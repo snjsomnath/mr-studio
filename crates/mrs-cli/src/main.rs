@@ -184,6 +184,16 @@ fn bench(dir: &Path) -> anyhow::Result<()> {
             println!("  sunlight {mode:8} {:>8.1} ms  [{adapter}]", started.elapsed().as_secs_f64() * 1e3);
             engine.drop_job(job);
         }
+        let job = engine.create_job("wind", &json!({}))?;
+        let started = Instant::now();
+        let mut status = engine.step(job, Duration::from_millis(50))?;
+        while started.elapsed() < Duration::from_secs(3) && status.state != JobState::Done {
+            status = engine.step(job, Duration::from_millis(50))?;
+        }
+        let rate = status.info["steps"].as_u64().unwrap_or(0) as f64 / started.elapsed().as_secs_f64();
+        let domain = &status.info["lattice"]["domain"];
+        println!("  wind     {rate:>8.0} steps/s on a {} x {} lattice  [{adapter}]", domain[0], domain[1]);
+        engine.drop_job(job);
     }
     Ok(())
 }

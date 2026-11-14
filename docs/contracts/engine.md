@@ -77,7 +77,7 @@ Kinds:
 
 - **OneShot**: one `step` produces the result (a shadow mask for one instant).
 - **Progressive**: output is valid after every `step` and refines until `Done` (sun hours over a day).
-- **Iterative**: a simulation that keeps running (wind, stormwater). `Done` is never reached; `progress` reports convergence.
+- **Iterative**: a simulation that runs until it settles (wind, stormwater). `progress` reports how far it has developed. It reports `Done` once the result has stopped changing, so a steady result costs nothing to keep on the table; an unsteady one never reaches `Done`. A change of params or scene makes it `Running` again.
 
 Rules for kernels:
 
@@ -102,6 +102,10 @@ pub struct Field {
 ```
 
 Vector fields are delivered as separate component fields (`u`, `v`) plus any derived scalar the layer needs (`speed`).
+
+A field always covers the whole site extent, but it may be coarser than the scene grid: `width` and `height` are the field's own.
+A simulation picks the resolution it can afford, and a surface stretches the frame over the extent.
+The resolution of a field may change when params change, never between two frames of the same params.
 
 ## Engine
 
@@ -179,3 +183,45 @@ Algorithm: for each cell, march a ray across the `dsm` towards the sun in one-ce
 `shadow` exists in `instant` mode and `sun_hours` in `day` mode. Status `info` carries `sun: { azimuth_deg, altitude_deg }` and `daylight_hours`, so a layer can show them without recomputing.
 
 The march is the simplest correct algorithm and costs one step per cell of shadow length. The planned speed-up is a max-height pyramid that lets the ray skip empty space; the parity and physics tests are what make that change safe.
+
+## Wind kernel
+
+Kernel id `wind`, kind Iterative. Steady air flow at pedestrian level around buildings and through trees, in two dimensions.
+Ported from `animations/cfd-core.js` of the previous app.
+
+| Param | Type | Meaning |
+| --- | --- | --- |
+| `speed` | number, 0.5 to 20, default 5 | Wind speed in m/s |
+| `direction_deg` | number, default 270 | Compass bearing the wind blows from, clockwise from north |
+| `resolution` | number, 32 to 1024, default 256 | Lattice cells along the longer side of the site |
+| `trees` | boolean, default true | Tree canopy slows the air that passes through it |
+| `viscosity` | number, 0.02 to 0.15, default 0.03 | Lattice viscosity. Higher is smoother and more stable |
+| `boundary` | `"open"`, `"periodic"` or `"channel"`, default `"open"` | Verification only. `open` is the real thing |
+| `force` | two numbers | Verification only: a body force in lattice units |
+
+| Field | Units | Meaning |
+| --- | --- | --- |
+| `speed` | m/s | Wind speed, 0 inside buildings |
+| `u` | m/s | Velocity towards higher columns (the right of the table) |
+| `v` | m/s | Velocity towards higher rows (the bottom of the table) |
+
+All three fields have the lattice's resolution and a fixed display range: `speed` runs from 0 to 2.5 times the wind speed, `u` and `v` over plus and minus that.
+
+Algorithm: a D2Q9 lattice Boltzmann solver with two-relaxation-time collision (magic parameter 1/4) and halfway bounce-back at buildings.
+The lattice is the scene grid coarsened by a whole factor, chosen from `resolution`. A lattice cell is a building when at least half of its scene cells are solid, and its canopy cover is the share of its scene cells under trees.
+Around the site the lattice is padded: half the site's length upstream, three quarters downstream and a third of its width on each side, so the open boundaries sit away from the buildings.
+The upwind edges prescribe the wind velocity, the downwind edges prescribe density, and edges parallel to the wind let air leave; all three use non-equilibrium extrapolation. A sponge in the outer padding absorbs pressure waves.
+Canopy removes momentum in proportion to speed squared and cover, applied with exact-difference forcing.
+With buildings the inlet ramps up from rest over 400 steps.
+
+One pass does one time step for every cell: pull the incoming populations (or reflect them at a wall), apply the edge condition, take density and velocity, collide, write to the other buffer. Nothing else touches the populations, so a step is one dispatch and the GPU never waits for the CPU. Steps are batched into one submission sized to the budget.
+
+Wind speed and lattice speed are separate. The inlet runs at `speed * 0.005` lattice units, capped at 0.05, or 0.025 when there are buildings, and the result is scaled back to m/s. So above 5 m/s a change of `speed` only rescales the fields and nothing is recomputed.
+What a change restarts: `direction_deg` and `resolution` rebuild the lattice; `speed` restarts only when it changes the lattice speed; `trees` and `viscosity` keep the flow and let it adapt.
+
+Every 100 steps the kernel compares the visible velocities with the previous check. The run has settled, and reports `Done`, when the wind has had time to cross the site once and the root-mean-square change stayed under 0.1% of the inlet speed per 100 steps for five checks in a row.
+The same check enforces the numerical limits (density within 0.8 to 1.2, lattice speed under 0.15). A run that leaves them restarts at half the lattice speed; if that cannot help the job fails with `EngineError::Unstable`.
+
+Status `info` carries `steps`, `settled`, `change`, `lattice_speed`, `peak_mps`, `steps_per_second`, `lattice: { width, height, cell_m, factor, domain }` and `wind: { u, v }`, the unit vector the wind blows towards in table axes.
+
+A zero budget runs exactly one step, which is how the parity test keeps both backends on the same step.
