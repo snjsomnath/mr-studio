@@ -23,6 +23,8 @@ export class TableView {
   private container: HTMLElement;
   /** Map layer ids each scene layer has added, in the order it added them. */
   private owned = new Map<string, string[]>();
+  /** What each layer has drawn, so its intensity can be applied to all of it. */
+  private drawn = new Map<string, { overlays: Set<MapFieldOverlay>; elements: Set<HTMLElement>; canvases: Map<string, number>; intensity: number }>();
 
   constructor(container: HTMLElement, site: SiteInfo) {
     this.site = site;
@@ -51,6 +53,7 @@ export class TableView {
   /** What a scene layer may draw. Ids are namespaced by the layer, and everything lands in its slot. */
   handle(instance: string, track: (cleanup: () => void) => void): MapHandle {
     const map = this.map;
+    const drawn = this.drawnBy(instance);
     const add = (id: string, layer: Parameters<typeof map.addLayer>[0]) => {
       this.ensureSlot(instance);
       map.addLayer(layer, slot(instance));
@@ -65,7 +68,10 @@ export class TableView {
         const id = `field:${instance}:${name}`;
         const overlay = new MapFieldOverlay(map, id, this.site, style);
         add(id, overlay);
+        overlay.setGain(drawn.intensity);
+        drawn.overlays.add(overlay);
         track(() => {
+          drawn.overlays.delete(overlay);
           overlay.remove();
           forget(id);
         });
@@ -82,11 +88,14 @@ export class TableView {
         ctx.setTransform(scale, 0, 0, scale, 0, 0);
         // The canvas is uploaded only on commit, so a static layer costs nothing per frame.
         map.addSource(id, { type: 'canvas', canvas: element, coordinates: this.site.corners, animate: false });
-        add(id, { id, type: 'raster', source: id, paint: { 'raster-opacity': options.opacity ?? 1, 'raster-fade-duration': 0 } });
+        // The layer's own opacity, which its intensity scales.
+        drawn.canvases.set(id, options.opacity ?? 1);
+        add(id, { id, type: 'raster', source: id, paint: { 'raster-opacity': canvasOpacity(options.opacity ?? 1, drawn.intensity), 'raster-fade-duration': 0 } });
         let removed = false;
         const remove = () => {
           if (removed) return;
           removed = true;
+          drawn.canvases.delete(id);
           if (map.getLayer(id)) map.removeLayer(id);
           if (map.getSource(id)) map.removeSource(id);
           forget(id);
@@ -107,7 +116,9 @@ export class TableView {
             map.triggerRepaint();
           },
           setOpacity: (opacity) => {
-            if (!removed) map.setPaintProperty(id, 'raster-opacity', opacity);
+            if (removed) return;
+            drawn.canvases.set(id, opacity);
+            map.setPaintProperty(id, 'raster-opacity', canvasOpacity(opacity, drawn.intensity));
           },
           remove,
         };
@@ -118,10 +129,30 @@ export class TableView {
         element.className = 'table-decoration';
         element.dataset.layer = instance;
         this.container.append(element);
-        track(() => element.remove());
+        styleElement(element, drawn.intensity);
+        drawn.elements.add(element);
+        track(() => {
+          drawn.elements.delete(element);
+          element.remove();
+        });
         return element;
       },
     };
+  }
+
+  /** Applies a layer's intensity (0 to 2) to everything it has drawn and will draw. */
+  setIntensity(instance: string, intensity: number): void {
+    const drawn = this.drawnBy(instance);
+    drawn.intensity = intensity;
+    for (const overlay of drawn.overlays) overlay.setGain(intensity);
+    for (const element of drawn.elements) styleElement(element, intensity);
+    for (const [id, opacity] of drawn.canvases) this.map.setPaintProperty(id, 'raster-opacity', canvasOpacity(opacity, intensity));
+  }
+
+  private drawnBy(instance: string) {
+    let drawn = this.drawn.get(instance);
+    if (!drawn) this.drawn.set(instance, (drawn = { overlays: new Set(), elements: new Set(), canvases: new Map(), intensity: 1 }));
+    return drawn;
   }
 
   /** Stacks the scene's layers in this order, bottom first. */
@@ -137,6 +168,7 @@ export class TableView {
   dropSlot(instance: string): void {
     if (this.map.getLayer(slot(instance))) this.map.removeLayer(slot(instance));
     this.owned.delete(instance);
+    this.drawn.delete(instance);
   }
 
   private ensureSlot(instance: string): void {
@@ -159,4 +191,15 @@ export class TableView {
     this.map.resize();
     this.map.jumpTo({ center: [this.site.origin.lon, this.site.origin.lat], bearing: this.site.extent.rotation_deg, zoom: this.fitZoom() });
   }
+}
+
+/** Below 1 a decoration fades; above 1 it brightens. The filter is on the layer's own element, never the root. */
+function styleElement(element: HTMLElement, intensity: number): void {
+  element.style.opacity = String(Math.min(1, intensity));
+  element.style.filter = intensity > 1 ? `brightness(${intensity})` : '';
+}
+
+/** A canvas fades below intensity 1. It is already drawn at full strength, so above 1 it stays as it is. */
+function canvasOpacity(opacity: number, intensity: number): number {
+  return opacity * Math.min(1, Math.max(0, intensity));
 }

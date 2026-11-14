@@ -62,6 +62,8 @@ pub struct LayerState {
     /// The layer package this instance runs.
     pub layer: String,
     pub active: bool,
+    /// How strongly the layer is drawn on the table, 0 to 2. 1 is as the layer intends.
+    pub intensity: f64,
     pub params: Map<String, Value>,
     pub shared: Map<String, Value>,
 }
@@ -160,7 +162,7 @@ impl Hub {
             Err(e) if lenient => tracing::warn!("site.json params for layer '{id}' ignored: {e}"),
             Err(e) => anyhow::bail!(e),
         }
-        let state = LayerState { layer: layer.id.clone(), active: saved.active, params, shared: Map::new() };
+        let state = LayerState { layer: layer.id.clone(), active: saved.active, intensity: 1.0, params, shared: Map::new() };
         Ok(Instance { id, def, saved, state })
     }
 
@@ -251,6 +253,13 @@ impl Hub {
                     return Err("phones cannot turn layers on or off".into());
                 }
                 state.active = p["active"].as_bool().ok_or("missing active")?;
+                self.emit_layer(layer, state);
+            }
+            "layer.intensity" => {
+                if !role.may_activate() {
+                    return Err("phones cannot change a layer's intensity".into());
+                }
+                state.intensity = p["intensity"].as_f64().filter(|v| v.is_finite()).ok_or("missing intensity")?.clamp(0.0, 2.0);
                 self.emit_layer(layer, state);
             }
             "layer.set" => {

@@ -102,6 +102,8 @@ export interface LayerState {
   /** The layer package this instance runs. */
   layer: string;
   active: boolean;
+  /** How strongly the layer is drawn on the table, 0 to 2. 1 is as the layer intends. Applied by the runtime. */
+  intensity: number;
   params: Params;
   shared: Record<string, unknown>;
 }
