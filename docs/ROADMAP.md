@@ -99,7 +99,7 @@ These are not layers but things the projector can do because it lights a physica
 | Spotlight storytelling | Dim the model and light only what is being talked about | model surface, guided tours |
 | Phones as lenses | A phone pointed at the table shows an aligned extra layer; pins appear as light | model surface maths on the phone |
 
-Order: the model surface and calibration first, then relighting (it improves every layer), then walls and motion, then the rest.
+The model surface, calibration and relighting are built (see the state column in contracts/model.md). Order: the model surface and calibration first, then relighting (it improves every layer), then walls and motion, then the rest.
 
 ## Sun study extras
 

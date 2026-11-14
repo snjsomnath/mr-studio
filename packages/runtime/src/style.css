@@ -33,6 +33,30 @@ body {
   display: flex;
 }
 
+/* ---- Stage: the table, the dashboard, or in dev both ---- */
+
+.stage {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.dash {
+  flex: 1;
+  min-height: 0;
+}
+
+/* In dev the dashboard is a small preview of the TV; open /tv for the real size. */
+body[data-role='dev'] .table-frame {
+  flex: 1;
+}
+
+body[data-role='dev'] .dash {
+  flex: 1;
+  border-top: 1px solid var(--line);
+}
+
 /* ---- Table ---- */
 
 .table-frame {
@@ -80,7 +104,6 @@ body[data-role='dev'] .table-surface {
   border-left: 1px solid var(--line);
 }
 
-body[data-role='tv'] .controller,
 body[data-role='phone'] .controller {
   width: 100%;
   max-width: 720px;
@@ -88,13 +111,34 @@ body[data-role='phone'] .controller {
   border: 0;
 }
 
-body[data-role='phone'],
-body[data-role='tv'] {
+body[data-role='phone'] {
   background: var(--panel);
+}
+
+/* On the TV the controls are a rail beside the dashboard canvas. */
+body[data-role='tv'] .controller {
+  order: -1;
+  width: clamp(300px, 22vw, 460px);
+  border-left: 0;
+  border-right: 1px solid var(--line);
+}
+
+body[data-role='tv'][data-rail='right'] .controller {
+  order: 1;
+  border-right: 0;
+  border-left: 1px solid var(--line);
+}
+
+body[data-role='tv'][data-rail='none'] .controller {
+  display: none;
 }
 
 .controller-header {
   padding: 20px 20px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
 
 .controller-header h1 {
@@ -161,12 +205,6 @@ body[data-role='tv'] {
   padding: 4px 16px 16px;
   display: grid;
   gap: 16px;
-}
-
-.layer-panel {
-  padding: 12px 14px;
-  background: rgb(0 0 0 / 0.22);
-  border-radius: 8px;
 }
 
 .controls {
@@ -327,6 +365,207 @@ button.action {
   }
 }
 
+/* ---- Joining ---- */
+
+.join {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 20px;
+  border-top: 1px solid var(--line);
+}
+
+.join-qr {
+  flex: none;
+  width: 132px;
+  border-radius: 8px;
+  overflow: hidden;
+  line-height: 0;
+}
+
+/* The TV is read from across the room. */
+body[data-role='tv'] .join-qr {
+  width: 220px;
+}
+
+.join-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.join h2 {
+  margin: 0 0 4px;
+  font-size: 1rem;
+}
+
+.join p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.join b {
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.join-code {
+  font-size: 1.15em;
+  letter-spacing: 0.12em;
+  font-variant-numeric: tabular-nums;
+}
+
+.join-crowd {
+  flex: none;
+  display: grid;
+  gap: 6px;
+  justify-items: end;
+}
+
+.join-people {
+  display: grid;
+  grid-template-columns: repeat(4, auto);
+  gap: 5px;
+}
+
+.join-person,
+.phone-badge i {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  color: #10131a;
+  font-size: 0.8rem;
+  font-weight: 700;
+  font-style: normal;
+}
+
+.join-person.is-away {
+  opacity: 0.35;
+}
+
+/* ---- Phone ---- */
+
+.phone-badge {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 12px 5px 6px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.door {
+  margin: auto;
+  width: min(100%, 360px);
+  padding: 24px;
+  display: grid;
+  gap: 14px;
+  text-align: center;
+}
+
+.door h1 {
+  margin: 0;
+  font-size: 1.3rem;
+}
+
+.door p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.door form {
+  display: grid;
+  gap: 12px;
+}
+
+.door input {
+  height: 56px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--card);
+  color: var(--text);
+  font: inherit;
+  font-size: 1.8rem;
+  letter-spacing: 0.3em;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 600;
+}
+
+button.action:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.door button {
+  min-height: 48px;
+}
+
+.layer-card[hidden] {
+  display: none;
+}
+
+.tools {
+  display: grid;
+  gap: 10px;
+}
+
+.tool-pad {
+  display: grid;
+  gap: 8px;
+}
+
+.tool-map {
+  display: block;
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+  /* Fingers draw here; the page must not scroll or zoom under them. */
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: crosshair;
+}
+
+.tool-buildings {
+  fill: rgb(255 255 255 / 0.1);
+  stroke: rgb(255 255 255 / 0.4);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.tool-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.tool-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr 2fr;
+  gap: 8px;
+}
+
+.tool-actions[hidden] {
+  display: none;
+}
+
+.tool-actions button {
+  min-height: 44px;
+}
+
 /* Decorations layers draw over the table (see MapHandle.addElement). */
 .table-decoration {
   position: absolute;
@@ -334,4 +573,165 @@ button.action {
   z-index: 2;
   pointer-events: none;
   overflow: hidden;
+}
+
+/* ---- Model surface ---- */
+
+/* The twin, drawn over the flat map through the projector's camera. */
+.table-model {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 1;
+  pointer-events: none;
+}
+
+/* ---- Projector calibration ---- */
+
+.calibration {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  cursor: crosshair;
+  touch-action: none;
+  user-select: none;
+  color: #e8ecf4;
+  font-size: 14px;
+}
+
+/* Until the camera is solved the surface is dark, so only the marker's light falls on the model. */
+.calibration:not(.shows-model) {
+  background: #000;
+}
+
+.calibration-marker,
+.calibration-dot {
+  position: absolute;
+  left: 0;
+  top: 0;
+  pointer-events: none;
+}
+
+.calibration-marker i {
+  position: absolute;
+  background: #fff;
+}
+
+.calibration-marker i:nth-child(1) {
+  left: -22px;
+  top: -0.5px;
+  width: 44px;
+  height: 1px;
+}
+
+.calibration-marker i:nth-child(2) {
+  left: -0.5px;
+  top: -22px;
+  width: 1px;
+  height: 44px;
+}
+
+.calibration-marker b {
+  position: absolute;
+  left: -9px;
+  top: -9px;
+  width: 18px;
+  height: 18px;
+  border: 1px solid #ffd24a;
+  border-radius: 50%;
+}
+
+.calibration-marker:not(.is-placed) {
+  opacity: 0.6;
+}
+
+.calibration-dot {
+  margin: -9px 0 0 -9px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1px solid #4ade80;
+  color: #4ade80;
+  font-size: 10px;
+  line-height: 16px;
+  text-align: center;
+}
+
+.calibration-panel {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  width: 292px;
+  padding: 16px;
+  display: grid;
+  gap: 10px;
+  cursor: default;
+  background: rgb(14 18 26 / 0.94);
+  border: 1px solid rgb(255 255 255 / 0.14);
+  border-radius: 10px;
+}
+
+.calibration-panel h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.calibration-panel p {
+  margin: 0;
+  line-height: 1.4;
+}
+
+.calibration-plan {
+  display: block;
+  border-radius: 6px;
+}
+
+.calibration-status {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.85;
+}
+
+.calibration-status.is-problem {
+  color: #ffb4a8;
+  opacity: 1;
+}
+
+.calibration-help {
+  font-size: 12px;
+  opacity: 0.6;
+}
+
+.calibration-row {
+  display: flex;
+  gap: 8px;
+}
+
+.calibration-row button {
+  flex: 1;
+  padding: 7px 8px;
+  font: inherit;
+  color: inherit;
+  background: rgb(255 255 255 / 0.08);
+  border: 1px solid rgb(255 255 255 / 0.16);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.calibration-row button.is-primary {
+  background: #ffd24a;
+  border-color: #ffd24a;
+  color: #14171d;
+  font-weight: 600;
+}
+
+.calibration-row button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* Layers' own decorations would only distract from the markers. */
+.is-calibrating .table-decoration {
+  visibility: hidden;
 }

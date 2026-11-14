@@ -1,0 +1,16 @@
+{
+  "api": 1,
+  "id": "sketch",
+  "name": "Sketch",
+  "description": "Mark places, routes and areas on the table from a phone",
+  "icon": "pencil",
+  "controls": [
+    { "id": "opacity", "type": "range", "label": "Opacity", "min": 0.2, "max": 1, "step": 0.05, "default": 1 },
+    { "id": "clear", "type": "action", "label": "Clear the sketch" }
+  ],
+  "tools": [
+    { "id": "place", "type": "point", "label": "Place" },
+    { "id": "route", "type": "line", "label": "Route" },
+    { "id": "area", "type": "polygon", "label": "Area" }
+  ]
+}

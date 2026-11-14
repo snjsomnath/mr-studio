@@ -55,6 +55,7 @@ Rules:
 - `layers[].use` is a core layer id, or a relative path to a site-only layer package. `params` override the layer's defaults and `active` turns it on at start.
 - `data` maps dataset names to files in the site folder. A layer asks for a dataset by name (`requires.data` in its `layer.json`), so the same layer runs on every site and each site decides which file answers. Names are lowercase letters, digits, dashes and underscores. Each layer's README describes the format it expects.
 - `terrain` is raw little-endian f32 elevations covering the extent, row-major with row 0 at the top, at any resolution.
+- `tv` holds the TV's settings: where the control rail sits, the site's theme, and optional hand-made dashboard pages. Its shape and rules are in [dashboard.md](dashboard.md). The host passes it to surfaces as written.
 - Unknown keys are an error, so a typo is caught by `mrstudio validate` rather than silently ignored.
 - Vector data is GeoJSON in WGS84 (CRS84). Site prep reprojects from national grids.
 - Nothing in `site.json` is a secret. Credentials for services live in the app's own config.

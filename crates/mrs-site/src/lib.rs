@@ -4,6 +4,7 @@
 mod bake;
 mod manifest;
 mod projection;
+mod twin;
 
 use std::collections::BTreeMap;
 use std::path::{Component, Path, PathBuf};
@@ -54,6 +55,8 @@ pub struct SiteInfo {
     pub buildings: Option<String>,
     /// Named datasets for layers: name to site-relative path, served under `/site/`.
     pub data: BTreeMap<String, String>,
+    /// The site's TV dashboard settings (theme, pages), as written. Validated on the TV by `@mrstudio/dashboard`.
+    pub tv: Option<serde_json::Value>,
 }
 
 impl Site {
@@ -181,6 +184,7 @@ impl Site {
             branding: m.branding.clone(),
             buildings: m.scene.buildings.as_ref().map(|b| b.path.clone()),
             data: m.data.clone(),
+            tv: m.tv.clone(),
         }
     }
 

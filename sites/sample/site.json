@@ -19,7 +19,8 @@
     "trip_cells": "data/trip-cells.geojson"
   },
   "layers": [
-    { "use": "sunlight", "active": true, "params": { "date": "2026-06-21", "hour": 15 } },
+    { "use": "sunlight", "active": true, "params": { "date": "2026-06-21", "hour": 15, "relight": true } },
+    { "use": "sketch", "active": true },
     { "use": "coolpaths" },
     { "use": "mobility" }
   ],

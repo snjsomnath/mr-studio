@@ -16,12 +16,26 @@ pnpm dev
 
 Open <http://localhost:5173/dev>. That is the layer dev mode: the table view of the sample site with the generated controls beside it, with hot reload.
 `/table`, `/tv` and `/phone?c=<session code>` are the real surfaces; the session code is printed when the host starts.
+To join from a real phone, run `pnpm dev -- --lan` and scan the QR code shown on `/tv` or `/dev`.
 
 ```bash
 cargo run -p mrs-cli -- validate sites/sample      # check a site and report its scene
 cargo run -p mrs-cli -- new-site sites/mysite --lon 11.94 --lat 57.706
 cargo run --release -p mrs-cli -- bench sites/sample   # time the kernels on GPU and CPU
 ```
+
+## The desktop app
+
+```bash
+pnpm app          # build the surfaces and run the app from source
+pnpm app:build    # make an installer for this computer (target/release/bundle)
+```
+
+The app opens a launcher where you pick a site and say which display is the table and which is the TV, then opens one borderless fullscreen window per display.
+The choice is remembered, so the next start goes straight to the table. Ctrl+Shift+S brings the launcher back and Ctrl+Shift+Q quits.
+The launcher's Colour tab boosts or corrects the colours of each display (saturation, contrast, brightness, gamma, white balance), live on the running table, with presets and a test card.
+Windows and macOS installers are built by the "Desktop app" workflow on every pull request and push to `main` (download them from the run's artifacts), and attached to a draft release for a `v*` tag.
+The installers are not signed yet: Windows SmartScreen asks once ("More info", "Run anyway"), and on macOS open the app the first time with right click, Open.
 
 ## Layout
 
@@ -33,7 +47,7 @@ crates/mrs-cli       the `mrstudio` command
 apps/studio          desktop shell (Tauri): one window per display
 packages/sdk         @mrstudio/sdk: layer API, connection, engine client
 packages/runtime     the surfaces: table, tv, phone, dev
-packages/layers      core layers: sunlight (the reference), coolpaths, mobility
+packages/layers      core layers: sunlight (the reference), sketch (the reference for phone tools), coolpaths, mobility
 sites/sample         a small synthetic site for tests and dev mode
 ```
 
@@ -68,12 +82,13 @@ The GPU tests need a Vulkan, Metal or DirectX 12 adapter. Without one they are s
 | Engine: scene, jobs, sunlight kernel on GPU and CPU, parity tests | Working |
 | Site format, validation, scene bake from footprints, terrain and trees | Working |
 | Host: session state, roles, validated params, field streaming | Working |
+| Phones: QR join, slots that survive a reload (60 s hold), per-phone rate limit, point, line and polygon tools | Working; tested in a desktop browser, not yet on a real phone |
 | Surfaces: table, TV, phone, dev, with generated controls | Working, first version |
 | Sunlight layer (shadows, sun hours, animation, TV panel) | Working |
 | Cool paths layer (shortest and shadiest walk over a site's walkways, live shade from the engine) | Working; thermal comfort (PET) kernel proposed |
 | Mobility layer (a site's trips played over time, values per cell) | Working |
-| Desktop shell | Builds and starts on macOS (Apple M4 Pro, Metal) with a dev window; not yet run on Windows; display placement untested on real hardware |
+| Desktop app: launcher (site and display picker), fullscreen per display, colour per display, installers from CI | Working on Linux with two displays. The earlier shell started on macOS (Apple M4 Pro, Metal); the launcher, fullscreen placement and the installers still need a first run on real Windows and macOS hardware |
 | Wind, stormwater, isovist kernels and layers | Not started; see the work packages in ARCHITECTURE.md |
-| Calibration, basemap tiles, QR join, phone tools | Not started |
+| Calibration, basemap tiles | Not started |
 | Chalmers, Lindholmen and Universeum site packages | Not started |
 | Python services gateway (ECOM, CoolPaths, site prep) | Not started |
