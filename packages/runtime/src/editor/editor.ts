@@ -1,11 +1,11 @@
 import { isVisible } from '@mrstudio/sdk';
 import type { Connection, LayerManifest, LayerState } from '@mrstudio/sdk';
 
-import { el, instanceTitle, widget } from '../controls.ts';
+import { el, layerButton, widget } from '../controls.ts';
 import type { Widget } from '../controls.ts';
 import { paramSender } from '../layer-manager.ts';
 import type { Store } from '../store.ts';
-import { icon } from './icons.ts';
+import { LAYER_ICONS, icon } from './icons.ts';
 import './editor.css';
 
 /**
@@ -307,7 +307,7 @@ export class Editor {
       remove.title = 'Take this out of the table';
       remove.addEventListener('click', () => selected && void this.send('scene.remove', { layer: selected.id }));
       for (const tool of [show, remove]) tool.disabled = !selected;
-      groups.push(this.group(selected ? instanceTitle(selected.id, selected.manifest) : 'Nothing selected', show, ...this.column([up, down, remove])));
+      groups.push(this.group(selected ? layerButton(selected.id, selected.manifest, selected.state).name : 'Nothing selected', show, ...this.column([up, down, remove])));
     } else {
       const open = (label: string, iconName: string, path: string, tip: string) => {
         const tool = button('ed-tool is-large', label, iconName, 20);
@@ -361,10 +361,18 @@ export class Editor {
     nodes.push(title);
     if (layers.length === 0) nodes.push(el('p', 'ed-empty', 'No layers yet. Each layer becomes a button on the controller. Add one from Insert.'));
     for (const { id, manifest, state } of layers) {
-      const row = this.treeRow(instanceTitle(id, manifest), '', manifest.icon, context.kind === 'layer' && context.id === id, () => this.go({ kind: 'layer', id }));
+      const as = layerButton(id, manifest, state);
+      const row = this.treeRow(as.name, '', as.icon, context.kind === 'layer' && context.id === id, () => this.go({ kind: 'layer', id }));
       row.dataset.layer = id;
-      row.classList.toggle('is-off', !state.active);
-      this.sync.set(id, (next) => row.classList.toggle('is-off', !next.active));
+      const side = el('span', 'ed-row-side');
+      row.append(side);
+      this.sync.set(id, (next) => {
+        const button = layerButton(id, manifest, next);
+        row.classList.toggle('is-off', !next.active);
+        row.querySelector('.ed-row-label')!.textContent = button.name;
+        row.querySelector('.ed-row-icon')!.replaceChildren(icon(button.icon));
+        side.textContent = button.side === 'right' ? 'Right' : 'Left';
+      });
       nodes.push(row);
     }
 
@@ -382,9 +390,10 @@ export class Editor {
     let notice: string | null = null;
     if (context.kind === 'layer') {
       const layer = instances.find((i) => i.id === context.id)!;
-      iconName = layer.manifest.icon;
-      title = instanceTitle(layer.id, layer.manifest);
-      detail = layer.manifest.description ?? 'Layer';
+      const as = layerButton(layer.id, layer.manifest, layer.state);
+      iconName = as.icon;
+      title = as.name;
+      detail = as.description || 'Layer';
     } else if (context.kind === 'phone') {
       iconName = 'phone';
       title = 'Phones';
@@ -401,6 +410,76 @@ export class Editor {
     this.canvasHead.replaceChildren(badge, el('strong', undefined, title), el('span', undefined, detail));
     this.notice.hidden = notice === null;
     this.notice.textContent = notice ?? '';
+  }
+
+  /**
+   * How a layer is offered on the controller: its name, a line of description, an icon
+   * and the side its button sits on. Empty fields fall back to the layer package's own.
+   */
+  private buttonSection(id: string, manifest: LayerManifest): HTMLElement {
+    const section = el('section', 'ed-section');
+    const set = (button: object) => void this.send('scene.set', { layer: id, button });
+    const field = (label: string, input: HTMLElement) => {
+      const row = el('label', 'ed-field');
+      row.append(el('span', undefined, label), input);
+      return row;
+    };
+
+    const name = el('input');
+    Object.assign(name, { type: 'text', maxLength: 40, placeholder: manifest.name });
+    name.addEventListener('change', () => set({ name: name.value.trim() || null }));
+    const description = el('textarea');
+    Object.assign(description, { rows: 2, maxLength: 200, placeholder: manifest.description ?? 'One line about what this layer shows' });
+    description.addEventListener('change', () => set({ description: description.value.trim() || null }));
+
+    const side = el('div', 'segmented');
+    side.setAttribute('role', 'radiogroup');
+    side.setAttribute('aria-label', 'Side of the controller');
+    const sides = (['left', 'right'] as const).map((value) => {
+      const option = el('button', undefined, value === 'left' ? 'Left' : 'Right');
+      option.type = 'button';
+      option.setAttribute('role', 'radio');
+      option.addEventListener('click', () => set({ side: value }));
+      side.append(option);
+      return [value, option] as const;
+    });
+
+    const icons = el('div', 'ed-icons');
+    icons.setAttribute('role', 'radiogroup');
+    icons.setAttribute('aria-label', 'Icon');
+    const names = LAYER_ICONS.includes(manifest.icon ?? '') || !manifest.icon ? LAYER_ICONS : [manifest.icon, ...LAYER_ICONS];
+    const choices = names.map((value) => {
+      const option = el('button', 'ed-icon-choice');
+      option.type = 'button';
+      option.setAttribute('role', 'radio');
+      option.ariaLabel = value;
+      option.title = value;
+      option.append(icon(value));
+      option.addEventListener('click', () => set({ icon: value === manifest.icon ? null : value }));
+      icons.append(option);
+      return [value, option] as const;
+    });
+
+    const row = el('div', 'ed-field');
+    row.append(el('span', undefined, 'Side'), side);
+    const iconRow = el('div', 'ed-field is-tall');
+    iconRow.append(el('span', undefined, 'Icon'), icons);
+    section.append(el('h3', undefined, 'Button on the controller'), field('Name', name), field('Description', description), row, iconRow);
+
+    const previous = this.sync.get(id);
+    this.sync.set(id, (state) => {
+      previous?.(state);
+      const button = layerButton(id, manifest, state);
+      if (document.activeElement !== name) name.value = state.button?.name ?? '';
+      if (document.activeElement !== description) description.value = state.button?.description ?? '';
+      for (const [value, option] of sides) option.setAttribute('aria-checked', String(value === button.side));
+      for (const [value, option] of choices) option.setAttribute('aria-checked', String(value === button.icon));
+      // The headings that show the layer's name follow it.
+      this.inspector.querySelector('.ed-inspector-head strong')!.textContent = button.name;
+      this.inspector.querySelector('.ed-inspector-head svg')!.replaceWith(icon(button.icon));
+      if (this.context.kind === 'layer' && this.context.id === id) this.renderCanvas(this.instances());
+    });
+    return section;
   }
 
   /** The settings form of one scene instance, generated from its manifest. */
@@ -454,7 +533,7 @@ export class Editor {
       section.append(el('h3', undefined, 'On the home screen'));
       if (ambient.length === 0) section.append(el('p', 'ed-empty', 'Nothing yet. Add a base map and some ambient life from Insert.'));
       for (const { id, manifest, state } of ambient) {
-        const row = this.treeRow(instanceTitle(id, manifest), '', manifest.icon, this.homeItem === id, () => {
+        const row = this.treeRow(layerButton(id, manifest).name, '', manifest.icon, this.homeItem === id, () => {
           this.homeItem = this.homeItem === id ? null : id;
           this.render();
         });
@@ -468,7 +547,9 @@ export class Editor {
       if (open) nodes.push(this.settings(open.id, open.manifest));
     } else if (context.kind === 'layer') {
       const layer = instances.find((i) => i.id === context.id)!;
-      nodes.push(head(layer.manifest.icon, instanceTitle(layer.id, layer.manifest), 'Layer'));
+      const as = layerButton(layer.id, layer.manifest, layer.state);
+      nodes.push(head(as.icon, as.name, 'Layer'));
+      nodes.push(this.buttonSection(layer.id, layer.manifest));
       nodes.push(this.settings(layer.id, layer.manifest));
     } else {
       nodes.push(head(context.kind === 'controller' ? 'tv' : 'phone', context.kind === 'controller' ? 'Controller' : 'Phones', ''));

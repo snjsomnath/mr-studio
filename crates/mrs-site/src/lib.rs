@@ -201,6 +201,9 @@ impl Site {
             if let Some(id) = layer.id.as_deref().filter(|id| !is_instance_id(id)) {
                 out.push(format!("layers[].id '{id}' must be lowercase letters, digits and dashes"));
             }
+            if let Some(problem) = layer.button.problem() {
+                out.push(format!("layer '{}': {problem}", layer.instance_hint()));
+            }
             if !seen.insert(layer.instance_hint()) {
                 out.push(format!("layer '{}' is listed twice; give one entry its own \"id\"", layer.instance_hint()));
             }
@@ -306,7 +309,7 @@ mod tests {
     }
 
     fn layer(name: &str, id: Option<&str>) -> LayerRef {
-        LayerRef { r#use: name.into(), id: id.map(String::from), active: true, params: Default::default() }
+        LayerRef { r#use: name.into(), id: id.map(String::from), active: true, params: Default::default(), button: Default::default() }
     }
 
     #[test]

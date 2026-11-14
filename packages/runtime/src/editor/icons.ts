@@ -33,6 +33,9 @@ const PATHS: Record<string, string> = {
   code: 'M8 7l-5 5 5 5M16 7l5 5-5 5',
 };
 
+/** Icons an author can give a layer's button. */
+export const LAYER_ICONS = ['sun', 'wind', 'route', 'footprints', 'tram', 'car', 'tree', 'lightbulb', 'images', 'pencil', 'map', 'blocks', 'layers', 'home', 'eye', 'play'];
+
 const NS = 'http://www.w3.org/2000/svg';
 
 /** An icon by name, `size` px square, drawn in the current text colour. */

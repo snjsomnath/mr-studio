@@ -494,6 +494,33 @@ async fn the_scene_is_composed_and_saved() {
     let live_only = saved_layers(&site).into_iter().find(|l| l["id"] == "cars-2").unwrap();
     assert_eq!(live_only["params"], json!({ "density": 30.0 }), "layer.set is not written to site.json");
 
+    // A layer's button on the controller: its own name, description, icon and side. Null clears a field.
+    let button = json!({ "name": " Shade ", "description": "Where the trees are", "icon": "tree", "side": "right" });
+    composer.request("scene.set", json!({ "layer": "trees", "button": button })).await.unwrap();
+    let shown = json!({ "name": "Shade", "description": "Where the trees are", "icon": "tree", "side": "right" });
+    assert_eq!(table.event("state.layer").await["state"]["button"], shown);
+    assert_eq!(saved_layers(&site).into_iter().find(|l| l["use"] == "trees").unwrap()["button"], shown);
+    composer
+        .request("scene.set", json!({ "layer": "trees", "button": { "description": null, "icon": null, "side": null } }))
+        .await
+        .unwrap();
+    assert_eq!(table.event("state.layer").await["state"]["button"], json!({ "name": "Shade" }));
+    for bad in [
+        json!({ "side": "top" }),
+        json!({ "name": "x".repeat(41) }),
+        json!({ "icon": "Tree!" }),
+        json!({ "colour": "red" }),
+        json!("Shade"),
+    ] {
+        assert!(composer.request("scene.set", json!({ "layer": "trees", "button": bad })).await.is_err(), "{bad} should be refused");
+    }
+    composer.request("scene.set", json!({ "layer": "trees", "button": { "name": null } })).await.unwrap();
+    table.event("state.layer").await;
+    assert!(
+        saved_layers(&site).into_iter().find(|l| l["use"] == "trees").unwrap().get("button").is_none(),
+        "an empty button is not written"
+    );
+
     // Removing takes the layer out of the session and the file.
     composer.request("scene.remove", json!({ "layer": "cars-2" })).await.unwrap();
     let event = table.event("state.scene").await;

@@ -8,7 +8,7 @@ use std::hash::{BuildHasher, Hasher};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use mrs_site::{is_instance_id, LayerRef, Site, SiteInfo};
+use mrs_site::{is_instance_id, LayerButton, LayerRef, Site, SiteInfo};
 use serde::Serialize;
 use serde_json::{json, Map, Value};
 use tokio::sync::{broadcast, Notify};
@@ -93,6 +93,8 @@ pub struct LayerState {
     pub intensity: f64,
     pub params: Map<String, Value>,
     pub shared: Map<String, Value>,
+    /// How the site offers the layer on the controller. Empty fields fall back to the layer package.
+    pub button: LayerButton,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -239,7 +241,14 @@ impl Hub {
             Err(e) if lenient => tracing::warn!("site.json params for layer '{id}' ignored: {e}"),
             Err(e) => anyhow::bail!(e),
         }
-        let state = LayerState { layer: layer.id.clone(), active: saved.active, intensity: 1.0, params, shared: Map::new() };
+        let state = LayerState {
+            layer: layer.id.clone(),
+            active: saved.active,
+            intensity: 1.0,
+            params,
+            shared: Map::new(),
+            button: saved.button.clone(),
+        };
         Ok(Instance { id, def, saved, state })
     }
 
@@ -487,6 +496,7 @@ impl Hub {
                         Value::Object(params) => self.catalog[def].validate(params, false)?,
                         _ => return Err("params must be an object".into()),
                     },
+                    button: button_patch(LayerButton::default(), &p["button"])?,
                 };
                 let instance = Self::instance(&self.catalog, def, saved, false).map_err(|e| e.to_string())?;
                 let index = p["index"].as_u64().map_or(scene.len(), |i| (i as usize).min(scene.len()));
@@ -519,6 +529,9 @@ impl Hub {
                     instance.state.active = active;
                     instance.saved.active = active;
                 }
+                let button = button_patch(instance.saved.button.clone(), &p["button"])?;
+                instance.state.button = button.clone();
+                instance.saved.button = button;
                 changed_layer = Some(index);
             }
             other => return Err(format!("unknown method '{other}'")),
@@ -586,6 +599,41 @@ fn clean_geometry(kind: ToolKind, geometry: &Value) -> Result<Value, String> {
         }
     };
     Ok(json!({ "type": name, "coordinates": cleaned }))
+}
+
+/// Applies a `button` patch from a `scene.*` request: a string sets a field, `null` clears it,
+/// and a field that is left out stays as it is.
+fn button_patch(mut button: LayerButton, patch: &Value) -> Result<LayerButton, String> {
+    let patch = match patch {
+        Value::Null => return Ok(button),
+        Value::Object(patch) => patch,
+        _ => return Err("button must be an object".into()),
+    };
+    for (key, value) in patch {
+        let text = match value {
+            Value::Null => None,
+            Value::String(text) => Some(text.trim().to_string()).filter(|t| !t.is_empty()),
+            _ => return Err(format!("button.{key} must be text or null")),
+        };
+        match key.as_str() {
+            "name" => button.name = text,
+            "description" => button.description = text,
+            "icon" => button.icon = text,
+            "side" => {
+                button.side = match text.as_deref() {
+                    None => None,
+                    Some("left") => Some(mrs_site::ButtonSide::Left),
+                    Some("right") => Some(mrs_site::ButtonSide::Right),
+                    Some(other) => return Err(format!("button.side is 'left' or 'right', not '{other}'")),
+                }
+            }
+            other => return Err(format!("a button has no '{other}'")),
+        }
+    }
+    match button.problem() {
+        Some(problem) => Err(problem),
+        None => Ok(button),
+    }
 }
 
 #[cfg(test)]

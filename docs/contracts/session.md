@@ -139,6 +139,7 @@ interface LayerState {
   intensity: number;                       // 0..2, how strongly the layer is drawn on the table; 1 is as designed
   params: Record<string, unknown>;         // validated against the layer's controls
   shared: Record<string, unknown>;         // published by the table surface
+  button: { name?: string; description?: string; icon?: string; side?: 'left' | 'right' };  // the site's own words for the layer on the controller; empty fields fall back to layer.json
 }
 ```
 
@@ -179,7 +180,7 @@ Requests:
 | `scene.add` | `{ use, id?, index?, active?, params? }` | tv, dev | Adds a layer from the catalogue at `index` (default: on top, active). Returns `{ id }`; without `id` the first copy is named after the layer and later ones `<layer>-2`, `-3`, ... |
 | `scene.remove` | `{ layer }` | tv, dev | Takes a layer out of the scene |
 | `scene.move` | `{ layer, index }` | tv, dev | Moves a layer to `index` in the draw order (0 is the bottom) |
-| `scene.set` | `{ layer, params?, active? }` | tv, dev | Like `layer.set` and `layer.activate`, and also saved as the layer's starting state |
+| `scene.set` | `{ layer, params?, active?, button? }` | tv, dev | Like `layer.set` and `layer.activate`, and also saved as the layer's starting state. `button` is `{ name?, description?, icon?, side? }`: text sets a field, `null` clears it, a field left out stays. `scene.add` takes `button` too |
 
 In every `layer.*` and `tool.input` request, `layer` is the instance id.
 The `scene.*` requests rewrite the `layers` list of `site.json` before they take effect, and fail without changing anything if it cannot be saved.
