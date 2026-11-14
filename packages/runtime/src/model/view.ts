@@ -415,9 +415,9 @@ export class ModelView {
   // ---- Buildings and surface queries ---------------------------------------
 
   private async loadBuildings(): Promise<void> {
-    if (!this.site.buildings) return;
+    if (!this.site.data.buildings) return;
     try {
-      const response = await fetch(`/site/${this.site.buildings}`);
+      const response = await fetch(`/site/${this.site.data.buildings}`);
       const collection = (await response.json()) as { features?: { id?: unknown; properties?: Record<string, unknown> | null }[] };
       this.buildings = (collection.features ?? []).map((feature, index) => ({
         id: String(feature.id ?? feature.properties?.id ?? index),

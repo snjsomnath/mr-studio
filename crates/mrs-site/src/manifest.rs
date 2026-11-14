@@ -146,11 +146,27 @@ pub struct Branding {
 pub struct LayerRef {
     /// A core layer id, or a relative path to a site-only layer package.
     pub r#use: String,
-    #[serde(default, skip_serializing_if = "Map::is_empty")]
-    pub params: Map<String, Value>,
+    /// Names this entry when the same layer is used more than once. Defaults to the layer's id.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
     /// Whether the layer starts active.
     #[serde(default)]
     pub active: bool,
+    #[serde(default, skip_serializing_if = "Map::is_empty")]
+    pub params: Map<String, Value>,
+}
+
+impl LayerRef {
+    /// The id this entry's state is keyed by, as far as the site file alone can tell:
+    /// the explicit `id`, or the last segment of `use`.
+    pub fn instance_hint(&self) -> &str {
+        self.id.as_deref().unwrap_or_else(|| self.r#use.trim_end_matches('/').rsplit('/').next().unwrap_or(&self.r#use))
+    }
+}
+
+/// Whether a string can be a layer instance id: lowercase letters, digits and dashes.
+pub fn is_instance_id(id: &str) -> bool {
+    !id.is_empty() && id.len() <= 40 && id.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -166,11 +182,11 @@ pub struct SiteManifest {
     #[serde(default)]
     pub table: Option<Table>,
     pub scene: SceneSpec,
-    #[serde(default)]
-    pub basemap: Basemap,
-    /// Named datasets for layers: name to site-relative path.
+    /// Named datasets for layers (`requires.data`), as site-relative paths.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub data: BTreeMap<String, String>,
+    #[serde(default)]
+    pub basemap: Basemap,
     #[serde(default)]
     pub layers: Vec<LayerRef>,
     #[serde(default)]

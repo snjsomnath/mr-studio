@@ -23,6 +23,26 @@ export interface FieldOverlay {
   remove(): void;
 }
 
+/**
+ * A 2D drawing stretched over the table, inside the scene's draw order. The context is scaled so that one
+ * unit is one metre: x runs right from 0 to `width`, y runs down from 0 to `height`.
+ * Use `tableSpace(ctx.site)` to turn WGS84 coordinates into these metres.
+ */
+export interface DrawingOverlay {
+  readonly ctx: CanvasRenderingContext2D;
+  /** Table width and height in metres. */
+  readonly width: number;
+  readonly height: number;
+  /** Canvas pixels per metre, for line widths that should stay crisp. */
+  readonly scale: number;
+  /** Erases everything. */
+  clear(): void;
+  /** Puts what was drawn since the last commit on the table. */
+  commit(): void;
+  setOpacity(opacity: number): void;
+  remove(): void;
+}
+
 export interface FlowOverlayStyle {
   /** Colours tracers by the local magnitude of the field. */
   colormap?: Colormap;
@@ -82,17 +102,20 @@ export interface ShapeOverlay {
   remove(): void;
 }
 
-/** What a layer may draw on the table. */
+/** What a layer may draw on the table. Everything sits at the layer's place in the scene's draw order. */
 export interface MapHandle {
   addField(id: string, style: FieldOverlayStyle & { colormap: Colormap }): FieldOverlay;
   addFlow(id: string, style: FlowOverlayStyle & { colormap: Colormap }): FlowOverlay;
   addShapes(id: string, style?: { opacity?: number }): ShapeOverlay;
   /**
-   * An element covering the table, above the fields, for decorations a layer draws itself
+   * An element covering the table, above everything the scene draws, for decorations a layer draws itself
    * (a sun path, a compass). It ignores pointer input and is removed with the layer.
    * The table's up direction is `site.extent.rotation_deg`.
    */
   addElement(): HTMLElement;
+  /** A drawing in table metres at the layer's place in the scene. For layers that draw shapes or sprites themselves: base maps, ambient animation, media. */
+  addDrawing(id: string, options?: { opacity?: number; /** Canvas width in pixels. Default 2048. */ resolution?: number }): DrawingOverlay;
+  /** A canvas above the scene, in CSS pixels, with a projection from WGS84. */
   addCanvas(id: string, style?: { opacity?: number }): CanvasOverlay;
 }
 

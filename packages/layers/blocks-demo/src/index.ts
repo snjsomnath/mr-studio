@@ -223,7 +223,7 @@ export default defineLayer<Params>({
 
   async table(ctx) {
     const frame = tableFrame(ctx.site);
-    const loaded = await load(frame, ctx.site.buildings);
+    const loaded = await load(frame, ctx.site.data.buildings ?? null);
     const surface = canvasSurface(ctx.map.addElement(), frame);
 
     const sequence = new Sequence([{ id: 'idle' }, { id: 'reveal', seconds: 4 }, { id: 'revealed' }, { id: 'ramp', seconds: 3 }, { id: 'full' }]);

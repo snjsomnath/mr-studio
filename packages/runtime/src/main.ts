@@ -4,6 +4,7 @@ import type { Role } from '@mrstudio/sdk';
 import { themeVariables } from '@mrstudio/dashboard';
 import '@mrstudio/dashboard/src/dashboard.css';
 
+import { Composer } from './compose.ts';
 import { Controller } from './controls.ts';
 import { mountDashboard } from './dashboard.ts';
 import { joinPanel } from './join.ts';
@@ -23,9 +24,11 @@ function el(tag: string, className: string, text?: string): HTMLElement {
 
 async function main() {
   const app = document.getElementById('app')!;
-  const segment = location.pathname.split('/').filter(Boolean)[0] as Role | undefined;
-  const role: Role = segment && ROLES.includes(segment) ? segment : 'dev';
-  document.body.dataset.role = role;
+  const segment = location.pathname.split('/').filter(Boolean)[0];
+  // The scene composer is an operator's tool: it joins with the dev role and has its own layout.
+  const composing = segment === 'compose';
+  const role: Role = ROLES.includes(segment as Role) ? (segment as Role) : 'dev';
+  document.body.dataset.role = composing ? 'compose' : role;
 
   const phone = role === 'phone';
   const code = phone ? phoneCode() : undefined;
@@ -75,6 +78,8 @@ async function main() {
 
   // The table (and the table half of dev) renders layers. Dev shows the TV's dashboard under it.
   const stage = el('div', 'stage');
+  const palette = el('aside', 'controller palette');
+  if (composing) app.append(palette);
   if (role === 'table' || role === 'dev') {
     const frame = el('div', 'table-frame');
     const surface = el('div', 'table-surface');
@@ -90,6 +95,12 @@ async function main() {
     const { installModel } = await import('./model/index.ts');
     await installModel(view, connection, role);
     new LayerManager(store, connection, view);
+    if (composing) {
+      const stack = el('aside', 'controller stack');
+      app.append(stack);
+      new Composer(palette, stack, surface, store, connection);
+      return;
+    }
   }
   if (role === 'tv' || role === 'dev') {
     const dash = el('main', 'dash');

@@ -37,8 +37,8 @@ function svg<K extends keyof SVGElementTagNameMap>(tag: K, attributes: Record<st
 /** The site's building footprints as rings in table coordinates. Fetched once per page. */
 let footprints: Promise<[number, number][][]> | null = null;
 function loadFootprints(site: SiteInfo): Promise<[number, number][][]> {
-  if (!site.buildings) return Promise.resolve([]);
-  footprints ??= fetch(`/site/${site.buildings}`)
+  if (!site.data.buildings) return Promise.resolve([]);
+  footprints ??= fetch(`/site/${site.data.buildings}`)
     .then((response) => response.json())
     .then((collection: { features?: { geometry?: { type: string; coordinates: unknown } }[] }) => {
       const rings: [number, number][][] = [];
@@ -222,11 +222,11 @@ class ToolPad {
 }
 
 /** The tools part of a layer's card on a phone: a tool picker and the map pad. */
-export function toolSection(manifest: LayerManifest, store: Store, connection: Connection): { element: HTMLElement; sync(active: boolean): void } {
+export function toolSection(layer: string, manifest: LayerManifest, store: Store, connection: Connection): { element: HTMLElement; sync(active: boolean): void } {
   const tools = manifest.tools ?? [];
   const element = el('div', 'tools');
   const colour = () => store.me()?.colour ?? '#ffffff';
-  const send = (tool: ToolSpec, geometry: ToolGeometry) => connection.request<void>('tool.input', { layer: manifest.id, tool: tool.id, geometry });
+  const send = (tool: ToolSpec, geometry: ToolGeometry) => connection.request<void>('tool.input', { layer, tool: tool.id, geometry });
   let pad: ToolPad | null = null;
   let current = tools[0]!;
 

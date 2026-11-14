@@ -4,7 +4,6 @@
   "name": "Building blocks",
   "description": "Two scenes assembled from the SDK's building blocks, with pointer interactions",
   "icon": "blocks",
-  "requires": { "data": ["places.geojson", "energy-nodes.geojson", "energy-flows.geojson", "buildings.csv"] },
   "controls": [
     {
       "id": "scene", "type": "select", "label": "Scene", "default": "gravity",

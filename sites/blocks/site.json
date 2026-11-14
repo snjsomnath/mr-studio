@@ -12,6 +12,7 @@
   },
   "basemap": { "background": "#06090e", "style": null },
   "layers": [
+    { "use": "basemap", "active": true },
     { "use": "blocks-demo", "active": true }
   ],
   "branding": { "title": "MR Studio" }

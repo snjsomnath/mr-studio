@@ -81,12 +81,14 @@ body[data-role='table'] .table-surface {
 }
 
 /* In dev the table keeps the site's aspect ratio and fits whichever side is tight. */
-body[data-role='dev'] .table-frame {
+body[data-role='dev'] .table-frame,
+body[data-role='compose'] .table-frame {
   padding: 24px;
   container-type: size;
 }
 
-body[data-role='dev'] .table-surface {
+body[data-role='dev'] .table-surface,
+body[data-role='compose'] .table-surface {
   width: min(100cqw, 100cqh * var(--aspect, 1.6667));
   border-radius: 6px;
   overflow: hidden;
@@ -336,6 +338,205 @@ button.action {
 :focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+
+/* ---- Scene composer ---- */
+
+.palette {
+  width: 300px;
+  border-left: 0;
+  border-right: 1px solid var(--line);
+}
+
+.palette-groups,
+.stack-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 16px 16px;
+}
+
+.palette-group h2 {
+  margin: 14px 0 8px;
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.palette-empty,
+.stack-empty {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.stack-empty {
+  padding: 28px 12px;
+  text-align: center;
+  border: 1px dashed var(--line);
+  border-radius: 12px;
+}
+
+.palette-item,
+.stack-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  touch-action: none;
+  user-select: none;
+  cursor: grab;
+}
+
+.palette-item {
+  padding: 10px 10px 10px 12px;
+  margin-bottom: 8px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.palette-text {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.palette-text strong {
+  font-size: 0.95rem;
+}
+
+.palette-text span {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.palette-text .palette-note {
+  color: var(--accent);
+}
+
+.icon-button {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.icon-button:hover {
+  border-color: var(--accent);
+}
+
+.stack-list {
+  position: relative;
+  display: grid;
+  gap: 8px;
+  align-content: start;
+}
+
+.stack-row {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.stack-row.is-selected {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+}
+
+.stack-row.is-moving {
+  opacity: 0.4;
+}
+
+.stack-row.is-off .stack-title {
+  opacity: 0.55;
+}
+
+.stack-head {
+  padding: 8px 10px;
+}
+
+.stack-grip {
+  color: var(--muted);
+}
+
+.stack-title {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 1px;
+  padding: 2px 0;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.stack-title strong {
+  font-size: 0.95rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stack-title span {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.stack-settings {
+  padding: 6px 14px 14px;
+  border-top: 1px solid var(--line);
+}
+
+.compose-status {
+  margin: 0;
+  padding: 10px 20px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.compose-status.is-error {
+  color: #ff8a8a;
+}
+
+.drop-line {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--accent);
+  pointer-events: none;
+}
+
+.drag-ghost {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 10;
+  padding: 8px 14px;
+  border-radius: 10px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 600;
+  font-size: 0.9rem;
+  pointer-events: none;
+  box-shadow: 0 6px 20px rgb(0 0 0 / 0.5);
+}
+
+body.is-dragging,
+body.is-dragging * {
+  cursor: grabbing !important;
 }
 
 .notice {
