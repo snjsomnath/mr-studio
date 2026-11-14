@@ -56,6 +56,7 @@ interface Participant {
 }
 interface LayerState {
   active: boolean;
+  intensity: number;                       // 0..2, how strongly the layer is drawn on the table; 1 is as designed
   params: Record<string, unknown>;         // validated against the layer's controls
   shared: Record<string, unknown>;         // published by the table surface
 }
@@ -86,6 +87,7 @@ Requests:
 | Method | Params | Roles | Effect |
 | --- | --- | --- | --- |
 | `layer.activate` | `{ layer, active }` | table, tv, dev | Turns a layer on or off |
+| `layer.intensity` | `{ layer, intensity }` | table, tv, dev | Sets how strongly the layer is drawn, clamped to 0..2. The runtime applies it to the layer's overlays and decorations; layers need no code |
 | `layer.set` | `{ layer, params }` | all (phones only for `phone: true` controls) | Validates, merges, broadcasts |
 | `layer.action` | `{ layer, action }` | all (phones only for `phone: true`) | Broadcast to the table |
 | `layer.publish` | `{ layer, values }` | table, dev | Merges into `shared`, broadcasts |

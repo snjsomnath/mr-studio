@@ -79,6 +79,7 @@ export class LayerManager {
   }
 
   private sync(id: string, state: LayerState, previous: LayerState | undefined): void {
+    this.view.setIntensity(id, state.intensity ?? 1);
     const running = this.running.get(id);
     if (state.active && !running) {
       void this.start(id);

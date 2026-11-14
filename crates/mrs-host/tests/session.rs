@@ -140,6 +140,11 @@ async fn the_host_validates_and_broadcasts_param_changes() {
     }
     assert!(tv.request("layer.set", json!({ "layer": "ghost", "params": {} })).await.is_err());
 
+    // Intensity is host state like any other: clamped to 0..2 and broadcast.
+    tv.request("layer.intensity", json!({ "layer": "sunlight", "intensity": 5 })).await.unwrap();
+    assert_eq!(table.event("state.layer").await["state"]["intensity"], 2.0);
+    assert!(tv.request("layer.intensity", json!({ "layer": "sunlight", "intensity": "bright" })).await.is_err());
+
     tv.request("layer.activate", json!({ "layer": "sunlight", "active": false })).await.unwrap();
     assert_eq!(table.event("state.layer").await["state"]["active"], false);
 

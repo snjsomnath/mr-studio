@@ -108,3 +108,21 @@ export const treeHoursColormap: Colormap = {
 
 /** The tree shade colour as CSS, for legends. */
 export const TREE_SHADE_CSS = 'rgb(45 205 140)';
+
+/**
+ * Sun hours with a design threshold: everything below `share` (0..1 of the scale) is flagged
+ * in one flat colour, and the rest keeps the usual ramp, so a rule reads as pass and fail.
+ */
+export function thresholdColormap(share: number): Colormap {
+  const t = Math.min(0.98, Math.max(0.01, share));
+  const flag: [number, number, number, number] = [226, 54, 76, 240];
+  const above = sunHoursColormap.stops.filter(([p]) => p > t + 0.005);
+  // The ramp's own colour at the threshold, so the passing side starts where it would have been.
+  const stops = sunHoursColormap.stops;
+  let k = 0;
+  while (k < stops.length - 2 && t > stops[k + 1]![0]) k++;
+  const [a, b] = [stops[k]!, stops[k + 1]!];
+  const f = (t - a[0]) / (b[0] - a[0]);
+  const at = [1, 2, 3, 4].map((c) => Math.round(a[c]! + (b[c]! - a[c]!) * f)) as [number, number, number, number];
+  return { stops: [[0, ...flag], [t - 0.004, ...flag], [t + 0.004, ...at], ...above] };
+}
