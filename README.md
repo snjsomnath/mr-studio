@@ -20,6 +20,7 @@ To join from a real phone, run `pnpm dev -- --lan` and scan the QR code shown on
 
 ```bash
 cargo run -p mrs-cli -- validate sites/sample      # check a site and report its scene
+pnpm dev -- --site sites/chalmers                  # the Chalmers campus instead of the sample
 cargo run -p mrs-cli -- new-site sites/mysite --lon 11.94 --lat 57.706
 cargo run --release -p mrs-cli -- bench sites/sample   # time the kernels on GPU and CPU
 ```
@@ -49,6 +50,7 @@ packages/sdk         @mrstudio/sdk: layer API, connection, engine client
 packages/runtime     the surfaces: table, tv, phone, dev
 packages/layers      core layers: sunlight (the reference), sketch (the reference for phone tools), wind (the simulation example), coolpaths, mobility
 sites/sample         a small synthetic site for tests and dev mode
+sites/chalmers       the Chalmers campus, the flagship reference site
 ```
 
 ## Adding things
@@ -80,7 +82,7 @@ The GPU tests need a Vulkan, Metal or DirectX 12 adapter. Without one they are s
 | Part | State |
 | --- | --- |
 | Engine: scene, jobs, sunlight kernel on GPU and CPU, parity tests | Working |
-| Site format, validation, scene bake from footprints, terrain and trees | Working |
+| Site format, validation, scene bake from footprints, meshes (STL), terrain (raw or GeoTIFF) and trees | Working |
 | Host: session state, roles, validated params, field streaming | Working |
 | Phones: QR join, slots that survive a reload (60 s hold), per-phone rate limit, point, line and polygon tools | Working; tested in a desktop browser, not yet on a real phone |
 | Surfaces: table, TV, phone, dev, with generated controls | Working, first version |
@@ -90,6 +92,8 @@ The GPU tests need a Vulkan, Metal or DirectX 12 adapter. Without one they are s
 | Desktop app: launcher (site and display picker), fullscreen per display, colour per display, installers from CI | Working on Linux with two displays. The earlier shell started on macOS (Apple M4 Pro, Metal); the launcher, fullscreen placement and the installers still need a first run on real Windows and macOS hardware |
 | Wind kernel (lattice Boltzmann on GPU and CPU) and layer (speed map, ribbons, particles, TV panel) | Working |
 | Stormwater, isovist kernels and layers | Not started; see the work packages in ARCHITECTURE.md |
-| Calibration, basemap tiles | Not started |
-| Chalmers, Lindholmen and Universeum site packages | Not started |
+| Table calibration | Read from the site and applied on the table surface; the calibration tool is not started |
+| Basemap tiles | Not started |
+| Chalmers site package | Working, with the sunlight layer |
+| Lindholmen and Universeum site packages | Not started |
 | Python services gateway (ECOM, CoolPaths, site prep) | Not started |

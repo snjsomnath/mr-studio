@@ -134,6 +134,13 @@ export interface SiteInfo {
   basemap: { background: string; style: string | null };
   branding: { title: string | null; logo: string | null };
   buildings: string | null;
+  /** The calibrated table view, when the site has a calibration.json. */
+  calibration: {
+    center: { lon: number; lat: number };
+    zoom: number;
+    bearing: number;
+    window?: { width_px: number; height_px: number };
+  } | null;
   /** Named datasets from site.json: name to site-relative path. Load one with `loadSiteData`. */
   data: Record<string, string>;
   tv?: TvConfig | null;
