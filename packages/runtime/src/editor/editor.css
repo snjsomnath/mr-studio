@@ -962,3 +962,9 @@ body[data-role='edit'] .table-surface {
 .ed-setting.is-hidden > .control .control-label {
   color: #a3aab6;
 }
+
+/* The windows group sits at the far end of the ribbon. */
+.ed-group.is-last {
+  margin-left: auto;
+  border-right: 0;
+}

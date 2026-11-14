@@ -444,11 +444,10 @@ async function main() {
     // Ambient life joins the home screen, under the layers.
     assert.equal(savedLayers()[6].id, 'trees-2');
     // Its settings open in the inspector and are saved.
-    await editor.getByLabel('Shown on the table').uncheck();
+    await editor.getByLabel('Shown on the map').uncheck();
     await editor.waitForFunction(() => document.querySelector('.ed-inspector .ed-row[data-layer="trees-2"]')?.classList.contains('is-off'));
     assert.equal(savedLayers()[6].active, false);
-    // The Home tab acts on what is selected.
-    await editor.getByRole('tab', { name: 'Home' }).click();
+    // The ribbon's tools act on what is selected.
     await editor.locator('.ed-ribbon').getByText('Send back').click();
     await editor.waitForFunction(() => document.querySelectorAll('.ed-inspector .ed-row[data-layer]')[1]?.getAttribute('data-layer') === 'trees-2');
     assert.equal(savedLayers()[5].id, 'trees-2');
@@ -456,7 +455,6 @@ async function main() {
     await editor.locator('.ed-inspector .ed-row[data-layer="trees-2"]').waitFor({ state: 'detached' });
     // Inside a layer the ambient tools are not offered.
     await editor.locator('.ed-tree .ed-row[data-layer="mobility"]').click();
-    await editor.getByRole('tab', { name: 'Insert' }).click();
     assert.equal(await editor.locator('.ed-ribbon .ed-tool[data-layer="trees"]').count(), 0);
     await editor.locator('.ed-ribbon .ed-tool[data-layer="sunlight"]').waitFor();
     await editor.locator('.ed-inspector').getByText('Show trips').waitFor();
