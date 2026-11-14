@@ -39,7 +39,7 @@ The controls are the single source of truth for a layer's params:
 - The TV and phone surfaces generate their UI from them.
 - The host validates and clamps every change against them.
 
-Tools are spatial inputs a layer accepts: `point`, `line`, `polygon`. The input system (touch, phone, hand tracking) delivers them as `ToolInput` with coordinates in WGS84.
+Tools are spatial inputs a layer accepts: `point`, `line`, `polygon`. The input system (touch, phone) delivers them as `ToolInput` with coordinates in WGS84.
 
 ## Module
 

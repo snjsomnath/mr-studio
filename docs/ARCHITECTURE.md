@@ -18,7 +18,7 @@ Functions that must survive from the current app (`Nodal-Works/interactive_map`)
 | Phone participation | `runtime` phone surface served by the host on the local network |
 | Wind (CFD), sunlight, stormwater, isovist, thermal comfort | Kernels in the compute engine, each with a thin visual layer |
 | Street life, transit, slideshow, ECOM energy, street view, bird sounds | Layer packages (no kernel needed, or a Python service behind the gateway) |
-| Hand tracking, touch, keyboard | Inputs that produce the same layer actions and tool inputs |
+| Touch, keyboard | Inputs that produce the same layer actions and tool inputs |
 | Multi-screen launch | The desktop shell places one window per display |
 | Per-site variants (Chalmers, Lindholmen, Universeum) | Site packages, never branches |
 
