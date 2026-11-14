@@ -116,6 +116,41 @@ fn trees_dim_but_do_not_block() {
 }
 
 #[test]
+fn tree_shade_is_reported_apart_from_building_shade() {
+    // A box building and, beside it, a clump of trees.
+    let mut scene = box_scene(0.0);
+    for row in 95..105 {
+        for col in 30..40 {
+            scene.canopy[row * 200 + col] = 12.0;
+        }
+    }
+    let mut engine = engine(Backend::Cpu, scene).unwrap();
+    let noon = "2026-06-21T11:14:00Z";
+    let light = run(&mut engine, params("instant", noon), "shadow");
+    let tree = run(&mut engine, params("instant", noon), "tree_shade");
+    // Every cell is lit, shaded by a building, or has lost exactly what the trees took.
+    let mut tree_cells = 0;
+    for (l, t) in light.data.iter().zip(&tree.data) {
+        assert!((l + t - 1.0).abs() < 1e-5 || (*l == 0.0 && *t == 0.0), "light {l} tree {t}");
+        tree_cells += (*t > 0.0) as usize;
+    }
+    assert!(tree_cells > 50, "the clump should shade the ground north of it, got {tree_cells} cells");
+    // The building's own shadow is not tree shade.
+    let building_shadow = (0..200 * 200).filter(|&i| light.data[i] == 0.0).count();
+    assert!(building_shadow > 50);
+
+    let mut p = params("instant", noon);
+    p["trees"] = json!(false);
+    assert!(run(&mut engine, p, "tree_shade").data.iter().all(|t| *t == 0.0));
+
+    // Over a day the hours lost to trees are part of the daylight, never more.
+    let hours = run(&mut engine, params("day", "2026-06-21T12:00:00Z"), "sun_hours");
+    let lost = run(&mut engine, params("day", "2026-06-21T12:00:00Z"), "tree_shade_hours");
+    assert!(lost.data.iter().any(|t| *t > 1.0));
+    assert!(hours.data.iter().zip(&lost.data).all(|(h, t)| h + t <= hours.max + 1e-3));
+}
+
+#[test]
 fn params_are_validated_and_changes_restart() {
     let mut engine = engine(Backend::Cpu, box_scene(0.0)).unwrap();
     assert!(matches!(engine.create_job("sunlight", &json!({ "mode": "instant" })), Err(EngineError::InvalidParams(_))));
@@ -168,6 +203,9 @@ fn gpu_matches_cpu_reference() {
             let (g, c) = (run(&mut gpu, params("instant", time), "shadow"), run(&mut cpu, params("instant", time), "shadow"));
             let m = mismatch(&g, &c, 0.02);
             assert!(m < 0.002, "instant {time} rotation {rotation}: {:.4}% of cells differ", m * 100.0);
+            let (g, c) = (run(&mut gpu, params("instant", time), "tree_shade"), run(&mut cpu, params("instant", time), "tree_shade"));
+            let m = mismatch(&g, &c, 0.02);
+            assert!(m < 0.002, "tree shade {time} rotation {rotation}: {:.4}% of cells differ", m * 100.0);
         }
         let mut p = params("day", "2026-06-21T12:00:00Z");
         p["step_minutes"] = json!(30);

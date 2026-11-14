@@ -2,7 +2,7 @@ import { defineLayer, formatHour, zonedTimeToUtc } from '@mrstudio/sdk';
 import type { FieldStream, LayerManifest, TableContext } from '@mrstudio/sdk';
 
 import manifest from '../layer.json';
-import { skyColormap, sunAt, sunDay, sunHoursColormap } from './look.ts';
+import { skyColormap, sunAt, sunDay, sunHoursColormap, treeHoursColormap, treeShadeColormap } from './look.ts';
 import { SunPath } from './sun-path.ts';
 
 interface Params {
@@ -11,6 +11,7 @@ interface Params {
   hour: number;
   play: boolean;
   trees: boolean;
+  treeColor: boolean;
   path: boolean;
   opacity: number;
 }
@@ -42,6 +43,9 @@ export default defineLayer<Params>({
       soften: SOFTEN_CELLS,
       glide: GLIDE_SECONDS,
     });
+    // Tree shade is drawn over the light in its own colour.
+    const treeOverlay = ctx.map.addField('tree-shade', { colormap: treeShadeColormap, opacity: 0, soften: SOFTEN_CELLS, glide: GLIDE_SECONDS });
+    const treeOpacity = () => (ctx.params.trees && ctx.params.treeColor ? ctx.params.opacity : 0);
     const path = new SunPath(ctx.map.addElement(), ctx.site.extent.rotation_deg);
     let stream: FieldStream | null = null;
     let generation = 0;
@@ -55,10 +59,17 @@ export default defineLayer<Params>({
       const day = ctx.params.mode === 'day';
       const sun = sunNow();
       overlay.setStyle({ colormap: day ? sunHoursColormap : skyColormap(sun.altitude), soften: day ? 1 : SOFTEN_CELLS });
+      treeOverlay.setStyle({ colormap: day ? treeHoursColormap : treeShadeColormap, soften: day ? 1 : SOFTEN_CELLS, opacity: treeOpacity() });
       path.setVisible(ctx.params.path);
       path.setSun(day ? { ...sun, altitude: -90 } : sun);
       // The TV's colour key shows the ramp the table is using right now.
-      ctx.publish({ ramp: day ? sunHoursColormap : skyColormap(sun.altitude), rampLow: day ? '0 h' : 'Shade' });
+      ctx.publish({
+        ramp: day ? sunHoursColormap : skyColormap(sun.altitude),
+        rampLow: day ? '0 h' : 'Shade',
+        treeRamp: day ? treeHoursColormap : treeShadeColormap,
+        treeLow: day ? 'No sun lost' : 'No shade',
+        treeHigh: day ? 'Most lost' : 'Full shade',
+      });
     }
 
     // The timeline on the TV shades the hours between sunrise and sunset.
@@ -73,10 +84,10 @@ export default defineLayer<Params>({
       const mine = ++generation;
       stream?.close();
       stream = null;
-      const field = ctx.params.mode === 'day' ? 'sun_hours' : 'shadow';
+      const [field, treeField] = ctx.params.mode === 'day' ? ['sun_hours', 'tree_shade_hours'] : ['shadow', 'tree_shade'];
       // The panel shows progress from the first moment, not the previous job's.
       ctx.publish({ progress: 0 });
-      const opened = await ctx.engine.open('sunlight', kernelParams(ctx), [field]);
+      const opened = await ctx.engine.open('sunlight', kernelParams(ctx), [field, treeField]);
       if (mine !== generation) {
         // The mode changed again, or the layer was turned off, while this was opening.
         opened.close();
@@ -85,6 +96,7 @@ export default defineLayer<Params>({
       stream = opened;
       dress();
       opened.on(field, (frame) => overlay.set(frame));
+      opened.on(treeField, (frame) => treeOverlay.set(frame));
       opened.onStatus((status) => {
         // The TV panels in layer.json show these. Text is worded here so the panels stay plain data.
         const altitude = Math.round(status.info.sun.altitude_deg * 10) / 10;
