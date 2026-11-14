@@ -460,6 +460,16 @@ async function main() {
     assert.equal(await editor.locator('.ed-ribbon .ed-tool[data-layer="trees"]').count(), 0);
     await editor.locator('.ed-ribbon .ed-tool[data-layer="sunlight"]').waitFor();
     await editor.locator('.ed-inspector').getByText('Show trips').waitFor();
+    // The eye beside a setting takes that control off the controller, and it is saved. The editor keeps it.
+    await editor.getByRole('switch', { name: 'Show Show trips on the controller' }).click();
+    await editor.waitForFunction(() => document.querySelector('.ed-eye[aria-label="Show Show trips on the controller"]')?.getAttribute('aria-checked') === 'false');
+    assert.deepEqual(savedLayers().find((l) => l.use === 'mobility').hide, ['trips']);
+    await press('Mobility', true);
+    assert.equal(await card('Mobility').getByText('Show trips').isVisible(), false);
+    assert.equal(await card('Mobility').getByLabel('Play', { exact: true }).isVisible(), true);
+    await editor.getByRole('switch', { name: 'Show Show trips on the controller' }).click();
+    await card('Mobility').getByText('Show trips').waitFor();
+    assert.equal(savedLayers().find((l) => l.use === 'mobility').hide, undefined);
     // A layer's button on the controller: name, description, side and icon, saved with the scene.
     await editor.getByLabel('Name').fill('Getting here');
     await editor.getByLabel('Name').blur();
@@ -568,7 +578,7 @@ async function main() {
     await shelled.getByRole('button', { name: 'Present', exact: true }).click();
     await shelled.getByRole('button', { name: 'Stop presenting' }).click();
     await shelled.getByRole('button', { name: 'Present', exact: true }).waitFor();
-    await shelled.getByRole('button', { name: 'Sites and displays' }).click();
+    await shelled.getByRole('button', { name: 'Home', exact: true }).click();
     assert.equal(await shelled.evaluate(() => window.mrsShellControls), true);
     assert.deepEqual(await shelled.evaluate(() => window.shellCalls.filter((c) => c !== 'presenting_state')), ['present', 'stop_presenting', 'open_home']);
     await shelled.close();

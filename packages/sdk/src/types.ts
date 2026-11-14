@@ -164,6 +164,8 @@ export interface LayerState {
   shared: Record<string, unknown>;
   /** How the site offers the layer on the controller. What is left out comes from the layer package. */
   button: LayerButton;
+  /** Ids of the controls the controller and phones leave out. The editor still shows them. */
+  hide?: string[];
 }
 
 /** The button that opens a layer on the controller, as the site's author set it. */

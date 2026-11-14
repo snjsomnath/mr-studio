@@ -516,6 +516,15 @@ async fn the_scene_is_composed_and_saved() {
     }
     composer.request("scene.set", json!({ "layer": "trees", "button": { "name": null } })).await.unwrap();
     table.event("state.layer").await;
+    // Controls can be left off the controller and phones. The list is replaced whole, and must name real controls.
+    let control = "opacity";
+    composer.request("scene.set", json!({ "layer": "trees", "hide": [control, control] })).await.unwrap();
+    assert_eq!(table.event("state.layer").await["state"]["hide"], json!([control]));
+    assert_eq!(saved_layers(&site).into_iter().find(|l| l["use"] == "trees").unwrap()["hide"], json!([control]));
+    assert!(composer.request("scene.set", json!({ "layer": "trees", "hide": ["no-such-control"] })).await.is_err());
+    assert!(composer.request("scene.set", json!({ "layer": "trees", "hide": "all" })).await.is_err());
+    composer.request("scene.set", json!({ "layer": "trees", "hide": [] })).await.unwrap();
+    assert!(table.event("state.layer").await["state"].get("hide").is_none());
     assert!(
         saved_layers(&site).into_iter().find(|l| l["use"] == "trees").unwrap().get("button").is_none(),
         "an empty button is not written"

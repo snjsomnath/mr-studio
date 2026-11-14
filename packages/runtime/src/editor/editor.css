@@ -918,3 +918,47 @@ body[data-role='edit'] .table-surface {
   color: var(--ed-text);
   font-size: 18px;
 }
+
+/* ---- A setting and its eye ---- */
+
+.ed-setting {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.ed-setting[hidden] {
+  display: none;
+}
+
+.ed-setting > .control {
+  flex: 1;
+  min-width: 0;
+}
+
+.ed-eye {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  margin-top: 2px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--ed-text-2);
+  cursor: pointer;
+}
+
+.ed-eye:hover {
+  background: var(--ed-chrome);
+  color: var(--ed-text);
+}
+
+.ed-eye[aria-checked='false'] {
+  color: #a3aab6;
+}
+
+.ed-setting.is-hidden > .control .control-label {
+  color: #a3aab6;
+}

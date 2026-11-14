@@ -284,8 +284,8 @@ export class Editor {
     draw();
     if (invoke) {
       // Inside the desktop app: the way back to the list of sites and the displays.
-      const sites = button('ed-button', 'Sites and displays', 'blocks');
-      sites.title = 'Open another site, or choose which display is the table';
+      const sites = button('ed-button', 'Home', 'home');
+      sites.title = 'Back to your tables: open another one or start a new one';
       sites.addEventListener('click', () => void invoke('open_home').catch(() => {}));
       actions.append(sites);
       window.addEventListener('focus', () => void refresh());
@@ -616,17 +616,41 @@ export class Editor {
         () => void this.connection.request('layer.action', { layer: id, action: control.id }).catch(() => {}),
       ),
     );
+    // Each control has an eye: closed, the controller and phones leave the control out. It stays here.
+    const offered = !isAmbient(manifest);
+    const rows = widgets.map((w) => {
+      const row = el('div', 'ed-setting');
+      const eye = el('button', 'ed-eye');
+      eye.type = 'button';
+      eye.setAttribute('role', 'switch');
+      eye.ariaLabel = `Show ${w.control.label} on the controller`;
+      eye.addEventListener('click', () => {
+        const hide = new Set(this.store.state.layers[id]?.hide ?? []);
+        if (hide.has(w.control.id)) hide.delete(w.control.id);
+        else hide.add(w.control.id);
+        void this.send('scene.set', { layer: id, hide: [...hide] });
+      });
+      row.append(w.row);
+      if (offered) row.append(eye);
+      return { row, eye, w };
+    });
     const controls = el('div', 'controls');
-    controls.append(shown, ...widgets.map((w) => w.row));
+    controls.append(shown, ...rows.map((r) => r.row));
     section.append(el('h3', undefined, 'Settings'), controls);
+    if (offered && rows.length > 0) section.append(el('p', 'ed-empty', 'The eye beside a setting decides whether visitors get it on the controller and their phones.'));
 
     const previous = this.sync.get(id);
     this.sync.set(id, (state) => {
       previous?.(state);
       power.checked = state.active;
-      for (const w of widgets) {
-        w.row.hidden = !isVisible(w.control, state.params);
+      for (const { row, eye, w } of rows) {
+        row.hidden = !isVisible(w.control, state.params);
         w.sync(state.params[w.control.id]);
+        const hidden = Boolean(state.hide?.includes(w.control.id));
+        eye.setAttribute('aria-checked', String(!hidden));
+        eye.title = hidden ? 'Hidden from the controller and phones. Click to show it.' : 'Shown on the controller. Click to hide it from visitors.';
+        eye.replaceChildren(icon(hidden ? 'eye-off' : 'eye', 14));
+        row.classList.toggle('is-hidden', hidden);
       }
     });
     return section;
