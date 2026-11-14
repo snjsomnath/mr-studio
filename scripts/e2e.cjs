@@ -497,6 +497,27 @@ async function main() {
 
     const real = errors.filter((e) => !/wrong session code|WebSocket/.test(e));
     assert.deepEqual(real, [], 'no page errors');
+    // Inside the desktop app the editor drives the shell itself: Present becomes Stop presenting.
+    const shelled = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+    await shelled.addInitScript(() => {
+      window.shellCalls = [];
+      let presenting = false;
+      window.__TAURI__ = { core: { invoke: async (command) => {
+        window.shellCalls.push(command);
+        if (command === 'present') presenting = true;
+        if (command === 'stop_presenting') presenting = false;
+        return { presenting };
+      } } };
+    });
+    await shelled.goto(base + '/edit');
+    await shelled.getByRole('button', { name: 'Present', exact: true }).click();
+    await shelled.getByRole('button', { name: 'Stop presenting' }).click();
+    await shelled.getByRole('button', { name: 'Present', exact: true }).waitFor();
+    await shelled.getByRole('button', { name: 'Sites and displays' }).click();
+    assert.equal(await shelled.evaluate(() => window.mrsShellControls), true);
+    assert.deepEqual(await shelled.evaluate(() => window.shellCalls.filter((c) => c !== 'presenting_state')), ['present', 'stop_presenting', 'open_home']);
+    await shelled.close();
+
     console.log('e2e passed');
   } finally {
     await browser.close();

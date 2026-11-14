@@ -65,7 +65,7 @@ The editor window is the only remote page with access to the shell, and only to 
 | `open_home` | Opens the launcher |
 | `quit` | Quits the app |
 
-The shell adds a small bar to the editor window with Present, Stop presenting and "Sites and displays". When the page has an element with `data-shell-present` (its own Present button) the bar leaves Present to the page and shows Stop only while presenting. A page that sets `window.mrsShellControls = true` before it finishes loading gets no bar. The page must work without `window.__TAURI__` too, for an editor opened in a browser.
+The shell adds a small bar to the editor window with Present, Stop presenting and "Sites and displays". When the page has an element with `data-shell-present` (its own Present button) the bar leaves Present to the page and shows Stop only while presenting. A page that sets `window.mrsShellControls = true` before it finishes loading gets no bar. The editor at `/edit` does this: its title bar has Present, which becomes Stop presenting, and Sites and displays. The page must work without `window.__TAURI__` too, for an editor opened in a browser.
 
 What the shell does when it starts:
 
