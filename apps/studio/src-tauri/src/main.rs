@@ -75,6 +75,8 @@ struct Shell {
     generation: AtomicU32,
     /// The open surface windows and the display each one is on: (window label, display index).
     surfaces: Mutex<Vec<(String, usize)>>,
+    /// The editor window shows a site that has since been replaced.
+    editor_stale: std::sync::atomic::AtomicBool,
     /// The result of the last look for a newer version.
     updates: Mutex<Option<Result<updates::Available, String>>>,
 }
@@ -171,6 +173,7 @@ fn main() -> anyhow::Result<()> {
                 error: Mutex::new(None),
                 generation: AtomicU32::new(0),
                 surfaces: Mutex::new(Vec::new()),
+                editor_stale: Default::default(),
                 updates: Mutex::new(None),
             });
             let handle = app.handle().clone();
@@ -308,8 +311,11 @@ async fn launch(app: &AppHandle, site: PathBuf, lan: bool) -> anyhow::Result<()>
     // One start at a time.
     let mut host = shell.host.lock().await;
     close_surfaces(app)?;
+    // The editor window stays: it may be the only window, and an app without windows quits.
+    // It shows the site that is about to stop, so it is marked for a reload.
+    shell.editor_stale.store(true, Ordering::Relaxed);
     for (label, window) in app.webview_windows() {
-        if label == EDITOR || label.starts_with("view-") {
+        if label.starts_with("view-") {
             window.destroy()?;
         }
     }
@@ -455,19 +461,23 @@ fn usual_displays(app: &AppHandle) -> anyhow::Result<Displays> {
 /// Opens the running site in the editor window, at `page` of the host: `edit` for the
 /// editor, `edit?welcome=1` for a table that was just created, `new` for the new-table wizard.
 fn open_editor(app: &AppHandle, page: &str) -> anyhow::Result<()> {
-    let running = app.state::<Shell>().running.lock().unwrap().clone().context("no site is open")?;
+    let shell = app.state::<Shell>();
+    let running = shell.running.lock().unwrap().clone().context("no site is open")?;
     let url: tauri::Url = format!("http://127.0.0.1:{}/{page}", running.port).parse().context("the editor's address")?;
+    let title = if page == "new" { "MR Studio · New table".to_string() } else { format!("MR Studio · {}", running.name) };
+    let stale = shell.editor_stale.swap(false, Ordering::Relaxed);
     let window = match app.get_webview_window(EDITOR) {
         Some(window) => {
-            if window.url().ok().as_ref() != Some(&url) {
+            if stale || window.url().ok().as_ref() != Some(&url) {
                 window.navigate(url)?;
             }
+            window.set_title(&title)?;
             window
         }
         None => {
             let handle = app.clone();
             let window = WebviewWindowBuilder::new(app, EDITOR, WebviewUrl::External(url))
-                .title(format!("MR Studio · {}", running.name))
+                .title(title)
                 .inner_size(1440.0, 900.0)
                 .min_inner_size(960.0, 600.0)
                 .center()
@@ -769,6 +779,9 @@ async fn start(app: AppHandle, shell: State<'_, Shell>, request: StartRequest) -
     let mut settings = shell.settings();
     settings.opened(&site);
     settings.write(&shell.settings_path()).map_err(text)?;
+    if app.get_webview_window(EDITOR).is_some() {
+        open_editor(&app, "edit").map_err(text)?;
+    }
     show(&app, &displays).map_err(text)?;
     if let Some(launcher) = app.get_webview_window(LAUNCHER) {
         launcher.close().map_err(text)?;
