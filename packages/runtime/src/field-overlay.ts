@@ -60,15 +60,6 @@ void main() {
   color = vec4(mix(texture(u_shown, v_uv).r, texture(u_target, v_uv).r, u_k), 0.0, 0.0, 1.0);
 }`;
 
-function link(gl: WebGL2RenderingContext, vertex: string, fragment: string): WebGLProgram {
-  const program = gl.createProgram()!;
-  gl.attachShader(program, compile(gl, gl.VERTEX_SHADER, vertex));
-  gl.attachShader(program, compile(gl, gl.FRAGMENT_SHADER, fragment));
-  gl.linkProgram(program);
-  if (!gl.getProgramParameter(program, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(program) ?? 'program failed to link');
-  return program;
-}
-
 function compile(gl: WebGL2RenderingContext, type: number, source: string): WebGLShader {
   const shader = gl.createShader(type)!;
   gl.shaderSource(shader, source);
