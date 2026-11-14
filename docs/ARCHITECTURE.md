@@ -70,7 +70,7 @@ packages/
   layers/         core layer packages (sunlight first, then wind, stormwater, isovist, ...)
 sites/
   sample/         small synthetic site used by tests and layer dev mode
-  chalmers/       flagship reference site (to be ported)
+  chalmers/       flagship reference site
 services/         Python data and research services (site prep, ECOM, CoolPaths)
 docs/contracts/   the interface contracts below
 ```

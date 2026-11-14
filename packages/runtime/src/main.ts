@@ -54,7 +54,7 @@ async function main() {
     surface.style.setProperty('--aspect', String(site.extent.width_m / site.extent.height_m));
     frame.append(surface);
     app.append(frame);
-    const view = new TableView(surface, site);
+    const view = new TableView(surface, site, role === 'table');
     await view.ready;
     new LayerManager(store, connection, view);
   }

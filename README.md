@@ -19,6 +19,7 @@ Open <http://localhost:5173/dev>. That is the layer dev mode: the table view of 
 
 ```bash
 cargo run -p mrs-cli -- validate sites/sample      # check a site and report its scene
+pnpm dev -- --site sites/chalmers                  # the Chalmers campus instead of the sample
 cargo run -p mrs-cli -- new-site sites/mysite --lon 11.94 --lat 57.706
 cargo run --release -p mrs-cli -- bench sites/sample   # time the kernels on GPU and CPU
 ```
@@ -35,6 +36,7 @@ packages/sdk         @mrstudio/sdk: layer API, connection, engine client
 packages/runtime     the surfaces: table, tv, phone, dev
 packages/layers      core layers; sunlight is the reference
 sites/sample         a small synthetic site for tests and dev mode
+sites/chalmers       the Chalmers campus, the flagship reference site
 ```
 
 ## Adding things
@@ -57,12 +59,14 @@ The GPU tests need a Vulkan, Metal or DirectX 12 adapter. Without one they are s
 | Part | State |
 | --- | --- |
 | Engine: scene, jobs, sunlight kernel on GPU and CPU, parity tests | Working |
-| Site format, validation, scene bake from footprints, terrain and trees | Working |
+| Site format, validation, scene bake from footprints, meshes (STL), terrain (raw or GeoTIFF) and trees | Working |
 | Host: session state, roles, validated params, field streaming | Working |
 | Surfaces: table, TV, phone, dev, with generated controls | Working, first version |
 | Sunlight layer (shadows, sun hours, animation, TV panel) | Working |
 | Desktop shell | Compiles on Linux; not yet run on Windows or macOS |
 | Wind, stormwater, isovist kernels and layers | Not started; see the work packages in ARCHITECTURE.md |
-| Calibration, basemap tiles, QR join, phone tools, hand tracking | Not started |
-| Chalmers, Lindholmen and Universeum site packages | Not started |
+| Table calibration | Read from the site and applied on the table surface; the calibration tool is not started |
+| Basemap tiles, QR join, phone tools, hand tracking | Not started |
+| Chalmers site package | Working, with the sunlight layer |
+| Lindholmen and Universeum site packages | Not started |
 | Python services gateway (ECOM, CoolPaths, site prep) | Not started |

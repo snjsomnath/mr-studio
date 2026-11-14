@@ -110,12 +110,21 @@ fn validate(dir: &Path) -> anyhow::Result<(Site, mrs_engine::SceneData)> {
         "  buildings  {} ({} without a height, {} outside the extent)",
         stats.buildings, stats.buildings_without_height, stats.buildings_outside
     );
+    if site.manifest.scene.mesh.is_some() {
+        println!("  mesh       {} triangles covering {:.1}% of cells", stats.mesh_triangles, stats.mesh_coverage * 100.0);
+    }
+    if stats.terrain_missing_cells > 0 {
+        println!("  terrain    {} cells are outside the terrain raster and took its lowest elevation", stats.terrain_missing_cells);
+    }
     println!("  trees      {}", stats.trees);
     println!("  built area {:.1}% of cells, highest point {:.1} m", stats.solid_fraction * 100.0, stats.max_height_m);
     println!("  layers     {}", site.manifest.layers.iter().map(|l| l.r#use.as_str()).collect::<Vec<_>>().join(", "));
     println!("  baked in {:.0} ms", started.elapsed().as_secs_f64() * 1e3);
     if stats.buildings == 0 && site.manifest.scene.buildings.is_some() {
         bail!("no building falls inside the extent; check origin and extent");
+    }
+    if site.manifest.scene.mesh.is_some() && stats.mesh_coverage == 0.0 {
+        bail!("the mesh does not touch the extent; check its anchor, unit_m and bearing_deg");
     }
     Ok((site, scene))
 }
