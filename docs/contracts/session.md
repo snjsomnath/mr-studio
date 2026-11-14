@@ -24,8 +24,35 @@ Display assignment is per machine, not per site, and lives in the app's config f
 }
 ```
 
-A display is matched by name first, then by index. If no file exists, the shell opens one `dev` window on the primary display and a display picker.
+A display is matched by name first (exactly, then as part of the name), then by index. `index` is the position in the order the system lists displays.
+`role` is `table`, `tv` or `dev`. A window whose display is not connected opens on the primary display.
 The shell never uses browser popups, so there are no permission prompts.
+
+The launcher is the shell's own window with the site picker and the display picker. It writes `displays.json`, and keeps its other choices in `studio.json` beside it:
+
+```jsonc
+// studio.json
+{
+  "sites": ["D:/sites/chalmers"],   // site folders added by hand
+  "site": "D:/sites/chalmers",      // the site that ran last
+  "lan": false,                     // listen on the local network so phones can join
+  "autostart": true                 // start `site` on the saved displays without showing the launcher
+}
+```
+
+What the shell does when it starts:
+
+| Start | Result |
+| --- | --- |
+| `displays.json` exists, `autostart` is on and `site` is set | Runs the site on the saved displays. If that fails, the launcher opens and says why |
+| Anything else, or `mr-studio --setup` | The launcher opens. With no `displays.json` it suggests the table on the second display and the TV on the primary one, or one `dev` window if there is a single display |
+| `mr-studio <site folder>` or `MRS_SITE` | Runs that site on the saved displays, or in one windowed `dev` window if there are none |
+
+The site picker lists site folders added by hand, the packages in `Documents/MR Studio/sites`, and the sample site shipped inside the app.
+With `lan` off the host listens on this computer only (127.0.0.1), so Windows shows no firewall prompt. The host uses port 4170, or a free port if that one is taken.
+
+In a running session, Ctrl+Shift+S (Cmd on macOS) in any window opens the launcher and Ctrl+Shift+Q quits. A surface asks for these by navigating to `/__shell/setup` or `/__shell/quit`, which the shell intercepts; surfaces have no other access to the shell.
+Starting the app a second time brings up the launcher of the one already running.
 
 Surface URLs served by the host:
 

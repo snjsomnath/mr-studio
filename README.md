@@ -23,6 +23,18 @@ cargo run -p mrs-cli -- new-site sites/mysite --lon 11.94 --lat 57.706
 cargo run --release -p mrs-cli -- bench sites/sample   # time the kernels on GPU and CPU
 ```
 
+## The desktop app
+
+```bash
+pnpm app          # build the surfaces and run the app from source
+pnpm app:build    # make an installer for this computer (target/release/bundle)
+```
+
+The app opens a launcher where you pick a site and say which display is the table and which is the TV, then opens one borderless fullscreen window per display.
+The choice is remembered, so the next start goes straight to the table. Ctrl+Shift+S brings the launcher back and Ctrl+Shift+Q quits.
+Windows and macOS installers are built by the "Desktop app" workflow on every pull request and push to `main` (download them from the run's artifacts), and attached to a draft release for a `v*` tag.
+The installers are not signed yet: Windows SmartScreen asks once ("More info", "Run anyway"), and on macOS open the app the first time with right click, Open.
+
 ## Layout
 
 ```
@@ -61,7 +73,7 @@ The GPU tests need a Vulkan, Metal or DirectX 12 adapter. Without one they are s
 | Host: session state, roles, validated params, field streaming | Working |
 | Surfaces: table, TV, phone, dev, with generated controls | Working, first version |
 | Sunlight layer (shadows, sun hours, animation, TV panel) | Working |
-| Desktop shell | Compiles on Linux; not yet run on Windows or macOS |
+| Desktop app: launcher (site and display picker), fullscreen per display, installers from CI | Working on Linux with two displays; Windows and macOS builds come from CI and still need a first run on real hardware |
 | Wind, stormwater, isovist kernels and layers | Not started; see the work packages in ARCHITECTURE.md |
 | Calibration, basemap tiles, QR join, phone tools | Not started |
 | Chalmers, Lindholmen and Universeum site packages | Not started |

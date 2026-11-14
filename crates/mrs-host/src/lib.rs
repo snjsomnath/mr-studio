@@ -56,6 +56,16 @@ impl RunningHost {
         let _ = self.task.await;
     }
 
+    /// Stops serving. Open connections get `grace` to close; after that the listener is
+    /// released anyway, so the port is free for the next session.
+    pub async fn stop(self, grace: std::time::Duration) {
+        let _ = self.shutdown.send(());
+        let abort = self.task.abort_handle();
+        if tokio::time::timeout(grace, self.task).await.is_err() {
+            abort.abort();
+        }
+    }
+
     /// Runs until the server stops.
     pub async fn wait(self) {
         let _ = self.task.await;
