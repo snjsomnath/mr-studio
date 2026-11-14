@@ -177,10 +177,12 @@ Kernel id `sunlight`. Reference implementation of the rules above.
 | --- | --- | --- |
 | `shadow` | 0..1 | 1 where the cell is lit at `time`, 0 in shadow or at night |
 | `sun_hours` | h | Hours of direct sun on the day of `time` (`day` mode) |
+| `tree_shade` | 0..1 | Share of the light that tree canopy takes from a cell no building shades (`instant` mode) |
+| `tree_shade_hours` | h | Hours of direct sun lost to tree canopy (`day` mode) |
 
 Algorithm: for each cell, march a ray across the `dsm` towards the sun in one-cell steps, starting from the cell's top surface. The cell is in shadow when the `dsm` rises above the ray. The march stops when the ray clears the scene's highest point or leaves the grid. Canopy the ray passes under removes a fixed share of the light per metre. Sun position follows the NOAA solar position equations. In `day` mode the day is the 24 hours from local mean solar midnight, sampled every `step_minutes`.
 
-`shadow` exists in `instant` mode and `sun_hours` in `day` mode. Status `info` carries `sun: { azimuth_deg, altitude_deg }` and `daylight_hours`, so a layer can show them without recomputing.
+`shadow` and `tree_shade` exist in `instant` mode, `sun_hours` and `tree_shade_hours` in `day` mode. Where no building shades a cell, `shadow + tree_shade = 1`, so a layer can colour the two kinds of shade differently. Status `info` carries `sun: { azimuth_deg, altitude_deg }` and `daylight_hours`, so a layer can show them without recomputing.
 
 The march is the simplest correct algorithm and costs one step per cell of shadow length. The planned speed-up is a max-height pyramid that lets the ray skip empty space; the parity and physics tests are what make that change safe.
 

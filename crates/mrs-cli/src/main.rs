@@ -35,6 +35,10 @@ enum Command {
         /// Listen on the local network so phones can join.
         #[arg(long)]
         lan: bool,
+        /// The address phones reach this host at, when it is not this machine's own
+        /// (a dev server or a relay in front of it), for example http://192.168.1.20:5173.
+        #[arg(long)]
+        public_url: Option<String>,
         /// auto, gpu or cpu.
         #[arg(long, default_value = "auto")]
         backend: String,
@@ -71,7 +75,7 @@ enum Command {
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt().with_target(false).init();
     match Cli::parse().command {
-        Command::Dev { site, layers, web, port, lan, backend } => {
+        Command::Dev { site, layers, web, port, lan, public_url, backend } => {
             let backend = Backend::parse(&backend).context("backend must be auto, gpu or cpu")?;
             let ip = if lan { [0, 0, 0, 0] } else { [127, 0, 0, 1] };
             let host = mrs_host::start(HostConfig {
@@ -80,6 +84,7 @@ async fn main() -> anyhow::Result<()> {
                 web_dir: web,
                 bind: SocketAddr::from((ip, port)),
                 backend,
+                session: mrs_host::SessionOptions { public_url, ..Default::default() },
             })
             .await?;
             let code = &host.state.hub.session().code;

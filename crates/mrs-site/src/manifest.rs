@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
@@ -122,6 +124,9 @@ pub struct SiteManifest {
     pub scene: SceneSpec,
     #[serde(default)]
     pub basemap: Basemap,
+    /// Named datasets for layers: name to site-relative path.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub data: BTreeMap<String, String>,
     #[serde(default)]
     pub layers: Vec<LayerRef>,
     #[serde(default)]

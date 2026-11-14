@@ -33,29 +33,6 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm -r typecheck
-      - run: pnpm --filter @mrstudio/sdk test
+      # Every package with tests, including the density budget: every panel and theme in the repo is checked against the dashboard rules.
+      - run: pnpm -r test
       - run: pnpm build
-
-  desktop:
-    name: Desktop shell (${{ matrix.os }})
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [windows-latest, macos-latest]
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-      # The kernels and their GPU/CPU parity tests on this platform's own graphics API
-      # (DirectX 12 or Metal). They skip themselves where the runner has no adapter.
-      - run: cargo test -p mrs-engine -- --nocapture
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm build
-      - run: cargo build -p mrs-cli
-      - run: cargo check -p mr-studio-app

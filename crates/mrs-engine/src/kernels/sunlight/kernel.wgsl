@@ -26,6 +26,8 @@ struct Params {
 @group(0) @binding(2) var<storage, read> dtm: array<f32>;
 @group(0) @binding(3) var<storage, read> canopy: array<f32>;
 @group(0) @binding(4) var<storage, read_write> out: array<f32>;
+// Light taken by tree canopy from cells no building shades.
+@group(0) @binding(5) var<storage, read_write> tree_out: array<f32>;
 
 @compute @workgroup_size(8, 8)
 fn main(@builtin(global_invocation_id) id: vec3<u32>) {
@@ -34,6 +36,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     }
     let i = id.y * p.width + id.x;
     var light = p.lit;
+    var blocked = false;
     if (light > 0.0) {
         let h0 = dsm[i];
         let px = f32(id.x) + 0.5;
@@ -52,6 +55,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
             let j = u32(cy) * p.width + u32(cx);
             if (dsm[j] > z + 0.001) {
                 light = 0.0;
+                blocked = true;
                 break;
             }
             if (p.canopy_t < 1.0 && canopy[j] > 0.0 && z < dtm[j] + canopy[j]) {
@@ -63,5 +67,10 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
             }
         }
     }
+    var tree = 0.0;
+    if (p.lit > 0.0 && !blocked) {
+        tree = 1.0 - light;
+    }
     out[i] = out[i] * f32(p.accumulate) + light * p.weight;
+    tree_out[i] = tree_out[i] * f32(p.accumulate) + tree * p.weight;
 }

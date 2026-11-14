@@ -1,13 +1,17 @@
-import type { Colormap, FieldOverlay, FieldOverlayStyle, FlowOverlay, FlowOverlayStyle, MapHandle, SiteInfo } from '@mrstudio/sdk';
+import type { CanvasOverlay, Colormap, FieldOverlay, FieldOverlayStyle, FlowOverlay, FlowOverlayStyle, MapHandle, ModelHandle, Shape, ShapeOverlay, SiteInfo, TablePointer } from '@mrstudio/sdk';
 import maplibregl from 'maplibre-gl';
 import type { StyleSpecification } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 
+import { MapCanvasOverlay } from './canvas-overlay.ts';
 import { MapFieldOverlay } from './field-overlay.ts';
 import { MapFlowOverlay } from './flow-overlay.ts';
+import { ModelView } from './model/view.ts';
+import { tablePointer } from './table-pointer.ts';
 
 const EARTH_CIRCUMFERENCE_M = 40_075_016.686;
-/** Field overlays are inserted below this layer, so building outlines stay readable. */
+/** Field overlays are inserted below the site's buildings, so roofs and outlines stay readable. */
+const FILL_LAYER = 'site-buildings-fill';
 const OUTLINE_LAYER = 'site-buildings-outline';
 
 /**
@@ -17,9 +21,13 @@ const OUTLINE_LAYER = 'site-buildings-outline';
  */
 export class TableView {
   readonly ready: Promise<void>;
+  /** The model surface, once `attachModel` has loaded the twin. Null on a host or a device without one. */
+  model: ModelView | null = null;
   private map: maplibregl.Map;
-  private site: SiteInfo;
-  private container: HTMLElement;
+  readonly site: SiteInfo;
+  readonly container: HTMLElement;
+  /** What each layer has drawn, so its intensity can be applied to all of it. */
+  private drawn = new Map<string, { overlays: Set<MapFieldOverlay>; elements: Set<HTMLElement>; intensity: number }>();
 
   constructor(container: HTMLElement, site: SiteInfo) {
     this.site = site;
@@ -27,8 +35,10 @@ export class TableView {
     const blank: StyleSpecification = {
       version: 8,
       sources: {},
-      layers: [{ id: 'background', type: 'background', paint: { 'background-color': site.basemap.background } }],
+      layers: [],
     };
+    // The background is the surface's own, so the map stays clear where it draws nothing and the twin can show through.
+    container.style.backgroundColor = site.basemap.background;
     this.map = new maplibregl.Map({
       container,
       style: site.basemap.style ?? blank,
@@ -50,10 +60,34 @@ export class TableView {
 
   /** What layers may draw. Overlay ids are namespaced by the layer. */
   handle(layer: string, track: (cleanup: () => void) => void): MapHandle {
+    const drawn = this.drawnBy(layer);
     return {
       addField: (id: string, style: FieldOverlayStyle & { colormap: Colormap }): FieldOverlay => {
         const overlay = new MapFieldOverlay(this.map, `field:${layer}:${id}`, this.site, style);
-        this.map.addLayer(overlay, this.map.getLayer(OUTLINE_LAYER) ? OUTLINE_LAYER : undefined);
+        this.map.addLayer(overlay, this.map.getLayer(FILL_LAYER) ? FILL_LAYER : undefined);
+        overlay.setGain(drawn.intensity);
+        drawn.overlays.add(overlay);
+        track(() => {
+          drawn.overlays.delete(overlay);
+          overlay.remove();
+        });
+        return overlay;
+      },
+      addElement: (): HTMLElement => {
+        const element = document.createElement('div');
+        element.className = 'table-decoration';
+        element.dataset.layer = layer;
+        this.container.append(element);
+        styleElement(element, drawn.intensity);
+        drawn.elements.add(element);
+        track(() => {
+          drawn.elements.delete(element);
+          element.remove();
+        });
+        return element;
+      },
+      addCanvas: (id: string, style?: { opacity?: number }): CanvasOverlay => {
+        const overlay = new MapCanvasOverlay(this.map, this.container, `canvas:${layer}:${id}`, this.site, style);
         track(() => overlay.remove());
         return overlay;
       },
@@ -63,6 +97,104 @@ export class TableView {
         track(() => overlay.remove());
         return overlay;
       },
+      addShapes: (id: string, style?: { opacity?: number }): ShapeOverlay => {
+        const overlay = this.shapes(`shapes:${layer}:${id}`, style?.opacity ?? 1);
+        track(() => overlay.remove());
+        return overlay;
+      },
+    };
+  }
+
+  /** Points, lines and areas as one GeoJSON source, drawn above everything else. */
+  private shapes(source: string, opacity: number): ShapeOverlay {
+    const map = this.map;
+    const colour = ['coalesce', ['get', 'colour'], '#ffffff'] as unknown as string;
+    map.addSource(source, { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+    const is = (type: string) => ['==', ['geometry-type'], type] as maplibregl.FilterSpecification;
+    map.addLayer({ id: `${source}:fill`, type: 'fill', source, filter: is('Polygon'), paint: { 'fill-color': colour } });
+    map.addLayer({
+      id: `${source}:line`,
+      type: 'line',
+      source,
+      filter: ['!=', ['geometry-type'], 'Point'],
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: { 'line-color': colour, 'line-width': 4 },
+    });
+    map.addLayer({
+      id: `${source}:point`,
+      type: 'circle',
+      source,
+      filter: is('Point'),
+      paint: { 'circle-color': colour, 'circle-radius': 9, 'circle-stroke-color': '#000000', 'circle-stroke-width': 2 },
+    });
+    const setOpacity = (value: number) => {
+      map.setPaintProperty(`${source}:fill`, 'fill-opacity', 0.25 * value);
+      map.setPaintProperty(`${source}:line`, 'line-opacity', value);
+      map.setPaintProperty(`${source}:point`, 'circle-opacity', value);
+      map.setPaintProperty(`${source}:point`, 'circle-stroke-opacity', value);
+    };
+    setOpacity(opacity);
+    let removed = false;
+    return {
+      set: (shapes: Shape[]) => {
+        if (removed) return;
+        (map.getSource(source) as maplibregl.GeoJSONSource).setData({
+          type: 'FeatureCollection',
+          features: shapes.map((shape) => ({ type: 'Feature', geometry: shape.geometry, properties: shape.colour ? { colour: shape.colour } : {} })),
+        });
+      },
+      setOpacity: (value: number) => !removed && setOpacity(value),
+      remove: () => {
+        if (removed) return;
+        removed = true;
+        for (const kind of ['fill', 'line', 'point']) map.removeLayer(`${source}:${kind}`);
+        map.removeSource(source);
+      },
+    };
+  }
+
+  /** Pointer input on the table surface for one layer. */
+  pointer(track: (cleanup: () => void) => void): TablePointer {
+    return tablePointer(this.container, this.site, track);
+  }
+
+  /** Applies a layer's intensity (0 to 2) to everything it has drawn and will draw. */
+  setIntensity(layer: string, intensity: number): void {
+    const drawn = this.drawnBy(layer);
+    drawn.intensity = intensity;
+    for (const overlay of drawn.overlays) overlay.setGain(intensity);
+    for (const element of drawn.elements) styleElement(element, intensity);
+    this.model?.setIntensity(layer, intensity);
+  }
+
+  private drawnBy(layer: string) {
+    let drawn = this.drawn.get(layer);
+    if (!drawn) this.drawn.set(layer, (drawn = { overlays: new Set(), elements: new Set(), intensity: 1 }));
+    return drawn;
+  }
+
+  /** Loads the site's twin and lays the model surface over the map. Resolves to null when that is not possible. */
+  async attachModel(): Promise<ModelView | null> {
+    try {
+      this.model = await ModelView.create(this.container, this.site, this.map);
+      for (const [layer, drawn] of this.drawn) this.model.setIntensity(layer, drawn.intensity);
+    } catch (error) {
+      console.warn('model surface is off; the table stays flat:', (error as Error).message);
+    }
+    return this.model;
+  }
+
+  /** A layer's `ctx.model`. Without a twin, fields go to the flat map and the rest does nothing. */
+  modelHandle(layer: string, track: (cleanup: () => void) => void): ModelHandle {
+    if (this.model) return this.model.handle(layer, track);
+    const map = this.handle(layer, track);
+    return {
+      calibrated: false,
+      addField: (id, style) => map.addField(`model:${id}`, style),
+      addLight: () => ({ set: () => {}, remove: () => {} }),
+      setMaterial: () => {},
+      focus: () => {},
+      pick: () => null,
     };
   }
 
@@ -85,7 +217,13 @@ export class TableView {
   private addContext(): void {
     if (!this.site.buildings) return;
     this.map.addSource('site-buildings', { type: 'geojson', data: `/site/${this.site.buildings}` });
-    this.map.addLayer({ id: 'site-buildings-fill', type: 'fill', source: 'site-buildings', paint: { 'fill-color': '#ffffff', 'fill-opacity': 0.06 } });
-    this.map.addLayer({ id: OUTLINE_LAYER, type: 'line', source: 'site-buildings', paint: { 'line-color': '#ffffff', 'line-opacity': 0.35, 'line-width': 1 } });
+    this.map.addLayer({ id: FILL_LAYER, type: 'fill', source: 'site-buildings', paint: { 'fill-color': '#ffffff', 'fill-opacity': 0.07 } });
+    this.map.addLayer({ id: OUTLINE_LAYER, type: 'line', source: 'site-buildings', paint: { 'line-color': '#ffffff', 'line-opacity': 0.28, 'line-width': 1 } });
   }
+}
+
+/** Below 1 a decoration fades; above 1 it brightens. The filter is on the layer's own element, never the root. */
+function styleElement(element: HTMLElement, intensity: number): void {
+  element.style.opacity = String(Math.min(1, intensity));
+  element.style.filter = intensity > 1 ? `brightness(${intensity})` : '';
 }
