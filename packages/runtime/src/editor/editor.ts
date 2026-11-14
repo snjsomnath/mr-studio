@@ -18,6 +18,13 @@ type Context = { kind: 'home' } | { kind: 'layer'; id: string } | { kind: 'contr
 
 type Tab = 'home' | 'insert' | 'view';
 
+type Invoke = (command: string, args?: object) => Promise<unknown>;
+
+/** The desktop app's commands, or undefined in a browser. */
+function shell(): Invoke | undefined {
+  return (window as { __TAURI__?: { core?: { invoke?: Invoke } } }).__TAURI__?.core?.invoke;
+}
+
 function button(className: string, label: string, iconName?: string, size = 16): HTMLButtonElement {
   const node = el('button', className);
   node.type = 'button';
@@ -154,28 +161,58 @@ export class Editor {
     preview.title = 'Open the table in a window on this screen';
     preview.addEventListener('click', () => window.open('/table', 'mrstudio-preview'));
     const present = button('ed-button is-primary', 'Present', 'tv');
-    present.title = 'Show the map on the projector and the controller on its screen';
     // Tells the desktop shell that this page has its own Present control.
     present.dataset.shellPresent = '';
-    present.addEventListener('click', () => void this.present());
+    const invoke = shell();
+    let presenting = false;
+    const draw = (): void => {
+      present.replaceChildren(icon(presenting ? 'stop' : 'tv', 16), el('span', undefined, presenting ? 'Stop presenting' : 'Present'));
+      present.classList.toggle('is-primary', !presenting);
+      present.title = presenting
+        ? 'Take the map off the projector and the controller off its screen'
+        : invoke
+          ? 'Show the map on the projector and the controller on its screen. Ctrl+Shift+E on a full screen brings this editor back.'
+          : 'Open the map and the controller in two windows';
+    };
+    const refresh = async (): Promise<void> => {
+      if (!invoke) return;
+      try {
+        presenting = ((await invoke('presenting_state')) as { presenting: boolean }).presenting;
+        draw();
+      } catch {
+        // An older shell: the button stays as Present.
+      }
+    };
+    present.addEventListener('click', async () => {
+      if (!invoke) {
+        window.open('/table', 'mrstudio-table');
+        window.open('/tv', 'mrstudio-tv');
+        return;
+      }
+      present.disabled = true;
+      try {
+        await invoke(presenting ? 'stop_presenting' : 'present');
+        this.saved.classList.remove('is-error');
+      } catch (error) {
+        this.saved.textContent = String(error);
+        this.saved.classList.add('is-error');
+      }
+      present.disabled = false;
+      await refresh();
+    });
+    draw();
+    if (invoke) {
+      // Inside the desktop app: the way back to the list of sites and the displays.
+      const sites = button('ed-button', 'Sites and displays', 'blocks');
+      sites.title = 'Open another site, or choose which display is the table';
+      sites.addEventListener('click', () => void invoke('open_home').catch(() => {}));
+      actions.append(sites);
+      window.addEventListener('focus', () => void refresh());
+      void refresh();
+    }
     actions.append(preview, present);
     bar.append(brand, name, actions);
     return bar;
-  }
-
-  /** Inside the desktop app the shell places the windows; in a browser the table opens in a tab. */
-  private async present(): Promise<void> {
-    const invoke = (window as any).__TAURI__?.core?.invoke as ((command: string, args?: object) => Promise<unknown>) | undefined;
-    if (invoke) {
-      try {
-        await invoke('present');
-        return;
-      } catch {
-        // The shell has no such command yet: fall through to a plain window.
-      }
-    }
-    window.open('/table', 'mrstudio-table');
-    window.open('/tv', 'mrstudio-tv');
   }
 
   private statusBar(): HTMLElement {

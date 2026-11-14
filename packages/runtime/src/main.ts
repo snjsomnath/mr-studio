@@ -30,6 +30,8 @@ async function main() {
   // The editor is the authoring window around the live table. It joins with the dev role too.
   const editing = segment === 'edit';
   const role: Role = ROLES.includes(segment as Role) ? (segment as Role) : 'dev';
+  // The editor has its own Present, Stop and Sites controls, so the desktop app adds no bar of its own.
+  if (editing) (window as { mrsShellControls?: boolean }).mrsShellControls = true;
   document.body.dataset.role = editing ? 'edit' : composing ? 'compose' : role;
 
   const phone = role === 'phone';
