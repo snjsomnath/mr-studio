@@ -47,7 +47,7 @@ crates/mrs-cli       the `mrstudio` command
 apps/studio          desktop shell (Tauri): one window per display
 packages/sdk         @mrstudio/sdk: layer API, connection, engine client
 packages/runtime     the surfaces: table, tv, phone, dev
-packages/layers      core layers; sunlight is the reference, sketch the reference for phone tools
+packages/layers      core layers: sunlight (the reference), sketch (the reference for phone tools), coolpaths, mobility
 sites/sample         a small synthetic site for tests and dev mode
 ```
 
@@ -85,6 +85,8 @@ The GPU tests need a Vulkan, Metal or DirectX 12 adapter. Without one they are s
 | Phones: QR join, slots that survive a reload (60 s hold), per-phone rate limit, point, line and polygon tools | Working; tested in a desktop browser, not yet on a real phone |
 | Surfaces: table, TV, phone, dev, with generated controls | Working, first version |
 | Sunlight layer (shadows, sun hours, animation, TV panel) | Working |
+| Cool paths layer (shortest and shadiest walk over a site's walkways, live shade from the engine) | Working; thermal comfort (PET) kernel proposed |
+| Mobility layer (a site's trips played over time, values per cell) | Working |
 | Desktop app: launcher (site and display picker), fullscreen per display, colour per display, installers from CI | Working on Linux with two displays. The earlier shell started on macOS (Apple M4 Pro, Metal); the launcher, fullscreen placement and the installers still need a first run on real Windows and macOS hardware |
 | Wind, stormwater, isovist kernels and layers | Not started; see the work packages in ARCHITECTURE.md |
 | Calibration, basemap tiles | Not started |

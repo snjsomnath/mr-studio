@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import { lut, colormaps } from '../src/colormap.ts';
 import { isVisible } from '../src/controls.ts';
 import { parseFrame, sample } from '../src/frame.ts';
-import { lonLatToTable, tableToLonLat } from '../src/geo.ts';
+import { lonLatToTable, siteProjection, tableToLonLat } from '../src/geo.ts';
 import { sunPosition } from '../src/solar.ts';
 import { formatHour, zonedTimeToUtc } from '../src/time.ts';
 
@@ -90,6 +90,25 @@ test('sun position matches the engine reference values', () => {
   const rise = at('2026-03-20T05:20:00Z');
   assert.ok(Math.abs(rise.altitude) < 1.5 && Math.abs(rise.azimuth - 90) < 2, JSON.stringify(rise));
   assert.ok(at('2026-12-21T23:00:00Z').altitude < -40);
+});
+
+test('the site projection matches the host and the grid', () => {
+  // The same numbers as mrs-site's projection test.
+  const flat = siteProjection({ origin: { lon: 11.9778, lat: 57.6884 }, grid: { width: 100, height: 50, cell_m: 2, rotation_deg: 0 } });
+  const [east, north] = flat.toLocal([12.9778, 58.6884]);
+  assert.ok(Math.abs(north - 111_370) < 100 && Math.abs(east - 59_640) < 100);
+  const back = flat.toLonLat(east, north);
+  assert.ok(Math.abs(back[0] - 12.9778) < 1e-9 && Math.abs(back[1] - 58.6884) < 1e-9);
+  // The origin is the middle of the grid, and north is up.
+  assert.deepEqual(flat.toGrid([11.9778, 57.6884]), [50, 25]);
+  const [col, row] = flat.toGrid(flat.toLonLat(0, 10));
+  assert.ok(Math.abs(col - 50) < 1e-9 && Math.abs(row - 20) < 1e-9);
+  assert.ok(Math.abs(flat.distance(flat.toLonLat(0, 0), flat.toLonLat(30, 40)) - 50) < 1e-6);
+
+  // With the table turned so east is up, a point 10 m east is 5 cells above the middle.
+  const turned = siteProjection({ origin: { lon: 11.9778, lat: 57.6884 }, grid: { width: 100, height: 50, cell_m: 2, rotation_deg: 90 } });
+  const [c, r] = turned.toGrid(turned.toLonLat(10, 0));
+  assert.ok(Math.abs(c - 50) < 1e-9 && Math.abs(r - 20) < 1e-9);
 });
 
 // ---- Model surface --------------------------------------------------------

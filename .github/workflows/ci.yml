@@ -33,7 +33,6 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm -r typecheck
-      - run: pnpm --filter @mrstudio/sdk test
-      # The density budget: every panel and theme in the repo is checked against the dashboard rules.
-      - run: pnpm --filter @mrstudio/dashboard test
+      # Every package with tests, including the density budget: every panel and theme in the repo is checked against the dashboard rules.
+      - run: pnpm -r test
       - run: pnpm build

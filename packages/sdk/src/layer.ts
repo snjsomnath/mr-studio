@@ -23,6 +23,27 @@ export interface FieldOverlay {
   remove(): void;
 }
 
+/**
+ * A 2D canvas locked to the table, for vector drawing: networks, routes, moving markers.
+ * It sits above the fields and the building outlines; canvases stack in the order they are added.
+ */
+export interface CanvasOverlay {
+  /** Scaled so one unit is one CSS pixel. */
+  readonly context: CanvasRenderingContext2D;
+  /** Size in CSS pixels. */
+  readonly width: number;
+  readonly height: number;
+  /** Table pixels per site metre, so marks can keep a physical size. */
+  readonly pixelsPerMetre: number;
+  /** Raised whenever the size or the view changes. The canvas is blank afterwards: draw again. */
+  readonly revision: number;
+  /** WGS84 `[lon, lat]` to canvas pixels. */
+  project(lonLat: readonly [number, number] | readonly number[]): [number, number];
+  clear(): void;
+  setOpacity(opacity: number): void;
+  remove(): void;
+}
+
 /** A point, line or area drawn on the table. */
 export interface Shape {
   geometry: ToolGeometry;
@@ -48,6 +69,7 @@ export interface MapHandle {
    * The table's up direction is `site.extent.rotation_deg`.
    */
   addElement(): HTMLElement;
+  addCanvas(id: string, style?: { opacity?: number }): CanvasOverlay;
 }
 
 /**

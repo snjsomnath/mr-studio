@@ -1,8 +1,9 @@
-import type { Colormap, FieldOverlay, FieldOverlayStyle, MapHandle, ModelHandle, Shape, ShapeOverlay, SiteInfo, TablePointer } from '@mrstudio/sdk';
+import type { CanvasOverlay, Colormap, FieldOverlay, FieldOverlayStyle, MapHandle, ModelHandle, Shape, ShapeOverlay, SiteInfo, TablePointer } from '@mrstudio/sdk';
 import maplibregl from 'maplibre-gl';
 import type { StyleSpecification } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 
+import { MapCanvasOverlay } from './canvas-overlay.ts';
 import { MapFieldOverlay } from './field-overlay.ts';
 import { ModelView } from './model/view.ts';
 import { tablePointer } from './table-pointer.ts';
@@ -83,6 +84,11 @@ export class TableView {
           element.remove();
         });
         return element;
+      },
+      addCanvas: (id: string, style?: { opacity?: number }): CanvasOverlay => {
+        const overlay = new MapCanvasOverlay(this.map, this.container, `canvas:${layer}:${id}`, this.site, style);
+        track(() => overlay.remove());
+        return overlay;
       },
       addShapes: (id: string, style?: { opacity?: number }): ShapeOverlay => {
         const overlay = this.shapes(`shapes:${layer}:${id}`, style?.opacity ?? 1);

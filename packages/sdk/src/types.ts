@@ -134,6 +134,8 @@ export interface SiteInfo {
   basemap: { background: string; style: string | null };
   branding: { title: string | null; logo: string | null };
   buildings: string | null;
+  /** Named datasets from site.json: name to site-relative path. Load one with `loadSiteData`. */
+  data: Record<string, string>;
   tv?: TvConfig | null;
 }
 

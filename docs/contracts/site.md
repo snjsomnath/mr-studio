@@ -33,6 +33,10 @@ sites/<id>/
     "trees":     { "path": "data/trees.geojson", "height_property": "height", "crown_radius_m": 3 }  // optional, points
   },
   "basemap": { "background": "#0b0e14", "style": null },
+  "data": {                                           // named datasets for layers (optional)
+    "walkways": "data/walkways.geojson",
+    "trips": "data/trips.json"
+  },
   "layers": [
     { "use": "sunlight", "active": true, "params": { "hour": 15 } },
     { "use": "./layers/artwork" }
@@ -49,6 +53,7 @@ Rules:
 - The scene grid covers exactly the extent with `cell_m` cells, so `width = round(width_m / cell_m)`.
 - Paths are relative to the site folder and may not leave it.
 - `layers[].use` is a core layer id, or a relative path to a site-only layer package. `params` override the layer's defaults and `active` turns it on at start.
+- `data` maps dataset names to files in the site folder. A layer asks for a dataset by name (`requires.data` in its `layer.json`), so the same layer runs on every site and each site decides which file answers. Names are lowercase letters, digits, dashes and underscores. Each layer's README describes the format it expects.
 - `terrain` is raw little-endian f32 elevations covering the extent, row-major with row 0 at the top, at any resolution.
 - `tv` holds the TV's settings: where the control rail sits, the site's theme, and optional hand-made dashboard pages. Its shape and rules are in [dashboard.md](dashboard.md). The host passes it to surfaces as written.
 - Unknown keys are an error, so a typo is caught by `mrstudio validate` rather than silently ignored.
@@ -67,6 +72,7 @@ What the composer needs, and where it stands:
 | --- | --- |
 | Ordered list of layers with params and initial on/off | In format 1 |
 | Layers self-describe their controls, tools and data needs | In `layer.json` (`controls`, `tools`, `requires`) |
+| A site says which of its files a layer should use | In format 1: `data` |
 | A blank starting point | `mrstudio new-site`, and `sites/sample` as the dummy scene |
 | The same layer twice with different settings | Planned: an optional `id` per entry; state is then keyed by that id instead of the layer id |
 | Palette grouping | Planned: `category` in `layer.json` (`base`, `ambient`, `analysis`, `media`) |
