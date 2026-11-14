@@ -87,7 +87,7 @@ fn geotiff_site(dir: &Path, keys: &[u16], crs: Option<&str>) {
         terrain["crs"] = crs.into();
     }
     let manifest = serde_json::json!({
-        "format": 1, "id": "tiff", "name": "GeoTIFF test",
+        "format": 2, "id": "tiff", "name": "GeoTIFF test",
         "origin": { "lon": lon, "lat": lat },
         "extent": { "width_m": 30, "height_m": 20 },
         "scene": { "cell_m": 10, "terrain": terrain }

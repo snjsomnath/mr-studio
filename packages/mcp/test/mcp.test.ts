@@ -149,18 +149,20 @@ describe('server over stdio', () => {
     const bad = await call(client, 'add_layer', { site: 'harbour', use: 'sunlight', params: { mode: 'night', nope: 1 } });
     assert.equal(bad.isError, true);
     assert.match(bad.text, /no control 'nope'/);
-    assert.equal(JSON.parse(readFileSync(join(dir, 'site.json'), 'utf8')).layers.length, 1);
+    assert.equal(JSON.parse(readFileSync(join(dir, 'site.json'), 'utf8')).layers.length, 2);
 
     // A value is snapped like the host would, with a warning.
     const set = await call(client, 'set_layer', { site: 'harbour', use: 'sunlight', params: { hour: 17.03, date: '2026-09-22' } });
     assert.equal(set.isError, false, set.text);
     const manifest = JSON.parse(readFileSync(join(dir, 'site.json'), 'utf8'));
-    assert.equal(manifest.layers[0].params.hour, 17.05);
+    // A new site starts with the base map under the sunlight.
+    assert.deepEqual(manifest.layers.map((l: any) => l.use), ['basemap', 'sunlight']);
+    assert.equal(manifest.layers[1].params.hour, 17.05);
 
     // A second sunlight is allowed but flagged, then moved and removed.
     assert.equal((await call(client, 'add_layer', { site: 'harbour', use: 'sunlight', params: { mode: 'day' }, position: 0 })).isError, false);
     const two = await call(client, 'get_site', { site: 'harbour' });
-    assert.equal(two.data.scene.length, 2);
+    assert.equal(two.data.scene.length, 3);
     assert.ok(two.data.issues.some((i: any) => /again/.test(i.message)));
     assert.equal((await call(client, 'move_layer', { site: 'harbour', index: 0, to: 1 })).isError, false);
     assert.equal((await call(client, 'set_layer', { site: 'harbour', use: 'sunlight', active: false })).isError, true, 'ambiguous use needs an index');
@@ -195,7 +197,7 @@ describe('server over stdio', () => {
     assert.equal(invalid.isError, true);
     if (invalid.data.cli.ran) assert.equal(invalid.data.cli.ok, false, 'mrstudio validate refuses the unknown key too');
     assert.ok(invalid.data.issues.some((i: any) => i.path === 'extra'));
-    assert.ok(invalid.data.issues.some((i: any) => i.path === 'layers[1].use'));
+    assert.ok(invalid.data.issues.some((i: any) => i.path === 'layers[2].use'));
   });
 
   test('routes layer ideas to configuration or a core request', async () => {

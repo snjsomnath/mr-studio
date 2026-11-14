@@ -15,7 +15,7 @@ sites/<id>/
 
 ```jsonc
 {
-  "format": 1,
+  "format": 2,
   "id": "sample",
   "name": "Sample district",
   "origin": { "lon": 11.9778, "lat": 57.6884 },   // centre of the table area, WGS84
@@ -57,6 +57,7 @@ sites/<id>/
 Rules:
 
 - `format` is the contract version, a whole number. A site with an older format is upgraded when it is opened: the app and `mrstudio migrate` rewrite `site.json` and keep the original as `site.format-<n>.json`; anything else that reads a site (`Site::load`) upgrades it in memory. A site with a newer format than the app knows is refused with a message that says to update the app. Every format change adds one step to `mrs-site`'s `migrate` module, which is the only place that knows about older formats.
+  - Format 2: the base map is a layer. Format 1 drew ground, streets and footprints under every layer by itself; the upgrade puts `{ "use": "basemap", "active": true }` first in `layers` unless the site already lists it.
 - `extent` is the table area: a `width_m` by `height_m` rectangle centred on `origin`, rotated by `rotation_deg`. Its aspect ratio should match the table's.
 - The scene grid covers exactly the extent with `cell_m` cells, so `width = round(width_m / cell_m)`.
 - Paths are relative to the site folder and may not leave it.

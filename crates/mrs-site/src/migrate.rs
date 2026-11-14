@@ -23,10 +23,21 @@ pub struct Step {
     pub apply: fn(&mut Map<String, Value>) -> Result<(), String>,
 }
 
-/// The steps from the first format to `FORMAT`, in order. Format 1 is the first, so
-/// there are none yet. When `FORMAT` becomes 2, add `Step { from: 1, .. }` here and a
-/// test with a format 1 document beside the ones below.
-pub const STEPS: &[Step] = &[];
+/// The steps from the first format to `FORMAT`, in order. A new format adds one
+/// `Step` here and a test with a document of the format before it.
+pub const STEPS: &[Step] = &[Step { from: 1, summary: "the base map is now a layer, drawn first", apply: basemap_becomes_a_layer }];
+
+/// Format 1 drew the ground, streets and building footprints by itself, under every
+/// layer. Format 2 draws only what `layers` lists, so the base map joins the list at
+/// the bottom unless the site already has one.
+fn basemap_becomes_a_layer(site: &mut Map<String, Value>) -> Result<(), String> {
+    let layers = site.entry("layers").or_insert_with(|| Value::Array(Vec::new()));
+    let layers = layers.as_array_mut().ok_or("\"layers\" is not a list")?;
+    if !layers.iter().any(|layer| layer["use"] == "basemap") {
+        layers.insert(0, serde_json::json!({ "use": "basemap", "active": true }));
+    }
+    Ok(())
+}
 
 /// What an upgrade did.
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -143,6 +154,23 @@ mod tests {
         assert!(upgrade_with(&mut json!({}), TEST_STEPS, 3).is_err());
         assert!(upgrade_with(&mut json!({ "format": 0 }), TEST_STEPS, 3).is_err());
         assert!(upgrade_with(&mut json!({ "format": 1, "title": "T" }), &[], 2).unwrap_err().contains("no upgrade"));
+    }
+
+    #[test]
+    fn format_1_gains_the_base_map_layer() {
+        let mut site = json!({ "format": 1, "layers": [{ "use": "sunlight", "active": true }] });
+        let done = upgrade(&mut site).unwrap().unwrap();
+        assert_eq!((done.from, done.to), (1, FORMAT));
+        assert_eq!(done.changes, ["the base map is now a layer, drawn first"]);
+        assert_eq!(site["layers"], json!([{ "use": "basemap", "active": true }, { "use": "sunlight", "active": true }]));
+
+        // A site that already lists the base map keeps its place and settings, and one without layers gets the list.
+        let mut placed = json!({ "format": 1, "layers": [{ "use": "sunlight" }, { "use": "basemap", "active": false }] });
+        upgrade(&mut placed).unwrap();
+        assert_eq!(placed["layers"], json!([{ "use": "sunlight" }, { "use": "basemap", "active": false }]));
+        let mut bare = json!({ "format": 1 });
+        upgrade(&mut bare).unwrap();
+        assert_eq!(bare["layers"], json!([{ "use": "basemap", "active": true }]));
     }
 
     #[test]
