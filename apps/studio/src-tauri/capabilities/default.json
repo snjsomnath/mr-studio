@@ -1,8 +1,9 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "The launcher is the shell's own page and may call every command.",
+  "description": "The shell's own pages (Home, and displays and settings) may call every command.",
   "windows": [
+    "home",
     "launcher"
   ],
   "permissions": [
@@ -32,6 +33,8 @@
     "allow-check-updates",
     "allow-set-update-check",
     "allow-install-update",
-    "allow-open-link"
+    "allow-open-link",
+    "allow-open-settings",
+    "allow-new-table"
   ]
 }

@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light" />
+    <title>MR Studio</title>
+    <link rel="stylesheet" href="home.css" />
+  </head>
+  <body>
+    <aside>
+      <div class="brand">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 3 7.5l9 4.5 9-4.5L12 3Z" /><path d="m3 12 9 4.5 9-4.5" /><path d="m3 16.5 9 4.5 9-4.5" /></svg>
+        <div><b>MR Studio</b><span id="version"></span></div>
+      </div>
+      <nav>
+        <button type="button" id="nav-new"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>New table</button>
+        <button type="button" id="nav-open"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z" /></svg>Open a folder…</button>
+      </nav>
+      <nav class="bottom">
+        <button type="button" id="nav-settings"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2" /><path d="M8 20h8M12 16v4" /></svg>Displays and settings</button>
+        <button type="button" id="nav-quit"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" /></svg>Quit</button>
+      </nav>
+    </aside>
+
+    <main id="view-home">
+      <h1>Start a table</h1>
+      <p class="lead">Make a new interactive table in a few steps, or pick up where you left off.</p>
+      <p id="error" class="error" role="alert" hidden></p>
+
+      <div class="cards">
+        <button type="button" class="card primary" id="card-new">
+          <span class="art"><svg viewBox="0 0 120 64" aria-hidden="true"><path class="top" d="M60 8 108 26 60 44 12 26Z" /><path class="leg" d="M12 26v14M108 26v14M60 44v14" /><path class="b" d="M44 24l8-3 8 3-8 3zM62 30l8-3 8 3-8 3zM60 18l6-2.2 6 2.2-6 2.2z" /><path class="route" d="M30 27c14 6 30-8 52 2" /></svg></span>
+          <b>New table</b>
+          <span>A guided setup: name, place and size, then the map, the layers and the controller.</span>
+        </button>
+        <button type="button" class="card" id="card-open">
+          <span class="art"><svg viewBox="0 0 120 64" aria-hidden="true"><path class="folder" d="M34 16h18l6 6h28a4 4 0 0 1 4 4v22a4 4 0 0 1-4 4H34a4 4 0 0 1-4-4V20a4 4 0 0 1 4-4Z" /></svg></span>
+          <b>Open a folder</b>
+          <span>A table someone gave you: choose the folder that holds its site.json.</span>
+        </button>
+      </div>
+
+      <h2>Your tables</h2>
+      <ul id="tables" class="tables"></ul>
+      <p id="tables-hint" class="hint"></p>
+    </main>
+
+    <main id="view-new" hidden>
+      <button type="button" class="back" id="new-back">‹ Home</button>
+      <h1>New table</h1>
+      <ol class="stepper" id="stepper">
+        <li>Name</li>
+        <li>Place</li>
+        <li>Size</li>
+      </ol>
+      <form id="new-form" novalidate>
+        <section data-step="0">
+          <h2>What is this table called?</h2>
+          <p class="hint">Usually the name of the place. You can change it later.</p>
+          <input id="new-name" type="text" maxlength="60" placeholder="Lindholmen Science Park" autocomplete="off" />
+        </section>
+        <section data-step="1" hidden>
+          <h2>Where is the middle of the table?</h2>
+          <p class="hint">Paste a link from Google Maps or OpenStreetMap, or type the coordinates as latitude, longitude. In Google Maps, right-click the spot and click the numbers to copy them.</p>
+          <input id="new-place" type="text" placeholder="57.7066, 11.9384" autocomplete="off" spellcheck="false" />
+          <p id="place-read" class="read"></p>
+        </section>
+        <section data-step="2" hidden>
+          <h2>How much of the place fits on the table?</h2>
+          <p class="hint">The width on the ground that the table's long side covers.</p>
+          <div class="choices" id="new-width" role="radiogroup" aria-label="Width on the ground">
+            <label><input type="radio" name="width" value="500" /> <b>500 m</b><span>A few blocks</span></label>
+            <label><input type="radio" name="width" value="1000" checked /> <b>1 km</b><span>A campus or a district</span></label>
+            <label><input type="radio" name="width" value="2000" /> <b>2 km</b><span>A part of town</span></label>
+            <label><input type="radio" name="width" value="custom" /> <b>Other</b><span><input id="new-width-custom" type="number" min="50" max="20000" step="10" placeholder="metres" aria-label="Width in metres" /></span></label>
+          </div>
+          <h2>What shape is the table?</h2>
+          <div class="choices" id="new-shape" role="radiogroup" aria-label="Table shape">
+            <label><input type="radio" name="shape" value="1.7778" /> <b>16 : 9</b><span>Most projectors</span></label>
+            <label><input type="radio" name="shape" value="1.6" checked /> <b>16 : 10</b><span>Office projectors</span></label>
+            <label><input type="radio" name="shape" value="1.3333" /> <b>4 : 3</b><span>Older projectors</span></label>
+            <label><input type="radio" name="shape" value="1" /> <b>Square</b><span></span></label>
+          </div>
+          <p id="size-read" class="read"></p>
+        </section>
+        <p id="new-error" class="error" role="alert" hidden></p>
+        <div class="actions">
+          <button type="button" id="new-prev">Back</button>
+          <button type="submit" id="new-next" class="primary">Continue</button>
+        </div>
+      </form>
+    </main>
+
+    <script src="home.js"></script>
+  </body>
+</html>

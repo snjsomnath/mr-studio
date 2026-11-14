@@ -33,6 +33,9 @@ use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_opener::OpenerExt;
 use tauri_plugin_updater::UpdaterExt;
 
+/// The first window: recent tables and the way to a new one.
+const HOME: &str = "home";
+/// Displays, colour, calibration and updates.
 const LAUNCHER: &str = "launcher";
 /// The window where a site is authored: the host's `/edit` page. It may call the few
 /// commands listed in `capabilities/editor.json`.
@@ -43,6 +46,10 @@ const PORT: u16 = 4170;
 /// asking to navigate to a path the shell intercepts (see `open_surfaces`).
 /// The editor page's link to the shell until it has a Present button of its own.
 const EDITOR_BAR: &str = include_str!("editor-bar.js");
+
+/// The way back from a presentation, on the screens people look at up close. Never on
+/// the table: nothing of the app's own is projected onto the model.
+const SURFACE_EXIT: &str = include_str!("surface-exit.js");
 
 const SHORTCUTS: &str = r"
 window.addEventListener('keydown', (event) => {
@@ -102,10 +109,10 @@ impl Shell {
 
 fn main() -> anyhow::Result<()> {
     tauri::Builder::default()
-        // A second start (a double click too many) brings up the launcher of the first.
+        // A second start (a double click too many) brings up the Home page of the first.
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             let app = app.clone();
-            tauri::async_runtime::spawn(async move { report(open_launcher(&app)) });
+            tauri::async_runtime::spawn(async move { report(open_home_window(&app)) });
         }))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
@@ -122,6 +129,8 @@ fn main() -> anyhow::Result<()> {
             stop_presenting,
             presenting_state,
             open_home,
+            open_settings,
+            new_table,
             quit,
             colour_state,
             set_colour,
@@ -194,9 +203,9 @@ fn init_logging(log_dir: Option<&Path>) {
 
 /// What to do when the app starts:
 /// - `mr-studio <site folder>` (or MRS_SITE) runs that site straight away;
-/// - `mr-studio --setup` always shows the launcher;
-/// - otherwise the last site starts on the saved displays if the launcher was told to
-///   do that, and the launcher opens if not.
+/// - `mr-studio --setup` shows the displays and settings window;
+/// - otherwise the last site starts on the saved displays if the settings say so, and
+///   the Home page opens if not.
 async fn startup(app: AppHandle) {
     let shell = app.state::<Shell>();
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -227,8 +236,9 @@ async fn startup(app: AppHandle) {
             }
         }
     }
-    if let Err(e) = open_launcher(&app) {
-        tracing::error!("could not open the launcher: {e:#}");
+    let opened = if setup { open_launcher(&app) } else { open_home_window(&app) };
+    if let Err(e) = opened {
+        tracing::error!("could not open the first window: {e:#}");
         app.exit(1);
     }
 }
@@ -239,11 +249,28 @@ fn report(result: anyhow::Result<()>) {
     }
 }
 
+fn open_home_window(app: &AppHandle) -> anyhow::Result<()> {
+    let window = match app.get_webview_window(HOME) {
+        Some(window) => window,
+        None => WebviewWindowBuilder::new(app, HOME, WebviewUrl::App("home.html".into()))
+            .title("MR Studio")
+            .inner_size(1040.0, 720.0)
+            .min_inner_size(760.0, 560.0)
+            .center()
+            .build()?,
+    };
+    window.set_always_on_top(is_presenting(app))?;
+    window.unminimize()?;
+    window.show()?;
+    window.set_focus()?;
+    Ok(())
+}
+
 fn open_launcher(app: &AppHandle) -> anyhow::Result<()> {
     let window = match app.get_webview_window(LAUNCHER) {
         Some(window) => window,
         None => WebviewWindowBuilder::new(app, LAUNCHER, WebviewUrl::App("index.html".into()))
-            .title("MR Studio")
+            .title("MR Studio · Displays and settings")
             .inner_size(1080.0, 720.0)
             .min_inner_size(820.0, 560.0)
             .center()
@@ -281,8 +308,10 @@ async fn launch(app: &AppHandle, site: PathBuf, lan: bool) -> anyhow::Result<()>
     // One start at a time.
     let mut host = shell.host.lock().await;
     close_surfaces(app)?;
-    if let Some(editor) = app.get_webview_window(EDITOR) {
-        editor.destroy()?;
+    for (label, window) in app.webview_windows() {
+        if label == EDITOR || label.starts_with("view-") {
+            window.destroy()?;
+        }
     }
     *shell.running.lock().unwrap() = None;
     if let Some(old) = host.take() {
@@ -329,12 +358,66 @@ async fn launch(app: &AppHandle, site: PathBuf, lan: bool) -> anyhow::Result<()>
 }
 
 /// Runs `site` unless it is what is running already, with the same network choice.
-async fn ensure_running(app: &AppHandle, site: &Path, lan: bool) -> anyhow::Result<()> {
-    let same = |r: &Running| r.lan == lan && (r.site == site || r.site.canonicalize().ok() == site.canonicalize().ok());
-    if app.state::<Shell>().running.lock().unwrap().as_ref().is_some_and(same) {
-        return Ok(());
+/// Returns the folder that runs: `site` itself, or the person's own copy of a built-in one.
+async fn ensure_running(app: &AppHandle, site: &Path, lan: bool) -> anyhow::Result<PathBuf> {
+    let shell = app.state::<Shell>();
+    let site = sites::canonical(working_copy(&shell, site)?);
+    let same = |r: &Running| r.lan == lan && r.site == site;
+    if !shell.running.lock().unwrap().as_ref().is_some_and(same) {
+        launch(app, site.clone(), lan).await?;
     }
-    launch(app, site.to_path_buf(), lan).await
+    Ok(site)
+}
+
+/// A site that ships inside the app is a starting point, not a place to save: the app
+/// folder is replaced by every update and may not be writable. It is copied to the sites
+/// folder once, and that copy is what opens from then on.
+fn working_copy(shell: &Shell, site: &Path) -> anyhow::Result<PathBuf> {
+    let built_in = sites::canonical(shell.resources.join("sites"));
+    let site = sites::canonical(site.to_path_buf());
+    let (Ok(inside), Some(folder)) = (site.strip_prefix(&built_in), shell.sites_folders.first()) else { return Ok(site) };
+    let copy = folder.join(inside);
+    if !copy.join("site.json").exists() {
+        copy_dir(&site, &copy).with_context(|| format!("copying the example to {}", copy.display()))?;
+        tracing::info!("copied the built-in site to {}", copy.display());
+    }
+    Ok(copy)
+}
+
+fn copy_dir(from: &Path, to: &Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(to)?;
+    for entry in std::fs::read_dir(from)? {
+        let entry = entry?;
+        let target = to.join(entry.file_name());
+        if entry.file_type()?.is_dir() {
+            copy_dir(&entry.path(), &target)?;
+        } else {
+            std::fs::copy(entry.path(), target)?;
+        }
+    }
+    Ok(())
+}
+
+/// Opens one surface of the running site in a normal window, for looking at it beside the editor.
+fn open_view(app: &AppHandle, role: &str) -> anyhow::Result<()> {
+    anyhow::ensure!(["table", "tv", "dev", "phone"].contains(&role), "'{role}' is not a view");
+    let running = app.state::<Shell>().running.lock().unwrap().clone().context("no site is open")?;
+    let label = format!("view-{role}");
+    let window = match app.get_webview_window(&label) {
+        Some(window) => window,
+        None => {
+            let url = format!("http://127.0.0.1:{}/{role}", running.port).parse().expect("valid view url");
+            let (width, height) = if role == "phone" { (420.0, 800.0) } else { (1100.0, 700.0) };
+            WebviewWindowBuilder::new(app, &label, WebviewUrl::External(url))
+                .title(format!("MR Studio · {} · {role}", running.name))
+                .inner_size(width, height)
+                .build()?
+        }
+    };
+    window.unminimize()?;
+    window.show()?;
+    window.set_focus()?;
+    Ok(())
 }
 
 fn close_surfaces(app: &AppHandle) -> anyhow::Result<()> {
@@ -369,15 +452,21 @@ fn usual_displays(app: &AppHandle) -> anyhow::Result<Displays> {
     })
 }
 
-/// Opens the running site in the editor window.
-fn open_editor(app: &AppHandle) -> anyhow::Result<()> {
+/// Opens the running site in the editor window, at `page` of the host: `edit` for the
+/// editor, `edit?welcome=1` for a table that was just created, `new` for the new-table wizard.
+fn open_editor(app: &AppHandle, page: &str) -> anyhow::Result<()> {
     let running = app.state::<Shell>().running.lock().unwrap().clone().context("no site is open")?;
+    let url: tauri::Url = format!("http://127.0.0.1:{}/{page}", running.port).parse().context("the editor's address")?;
     let window = match app.get_webview_window(EDITOR) {
-        Some(window) => window,
+        Some(window) => {
+            if window.url().ok().as_ref() != Some(&url) {
+                window.navigate(url)?;
+            }
+            window
+        }
         None => {
-            let url = format!("http://127.0.0.1:{}/edit", running.port).parse().expect("valid editor url");
             let handle = app.clone();
-            WebviewWindowBuilder::new(app, EDITOR, WebviewUrl::External(url))
+            let window = WebviewWindowBuilder::new(app, EDITOR, WebviewUrl::External(url))
                 .title(format!("MR Studio · {}", running.name))
                 .inner_size(1440.0, 900.0)
                 .min_inner_size(960.0, 600.0)
@@ -390,13 +479,31 @@ fn open_editor(app: &AppHandle) -> anyhow::Result<()> {
                     }
                     None => true,
                 })
-                .build()?
+                .build()?;
+            // Closing the editor leads back to Home, as closing a document does, unless the
+            // table is being presented.
+            let handle = app.clone();
+            window.on_window_event(move |event| {
+                if matches!(event, tauri::WindowEvent::CloseRequested { .. }) && !is_presenting(&handle) {
+                    report(open_home_window(&handle));
+                }
+            });
+            window
         }
     };
     window.unminimize()?;
     window.show()?;
     window.set_focus()?;
     Ok(())
+}
+
+/// Closes the shell's own pages once a site is in front.
+fn close_shell_pages(app: &AppHandle) {
+    for label in [HOME, LAUNCHER] {
+        if let Some(window) = app.get_webview_window(label) {
+            let _ = window.close();
+        }
+    }
 }
 
 fn open_surfaces(app: &AppHandle, port: u16, displays: &Displays) -> anyhow::Result<()> {
@@ -421,7 +528,12 @@ fn open_surfaces(app: &AppHandle, port: u16, displays: &Displays) -> anyhow::Res
             .title(format!("MR Studio · {}", spec.role))
             .inner_size(1400.0, 840.0)
             .visible(false)
-            .initialization_script(format!("{SHORTCUTS}\n{}\n{}", colour::SCRIPT, colour.script()))
+            .initialization_script(format!(
+                "{SHORTCUTS}\n{}\n{}\n{}",
+                colour::SCRIPT,
+                colour.script(),
+                if spec.role == "table" { "" } else { SURFACE_EXIT }
+            ))
             .on_navigation(move |url| match url.path().strip_prefix("/__shell/") {
                 Some(action) => {
                     shell_action(&handle, action);
@@ -478,11 +590,15 @@ fn shell_action(app: &AppHandle, action: &str) {
         "setup" => drop(tauri::async_runtime::spawn(async move { report(open_launcher(&app)) })),
         // Back from the table to the editor.
         "edit" => drop(tauri::async_runtime::spawn(async move {
+            // The editor first: with the surfaces gone and no other window, the app would quit.
+            report(open_editor(&app, "edit").or_else(|_| open_home_window(&app)));
             report(close_surfaces(&app));
-            if app.get_webview_window(EDITOR).is_some() || app.webview_windows().is_empty() {
-                report(open_editor(&app).or_else(|_| open_launcher(&app)));
-            }
         })),
+        // A page asked for a view of its own (the editor's "Open in a window").
+        view if view.starts_with("window/") => {
+            let role = view["window/".len()..].to_string();
+            drop(tauri::async_runtime::spawn(async move { report(open_view(&app, &role)) }));
+        }
         "quit" => app.exit(0),
         other => tracing::warn!("unknown shell action '{other}'"),
     }
@@ -548,6 +664,9 @@ fn launcher_state(app: AppHandle, shell: State<'_, Shell>) -> Result<LauncherSta
     // The sites opened last come first; the rest keep their order.
     let recency = |s: &SiteEntry| settings.recent.iter().position(|p| p == &s.path).unwrap_or(usize::MAX);
     sites.sort_by_key(recency);
+    // An example that has been opened lives on as the person's own copy; list that one only.
+    let own: Vec<_> = sites.iter().filter(|s| s.source != "built in").filter_map(|s| s.path.file_name().map(|n| n.to_owned())).collect();
+    sites.retain(|s| s.source != "built in" || s.path.file_name().is_none_or(|n| !own.iter().any(|o| o == n)));
     let usable = |path: &PathBuf| sites.iter().any(|s| &s.path == path && s.problem.is_none());
     let site = running.as_ref().map(|r| r.site.clone()).or(settings.site.clone()).filter(usable);
     Ok(LauncherState {
@@ -641,13 +760,15 @@ async fn start(app: AppHandle, shell: State<'_, Shell>, request: StartRequest) -
     let displays = chosen_displays(&app, &request.windows)?;
     displays.write(&shell.displays_path()).map_err(text)?;
     let mut settings = shell.settings();
-    settings.opened(&request.site);
     settings.lan = request.lan;
     settings.autostart = request.autostart;
     settings.write(&shell.settings_path()).map_err(text)?;
 
     // An editor that is open on this site stays open; its changes are already on the table.
-    ensure_running(&app, &request.site, request.lan).await.map_err(text)?;
+    let site = ensure_running(&app, &request.site, request.lan).await.map_err(text)?;
+    let mut settings = shell.settings();
+    settings.opened(&site);
+    settings.write(&shell.settings_path()).map_err(text)?;
     show(&app, &displays).map_err(text)?;
     if let Some(launcher) = app.get_webview_window(LAUNCHER) {
         launcher.close().map_err(text)?;
@@ -672,19 +793,38 @@ fn chosen_displays(app: &AppHandle, windows: &[Assigned]) -> Result<Displays, St
     Ok(displays)
 }
 
-/// Opens a site in the editor and closes the launcher. Nothing goes on the displays
-/// until Present.
+/// Opens a site in the editor and closes the shell's own pages. Nothing goes on the
+/// displays until Present. `welcome` is for a table that was just created: the editor
+/// continues the new-table wizard.
 #[tauri::command]
-async fn open_site(app: AppHandle, shell: State<'_, Shell>, path: PathBuf) -> Result<(), String> {
+async fn open_site(app: AppHandle, shell: State<'_, Shell>, path: PathBuf, welcome: Option<bool>) -> Result<(), String> {
     let mut settings = shell.settings();
-    ensure_running(&app, &path, settings.lan).await.map_err(text)?;
+    let path = ensure_running(&app, &path, settings.lan).await.map_err(text)?;
     settings.opened(&path);
     settings.write(&shell.settings_path()).map_err(text)?;
-    open_editor(&app).map_err(text)?;
-    if let Some(launcher) = app.get_webview_window(LAUNCHER) {
-        launcher.close().map_err(text)?;
-    }
+    open_editor(&app, if welcome == Some(true) { "edit?welcome=1" } else { "edit" }).map_err(text)?;
+    close_shell_pages(&app);
     Ok(())
+}
+
+/// Starts a new table. With the editor's wizard in the bundle, the editor window opens on
+/// it, over the sample site as a backdrop, and `true` is returned. Without it `false` is
+/// returned and the Home page asks the first questions itself.
+#[tauri::command]
+async fn new_table(app: AppHandle, shell: State<'_, Shell>) -> Result<bool, String> {
+    let features = std::fs::read_to_string(shell.resources.join("web").join("features.json")).unwrap_or_default();
+    let has_wizard = serde_json::from_str::<serde_json::Value>(&features).is_ok_and(|f| f["new_table_wizard"] == true);
+    if !has_wizard {
+        return Ok(false);
+    }
+    // The wizard is a page of the host, and a host needs a site. Whatever is open will do.
+    if shell.running.lock().unwrap().is_none() {
+        let sample = shell.resources.join("sites").join("sample");
+        launch(&app, sample, shell.settings().lan).await.map_err(text)?;
+    }
+    open_editor(&app, "new").map_err(text)?;
+    close_shell_pages(&app);
+    Ok(true)
 }
 
 #[derive(Debug, Deserialize)]
@@ -759,9 +899,15 @@ async fn stop_presenting(app: AppHandle) -> Result<(), String> {
     close_surfaces(&app).map_err(text)
 }
 
-/// Shows the launcher: other sites, the displays, colour, calibration and updates.
+/// Shows the Home page: recent tables and New table.
 #[tauri::command]
 async fn open_home(app: AppHandle) -> Result<(), String> {
+    open_home_window(&app).map_err(text)
+}
+
+/// Shows the displays and settings window: displays, colour, calibration and updates.
+#[tauri::command]
+async fn open_settings(app: AppHandle) -> Result<(), String> {
     open_launcher(&app).map_err(text)
 }
 
