@@ -1,5 +1,5 @@
 import { defineLayer, geojsonLines, geojsonPoints, geojsonPolygons, loadSiteData, siteDataUrl, tableSpace, traceLine, tracePolygon, withAlpha } from '@mrstudio/sdk';
-import type { CanvasOverlay, LayerManifest, Point, Shape, TableSpace } from '@mrstudio/sdk';
+import type { CanvasOverlay, LayerManifest, Placed, TableSpace, XY } from '@mrstudio/sdk';
 
 import manifest from '../layer.json';
 
@@ -29,7 +29,7 @@ interface Slide {
 
 type Loaded =
   | { kind: 'picture'; element: HTMLImageElement | HTMLVideoElement; width: number; height: number }
-  | { kind: 'shapes'; polygons: Shape<Point[][]>[]; lines: Shape<Point[]>[]; points: Shape<Point>[] };
+  | { kind: 'shapes'; polygons: Placed<XY[][]>[]; lines: Placed<XY[]>[]; points: Placed<XY>[] };
 
 const SUPPORTED = ['image', 'video', 'geojson'];
 const DEFAULT_DURATION_MS = 8000;

@@ -67,8 +67,9 @@ apps/
   studio/         Tauri shell (embeds mrs-host)
 packages/
   sdk/            @mrstudio/sdk: layer API, protocol types, engine client, field rendering
+  dashboard/      @mrstudio/dashboard: the TV panel grid, widgets, density budget, themes
   runtime/        @mrstudio/runtime: surfaces (table, tv, phone, dev), scene composer, layer manager, generated controls
-  layers/         core layer packages: basemap, ambient (cars, building-lights, transit, trees), slideshow, sunlight, then wind, stormwater, isovist, ...
+  layers/         core layer packages: basemap, ambient (cars, building-lights, transit, trees), slideshow, sunlight, sketch, then wind, stormwater, isovist, ...
 sites/
   sample/         small synthetic site used by tests and layer dev mode
   chalmers/       flagship reference site (to be ported)
@@ -85,6 +86,7 @@ docs/contracts/   the interface contracts below
 | Site package format | [contracts/site.md](contracts/site.md) | `mrs-site` |
 | App, display and session model, wire protocol | [contracts/session.md](contracts/session.md) | `mrs-host` |
 | Mobile controller | [contracts/mobile.md](contracts/mobile.md) | `@mrstudio/runtime` |
+| TV dashboard: panels, widgets, density budget, themes | [contracts/dashboard.md](contracts/dashboard.md), design in [DASHBOARD.md](DASHBOARD.md) | `@mrstudio/dashboard` |
 
 ## Key decisions
 
@@ -93,6 +95,7 @@ docs/contracts/   the interface contracts below
 - **The simulation grid is aligned to the table.** The grid is a rotated rectangle around the site origin, so no cells are wasted on area the table does not show. Kernels read the rotation from the scene.
 - **Local metric coordinates.** The engine works in east/north metres on a tangent plane at the site origin. That needs no projection library, is accurate to centimetres over a few kilometres, and works anywhere in the world. Site prep reprojects source data to WGS84.
 - **A scene is a list.** What a table shows is the ordered `layers` list in `site.json`, drawn bottom to top. The composer at `/compose` edits it through the host, and layers that are not analysis (base map, ambient life, media) are ordinary layer packages that draw on a canvas.
+- **The TV has a budget.** Dashboard panels sit on a fixed 12 by 6 grid, come in eight sizes and each spend a counted share of what one screen may ask a visitor to read. A panel over its budget is refused; too many panels become another page. Sites restyle through tokens and cannot change the rules.
 - **Controls are data.** A layer declares its controls in the manifest. The TV and phone UIs are generated from them, and the host validates every change against them.
 - **Python stays outside the app process.** Data preparation and research models run as services declared in the site or layer manifest and reached through the host gateway.
 

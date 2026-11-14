@@ -69,6 +69,52 @@ export interface LayerManifest {
   requires?: { kernels?: string[]; data?: string[]; services?: string[] };
   controls?: Control[];
   tools?: ToolSpec[];
+  /** TV panels the layer contributes while it is on. Rules in docs/contracts/dashboard.md. */
+  panels?: PanelSpec[];
+}
+
+// ---- TV panels ------------------------------------------------------------
+// The shapes only. The rules (grid, budget, widgets) live in @mrstudio/dashboard.
+
+/** The closed set of panel sizes on the TV grid. */
+export type PanelSize = 'chip' | 'tile' | 'wide' | 'tall' | 'block' | 'hero' | 'band' | 'strip';
+
+/** A live value: `params.<control>`, `shared.<key>` or `site.<field>` of the panel's layer. */
+export interface Binding {
+  bind: string;
+}
+
+/** One panel: a widget of a fixed size. Plain JSON, so an editor can write it. */
+export interface PanelSpec {
+  /** Unique within the layer or page. */
+  id: string;
+  /** A widget type from the registry: `stat`, `bars`, `series`, `ramp`, `timeline`, `text`, `custom`. */
+  widget: string;
+  size: PanelSize;
+  title?: string;
+  /** The widget's props. Values may be literals or bindings, as the widget's schema allows. */
+  props?: Record<string, unknown>;
+  /** Show only while the layer's params have these values. */
+  visibleWhen?: Record<string, unknown>;
+  /** Higher is placed first by the automatic layout. Default 0. */
+  priority?: number;
+  /** Fixed position on the grid, 1-based. Only in a site's pages; layers never choose positions. */
+  at?: { col: number; row: number };
+  /** In a site's pages: the layer whose params and shared values the bindings read. */
+  layer?: string;
+}
+
+/** `tv` in site.json. */
+export interface TvConfig {
+  layout?: string;
+  /** Where the controls sit. Default `left`. */
+  rail?: 'left' | 'right' | 'none';
+  /** Style tokens the site overrides. */
+  theme?: Record<string, string>;
+  /** Hand-made pages. Without them the active layers' panels are laid out automatically. */
+  pages?: { id: string; title?: string; panels: PanelSpec[] }[];
+  /** Seconds each page stays up when there is more than one. Default 12. */
+  rotate_s?: number;
 }
 
 // ---- Site and session -----------------------------------------------------
@@ -94,6 +140,7 @@ export interface SiteInfo {
   branding: { title: string | null; logo: string | null };
   /** Datasets layers may read, by name: site-relative paths served under `/site/`. */
   data: Record<string, string>;
+  tv?: TvConfig | null;
 }
 
 export type Params = Record<string, unknown>;
@@ -109,14 +156,18 @@ export interface LayerState {
 }
 
 export interface Participant {
+  /** The surface in the slot. It changes when the phone reconnects; the slot does not. */
   surface: number;
   slot: number;
   colour: string;
+  /** False while the slot is held for a phone that dropped. */
+  connected: boolean;
 }
 
 export interface SessionState {
   protocol: number;
-  session: { id: string; code: string; port: number };
+  /** `join_url` is what the TV's QR code points at; null when phones cannot reach the host. */
+  session: { id: string; code: string; port: number; join_url: string | null };
   site: SiteInfo;
   /** Layer instance ids in draw order, bottom first. */
   scene: string[];
@@ -125,12 +176,24 @@ export interface SessionState {
   participants: Participant[];
 }
 
+/** A `[lon, lat]` position in WGS84. */
+export type Position = [number, number];
+
+/** The GeoJSON geometry a tool produces: `Point` for point, `LineString` for line, `Polygon` for polygon. */
+export type ToolGeometry =
+  | { type: 'Point'; coordinates: Position }
+  | { type: 'LineString'; coordinates: Position[] }
+  | { type: 'Polygon'; coordinates: Position[][] };
+
 export interface ToolInput {
   layer: string;
   tool: string;
-  /** GeoJSON geometry in WGS84. */
-  geometry: unknown;
+  /** Checked by the host: the tool's kind, in WGS84, polygon rings closed. */
+  geometry: ToolGeometry;
+  /** The surface that sent it. */
   from: number;
+  /** Present when it came from a phone. */
+  participant?: { slot: number; colour: string };
 }
 
 // ---- Engine ---------------------------------------------------------------

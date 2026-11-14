@@ -3,14 +3,14 @@
 
 import type { SiteInfo } from './types.ts';
 
-export type Point = [x: number, y: number];
+export type XY = [x: number, y: number];
 
 /** The table as a rectangle in metres: x right, y down, origin at the top left corner. */
 export interface TableSpace {
   readonly width: number;
   readonly height: number;
   /** WGS84 to table metres. Points outside the extent give coordinates outside the rectangle. */
-  toTable(lon: number, lat: number): Point;
+  toTable(lon: number, lat: number): XY;
 }
 
 export function tableSpace(site: SiteInfo): TableSpace {
@@ -53,7 +53,7 @@ export async function loadSiteData<T = any>(site: SiteInfo, name: string): Promi
 
 // ---- GeoJSON --------------------------------------------------------------
 
-export interface Shape<G> {
+export interface Placed<G> {
   geometry: G;
   properties: Record<string, any>;
 }
@@ -65,8 +65,8 @@ function features(geojson: any): any[] {
 }
 
 /** Every line in a GeoJSON document, in table metres. */
-export function geojsonLines(geojson: unknown, space: TableSpace): Shape<Point[]>[] {
-  const out: Shape<Point[]>[] = [];
+export function geojsonLines(geojson: unknown, space: TableSpace): Placed<XY[]>[] {
+  const out: Placed<XY[]>[] = [];
   for (const feature of features(geojson)) {
     const geometry = feature.geometry;
     const lines = geometry?.type === 'LineString' ? [geometry.coordinates] : geometry?.type === 'MultiLineString' ? geometry.coordinates : [];
@@ -78,8 +78,8 @@ export function geojsonLines(geojson: unknown, space: TableSpace): Shape<Point[]
 }
 
 /** Every polygon in a GeoJSON document as rings (outer first, then holes), in table metres. */
-export function geojsonPolygons(geojson: unknown, space: TableSpace): Shape<Point[][]>[] {
-  const out: Shape<Point[][]>[] = [];
+export function geojsonPolygons(geojson: unknown, space: TableSpace): Placed<XY[][]>[] {
+  const out: Placed<XY[][]>[] = [];
   for (const feature of features(geojson)) {
     const geometry = feature.geometry;
     const polygons = geometry?.type === 'Polygon' ? [geometry.coordinates] : geometry?.type === 'MultiPolygon' ? geometry.coordinates : [];
@@ -91,8 +91,8 @@ export function geojsonPolygons(geojson: unknown, space: TableSpace): Shape<Poin
 }
 
 /** Every point in a GeoJSON document, in table metres. */
-export function geojsonPoints(geojson: unknown, space: TableSpace): Shape<Point>[] {
-  const out: Shape<Point>[] = [];
+export function geojsonPoints(geojson: unknown, space: TableSpace): Placed<XY>[] {
+  const out: Placed<XY>[] = [];
   for (const feature of features(geojson)) {
     const geometry = feature.geometry;
     const points = geometry?.type === 'Point' ? [geometry.coordinates] : geometry?.type === 'MultiPoint' ? geometry.coordinates : [];
@@ -102,7 +102,7 @@ export function geojsonPoints(geojson: unknown, space: TableSpace): Shape<Point>
 }
 
 /** Adds polygon rings to the current path. Fill with the 'evenodd' rule so holes stay open. */
-export function tracePolygon(ctx: CanvasRenderingContext2D, rings: Point[][]): void {
+export function tracePolygon(ctx: CanvasRenderingContext2D, rings: XY[][]): void {
   for (const ring of rings) {
     ring.forEach(([x, y], i) => (i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)));
     ctx.closePath();
@@ -110,12 +110,12 @@ export function tracePolygon(ctx: CanvasRenderingContext2D, rings: Point[][]): v
 }
 
 /** Adds a polyline to the current path. */
-export function traceLine(ctx: CanvasRenderingContext2D, line: Point[]): void {
+export function traceLine(ctx: CanvasRenderingContext2D, line: XY[]): void {
   line.forEach(([x, y], i) => (i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)));
 }
 
 /** Whether a point is inside a polygon given as rings (even-odd, so holes are outside). */
-export function insidePolygon(rings: Point[][], x: number, y: number): boolean {
+export function insidePolygon(rings: XY[][], x: number, y: number): boolean {
   let inside = false;
   for (const ring of rings) {
     for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
@@ -131,13 +131,13 @@ export function insidePolygon(rings: Point[][], x: number, y: number): boolean {
 
 /** A polyline with its running length, for moving things along it. */
 export interface Track {
-  points: Point[];
+  points: XY[];
   /** Distance from the start to each point. */
   at: number[];
   length: number;
 }
 
-export function track(points: Point[]): Track {
+export function track(points: XY[]): Track {
   const at = [0];
   for (let i = 1; i < points.length; i++) {
     at.push(at[i - 1]! + Math.hypot(points[i]![0] - points[i - 1]![0], points[i]![1] - points[i - 1]![1]));
@@ -184,7 +184,7 @@ export function nearestAlong(t: Track, x: number, y: number): number {
  * The site's streets as lines in table metres: the `roads` dataset when the site has
  * one, otherwise a generated grid so ambient layers still have somewhere to run.
  */
-export async function streetLines(site: SiteInfo): Promise<{ lines: Shape<Point[]>[]; generated: boolean }> {
+export async function streetLines(site: SiteInfo): Promise<{ lines: Placed<XY[]>[]; generated: boolean }> {
   const space = tableSpace(site);
   const lines = geojsonLines(await loadSiteData(site, 'roads'), space);
   if (lines.length > 0) return { lines, generated: false };
@@ -193,9 +193,9 @@ export async function streetLines(site: SiteInfo): Promise<{ lines: Shape<Point[
   const stops = (size: number) => Array.from({ length: Math.ceil(size / pitch) + 2 }, (_, i) => (i - 0.5) * pitch);
   const xs = stops(space.width);
   const ys = stops(space.height);
-  const out: Shape<Point[]>[] = [];
-  for (const x of xs) out.push({ geometry: ys.map((y): Point => [x, y]), properties: { kind: 'street' } });
-  for (const y of ys) out.push({ geometry: xs.map((x): Point => [x, y]), properties: { kind: 'street' } });
+  const out: Placed<XY[]>[] = [];
+  for (const x of xs) out.push({ geometry: ys.map((y): XY => [x, y]), properties: { kind: 'street' } });
+  for (const y of ys) out.push({ geometry: xs.map((x): XY => [x, y]), properties: { kind: 'street' } });
   return { lines: out, generated: true };
 }
 

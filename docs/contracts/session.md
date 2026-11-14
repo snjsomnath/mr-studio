@@ -5,7 +5,7 @@
 - **Studio**: one installed app on one computer. It runs one host.
 - **Session**: one site running in a studio. It has a short join code and holds all shared state.
 - **Surface**: a connected page with a role: `table`, `tv`, `phone` or `dev`.
-- **Participant**: a person on a phone surface, with a slot (colour and number).
+- **Participant**: a person on a phone surface, with a slot (colour and number). The slot belongs to the person, not the connection: it survives a reload or a brief drop (see mobile.md).
 
 One session runs at a time. The host is the only authority over its state.
 
@@ -44,11 +44,17 @@ Surface URLs served by the host:
 ```ts
 interface SessionState {
   protocol: 1;
-  session: { id: string; code: string; port: number };
-  site: SiteInfo;                          // id, name, origin, extent, grid, timezone, table, data
+  session: { id: string; code: string; port: number; join_url: string | null };
+  site: SiteInfo;                          // id, name, origin, extent, grid, timezone, table, data, tv
   scene: string[];                         // layer instance ids in draw order, bottom first
   layers: Record<string, LayerState>;      // by instance id (the layer id unless site.json names the entry)
   participants: Participant[];
+}
+interface Participant {
+  surface: number;      // the surface in the slot now; changes when the phone reconnects
+  slot: number;         // 0-based; stable for as long as the person stays
+  colour: string;
+  connected: boolean;   // false while the slot is held for a phone that dropped
 }
 interface LayerState {
   layer: string;                           // the layer package this instance runs
@@ -59,18 +65,21 @@ interface LayerState {
 }
 ```
 
+`session.join_url` is the address the TV's QR code carries, `http://<address>:<port>/phone?c=<code>`.
+The host works the address out from the interface it listens on. It is `null` when the host listens on the loopback interface only, and it can be set outright (`SessionOptions::public_url`, `mrstudio dev --public-url`) when phones reach the studio through something else, such as the web dev server or a relay.
+
 ## Wire protocol
 
 Text frames are JSON. Binary frames are engine field frames (see engine.md).
 
 ```ts
 // surface to host
-{ t: 'hello', protocol: 1, role: 'table' | 'tv' | 'phone' | 'dev', code?: string }
+{ t: 'hello', protocol: 1, role: 'table' | 'tv' | 'phone' | 'dev', code?: string, resume?: string }
 { t: 'req', id: number, m: string, p?: object }
 
 // host to surface
-{ t: 'welcome', surface: number, state: SessionState, manifests: LayerManifest[] }   // manifests: every layer that can be in a scene
-{ t: 'refused', e: string }                 // wrong code, session full, protocol mismatch
+{ t: 'welcome', surface: number, state: SessionState, manifests: LayerManifest[], resume?: string }   // manifests: every layer that can be in a scene
+{ t: 'refused', e: string }                 // wrong code, session full, protocol mismatch; also sent later, see below
 { t: 'resync', state: SessionState, ... }   // the surface fell behind; replace all state
 { t: 'res', id: number, ok: true, r?: object } | { t: 'res', id: number, ok: false, e: string }
 { t: 'ev', m: string, p: object }
@@ -85,7 +94,7 @@ Requests:
 | `layer.set` | `{ layer, params }` | all (phones only for `phone: true` controls) | Validates, merges, broadcasts |
 | `layer.action` | `{ layer, action }` | all (phones only for `phone: true`) | Broadcast to the table |
 | `layer.publish` | `{ layer, values }` | table, dev | Merges into `shared`, broadcasts |
-| `tool.input` | `{ layer, tool, geometry }` | all | Forwarded to the table |
+| `tool.input` | `{ layer, tool, geometry }` | all | Checked, then forwarded to the table |
 | `engine.*` | see engine.md | table, tv, dev | Kernel streams |
 | `scene.add` | `{ use, id?, index?, active?, params? }` | tv, dev | Adds a layer from the catalogue at `index` (default: on top, active). Returns `{ id }`; without `id` the first copy is named after the layer and later ones `<layer>-2`, `-3`, ... |
 | `scene.remove` | `{ layer }` | tv, dev | Takes a layer out of the scene |
@@ -104,7 +113,7 @@ Events:
 | `state.scene` | `{ scene, layers }` after a layer was added, removed or moved: the new order and every layer's state |
 | `state.participants` | `{ participants }` |
 | `layer.action` | `{ layer, action, from }` |
-| `tool.input` | `{ layer, tool, geometry, from }` |
+| `tool.input` | `{ layer, tool, geometry, from, participant? }` |
 
 Rules:
 
@@ -112,3 +121,8 @@ Rules:
 - The host clamps numbers to `min` and `max`, snaps to `step`, and rejects unknown controls and options.
 - Events for one layer are delivered in order. A slow surface receives the latest state, not a backlog: field frames are dropped rather than queued, and a surface that falls behind on events gets one `resync`.
 - Only `table` and `dev` surfaces may publish.
+- `tool.input` geometry is GeoJSON in WGS84 and must match the tool's type: `Point` for `point`, `LineString` (2 or more positions) for `line`, `Polygon` (closed rings) for `polygon`, at most 256 positions in all. The host forwards only `type` and `coordinates`, with positions cut to `[lon, lat]`. Input for a layer that is off is refused. `from` is the sending surface; `participant` is `{ slot, colour }` when it is a phone, so a layer can draw in the sender's colour without tracking participants.
+- `resume` in `welcome` is given to phones only. Sent back in a later `hello` (with the code) it returns the phone to its slot; an unknown or expired token is an ordinary new join.
+- `refused` can also arrive after `welcome`, when the same phone joins again with its token (a reload that beat the old connection's close, or a second tab). The older connection gets `refused` and is closed, and must not reconnect.
+- The host accepts 20 requests per second from each phone, with bursts up to 20. Further requests are answered `ok: false` with `e: 'rate limited'` and have no effect. Other roles are not limited.
+- The host pings every surface every 10 seconds and closes a connection it has not heard from for 30 seconds.

@@ -16,22 +16,34 @@ interface Running {
 }
 
 /**
- * Sends param changes for a layer, at most one request per animation frame.
- * `layer.set` changes the running session; the composer uses `scene.set`, which also saves.
+ * Sends param changes for a layer, at most one request per animation frame, carrying the
+ * latest values. `layer.set` changes the running session; the composer uses `scene.set`,
+ * which also saves. `minInterval` (ms) spaces the requests further apart; phones use it to
+ * stay inside the host's per-phone request limit while a slider is dragged.
  */
-export function paramSender(connection: Connection, layer: string, method: 'layer.set' | 'scene.set' = 'layer.set'): (patch: Record<string, unknown>) => void {
+export function paramSender(
+  connection: Connection,
+  layer: string,
+  options: { method?: 'layer.set' | 'scene.set'; minInterval?: number } = {},
+): (patch: Record<string, unknown>) => void {
+  const { method = 'layer.set', minInterval = 0 } = options;
   let pending: Record<string, unknown> | null = null;
+  let last = -Infinity;
+  const flush = () => {
+    const params = pending!;
+    pending = null;
+    last = performance.now();
+    connection.request(method, { layer, params }).catch((error) => console.warn(`[${layer}] ${error.message}`));
+  };
   return (patch) => {
     if (pending) {
       Object.assign(pending, patch);
       return;
     }
     pending = { ...patch };
-    requestAnimationFrame(() => {
-      const params = pending!;
-      pending = null;
-      connection.request(method, { layer, params }).catch((error) => console.warn(`[${layer}] ${error.message}`));
-    });
+    const wait = last + minInterval - performance.now();
+    if (wait > 0) setTimeout(flush, wait);
+    else requestAnimationFrame(flush);
   };
 }
 
@@ -117,6 +129,7 @@ export class LayerManager {
         info: () => engine.info(),
       } as EngineClient,
       map: this.view.handle(id, track),
+      pointer: this.view.pointer(track),
       publish: (values) => {
         const patch: Record<string, unknown> = {};
         for (const [key, value] of Object.entries(values)) {

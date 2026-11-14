@@ -1,4 +1,4 @@
-import type { Point } from '@mrstudio/sdk';
+import type { XY } from '@mrstudio/sdk';
 
 /** One direction of travel along a street segment. */
 export interface Edge {
@@ -14,7 +14,7 @@ export interface Edge {
  * with a vertex at each crossing (as OpenStreetMap exports have) gives cars junctions to turn at.
  */
 export class Network {
-  readonly nodes: Point[] = [];
+  readonly nodes: XY[] = [];
   readonly edges: Edge[] = [];
   /** Edge indices leaving each node. */
   readonly out: number[][] = [];
@@ -22,7 +22,7 @@ export class Network {
   length = 0;
   private index = new Map<string, number>();
 
-  constructor(lines: Point[][]) {
+  constructor(lines: XY[][]) {
     for (const line of lines) {
       for (let i = 1; i < line.length; i++) {
         const a = this.node(line[i - 1]!);
@@ -48,7 +48,7 @@ export class Network {
     return random() < 0.65 ? straight : options[Math.floor(random() * options.length)]!;
   }
 
-  private node(point: Point): number {
+  private node(point: XY): number {
     // Vertices within half a metre are the same junction.
     const key = `${Math.round(point[0] * 2)},${Math.round(point[1] * 2)}`;
     let id = this.index.get(key);

@@ -53,6 +53,8 @@ pub struct SiteInfo {
     /// Datasets layers may read, by name, as site-relative paths served under `/site/`.
     /// Holds the scene's `buildings` and `trees` and everything in the manifest's `data`.
     pub data: BTreeMap<String, String>,
+    /// The site's TV dashboard settings (theme, pages), as written. Validated on the TV by `@mrstudio/dashboard`.
+    pub tv: Option<serde_json::Value>,
 }
 
 impl Site {
@@ -183,6 +185,7 @@ impl Site {
             basemap: m.basemap.clone(),
             branding: m.branding.clone(),
             data: self.data(),
+            tv: m.tv.clone(),
         }
     }
 

@@ -123,10 +123,4 @@ export default defineLayer<Params>({
       },
     };
   },
-
-  panel(ctx, el) {
-    const update = () => (el.textContent = ctx.shared.cars === undefined ? '' : `${ctx.shared.cars} cars on the streets`);
-    update();
-    return { update };
-  },
 });

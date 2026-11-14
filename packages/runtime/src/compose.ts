@@ -159,7 +159,7 @@ export class Composer {
     let widgets: Widget[] = [];
     if (open) {
       const settings = el('div', 'stack-settings controls');
-      const send = paramSender(this.connection, id, 'scene.set');
+      const send = paramSender(this.connection, id, { method: 'scene.set' });
       widgets = (manifest.controls ?? []).map((control) =>
         widget(
           control,

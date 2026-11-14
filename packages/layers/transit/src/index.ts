@@ -1,5 +1,5 @@
 import { along, defineLayer, geojsonLines, geojsonPoints, loadSiteData, nearestAlong, streetLines, tableSpace, traceLine, track, withAlpha } from '@mrstudio/sdk';
-import type { LayerManifest, Point, Track } from '@mrstudio/sdk';
+import type { LayerManifest, XY, Track } from '@mrstudio/sdk';
 
 import manifest from '../layer.json';
 
@@ -36,7 +36,7 @@ interface Vehicle {
   line: string;
   colour: string;
   textColour: string;
-  trail: Point[];
+  trail: XY[];
 }
 
 interface Simulated extends Vehicle {
@@ -103,7 +103,7 @@ export default defineLayer<Params>({
         const m: Mode = i === 0 ? 'tram' : 'bus';
         return { line: String(i + 1), mode: m, colour: MODES[m].colour, textColour: inkFor(MODES[m].colour), track: t, stops: [] };
       });
-      stopPoints = routes.flatMap((route) => Array.from({ length: Math.floor(route.track.length / 180) }, (_, i) => along(route.track, 90 + i * 180)).map((p): Point => [p.x, p.y]));
+      stopPoints = routes.flatMap((route) => Array.from({ length: Math.floor(route.track.length / 180) }, (_, i) => along(route.track, 90 + i * 180)).map((p): XY => [p.x, p.y]));
     }
     for (const route of routes) {
       route.stops = stopPoints
@@ -321,26 +321,5 @@ export default defineLayer<Params>({
         }
       },
     };
-  },
-
-  panel(ctx, el) {
-    function update() {
-      const { vehicles, status, lines } = ctx.shared as { vehicles?: number; status?: string; lines?: { line: string; mode: string; colour: string }[] };
-      el.replaceChildren();
-      const row = document.createElement('div');
-      row.style.cssText = 'display:flex;flex-wrap:wrap;gap:6px;align-items:center';
-      for (const line of lines ?? []) {
-        const chip = document.createElement('span');
-        chip.textContent = `${line.line} ${line.mode}`.trim();
-        chip.style.cssText = `padding:2px 8px;border-radius:999px;font-size:0.8rem;border:1px solid ${line.colour};`;
-        row.append(chip);
-      }
-      const note = document.createElement('p');
-      note.style.cssText = 'margin:8px 0 0;font-size:0.85rem;opacity:0.75';
-      note.textContent = status || (vehicles === undefined ? '' : `${vehicles} vehicles running`);
-      el.append(row, note);
-    }
-    update();
-    return { update };
   },
 });

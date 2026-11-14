@@ -59,6 +59,7 @@ Rules:
 - `layers[].id` names an entry: lowercase letters, digits and dashes. It defaults to the layer's id, so it is only needed when the same layer is listed more than once. All of an entry's state in the session is keyed by it.
 - `data` maps a dataset name to a file in the site. Layers ask for datasets by name (`requires.data` in `layer.json`), never by path. The scene's `buildings` and `trees` are always available under those names. Names the core layers read: `roads` (LineStrings; optional `width` in metres and `kind`), `transit` (see `packages/layers/transit/README.md`), `slideshow` (see `packages/layers/slideshow/README.md`).
 - `terrain` is raw little-endian f32 elevations covering the extent, row-major with row 0 at the top, at any resolution.
+- `tv` holds the TV's settings: where the control rail sits, the site's theme, and optional hand-made dashboard pages. Its shape and rules are in [dashboard.md](dashboard.md). The host passes it to surfaces as written.
 - Unknown keys are an error, so a typo is caught by `mrstudio validate` rather than silently ignored.
 - Vector data is GeoJSON in WGS84 (CRS84). Site prep reprojects from national grids.
 - Nothing in `site.json` is a secret. Credentials for services live in the app's own config.
@@ -81,7 +82,7 @@ What the composer needs, and where it stands:
 | Palette grouping | Done: `category` in `layer.json` (`base`, `ambient`, `analysis`, `media`) |
 | Add, remove and reorder while running | Done: `scene.add`, `scene.remove`, `scene.move` and `scene.set` requests (session.md); the host rewrites `site.json` |
 | Draw order follows the list | Done: everything a layer draws sits at its place in the list |
-| TV dashboards built from widgets | Planned: `tv.widgets`, an ordered list of panel packages using the same manifest and controls |
+| TV dashboards built from widgets | Done: `tv` (theme, pages) and layer `panels`; see [dashboard.md](dashboard.md) |
 
 Ambient layers (`cars`, `building-lights`, `transit`, `trees`) animate on the table surface from site data or generated paths. They need no kernel; the layer rule "no solver code" still holds.
 `basemap` is the dark base map and `slideshow` shows a site's media. `sites/sample` has the data for all of them and is the dummy scene to start from.

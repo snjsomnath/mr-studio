@@ -1,9 +1,10 @@
-import type { CanvasOverlay, Colormap, FieldOverlay, FieldOverlayStyle, MapHandle, SiteInfo } from '@mrstudio/sdk';
+import type { CanvasOverlay, Colormap, FieldOverlay, FieldOverlayStyle, MapHandle, Shape, ShapeOverlay, SiteInfo, TablePointer } from '@mrstudio/sdk';
 import maplibregl from 'maplibre-gl';
 import type { StyleSpecification } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 
 import { MapFieldOverlay } from './field-overlay.ts';
+import { tablePointer } from './table-pointer.ts';
 
 const EARTH_CIRCUMFERENCE_M = 40_075_016.686;
 /** Width in pixels of a layer's canvas unless it asks for another. */
@@ -54,7 +55,7 @@ export class TableView {
   handle(instance: string, track: (cleanup: () => void) => void): MapHandle {
     const map = this.map;
     const drawn = this.drawnBy(instance);
-    const add = (id: string, layer: Parameters<typeof map.addLayer>[0]) => {
+    const add = (id: string, layer: maplibregl.AddLayerObject) => {
       this.ensureSlot(instance);
       map.addLayer(layer, slot(instance));
       this.owned.get(instance)!.push(id);
@@ -137,7 +138,73 @@ export class TableView {
         });
         return element;
       },
+      addShapes: (name: string, style?: { opacity?: number }): ShapeOverlay => {
+        const overlay = this.shapes(`shapes:${instance}:${name}`, style?.opacity ?? 1, add, forget);
+        track(() => overlay.remove());
+        return overlay;
+      },
     };
+  }
+
+  /** Points, lines and areas as one GeoJSON source, drawn in the layer's slot. */
+  private shapes(
+    source: string,
+    opacity: number,
+    add: (id: string, layer: maplibregl.AddLayerObject) => void,
+    forget: (id: string) => void,
+  ): ShapeOverlay {
+    const map = this.map;
+    const colour = ['coalesce', ['get', 'colour'], '#ffffff'] as unknown as string;
+    map.addSource(source, { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+    const is = (type: string) => ['==', ['geometry-type'], type] as maplibregl.FilterSpecification;
+    add(`${source}:fill`, { id: `${source}:fill`, type: 'fill', source, filter: is('Polygon'), paint: { 'fill-color': colour } });
+    add(`${source}:line`, {
+      id: `${source}:line`,
+      type: 'line',
+      source,
+      filter: ['!=', ['geometry-type'], 'Point'],
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: { 'line-color': colour, 'line-width': 4 },
+    });
+    add(`${source}:point`, {
+      id: `${source}:point`,
+      type: 'circle',
+      source,
+      filter: is('Point'),
+      paint: { 'circle-color': colour, 'circle-radius': 9, 'circle-stroke-color': '#000000', 'circle-stroke-width': 2 },
+    });
+    const setOpacity = (value: number) => {
+      map.setPaintProperty(`${source}:fill`, 'fill-opacity', 0.25 * value);
+      map.setPaintProperty(`${source}:line`, 'line-opacity', value);
+      map.setPaintProperty(`${source}:point`, 'circle-opacity', value);
+      map.setPaintProperty(`${source}:point`, 'circle-stroke-opacity', value);
+    };
+    setOpacity(opacity);
+    let removed = false;
+    return {
+      set: (shapes: Shape[]) => {
+        if (removed) return;
+        (map.getSource(source) as maplibregl.GeoJSONSource).setData({
+          type: 'FeatureCollection',
+          features: shapes.map((shape) => ({ type: 'Feature', geometry: shape.geometry, properties: shape.colour ? { colour: shape.colour } : {} })),
+        });
+      },
+      setOpacity: (value: number) => !removed && setOpacity(value),
+      remove: () => {
+        if (removed) return;
+        removed = true;
+        for (const kind of ['fill', 'line', 'point']) {
+          map.removeLayer(`${source}:${kind}`);
+          forget(`${source}:${kind}`);
+        }
+        map.removeSource(source);
+      },
+    };
+  }
+
+  /** Pointer input on the table surface for one layer. */
+  pointer(track: (cleanup: () => void) => void): TablePointer {
+    return tablePointer(this.container, this.site, track);
   }
 
   /** Applies a layer's intensity (0 to 2) to everything it has drawn and will draw. */

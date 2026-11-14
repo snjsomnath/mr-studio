@@ -27,6 +27,7 @@ export class Store {
       this.surface = message.surface ?? this.surface;
       this.state = { ...message.state, scene: this.state.scene, layers: this.state.layers };
       this.setScene(message.state.scene, message.state.layers);
+      for (const listener of this.participantListeners) listener(this.state.participants);
     };
     connection.on('welcome', (message: Welcome) => message !== welcome && replace(message));
     connection.on('resync', replace);
@@ -36,6 +37,11 @@ export class Store {
     const state = this.state.layers[id];
     if (!state) throw new Error(`unknown layer '${id}'`);
     return state;
+  }
+
+  /** This surface's own seat, when it is a phone. */
+  me(): Participant | undefined {
+    return this.state.participants.find((p) => p.surface === this.surface);
   }
 
   onLayer(listener: LayerListener): () => void {
