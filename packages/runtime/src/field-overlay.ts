@@ -60,7 +60,15 @@ void main() {
   color = vec4(mix(texture(u_shown, v_uv).r, texture(u_target, v_uv).r, u_k), 0.0, 0.0, 1.0);
 }`;
 
-function link(gl: WebGL2RenderingContext, vertex: string, fragment: string): WebGLProgram {
+function compile(gl: WebGL2RenderingContext, type: number, source: string): WebGLShader {
+  const shader = gl.createShader(type)!;
+  gl.shaderSource(shader, source);
+  gl.compileShader(shader);
+  if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(shader) ?? 'shader failed to compile');
+  return shader;
+}
+
+export function link(gl: WebGL2RenderingContext, vertex: string, fragment: string): WebGLProgram {
   const program = gl.createProgram()!;
   gl.attachShader(program, compile(gl, gl.VERTEX_SHADER, vertex));
   gl.attachShader(program, compile(gl, gl.FRAGMENT_SHADER, fragment));
@@ -69,12 +77,22 @@ function link(gl: WebGL2RenderingContext, vertex: string, fragment: string): Web
   return program;
 }
 
-function compile(gl: WebGL2RenderingContext, type: number, source: string): WebGLShader {
-  const shader = gl.createShader(type)!;
-  gl.shaderSource(shader, source);
-  gl.compileShader(shader);
-  if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(shader) ?? 'shader failed to compile');
-  return shader;
+/**
+ * The site's extent in Mercator units: its centre, and its corners relative to the
+ * centre (top left, top right, bottom right, bottom left) so they keep float precision.
+ */
+export function mercatorExtent(site: SiteInfo): { centre: [number, number]; corners: [number, number][] } {
+  const mercator = site.corners.map(([lon, lat]) => maplibregl.MercatorCoordinate.fromLngLat({ lng: lon, lat }));
+  const centre: [number, number] = [mercator.reduce((s, m) => s + m.x, 0) / 4, mercator.reduce((s, m) => s + m.y, 0) / 4];
+  return { centre, corners: mercator.map((m) => [m.x - centre[0], m.y - centre[1]]) };
+}
+
+/** The map's projection matrix with the origin moved to `centre`, in double precision before it becomes float32. */
+export function matrixAt(options: CustomRenderMethodInput, [cx, cy]: [number, number]): Float32Array {
+  const m = options.defaultProjectionData?.mainMatrix ?? options.modelViewProjectionMatrix;
+  const matrix = new Float32Array(m as ArrayLike<number>);
+  for (let row = 0; row < 4; row++) matrix[12 + row] = m[row]! * cx + m[4 + row]! * cy + m[12 + row]!;
+  return matrix;
 }
 
 /**
@@ -127,9 +145,9 @@ export class MapFieldOverlay implements FieldOverlay, CustomLayerInterface {
     this.smooth = style.smooth ?? true;
     this.soften = style.soften ?? 0;
     this.glide = style.glide ?? 0;
-    const mercator = site.corners.map(([lon, lat]) => maplibregl.MercatorCoordinate.fromLngLat({ lng: lon, lat }));
-    this.centre = [mercator.reduce((s, m) => s + m.x, 0) / 4, mercator.reduce((s, m) => s + m.y, 0) / 4];
-    this.corners = mercator.map((m) => [m.x - this.centre[0], m.y - this.centre[1]]);
+    const extent = mercatorExtent(site);
+    this.centre = extent.centre;
+    this.corners = extent.corners;
   }
 
   set(frame: FieldFrame): void {
@@ -288,11 +306,7 @@ export class MapFieldOverlay implements FieldOverlay, CustomLayerInterface {
       this.lutDirty = false;
     }
 
-    // Move the origin to the extent's centre in double precision before the matrix becomes float32.
-    const m = options.defaultProjectionData?.mainMatrix ?? options.modelViewProjectionMatrix;
-    const [cx, cy] = this.centre;
-    const matrix = new Float32Array(m as ArrayLike<number>);
-    for (let row = 0; row < 4; row++) matrix[12 + row] = m[row]! * cx + m[4 + row]! * cy + m[12 + row]!;
+    const matrix = matrixAt(options, this.centre);
 
     gl.useProgram(this.program);
     gl.uniformMatrix4fv(this.uniforms.u_matrix!, false, matrix);

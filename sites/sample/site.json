@@ -22,7 +22,8 @@
     { "use": "sunlight", "active": true, "params": { "date": "2026-06-21", "hour": 15, "relight": true } },
     { "use": "sketch", "active": true },
     { "use": "coolpaths" },
-    { "use": "mobility" }
+    { "use": "mobility" },
+    { "use": "wind" }
   ],
   "branding": { "title": "MR Studio" }
 }

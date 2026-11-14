@@ -110,7 +110,7 @@ export default defineLayer({
 The module is loaded on every surface. `table` runs only on the table surface and `panel` only on the TV, once for each `custom` panel in the manifest. Phones need no code.
 State lives in the closure, so a layer has no module-level variables and no explicit teardown:
 overlays and streams opened through `ctx` are released when the layer is turned off.
-`packages/layers/sunlight` is the reference to copy. `coolpaths` shows a layer that combines a kernel with site data, and `mobility` one that only plays site data.
+`packages/layers/sunlight` is the reference to copy. `coolpaths` shows a layer that combines a kernel with site data, `mobility` one that only plays site data, and `packages/layers/wind` a running simulation with a flow overlay.
 
 ## Context
 
@@ -161,6 +161,7 @@ interface FieldStream {
 
 interface MapHandle {
   addField(id: string, style: FieldStyle & { colormap: Colormap }): FieldOverlay;
+  addFlow(id: string, style: FlowOverlayStyle & { colormap: Colormap }): FlowOverlay;   // a vector field as moving tracers
   addElement(): HTMLElement;        // a layer-owned element covering the table, for SVG or canvas decorations
   addCanvas(id: string, style?: { opacity?: number }): CanvasOverlay;
   addShapes(id: string, style?: { opacity?: number }): ShapeOverlay;   // points, lines and areas above the fields
@@ -198,12 +199,33 @@ interface CanvasOverlay {
   setOpacity(opacity: number): void;
   remove(): void;
 }
+
+// A vector field drawn as moving tracers: ribbons or particles.
+interface FlowOverlay {
+  set(u: FieldFrame, v: FieldFrame): void;   // components towards the right and the bottom of the table
+  setStyle(style: FlowOverlayStyle): void;
+  remove(): void;
+}
+
+interface FlowOverlayStyle {
+  colormap?: Colormap;               // colours tracers by the local magnitude
+  max?: number;                      // magnitude at the top of the colormap; default the frames' max
+  mode?: 'ribbons' | 'particles';    // long tapering trails, or short streaks
+  count?: number;                    // tracers, default 500
+  rate?: number;                     // share of the extent's longer side travelled per second, per field unit
+  opacity?: number;
+}
 ```
 
 Fields are drawn under the site's buildings; elements and canvases above them, in the order they were added.
 `addCanvas` is the drawing surface for anything placed geographically: it brings the projection, the scale and the redraw signal that a bare `addElement` leaves to the layer.
 A layer draws on a canvas from `ctx.onFrame`: every frame for moving things, or only when `revision` or its own data changed.
 `siteProjection(ctx.site)` from the SDK converts WGS84 to local metres and to grid cells, for measuring distances and for reading a field frame at a place.
+
+`addFlow` is how any layer shows movement (wind now, water later). The surface animates the tracers itself between frames,
+so the kernel only has to deliver the field a few times a second. Cells where both components are zero are obstacles: tracers never enter them.
+The tracer logic is `FlowField` and `Tracers` in `@mrstudio/sdk`, which are plain and tested, for a layer that wants to draw its own.
+`stretch(colormap, fraction)` gives a legend that ends below the field's own maximum.
 
 Rules for layers:
 

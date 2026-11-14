@@ -16,6 +16,8 @@ pub enum EngineError {
     InvalidParams(String),
     #[error("field '{0}' is not available")]
     UnknownField(String),
+    #[error("simulation became unstable: {0}")]
+    Unstable(String),
     #[error("gpu error: {0}")]
     Gpu(String),
 }

@@ -36,3 +36,20 @@ export function cssGradient(colormap: Colormap, direction = 'to right'): string 
   const parts = colormap.stops.map(([p, r, g, b]) => `rgb(${r} ${g} ${b}) ${(p * 100).toFixed(0)}%`);
   return `linear-gradient(${direction}, ${parts.join(', ')})`;
 }
+
+/**
+ * The same ramp reaching its top colour at `fraction` of the range instead of at the end.
+ * Use it to show a field quantised over 0..max on a legend that ends at `fraction * max`.
+ */
+export function stretch(colormap: Colormap, fraction: number): Colormap {
+  if (!(fraction > 0)) return colormap;
+  const table = lut(colormap);
+  const steps = 32;
+  const stops: Colormap['stops'] = [];
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps;
+    const k = Math.round(Math.min(1, t / fraction) * 255) * 4;
+    stops.push([t, table[k]!, table[k + 1]!, table[k + 2]!, table[k + 3]!]);
+  }
+  return { stops };
+}

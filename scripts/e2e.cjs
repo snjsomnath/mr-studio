@@ -301,6 +301,33 @@ async function main() {
     assert.notDeepEqual(await table.screenshot(), start, 'travellers should move with the time');
     await tv.getByLabel('Turn Mobility on or off').uncheck();
 
+
+    // Wind: the simulation streams while it settles, tracers move, and a faster wind only rescales.
+    await tv.getByLabel('Turn Sunlight on or off').uncheck();
+    await dev.waitForTimeout(500);
+    const calm = await table.screenshot();
+    await tv.getByLabel('Turn Wind on or off').check();
+    await tv.getByText(/Settling, \d+%|Steady/).waitFor({ timeout: 60_000 });
+    await dev.getByText(/Fastest spot [\d.]+ m\/s/).waitFor({ timeout: 120_000 });
+    const windy = await table.screenshot();
+    assert.notDeepEqual(windy, calm, 'wind should draw on the table');
+    await dev.waitForTimeout(300);
+    assert.notDeepEqual(await table.screenshot(), windy, 'tracers should keep moving');
+    await tv.getByLabel('Wind speed').fill('10');
+    await dev.getByText('10 m/s', { exact: true }).waitFor();
+    await tv.getByLabel('Wind from').fill('180');
+    await dev.getByText('from the south').waitFor();
+    await tv.getByRole('radio', { name: 'Speed map' }).click();
+    await dev.waitForTimeout(500);
+    const still = await table.screenshot();
+    await dev.waitForTimeout(100);
+    if (shots) await dev.screenshot({ path: path.join(shots, 'dev-wind.png') });
+    await tv.getByRole('radio', { name: 'Ribbons' }).click();
+    await dev.waitForTimeout(1500);
+    assert.notDeepEqual(await table.screenshot(), still, 'ribbons should come back');
+    if (shots) await dev.screenshot({ path: path.join(shots, 'dev-wind-ribbons.png') });
+    await tv.getByLabel('Turn Wind on or off').uncheck();
+
     const real = errors.filter((e) => !/WebSocket/.test(e));
     assert.deepEqual(real, [], 'no page errors');
     console.log('e2e passed');

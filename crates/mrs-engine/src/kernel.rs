@@ -12,7 +12,7 @@ pub enum KernelKind {
     OneShot,
     /// Output is valid after every step and refines until done.
     Progressive,
-    /// A simulation that keeps running; progress reports convergence.
+    /// A simulation that runs until it settles; done once the result stops changing.
     Iterative,
 }
 

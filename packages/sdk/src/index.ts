@@ -4,6 +4,7 @@ export * from './connection.ts';
 export * from './engine.ts';
 export * from './frame.ts';
 export * from './colormap.ts';
+export * from './flow.ts';
 export * from './time.ts';
 export * from './controls.ts';
 export * from './geo.ts';
