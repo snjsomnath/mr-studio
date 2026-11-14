@@ -11,6 +11,7 @@ mod colour;
 mod config;
 mod sites;
 
+use std::collections::BTreeMap;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -21,8 +22,9 @@ use anyhow::Context;
 use colour::{Colour, ColourConfig};
 use config::{Display, Displays, Settings, WindowSpec, WINDOW_ROLES};
 use mrs_engine::Backend;
-use mrs_host::{HostConfig, RunningHost};
+use mrs_host::{HostConfig, Role, RunningHost};
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use sites::SiteEntry;
 use tauri::{AppHandle, Manager, PhysicalPosition, State, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 use tauri_plugin_dialog::DialogExt;
@@ -61,6 +63,7 @@ struct Shell {
 #[derive(Debug, Clone, Serialize)]
 struct Running {
     site: PathBuf,
+    site_id: String,
     name: String,
     port: u16,
     code: String,
@@ -104,7 +107,8 @@ fn main() -> anyhow::Result<()> {
             set_colour,
             save_preset,
             delete_preset,
-            test_card
+            test_card,
+            set_layer_intensity
         ])
         .setup(|app| {
             let paths = app.path();
@@ -257,12 +261,20 @@ async fn launch(app: &AppHandle, site: PathBuf, displays: Displays, lan: bool) -
     .await?;
     let running = Running {
         site,
+        site_id: started.state.site.manifest.id.clone(),
         name: started.state.site.manifest.name.clone(),
         port: started.addr.port(),
         code: started.state.hub.session().code.clone(),
         lan,
     };
     tracing::info!("running '{}' on port {}, session code {}", running.name, running.port, running.code);
+    // Layer intensities tuned on this machine for this site.
+    let colours = ColourConfig::read(&shell.colour_path());
+    for (layer, intensity) in colours.layers.get(&running.site_id).into_iter().flatten() {
+        if let Err(e) = started.state.hub.request(Role::Tv, 0, "layer.intensity", &json!({ "layer": layer, "intensity": intensity })) {
+            tracing::warn!("saved intensity for layer '{layer}' not applied: {e}");
+        }
+    }
     *host = Some(started);
     *shell.running.lock().unwrap() = Some(running.clone());
 
@@ -529,6 +541,16 @@ fn quit(app: AppHandle) {
 struct ColourState {
     displays: Vec<DisplayColour>,
     presets: Vec<Preset>,
+    /// The running session's layers; empty when nothing runs.
+    layers: Vec<LayerIntensity>,
+}
+
+#[derive(Serialize)]
+struct LayerIntensity {
+    id: String,
+    name: String,
+    active: bool,
+    intensity: f64,
 }
 
 #[derive(Serialize)]
@@ -548,7 +570,7 @@ struct Preset {
 }
 
 #[tauri::command]
-fn colour_state(app: AppHandle, shell: State<'_, Shell>) -> Result<ColourState, String> {
+async fn colour_state(app: AppHandle, shell: State<'_, Shell>) -> Result<ColourState, String> {
     let config = ColourConfig::read(&shell.colour_path());
     let surfaces = shell.surfaces.lock().unwrap().clone();
     let connected = list_displays(&app).map_err(text)?;
@@ -560,7 +582,22 @@ fn colour_state(app: AppHandle, shell: State<'_, Shell>) -> Result<ColourState, 
     });
     let built_in = colour::built_in_presets().into_iter().map(|(name, colour)| Preset { name: name.into(), built_in: true, colour });
     let saved = config.presets.iter().map(|(name, colour)| Preset { name: name.clone(), built_in: false, colour: colour.clamped() });
-    Ok(ColourState { displays: displays.collect(), presets: built_in.chain(saved).collect() })
+    // The host is the authority on layer state, so ask it rather than the file.
+    let mut layers = Vec::new();
+    if let Some(host) = shell.host.lock().await.as_ref() {
+        let welcome = host.state.hub.welcome(0);
+        for manifest in welcome["manifests"].as_array().map(Vec::as_slice).unwrap_or(&[]) {
+            let Some(id) = manifest["id"].as_str() else { continue };
+            let state = &welcome["state"]["layers"][id];
+            layers.push(LayerIntensity {
+                id: id.to_string(),
+                name: manifest["name"].as_str().unwrap_or(id).to_string(),
+                active: state["active"].as_bool().unwrap_or(false),
+                intensity: state["intensity"].as_f64().unwrap_or(1.0),
+            });
+        }
+    }
+    Ok(ColourState { displays: displays.collect(), presets: built_in.chain(saved).collect(), layers })
 }
 
 /// Runs a script in every surface window on a display.
@@ -615,4 +652,25 @@ fn delete_preset(shell: State<'_, Shell>, name: String) -> Result<(), String> {
 #[tauri::command]
 fn test_card(app: AppHandle, display: usize, on: bool) {
     on_display(&app, display, &format!("window.__mrsTestCard && window.__mrsTestCard({on});"));
+}
+
+/// Sets how strongly a layer of the running session is drawn, and remembers it for the site.
+#[tauri::command]
+async fn set_layer_intensity(shell: State<'_, Shell>, layer: String, intensity: f64) -> Result<(), String> {
+    let site = shell.running.lock().unwrap().as_ref().map(|r| r.site_id.clone()).ok_or("Start a session first.")?;
+    let host = shell.host.lock().await;
+    let hub = &host.as_ref().ok_or("Start a session first.")?.state.hub;
+    // The shell acts with the TV's rights; the host clamps and broadcasts.
+    hub.request(Role::Tv, 0, "layer.intensity", &json!({ "layer": layer, "intensity": intensity }))?;
+    let mut config = ColourConfig::read(&shell.colour_path());
+    let saved = config.layers.entry(site.clone()).or_default();
+    if (intensity - 1.0).abs() < 1e-6 {
+        saved.remove(&layer);
+    } else {
+        saved.insert(layer, intensity.clamp(0.0, 2.0));
+    }
+    if config.layers.get(&site).is_some_and(BTreeMap::is_empty) {
+        config.layers.remove(&site);
+    }
+    config.write(&shell.colour_path()).map_err(text)
 }

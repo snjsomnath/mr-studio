@@ -65,12 +65,15 @@ The launcher's Colour tab edits it live, with a test card, and saves it in `colo
   "displays": {                      // by display name, or "#<index>" for a display without one
     "EPSON PJ": { "saturation": 1.35, "brightness": 1, "contrast": 1.12, "gamma": 1.1, "temperature": 0, "tint": 0 }
   },
-  "presets": { "Evening demo": { "saturation": 1.6, "contrast": 1.2 } }   // saved on this machine, besides the built-in ones
+  "presets": { "Evening demo": { "saturation": 1.6, "contrast": 1.2 } },  // saved on this machine, besides the built-in ones
+  "layers": { "chalmers": { "sunlight": 1.4 } }                            // layer intensity by site id and layer id
 }
 ```
 
 Ranges: `saturation` 0 to 2.5, `brightness` 0.5 to 1.5, `contrast` 0.5 to 2, `gamma` 0.5 to 2.5 (above 1 lifts midtones), `temperature` and `tint` -1 to 1 (white balance, applied as channel gains that never exceed 1). Missing values are neutral.
-The pass is one CSS filter on the page's root element, injected by the shell, in the order saturation, white balance, gamma, contrast, brightness. Surfaces and layers do not know about it and must not set a filter on the root element themselves. It is per display, not per layer; a layer's own strength stays a layer control.
+The pass is one CSS filter on the page's root element, injected by the shell, in the order saturation, white balance, gamma, contrast, brightness. Surfaces and layers do not know about it and must not set a filter on the root element themselves. It is per display, not per layer.
+
+The same tab has a slider per layer of the running session for `LayerState.intensity`. The shell sends `layer.intensity` to the host with the TV's rights, saves values other than 1 under `layers`, and sends them again when that site next starts.
 
 Surface URLs served by the host:
 

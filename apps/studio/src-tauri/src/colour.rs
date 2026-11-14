@@ -72,6 +72,9 @@ pub struct ColourConfig {
     pub displays: BTreeMap<String, Colour>,
     /// Presets saved on this machine, by name.
     pub presets: BTreeMap<String, Colour>,
+    /// How strongly each layer is drawn (0 to 2), by site id and then layer id. Only values
+    /// that differ from 1 are kept. The shell hands them to the host when a session starts.
+    pub layers: BTreeMap<String, BTreeMap<String, f64>>,
 }
 
 impl ColourConfig {

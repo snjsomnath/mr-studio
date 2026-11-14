@@ -62,6 +62,46 @@
       }),
     );
     renderPresets();
+    renderLayers();
+  }
+
+  function renderLayers() {
+    $('layers-block').hidden = colourState.layers.length === 0;
+    $('layer-sliders').replaceChildren(
+      ...colourState.layers.flatMap((layer) => {
+        const output = el('output', {}, layer.intensity.toFixed(2));
+        const range = el('input', { type: 'range', min: 0, max: 2, step: 0.01, value: layer.intensity, ariaLabel: `${layer.name} intensity` });
+        const change = (value) => {
+          layer.intensity = value;
+          output.textContent = value.toFixed(2);
+          sendLayer(layer);
+        };
+        range.addEventListener('input', () => change(Number(range.value)));
+        range.addEventListener('dblclick', () => {
+          range.value = 1;
+          change(1);
+        });
+        return [el('label', {}, layer.active ? layer.name : `${layer.name} (off)`), range, output];
+      }),
+    );
+  }
+
+  const layerQueue = new Map(); // layer id -> latest value not yet sent
+  let sendingLayers = false;
+  async function sendLayer(layer) {
+    layerQueue.set(layer.id, layer.intensity);
+    if (sendingLayers) return;
+    sendingLayers = true;
+    while (layerQueue.size) {
+      const [id, intensity] = layerQueue.entries().next().value;
+      layerQueue.delete(id);
+      try {
+        await invoke('set_layer_intensity', { layer: id, intensity });
+      } catch (e) {
+        showError(String(e));
+      }
+    }
+    sendingLayers = false;
   }
 
   function renderPresets() {
