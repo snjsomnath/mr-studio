@@ -37,6 +37,10 @@ sites/<id>/
     "transit": "data/transit.geojson"
   },
   "basemap": { "background": "#0b0e14", "style": null },
+  "data": {                                           // named datasets for layers (optional)
+    "walkways": "data/walkways.geojson",
+    "trips": "data/trips.json"
+  },
   "layers": [                                      // the scene, bottom first
     { "use": "basemap", "active": true },
     { "use": "sunlight", "active": true, "params": { "hour": 15 } },
@@ -77,6 +81,7 @@ What the composer needs, and where it stands:
 | --- | --- |
 | Ordered list of layers with params and initial on/off | In format 1 |
 | Layers self-describe their controls, tools and data needs | In `layer.json` (`controls`, `tools`, `requires`) |
+| A site says which of its files a layer should use | In format 1: `data` |
 | A blank starting point | `mrstudio new-site`, and `sites/sample` as the dummy scene |
 | The same layer twice with different settings | Done: an optional `id` per entry; state is keyed by that id instead of the layer id |
 | Palette grouping | Done: `category` in `layer.json` (`base`, `ambient`, `analysis`, `media`) |

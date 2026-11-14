@@ -44,6 +44,12 @@ The controls are the single source of truth for a layer's params:
 - The TV and phone surfaces generate their UI from them.
 - The host validates and clamps every change against them.
 
+`requires` states what the layer needs from the app and the site:
+
+- `kernels`: engine kernels it opens streams on.
+- `data`: named datasets the site must provide. A site maps each name to a file under `data` in `site.json` (see site.md), and the host refuses to start a site, or to add a layer to a scene, when one is missing; the composer's palette says so beforehand. The scene's `buildings` and `trees` count as datasets. The layer loads it with `loadSiteData(ctx.site, name)`. A layer may also use a dataset it does not require: it checks `hasSiteData(ctx.site, name)` and does without when the site has none.
+- `services`: Python services it reaches through the gateway.
+
 ## TV panels
 
 A layer lists the panels it shows on the TV while it is on. They are data: the layer needs no TV code, and it does not place them.
@@ -109,7 +115,7 @@ export default defineLayer({
 The module is loaded on every surface. `table` runs only on the table surface and `panel` only on the TV, once for each `custom` panel in the manifest. Phones need no code.
 State lives in the closure, so a layer has no module-level variables and no explicit teardown:
 overlays and streams opened through `ctx` are released when the layer is turned off.
-`packages/layers/sunlight` is the reference to copy.
+`packages/layers/sunlight` is the reference to copy. `coolpaths` shows a layer that combines a kernel with site data, `mobility` one that only plays site data, and `packages/layers/wind` a running simulation with a flow overlay.
 
 ## Context
 
@@ -160,14 +166,16 @@ interface FieldStream {
 
 interface MapHandle {
   addField(id: string, style: FieldStyle & { colormap: Colormap }): FieldOverlay;
+  addFlow(id: string, style: FlowOverlayStyle & { colormap: Colormap }): FlowOverlay;   // a vector field as moving tracers
   addElement(): HTMLElement;        // a layer-owned element covering the table, for SVG or canvas decorations
+  addCanvas(id: string, style?: { opacity?: number }): CanvasOverlay;      // a canvas above the scene, in CSS pixels, with a projection
   addShapes(id: string, style?: { opacity?: number }): ShapeOverlay;   // points, lines and areas
-  addCanvas(id: string, options?: { opacity?: number; resolution?: number }): CanvasOverlay;
+  addDrawing(id: string, options?: { opacity?: number; resolution?: number }): DrawingOverlay;
 }
 
-// A 2D canvas stretched over the table, for layers that draw shapes themselves:
+// A 2D drawing inside the scene's draw order, for layers that draw shapes themselves:
 // base maps, ambient animation, media. One unit is one metre, origin top left.
-interface CanvasOverlay {
+interface DrawingOverlay {
   readonly ctx: CanvasRenderingContext2D;   // already scaled to metres
   readonly width: number;                    // table size in metres
   readonly height: number;
@@ -197,17 +205,56 @@ interface FieldOverlay {
   setStyle(style: FieldStyle): void;
   remove(): void;
 }
+
+// A 2D canvas locked to the table, for vectors: networks, routes, moving markers.
+interface CanvasOverlay {
+  readonly context: CanvasRenderingContext2D;   // one unit is one CSS pixel
+  readonly width: number;                       // CSS pixels
+  readonly height: number;
+  readonly pixelsPerMetre: number;              // so marks can keep a physical size
+  readonly revision: number;                    // raised when the size or view changes; the canvas is then blank
+  project(lonLat: [number, number]): [number, number];   // WGS84 to canvas pixels
+  clear(): void;
+  setOpacity(opacity: number): void;
+  remove(): void;
+}
+
+// A vector field drawn as moving tracers: ribbons or particles.
+interface FlowOverlay {
+  set(u: FieldFrame, v: FieldFrame): void;   // components towards the right and the bottom of the table
+  setStyle(style: FlowOverlayStyle): void;
+  remove(): void;
+}
+
+interface FlowOverlayStyle {
+  colormap?: Colormap;               // colours tracers by the local magnitude
+  max?: number;                      // magnitude at the top of the colormap; default the frames' max
+  mode?: 'ribbons' | 'particles';    // long tapering trails, or short streaks
+  count?: number;                    // tracers, default 500
+  rate?: number;                     // share of the extent's longer side travelled per second, per field unit
+  opacity?: number;
+}
 ```
 
-Everything a layer adds through `ctx.map` is drawn at the layer's place in the scene: above the layers before it in `site.json` and below those after it.
+Fields, flows, shapes and drawings (`addDrawing`) are drawn at the layer's place in the scene: above the layers before it in `site.json` and below those after it.
 A layer can be in a scene more than once. Each copy runs `table` on its own, with its own params, so state must live in the closure.
 
-Helpers in `@mrstudio/sdk` for canvas layers: `tableSpace(site)` turns WGS84 into table metres, `loadSiteData(site, name)` and `siteDataUrl(site, name)` read a named dataset, `geojsonLines`, `geojsonPolygons` and `geojsonPoints` convert GeoJSON, `streetLines(site)` gives the `roads` dataset or a generated grid, `track`, `along` and `nearestAlong` move things along a polyline, and `seededRandom` keeps "random" scenes the same on every table.
+Helpers in `@mrstudio/sdk` for drawing layers: `tableSpace(site)` turns WGS84 into table metres, `readSiteData(site, name)` and `siteDataUrl(site, name)` read a named dataset, `geojsonLines`, `geojsonPolygons` and `geojsonPoints` convert GeoJSON, `streetLines(site)` gives the `roads` dataset or a generated grid, `track`, `along` and `nearestAlong` move things along a polyline, and `seededRandom` keeps "random" scenes the same on every table.
 `packages/layers/trees` is the smallest animated example and `packages/layers/basemap` the smallest static one.
+
+Elements (`addElement`) and canvases (`addCanvas`) sit above the whole scene, in the order they were added. They do not follow the scene's draw order yet.
+`addCanvas` is the drawing surface for anything placed geographically: it brings the projection, the scale and the redraw signal that a bare `addElement` leaves to the layer.
+A layer draws on a canvas from `ctx.onFrame`: every frame for moving things, or only when `revision` or its own data changed.
+`siteProjection(ctx.site)` from the SDK converts WGS84 to local metres and to grid cells, for measuring distances and for reading a field frame at a place.
+
+`addFlow` is how any layer shows movement (wind now, water later). The surface animates the tracers itself between frames,
+so the kernel only has to deliver the field a few times a second. Cells where both components are zero are obstacles: tracers never enter them.
+The tracer logic is `FlowField` and `Tracers` in `@mrstudio/sdk`, which are plain and tested, for a layer that wants to draw its own.
+`stretch(colormap, fraction)` gives a legend that ends below the field's own maximum.
 
 Rules for layers:
 
-1. No solver code. Heavy computation is a kernel or a service.
+1. No solver code. Heavy computation is a kernel or a service. Light work on the layer's own data, such as a route search over a site's path network, may stay in the layer as a module with its own tests.
 2. No site paths or coordinates in code. Use `ctx.site` and data declared in `requires.data`.
 3. No direct communication between surfaces. Use `setParams` and `publish`.
 4. Clean up is automatic for everything opened through `ctx`. Anything else is released with `ctx.onCleanup`.

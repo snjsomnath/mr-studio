@@ -153,7 +153,10 @@ async fn welcome_carries_site_state_and_manifests() {
     assert_eq!(sunlight["params"]["mode"], "instant");
     // The scene is site.json's list, bottom first, and the base map is on.
     let scene: Vec<&str> = state["scene"].as_array().unwrap().iter().map(|id| id.as_str().unwrap()).collect();
-    assert_eq!(scene, ["basemap", "sunlight", "building-lights", "cars", "transit", "trees", "slideshow", "sketch"]);
+    assert_eq!(
+        scene,
+        ["basemap", "sunlight", "building-lights", "cars", "transit", "trees", "slideshow", "sketch", "coolpaths", "mobility", "wind"]
+    );
     assert_eq!(state["layers"]["basemap"]["active"], true);
     assert_eq!(state["site"]["data"]["roads"], "data/roads.geojson");
     assert_eq!(state["site"]["data"]["buildings"], "data/buildings.geojson");

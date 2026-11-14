@@ -5,7 +5,6 @@
   "description": "Trams, buses, trains and ferries on their routes, simulated or from a live feed",
   "icon": "tram",
   "category": "ambient",
-  "requires": { "data": ["transit"] },
   "controls": [
     {
       "id": "source", "type": "select", "label": "Vehicles", "default": "simulated",

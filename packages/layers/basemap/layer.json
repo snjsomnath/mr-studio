@@ -5,7 +5,6 @@
   "description": "Ground, streets and building footprints as a quiet backdrop",
   "icon": "map",
   "category": "base",
-  "requires": { "data": ["buildings", "roads"] },
   "controls": [
     { "id": "ground", "type": "color", "label": "Ground", "default": "#0b0e14" },
     { "id": "streets", "type": "toggle", "label": "Streets", "default": true },

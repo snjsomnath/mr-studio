@@ -5,7 +5,6 @@
   "description": "Cars with headlights driving the street network",
   "icon": "car",
   "category": "ambient",
-  "requires": { "data": ["roads"] },
   "controls": [
     { "id": "density", "type": "range", "label": "Cars per kilometre of street", "min": 0, "max": 40, "step": 1, "default": 10, "phone": true },
     { "id": "speed", "type": "range", "label": "Speed", "min": 0, "max": 80, "step": 5, "unit": "km/h", "default": 40 },

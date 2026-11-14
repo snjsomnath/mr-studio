@@ -1,4 +1,4 @@
-import { along, defineLayer, geojsonLines, geojsonPoints, loadSiteData, nearestAlong, streetLines, tableSpace, traceLine, track, withAlpha } from '@mrstudio/sdk';
+import { along, defineLayer, geojsonLines, geojsonPoints, readSiteData, nearestAlong, streetLines, tableSpace, traceLine, track, withAlpha } from '@mrstudio/sdk';
 import type { LayerManifest, XY, Track } from '@mrstudio/sdk';
 
 import manifest from '../layer.json';
@@ -84,9 +84,9 @@ export default defineLayer<Params>({
   manifest: manifest as LayerManifest,
 
   async table(ctx) {
-    const canvas = ctx.map.addCanvas('transit', { opacity: ctx.params.opacity });
+    const canvas = ctx.map.addDrawing('transit', { opacity: ctx.params.opacity });
     const space = tableSpace(ctx.site);
-    const data = await loadSiteData(ctx.site, 'transit');
+    const data = await readSiteData(ctx.site, 'transit');
 
     let routes: Route[] = geojsonLines(data, space).map(({ geometry, properties }) => {
       const m = mode(properties.mode);

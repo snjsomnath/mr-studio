@@ -1,0 +1,21 @@
+{
+  "api": 1,
+  "id": "coolpaths",
+  "name": "Cool paths",
+  "description": "The shortest walk between two points, and the one that stays in the shade",
+  "icon": "footprints",
+  "requires": { "kernels": ["sunlight"], "data": ["walkways"] },
+  "controls": [
+    { "id": "date", "type": "date", "label": "Date", "default": "2026-07-15", "phone": true },
+    { "id": "hour", "type": "range", "label": "Time of day", "min": 0, "max": 24, "step": 0.25, "unit": "h", "default": 14, "phone": true },
+    { "id": "play", "type": "toggle", "label": "Animate the day", "default": false },
+    { "id": "detour", "type": "range", "label": "Longest detour", "min": 0, "max": 100, "step": 5, "unit": "%", "default": 50, "phone": true },
+    { "id": "example", "type": "action", "label": "Try another walk", "phone": true },
+    { "id": "network", "type": "toggle", "label": "Colour every path by sun", "default": true },
+    { "id": "shade", "type": "toggle", "label": "Show shade", "default": true }
+  ],
+  "tools": [
+    { "id": "from", "type": "point", "label": "Start of the walk" },
+    { "id": "to", "type": "point", "label": "End of the walk" }
+  ]
+}

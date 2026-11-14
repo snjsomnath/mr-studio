@@ -33,7 +33,7 @@ export default defineLayer<Params>({
   manifest: manifest as LayerManifest,
 
   async table(ctx) {
-    const canvas = ctx.map.addCanvas('cars', { opacity: ctx.params.opacity });
+    const canvas = ctx.map.addDrawing('cars', { opacity: ctx.params.opacity });
     const { lines } = await streetLines(ctx.site);
     const network = new Network(lines.map((line) => line.geometry));
     const random = seededRandom(5);

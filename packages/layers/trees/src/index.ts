@@ -1,4 +1,4 @@
-import { defineLayer, geojsonPoints, loadSiteData, seededRandom, tableSpace, withAlpha } from '@mrstudio/sdk';
+import { defineLayer, geojsonPoints, readSiteData, seededRandom, tableSpace, withAlpha } from '@mrstudio/sdk';
 import type { LayerManifest } from '@mrstudio/sdk';
 
 import manifest from '../layer.json';
@@ -38,10 +38,10 @@ export default defineLayer<Params>({
   manifest: manifest as LayerManifest,
 
   async table(ctx) {
-    const canvas = ctx.map.addCanvas('crowns', { opacity: ctx.params.opacity });
+    const canvas = ctx.map.addDrawing('crowns', { opacity: ctx.params.opacity });
     const space = tableSpace(ctx.site);
     const random = seededRandom(11);
-    const trees: Tree[] = geojsonPoints(await loadSiteData(ctx.site, 'trees'), space)
+    const trees: Tree[] = geojsonPoints(await readSiteData(ctx.site, 'trees'), space)
       .filter(({ geometry: [x, y] }) => x > -20 && y > -20 && x < space.width + 20 && y < space.height + 20)
       .map(({ geometry: [x, y], properties }) => ({
         x,

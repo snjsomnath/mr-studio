@@ -464,6 +464,9 @@ impl Hub {
                 }
                 let wanted = p["use"].as_str().ok_or("missing use")?;
                 let def = self.catalog.iter().position(|d| d.id == wanted).ok_or_else(|| format!("unknown layer '{wanted}'"))?;
+                if let Some(name) = self.catalog[def].missing_data(&self.info.data).map_err(|e| e.to_string())? {
+                    return Err(format!("this site has no '{name}' dataset, which the layer needs"));
+                }
                 let base = &self.catalog[def].id;
                 let id = match p["id"].as_str() {
                     Some(id) if !is_instance_id(id) => return Err("id must be lowercase letters, digits and dashes".into()),

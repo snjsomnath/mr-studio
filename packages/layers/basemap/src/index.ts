@@ -1,4 +1,4 @@
-import { defineLayer, geojsonLines, geojsonPolygons, loadSiteData, tableSpace, traceLine, tracePolygon, withAlpha } from '@mrstudio/sdk';
+import { defineLayer, geojsonLines, geojsonPolygons, readSiteData, tableSpace, traceLine, tracePolygon, withAlpha } from '@mrstudio/sdk';
 import type { LayerManifest } from '@mrstudio/sdk';
 
 import manifest from '../layer.json';
@@ -19,7 +19,7 @@ export default defineLayer<Params>({
   manifest: manifest as LayerManifest,
 
   async table(ctx) {
-    const canvas = ctx.map.addCanvas('base', { opacity: ctx.params.opacity });
+    const canvas = ctx.map.addDrawing('base', { opacity: ctx.params.opacity });
     const space = tableSpace(ctx.site);
 
     // The base map is static: it is drawn once, and again only when a setting changes.
@@ -52,7 +52,7 @@ export default defineLayer<Params>({
     }
 
     draw([], []);
-    const [buildings, roads] = await Promise.all([loadSiteData(ctx.site, 'buildings'), loadSiteData(ctx.site, 'roads')]);
+    const [buildings, roads] = await Promise.all([readSiteData(ctx.site, 'buildings'), readSiteData(ctx.site, 'roads')]);
     const shapes = [geojsonPolygons(buildings, space), geojsonLines(roads, space)] as const;
     draw(...shapes);
 

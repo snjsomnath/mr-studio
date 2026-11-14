@@ -40,7 +40,7 @@ export function siteDataUrl(site: SiteInfo, name: string): string | null {
 }
 
 /** Fetches a named site dataset as JSON. Null when the site does not have it or it fails to load. */
-export async function loadSiteData<T = any>(site: SiteInfo, name: string): Promise<T | null> {
+export async function readSiteData<T = any>(site: SiteInfo, name: string): Promise<T | null> {
   const url = siteDataUrl(site, name);
   if (!url) return null;
   try {
@@ -186,7 +186,7 @@ export function nearestAlong(t: Track, x: number, y: number): number {
  */
 export async function streetLines(site: SiteInfo): Promise<{ lines: Placed<XY[]>[]; generated: boolean }> {
   const space = tableSpace(site);
-  const lines = geojsonLines(await loadSiteData(site, 'roads'), space);
+  const lines = geojsonLines(await readSiteData(site, 'roads'), space);
   if (lines.length > 0) return { lines, generated: false };
   // Lines share a vertex at every crossing, which is what lets traffic turn there.
   const pitch = 90;

@@ -24,11 +24,11 @@ export interface FieldOverlay {
 }
 
 /**
- * A 2D drawing surface stretched over the table. The context is scaled so that one
+ * A 2D drawing stretched over the table, inside the scene's draw order. The context is scaled so that one
  * unit is one metre: x runs right from 0 to `width`, y runs down from 0 to `height`.
  * Use `tableSpace(ctx.site)` to turn WGS84 coordinates into these metres.
  */
-export interface CanvasOverlay {
+export interface DrawingOverlay {
   readonly ctx: CanvasRenderingContext2D;
   /** Table width and height in metres. */
   readonly width: number;
@@ -39,6 +39,50 @@ export interface CanvasOverlay {
   clear(): void;
   /** Puts what was drawn since the last commit on the table. */
   commit(): void;
+  setOpacity(opacity: number): void;
+  remove(): void;
+}
+
+export interface FlowOverlayStyle {
+  /** Colours tracers by the local magnitude of the field. */
+  colormap?: Colormap;
+  /** The magnitude at the top of the colormap. Default: the frames' `max`. */
+  max?: number;
+  /** `ribbons` are long tapering trails, `particles` short streaks. Default `ribbons`. */
+  mode?: 'ribbons' | 'particles';
+  /** Number of tracers. Default 500. */
+  count?: number;
+  /** Share of the extent's longer side a tracer travels per second, per field unit. Default 0.04. */
+  rate?: number;
+  /** 0..1, multiplied with the colormap's own alpha. */
+  opacity?: number;
+}
+
+/** A vector field drawn on the table as moving tracers. Animation and drawing run on the surface. */
+export interface FlowOverlay {
+  /** The two components of the same revision, towards the right and towards the bottom of the table. Cells where both are zero are obstacles. */
+  set(u: FieldFrame, v: FieldFrame): void;
+  setStyle(style: FlowOverlayStyle): void;
+  remove(): void;
+}
+
+/**
+ * A 2D canvas locked to the table, for vector drawing: networks, routes, moving markers.
+ * It sits above the fields and the building outlines; canvases stack in the order they are added.
+ */
+export interface CanvasOverlay {
+  /** Scaled so one unit is one CSS pixel. */
+  readonly context: CanvasRenderingContext2D;
+  /** Size in CSS pixels. */
+  readonly width: number;
+  readonly height: number;
+  /** Table pixels per site metre, so marks can keep a physical size. */
+  readonly pixelsPerMetre: number;
+  /** Raised whenever the size or the view changes. The canvas is blank afterwards: draw again. */
+  readonly revision: number;
+  /** WGS84 `[lon, lat]` to canvas pixels. */
+  project(lonLat: readonly [number, number] | readonly number[]): [number, number];
+  clear(): void;
   setOpacity(opacity: number): void;
   remove(): void;
 }
@@ -61,6 +105,7 @@ export interface ShapeOverlay {
 /** What a layer may draw on the table. Everything sits at the layer's place in the scene's draw order. */
 export interface MapHandle {
   addField(id: string, style: FieldOverlayStyle & { colormap: Colormap }): FieldOverlay;
+  addFlow(id: string, style: FlowOverlayStyle & { colormap: Colormap }): FlowOverlay;
   addShapes(id: string, style?: { opacity?: number }): ShapeOverlay;
   /**
    * An element covering the table, above everything the scene draws, for decorations a layer draws itself
@@ -68,8 +113,10 @@ export interface MapHandle {
    * The table's up direction is `site.extent.rotation_deg`.
    */
   addElement(): HTMLElement;
-  /** For layers that draw shapes or sprites themselves: base maps, ambient animation, media. */
-  addCanvas(id: string, options?: { opacity?: number; /** Canvas width in pixels. Default 2048. */ resolution?: number }): CanvasOverlay;
+  /** A drawing in table metres at the layer's place in the scene. For layers that draw shapes or sprites themselves: base maps, ambient animation, media. */
+  addDrawing(id: string, options?: { opacity?: number; /** Canvas width in pixels. Default 2048. */ resolution?: number }): DrawingOverlay;
+  /** A canvas above the scene, in CSS pixels, with a projection from WGS84. */
+  addCanvas(id: string, style?: { opacity?: number }): CanvasOverlay;
 }
 
 /**

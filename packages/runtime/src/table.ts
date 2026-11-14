@@ -1,9 +1,11 @@
-import type { CanvasOverlay, Colormap, FieldOverlay, FieldOverlayStyle, MapHandle, ModelHandle, Shape, ShapeOverlay, SiteInfo, TablePointer } from '@mrstudio/sdk';
+import type { CanvasOverlay, DrawingOverlay, Colormap, FieldOverlay, FieldOverlayStyle, FlowOverlay, FlowOverlayStyle, MapHandle, ModelHandle, Shape, ShapeOverlay, SiteInfo, TablePointer } from '@mrstudio/sdk';
 import maplibregl from 'maplibre-gl';
 import type { StyleSpecification } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 
+import { MapCanvasOverlay } from './canvas-overlay.ts';
 import { MapFieldOverlay } from './field-overlay.ts';
+import { MapFlowOverlay } from './flow-overlay.ts';
 import { ModelView } from './model/view.ts';
 import { tablePointer } from './table-pointer.ts';
 
@@ -83,8 +85,8 @@ export class TableView {
         });
         return overlay;
       },
-      addCanvas: (name: string, options = {}): CanvasOverlay => {
-        const id = `canvas:${instance}:${name}`;
+      addDrawing: (name: string, options = {}): DrawingOverlay => {
+        const id = `drawing:${instance}:${name}`;
         const { width_m, height_m } = this.site.extent;
         const element = document.createElement('canvas');
         element.width = Math.round(options.resolution ?? CANVAS_WIDTH);
@@ -142,6 +144,20 @@ export class TableView {
           element.remove();
         });
         return element;
+      },
+      addCanvas: (id: string, style?: { opacity?: number }): CanvasOverlay => {
+        const overlay = new MapCanvasOverlay(this.map, this.container, `canvas:${instance}:${id}`, this.site, style);
+        track(() => overlay.remove());
+        return overlay;
+      },
+      addFlow: (id: string, style: FlowOverlayStyle & { colormap: Colormap }): FlowOverlay => {
+        const overlay = new MapFlowOverlay(this.map, `flow:${instance}:${id}`, this.site, style);
+        add(`flow:${instance}:${id}`, overlay);
+        track(() => {
+          overlay.remove();
+          forget(`flow:${instance}:${id}`);
+        });
+        return overlay;
       },
       addShapes: (name: string, style?: { opacity?: number }): ShapeOverlay => {
         const overlay = this.shapes(`shapes:${instance}:${name}`, style?.opacity ?? 1, add, forget);

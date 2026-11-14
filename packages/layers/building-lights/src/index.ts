@@ -1,4 +1,4 @@
-import { defineLayer, geojsonPolygons, insidePolygon, loadSiteData, seededRandom, tableSpace } from '@mrstudio/sdk';
+import { defineLayer, geojsonPolygons, insidePolygon, readSiteData, seededRandom, tableSpace } from '@mrstudio/sdk';
 import type { LayerManifest } from '@mrstudio/sdk';
 
 import manifest from '../layer.json';
@@ -32,10 +32,10 @@ export default defineLayer<Params>({
   manifest: manifest as LayerManifest,
 
   async table(ctx) {
-    const canvas = ctx.map.addCanvas('windows', { opacity: ctx.params.opacity });
+    const canvas = ctx.map.addDrawing('windows', { opacity: ctx.params.opacity });
     const space = tableSpace(ctx.site);
     const random = seededRandom(23);
-    const buildings = geojsonPolygons(await loadSiteData(ctx.site, 'buildings'), space);
+    const buildings = geojsonPolygons(await readSiteData(ctx.site, 'buildings'), space);
 
     // Windows sit on a grid inside each footprint. A coarser grid is used when a site is very built up.
     const lights: Light[] = [];

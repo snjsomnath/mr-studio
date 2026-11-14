@@ -38,7 +38,10 @@
   "data": {
     "roads": "data/roads.geojson",
     "transit": "data/transit.geojson",
-    "slideshow": "data/slideshow/slideshow.json"
+    "slideshow": "data/slideshow/slideshow.json",
+    "walkways": "data/walkways.geojson",
+    "trips": "data/trips.json",
+    "trip_cells": "data/trip-cells.geojson"
   },
   "basemap": {
     "background": "#0b0e14",
@@ -81,6 +84,18 @@
     {
       "use": "sketch",
       "active": true
+    },
+    {
+      "use": "coolpaths",
+      "active": false
+    },
+    {
+      "use": "mobility",
+      "active": false
+    },
+    {
+      "use": "wind",
+      "active": false
     }
   ],
   "branding": {

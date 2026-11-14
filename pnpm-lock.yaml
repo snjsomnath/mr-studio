@@ -74,6 +74,32 @@ importers:
         specifier: ^5.9.0
         version: 5.9.3
 
+  packages/layers/coolpaths:
+    dependencies:
+      '@mrstudio/sdk':
+        specifier: workspace:*
+        version: link:../../sdk
+    devDependencies:
+      '@types/node':
+        specifier: ^22.0.0
+        version: 22.20.5
+      typescript:
+        specifier: ^5.9.0
+        version: 5.9.3
+
+  packages/layers/mobility:
+    dependencies:
+      '@mrstudio/sdk':
+        specifier: workspace:*
+        version: link:../../sdk
+    devDependencies:
+      '@types/node':
+        specifier: ^22.0.0
+        version: 22.20.5
+      typescript:
+        specifier: ^5.9.0
+        version: 5.9.3
+
   packages/layers/sketch:
     dependencies:
       '@mrstudio/sdk':
@@ -115,6 +141,16 @@ importers:
         version: 5.9.3
 
   packages/layers/trees:
+    dependencies:
+      '@mrstudio/sdk':
+        specifier: workspace:*
+        version: link:../../sdk
+    devDependencies:
+      typescript:
+        specifier: ^5.9.0
+        version: 5.9.3
+
+  packages/layers/wind:
     dependencies:
       '@mrstudio/sdk':
         specifier: workspace:*

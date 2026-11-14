@@ -130,6 +130,17 @@ impl LayerDef {
         self.controls.iter().find(|c| c.id == id)
     }
 
+    /// The first dataset in `requires.data` that `data` does not have.
+    pub fn missing_data(&self, data: &std::collections::BTreeMap<String, String>) -> anyhow::Result<Option<String>> {
+        for name in self.manifest["requires"]["data"].as_array().map(Vec::as_slice).unwrap_or(&[]) {
+            let name = name.as_str().ok_or_else(|| anyhow!("layer '{}': requires.data must be dataset names", self.id))?;
+            if !data.contains_key(name) {
+                return Ok(Some(name.to_string()));
+            }
+        }
+        Ok(None)
+    }
+
     pub fn defaults(&self) -> Map<String, Value> {
         self.controls.iter().filter(|c| !matches!(c.kind, ControlKind::Action)).map(|c| (c.id.clone(), c.default.clone())).collect()
     }
@@ -242,6 +253,14 @@ pub fn load_catalog(site: &Site, core_layers: &Path) -> anyhow::Result<Vec<Layer
             bail!("site.json uses layer '{}', which is not in {}", layer.r#use, core_layers.display());
         }
     }
+    // A layer the site uses must find the datasets it requires. Layers only in the palette need not.
+    let data = site.data();
+    for layer in &site.manifest.layers {
+        let Some(def) = defs.iter().find(|d| d.source == layer.r#use) else { continue };
+        if let Some(name) = def.missing_data(&data)? {
+            bail!("layer '{}' needs the dataset '{name}'; add it under \"data\" in site.json", def.id);
+        }
+    }
     Ok(defs)
 }
 
@@ -287,6 +306,17 @@ mod tests {
         let d = def();
         assert!(d.validate(&patch(json!({ "hour": 9 })), true).is_ok());
         assert!(d.validate(&patch(json!({ "mode": "b" })), true).is_err());
+    }
+
+    #[test]
+    fn a_layer_needs_its_datasets() {
+        let repo = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let mut site = Site::load(repo.join("sites/sample")).unwrap();
+        assert!(site.manifest.layers.iter().any(|l| l.r#use == "coolpaths"));
+        assert!(load_catalog(&site, &repo.join("packages/layers")).is_ok());
+        site.manifest.data.remove("walkways");
+        let error = load_catalog(&site, &repo.join("packages/layers")).unwrap_err().to_string();
+        assert!(error.contains("coolpaths") && error.contains("walkways"), "{error}");
     }
 
     #[test]

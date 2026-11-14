@@ -126,6 +126,9 @@ impl Site {
             }
         }
         for (name, path) in &m.data {
+            if name.is_empty() || !name.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '-') {
+                out.push(format!("data: name '{name}' must be lowercase letters, digits, dashes and underscores"));
+            }
             check(&mut out, &format!("data.{name}"), path);
         }
         let mut seen = BTreeSet::new();
@@ -265,5 +268,27 @@ mod tests {
         assert_eq!(data["roads"], "data/roads.geojson");
         site.manifest.data.insert("roads".into(), "../elsewhere.geojson".into());
         assert!(site.problems().iter().any(|p| p.starts_with("data.roads")));
+    }
+
+    fn site(data: &str) -> Site {
+        let text = format!(
+            r#"{{ "format": 1, "id": "t", "name": "T", "origin": {{ "lon": 12, "lat": 57 }},
+                 "extent": {{ "width_m": 100, "height_m": 100 }}, "scene": {{ "cell_m": 1 }}, "data": {data} }}"#
+        );
+        // The crate's own folder stands in for a site folder: Cargo.toml exists in it.
+        Site { dir: PathBuf::from(env!("CARGO_MANIFEST_DIR")), manifest: serde_json::from_str(&text).unwrap() }
+    }
+
+    #[test]
+    fn datasets_are_named_files_inside_the_site() {
+        let good = site(r#"{ "walkways": "Cargo.toml" }"#);
+        assert_eq!(good.problems(), Vec::<String>::new());
+        assert_eq!(good.info().data["walkways"], "Cargo.toml");
+
+        let problems = site(r#"{ "walkways": "missing.geojson", "trips": "../outside.json", "Bad Name": "Cargo.toml" }"#).problems();
+        assert_eq!(problems.len(), 3, "{problems:?}");
+        assert!(problems.iter().any(|p| p.contains("data.walkways") && p.contains("does not exist")));
+        assert!(problems.iter().any(|p| p.contains("data.trips") && p.contains("inside the site folder")));
+        assert!(problems.iter().any(|p| p.contains("'Bad Name'")));
     }
 }

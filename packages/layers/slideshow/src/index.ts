@@ -1,5 +1,5 @@
-import { defineLayer, geojsonLines, geojsonPoints, geojsonPolygons, loadSiteData, siteDataUrl, tableSpace, traceLine, tracePolygon, withAlpha } from '@mrstudio/sdk';
-import type { CanvasOverlay, LayerManifest, Placed, TableSpace, XY } from '@mrstudio/sdk';
+import { defineLayer, geojsonLines, geojsonPoints, geojsonPolygons, readSiteData, siteDataUrl, tableSpace, traceLine, tracePolygon, withAlpha } from '@mrstudio/sdk';
+import type { DrawingOverlay, LayerManifest, Placed, TableSpace, XY } from '@mrstudio/sdk';
 
 import manifest from '../layer.json';
 
@@ -58,7 +58,7 @@ function load(slide: Slide, url: string, space: TableSpace): Promise<Loaded> {
   });
 }
 
-function paint(canvas: CanvasOverlay, slide: Slide, loaded: Loaded, alpha: number): void {
+function paint(canvas: DrawingOverlay, slide: Slide, loaded: Loaded, alpha: number): void {
   const g = canvas.ctx;
   g.save();
   g.globalAlpha = alpha;
@@ -118,10 +118,10 @@ export default defineLayer<Params>({
   manifest: manifest as LayerManifest,
 
   async table(ctx) {
-    const canvas = ctx.map.addCanvas('slides', { opacity: ctx.params.opacity });
+    const canvas = ctx.map.addDrawing('slides', { opacity: ctx.params.opacity });
     const space = tableSpace(ctx.site);
     const configUrl = siteDataUrl(ctx.site, 'slideshow');
-    const config = await loadSiteData<{ slides?: Slide[] }>(ctx.site, 'slideshow');
+    const config = await readSiteData<{ slides?: Slide[] }>(ctx.site, 'slideshow');
     const all = (config?.slides ?? []).filter((slide) => slide.enabled !== false);
     const slides = all.filter((slide) => SUPPORTED.includes(slide.type) && slide.media);
     const cache = new Map<number, Promise<Loaded>>();
