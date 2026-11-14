@@ -104,12 +104,21 @@ interface FieldStream {
 }
 
 interface MapHandle {
-  addField(id: string, style: { colormap: Colormap; opacity?: number; smooth?: boolean }): FieldOverlay;
+  addField(id: string, style: FieldStyle & { colormap: Colormap }): FieldOverlay;
+  addElement(): HTMLElement;        // a layer-owned element covering the table, for SVG or canvas decorations
+}
+
+interface FieldStyle {
+  colormap?: Colormap;
+  opacity?: number;
+  smooth?: boolean;                 // interpolate between cells, default true
+  soften?: number;                  // blur radius in cells, for soft edges
+  glide?: number;                   // seconds a new frame takes to ease in, so stepped results move smoothly
 }
 
 interface FieldOverlay {
   set(frame: FieldFrame): void;     // uploads the frame as a texture, coloured on the GPU
-  setStyle(style: { colormap?: Colormap; opacity?: number; smooth?: boolean }): void;
+  setStyle(style: FieldStyle): void;
   remove(): void;
 }
 ```

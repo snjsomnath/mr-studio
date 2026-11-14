@@ -129,6 +129,8 @@ None of this is built yet. Releases, the updater, npm publishing and the templat
 
 ## Work packages
 
+The layers planned beyond the first set, and the kernels and blocks each one reuses, are in [ROADMAP.md](ROADMAP.md).
+
 These are independent once the contracts are fixed.
 
 | Package | Scope | Contract |

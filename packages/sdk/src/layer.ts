@@ -8,6 +8,10 @@ export interface FieldOverlayStyle {
   opacity?: number;
   /** Interpolate between cells. Default true. */
   smooth?: boolean;
+  /** Blur radius in cells, for soft edges such as shadow penumbras. Default 0. */
+  soften?: number;
+  /** Seconds over which a new frame eases in, so stepped results move smoothly. Quantised frames only. Default 0. */
+  glide?: number;
 }
 
 /** A field drawn on the table. The frame is uploaded as a texture and coloured on the GPU. */
@@ -20,6 +24,12 @@ export interface FieldOverlay {
 /** What a layer may draw on the table. */
 export interface MapHandle {
   addField(id: string, style: FieldOverlayStyle & { colormap: Colormap }): FieldOverlay;
+  /**
+   * An element covering the table, above the fields, for decorations a layer draws itself
+   * (a sun path, a compass). It ignores pointer input and is removed with the layer.
+   * The table's up direction is `site.extent.rotation_deg`.
+   */
+  addElement(): HTMLElement;
 }
 
 interface ContextBase<P> {
