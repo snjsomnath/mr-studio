@@ -144,4 +144,5 @@ These are independent once the contracts are fixed.
 | Site tooling | `mrstudio new-site` and `prepare`, Python prep, Chalmers port | site.md |
 | Scene composer and ambient layers | Instance ids, live add and reorder, dark base map, cars, lights, transit, trees, composer page | site.md, layer.md |
 | Layer building blocks | Shared visual, data and interaction primitives in the SDK that layers are composed from | layer.md |
+| Model surface and calibration | Digital twin of the physical model, projector cameras, three.js rendering, `ctx.model` | model.md |
 | Release and distribution | Signed installers, updater and channels, npm publishing of the SDK, site template, `mrstudio migrate` | this document |

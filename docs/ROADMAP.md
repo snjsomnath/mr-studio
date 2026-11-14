@@ -84,6 +84,27 @@ Status: only sunlight is built. Wind is next, and the kernels after it start onc
 | Carbon and materials | none | choropleth, chart |
 | What-if sandbox | every kernel, by editing the scene | phone tools (add or remove buildings and trees), scenario switch |
 
+## Mixed reality
+
+These are not layers but things the projector can do because it lights a physical 3D model whose shape the app knows. They all rest on one core feature, the model surface (contracts/model.md): a digital twin of the model rendered from the projector's calibrated position.
+
+| Capability | What it gives every layer | Needs |
+| --- | --- | --- |
+| Relight the model | Correct light on roofs, walls and ground; night scenes with lit windows and lamps | model surface |
+| Paint the walls | Fields and materials on facades, not only the ground | model surface, kernels on vertical surfaces |
+| Make the model move | Water pooling and flowing, wind particles bending round blocks, snow, fog, rising sea | model surface, `stormwater`, `wind` |
+| X-ray and time machine | See under and inside blocks; dissolve today into 1900 or a proposal | model surface, dated datasets |
+| Phantom buildings | A proposal's footprint with its shadow, wind and view effects before the piece exists | model surface, scene edits |
+| Tangible input | A pointer or marker becomes a person with a view cone, street view and sound | table pointer block, `isovist` |
+| Spotlight storytelling | Dim the model and light only what is being talked about | model surface, guided tours |
+| Phones as lenses | A phone pointed at the table shows an aligned extra layer; pins appear as light | model surface maths on the phone |
+
+Order: the model surface and calibration first, then relighting (it improves every layer), then walls and motion, then the rest.
+
+## Sun study extras
+
+Planned additions to the sunlight layer: a point probe with a day timeline, seasons side by side, "where is it sunny at 5 pm", design thresholds as a pass and fail map, what-if edits from a phone, shadow trails over the day, a golden hour mode, and sun on facades.
+
 ## What this adds up to
 
 About forty layers need eight new kernels (`wind`, `stormwater`, `thermal`, `plume`, `drift`, `isovist`, `noise`, `isochrone`) and around a dozen blocks. Several kernels feed others: `plume` and `drift` read the wind field, `thermal` reads sun and wind, and CoolPaths reads thermal. That is why the engine keeps one scene and lets a kernel take another kernel's field as input, which is the one engine feature this roadmap still needs.
