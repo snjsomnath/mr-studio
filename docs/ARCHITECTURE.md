@@ -132,7 +132,7 @@ A venue can pin a version, so a table does not change the day before an exhibiti
 A custom layer that proves useful to more than one team moves into the core through a pull request, and from then on reaches everyone through an app update.
 When a site needs a layer, block, kernel or setting the core lacks, the team files a module request (an issue from `.github/ISSUE_TEMPLATE/module-request.yml`, which the MCP server drafts) rather than writing its own copy.
 
-None of this is built yet. Releases, the updater, npm publishing and the template are the "Release and distribution" work package.
+Built so far: releases from a version tag, the in-app update check with release notes and breaking changes, in-place install from signed files, and the site format migration pipeline; see [RELEASING.md](RELEASING.md). Not built: channels and pinning, operating system code signing, npm publishing and the site template.
 
 ## Work packages
 

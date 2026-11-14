@@ -40,6 +40,7 @@ The app opens a launcher where you pick a site and say which display is the tabl
 The choice is remembered, so the next start goes straight to the table. Ctrl+Shift+S brings the launcher back and Ctrl+Shift+Q quits.
 The launcher's Colour tab boosts or corrects the colours of each display (saturation, contrast, brightness, gamma, white balance), live on the running table, with presets and a test card.
 The Calibration tab starts the projector calibration tool on the table.
+The Updates tab says when a newer version is published, shows what it brings and any breaking changes, and installs it; see [docs/RELEASING.md](docs/RELEASING.md).
 Windows and macOS installers are built by the "Desktop app" workflow on every pull request and push to `main` (download them from the run's artifacts), and attached to a draft release for a `v*` tag.
 The installers are not signed yet: Windows SmartScreen asks once ("More info", "Run anyway"), and on macOS open the app the first time with right click, Open.
 
