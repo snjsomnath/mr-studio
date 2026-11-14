@@ -14,6 +14,7 @@
       <nav role="tablist">
         <button type="button" role="tab" data-tab="setup" aria-selected="true">Setup</button>
         <button type="button" role="tab" data-tab="colour" aria-selected="false">Colour</button>
+        <button type="button" role="tab" data-tab="calibration" aria-selected="false">Calibration</button>
       </nav>
       <span id="running" hidden></span>
     </header>
@@ -70,6 +71,25 @@
       </section>
     </main>
 
+    <main id="tab-calibration" class="single" hidden>
+      <section aria-labelledby="calibration-title">
+        <div class="section-head"><h2 id="calibration-title">Projector calibration</h2></div>
+        <p id="calibration-status" class="status"></p>
+        <ol class="steps">
+          <li>Start the tool. It appears on the table and names ten corners of the model, one at a time.</li>
+          <li>Move each projected marker with the mouse or the arrow keys until its light sits on that corner of the physical model. Skip a corner you cannot find.</li>
+          <li>From six corners on, the model is drawn through the solved camera, so you can see whether it lands.</li>
+          <li>Save on the table. The calibration is kept in the site folder for this site.</li>
+        </ol>
+        <div class="presets">
+          <button id="calibration-start" type="button" class="primary">Start calibrating on the table</button>
+          <button id="calibration-stop" type="button">Close the tool</button>
+          <button id="calibration-clear" type="button" class="quiet">Forget the saved calibration</button>
+        </div>
+        <p id="calibration-hint" class="hint"></p>
+      </section>
+    </main>
+
     <footer>
       <div class="options">
         <label class="check"><input id="autostart" type="checkbox" /> Start like this every time the app opens</label>
@@ -84,5 +104,6 @@
 
     <script src="launcher.js"></script>
     <script src="colour.js"></script>
+    <script src="calibration.js"></script>
   </body>
 </html>

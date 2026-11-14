@@ -174,11 +174,13 @@
 
   for (const tab of document.querySelectorAll('[role=tab]')) {
     tab.addEventListener('click', () => {
-      for (const other of document.querySelectorAll('[role=tab]')) other.setAttribute('aria-selected', String(other === tab));
-      $('tab-setup').hidden = tab.dataset.tab !== 'setup';
-      $('tab-colour').hidden = tab.dataset.tab !== 'colour';
+      for (const other of document.querySelectorAll('[role=tab]')) {
+        other.setAttribute('aria-selected', String(other === tab));
+        $(`tab-${other.dataset.tab}`).hidden = other !== tab;
+      }
       if (tab.dataset.tab === 'colour') loadColour().catch((e) => showError(String(e)));
       else setTestCard(false);
+      if (tab.dataset.tab === 'calibration') window.loadCalibration();
     });
   }
   // Never leave the test card up behind a closed launcher.
