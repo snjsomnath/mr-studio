@@ -117,22 +117,78 @@ body[data-role='phone'] {
   background: var(--panel);
 }
 
-/* On the TV the controls are a rail beside the dashboard canvas. */
+/* The controller screen: layer buttons down both sides of the dashboard canvas. */
 body[data-role='tv'] .controller {
   order: -1;
-  width: clamp(300px, 22vw, 460px);
+  width: clamp(240px, 17vw, 360px);
   border-left: 0;
   border-right: 1px solid var(--line);
 }
 
-body[data-role='tv'][data-rail='right'] .controller {
+body[data-role='tv'] .controller-right {
   order: 1;
   border-right: 0;
   border-left: 1px solid var(--line);
 }
 
+body[data-role='tv'] .controller-right .cards {
+  padding-top: 20px;
+}
+
 body[data-role='tv'][data-rail='none'] .controller {
   display: none;
+}
+
+.layer-button {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 56px;
+  padding: 8px 14px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 1rem;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.layer-button-icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--panel);
+  color: var(--muted);
+}
+
+.layer-button[aria-pressed='true'] .layer-button-icon {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.layer-button-card .layer-body {
+  padding-top: 0;
+}
+
+.layer-about {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.home-button {
+  width: auto;
+  margin: 0 16px 12px;
+  justify-content: center;
+  border: 1px solid var(--line);
+  background: var(--card);
 }
 
 .controller-header {

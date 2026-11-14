@@ -32,7 +32,7 @@ A layer that has a `panel` function but no `panels` gets one `custom` tile.
 
 ```jsonc
 "tv": {
-  "rail": "left",                  // left | right | none. Where the generated controls sit
+  "rail": "left",                  // left | right | none. The side a layer's button sits on unless the layer says otherwise; none hides the buttons
   "theme": { "color.accent": "#c2410c", "shape.radius": "none" },   // style tokens only
   "rotate_s": 12,                  // seconds per page, 6 to 60
   "pages": [                       // optional: replaces the automatic layout

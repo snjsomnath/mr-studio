@@ -98,7 +98,16 @@ async function main() {
 
     // Sunlight is in the scene but off; the TV turns it on.
     const tv = await open('/tv', { width: 1920, height: 1080 });
-    await tv.getByLabel('Turn Sunlight on or off').check();
+    // On the controller a layer is a button: pressing it opens the layer, pressing it again closes it.
+    const press = async (name, on) => {
+      const button = tv.locator('.layer-button', { hasText: name });
+      if ((await button.getAttribute('aria-pressed')) !== String(on)) await button.click();
+      await tv.locator(`.layer-button[aria-pressed="${on}"]`, { hasText: name }).waitFor();
+    };
+    // The map's ambient layers have no button there, and the buttons default to the left side.
+    assert.equal(await tv.locator('.layer-button', { hasText: 'Traffic' }).count(), 0);
+    assert.equal(await tv.locator('.controller-right .layer-button-card').count(), 0);
+    await press('Sunlight', true);
     await dev.getByText(/sun [\d.]+° up/).waitFor();
     await dev.waitForTimeout(500);
     const afternoon = await table.screenshot();
@@ -136,12 +145,12 @@ async function main() {
     if (shots) await dev.screenshot({ path: path.join(shots, 'dev-sun-hours.png') });
 
     // Turning the layer off clears the table.
-    await tv.getByLabel('Turn Sunlight on or off').uncheck();
+    await press('Sunlight', false);
     await dev.locator('.layer-card:not(.is-active)', { hasText: 'Sunlight' }).waitFor();
     await dev.waitForTimeout(500);
     const off = await table.screenshot();
     assert.notDeepEqual(off, day, 'the overlay should disappear when the layer is off');
-    await tv.getByLabel('Turn Sunlight on or off').check();
+    await press('Sunlight', true);
     await tv.getByRole('radio', { name: 'Shadows' }).click();
 
     // The TV invites phones with a QR code. Read it the way a phone camera would.
@@ -283,8 +292,8 @@ async function main() {
 
     // CoolPaths: routes over the site's walkways, costed by the engine's shade.
     const card = (name) => tv.locator('.layer-card', { hasText: name });
-    await tv.getByLabel('Turn Sunlight on or off').uncheck();
-    await tv.getByLabel('Turn Cool paths on or off').check();
+    await press('Sunlight', false);
+    await press('Cool paths', true);
     const cool = card('Cool paths');
     // A layer's own panel sits on the dashboard canvas; its controls stay in its card.
     const coolPanel = tv.locator('[data-panel="coolpaths/panel"]');
@@ -305,10 +314,10 @@ async function main() {
     await cool.getByLabel('Time of day').fill('1');
     await coolPanel.getByText(/the sun is down/).waitFor();
     await coolPanel.getByText('0 m in the sun').first().waitFor();
-    await tv.getByLabel('Turn Cool paths on or off').uncheck();
+    await press('Cool paths', false);
 
     // Mobility: the site's trips played over time.
-    await tv.getByLabel('Turn Mobility on or off').check();
+    await press('Mobility', true);
     const moving = card('Mobility');
     const movingPanel = tv.locator('[data-panel="mobility/panel"]');
     await movingPanel.getByText(/of 60 arrived/).first().waitFor();
@@ -322,14 +331,14 @@ async function main() {
     await movingPanel.getByText('60 of 60 arrived').nth(1).waitFor();
     await dev.waitForTimeout(500);
     assert.notDeepEqual(await table.screenshot(), start, 'travellers should move with the time');
-    await tv.getByLabel('Turn Mobility on or off').uncheck();
+    await press('Mobility', false);
 
 
     // Wind: the simulation streams while it settles, tracers move, and a faster wind only rescales.
-    await tv.getByLabel('Turn Sunlight on or off').uncheck();
+    await press('Sunlight', false);
     await dev.waitForTimeout(500);
     const calm = await table.screenshot();
-    await tv.getByLabel('Turn Wind on or off').check();
+    await press('Wind', true);
     await tv.getByText(/Settling, \d+%|Steady/).waitFor({ timeout: 60_000 });
     await dev.getByText(/Fastest spot [\d.]+ m\/s/).waitFor({ timeout: 120_000 });
     const windy = await table.screenshot();
@@ -349,7 +358,7 @@ async function main() {
     await dev.waitForTimeout(1500);
     assert.notDeepEqual(await table.screenshot(), still, 'ribbons should come back');
     if (shots) await dev.screenshot({ path: path.join(shots, 'dev-wind-ribbons.png') });
-    await tv.getByLabel('Turn Wind on or off').uncheck();
+    await press('Wind', false);
 
 
     // ---- The scene composer ----
@@ -376,7 +385,6 @@ async function main() {
     await compose.getByLabel('Add Traffic').click();
     await row('Traffic (cars-2)').waitFor();
     assert.deepEqual(savedLayers().at(-1), { use: 'cars', id: 'cars-2', active: true });
-    await tv.getByRole('heading', { name: 'Traffic (cars-2)' }).waitFor();
 
     // Its settings form is generated from the manifest, and what it changes is saved.
     await compose.getByLabel('Cars per kilometre of street').fill('25');
@@ -422,7 +430,6 @@ async function main() {
     await compose.getByLabel('Remove Trees (trees-2)').click();
     await row('Trees (trees-2)').waitFor({ state: 'detached' });
     assert.deepEqual(savedLayers().map((l) => l.id ?? l.use), ['basemap', 'sunlight', 'building-lights', 'cars', 'transit', 'trees', 'slideshow', 'sketch', 'coolpaths', 'mobility', 'wind']);
-    assert.equal(await tv.getByRole('heading', { name: 'Traffic (cars-2)' }).count(), 0);
 
     // ---- The editor ----
     await compose.close();
@@ -467,15 +474,25 @@ async function main() {
     await editor.waitForFunction(() => document.querySelector('.ed-icon-choice[aria-label="tram"]')?.getAttribute('aria-checked') === 'true');
     assert.deepEqual(savedLayers().find((l) => l.use === 'mobility').button, named);
     // The controller goes by the same words.
-    await tv.getByRole('heading', { name: 'Getting here' }).waitFor();
+    await tv.locator('.controller-right .layer-button', { hasText: 'Getting here' }).waitFor();
+    // Opening a layer closes the one that was open, except a layer made to run alongside.
+    await press('Sunlight', true);
+    await press('Getting here', true);
     await tv.getByText('How people reach the square').waitFor();
+    await tv.locator('.layer-button[aria-pressed="false"]', { hasText: 'Sunlight' }).waitFor();
+    await tv.locator('.layer-button[aria-pressed="true"]', { hasText: 'Sketch' }).waitFor();
+    if (shots) await tv.screenshot({ path: path.join(shots, 'tv-buttons.png') });
+    // Home closes every layer and leaves the map at rest.
+    await tv.getByRole('button', { name: 'Home', exact: true }).click();
+    await tv.locator('.layer-button[aria-pressed="false"]', { hasText: 'Getting here' }).waitFor();
+    await tv.locator('.layer-button[aria-pressed="false"]', { hasText: 'Sketch' }).waitFor();
     if (shots) await editor.screenshot({ path: path.join(shots, 'editor.png') });
     await editor.getByLabel('Name').fill('');
     await editor.getByLabel('Name').blur();
     await editor.getByLabel('Description').fill('');
     await editor.getByLabel('Description').blur();
     await editor.locator('.ed-tree .ed-row[data-layer="mobility"] .ed-row-label', { hasText: 'Mobility' }).waitFor();
-    await tv.getByRole('heading', { name: 'Mobility' }).waitFor();
+    await tv.locator('.controller-right .layer-button', { hasText: 'Mobility' }).waitFor();
     assert.deepEqual(savedLayers().map((l) => l.id ?? l.use), ['basemap', 'sunlight', 'building-lights', 'cars', 'transit', 'trees', 'slideshow', 'sketch', 'coolpaths', 'mobility', 'wind']);
 
     const real = errors.filter((e) => !/wrong session code|WebSocket/.test(e));
