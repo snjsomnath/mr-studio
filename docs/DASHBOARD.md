@@ -110,7 +110,7 @@ A widget is a kind of panel content. Each has a schema for its props, the sizes 
 Things that are deliberately missing: tables, pie charts, a second y-axis, free HTML and icons-as-data.
 A table on a TV is a document, and nobody reads documents across a room.
 
-`custom` is the escape hatch for what no widget covers, such as a map inset.
+`custom` is the escape hatch for what no widget covers, such as a map inset. The sunlight layer's curve of the sun's height over the day is one.
 It still gets a title, a fixed size and a declared cost, and it is clipped to its panel.
 If two layers need the same custom panel, that is the signal to make it a widget.
 

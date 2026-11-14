@@ -57,7 +57,7 @@ A panel that breaks a rule is not shown.
 
 ## Tools
 
-Tools are spatial inputs a layer accepts: `point`, `line`, `polygon`. The input system (touch, phone, hand tracking) delivers them as `ToolInput` with coordinates in WGS84.
+Tools are spatial inputs a layer accepts: `point`, `line`, `polygon`. The input system (touch, phone) delivers them as `ToolInput` with coordinates in WGS84.
 
 ## Module
 
@@ -122,12 +122,21 @@ interface FieldStream {
 }
 
 interface MapHandle {
-  addField(id: string, style: { colormap: Colormap; opacity?: number; smooth?: boolean }): FieldOverlay;
+  addField(id: string, style: FieldStyle & { colormap: Colormap }): FieldOverlay;
+  addElement(): HTMLElement;        // a layer-owned element covering the table, for SVG or canvas decorations
+}
+
+interface FieldStyle {
+  colormap?: Colormap;
+  opacity?: number;
+  smooth?: boolean;                 // interpolate between cells, default true
+  soften?: number;                  // blur radius in cells, for soft edges
+  glide?: number;                   // seconds a new frame takes to ease in, so stepped results move smoothly
 }
 
 interface FieldOverlay {
   set(frame: FieldFrame): void;     // uploads the frame as a texture, coloured on the GPU
-  setStyle(style: { colormap?: Colormap; opacity?: number; smooth?: boolean }): void;
+  setStyle(style: FieldStyle): void;
   remove(): void;
 }
 ```

@@ -51,7 +51,11 @@ const state = () => {
     daylightHours: 17.6,
     sun: 'sun 41.2° up, bearing 231°',
     dayStatus: '',
-    dayMax: '17.6 h',
+    ramp: 'daylight',
+    rampLow: 'Shade',
+    rampHigh: 'Sun',
+    sunrise: 4.2,
+    sunset: 21.9,
   };
 };
 

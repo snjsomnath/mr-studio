@@ -55,6 +55,26 @@ Rules:
 - Vector data is GeoJSON in WGS84 (CRS84). Site prep reprojects from national grids.
 - Nothing in `site.json` is a secret. Credentials for services live in the app's own config.
 
+## Composing a scene
+
+A table scene is the ordered `layers` list and nothing else: the first entry is drawn at the bottom, the last on top.
+Everything a person sees on the table, from the dark base map to moving cars, building lights, public transport, trees and analysis layers such as sunlight or isovist, is a layer package added to that list with its params.
+This is what the planned visual composer edits. It reads each layer's `layer.json` to offer it in a palette and to generate its settings form, and it writes `site.json`, so a scene made by drag and drop and one written by hand are the same file.
+
+What the composer needs, and where it stands:
+
+| Need | Status |
+| --- | --- |
+| Ordered list of layers with params and initial on/off | In format 1 |
+| Layers self-describe their controls, tools and data needs | In `layer.json` (`controls`, `tools`, `requires`) |
+| A blank starting point | `mrstudio new-site`, and `sites/sample` as the dummy scene |
+| The same layer twice with different settings | Planned: an optional `id` per entry; state is then keyed by that id instead of the layer id |
+| Palette grouping | Planned: `category` in `layer.json` (`base`, `ambient`, `analysis`, `media`) |
+| Add, remove and reorder while running | Planned: `scene.add`, `scene.remove`, `scene.move` requests; the host rewrites `site.json` |
+| TV dashboards built from widgets | Planned: `tv.widgets`, an ordered list of panel packages using the same manifest and controls |
+
+Ambient layers (cars, lights, transit) animate on the table surface from site data or generated paths. They need no kernel; the layer rule "no solver code" still holds.
+
 ## Baking the scene
 
 The host turns the sources into the rasters the engine loads, in memory at startup:

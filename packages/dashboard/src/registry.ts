@@ -13,7 +13,7 @@ export type PropSpec = (
   | { kind: 'value' }
   | { kind: 'boolean' }
   | { kind: 'enum'; options: string[] }
-  /** A named colour ramp from `@mrstudio/sdk`. */
+  /** A colour ramp: a name from `@mrstudio/sdk`, or a ramp object (`{ stops }`) a layer publishes. */
   | { kind: 'colormap' }
   /** A categorical colour slot of the theme, 1 to 6. */
   | { kind: 'slot' }

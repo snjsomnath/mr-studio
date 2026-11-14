@@ -4,156 +4,33 @@
   "name": "Sunlight",
   "description": "Shadows at any moment, or hours of direct sun over a day",
   "icon": "sun",
-  "requires": {
-    "kernels": [
-      "sunlight"
-    ]
-  },
+  "requires": { "kernels": ["sunlight"] },
   "controls": [
     {
-      "id": "mode",
-      "type": "select",
-      "label": "Show",
-      "default": "instant",
+      "id": "mode", "type": "select", "label": "Show", "default": "instant",
       "options": [
-        {
-          "value": "instant",
-          "label": "Shadows"
-        },
-        {
-          "value": "day",
-          "label": "Sun hours"
-        }
+        { "value": "instant", "label": "Shadows" },
+        { "value": "day", "label": "Sun hours" }
       ]
     },
-    {
-      "id": "date",
-      "type": "date",
-      "label": "Date",
-      "default": "2026-06-21",
-      "phone": true
-    },
-    {
-      "id": "hour",
-      "type": "range",
-      "label": "Time of day",
-      "min": 0,
-      "max": 24,
-      "step": 0.25,
-      "unit": "h",
-      "default": 12,
-      "phone": true,
-      "visibleWhen": {
-        "mode": "instant"
-      }
-    },
-    {
-      "id": "play",
-      "type": "toggle",
-      "label": "Animate the day",
-      "default": false,
-      "visibleWhen": {
-        "mode": "instant"
-      }
-    },
-    {
-      "id": "trees",
-      "type": "toggle",
-      "label": "Trees cast shade",
-      "default": true
-    },
-    {
-      "id": "opacity",
-      "type": "range",
-      "label": "Opacity",
-      "min": 0.1,
-      "max": 1,
-      "step": 0.05,
-      "default": 1
-    }
+    { "id": "date", "type": "date", "label": "Date", "default": "2026-06-21", "phone": true },
+    { "id": "hour", "type": "range", "label": "Time of day", "min": 0, "max": 24, "step": 0.05, "unit": "h", "default": 12, "phone": true, "visibleWhen": { "mode": "instant" } },
+    { "id": "play", "type": "toggle", "label": "Animate the day", "default": false, "visibleWhen": { "mode": "instant" } },
+    { "id": "path", "type": "toggle", "label": "Sun path on the table", "default": true },
+    { "id": "trees", "type": "toggle", "label": "Trees cast shade", "default": true },
+    { "id": "opacity", "type": "range", "label": "Opacity", "min": 0.1, "max": 1, "step": 0.05, "default": 1 }
   ],
   "tools": [],
   "panels": [
-    {
-      "id": "time",
-      "widget": "stat",
-      "size": "tile",
-      "title": "Time on the table",
-      "visibleWhen": {
-        "mode": "instant"
-      },
-      "props": {
-        "value": {
-          "bind": "params.hour"
-        },
-        "format": "hour",
-        "caption": {
-          "bind": "shared.sun"
-        }
-      }
-    },
-    {
-      "id": "daylight",
-      "widget": "stat",
-      "size": "tile",
-      "title": "Daylight on this date",
-      "props": {
-        "value": {
-          "bind": "shared.daylightHours"
-        },
-        "unit": "h",
-        "decimals": 1,
-        "caption": {
-          "bind": "shared.dayStatus"
-        }
-      },
-      "visibleWhen": {
-        "mode": "day"
-      }
-    },
-    {
-      "id": "day",
-      "widget": "timeline",
-      "size": "band",
-      "title": "The day",
-      "visibleWhen": {
-        "mode": "instant"
-      },
-      "props": {
-        "now": {
-          "bind": "params.hour"
-        }
-      }
-    },
-    {
-      "id": "key-shadow",
-      "widget": "ramp",
-      "size": "band",
-      "title": "On the table",
-      "visibleWhen": {
-        "mode": "instant"
-      },
-      "props": {
-        "colormap": "daylight",
-        "low": "Shade",
-        "high": "Sun"
-      }
-    },
-    {
-      "id": "key-hours",
-      "widget": "ramp",
-      "size": "band",
-      "title": "Hours of sun",
-      "visibleWhen": {
-        "mode": "day"
-      },
-      "props": {
-        "colormap": "sun",
-        "low": "0 h",
-        "high": {
-          "bind": "shared.dayMax"
-        }
-      }
-    }
+    { "id": "time", "widget": "stat", "size": "tile", "title": "Time on the table", "visibleWhen": { "mode": "instant" },
+      "props": { "value": { "bind": "params.hour" }, "format": "hour", "caption": { "bind": "shared.sun" } } },
+    { "id": "daylight", "widget": "stat", "size": "tile", "title": "Daylight on this date", "visibleWhen": { "mode": "day" },
+      "props": { "value": { "bind": "shared.daylightHours" }, "unit": "h", "decimals": 1, "caption": { "bind": "shared.dayStatus" } } },
+    { "id": "sun-height", "widget": "custom", "size": "wide", "title": "The sun's height this day",
+      "props": { "reads": 4 } },
+    { "id": "day", "widget": "timeline", "size": "band", "title": "The day", "visibleWhen": { "mode": "instant" },
+      "props": { "now": { "bind": "params.hour" }, "dayFrom": { "bind": "shared.sunrise" }, "dayTo": { "bind": "shared.sunset" } } },
+    { "id": "key", "widget": "ramp", "size": "band", "title": "On the table",
+      "props": { "colormap": { "bind": "shared.ramp" }, "low": { "bind": "shared.rampLow" }, "high": { "bind": "shared.rampHigh" } } }
   ]
 }

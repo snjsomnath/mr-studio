@@ -54,7 +54,7 @@ function checkProp(path: string, spec: PropSpec, value: unknown, limit: number |
       if (!spec.options.includes(value as string)) fail('schema', `must be one of ${spec.options.join(', ')}`);
       break;
     case 'colormap':
-      if (typeof value !== 'string') fail('schema', 'must be the name of a colour ramp');
+      if (typeof value !== 'string' && !Array.isArray((value as { stops?: unknown } | null)?.stops)) fail('schema', 'must be the name of a colour ramp, or a ramp with stops');
       break;
     case 'slot':
       if (!Number.isInteger(value) || (value as number) < 1 || (value as number) > DATA_SLOTS) fail('schema', `must be a data colour slot, 1 to ${DATA_SLOTS}`);

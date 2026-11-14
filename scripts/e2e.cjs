@@ -55,7 +55,7 @@ async function main() {
     assert.notDeepEqual(morning, afternoon, 'shadows should move when the time changes');
     assert.equal(await tv.locator(clock).textContent(), '08:30');
     // The TV is a rail of controls beside the dashboard canvas, and the layer's panels sit on the grid.
-    assert.equal(await tv.locator('.mrs-panel').count(), 3);
+    assert.equal(await tv.locator('.mrs-panel').count(), 4);
     const band = await tv.locator('[data-panel="sunlight/day"]').boundingBox();
     const canvas = await tv.locator('.mrs-dash').boundingBox();
     assert.ok(band.width > canvas.width * 0.9 && band.y + band.height > canvas.y + canvas.height * 0.9, 'the timeline spans the bottom row');
@@ -67,7 +67,7 @@ async function main() {
     await dev.getByText('whole day added up').waitFor({ timeout: 120_000 });
     // Panels follow the mode: the clock and the timeline leave, the sun-hours key arrives.
     assert.equal(await tv.locator(clock).count(), 0);
-    await tv.locator('[data-panel="sunlight/key-hours"]').waitFor();
+    await tv.locator('[data-panel="sunlight/daylight"]').waitFor();
     if (shots) await tv.screenshot({ path: path.join(shots, 'tv-sun-hours.png') });
     await dev.waitForTimeout(500);
     const day = await table.screenshot();

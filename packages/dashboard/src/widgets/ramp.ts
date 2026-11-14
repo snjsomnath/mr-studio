@@ -28,10 +28,12 @@ export const ramp = defineWidget({
       update(props) {
         setText(low, props.low ?? '');
         setText(high, props.high ?? '');
-        if (props.colormap !== shown) {
-          shown = props.colormap;
-          const map = (colormaps as Record<string, Colormap>)[shown];
-          bar.style.background = map ? cssGradient(map) : 'var(--mrs-line)';
+        // A name from the SDK's ramps, or a ramp the layer published (one that changes with the data).
+        const key = JSON.stringify(props.colormap);
+        if (key !== shown) {
+          shown = key;
+          const map = typeof props.colormap === 'string' ? (colormaps as Record<string, Colormap>)[props.colormap] : (props.colormap as Colormap | undefined);
+          bar.style.background = map?.stops?.length ? cssGradient(map) : 'var(--mrs-line)';
         }
       },
     };

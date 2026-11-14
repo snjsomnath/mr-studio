@@ -18,7 +18,7 @@ Functions that must survive from the current app (`Nodal-Works/interactive_map`)
 | Phone participation | `runtime` phone surface served by the host on the local network |
 | Wind (CFD), sunlight, stormwater, isovist, thermal comfort | Kernels in the compute engine, each with a thin visual layer |
 | Street life, transit, slideshow, ECOM energy, street view, bird sounds | Layer packages (no kernel needed, or a Python service behind the gateway) |
-| Hand tracking, touch, keyboard | Inputs that produce the same layer actions and tool inputs |
+| Touch, keyboard | Inputs that produce the same layer actions and tool inputs |
 | Multi-screen launch | The desktop shell places one window per display |
 | Per-site variants (Chalmers, Lindholmen, Universeum) | Site packages, never branches |
 
@@ -53,6 +53,7 @@ Every screen, including a phone, is a *surface*: a web page that speaks one WebS
 4. **Every kernel has a CPU reference.** GPU and CPU run the same algorithm, and a parity test compares them in CI. Speed-ups cannot silently change results.
 5. **Nothing site-specific in core.** Paths, bounds, branding and datasets live in `sites/<id>`.
 6. **Contracts are versioned.** `site.json` has `format`, layer manifests have `api`, the wire protocol has `protocol`.
+7. **Building blocks before ports.** A layer is a short composition of shared primitives, not a port of an old layer. When a layer from the old app is wanted (cultural gravity, ECOM, street life), first ask which reusable blocks it is made of, build those in the SDK or the engine, and then assemble the layer from them. The blocks fall into three groups: visuals (field overlays, markers, animated paths, glows, legends, charts), data sources (site datasets, live feeds, services, kernel streams) and interactions (a pointer on the table driving a person marker or a magnifier, phone tools, drawing). A primitive earns its place when a second layer can use it unchanged; the sunlight layer's soft field overlay, table decoration and sun position helper are the first examples.
 
 ## Workspace
 
@@ -97,7 +98,41 @@ docs/contracts/   the interface contracts below
 - **Controls are data.** A layer declares its controls in the manifest. The TV and phone UIs are generated from them, and the host validates every change against them.
 - **Python stays outside the app process.** Data preparation and research models run as services declared in the site or layer manifest and reached through the host gateway.
 
+## Distribution and updates
+
+There is one core, maintained in this repository. Nobody clones, forks or branches it to make their own table.
+A team installs the core and keeps only what is theirs in a repository of their own.
+
+What a team installs:
+
+| Thing | Form | For |
+| --- | --- | --- |
+| MR Studio app | Signed installer for Windows and macOS, with built-in update | Running a table. Contains the engine, host, runtime and core layers |
+| `mrstudio` CLI | Ships inside the app, also `cargo install` | Creating, validating and previewing sites and layers |
+| `@mrstudio/sdk` | npm package | Writing custom layers and TV widgets |
+
+What a team owns: a site repository made from a template (`mrstudio new-site`, later a GitHub template repository).
+It holds `site.json`, data, custom layers and dashboards, and a `mrstudio` version range. It contains no core code.
+The app opens that folder. Updating the core is installing a newer app; the site folder is not touched.
+
+Versioning. The app, CLI and SDK share one semantic version. What that version promises is the contracts, each of which carries its own number:
+`format` in `site.json`, `api` in `layer.json`, `protocol` in the wire hello, and kernel ids with their params and fields.
+
+- Patch and minor releases never break a site or layer that worked on the same major version. New controls, kernels and fields are additions.
+- A breaking change raises the contract number and the major version. The app keeps reading the previous `format` and `api` for one major version and `mrstudio migrate` rewrites a site to the new one.
+- The app refuses a site that needs a newer core than it has, and says which version to install.
+- Kernel results are part of the promise: the parity and physics tests guard them, and a change in output beyond the stated tolerance is a breaking change.
+
+Channels: `stable` for tables in use, `beta` for trying the next release, and nightly builds from `main` for development.
+A venue can pin a version, so a table does not change the day before an exhibition.
+
+A custom layer that proves useful to more than one team moves into the core through a pull request, and from then on reaches everyone through an app update.
+
+None of this is built yet. Releases, the updater, npm publishing and the template are the "Release and distribution" work package.
+
 ## Work packages
+
+The layers planned beyond the first set, and the kernels and blocks each one reuses, are in [ROADMAP.md](ROADMAP.md).
 
 These are independent once the contracts are fixed.
 
@@ -110,3 +145,6 @@ These are independent once the contracts are fixed.
 | Session hub and phone controller | Rooms, slots, roles, join by QR, tools, reconnect | session.md, mobile.md |
 | Layer SDK and runtime | Layer manager, generated controls, TV layout, dev mode | layer.md |
 | Site tooling | `mrstudio new-site` and `prepare`, Python prep, Chalmers port | site.md |
+| Scene composer and ambient layers | Instance ids, live add and reorder, dark base map, cars, lights, transit, trees, composer page | site.md, layer.md |
+| Layer building blocks | Shared visual, data and interaction primitives in the SDK that layers are composed from | layer.md |
+| Release and distribution | Signed installers, updater and channels, npm publishing of the SDK, site template, `mrstudio migrate` | this document |

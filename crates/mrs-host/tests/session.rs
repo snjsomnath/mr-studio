@@ -121,8 +121,9 @@ async fn the_host_validates_and_broadcasts_param_changes() {
     // Out of range is clamped, off-step is snapped, and every surface hears the result.
     tv.request("layer.set", json!({ "layer": "sunlight", "params": { "hour": 99 } })).await.unwrap();
     assert_eq!(table.event("state.layer").await["state"]["params"]["hour"], 24.0);
-    tv.request("layer.set", json!({ "layer": "sunlight", "params": { "hour": 9.1 } })).await.unwrap();
-    assert_eq!(table.event("state.layer").await["state"]["params"]["hour"], 9.0);
+    tv.request("layer.set", json!({ "layer": "sunlight", "params": { "hour": 9.13 } })).await.unwrap();
+    let snapped = table.event("state.layer").await["state"]["params"]["hour"].as_f64().unwrap();
+    assert!((snapped - 9.15).abs() < 1e-9, "{snapped}");
 
     // Bad requests are refused and change nothing.
     for params in [json!({ "mode": "weekly" }), json!({ "nope": 1 }), json!({ "hour": "noon" })] {
