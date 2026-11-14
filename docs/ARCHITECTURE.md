@@ -53,6 +53,7 @@ Every screen, including a phone, is a *surface*: a web page that speaks one WebS
 4. **Every kernel has a CPU reference.** GPU and CPU run the same algorithm, and a parity test compares them in CI. Speed-ups cannot silently change results.
 5. **Nothing site-specific in core.** Paths, bounds, branding and datasets live in `sites/<id>`.
 6. **Contracts are versioned.** `site.json` has `format`, layer manifests have `api`, the wire protocol has `protocol`.
+7. **Building blocks before ports.** A layer is a short composition of shared primitives, not a port of an old layer. When a layer from the old app is wanted (cultural gravity, ECOM, street life), first ask which reusable blocks it is made of, build those in the SDK or the engine, and then assemble the layer from them. The blocks fall into three groups: visuals (field overlays, markers, animated paths, glows, legends, charts), data sources (site datasets, live feeds, services, kernel streams) and interactions (a pointer on the table driving a person marker or a magnifier, phone tools, drawing). A primitive earns its place when a second layer can use it unchanged; the sunlight layer's soft field overlay, table decoration and sun position helper are the first examples.
 
 ## Workspace
 
@@ -140,4 +141,5 @@ These are independent once the contracts are fixed.
 | Layer SDK and runtime | Layer manager, generated controls, TV layout, dev mode | layer.md |
 | Site tooling | `mrstudio new-site` and `prepare`, Python prep, Chalmers port | site.md |
 | Scene composer and ambient layers | Instance ids, live add and reorder, dark base map, cars, lights, transit, trees, composer page | site.md, layer.md |
+| Layer building blocks | Shared visual, data and interaction primitives in the SDK that layers are composed from | layer.md |
 | Release and distribution | Signed installers, updater and channels, npm publishing of the SDK, site template, `mrstudio migrate` | this document |
