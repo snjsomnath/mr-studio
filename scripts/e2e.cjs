@@ -57,7 +57,8 @@ async function main() {
     assert.notDeepEqual(morning, afternoon, 'shadows should move when the time changes');
     assert.equal(await tv.locator(clock).textContent(), '08:30');
     // The TV is a rail of controls beside the dashboard canvas, and the layer's panels sit on the grid.
-    assert.equal(await tv.locator('.mrs-panel').count(), 5);
+    // Sunlight's five panels and the sketch layer's one.
+    assert.equal(await tv.locator('.mrs-panel').count(), 6);
     const band = await tv.locator('[data-panel="sunlight/day"]').boundingBox();
     const canvas = await tv.locator('.mrs-dash').boundingBox();
     assert.ok(band.width > canvas.width * 0.9 && band.y + band.height > canvas.y + canvas.height * 0.9, 'the timeline spans the bottom row');
