@@ -66,6 +66,8 @@ export interface LayerManifest {
   icon?: string;
   /** Where the composer's palette lists the layer. Default `analysis`. */
   category?: LayerCategory;
+  /** The layer stays open when another layer's button is pressed on the controller. Default false. */
+  alongside?: boolean;
   requires?: { kernels?: string[]; data?: string[]; services?: string[] };
   controls?: Control[];
   tools?: ToolSpec[];

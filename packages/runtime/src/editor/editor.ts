@@ -1,7 +1,7 @@
 import { isVisible } from '@mrstudio/sdk';
 import type { Connection, LayerManifest, LayerState } from '@mrstudio/sdk';
 
-import { el, layerButton, widget } from '../controls.ts';
+import { defaultSide, el, isAmbient, layerButton, widget } from '../controls.ts';
 import type { Widget } from '../controls.ts';
 import { paramSender } from '../layer-manager.ts';
 import type { Store } from '../store.ts';
@@ -17,11 +17,6 @@ import './editor.css';
 type Context = { kind: 'home' } | { kind: 'layer'; id: string } | { kind: 'controller' } | { kind: 'phone' };
 
 type Tab = 'home' | 'insert' | 'view';
-
-/** Layers of these categories are the table at rest: they belong to the home screen. */
-function isAmbient(manifest: LayerManifest): boolean {
-  return manifest.category === 'base' || manifest.category === 'ambient';
-}
 
 function button(className: string, label: string, iconName?: string, size = 16): HTMLButtonElement {
   const node = el('button', className);
@@ -367,7 +362,7 @@ export class Editor {
       const side = el('span', 'ed-row-side');
       row.append(side);
       this.sync.set(id, (next) => {
-        const button = layerButton(id, manifest, next);
+        const button = layerButton(id, manifest, next, defaultSide(this.store));
         row.classList.toggle('is-off', !next.active);
         row.querySelector('.ed-row-label')!.textContent = button.name;
         row.querySelector('.ed-row-icon')!.replaceChildren(icon(button.icon));
@@ -469,7 +464,7 @@ export class Editor {
     const previous = this.sync.get(id);
     this.sync.set(id, (state) => {
       previous?.(state);
-      const button = layerButton(id, manifest, state);
+      const button = layerButton(id, manifest, state, defaultSide(this.store));
       if (document.activeElement !== name) name.value = state.button?.name ?? '';
       if (document.activeElement !== description) description.value = state.button?.description ?? '';
       for (const [value, option] of sides) option.setAttribute('aria-checked', String(value === button.side));

@@ -5,7 +5,7 @@ import { themeVariables } from '@mrstudio/dashboard';
 import '@mrstudio/dashboard/src/dashboard.css';
 
 import { Composer } from './compose.ts';
-import { Controller } from './controls.ts';
+import { Controller, isAmbient } from './controls.ts';
 import { mountDashboard } from './dashboard.ts';
 import { joinPanel } from './join.ts';
 import { LayerManager } from './layer-manager.ts';
@@ -130,16 +130,36 @@ async function main() {
     side.append(header);
     const cards = el('div', 'cards');
     side.append(cards);
-    new Controller(cards, store, connection, role);
+
+    // The controller screen has the layer buttons down both sides of the dashboard.
+    const second = role === 'tv' ? el('aside', 'controller controller-right') : null;
+    const rightCards = el('div', 'cards');
+    new Controller(cards, store, connection, role, second ? rightCards : undefined);
 
     if (!phone) {
-      side.append(joinPanel(store));
+      const foot = second ?? side;
+      if (second) {
+        second.append(rightCards);
+        const home = el('button', 'layer-button home-button', 'Home');
+        (home as HTMLButtonElement).type = 'button';
+        home.title = 'Close every layer and show the map at rest';
+        home.addEventListener('click', () => {
+          for (const id of store.state.scene) {
+            const state = store.state.layers[id];
+            const manifest = state && store.manifest(state.layer);
+            if (state?.active && manifest && !isAmbient(manifest)) void connection.request('layer.activate', { layer: id, active: false }).catch(() => {});
+          }
+        });
+        second.append(home);
+      }
+      foot.append(joinPanel(store));
       const footer = el('footer', 'controller-footer');
       const info = await connection.request<{ backend: string; adapter: string | null }>('engine.info').catch(() => null);
       footer.append(el('span', '', `Session ${store.state.session.code}`), el('span', '', info ? `Engine: ${info.adapter ?? `${info.backend} reference`}` : ''));
-      side.append(footer);
+      foot.append(footer);
     }
     app.append(side);
+    if (second) app.append(second);
   }
 }
 

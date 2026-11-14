@@ -70,7 +70,7 @@ Rules:
   - A GeoTIFF (`.tif`, `.tiff`): `{ "path": "data/terrain.tif" }`. It is placed by its own georeference, so it may be larger than the extent and on a national grid. Add `"crs": "EPSG:3006"` when the file does not name its coordinate system. See [Terrain from a GeoTIFF](#terrain-from-a-geotiff).
 - `mesh` is a 3D model of the top surface, for sites whose footprints have no heights. See [Buildings from a mesh](#buildings-from-a-mesh).
 - `buildings.extrude` (default `true`) says whether the footprints are raised into the scene. Set it to `false` when a mesh gives the buildings their shape; the footprints are then only drawn on the table.
-- `tv` holds the TV's settings: where the control rail sits, the site's theme, and optional hand-made dashboard pages. Its shape and rules are in [dashboard.md](dashboard.md). The host passes it to surfaces as written.
+- `tv` holds the TV's settings: which side the layer buttons default to, the site's theme, and optional hand-made dashboard pages. Its shape and rules are in [dashboard.md](dashboard.md). The host passes it to surfaces as written.
 - Unknown keys are an error, so a typo is caught by `mrstudio validate` rather than silently ignored.
 - Vector data is GeoJSON in WGS84 (CRS84). Site prep reprojects from national grids.
 - Nothing in `site.json` is a secret. Credentials for services live in the app's own config.

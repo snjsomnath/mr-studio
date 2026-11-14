@@ -47,7 +47,7 @@ Density is not a matter of taste or review. It is a number the code checks.
 
 The TV has two regions.
 
-- **The rail** holds the controls generated from the layer manifests. It is 22% of the width (300 to 460 px) on the left, or on the right, or absent (`tv.rail`), for a TV that only displays.
+- **The rail** holds the controls generated from the layer manifests. On the controller screen it is two columns of layer buttons, one each side of the canvas; an open layer shows its controls under its button. `tv.rail` picks the side a button defaults to, or `none` for a TV that only displays.
 - **The canvas** is everything else and holds the panels. It is always 12 columns by 6 rows, with a margin of 3 units and a gap of 1.5 units.
 
 A **unit** is 1% of the canvas height. Every length in the dashboard is a multiple of it, so a layout is the same picture on a 1080p and a 4K screen, and text keeps its size relative to the screen.
