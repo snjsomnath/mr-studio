@@ -1,0 +1,30 @@
+{
+  "id": "energy",
+  "title": "Community energy",
+  "panels": [
+    { "id": "solar", "widget": "stat", "size": "tile", "title": "Solar now", "layer": "energy", "at": { "col": 1, "row": 1 },
+      "props": { "value": { "bind": "shared.solar" }, "unit": "kW", "decimals": 0, "caption": { "bind": "shared.solarState" } } },
+    { "id": "demand", "widget": "stat", "size": "tile", "title": "Buildings are using", "layer": "energy", "at": { "col": 4, "row": 1 },
+      "props": { "value": { "bind": "shared.demand" }, "unit": "kW", "decimals": 0, "delta": { "bind": "shared.demandChange" } } },
+    { "id": "battery", "widget": "stat", "size": "tile", "title": "Battery", "layer": "energy", "at": { "col": 7, "row": 1 },
+      "props": { "value": { "bind": "shared.battery" }, "format": "percent", "caption": { "bind": "shared.batteryState" } } },
+    { "id": "own", "widget": "stat", "size": "tile", "title": "Covered by our own solar", "layer": "energy", "at": { "col": 10, "row": 1 },
+      "props": { "value": { "bind": "shared.selfSufficiency" }, "format": "percent", "caption": "so far today" } },
+    { "id": "split", "widget": "bars", "size": "wide", "title": "Where the solar goes", "layer": "energy", "at": { "col": 1, "row": 3 },
+      "props": { "unit": "kWh", "decimals": 0, "items": [
+        { "label": "Used in the building", "value": { "bind": "shared.used" }, "slot": 1 },
+        { "label": "Shared with others", "value": { "bind": "shared.sharedOut" }, "slot": 2 },
+        { "label": "Into the battery", "value": { "bind": "shared.stored" }, "slot": 3 },
+        { "label": "Sold to the grid", "value": { "bind": "shared.sold" }, "slot": 4 }
+      ] } },
+    { "id": "today", "widget": "series", "size": "wide", "title": "Today", "layer": "energy", "at": { "col": 7, "row": 3 },
+      "props": { "unit": "kW", "decimals": 0, "start": "00:00", "end": "24:00", "now": { "bind": "shared.dayFraction" }, "series": [
+        { "label": "Solar", "values": { "bind": "shared.solarCurve" }, "slot": 4 },
+        { "label": "Use", "values": { "bind": "shared.demandCurve" }, "slot": 1 }
+      ] } },
+    { "id": "key", "widget": "ramp", "size": "band", "title": "Roofs on the table", "at": { "col": 1, "row": 5 },
+      "props": { "colormap": "sun", "low": "Little sun", "high": "Most sun" } },
+    { "id": "clock", "widget": "timeline", "size": "band", "title": "The day", "layer": "energy", "at": { "col": 1, "row": 6 },
+      "props": { "now": { "bind": "shared.hour" }, "dayFrom": 6, "dayTo": 20 } }
+  ]
+}

@@ -1,4 +1,5 @@
-/// A scalar result on the scene grid, row-major with row 0 at the top.
+/// A scalar result covering the site extent, row-major with row 0 at the top.
+/// It may be coarser than the scene grid.
 #[derive(Debug, Clone)]
 pub struct Field {
     pub width: u32,

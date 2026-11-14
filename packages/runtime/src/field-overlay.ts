@@ -19,6 +19,7 @@ uniform sampler2D u_field;
 uniform sampler2D u_lut;
 uniform vec2 u_range;   // offset and scale that take a texel to 0..1
 uniform float u_opacity;
+uniform float u_gain;    // the layer's intensity: below 1 fades, above 1 brightens
 uniform vec2 u_soften;  // blur radius in texture coordinates, 0 for none
 in vec2 v_uv;
 out vec4 color;
@@ -35,8 +36,8 @@ void main() {
   }
   float t = clamp((v - u_range.x) * u_range.y, 0.0, 1.0);
   vec4 c = texture(u_lut, vec2(t * (255.0 / 256.0) + 0.5 / 256.0, 0.5));
-  float a = c.a * u_opacity;
-  color = vec4(c.rgb * a, a);   // premultiplied, as MapLibre blends
+  float a = clamp(c.a * u_opacity * u_gain, 0.0, 1.0);
+  color = vec4(min(c.rgb * max(1.0, u_gain), 1.0) * a, a);   // premultiplied, as MapLibre blends
 }`;
 
 // Eases the displayed field towards the newest frame: out = mix(shown, target, k).
@@ -59,7 +60,15 @@ void main() {
   color = vec4(mix(texture(u_shown, v_uv).r, texture(u_target, v_uv).r, u_k), 0.0, 0.0, 1.0);
 }`;
 
-function link(gl: WebGL2RenderingContext, vertex: string, fragment: string): WebGLProgram {
+function compile(gl: WebGL2RenderingContext, type: number, source: string): WebGLShader {
+  const shader = gl.createShader(type)!;
+  gl.shaderSource(shader, source);
+  gl.compileShader(shader);
+  if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(shader) ?? 'shader failed to compile');
+  return shader;
+}
+
+export function link(gl: WebGL2RenderingContext, vertex: string, fragment: string): WebGLProgram {
   const program = gl.createProgram()!;
   gl.attachShader(program, compile(gl, gl.VERTEX_SHADER, vertex));
   gl.attachShader(program, compile(gl, gl.FRAGMENT_SHADER, fragment));
@@ -68,12 +77,22 @@ function link(gl: WebGL2RenderingContext, vertex: string, fragment: string): Web
   return program;
 }
 
-function compile(gl: WebGL2RenderingContext, type: number, source: string): WebGLShader {
-  const shader = gl.createShader(type)!;
-  gl.shaderSource(shader, source);
-  gl.compileShader(shader);
-  if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(shader) ?? 'shader failed to compile');
-  return shader;
+/**
+ * The site's extent in Mercator units: its centre, and its corners relative to the
+ * centre (top left, top right, bottom right, bottom left) so they keep float precision.
+ */
+export function mercatorExtent(site: SiteInfo): { centre: [number, number]; corners: [number, number][] } {
+  const mercator = site.corners.map(([lon, lat]) => maplibregl.MercatorCoordinate.fromLngLat({ lng: lon, lat }));
+  const centre: [number, number] = [mercator.reduce((s, m) => s + m.x, 0) / 4, mercator.reduce((s, m) => s + m.y, 0) / 4];
+  return { centre, corners: mercator.map((m) => [m.x - centre[0], m.y - centre[1]]) };
+}
+
+/** The map's projection matrix with the origin moved to `centre`, in double precision before it becomes float32. */
+export function matrixAt(options: CustomRenderMethodInput, [cx, cy]: [number, number]): Float32Array {
+  const m = options.defaultProjectionData?.mainMatrix ?? options.modelViewProjectionMatrix;
+  const matrix = new Float32Array(m as ArrayLike<number>);
+  for (let row = 0; row < 4; row++) matrix[12 + row] = m[row]! * cx + m[4 + row]! * cy + m[12 + row]!;
+  return matrix;
 }
 
 /**
@@ -99,6 +118,7 @@ export class MapFieldOverlay implements FieldOverlay, CustomLayerInterface {
   private colormap: Colormap;
   private lutDirty = true;
   private opacity: number;
+  private gain = 1;
   private smooth: boolean;
   private soften: number;
   private glide: number;
@@ -125,9 +145,9 @@ export class MapFieldOverlay implements FieldOverlay, CustomLayerInterface {
     this.smooth = style.smooth ?? true;
     this.soften = style.soften ?? 0;
     this.glide = style.glide ?? 0;
-    const mercator = site.corners.map(([lon, lat]) => maplibregl.MercatorCoordinate.fromLngLat({ lng: lon, lat }));
-    this.centre = [mercator.reduce((s, m) => s + m.x, 0) / 4, mercator.reduce((s, m) => s + m.y, 0) / 4];
-    this.corners = mercator.map((m) => [m.x - this.centre[0], m.y - this.centre[1]]);
+    const extent = mercatorExtent(site);
+    this.centre = extent.centre;
+    this.corners = extent.corners;
   }
 
   set(frame: FieldFrame): void {
@@ -147,6 +167,12 @@ export class MapFieldOverlay implements FieldOverlay, CustomLayerInterface {
     this.map.triggerRepaint();
   }
 
+  /** The layer's intensity, set by the runtime from host state. Not part of the layer API. */
+  setGain(gain: number): void {
+    this.gain = gain;
+    this.map.triggerRepaint();
+  }
+
   remove(): void {
     if (this.map.getLayer(this.id)) this.map.removeLayer(this.id);
   }
@@ -156,7 +182,7 @@ export class MapFieldOverlay implements FieldOverlay, CustomLayerInterface {
     this.gl = gl;
     const program = link(gl, VERTEX, FRAGMENT);
     this.program = program;
-    for (const name of ['u_matrix', 'u_field', 'u_lut', 'u_range', 'u_opacity', 'u_soften']) this.uniforms[name] = gl.getUniformLocation(program, name);
+    for (const name of ['u_matrix', 'u_field', 'u_lut', 'u_range', 'u_opacity', 'u_gain', 'u_soften']) this.uniforms[name] = gl.getUniformLocation(program, name);
     this.glideProgram = link(gl, GLIDE_VERTEX, GLIDE_FRAGMENT);
     for (const name of ['u_shown', 'u_target', 'u_k']) this.glideUniforms[name] = gl.getUniformLocation(this.glideProgram, name);
     this.shown = [gl.createTexture(), gl.createTexture()];
@@ -280,16 +306,13 @@ export class MapFieldOverlay implements FieldOverlay, CustomLayerInterface {
       this.lutDirty = false;
     }
 
-    // Move the origin to the extent's centre in double precision before the matrix becomes float32.
-    const m = options.defaultProjectionData?.mainMatrix ?? options.modelViewProjectionMatrix;
-    const [cx, cy] = this.centre;
-    const matrix = new Float32Array(m as ArrayLike<number>);
-    for (let row = 0; row < 4; row++) matrix[12 + row] = m[row]! * cx + m[4 + row]! * cy + m[12 + row]!;
+    const matrix = matrixAt(options, this.centre);
 
     gl.useProgram(this.program);
     gl.uniformMatrix4fv(this.uniforms.u_matrix!, false, matrix);
     gl.uniform2f(this.uniforms.u_range!, this.range[0], this.range[1]);
     gl.uniform1f(this.uniforms.u_opacity!, this.opacity);
+    gl.uniform1f(this.uniforms.u_gain!, this.gain);
     gl.activeTexture(gl.TEXTURE0);
     const gliding = this.gliding() && this.shownValid;
     gl.bindTexture(gl.TEXTURE_2D, gliding ? this.shown[0] : this.fieldTexture);

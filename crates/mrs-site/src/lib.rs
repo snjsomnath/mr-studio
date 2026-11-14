@@ -2,9 +2,14 @@
 //! Contract in `docs/contracts/site.md`.
 
 mod bake;
+mod crs;
+mod geotiff;
 mod manifest;
+mod mesh;
 mod projection;
+mod twin;
 
+use std::collections::BTreeMap;
 use std::path::{Component, Path, PathBuf};
 
 use mrs_engine::{Grid, SceneData};
@@ -12,6 +17,7 @@ use serde::Serialize;
 use thiserror::Error;
 
 pub use bake::BakeStats;
+pub use crs::Crs;
 pub use manifest::*;
 pub use projection::Projection;
 
@@ -33,6 +39,8 @@ pub enum SiteError {
 pub struct Site {
     pub dir: PathBuf,
     pub manifest: SiteManifest,
+    /// From `calibration.json`, when the site has one.
+    pub calibration: Option<Calibration>,
 }
 
 /// What surfaces need to know about the site.
@@ -51,6 +59,12 @@ pub struct SiteInfo {
     pub branding: Branding,
     /// Site-relative path of the building footprints, for the table's context drawing.
     pub buildings: Option<String>,
+    /// The calibrated table view, when the site has a `calibration.json`.
+    pub calibration: Option<TableCalibration>,
+    /// Named datasets for layers: name to site-relative path, served under `/site/`.
+    pub data: BTreeMap<String, String>,
+    /// The site's TV dashboard settings (theme, pages), as written. Validated on the TV by `@mrstudio/dashboard`.
+    pub tv: Option<serde_json::Value>,
 }
 
 impl Site {
@@ -60,7 +74,13 @@ impl Site {
         let text = std::fs::read_to_string(&path).map_err(|source| SiteError::Io { path: path.clone(), source })?;
         let manifest: SiteManifest =
             serde_json::from_str(&text).map_err(|e| SiteError::Parse { path: path.clone(), message: e.to_string() })?;
-        let site = Self { dir, manifest };
+        let path = dir.join("calibration.json");
+        let calibration = match std::fs::read_to_string(&path) {
+            Ok(text) => Some(serde_json::from_str(&text).map_err(|e| SiteError::Parse { path: path.clone(), message: e.to_string() })?),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+            Err(source) => return Err(SiteError::Io { path, source }),
+        };
+        let site = Self { dir, manifest, calibration };
         let problems = site.problems();
         if problems.is_empty() {
             Ok(site)
@@ -112,13 +132,62 @@ impl Site {
         }
         if let Some(t) = &m.scene.terrain {
             check(&mut out, "scene.terrain.path", &t.path);
-            if let Some(full) = self.resolve(&t.path).filter(|p| p.exists()) {
-                let expected = t.width as u64 * t.height as u64 * 4;
-                let actual = std::fs::metadata(&full).map(|m| m.len()).unwrap_or(0);
-                if actual != expected {
-                    out.push(format!("scene.terrain: {} is {actual} bytes, {}x{} f32 needs {expected}", t.path, t.width, t.height));
+            if t.is_geotiff() {
+                if t.width.is_some() || t.height.is_some() {
+                    out.push("scene.terrain: width and height are for raw .f32 terrain; a GeoTIFF carries its own".into());
+                }
+                if let Some(crs) = t.crs.as_deref().filter(|crs| Crs::parse(crs).is_none()) {
+                    out.push(format!("scene.terrain.crs: '{crs}' is not supported; use one of {}", Crs::SUPPORTED));
+                }
+            } else {
+                match (t.width, t.height) {
+                    (Some(width), Some(height)) if width > 0 && height > 0 => {
+                        if let Some(full) = self.resolve(&t.path).filter(|p| p.exists()) {
+                            let expected = width as u64 * height as u64 * 4;
+                            let actual = std::fs::metadata(&full).map(|m| m.len()).unwrap_or(0);
+                            if actual != expected {
+                                out.push(format!("scene.terrain: {} is {actual} bytes, {width}x{height} f32 needs {expected}", t.path));
+                            }
+                        }
+                    }
+                    _ => out.push("scene.terrain: raw .f32 terrain needs a positive width and height".into()),
+                }
+                if t.crs.is_some() {
+                    out.push("scene.terrain.crs is for GeoTIFF terrain; raw .f32 terrain covers the extent".into());
                 }
             }
+        }
+        if let Some(mesh) = &m.scene.mesh {
+            check(&mut out, "scene.mesh.path", &mesh.path);
+            if !mesh.path.to_ascii_lowercase().ends_with(".stl") {
+                out.push("scene.mesh.path: only STL meshes are read so far".into());
+            }
+            if !(mesh.unit_m > 0.0) || !mesh.unit_m.is_finite() {
+                out.push("scene.mesh.unit_m must be positive".into());
+            }
+            if !(-180.0..=180.0).contains(&mesh.anchor.lon) || !(-85.0..=85.0).contains(&mesh.anchor.lat) {
+                out.push("scene.mesh.anchor must be a WGS84 lon/lat".into());
+            }
+            if !mesh.bearing_deg.is_finite() || !mesh.base_m.is_finite() || !(mesh.ground_tolerance_m >= 0.0) {
+                out.push("scene.mesh: bearing_deg and base_m must be numbers, ground_tolerance_m zero or more".into());
+            }
+        }
+        if let Some(c) = self.calibration.and_then(|c| c.table) {
+            let window_ok = c.window.is_none_or(|w| w.width_px > 0.0 && w.height_px > 0.0);
+            if !(-180.0..=180.0).contains(&c.center.lon)
+                || !(-85.0..=85.0).contains(&c.center.lat)
+                || !(0.0..=24.0).contains(&c.zoom)
+                || !c.bearing.is_finite()
+                || !window_ok
+            {
+                out.push("calibration.json: needs a WGS84 center, a zoom from 0 to 24, a bearing and a positive window size".into());
+            }
+        }
+        for (name, path) in &m.data {
+            if name.is_empty() || !name.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '-') {
+                out.push(format!("data: name '{name}' must be lowercase letters, digits, dashes and underscores"));
+            }
+            check(&mut out, &format!("data.{name}"), path);
         }
         for layer in &m.layers {
             if layer.r#use.starts_with('.') {
@@ -171,11 +240,53 @@ impl Site {
             basemap: m.basemap.clone(),
             branding: m.branding.clone(),
             buildings: m.scene.buildings.as_ref().map(|b| b.path.clone()),
+            calibration: self.calibration.and_then(|c| c.table),
+            data: m.data.clone(),
+            tv: m.tv.clone(),
         }
     }
 
     /// Builds the engine scene from the site's sources.
     pub fn bake(&self) -> Result<(SceneData, BakeStats), SiteError> {
         bake::bake(self)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn site(data: &str) -> Site {
+        let text = format!(
+            r#"{{ "format": 1, "id": "t", "name": "T", "origin": {{ "lon": 12, "lat": 57 }},
+                 "extent": {{ "width_m": 100, "height_m": 100 }}, "scene": {{ "cell_m": 1 }}, "data": {data} }}"#
+        );
+        // The crate's own folder stands in for a site folder: Cargo.toml exists in it.
+        Site { dir: PathBuf::from(env!("CARGO_MANIFEST_DIR")), manifest: serde_json::from_str(&text).unwrap(), calibration: None }
+    }
+
+    #[test]
+    fn datasets_are_named_files_inside_the_site() {
+        let good = site(r#"{ "walkways": "Cargo.toml" }"#);
+        assert_eq!(good.problems(), Vec::<String>::new());
+        assert_eq!(good.info().data["walkways"], "Cargo.toml");
+
+        let problems = site(r#"{ "walkways": "missing.geojson", "trips": "../outside.json", "Bad Name": "Cargo.toml" }"#).problems();
+        assert_eq!(problems.len(), 3, "{problems:?}");
+        assert!(problems.iter().any(|p| p.contains("data.walkways") && p.contains("does not exist")));
+        assert!(problems.iter().any(|p| p.contains("data.trips") && p.contains("inside the site folder")));
+        assert!(problems.iter().any(|p| p.contains("'Bad Name'")));
+    }
+
+    #[test]
+    fn calibration_file_may_hold_only_a_projector() {
+        // The host writes the model surface's projector calibration into the same file.
+        let only_projector: Calibration = serde_json::from_str(r#"{ "projector": { "version": 1 } }"#).unwrap();
+        assert_eq!(only_projector.table, None);
+        let both: Calibration = serde_json::from_str(
+            r#"{ "table": { "center": { "lon": 12, "lat": 57 }, "zoom": 16, "bearing": 0 }, "projector": null }"#,
+        )
+        .unwrap();
+        assert_eq!(both.table.map(|t| t.zoom), Some(16.0));
     }
 }

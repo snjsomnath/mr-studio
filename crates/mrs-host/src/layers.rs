@@ -29,12 +29,27 @@ pub struct Control {
     pub default: Value,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ToolKind {
+    Point,
+    Line,
+    Polygon,
+}
+
+/// A spatial input the layer accepts.
+#[derive(Debug, Clone)]
+pub struct Tool {
+    pub id: String,
+    pub kind: ToolKind,
+}
+
 #[derive(Debug, Clone)]
 pub struct LayerDef {
     pub id: String,
     /// The manifest as written, sent to surfaces.
     pub manifest: Value,
     pub controls: Vec<Control>,
+    pub tools: Vec<Tool>,
 }
 
 impl LayerDef {
@@ -80,7 +95,22 @@ impl LayerDef {
             }
             controls.push(control);
         }
-        Ok(Self { id, manifest, controls })
+        let mut tools = Vec::new();
+        for t in manifest["tools"].as_array().map(Vec::as_slice).unwrap_or(&[]) {
+            let tid = t["id"].as_str().ok_or_else(|| anyhow!("a tool has no id"))?.to_string();
+            let kind = match t["type"].as_str() {
+                Some("point") => ToolKind::Point,
+                Some("line") => ToolKind::Line,
+                Some("polygon") => ToolKind::Polygon,
+                other => bail!("tool '{tid}' has unknown type {other:?}"),
+            };
+            tools.push(Tool { id: tid, kind });
+        }
+        Ok(Self { id, manifest, controls, tools })
+    }
+
+    pub fn tool(&self, id: &str) -> Option<&Tool> {
+        self.tools.iter().find(|t| t.id == id)
     }
 
     pub fn control(&self, id: &str) -> Option<&Control> {
@@ -172,6 +202,12 @@ pub fn load_for_site(site: &Site, core_layers: &Path) -> anyhow::Result<Vec<Laye
         if !layer.r#use.starts_with('.') && def.id != layer.r#use {
             bail!("{} declares id '{}', expected '{}'", dir.display(), def.id, layer.r#use);
         }
+        for name in def.manifest["requires"]["data"].as_array().map(Vec::as_slice).unwrap_or(&[]) {
+            let name = name.as_str().ok_or_else(|| anyhow!("layer '{}': requires.data must be dataset names", def.id))?;
+            if !site.manifest.data.contains_key(name) {
+                bail!("layer '{}' needs the dataset '{name}'; add it under \"data\" in site.json", def.id);
+            }
+        }
         if defs.iter().any(|d| d.id == def.id) {
             bail!("layer '{}' is listed twice in site.json", def.id);
         }
@@ -225,8 +261,22 @@ mod tests {
     }
 
     #[test]
+    fn a_layer_needs_its_datasets() {
+        let repo = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let mut site = Site::load(repo.join("sites/sample")).unwrap();
+        assert!(site.manifest.layers.iter().any(|l| l.r#use == "coolpaths"));
+        assert!(load_for_site(&site, &repo.join("packages/layers")).is_ok());
+        site.manifest.data.remove("walkways");
+        let error = load_for_site(&site, &repo.join("packages/layers")).unwrap_err().to_string();
+        assert!(error.contains("coolpaths") && error.contains("walkways"), "{error}");
+    }
+
+    #[test]
     fn bad_manifests_are_refused() {
         assert!(LayerDef::parse(json!({ "api": 2, "id": "t" })).is_err());
+        assert!(LayerDef::parse(json!({ "api": 1, "id": "t", "tools": [{ "id": "x", "type": "circle" }] })).is_err());
+        let ok = LayerDef::parse(json!({ "api": 1, "id": "t", "tools": [{ "id": "x", "type": "line" }] })).unwrap();
+        assert_eq!(ok.tool("x").unwrap().kind, ToolKind::Line);
         assert!(LayerDef::parse(
             json!({ "api": 1, "id": "t", "controls": [{ "id": "x", "type": "range", "min": 1, "max": 1, "default": 1 }] })
         )

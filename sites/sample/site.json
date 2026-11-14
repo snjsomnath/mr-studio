@@ -13,8 +13,17 @@
     "trees": { "path": "data/trees.geojson", "height_property": "height", "crown_radius_m": 3.5 }
   },
   "basemap": { "background": "#0b0e14", "style": null },
+  "data": {
+    "walkways": "data/walkways.geojson",
+    "trips": "data/trips.json",
+    "trip_cells": "data/trip-cells.geojson"
+  },
   "layers": [
-    { "use": "sunlight", "active": true, "params": { "date": "2026-06-21", "hour": 15 } }
+    { "use": "sunlight", "active": true, "params": { "date": "2026-06-21", "hour": 15, "relight": true } },
+    { "use": "sketch", "active": true },
+    { "use": "coolpaths" },
+    { "use": "mobility" },
+    { "use": "wind" }
   ],
   "branding": { "title": "MR Studio" }
 }

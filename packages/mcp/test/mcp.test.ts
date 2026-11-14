@@ -189,7 +189,7 @@ describe('server over stdio', () => {
     // Hand edits are caught.
     const broken = JSON.parse(readFileSync(join(dir, 'site.json'), 'utf8'));
     broken.extra = true;
-    broken.layers.push({ use: 'wind' });
+    broken.layers.push({ use: 'no-such-layer' });
     writeFileSync(join(dir, 'site.json'), JSON.stringify(broken));
     const invalid = await call(client, 'validate_site', { site: 'harbour' });
     assert.equal(invalid.isError, true);
