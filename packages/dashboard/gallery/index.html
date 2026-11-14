@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>MR Studio dashboard gallery</title>
+    <style>
+      html, body { height: 100%; margin: 0; background: #000; }
+      /* A 16:9 TV with the control rail's share taken off the left, as on the real screen. */
+      #tv { height: 100vh; width: 100vw; display: flex; }
+      #rail { width: 22vw; background: #131722; border-right: 1px solid #2a3246; }
+      #canvas { flex: 1; min-width: 0; }
+      body.grid #canvas .mrs-page { background-image:
+        repeating-linear-gradient(to right, rgb(255 0 128 / 0.5) 0 1px, transparent 1px calc((100% - 2 * var(--mrs-margin) + var(--mrs-gap)) / 12));
+        background-origin: content-box; background-clip: content-box; }
+    </style>
+  </head>
+  <body>
+    <div id="tv"><div id="rail"></div><div id="canvas"></div></div>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

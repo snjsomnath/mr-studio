@@ -1,9 +1,8 @@
 import { isVisible } from '@mrstudio/sdk';
-import type { Connection, Control, LayerManifest, LayerState, PanelHandlers, Role } from '@mrstudio/sdk';
+import type { Connection, Control, LayerManifest, LayerState, Role } from '@mrstudio/sdk';
 
-import { baseContext, paramSender } from './layer-manager.ts';
+import { paramSender } from './layer-manager.ts';
 import { PHONE_SEND_INTERVAL, toolSection } from './phone-tools.ts';
-import { layerModule } from './registry.ts';
 import type { Store } from './store.ts';
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, className?: string, text?: string): HTMLElementTagNameMap[K] {
@@ -105,8 +104,8 @@ function widget(control: Control, send: (value: unknown) => void, act: () => voi
 }
 
 /**
- * The controller: one card per layer with an on/off switch, the controls
- * generated from its manifest, and (on the TV and in dev) the layer's panel.
+ * The controller: one card per layer with an on/off switch and the controls
+ * generated from its manifest. The layer's panels are on the dashboard canvas.
  */
 export class Controller {
   private cards = new Map<string, { sync(state: LayerState): void }>();
@@ -160,28 +159,6 @@ export class Controller {
     const controls = el('div', 'controls');
     controls.append(...widgets.map((w) => w.row));
 
-    // The layer's own panel, mounted only while the layer is on.
-    const module = phone ? undefined : layerModule(manifest.id);
-    const panelHost = el('div', 'layer-panel');
-    let panel: { handlers: PanelHandlers; cleanups: (() => void)[] } | null = null;
-    const mount = () => {
-      if (!module?.panel || panel) return;
-      const cleanups: (() => void)[] = [];
-      const ctx = Object.assign(Object.create(baseContext(store, connection, manifest.id)), { onCleanup: (c: () => void) => cleanups.push(c) });
-      try {
-        panel = { handlers: module.panel(ctx, panelHost) ?? {}, cleanups };
-      } catch (error) {
-        console.error(`[${manifest.id}] panel failed`, error);
-      }
-    };
-    const unmount = () => {
-      if (!panel) return;
-      for (const cleanup of panel.cleanups) cleanup();
-      panel = null;
-      panelHost.replaceChildren();
-    };
-
-    if (module?.panel) body.append(panelHost);
     // On a phone, the layer's tools: a small map of the table to tap and draw on.
     const tools = phone && manifest.tools?.length ? toolSection(manifest, store, connection) : null;
     if (tools) body.append(tools.element);
@@ -200,16 +177,6 @@ export class Controller {
           w.sync(state.params[w.control.id]);
         }
         tools?.sync(state.active);
-        if (state.active) {
-          mount();
-          try {
-            panel?.handlers.update?.();
-          } catch (error) {
-            console.error(`[${manifest.id}] panel failed`, error);
-          }
-        } else {
-          unmount();
-        }
       },
     });
     return card;

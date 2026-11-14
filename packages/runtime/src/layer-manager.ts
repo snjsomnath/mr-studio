@@ -115,6 +115,7 @@ export class LayerManager {
         info: () => engine.info(),
       } as EngineClient,
       map: this.view.handle(id, track),
+      pointer: this.view.pointer(track),
       publish: (values) => {
         const patch: Record<string, unknown> = {};
         for (const [key, value] of Object.entries(values)) {

@@ -1,7 +1,11 @@
 import { Connection } from '@mrstudio/sdk';
 import type { Role } from '@mrstudio/sdk';
 
+import { themeVariables } from '@mrstudio/dashboard';
+import '@mrstudio/dashboard/src/dashboard.css';
+
 import { Controller } from './controls.ts';
+import { mountDashboard } from './dashboard.ts';
 import { joinPanel } from './join.ts';
 import { LayerManager } from './layer-manager.ts';
 import { phoneBadge, phoneCode, refusedScreen, rememberSeat, rememberedSeat } from './phone.ts';
@@ -63,19 +67,33 @@ async function main() {
   connection.on('welcome', () => (status.hidden = true));
   document.body.append(status);
 
-  // The table (and the table half of dev) renders layers.
+  // The site's theme also colours the controls, so the rail and the dashboard read as one screen.
+  const theme = themeVariables(site.tv?.theme).variables;
+  const names = { '--bg': '--mrs-bg', '--panel': '--mrs-panel', '--card': '--mrs-panel', '--line': '--mrs-line', '--text': '--mrs-text', '--muted': '--mrs-muted', '--accent': '--mrs-accent', '--accent-ink': '--mrs-accent-ink' };
+  if (site.tv?.theme) for (const [own, token] of Object.entries(names)) document.documentElement.style.setProperty(own, theme[token]!);
+  document.body.dataset.rail = site.tv?.rail ?? 'left';
+
+  // The table (and the table half of dev) renders layers. Dev shows the TV's dashboard under it.
+  const stage = el('div', 'stage');
   if (role === 'table' || role === 'dev') {
     const frame = el('div', 'table-frame');
     const surface = el('div', 'table-surface');
     surface.style.aspectRatio = `${site.extent.width_m} / ${site.extent.height_m}`;
     surface.style.setProperty('--aspect', String(site.extent.width_m / site.extent.height_m));
     frame.append(surface);
-    app.append(frame);
+    stage.append(frame);
+    app.append(stage);
     // The map library is large; phones and the TV never load it.
     const { TableView } = await import('./table.ts');
     const view = new TableView(surface, site);
     await view.ready;
     new LayerManager(store, connection, view);
+  }
+  if (role === 'tv' || role === 'dev') {
+    const dash = el('main', 'dash');
+    stage.append(dash);
+    if (role === 'tv') app.append(stage);
+    mountDashboard(dash, store, connection, role === 'dev');
   }
 
   // Everything except the bare table gets the controller.

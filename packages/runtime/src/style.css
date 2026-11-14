@@ -33,6 +33,30 @@ body {
   display: flex;
 }
 
+/* ---- Stage: the table, the dashboard, or in dev both ---- */
+
+.stage {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.dash {
+  flex: 1;
+  min-height: 0;
+}
+
+/* In dev the dashboard is a small preview of the TV; open /tv for the real size. */
+body[data-role='dev'] .table-frame {
+  flex: 1;
+}
+
+body[data-role='dev'] .dash {
+  flex: 1;
+  border-top: 1px solid var(--line);
+}
+
 /* ---- Table ---- */
 
 .table-frame {
@@ -80,7 +104,6 @@ body[data-role='dev'] .table-surface {
   border-left: 1px solid var(--line);
 }
 
-body[data-role='tv'] .controller,
 body[data-role='phone'] .controller {
   width: 100%;
   max-width: 720px;
@@ -88,9 +111,26 @@ body[data-role='phone'] .controller {
   border: 0;
 }
 
-body[data-role='phone'],
-body[data-role='tv'] {
+body[data-role='phone'] {
   background: var(--panel);
+}
+
+/* On the TV the controls are a rail beside the dashboard canvas. */
+body[data-role='tv'] .controller {
+  order: -1;
+  width: clamp(300px, 22vw, 460px);
+  border-left: 0;
+  border-right: 1px solid var(--line);
+}
+
+body[data-role='tv'][data-rail='right'] .controller {
+  order: 1;
+  border-right: 0;
+  border-left: 1px solid var(--line);
+}
+
+body[data-role='tv'][data-rail='none'] .controller {
+  display: none;
 }
 
 .controller-header {
@@ -165,12 +205,6 @@ body[data-role='tv'] {
   padding: 4px 16px 16px;
   display: grid;
   gap: 16px;
-}
-
-.layer-panel {
-  padding: 12px 14px;
-  background: rgb(0 0 0 / 0.22);
-  border-radius: 8px;
 }
 
 .controls {
