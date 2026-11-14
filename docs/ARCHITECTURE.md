@@ -94,6 +94,38 @@ docs/contracts/   the interface contracts below
 - **Controls are data.** A layer declares its controls in the manifest. The TV and phone UIs are generated from them, and the host validates every change against them.
 - **Python stays outside the app process.** Data preparation and research models run as services declared in the site or layer manifest and reached through the host gateway.
 
+## Distribution and updates
+
+There is one core, maintained in this repository. Nobody clones, forks or branches it to make their own table.
+A team installs the core and keeps only what is theirs in a repository of their own.
+
+What a team installs:
+
+| Thing | Form | For |
+| --- | --- | --- |
+| MR Studio app | Signed installer for Windows and macOS, with built-in update | Running a table. Contains the engine, host, runtime and core layers |
+| `mrstudio` CLI | Ships inside the app, also `cargo install` | Creating, validating and previewing sites and layers |
+| `@mrstudio/sdk` | npm package | Writing custom layers and TV widgets |
+
+What a team owns: a site repository made from a template (`mrstudio new-site`, later a GitHub template repository).
+It holds `site.json`, data, custom layers and dashboards, and a `mrstudio` version range. It contains no core code.
+The app opens that folder. Updating the core is installing a newer app; the site folder is not touched.
+
+Versioning. The app, CLI and SDK share one semantic version. What that version promises is the contracts, each of which carries its own number:
+`format` in `site.json`, `api` in `layer.json`, `protocol` in the wire hello, and kernel ids with their params and fields.
+
+- Patch and minor releases never break a site or layer that worked on the same major version. New controls, kernels and fields are additions.
+- A breaking change raises the contract number and the major version. The app keeps reading the previous `format` and `api` for one major version and `mrstudio migrate` rewrites a site to the new one.
+- The app refuses a site that needs a newer core than it has, and says which version to install.
+- Kernel results are part of the promise: the parity and physics tests guard them, and a change in output beyond the stated tolerance is a breaking change.
+
+Channels: `stable` for tables in use, `beta` for trying the next release, and nightly builds from `main` for development.
+A venue can pin a version, so a table does not change the day before an exhibition.
+
+A custom layer that proves useful to more than one team moves into the core through a pull request, and from then on reaches everyone through an app update.
+
+None of this is built yet. Releases, the updater, npm publishing and the template are the "Release and distribution" work package.
+
 ## Work packages
 
 These are independent once the contracts are fixed.
