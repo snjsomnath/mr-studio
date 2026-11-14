@@ -75,6 +75,10 @@ The pass is one CSS filter on the page's root element, injected by the shell, in
 
 The same tab has a slider per layer of the running session for `LayerState.intensity`. The shell sends `layer.intensity` to the host with the TV's rights, saves values other than 1 under `layers`, and sends them again when that site next starts.
 
+### Calibration tab
+
+The launcher's Calibration tab does not calibrate anything itself. It shows the running site's saved projector calibration (when, and the average error), sends `calibration.mode` to open or close the tool on the table surface and moves the keyboard focus to the table window, and can clear the calibration with `calibration.set { projector: null }`. The tool and the file format are in [model.md](model.md).
+
 Surface URLs served by the host:
 
 | URL | Surface |

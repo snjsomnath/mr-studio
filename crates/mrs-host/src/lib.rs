@@ -52,6 +52,18 @@ pub struct AppState {
     pub calibration: Calibration,
 }
 
+impl AppState {
+    /// Handles a `calibration.*` request and tells every surface what changed. The desktop
+    /// shell's calibration tab uses this directly; surfaces reach it over the WebSocket.
+    pub fn calibration_request(&self, method: &str, p: &Value) -> Result<Value, String> {
+        let (result, event) = self.calibration.request(method, p)?;
+        if let Some((name, payload)) = event {
+            self.hub.emit(name, payload);
+        }
+        Ok(result)
+    }
+}
+
 /// A running host. Dropping it does not stop the server; call `shutdown`.
 pub struct RunningHost {
     pub addr: SocketAddr,

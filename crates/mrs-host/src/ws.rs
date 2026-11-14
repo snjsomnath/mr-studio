@@ -161,11 +161,7 @@ async fn request(state: &AppState, role: Role, surface: u64, message: &Value, ou
         if !role.may_calibrate() {
             return Err("phones cannot read or change the calibration".into());
         }
-        let (result, event) = state.calibration.request(method, p)?;
-        if let Some((name, payload)) = event {
-            state.hub.emit(name, payload);
-        }
-        return Ok(result);
+        return state.calibration_request(method, p);
     }
     if !method.starts_with("engine.") {
         return state.hub.request(role, surface, method, p);

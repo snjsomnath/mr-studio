@@ -34,6 +34,7 @@ pnpm app:build    # make an installer for this computer (target/release/bundle)
 The app opens a launcher where you pick a site and say which display is the table and which is the TV, then opens one borderless fullscreen window per display.
 The choice is remembered, so the next start goes straight to the table. Ctrl+Shift+S brings the launcher back and Ctrl+Shift+Q quits.
 The launcher's Colour tab boosts or corrects the colours of each display (saturation, contrast, brightness, gamma, white balance), live on the running table, with presets and a test card.
+The Calibration tab starts the projector calibration tool on the table.
 Windows and macOS installers are built by the "Desktop app" workflow on every pull request and push to `main` (download them from the run's artifacts), and attached to a draft release for a `v*` tag.
 The installers are not signed yet: Windows SmartScreen asks once ("More info", "Run anyway"), and on macOS open the app the first time with right click, Open.
 
