@@ -4,3 +4,5 @@ dist/
 .DS_Store
 *.log
 sites/*/scene/
+# The demo site's projector calibration belongs to whichever machine made it.
+sites/sample/calibration.json

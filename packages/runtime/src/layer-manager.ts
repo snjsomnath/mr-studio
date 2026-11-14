@@ -106,6 +106,7 @@ export class LayerManager {
         info: () => engine.info(),
       } as EngineClient,
       map: this.view.handle(id, track),
+      model: this.view.modelHandle(id, track),
       publish: (values) => {
         const patch: Record<string, unknown> = {};
         for (const [key, value] of Object.entries(values)) {

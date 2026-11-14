@@ -46,6 +46,10 @@ impl Role {
     pub fn may_use_engine(self) -> bool {
         self != Self::Phone
     }
+
+    pub fn may_calibrate(self) -> bool {
+        self != Self::Phone
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -119,7 +123,7 @@ impl Hub {
         self.events.subscribe()
     }
 
-    fn emit(&self, method: &str, payload: Value) {
+    pub(crate) fn emit(&self, method: &str, payload: Value) {
         let _ = self.events.send(json!({ "t": "ev", "m": method, "p": payload }).to_string());
     }
 

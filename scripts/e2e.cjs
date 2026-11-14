@@ -3,6 +3,7 @@
 // Needs Playwright with Chromium (`npm i -g playwright && npx playwright install chromium`).
 const { spawn } = require('node:child_process');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
 const path = require('node:path');
 const { chromium } = require('playwright');
 
@@ -10,6 +11,40 @@ const root = path.resolve(__dirname, '..');
 const port = 4199;
 const base = `http://127.0.0.1:${port}`;
 const shots = process.argv[2];
+
+// The 3 x 4 matrix of a test projector for a 1500 x 800 image (see docs/contracts/model.md).
+const PROJECTOR = [1242.805279, 295.385556, -503.172347, 720252.706881, -99.105566, -449.278568, -1134.560204, 408103.300056, 0.159737, 0.724142, -0.670896, 966.942839];
+
+/** A surface without a browser: joins the session over the WebSocket and sends requests. */
+function join(role) {
+  return new Promise((resolve, reject) => {
+    const socket = new WebSocket(`ws://127.0.0.1:${port}/ws`);
+    const pending = new Map();
+    let next = 1;
+    socket.onopen = () => socket.send(JSON.stringify({ t: 'hello', protocol: 1, role }));
+    socket.onerror = () => reject(new Error('could not reach the host'));
+    socket.onmessage = (event) => {
+      if (typeof event.data !== 'string') return;
+      const message = JSON.parse(event.data);
+      if (message.t === 'welcome') {
+        resolve({
+          request: (m, p) =>
+            new Promise((done, fail) => {
+              const id = next++;
+              pending.set(id, { done, fail });
+              socket.send(JSON.stringify({ t: 'req', id, m, p }));
+            }),
+          close: () => socket.close(),
+        });
+      } else if (message.t === 'res') {
+        const waiting = pending.get(message.id);
+        pending.delete(message.id);
+        if (message.ok) waiting?.done(message.r);
+        else waiting?.fail(new Error(message.e));
+      }
+    };
+  });
+}
 
 async function main() {
   const host = spawn(
@@ -89,12 +124,61 @@ async function main() {
       await tv.screenshot({ path: path.join(shots, 'tv.png') });
     }
 
+    // ---- The model surface ----
+
+    // The sample site lights the twin, so the flat map is laid over it rather than shown on its own.
+    await dev.locator('.table-surface.is-draped canvas.table-model').waitFor();
+    // With the lighting off the table is the flat map again, and looks different.
+    await tv.getByLabel('Time of day').fill('15');
+    await dev.locator('.sunlight-clock', { hasText: '15:00' }).waitFor();
+    await dev.waitForTimeout(800);
+    const relit = await table.screenshot();
+    if (shots) await dev.screenshot({ path: path.join(shots, 'dev-relit.png') });
+    await tv.getByLabel('Light the 3D model').uncheck();
+    await dev.locator('.table-surface:not(.is-draped)').waitFor();
+    await dev.waitForTimeout(800);
+    assert.notDeepEqual(await table.screenshot(), relit, 'relighting should change the table');
+    await tv.getByLabel('Light the 3D model').check();
+
+    // The projected table takes up a projector calibration the moment the host has one.
+    const projected = await open('/table', { width: 1500, height: 800 });
+    await projected.locator('canvas.table-model').waitFor();
+    await projected.waitForTimeout(1500);
+    const flat = await projected.screenshot();
+    const controller = await join('dev');
+    // A projector above and to the south of the model, looking down at it at an angle.
+    const projector = { version: 1, matrix: PROJECTOR, image: { width: 1500, height: 800 }, pairs: [], error_px: 0, camera: {} };
+    await controller.request('calibration.set', { projector });
+    await projected.locator('.table-surface.is-projector').waitFor();
+    await projected.waitForTimeout(1500);
+    assert.notDeepEqual(await projected.screenshot(), flat, 'the calibrated table should show the twin through the projector');
+    if (shots) await projected.screenshot({ path: path.join(shots, 'table-projector.png') });
+    // The dev surface stays a flat preview.
+    assert.equal(await dev.locator('.table-surface.is-projector').count(), 0);
+
+    // Any controller can open the calibration tool on the table. It starts from a dark surface and counts corners.
+    await controller.request('calibration.mode', { active: true });
+    await projected.getByText('Corner 1 of 10').waitFor();
+    await projected.mouse.click(300, 200);
+    await projected.getByText('1 of at least 6 corners placed.').waitFor();
+    if (shots) await projected.screenshot({ path: path.join(shots, 'table-calibrating.png') });
+    await projected.keyboard.press('Escape');
+    await projected.locator('.table-surface.is-projector:not(.is-calibrating)').waitFor();
+    assert.equal(await projected.locator('.calibration').count(), 0);
+
+    // Clearing the calibration brings the flat table back.
+    await controller.request('calibration.set', { projector: null });
+    await projected.locator('.table-surface:not(.is-projector)').waitFor();
+    controller.close();
+
     const real = errors.filter((e) => !/wrong session code|WebSocket/.test(e));
     assert.deepEqual(real, [], 'no page errors');
     console.log('e2e passed');
   } finally {
     await browser.close();
     host.kill();
+    // The run's calibration must not outlive it.
+    fs.rmSync(path.join(root, 'sites/sample/calibration.json'), { force: true });
   }
 }
 

@@ -1,5 +1,6 @@
 import type { Colormap } from './colormap.ts';
 import type { EngineClient } from './engine.ts';
+import type { ModelHandle } from './model.ts';
 import type { FieldFrame, LayerManifest, Params, SiteInfo, ToolInput } from './types.ts';
 
 export interface FieldOverlayStyle {
@@ -45,6 +46,8 @@ interface ContextBase<P> {
 export interface TableContext<P = Params> extends ContextBase<P> {
   readonly engine: EngineClient;
   readonly map: MapHandle;
+  /** The digital twin of the physical model: fields, lights and materials on its real surfaces. */
+  readonly model: ModelHandle;
   /** Publishes derived values for panels. Only changed keys are sent. */
   publish(values: Record<string, unknown>): void;
   /** Runs every animation frame while the layer is active. `dt` is seconds since the last call. */

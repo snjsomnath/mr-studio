@@ -113,6 +113,16 @@ async fn connection(socket: WebSocket, state: Arc<AppState>) {
 async fn request(state: &AppState, role: Role, surface: u64, message: &Value, out: &mpsc::Sender<Out>) -> Result<Value, String> {
     let method = message["m"].as_str().ok_or("missing method")?;
     let p = &message["p"];
+    if method.starts_with("calibration.") {
+        if !role.may_calibrate() {
+            return Err("phones cannot read or change the calibration".into());
+        }
+        let (result, event) = state.calibration.request(method, p)?;
+        if let Some((name, payload)) = event {
+            state.hub.emit(name, payload);
+        }
+        return Ok(result);
+    }
     if !method.starts_with("engine.") {
         return state.hub.request(role, surface, method, p);
     }

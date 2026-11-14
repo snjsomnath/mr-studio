@@ -2,6 +2,7 @@
 //! hub and fronts the compute engine. The desktop shell embeds it; `mrstudio dev`
 //! runs it on its own. Contract in `docs/contracts/session.md`.
 
+mod calibration;
 mod engine_bridge;
 mod hub;
 mod layers;
@@ -12,7 +13,10 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use anyhow::Context as _;
+use axum::body::Bytes;
 use axum::extract::State;
+use axum::http::header;
+use axum::response::IntoResponse;
 use axum::routing::get;
 use axum::{Json, Router};
 use mrs_engine::Backend;
@@ -20,6 +24,7 @@ use mrs_site::Site;
 use serde_json::{json, Value};
 use tower_http::services::{ServeDir, ServeFile};
 
+pub use calibration::Calibration;
 pub use engine_bridge::EngineHandle;
 pub use hub::{Hub, Role};
 pub use layers::{Control, ControlKind, LayerDef};
@@ -40,6 +45,9 @@ pub struct AppState {
     pub hub: Hub,
     pub engine: EngineHandle,
     pub site: Site,
+    /// The site's digital twin in its wire form, built once from the baked scene.
+    pub twin: Bytes,
+    pub calibration: Calibration,
 }
 
 /// A running host. Dropping it does not stop the server; call `shutdown`.
@@ -75,6 +83,10 @@ pub async fn start(config: HostConfig) -> anyhow::Result<RunningHost> {
         stats.buildings,
         stats.trees
     );
+    let twin = site.twin(&scene)?;
+    tracing::info!("twin: {} triangles", twin.triangle_count());
+    let twin = Bytes::from(twin.encode());
+    let calibration = Calibration::load(&site.dir);
     let defs = layers::load_for_site(&site, &config.layers_dir)?;
     let engine = EngineHandle::spawn(config.backend, scene, site.manifest.origin)?;
     let info = engine.info().await?;
@@ -83,7 +95,7 @@ pub async fn start(config: HostConfig) -> anyhow::Result<RunningHost> {
     let listener = tokio::net::TcpListener::bind(config.bind).await.with_context(|| format!("binding {}", config.bind))?;
     let addr = listener.local_addr()?;
     let hub = Hub::new(&site, defs, addr.port());
-    let state = Arc::new(AppState { hub, engine, site });
+    let state = Arc::new(AppState { hub, engine, site, twin, calibration });
     let app = router(state.clone(), config.web_dir.clone());
 
     let (shutdown, stop) = tokio::sync::oneshot::channel::<()>();
@@ -99,8 +111,11 @@ pub async fn start(config: HostConfig) -> anyhow::Result<RunningHost> {
 }
 
 fn router(state: Arc<AppState>, web_dir: Option<PathBuf>) -> Router {
-    let mut app =
-        Router::new().route("/ws", get(ws::upgrade)).route("/api/info", get(info)).nest_service("/site", ServeDir::new(&state.site.dir));
+    let mut app = Router::new()
+        .route("/ws", get(ws::upgrade))
+        .route("/api/info", get(info))
+        .route("/api/model", get(model))
+        .nest_service("/site", ServeDir::new(&state.site.dir));
     app = match web_dir {
         // Every surface path (/table, /tv, /phone, /dev) is the same single-page app.
         Some(dir) => app.fallback_service(ServeDir::new(&dir).fallback(ServeFile::new(dir.join("index.html")))),
@@ -112,4 +127,9 @@ fn router(state: Arc<AppState>, web_dir: Option<PathBuf>) -> Router {
 async fn info(State(state): State<Arc<AppState>>) -> Json<Value> {
     let engine = state.engine.info().await.map(|i| json!(i)).unwrap_or(Value::Null);
     Json(json!({ "site": state.site.info(), "engine": engine, "session": state.hub.session() }))
+}
+
+/// The digital twin mesh. Layout in `docs/contracts/model.md`.
+async fn model(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+    ([(header::CONTENT_TYPE, "application/octet-stream"), (header::CACHE_CONTROL, "no-cache")], state.twin.clone())
 }

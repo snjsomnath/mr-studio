@@ -86,6 +86,7 @@ interface TableContext<P> {
   publish(values: Record<string, unknown>): void;      // derived values for panels
   readonly engine: EngineClient;        // open kernel streams
   readonly map: MapHandle;              // field overlays
+  readonly model: ModelHandle;          // the 3D model: fields, lights, materials, focus, pick (see model.md)
   onFrame(cb: (dt: number) => void): void;   // every animation frame while the layer is on
   onCleanup(cb: () => void): void;      // extra teardown
 }

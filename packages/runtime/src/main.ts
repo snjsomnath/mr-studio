@@ -3,6 +3,7 @@ import type { Role } from '@mrstudio/sdk';
 
 import { Controller } from './controls.ts';
 import { LayerManager } from './layer-manager.ts';
+import { installModel } from './model/index.ts';
 import { Store } from './store.ts';
 import './style.css';
 import { TableView } from './table.ts';
@@ -56,6 +57,7 @@ async function main() {
     app.append(frame);
     const view = new TableView(surface, site);
     await view.ready;
+    await installModel(view, connection, role);
     new LayerManager(store, connection, view);
   }
 
