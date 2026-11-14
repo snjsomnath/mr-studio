@@ -138,6 +138,13 @@ export interface SiteInfo {
   table: { width_cm: number; height_cm: number; tile_cm?: number } | null;
   basemap: { background: string; style: string | null };
   branding: { title: string | null; logo: string | null };
+  /** The calibrated table view, when the site has a calibration.json. */
+  calibration: {
+    center: { lon: number; lat: number };
+    zoom: number;
+    bearing: number;
+    window?: { width_px: number; height_px: number };
+  } | null;
   /** Datasets layers may read, by name: site-relative paths served under `/site/`. */
   data: Record<string, string>;
   tv?: TvConfig | null;

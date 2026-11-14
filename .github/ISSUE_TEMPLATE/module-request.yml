@@ -1,0 +1,40 @@
+name: Module request
+description: Ask the core for a layer, building block, kernel or contract change a site needs. The MR Studio MCP server drafts these.
+title: "[layer] "
+labels: ["module-request"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Teams build sites from the core's layers and building blocks; they do not fork MR Studio or copy core code.
+        When something is missing, describe it here so it is built once for every team.
+        Read principle 7 in docs/ARCHITECTURE.md first: a new piece should be a reusable block wherever it can.
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Kind
+      options:
+        - layer-change (a control, tool, panel or option on an existing core layer)
+        - layer (a new core layer from existing building blocks)
+        - block (a shared visual, data source or interaction)
+        - kernel (a new engine computation)
+        - contract (site.json, TV dashboard, protocol or CLI)
+        - promote (move a team's layer into the core)
+    validations: { required: true }
+  - type: textarea
+    id: goal
+    attributes: { label: What we want, description: What people at the table should see or be able to do }
+    validations: { required: true }
+  - type: textarea
+    id: why
+    attributes: { label: Why the core does not cover it yet, description: Which layers and blocks you checked and where they fall short }
+    validations: { required: true }
+  - type: textarea
+    id: proposal
+    attributes: { label: Proposal, description: How it could be composed from reusable blocks, and what is missing }
+  - type: textarea
+    id: example
+    attributes: { label: Example configuration, description: The layer.json or site.json fragment you would write once it exists, render: json }
+  - type: input
+    id: site
+    attributes: { label: Site, description: Which site needs it (optional) }

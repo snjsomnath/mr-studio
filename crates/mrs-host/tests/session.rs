@@ -564,8 +564,12 @@ async fn the_host_serves_the_twin() {
 async fn calibration_is_saved_shared_and_survives_a_restart() {
     // A copy of the sample site, so the test's calibration.json does not land in the repository.
     let dir = scratch_site("calibration");
-    // Another tool's calibration in the same file must be left alone.
-    std::fs::write(dir.join("calibration.json"), r#"{ "table": { "zoom": 16 } }"#).unwrap();
+    // The site's own table calibration in the same file must be left alone.
+    std::fs::write(
+        dir.join("calibration.json"),
+        r#"{ "table": { "center": { "lon": 11.9778, "lat": 57.6884 }, "zoom": 16, "bearing": 0 } }"#,
+    )
+    .unwrap();
     let start = || async {
         mrs_host::start(HostConfig {
             site_dir: dir.clone(),

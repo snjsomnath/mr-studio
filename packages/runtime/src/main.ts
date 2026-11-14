@@ -90,7 +90,7 @@ async function main() {
     app.append(stage);
     // The map library is large; phones and the TV never load it.
     const { TableView } = await import('./table.ts');
-    const view = new TableView(surface, site);
+    const view = new TableView(surface, site, role === 'table');
     await view.ready;
     const { installModel } = await import('./model/index.ts');
     await installModel(view, connection, role);

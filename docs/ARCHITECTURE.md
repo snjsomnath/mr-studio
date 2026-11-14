@@ -70,9 +70,10 @@ packages/
   dashboard/      @mrstudio/dashboard: the TV panel grid, widgets, density budget, themes
   runtime/        @mrstudio/runtime: surfaces (table, tv, phone, dev), scene composer, layer manager, generated controls
   layers/         core layer packages: basemap, ambient (cars, building-lights, transit, trees), slideshow, sunlight, sketch, then wind, stormwater, isovist, ...
+  mcp/            @mrstudio/mcp: MCP server that lets a team's LLM assemble sites and draft core requests
 sites/
   sample/         small synthetic site used by tests and layer dev mode
-  chalmers/       flagship reference site (to be ported)
+  chalmers/       flagship reference site
 services/         Python data and research services (site prep, ECOM, CoolPaths)
 docs/contracts/   the interface contracts below
 ```
@@ -111,6 +112,7 @@ What a team installs:
 | MR Studio app | Signed installer for Windows and macOS, with built-in update | Running a table. Contains the engine, host, runtime and core layers |
 | `mrstudio` CLI | Ships inside the app, also `cargo install` | Creating, validating and previewing sites and layers |
 | `@mrstudio/sdk` | npm package | Writing custom layers and TV widgets |
+| MR Studio MCP server | One file inside the app, also npm `@mrstudio/mcp` | Building a site by talking to an LLM ([MCP.md](MCP.md)) |
 
 What a team owns: a site repository made from a template (`mrstudio new-site`, later a GitHub template repository).
 It holds `site.json`, data, custom layers and dashboards, and a `mrstudio` version range. It contains no core code.
@@ -128,6 +130,7 @@ Channels: `stable` for tables in use, `beta` for trying the next release, and ni
 A venue can pin a version, so a table does not change the day before an exhibition.
 
 A custom layer that proves useful to more than one team moves into the core through a pull request, and from then on reaches everyone through an app update.
+When a site needs a layer, block, kernel or setting the core lacks, the team files a module request (an issue from `.github/ISSUE_TEMPLATE/module-request.yml`, which the MCP server drafts) rather than writing its own copy.
 
 None of this is built yet. Releases, the updater, npm publishing and the template are the "Release and distribution" work package.
 

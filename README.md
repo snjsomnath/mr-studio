@@ -22,6 +22,7 @@ To join from a real phone, run `pnpm dev -- --lan` and scan the QR code shown on
 
 ```bash
 cargo run -p mrs-cli -- validate sites/sample      # check a site and report its scene
+pnpm dev -- --site sites/chalmers                  # the Chalmers campus instead of the sample
 cargo run -p mrs-cli -- new-site sites/mysite --lon 11.94 --lat 57.706
 cargo run --release -p mrs-cli -- bench sites/sample   # time the kernels on GPU and CPU
 ```
@@ -36,6 +37,7 @@ pnpm app:build    # make an installer for this computer (target/release/bundle)
 The app opens a launcher where you pick a site and say which display is the table and which is the TV, then opens one borderless fullscreen window per display.
 The choice is remembered, so the next start goes straight to the table. Ctrl+Shift+S brings the launcher back and Ctrl+Shift+Q quits.
 The launcher's Colour tab boosts or corrects the colours of each display (saturation, contrast, brightness, gamma, white balance), live on the running table, with presets and a test card.
+The Calibration tab starts the projector calibration tool on the table.
 Windows and macOS installers are built by the "Desktop app" workflow on every pull request and push to `main` (download them from the run's artifacts), and attached to a draft release for a `v*` tag.
 The installers are not signed yet: Windows SmartScreen asks once ("More info", "Run anyway"), and on macOS open the app the first time with right click, Open.
 
@@ -50,7 +52,9 @@ apps/studio          desktop shell (Tauri): one window per display
 packages/sdk         @mrstudio/sdk: layer API, connection, engine client
 packages/runtime     the surfaces: table, tv, phone, dev
 packages/layers      core layers: sunlight (the reference for analysis), trees (for ambient layers), sketch (for phone tools), wind (the simulation example), coolpaths, mobility
+packages/mcp         MCP server: build a site by talking to an LLM
 sites/sample         a small synthetic site for tests and dev mode
+sites/chalmers       the Chalmers campus, the flagship reference site
 ```
 
 ## Adding things
@@ -58,6 +62,7 @@ sites/sample         a small synthetic site for tests and dev mode
 - **A layer**: copy `packages/layers/sunlight`. A layer is `layer.json` (id, controls, tools) plus `src/index.ts`. The TV and phone controls are generated from the manifest. List the layer in a site's `site.json`. See [docs/contracts/layer.md](docs/contracts/layer.md).
 - **A kernel**: add `crates/mrs-engine/src/kernels/<id>/` with `kernel.wgsl`, `cpu.rs` and `mod.rs`, register it in `kernels/mod.rs`, and add `tests/<id>.rs` with physics tests on the CPU reference and a GPU/CPU parity test. See [docs/contracts/engine.md](docs/contracts/engine.md).
 - **A site**: `mrstudio new-site`, add data, `mrstudio validate`. See [docs/contracts/site.md](docs/contracts/site.md).
+- **A site, with an LLM**: connect the MCP server and use its `new_project` prompt. Ideas the core cannot serve become module requests to this repository. See [docs/MCP.md](docs/MCP.md).
 
 ## Tests
 
@@ -82,7 +87,7 @@ The GPU tests need a Vulkan, Metal or DirectX 12 adapter. Without one they are s
 | Part | State |
 | --- | --- |
 | Engine: scene, jobs, sunlight kernel on GPU and CPU, parity tests | Working |
-| Site format, validation, scene bake from footprints, terrain and trees | Working |
+| Site format, validation, scene bake from footprints, meshes (STL), terrain (raw or GeoTIFF) and trees | Working |
 | Host: session state, roles, validated params, field streaming | Working |
 | Phones: QR join, slots that survive a reload (60 s hold), per-phone rate limit, point, line and polygon tools | Working; tested in a desktop browser, not yet on a real phone |
 | Surfaces: table, TV, phone, dev, with generated controls | Working, first version |
@@ -93,6 +98,9 @@ The GPU tests need a Vulkan, Metal or DirectX 12 adapter. Without one they are s
 | Desktop app: launcher (site and display picker), fullscreen per display, colour per display, installers from CI | Working on Linux with two displays. The earlier shell started on macOS (Apple M4 Pro, Metal); the launcher, fullscreen placement and the installers still need a first run on real Windows and macOS hardware |
 | Wind kernel (lattice Boltzmann on GPU and CPU) and layer (speed map, ribbons, particles, TV panel) | Working |
 | Stormwater, isovist kernels and layers | Not started; see the work packages in ARCHITECTURE.md |
-| Calibration, basemap tiles | Not started |
-| Chalmers, Lindholmen and Universeum site packages | Not started |
+| Table calibration | Read from the site and applied on the table surface; the calibration tool is not started |
+| Basemap tiles | Not started |
+| Chalmers site package | Working, with the sunlight layer |
+| Lindholmen and Universeum site packages | Not started |
 | Python services gateway (ECOM, CoolPaths, site prep) | Not started |
+| MCP server for building sites with an LLM | Working, first version; CI runs it on Linux, Windows and macOS |

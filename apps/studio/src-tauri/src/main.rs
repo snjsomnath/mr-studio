@@ -108,7 +108,10 @@ fn main() -> anyhow::Result<()> {
             save_preset,
             delete_preset,
             test_card,
-            set_layer_intensity
+            set_layer_intensity,
+            calibration_state,
+            calibration_mode,
+            calibration_clear
         ])
         .setup(|app| {
             let paths = app.path();
@@ -681,4 +684,54 @@ async fn set_layer_intensity(shell: State<'_, Shell>, layer: String, intensity: 
         config.layers.remove(&site);
     }
     config.write(&shell.colour_path()).map_err(text)
+}
+
+// Calibration: the tool itself lives on the table surface (docs/contracts/model.md).
+// The shell only opens and closes it and shows what is saved.
+
+#[derive(Serialize)]
+struct CalibrationState {
+    /// The running site's name; none when nothing runs.
+    site: Option<String>,
+    /// A window is showing the table (a table or dev surface), so the tool has somewhere to open.
+    table: bool,
+    /// The saved projector calibration, or null when the table is shown flat.
+    projector: serde_json::Value,
+}
+
+/// The surface window that shows the table, if any.
+fn table_window(app: &AppHandle) -> Option<WebviewWindow> {
+    let surfaces = app.state::<Shell>().surfaces.lock().unwrap().clone();
+    let label = |role: &str| surfaces.iter().map(|(label, _)| label).find(|label| label.ends_with(role)).cloned();
+    app.get_webview_window(&label("-table").or_else(|| label("-dev"))?)
+}
+
+#[tauri::command]
+async fn calibration_state(app: AppHandle, shell: State<'_, Shell>) -> Result<CalibrationState, String> {
+    let site = shell.running.lock().unwrap().as_ref().map(|r| r.name.clone());
+    let projector = match shell.host.lock().await.as_ref() {
+        Some(host) => host.state.calibration.projector(),
+        None => serde_json::Value::Null,
+    };
+    Ok(CalibrationState { site, table: table_window(&app).is_some(), projector })
+}
+
+/// Opens or closes the calibration tool on the table.
+#[tauri::command]
+async fn calibration_mode(app: AppHandle, shell: State<'_, Shell>, active: bool) -> Result<(), String> {
+    let table = table_window(&app).ok_or("No window is showing the table. Give a display the table on the Setup tab and start.")?;
+    let host = shell.host.lock().await;
+    host.as_ref().ok_or("Start a session first.")?.state.calibration_request("calibration.mode", &json!({ "active": active }))?;
+    if active {
+        // The markers are moved with the mouse and the arrow keys in the table window.
+        table.set_focus().map_err(text)?;
+    }
+    Ok(())
+}
+
+/// Forgets the saved calibration, so the table is shown flat again.
+#[tauri::command]
+async fn calibration_clear(shell: State<'_, Shell>) -> Result<(), String> {
+    let host = shell.host.lock().await;
+    host.as_ref().ok_or("Start a session first.")?.state.calibration_request("calibration.set", &json!({ "projector": null })).map(|_| ())
 }

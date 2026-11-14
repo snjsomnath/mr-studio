@@ -94,3 +94,7 @@ input[type='text'] { flex: 1; min-width: 150px; padding: 6px 8px; border-radius:
 .sliders { display: grid; grid-template-columns: auto 1fr 52px; align-items: center; gap: 12px 14px; padding: 6px 2px; }
 .sliders output { text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); }
 .sliders input[type='range'] { width: 100%; accent-color: var(--accent); }
+
+main.single { grid-template-columns: 1fr; }
+.status { margin: 0; font-size: 15px; }
+.steps { margin: 4px 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; color: var(--muted); }

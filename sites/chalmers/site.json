@@ -1,0 +1,27 @@
+{
+  "format": 1,
+  "id": "chalmers",
+  "name": "Chalmers campus Johanneberg",
+  "origin": { "lon": 11.977771061, "lat": 57.688384301 },
+  "extent": { "width_m": 1250, "height_m": 750, "rotation_deg": -92.555 },
+  "timezone": "Europe/Stockholm",
+  "table": { "width_cm": 100, "height_cm": 60, "tile_cm": 20 },
+  "scene": {
+    "cell_m": 1,
+    "buildings": { "path": "data/buildings.geojson", "extrude": false },
+    "terrain": { "path": "data/terrain.tif", "crs": "EPSG:3006" },
+    "mesh": {
+      "path": "data/mesh.stl",
+      "anchor": { "lon": 11.971958186, "lat": 57.68262783 },
+      "unit_m": 1250,
+      "bearing_deg": -2.555
+    },
+    "trees": { "path": "data/trees.geojson", "height_property": "height", "crown_radius_m": 3 }
+  },
+  "basemap": { "background": "#0b0e14", "style": null },
+  "layers": [
+    { "use": "basemap", "active": true },
+    { "use": "sunlight", "active": true, "params": { "date": "2026-06-21", "hour": 15 } }
+  ],
+  "branding": { "title": "ACE MR Studio" }
+}
