@@ -17,6 +17,7 @@ packages/layers/sunlight/        (or sites/<id>/layers/<name>/)
   "name": "Sunlight",
   "description": "Shadows and hours of direct sun",
   "icon": "sun",
+  "category": "analysis",
   "requires": { "kernels": ["sunlight"], "data": [], "services": [] },
   "controls": [
     { "id": "mode", "type": "select", "label": "Show", "default": "instant",
@@ -28,6 +29,10 @@ packages/layers/sunlight/        (or sites/<id>/layers/<name>/)
   "tools": []
 }
 ```
+
+`id` is lowercase letters, digits and dashes, and is the folder name for a core layer.
+`category` puts the layer in a group of the composer's palette: `base`, `ambient`, `analysis` (the default) or `media`.
+`requires.data` lists the site datasets the layer reads, by name (see `data` in site.md). A layer must still start when one is missing.
 
 Control types: `range`, `select`, `toggle`, `date`, `color`, `text`, `action` (a button, no stored value).
 Every control has `id`, `type`, `label` and `default`. `phone: true` lets phone participants change it.
@@ -42,7 +47,7 @@ The controls are the single source of truth for a layer's params:
 `requires` states what the layer needs from the app and the site:
 
 - `kernels`: engine kernels it opens streams on.
-- `data`: named datasets the site must provide. A site maps each name to a file under `data` in `site.json` (see site.md), and the host refuses to start a site whose layer is missing one. The layer loads it with `loadSiteData(ctx.site, name)`. A layer may also use a dataset it does not require: it checks `hasSiteData(ctx.site, name)` and does without when the site has none.
+- `data`: named datasets the site must provide. A site maps each name to a file under `data` in `site.json` (see site.md), and the host refuses to start a site, or to add a layer to a scene, when one is missing; the composer's palette says so beforehand. The scene's `buildings` and `trees` count as datasets. The layer loads it with `loadSiteData(ctx.site, name)`. A layer may also use a dataset it does not require: it checks `hasSiteData(ctx.site, name)` and does without when the site has none.
 - `services`: Python services it reaches through the gateway.
 
 ## TV panels
@@ -163,8 +168,22 @@ interface MapHandle {
   addField(id: string, style: FieldStyle & { colormap: Colormap }): FieldOverlay;
   addFlow(id: string, style: FlowOverlayStyle & { colormap: Colormap }): FlowOverlay;   // a vector field as moving tracers
   addElement(): HTMLElement;        // a layer-owned element covering the table, for SVG or canvas decorations
-  addCanvas(id: string, style?: { opacity?: number }): CanvasOverlay;
-  addShapes(id: string, style?: { opacity?: number }): ShapeOverlay;   // points, lines and areas above the fields
+  addCanvas(id: string, style?: { opacity?: number }): CanvasOverlay;      // a canvas above the scene, in CSS pixels, with a projection
+  addShapes(id: string, style?: { opacity?: number }): ShapeOverlay;   // points, lines and areas
+  addDrawing(id: string, options?: { opacity?: number; resolution?: number }): DrawingOverlay;
+}
+
+// A 2D drawing inside the scene's draw order, for layers that draw shapes themselves:
+// base maps, ambient animation, media. One unit is one metre, origin top left.
+interface DrawingOverlay {
+  readonly ctx: CanvasRenderingContext2D;   // already scaled to metres
+  readonly width: number;                    // table size in metres
+  readonly height: number;
+  readonly scale: number;                    // canvas pixels per metre
+  clear(): void;
+  commit(): void;                            // show what was drawn; nothing is uploaded until then
+  setOpacity(opacity: number): void;
+  remove(): void;
 }
 
 interface ShapeOverlay {
@@ -217,7 +236,13 @@ interface FlowOverlayStyle {
 }
 ```
 
-Fields are drawn under the site's buildings; elements and canvases above them, in the order they were added.
+Fields, flows, shapes and drawings (`addDrawing`) are drawn at the layer's place in the scene: above the layers before it in `site.json` and below those after it.
+A layer can be in a scene more than once. Each copy runs `table` on its own, with its own params, so state must live in the closure.
+
+Helpers in `@mrstudio/sdk` for drawing layers: `tableSpace(site)` turns WGS84 into table metres, `readSiteData(site, name)` and `siteDataUrl(site, name)` read a named dataset, `geojsonLines`, `geojsonPolygons` and `geojsonPoints` convert GeoJSON, `streetLines(site)` gives the `roads` dataset or a generated grid, `track`, `along` and `nearestAlong` move things along a polyline, and `seededRandom` keeps "random" scenes the same on every table.
+`packages/layers/trees` is the smallest animated example and `packages/layers/basemap` the smallest static one.
+
+Elements (`addElement`) and canvases (`addCanvas`) sit above the whole scene, in the order they were added. They do not follow the scene's draw order yet.
 `addCanvas` is the drawing surface for anything placed geographically: it brings the projection, the scale and the redraw signal that a bare `addElement` leaves to the layer.
 A layer draws on a canvas from `ctx.onFrame`: every frame for moving things, or only when `revision` or its own data changed.
 `siteProjection(ctx.site)` from the SDK converts WGS84 to local metres and to grid cells, for measuring distances and for reading a field frame at a place.
@@ -249,4 +274,5 @@ so a layer routes both to the same behaviours. What other surfaces need goes out
 `mrstudio dev --site sites/sample` serves the runtime with the layer loaded against the sample site.
 `pnpm dev` runs the host and the web dev server together.
 `/dev` shows the table view with the generated controls beside it and a small preview of the TV dashboard under it, in a normal browser, with hot reload.
+`/compose` shows the palette, the table and the scene's stack: drag layers in, reorder them and edit their settings.
 No table, projector or calibration is needed.

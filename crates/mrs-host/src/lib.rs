@@ -111,7 +111,7 @@ pub async fn start(config: HostConfig) -> anyhow::Result<RunningHost> {
     tracing::info!("twin: {} triangles", twin.triangle_count());
     let twin = Bytes::from(twin.encode());
     let calibration = Calibration::load(&site.dir);
-    let defs = layers::load_for_site(&site, &config.layers_dir)?;
+    let catalog = layers::load_catalog(&site, &config.layers_dir)?;
     let engine = EngineHandle::spawn(config.backend, scene, site.manifest.origin)?;
     let info = engine.info().await?;
     tracing::info!("engine: {:?} backend{}", info.backend, info.adapter.as_ref().map(|a| format!(", {a}")).unwrap_or_default());
@@ -127,7 +127,7 @@ pub async fn start(config: HostConfig) -> anyhow::Result<RunningHost> {
         Some(base) => tracing::info!("phones join at {base}/phone"),
         None => tracing::info!("listening on this computer only; phones cannot join"),
     }
-    let hub = Hub::new(&site, defs, addr.port(), join_base, config.session.clone());
+    let hub = Hub::new(&site, catalog, addr.port(), join_base, config.session.clone())?;
     let state = Arc::new(AppState { hub, engine, site, twin, calibration });
     let app = router(state.clone(), config.web_dir.clone());
 

@@ -9,7 +9,7 @@ mod mesh;
 mod projection;
 mod twin;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Component, Path, PathBuf};
 
 use mrs_engine::{Grid, SceneData};
@@ -57,11 +57,10 @@ pub struct SiteInfo {
     pub table: Option<Table>,
     pub basemap: Basemap,
     pub branding: Branding,
-    /// Site-relative path of the building footprints, for the table's context drawing.
-    pub buildings: Option<String>,
     /// The calibrated table view, when the site has a `calibration.json`.
     pub calibration: Option<TableCalibration>,
-    /// Named datasets for layers: name to site-relative path, served under `/site/`.
+    /// Datasets layers may read, by name, as site-relative paths served under `/site/`.
+    /// Holds the scene's `buildings` and `trees` and everything in the manifest's `data`.
     pub data: BTreeMap<String, String>,
     /// The site's TV dashboard settings (theme, pages), as written. Validated on the TV by `@mrstudio/dashboard`.
     pub tv: Option<serde_json::Value>,
@@ -189,9 +188,16 @@ impl Site {
             }
             check(&mut out, &format!("data.{name}"), path);
         }
+        let mut seen = BTreeSet::new();
         for layer in &m.layers {
             if layer.r#use.starts_with('.') {
                 check(&mut out, "layers[].use", &format!("{}/layer.json", layer.r#use));
+            }
+            if let Some(id) = layer.id.as_deref().filter(|id| !is_instance_id(id)) {
+                out.push(format!("layers[].id '{id}' must be lowercase letters, digits and dashes"));
+            }
+            if !seen.insert(layer.instance_hint()) {
+                out.push(format!("layer '{}' is listed twice; give one entry its own \"id\"", layer.instance_hint()));
             }
         }
         out
@@ -239,11 +245,45 @@ impl Site {
             table: m.table,
             basemap: m.basemap.clone(),
             branding: m.branding.clone(),
-            buildings: m.scene.buildings.as_ref().map(|b| b.path.clone()),
             calibration: self.calibration.and_then(|c| c.table),
-            data: m.data.clone(),
+            data: self.data(),
             tv: m.tv.clone(),
         }
+    }
+
+    /// The datasets layers may read: the scene's vector sources plus the manifest's `data`.
+    pub fn data(&self) -> BTreeMap<String, String> {
+        let m = &self.manifest;
+        let mut data = BTreeMap::new();
+        if let Some(b) = &m.scene.buildings {
+            data.insert("buildings".to_string(), b.path.clone());
+        }
+        if let Some(t) = &m.scene.trees {
+            data.insert("trees".to_string(), t.path.clone());
+        }
+        data.extend(m.data.clone());
+        data
+    }
+
+    /// Rewrites the `layers` list of `site.json` and leaves every other key as it was written.
+    /// The file is replaced in one step, so a crash cannot leave half a manifest behind.
+    pub fn save_layers(&self, layers: &[LayerRef]) -> Result<(), SiteError> {
+        let path = self.dir.join("site.json");
+        let io = |source| SiteError::Io { path: path.clone(), source };
+        let parse = |e: serde_json::Error| SiteError::Parse { path: path.clone(), message: e.to_string() };
+        let text = std::fs::read_to_string(&path).map_err(io)?;
+        let mut value: serde_json::Value = serde_json::from_str(&text).map_err(parse)?;
+        value["layers"] = serde_json::to_value(layers).map_err(parse)?;
+        // What is written must load again.
+        let manifest: SiteManifest = serde_json::from_value(value.clone()).map_err(parse)?;
+        let problems = Site { dir: self.dir.clone(), manifest, calibration: self.calibration }.problems();
+        if !problems.is_empty() {
+            return Err(SiteError::Invalid(problems));
+        }
+        let text = serde_json::to_string_pretty(&value).map_err(parse)? + "\n";
+        let temporary = self.dir.join("site.json.tmp");
+        std::fs::write(&temporary, text).map_err(io)?;
+        std::fs::rename(&temporary, &path).map_err(io)
     }
 
     /// Builds the engine scene from the site's sources.
@@ -255,6 +295,38 @@ impl Site {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn sample() -> Site {
+        Site::load(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../sites/sample")).unwrap()
+    }
+
+    fn layer(name: &str, id: Option<&str>) -> LayerRef {
+        LayerRef { r#use: name.into(), id: id.map(String::from), active: true, params: Default::default() }
+    }
+
+    #[test]
+    fn the_same_layer_twice_needs_an_id() {
+        let mut site = sample();
+        site.manifest.layers = vec![layer("cars", None), layer("cars", None)];
+        assert!(site.problems().iter().any(|p| p.contains("listed twice")), "{:?}", site.problems());
+        site.manifest.layers = vec![layer("cars", None), layer("cars", Some("rush-hour"))];
+        assert!(site.problems().is_empty(), "{:?}", site.problems());
+        site.manifest.layers = vec![layer("cars", Some("Rush Hour"))];
+        assert!(site.problems().iter().any(|p| p.contains("lowercase")));
+        // A site-only layer is known by its folder name.
+        assert_eq!(layer("./layers/artwork", None).instance_hint(), "artwork");
+    }
+
+    #[test]
+    fn datasets_are_named_and_checked() {
+        let mut site = sample();
+        let data = site.info().data;
+        assert_eq!(data["buildings"], "data/buildings.geojson");
+        assert_eq!(data["trees"], "data/trees.geojson");
+        assert_eq!(data["roads"], "data/roads.geojson");
+        site.manifest.data.insert("roads".into(), "../elsewhere.geojson".into());
+        assert!(site.problems().iter().any(|p| p.starts_with("data.roads")));
+    }
 
     fn site(data: &str) -> Site {
         let text = format!(
@@ -283,10 +355,9 @@ mod tests {
         // The host writes the model surface's projector calibration into the same file.
         let only_projector: Calibration = serde_json::from_str(r#"{ "projector": { "version": 1 } }"#).unwrap();
         assert_eq!(only_projector.table, None);
-        let both: Calibration = serde_json::from_str(
-            r#"{ "table": { "center": { "lon": 12, "lat": 57 }, "zoom": 16, "bearing": 0 }, "projector": null }"#,
-        )
-        .unwrap();
+        let both: Calibration =
+            serde_json::from_str(r#"{ "table": { "center": { "lon": 12, "lat": 57 }, "zoom": 16, "bearing": 0 }, "projector": null }"#)
+                .unwrap();
         assert_eq!(both.table.map(|t| t.zoom), Some(16.0));
     }
 }

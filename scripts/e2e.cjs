@@ -1,10 +1,12 @@
 // End-to-end check in a real browser: the host, the engine, the surfaces, the core layers,
+// the ambient scene, the scene composer,
 // and a phone joining by QR code, using its tools and coming back after a reload.
 //   pnpm build && cargo build -p mrs-cli && node scripts/e2e.cjs [screenshot-dir]
 // Needs Playwright with Chromium (`npm i -g playwright && npx playwright install chromium`).
 const { spawn } = require('node:child_process');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 const { chromium } = require('playwright');
 const jsQR = require('jsqr');
@@ -49,9 +51,13 @@ function join(role) {
 }
 
 async function main() {
+  // The composer rewrites site.json, so the test runs on a copy of the sample site.
+  const site = fs.mkdtempSync(path.join(os.tmpdir(), 'mrs-e2e-'));
+  fs.cpSync(path.join(root, 'sites/sample'), site, { recursive: true });
+  const savedLayers = () => JSON.parse(fs.readFileSync(path.join(site, 'site.json'), 'utf8')).layers;
   const host = spawn(
     path.join(root, 'target/debug/mrstudio'),
-    ['dev', '--site', 'sites/sample', '--web', 'packages/runtime/dist', '--port', String(port), '--backend', 'cpu', '--public-url', base],
+    ['dev', '--site', site, '--web', 'packages/runtime/dist', '--port', String(port), '--backend', 'cpu', '--public-url', base],
     { cwd: root, stdio: ['ignore', 'pipe', 'pipe'] },
   );
   let log = '';
@@ -76,16 +82,29 @@ async function main() {
     // Controls are looked up inside their layer's card: layers may share control names.
     const sunlight = (page) => page.locator('.layer-card', { hasText: 'Sunlight' });
 
-    // The dev surface renders the layer that site.json turns on.
+    // The dev surface renders the scene in site.json: a dark base map with ambient layers that move.
     const dev = await open('/dev', { width: 1500, height: 800 });
     const table = dev.locator('.table-surface');
+    const unmoved = async () => {
+      const first = await table.screenshot();
+      await dev.waitForTimeout(400);
+      return first.equals(await table.screenshot());
+    };
+    // The layers load their data first, so give the scene a few seconds to start moving.
+    let ambient = false;
+    for (let i = 0; i < 20 && !ambient; i++) ambient = !(await unmoved());
+    assert.ok(ambient, 'the ambient scene should be moving');
+    if (shots) await dev.screenshot({ path: path.join(shots, 'dev-ambient.png') });
+
+    // Sunlight is in the scene but off; the TV turns it on.
+    const tv = await open('/tv', { width: 1920, height: 1080 });
+    await tv.getByLabel('Turn Sunlight on or off').check();
     await dev.getByText(/sun [\d.]+° up/).waitFor();
     await dev.waitForTimeout(500);
     const afternoon = await table.screenshot();
     if (shots) await dev.screenshot({ path: path.join(shots, 'dev-shadows.png') });
 
     // A change made on the TV reaches the host, the engine and the dev surface.
-    const tv = await open('/tv', { width: 1920, height: 1080 });
     const clock = '[data-panel="sunlight/time"] .mrs-number';
     await sunlight(tv).getByLabel('Time of day').fill('8.5');
     await dev.locator(clock, { hasText: '08:30' }).waitFor();
@@ -95,7 +114,7 @@ async function main() {
     assert.notDeepEqual(morning, afternoon, 'shadows should move when the time changes');
     assert.equal(await tv.locator(clock).textContent(), '08:30');
     // The TV is a rail of controls beside the dashboard canvas, and the layer's panels sit on the grid.
-    // Sunlight's five panels and the sketch layer's one.
+    // Sunlight's five panels and the sketch layer's one. Ambient layers take no room on the TV.
     assert.equal(await tv.locator('.mrs-panel').count(), 6);
     const band = await tv.locator('[data-panel="sunlight/day"]').boundingBox();
     const canvas = await tv.locator('.mrs-dash').boundingBox();
@@ -157,8 +176,12 @@ async function main() {
 
     // Phone tools: a point, a line and an area drawn on the small map arrive on the table.
     const pad = phone.locator('.tool-map');
-    const box = await pad.boundingBox();
-    const tap = (u, v) => phone.mouse.click(box.x + u * box.width, box.y + v * box.height);
+    // The sketch card is above Sunlight's, so the pad is found again for each tap: the page may have scrolled.
+    const tap = async (u, v) => {
+      await pad.scrollIntoViewIfNeeded();
+      const box = await pad.boundingBox();
+      await phone.mouse.click(box.x + u * box.width, box.y + v * box.height);
+    };
     const before = await table.screenshot();
     await tap(0.5, 0.5);
     await tv.getByText('1 mark on the table').waitFor();
@@ -328,14 +351,86 @@ async function main() {
     if (shots) await dev.screenshot({ path: path.join(shots, 'dev-wind-ribbons.png') });
     await tv.getByLabel('Turn Wind on or off').uncheck();
 
-    const real = errors.filter((e) => !/WebSocket/.test(e));
+
+    // ---- The scene composer ----
+    // The pages that are done with are closed first: every open table costs rendering time.
+    for (const page of [stranger, phone, typist, projected]) await page.close();
+    // Tall enough that the whole stack is on screen while one layer's settings are open.
+    const compose = await open('/compose', { width: 1700, height: 1200 });
+    const stage = compose.locator('.table-surface');
+    const rows = () => compose.locator('.stack-row strong').allTextContents();
+    await compose.locator('.palette-group', { hasText: 'Analysis' }).getByText('Sunlight').waitFor();
+    assert.deepEqual(await rows(), ['Wind', 'Mobility', 'Cool paths', 'Sketch', 'Slideshow', 'Trees', 'Public transport', 'Traffic', 'Building lights', 'Sunlight', 'Dark base map']);
+    const drag = async (from, to, where = 0.5) => {
+      const a = await from.boundingBox();
+      const b = await to.boundingBox();
+      await compose.mouse.move(a.x + 12, a.y + a.height / 2);
+      await compose.mouse.down();
+      await compose.mouse.move(a.x + 40, a.y + a.height / 2 + 10, { steps: 3 });
+      await compose.mouse.move(b.x + b.width / 2, b.y + b.height * where, { steps: 8 });
+      await compose.mouse.up();
+    };
+    const row = (name) => compose.locator('.stack-row', { has: compose.getByText(name, { exact: true }) });
+
+    // Pressing + adds a second copy of a layer on top, under its own id, and saves it.
+    await compose.getByLabel('Add Traffic').click();
+    await row('Traffic (cars-2)').waitFor();
+    assert.deepEqual(savedLayers().at(-1), { use: 'cars', id: 'cars-2', active: true });
+    await tv.getByRole('heading', { name: 'Traffic (cars-2)' }).waitFor();
+
+    // Its settings form is generated from the manifest, and what it changes is saved.
+    await compose.getByLabel('Cars per kilometre of street').fill('25');
+    await compose.waitForFunction(() => true);
+    await assert.doesNotReject(async () => {
+      for (let i = 0; savedLayers().at(-1).params?.density !== 25; i++) {
+        if (i > 50) throw new Error('density was not saved');
+        await compose.waitForTimeout(100);
+      }
+    });
+
+    // Dragging from the palette into the stack adds a layer at that place.
+    await drag(compose.locator('.palette-item[data-layer="trees"]'), row('Dark base map'), 0.9);
+    await row('Trees (trees-2)').waitFor();
+    assert.equal(savedLayers()[0].id, 'trees-2', 'dropped below the base map, so first in site.json');
+
+    // Draw order follows the list: with the opaque base map on top, nothing below shows through.
+    await compose.getByLabel('Show Slideshow').waitFor();
+    await drag(row('Dark base map').locator('.stack-head'), row('Traffic (cars-2)'), 0.05);
+    await compose.waitForFunction(() => document.querySelector('.stack-row strong')?.textContent === 'Dark base map');
+    assert.equal(savedLayers().at(-1).use, 'basemap');
+    await compose.waitForTimeout(600);
+    // The outermost pixels are left out: a quad's edge is blended with what is under it.
+    const inner = async () => {
+      const box = await stage.boundingBox();
+      return compose.screenshot({ clip: { x: box.x + 4, y: box.y + 4, width: box.width - 8, height: box.height - 8 } });
+    };
+    const covered = await inner();
+    await compose.waitForTimeout(400);
+    assert.ok(covered.equals(await inner()), 'the base map on top should hide the moving layers');
+    await drag(row('Dark base map').locator('.stack-head'), row('Trees (trees-2)'), 0.9);
+    await compose.waitForFunction(() => [...document.querySelectorAll('.stack-row strong')].at(-1)?.textContent === 'Dark base map');
+    assert.equal(savedLayers()[0].use, 'basemap');
+    await compose.waitForTimeout(600);
+    assert.ok(!covered.equals(await inner()), 'with the base map at the bottom the scene shows again');
+
+    // The eye switch and the remove button.
+    await compose.getByLabel('Show Slideshow').check();
+    await tv.getByText('What the buildings are used for').waitFor();
+    if (shots) await compose.screenshot({ path: path.join(shots, 'compose.png') });
+    await compose.getByLabel('Show Slideshow').uncheck();
+    await compose.getByLabel('Remove Traffic (cars-2)').click();
+    await compose.getByLabel('Remove Trees (trees-2)').click();
+    await row('Trees (trees-2)').waitFor({ state: 'detached' });
+    assert.deepEqual(savedLayers().map((l) => l.id ?? l.use), ['basemap', 'sunlight', 'building-lights', 'cars', 'transit', 'trees', 'slideshow', 'sketch', 'coolpaths', 'mobility', 'wind']);
+    assert.equal(await tv.getByRole('heading', { name: 'Traffic (cars-2)' }).count(), 0);
+
+    const real = errors.filter((e) => !/wrong session code|WebSocket/.test(e));
     assert.deepEqual(real, [], 'no page errors');
     console.log('e2e passed');
   } finally {
     await browser.close();
     host.kill();
-    // The run's calibration must not outlive it.
-    fs.rmSync(path.join(root, 'sites/sample/calibration.json'), { force: true });
+    fs.rmSync(site, { recursive: true, force: true });
   }
 }
 

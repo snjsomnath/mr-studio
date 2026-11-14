@@ -8,6 +8,8 @@ use mrs_site::Site;
 use serde_json::{Map, Value};
 
 pub const LAYER_API: u64 = 1;
+/// Palette groups a layer may put itself in with `category`.
+pub const CATEGORIES: [&str; 4] = ["base", "ambient", "analysis", "media"];
 
 #[derive(Debug, Clone)]
 pub enum ControlKind {
@@ -46,6 +48,9 @@ pub struct Tool {
 #[derive(Debug, Clone)]
 pub struct LayerDef {
     pub id: String,
+    /// What a `layers[].use` in site.json says to get this layer: its id for a core
+    /// layer, a relative path for a site-only one.
+    pub source: String,
     /// The manifest as written, sent to surfaces.
     pub manifest: Value,
     pub controls: Vec<Control>,
@@ -59,6 +64,14 @@ impl LayerDef {
             bail!("layer api is {api}, this app supports {LAYER_API}");
         }
         let id = manifest["id"].as_str().ok_or_else(|| anyhow!("missing id"))?.to_string();
+        if !mrs_site::is_instance_id(&id) {
+            bail!("id '{id}' must be lowercase letters, digits and dashes");
+        }
+        match &manifest["category"] {
+            Value::Null => {}
+            Value::String(c) if CATEGORIES.contains(&c.as_str()) => {}
+            other => bail!("category {other} is not one of {}", CATEGORIES.join(", ")),
+        }
         let mut controls = Vec::new();
         for c in manifest["controls"].as_array().map(Vec::as_slice).unwrap_or(&[]) {
             let cid = c["id"].as_str().ok_or_else(|| anyhow!("a control has no id"))?.to_string();
@@ -106,7 +119,7 @@ impl LayerDef {
             };
             tools.push(Tool { id: tid, kind });
         }
-        Ok(Self { id, manifest, controls, tools })
+        Ok(Self { source: id.clone(), id, manifest, controls, tools })
     }
 
     pub fn tool(&self, id: &str) -> Option<&Tool> {
@@ -115,6 +128,17 @@ impl LayerDef {
 
     pub fn control(&self, id: &str) -> Option<&Control> {
         self.controls.iter().find(|c| c.id == id)
+    }
+
+    /// The first dataset in `requires.data` that `data` does not have.
+    pub fn missing_data(&self, data: &std::collections::BTreeMap<String, String>) -> anyhow::Result<Option<String>> {
+        for name in self.manifest["requires"]["data"].as_array().map(Vec::as_slice).unwrap_or(&[]) {
+            let name = name.as_str().ok_or_else(|| anyhow!("layer '{}': requires.data must be dataset names", self.id))?;
+            if !data.contains_key(name) {
+                return Ok(Some(name.to_string()));
+            }
+        }
+        Ok(None)
     }
 
     pub fn defaults(&self) -> Map<String, Value> {
@@ -189,29 +213,53 @@ fn read_manifest(dir: &Path) -> anyhow::Result<LayerDef> {
     LayerDef::parse(value).with_context(|| format!("in {}", path.display()))
 }
 
-/// Loads the manifests of the layers a site uses, in the site's order.
-pub fn load_for_site(site: &Site, core_layers: &Path) -> anyhow::Result<Vec<LayerDef>> {
+/// Loads the layer catalogue: every core layer package, then the site-only layers the
+/// site lists. A broken core layer the site does not use is skipped with a warning.
+pub fn load_catalog(site: &Site, core_layers: &Path) -> anyhow::Result<Vec<LayerDef>> {
     let mut defs: Vec<LayerDef> = Vec::new();
-    for layer in &site.manifest.layers {
-        let dir = if layer.r#use.starts_with('.') {
-            site.resolve(&layer.r#use).ok_or_else(|| anyhow!("layer path '{}' leaves the site folder", layer.r#use))?
-        } else {
-            core_layers.join(&layer.r#use)
-        };
-        let def = read_manifest(&dir)?;
-        if !layer.r#use.starts_with('.') && def.id != layer.r#use {
-            bail!("{} declares id '{}', expected '{}'", dir.display(), def.id, layer.r#use);
-        }
-        for name in def.manifest["requires"]["data"].as_array().map(Vec::as_slice).unwrap_or(&[]) {
-            let name = name.as_str().ok_or_else(|| anyhow!("layer '{}': requires.data must be dataset names", def.id))?;
-            if !site.manifest.data.contains_key(name) {
-                bail!("layer '{}' needs the dataset '{name}'; add it under \"data\" in site.json", def.id);
+    let mut folders: Vec<_> = match std::fs::read_dir(core_layers) {
+        Ok(entries) => entries.filter_map(|e| e.ok()).map(|e| e.path()).filter(|p| p.join("layer.json").is_file()).collect(),
+        Err(e) => bail!("reading the layers folder {}: {e}", core_layers.display()),
+    };
+    folders.sort();
+    for dir in folders {
+        let name = dir.file_name().and_then(|n| n.to_str()).unwrap_or_default().to_string();
+        let used = site.manifest.layers.iter().any(|l| l.r#use == name);
+        let def = read_manifest(&dir).and_then(|def| {
+            if def.id != name {
+                bail!("{} declares id '{}', expected '{name}'", dir.display(), def.id);
             }
+            Ok(def)
+        });
+        match def {
+            Ok(def) => defs.push(def),
+            Err(e) if used => return Err(e),
+            Err(e) => tracing::warn!("layer '{name}' is left out of the palette: {e:#}"),
         }
-        if defs.iter().any(|d| d.id == def.id) {
-            bail!("layer '{}' is listed twice in site.json", def.id);
+    }
+    for layer in &site.manifest.layers {
+        if layer.r#use.starts_with('.') {
+            if defs.iter().any(|d| d.source == layer.r#use) {
+                continue;
+            }
+            let dir = site.resolve(&layer.r#use).ok_or_else(|| anyhow!("layer path '{}' leaves the site folder", layer.r#use))?;
+            let mut def = read_manifest(&dir)?;
+            if defs.iter().any(|d| d.id == def.id) {
+                bail!("{} declares id '{}', which another layer already uses", dir.display(), def.id);
+            }
+            def.source = layer.r#use.clone();
+            defs.push(def);
+        } else if !defs.iter().any(|d| d.source == layer.r#use) {
+            bail!("site.json uses layer '{}', which is not in {}", layer.r#use, core_layers.display());
         }
-        defs.push(def);
+    }
+    // A layer the site uses must find the datasets it requires. Layers only in the palette need not.
+    let data = site.data();
+    for layer in &site.manifest.layers {
+        let Some(def) = defs.iter().find(|d| d.source == layer.r#use) else { continue };
+        if let Some(name) = def.missing_data(&data)? {
+            bail!("layer '{}' needs the dataset '{name}'; add it under \"data\" in site.json", def.id);
+        }
     }
     Ok(defs)
 }
@@ -265,15 +313,18 @@ mod tests {
         let repo = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
         let mut site = Site::load(repo.join("sites/sample")).unwrap();
         assert!(site.manifest.layers.iter().any(|l| l.r#use == "coolpaths"));
-        assert!(load_for_site(&site, &repo.join("packages/layers")).is_ok());
+        assert!(load_catalog(&site, &repo.join("packages/layers")).is_ok());
         site.manifest.data.remove("walkways");
-        let error = load_for_site(&site, &repo.join("packages/layers")).unwrap_err().to_string();
+        let error = load_catalog(&site, &repo.join("packages/layers")).unwrap_err().to_string();
         assert!(error.contains("coolpaths") && error.contains("walkways"), "{error}");
     }
 
     #[test]
     fn bad_manifests_are_refused() {
         assert!(LayerDef::parse(json!({ "api": 2, "id": "t" })).is_err());
+        assert!(LayerDef::parse(json!({ "api": 1, "id": "t", "category": "ambient" })).is_ok());
+        assert!(LayerDef::parse(json!({ "api": 1, "id": "t", "category": "misc" })).is_err());
+        assert!(LayerDef::parse(json!({ "api": 1, "id": "Bad Id" })).is_err());
         assert!(LayerDef::parse(json!({ "api": 1, "id": "t", "tools": [{ "id": "x", "type": "circle" }] })).is_err());
         let ok = LayerDef::parse(json!({ "api": 1, "id": "t", "tools": [{ "id": "x", "type": "line" }] })).unwrap();
         assert_eq!(ok.tool("x").unwrap().kind, ToolKind::Line);

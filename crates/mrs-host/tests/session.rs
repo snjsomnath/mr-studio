@@ -20,8 +20,41 @@ async fn host() -> RunningHost {
 }
 
 async fn host_with(options: SessionOptions) -> RunningHost {
+    start(repo().join("sites/sample"), options).await
+}
+
+async fn host_for(site_dir: PathBuf) -> RunningHost {
+    start(site_dir, SessionOptions::default()).await
+}
+
+/// A private copy of the sample site, for tests that edit the scene (the host rewrites site.json).
+fn scratch_site(name: &str) -> PathBuf {
+    fn copy(from: &std::path::Path, to: &std::path::Path) {
+        std::fs::create_dir_all(to).unwrap();
+        for entry in std::fs::read_dir(from).unwrap() {
+            let entry = entry.unwrap();
+            let target = to.join(entry.file_name());
+            if entry.file_type().unwrap().is_dir() {
+                copy(&entry.path(), &target);
+            } else {
+                std::fs::copy(entry.path(), target).unwrap();
+            }
+        }
+    }
+    let dir = std::env::temp_dir().join(format!("mrs-host-test-{}-{name}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    copy(&repo().join("sites/sample"), &dir);
+    dir
+}
+
+fn saved_layers(site: &std::path::Path) -> Vec<Value> {
+    let manifest: Value = serde_json::from_str(&std::fs::read_to_string(site.join("site.json")).unwrap()).unwrap();
+    manifest["layers"].as_array().unwrap().clone()
+}
+
+async fn start(site_dir: PathBuf, options: SessionOptions) -> RunningHost {
     mrs_host::start(HostConfig {
-        site_dir: repo().join("sites/sample"),
+        site_dir,
         layers_dir: repo().join("packages/layers"),
         web_dir: None,
         bind: "127.0.0.1:0".parse().unwrap(),
@@ -114,10 +147,24 @@ async fn welcome_carries_site_state_and_manifests() {
     assert_eq!(state["site"]["corners"].as_array().unwrap().len(), 4);
     // Defaults from the manifest, overridden by site.json.
     let sunlight = &state["layers"]["sunlight"];
-    assert_eq!(sunlight["active"], true);
+    assert_eq!(sunlight["layer"], "sunlight");
+    assert_eq!(sunlight["active"], false);
     assert_eq!(sunlight["params"]["hour"], 15.0);
     assert_eq!(sunlight["params"]["mode"], "instant");
-    assert_eq!(tv.welcome["manifests"][0]["id"], "sunlight");
+    // The scene is site.json's list, bottom first, and the base map is on.
+    let scene: Vec<&str> = state["scene"].as_array().unwrap().iter().map(|id| id.as_str().unwrap()).collect();
+    assert_eq!(
+        scene,
+        ["basemap", "sunlight", "building-lights", "cars", "transit", "trees", "slideshow", "sketch", "coolpaths", "mobility", "wind"]
+    );
+    assert_eq!(state["layers"]["basemap"]["active"], true);
+    assert_eq!(state["site"]["data"]["roads"], "data/roads.geojson");
+    assert_eq!(state["site"]["data"]["buildings"], "data/buildings.geojson");
+    // The manifests are the whole catalogue, each with a palette category.
+    let manifests = tv.welcome["manifests"].as_array().unwrap();
+    assert!(manifests.iter().any(|m| m["id"] == "sunlight"));
+    assert!(manifests.iter().any(|m| m["id"] == "cars" && m["category"] == "ambient"));
+    assert!(manifests.iter().any(|m| m["id"] == "basemap" && m["category"] == "base"));
     host.shutdown().await;
 }
 
@@ -406,6 +453,86 @@ async fn sun_hours_arrive_progressively() {
     host.shutdown().await;
 }
 
+#[tokio::test(flavor = "multi_thread")]
+async fn the_scene_is_composed_and_saved() {
+    let site = scratch_site("compose");
+    let host = host_for(site.clone()).await;
+    let mut composer = Surface::join(&host, "dev", None).await.unwrap();
+    let mut table = Surface::join(&host, "table", None).await.unwrap();
+    let order = |event: &Value| event["scene"].as_array().unwrap().iter().map(|id| id.as_str().unwrap().to_string()).collect::<Vec<_>>();
+
+    // A second copy of a layer gets its own id and its own state, and lands on top.
+    let added = composer.request("scene.add", json!({ "use": "cars", "params": { "density": 30 } })).await.unwrap();
+    assert_eq!(added["id"], "cars-2");
+    let event = table.event("state.scene").await;
+    assert_eq!(order(&event).last().unwrap(), "cars-2");
+    assert_eq!(event["layers"]["cars-2"]["layer"], "cars");
+    assert_eq!(event["layers"]["cars-2"]["active"], true);
+    assert_eq!(event["layers"]["cars-2"]["params"]["density"], 30.0);
+    assert_eq!(event["layers"]["cars"]["params"]["density"], 10.0);
+    let saved = saved_layers(&site);
+    assert_eq!(saved.last().unwrap(), &json!({ "use": "cars", "id": "cars-2", "active": true, "params": { "density": 30.0 } }));
+
+    // Each copy is addressed by its id.
+    composer.request("layer.set", json!({ "layer": "cars-2", "params": { "speed": 80 } })).await.unwrap();
+    let event = table.event("state.layer").await;
+    assert_eq!((event["layer"].as_str().unwrap(), &event["state"]["params"]["speed"]), ("cars-2", &json!(80.0)));
+
+    // Moving changes the draw order, in the session and in the file.
+    composer.request("scene.move", json!({ "layer": "cars-2", "index": 0 })).await.unwrap();
+    assert_eq!(order(&table.event("state.scene").await)[..2], ["cars-2", "basemap"]);
+    assert_eq!(saved_layers(&site)[0]["id"], "cars-2");
+    composer.request("scene.move", json!({ "layer": "basemap", "index": 99 })).await.unwrap();
+    assert_eq!(order(&table.event("state.scene").await).last().unwrap(), "basemap");
+
+    // scene.set saves settings; layer.set changes the session only.
+    composer.request("scene.set", json!({ "layer": "trees", "params": { "size": 9 }, "active": false })).await.unwrap();
+    let event = table.event("state.layer").await;
+    assert_eq!((&event["state"]["params"]["size"], &event["state"]["active"]), (&json!(3.0), &json!(false)));
+    let trees = saved_layers(&site).into_iter().find(|l| l["use"] == "trees").unwrap();
+    assert_eq!(trees, json!({ "use": "trees", "active": false, "params": { "size": 3.0 } }));
+    let live_only = saved_layers(&site).into_iter().find(|l| l["id"] == "cars-2").unwrap();
+    assert_eq!(live_only["params"], json!({ "density": 30.0 }), "layer.set is not written to site.json");
+
+    // Removing takes the layer out of the session and the file.
+    composer.request("scene.remove", json!({ "layer": "cars-2" })).await.unwrap();
+    let event = table.event("state.scene").await;
+    assert!(event["layers"].get("cars-2").is_none() && !order(&event).contains(&"cars-2".to_string()));
+    assert!(saved_layers(&site).iter().all(|l| l["id"] != "cars-2"));
+    assert!(composer.request("layer.set", json!({ "layer": "cars-2", "params": {} })).await.is_err());
+
+    // Bad requests are refused and change nothing.
+    let before = saved_layers(&site);
+    assert!(composer.request("scene.add", json!({ "use": "ghost" })).await.is_err());
+    assert!(composer.request("scene.add", json!({ "use": "cars", "id": "trees" })).await.is_err());
+    assert!(composer.request("scene.add", json!({ "use": "cars", "id": "Not OK" })).await.is_err());
+    assert!(composer.request("scene.add", json!({ "use": "cars", "params": { "nope": 1 } })).await.is_err());
+    assert!(composer.request("scene.move", json!({ "layer": "ghost", "index": 0 })).await.is_err());
+    assert!(composer.request("scene.remove", json!({ "layer": "ghost" })).await.is_err());
+    // The table and phones cannot edit the scene.
+    assert!(table.request("scene.remove", json!({ "layer": "trees" })).await.is_err());
+    let code = host.state.hub.session().code.clone();
+    let mut phone = Surface::join(&host, "phone", Some(&code)).await.unwrap();
+    assert!(phone.request("scene.add", json!({ "use": "cars" })).await.is_err());
+    assert_eq!(saved_layers(&site), before);
+    host.shutdown().await;
+
+    // The saved scene is what the next session starts with, and the rest of site.json is untouched.
+    let host = host_for(site.clone()).await;
+    let tv = Surface::join(&host, "tv", None).await.unwrap();
+    let state = &tv.welcome["state"];
+    assert_eq!(state["scene"].as_array().unwrap().last().unwrap(), "basemap");
+    assert_eq!(state["layers"]["trees"]["params"]["size"], 3.0);
+    assert_eq!(state["layers"]["trees"]["active"], false);
+    assert_eq!(state["site"]["grid"]["width"], 1000);
+    host.shutdown().await;
+    let original: Value = serde_json::from_str(&std::fs::read_to_string(repo().join("sites/sample/site.json")).unwrap()).unwrap();
+    let mut rewritten: Value = serde_json::from_str(&std::fs::read_to_string(site.join("site.json")).unwrap()).unwrap();
+    rewritten["layers"] = original["layers"].clone();
+    assert_eq!(rewritten, original);
+    let _ = std::fs::remove_dir_all(&site);
+}
+
 /// A plain HTTP GET, returning the body.
 async fn http_get(host: &RunningHost, path: &str) -> Vec<u8> {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -436,18 +563,13 @@ async fn the_host_serves_the_twin() {
 #[tokio::test(flavor = "multi_thread")]
 async fn calibration_is_saved_shared_and_survives_a_restart() {
     // A copy of the sample site, so the test's calibration.json does not land in the repository.
-    let dir = std::env::temp_dir().join(format!("mrs-calibration-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(dir.join("data")).unwrap();
-    let sample = repo().join("sites/sample");
-    std::fs::copy(sample.join("site.json"), dir.join("site.json")).unwrap();
-    for entry in std::fs::read_dir(sample.join("data")).unwrap() {
-        let entry = entry.unwrap();
-        std::fs::copy(entry.path(), dir.join("data").join(entry.file_name())).unwrap();
-    }
+    let dir = scratch_site("calibration");
     // The site's own table calibration in the same file must be left alone.
-    std::fs::write(dir.join("calibration.json"), r#"{ "table": { "center": { "lon": 11.9778, "lat": 57.6884 }, "zoom": 16, "bearing": 0 } }"#)
-        .unwrap();
+    std::fs::write(
+        dir.join("calibration.json"),
+        r#"{ "table": { "center": { "lon": 11.9778, "lat": 57.6884 }, "zoom": 16, "bearing": 0 } }"#,
+    )
+    .unwrap();
     let start = || async {
         mrs_host::start(HostConfig {
             site_dir: dir.clone(),

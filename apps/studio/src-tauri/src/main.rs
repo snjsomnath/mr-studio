@@ -593,12 +593,16 @@ async fn colour_state(app: AppHandle, shell: State<'_, Shell>) -> Result<ColourS
     let mut layers = Vec::new();
     if let Some(host) = shell.host.lock().await.as_ref() {
         let welcome = host.state.hub.welcome(0);
-        for manifest in welcome["manifests"].as_array().map(Vec::as_slice).unwrap_or(&[]) {
-            let Some(id) = manifest["id"].as_str() else { continue };
+        // One row per layer in the scene, top of the stack first. A second copy of a layer is named by its id.
+        let manifests = welcome["manifests"].as_array().map(Vec::as_slice).unwrap_or(&[]);
+        for id in welcome["state"]["scene"].as_array().map(Vec::as_slice).unwrap_or(&[]).iter().rev() {
+            let Some(id) = id.as_str() else { continue };
             let state = &welcome["state"]["layers"][id];
+            let package = state["layer"].as_str().unwrap_or(id);
+            let name = manifests.iter().find(|m| m["id"] == package).and_then(|m| m["name"].as_str()).unwrap_or(package);
             layers.push(LayerIntensity {
                 id: id.to_string(),
-                name: manifest["name"].as_str().unwrap_or(id).to_string(),
+                name: if id == package { name.to_string() } else { format!("{name} ({id})") },
                 active: state["active"].as_bool().unwrap_or(false),
                 intensity: state["intensity"].as_f64().unwrap_or(1.0),
             });

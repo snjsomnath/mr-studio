@@ -1,0 +1,27 @@
+{
+  "api": 1,
+  "id": "transit",
+  "name": "Public transport",
+  "description": "Trams, buses, trains and ferries on their routes, simulated or from a live feed",
+  "icon": "tram",
+  "category": "ambient",
+  "controls": [
+    {
+      "id": "source", "type": "select", "label": "Vehicles", "default": "simulated",
+      "options": [
+        { "value": "simulated", "label": "Simulated" },
+        { "value": "live", "label": "Live feed" }
+      ]
+    },
+    { "id": "feed", "type": "text", "label": "Feed address", "default": "", "visibleWhen": { "source": "live" } },
+    { "id": "vehicles", "type": "range", "label": "Vehicles per line", "min": 1, "max": 8, "step": 1, "default": 2, "visibleWhen": { "source": "simulated" } },
+    { "id": "speed", "type": "range", "label": "Speed", "min": 10, "max": 80, "step": 5, "unit": "km/h", "default": 35, "visibleWhen": { "source": "simulated" } },
+    { "id": "routes", "type": "toggle", "label": "Routes", "default": true },
+    { "id": "stops", "type": "toggle", "label": "Stops", "default": true },
+    { "id": "labels", "type": "toggle", "label": "Line numbers", "default": true },
+    { "id": "trails", "type": "toggle", "label": "Trails", "default": true },
+    { "id": "size", "type": "range", "label": "Vehicle size", "min": 1, "max": 4, "step": 0.25, "default": 2 },
+    { "id": "opacity", "type": "range", "label": "Opacity", "min": 0.1, "max": 1, "step": 0.05, "default": 1 }
+  ],
+  "tools": []
+}

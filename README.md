@@ -15,6 +15,8 @@ pnpm dev
 ```
 
 Open <http://localhost:5173/dev>. That is the layer dev mode: the table view of the sample site with the generated controls beside it, with hot reload.
+
+Open <http://localhost:5173/compose> to assemble a scene: drag layers from the palette into the stack, reorder them and edit their settings. The sample site starts as a dark base map with traffic, public transport, building lights and trees. Every change is saved to the site's `site.json`.
 `/table`, `/tv` and `/phone?c=<session code>` are the real surfaces; the session code is printed when the host starts.
 To join from a real phone, run `pnpm dev -- --lan` and scan the QR code shown on `/tv` or `/dev`.
 
@@ -49,7 +51,7 @@ crates/mrs-cli       the `mrstudio` command
 apps/studio          desktop shell (Tauri): one window per display
 packages/sdk         @mrstudio/sdk: layer API, connection, engine client
 packages/runtime     the surfaces: table, tv, phone, dev
-packages/layers      core layers: sunlight (the reference), sketch (the reference for phone tools), wind (the simulation example), coolpaths, mobility
+packages/layers      core layers: sunlight (the reference for analysis), trees (for ambient layers), sketch (for phone tools), wind (the simulation example), coolpaths, mobility
 packages/mcp         MCP server: build a site by talking to an LLM
 sites/sample         a small synthetic site for tests and dev mode
 sites/chalmers       the Chalmers campus, the flagship reference site
@@ -89,6 +91,7 @@ The GPU tests need a Vulkan, Metal or DirectX 12 adapter. Without one they are s
 | Host: session state, roles, validated params, field streaming | Working |
 | Phones: QR join, slots that survive a reload (60 s hold), per-phone rate limit, point, line and polygon tools | Working; tested in a desktop browser, not yet on a real phone |
 | Surfaces: table, TV, phone, dev, with generated controls | Working, first version |
+| Scene composer (`/compose`), base map, ambient layers and slideshow | Working, first version |
 | Sunlight layer (shadows, sun hours, animation, TV panel) | Working |
 | Cool paths layer (shortest and shadiest walk over a site's walkways, live shade from the engine) | Working; thermal comfort (PET) kernel proposed |
 | Mobility layer (a site's trips played over time, values per cell) | Working |

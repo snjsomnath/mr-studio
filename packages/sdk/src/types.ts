@@ -55,12 +55,17 @@ export interface ToolSpec {
   label?: string;
 }
 
+/** Palette groups in the scene composer. */
+export type LayerCategory = 'base' | 'ambient' | 'analysis' | 'media';
+
 export interface LayerManifest {
   api: number;
   id: string;
   name: string;
   description?: string;
   icon?: string;
+  /** Where the composer's palette lists the layer. Default `analysis`. */
+  category?: LayerCategory;
   requires?: { kernels?: string[]; data?: string[]; services?: string[] };
   controls?: Control[];
   tools?: ToolSpec[];
@@ -133,7 +138,6 @@ export interface SiteInfo {
   table: { width_cm: number; height_cm: number; tile_cm?: number } | null;
   basemap: { background: string; style: string | null };
   branding: { title: string | null; logo: string | null };
-  buildings: string | null;
   /** The calibrated table view, when the site has a calibration.json. */
   calibration: {
     center: { lon: number; lat: number };
@@ -141,7 +145,7 @@ export interface SiteInfo {
     bearing: number;
     window?: { width_px: number; height_px: number };
   } | null;
-  /** Named datasets from site.json: name to site-relative path. Load one with `loadSiteData`. */
+  /** Datasets layers may read, by name: site-relative paths served under `/site/`. */
   data: Record<string, string>;
   tv?: TvConfig | null;
 }
@@ -149,6 +153,8 @@ export interface SiteInfo {
 export type Params = Record<string, unknown>;
 
 export interface LayerState {
+  /** The layer package this instance runs. */
+  layer: string;
   active: boolean;
   /** How strongly the layer is drawn on the table, 0 to 2. 1 is as the layer intends. Applied by the runtime. */
   intensity: number;
@@ -170,6 +176,9 @@ export interface SessionState {
   /** `join_url` is what the TV's QR code points at; null when phones cannot reach the host. */
   session: { id: string; code: string; port: number; join_url: string | null };
   site: SiteInfo;
+  /** Layer instance ids in draw order, bottom first. */
+  scene: string[];
+  /** By instance id, which is the layer id unless site.json names the entry. */
   layers: Record<string, LayerState>;
   participants: Participant[];
 }

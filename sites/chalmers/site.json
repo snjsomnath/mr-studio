@@ -20,6 +20,7 @@
   },
   "basemap": { "background": "#0b0e14", "style": null },
   "layers": [
+    { "use": "basemap", "active": true },
     { "use": "sunlight", "active": true, "params": { "date": "2026-06-21", "hour": 15 } }
   ],
   "branding": { "title": "ACE MR Studio" }
