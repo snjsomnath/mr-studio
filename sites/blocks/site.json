@@ -1,0 +1,18 @@
+{
+  "format": 1,
+  "id": "blocks",
+  "name": "Building blocks demo",
+  "origin": { "lon": 11.97, "lat": 57.7 },
+  "extent": { "width_m": 1000, "height_m": 600, "rotation_deg": 0 },
+  "timezone": "Europe/Stockholm",
+  "table": { "width_cm": 100, "height_cm": 60 },
+  "scene": {
+    "cell_m": 2,
+    "buildings": { "path": "data/buildings.geojson", "height_property": "height", "default_height_m": 12 }
+  },
+  "basemap": { "background": "#06090e", "style": null },
+  "layers": [
+    { "use": "blocks-demo", "active": true }
+  ],
+  "branding": { "title": "MR Studio" }
+}
