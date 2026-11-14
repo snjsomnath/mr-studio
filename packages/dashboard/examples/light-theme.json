@@ -1,0 +1,21 @@
+{
+  "color.background": "#f3efe6",
+  "color.panel": "#ffffff",
+  "color.line": "#d8d2c4",
+  "color.text": "#15181d",
+  "color.muted": "#545b66",
+  "color.accent": "#c2410c",
+  "color.accent-ink": "#ffffff",
+  "color.good": "#008300",
+  "color.warn": "#a86f00",
+  "color.bad": "#d03b3b",
+  "data.1": "#2a78d6",
+  "data.2": "#d95926",
+  "data.3": "#0f8a5f",
+  "data.4": "#a87400",
+  "data.5": "#c2477a",
+  "data.6": "#008300",
+  "font.number": "Georgia, 'Times New Roman', serif",
+  "shape.radius": "none",
+  "panel.style": "outlined"
+}

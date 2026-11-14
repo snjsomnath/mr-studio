@@ -136,7 +136,7 @@ pub fn bake(site: &Site) -> Result<(SceneData, BakeStats), SiteError> {
     Ok((scene, stats))
 }
 
-fn features(path: &Path) -> Result<Vec<Value>, SiteError> {
+pub(crate) fn features(path: &Path) -> Result<Vec<Value>, SiteError> {
     let text = std::fs::read_to_string(path).map_err(|source| SiteError::Io { path: path.to_path_buf(), source })?;
     let mut doc: Value = serde_json::from_str(&text).map_err(|e| SiteError::Parse { path: path.to_path_buf(), message: e.to_string() })?;
     match doc["features"].take() {
@@ -155,7 +155,7 @@ fn number(value: &Value) -> Option<f64> {
 }
 
 /// The polygons of a Polygon or MultiPolygon geometry, each a list of rings.
-fn polygons(geometry: &Value) -> Vec<&Vec<Value>> {
+pub(crate) fn polygons(geometry: &Value) -> Vec<&Vec<Value>> {
     let coordinates = geometry["coordinates"].as_array();
     match (geometry["type"].as_str(), coordinates) {
         (Some("Polygon"), Some(rings)) => vec![rings],
@@ -164,7 +164,7 @@ fn polygons(geometry: &Value) -> Vec<&Vec<Value>> {
     }
 }
 
-fn to_cells(ring: &Value, projection: &Projection, grid: Grid) -> Vec<(f64, f64)> {
+pub(crate) fn to_cells(ring: &Value, projection: &Projection, grid: Grid) -> Vec<(f64, f64)> {
     ring.as_array()
         .map(|points| {
             points

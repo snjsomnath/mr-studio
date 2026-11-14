@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
@@ -166,6 +168,9 @@ pub struct SiteManifest {
     pub scene: SceneSpec,
     #[serde(default)]
     pub basemap: Basemap,
+    /// Named datasets for layers: name to site-relative path.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub data: BTreeMap<String, String>,
     #[serde(default)]
     pub layers: Vec<LayerRef>,
     #[serde(default)]
@@ -175,10 +180,12 @@ pub struct SiteManifest {
 }
 
 /// `calibration.json`: how the table window shows the site on the physical table.
+/// The host keeps the projector calibration of the model surface in the same file under
+/// `projector`; that key, and any other, is left to its owner.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct Calibration {
-    pub table: TableCalibration,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub table: Option<TableCalibration>,
 }
 
 /// The map view the projector needs for the image to land on the physical model.

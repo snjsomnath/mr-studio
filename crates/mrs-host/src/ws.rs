@@ -1,6 +1,7 @@
 //! One WebSocket connection per surface. Wire protocol in `docs/contracts/session.md`.
 
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::State;
@@ -16,6 +17,11 @@ use crate::AppState;
 
 /// Engine output queued per connection. When it is full, frames are dropped.
 const OUT_QUEUE: usize = 16;
+/// The host pings every surface this often,
+const PING_EVERY: Duration = Duration::from_secs(10);
+/// and gives up on one it has not heard from for this long. A phone that fell asleep or
+/// walked out of range leaves no close frame; this is what starts its seat's hold.
+const SILENCE_LIMIT: Duration = Duration::from_secs(30);
 
 pub async fn upgrade(ws: WebSocketUpgrade, State(state): State<Arc<AppState>>) -> Response {
     ws.max_message_size(1 << 20).on_upgrade(move |socket| connection(socket, state))
@@ -37,10 +43,10 @@ async fn connection(socket: WebSocket, state: Arc<AppState>) {
             return Err(format!("protocol mismatch: host speaks {PROTOCOL}"));
         }
         let role = hello["role"].as_str().and_then(Role::parse).ok_or("unknown role")?;
-        let surface = state.hub.join(role, hello["code"].as_str())?;
-        Ok((role, surface))
+        let joined = state.hub.join(role, hello["code"].as_str(), hello["resume"].as_str())?;
+        Ok((role, joined))
     })();
-    let (role, surface) = match admitted {
+    let (role, joined) = match admitted {
         Ok(ok) => ok,
         Err(e) => {
             let _ = sink.send(Message::Text(json!({ "t": "refused", "e": e }).to_string().into())).await;
@@ -48,18 +54,23 @@ async fn connection(socket: WebSocket, state: Arc<AppState>) {
         }
     };
 
+    let surface = joined.surface;
     // Subscribe before sending the welcome so no event is missed in between.
+    // (A phone's own join was announced inside `join`, before this subscription; its welcome carries it.)
     let mut events = state.hub.subscribe();
     let (out_tx, mut out_rx) = mpsc::channel::<Out>(OUT_QUEUE);
     if sink.send(Message::Text(state.hub.welcome(surface).to_string().into())).await.is_err() {
-        state.hub.leave(surface);
+        release(&state, surface);
         return;
     }
     tracing::info!("surface {surface} joined as {role:?}");
 
+    let mut ping = tokio::time::interval_at(tokio::time::Instant::now() + PING_EVERY, PING_EVERY);
+    let mut heard = Instant::now();
     loop {
         tokio::select! {
             incoming = source.next() => {
+                heard = Instant::now();
                 let text = match incoming {
                     Some(Ok(Message::Text(text))) => text,
                     Some(Ok(Message::Close(_))) | Some(Err(_)) | None => break,
@@ -69,7 +80,12 @@ async fn connection(socket: WebSocket, state: Arc<AppState>) {
                 if message["t"] != "req" {
                     continue;
                 }
-                let result = request(&state, role, surface, &message, &out_tx).await;
+                // Phones are strangers on the network: each gets a fixed allowance of requests.
+                let result = if role == Role::Phone && !state.hub.allow(surface) {
+                    Err("rate limited".to_string())
+                } else {
+                    request(&state, role, surface, &message, &out_tx).await
+                };
                 let reply = match result {
                     Ok(r) => json!({ "t": "res", "id": message["id"], "ok": true, "r": r }),
                     Err(e) => json!({ "t": "res", "id": message["id"], "ok": false, "e": e }),
@@ -103,16 +119,54 @@ async fn connection(socket: WebSocket, state: Arc<AppState>) {
                     break;
                 }
             }
+            _ = ping.tick() => {
+                if heard.elapsed() > SILENCE_LIMIT || sink.send(Message::Ping(Default::default())).await.is_err() {
+                    break;
+                }
+            }
+            // The same phone joined again (a reload, or a second tab) and now has this seat.
+            _ = replaced(&joined.kick) => {
+                let _ = sink.send(Message::Text(json!({ "t": "refused", "e": "this phone joined again somewhere else" }).to_string().into())).await;
+                break;
+            }
         }
     }
     state.engine.close_connection(surface);
-    state.hub.leave(surface);
+    release(&state, surface);
     tracing::info!("surface {surface} left");
+}
+
+async fn replaced(kick: &Option<Arc<tokio::sync::Notify>>) {
+    match kick {
+        Some(kick) => kick.notified().await,
+        None => std::future::pending().await,
+    }
+}
+
+/// Ends a surface's part in the session. A phone's seat is held for a while first.
+fn release(state: &Arc<AppState>, surface: u64) {
+    if let Some(hold) = state.hub.leave(surface) {
+        let state = state.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(state.hub.resume_hold()).await;
+            state.hub.expire(hold);
+        });
+    }
 }
 
 async fn request(state: &AppState, role: Role, surface: u64, message: &Value, out: &mpsc::Sender<Out>) -> Result<Value, String> {
     let method = message["m"].as_str().ok_or("missing method")?;
     let p = &message["p"];
+    if method.starts_with("calibration.") {
+        if !role.may_calibrate() {
+            return Err("phones cannot read or change the calibration".into());
+        }
+        let (result, event) = state.calibration.request(method, p)?;
+        if let Some((name, payload)) = event {
+            state.hub.emit(name, payload);
+        }
+        return Ok(result);
+    }
     if !method.starts_with("engine.") {
         return state.hub.request(role, surface, method, p);
     }

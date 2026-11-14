@@ -1,0 +1,30 @@
+{
+  "api": 1,
+  "id": "blocks-demo",
+  "name": "Building blocks",
+  "description": "Two scenes assembled from the SDK's building blocks, with pointer interactions",
+  "icon": "blocks",
+  "requires": { "data": ["places.geojson", "energy-nodes.geojson", "energy-flows.geojson", "buildings.csv"] },
+  "controls": [
+    {
+      "id": "scene", "type": "select", "label": "Scene", "default": "gravity",
+      "options": [
+        { "value": "gravity", "label": "Places that pull" },
+        { "value": "energy", "label": "Energy community" }
+      ]
+    },
+    { "id": "next", "type": "action", "label": "Next step", "phone": true, "visibleWhen": { "scene": "gravity" } },
+    { "id": "hour", "type": "range", "label": "Hour", "min": 0, "max": 23.95, "step": 0.05, "unit": "h", "default": 12, "phone": true, "visibleWhen": { "scene": "energy" } },
+    { "id": "play", "type": "toggle", "label": "Play the day", "default": true, "visibleWhen": { "scene": "energy" } },
+    {
+      "id": "pointer", "type": "select", "label": "Pointer on the table", "default": "probe",
+      "options": [
+        { "value": "probe", "label": "Read" },
+        { "value": "people", "label": "Walk a person" },
+        { "value": "magnifier", "label": "Magnifier" },
+        { "value": "xray", "label": "X-ray" }
+      ]
+    }
+  ],
+  "tools": [{ "id": "point", "type": "point", "label": "Point at the table" }]
+}
