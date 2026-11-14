@@ -27,8 +27,10 @@ async function main() {
   const segment = location.pathname.split('/').filter(Boolean)[0];
   // The scene composer is an operator's tool: it joins with the dev role and has its own layout.
   const composing = segment === 'compose';
+  // The editor is the authoring window around the live table. It joins with the dev role too.
+  const editing = segment === 'edit';
   const role: Role = ROLES.includes(segment as Role) ? (segment as Role) : 'dev';
-  document.body.dataset.role = composing ? 'compose' : role;
+  document.body.dataset.role = editing ? 'edit' : composing ? 'compose' : role;
 
   const phone = role === 'phone';
   const code = phone ? phoneCode() : undefined;
@@ -73,7 +75,7 @@ async function main() {
   // The site's theme also colours the controls, so the rail and the dashboard read as one screen.
   const theme = themeVariables(site.tv?.theme).variables;
   const names = { '--bg': '--mrs-bg', '--panel': '--mrs-panel', '--card': '--mrs-panel', '--line': '--mrs-line', '--text': '--mrs-text', '--muted': '--mrs-muted', '--accent': '--mrs-accent', '--accent-ink': '--mrs-accent-ink' };
-  if (site.tv?.theme) for (const [own, token] of Object.entries(names)) document.documentElement.style.setProperty(own, theme[token]!);
+  if (site.tv?.theme && !editing) for (const [own, token] of Object.entries(names)) document.documentElement.style.setProperty(own, theme[token]!);
   document.body.dataset.rail = site.tv?.rail ?? 'left';
 
   // The table (and the table half of dev) renders layers. Dev shows the TV's dashboard under it.
@@ -86,8 +88,15 @@ async function main() {
     surface.style.aspectRatio = `${site.extent.width_m} / ${site.extent.height_m}`;
     surface.style.setProperty('--aspect', String(site.extent.width_m / site.extent.height_m));
     frame.append(surface);
-    stage.append(frame);
-    app.append(stage);
+    if (editing) {
+      // The editor's chrome is light whatever the site's theme; only the table inside it is dark.
+      document.querySelector('meta[name="color-scheme"]')?.setAttribute('content', 'light');
+      const { Editor } = await import('./editor/editor.ts');
+      new Editor(app, store, connection).canvas.append(frame);
+    } else {
+      stage.append(frame);
+      app.append(stage);
+    }
     // The map library is large; phones and the TV never load it.
     const { TableView } = await import('./table.ts');
     const view = new TableView(surface, site, role === 'table');
@@ -95,6 +104,7 @@ async function main() {
     const { installModel } = await import('./model/index.ts');
     await installModel(view, connection, role);
     new LayerManager(store, connection, view);
+    if (editing) return;
     if (composing) {
       const stack = el('aside', 'controller stack');
       app.append(stack);

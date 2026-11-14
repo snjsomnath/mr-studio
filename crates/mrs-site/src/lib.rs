@@ -24,7 +24,7 @@ pub use manifest::*;
 pub use projection::Projection;
 
 /// The site format this build reads.
-pub const FORMAT: u32 = 1;
+pub const FORMAT: u32 = 2;
 
 #[derive(Debug, Error)]
 pub enum SiteError {
@@ -335,7 +335,7 @@ mod tests {
 
     fn site(data: &str) -> Site {
         let text = format!(
-            r#"{{ "format": 1, "id": "t", "name": "T", "origin": {{ "lon": 12, "lat": 57 }},
+            r#"{{ "format": 2, "id": "t", "name": "T", "origin": {{ "lon": 12, "lat": 57 }},
                  "extent": {{ "width_m": 100, "height_m": 100 }}, "scene": {{ "cell_m": 1 }}, "data": {data} }}"#
         );
         // The crate's own folder stands in for a site folder: Cargo.toml exists in it.

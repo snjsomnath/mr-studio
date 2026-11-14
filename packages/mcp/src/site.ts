@@ -9,7 +9,7 @@ import { delimiter, isAbsolute, join, relative, resolve } from 'node:path';
 
 import { readLayerDir, type Catalog, type LayerEntry, type SiteSchema } from './core.ts';
 
-export const SITE_FORMAT = 1;
+export const SITE_FORMAT = 2;
 
 export interface Issue {
   level: 'error' | 'warning' | 'note';
@@ -20,7 +20,7 @@ export interface Issue {
 export type SiteManifest = Record<string, any>;
 
 // The keys mrs-site accepts. Unknown keys are an error there. The catalog normally carries the
-// schema read from the core's own manifest.rs; this copy of format 1 is the fallback.
+// schema read from the core's own manifest.rs; this copy of format 2 is the fallback.
 const FALLBACK_SCHEMA: SiteSchema = {
   '': { fields: ['format', 'id', 'name', 'origin', 'extent', 'timezone', 'table', 'scene', 'basemap', 'layers', 'tv', 'branding'], required: ['format', 'id', 'name', 'origin', 'extent', 'scene'] },
   origin: { fields: ['lon', 'lat'], required: ['lon', 'lat'] },
@@ -186,7 +186,8 @@ export function validateManifest(manifest: SiteManifest, dir: string | null, cat
   }
   checkKeys(manifest, '', '', catalog.siteSchema ?? FALLBACK_SCHEMA, issues);
 
-  if (manifest.format !== SITE_FORMAT) err('format', `must be ${SITE_FORMAT}; this core reads site format ${SITE_FORMAT}`);
+  if (typeof manifest.format === 'number' && manifest.format < SITE_FORMAT) err('format', `this site is in the older site format ${manifest.format}; run \`mrstudio migrate <site folder>\` (or open it once in the MR Studio app) to bring it to format ${SITE_FORMAT}, then try again`);
+  else if (manifest.format !== SITE_FORMAT) err('format', `must be ${SITE_FORMAT}; this core reads site format ${SITE_FORMAT}`);
   if (typeof manifest.id !== 'string' || !/^[a-z0-9][a-z0-9-]*$/.test(manifest.id)) err('id', 'must be lower-case letters, digits and dashes');
   if (typeof manifest.name !== 'string' || !manifest.name.trim()) err('name', 'is required');
 
@@ -348,7 +349,7 @@ export function newSiteManifest(spec: NewSite): SiteManifest {
     table: { width_cm: tableW, height_cm: tableH },
     scene: { cell_m: cell },
     basemap: { background: spec.background ?? '#0b0e14', style: null },
-    layers: spec.layers ?? [{ use: 'sunlight', active: true }],
+    layers: spec.layers ?? [{ use: 'basemap', active: true }, { use: 'sunlight', active: true }],
     branding: { title: spec.title ?? spec.name },
   };
 }

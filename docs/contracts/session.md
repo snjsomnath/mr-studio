@@ -111,6 +111,7 @@ Surface URLs served by the host:
 | `/phone` | Phone controller |
 | `/dev` | Table view with controls side by side, for layer development |
 | `/compose` | Scene composer: layer palette, table view and the scene's stack. Joins with the `dev` role |
+| `/edit` | The editor: the authoring window around the live table. The home screen holds layers of category `base` and `ambient`; every other layer is a layer of its own. Joins with the `dev` role |
 | `/site/*` | Files from the active site package (read only) |
 | `/api/model` | The site's digital twin mesh (see model.md) |
 | `/ws` | WebSocket endpoint |
