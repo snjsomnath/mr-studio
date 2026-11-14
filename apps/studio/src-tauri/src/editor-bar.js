@@ -1,7 +1,8 @@
-// Runs in the editor window, which shows the host's /compose page. It adds the shell's
-// part of the editor: Present, Stop and the way back to the launcher. A page that has
-// its own controls for these sets `window.mrsShellControls = true` (or carries an element
-// with `data-shell-present`) and calls the same commands itself; then this adds nothing.
+// Runs in the editor window, which shows the host's /edit page. It adds the shell's
+// part of the editor: Present, Stop and the way back to the launcher. A page with its own
+// Present button marks it `data-shell-present`, and then this bar leaves Present to it and
+// only offers Stop while presenting. A page that does all of it itself sets
+// `window.mrsShellControls = true` and gets no bar.
 (() => {
   if (window.top !== window) return;
   const invoke = (command, args) => window.__TAURI__.core.invoke(command, args);
@@ -14,10 +15,10 @@
   }, true);
 
   function build() {
-    if (window.mrsShellControls || document.querySelector('[data-shell-present]')) return;
+    if (window.mrsShellControls) return;
     const host = document.createElement('div');
     host.setAttribute('data-shell-bar', '');
-    Object.assign(host.style, { position: 'fixed', top: '10px', right: '12px', zIndex: '2147483000' });
+    Object.assign(host.style, { position: 'fixed', bottom: '34px', right: '12px', zIndex: '2147483000' });
     const root = host.attachShadow({ mode: 'closed' });
     const style = document.createElement('style');
     style.textContent = `
@@ -33,6 +34,7 @@
       button.primary:hover { background: #2c49b8; }
       button.stop { background: #fdecec; color: #a4262c; font-weight: 600; }
       button[disabled] { opacity: .55; }
+      [hidden] { display: none !important; }
       .note { padding: 0 6px; color: #a4262c; max-width: 320px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       svg { width: 14px; height: 14px; fill: currentColor; }
     `;
@@ -53,6 +55,7 @@
     let presenting = false;
     const icon = (path) => `<svg viewBox="0 0 16 16" aria-hidden="true"><path d="${path}"/></svg>`;
     function draw() {
+      go.hidden = !presenting && !!document.querySelector('[data-shell-present]');
       go.className = presenting ? 'stop' : 'primary';
       go.innerHTML = presenting ? `${icon('M3 3h10v10H3z')}<span>Stop presenting</span>` : `${icon('M4 2.5v11l9-5.5z')}<span>Present</span>`;
       go.title = presenting ? 'Take the site off the table and the TV' : 'Show the site on the table and the TV';
@@ -83,8 +86,12 @@
       await refresh();
     });
     window.addEventListener('focus', refresh);
+    // The page's own Present button does not tell the bar; look again shortly after any click.
+    document.addEventListener('click', () => setTimeout(refresh, 600), true);
     draw();
     refresh();
+    // The page builds its own controls after it has loaded.
+    setTimeout(refresh, 1500);
     document.body.append(host);
   }
 

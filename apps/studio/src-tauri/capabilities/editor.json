@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "editor",
-  "description": "The editor window shows the host's /compose page from this computer. It may present, stop, see the displays, open the launcher and quit, and nothing else. Table, TV and phone surfaces get no commands at all.",
+  "description": "The editor window shows the host's /edit page from this computer. It may present, stop, see the displays, open the launcher and quit, and nothing else. Table, TV and phone surfaces get no commands at all.",
   "windows": [
     "editor"
   ],

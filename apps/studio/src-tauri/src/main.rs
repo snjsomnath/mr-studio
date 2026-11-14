@@ -34,7 +34,7 @@ use tauri_plugin_opener::OpenerExt;
 use tauri_plugin_updater::UpdaterExt;
 
 const LAUNCHER: &str = "launcher";
-/// The window where a site is authored: the host's `/compose` page. It may call the few
+/// The window where a site is authored: the host's `/edit` page. It may call the few
 /// commands listed in `capabilities/editor.json`.
 const EDITOR: &str = "editor";
 const PORT: u16 = 4170;
@@ -375,7 +375,7 @@ fn open_editor(app: &AppHandle) -> anyhow::Result<()> {
     let window = match app.get_webview_window(EDITOR) {
         Some(window) => window,
         None => {
-            let url = format!("http://127.0.0.1:{}/compose", running.port).parse().expect("valid editor url");
+            let url = format!("http://127.0.0.1:{}/edit", running.port).parse().expect("valid editor url");
             let handle = app.clone();
             WebviewWindowBuilder::new(app, EDITOR, WebviewUrl::External(url))
                 .title(format!("MR Studio · {}", running.name))

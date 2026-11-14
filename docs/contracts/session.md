@@ -46,7 +46,7 @@ The launcher is the shell's own window with the site picker and the display pick
 
 A site that is open is in one of two states: open in the editor, or also presented on the displays. Both use the same running host, so what is authored is what is shown.
 
-- **Open in editor** (the launcher's main button, and what happens after **New site**) runs the site and opens the editor window: the host's `/compose` page in a normal window. Nothing goes on the displays.
+- **Open in editor** (the launcher's main button, and what happens after **New site**) runs the site and opens the editor window: the host's `/edit` page in a normal window. Nothing goes on the displays.
 - **Present** opens the surface windows on the displays; **Stop presenting** closes them. The editor stays open and the session keeps its state. The launcher's Present button does the same for a site without opening the editor.
 - A new site is created in the sites folder with a base map and sunlight; the same code backs `mrstudio new-site`.
 
@@ -61,7 +61,7 @@ The editor window is the only remote page with access to the shell, and only to 
 | `open_home` | Opens the launcher |
 | `quit` | Quits the app |
 
-Until the editor page has its own Present control the shell adds a small bar to the editor window with Present, Stop presenting and "Sites and displays". A page that sets `window.mrsShellControls = true` before it finishes loading, or has an element with `data-shell-present`, gets no bar. The page must work without `window.__TAURI__` too, for an editor opened in a browser.
+The shell adds a small bar to the editor window with Present, Stop presenting and "Sites and displays". When the page has an element with `data-shell-present` (its own Present button) the bar leaves Present to the page and shows Stop only while presenting. A page that sets `window.mrsShellControls = true` before it finishes loading gets no bar. The page must work without `window.__TAURI__` too, for an editor opened in a browser.
 
 What the shell does when it starts:
 
