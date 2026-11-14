@@ -47,6 +47,10 @@ const PORT: u16 = 4170;
 /// The editor page's link to the shell until it has a Present button of its own.
 const EDITOR_BAR: &str = include_str!("editor-bar.js");
 
+/// The way back from a presentation, on the screens people look at up close. Never on
+/// the table: nothing of the app's own is projected onto the model.
+const SURFACE_EXIT: &str = include_str!("surface-exit.js");
+
 const SHORTCUTS: &str = r"
 window.addEventListener('keydown', (event) => {
   if (!(event.ctrlKey || event.metaKey) || !event.shiftKey) return;
@@ -304,8 +308,10 @@ async fn launch(app: &AppHandle, site: PathBuf, lan: bool) -> anyhow::Result<()>
     // One start at a time.
     let mut host = shell.host.lock().await;
     close_surfaces(app)?;
-    if let Some(editor) = app.get_webview_window(EDITOR) {
-        editor.destroy()?;
+    for (label, window) in app.webview_windows() {
+        if label == EDITOR || label.starts_with("view-") {
+            window.destroy()?;
+        }
     }
     *shell.running.lock().unwrap() = None;
     if let Some(old) = host.take() {
@@ -352,12 +358,66 @@ async fn launch(app: &AppHandle, site: PathBuf, lan: bool) -> anyhow::Result<()>
 }
 
 /// Runs `site` unless it is what is running already, with the same network choice.
-async fn ensure_running(app: &AppHandle, site: &Path, lan: bool) -> anyhow::Result<()> {
-    let same = |r: &Running| r.lan == lan && (r.site == site || r.site.canonicalize().ok() == site.canonicalize().ok());
-    if app.state::<Shell>().running.lock().unwrap().as_ref().is_some_and(same) {
-        return Ok(());
+/// Returns the folder that runs: `site` itself, or the person's own copy of a built-in one.
+async fn ensure_running(app: &AppHandle, site: &Path, lan: bool) -> anyhow::Result<PathBuf> {
+    let shell = app.state::<Shell>();
+    let site = sites::canonical(working_copy(&shell, site)?);
+    let same = |r: &Running| r.lan == lan && r.site == site;
+    if !shell.running.lock().unwrap().as_ref().is_some_and(same) {
+        launch(app, site.clone(), lan).await?;
     }
-    launch(app, site.to_path_buf(), lan).await
+    Ok(site)
+}
+
+/// A site that ships inside the app is a starting point, not a place to save: the app
+/// folder is replaced by every update and may not be writable. It is copied to the sites
+/// folder once, and that copy is what opens from then on.
+fn working_copy(shell: &Shell, site: &Path) -> anyhow::Result<PathBuf> {
+    let built_in = sites::canonical(shell.resources.join("sites"));
+    let site = sites::canonical(site.to_path_buf());
+    let (Ok(inside), Some(folder)) = (site.strip_prefix(&built_in), shell.sites_folders.first()) else { return Ok(site) };
+    let copy = folder.join(inside);
+    if !copy.join("site.json").exists() {
+        copy_dir(&site, &copy).with_context(|| format!("copying the example to {}", copy.display()))?;
+        tracing::info!("copied the built-in site to {}", copy.display());
+    }
+    Ok(copy)
+}
+
+fn copy_dir(from: &Path, to: &Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(to)?;
+    for entry in std::fs::read_dir(from)? {
+        let entry = entry?;
+        let target = to.join(entry.file_name());
+        if entry.file_type()?.is_dir() {
+            copy_dir(&entry.path(), &target)?;
+        } else {
+            std::fs::copy(entry.path(), target)?;
+        }
+    }
+    Ok(())
+}
+
+/// Opens one surface of the running site in a normal window, for looking at it beside the editor.
+fn open_view(app: &AppHandle, role: &str) -> anyhow::Result<()> {
+    anyhow::ensure!(["table", "tv", "dev", "phone"].contains(&role), "'{role}' is not a view");
+    let running = app.state::<Shell>().running.lock().unwrap().clone().context("no site is open")?;
+    let label = format!("view-{role}");
+    let window = match app.get_webview_window(&label) {
+        Some(window) => window,
+        None => {
+            let url = format!("http://127.0.0.1:{}/{role}", running.port).parse().expect("valid view url");
+            let (width, height) = if role == "phone" { (420.0, 800.0) } else { (1100.0, 700.0) };
+            WebviewWindowBuilder::new(app, &label, WebviewUrl::External(url))
+                .title(format!("MR Studio · {} · {role}", running.name))
+                .inner_size(width, height)
+                .build()?
+        }
+    };
+    window.unminimize()?;
+    window.show()?;
+    window.set_focus()?;
+    Ok(())
 }
 
 fn close_surfaces(app: &AppHandle) -> anyhow::Result<()> {
@@ -468,7 +528,12 @@ fn open_surfaces(app: &AppHandle, port: u16, displays: &Displays) -> anyhow::Res
             .title(format!("MR Studio · {}", spec.role))
             .inner_size(1400.0, 840.0)
             .visible(false)
-            .initialization_script(format!("{SHORTCUTS}\n{}\n{}", colour::SCRIPT, colour.script()))
+            .initialization_script(format!(
+                "{SHORTCUTS}\n{}\n{}\n{}",
+                colour::SCRIPT,
+                colour.script(),
+                if spec.role == "table" { "" } else { SURFACE_EXIT }
+            ))
             .on_navigation(move |url| match url.path().strip_prefix("/__shell/") {
                 Some(action) => {
                     shell_action(&handle, action);
@@ -525,11 +590,15 @@ fn shell_action(app: &AppHandle, action: &str) {
         "setup" => drop(tauri::async_runtime::spawn(async move { report(open_launcher(&app)) })),
         // Back from the table to the editor.
         "edit" => drop(tauri::async_runtime::spawn(async move {
+            // The editor first: with the surfaces gone and no other window, the app would quit.
+            report(open_editor(&app, "edit").or_else(|_| open_home_window(&app)));
             report(close_surfaces(&app));
-            if app.get_webview_window(EDITOR).is_some() || app.webview_windows().is_empty() {
-                report(open_editor(&app, "edit").or_else(|_| open_home_window(&app)));
-            }
         })),
+        // A page asked for a view of its own (the editor's "Open in a window").
+        view if view.starts_with("window/") => {
+            let role = view["window/".len()..].to_string();
+            drop(tauri::async_runtime::spawn(async move { report(open_view(&app, &role)) }));
+        }
         "quit" => app.exit(0),
         other => tracing::warn!("unknown shell action '{other}'"),
     }
@@ -595,6 +664,9 @@ fn launcher_state(app: AppHandle, shell: State<'_, Shell>) -> Result<LauncherSta
     // The sites opened last come first; the rest keep their order.
     let recency = |s: &SiteEntry| settings.recent.iter().position(|p| p == &s.path).unwrap_or(usize::MAX);
     sites.sort_by_key(recency);
+    // An example that has been opened lives on as the person's own copy; list that one only.
+    let own: Vec<_> = sites.iter().filter(|s| s.source != "built in").filter_map(|s| s.path.file_name().map(|n| n.to_owned())).collect();
+    sites.retain(|s| s.source != "built in" || s.path.file_name().is_none_or(|n| !own.iter().any(|o| o == n)));
     let usable = |path: &PathBuf| sites.iter().any(|s| &s.path == path && s.problem.is_none());
     let site = running.as_ref().map(|r| r.site.clone()).or(settings.site.clone()).filter(usable);
     Ok(LauncherState {
@@ -688,13 +760,15 @@ async fn start(app: AppHandle, shell: State<'_, Shell>, request: StartRequest) -
     let displays = chosen_displays(&app, &request.windows)?;
     displays.write(&shell.displays_path()).map_err(text)?;
     let mut settings = shell.settings();
-    settings.opened(&request.site);
     settings.lan = request.lan;
     settings.autostart = request.autostart;
     settings.write(&shell.settings_path()).map_err(text)?;
 
     // An editor that is open on this site stays open; its changes are already on the table.
-    ensure_running(&app, &request.site, request.lan).await.map_err(text)?;
+    let site = ensure_running(&app, &request.site, request.lan).await.map_err(text)?;
+    let mut settings = shell.settings();
+    settings.opened(&site);
+    settings.write(&shell.settings_path()).map_err(text)?;
     show(&app, &displays).map_err(text)?;
     if let Some(launcher) = app.get_webview_window(LAUNCHER) {
         launcher.close().map_err(text)?;
@@ -725,7 +799,7 @@ fn chosen_displays(app: &AppHandle, windows: &[Assigned]) -> Result<Displays, St
 #[tauri::command]
 async fn open_site(app: AppHandle, shell: State<'_, Shell>, path: PathBuf, welcome: Option<bool>) -> Result<(), String> {
     let mut settings = shell.settings();
-    ensure_running(&app, &path, settings.lan).await.map_err(text)?;
+    let path = ensure_running(&app, &path, settings.lan).await.map_err(text)?;
     settings.opened(&path);
     settings.write(&shell.settings_path()).map_err(text)?;
     open_editor(&app, if welcome == Some(true) { "edit?welcome=1" } else { "edit" }).map_err(text)?;
