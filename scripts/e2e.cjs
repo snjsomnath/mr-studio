@@ -1,5 +1,5 @@
 // End-to-end check in a real browser: the host, the engine, the surfaces, the core layers,
-// the ambient scene, the scene composer,
+// the ambient scene, the scene composer, the editor,
 // and a phone joining by QR code, using its tools and coming back after a reload.
 //   pnpm build && cargo build -p mrs-cli && node scripts/e2e.cjs [screenshot-dir]
 // Needs Playwright with Chromium (`npm i -g playwright && npx playwright install chromium`).
@@ -423,6 +423,38 @@ async function main() {
     await row('Trees (trees-2)').waitFor({ state: 'detached' });
     assert.deepEqual(savedLayers().map((l) => l.id ?? l.use), ['basemap', 'sunlight', 'building-lights', 'cars', 'transit', 'trees', 'slideshow', 'sketch', 'coolpaths', 'mobility', 'wind']);
     assert.equal(await tv.getByRole('heading', { name: 'Traffic (cars-2)' }).count(), 0);
+
+    // ---- The editor ----
+    await compose.close();
+    const editor = await open('/edit', { width: 1440, height: 900 });
+    const treeLayers = () => editor.locator('.ed-tree .ed-row[data-layer] .ed-row-label').allTextContents();
+    await editor.locator('.ed-row[data-context="home"]').waitFor();
+    assert.deepEqual(await treeLayers(), ['Wind', 'Mobility', 'Cool paths', 'Sketch', 'Slideshow', 'Sunlight']);
+    // The home screen holds the base map and the ambient life, and offers more of it.
+    assert.deepEqual(await editor.locator('.ed-inspector .ed-row .ed-row-label').allTextContents(), ['Trees', 'Public transport', 'Traffic', 'Building lights', 'Dark base map']);
+    await editor.locator('.ed-ribbon .ed-tool[data-layer="trees"]').click();
+    await editor.locator('.ed-inspector .ed-row[data-layer="trees-2"][aria-current="true"]').waitFor();
+    // Ambient life joins the home screen, under the layers.
+    assert.equal(savedLayers()[6].id, 'trees-2');
+    // Its settings open in the inspector and are saved.
+    await editor.getByLabel('Shown on the table').uncheck();
+    await editor.waitForFunction(() => document.querySelector('.ed-inspector .ed-row[data-layer="trees-2"]')?.classList.contains('is-off'));
+    assert.equal(savedLayers()[6].active, false);
+    // The Home tab acts on what is selected.
+    await editor.getByRole('tab', { name: 'Home' }).click();
+    await editor.locator('.ed-ribbon').getByText('Send back').click();
+    await editor.waitForFunction(() => document.querySelectorAll('.ed-inspector .ed-row[data-layer]')[1]?.getAttribute('data-layer') === 'trees-2');
+    assert.equal(savedLayers()[5].id, 'trees-2');
+    await editor.locator('.ed-ribbon').getByText('Remove').click();
+    await editor.locator('.ed-inspector .ed-row[data-layer="trees-2"]').waitFor({ state: 'detached' });
+    // Inside a layer the ambient tools are not offered.
+    await editor.locator('.ed-tree .ed-row[data-layer="mobility"]').click();
+    await editor.getByRole('tab', { name: 'Insert' }).click();
+    assert.equal(await editor.locator('.ed-ribbon .ed-tool[data-layer="trees"]').count(), 0);
+    await editor.locator('.ed-ribbon .ed-tool[data-layer="sunlight"]').waitFor();
+    await editor.locator('.ed-inspector').getByText('Show trips').waitFor();
+    if (shots) await editor.screenshot({ path: path.join(shots, 'editor.png') });
+    assert.deepEqual(savedLayers().map((l) => l.id ?? l.use), ['basemap', 'sunlight', 'building-lights', 'cars', 'transit', 'trees', 'slideshow', 'sketch', 'coolpaths', 'mobility', 'wind']);
 
     const real = errors.filter((e) => !/wrong session code|WebSocket/.test(e));
     assert.deepEqual(real, [], 'no page errors');
