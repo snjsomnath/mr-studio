@@ -1,0 +1,27 @@
+[package]
+name = "mr-studio-app"
+description = "MR Studio desktop shell: embeds the host and places one window per display"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[[bin]]
+name = "mr-studio"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+mrs-engine.workspace = true
+mrs-host.workspace = true
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tauri = { version = "2", features = [] }
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+[lints]
+workspace = true

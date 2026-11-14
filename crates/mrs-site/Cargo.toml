@@ -1,0 +1,15 @@
+[package]
+name = "mrs-site"
+description = "MR Studio site package format: site.json, validation, scene baking"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[dependencies]
+mrs-engine.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+
+[lints]
+workspace = true

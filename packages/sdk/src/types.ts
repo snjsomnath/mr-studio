@@ -1,0 +1,145 @@
+// Shared types. These mirror docs/contracts/*.md; change them together.
+
+export const PROTOCOL = 1;
+export const LAYER_API = 1;
+
+export type Role = 'table' | 'tv' | 'phone' | 'dev';
+
+// ---- Layer manifest -------------------------------------------------------
+
+interface ControlBase {
+  id: string;
+  label: string;
+  /** Phone participants may change it. */
+  phone?: boolean;
+  /** Show only while other controls have these values. */
+  visibleWhen?: Record<string, unknown>;
+}
+export interface RangeControl extends ControlBase {
+  type: 'range';
+  min: number;
+  max: number;
+  step?: number;
+  unit?: string;
+  default: number;
+}
+export interface SelectControl extends ControlBase {
+  type: 'select';
+  options: { value: string; label: string }[];
+  default: string;
+}
+export interface ToggleControl extends ControlBase {
+  type: 'toggle';
+  default: boolean;
+}
+export interface DateControl extends ControlBase {
+  type: 'date';
+  default: string;
+}
+export interface ColorControl extends ControlBase {
+  type: 'color';
+  default: string;
+}
+export interface TextControl extends ControlBase {
+  type: 'text';
+  default: string;
+}
+export interface ActionControl extends ControlBase {
+  type: 'action';
+}
+export type Control = RangeControl | SelectControl | ToggleControl | DateControl | ColorControl | TextControl | ActionControl;
+
+export interface ToolSpec {
+  id: string;
+  type: 'point' | 'line' | 'polygon';
+  label?: string;
+}
+
+export interface LayerManifest {
+  api: number;
+  id: string;
+  name: string;
+  description?: string;
+  icon?: string;
+  requires?: { kernels?: string[]; data?: string[]; services?: string[] };
+  controls?: Control[];
+  tools?: ToolSpec[];
+}
+
+// ---- Site and session -----------------------------------------------------
+
+export interface Grid {
+  width: number;
+  height: number;
+  cell_m: number;
+  rotation_deg: number;
+}
+
+export interface SiteInfo {
+  id: string;
+  name: string;
+  origin: { lon: number; lat: number };
+  extent: { width_m: number; height_m: number; rotation_deg: number };
+  grid: Grid;
+  /** Extent corners as [lon, lat]: top left, top right, bottom right, bottom left. */
+  corners: [[number, number], [number, number], [number, number], [number, number]];
+  timezone: string | null;
+  table: { width_cm: number; height_cm: number; tile_cm?: number } | null;
+  basemap: { background: string; style: string | null };
+  branding: { title: string | null; logo: string | null };
+  buildings: string | null;
+}
+
+export type Params = Record<string, unknown>;
+
+export interface LayerState {
+  active: boolean;
+  params: Params;
+  shared: Record<string, unknown>;
+}
+
+export interface Participant {
+  surface: number;
+  slot: number;
+  colour: string;
+}
+
+export interface SessionState {
+  protocol: number;
+  session: { id: string; code: string; port: number };
+  site: SiteInfo;
+  layers: Record<string, LayerState>;
+  participants: Participant[];
+}
+
+export interface ToolInput {
+  layer: string;
+  tool: string;
+  /** GeoJSON geometry in WGS84. */
+  geometry: unknown;
+  from: number;
+}
+
+// ---- Engine ---------------------------------------------------------------
+
+export interface FieldFrame {
+  stream: number;
+  /** Index into the stream's `fields`. */
+  field: number;
+  width: number;
+  height: number;
+  revision: number;
+  min: number;
+  max: number;
+  progress: number;
+  /** Quantised over [min, max] when Uint8Array. Row-major, row 0 at the top. */
+  data: Uint8Array | Float32Array;
+}
+
+export interface StreamStatus {
+  stream: number;
+  state: 'running' | 'done';
+  progress: number;
+  revision: number;
+  info: Record<string, any>;
+}

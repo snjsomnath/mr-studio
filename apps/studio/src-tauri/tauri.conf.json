@@ -1,0 +1,23 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "MR Studio",
+  "version": "0.1.0",
+  "identifier": "app.mrstudio.studio",
+  "build": {
+    "frontendDist": "../../../packages/runtime/dist",
+    "beforeBuildCommand": "pnpm --filter @mrstudio/runtime build"
+  },
+  "app": {
+    "windows": [],
+    "security": { "csp": null }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": ["icons/icon.png"],
+    "resources": {
+      "../../../packages/runtime/dist": "web",
+      "../../../packages/layers": "layers"
+    }
+  }
+}

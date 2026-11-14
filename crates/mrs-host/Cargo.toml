@@ -1,0 +1,24 @@
+[package]
+name = "mrs-host"
+description = "MR Studio local host: serves surfaces, runs the session hub, fronts the compute engine"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[dependencies]
+mrs-engine.workspace = true
+mrs-site.workspace = true
+anyhow.workspace = true
+axum.workspace = true
+futures-util.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tower-http.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+tokio-tungstenite = "0.30"
+
+[lints]
+workspace = true

@@ -1,0 +1,24 @@
+[package]
+name = "mrs-cli"
+description = "mrstudio command line: dev, validate, new-site, bench"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[[bin]]
+name = "mrstudio"
+path = "src/main.rs"
+
+[dependencies]
+mrs-engine.workspace = true
+mrs-site.workspace = true
+mrs-host.workspace = true
+anyhow.workspace = true
+clap.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+[lints]
+workspace = true
