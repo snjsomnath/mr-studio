@@ -8,4 +8,6 @@ export * from './time.ts';
 export * from './controls.ts';
 export * from './geo.ts';
 export * from './solar.ts';
+export * from './model.ts';
+export * from './projector.ts';
 export * from './blocks/index.ts';

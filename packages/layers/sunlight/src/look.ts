@@ -30,6 +30,18 @@ export function skyColormap(altitude: number): Colormap {
   return { stops: [stop(0, shade, 236), stop(0.5, edge, 236), stop(1, light, 236)] };
 }
 
+/**
+ * The same light as `skyColormap`, as a sun and a sky for lighting the 3D model: the sun's own
+ * colour, and the colour the sky leaves in the shade.
+ */
+export function skyLight(altitude: number): { sun: string; sky: string; intensity: number } {
+  const day = clamp01((altitude + 5) / 9);
+  const low = clamp01(1 - altitude / 38) ** 1.6;
+  const css = (c: Rgb) => `rgb(${c.map((v) => Math.round(v)).join(' ')})`;
+  // A low sun rakes across the ground, so it is given more strength to keep the model readable.
+  return { sun: css(mix(NOON_LIGHT, LOW_LIGHT, low)), sky: css(mix(NIGHT, mix(NOON_SHADE, LOW_SHADE, low), day)), intensity: day * (1 + 0.6 * low) };
+}
+
 /** Hours of direct sun: cool where there is little, warm where there is a lot. */
 export const sunHoursColormap: Colormap = {
   stops: [

@@ -1,8 +1,8 @@
 import { defineLayer, formatHour, zonedTimeToUtc } from '@mrstudio/sdk';
-import type { FieldStream, LayerManifest, TableContext } from '@mrstudio/sdk';
+import type { FieldStream, LayerManifest, LightHandle, SunLight, TableContext } from '@mrstudio/sdk';
 
 import manifest from '../layer.json';
-import { skyColormap, sunAt, sunDay, sunHoursColormap, thresholdColormap, treeHoursColormap, treeShadeColormap } from './look.ts';
+import { skyColormap, skyLight, sunAt, sunDay, sunHoursColormap, thresholdColormap, treeHoursColormap, treeShadeColormap } from './look.ts';
 import { SunPath } from './sun-path.ts';
 
 interface Params {
@@ -14,6 +14,7 @@ interface Params {
   treeColor: boolean;
   threshold: number;
   path: boolean;
+  relight: boolean;
   opacity: number;
 }
 
@@ -49,13 +50,30 @@ export default defineLayer<Params>({
       soften: SOFTEN_CELLS,
       glide: GLIDE_SECONDS,
     });
-    // Tree shade is drawn over the light in its own colour.
-    const treeOverlay = ctx.map.addField('tree-shade', { colormap: treeShadeColormap, opacity: 0, soften: SOFTEN_CELLS, glide: GLIDE_SECONDS });
+    // Tree shade is drawn over the light in its own colour, on the twin's ground and roofs.
+    const treeOverlay = ctx.model.addField('tree-shade', { colormap: treeShadeColormap, opacity: 0, soften: SOFTEN_CELLS, glide: GLIDE_SECONDS });
     const treeOpacity = () => (ctx.params.trees && ctx.params.treeColor ? ctx.params.opacity : 0);
     const path = new SunPath(ctx.map.addElement(), ctx.site.extent.rotation_deg);
     let stream: FieldStream | null = null;
     let generation = 0;
     let daylightHours: number | undefined;
+
+    // Relighting: instead of colouring a shadow mask, a sun and a sky light the twin itself,
+    // so walls catch the light and shadows fall on every surface. Tree shade stays a field.
+    let sunLight: LightHandle<SunLight> | null = null;
+    const relit = () => ctx.params.relight && ctx.params.mode === 'instant';
+    function relight() {
+      if (!relit()) {
+        sunLight?.remove();
+        sunLight = null;
+        return;
+      }
+      const sun = sunNow();
+      const look = skyLight(sun.altitude);
+      const light = { azimuth: sun.azimuth, altitude: sun.altitude, color: look.sun, intensity: look.intensity * ctx.params.opacity, sky: { color: look.sky } };
+      if (sunLight) sunLight.set(light);
+      else sunLight = ctx.model.addLight({ type: 'sun', ...light });
+    }
     let percent = 0;
     // The line under the daylight figure on the TV: progress, then what the map is flagging.
     const dayStatus = () => {
@@ -72,7 +90,12 @@ export default defineLayer<Params>({
     function dress() {
       const day = ctx.params.mode === 'day';
       const sun = sunNow();
-      overlay.setStyle({ colormap: day ? hoursColormap(ctx.params.threshold, daylightHours) : skyColormap(sun.altitude), soften: day ? 1 : SOFTEN_CELLS });
+      relight();
+      overlay.setStyle({
+        colormap: day ? hoursColormap(ctx.params.threshold, daylightHours) : skyColormap(sun.altitude),
+        soften: day ? 1 : SOFTEN_CELLS,
+        opacity: relit() ? 0 : ctx.params.opacity,
+      });
       treeOverlay.setStyle({ colormap: day ? treeHoursColormap : treeShadeColormap, soften: day ? 1 : SOFTEN_CELLS, opacity: treeOpacity() });
       path.setVisible(ctx.params.path);
       path.setSun(day ? { ...sun, altitude: -90 } : sun);
@@ -151,7 +174,6 @@ export default defineLayer<Params>({
 
     return {
       update(changed) {
-        if (changed.includes('opacity')) overlay.setStyle({ opacity: ctx.params.opacity });
         if (changed.includes('date')) publishDay();
         if (changed.includes('mode')) void open();
         else {

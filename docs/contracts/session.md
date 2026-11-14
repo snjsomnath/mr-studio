@@ -36,6 +36,7 @@ Surface URLs served by the host:
 | `/phone` | Phone controller |
 | `/dev` | Table view with controls side by side, for layer development |
 | `/site/*` | Files from the active site package (read only) |
+| `/api/model` | The site's digital twin mesh (see model.md) |
 | `/ws` | WebSocket endpoint |
 
 ## State
@@ -93,6 +94,9 @@ Requests:
 | `layer.publish` | `{ layer, values }` | table, dev | Merges into `shared`, broadcasts |
 | `tool.input` | `{ layer, tool, geometry }` | all | Checked, then forwarded to the table |
 | `engine.*` | see engine.md | table, tv, dev | Kernel streams |
+| `calibration.get` | none | table, tv, dev | Returns `{ projector }`, the saved projector calibration or null (see model.md) |
+| `calibration.set` | `{ projector }` | table, tv, dev | Saves it to the site's `calibration.json` (null clears it) and broadcasts `calibration` |
+| `calibration.mode` | `{ active }` | table, tv, dev | Asks the table to open or close its calibration tool |
 
 Events:
 
@@ -102,6 +106,8 @@ Events:
 | `state.participants` | `{ participants }` |
 | `layer.action` | `{ layer, action, from }` |
 | `tool.input` | `{ layer, tool, geometry, from, participant? }` |
+| `calibration` | `{ projector }` after a calibration was saved or cleared |
+| `calibration.mode` | `{ active }` |
 
 Rules:
 

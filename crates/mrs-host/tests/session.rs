@@ -405,3 +405,88 @@ async fn sun_hours_arrive_progressively() {
     assert!((17.0..19.0).contains(&hours), "{hours} h of daylight at midsummer");
     host.shutdown().await;
 }
+
+/// A plain HTTP GET, returning the body.
+async fn http_get(host: &RunningHost, path: &str) -> Vec<u8> {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let mut stream = tokio::net::TcpStream::connect(host.addr).await.unwrap();
+    stream.write_all(format!("GET {path} HTTP/1.0\r\nHost: {}\r\n\r\n", host.addr).as_bytes()).await.unwrap();
+    let mut response = Vec::new();
+    stream.read_to_end(&mut response).await.unwrap();
+    let split = response.windows(4).position(|w| w == b"\r\n\r\n").expect("an HTTP response");
+    assert!(
+        response.starts_with(b"HTTP/1.0 200") || response.starts_with(b"HTTP/1.1 200"),
+        "{}",
+        String::from_utf8_lossy(&response[..split])
+    );
+    response[split + 4..].to_vec()
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_host_serves_the_twin() {
+    let host = host().await;
+    let body = http_get(&host, "/api/model").await;
+    assert_eq!(&body[0..4], b"MRSM");
+    let (vertices, indices) = (u32_at(&body, 8) as usize, u32_at(&body, 12) as usize);
+    assert!(vertices > 1000 && indices % 3 == 0);
+    assert_eq!(body.len(), 32 + vertices * 20 + indices * 4);
+    host.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn calibration_is_saved_shared_and_survives_a_restart() {
+    // A copy of the sample site, so the test's calibration.json does not land in the repository.
+    let dir = std::env::temp_dir().join(format!("mrs-calibration-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(dir.join("data")).unwrap();
+    let sample = repo().join("sites/sample");
+    std::fs::copy(sample.join("site.json"), dir.join("site.json")).unwrap();
+    for entry in std::fs::read_dir(sample.join("data")).unwrap() {
+        let entry = entry.unwrap();
+        std::fs::copy(entry.path(), dir.join("data").join(entry.file_name())).unwrap();
+    }
+    // Another tool's calibration in the same file must be left alone.
+    std::fs::write(dir.join("calibration.json"), r#"{ "table": { "zoom": 16 } }"#).unwrap();
+    let start = || async {
+        mrs_host::start(HostConfig {
+            site_dir: dir.clone(),
+            layers_dir: repo().join("packages/layers"),
+            web_dir: None,
+            bind: "127.0.0.1:0".parse().unwrap(),
+            backend: Backend::Cpu,
+            session: Default::default(),
+        })
+        .await
+        .unwrap()
+    };
+
+    let host = start().await;
+    let code = host.state.hub.session().code.clone();
+    let mut dev = Surface::join(&host, "dev", None).await.unwrap();
+    let mut table = Surface::join(&host, "table", None).await.unwrap();
+    let mut phone = Surface::join(&host, "phone", Some(&code)).await.unwrap();
+    assert_eq!(dev.request("calibration.get", json!({})).await.unwrap()["projector"], Value::Null);
+
+    let projector = json!({ "matrix": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1], "image": { "width": 1920, "height": 1080 }, "error_px": 0.4 });
+    assert!(phone.request("calibration.set", json!({ "projector": projector })).await.is_err());
+    assert!(dev.request("calibration.set", json!({ "projector": { "matrix": [1, 2, 3] } })).await.is_err());
+    dev.request("calibration.set", json!({ "projector": projector })).await.unwrap();
+    assert_eq!(table.event("calibration").await["projector"], projector);
+    // Any controller can ask the table to open its calibration tool.
+    dev.request("calibration.mode", json!({ "active": true })).await.unwrap();
+    assert_eq!(table.event("calibration.mode").await["active"], true);
+    host.shutdown().await;
+
+    let file: Value = serde_json::from_str(&std::fs::read_to_string(dir.join("calibration.json")).unwrap()).unwrap();
+    assert_eq!(file["projector"], projector);
+    assert_eq!(file["table"]["zoom"], 16);
+
+    let host = start().await;
+    let mut dev = Surface::join(&host, "dev", None).await.unwrap();
+    assert_eq!(dev.request("calibration.get", json!({})).await.unwrap()["projector"], projector);
+    // Clearing goes back to the flat table.
+    dev.request("calibration.set", json!({ "projector": null })).await.unwrap();
+    assert_eq!(dev.request("calibration.get", json!({})).await.unwrap()["projector"], Value::Null);
+    host.shutdown().await;
+    let _ = std::fs::remove_dir_all(&dir);
+}

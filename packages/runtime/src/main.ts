@@ -87,6 +87,8 @@ async function main() {
     const { TableView } = await import('./table.ts');
     const view = new TableView(surface, site);
     await view.ready;
+    const { installModel } = await import('./model/index.ts');
+    await installModel(view, connection, role);
     new LayerManager(store, connection, view);
   }
   if (role === 'tv' || role === 'dev') {
