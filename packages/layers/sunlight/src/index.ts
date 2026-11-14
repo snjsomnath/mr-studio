@@ -2,7 +2,7 @@ import { cssGradient, defineLayer, formatHour, zonedTimeToUtc } from '@mrstudio/
 import type { FieldStream, LayerManifest, TableContext } from '@mrstudio/sdk';
 
 import manifest from '../layer.json';
-import { skyColormap, sunAt, sunDay, sunHoursColormap } from './look.ts';
+import { TREE_SHADE_CSS, skyColormap, sunAt, sunDay, sunHoursColormap, treeHoursColormap, treeShadeColormap } from './look.ts';
 import { SunPath } from './sun-path.ts';
 
 interface Params {
@@ -11,6 +11,7 @@ interface Params {
   hour: number;
   play: boolean;
   trees: boolean;
+  treeColor: boolean;
   path: boolean;
   opacity: number;
 }
@@ -42,6 +43,9 @@ export default defineLayer<Params>({
       soften: SOFTEN_CELLS,
       glide: GLIDE_SECONDS,
     });
+    // Tree shade is drawn over the light in its own colour.
+    const treeOverlay = ctx.map.addField('tree-shade', { colormap: treeShadeColormap, opacity: 0, soften: SOFTEN_CELLS, glide: GLIDE_SECONDS });
+    const treeOpacity = () => (ctx.params.trees && ctx.params.treeColor ? ctx.params.opacity : 0);
     const path = new SunPath(ctx.map.addElement(), ctx.site.extent.rotation_deg);
     let stream: FieldStream | null = null;
     let generation = 0;
@@ -55,6 +59,7 @@ export default defineLayer<Params>({
       const day = ctx.params.mode === 'day';
       const sun = sunNow();
       overlay.setStyle({ colormap: day ? sunHoursColormap : skyColormap(sun.altitude), soften: day ? 1 : SOFTEN_CELLS });
+      treeOverlay.setStyle({ colormap: day ? treeHoursColormap : treeShadeColormap, soften: day ? 1 : SOFTEN_CELLS, opacity: treeOpacity() });
       path.setVisible(ctx.params.path);
       path.setSun(day ? { ...sun, altitude: -90 } : sun);
     }
@@ -64,10 +69,10 @@ export default defineLayer<Params>({
       const mine = ++generation;
       stream?.close();
       stream = null;
-      const field = ctx.params.mode === 'day' ? 'sun_hours' : 'shadow';
+      const [field, treeField] = ctx.params.mode === 'day' ? ['sun_hours', 'tree_shade_hours'] : ['shadow', 'tree_shade'];
       // The panel shows progress from the first moment, not the previous job's.
       ctx.publish({ progress: 0 });
-      const opened = await ctx.engine.open('sunlight', kernelParams(ctx), [field]);
+      const opened = await ctx.engine.open('sunlight', kernelParams(ctx), [field, treeField]);
       if (mine !== generation) {
         // The mode changed again, or the layer was turned off, while this was opening.
         opened.close();
@@ -76,6 +81,7 @@ export default defineLayer<Params>({
       stream = opened;
       dress();
       opened.on(field, (frame) => overlay.set(frame));
+      opened.on(treeField, (frame) => treeOverlay.set(frame));
       opened.onStatus((status) => {
         ctx.publish({
           altitude: Math.round(status.info.sun.altitude_deg * 10) / 10,
@@ -128,6 +134,8 @@ export default defineLayer<Params>({
         .sunlight-day { display: block; width: 100%; height: auto; overflow: visible; }
         .sunlight-day text { font-size: 9px; fill: currentColor; opacity: 0.6; font-variant-numeric: tabular-nums; }
         .sunlight-ramp { height: 10px; border-radius: 5px; box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.08); }
+        .sunlight-key { display: flex; align-items: center; gap: 8px; font-size: 0.8rem; opacity: 0.8; margin-top: 8px; }
+        .sunlight-key i { width: 22px; height: 10px; border-radius: 5px; background: ${TREE_SHADE_CSS}; }
         .sunlight-ticks { display: flex; justify-content: space-between; font-size: 0.8rem; opacity: 0.7; margin-top: 4px; font-variant-numeric: tabular-nums; }
       </style>
       <div class="sunlight-panel">
@@ -148,7 +156,7 @@ export default defineLayer<Params>({
           <text class="sunlight-peak" text-anchor="middle"></text>
           <g class="sunlight-marker"><line y1="0" y2="${HORIZON}" stroke="#fff7d6" stroke-opacity="0.25" stroke-dasharray="2 3"/><circle class="sunlight-glow" r="12" fill="url(#sunlight-dot)"/><circle class="sunlight-core" r="3" fill="#fffbe8"/></g>
         </svg>
-        <div><div class="sunlight-ramp"></div><div class="sunlight-ticks"><span></span><span></span><span></span></div></div>
+        <div><div class="sunlight-ramp"></div><div class="sunlight-ticks"><span></span><span></span><span></span></div><div class="sunlight-key"><i></i><span></span></div></div>
       </div>`;
     const find = <T extends Element>(selector: string) => el.querySelector<T>(selector)!;
     const clock = find<HTMLElement>('.sunlight-clock');
@@ -202,6 +210,9 @@ export default defineLayer<Params>({
       } else {
         sun.textContent = altitude > 0 ? `sun ${altitude}° up, bearing ${azimuth}°` : 'sun below the horizon';
       }
+      const key = find<HTMLElement>('.sunlight-key');
+      key.style.display = ctx.params.trees && ctx.params.treeColor ? '' : 'none';
+      key.querySelector('span')!.textContent = day ? 'sun lost to trees' : 'shade from trees';
       low!.textContent = day ? '0 h' : 'shade';
       middle!.textContent = day && daylightHours ? `${Math.round(daylightHours / 2)} h` : '';
       high!.textContent = day ? `${daylightHours ?? ''} h` : 'sun';
