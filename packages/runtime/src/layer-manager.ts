@@ -70,6 +70,7 @@ export class LayerManager {
   }
 
   private sync(id: string, state: LayerState, previous: LayerState | undefined): void {
+    this.view.setIntensity(id, state.intensity ?? 1);
     const running = this.running.get(id);
     if (state.active && !running) {
       void this.start(id);
@@ -105,6 +106,7 @@ export class LayerManager {
         info: () => engine.info(),
       } as EngineClient,
       map: this.view.handle(id, track),
+      pointer: this.view.pointer(track),
       publish: (values) => {
         const patch: Record<string, unknown> = {};
         for (const [key, value] of Object.entries(values)) {
