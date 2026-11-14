@@ -559,8 +559,8 @@ fn launcher_state(app: AppHandle, shell: State<'_, Shell>) -> Result<LauncherSta
         displays,
         configured: saved.is_some(),
         lan: settings.lan,
-        // Offered by default on a machine that is being set up for the first time.
-        autostart: settings.autostart || saved.is_none(),
+        // A table that starts by itself is a choice for a finished installation, never the default.
+        autostart: settings.autostart,
         running,
         presenting: is_presenting(&app),
         error,
