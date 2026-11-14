@@ -2,7 +2,7 @@ import type { Position, SiteInfo } from './types.ts';
 
 // The table is a rectangle on a tangent plane, so across a site longitude and latitude
 // are linear in table coordinates. These two functions are the whole mapping, for every
-// input that points at the table: a phone's map, touch, hand tracking.
+// input that points at the table: a phone's map, touch.
 
 /** Table coordinates (0..1 from the top left corner, u to the right, v down) to WGS84. */
 export function tableToLonLat(site: Pick<SiteInfo, 'corners'>, u: number, v: number): Position {

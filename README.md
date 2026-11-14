@@ -65,6 +65,6 @@ The GPU tests need a Vulkan, Metal or DirectX 12 adapter. Without one they are s
 | Sunlight layer (shadows, sun hours, animation, TV panel) | Working |
 | Desktop shell | Compiles on Linux; not yet run on Windows or macOS |
 | Wind, stormwater, isovist kernels and layers | Not started; see the work packages in ARCHITECTURE.md |
-| Calibration, basemap tiles, hand tracking | Not started |
+| Calibration, basemap tiles | Not started |
 | Chalmers, Lindholmen and Universeum site packages | Not started |
 | Python services gateway (ECOM, CoolPaths, site prep) | Not started |
