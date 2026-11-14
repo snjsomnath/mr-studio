@@ -216,3 +216,8 @@ window.addEventListener('resize', () => state && renderMap());
 window.addEventListener('focus', () => state && !busy && !$('new-site-dialog').open && load());
 
 load().catch((e) => showError(String(e)));
+
+// Say the keys and the hints of the computer this runs on.
+const mac = /Mac/i.test(navigator.platform);
+if (mac) document.querySelectorAll('.keys kbd').forEach((key) => key.textContent === 'Ctrl' && (key.textContent = 'Cmd'));
+document.querySelectorAll('[data-only="windows"]').forEach((node) => (node.hidden = !/Win/i.test(navigator.platform)));

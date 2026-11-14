@@ -21,7 +21,7 @@ pub struct SiteEntry {
 pub fn discover(added: &[PathBuf], folders: &[PathBuf], built_in: &Path) -> Vec<SiteEntry> {
     let mut entries: Vec<SiteEntry> = Vec::new();
     let mut push = |path: PathBuf, source: &'static str| {
-        let path = path.canonicalize().map(strip_verbatim).unwrap_or(path);
+        let path = canonical(path);
         if !entries.iter().any(|e| e.path == path) {
             entries.push(describe(path, source));
         }
@@ -53,6 +53,12 @@ pub fn describe(path: PathBuf, source: &'static str) -> SiteEntry {
         Ok(site) => SiteEntry { id: site.manifest.id.clone(), name: site.manifest.name.clone(), path, source, problem: None },
         Err(e) => SiteEntry { id: fallback.clone(), name: fallback, path, source, problem: Some(e.to_string()) },
     }
+}
+
+/// The one spelling of a folder's path that is stored and compared, so a folder reached
+/// through a link (Documents kept in a cloud folder) is still the same site.
+pub fn canonical(path: PathBuf) -> PathBuf {
+    path.canonicalize().map(strip_verbatim).unwrap_or(path)
 }
 
 /// Windows canonical paths start with `\\?\`, which is noise in a picker and in a config file.

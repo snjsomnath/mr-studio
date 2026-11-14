@@ -17,7 +17,7 @@ Nothing is installed until the person presses the button. A table that starts by
 
 ## Writing the notes
 
-The draft starts from `.github/release-notes-template.md`. Write for the people who run a table.
+The draft starts from `.github/release-notes-template.md`. Write for the people who run a table. A pull request that changes how something works adds its line to that file, so the draft already lists what happened since the last release; empty the lists again after publishing.
 
 - Pictures: drag them into the editor on GitHub. The app shows pictures hosted on github.com and githubusercontent.com.
 - **Breaking changes**: add a heading that starts with "Breaking", for example `## Breaking changes`, and under it say what changes and what people must do. The app shows that section before anything else. A release that raises the major version is also marked as breaking.

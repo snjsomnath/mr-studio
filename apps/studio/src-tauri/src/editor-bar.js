@@ -14,6 +14,21 @@
     if (event.code === 'KeyQ') { event.preventDefault(); invoke('quit'); }
   }, true);
 
+  // A webview has no tabs. A page that asks for a window of one of this table's views
+  // gets a real one from the shell; any other address is left alone.
+  const browserOpen = window.open;
+  window.open = function (url, ...rest) {
+    try {
+      const target = new URL(url, window.location.href);
+      const view = target.pathname.replace(/^\//, '');
+      if (target.origin === window.location.origin && ['table', 'tv', 'dev', 'phone'].includes(view)) {
+        window.location.href = '/__shell/window/' + view;
+        return null;
+      }
+    } catch {}
+    return browserOpen.call(window, url, ...rest);
+  };
+
   function build() {
     if (window.mrsShellControls) return;
     const host = document.createElement('div');
@@ -45,8 +60,8 @@
     note.hidden = true;
     const home = document.createElement('button');
     home.type = 'button';
-    home.textContent = 'Sites and displays';
-    home.title = 'Other sites, which display shows what, colour, calibration and updates';
+    home.textContent = 'Home';
+    home.title = 'Other tables and a new table. Displays and settings are there too.';
     const go = document.createElement('button');
     go.type = 'button';
     bar.append(note, home, go);
