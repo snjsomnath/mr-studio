@@ -4,6 +4,8 @@ import type { FieldFrame, LayerManifest, Role, SessionState } from './types.ts';
 
 export interface Welcome {
   surface: number;
+  /** Phones only: present it in the next `hello` to return to the same slot. */
+  resume?: string;
   state: SessionState;
   manifests: LayerManifest[];
 }
@@ -30,11 +32,14 @@ export class Connection {
   private readonly url: string;
   private readonly role: Role;
   private readonly code: string | undefined;
+  private resume: string | undefined;
 
-  constructor(options: { url: string; role: Role; code?: string }) {
+  /** `resume` is a token kept from an earlier welcome, for a phone that reloaded. */
+  constructor(options: { url: string; role: Role; code?: string; resume?: string }) {
     this.url = options.url;
     this.role = options.role;
     this.code = options.code;
+    this.resume = options.resume;
   }
 
   /** Connects and resolves with the first welcome. Later reconnects emit `welcome`. */
@@ -46,7 +51,7 @@ export class Connection {
         socket.binaryType = 'arraybuffer';
         this.socket = socket;
         socket.onopen = () => {
-          socket.send(JSON.stringify({ t: 'hello', protocol: PROTOCOL, role: this.role, code: this.code }));
+          socket.send(JSON.stringify({ t: 'hello', protocol: PROTOCOL, role: this.role, code: this.code, resume: this.resume }));
         };
         socket.onmessage = (event) => {
           if (typeof event.data !== 'string') {
@@ -58,6 +63,8 @@ export class Connection {
           switch (message.t) {
             case 'welcome':
               this.retry = 0;
+              // Reconnects present the latest token, so a brief drop returns to the same slot.
+              this.resume = message.resume ?? this.resume;
               if (first) {
                 first = false;
                 resolve(message);

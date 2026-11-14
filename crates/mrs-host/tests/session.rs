@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use futures_util::{SinkExt, StreamExt};
 use mrs_engine::Backend;
-use mrs_host::{HostConfig, RunningHost};
+use mrs_host::{HostConfig, RunningHost, SessionOptions};
 use serde_json::{json, Value};
 use tokio_tungstenite::tungstenite::Message;
 
@@ -16,6 +16,10 @@ fn repo() -> PathBuf {
 }
 
 async fn host() -> RunningHost {
+    host_with(SessionOptions::default()).await
+}
+
+async fn host_with(options: SessionOptions) -> RunningHost {
     mrs_host::start(HostConfig {
         site_dir: repo().join("sites/sample"),
         layers_dir: repo().join("packages/layers"),
@@ -23,6 +27,7 @@ async fn host() -> RunningHost {
         bind: "127.0.0.1:0".parse().unwrap(),
         // The CPU reference keeps these tests independent of the machine's GPU.
         backend: Backend::Cpu,
+        session: options,
     })
     .await
     .unwrap()
@@ -36,8 +41,12 @@ struct Surface {
 
 impl Surface {
     async fn join(host: &RunningHost, role: &str, code: Option<&str>) -> Result<Self, String> {
+        Self::resume(host, role, code, None).await
+    }
+
+    async fn resume(host: &RunningHost, role: &str, code: Option<&str>, resume: Option<&str>) -> Result<Self, String> {
         let (mut socket, _) = tokio_tungstenite::connect_async(format!("ws://{}/ws", host.addr)).await.unwrap();
-        let hello = json!({ "t": "hello", "protocol": 1, "role": role, "code": code });
+        let hello = json!({ "t": "hello", "protocol": 1, "role": role, "code": code, "resume": resume });
         socket.send(Message::Text(hello.to_string().into())).await.unwrap();
         let first: Value = match socket.next().await.unwrap().unwrap() {
             Message::Text(text) => serde_json::from_str(&text).unwrap(),
@@ -160,16 +169,156 @@ async fn phones_need_the_code_and_are_limited() {
     assert!(phone.request("layer.activate", json!({ "layer": "sunlight", "active": false })).await.is_err());
     assert!(phone.request("engine.open", json!({ "kernel": "sunlight", "params": {}, "fields": ["shadow"] })).await.is_err());
 
-    // Leaving frees the slot.
+    // The slot is held when the phone drops (see the resume test), so eight more do not fit.
     drop(phone);
-    assert_eq!(tv.event("state.participants").await["participants"].as_array().unwrap().len(), 0);
-
-    // The ninth phone is turned away.
+    assert_eq!(tv.event("state.participants").await["participants"][0]["connected"], false);
     let mut phones = Vec::new();
-    for _ in 0..8 {
+    for _ in 0..7 {
         phones.push(Surface::join(&host, "phone", Some(&code)).await.unwrap());
     }
     assert_eq!(Surface::join(&host, "phone", Some(&code)).await.err().unwrap(), "session full");
+    host.shutdown().await;
+}
+
+/// The participants in the next `state.participants` event, as (slot, connected).
+async fn people(surface: &mut Surface) -> Vec<(u64, bool)> {
+    let event = surface.event("state.participants").await;
+    event["participants"].as_array().unwrap().iter().map(|p| (p["slot"].as_u64().unwrap(), p["connected"].as_bool().unwrap())).collect()
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_phone_resumes_its_slot_and_an_abandoned_slot_is_released() {
+    let host = host_with(SessionOptions { resume_hold: Duration::from_millis(600), ..Default::default() }).await;
+    let code = host.state.hub.session().code.clone();
+    let mut tv = Surface::join(&host, "tv", None).await.unwrap();
+    assert!(tv.welcome["resume"].is_null());
+
+    let _first = Surface::join(&host, "phone", Some(&code)).await.unwrap();
+    assert_eq!(people(&mut tv).await, [(0, true)]);
+    let second = Surface::join(&host, "phone", Some(&code)).await.unwrap();
+    assert_eq!(people(&mut tv).await, [(0, true), (1, true)]);
+    let token = second.welcome["resume"].as_str().unwrap().to_string();
+    let colour = second.welcome["state"]["participants"][1]["colour"].clone();
+
+    // The connection drops: the slot is kept, shown as away.
+    drop(second);
+    assert_eq!(people(&mut tv).await, [(0, true), (1, false)]);
+
+    // Back in time with the token: same slot and colour, same token, a new surface id.
+    let mut back = Surface::resume(&host, "phone", Some(&code), Some(&token)).await.unwrap();
+    assert_eq!(people(&mut tv).await, [(0, true), (1, true)]);
+    assert_eq!(back.welcome["resume"], token.as_str());
+    let me = back.welcome["state"]["participants"].as_array().unwrap().iter().find(|p| p["surface"] == back.welcome["surface"]).unwrap();
+    assert_eq!((me["slot"].as_u64(), &me["colour"]), (Some(1), &colour));
+    back.request("layer.set", json!({ "layer": "sunlight", "params": { "hour": 7 } })).await.unwrap();
+
+    // A reload that arrives before the old connection is gone takes the seat over; the old one is told.
+    let _again = Surface::resume(&host, "phone", Some(&code), Some(&token)).await.unwrap();
+    assert_eq!(people(&mut tv).await, [(0, true), (1, true)]);
+    let told = loop {
+        if let Message::Text(text) = back.next().await {
+            let message: Value = serde_json::from_str(&text).unwrap();
+            if message["t"] == "refused" {
+                break message;
+            }
+        }
+    };
+    assert!(told["e"].as_str().unwrap().contains("joined again"));
+
+    // Nobody comes back for this one: after the hold the slot is free again.
+    drop(_again);
+    assert_eq!(people(&mut tv).await, [(0, true), (1, false)]);
+    let started = std::time::Instant::now();
+    assert_eq!(people(&mut tv).await, [(0, true)]);
+    assert!(started.elapsed() >= Duration::from_millis(400), "released after the hold, not before");
+    // The token died with the slot: it now gets an ordinary new seat.
+    let fresh = Surface::resume(&host, "phone", Some(&code), Some(&token)).await.unwrap();
+    assert_ne!(fresh.welcome["resume"], token.as_str());
+    host.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_flooding_phone_is_cut_to_twenty_requests_a_second() {
+    let host = host().await;
+    let code = host.state.hub.session().code.clone();
+    let mut tv = Surface::join(&host, "tv", None).await.unwrap();
+    let mut phone = Surface::join(&host, "phone", Some(&code)).await.unwrap();
+
+    // Sixty requests at once, without waiting for answers.
+    for id in 1..=60 {
+        let request = json!({ "t": "req", "id": id, "m": "layer.set", "p": { "layer": "sunlight", "params": { "hour": id % 24 } } });
+        phone.socket.send(Message::Text(request.to_string().into())).await.unwrap();
+    }
+    let (mut accepted, mut limited) = (0, 0);
+    while accepted + limited < 60 {
+        if let Message::Text(text) = phone.next().await {
+            let message: Value = serde_json::from_str(&text).unwrap();
+            if message["t"] == "res" {
+                if message["ok"] == true {
+                    accepted += 1;
+                } else {
+                    assert_eq!(message["e"], "rate limited");
+                    limited += 1;
+                }
+            }
+        }
+    }
+    // Twenty at once, plus whatever refilled while they were being handled.
+    assert!((20..=30).contains(&accepted), "{accepted} accepted, {limited} refused");
+
+    // The limit is per phone and does not touch the studio's own surfaces.
+    for hour in 0..40 {
+        tv.request("layer.set", json!({ "layer": "sunlight", "params": { "hour": hour % 24 } })).await.unwrap();
+    }
+    // The allowance comes back.
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    phone.next_id = 100;
+    phone.request("layer.set", json!({ "layer": "sunlight", "params": { "hour": 9 } })).await.unwrap();
+    host.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn phone_tools_reach_the_table_as_tool_input() {
+    let host = host().await;
+    let code = host.state.hub.session().code.clone();
+    let mut table = Surface::join(&host, "table", None).await.unwrap();
+    let mut tv = Surface::join(&host, "tv", None).await.unwrap();
+    let _other = Surface::join(&host, "phone", Some(&code)).await.unwrap();
+    let mut phone = Surface::join(&host, "phone", Some(&code)).await.unwrap();
+
+    // A point, with anything extra stripped, tagged with who sent it.
+    let point = json!({ "type": "Point", "coordinates": [11.9712, 57.7003, 40.0], "note": "x" });
+    phone.request("tool.input", json!({ "layer": "sketch", "tool": "place", "geometry": point })).await.unwrap();
+    let input = table.event("tool.input").await;
+    assert_eq!(input["layer"], "sketch");
+    assert_eq!(input["tool"], "place");
+    assert_eq!(input["geometry"], json!({ "type": "Point", "coordinates": [11.9712, 57.7003] }));
+    assert_eq!(input["from"], phone.welcome["surface"]);
+    assert_eq!(input["participant"]["slot"], 1);
+    assert_eq!(input["participant"]["colour"], phone.welcome["state"]["participants"][1]["colour"]);
+
+    let line = json!({ "type": "LineString", "coordinates": [[11.97, 57.7], [11.971, 57.7005], [11.972, 57.7]] });
+    phone.request("tool.input", json!({ "layer": "sketch", "tool": "route", "geometry": line })).await.unwrap();
+    assert_eq!(table.event("tool.input").await["geometry"], line);
+    let area = json!({ "type": "Polygon", "coordinates": [[[11.97, 57.7], [11.971, 57.7], [11.971, 57.701], [11.97, 57.7]]] });
+    phone.request("tool.input", json!({ "layer": "sketch", "tool": "area", "geometry": area })).await.unwrap();
+    assert_eq!(table.event("tool.input").await["geometry"], area);
+
+    // The geometry must be the tool's kind and well formed, and the tool must exist.
+    let send = |tool: &str, geometry: Value| json!({ "layer": "sketch", "tool": tool, "geometry": geometry });
+    assert!(phone.request("tool.input", send("place", line.clone())).await.is_err());
+    assert!(phone.request("tool.input", send("route", json!({ "type": "LineString", "coordinates": [[11.97, 57.7]] }))).await.is_err());
+    assert!(phone.request("tool.input", send("place", json!({ "type": "Point", "coordinates": [500, 57.7] }))).await.is_err());
+    assert!(phone.request("tool.input", send("lasso", point.clone())).await.is_err());
+    assert!(phone.request("tool.input", json!({ "layer": "sunlight", "tool": "place", "geometry": point })).await.is_err());
+
+    // A studio surface may send tool input too; it carries no participant.
+    tv.request("tool.input", send("place", point.clone())).await.unwrap();
+    assert!(table.event("tool.input").await["participant"].is_null());
+
+    // A layer that is off takes no input.
+    tv.request("layer.activate", json!({ "layer": "sketch", "active": false })).await.unwrap();
+    assert_eq!(phone.request("tool.input", send("place", point)).await.err().unwrap(), "layer 'sketch' is off");
     host.shutdown().await;
 }
 

@@ -1,10 +1,12 @@
-// End-to-end check in a real browser: the host, the engine, three surfaces and the sunlight layer.
+// End-to-end check in a real browser: the host, the engine, the surfaces, the sunlight layer,
+// and a phone joining by QR code, using its tools and coming back after a reload.
 //   pnpm build && cargo build -p mrs-cli && node scripts/e2e.cjs [screenshot-dir]
 // Needs Playwright with Chromium (`npm i -g playwright && npx playwright install chromium`).
 const { spawn } = require('node:child_process');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const { chromium } = require('playwright');
+const jsQR = require('jsqr');
 
 const root = path.resolve(__dirname, '..');
 const port = 4199;
@@ -14,7 +16,7 @@ const shots = process.argv[2];
 async function main() {
   const host = spawn(
     path.join(root, 'target/debug/mrstudio'),
-    ['dev', '--site', 'sites/sample', '--web', 'packages/runtime/dist', '--port', String(port), '--backend', 'cpu'],
+    ['dev', '--site', 'sites/sample', '--web', 'packages/runtime/dist', '--port', String(port), '--backend', 'cpu', '--public-url', base],
     { cwd: root, stdio: ['ignore', 'pipe', 'pipe'] },
   );
   let log = '';
@@ -72,24 +74,88 @@ async function main() {
     await tv.getByLabel('Turn Sunlight on or off').check();
     await tv.getByRole('radio', { name: 'Shadows' }).click();
 
-    // A phone needs the code, sees only phone controls and cannot switch layers.
-    const stranger = await open('/phone', { width: 390, height: 800 });
-    await stranger.getByText(/wrong session code/).waitFor();
-    const phone = await open(`/phone?c=${code}`, { width: 390, height: 800 });
+    // The TV invites phones with a QR code. Read it the way a phone camera would.
+    const pixels = await tv.locator('.join-qr svg').evaluate(async (svg) => {
+      const image = new Image();
+      image.src = `data:image/svg+xml,${encodeURIComponent(new XMLSerializer().serializeToString(svg))}`;
+      await image.decode();
+      const canvas = document.createElement('canvas');
+      canvas.width = canvas.height = 330;
+      const context = canvas.getContext('2d');
+      context.drawImage(image, 0, 0, 330, 330);
+      return Array.from(context.getImageData(0, 0, 330, 330).data);
+    });
+    const scanned = jsQR(Uint8ClampedArray.from(pixels), 330, 330)?.data;
+    assert.equal(scanned, `${base}/phone?c=${code}`, 'the QR code carries the join address');
+
+    // Without the right code a phone gets the code form, not the controls.
+    const stranger = await open(`/phone?c=${code === '0000' ? '1111' : '0000'}`, { width: 390, height: 800 });
+    await stranger.getByText('That code did not work').waitFor();
+
+    // A phone that scanned the code sees only phone controls and cannot switch layers.
+    const phone = await open(scanned.slice(base.length), { width: 390, height: 800 });
     await phone.getByLabel('Time of day').waitFor();
+    await phone.getByText('You are 1').waitFor();
     assert.equal(await phone.getByLabel('Turn Sunlight on or off').count(), 0);
     assert.equal(await phone.getByText('Opacity').count(), 0);
-    await tv.getByText('1 phones').waitFor();
+    await tv.getByText('1 phone', { exact: true }).waitFor();
     await phone.getByLabel('Time of day').fill('18');
     await tv.getByText('18:00').waitFor();
     // The table recomputed for the phone's time and published the new sun position to the TV.
     await tv.getByText(/sun 2\d\.\d° up, bearing 2[5-8]\d/).waitFor();
-    if (shots) {
-      await phone.screenshot({ path: path.join(shots, 'phone.png') });
-      await tv.screenshot({ path: path.join(shots, 'tv.png') });
-    }
 
-    const real = errors.filter((e) => !/wrong session code|WebSocket/.test(e));
+    // Phone tools: a point, a line and an area drawn on the small map arrive on the table.
+    const pad = phone.locator('.tool-map');
+    const box = await pad.boundingBox();
+    const tap = (u, v) => phone.mouse.click(box.x + u * box.width, box.y + v * box.height);
+    const before = await table.screenshot();
+    await tap(0.5, 0.5);
+    await tv.getByText('1 mark on the table').waitFor();
+    await dev.waitForTimeout(500);
+    const marked = await table.screenshot();
+    assert.notDeepEqual(marked, before, 'the point should be drawn on the table');
+
+    await phone.getByRole('radio', { name: 'Route' }).click();
+    assert.equal(await phone.getByRole('button', { name: 'Send line' }).isDisabled(), true, 'a line needs two points');
+    await tap(0.2, 0.3);
+    await tap(0.4, 0.7);
+    await tap(0.6, 0.3);
+    await phone.getByRole('button', { name: 'Undo' }).click();
+    await tap(0.7, 0.4);
+    await phone.getByRole('button', { name: 'Send line' }).click();
+    await phone.getByText('Sent to the table.').waitFor();
+    await tv.getByText('2 marks on the table').waitFor();
+
+    await phone.getByRole('radio', { name: 'Area' }).click();
+    await tap(0.75, 0.6);
+    await tap(0.95, 0.6);
+    await tap(0.85, 0.9);
+    if (shots) await phone.screenshot({ path: path.join(shots, 'phone.png') });
+    await phone.getByRole('button', { name: 'Send area' }).click();
+    await tv.getByText('3 marks on the table').waitFor();
+    await dev.waitForTimeout(500);
+    assert.notDeepEqual(await table.screenshot(), marked, 'the line and the area should be drawn too');
+    if (shots) await dev.screenshot({ path: path.join(shots, 'dev-sketch.png') });
+
+    // A second phone types the code instead of scanning, and gets the next slot.
+    const typist = await open('/phone', { width: 390, height: 800 });
+    await typist.getByLabel('Session code').fill(code);
+    await typist.getByRole('button', { name: 'Join' }).click();
+    await typist.getByText('You are 2').waitFor();
+    await tv.getByText('2 phones').waitFor();
+
+    // A reload brings the first phone back to its own slot instead of a third one.
+    await phone.reload();
+    await phone.getByText('You are 1').waitFor();
+    await tv.getByText('2 phones').waitFor();
+    assert.equal(await tv.locator('.join-person').count(), 2);
+    if (shots) await tv.screenshot({ path: path.join(shots, 'tv.png') });
+
+    // The TV clears the sketch.
+    await tv.getByRole('button', { name: 'Clear the sketch' }).click();
+    await tv.getByText('Nothing marked yet').waitFor();
+
+    const real = errors.filter((e) => !/WebSocket/.test(e));
     assert.deepEqual(real, [], 'no page errors');
     console.log('e2e passed');
   } finally {

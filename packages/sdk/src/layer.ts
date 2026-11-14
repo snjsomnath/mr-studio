@@ -1,6 +1,6 @@
 import type { Colormap } from './colormap.ts';
 import type { EngineClient } from './engine.ts';
-import type { FieldFrame, LayerManifest, Params, SiteInfo, ToolInput } from './types.ts';
+import type { FieldFrame, LayerManifest, Params, SiteInfo, ToolGeometry, ToolInput } from './types.ts';
 
 export interface FieldOverlayStyle {
   colormap?: Colormap;
@@ -17,9 +17,25 @@ export interface FieldOverlay {
   remove(): void;
 }
 
+/** A point, line or area drawn on the table. */
+export interface Shape {
+  geometry: ToolGeometry;
+  /** CSS colour. Default white. */
+  colour?: string;
+}
+
+/** Vector shapes drawn on the table, above the fields. */
+export interface ShapeOverlay {
+  /** Replaces everything the overlay shows. */
+  set(shapes: Shape[]): void;
+  setOpacity(opacity: number): void;
+  remove(): void;
+}
+
 /** What a layer may draw on the table. */
 export interface MapHandle {
   addField(id: string, style: FieldOverlayStyle & { colormap: Colormap }): FieldOverlay;
+  addShapes(id: string, style?: { opacity?: number }): ShapeOverlay;
 }
 
 interface ContextBase<P> {

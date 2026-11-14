@@ -39,7 +39,20 @@ The controls are the single source of truth for a layer's params:
 - The TV and phone surfaces generate their UI from them.
 - The host validates and clamps every change against them.
 
-Tools are spatial inputs a layer accepts: `point`, `line`, `polygon`. The input system (touch, phone, hand tracking) delivers them as `ToolInput` with coordinates in WGS84.
+Tools are spatial inputs a layer accepts: `point`, `line`, `polygon`. Each is `{ "id", "type", "label" }`. The input system (touch, phone, hand tracking) delivers them as `ToolInput` with coordinates in WGS84:
+
+```ts
+interface ToolInput {
+  layer: string;
+  tool: string;                                   // the tool's id
+  geometry: ToolGeometry;                         // GeoJSON Point, LineString or Polygon, checked by the host
+  from: number;                                   // the sending surface
+  participant?: { slot: number; colour: string }; // when it came from a phone
+}
+```
+
+A phone shows a layer's tools on a small map as soon as the manifest declares them; the layer writes no phone code.
+`packages/layers/sketch` is the reference for a layer with tools.
 
 ## Module
 
@@ -105,6 +118,13 @@ interface FieldStream {
 
 interface MapHandle {
   addField(id: string, style: { colormap: Colormap; opacity?: number; smooth?: boolean }): FieldOverlay;
+  addShapes(id: string, style?: { opacity?: number }): ShapeOverlay;   // points, lines and areas above the fields
+}
+
+interface ShapeOverlay {
+  set(shapes: { geometry: ToolGeometry; colour?: string }[]): void;   // replaces what it shows
+  setOpacity(opacity: number): void;
+  remove(): void;
 }
 
 interface FieldOverlay {

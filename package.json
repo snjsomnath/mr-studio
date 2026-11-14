@@ -14,5 +14,8 @@
     "onlyBuiltDependencies": [
       "esbuild"
     ]
+  },
+  "devDependencies": {
+    "jsqr": "^1.4.0"
   }
 }

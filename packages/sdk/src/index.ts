@@ -6,3 +6,4 @@ export * from './frame.ts';
 export * from './colormap.ts';
 export * from './time.ts';
 export * from './controls.ts';
+export * from './geo.ts';

@@ -7,7 +7,7 @@ mod hub;
 mod layers;
 mod ws;
 
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr, UdpSocket};
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -21,8 +21,8 @@ use serde_json::{json, Value};
 use tower_http::services::{ServeDir, ServeFile};
 
 pub use engine_bridge::EngineHandle;
-pub use hub::{Hub, Role};
-pub use layers::{Control, ControlKind, LayerDef};
+pub use hub::{Hub, Role, SessionOptions};
+pub use layers::{Control, ControlKind, LayerDef, Tool, ToolKind};
 
 #[derive(Debug, Clone)]
 pub struct HostConfig {
@@ -34,6 +34,8 @@ pub struct HostConfig {
     pub web_dir: Option<PathBuf>,
     pub bind: SocketAddr,
     pub backend: Backend,
+    /// Phone limits and the address phones join at.
+    pub session: SessionOptions,
 }
 
 pub struct AppState {
@@ -82,7 +84,16 @@ pub async fn start(config: HostConfig) -> anyhow::Result<RunningHost> {
 
     let listener = tokio::net::TcpListener::bind(config.bind).await.with_context(|| format!("binding {}", config.bind))?;
     let addr = listener.local_addr()?;
-    let hub = Hub::new(&site, defs, addr.port());
+    let join_base = config
+        .session
+        .public_url
+        .clone()
+        .or_else(|| reachable_ip(addr.ip()).map(|ip| format!("http://{}", SocketAddr::new(ip, addr.port()))));
+    match &join_base {
+        Some(base) => tracing::info!("phones join at {base}/phone"),
+        None => tracing::info!("listening on this computer only; phones cannot join"),
+    }
+    let hub = Hub::new(&site, defs, addr.port(), join_base, config.session.clone());
     let state = Arc::new(AppState { hub, engine, site });
     let app = router(state.clone(), config.web_dir.clone());
 
@@ -96,6 +107,31 @@ pub async fn start(config: HostConfig) -> anyhow::Result<RunningHost> {
         }
     });
     Ok(RunningHost { addr, state, shutdown, task })
+}
+
+/// The address a phone on the local network should use for a host bound to `bound`.
+fn reachable_ip(bound: IpAddr) -> Option<IpAddr> {
+    if bound.is_loopback() {
+        return None;
+    }
+    if !bound.is_unspecified() {
+        return Some(bound);
+    }
+    // Bound to every interface: use the one the system routes outward through. Connecting a
+    // UDP socket sends nothing; it only makes the system pick the local address. The private
+    // ranges are tried too, for a studio network with no route to the internet.
+    for target in ["8.8.8.8:9", "192.168.255.254:9", "10.255.255.254:9", "172.31.255.254:9"] {
+        let Ok(socket) = UdpSocket::bind("0.0.0.0:0") else { continue };
+        if socket.connect(target).is_err() {
+            continue;
+        }
+        if let Ok(local) = socket.local_addr() {
+            if !local.ip().is_loopback() && !local.ip().is_unspecified() {
+                return Some(local.ip());
+            }
+        }
+    }
+    None
 }
 
 fn router(state: Arc<AppState>, web_dir: Option<PathBuf>) -> Router {

@@ -4,6 +4,7 @@ import { test } from 'node:test';
 import { lut, colormaps } from '../src/colormap.ts';
 import { isVisible } from '../src/controls.ts';
 import { parseFrame, sample } from '../src/frame.ts';
+import { lonLatToTable, tableToLonLat } from '../src/geo.ts';
 import { formatHour, zonedTimeToUtc } from '../src/time.ts';
 
 test('wall-clock time converts to UTC across daylight saving', () => {
@@ -59,4 +60,21 @@ test('visibleWhen hides controls', () => {
   const control = { id: 'x', type: 'toggle', label: 'X', default: false, visibleWhen: { mode: 'day' } } as const;
   assert.equal(isVisible(control, { mode: 'day' }), true);
   assert.equal(isVisible(control, { mode: 'instant' }), false);
+});
+
+test('table coordinates map to WGS84 and back, also on a rotated table', () => {
+  // A 1000 m by 600 m table at Gothenburg, turned 30 degrees: top left, top right, bottom right, bottom left.
+  const corners = [
+    [11.9601, 57.7], [11.9746, 57.7045], [11.9796, 57.6998], [11.9651, 57.6953],
+  ] as [[number, number], [number, number], [number, number], [number, number]];
+  const site = { corners };
+  assert.deepEqual(tableToLonLat(site, 0, 0), corners[0]);
+  assert.deepEqual(tableToLonLat(site, 1, 0), corners[1]);
+  assert.deepEqual(tableToLonLat(site, 0, 1), corners[3]);
+  const near = (a: number[], b: number[]) => a.every((value, i) => Math.abs(value - b[i]!) < 1e-9);
+  assert.ok(near(tableToLonLat(site, 1, 1), corners[2]));
+  assert.ok(near(lonLatToTable(site, ...corners[2]), [1, 1]));
+  for (const [u, v] of [[0.5, 0.5], [0.13, 0.87], [1.2, -0.1]] as const) {
+    assert.ok(near(lonLatToTable(site, ...tableToLonLat(site, u, v)), [u, v]));
+  }
 });

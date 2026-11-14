@@ -95,6 +95,10 @@ body[data-role='tv'] {
 
 .controller-header {
   padding: 20px 20px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
 
 .controller-header h1 {
@@ -325,4 +329,205 @@ button.action {
   .switch::after {
     transition: none;
   }
+}
+
+/* ---- Joining ---- */
+
+.join {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 20px;
+  border-top: 1px solid var(--line);
+}
+
+.join-qr {
+  flex: none;
+  width: 132px;
+  border-radius: 8px;
+  overflow: hidden;
+  line-height: 0;
+}
+
+/* The TV is read from across the room. */
+body[data-role='tv'] .join-qr {
+  width: 220px;
+}
+
+.join-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.join h2 {
+  margin: 0 0 4px;
+  font-size: 1rem;
+}
+
+.join p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.join b {
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.join-code {
+  font-size: 1.15em;
+  letter-spacing: 0.12em;
+  font-variant-numeric: tabular-nums;
+}
+
+.join-crowd {
+  flex: none;
+  display: grid;
+  gap: 6px;
+  justify-items: end;
+}
+
+.join-people {
+  display: grid;
+  grid-template-columns: repeat(4, auto);
+  gap: 5px;
+}
+
+.join-person,
+.phone-badge i {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  color: #10131a;
+  font-size: 0.8rem;
+  font-weight: 700;
+  font-style: normal;
+}
+
+.join-person.is-away {
+  opacity: 0.35;
+}
+
+/* ---- Phone ---- */
+
+.phone-badge {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 12px 5px 6px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.door {
+  margin: auto;
+  width: min(100%, 360px);
+  padding: 24px;
+  display: grid;
+  gap: 14px;
+  text-align: center;
+}
+
+.door h1 {
+  margin: 0;
+  font-size: 1.3rem;
+}
+
+.door p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.door form {
+  display: grid;
+  gap: 12px;
+}
+
+.door input {
+  height: 56px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--card);
+  color: var(--text);
+  font: inherit;
+  font-size: 1.8rem;
+  letter-spacing: 0.3em;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 600;
+}
+
+button.action:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.door button {
+  min-height: 48px;
+}
+
+.layer-card[hidden] {
+  display: none;
+}
+
+.tools {
+  display: grid;
+  gap: 10px;
+}
+
+.tool-pad {
+  display: grid;
+  gap: 8px;
+}
+
+.tool-map {
+  display: block;
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+  /* Fingers draw here; the page must not scroll or zoom under them. */
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: crosshair;
+}
+
+.tool-buildings {
+  fill: rgb(255 255 255 / 0.1);
+  stroke: rgb(255 255 255 / 0.4);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.tool-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.tool-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr 2fr;
+  gap: 8px;
+}
+
+.tool-actions[hidden] {
+  display: none;
+}
+
+.tool-actions button {
+  min-height: 44px;
 }

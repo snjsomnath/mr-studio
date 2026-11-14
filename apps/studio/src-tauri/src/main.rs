@@ -62,6 +62,7 @@ fn main() -> anyhow::Result<()> {
                 // All interfaces, so phones on the studio's network can join.
                 bind: SocketAddr::from(([0, 0, 0, 0], 4170)),
                 backend: Backend::Auto,
+                session: Default::default(),
             };
             let host = tauri::async_runtime::block_on(mrs_host::start(config))?;
             let port = host.addr.port();

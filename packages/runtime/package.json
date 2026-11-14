@@ -10,7 +10,8 @@
   },
   "dependencies": {
     "@mrstudio/sdk": "workspace:*",
-    "maplibre-gl": "^5.0.0"
+    "maplibre-gl": "^5.0.0",
+    "qrcode-generator": "^2.0.4"
   },
   "devDependencies": {
     "typescript": "^5.9.0",
