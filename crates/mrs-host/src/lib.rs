@@ -10,16 +10,17 @@ mod ws;
 
 use std::net::{IpAddr, SocketAddr, UdpSocket};
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
 use anyhow::Context as _;
 use axum::body::Bytes;
-use axum::extract::State;
-use axum::http::header;
+use axum::extract::{ConnectInfo, DefaultBodyLimit, Query, State};
+use axum::http::{header, HeaderMap, StatusCode};
 use axum::response::IntoResponse;
-use axum::routing::get;
+use axum::routing::{get, post};
 use axum::{Json, Router};
 use mrs_engine::Backend;
+use mrs_site::import::{self, Options, Report, Target};
 use mrs_site::Site;
 use serde_json::{json, Value};
 use tower_http::services::{ServeDir, ServeFile};
@@ -47,10 +48,16 @@ pub struct AppState {
     pub hub: Hub,
     pub engine: EngineHandle,
     pub site: Site,
-    /// The site's digital twin in its wire form, built once from the baked scene.
-    pub twin: Bytes,
+    /// The site's digital twin in its wire form, built from the baked scene and rebuilt
+    /// when imported data changes the scene.
+    pub twin: RwLock<Bytes>,
     pub calibration: Calibration,
+    /// One import at a time.
+    imports: tokio::sync::Mutex<()>,
 }
+
+/// The largest file `/api/data/*` accepts.
+pub const MAX_IMPORT_BYTES: usize = 256 * 1024 * 1024;
 
 impl AppState {
     /// Handles a `calibration.*` request and tells every surface what changed. The desktop
@@ -61,6 +68,43 @@ impl AppState {
             self.hub.emit(name, payload);
         }
         Ok(result)
+    }
+
+    /// Reads and checks a file for `target` and, with `write`, saves it into the site,
+    /// re-bakes the scene, swaps it into the engine and tells every surface (`site.changed`).
+    /// The report is the same either way; a blocker leaves the site untouched.
+    pub async fn import_data(&self, target: &str, filename: &str, bytes: Vec<u8>, options: Options, write: bool) -> Result<Report, String> {
+        let target = Target::parse(target)?;
+        let _one = self.imports.lock().await;
+        let dir = self.site.dir.clone();
+        let filename = filename.to_string();
+        // The site as it is on disk now: earlier imports and scene edits included.
+        let (updated, report) = tokio::task::spawn_blocking(move || -> Result<(Option<Site>, Report), String> {
+            let site = Site::load(&dir).map_err(|e| e.to_string())?;
+            let prepared = import::inspect(&site, &target, &filename, &bytes, options);
+            if !write || !prepared.report.ok {
+                return Ok((None, prepared.report));
+            }
+            let (site, report) = import::apply(&site, prepared).map_err(|e| e.to_string())?;
+            Ok((Some(site), report))
+        })
+        .await
+        .map_err(|e| e.to_string())??;
+        let Some(site) = updated else { return Ok(report) };
+
+        let rebuilt = tokio::task::spawn_blocking(move || -> anyhow::Result<_> {
+            let (scene, stats) = site.bake()?;
+            tracing::info!("re-baked after import: {} buildings, {} trees", stats.buildings, stats.trees);
+            let twin = Bytes::from(site.twin(&scene)?.encode());
+            Ok((scene, twin, site.info()))
+        })
+        .await
+        .map_err(|e| e.to_string())?;
+        let (scene, twin, info) = rebuilt.map_err(|e| format!("the data was saved, but the scene could not be rebuilt: {e}"))?;
+        self.engine.load_scene(scene).await?;
+        *self.twin.write().unwrap() = twin;
+        self.hub.site_changed(info);
+        Ok(report)
     }
 }
 
@@ -128,12 +172,12 @@ pub async fn start(config: HostConfig) -> anyhow::Result<RunningHost> {
         None => tracing::info!("listening on this computer only; phones cannot join"),
     }
     let hub = Hub::new(&site, catalog, addr.port(), join_base, config.session.clone())?;
-    let state = Arc::new(AppState { hub, engine, site, twin, calibration });
+    let state = Arc::new(AppState { hub, engine, site, twin: RwLock::new(twin), calibration, imports: Default::default() });
     let app = router(state.clone(), config.web_dir.clone());
 
     let (shutdown, stop) = tokio::sync::oneshot::channel::<()>();
     let task = tokio::spawn(async move {
-        let serve = axum::serve(listener, app).with_graceful_shutdown(async {
+        let serve = axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>()).with_graceful_shutdown(async {
             let _ = stop.await;
         });
         if let Err(e) = serve.await {
@@ -173,6 +217,9 @@ fn router(state: Arc<AppState>, web_dir: Option<PathBuf>) -> Router {
         .route("/ws", get(ws::upgrade))
         .route("/api/info", get(info))
         .route("/api/model", get(model))
+        .route("/api/data/inspect", post(inspect_data))
+        .route("/api/data/import", post(import_data))
+        .layer(DefaultBodyLimit::max(MAX_IMPORT_BYTES))
         .nest_service("/site", ServeDir::new(&state.site.dir));
     app = match web_dir {
         // Every surface path (/table, /tv, /phone, /dev) is the same single-page app.
@@ -184,10 +231,66 @@ fn router(state: Arc<AppState>, web_dir: Option<PathBuf>) -> Router {
 
 async fn info(State(state): State<Arc<AppState>>) -> Json<Value> {
     let engine = state.engine.info().await.map(|i| json!(i)).unwrap_or(Value::Null);
-    Json(json!({ "site": state.site.info(), "engine": engine, "session": state.hub.session() }))
+    Json(json!({ "site": state.hub.site(), "engine": engine, "session": state.hub.session() }))
 }
 
 /// The digital twin mesh. Layout in `docs/contracts/model.md`.
 async fn model(State(state): State<Arc<AppState>>) -> impl IntoResponse {
-    ([(header::CONTENT_TYPE, "application/octet-stream"), (header::CACHE_CONTROL, "no-cache")], state.twin.clone())
+    ([(header::CONTENT_TYPE, "application/octet-stream"), (header::CACHE_CONTROL, "no-cache")], state.twin.read().unwrap().clone())
+}
+
+#[derive(serde::Deserialize)]
+struct ImportQuery {
+    target: String,
+    #[serde(default)]
+    crop: Option<String>,
+    #[serde(default)]
+    swap: Option<String>,
+}
+
+fn flag(value: &Option<String>) -> bool {
+    value.as_deref().is_some_and(|v| v == "1" || v == "true")
+}
+
+/// `POST /api/data/inspect?target=buildings`, the file as the body: what it is and where it lands. Writes nothing.
+async fn inspect_data(
+    state: State<Arc<AppState>>,
+    from: ConnectInfo<SocketAddr>,
+    query: Query<ImportQuery>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> axum::response::Response {
+    data_request(state, from, query, headers, body, false).await
+}
+
+/// `POST /api/data/import?target=buildings[&crop=1][&swap=1]`: the same, then saves it and rebuilds the scene.
+async fn import_data(
+    state: State<Arc<AppState>>,
+    from: ConnectInfo<SocketAddr>,
+    query: Query<ImportQuery>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> axum::response::Response {
+    data_request(state, from, query, headers, body, true).await
+}
+
+async fn data_request(
+    State(state): State<Arc<AppState>>,
+    ConnectInfo(from): ConnectInfo<SocketAddr>,
+    Query(query): Query<ImportQuery>,
+    headers: HeaderMap,
+    body: Bytes,
+    write: bool,
+) -> axum::response::Response {
+    // The host listens on the network while presenting; only this computer may change the site.
+    if !from.ip().is_loopback() {
+        return (StatusCode::FORBIDDEN, Json(json!({ "error": "data can only be added from this computer" }))).into_response();
+    }
+    let filename = headers.get("x-filename").and_then(|v| v.to_str().ok()).unwrap_or("").to_string();
+    let options = Options { crop: flag(&query.crop), swap: flag(&query.swap) };
+    match state.import_data(&query.target, &filename, body.to_vec(), options, write).await {
+        Ok(report) if report.ok => (StatusCode::OK, Json(json!(report))).into_response(),
+        Ok(report) => (StatusCode::UNPROCESSABLE_ENTITY, Json(json!(report))).into_response(),
+        Err(error) => (StatusCode::BAD_REQUEST, Json(json!({ "error": error }))).into_response(),
+    }
 }

@@ -5,6 +5,7 @@ mod bake;
 pub mod create;
 mod crs;
 mod geotiff;
+pub mod import;
 mod manifest;
 mod mesh;
 pub mod migrate;
@@ -309,7 +310,14 @@ mod tests {
     }
 
     fn layer(name: &str, id: Option<&str>) -> LayerRef {
-        LayerRef { r#use: name.into(), id: id.map(String::from), active: true, params: Default::default(), button: Default::default(), hide: Vec::new() }
+        LayerRef {
+            r#use: name.into(),
+            id: id.map(String::from),
+            active: true,
+            params: Default::default(),
+            button: Default::default(),
+            hide: Vec::new(),
+        }
     }
 
     #[test]

@@ -649,3 +649,72 @@ async fn calibration_is_saved_shared_and_survives_a_restart() {
     host.shutdown().await;
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// A plain HTTP POST with a body, returning the status line's code and the body as JSON.
+async fn http_post(host: &RunningHost, path: &str, filename: &str, body: &[u8]) -> (u16, Value) {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let mut stream = tokio::net::TcpStream::connect(host.addr).await.unwrap();
+    let head = format!(
+        "POST {path} HTTP/1.0\r\nHost: {}\r\nX-Filename: {filename}\r\nContent-Type: application/octet-stream\r\nContent-Length: {}\r\n\r\n",
+        host.addr,
+        body.len()
+    );
+    stream.write_all(head.as_bytes()).await.unwrap();
+    stream.write_all(body).await.unwrap();
+    let mut response = Vec::new();
+    stream.read_to_end(&mut response).await.unwrap();
+    let split = response.windows(4).position(|w| w == b"\r\n\r\n").expect("an HTTP response");
+    let status = String::from_utf8_lossy(&response[9..12]).parse().unwrap();
+    (status, serde_json::from_slice(&response[split + 4..]).unwrap())
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_new_table_takes_its_buildings_without_a_restart() {
+    // A table as the setup wizard makes it: a base map, sunlight and no data.
+    let base = std::env::temp_dir().join(format!("mrs-host-import-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&base);
+    let dir = base.join("new-place");
+    mrs_site::create::create(&dir, "New place", 11.97, 57.70, 1000.0, 600.0, 0.0).unwrap();
+    let host = host_for(dir.clone()).await;
+    let mut dev = Surface::join(&host, "dev", None).await.unwrap();
+    let mut table = Surface::join(&host, "table", None).await.unwrap();
+    let twin_before = http_get(&host, "/api/model").await.len();
+    let refused = dev.request("scene.add", json!({ "use": "building-lights" })).await.unwrap_err();
+    assert!(refused.contains("no 'buildings' dataset"), "{refused}");
+
+    // Two footprints in SWEREF99 TM, as a municipal export would have them, one with storeys only.
+    let square = |e: f64, n: f64| json!([[[e, n], [e + 20.0, n], [e + 20.0, n + 20.0], [e, n + 20.0], [e, n]]]);
+    let (e, n) = mrs_site::Crs::from_epsg(3006).unwrap().forward(11.969, 57.6995);
+    let file = serde_json::to_vec(&json!({ "type": "FeatureCollection", "features": [
+        { "type": "Feature", "properties": { "height": 20 }, "geometry": { "type": "Polygon", "coordinates": square(e, n) } },
+        { "type": "Feature", "properties": { "building:levels": 5 }, "geometry": { "type": "Polygon", "coordinates": square(e + 60.0, n) } },
+    ] }))
+    .unwrap();
+
+    let (status, report) = http_post(&host, "/api/data/inspect?target=buildings", "buildings.geojson", &file).await;
+    assert_eq!(status, 200, "{report}");
+    assert_eq!(report["summary"], "2 buildings, 2 with a height");
+    assert_eq!(report["crs"], json!({ "code": "EPSG:3006", "guessed": true }));
+    assert_eq!(report["preview"]["features"].as_array().unwrap().len(), 2);
+    assert!(!dir.join("data/buildings.geojson").exists(), "inspect writes nothing");
+
+    let (status, report) = http_post(&host, "/api/data/import?target=buildings", "buildings.geojson", &file).await;
+    assert_eq!(status, 200, "{report}");
+    assert_eq!(report["path"], "data/buildings.geojson");
+    let changed = table.event("site.changed").await;
+    assert_eq!(changed["site"]["data"]["buildings"], "data/buildings.geojson");
+    assert!(http_get(&host, "/api/model").await.len() > twin_before, "the twin has the new buildings");
+    dev.request("scene.add", json!({ "use": "building-lights" })).await.unwrap();
+    let info: Value = serde_json::from_slice(&http_get(&host, "/api/info").await).unwrap();
+    assert_eq!(info["site"]["data"]["buildings"], "data/buildings.geojson");
+
+    // A blocker is a 422 with the reason, and nothing changes.
+    let (status, report) = http_post(&host, "/api/data/import?target=trees", "trees.zip", b"PK\x03\x04").await;
+    assert_eq!(status, 422);
+    assert_eq!(report["issues"][0]["code"], "read.unknown");
+    let (status, report) = http_post(&host, "/api/data/import?target=slideshow", "s.json", b"{}").await;
+    assert_eq!(status, 400);
+    assert!(report["error"].as_str().unwrap().contains("not something a table can take"));
+    host.shutdown().await;
+    let _ = std::fs::remove_dir_all(&base);
+}

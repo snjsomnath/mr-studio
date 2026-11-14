@@ -38,6 +38,7 @@ enum Command {
     Set { conn: u64, stream: u32, params: Value, reply: oneshot::Sender<Result<(), String>> },
     Close { conn: u64, stream: u32 },
     CloseConnection(u64),
+    LoadScene(SceneData, oneshot::Sender<Result<(), String>>),
 }
 
 #[derive(Clone)]
@@ -103,6 +104,13 @@ impl EngineHandle {
         let _ = self.send(Command::Close { conn, stream });
     }
 
+    /// Replaces the scene, for a site whose sources changed. Running jobs pick it up on their next step.
+    pub async fn load_scene(&self, scene: SceneData) -> Result<(), String> {
+        let (reply, rx) = oneshot::channel();
+        self.send(Command::LoadScene(scene, reply)).map_err(|e| e.to_string())?;
+        rx.await.map_err(|e| e.to_string())?
+    }
+
     pub fn close_connection(&self, conn: u64) {
         let _ = self.send(Command::CloseConnection(conn));
     }
@@ -150,6 +158,9 @@ fn run(mut engine: Engine, origin: LonLat, rx: mpsc::Receiver<Command>) {
                     if streams.get(&stream).is_some_and(|s| s.conn == conn) {
                         engine.drop_job(streams.remove(&stream).unwrap().job);
                     }
+                }
+                Command::LoadScene(scene, reply) => {
+                    let _ = reply.send(engine.load_scene(scene).map_err(|e| e.to_string()));
                 }
                 Command::CloseConnection(conn) => {
                     streams.retain(|_, s| {
