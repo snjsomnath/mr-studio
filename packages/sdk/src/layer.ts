@@ -67,6 +67,8 @@ export interface TableContext<P = Params> extends ContextBase<P> {
 }
 
 export interface PanelContext<P = Params> extends ContextBase<P> {
+  /** The id of the `custom` panel being drawn, from the manifest's `panels`. */
+  readonly panel: string;
   onCleanup(callback: () => void): void;
 }
 
@@ -92,7 +94,10 @@ export interface LayerModule<P = Params> {
    * is released when the layer is turned off; use `ctx.onCleanup` for the rest.
    */
   table?(ctx: TableContext<P>): TableHandlers | void | Promise<TableHandlers | void>;
-  /** Optional TV panel, mounted while the layer is on. */
+  /**
+   * Draws the layer's `custom` panels on the TV. Most panels need no code: declare them
+   * in the manifest's `panels`. The element has a fixed size and clips what does not fit.
+   */
   panel?(ctx: PanelContext<P>, el: HTMLElement): PanelHandlers | void;
 }
 

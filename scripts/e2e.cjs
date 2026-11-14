@@ -45,18 +45,30 @@ async function main() {
     if (shots) await dev.screenshot({ path: path.join(shots, 'dev-shadows.png') });
 
     // A change made on the TV reaches the host, the engine and the dev surface.
-    const tv = await open('/tv', { width: 900, height: 900 });
+    const tv = await open('/tv', { width: 1920, height: 1080 });
+    const clock = '[data-panel="sunlight/time"] .mrs-number';
     await tv.getByLabel('Time of day').fill('8.5');
-    await dev.getByText('08:30').waitFor();
+    await dev.locator(clock, { hasText: '08:30' }).waitFor();
     await dev.getByText(/bearing 9\d/).waitFor();
     await dev.waitForTimeout(500);
     const morning = await table.screenshot();
     assert.notDeepEqual(morning, afternoon, 'shadows should move when the time changes');
-    assert.equal(await tv.locator('.sunlight-clock').textContent(), '08:30');
+    assert.equal(await tv.locator(clock).textContent(), '08:30');
+    // The TV is a rail of controls beside the dashboard canvas, and the layer's panels sit on the grid.
+    assert.equal(await tv.locator('.mrs-panel').count(), 5);
+    const band = await tv.locator('[data-panel="sunlight/day"]').boundingBox();
+    const canvas = await tv.locator('.mrs-dash').boundingBox();
+    assert.ok(band.width > canvas.width * 0.9 && band.y + band.height > canvas.y + canvas.height * 0.9, 'the timeline spans the bottom row');
+    assert.equal(await tv.locator('.mrs-issues').isVisible(), false);
+    if (shots) await tv.screenshot({ path: path.join(shots, 'tv-shadows.png') });
 
     // Sun hours accumulate progressively and finish.
     await tv.getByRole('radio', { name: 'Sun hours' }).click();
-    await dev.getByText(/h of daylight/).waitFor({ timeout: 120_000 });
+    await dev.getByText('whole day added up').waitFor({ timeout: 120_000 });
+    // Panels follow the mode: the clock and the timeline leave, the sun-hours key arrives.
+    assert.equal(await tv.locator(clock).count(), 0);
+    await tv.locator('[data-panel="sunlight/daylight"]').waitFor();
+    if (shots) await tv.screenshot({ path: path.join(shots, 'tv-sun-hours.png') });
     await dev.waitForTimeout(500);
     const day = await table.screenshot();
     assert.notDeepEqual(day, morning, 'sun hours should look different from shadows');
@@ -81,7 +93,7 @@ async function main() {
     assert.equal(await phone.getByText('Opacity').count(), 0);
     await tv.getByText('1 phones').waitFor();
     await phone.getByLabel('Time of day').fill('18');
-    await tv.getByText('18:00').waitFor();
+    await tv.locator(clock, { hasText: '18:00' }).waitFor();
     // The table recomputed for the phone's time and published the new sun position to the TV.
     await tv.getByText(/sun 2\d\.\d° up, bearing 2[5-8]\d/).waitFor();
     if (shots) {

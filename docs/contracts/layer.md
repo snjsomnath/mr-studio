@@ -39,6 +39,24 @@ The controls are the single source of truth for a layer's params:
 - The TV and phone surfaces generate their UI from them.
 - The host validates and clamps every change against them.
 
+## TV panels
+
+A layer lists the panels it shows on the TV while it is on. They are data: the layer needs no TV code, and it does not place them.
+
+```jsonc
+"panels": [
+  { "id": "time", "widget": "stat", "size": "tile", "title": "Time on the table",
+    "visibleWhen": { "mode": "instant" },
+    "props": { "value": { "bind": "params.hour" }, "format": "hour", "caption": { "bind": "shared.sun" } } }
+]
+```
+
+Props are literals or bindings: `params.<control>`, or `shared.<key>` for a value the table published with `ctx.publish`.
+The widgets, the sizes and the density budget every panel must fit are in [dashboard.md](dashboard.md) and [../DASHBOARD.md](../DASHBOARD.md).
+A panel that breaks a rule is not shown.
+
+## Tools
+
 Tools are spatial inputs a layer accepts: `point`, `line`, `polygon`. The input system (touch, phone) delivers them as `ToolInput` with coordinates in WGS84.
 
 ## Module
@@ -62,7 +80,7 @@ export default defineLayer({
     };
   },
 
-  // Optional TV panel, mounted while the layer is on.
+  // Only for `custom` panels: draws inside a panel declared in layer.json.
   panel(ctx, el) {
     el.textContent = '...';
     return { update() {} };                                 // params or shared values changed
@@ -70,7 +88,7 @@ export default defineLayer({
 });
 ```
 
-The module is loaded on every surface. `table` runs only on the table surface and `panel` only on the TV. Phones need no code.
+The module is loaded on every surface. `table` runs only on the table surface and `panel` only on the TV, once for each `custom` panel in the manifest. Phones need no code.
 State lives in the closure, so a layer has no module-level variables and no explicit teardown:
 overlays and streams opened through `ctx` are released when the layer is turned off.
 `packages/layers/sunlight` is the reference to copy.
@@ -91,7 +109,7 @@ interface TableContext<P> {
   onCleanup(cb: () => void): void;      // extra teardown
 }
 
-// PanelContext has site, params, setParams, shared and onCleanup.
+// PanelContext has site, params, setParams, shared, onCleanup and `panel`, the id of the custom panel being drawn.
 
 interface TablePointer {
   on(cb: (sample: PointerSample) => void): void;   // released with the layer
@@ -162,5 +180,5 @@ so a layer routes both to the same behaviours. What other surfaces need goes out
 
 `mrstudio dev --site sites/sample` serves the runtime with the layer loaded against the sample site.
 `pnpm dev` runs the host and the web dev server together.
-`/dev` shows the table view with the generated controls beside it, in a normal browser, with hot reload.
+`/dev` shows the table view with the generated controls beside it and a small preview of the TV dashboard under it, in a normal browser, with hot reload.
 No table, projector or calibration is needed.

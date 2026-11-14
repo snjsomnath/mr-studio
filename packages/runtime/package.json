@@ -9,6 +9,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@mrstudio/dashboard": "workspace:*",
     "@mrstudio/sdk": "workspace:*",
     "maplibre-gl": "^5.0.0"
   },
