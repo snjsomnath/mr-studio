@@ -15,8 +15,11 @@ interface Running {
   stopped: boolean;
 }
 
-/** Sends param changes for a layer, at most one request per animation frame. */
-export function paramSender(connection: Connection, layer: string): (patch: Record<string, unknown>) => void {
+/**
+ * Sends param changes for a layer, at most one request per animation frame.
+ * `layer.set` changes the running session; the composer uses `scene.set`, which also saves.
+ */
+export function paramSender(connection: Connection, layer: string, method: 'layer.set' | 'scene.set' = 'layer.set'): (patch: Record<string, unknown>) => void {
   let pending: Record<string, unknown> | null = null;
   return (patch) => {
     if (pending) {
@@ -27,7 +30,7 @@ export function paramSender(connection: Connection, layer: string): (patch: Reco
     requestAnimationFrame(() => {
       const params = pending!;
       pending = null;
-      connection.request('layer.set', { layer, params }).catch((error) => console.warn(`[${layer}] ${error.message}`));
+      connection.request(method, { layer, params }).catch((error) => console.warn(`[${layer}] ${error.message}`));
     });
   };
 }
@@ -62,8 +65,14 @@ export class LayerManager {
     this.connection = connection;
     this.view = view;
     this.engine = new EngineClient(connection);
+    view.setOrder(store.state.scene);
     store.onLayer((id, state, previous) => this.sync(id, state, previous));
-    for (const [id, state] of Object.entries(store.state.layers)) this.sync(id, state, undefined);
+    store.onRemoved((id) => {
+      this.stop(id);
+      view.dropSlot(id);
+    });
+    store.onScene((scene) => view.setOrder(scene));
+    for (const id of store.state.scene) this.sync(id, store.layer(id), undefined);
     connection.on('layer.action', (p: { layer: string; action: string }) => this.running.get(p.layer)?.handlers.action?.(p.action));
     connection.on('tool.input', (p: ToolInput) => this.running.get(p.layer)?.handlers.tool?.(p));
     requestAnimationFrame(this.frame);
@@ -82,9 +91,11 @@ export class LayerManager {
   }
 
   private async start(id: string): Promise<void> {
-    const module = layerModule(id) as LayerModule | undefined;
+    // `id` names the instance; the code comes from the layer package it runs.
+    const layer = this.store.layer(id).layer;
+    const module = layerModule(layer) as LayerModule | undefined;
     if (!module?.table) {
-      if (!module) console.warn(`layer '${id}' is not part of this build`);
+      if (!module) console.warn(`layer '${layer}' is not part of this build`);
       return;
     }
     const running: Running = { handlers: {}, cleanups: [], frames: [], ready: false, stopped: false };
@@ -121,14 +132,14 @@ export class LayerManager {
     try {
       running.handlers = (await module.table(ctx)) ?? {};
     } catch (error) {
-      console.error(`[${id}] failed to start`, error);
-      this.stop(id);
+      if (!running.stopped) console.error(`[${id}] failed to start`, error);
+      if (this.running.get(id) === running) this.stop(id);
       return;
     }
     if (running.stopped) return;
     running.ready = true;
     // Params may have changed while the layer was starting.
-    const changed = changedKeys(before, store.layer(id).params);
+    const changed = changedKeys(before, store.state.layers[id]?.params ?? before);
     if (changed.length > 0) this.guard(id, () => running.handlers.update?.(changed));
   }
 

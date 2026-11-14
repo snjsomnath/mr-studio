@@ -151,7 +151,7 @@ fn new_site(dir: &Path, name: Option<String>, lon: f64, lat: f64, width_m: f64, 
         "table": { "width_cm": 100, "height_cm": (100.0 * height_m / width_m * 100.0).round() / 100.0 },
         "scene": { "cell_m": 1 },
         "basemap": { "background": "#0b0e14", "style": null },
-        "layers": [{ "use": "sunlight", "active": true }],
+        "layers": [{ "use": "basemap", "active": true }, { "use": "sunlight", "active": true }],
         "branding": { "title": "MR Studio" }
     });
     std::fs::write(dir.join("site.json"), serde_json::to_string_pretty(&manifest)? + "\n")?;

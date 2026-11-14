@@ -8,6 +8,8 @@ use mrs_site::Site;
 use serde_json::{Map, Value};
 
 pub const LAYER_API: u64 = 1;
+/// Palette groups a layer may put itself in with `category`.
+pub const CATEGORIES: [&str; 4] = ["base", "ambient", "analysis", "media"];
 
 #[derive(Debug, Clone)]
 pub enum ControlKind {
@@ -32,6 +34,9 @@ pub struct Control {
 #[derive(Debug, Clone)]
 pub struct LayerDef {
     pub id: String,
+    /// What a `layers[].use` in site.json says to get this layer: its id for a core
+    /// layer, a relative path for a site-only one.
+    pub source: String,
     /// The manifest as written, sent to surfaces.
     pub manifest: Value,
     pub controls: Vec<Control>,
@@ -44,6 +49,14 @@ impl LayerDef {
             bail!("layer api is {api}, this app supports {LAYER_API}");
         }
         let id = manifest["id"].as_str().ok_or_else(|| anyhow!("missing id"))?.to_string();
+        if !mrs_site::is_instance_id(&id) {
+            bail!("id '{id}' must be lowercase letters, digits and dashes");
+        }
+        match &manifest["category"] {
+            Value::Null => {}
+            Value::String(c) if CATEGORIES.contains(&c.as_str()) => {}
+            other => bail!("category {other} is not one of {}", CATEGORIES.join(", ")),
+        }
         let mut controls = Vec::new();
         for c in manifest["controls"].as_array().map(Vec::as_slice).unwrap_or(&[]) {
             let cid = c["id"].as_str().ok_or_else(|| anyhow!("a control has no id"))?.to_string();
@@ -80,7 +93,7 @@ impl LayerDef {
             }
             controls.push(control);
         }
-        Ok(Self { id, manifest, controls })
+        Ok(Self { source: id.clone(), id, manifest, controls })
     }
 
     pub fn control(&self, id: &str) -> Option<&Control> {
@@ -159,23 +172,45 @@ fn read_manifest(dir: &Path) -> anyhow::Result<LayerDef> {
     LayerDef::parse(value).with_context(|| format!("in {}", path.display()))
 }
 
-/// Loads the manifests of the layers a site uses, in the site's order.
-pub fn load_for_site(site: &Site, core_layers: &Path) -> anyhow::Result<Vec<LayerDef>> {
+/// Loads the layer catalogue: every core layer package, then the site-only layers the
+/// site lists. A broken core layer the site does not use is skipped with a warning.
+pub fn load_catalog(site: &Site, core_layers: &Path) -> anyhow::Result<Vec<LayerDef>> {
     let mut defs: Vec<LayerDef> = Vec::new();
+    let mut folders: Vec<_> = match std::fs::read_dir(core_layers) {
+        Ok(entries) => entries.filter_map(|e| e.ok()).map(|e| e.path()).filter(|p| p.join("layer.json").is_file()).collect(),
+        Err(e) => bail!("reading the layers folder {}: {e}", core_layers.display()),
+    };
+    folders.sort();
+    for dir in folders {
+        let name = dir.file_name().and_then(|n| n.to_str()).unwrap_or_default().to_string();
+        let used = site.manifest.layers.iter().any(|l| l.r#use == name);
+        let def = read_manifest(&dir).and_then(|def| {
+            if def.id != name {
+                bail!("{} declares id '{}', expected '{name}'", dir.display(), def.id);
+            }
+            Ok(def)
+        });
+        match def {
+            Ok(def) => defs.push(def),
+            Err(e) if used => return Err(e),
+            Err(e) => tracing::warn!("layer '{name}' is left out of the palette: {e:#}"),
+        }
+    }
     for layer in &site.manifest.layers {
-        let dir = if layer.r#use.starts_with('.') {
-            site.resolve(&layer.r#use).ok_or_else(|| anyhow!("layer path '{}' leaves the site folder", layer.r#use))?
-        } else {
-            core_layers.join(&layer.r#use)
-        };
-        let def = read_manifest(&dir)?;
-        if !layer.r#use.starts_with('.') && def.id != layer.r#use {
-            bail!("{} declares id '{}', expected '{}'", dir.display(), def.id, layer.r#use);
+        if layer.r#use.starts_with('.') {
+            if defs.iter().any(|d| d.source == layer.r#use) {
+                continue;
+            }
+            let dir = site.resolve(&layer.r#use).ok_or_else(|| anyhow!("layer path '{}' leaves the site folder", layer.r#use))?;
+            let mut def = read_manifest(&dir)?;
+            if defs.iter().any(|d| d.id == def.id) {
+                bail!("{} declares id '{}', which another layer already uses", dir.display(), def.id);
+            }
+            def.source = layer.r#use.clone();
+            defs.push(def);
+        } else if !defs.iter().any(|d| d.source == layer.r#use) {
+            bail!("site.json uses layer '{}', which is not in {}", layer.r#use, core_layers.display());
         }
-        if defs.iter().any(|d| d.id == def.id) {
-            bail!("layer '{}' is listed twice in site.json", def.id);
-        }
-        defs.push(def);
     }
     Ok(defs)
 }
@@ -227,6 +262,9 @@ mod tests {
     #[test]
     fn bad_manifests_are_refused() {
         assert!(LayerDef::parse(json!({ "api": 2, "id": "t" })).is_err());
+        assert!(LayerDef::parse(json!({ "api": 1, "id": "t", "category": "ambient" })).is_ok());
+        assert!(LayerDef::parse(json!({ "api": 1, "id": "t", "category": "misc" })).is_err());
+        assert!(LayerDef::parse(json!({ "api": 1, "id": "Bad Id" })).is_err());
         assert!(LayerDef::parse(
             json!({ "api": 1, "id": "t", "controls": [{ "id": "x", "type": "range", "min": 1, "max": 1, "default": 1 }] })
         )

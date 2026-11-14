@@ -1,6 +1,7 @@
 import { Connection } from '@mrstudio/sdk';
 import type { Role } from '@mrstudio/sdk';
 
+import { Composer } from './compose.ts';
 import { Controller } from './controls.ts';
 import { LayerManager } from './layer-manager.ts';
 import { Store } from './store.ts';
@@ -18,9 +19,11 @@ function el(tag: string, className: string, text?: string): HTMLElement {
 
 async function main() {
   const app = document.getElementById('app')!;
-  const segment = location.pathname.split('/').filter(Boolean)[0] as Role | undefined;
-  const role: Role = segment && ROLES.includes(segment) ? segment : 'dev';
-  document.body.dataset.role = role;
+  const segment = location.pathname.split('/').filter(Boolean)[0];
+  // The scene composer is an operator's tool: it joins with the dev role and has its own layout.
+  const composing = segment === 'compose';
+  const role: Role = ROLES.includes(segment as Role) ? (segment as Role) : 'dev';
+  document.body.dataset.role = composing ? 'compose' : role;
 
   const scheme = location.protocol === 'https:' ? 'wss' : 'ws';
   const connection = new Connection({
@@ -46,7 +49,10 @@ async function main() {
   connection.on('welcome', () => (status.hidden = true));
   document.body.append(status);
 
-  // The table (and the table half of dev) renders layers.
+  const palette = el('aside', 'controller palette');
+  if (composing) app.append(palette);
+
+  // The table (and the table half of dev and of the composer) renders layers.
   if (role === 'table' || role === 'dev') {
     const frame = el('div', 'table-frame');
     const surface = el('div', 'table-surface');
@@ -57,6 +63,12 @@ async function main() {
     const view = new TableView(surface, site);
     await view.ready;
     new LayerManager(store, connection, view);
+    if (composing) {
+      const stack = el('aside', 'controller stack');
+      app.append(stack);
+      new Composer(palette, stack, surface, store, connection);
+      return;
+    }
   }
 
   // Everything except the bare table gets the controller.

@@ -17,6 +17,7 @@ packages/layers/sunlight/        (or sites/<id>/layers/<name>/)
   "name": "Sunlight",
   "description": "Shadows and hours of direct sun",
   "icon": "sun",
+  "category": "analysis",
   "requires": { "kernels": ["sunlight"], "data": [], "services": [] },
   "controls": [
     { "id": "mode", "type": "select", "label": "Show", "default": "instant",
@@ -28,6 +29,10 @@ packages/layers/sunlight/        (or sites/<id>/layers/<name>/)
   "tools": []
 }
 ```
+
+`id` is lowercase letters, digits and dashes, and is the folder name for a core layer.
+`category` puts the layer in a group of the composer's palette: `base`, `ambient`, `analysis` (the default) or `media`.
+`requires.data` lists the site datasets the layer reads, by name (see `data` in site.md). A layer must still start when one is missing.
 
 Control types: `range`, `select`, `toggle`, `date`, `color`, `text`, `action` (a button, no stored value).
 Every control has `id`, `type`, `label` and `default`. `phone: true` lets phone participants change it.
@@ -106,6 +111,20 @@ interface FieldStream {
 interface MapHandle {
   addField(id: string, style: FieldStyle & { colormap: Colormap }): FieldOverlay;
   addElement(): HTMLElement;        // a layer-owned element covering the table, for SVG or canvas decorations
+  addCanvas(id: string, options?: { opacity?: number; resolution?: number }): CanvasOverlay;
+}
+
+// A 2D canvas stretched over the table, for layers that draw shapes themselves:
+// base maps, ambient animation, media. One unit is one metre, origin top left.
+interface CanvasOverlay {
+  readonly ctx: CanvasRenderingContext2D;   // already scaled to metres
+  readonly width: number;                    // table size in metres
+  readonly height: number;
+  readonly scale: number;                    // canvas pixels per metre
+  clear(): void;
+  commit(): void;                            // show what was drawn; nothing is uploaded until then
+  setOpacity(opacity: number): void;
+  remove(): void;
 }
 
 interface FieldStyle {
@@ -123,6 +142,12 @@ interface FieldOverlay {
 }
 ```
 
+Everything a layer adds through `ctx.map` is drawn at the layer's place in the scene: above the layers before it in `site.json` and below those after it.
+A layer can be in a scene more than once. Each copy runs `table` on its own, with its own params, so state must live in the closure.
+
+Helpers in `@mrstudio/sdk` for canvas layers: `tableSpace(site)` turns WGS84 into table metres, `loadSiteData(site, name)` and `siteDataUrl(site, name)` read a named dataset, `geojsonLines`, `geojsonPolygons` and `geojsonPoints` convert GeoJSON, `streetLines(site)` gives the `roads` dataset or a generated grid, `track`, `along` and `nearestAlong` move things along a polyline, and `seededRandom` keeps "random" scenes the same on every table.
+`packages/layers/trees` is the smallest animated example and `packages/layers/basemap` the smallest static one.
+
 Rules for layers:
 
 1. No solver code. Heavy computation is a kernel or a service.
@@ -136,4 +161,5 @@ Rules for layers:
 `mrstudio dev --site sites/sample` serves the runtime with the layer loaded against the sample site.
 `pnpm dev` runs the host and the web dev server together.
 `/dev` shows the table view with the generated controls beside it, in a normal browser, with hot reload.
+`/compose` shows the palette, the table and the scene's stack: drag layers in, reorder them and edit their settings.
 No table, projector or calibration is needed.

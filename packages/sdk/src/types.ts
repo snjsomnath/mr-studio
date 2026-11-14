@@ -55,12 +55,17 @@ export interface ToolSpec {
   label?: string;
 }
 
+/** Palette groups in the scene composer. */
+export type LayerCategory = 'base' | 'ambient' | 'analysis' | 'media';
+
 export interface LayerManifest {
   api: number;
   id: string;
   name: string;
   description?: string;
   icon?: string;
+  /** Where the composer's palette lists the layer. Default `analysis`. */
+  category?: LayerCategory;
   requires?: { kernels?: string[]; data?: string[]; services?: string[] };
   controls?: Control[];
   tools?: ToolSpec[];
@@ -87,12 +92,15 @@ export interface SiteInfo {
   table: { width_cm: number; height_cm: number; tile_cm?: number } | null;
   basemap: { background: string; style: string | null };
   branding: { title: string | null; logo: string | null };
-  buildings: string | null;
+  /** Datasets layers may read, by name: site-relative paths served under `/site/`. */
+  data: Record<string, string>;
 }
 
 export type Params = Record<string, unknown>;
 
 export interface LayerState {
+  /** The layer package this instance runs. */
+  layer: string;
   active: boolean;
   params: Params;
   shared: Record<string, unknown>;
@@ -108,6 +116,9 @@ export interface SessionState {
   protocol: number;
   session: { id: string; code: string; port: number };
   site: SiteInfo;
+  /** Layer instance ids in draw order, bottom first. */
+  scene: string[];
+  /** By instance id, which is the layer id unless site.json names the entry. */
   layers: Record<string, LayerState>;
   participants: Participant[];
 }

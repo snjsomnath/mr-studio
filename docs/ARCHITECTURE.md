@@ -67,8 +67,8 @@ apps/
   studio/         Tauri shell (embeds mrs-host)
 packages/
   sdk/            @mrstudio/sdk: layer API, protocol types, engine client, field rendering
-  runtime/        @mrstudio/runtime: surfaces (table, tv, phone, dev), layer manager, generated controls
-  layers/         core layer packages (sunlight first, then wind, stormwater, isovist, ...)
+  runtime/        @mrstudio/runtime: surfaces (table, tv, phone, dev), scene composer, layer manager, generated controls
+  layers/         core layer packages: basemap, ambient (cars, building-lights, transit, trees), slideshow, sunlight, then wind, stormwater, isovist, ...
 sites/
   sample/         small synthetic site used by tests and layer dev mode
   chalmers/       flagship reference site (to be ported)
@@ -92,6 +92,7 @@ docs/contracts/   the interface contracts below
 - **The host schedules the engine.** A job with subscribers is stepped inside a frame budget and pushes a frame only when its revision changes. Layers never poll.
 - **The simulation grid is aligned to the table.** The grid is a rotated rectangle around the site origin, so no cells are wasted on area the table does not show. Kernels read the rotation from the scene.
 - **Local metric coordinates.** The engine works in east/north metres on a tangent plane at the site origin. That needs no projection library, is accurate to centimetres over a few kilometres, and works anywhere in the world. Site prep reprojects source data to WGS84.
+- **A scene is a list.** What a table shows is the ordered `layers` list in `site.json`, drawn bottom to top. The composer at `/compose` edits it through the host, and layers that are not analysis (base map, ambient life, media) are ordinary layer packages that draw on a canvas.
 - **Controls are data.** A layer declares its controls in the manifest. The TV and phone UIs are generated from them, and the host validates every change against them.
 - **Python stays outside the app process.** Data preparation and research models run as services declared in the site or layer manifest and reached through the host gateway.
 

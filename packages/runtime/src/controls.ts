@@ -5,7 +5,7 @@ import { baseContext, paramSender } from './layer-manager.ts';
 import { layerModule } from './registry.ts';
 import type { Store } from './store.ts';
 
-function el<K extends keyof HTMLElementTagNameMap>(tag: K, className?: string, text?: string): HTMLElementTagNameMap[K] {
+export function el<K extends keyof HTMLElementTagNameMap>(tag: K, className?: string, text?: string): HTMLElementTagNameMap[K] {
   const node = document.createElement(tag);
   if (className) node.className = className;
   if (text !== undefined) node.textContent = text;
@@ -13,7 +13,7 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, className?: string, t
 }
 
 /** One generated control. `sync` shows a value from the host; `row` is its element. */
-interface Widget {
+export interface Widget {
   control: Control;
   row: HTMLElement;
   sync(value: unknown): void;
@@ -24,7 +24,7 @@ function formatNumber(value: number, control: Extract<Control, { type: 'range' }
   return `${value.toFixed(decimals)}${control.unit ? ` ${control.unit}` : ''}`;
 }
 
-function widget(control: Control, send: (value: unknown) => void, act: () => void): Widget {
+export function widget(control: Control, send: (value: unknown) => void, act: () => void): Widget {
   const row = el('div', `control control-${control.type}`);
   const id = `c-${Math.random().toString(36).slice(2)}`;
   const label = el('label', 'control-label', control.label);
@@ -103,57 +103,90 @@ function widget(control: Control, send: (value: unknown) => void, act: () => voi
   return { control, row, sync };
 }
 
+/** What an instance is called on screen: the layer's name, plus the instance id when it is not the only one. */
+export function instanceTitle(id: string, manifest: LayerManifest): string {
+  return id === manifest.id ? manifest.name : `${manifest.name} (${id})`;
+}
+
+interface Card {
+  element: HTMLElement;
+  sync(state: LayerState): void;
+  dispose(): void;
+}
+
 /**
- * The controller: one card per layer with an on/off switch, the controls
+ * The controller: one card per layer in the scene with an on/off switch, the controls
  * generated from its manifest, and (on the TV and in dev) the layer's panel.
  */
 export class Controller {
-  private cards = new Map<string, { sync(state: LayerState): void }>();
+  private cards = new Map<string, Card>();
+  private readonly root: HTMLElement;
   private readonly store: Store;
   private readonly connection: Connection;
   private readonly role: Role;
 
   constructor(root: HTMLElement, store: Store, connection: Connection, role: Role) {
+    this.root = root;
     this.store = store;
     this.connection = connection;
     this.role = role;
-    for (const manifest of store.manifests) {
-      const state = store.state.layers[manifest.id];
-      if (!state) continue;
-      root.append(this.card(manifest));
-      this.cards.get(manifest.id)!.sync(state);
-    }
+    this.arrange();
     store.onLayer((id, state) => this.cards.get(id)?.sync(state));
+    store.onRemoved((id) => {
+      this.cards.get(id)?.dispose();
+      this.cards.delete(id);
+    });
+    store.onScene(() => this.arrange());
   }
 
-  private card(manifest: LayerManifest): HTMLElement {
+  /** Lays the cards out with the top of the scene first, making cards for layers that are new. */
+  private arrange(): void {
+    const { store } = this;
+    const elements: HTMLElement[] = [];
+    for (const id of [...store.state.scene].reverse()) {
+      const state = store.state.layers[id];
+      const manifest = state && store.manifest(state.layer);
+      if (!manifest) continue;
+      let card = this.cards.get(id);
+      if (!card) {
+        card = this.card(id, manifest);
+        this.cards.set(id, card);
+        card.sync(state);
+      }
+      elements.push(card.element);
+    }
+    this.root.replaceChildren(...elements);
+  }
+
+  private card(id: string, manifest: LayerManifest): Card {
     const { store, connection, role } = this;
     const phone = role === 'phone';
+    const name = instanceTitle(id, manifest);
     const card = el('section', 'layer-card');
     const header = el('header');
     const title = el('div', 'layer-title');
-    title.append(el('h2', undefined, manifest.name));
+    title.append(el('h2', undefined, name));
     if (manifest.description) title.append(el('p', undefined, manifest.description));
     header.append(title);
 
     const power = el('input');
-    Object.assign(power, { type: 'checkbox', className: 'switch', ariaLabel: `Turn ${manifest.name} on or off` });
+    Object.assign(power, { type: 'checkbox', className: 'switch', ariaLabel: `Turn ${name} on or off` });
     power.addEventListener('change', () => {
-      connection.request('layer.activate', { layer: manifest.id, active: power.checked }).catch(() => (power.checked = !power.checked));
+      connection.request('layer.activate', { layer: id, active: power.checked }).catch(() => (power.checked = !power.checked));
     });
     // Phones cannot turn layers on or off, so they are not offered the switch.
     if (!phone) header.append(power);
     card.append(header);
 
     const body = el('div', 'layer-body');
-    const send = paramSender(connection, manifest.id);
+    const send = paramSender(connection, id);
     const widgets = (manifest.controls ?? [])
       .filter((control) => !phone || control.phone)
       .map((control) =>
         widget(
           control,
           (value) => send({ [control.id]: value }),
-          () => void connection.request('layer.action', { layer: manifest.id, action: control.id }).catch(() => {}),
+          () => void connection.request('layer.action', { layer: id, action: control.id }).catch(() => {}),
         ),
       );
     const controls = el('div', 'controls');
@@ -166,11 +199,11 @@ export class Controller {
     const mount = () => {
       if (!module?.panel || panel) return;
       const cleanups: (() => void)[] = [];
-      const ctx = Object.assign(Object.create(baseContext(store, connection, manifest.id)), { onCleanup: (c: () => void) => cleanups.push(c) });
+      const ctx = Object.assign(Object.create(baseContext(store, connection, id)), { onCleanup: (c: () => void) => cleanups.push(c) });
       try {
         panel = { handlers: module.panel(ctx, panelHost) ?? {}, cleanups };
       } catch (error) {
-        console.error(`[${manifest.id}] panel failed`, error);
+        console.error(`[${id}] panel failed`, error);
       }
     };
     const unmount = () => {
@@ -184,7 +217,9 @@ export class Controller {
     body.append(controls);
     card.append(body);
 
-    this.cards.set(manifest.id, {
+    return {
+      element: card,
+      dispose: unmount,
       sync: (state) => {
         power.checked = state.active;
         card.classList.toggle('is-active', state.active);
@@ -198,13 +233,12 @@ export class Controller {
           try {
             panel?.handlers.update?.();
           } catch (error) {
-            console.error(`[${manifest.id}] panel failed`, error);
+            console.error(`[${id}] panel failed`, error);
           }
         } else {
           unmount();
         }
       },
-    });
-    return card;
+    };
   }
 }

@@ -1,0 +1,87 @@
+{
+  "slides": [
+    {
+      "media": "../buildings.geojson",
+      "type": "geojson",
+      "duration": 8000,
+      "metadata": {
+        "title": "What the buildings are used for",
+        "description": "Every footprint in the sample district, coloured by use",
+        "source": "Synthetic data from sites/sample/tools/generate.py",
+        "legend": {
+          "items": [
+            {
+              "color": "#ff8a3d",
+              "label": "Housing"
+            },
+            {
+              "color": "#4dabf7",
+              "label": "Offices"
+            },
+            {
+              "color": "#f7d154",
+              "label": "Shops"
+            },
+            {
+              "color": "#b197fc",
+              "label": "Public buildings"
+            }
+          ]
+        },
+        "style": {
+          "colorProperty": "kind",
+          "fillOpacity": 0.6,
+          "strokeWidth": 1,
+          "colorMap": {
+            "housing": "#ff8a3d",
+            "offices": "#4dabf7",
+            "shops": "#f7d154",
+            "public": "#b197fc"
+          }
+        }
+      }
+    },
+    {
+      "media": "terrain.png",
+      "type": "image",
+      "duration": 8000,
+      "fitMode": "stretch",
+      "metadata": {
+        "title": "Terrain",
+        "description": "The ground slopes down to the south-east, with one low hill. Contours every metre.",
+        "source": "Synthetic data from sites/sample/tools/generate.py"
+      }
+    },
+    {
+      "media": "../roads.geojson",
+      "type": "geojson",
+      "duration": 8000,
+      "metadata": {
+        "title": "Street network",
+        "description": "One avenue and a grid of local streets",
+        "source": "Synthetic data from sites/sample/tools/generate.py",
+        "legend": {
+          "items": [
+            {
+              "color": "#ffd43b",
+              "label": "Avenue"
+            },
+            {
+              "color": "#74c0fc",
+              "label": "Street"
+            }
+          ]
+        },
+        "style": {
+          "colorProperty": "kind",
+          "strokeWidth": 4,
+          "strokeOpacity": 0.9,
+          "colorMap": {
+            "avenue": "#ffd43b",
+            "street": "#74c0fc"
+          }
+        }
+      }
+    }
+  ]
+}

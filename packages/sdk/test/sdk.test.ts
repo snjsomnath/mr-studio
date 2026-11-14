@@ -5,7 +5,9 @@ import { lut, colormaps } from '../src/colormap.ts';
 import { isVisible } from '../src/controls.ts';
 import { parseFrame, sample } from '../src/frame.ts';
 import { sunPosition } from '../src/solar.ts';
+import { along, geojsonPolygons, insidePolygon, nearestAlong, seededRandom, tableSpace, track } from '../src/table-space.ts';
 import { formatHour, zonedTimeToUtc } from '../src/time.ts';
+import type { SiteInfo } from '../src/types.ts';
 
 test('wall-clock time converts to UTC across daylight saving', () => {
   assert.equal(zonedTimeToUtc('2026-06-21', 12, 'Europe/Stockholm'), '2026-06-21T10:00:00Z');
@@ -72,4 +74,38 @@ test('sun position matches the engine reference values', () => {
   const rise = at('2026-03-20T05:20:00Z');
   assert.ok(Math.abs(rise.altitude) < 1.5 && Math.abs(rise.azimuth - 90) < 2, JSON.stringify(rise));
   assert.ok(at('2026-12-21T23:00:00Z').altitude < -40);
+});
+
+test('table space maps WGS84 to metres from the top left corner', () => {
+  // A 1000 x 600 m table turned 90 degrees: its top edge runs north to south on the east side.
+  const site = {
+    extent: { width_m: 1000, height_m: 600, rotation_deg: 90 },
+    corners: [[11.975, 57.7045], [11.975, 57.6955], [11.965, 57.6955], [11.965, 57.7045]],
+  } as unknown as SiteInfo;
+  const space = tableSpace(site);
+  const near = (actual: number[], expected: number[]) => actual.forEach((v, i) => assert.ok(Math.abs(v - expected[i]!) < 1e-6, `${actual} vs ${expected}`));
+  near(space.toTable(11.975, 57.7045), [0, 0]);
+  near(space.toTable(11.975, 57.6955), [1000, 0]);
+  near(space.toTable(11.965, 57.6955), [1000, 600]);
+  near(space.toTable(11.97, 57.7), [500, 300]);
+
+  const [polygon] = geojsonPolygons(
+    { type: 'Feature', properties: { kind: 'x' }, geometry: { type: 'Polygon', coordinates: [[[11.975, 57.7045], [11.975, 57.6955], [11.965, 57.6955], [11.975, 57.7045]]] } },
+    space,
+  );
+  assert.equal(polygon!.properties.kind, 'x');
+  assert.equal(insidePolygon(polygon!.geometry, 900, 100), true);
+  assert.equal(insidePolygon(polygon!.geometry, 100, 500), false);
+});
+
+test('tracks give positions, headings and nearest points', () => {
+  const t = track([[0, 0], [10, 0], [10, 10]]);
+  assert.equal(t.length, 20);
+  assert.deepEqual(along(t, 5), { x: 5, y: 0, angle: 0 });
+  assert.deepEqual(along(t, 15), { x: 10, y: 5, angle: Math.PI / 2 });
+  assert.deepEqual(along(t, 99), { x: 10, y: 10, angle: Math.PI / 2 });
+  assert.equal(nearestAlong(t, 12, 4), 14);
+  const a = seededRandom(3);
+  const b = seededRandom(3);
+  assert.deepEqual([a(), a(), a()], [b(), b(), b()]);
 });
