@@ -57,7 +57,7 @@ export function newTable(root: HTMLElement): void {
   size.append(field('Width, metres', width), field('Height, metres', height));
   body.append(
     field('Name', name),
-    field('Centre of the table', place, 'Paste coordinates, or a link copied from a map site.'),
+    field('Centre of the table', place, 'Paste coordinates, or a link copied from Google Maps or OpenStreetMap.'),
     size,
     el('p', 'wz-hint', 'The shape should match your table. A 16 to 10 projector suits 1000 by 600 metres or 1600 by 1000.'),
   );
