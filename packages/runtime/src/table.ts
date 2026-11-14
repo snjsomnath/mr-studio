@@ -1,9 +1,11 @@
-import type { Colormap, FieldOverlay, FieldOverlayStyle, MapHandle, ModelHandle, Shape, ShapeOverlay, SiteInfo, TablePointer } from '@mrstudio/sdk';
+import type { CanvasOverlay, Colormap, FieldOverlay, FieldOverlayStyle, FlowOverlay, FlowOverlayStyle, MapHandle, ModelHandle, Shape, ShapeOverlay, SiteInfo, TablePointer } from '@mrstudio/sdk';
 import maplibregl from 'maplibre-gl';
 import type { StyleSpecification } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 
+import { MapCanvasOverlay } from './canvas-overlay.ts';
 import { MapFieldOverlay } from './field-overlay.ts';
+import { MapFlowOverlay } from './flow-overlay.ts';
 import { ModelView } from './model/view.ts';
 import { tablePointer } from './table-pointer.ts';
 
@@ -13,9 +15,10 @@ const FILL_LAYER = 'site-buildings-fill';
 const OUTLINE_LAYER = 'site-buildings-outline';
 
 /**
- * The table view: a map locked to the site's extent. The extent fills the
- * container, so on a correctly shaped window one site metre is the same
- * number of pixels in both directions.
+ * The table view: a map locked to the site. Without a calibration the extent
+ * fills the container, so on a correctly shaped window one site metre is the
+ * same number of pixels in both directions. On the projected table, the site's
+ * calibration decides the view instead, so the image lands on the physical model.
  */
 export class TableView {
   readonly ready: Promise<void>;
@@ -24,12 +27,15 @@ export class TableView {
   private map: maplibregl.Map;
   readonly site: SiteInfo;
   readonly container: HTMLElement;
+  private calibrated: boolean;
   /** What each layer has drawn, so its intensity can be applied to all of it. */
   private drawn = new Map<string, { overlays: Set<MapFieldOverlay>; elements: Set<HTMLElement>; intensity: number }>();
 
-  constructor(container: HTMLElement, site: SiteInfo) {
+  /** `calibrated` applies the site's table calibration, when it has one. */
+  constructor(container: HTMLElement, site: SiteInfo, calibrated = false) {
     this.site = site;
     this.container = container;
+    this.calibrated = calibrated;
     const blank: StyleSpecification = {
       version: 8,
       sources: {},
@@ -40,9 +46,7 @@ export class TableView {
     this.map = new maplibregl.Map({
       container,
       style: site.basemap.style ?? blank,
-      center: [site.origin.lon, site.origin.lat],
-      bearing: site.extent.rotation_deg,
-      zoom: this.fitZoom(),
+      ...this.view(),
       interactive: false,
       attributionControl: false,
       fadeDuration: 0,
@@ -83,6 +87,17 @@ export class TableView {
           element.remove();
         });
         return element;
+      },
+      addCanvas: (id: string, style?: { opacity?: number }): CanvasOverlay => {
+        const overlay = new MapCanvasOverlay(this.map, this.container, `canvas:${layer}:${id}`, this.site, style);
+        track(() => overlay.remove());
+        return overlay;
+      },
+      addFlow: (id: string, style: FlowOverlayStyle & { colormap: Colormap }): FlowOverlay => {
+        const overlay = new MapFlowOverlay(this.map, `flow:${layer}:${id}`, this.site, style);
+        this.map.addLayer(overlay, this.map.getLayer(OUTLINE_LAYER) ? OUTLINE_LAYER : undefined);
+        track(() => overlay.remove());
+        return overlay;
       },
       addShapes: (id: string, style?: { opacity?: number }): ShapeOverlay => {
         const overlay = this.shapes(`shapes:${layer}:${id}`, style?.opacity ?? 1);
@@ -195,9 +210,20 @@ export class TableView {
     return Math.log2((EARTH_CIRCUMFERENCE_M * Math.cos(latitude)) / (512 * metresPerPixel));
   }
 
+  /** The camera: the calibrated table view, or the extent fitted to the container. */
+  private view(): { center: [number, number]; bearing: number; zoom: number } {
+    const calibration = this.calibrated ? this.site.calibration : null;
+    if (!calibration) {
+      return { center: [this.site.origin.lon, this.site.origin.lat], bearing: this.site.extent.rotation_deg, zoom: this.fitZoom() };
+    }
+    // The zoom was found at one window size. Scale it, so the same ground stays in view at another.
+    const scale = calibration.window ? Math.max(1, this.container.clientWidth) / calibration.window.width_px : 1;
+    return { center: [calibration.center.lon, calibration.center.lat], bearing: calibration.bearing, zoom: calibration.zoom + Math.log2(scale) };
+  }
+
   private fit(): void {
     this.map.resize();
-    this.map.jumpTo({ center: [this.site.origin.lon, this.site.origin.lat], bearing: this.site.extent.rotation_deg, zoom: this.fitZoom() });
+    this.map.jumpTo(this.view());
   }
 
   /** Building footprints from the site package, as quiet context under and over the layers. */

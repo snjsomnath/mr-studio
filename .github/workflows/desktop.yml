@@ -43,6 +43,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: desktop
+      # The kernels and their GPU/CPU parity tests on this platform's own graphics API
+      # (DirectX 12 or Metal). They skip themselves where the runner has no adapter.
+      - run: cargo test -p mrs-engine -- --nocapture
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:

@@ -6,7 +6,8 @@ use mrs_engine::{Grid, SceneData};
 use serde::Serialize;
 use serde_json::Value;
 
-use crate::{Projection, Site, SiteError};
+use crate::geotiff::GeoRaster;
+use crate::{mesh, Crs, Projection, Site, SiteError};
 
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct BakeStats {
@@ -14,6 +15,11 @@ pub struct BakeStats {
     pub buildings_without_height: usize,
     pub buildings_outside: usize,
     pub trees: usize,
+    /// Cells the terrain source does not cover; they take the lowest elevation it has.
+    pub terrain_missing_cells: usize,
+    pub mesh_triangles: usize,
+    /// Share of cells the mesh covers.
+    pub mesh_coverage: f32,
     pub solid_fraction: f32,
     pub max_height_m: f32,
 }
@@ -27,19 +33,67 @@ pub fn bake(site: &Site) -> Result<(SceneData, BakeStats), SiteError> {
 
     if let Some(terrain) = &spec.terrain {
         let path = site.resolve(&terrain.path).expect("validated");
-        let bytes = std::fs::read(&path).map_err(|source| SiteError::Io { path: path.clone(), source })?;
-        let source: Vec<f32> = bytes.chunks_exact(4).map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]])).collect();
-        if source.iter().any(|v| !v.is_finite()) {
-            return Err(SiteError::Parse { path, message: "terrain contains non-finite values".into() });
+        if terrain.is_geotiff() {
+            let crs = terrain.crs.as_deref().and_then(Crs::parse);
+            let raster = GeoRaster::read(&path, crs).map_err(|message| SiteError::Parse { path: path.clone(), message })?;
+            let lowest = raster.data.iter().copied().filter(|v| v.is_finite()).fold(f32::INFINITY, f32::min);
+            if !lowest.is_finite() {
+                return Err(SiteError::Parse { path, message: "the terrain has no data".into() });
+            }
+            let width = grid.width as usize;
+            for (i, out) in scene.dtm.iter_mut().enumerate() {
+                let (east, north) = grid.cell_to_local((i % width) as f64 + 0.5, (i / width) as f64 + 0.5);
+                let p = projection.to_lonlat(east, north);
+                *out = raster.sample(p.lon, p.lat).unwrap_or_else(|| {
+                    stats.terrain_missing_cells += 1;
+                    lowest
+                });
+            }
+        } else {
+            let bytes = std::fs::read(&path).map_err(|source| SiteError::Io { path: path.clone(), source })?;
+            let source: Vec<f32> = bytes.chunks_exact(4).map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]])).collect();
+            if source.iter().any(|v| !v.is_finite()) {
+                return Err(SiteError::Parse { path, message: "terrain contains non-finite values".into() });
+            }
+            let (width, height) = (terrain.width.expect("validated") as usize, terrain.height.expect("validated") as usize);
+            resample(&source, width, height, grid, &mut scene.dtm);
         }
-        resample(&source, terrain.width as usize, terrain.height as usize, grid, &mut scene.dtm);
     }
     scene.dsm.copy_from_slice(&scene.dtm);
+
+    if let Some(spec) = &spec.mesh {
+        let path = site.resolve(&spec.path).expect("validated");
+        let triangles = mesh::read_stl(&path).map_err(|message| SiteError::Parse { path: path.clone(), message })?;
+        // Mesh units to local metres: +Y points along `bearing_deg`, +X a quarter turn clockwise from it.
+        let (anchor_east, anchor_north) = projection.to_local(spec.anchor.lon, spec.anchor.lat);
+        let (sin, cos) = spec.bearing_deg.to_radians().sin_cos();
+        let to_cell = |v: [f32; 3]| {
+            let (x, y) = (v[0] as f64 * spec.unit_m, v[1] as f64 * spec.unit_m);
+            let (col, row) = grid.local_to_cell(anchor_east + x * cos + y * sin, anchor_north - x * sin + y * cos);
+            (col, row, v[2] as f64 * spec.unit_m + spec.base_m)
+        };
+        let mut top = vec![f32::NEG_INFINITY; grid.len()];
+        mesh::rasterise(&triangles, to_cell, grid.width as usize, grid.height as usize, &mut top);
+        let mut covered = 0;
+        let tolerance = spec.ground_tolerance_m as f32;
+        for (dsm, top) in scene.dsm.iter_mut().zip(&top) {
+            if top.is_finite() {
+                covered += 1;
+                // `dsm` still equals the ground here.
+                if *top - *dsm > tolerance {
+                    *dsm = *top;
+                }
+            }
+        }
+        stats.mesh_triangles = triangles.len();
+        stats.mesh_coverage = covered as f32 / grid.len() as f32;
+    }
 
     if let Some(buildings) = &spec.buildings {
         let path = site.resolve(&buildings.path).expect("validated");
         for feature in features(&path)? {
             let height = match number(&feature["properties"][&buildings.height_property]) {
+                _ if !buildings.extrude => 0.0,
                 Some(h) if h > 0.0 => h,
                 _ => {
                     stats.buildings_without_height += 1;

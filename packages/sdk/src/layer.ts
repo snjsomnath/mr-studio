@@ -23,6 +23,50 @@ export interface FieldOverlay {
   remove(): void;
 }
 
+export interface FlowOverlayStyle {
+  /** Colours tracers by the local magnitude of the field. */
+  colormap?: Colormap;
+  /** The magnitude at the top of the colormap. Default: the frames' `max`. */
+  max?: number;
+  /** `ribbons` are long tapering trails, `particles` short streaks. Default `ribbons`. */
+  mode?: 'ribbons' | 'particles';
+  /** Number of tracers. Default 500. */
+  count?: number;
+  /** Share of the extent's longer side a tracer travels per second, per field unit. Default 0.04. */
+  rate?: number;
+  /** 0..1, multiplied with the colormap's own alpha. */
+  opacity?: number;
+}
+
+/** A vector field drawn on the table as moving tracers. Animation and drawing run on the surface. */
+export interface FlowOverlay {
+  /** The two components of the same revision, towards the right and towards the bottom of the table. Cells where both are zero are obstacles. */
+  set(u: FieldFrame, v: FieldFrame): void;
+  setStyle(style: FlowOverlayStyle): void;
+  remove(): void;
+}
+
+/**
+ * A 2D canvas locked to the table, for vector drawing: networks, routes, moving markers.
+ * It sits above the fields and the building outlines; canvases stack in the order they are added.
+ */
+export interface CanvasOverlay {
+  /** Scaled so one unit is one CSS pixel. */
+  readonly context: CanvasRenderingContext2D;
+  /** Size in CSS pixels. */
+  readonly width: number;
+  readonly height: number;
+  /** Table pixels per site metre, so marks can keep a physical size. */
+  readonly pixelsPerMetre: number;
+  /** Raised whenever the size or the view changes. The canvas is blank afterwards: draw again. */
+  readonly revision: number;
+  /** WGS84 `[lon, lat]` to canvas pixels. */
+  project(lonLat: readonly [number, number] | readonly number[]): [number, number];
+  clear(): void;
+  setOpacity(opacity: number): void;
+  remove(): void;
+}
+
 /** A point, line or area drawn on the table. */
 export interface Shape {
   geometry: ToolGeometry;
@@ -41,6 +85,7 @@ export interface ShapeOverlay {
 /** What a layer may draw on the table. */
 export interface MapHandle {
   addField(id: string, style: FieldOverlayStyle & { colormap: Colormap }): FieldOverlay;
+  addFlow(id: string, style: FlowOverlayStyle & { colormap: Colormap }): FlowOverlay;
   addShapes(id: string, style?: { opacity?: number }): ShapeOverlay;
   /**
    * An element covering the table, above the fields, for decorations a layer draws itself
@@ -48,6 +93,7 @@ export interface MapHandle {
    * The table's up direction is `site.extent.rotation_deg`.
    */
   addElement(): HTMLElement;
+  addCanvas(id: string, style?: { opacity?: number }): CanvasOverlay;
 }
 
 /**

@@ -1,4 +1,4 @@
-// End-to-end check in a real browser: the host, the engine, the surfaces, the sunlight layer,
+// End-to-end check in a real browser: the host, the engine, the surfaces, the core layers,
 // and a phone joining by QR code, using its tools and coming back after a reload.
 //   pnpm build && cargo build -p mrs-cli && node scripts/e2e.cjs [screenshot-dir]
 // Needs Playwright with Chromium (`npm i -g playwright && npx playwright install chromium`).
@@ -73,6 +73,9 @@ async function main() {
       return page;
     };
 
+    // Controls are looked up inside their layer's card: layers may share control names.
+    const sunlight = (page) => page.locator('.layer-card', { hasText: 'Sunlight' });
+
     // The dev surface renders the layer that site.json turns on.
     const dev = await open('/dev', { width: 1500, height: 800 });
     const table = dev.locator('.table-surface');
@@ -84,7 +87,7 @@ async function main() {
     // A change made on the TV reaches the host, the engine and the dev surface.
     const tv = await open('/tv', { width: 1920, height: 1080 });
     const clock = '[data-panel="sunlight/time"] .mrs-number';
-    await tv.getByLabel('Time of day').fill('8.5');
+    await sunlight(tv).getByLabel('Time of day').fill('8.5');
     await dev.locator(clock, { hasText: '08:30' }).waitFor();
     await dev.getByText(/bearing 9\d/).waitFor();
     await dev.waitForTimeout(500);
@@ -110,12 +113,12 @@ async function main() {
     await dev.waitForTimeout(500);
     const day = await table.screenshot();
     assert.notDeepEqual(day, morning, 'sun hours should look different from shadows');
-    assert.equal(await tv.getByLabel('Time of day').isVisible(), false, 'the time control hides in sun hours mode');
+    assert.equal(await sunlight(tv).getByLabel('Time of day').isVisible(), false, 'the time control hides in sun hours mode');
     if (shots) await dev.screenshot({ path: path.join(shots, 'dev-sun-hours.png') });
 
     // Turning the layer off clears the table.
     await tv.getByLabel('Turn Sunlight on or off').uncheck();
-    await dev.locator('.layer-card:not(.is-active)').waitFor();
+    await dev.locator('.layer-card:not(.is-active)', { hasText: 'Sunlight' }).waitFor();
     await dev.waitForTimeout(500);
     const off = await table.screenshot();
     assert.notDeepEqual(off, day, 'the overlay should disappear when the layer is off');
@@ -142,12 +145,12 @@ async function main() {
 
     // A phone that scanned the code sees only phone controls and cannot switch layers.
     const phone = await open(scanned.slice(base.length), { width: 390, height: 800 });
-    await phone.getByLabel('Time of day').waitFor();
+    await sunlight(phone).getByLabel('Time of day').waitFor();
     await phone.getByText('You are 1').waitFor();
     assert.equal(await phone.getByLabel('Turn Sunlight on or off').count(), 0);
     assert.equal(await phone.getByText('Opacity').count(), 0);
     await tv.getByText('1 phone', { exact: true }).waitFor();
-    await phone.getByLabel('Time of day').fill('18');
+    await sunlight(phone).getByLabel('Time of day').fill('18');
     await tv.locator(clock, { hasText: '18:00' }).waitFor();
     // The table recomputed for the phone's time and published the new sun position to the TV.
     await tv.getByText(/sun 2\d\.\d° up, bearing 2[5-8]\d/).waitFor();
@@ -209,7 +212,7 @@ async function main() {
     // The sample site lights the twin, so the flat map is laid over it rather than shown on its own.
     await dev.locator('.table-surface.is-draped canvas.table-model').waitFor();
     // With the lighting off the table is the flat map again, and looks different.
-    await tv.getByLabel('Time of day').fill('15');
+    await sunlight(tv).getByLabel('Time of day').fill('15');
     await tv.locator(clock, { hasText: '15:00' }).waitFor();
     await dev.waitForTimeout(800);
     const relit = await table.screenshot();
@@ -245,11 +248,85 @@ async function main() {
     await projected.keyboard.press('Escape');
     await projected.locator('.table-surface.is-projector:not(.is-calibrating)').waitFor();
     assert.equal(await projected.locator('.calibration').count(), 0);
+    // The dev surface opened its preview of the tool too; close it for the layers that follow.
+    await controller.request('calibration.mode', { active: false });
+    await dev.locator('.calibration').waitFor({ state: 'detached' });
 
     // Clearing the calibration brings the flat table back.
     await controller.request('calibration.set', { projector: null });
     await projected.locator('.table-surface:not(.is-projector)').waitFor();
     controller.close();
+
+
+    // CoolPaths: routes over the site's walkways, costed by the engine's shade.
+    const card = (name) => tv.locator('.layer-card', { hasText: name });
+    await tv.getByLabel('Turn Sunlight on or off').uncheck();
+    await tv.getByLabel('Turn Cool paths on or off').check();
+    const cool = card('Cool paths');
+    // A layer's own panel sits on the dashboard canvas; its controls stay in its card.
+    const coolPanel = tv.locator('[data-panel="coolpaths/panel"]');
+    await coolPanel.getByText(/less sun|already the coolest/).waitFor();
+    await dev.waitForTimeout(500);
+    const walk = await table.screenshot();
+    assert.notDeepEqual(walk, off, 'the network and routes should be drawn');
+    assert.match(await coolPanel.locator('[data-route="shortest"] .coolpaths-length').textContent(), /^\d+ m$/);
+    if (shots) await dev.screenshot({ path: path.join(shots, 'dev-coolpaths.png') });
+    // A phone may ask for another walk, and the table answers with a different one.
+    await phone.getByRole('button', { name: 'Try another walk' }).click();
+    await dev.waitForTimeout(800);
+    assert.notDeepEqual(await table.screenshot(), walk, 'another walk should be drawn');
+    // With no detour allowed the coolest walk is the shortest one.
+    await cool.getByLabel('Longest detour').fill('0');
+    await coolPanel.getByText('the shortest walk is already the coolest').waitFor();
+    // At night there is no sun to avoid.
+    await cool.getByLabel('Time of day').fill('1');
+    await coolPanel.getByText(/the sun is down/).waitFor();
+    await coolPanel.getByText('0 m in the sun').first().waitFor();
+    await tv.getByLabel('Turn Cool paths on or off').uncheck();
+
+    // Mobility: the site's trips played over time.
+    await tv.getByLabel('Turn Mobility on or off').check();
+    const moving = card('Mobility');
+    const movingPanel = tv.locator('[data-panel="mobility/panel"]');
+    await movingPanel.getByText(/of 60 arrived/).first().waitFor();
+    await moving.getByLabel('Play', { exact: true }).uncheck();
+    await moving.getByLabel('Time', { exact: true }).fill('0');
+    await movingPanel.getByText('0 of 60 arrived').first().waitFor();
+    await dev.waitForTimeout(500);
+    const start = await table.screenshot();
+    if (shots) await dev.screenshot({ path: path.join(shots, 'dev-mobility.png') });
+    await moving.getByLabel('Time', { exact: true }).fill('100');
+    await movingPanel.getByText('60 of 60 arrived').nth(1).waitFor();
+    await dev.waitForTimeout(500);
+    assert.notDeepEqual(await table.screenshot(), start, 'travellers should move with the time');
+    await tv.getByLabel('Turn Mobility on or off').uncheck();
+
+
+    // Wind: the simulation streams while it settles, tracers move, and a faster wind only rescales.
+    await tv.getByLabel('Turn Sunlight on or off').uncheck();
+    await dev.waitForTimeout(500);
+    const calm = await table.screenshot();
+    await tv.getByLabel('Turn Wind on or off').check();
+    await tv.getByText(/Settling, \d+%|Steady/).waitFor({ timeout: 60_000 });
+    await dev.getByText(/Fastest spot [\d.]+ m\/s/).waitFor({ timeout: 120_000 });
+    const windy = await table.screenshot();
+    assert.notDeepEqual(windy, calm, 'wind should draw on the table');
+    await dev.waitForTimeout(300);
+    assert.notDeepEqual(await table.screenshot(), windy, 'tracers should keep moving');
+    await tv.getByLabel('Wind speed').fill('10');
+    await dev.getByText('10 m/s', { exact: true }).waitFor();
+    await tv.getByLabel('Wind from').fill('180');
+    await dev.getByText('from the south').waitFor();
+    await tv.getByRole('radio', { name: 'Speed map' }).click();
+    await dev.waitForTimeout(500);
+    const still = await table.screenshot();
+    await dev.waitForTimeout(100);
+    if (shots) await dev.screenshot({ path: path.join(shots, 'dev-wind.png') });
+    await tv.getByRole('radio', { name: 'Ribbons' }).click();
+    await dev.waitForTimeout(1500);
+    assert.notDeepEqual(await table.screenshot(), still, 'ribbons should come back');
+    if (shots) await dev.screenshot({ path: path.join(shots, 'dev-wind-ribbons.png') });
+    await tv.getByLabel('Turn Wind on or off').uncheck();
 
     const real = errors.filter((e) => !/WebSocket/.test(e));
     assert.deepEqual(real, [], 'no page errors');
