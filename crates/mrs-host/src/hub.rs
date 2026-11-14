@@ -51,6 +51,8 @@ impl Role {
 #[derive(Debug, Clone, Serialize)]
 pub struct LayerState {
     pub active: bool,
+    /// How strongly the layer is drawn on the table, 0 to 2. 1 is as the layer intends.
+    pub intensity: f64,
     pub params: Map<String, Value>,
     pub shared: Map<String, Value>,
 }
@@ -97,7 +99,7 @@ impl Hub {
                     Err(e) => tracing::warn!("site.json params for layer '{}' ignored: {e}", def.id),
                 }
             }
-            layers.insert(def.id.clone(), LayerState { active, params, shared: Map::new() });
+            layers.insert(def.id.clone(), LayerState { active, intensity: 1.0, params, shared: Map::new() });
         }
         let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0);
         let session = SessionInfo { id: format!("{:x}", nanos), code: format!("{:04}", (nanos / 7919) % 10_000), port };
@@ -186,6 +188,13 @@ impl Hub {
                 }
                 let active = p["active"].as_bool().ok_or("missing active")?;
                 self.update(layer, |state| state.active = active);
+            }
+            "layer.intensity" => {
+                if !role.may_activate() {
+                    return Err("phones cannot change a layer's intensity".into());
+                }
+                let intensity = p["intensity"].as_f64().filter(|v| v.is_finite()).ok_or("missing intensity")?.clamp(0.0, 2.0);
+                self.update(layer, |state| state.intensity = intensity);
             }
             "layer.set" => {
                 let patch = p["params"].as_object().ok_or("missing params")?;

@@ -50,6 +50,15 @@ pnpm test        # cargo test, typecheck, SDK tests
 pnpm test:e2e    # real browser against the real host (needs Playwright with Chromium)
 ```
 
+Measured on an Apple M4 Pro (Metal), 2026-11-14, sunlight kernel:
+
+| Grid | Sun hours over a day, GPU | CPU reference | One instant, GPU | CPU reference |
+| --- | --- | --- | --- | --- |
+| 1000 x 600 | 72 ms | 390 ms | 5.8 ms | 3.0 ms |
+| 2000 x 1200 | 261 ms | 2838 ms | 11.8 ms | 24.0 ms |
+
+The GPU wins clearly on accumulated work. A single instant on a small grid is dominated by the round trip to the GPU, which is the next thing to optimise (keep the field on the GPU instead of reading it back).
+
 The GPU tests need a Vulkan, Metal or DirectX 12 adapter. Without one they are skipped and the CPU reference tests still run. CI installs a software Vulkan driver so they always run there.
 
 ## Status
@@ -61,7 +70,7 @@ The GPU tests need a Vulkan, Metal or DirectX 12 adapter. Without one they are s
 | Host: session state, roles, validated params, field streaming | Working |
 | Surfaces: table, TV, phone, dev, with generated controls | Working, first version |
 | Sunlight layer (shadows, sun hours, animation, TV panel) | Working |
-| Desktop shell | Compiles on Linux; not yet run on Windows or macOS |
+| Desktop shell | Builds and starts on macOS (Apple M4 Pro, Metal) with a dev window; not yet run on Windows; display placement untested on real hardware |
 | Wind, stormwater, isovist kernels and layers | Not started; see the work packages in ARCHITECTURE.md |
 | Calibration, basemap tiles, QR join, phone tools | Not started |
 | Chalmers, Lindholmen and Universeum site packages | Not started |

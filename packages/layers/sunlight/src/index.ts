@@ -2,7 +2,7 @@ import { cssGradient, defineLayer, formatHour, zonedTimeToUtc } from '@mrstudio/
 import type { FieldStream, LayerManifest, TableContext } from '@mrstudio/sdk';
 
 import manifest from '../layer.json';
-import { TREE_SHADE_CSS, skyColormap, sunAt, sunDay, sunHoursColormap, treeHoursColormap, treeShadeColormap } from './look.ts';
+import { TREE_SHADE_CSS, skyColormap, sunAt, sunDay, sunHoursColormap, thresholdColormap, treeHoursColormap, treeShadeColormap } from './look.ts';
 import { SunPath } from './sun-path.ts';
 
 interface Params {
@@ -12,6 +12,7 @@ interface Params {
   play: boolean;
   trees: boolean;
   treeColor: boolean;
+  threshold: number;
   path: boolean;
   opacity: number;
 }
@@ -25,6 +26,11 @@ const HOUR_STEP = 0.05;
 function kernelParams(ctx: TableContext<Params>) {
   const { mode, date, hour, trees } = ctx.params;
   return { mode, time: zonedTimeToUtc(date, mode === 'day' ? 12 : hour, ctx.site.timezone), trees };
+}
+
+/** The sun hours ramp, with areas under the layer's threshold flagged when one is set. */
+function hoursColormap(threshold: number, daylightHours: number | undefined) {
+  return threshold > 0 && daylightHours ? thresholdColormap(threshold / daylightHours) : sunHoursColormap;
 }
 
 /** Shadow edges are blurred by this many cells, a soft penumbra. */
@@ -49,6 +55,7 @@ export default defineLayer<Params>({
     const path = new SunPath(ctx.map.addElement(), ctx.site.extent.rotation_deg);
     let stream: FieldStream | null = null;
     let generation = 0;
+    let daylightHours: number | undefined;
     ctx.onCleanup(() => {
       generation++;
       stream?.close();
@@ -58,7 +65,7 @@ export default defineLayer<Params>({
     function dress() {
       const day = ctx.params.mode === 'day';
       const sun = sunNow();
-      overlay.setStyle({ colormap: day ? sunHoursColormap : skyColormap(sun.altitude), soften: day ? 1 : SOFTEN_CELLS });
+      overlay.setStyle({ colormap: day ? hoursColormap(ctx.params.threshold, daylightHours) : skyColormap(sun.altitude), soften: day ? 1 : SOFTEN_CELLS });
       treeOverlay.setStyle({ colormap: day ? treeHoursColormap : treeShadeColormap, soften: day ? 1 : SOFTEN_CELLS, opacity: treeOpacity() });
       path.setVisible(ctx.params.path);
       path.setSun(day ? { ...sun, altitude: -90 } : sun);
@@ -83,6 +90,10 @@ export default defineLayer<Params>({
       opened.on(field, (frame) => overlay.set(frame));
       opened.on(treeField, (frame) => treeOverlay.set(frame));
       opened.onStatus((status) => {
+        if (daylightHours !== status.info.daylight_hours) {
+          daylightHours = status.info.daylight_hours;
+          dress();
+        }
         ctx.publish({
           altitude: Math.round(status.info.sun.altitude_deg * 10) / 10,
           azimuth: Math.round(status.info.sun.azimuth_deg * 10) / 10,
@@ -214,9 +225,9 @@ export default defineLayer<Params>({
       key.style.display = ctx.params.trees && ctx.params.treeColor ? '' : 'none';
       key.querySelector('span')!.textContent = day ? 'sun lost to trees' : 'shade from trees';
       low!.textContent = day ? '0 h' : 'shade';
-      middle!.textContent = day && daylightHours ? `${Math.round(daylightHours / 2)} h` : '';
+      middle!.textContent = !day || !daylightHours ? '' : ctx.params.threshold > 0 ? `under ${ctx.params.threshold} h flagged` : `${Math.round(daylightHours / 2)} h`;
       high!.textContent = day ? `${daylightHours ?? ''} h` : 'sun';
-      ramp.style.background = cssGradient(day ? sunHoursColormap : skyColormap(now.altitude));
+      ramp.style.background = cssGradient(day ? hoursColormap(ctx.params.threshold, daylightHours) : skyColormap(now.altitude));
     }
     update();
     return { update };
