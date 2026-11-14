@@ -11,6 +11,7 @@ that caused them. Keep them, add yours, and empty the lists again after publishi
 ## Breaking changes
 
 - Site format 2: the base map is a layer. Older sites are upgraded when opened, and the original file is kept beside the new one as `site.format-1.json`.
+- Tables that hide some of a layer's controls (a new choice in the editor) do not open in an older version of the app. Update the app on every computer that opens them.
 
 ## New
 
