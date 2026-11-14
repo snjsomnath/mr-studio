@@ -57,7 +57,7 @@ Rules:
 ## Composing a scene
 
 A table scene is the ordered `layers` list and nothing else: the first entry is drawn at the bottom, the last on top.
-Everything a person sees on the table, from the dark base map to moving cars, building lights, public transport, trees and analysis layers such as sunlight or isocost, is a layer package added to that list with its params.
+Everything a person sees on the table, from the dark base map to moving cars, building lights, public transport, trees and analysis layers such as sunlight or isovist, is a layer package added to that list with its params.
 This is what the planned visual composer edits. It reads each layer's `layer.json` to offer it in a palette and to generate its settings form, and it writes `site.json`, so a scene made by drag and drop and one written by hand are the same file.
 
 What the composer needs, and where it stands:
