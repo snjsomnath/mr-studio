@@ -147,10 +147,9 @@ mod tests {
 
     #[test]
     fn the_real_steps_reach_the_current_format_without_gaps() {
-        for format in 1..FORMAT {
-            assert_eq!(STEPS.iter().filter(|s| s.from == format).count(), 1, "exactly one step from format {format}");
-        }
-        assert!(STEPS.iter().all(|s| s.from < FORMAT));
+        let from: Vec<u32> = STEPS.iter().map(|s| s.from).collect();
+        let expected: Vec<u32> = (1..).take_while(|format| *format < FORMAT).collect();
+        assert_eq!(from, expected, "exactly one step from each older format, in order");
     }
 
     #[test]
