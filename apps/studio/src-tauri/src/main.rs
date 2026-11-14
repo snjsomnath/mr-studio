@@ -288,7 +288,10 @@ fn open_surfaces(app: &AppHandle, port: u16, displays: &Displays) -> anyhow::Res
     let colours = ColourConfig::read(&shell.colour_path());
     for (n, spec) in displays.windows.iter().enumerate() {
         let target = spec.display.resolve(&connected).or_else(|| {
-            tracing::warn!("no display matches {:?} for the {} window; using the primary display", spec.display, spec.role);
+            // A window with no display named (the dev window) simply belongs on the primary one.
+            if spec.display != Default::default() {
+                tracing::warn!("no display matches {:?} for the {} window; using the primary display", spec.display, spec.role);
+            }
             connected.iter().find(|d| d.primary).or(connected.first())
         });
         let url = format!("http://127.0.0.1:{port}/{}", spec.role).parse().expect("valid surface url");
