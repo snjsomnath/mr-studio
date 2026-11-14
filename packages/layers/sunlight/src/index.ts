@@ -1,4 +1,4 @@
-import { colormaps, cssGradient, defineLayer, formatHour, zonedTimeToUtc } from '@mrstudio/sdk';
+import { colormaps, defineLayer, zonedTimeToUtc } from '@mrstudio/sdk';
 import type { FieldStream, LayerManifest, TableContext } from '@mrstudio/sdk';
 
 import manifest from '../layer.json';
@@ -52,11 +52,18 @@ export default defineLayer<Params>({
       overlay.setStyle({ colormap: day ? colormaps.sun : colormaps.daylight });
       opened.on(field, (frame) => overlay.set(frame));
       opened.onStatus((status) => {
+        // The TV panels in layer.json show these. Text is made here so the panels stay plain data.
+        const altitude = Math.round(status.info.sun.altitude_deg * 10) / 10;
+        const azimuth = Math.round(status.info.sun.azimuth_deg);
+        const daylightHours = Math.round(status.info.daylight_hours * 10) / 10;
+        const percent = Math.round(status.progress * 100);
         ctx.publish({
-          altitude: Math.round(status.info.sun.altitude_deg * 10) / 10,
-          azimuth: Math.round(status.info.sun.azimuth_deg * 10) / 10,
-          daylightHours: Math.round(status.info.daylight_hours * 100) / 100,
-          progress: Math.round(status.progress * 100) / 100,
+          altitude,
+          azimuth,
+          daylightHours,
+          sun: altitude > 0 ? `sun ${altitude}° up, bearing ${azimuth}°` : 'sun below the horizon',
+          dayStatus: !day ? '' : percent < 100 ? `adding up the day, ${percent}%` : 'whole day added up',
+          dayMax: `${daylightHours} h`,
         });
       });
     }
@@ -80,45 +87,5 @@ export default defineLayer<Params>({
         else if (changed.some((key) => key === 'date' || key === 'hour' || key === 'trees')) stream?.set(kernelParams(ctx));
       },
     };
-  },
-
-  panel(ctx, el) {
-    el.innerHTML = `
-      <style>
-        .sunlight-panel { display: grid; gap: 12px; }
-        .sunlight-readout { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; font-variant-numeric: tabular-nums; }
-        .sunlight-clock { font-size: 2rem; font-weight: 600; }
-        .sunlight-sun { opacity: 0.7; text-align: right; }
-        .sunlight-ramp { height: 10px; border-radius: 5px; }
-        .sunlight-ticks { display: flex; justify-content: space-between; font-size: 0.8rem; opacity: 0.7; margin-top: 4px; }
-      </style>
-      <div class="sunlight-panel">
-        <div class="sunlight-readout"><span class="sunlight-clock"></span><span class="sunlight-sun"></span></div>
-        <div><div class="sunlight-ramp"></div><div class="sunlight-ticks"><span></span><span></span></div></div>
-      </div>`;
-    const clock = el.querySelector<HTMLElement>('.sunlight-clock')!;
-    const sun = el.querySelector<HTMLElement>('.sunlight-sun')!;
-    const ramp = el.querySelector<HTMLElement>('.sunlight-ramp')!;
-    const [low, high] = el.querySelectorAll<HTMLElement>('.sunlight-ticks span');
-
-    function update() {
-      const day = ctx.params.mode === 'day';
-      const { altitude, azimuth, daylightHours, progress } = ctx.shared;
-      clock.textContent = day
-        ? new Date(`${ctx.params.date}T12:00:00Z`).toLocaleDateString(undefined, { day: 'numeric', month: 'long', timeZone: 'UTC' })
-        : formatHour(ctx.params.hour);
-      if (day) {
-        sun.textContent = progress === undefined || progress >= 1 ? `${daylightHours ?? 0} h of daylight` : `computing ${Math.round(progress * 100)}%`;
-      } else if (altitude === undefined) {
-        sun.textContent = '';
-      } else {
-        sun.textContent = altitude > 0 ? `sun ${altitude}° up, bearing ${azimuth}°` : 'sun below the horizon';
-      }
-      low!.textContent = day ? '0 h' : 'shade';
-      high!.textContent = day ? `${daylightHours ?? ''} h` : 'sun';
-      ramp.style.background = cssGradient(day ? colormaps.sun : colormaps.daylight);
-    }
-    update();
-    return { update };
   },
 });

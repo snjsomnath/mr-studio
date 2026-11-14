@@ -1,0 +1,471 @@
+/*
+ * The TV dashboard. Two kinds of custom property live on .mrs-dash:
+ *
+ *   rule tokens   the grid, spacing and type scale. Core. Not themeable.
+ *   style tokens  colours, typefaces, corners. Set from the site's theme (theme.ts).
+ *
+ * Every length is a multiple of one unit, 1% of the canvas height, so a panel takes the same
+ * part of the screen on any TV and the smallest text stays the same physical size
+ * relative to the screen. Nothing here is sized in px except hairlines.
+ */
+
+.mrs-dash {
+  /* Rule tokens. The unit is 1% of the canvas height, less on a canvas narrower than 4:3. */
+  --mrs-u: min(1cqh, 0.75cqw);
+  --mrs-margin: calc(3 * var(--mrs-u));
+  --mrs-gap: calc(1.5 * var(--mrs-u));
+  --mrs-pad: calc(1.8 * var(--mrs-u));
+  --mrs-type-label: calc(2.2 * var(--mrs-u)); /* the smallest text allowed: 24px on a 1080p screen */
+  --mrs-type-body: calc(2.8 * var(--mrs-u));
+  --mrs-type-number-s: calc(4.8 * var(--mrs-u));
+  --mrs-type-number: calc(7.4 * var(--mrs-u));
+  --mrs-mark: calc(1.2 * var(--mrs-u)); /* thickness of a bar or a track */
+  --mrs-stroke: max(2px, calc(0.28 * var(--mrs-u)));
+
+  container-type: size;
+  position: relative;
+  overflow: hidden;
+  background: var(--mrs-bg);
+  color: var(--mrs-text);
+  font-family: var(--mrs-font);
+  font-size: var(--mrs-type-body);
+  line-height: 1.25;
+}
+
+.mrs-dash [hidden] {
+  display: none !important;
+}
+
+.mrs-pages,
+.mrs-page {
+  position: absolute;
+  inset: 0;
+}
+
+/* The grid: 12 columns by 6 rows. Tracks never grow to fit content. */
+.mrs-page {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  grid-template-rows: repeat(6, minmax(0, 1fr));
+  gap: var(--mrs-gap);
+  padding: var(--mrs-margin);
+}
+
+/* ---- Panel ---- */
+
+.mrs-panel {
+  display: flex;
+  flex-direction: column;
+  gap: calc(0.8 * var(--mrs-u));
+  min-width: 0;
+  min-height: 0;
+  padding: var(--mrs-pad);
+  border-radius: var(--mrs-radius);
+  background: var(--mrs-panel);
+  /* What does not fit is cut off, never scrolled and never allowed to push a neighbour. */
+  overflow: hidden;
+  contain: layout paint;
+}
+
+.mrs-dash[data-panel-style='outlined'] .mrs-panel {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--mrs-line);
+}
+
+.mrs-dash[data-panel-style='plain'] .mrs-panel {
+  background: transparent;
+  border-radius: 0;
+  box-shadow: inset 0 1px 0 var(--mrs-line);
+}
+
+.mrs-panel-title {
+  flex: none;
+  margin: 0;
+  color: var(--mrs-muted);
+  font-size: var(--mrs-type-label);
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mrs-panel-body {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+
+/* A band is one row high, so its title sits beside its content. */
+.mrs-size-band {
+  flex-direction: row;
+  align-items: center;
+  gap: calc(2.4 * var(--mrs-u));
+}
+
+.mrs-size-band .mrs-panel-title {
+  max-width: calc(24 * var(--mrs-u));
+}
+
+.mrs-size-band .mrs-panel-body {
+  justify-content: center;
+}
+
+/* ---- Stat ---- */
+
+.mrs-stat-row {
+  display: flex;
+  align-items: baseline;
+  gap: calc(0.9 * var(--mrs-u));
+  white-space: nowrap;
+}
+
+.mrs-number {
+  font-family: var(--mrs-font-number);
+  font-size: var(--mrs-type-number);
+  font-weight: 650;
+  line-height: 1;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+}
+
+.mrs-size-chip .mrs-number {
+  font-size: var(--mrs-type-number-s);
+}
+
+.mrs-unit {
+  color: var(--mrs-muted);
+  font-size: var(--mrs-type-body);
+}
+
+.mrs-size-chip .mrs-unit {
+  font-size: var(--mrs-type-label);
+}
+
+.mrs-delta {
+  margin-left: auto;
+  font-size: var(--mrs-type-body);
+  font-variant-numeric: tabular-nums;
+  color: var(--mrs-muted);
+}
+
+.mrs-caption {
+  /* Keeps its line even when empty, so numbers in a row of tiles share a baseline. */
+  min-height: 1.3em;
+  margin-top: calc(0.8 * var(--mrs-u));
+  line-height: 1.3;
+  color: var(--mrs-muted);
+  font-size: var(--mrs-type-label);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mrs-size-chip .mrs-caption {
+  display: none;
+}
+
+/* ---- Bars ---- */
+
+.mrs-bars {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  align-content: space-evenly;
+  gap: calc(1 * var(--mrs-u));
+  line-height: 1.1;
+  overflow: hidden;
+}
+
+.mrs-bar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: calc(1.6 * var(--mrs-u));
+  row-gap: calc(0.6 * var(--mrs-u));
+  align-items: baseline;
+}
+
+.mrs-bar-label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mrs-bar-value {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.mrs-bar-track {
+  grid-column: 1 / -1;
+  height: var(--mrs-mark);
+  border-radius: 0 4px 4px 0;
+  background: color-mix(in srgb, var(--mrs-line) 55%, transparent);
+}
+
+.mrs-bar-fill {
+  height: 100%;
+  min-width: 2px;
+  border-radius: 0 4px 4px 0;
+  transition: width 0.4s ease;
+}
+
+/* ---- Trend ---- */
+
+.mrs-series {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: calc(1 * var(--mrs-u));
+}
+
+.mrs-legend {
+  display: flex;
+  gap: calc(3 * var(--mrs-u));
+  font-size: var(--mrs-type-label);
+  white-space: nowrap;
+}
+
+.mrs-legend-entry {
+  display: flex;
+  align-items: center;
+  gap: calc(0.9 * var(--mrs-u));
+}
+
+.mrs-swatch {
+  width: calc(2.4 * var(--mrs-u));
+  height: calc(0.5 * var(--mrs-u));
+  border-radius: calc(0.25 * var(--mrs-u));
+  flex: none;
+}
+
+.mrs-plot {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  margin-left: calc(11 * var(--mrs-u));
+  border-block: 1px solid var(--mrs-line);
+}
+
+.mrs-plot svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.mrs-plot polyline {
+  fill: none;
+  stroke-width: var(--mrs-stroke);
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.mrs-plot-max,
+.mrs-plot-min {
+  position: absolute;
+  right: 100%;
+  margin-right: calc(1 * var(--mrs-u));
+  color: var(--mrs-muted);
+  font-size: var(--mrs-type-label);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.mrs-plot-max {
+  top: calc(-0.2 * var(--mrs-u));
+}
+
+.mrs-plot-min {
+  bottom: calc(-0.2 * var(--mrs-u));
+}
+
+.mrs-plot-now {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: var(--mrs-stroke);
+  margin-left: calc(var(--mrs-stroke) / -2);
+  background: var(--mrs-accent);
+}
+
+.mrs-plot-axis {
+  display: flex;
+  justify-content: space-between;
+  margin-left: calc(11 * var(--mrs-u));
+  color: var(--mrs-muted);
+  font-size: var(--mrs-type-label);
+  line-height: 1;
+}
+
+/* ---- Colour key ---- */
+
+.mrs-ramp {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: calc(1 * var(--mrs-u));
+  font-size: var(--mrs-type-label);
+}
+
+.mrs-ramp-bar {
+  grid-column: 1 / -1;
+  grid-row: 1;
+  height: calc(2.4 * var(--mrs-u));
+  border-radius: calc(0.6 * var(--mrs-u));
+}
+
+.mrs-ramp-end:last-child {
+  text-align: right;
+}
+
+.mrs-size-band .mrs-ramp {
+  display: flex;
+  align-items: center;
+  gap: calc(1.6 * var(--mrs-u));
+}
+
+.mrs-size-band .mrs-ramp-bar {
+  flex: 1;
+}
+
+/* ---- Timeline ---- */
+
+.mrs-timeline {
+  display: flex;
+  align-items: center;
+  gap: calc(2.4 * var(--mrs-u));
+}
+
+.mrs-timeline-now {
+  flex: none;
+  min-width: calc(14 * var(--mrs-u));
+  font-family: var(--mrs-font-number);
+  font-size: var(--mrs-type-number-s);
+  font-weight: 650;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.mrs-timeline-track {
+  flex: 1;
+  position: relative;
+  height: calc(6.6 * var(--mrs-u));
+  margin-inline: calc(3.6 * var(--mrs-u));
+}
+
+.mrs-timeline-track::before,
+.mrs-timeline-day,
+.mrs-timeline-played {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: calc(1.1 * var(--mrs-u));
+  height: var(--mrs-mark);
+  border-radius: calc(var(--mrs-mark) / 2);
+}
+
+.mrs-timeline-track::before {
+  right: 0;
+  background: color-mix(in srgb, var(--mrs-line) 70%, transparent);
+}
+
+.mrs-timeline-day {
+  background: color-mix(in srgb, var(--mrs-accent) 30%, transparent);
+}
+
+.mrs-timeline-played {
+  background: color-mix(in srgb, var(--mrs-text) 22%, transparent);
+}
+
+.mrs-timeline-head {
+  position: absolute;
+  top: 0;
+  width: calc(0.5 * var(--mrs-u));
+  height: calc(3.4 * var(--mrs-u));
+  margin-left: calc(-0.25 * var(--mrs-u));
+  border-radius: calc(0.25 * var(--mrs-u));
+  background: var(--mrs-accent);
+  transition: left 0.25s linear;
+}
+
+.mrs-timeline-tick {
+  position: absolute;
+  top: calc(3.9 * var(--mrs-u));
+  transform: translateX(-50%);
+  color: var(--mrs-muted);
+  font-size: var(--mrs-type-label);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+/* ---- Note ---- */
+
+.mrs-note {
+  margin: 0;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+  overflow: hidden;
+}
+
+.mrs-size-tile .mrs-note {
+  -webkit-line-clamp: 5;
+}
+
+/* ---- Pages, empty state, dev ---- */
+
+.mrs-pager {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(1 * var(--mrs-u));
+  display: flex;
+  justify-content: center;
+  gap: calc(1 * var(--mrs-u));
+}
+
+.mrs-pager i {
+  width: calc(0.9 * var(--mrs-u));
+  height: calc(0.9 * var(--mrs-u));
+  border-radius: 50%;
+  background: var(--mrs-line);
+}
+
+.mrs-pager i.is-current {
+  background: var(--mrs-accent);
+}
+
+.mrs-empty {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  display: grid;
+  place-items: center;
+  color: var(--mrs-muted);
+}
+
+.mrs-issues {
+  position: absolute;
+  left: var(--mrs-margin);
+  bottom: var(--mrs-margin);
+  max-width: 70%;
+  margin: 0;
+  padding: 10px 14px 10px 30px;
+  border-radius: 8px;
+  background: #5a2a2a;
+  color: #fff;
+  font: 13px/1.4 ui-monospace, monospace;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mrs-bar-fill,
+  .mrs-timeline-head {
+    transition: none;
+  }
+}
