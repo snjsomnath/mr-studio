@@ -10,7 +10,8 @@
     "test": "cargo test && pnpm -r typecheck && pnpm -r test",
     "test:e2e": "pnpm build && cargo build -p mrs-cli && node scripts/e2e.cjs",
     "app": "pnpm build && cargo run -p mr-studio-app",
-    "app:build": "pnpm build && pnpm --filter @mrstudio/studio exec tauri build"
+    "app:build": "pnpm build && pnpm --filter @mrstudio/studio exec tauri build",
+    "mcp": "pnpm --filter @mrstudio/mcp build"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

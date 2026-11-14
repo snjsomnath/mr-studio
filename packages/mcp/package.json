@@ -1,0 +1,25 @@
+{
+  "name": "@mrstudio/mcp",
+  "version": "0.1.0",
+  "private": true,
+  "description": "MCP server that lets an LLM assemble MR Studio sites from core layers and draft requests for new modules",
+  "type": "module",
+  "bin": {
+    "mrstudio-mcp": "dist/mrstudio-mcp.mjs"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "start": "node dist/mrstudio-mcp.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "node scripts/build.mjs && node --test --experimental-strip-types test/*.test.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "esbuild": "^0.28.2",
+    "typescript": "^5.9.0"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "zod": "^4.6.7"
+  }
+}
