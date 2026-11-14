@@ -1,0 +1,198 @@
+// Finds the MR Studio core the server describes: its layers, kernels, building blocks and docs.
+//
+// Order: an explicit core folder (--core or MRSTUDIO_CORE), a core checkout above the working
+// folder or above this script, and finally the snapshot embedded in the built server. The
+// snapshot is taken from the same commit the server is built from, so an installed server
+// always describes the core it shipped with.
+
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+import { BLOCKS, type BlockDef } from './blocks.ts';
+
+export interface LayerEntry {
+  id: string;
+  /** "core" for a layer shipped in the app, "site" for a site-only package. */
+  origin: 'core' | 'site';
+  /** For site layers: the value to put in site.json `use`, e.g. "./layers/artwork". */
+  use: string;
+  manifest: Record<string, any>;
+}
+
+export interface RoadmapRow {
+  section: string;
+  layer: string;
+  kernel: string;
+  blocks: string;
+  built: boolean;
+}
+
+export interface Block extends BlockDef {
+  status: 'built' | 'planned';
+}
+
+export interface Catalog {
+  version: string;
+  source: 'live' | 'snapshot';
+  root: string | null;
+  layers: LayerEntry[];
+  kernels: string[];
+  plannedKernels: string[];
+  blocks: Block[];
+  roadmap: RoadmapRow[];
+  docs: Record<string, string>;
+}
+
+declare const __MRSTUDIO_CATALOG__: string | undefined;
+
+export function isCoreRoot(dir: string): boolean {
+  return existsSync(join(dir, 'packages', 'layers')) && existsSync(join(dir, 'docs', 'contracts'));
+}
+
+function findUp(start: string): string | null {
+  let dir = resolve(start);
+  for (;;) {
+    if (isCoreRoot(dir)) return dir;
+    const parent = dirname(dir);
+    if (parent === dir) return null;
+    dir = parent;
+  }
+}
+
+function readJson(path: string): any {
+  return JSON.parse(readFileSync(path, 'utf8'));
+}
+
+function subdirs(dir: string): string[] {
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir).filter((name) => statSync(join(dir, name)).isDirectory()).sort();
+}
+
+function walkFiles(dir: string, ext: RegExp, out: string[] = []): string[] {
+  if (!existsSync(dir)) return out;
+  for (const name of readdirSync(dir)) {
+    if (name === 'node_modules' || name === 'dist') continue;
+    const path = join(dir, name);
+    if (statSync(path).isDirectory()) walkFiles(path, ext, out);
+    else if (ext.test(name)) out.push(path);
+  }
+  return out;
+}
+
+/** Reads the layer packages in a folder (core packages/layers or a site's layers/). */
+export function readLayerDir(dir: string, origin: 'core' | 'site'): LayerEntry[] {
+  const out: LayerEntry[] = [];
+  for (const name of subdirs(dir)) {
+    const path = join(dir, name, 'layer.json');
+    if (!existsSync(path)) continue;
+    try {
+      const manifest = readJson(path);
+      out.push({ id: String(manifest.id ?? name), origin, use: origin === 'core' ? String(manifest.id ?? name) : `./layers/${name}`, manifest });
+    } catch {
+      // A broken manifest is reported by validate_site, not here.
+    }
+  }
+  return out;
+}
+
+/** Splits the markdown tables in ROADMAP.md into rows. */
+export function parseRoadmap(text: string): RoadmapRow[] {
+  const rows: RoadmapRow[] = [];
+  let section = '';
+  let header: string[] | null = null;
+  for (const line of text.split(/\r?\n/)) {
+    const heading = /^##\s+(.*)$/.exec(line);
+    if (heading) {
+      section = heading[1]!.trim();
+      header = null;
+      continue;
+    }
+    if (!line.startsWith('|')) {
+      header = null;
+      continue;
+    }
+    const cells = line.split('|').slice(1, -1).map((c) => c.trim());
+    if (cells.every((c) => /^-+$/.test(c))) continue;
+    if (!header) {
+      header = cells.map((c) => c.toLowerCase());
+      continue;
+    }
+    if (header[0] !== 'layer') continue;
+    const kernel = cells[1] ?? '';
+    rows.push({ section, layer: cells[0] ?? '', kernel, blocks: cells[2] ?? '', built: /\(built\)/.test(kernel) });
+  }
+  return rows;
+}
+
+function plannedKernelsFrom(roadmap: RoadmapRow[], built: string[]): string[] {
+  const names = new Set<string>();
+  for (const row of roadmap) for (const m of row.kernel.matchAll(/`([a-z0-9_-]+)`/g)) names.add(m[1]!);
+  return [...names].filter((k) => !built.includes(k)).sort();
+}
+
+/** Builds the catalog from a core checkout. */
+export function loadLive(root: string): Catalog {
+  const pkg = existsSync(join(root, 'package.json')) ? readJson(join(root, 'package.json')) : {};
+  const layers = readLayerDir(join(root, 'packages', 'layers'), 'core');
+
+  const docs: Record<string, string> = {};
+  for (const path of walkFiles(join(root, 'docs'), /\.md$/)) {
+    const key = path.slice(join(root, 'docs').length + 1).replace(/\\/g, '/').replace(/\.md$/, '').toLowerCase();
+    docs[key] = readFileSync(path, 'utf8');
+  }
+
+  const kernels = subdirs(join(root, 'crates', 'mrs-engine', 'src', 'kernels'));
+
+  const sources = ['sdk', 'runtime', 'dashboard']
+    .flatMap((p) => walkFiles(join(root, 'packages', p, 'src'), /\.ts$/))
+    .map((p) => readFileSync(p, 'utf8'))
+    .join('\n');
+  const blocks: Block[] = BLOCKS.map((b) => ({ ...b, status: new RegExp(b.detect).test(sources) ? 'built' : 'planned' }));
+
+  const roadmap = parseRoadmap(docs['roadmap'] ?? '');
+  const layerNames = new Set(layers.map((l) => String(l.manifest.name ?? '').toLowerCase()));
+  for (const row of roadmap) if (layerNames.has(row.layer.toLowerCase())) row.built = true;
+
+  return {
+    version: String(pkg.version ?? '0.0.0'),
+    source: 'live',
+    root,
+    layers,
+    kernels,
+    plannedKernels: plannedKernelsFrom(roadmap, kernels),
+    blocks,
+    roadmap,
+    docs,
+  };
+}
+
+export interface CoreOptions {
+  core?: string;
+  /** Folders to search upwards from, first match wins. */
+  searchFrom?: string[];
+}
+
+export function loadCatalog(options: CoreOptions = {}): Catalog {
+  const explicit = options.core ?? process.env.MRSTUDIO_CORE;
+  if (explicit) {
+    const root = resolve(explicit);
+    if (!isCoreRoot(root)) throw new Error(`${root} is not an MR Studio core folder (no packages/layers and docs/contracts)`);
+    return loadLive(root);
+  }
+  const here = (() => {
+    try {
+      return dirname(fileURLToPath(import.meta.url));
+    } catch {
+      return null;
+    }
+  })();
+  for (const start of [...(options.searchFrom ?? []), process.cwd(), ...(here ? [here] : [])]) {
+    const root = findUp(start);
+    if (root) return loadLive(root);
+  }
+  if (typeof __MRSTUDIO_CATALOG__ === 'string') {
+    return { ...(JSON.parse(__MRSTUDIO_CATALOG__) as Catalog), source: 'snapshot', root: null };
+  }
+  throw new Error('No MR Studio core found. Pass --core <path to an mr-studio checkout> or set MRSTUDIO_CORE.');
+}

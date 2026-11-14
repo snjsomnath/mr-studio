@@ -34,6 +34,7 @@ apps/studio          desktop shell (Tauri): one window per display
 packages/sdk         @mrstudio/sdk: layer API, connection, engine client
 packages/runtime     the surfaces: table, tv, phone, dev
 packages/layers      core layers; sunlight is the reference
+packages/mcp         MCP server: build a site by talking to an LLM
 sites/sample         a small synthetic site for tests and dev mode
 ```
 
@@ -42,6 +43,7 @@ sites/sample         a small synthetic site for tests and dev mode
 - **A layer**: copy `packages/layers/sunlight`. A layer is `layer.json` (id, controls, tools) plus `src/index.ts`. The TV and phone controls are generated from the manifest. List the layer in a site's `site.json`. See [docs/contracts/layer.md](docs/contracts/layer.md).
 - **A kernel**: add `crates/mrs-engine/src/kernels/<id>/` with `kernel.wgsl`, `cpu.rs` and `mod.rs`, register it in `kernels/mod.rs`, and add `tests/<id>.rs` with physics tests on the CPU reference and a GPU/CPU parity test. See [docs/contracts/engine.md](docs/contracts/engine.md).
 - **A site**: `mrstudio new-site`, add data, `mrstudio validate`. See [docs/contracts/site.md](docs/contracts/site.md).
+- **A site, with an LLM**: connect the MCP server and use its `new_project` prompt. Ideas the core cannot serve become module requests to this repository. See [docs/MCP.md](docs/MCP.md).
 
 ## Tests
 
@@ -66,3 +68,4 @@ The GPU tests need a Vulkan, Metal or DirectX 12 adapter. Without one they are s
 | Calibration, basemap tiles, QR join, phone tools | Not started |
 | Chalmers, Lindholmen and Universeum site packages | Not started |
 | Python services gateway (ECOM, CoolPaths, site prep) | Not started |
+| MCP server for building sites with an LLM | Working, first version; CI runs it on Linux, Windows and macOS |

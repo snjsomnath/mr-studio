@@ -56,3 +56,21 @@ jobs:
       - run: pnpm build
       - run: cargo build -p mrs-cli
       - run: cargo check -p mr-studio-app
+
+  mcp:
+    name: MCP server (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @mrstudio/mcp typecheck
+      - run: pnpm --filter @mrstudio/mcp test

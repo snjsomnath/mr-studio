@@ -7,8 +7,9 @@
     "dev": "node scripts/dev.mjs",
     "build": "pnpm --filter @mrstudio/runtime build",
     "typecheck": "pnpm -r typecheck",
-    "test": "cargo test && pnpm -r typecheck && pnpm --filter @mrstudio/sdk test",
-    "test:e2e": "pnpm build && cargo build -p mrs-cli && node scripts/e2e.cjs"
+    "test": "cargo test && pnpm -r typecheck && pnpm --filter @mrstudio/sdk test && pnpm --filter @mrstudio/mcp test",
+    "test:e2e": "pnpm build && cargo build -p mrs-cli && node scripts/e2e.cjs",
+    "mcp": "pnpm --filter @mrstudio/mcp build"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
