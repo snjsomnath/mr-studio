@@ -1,4 +1,5 @@
-// The launcher: pick a site, say which display shows which surface, start.
+// The launcher: pick or make a site, open it in the editor, say which display shows
+// which surface, present.
 // It talks to the shell through the commands in src-tauri/src/main.rs.
 const { invoke } = window.__TAURI__.core;
 const $ = (id) => document.getElementById(id);
@@ -18,6 +19,7 @@ const ROLES = [
 let state;
 let site; // path of the chosen site
 let roles = []; // role per display index, '' when unused
+let busy = false; // a start or an open is under way
 
 function showError(message) {
   $('error').textContent = message ?? '';
@@ -35,8 +37,8 @@ async function load() {
   $('lan').checked = state.lan;
   $('running').hidden = !state.running;
   if (state.running) {
-    $('running').textContent = `Running ${state.running.name} · port ${state.running.port} · code ${state.running.code}`;
-    $('start').textContent = 'Restart';
+    const what = state.presenting ? 'Presenting' : 'Open';
+    $('running').textContent = `${what}: ${state.running.name} · port ${state.running.port} · code ${state.running.code}`;
   }
   $('sites-hint').textContent = state.sites_folder ? `Sites in ${state.sites_folder} appear here by themselves.` : '';
   showError(state.error);
@@ -125,6 +127,7 @@ function renderMap() {
 
 function update() {
   $('start').disabled = !site;
+  $('edit').disabled = !site;
 }
 
 $('add-site').addEventListener('click', async () => {
@@ -153,6 +156,7 @@ $('start').addEventListener('click', async () => {
   const fullscreen = $('fullscreen').checked;
   const windows = roles.flatMap((role, display) => (role ? [{ display, role, fullscreen }] : []));
   const label = $('start').textContent;
+  busy = true;
   $('start').disabled = true;
   $('start').textContent = 'Starting…';
   showError();
@@ -164,11 +168,51 @@ $('start').addEventListener('click', async () => {
     $('start').textContent = label;
     $('start').disabled = false;
   }
+  busy = false;
+});
+
+// Opens `path` in the editor. On success the shell closes this window.
+async function openInEditor(path) {
+  busy = true;
+  $('edit').disabled = true;
+  showError();
+  try {
+    await invoke('open_site', { path });
+  } catch (e) {
+    showError(String(e));
+  }
+  busy = false;
+  update();
+}
+
+$('edit').addEventListener('click', () => openInEditor(site));
+
+$('new-site').addEventListener('click', () => {
+  $('new-error').hidden = true;
+  $('new-site-dialog').showModal();
+});
+$('new-cancel').addEventListener('click', () => $('new-site-dialog').close());
+$('new-site-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const number = (id) => Number($(id).value);
+  $('new-create').disabled = true;
+  try {
+    const path = await invoke('create_site', {
+      site: { name: $('new-name').value, lat: number('new-lat'), lon: number('new-lon'), width_m: number('new-width'), height_m: number('new-height') },
+    });
+    $('new-site-dialog').close();
+    await openInEditor(path);
+    await load();
+  } catch (e) {
+    $('new-error').textContent = String(e);
+    $('new-error').hidden = false;
+  }
+  $('new-create').disabled = false;
 });
 
 $('quit').addEventListener('click', () => invoke('quit'));
 window.addEventListener('resize', () => state && renderMap());
 // Plugging in a projector while the launcher is open should not need a restart.
-window.addEventListener('focus', () => state && !$('start').textContent.startsWith('Starting') && load());
+window.addEventListener('focus', () => state && !busy && !$('new-site-dialog').open && load());
 
 load().catch((e) => showError(String(e)));

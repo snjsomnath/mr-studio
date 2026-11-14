@@ -167,26 +167,8 @@ fn prepare(dir: &Path) -> anyhow::Result<()> {
 }
 
 fn new_site(dir: &Path, name: Option<String>, lon: f64, lat: f64, width_m: f64, height_m: f64, rotation_deg: f64) -> anyhow::Result<()> {
-    if dir.exists() {
-        bail!("{} already exists", dir.display());
-    }
-    let id = dir.file_name().and_then(|n| n.to_str()).context("the folder needs a name")?.to_lowercase().replace([' ', '_'], "-");
-    std::fs::create_dir_all(dir.join("data"))?;
-    let manifest = json!({
-        "format": mrs_site::FORMAT,
-        "id": id,
-        "name": name.unwrap_or_else(|| id.clone()),
-        "origin": { "lon": lon, "lat": lat },
-        "extent": { "width_m": width_m, "height_m": height_m, "rotation_deg": rotation_deg },
-        "timezone": "Europe/Stockholm",
-        "table": { "width_cm": 100, "height_cm": (100.0 * height_m / width_m * 100.0).round() / 100.0 },
-        "scene": { "cell_m": 1 },
-        "basemap": { "background": "#0b0e14", "style": null },
-        "layers": [{ "use": "basemap", "active": true }, { "use": "sunlight", "active": true }],
-        "branding": { "title": "MR Studio" }
-    });
-    std::fs::write(dir.join("site.json"), serde_json::to_string_pretty(&manifest)? + "\n")?;
-    Site::load(dir)?;
+    let fallback = dir.file_name().and_then(|n| n.to_str()).context("the folder needs a name")?.to_string();
+    mrs_site::create::create(dir, &name.unwrap_or(fallback), lon, lat, width_m, height_m, rotation_deg)?;
     println!("Created {}.", dir.display());
     println!("Next: put building footprints (GeoJSON, WGS84, with a height property) in {}/data/", dir.display());
     println!("and add \"buildings\": {{ \"path\": \"data/buildings.geojson\" }} under \"scene\" in site.json.");

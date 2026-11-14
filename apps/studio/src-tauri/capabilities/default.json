@@ -1,11 +1,37 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Only the launcher talks to the shell. Surfaces are plain web pages served by the embedded host and get no native access.",
+  "description": "The launcher is the shell's own page and may call every command.",
   "windows": [
     "launcher"
   ],
   "permissions": [
-    "core:event:default"
+    "core:event:default",
+    "allow-launcher-state",
+    "allow-add-site",
+    "allow-remove-site",
+    "allow-identify",
+    "allow-start",
+    "allow-open-site",
+    "allow-create-site",
+    "allow-present",
+    "allow-stop-presenting",
+    "allow-presenting-state",
+    "allow-open-home",
+    "allow-quit",
+    "allow-colour-state",
+    "allow-set-colour",
+    "allow-save-preset",
+    "allow-delete-preset",
+    "allow-test-card",
+    "allow-set-layer-intensity",
+    "allow-calibration-state",
+    "allow-calibration-mode",
+    "allow-calibration-clear",
+    "allow-update-state",
+    "allow-check-updates",
+    "allow-set-update-check",
+    "allow-install-update",
+    "allow-open-link"
   ]
 }

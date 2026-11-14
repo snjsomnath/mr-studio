@@ -16,7 +16,37 @@ fn main() {
     }
     // The updater's public key is compiled in; see src/updates.rs.
     println!("cargo:rerun-if-env-changed=MRS_UPDATER_PUBKEY");
-    tauri_build::build()
+    // Naming the commands makes each one a permission, so a window can only call the ones
+    // its capability file lists (`capabilities/`). The editor window gets a short list.
+    let commands = tauri_build::AppManifest::new().commands(&[
+        "launcher_state",
+        "add_site",
+        "remove_site",
+        "identify",
+        "start",
+        "open_site",
+        "create_site",
+        "present",
+        "stop_presenting",
+        "presenting_state",
+        "open_home",
+        "quit",
+        "colour_state",
+        "set_colour",
+        "save_preset",
+        "delete_preset",
+        "test_card",
+        "set_layer_intensity",
+        "calibration_state",
+        "calibration_mode",
+        "calibration_clear",
+        "update_state",
+        "check_updates",
+        "set_update_check",
+        "install_update",
+        "open_link",
+    ]);
+    tauri_build::try_build(tauri_build::Attributes::new().app_manifest(commands)).expect("the Tauri build step");
 }
 
 fn stage(root: &Path, staged: &Path) -> io::Result<()> {
