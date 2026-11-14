@@ -228,7 +228,9 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
     },
   );
 
-  const editable = ['name', 'origin', 'extent', 'timezone', 'table', 'scene', 'basemap', 'branding', 'tv'] as const;
+  const editable = (catalog.siteSchema?.['']?.fields ?? ['name', 'origin', 'extent', 'timezone', 'table', 'scene', 'basemap', 'branding', 'tv']).filter(
+    (k) => !['format', 'id', 'layers'].includes(k),
+  );
 
   server.registerTool(
     'update_site',
@@ -253,7 +255,7 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
       for (const [key, value] of Object.entries(set)) {
         if (key === 'layers') return fail('Use add_layer, set_layer, move_layer and remove_layer to change the scene.');
         if (key === 'format' || key === 'id') return fail(`'${key}' cannot be changed here.`);
-        if (!(editable as readonly string[]).includes(key)) {
+        if (!editable.includes(key)) {
           return fail(`'${key}' is not a site.json setting in format ${SITE_FORMAT}. Settable: ${editable.join(', ')}. If the site needs it, draft a module request (kind "contract").`);
         }
         if (value === null) delete next[key];

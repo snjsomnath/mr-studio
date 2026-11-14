@@ -10,7 +10,7 @@ import { dirname, join, resolve } from 'node:path';
 import { after, before, describe, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-import { parseRoadmap } from '../src/core.ts';
+import { parseRoadmap, parseSiteSchema } from '../src/core.ts';
 import { checkControlValue } from '../src/site.ts';
 
 const pkg = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -51,6 +51,38 @@ describe('unit', () => {
     assert.equal(checkControlValue({ type: 'select', options: [{ value: 'a' }] }, 'b').ok, false);
     assert.equal(checkControlValue({ type: 'date' }, '2026-13-01').ok, false);
     assert.equal(checkControlValue({ type: 'color' }, '#00ff00').ok, true);
+  });
+
+  test('site keys come from the core manifest structs', () => {
+    const schema = parseSiteSchema(`
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Mesh {
+    pub path: String,
+    #[serde(default)]
+    pub unit_m: f64,
+}
+pub struct SceneSpec {
+    pub cell_m: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mesh: Option<Mesh>,
+}
+pub struct LayerRef {
+    pub r#use: String,
+}
+pub struct SiteManifest {
+    pub id: String,
+    pub scene: SceneSpec,
+    #[serde(default)]
+    pub layers: Vec<LayerRef>,
+}
+impl Mesh {
+    pub fn area(&self) -> f64 { 0.0 }
+}
+`)!;
+    assert.deepEqual(schema[''], { fields: ['id', 'scene', 'layers'], required: ['id', 'scene'] });
+    assert.deepEqual(schema['scene.mesh'], { fields: ['path', 'unit_m'], required: ['path'] });
+    assert.deepEqual(schema['layers[]'], { fields: ['use'], required: ['use'] });
   });
 
   test('roadmap tables become rows', () => {

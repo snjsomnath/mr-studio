@@ -7,7 +7,7 @@ import { execFile } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { delimiter, isAbsolute, join, relative, resolve } from 'node:path';
 
-import { readLayerDir, type Catalog, type LayerEntry } from './core.ts';
+import { readLayerDir, type Catalog, type LayerEntry, type SiteSchema } from './core.ts';
 
 export const SITE_FORMAT = 1;
 
@@ -19,20 +19,21 @@ export interface Issue {
 
 export type SiteManifest = Record<string, any>;
 
-// The keys mrs-site accepts in format 1. Unknown keys are an error there.
-const KNOWN_KEYS: Record<string, string[]> = {
-  '': ['format', 'id', 'name', 'origin', 'extent', 'timezone', 'table', 'scene', 'basemap', 'layers', 'tv', 'branding'],
-  origin: ['lon', 'lat'],
-  extent: ['width_m', 'height_m', 'rotation_deg'],
-  table: ['width_cm', 'height_cm', 'tile_cm'],
-  scene: ['cell_m', 'buildings', 'terrain', 'trees'],
-  'scene.buildings': ['path', 'height_property', 'default_height_m'],
-  'scene.terrain': ['path', 'width', 'height'],
-  'scene.trees': ['path', 'height_property', 'default_height_m', 'crown_radius_m'],
-  basemap: ['background', 'style'],
-  branding: ['title', 'logo'],
+// The keys mrs-site accepts. Unknown keys are an error there. The catalog normally carries the
+// schema read from the core's own manifest.rs; this copy of format 1 is the fallback.
+const FALLBACK_SCHEMA: SiteSchema = {
+  '': { fields: ['format', 'id', 'name', 'origin', 'extent', 'timezone', 'table', 'scene', 'basemap', 'layers', 'tv', 'branding'], required: ['format', 'id', 'name', 'origin', 'extent', 'scene'] },
+  origin: { fields: ['lon', 'lat'], required: ['lon', 'lat'] },
+  extent: { fields: ['width_m', 'height_m', 'rotation_deg'], required: ['width_m', 'height_m'] },
+  table: { fields: ['width_cm', 'height_cm', 'tile_cm'], required: ['width_cm', 'height_cm'] },
+  scene: { fields: ['cell_m', 'buildings', 'terrain', 'trees'], required: ['cell_m'] },
+  'scene.buildings': { fields: ['path', 'height_property', 'default_height_m'], required: ['path'] },
+  'scene.terrain': { fields: ['path', 'width', 'height'], required: ['path', 'width', 'height'] },
+  'scene.trees': { fields: ['path', 'height_property', 'default_height_m', 'crown_radius_m'], required: ['path'] },
+  basemap: { fields: ['background', 'style'], required: [] },
+  branding: { fields: ['title', 'logo'], required: [] },
+  'layers[]': { fields: ['use', 'params', 'active'], required: ['use'] },
 };
-const LAYER_REF_KEYS = ['use', 'params', 'active'];
 
 export function sitePath(dir: string): string {
   return join(dir, 'site.json');
@@ -148,19 +149,26 @@ export function checkParams(layer: LayerEntry, params: Record<string, unknown>, 
 
 // ---- Whole-site validation ----
 
-function unknownKeys(obj: unknown, at: string, issues: Issue[]): void {
-  if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return;
-  const known = KNOWN_KEYS[at];
-  if (!known) return;
+/** Unknown and missing keys at every level the schema knows, as mrs-site would refuse them. */
+function checkKeys(obj: unknown, at: string, shown: string, schema: SiteSchema, issues: Issue[]): void {
+  if (Array.isArray(obj) && schema[`${at}[]`]) {
+    obj.forEach((item, i) => checkKeys(item, `${at}[]`, `${shown}[${i}]`, schema, issues));
+    return;
+  }
+  const level = schema[at];
+  if (!level || !obj || typeof obj !== 'object' || Array.isArray(obj)) return;
+  for (const key of level.required) {
+    if (!(key in obj)) issues.push({ level: 'error', path: shown ? `${shown}.${key}` : key, message: `'${key}' is required` });
+  }
   for (const key of Object.keys(obj)) {
-    const path = at ? `${at}.${key}` : key;
-    if (!known.includes(key)) {
+    const path = shown ? `${shown}.${key}` : key;
+    if (!level.fields.includes(key)) {
       issues.push({
         level: 'error',
         path,
-        message: `'${key}' is not a site.json key in format ${SITE_FORMAT} (allowed: ${known.join(', ')}). If the site needs it, it is a core change: draft a module request.`,
+        message: `'${key}' is not allowed here in site format ${SITE_FORMAT} (allowed: ${level.fields.join(', ')}). If the site needs it, it is a core change: draft a module request.`,
       });
-    } else unknownKeys((obj as any)[key], path, issues);
+    } else checkKeys((obj as any)[key], at ? `${at}.${key}` : key, path, schema, issues);
   }
 }
 
@@ -176,7 +184,7 @@ export function validateManifest(manifest: SiteManifest, dir: string | null, cat
     err('', 'site.json must be an object');
     return issues;
   }
-  unknownKeys(manifest, '', issues);
+  checkKeys(manifest, '', '', catalog.siteSchema ?? FALLBACK_SCHEMA, issues);
 
   if (manifest.format !== SITE_FORMAT) err('format', `must be ${SITE_FORMAT}; this core reads site format ${SITE_FORMAT}`);
   if (typeof manifest.id !== 'string' || !/^[a-z0-9][a-z0-9-]*$/.test(manifest.id)) err('id', 'must be lower-case letters, digits and dashes');
@@ -226,7 +234,6 @@ export function validateManifest(manifest: SiteManifest, dir: string | null, cat
         if (!inside(dir, src.path)) err(`scene.${key}.path`, 'must stay inside the site folder');
         else if (!existsSync(join(dir, src.path))) err(`scene.${key}.path`, `${src.path} does not exist yet`);
       }
-      if (key === 'terrain' && (!isNum(src.width) || !isNum(src.height))) err('scene.terrain', 'needs width and height of the raw f32 raster');
     }
     if (!s.buildings) note('scene.buildings', 'no buildings yet: kernels such as sunlight and wind will see a flat, empty site. Add GeoJSON footprints with a height property.');
   }
@@ -247,7 +254,6 @@ export function validateManifest(manifest: SiteManifest, dir: string | null, cat
   (Array.isArray(layers) ? layers : []).forEach((ref: any, i: number) => {
     const at = `layers[${i}]`;
     if (!ref || typeof ref.use !== 'string') return err(at, "needs 'use': a core layer id or ./layers/<name>");
-    for (const key of Object.keys(ref)) if (!LAYER_REF_KEYS.includes(key)) err(`${at}.${key}`, `is not allowed in a layer entry (allowed: ${LAYER_REF_KEYS.join(', ')})`);
     if (seen.has(ref.use)) warn(at, `uses '${ref.use}' again (also layers[${seen.get(ref.use)}]); layer state is keyed by id, so both entries share one state until per-entry ids land in the core`);
     seen.set(ref.use, i);
     const layer = findLayer(catalog, dir, ref.use);

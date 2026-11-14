@@ -108,5 +108,5 @@ pnpm --filter @mrstudio/mcp typecheck
 pnpm --filter @mrstudio/mcp test       # builds, then drives the bundle over stdio in a scratch folder
 ```
 
-The site checks in `src/site.ts` mirror `mrs-site` (known keys of format 1) and the host's control validation (`crates/mrs-host/src/layers.rs`). When either changes, change the server in the same pull request; `mrstudio validate` stays the authority and runs whenever it is found.
+The allowed `site.json` keys are read from the serde structs in `crates/mrs-site/src/manifest.rs`, so a new site setting reaches the server without a change here. Param checks mirror the host's control validation (`crates/mrs-host/src/layers.rs`); when that changes, change `src/site.ts` in the same pull request. `mrstudio validate` stays the authority and runs whenever it is found.
 The block list is `src/blocks.ts`: add a block there when it is planned, with the pattern that will prove it exists.
