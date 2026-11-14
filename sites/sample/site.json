@@ -14,7 +14,8 @@
   },
   "basemap": { "background": "#0b0e14", "style": null },
   "layers": [
-    { "use": "sunlight", "active": true, "params": { "date": "2026-06-21", "hour": 15 } }
+    { "use": "sunlight", "active": true, "params": { "date": "2026-06-21", "hour": 15 } },
+    { "use": "sketch", "active": true }
   ],
   "branding": { "title": "MR Studio" }
 }

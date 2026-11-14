@@ -2,6 +2,7 @@ import { isVisible } from '@mrstudio/sdk';
 import type { Connection, Control, LayerManifest, LayerState, Role } from '@mrstudio/sdk';
 
 import { paramSender } from './layer-manager.ts';
+import { PHONE_SEND_INTERVAL, toolSection } from './phone-tools.ts';
 import type { Store } from './store.ts';
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, className?: string, text?: string): HTMLElementTagNameMap[K] {
@@ -145,7 +146,7 @@ export class Controller {
     card.append(header);
 
     const body = el('div', 'layer-body');
-    const send = paramSender(connection, manifest.id);
+    const send = paramSender(connection, manifest.id, phone ? PHONE_SEND_INTERVAL : 0);
     const widgets = (manifest.controls ?? [])
       .filter((control) => !phone || control.phone)
       .map((control) =>
@@ -158,8 +159,13 @@ export class Controller {
     const controls = el('div', 'controls');
     controls.append(...widgets.map((w) => w.row));
 
-    body.append(controls);
+    // On a phone, the layer's tools: a small map of the table to tap and draw on.
+    const tools = phone && manifest.tools?.length ? toolSection(manifest, store, connection) : null;
+    if (tools) body.append(tools.element);
+    if (widgets.length > 0) body.append(controls);
     card.append(body);
+    // A layer with nothing a phone can use is left off the phone.
+    if (phone && !tools && widgets.length === 0) card.hidden = true;
 
     this.cards.set(manifest.id, {
       sync: (state) => {
@@ -170,6 +176,7 @@ export class Controller {
           w.row.hidden = !isVisible(w.control, state.params);
           w.sync(state.params[w.control.id]);
         }
+        tools?.sync(state.active);
       },
     });
     return card;

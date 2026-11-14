@@ -148,25 +148,41 @@ export interface LayerState {
 }
 
 export interface Participant {
+  /** The surface in the slot. It changes when the phone reconnects; the slot does not. */
   surface: number;
   slot: number;
   colour: string;
+  /** False while the slot is held for a phone that dropped. */
+  connected: boolean;
 }
 
 export interface SessionState {
   protocol: number;
-  session: { id: string; code: string; port: number };
+  /** `join_url` is what the TV's QR code points at; null when phones cannot reach the host. */
+  session: { id: string; code: string; port: number; join_url: string | null };
   site: SiteInfo;
   layers: Record<string, LayerState>;
   participants: Participant[];
 }
 
+/** A `[lon, lat]` position in WGS84. */
+export type Position = [number, number];
+
+/** The GeoJSON geometry a tool produces: `Point` for point, `LineString` for line, `Polygon` for polygon. */
+export type ToolGeometry =
+  | { type: 'Point'; coordinates: Position }
+  | { type: 'LineString'; coordinates: Position[] }
+  | { type: 'Polygon'; coordinates: Position[][] };
+
 export interface ToolInput {
   layer: string;
   tool: string;
-  /** GeoJSON geometry in WGS84. */
-  geometry: unknown;
+  /** Checked by the host: the tool's kind, in WGS84, polygon rings closed. */
+  geometry: ToolGeometry;
+  /** The surface that sent it. */
   from: number;
+  /** Present when it came from a phone. */
+  participant?: { slot: number; colour: string };
 }
 
 // ---- Engine ---------------------------------------------------------------
