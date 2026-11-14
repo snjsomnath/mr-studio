@@ -160,6 +160,8 @@ export class Editor {
     preview.addEventListener('click', () => window.open('/table', 'mrstudio-preview'));
     const present = button('ed-button is-primary', 'Present', 'tv');
     present.title = 'Show the map on the projector and the controller on its screen';
+    // Tells the desktop shell that this page has its own Present control.
+    present.dataset.shellPresent = '';
     present.addEventListener('click', () => void this.present());
     actions.append(preview, present);
     bar.append(brand, name, actions);
