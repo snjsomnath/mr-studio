@@ -83,3 +83,28 @@ export function sunDay(site: SiteInfo, date: string): SunDay {
   }
   return { samples, sunrise, sunset, peak };
 }
+
+/**
+ * Shade cast by trees, in a colour of its own so it reads apart from building shadow.
+ * Clear where trees take no light, so it is drawn over the light and shade.
+ */
+export const treeShadeColormap: Colormap = {
+  stops: [
+    [0, 52, 211, 153, 0],
+    [0.5, 45, 205, 140, 190],
+    [1, 12, 148, 104, 240],
+  ],
+};
+
+/** Hours of sun lost to trees. A few hours is already a lot, so the colour comes in early. */
+export const treeHoursColormap: Colormap = {
+  stops: [
+    [0, 52, 211, 153, 0],
+    [0.06, 52, 211, 153, 120],
+    [0.3, 30, 180, 124, 215],
+    [1, 8, 120, 86, 240],
+  ],
+};
+
+/** The tree shade colour as CSS, for legends. */
+export const TREE_SHADE_CSS = 'rgb(45 205 140)';
