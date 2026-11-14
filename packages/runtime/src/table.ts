@@ -1,9 +1,10 @@
-import type { CanvasOverlay, Colormap, FieldOverlay, FieldOverlayStyle, MapHandle, Shape, ShapeOverlay, SiteInfo, TablePointer } from '@mrstudio/sdk';
+import type { CanvasOverlay, Colormap, FieldOverlay, FieldOverlayStyle, MapHandle, ModelHandle, Shape, ShapeOverlay, SiteInfo, TablePointer } from '@mrstudio/sdk';
 import maplibregl from 'maplibre-gl';
 import type { StyleSpecification } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 
 import { MapFieldOverlay } from './field-overlay.ts';
+import { ModelView } from './model/view.ts';
 import { tablePointer } from './table-pointer.ts';
 
 const EARTH_CIRCUMFERENCE_M = 40_075_016.686;
@@ -19,9 +20,11 @@ const slot = (instance: string) => `slot:${instance}`;
  */
 export class TableView {
   readonly ready: Promise<void>;
+  /** The model surface, once `attachModel` has loaded the twin. Null on a host or a device without one. */
+  model: ModelView | null = null;
   private map: maplibregl.Map;
-  private site: SiteInfo;
-  private container: HTMLElement;
+  readonly site: SiteInfo;
+  readonly container: HTMLElement;
   /** Map layer ids each scene layer has added, in the order it added them. */
   private owned = new Map<string, string[]>();
   /** What each layer has drawn, so its intensity can be applied to all of it. */
@@ -33,8 +36,10 @@ export class TableView {
     const blank: StyleSpecification = {
       version: 8,
       sources: {},
-      layers: [{ id: 'background', type: 'background', paint: { 'background-color': site.basemap.background } }],
+      layers: [],
     };
+    // The background is the surface's own, so the map stays clear where it draws nothing and the twin can show through.
+    container.style.backgroundColor = site.basemap.background;
     this.map = new maplibregl.Map({
       container,
       style: site.basemap.style ?? blank,
@@ -214,6 +219,7 @@ export class TableView {
     for (const overlay of drawn.overlays) overlay.setGain(intensity);
     for (const element of drawn.elements) styleElement(element, intensity);
     for (const [id, opacity] of drawn.canvases) this.map.setPaintProperty(id, 'raster-opacity', canvasOpacity(opacity, intensity));
+    this.model?.setIntensity(instance, intensity);
   }
 
   private drawnBy(instance: string) {
@@ -242,6 +248,31 @@ export class TableView {
     if (this.owned.has(instance)) return;
     this.owned.set(instance, []);
     this.map.addLayer({ id: slot(instance), type: 'background', layout: { visibility: 'none' } });
+  }
+
+  /** Loads the site's twin and lays the model surface over the map. Resolves to null when that is not possible. */
+  async attachModel(): Promise<ModelView | null> {
+    try {
+      this.model = await ModelView.create(this.container, this.site, this.map);
+      for (const [layer, drawn] of this.drawn) this.model.setIntensity(layer, drawn.intensity);
+    } catch (error) {
+      console.warn('model surface is off; the table stays flat:', (error as Error).message);
+    }
+    return this.model;
+  }
+
+  /** A layer's `ctx.model`. Without a twin, fields go to the flat map and the rest does nothing. */
+  modelHandle(layer: string, track: (cleanup: () => void) => void): ModelHandle {
+    if (this.model) return this.model.handle(layer, track);
+    const map = this.handle(layer, track);
+    return {
+      calibrated: false,
+      addField: (id, style) => map.addField(`model:${id}`, style),
+      addLight: () => ({ set: () => {}, remove: () => {} }),
+      setMaterial: () => {},
+      focus: () => {},
+      pick: () => null,
+    };
   }
 
   /** The zoom at which the extent exactly fits the container. */

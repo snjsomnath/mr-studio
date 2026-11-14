@@ -4,6 +4,7 @@
 mod bake;
 mod manifest;
 mod projection;
+mod twin;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Component, Path, PathBuf};

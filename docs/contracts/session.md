@@ -24,8 +24,56 @@ Display assignment is per machine, not per site, and lives in the app's config f
 }
 ```
 
-A display is matched by name first, then by index. If no file exists, the shell opens one `dev` window on the primary display and a display picker.
+A display is matched by name first (exactly, then as part of the name), then by index. `index` is the position in the order the system lists displays.
+`role` is `table`, `tv` or `dev`. A window whose display is not connected opens on the primary display.
 The shell never uses browser popups, so there are no permission prompts.
+
+The launcher is the shell's own window with the site picker and the display picker. It writes `displays.json`, and keeps its other choices in `studio.json` beside it:
+
+```jsonc
+// studio.json
+{
+  "sites": ["D:/sites/chalmers"],   // site folders added by hand
+  "site": "D:/sites/chalmers",      // the site that ran last
+  "lan": false,                     // listen on the local network so phones can join
+  "autostart": true                 // start `site` on the saved displays without showing the launcher
+}
+```
+
+What the shell does when it starts:
+
+| Start | Result |
+| --- | --- |
+| `displays.json` exists, `autostart` is on and `site` is set | Runs the site on the saved displays. If that fails, the launcher opens and says why |
+| Anything else, or `mr-studio --setup` | The launcher opens. With no `displays.json` it suggests the table on the second display and the TV on the primary one, or one `dev` window if there is a single display |
+| `mr-studio <site folder>` or `MRS_SITE` | Runs that site on the saved displays, or in one windowed `dev` window if there are none |
+
+The site picker lists site folders added by hand, the packages in `Documents/MR Studio/sites`, and the sample site shipped inside the app.
+With `lan` off the host listens on this computer only (127.0.0.1), so Windows shows no firewall prompt. The host uses port 4170, or a free port if that one is taken.
+
+In a running session, Ctrl+Shift+S (Cmd on macOS) in any window opens the launcher and Ctrl+Shift+Q quits. A surface asks for these by navigating to `/__shell/setup` or `/__shell/quit`, which the shell intercepts; surfaces have no other access to the shell.
+Starting the app a second time brings up the launcher of the one already running.
+
+### Colour per display
+
+The shell applies a final colour pass to every window on a display, because a projector on a physical model usually needs more saturation and contrast than a monitor.
+The launcher's Colour tab edits it live, with a test card, and saves it in `colour.json` beside `displays.json`:
+
+```jsonc
+// colour.json
+{
+  "displays": {                      // by display name, or "#<index>" for a display without one
+    "EPSON PJ": { "saturation": 1.35, "brightness": 1, "contrast": 1.12, "gamma": 1.1, "temperature": 0, "tint": 0 }
+  },
+  "presets": { "Evening demo": { "saturation": 1.6, "contrast": 1.2 } },  // saved on this machine, besides the built-in ones
+  "layers": { "chalmers": { "sunlight": 1.4 } }                            // layer intensity by site id and layer id
+}
+```
+
+Ranges: `saturation` 0 to 2.5, `brightness` 0.5 to 1.5, `contrast` 0.5 to 2, `gamma` 0.5 to 2.5 (above 1 lifts midtones), `temperature` and `tint` -1 to 1 (white balance, applied as channel gains that never exceed 1). Missing values are neutral.
+The pass is one CSS filter on the page's root element, injected by the shell, in the order saturation, white balance, gamma, contrast, brightness. Surfaces and layers do not know about it and must not set a filter on the root element themselves. It is per display, not per layer.
+
+The same tab has a slider per layer of the running session for `LayerState.intensity`. The shell sends `layer.intensity` to the host with the TV's rights, saves values other than 1 under `layers`, and sends them again when that site next starts.
 
 Surface URLs served by the host:
 
@@ -37,6 +85,7 @@ Surface URLs served by the host:
 | `/dev` | Table view with controls side by side, for layer development |
 | `/compose` | Scene composer: layer palette, table view and the scene's stack. Joins with the `dev` role |
 | `/site/*` | Files from the active site package (read only) |
+| `/api/model` | The site's digital twin mesh (see model.md) |
 | `/ws` | WebSocket endpoint |
 
 ## State
@@ -96,6 +145,9 @@ Requests:
 | `layer.publish` | `{ layer, values }` | table, dev | Merges into `shared`, broadcasts |
 | `tool.input` | `{ layer, tool, geometry }` | all | Checked, then forwarded to the table |
 | `engine.*` | see engine.md | table, tv, dev | Kernel streams |
+| `calibration.get` | none | table, tv, dev | Returns `{ projector }`, the saved projector calibration or null (see model.md) |
+| `calibration.set` | `{ projector }` | table, tv, dev | Saves it to the site's `calibration.json` (null clears it) and broadcasts `calibration` |
+| `calibration.mode` | `{ active }` | table, tv, dev | Asks the table to open or close its calibration tool |
 | `scene.add` | `{ use, id?, index?, active?, params? }` | tv, dev | Adds a layer from the catalogue at `index` (default: on top, active). Returns `{ id }`; without `id` the first copy is named after the layer and later ones `<layer>-2`, `-3`, ... |
 | `scene.remove` | `{ layer }` | tv, dev | Takes a layer out of the scene |
 | `scene.move` | `{ layer, index }` | tv, dev | Moves a layer to `index` in the draw order (0 is the bottom) |
@@ -114,6 +166,8 @@ Events:
 | `state.participants` | `{ participants }` |
 | `layer.action` | `{ layer, action, from }` |
 | `tool.input` | `{ layer, tool, geometry, from, participant? }` |
+| `calibration` | `{ projector }` after a calibration was saved or cleared |
+| `calibration.mode` | `{ active }` |
 
 Rules:
 

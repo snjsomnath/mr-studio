@@ -54,7 +54,8 @@
       "active": false,
       "params": {
         "date": "2026-06-21",
-        "hour": 15
+        "hour": 15,
+        "relight": true
       }
     },
     {

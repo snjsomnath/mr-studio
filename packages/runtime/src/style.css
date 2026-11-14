@@ -775,3 +775,164 @@ button.action:disabled {
   pointer-events: none;
   overflow: hidden;
 }
+
+/* ---- Model surface ---- */
+
+/* The twin, drawn over the flat map through the projector's camera. */
+.table-model {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 1;
+  pointer-events: none;
+}
+
+/* ---- Projector calibration ---- */
+
+.calibration {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  cursor: crosshair;
+  touch-action: none;
+  user-select: none;
+  color: #e8ecf4;
+  font-size: 14px;
+}
+
+/* Until the camera is solved the surface is dark, so only the marker's light falls on the model. */
+.calibration:not(.shows-model) {
+  background: #000;
+}
+
+.calibration-marker,
+.calibration-dot {
+  position: absolute;
+  left: 0;
+  top: 0;
+  pointer-events: none;
+}
+
+.calibration-marker i {
+  position: absolute;
+  background: #fff;
+}
+
+.calibration-marker i:nth-child(1) {
+  left: -22px;
+  top: -0.5px;
+  width: 44px;
+  height: 1px;
+}
+
+.calibration-marker i:nth-child(2) {
+  left: -0.5px;
+  top: -22px;
+  width: 1px;
+  height: 44px;
+}
+
+.calibration-marker b {
+  position: absolute;
+  left: -9px;
+  top: -9px;
+  width: 18px;
+  height: 18px;
+  border: 1px solid #ffd24a;
+  border-radius: 50%;
+}
+
+.calibration-marker:not(.is-placed) {
+  opacity: 0.6;
+}
+
+.calibration-dot {
+  margin: -9px 0 0 -9px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1px solid #4ade80;
+  color: #4ade80;
+  font-size: 10px;
+  line-height: 16px;
+  text-align: center;
+}
+
+.calibration-panel {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  width: 292px;
+  padding: 16px;
+  display: grid;
+  gap: 10px;
+  cursor: default;
+  background: rgb(14 18 26 / 0.94);
+  border: 1px solid rgb(255 255 255 / 0.14);
+  border-radius: 10px;
+}
+
+.calibration-panel h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.calibration-panel p {
+  margin: 0;
+  line-height: 1.4;
+}
+
+.calibration-plan {
+  display: block;
+  border-radius: 6px;
+}
+
+.calibration-status {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.85;
+}
+
+.calibration-status.is-problem {
+  color: #ffb4a8;
+  opacity: 1;
+}
+
+.calibration-help {
+  font-size: 12px;
+  opacity: 0.6;
+}
+
+.calibration-row {
+  display: flex;
+  gap: 8px;
+}
+
+.calibration-row button {
+  flex: 1;
+  padding: 7px 8px;
+  font: inherit;
+  color: inherit;
+  background: rgb(255 255 255 / 0.08);
+  border: 1px solid rgb(255 255 255 / 0.16);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.calibration-row button.is-primary {
+  background: #ffd24a;
+  border-color: #ffd24a;
+  color: #14171d;
+  font-weight: 600;
+}
+
+.calibration-row button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* Layers' own decorations would only distract from the markers. */
+.is-calibrating .table-decoration {
+  visibility: hidden;
+}
