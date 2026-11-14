@@ -11,12 +11,16 @@
     <header>
       <h1>MR Studio</h1>
       <span id="version"></span>
+      <nav role="tablist">
+        <button type="button" role="tab" data-tab="setup" aria-selected="true">Setup</button>
+        <button type="button" role="tab" data-tab="colour" aria-selected="false">Colour</button>
+      </nav>
       <span id="running" hidden></span>
     </header>
 
     <p id="error" role="alert" hidden></p>
 
-    <main>
+    <main id="tab-setup">
       <section aria-labelledby="sites-title">
         <div class="section-head">
           <h2 id="sites-title">Site</h2>
@@ -37,6 +41,30 @@
       </section>
     </main>
 
+    <main id="tab-colour" hidden>
+      <section aria-labelledby="colour-displays-title">
+        <div class="section-head"><h2 id="colour-displays-title">Display</h2></div>
+        <ul id="colour-displays" class="sites"></ul>
+        <p class="hint">Each display keeps its own colour. Changes show at once on a running session and are saved as you make them.</p>
+        <label class="check"><input id="test-card" type="checkbox" /> Show the test card on this display</label>
+      </section>
+
+      <section aria-labelledby="colour-title">
+        <div class="section-head">
+          <h2 id="colour-title">Colour</h2>
+          <button id="colour-reset" type="button" class="quiet">Reset</button>
+        </div>
+        <div class="presets">
+          <select id="preset" aria-label="Preset"></select>
+          <button id="preset-delete" type="button" class="quiet">Delete</button>
+          <input id="preset-name" type="text" placeholder="Name for a new preset" maxlength="40" />
+          <button id="preset-save" type="button" class="quiet">Save as preset</button>
+        </div>
+        <div id="sliders" class="sliders"></div>
+        <p class="hint">Double-click a slider to put it back. Saturation and contrast are what usually help on a projector.</p>
+      </section>
+    </main>
+
     <footer>
       <div class="options">
         <label class="check"><input id="autostart" type="checkbox" /> Start like this every time the app opens</label>
@@ -50,5 +78,6 @@
     </footer>
 
     <script src="launcher.js"></script>
+    <script src="colour.js"></script>
   </body>
 </html>

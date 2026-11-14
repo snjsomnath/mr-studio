@@ -54,6 +54,24 @@ With `lan` off the host listens on this computer only (127.0.0.1), so Windows sh
 In a running session, Ctrl+Shift+S (Cmd on macOS) in any window opens the launcher and Ctrl+Shift+Q quits. A surface asks for these by navigating to `/__shell/setup` or `/__shell/quit`, which the shell intercepts; surfaces have no other access to the shell.
 Starting the app a second time brings up the launcher of the one already running.
 
+### Colour per display
+
+The shell applies a final colour pass to every window on a display, because a projector on a physical model usually needs more saturation and contrast than a monitor.
+The launcher's Colour tab edits it live, with a test card, and saves it in `colour.json` beside `displays.json`:
+
+```jsonc
+// colour.json
+{
+  "displays": {                      // by display name, or "#<index>" for a display without one
+    "EPSON PJ": { "saturation": 1.35, "brightness": 1, "contrast": 1.12, "gamma": 1.1, "temperature": 0, "tint": 0 }
+  },
+  "presets": { "Evening demo": { "saturation": 1.6, "contrast": 1.2 } }   // saved on this machine, besides the built-in ones
+}
+```
+
+Ranges: `saturation` 0 to 2.5, `brightness` 0.5 to 1.5, `contrast` 0.5 to 2, `gamma` 0.5 to 2.5 (above 1 lifts midtones), `temperature` and `tint` -1 to 1 (white balance, applied as channel gains that never exceed 1). Missing values are neutral.
+The pass is one CSS filter on the page's root element, injected by the shell, in the order saturation, white balance, gamma, contrast, brightness. Surfaces and layers do not know about it and must not set a filter on the root element themselves. It is per display, not per layer; a layer's own strength stays a layer control.
+
 Surface URLs served by the host:
 
 | URL | Surface |

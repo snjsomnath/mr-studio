@@ -7,6 +7,7 @@
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod colour;
 mod config;
 mod sites;
 
@@ -17,6 +18,7 @@ use std::sync::Mutex;
 use std::time::Duration;
 
 use anyhow::Context;
+use colour::{Colour, ColourConfig};
 use config::{Display, Displays, Settings, WindowSpec, WINDOW_ROLES};
 use mrs_engine::Backend;
 use mrs_host::{HostConfig, RunningHost};
@@ -52,6 +54,8 @@ struct Shell {
     error: Mutex<Option<String>>,
     /// Makes window labels unique across restarts of the session.
     generation: AtomicU32,
+    /// The open surface windows and the display each one is on: (window label, display index).
+    surfaces: Mutex<Vec<(String, usize)>>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -72,6 +76,10 @@ impl Shell {
         self.config_dir.join("studio.json")
     }
 
+    fn colour_path(&self) -> PathBuf {
+        self.config_dir.join("colour.json")
+    }
+
     fn settings(&self) -> Settings {
         Settings::read(&self.settings_path())
     }
@@ -85,7 +93,19 @@ fn main() -> anyhow::Result<()> {
             tauri::async_runtime::spawn(async move { report(open_launcher(&app)) });
         }))
         .plugin(tauri_plugin_dialog::init())
-        .invoke_handler(tauri::generate_handler![launcher_state, add_site, remove_site, identify, start, quit])
+        .invoke_handler(tauri::generate_handler![
+            launcher_state,
+            add_site,
+            remove_site,
+            identify,
+            start,
+            quit,
+            colour_state,
+            set_colour,
+            save_preset,
+            delete_preset,
+            test_card
+        ])
         .setup(|app| {
             let paths = app.path();
             let config_dir = paths.app_config_dir()?;
@@ -108,6 +128,7 @@ fn main() -> anyhow::Result<()> {
                 running: Mutex::new(None),
                 error: Mutex::new(None),
                 generation: AtomicU32::new(0),
+                surfaces: Mutex::new(Vec::new()),
             });
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move { startup(handle).await });
@@ -217,6 +238,7 @@ async fn launch(app: &AppHandle, site: PathBuf, displays: Displays, lan: bool) -
             window.destroy()?;
         }
     }
+    shell.surfaces.lock().unwrap().clear();
     *shell.running.lock().unwrap() = None;
     if let Some(old) = host.take() {
         old.stop(Duration::from_secs(2)).await;
@@ -249,7 +271,9 @@ async fn launch(app: &AppHandle, site: PathBuf, displays: Displays, lan: bool) -
 
 fn open_surfaces(app: &AppHandle, port: u16, displays: &Displays) -> anyhow::Result<()> {
     let connected = list_displays(app)?;
-    let generation = app.state::<Shell>().generation.fetch_add(1, Ordering::Relaxed);
+    let shell = app.state::<Shell>();
+    let generation = shell.generation.fetch_add(1, Ordering::Relaxed);
+    let colours = ColourConfig::read(&shell.colour_path());
     for (n, spec) in displays.windows.iter().enumerate() {
         let target = spec.display.resolve(&connected).or_else(|| {
             tracing::warn!("no display matches {:?} for the {} window; using the primary display", spec.display, spec.role);
@@ -257,11 +281,14 @@ fn open_surfaces(app: &AppHandle, port: u16, displays: &Displays) -> anyhow::Res
         });
         let url = format!("http://127.0.0.1:{port}/{}", spec.role).parse().expect("valid surface url");
         let handle = app.clone();
-        let window = WebviewWindowBuilder::new(app, format!("surface-{generation}-{n}-{}", spec.role), WebviewUrl::External(url))
+        let label = format!("surface-{generation}-{n}-{}", spec.role);
+        // The colour pass for this display is in place before the page draws anything.
+        let colour = target.map(|d| colours.for_display(d)).unwrap_or_default();
+        let window = WebviewWindowBuilder::new(app, &label, WebviewUrl::External(url))
             .title(format!("MR Studio · {}", spec.role))
             .inner_size(1400.0, 840.0)
             .visible(false)
-            .initialization_script(SHORTCUTS)
+            .initialization_script(format!("{SHORTCUTS}\n{}\n{}", colour::SCRIPT, colour.script()))
             .on_navigation(move |url| match url.path().strip_prefix("/__shell/") {
                 Some(action) => {
                     shell_action(&handle, action);
@@ -271,6 +298,9 @@ fn open_surfaces(app: &AppHandle, port: u16, displays: &Displays) -> anyhow::Res
             })
             .build()?;
         place(&window, target, spec)?;
+        if let Some(d) = target {
+            shell.surfaces.lock().unwrap().push((label, d.index));
+        }
         tracing::info!("{} window on display {:?}", spec.role, target.map(|d| (d.index, d.name.as_deref().unwrap_or(""))));
     }
     Ok(())
@@ -491,4 +521,98 @@ async fn start(app: AppHandle, shell: State<'_, Shell>, request: StartRequest) -
 #[tauri::command]
 fn quit(app: AppHandle) {
     app.exit(0);
+}
+
+// Colour: the final pass per display. See colour.rs.
+
+#[derive(Serialize)]
+struct ColourState {
+    displays: Vec<DisplayColour>,
+    presets: Vec<Preset>,
+}
+
+#[derive(Serialize)]
+struct DisplayColour {
+    display: usize,
+    name: String,
+    /// What is showing on it now, if a session is running: table, tv or dev.
+    role: Option<String>,
+    colour: Colour,
+}
+
+#[derive(Serialize)]
+struct Preset {
+    name: String,
+    built_in: bool,
+    colour: Colour,
+}
+
+#[tauri::command]
+fn colour_state(app: AppHandle, shell: State<'_, Shell>) -> Result<ColourState, String> {
+    let config = ColourConfig::read(&shell.colour_path());
+    let surfaces = shell.surfaces.lock().unwrap().clone();
+    let connected = list_displays(&app).map_err(text)?;
+    let displays = connected.iter().map(|d| DisplayColour {
+        display: d.index,
+        name: d.name.clone().filter(|n| !n.is_empty()).unwrap_or_else(|| format!("Display {}", d.index + 1)),
+        role: surfaces.iter().find(|(_, index)| *index == d.index).and_then(|(label, _)| label.rsplit('-').next().map(str::to_string)),
+        colour: config.for_display(d),
+    });
+    let built_in = colour::built_in_presets().into_iter().map(|(name, colour)| Preset { name: name.into(), built_in: true, colour });
+    let saved = config.presets.iter().map(|(name, colour)| Preset { name: name.clone(), built_in: false, colour: colour.clamped() });
+    Ok(ColourState { displays: displays.collect(), presets: built_in.chain(saved).collect() })
+}
+
+/// Runs a script in every surface window on a display.
+fn on_display(app: &AppHandle, display: usize, script: &str) {
+    let surfaces = app.state::<Shell>().surfaces.lock().unwrap().clone();
+    for (label, _) in surfaces.iter().filter(|(_, index)| *index == display) {
+        if let Some(window) = app.get_webview_window(label) {
+            report(window.eval(script).map_err(Into::into));
+        }
+    }
+}
+
+/// Saves a display's settings and applies them to what is showing on it.
+#[tauri::command]
+fn set_colour(app: AppHandle, shell: State<'_, Shell>, display: usize, colour: Colour) -> Result<(), String> {
+    let colour = colour.clamped();
+    let displays = list_displays(&app).map_err(text)?;
+    let target = displays.iter().find(|d| d.index == display).ok_or("that display is no longer connected")?;
+    let mut config = ColourConfig::read(&shell.colour_path());
+    if colour == Colour::default() {
+        config.displays.remove(&colour::key(target));
+    } else {
+        config.displays.insert(colour::key(target), colour);
+    }
+    config.write(&shell.colour_path()).map_err(text)?;
+    on_display(&app, display, &colour.script());
+    Ok(())
+}
+
+#[tauri::command]
+fn save_preset(shell: State<'_, Shell>, name: String, colour: Colour) -> Result<(), String> {
+    let name = name.trim().to_string();
+    if name.is_empty() {
+        return Err("Give the preset a name.".into());
+    }
+    if colour::built_in_presets().iter().any(|(built_in, _)| built_in.eq_ignore_ascii_case(&name)) {
+        return Err(format!("'{name}' is a built-in preset. Choose another name."));
+    }
+    let mut config = ColourConfig::read(&shell.colour_path());
+    config.presets.insert(name, colour.clamped());
+    config.write(&shell.colour_path()).map_err(text)
+}
+
+#[tauri::command]
+fn delete_preset(shell: State<'_, Shell>, name: String) -> Result<(), String> {
+    let mut config = ColourConfig::read(&shell.colour_path());
+    config.presets.remove(&name);
+    config.write(&shell.colour_path()).map_err(text)
+}
+
+/// Shows or hides the colour test card on a display's surface.
+#[tauri::command]
+fn test_card(app: AppHandle, display: usize, on: bool) {
+    on_display(&app, display, &format!("window.__mrsTestCard && window.__mrsTestCard({on});"));
 }

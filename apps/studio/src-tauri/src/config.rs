@@ -150,7 +150,7 @@ impl Settings {
     }
 }
 
-fn write_json(path: &Path, value: &impl Serialize) -> anyhow::Result<()> {
+pub fn write_json(path: &Path, value: &impl Serialize) -> anyhow::Result<()> {
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)?;
     }

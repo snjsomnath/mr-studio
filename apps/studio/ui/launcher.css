@@ -81,3 +81,16 @@ kbd { padding: 0 4px; border: 1px solid var(--line); border-radius: 4px; font: i
 
 body.identify { display: grid; place-content: center; background: #ffb454; color: #1a1203; }
 body.identify #number { font-size: 150px; font-weight: 700; line-height: 1; }
+
+nav { display: flex; gap: 2px; margin-left: 18px; padding: 2px; border: 1px solid var(--line); border-radius: 9px; }
+nav button { padding: 3px 14px; border: 0; background: none; color: var(--muted); }
+nav button[aria-selected='true'] { background: #1d2430; color: var(--text); }
+[hidden] { display: none !important; }
+
+.sites .role { color: var(--muted); font-size: 12px; }
+.presets { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.presets select { min-width: 170px; }
+input[type='text'] { flex: 1; min-width: 150px; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--line); background: #0f131a; color: inherit; font: inherit; }
+.sliders { display: grid; grid-template-columns: auto 1fr 52px; align-items: center; gap: 12px 14px; padding: 6px 2px; }
+.sliders output { text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); }
+.sliders input[type='range'] { width: 100%; accent-color: var(--accent); }
