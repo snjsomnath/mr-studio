@@ -2,7 +2,7 @@ import { defineLayer, formatHour, zonedTimeToUtc } from '@mrstudio/sdk';
 import type { FieldStream, LayerManifest, TableContext } from '@mrstudio/sdk';
 
 import manifest from '../layer.json';
-import { skyColormap, sunAt, sunDay, sunHoursColormap, treeHoursColormap, treeShadeColormap } from './look.ts';
+import { skyColormap, sunAt, sunDay, sunHoursColormap, thresholdColormap, treeHoursColormap, treeShadeColormap } from './look.ts';
 import { SunPath } from './sun-path.ts';
 
 interface Params {
@@ -12,6 +12,7 @@ interface Params {
   play: boolean;
   trees: boolean;
   treeColor: boolean;
+  threshold: number;
   path: boolean;
   opacity: number;
 }
@@ -25,6 +26,11 @@ const HOUR_STEP = 0.05;
 function kernelParams(ctx: TableContext<Params>) {
   const { mode, date, hour, trees } = ctx.params;
   return { mode, time: zonedTimeToUtc(date, mode === 'day' ? 12 : hour, ctx.site.timezone), trees };
+}
+
+/** The sun hours ramp, with areas under the layer's threshold flagged when one is set. */
+function hoursColormap(threshold: number, daylightHours: number | undefined) {
+  return threshold > 0 && daylightHours ? thresholdColormap(threshold / daylightHours) : sunHoursColormap;
 }
 
 /** Shadow edges are blurred by this many cells, a soft penumbra. */
@@ -49,6 +55,14 @@ export default defineLayer<Params>({
     const path = new SunPath(ctx.map.addElement(), ctx.site.extent.rotation_deg);
     let stream: FieldStream | null = null;
     let generation = 0;
+    let daylightHours: number | undefined;
+    let percent = 0;
+    // The line under the daylight figure on the TV: progress, then what the map is flagging.
+    const dayStatus = () => {
+      if (ctx.params.mode !== 'day') return '';
+      if (percent < 100) return `adding up the day, ${percent}%`;
+      return ctx.params.threshold > 0 ? `under ${ctx.params.threshold} h of sun is flagged` : 'whole day added up';
+    };
     ctx.onCleanup(() => {
       generation++;
       stream?.close();
@@ -58,13 +72,14 @@ export default defineLayer<Params>({
     function dress() {
       const day = ctx.params.mode === 'day';
       const sun = sunNow();
-      overlay.setStyle({ colormap: day ? sunHoursColormap : skyColormap(sun.altitude), soften: day ? 1 : SOFTEN_CELLS });
+      overlay.setStyle({ colormap: day ? hoursColormap(ctx.params.threshold, daylightHours) : skyColormap(sun.altitude), soften: day ? 1 : SOFTEN_CELLS });
       treeOverlay.setStyle({ colormap: day ? treeHoursColormap : treeShadeColormap, soften: day ? 1 : SOFTEN_CELLS, opacity: treeOpacity() });
       path.setVisible(ctx.params.path);
       path.setSun(day ? { ...sun, altitude: -90 } : sun);
       // The TV's colour key shows the ramp the table is using right now.
       ctx.publish({
-        ramp: day ? sunHoursColormap : skyColormap(sun.altitude),
+        ramp: day ? hoursColormap(ctx.params.threshold, daylightHours) : skyColormap(sun.altitude),
+        dayStatus: dayStatus(),
         rampLow: day ? '0 h' : 'Shade',
         treeRamp: day ? treeHoursColormap : treeShadeColormap,
         treeLow: day ? 'No sun lost' : 'No shade',
@@ -86,6 +101,7 @@ export default defineLayer<Params>({
       stream = null;
       const [field, treeField] = ctx.params.mode === 'day' ? ['sun_hours', 'tree_shade_hours'] : ['shadow', 'tree_shade'];
       // The panel shows progress from the first moment, not the previous job's.
+      percent = 0;
       ctx.publish({ progress: 0 });
       const opened = await ctx.engine.open('sunlight', kernelParams(ctx), [field, treeField]);
       if (mine !== generation) {
@@ -98,20 +114,24 @@ export default defineLayer<Params>({
       opened.on(field, (frame) => overlay.set(frame));
       opened.on(treeField, (frame) => treeOverlay.set(frame));
       opened.onStatus((status) => {
+        if (daylightHours !== status.info.daylight_hours) {
+          daylightHours = status.info.daylight_hours;
+          dress();
+        }
         // The TV panels in layer.json show these. Text is worded here so the panels stay plain data.
         const altitude = Math.round(status.info.sun.altitude_deg * 10) / 10;
         const azimuth = Math.round(status.info.sun.azimuth_deg);
-        const daylightHours = Math.round(status.info.daylight_hours * 10) / 10;
-        const percent = Math.round(status.progress * 100);
+        const hours = Math.round(status.info.daylight_hours * 10) / 10;
+        percent = Math.round(status.progress * 100);
         const day = ctx.params.mode === 'day';
         ctx.publish({
           altitude,
           azimuth,
-          daylightHours,
+          daylightHours: hours,
           progress: Math.round(status.progress * 100) / 100,
           sun: altitude > 0 ? `sun ${altitude}° up, bearing ${azimuth}°` : 'sun below the horizon',
-          dayStatus: !day ? '' : percent < 100 ? `adding up the day, ${percent}%` : 'whole day added up',
-          rampHigh: day ? `${daylightHours} h` : 'Sun',
+          dayStatus: dayStatus(),
+          rampHigh: day ? `${hours} h` : 'Sun',
         });
       });
     }
