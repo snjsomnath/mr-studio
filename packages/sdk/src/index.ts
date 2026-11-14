@@ -7,3 +7,4 @@ export * from './colormap.ts';
 export * from './time.ts';
 export * from './controls.ts';
 export * from './geo.ts';
+export * from './solar.ts';

@@ -129,6 +129,8 @@ None of this is built yet. Releases, the updater, npm publishing and the templat
 
 ## Work packages
 
+The layers planned beyond the first set, and the kernels and blocks each one reuses, are in [ROADMAP.md](ROADMAP.md).
+
 These are independent once the contracts are fixed.
 
 | Package | Scope | Contract |
@@ -142,4 +144,5 @@ These are independent once the contracts are fixed.
 | Site tooling | `mrstudio new-site` and `prepare`, Python prep, Chalmers port | site.md |
 | Scene composer and ambient layers | Instance ids, live add and reorder, dark base map, cars, lights, transit, trees, composer page | site.md, layer.md |
 | Layer building blocks | Shared visual, data and interaction primitives in the SDK that layers are composed from | layer.md |
+| Model surface and calibration | Digital twin of the physical model, projector cameras, three.js rendering, `ctx.model` | model.md |
 | Release and distribution | Signed installers, updater and channels, npm publishing of the SDK, site template, `mrstudio migrate` | this document |

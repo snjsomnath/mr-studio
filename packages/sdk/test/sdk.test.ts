@@ -5,6 +5,7 @@ import { lut, colormaps } from '../src/colormap.ts';
 import { isVisible } from '../src/controls.ts';
 import { parseFrame, sample } from '../src/frame.ts';
 import { lonLatToTable, tableToLonLat } from '../src/geo.ts';
+import { sunPosition } from '../src/solar.ts';
 import { formatHour, zonedTimeToUtc } from '../src/time.ts';
 
 test('wall-clock time converts to UTC across daylight saving', () => {
@@ -77,4 +78,16 @@ test('table coordinates map to WGS84 and back, also on a rotated table', () => {
   for (const [u, v] of [[0.5, 0.5], [0.13, 0.87], [1.2, -0.1]] as const) {
     assert.ok(near(lonLatToTable(site, ...tableToLonLat(site, u, v)), [u, v]));
   }
+});
+
+test('sun position matches the engine reference values', () => {
+  // The same cases as crates/mrs-engine/src/solar.rs.
+  const at = (iso: string) => sunPosition(Date.parse(iso), 57.6884, 11.9778);
+  const noon = at('2026-06-21T11:14:00Z');
+  assert.ok(Math.abs(noon.altitude - 55.75) < 0.1, JSON.stringify(noon));
+  assert.ok(Math.abs(noon.azimuth - 180) < 1, JSON.stringify(noon));
+  assert.ok(Math.abs(at('2026-12-21T11:10:00Z').altitude - 8.87) < 0.15);
+  const rise = at('2026-03-20T05:20:00Z');
+  assert.ok(Math.abs(rise.altitude) < 1.5 && Math.abs(rise.azimuth - 90) < 2, JSON.stringify(rise));
+  assert.ok(at('2026-12-21T23:00:00Z').altitude < -40);
 });

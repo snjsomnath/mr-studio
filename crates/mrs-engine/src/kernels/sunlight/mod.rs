@@ -20,6 +20,16 @@ const CANOPY_EXTINCTION_PER_M: f32 = 0.15;
 const FIELDS: &[FieldInfo] = &[
     FieldInfo { name: "shadow", units: "0..1", description: "1 where the cell is lit at `time`, 0 in shadow or at night (instant mode)" },
     FieldInfo { name: "sun_hours", units: "h", description: "Hours of direct sun on the day of `time` (day mode)" },
+    FieldInfo {
+        name: "tree_shade",
+        units: "0..1",
+        description: "Share of the light that tree canopy takes from a cell no building shades (instant mode)",
+    },
+    FieldInfo {
+        name: "tree_shade_hours",
+        units: "h",
+        description: "Hours of direct sun lost to tree canopy on the day of `time` (day mode)",
+    },
 ];
 
 pub struct SunlightKernel;
@@ -54,6 +64,7 @@ impl Kernel for SunlightKernel {
         let mut job = SunlightJob {
             params,
             out: vec![0.0; scene.grid.len()],
+            tree: vec![0.0; scene.grid.len()],
             gpu,
             samples: Vec::new(),
             cursor: 0,
@@ -172,6 +183,7 @@ struct GpuState {
     pipeline: wgpu::ComputePipeline,
     uniforms: wgpu::Buffer,
     out: wgpu::Buffer,
+    tree: wgpu::Buffer,
     bind_group: wgpu::BindGroup,
 }
 
@@ -196,28 +208,42 @@ impl GpuState {
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        let (out, bind_group) = Self::bind(ctx, scene, &pipeline, &uniforms);
-        Self { pipeline, uniforms, out, bind_group }
+        let (out, tree, bind_group) = Self::bind(ctx, scene, &pipeline, &uniforms);
+        Self { pipeline, uniforms, out, tree, bind_group }
     }
 
-    fn bind(ctx: &Context, scene: &Scene, pipeline: &wgpu::ComputePipeline, uniforms: &wgpu::Buffer) -> (wgpu::Buffer, wgpu::BindGroup) {
+    fn bind(
+        ctx: &Context,
+        scene: &Scene,
+        pipeline: &wgpu::ComputePipeline,
+        uniforms: &wgpu::Buffer,
+    ) -> (wgpu::Buffer, wgpu::Buffer, wgpu::BindGroup) {
         let gpu = ctx.gpu();
         let rasters = scene.gpu.as_ref().expect("scene is not on the gpu");
         let out = gpu.storage_f32("sunlight.out", &vec![0.0; scene.grid.len()]);
+        let tree = gpu.storage_f32("sunlight.tree", &vec![0.0; scene.grid.len()]);
         fn entry(binding: u32, buffer: &wgpu::Buffer) -> wgpu::BindGroupEntry<'_> {
             wgpu::BindGroupEntry { binding, resource: buffer.as_entire_binding() }
         }
         let bind_group = gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("sunlight"),
             layout: &pipeline.get_bind_group_layout(0),
-            entries: &[entry(0, uniforms), entry(1, &rasters.dsm), entry(2, &rasters.dtm), entry(3, &rasters.canopy), entry(4, &out)],
+            entries: &[
+                entry(0, uniforms),
+                entry(1, &rasters.dsm),
+                entry(2, &rasters.dtm),
+                entry(3, &rasters.canopy),
+                entry(4, &out),
+                entry(5, &tree),
+            ],
         });
-        (out, bind_group)
+        (out, tree, bind_group)
     }
 
     fn rebind(&mut self, ctx: &Context, scene: &Scene) {
-        let (out, bind_group) = Self::bind(ctx, scene, &self.pipeline, &self.uniforms);
+        let (out, tree, bind_group) = Self::bind(ctx, scene, &self.pipeline, &self.uniforms);
         self.out = out;
+        self.tree = tree;
         self.bind_group = bind_group;
     }
 
@@ -239,6 +265,7 @@ struct SunlightJob {
     params: Params,
     /// CPU backend output. Unused on the GPU backend.
     out: Vec<f32>,
+    tree: Vec<f32>,
     gpu: Option<GpuState>,
     /// Sun positions still to evaluate, in order.
     samples: Vec<SunPosition>,
@@ -312,6 +339,7 @@ impl Job for SunlightJob {
 
     fn scene_changed(&mut self, ctx: &Context, scene: &Scene) -> Result<(), EngineError> {
         self.out = vec![0.0; scene.grid.len()];
+        self.tree = vec![0.0; scene.grid.len()];
         if let Some(gpu) = &mut self.gpu {
             gpu.rebind(ctx, scene);
         }
@@ -336,7 +364,7 @@ impl Job for SunlightJob {
                     // Submission is asynchronous; wait so the budget measures real work.
                     ctx.gpu().wait()?;
                 }
-                None => cpu::march(scene, &ray, &mut self.out, ctx.threads),
+                None => cpu::march(scene, &ray, &mut self.out, &mut self.tree, ctx.threads),
             }
             self.cursor += 1;
             if started.elapsed() >= budget {
@@ -348,13 +376,15 @@ impl Job for SunlightJob {
     }
 
     fn read(&mut self, ctx: &Context, scene: &Scene, field: &str) -> Result<Field, EngineError> {
+        let trees = field.starts_with("tree_");
         let (units, max) = match (field, self.params.mode) {
-            ("shadow", Mode::Instant) => ("0..1", 1.0),
-            ("sun_hours", Mode::Day) => ("h", self.daylight_hours().max(self.step_hours)),
+            ("shadow" | "tree_shade", Mode::Instant) => ("0..1", 1.0),
+            ("sun_hours" | "tree_shade_hours", Mode::Day) => ("h", self.daylight_hours().max(self.step_hours)),
             _ => return Err(EngineError::UnknownField(field.to_string())),
         };
         let data = match &self.gpu {
-            Some(gpu) => ctx.gpu().read_f32(&gpu.out, scene.grid.len())?,
+            Some(gpu) => ctx.gpu().read_f32(if trees { &gpu.tree } else { &gpu.out }, scene.grid.len())?,
+            None if trees => self.tree.clone(),
             None => self.out.clone(),
         };
         Ok(Field { width: scene.grid.width, height: scene.grid.height, units, min: 0.0, max, data })

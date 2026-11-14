@@ -531,3 +531,12 @@ button.action:disabled {
 .tool-actions button {
   min-height: 44px;
 }
+
+/* Decorations layers draw over the table (see MapHandle.addElement). */
+.table-decoration {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  overflow: hidden;
+}

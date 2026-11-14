@@ -6,7 +6,8 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import { MapFieldOverlay } from './field-overlay.ts';
 
 const EARTH_CIRCUMFERENCE_M = 40_075_016.686;
-/** Field overlays are inserted below this layer, so building outlines stay readable. */
+/** Field overlays are inserted below the site's buildings, so roofs and outlines stay readable. */
+const FILL_LAYER = 'site-buildings-fill';
 const OUTLINE_LAYER = 'site-buildings-outline';
 
 /**
@@ -52,9 +53,17 @@ export class TableView {
     return {
       addField: (id: string, style: FieldOverlayStyle & { colormap: Colormap }): FieldOverlay => {
         const overlay = new MapFieldOverlay(this.map, `field:${layer}:${id}`, this.site, style);
-        this.map.addLayer(overlay, this.map.getLayer(OUTLINE_LAYER) ? OUTLINE_LAYER : undefined);
+        this.map.addLayer(overlay, this.map.getLayer(FILL_LAYER) ? FILL_LAYER : undefined);
         track(() => overlay.remove());
         return overlay;
+      },
+      addElement: (): HTMLElement => {
+        const element = document.createElement('div');
+        element.className = 'table-decoration';
+        element.dataset.layer = layer;
+        this.container.append(element);
+        track(() => element.remove());
+        return element;
       },
       addShapes: (id: string, style?: { opacity?: number }): ShapeOverlay => {
         const overlay = this.shapes(`shapes:${layer}:${id}`, style?.opacity ?? 1);
@@ -131,7 +140,7 @@ export class TableView {
   private addContext(): void {
     if (!this.site.buildings) return;
     this.map.addSource('site-buildings', { type: 'geojson', data: `/site/${this.site.buildings}` });
-    this.map.addLayer({ id: 'site-buildings-fill', type: 'fill', source: 'site-buildings', paint: { 'fill-color': '#ffffff', 'fill-opacity': 0.06 } });
-    this.map.addLayer({ id: OUTLINE_LAYER, type: 'line', source: 'site-buildings', paint: { 'line-color': '#ffffff', 'line-opacity': 0.35, 'line-width': 1 } });
+    this.map.addLayer({ id: FILL_LAYER, type: 'fill', source: 'site-buildings', paint: { 'fill-color': '#ffffff', 'fill-opacity': 0.07 } });
+    this.map.addLayer({ id: OUTLINE_LAYER, type: 'line', source: 'site-buildings', paint: { 'line-color': '#ffffff', 'line-opacity': 0.28, 'line-width': 1 } });
   }
 }
