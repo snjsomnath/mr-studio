@@ -139,3 +139,5 @@ These are independent once the contracts are fixed.
 | Session hub and phone controller | Rooms, slots, roles, join by QR, tools, reconnect | session.md, mobile.md |
 | Layer SDK and runtime | Layer manager, generated controls, TV layout, dev mode | layer.md |
 | Site tooling | `mrstudio new-site` and `prepare`, Python prep, Chalmers port | site.md |
+| Scene composer and ambient layers | Instance ids, live add and reorder, dark base map, cars, lights, transit, trees, composer page | site.md, layer.md |
+| Release and distribution | Signed installers, updater and channels, npm publishing of the SDK, site template, `mrstudio migrate` | this document |
