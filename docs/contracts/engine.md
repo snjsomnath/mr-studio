@@ -205,7 +205,7 @@ Ported from `animations/cfd-core.js` of the previous app.
 | `u` | m/s | Velocity towards higher columns (the right of the table) |
 | `v` | m/s | Velocity towards higher rows (the bottom of the table) |
 
-All three fields have the lattice's resolution and a fixed display range: `speed` runs from 0 to 2.5 times the wind speed, `u` and `v` over plus and minus that.
+All three fields have the lattice's resolution and a fixed display range: `speed` runs from 0 to 2.5 times the wind speed, `u` and `v` over plus and minus that, with the lower bound stretched by 128/127 so that zero falls exactly on a step of the 8-bit encoding and still air stays still.
 
 Algorithm: a D2Q9 lattice Boltzmann solver with two-relaxation-time collision (magic parameter 1/4) and halfway bounce-back at buildings.
 The lattice is the scene grid coarsened by a whole factor, chosen from `resolution`. A lattice cell is a building when at least half of its scene cells are solid, and its canopy cover is the share of its scene cells under trees.

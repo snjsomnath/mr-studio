@@ -152,7 +152,15 @@ struct Params {
 
 impl Default for Params {
     fn default() -> Self {
-        Self { speed: 5.0, direction_deg: 270.0, resolution: 256.0, trees: true, viscosity: 0.03, boundary: Boundary::Open, force: [0.0; 2] }
+        Self {
+            speed: 5.0,
+            direction_deg: 270.0,
+            resolution: 256.0,
+            trees: true,
+            viscosity: 0.03,
+            boundary: Boundary::Open,
+            force: [0.0; 2],
+        }
     }
 }
 
@@ -162,7 +170,11 @@ impl Params {
         let bad = |m: &str| EngineError::InvalidParams(m.to_string());
         let map = patch.as_object().ok_or_else(|| bad("params must be an object"))?;
         let number = |value: &Value, name: &str| {
-            value.as_f64().filter(|v| v.is_finite()).map(|v| v as f32).ok_or_else(|| EngineError::InvalidParams(format!("{name} must be a number")))
+            value
+                .as_f64()
+                .filter(|v| v.is_finite())
+                .map(|v| v as f32)
+                .ok_or_else(|| EngineError::InvalidParams(format!("{name} must be a number")))
         };
         let mut p = self.clone();
         for (key, value) in map {
@@ -250,7 +262,7 @@ impl Geometry {
         let limit = match &ctx.gpu {
             Some(gpu) => {
                 let limits = gpu.device.limits();
-                (limits.max_storage_buffer_binding_size as u64).min(limits.max_buffer_size).min(MAX_BUFFER_BYTES)
+                limits.max_storage_buffer_binding_size.min(limits.max_buffer_size).min(MAX_BUFFER_BYTES)
             }
             None => MAX_BUFFER_BYTES,
         };
@@ -323,8 +335,14 @@ impl Geometry {
                     cell |= link << (6 + 2 * k);
                 }
                 if open && (x == 0 || y == 0 || x == nx - 1 || y == ny - 1) {
-                    let inlet = (x == 0 && wind.0 > 0.0) || (x == nx - 1 && wind.0 < 0.0) || (y == 0 && wind.1 > 0.0) || (y == ny - 1 && wind.1 < 0.0);
-                    let outlet = (x == 0 && wind.0 < 0.0) || (x == nx - 1 && wind.0 > 0.0) || (y == 0 && wind.1 < 0.0) || (y == ny - 1 && wind.1 > 0.0);
+                    let inlet = (x == 0 && wind.0 > 0.0)
+                        || (x == nx - 1 && wind.0 < 0.0)
+                        || (y == 0 && wind.1 > 0.0)
+                        || (y == ny - 1 && wind.1 < 0.0);
+                    let outlet = (x == 0 && wind.0 < 0.0)
+                        || (x == nx - 1 && wind.0 > 0.0)
+                        || (y == 0 && wind.1 < 0.0)
+                        || (y == ny - 1 && wind.1 > 0.0);
                     let edge = if inlet {
                         EDGE_INLET
                     } else if outlet {
@@ -449,7 +467,11 @@ impl GpuState {
         let storage = |binding: u32, read_only: bool| wgpu::BindGroupLayoutEntry {
             binding,
             visibility: wgpu::ShaderStages::COMPUTE,
-            ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Storage { read_only }, has_dynamic_offset: false, min_binding_size: None },
+            ty: wgpu::BindingType::Buffer {
+                ty: wgpu::BufferBindingType::Storage { read_only },
+                has_dynamic_offset: false,
+                min_binding_size: None,
+            },
             count: None,
         };
         let layout = gpu.device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -719,9 +741,13 @@ impl WindJob {
 
     /// Runs `count` steps. The last one writes the macroscopic values.
     fn advance(&mut self, ctx: &Context, count: usize) -> Result<(), EngineError> {
-        if self.gpu.is_some() {
-            let passes: Vec<Pass> = (0..count).map(|i| self.pass(self.steps + 1 + i as u64, i + 1 == count)).collect();
-            self.gpu.as_mut().expect("gpu state").run(ctx, &passes)?;
+        // The passes are built before the GPU state is borrowed for the run.
+        let passes: Vec<Pass> = match self.gpu {
+            Some(_) => (0..count).map(|i| self.pass(self.steps + 1 + i as u64, i + 1 == count)).collect(),
+            None => Vec::new(),
+        };
+        if let Some(gpu) = &mut self.gpu {
+            gpu.run(ctx, &passes)?;
             self.steps += count as u64;
         } else {
             for _ in 0..count {
@@ -764,7 +790,10 @@ impl WindJob {
                     self.steps
                 )));
             }
-            tracing::warn!("wind hit a numerical limit at step {} (density {low:.3} to {high:.3}, peak {peak:.3}); restarting slower", self.steps);
+            tracing::warn!(
+                "wind hit a numerical limit at step {} (density {low:.3} to {high:.3}, peak {peak:.3}); restarting slower",
+                self.steps
+            );
             self.backoff += 1;
             self.restart(ctx);
             return Ok(false);
@@ -892,11 +921,14 @@ impl Job for WindJob {
         self.sync_macros(ctx)?;
         let scale = self.scale();
         let range = RANGE_FACTOR * self.params.speed;
+        // The components' range puts zero exactly on a quantisation step (128 of 255),
+        // so a still cell stays still after 8-bit encoding.
+        let negative = -range * 128.0 / 127.0;
         let cells = self.macros.chunks_exact(3);
         let (min, data): (f32, Vec<f32>) = match field {
             "speed" => (0.0, cells.map(|m| (m[0] * m[0] + m[1] * m[1]).sqrt() * scale).collect()),
-            "u" => (-range, cells.map(|m| m[0] * scale).collect()),
-            _ => (-range, cells.map(|m| m[1] * scale).collect()),
+            "u" => (negative, cells.map(|m| m[0] * scale).collect()),
+            _ => (negative, cells.map(|m| m[1] * scale).collect()),
         };
         Ok(Field { width: self.geo.vw as u32, height: self.geo.vh as u32, units: "m/s", min, max: range, data })
     }

@@ -52,6 +52,9 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
+      # The kernels and their GPU/CPU parity tests on this platform's own graphics API
+      # (DirectX 12 or Metal). They skip themselves where the runner has no adapter.
+      - run: cargo test -p mrs-engine -- --nocapture
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
       - run: cargo build -p mrs-cli

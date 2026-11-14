@@ -33,7 +33,7 @@ crates/mrs-cli       the `mrstudio` command
 apps/studio          desktop shell (Tauri): one window per display
 packages/sdk         @mrstudio/sdk: layer API, connection, engine client
 packages/runtime     the surfaces: table, tv, phone, dev
-packages/layers      core layers; sunlight is the reference
+packages/layers      core layers; sunlight is the reference, wind the simulation example
 sites/sample         a small synthetic site for tests and dev mode
 ```
 
@@ -62,7 +62,8 @@ The GPU tests need a Vulkan, Metal or DirectX 12 adapter. Without one they are s
 | Surfaces: table, TV, phone, dev, with generated controls | Working, first version |
 | Sunlight layer (shadows, sun hours, animation, TV panel) | Working |
 | Desktop shell | Compiles on Linux; not yet run on Windows or macOS |
-| Wind, stormwater, isovist kernels and layers | Not started; see the work packages in ARCHITECTURE.md |
+| Wind kernel (lattice Boltzmann on GPU and CPU) and layer (speed map, ribbons, particles, TV panel) | Working |
+| Stormwater, isovist kernels and layers | Not started; see the work packages in ARCHITECTURE.md |
 | Calibration, basemap tiles, QR join, phone tools, hand tracking | Not started |
 | Chalmers, Lindholmen and Universeum site packages | Not started |
 | Python services gateway (ECOM, CoolPaths, site prep) | Not started |

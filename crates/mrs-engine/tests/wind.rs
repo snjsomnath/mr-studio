@@ -94,10 +94,10 @@ fn uniform_wind_stays_uniform_and_follows_the_compass() {
     // (grid rotation, wind from, expected u, expected v) with u to the right and v down the table.
     let h = 5.0 * std::f32::consts::FRAC_1_SQRT_2;
     let cases = [
-        (0.0, 270.0, 5.0, 0.0),  // from the west: towards the right
-        (0.0, 0.0, 0.0, 5.0),    // from the north: down the table
-        (0.0, 225.0, h, -h),     // from the south-west: right and up
-        (90.0, 0.0, 5.0, 0.0),   // "up" is east, so south is to the right
+        (0.0, 270.0, 5.0, 0.0),   // from the west: towards the right
+        (0.0, 0.0, 0.0, 5.0),     // from the north: down the table
+        (0.0, 225.0, h, -h),      // from the south-west: right and up
+        (90.0, 0.0, 5.0, 0.0),    // "up" is east, so south is to the right
         (90.0, 270.0, 0.0, -5.0), // and east is up
     ];
     for boundary in ["periodic", "open"] {
@@ -115,7 +115,9 @@ fn uniform_wind_stays_uniform_and_follows_the_compass() {
                 assert!(close(at(&speed, col, row), 5.0, 0.02), "{what}: speed {}", at(&speed, col, row));
             }
             // The display range is fixed by the wind speed, so colours do not jump.
-            assert_eq!((speed.min, speed.max, u.min, u.max), (0.0, 12.5, -12.5, 12.5));
+            assert_eq!((speed.min, speed.max, u.max), (0.0, 12.5, 12.5));
+            // Zero sits exactly on step 128 of the 8-bit encoding, so still air stays still.
+            assert!(close((0.0 - u.min) / (u.max - u.min) * 255.0, 128.0, 1e-4));
         }
     }
 }

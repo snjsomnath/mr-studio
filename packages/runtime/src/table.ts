@@ -1,9 +1,10 @@
-import type { Colormap, FieldOverlay, FieldOverlayStyle, MapHandle, SiteInfo } from '@mrstudio/sdk';
+import type { Colormap, FieldOverlay, FieldOverlayStyle, FlowOverlay, FlowOverlayStyle, MapHandle, SiteInfo } from '@mrstudio/sdk';
 import maplibregl from 'maplibre-gl';
 import type { StyleSpecification } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 
 import { MapFieldOverlay } from './field-overlay.ts';
+import { MapFlowOverlay } from './flow-overlay.ts';
 
 const EARTH_CIRCUMFERENCE_M = 40_075_016.686;
 /** Field overlays are inserted below this layer, so building outlines stay readable. */
@@ -52,6 +53,12 @@ export class TableView {
     return {
       addField: (id: string, style: FieldOverlayStyle & { colormap: Colormap }): FieldOverlay => {
         const overlay = new MapFieldOverlay(this.map, `field:${layer}:${id}`, this.site, style);
+        this.map.addLayer(overlay, this.map.getLayer(OUTLINE_LAYER) ? OUTLINE_LAYER : undefined);
+        track(() => overlay.remove());
+        return overlay;
+      },
+      addFlow: (id: string, style: FlowOverlayStyle & { colormap: Colormap }): FlowOverlay => {
+        const overlay = new MapFlowOverlay(this.map, `flow:${layer}:${id}`, this.site, style);
         this.map.addLayer(overlay, this.map.getLayer(OUTLINE_LAYER) ? OUTLINE_LAYER : undefined);
         track(() => overlay.remove());
         return overlay;

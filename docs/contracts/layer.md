@@ -73,7 +73,7 @@ export default defineLayer({
 The module is loaded on every surface. `table` runs only on the table surface and `panel` only on the TV. Phones need no code.
 State lives in the closure, so a layer has no module-level variables and no explicit teardown:
 overlays and streams opened through `ctx` are released when the layer is turned off.
-`packages/layers/sunlight` is the reference to copy.
+`packages/layers/sunlight` is the reference to copy. `packages/layers/wind` shows a running simulation with a flow overlay.
 
 ## Context
 
@@ -105,6 +105,7 @@ interface FieldStream {
 
 interface MapHandle {
   addField(id: string, style: { colormap: Colormap; opacity?: number; smooth?: boolean }): FieldOverlay;
+  addFlow(id: string, style: FlowOverlayStyle & { colormap: Colormap }): FlowOverlay;
 }
 
 interface FieldOverlay {
@@ -112,7 +113,28 @@ interface FieldOverlay {
   setStyle(style: { colormap?: Colormap; opacity?: number; smooth?: boolean }): void;
   remove(): void;
 }
+
+// A vector field drawn as moving tracers: ribbons or particles.
+interface FlowOverlay {
+  set(u: FieldFrame, v: FieldFrame): void;   // components towards the right and the bottom of the table
+  setStyle(style: FlowOverlayStyle): void;
+  remove(): void;
+}
+
+interface FlowOverlayStyle {
+  colormap?: Colormap;               // colours tracers by the local magnitude
+  max?: number;                      // magnitude at the top of the colormap; default the frames' max
+  mode?: 'ribbons' | 'particles';    // long tapering trails, or short streaks
+  count?: number;                    // tracers, default 500
+  rate?: number;                     // share of the extent's longer side travelled per second, per field unit
+  opacity?: number;
+}
 ```
+
+`addFlow` is how any layer shows movement (wind now, water later). The surface animates the tracers itself between frames,
+so the kernel only has to deliver the field a few times a second. Cells where both components are zero are obstacles: tracers never enter them.
+The tracer logic is `FlowField` and `Tracers` in `@mrstudio/sdk`, which are plain and tested, for a layer that wants to draw its own.
+`stretch(colormap, fraction)` gives a legend that ends below the field's own maximum.
 
 Rules for layers:
 

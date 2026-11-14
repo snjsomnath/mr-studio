@@ -17,9 +17,33 @@ export interface FieldOverlay {
   remove(): void;
 }
 
+export interface FlowOverlayStyle {
+  /** Colours tracers by the local magnitude of the field. */
+  colormap?: Colormap;
+  /** The magnitude at the top of the colormap. Default: the frames' `max`. */
+  max?: number;
+  /** `ribbons` are long tapering trails, `particles` short streaks. Default `ribbons`. */
+  mode?: 'ribbons' | 'particles';
+  /** Number of tracers. Default 500. */
+  count?: number;
+  /** Share of the extent's longer side a tracer travels per second, per field unit. Default 0.04. */
+  rate?: number;
+  /** 0..1, multiplied with the colormap's own alpha. */
+  opacity?: number;
+}
+
+/** A vector field drawn on the table as moving tracers. Animation and drawing run on the surface. */
+export interface FlowOverlay {
+  /** The two components of the same revision, towards the right and towards the bottom of the table. Cells where both are zero are obstacles. */
+  set(u: FieldFrame, v: FieldFrame): void;
+  setStyle(style: FlowOverlayStyle): void;
+  remove(): void;
+}
+
 /** What a layer may draw on the table. */
 export interface MapHandle {
   addField(id: string, style: FieldOverlayStyle & { colormap: Colormap }): FieldOverlay;
+  addFlow(id: string, style: FlowOverlayStyle & { colormap: Colormap }): FlowOverlay;
 }
 
 interface ContextBase<P> {
