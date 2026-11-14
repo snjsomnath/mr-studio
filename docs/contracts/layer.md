@@ -86,11 +86,29 @@ interface TableContext<P> {
   publish(values: Record<string, unknown>): void;      // derived values for panels
   readonly engine: EngineClient;        // open kernel streams
   readonly map: MapHandle;              // field overlays
+  readonly pointer: TablePointer;       // mouse, touch and pen on the table surface
   onFrame(cb: (dt: number) => void): void;   // every animation frame while the layer is on
   onCleanup(cb: () => void): void;      // extra teardown
 }
 
 // PanelContext has site, params, setParams, shared and onCleanup.
+
+interface TablePointer {
+  on(cb: (sample: PointerSample) => void): void;   // released with the layer
+}
+
+// One sample of one pointer, in table metres (x right, y down from the extent's top left).
+interface PointerSample {
+  id: string;                                // one mouse, finger, phone or token: 'mouse:1', 'touch:7', 'phone:3'
+  source: 'mouse' | 'touch' | 'pen' | 'phone' | 'token' | 'script';
+  phase: 'move' | 'down' | 'up' | 'leave';
+  point: [number, number];
+  lonLat: [number, number];
+  pressed: boolean;
+  time: number;                              // seconds
+  rotation?: number;                         // radians, for tokens and dials
+  owner?: number;                            // the participant behind a phone pointer
+}
 
 interface EngineClient {
   open(kernel: string, params: object, fields: string[], opts?: { encoding?: 'u8' | 'f32'; maxHz?: number }): Promise<FieldStream>;
@@ -130,6 +148,15 @@ Rules for layers:
 3. No direct communication between surfaces. Use `setParams` and `publish`.
 4. Clean up is automatic for everything opened through `ctx`. Anything else is released with `ctx.onCleanup`.
 5. `update` must be cheap. Send params to the stream and return; frames arrive asynchronously.
+
+## Building blocks and interactions
+
+Layers are composed from the primitives in `@mrstudio/sdk` (`packages/sdk/src/blocks/`): data sources,
+scales, visual blocks, staging and interaction behaviours. The catalogue is [../blocks.md](../blocks.md).
+
+Table pointers are local to the table surface and do not pass through the host. Phone tools arrive
+through `tool(input)`; `fromToolInput(input, frame)` turns a point input into the same `PointerSample`,
+so a layer routes both to the same behaviours. What other surfaces need goes out with `setParams` or `publish`.
 
 ## Dev mode
 

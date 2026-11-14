@@ -1,9 +1,10 @@
-import type { Colormap, FieldOverlay, FieldOverlayStyle, MapHandle, SiteInfo } from '@mrstudio/sdk';
+import type { Colormap, FieldOverlay, FieldOverlayStyle, MapHandle, SiteInfo, TablePointer } from '@mrstudio/sdk';
 import maplibregl from 'maplibre-gl';
 import type { StyleSpecification } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 
 import { MapFieldOverlay } from './field-overlay.ts';
+import { tablePointer } from './table-pointer.ts';
 
 const EARTH_CIRCUMFERENCE_M = 40_075_016.686;
 /** Field overlays are inserted below the site's buildings, so roofs and outlines stay readable. */
@@ -66,6 +67,11 @@ export class TableView {
         return element;
       },
     };
+  }
+
+  /** Pointer input on the table surface for one layer. */
+  pointer(track: (cleanup: () => void) => void): TablePointer {
+    return tablePointer(this.container, this.site, track);
   }
 
   /** The zoom at which the extent exactly fits the container. */
