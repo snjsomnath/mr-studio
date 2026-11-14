@@ -14,6 +14,8 @@ fn main() {
     for watched in ["packages/runtime/dist", "packages/layers", "sites/sample"] {
         println!("cargo:rerun-if-changed={}", root.join(watched).display());
     }
+    // The updater's public key is compiled in; see src/updates.rs.
+    println!("cargo:rerun-if-env-changed=MRS_UPDATER_PUBKEY");
     tauri_build::build()
 }
 

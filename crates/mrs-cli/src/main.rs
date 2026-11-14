@@ -43,6 +43,8 @@ enum Command {
         #[arg(long, default_value = "auto")]
         backend: String,
     },
+    /// Rewrite a site's site.json for this version's site format. The original is kept beside it.
+    Migrate { site: PathBuf },
     /// Check a site package and report what the scene bake produces.
     Validate { site: PathBuf },
     /// Bake the scene and write the rasters to `<site>/scene/` for inspection.
@@ -95,6 +97,7 @@ async fn main() -> anyhow::Result<()> {
             }
             Ok(())
         }
+        Command::Migrate { site } => migrate(&site),
         Command::Validate { site } => validate(&site).map(|_| ()),
         Command::Prepare { site } => prepare(&site),
         Command::NewSite { dir, name, lon, lat, width_m, height_m, rotation_deg } => {
@@ -102,6 +105,20 @@ async fn main() -> anyhow::Result<()> {
         }
         Command::Bench { site } => bench(&site),
     }
+}
+
+fn migrate(dir: &Path) -> anyhow::Result<()> {
+    match mrs_site::migrate::upgrade_site(dir)? {
+        None => println!("{} is already site format {}.", dir.display(), mrs_site::FORMAT),
+        Some(done) => {
+            println!("Upgraded {} from site format {} to {}:", dir.display(), done.from, done.to);
+            for change in &done.changes {
+                println!("  {change}");
+            }
+            println!("The original is kept as site.format-{}.json.", done.from);
+        }
+    }
+    Ok(())
 }
 
 fn validate(dir: &Path) -> anyhow::Result<(Site, mrs_engine::SceneData)> {

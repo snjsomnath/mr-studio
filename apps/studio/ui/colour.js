@@ -181,6 +181,7 @@
       if (tab.dataset.tab === 'colour') loadColour().catch((e) => showError(String(e)));
       else setTestCard(false);
       if (tab.dataset.tab === 'calibration') window.loadCalibration();
+      if (tab.dataset.tab === 'updates') window.loadUpdates();
     });
   }
   // Never leave the test card up behind a closed launcher.
