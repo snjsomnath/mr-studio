@@ -154,6 +154,59 @@ pub struct LayerRef {
     pub active: bool,
     #[serde(default, skip_serializing_if = "Map::is_empty")]
     pub params: Map<String, Value>,
+    /// How the layer is offered on the controller. What is left out comes from the layer package.
+    #[serde(default, skip_serializing_if = "LayerButton::is_empty")]
+    pub button: LayerButton,
+}
+
+/// The button that opens a layer on the controller: the words and icon the site's
+/// author chose for it, and the side of the controller it sits on.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LayerButton {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    /// An icon name from the editor's set, such as `sun` or `route`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub side: Option<ButtonSide>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ButtonSide {
+    Left,
+    Right,
+}
+
+impl LayerButton {
+    pub const MAX_NAME: usize = 40;
+    pub const MAX_DESCRIPTION: usize = 200;
+
+    pub fn is_empty(&self) -> bool {
+        *self == Self::default()
+    }
+
+    /// What is wrong with it, in the author's terms.
+    pub fn problem(&self) -> Option<String> {
+        let length = |text: &Option<String>| text.as_deref().map_or(0, |t| t.chars().count());
+        if self.name.as_deref().is_some_and(|n| n.trim().is_empty()) {
+            return Some("a button name cannot be blank".into());
+        }
+        if length(&self.name) > Self::MAX_NAME {
+            return Some(format!("a button name is at most {} characters", Self::MAX_NAME));
+        }
+        if length(&self.description) > Self::MAX_DESCRIPTION {
+            return Some(format!("a button description is at most {} characters", Self::MAX_DESCRIPTION));
+        }
+        if self.icon.as_deref().is_some_and(|icon| !crate::is_instance_id(icon)) {
+            return Some("a button icon is a name in lowercase letters, digits and dashes".into());
+        }
+        None
+    }
 }
 
 impl LayerRef {

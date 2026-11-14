@@ -62,6 +62,7 @@ Rules:
 - The scene grid covers exactly the extent with `cell_m` cells, so `width = round(width_m / cell_m)`.
 - Paths are relative to the site folder and may not leave it.
 - `layers[].use` is a core layer id, or a relative path to a site-only layer package. `params` override the layer's defaults and `active` turns it on at start.
+- `layers[].button` is how the layer is offered on the controller: `{ "name", "description", "icon", "side" }`, all optional. `name` (up to 40 characters) and `description` (up to 200) replace the layer package's own words, `icon` is an icon name in lowercase letters, digits and dashes, and `side` is `"left"` or `"right"`. The map never shows these; they are for the controller and phones.
 - `layers[].id` names an entry: lowercase letters, digits and dashes. It defaults to the layer's id, so it is only needed when the same layer is listed more than once. All of an entry's state in the session is keyed by it.
 - `data` maps a dataset name to a file in the site. Layers ask for datasets by name (`requires.data` in `layer.json`), never by path. The scene's `buildings` and `trees` are always available under those names. Names the core layers read: `roads` (LineStrings; optional `width` in metres and `kind`), `transit` (see `packages/layers/transit/README.md`), `slideshow` (see `packages/layers/slideshow/README.md`).
 - `terrain` is one of two things, told apart by the file extension:

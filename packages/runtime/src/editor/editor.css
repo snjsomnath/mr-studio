@@ -543,3 +543,67 @@ body[data-role='edit'] .table-surface {
 .ed-connected.is-off::before {
   background: #c8372d;
 }
+
+/* ---- A layer's button on the controller ---- */
+
+.ed-row-side {
+  margin-left: auto;
+  padding-right: 4px;
+  font-size: 12px;
+  color: var(--ed-text-2);
+}
+
+.ed-field {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  min-height: 24px;
+  margin-bottom: 6px;
+  font-size: 12px;
+  color: var(--ed-text-2);
+}
+
+.ed-field.is-tall {
+  align-items: start;
+}
+
+.ed-field textarea {
+  min-height: 40px;
+  padding: 4px 8px;
+  border: 1px solid var(--ed-line);
+  border-radius: 4px;
+  background: var(--ed-panel);
+  color: var(--ed-text);
+  font: inherit;
+  font-size: 12px;
+  line-height: 16px;
+  resize: vertical;
+}
+
+.ed-icons {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, 24px);
+  gap: 2px;
+}
+
+.ed-icon-choice {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+}
+
+.ed-icon-choice:hover {
+  background: var(--ed-chrome);
+}
+
+.ed-icon-choice[aria-checked='true'] {
+  border-color: var(--ed-accent);
+  background: var(--ed-accent-soft);
+  color: #22388f;
+}

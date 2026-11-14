@@ -108,6 +108,17 @@ export function instanceTitle(id: string, manifest: LayerManifest): string {
   return id === manifest.id ? manifest.name : `${manifest.name} (${id})`;
 }
 
+/** The words and icon a layer goes by on the controller: the site's own, else the layer package's. */
+export function layerButton(id: string, manifest: LayerManifest, state?: LayerState): { name: string; description: string; icon: string | undefined; side: 'left' | 'right' } {
+  const button = state?.button ?? {};
+  return {
+    name: button.name ?? instanceTitle(id, manifest),
+    description: button.description ?? manifest.description ?? '',
+    icon: button.icon ?? manifest.icon,
+    side: button.side ?? 'left',
+  };
+}
+
 interface Card {
   element: HTMLElement;
   sync(state: LayerState): void;
@@ -165,8 +176,10 @@ export class Controller {
     const card = el('section', 'layer-card');
     const header = el('header');
     const title = el('div', 'layer-title');
-    title.append(el('h2', undefined, name));
-    if (manifest.description) title.append(el('p', undefined, manifest.description));
+    const heading = el('h2', undefined, name);
+    const about = el('p', undefined, manifest.description ?? '');
+    about.hidden = !manifest.description;
+    title.append(heading, about);
     header.append(title);
 
     const power = el('input');
@@ -204,6 +217,11 @@ export class Controller {
       element: card,
       dispose: () => tools?.sync(false),
       sync: (state) => {
+        // The site's author may have renamed the layer's button.
+        const button = layerButton(id, manifest, state);
+        heading.textContent = button.name;
+        about.textContent = button.description;
+        about.hidden = !button.description;
         power.checked = state.active;
         card.classList.toggle('is-active', state.active);
         body.hidden = !state.active;

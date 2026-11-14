@@ -453,7 +453,29 @@ async function main() {
     assert.equal(await editor.locator('.ed-ribbon .ed-tool[data-layer="trees"]').count(), 0);
     await editor.locator('.ed-ribbon .ed-tool[data-layer="sunlight"]').waitFor();
     await editor.locator('.ed-inspector').getByText('Show trips').waitFor();
+    // A layer's button on the controller: name, description, side and icon, saved with the scene.
+    await editor.getByLabel('Name').fill('Getting here');
+    await editor.getByLabel('Name').blur();
+    await editor.locator('.ed-tree .ed-row[data-layer="mobility"] .ed-row-label', { hasText: 'Getting here' }).waitFor();
+    await editor.getByLabel('Description').fill('How people reach the square');
+    await editor.getByLabel('Description').blur();
+    await editor.getByRole('radiogroup', { name: 'Side of the controller' }).getByText('Right').click();
+    await editor.getByRole('radiogroup', { name: 'Icon' }).getByLabel('tram').click();
+    await editor.locator('.ed-tree .ed-row[data-layer="mobility"] .ed-row-side', { hasText: 'Right' }).waitFor();
+    await editor.locator('.ed-canvas-head strong', { hasText: 'Getting here' }).waitFor();
+    const named = { name: 'Getting here', description: 'How people reach the square', side: 'right', icon: 'tram' };
+    await editor.waitForFunction(() => document.querySelector('.ed-icon-choice[aria-label="tram"]')?.getAttribute('aria-checked') === 'true');
+    assert.deepEqual(savedLayers().find((l) => l.use === 'mobility').button, named);
+    // The controller goes by the same words.
+    await tv.getByRole('heading', { name: 'Getting here' }).waitFor();
+    await tv.getByText('How people reach the square').waitFor();
     if (shots) await editor.screenshot({ path: path.join(shots, 'editor.png') });
+    await editor.getByLabel('Name').fill('');
+    await editor.getByLabel('Name').blur();
+    await editor.getByLabel('Description').fill('');
+    await editor.getByLabel('Description').blur();
+    await editor.locator('.ed-tree .ed-row[data-layer="mobility"] .ed-row-label', { hasText: 'Mobility' }).waitFor();
+    await tv.getByRole('heading', { name: 'Mobility' }).waitFor();
     assert.deepEqual(savedLayers().map((l) => l.id ?? l.use), ['basemap', 'sunlight', 'building-lights', 'cars', 'transit', 'trees', 'slideshow', 'sketch', 'coolpaths', 'mobility', 'wind']);
 
     const real = errors.filter((e) => !/wrong session code|WebSocket/.test(e));

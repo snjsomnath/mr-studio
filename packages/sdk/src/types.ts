@@ -160,6 +160,17 @@ export interface LayerState {
   intensity: number;
   params: Params;
   shared: Record<string, unknown>;
+  /** How the site offers the layer on the controller. What is left out comes from the layer package. */
+  button: LayerButton;
+}
+
+/** The button that opens a layer on the controller, as the site's author set it. */
+export interface LayerButton {
+  name?: string;
+  description?: string;
+  /** An icon name, such as `sun` or `route`. */
+  icon?: string;
+  side?: 'left' | 'right';
 }
 
 export interface Participant {

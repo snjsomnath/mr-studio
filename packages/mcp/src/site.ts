@@ -32,7 +32,7 @@ const FALLBACK_SCHEMA: SiteSchema = {
   'scene.trees': { fields: ['path', 'height_property', 'default_height_m', 'crown_radius_m'], required: ['path'] },
   basemap: { fields: ['background', 'style'], required: [] },
   branding: { fields: ['title', 'logo'], required: [] },
-  'layers[]': { fields: ['use', 'params', 'active'], required: ['use'] },
+  'layers[]': { fields: ['use', 'id', 'params', 'active', 'button'], required: ['use'] },
 };
 
 export function sitePath(dir: string): string {
