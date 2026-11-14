@@ -26,7 +26,10 @@
       <section aria-labelledby="sites-title">
         <div class="section-head">
           <h2 id="sites-title">Site</h2>
-          <button id="add-site" type="button" class="quiet">Add a site folder…</button>
+          <span>
+            <button id="new-site" type="button" class="quiet">New site…</button>
+            <button id="add-site" type="button" class="quiet">Add a site folder…</button>
+          </span>
         </div>
         <ul id="sites" class="sites"></ul>
         <p id="sites-hint" class="hint"></p>
@@ -115,11 +118,33 @@
         <label class="check"><input id="lan" type="checkbox" /> Let phones on this network join <span class="hint">Windows may ask once to allow network access.</span></label>
       </div>
       <div class="actions">
-        <span class="hint keys">In a running session: <kbd>Ctrl</kbd> <kbd>Shift</kbd> <kbd>S</kbd> opens this window, <kbd>Ctrl</kbd> <kbd>Shift</kbd> <kbd>Q</kbd> quits.</span>
+        <span class="hint keys">While presenting, <kbd>Ctrl</kbd> <kbd>Shift</kbd> + <kbd>E</kbd> editor, <kbd>S</kbd> this window, <kbd>Q</kbd> quit.</span>
         <button id="quit" type="button">Quit</button>
-        <button id="start" type="button" class="primary">Start</button>
+        <button id="start" type="button">Present</button>
+        <button id="edit" type="button" class="primary">Open in editor</button>
       </div>
     </footer>
+
+    <dialog id="new-site-dialog">
+      <form id="new-site-form" method="dialog">
+        <h2>New site</h2>
+        <label>Name <input id="new-name" type="text" required maxlength="60" placeholder="Lindholmen" /></label>
+        <div class="pair">
+          <label>Latitude of the centre <input id="new-lat" type="number" required step="any" min="-90" max="90" placeholder="57.7066" /></label>
+          <label>Longitude <input id="new-lon" type="number" required step="any" min="-180" max="180" placeholder="11.9384" /></label>
+        </div>
+        <div class="pair">
+          <label>Width on the ground, metres <input id="new-width" type="number" required min="50" max="20000" value="1000" /></label>
+          <label>Height, metres <input id="new-height" type="number" required min="50" max="20000" value="600" /></label>
+        </div>
+        <p class="hint">The site starts with a base map and sunlight. Everything else is added in the editor, and these values can be changed later in site.json.</p>
+        <p id="new-error" class="problem" role="alert" hidden></p>
+        <div class="actions">
+          <button id="new-cancel" type="button">Cancel</button>
+          <button id="new-create" type="submit" class="primary">Create and open</button>
+        </div>
+      </form>
+    </dialog>
 
     <script src="launcher.js"></script>
     <script src="colour.js"></script>

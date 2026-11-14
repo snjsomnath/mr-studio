@@ -134,9 +134,19 @@ pub struct Settings {
     pub autostart: bool,
     /// Do not look for a newer version when the app starts. Checking is the default.
     pub skip_update_check: bool,
+    /// The sites opened last, newest first.
+    pub recent: Vec<PathBuf>,
 }
 
 impl Settings {
+    /// Notes that `site` was opened: it is the one to offer next time and tops the recent list.
+    pub fn opened(&mut self, site: &Path) {
+        self.site = Some(site.to_path_buf());
+        self.recent.retain(|p| p != site);
+        self.recent.insert(0, site.to_path_buf());
+        self.recent.truncate(8);
+    }
+
     pub fn read(path: &Path) -> Self {
         match std::fs::read_to_string(path) {
             Ok(text) => serde_json::from_str(&text).unwrap_or_else(|e| {

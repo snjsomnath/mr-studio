@@ -1,7 +1,8 @@
 //! MR Studio desktop shell.
 //!
-//! Runs the host inside this process and opens one window per configured display, each
-//! pointed at a surface URL. A launcher window picks the site and the displays. Surfaces
+//! Runs the host inside this process. A launcher window picks or creates the site and the
+//! displays; the editor window authors it; Present opens one window per configured
+//! display, each pointed at a surface URL. Surfaces
 //! are ordinary pages served by the host, so there are no popups, no browser flags and no
 //! permission prompts. Contract in `docs/contracts/session.md`.
 
@@ -33,14 +34,20 @@ use tauri_plugin_opener::OpenerExt;
 use tauri_plugin_updater::UpdaterExt;
 
 const LAUNCHER: &str = "launcher";
+/// The window where a site is authored: the host's `/compose` page. It may call the few
+/// commands listed in `capabilities/editor.json`.
+const EDITOR: &str = "editor";
 const PORT: u16 = 4170;
 
-/// Surfaces are remote pages with no access to the shell. These two shortcuts reach it by
+/// Surfaces are remote pages with no access to the shell. These shortcuts reach it by
 /// asking to navigate to a path the shell intercepts (see `open_surfaces`).
+/// The editor page's link to the shell until it has a Present button of its own.
+const EDITOR_BAR: &str = include_str!("editor-bar.js");
+
 const SHORTCUTS: &str = r"
 window.addEventListener('keydown', (event) => {
   if (!(event.ctrlKey || event.metaKey) || !event.shiftKey) return;
-  const action = { KeyS: 'setup', KeyQ: 'quit' }[event.code];
+  const action = { KeyS: 'setup', KeyQ: 'quit', KeyE: 'edit' }[event.code];
   if (!action) return;
   event.preventDefault();
   window.location.href = '/__shell/' + action;
@@ -109,6 +116,12 @@ fn main() -> anyhow::Result<()> {
             remove_site,
             identify,
             start,
+            open_site,
+            create_site,
+            present,
+            stop_presenting,
+            presenting_state,
+            open_home,
             quit,
             colour_state,
             set_colour,
@@ -134,8 +147,9 @@ fn main() -> anyhow::Result<()> {
             let bundled = paths.resource_dir().unwrap_or_default();
             let resources = if bundled.join("web").exists() { bundled } else { Path::new(env!("CARGO_MANIFEST_DIR")).join("staged") };
             let mut sites_folders = Vec::new();
-            if let Ok(documents) = paths.document_dir() {
-                sites_folders.push(documents.join("MR Studio").join("sites"));
+            // Sites live in Documents, where people find them; on a computer without one, with the app's data.
+            if let Ok(folder) = paths.document_dir().map(|d| d.join("MR Studio")).or_else(|_| paths.app_data_dir()) {
+                sites_folders.push(folder.join("sites"));
             }
             tracing::info!("MR Studio {}; config in {}", app.package_info().version, config_dir.display());
 
@@ -201,7 +215,11 @@ async fn startup(app: AppHandle) {
         _ => None,
     };
     if let Some(site) = site {
-        match launch(&app, site, saved.unwrap_or_else(Displays::dev), settings.lan).await {
+        let started = match launch(&app, site, settings.lan).await {
+            Ok(()) => show(&app, &saved.unwrap_or_else(Displays::dev)),
+            Err(e) => Err(e),
+        };
+        match started {
             Ok(()) => return,
             Err(e) => {
                 tracing::error!("could not start: {e:#}");
@@ -232,7 +250,7 @@ fn open_launcher(app: &AppHandle) -> anyhow::Result<()> {
             .build()?,
     };
     // A fullscreen surface may cover the display the launcher is on.
-    window.set_always_on_top(app.state::<Shell>().running.lock().unwrap().is_some())?;
+    window.set_always_on_top(is_presenting(app))?;
     window.unminimize()?;
     window.show()?;
     window.set_focus()?;
@@ -256,17 +274,16 @@ fn list_displays(app: &AppHandle) -> anyhow::Result<Vec<Display>> {
     Ok(displays.collect())
 }
 
-/// Stops whatever is running, then runs `site` with one window per entry of `displays`.
-async fn launch(app: &AppHandle, site: PathBuf, displays: Displays, lan: bool) -> anyhow::Result<()> {
+/// Stops whatever is running, then runs `site`. No window is opened: `show` puts it on
+/// the displays and `open_editor` opens it for authoring.
+async fn launch(app: &AppHandle, site: PathBuf, lan: bool) -> anyhow::Result<()> {
     let shell = app.state::<Shell>();
     // One start at a time.
     let mut host = shell.host.lock().await;
-    for (label, window) in app.webview_windows() {
-        if label.starts_with("surface-") {
-            window.destroy()?;
-        }
+    close_surfaces(app)?;
+    if let Some(editor) = app.get_webview_window(EDITOR) {
+        editor.destroy()?;
     }
-    shell.surfaces.lock().unwrap().clear();
     *shell.running.lock().unwrap() = None;
     if let Some(old) = host.take() {
         old.stop(Duration::from_secs(2)).await;
@@ -307,9 +324,79 @@ async fn launch(app: &AppHandle, site: PathBuf, displays: Displays, lan: bool) -
         }
     }
     *host = Some(started);
-    *shell.running.lock().unwrap() = Some(running.clone());
+    *shell.running.lock().unwrap() = Some(running);
+    Ok(())
+}
 
-    open_surfaces(app, running.port, &displays)
+/// Runs `site` unless it is what is running already, with the same network choice.
+async fn ensure_running(app: &AppHandle, site: &Path, lan: bool) -> anyhow::Result<()> {
+    let same = |r: &Running| r.lan == lan && (r.site == site || r.site.canonicalize().ok() == site.canonicalize().ok());
+    if app.state::<Shell>().running.lock().unwrap().as_ref().is_some_and(same) {
+        return Ok(());
+    }
+    launch(app, site.to_path_buf(), lan).await
+}
+
+fn close_surfaces(app: &AppHandle) -> anyhow::Result<()> {
+    for (label, window) in app.webview_windows() {
+        if label.starts_with("surface-") {
+            window.destroy()?;
+        }
+    }
+    app.state::<Shell>().surfaces.lock().unwrap().clear();
+    Ok(())
+}
+
+fn is_presenting(app: &AppHandle) -> bool {
+    app.webview_windows().keys().any(|label| label.starts_with("surface-"))
+}
+
+/// Puts the running site on the displays: one window per entry of `displays`, replacing
+/// the ones that are open.
+fn show(app: &AppHandle, displays: &Displays) -> anyhow::Result<()> {
+    let port = app.state::<Shell>().running.lock().unwrap().as_ref().map(|r| r.port).context("no site is open")?;
+    close_surfaces(app)?;
+    open_surfaces(app, port, displays)
+}
+
+/// The displays to present on when nobody says: the saved ones, or a suggestion for
+/// what is connected.
+fn usual_displays(app: &AppHandle) -> anyhow::Result<Displays> {
+    let saved = Displays::read(&app.state::<Shell>().displays_path())?;
+    Ok(match saved {
+        Some(saved) => saved,
+        None => Displays::suggest(&list_displays(app)?),
+    })
+}
+
+/// Opens the running site in the editor window.
+fn open_editor(app: &AppHandle) -> anyhow::Result<()> {
+    let running = app.state::<Shell>().running.lock().unwrap().clone().context("no site is open")?;
+    let window = match app.get_webview_window(EDITOR) {
+        Some(window) => window,
+        None => {
+            let url = format!("http://127.0.0.1:{}/compose", running.port).parse().expect("valid editor url");
+            let handle = app.clone();
+            WebviewWindowBuilder::new(app, EDITOR, WebviewUrl::External(url))
+                .title(format!("MR Studio · {}", running.name))
+                .inner_size(1440.0, 900.0)
+                .min_inner_size(960.0, 600.0)
+                .center()
+                .initialization_script(EDITOR_BAR)
+                .on_navigation(move |url| match url.path().strip_prefix("/__shell/") {
+                    Some(action) => {
+                        shell_action(&handle, action);
+                        false
+                    }
+                    None => true,
+                })
+                .build()?
+        }
+    };
+    window.unminimize()?;
+    window.show()?;
+    window.set_focus()?;
+    Ok(())
 }
 
 fn open_surfaces(app: &AppHandle, port: u16, displays: &Displays) -> anyhow::Result<()> {
@@ -389,13 +476,20 @@ fn shell_action(app: &AppHandle, action: &str) {
     match action {
         // Off the event loop: creating a window from inside a webview callback can deadlock on Windows.
         "setup" => drop(tauri::async_runtime::spawn(async move { report(open_launcher(&app)) })),
+        // Back from the table to the editor.
+        "edit" => drop(tauri::async_runtime::spawn(async move {
+            report(close_surfaces(&app));
+            if app.get_webview_window(EDITOR).is_some() || app.webview_windows().is_empty() {
+                report(open_editor(&app).or_else(|_| open_launcher(&app)));
+            }
+        })),
         "quit" => app.exit(0),
         other => tracing::warn!("unknown shell action '{other}'"),
     }
 }
 
-// The launcher's commands. Only the launcher window can call them: it is the only local
-// page, and Tauri refuses commands from remote pages such as the surfaces.
+// The shell's commands. The launcher may call all of them and the editor window a few
+// (`capabilities/`); Tauri refuses commands from every other page, such as the surfaces.
 
 #[derive(Serialize)]
 struct LauncherState {
@@ -412,6 +506,8 @@ struct LauncherState {
     lan: bool,
     autostart: bool,
     running: Option<Running>,
+    /// The running site is on the displays, not only open in the editor.
+    presenting: bool,
     error: Option<String>,
 }
 
@@ -448,7 +544,10 @@ fn launcher_state(app: AppHandle, shell: State<'_, Shell>) -> Result<LauncherSta
         Some(Assigned { display: display.index, role: w.role.clone(), fullscreen: w.fullscreen })
     });
     let running = shell.running.lock().unwrap().clone();
-    let sites = sites::discover(&settings.sites, &shell.sites_folders, &shell.resources.join("sites"));
+    let mut sites = sites::discover(&settings.sites, &shell.sites_folders, &shell.resources.join("sites"));
+    // The sites opened last come first; the rest keep their order.
+    let recency = |s: &SiteEntry| settings.recent.iter().position(|p| p == &s.path).unwrap_or(usize::MAX);
+    sites.sort_by_key(recency);
     let usable = |path: &PathBuf| sites.iter().any(|s| &s.path == path && s.problem.is_none());
     let site = running.as_ref().map(|r| r.site.clone()).or(settings.site.clone()).filter(usable);
     Ok(LauncherState {
@@ -463,6 +562,7 @@ fn launcher_state(app: AppHandle, shell: State<'_, Shell>) -> Result<LauncherSta
         // Offered by default on a machine that is being set up for the first time.
         autostart: settings.autostart || saved.is_none(),
         running,
+        presenting: is_presenting(&app),
         error,
     })
 }
@@ -535,12 +635,31 @@ struct StartRequest {
     autostart: bool,
 }
 
-/// Saves the choices, starts the session and closes the launcher.
+/// Saves the choices, puts the site on the displays and closes the launcher.
 #[tauri::command]
 async fn start(app: AppHandle, shell: State<'_, Shell>, request: StartRequest) -> Result<(), String> {
-    let connected = list_displays(&app).map_err(text)?;
+    let displays = chosen_displays(&app, &request.windows)?;
+    displays.write(&shell.displays_path()).map_err(text)?;
+    let mut settings = shell.settings();
+    settings.opened(&request.site);
+    settings.lan = request.lan;
+    settings.autostart = request.autostart;
+    settings.write(&shell.settings_path()).map_err(text)?;
+
+    // An editor that is open on this site stays open; its changes are already on the table.
+    ensure_running(&app, &request.site, request.lan).await.map_err(text)?;
+    show(&app, &displays).map_err(text)?;
+    if let Some(launcher) = app.get_webview_window(LAUNCHER) {
+        launcher.close().map_err(text)?;
+    }
+    Ok(())
+}
+
+/// The launcher's or the editor's choice of displays, as it is saved.
+fn chosen_displays(app: &AppHandle, windows: &[Assigned]) -> Result<Displays, String> {
+    let connected = list_displays(app).map_err(text)?;
     let mut displays = Displays { windows: Vec::new() };
-    for window in &request.windows {
+    for window in windows {
         if !WINDOW_ROLES.contains(&window.role.as_str()) {
             return Err(format!("'{}' is not a window role", window.role));
         }
@@ -550,18 +669,100 @@ async fn start(app: AppHandle, shell: State<'_, Shell>, request: StartRequest) -
     if displays.windows.is_empty() {
         displays = Displays::dev();
     }
-    displays.write(&shell.displays_path()).map_err(text)?;
-    let mut settings = shell.settings();
-    settings.site = Some(request.site.clone());
-    settings.lan = request.lan;
-    settings.autostart = request.autostart;
-    settings.write(&shell.settings_path()).map_err(text)?;
+    Ok(displays)
+}
 
-    launch(&app, request.site, displays, request.lan).await.map_err(text)?;
+/// Opens a site in the editor and closes the launcher. Nothing goes on the displays
+/// until Present.
+#[tauri::command]
+async fn open_site(app: AppHandle, shell: State<'_, Shell>, path: PathBuf) -> Result<(), String> {
+    let mut settings = shell.settings();
+    ensure_running(&app, &path, settings.lan).await.map_err(text)?;
+    settings.opened(&path);
+    settings.write(&shell.settings_path()).map_err(text)?;
+    open_editor(&app).map_err(text)?;
     if let Some(launcher) = app.get_webview_window(LAUNCHER) {
         launcher.close().map_err(text)?;
     }
     Ok(())
+}
+
+#[derive(Debug, Deserialize)]
+struct NewSite {
+    name: String,
+    lat: f64,
+    lon: f64,
+    width_m: f64,
+    height_m: f64,
+}
+
+/// Makes an empty site in the sites folder and returns where. The caller opens it.
+#[tauri::command]
+fn create_site(shell: State<'_, Shell>, site: NewSite) -> Result<PathBuf, String> {
+    let folder = shell.sites_folders.first().ok_or("this computer has no folder to keep sites in")?;
+    let name = site.name.trim();
+    let id = mrs_site::create::id_from(name);
+    if id.is_empty() {
+        return Err("Give the site a name with at least one letter or digit.".into());
+    }
+    let dir = folder.join(&id);
+    mrs_site::create::create(&dir, name, site.lon, site.lat, site.width_m, site.height_m, 0.0).map_err(text)?;
+    Ok(dir)
+}
+
+#[derive(Serialize)]
+struct PresentingState {
+    version: String,
+    site: Option<Running>,
+    presenting: bool,
+    displays: Vec<Display>,
+    /// What Present uses when it is not told otherwise.
+    windows: Vec<Assigned>,
+}
+
+/// What the editor needs to know to offer Present.
+#[tauri::command]
+fn presenting_state(app: AppHandle, shell: State<'_, Shell>) -> Result<PresentingState, String> {
+    let displays = list_displays(&app).map_err(text)?;
+    let usual = usual_displays(&app).map_err(text)?;
+    let windows = usual.windows.iter().filter_map(|w| {
+        let display = w.display.resolve(&displays)?;
+        Some(Assigned { display: display.index, role: w.role.clone(), fullscreen: w.fullscreen })
+    });
+    Ok(PresentingState {
+        version: app.package_info().version.to_string(),
+        site: shell.running.lock().unwrap().clone(),
+        presenting: is_presenting(&app),
+        windows: windows.collect(),
+        displays,
+    })
+}
+
+/// Puts the open site on the displays. With `windows` the choice is saved first; without,
+/// the saved displays are used.
+#[tauri::command]
+async fn present(app: AppHandle, shell: State<'_, Shell>, windows: Option<Vec<Assigned>>) -> Result<(), String> {
+    let displays = match windows {
+        Some(windows) => {
+            let displays = chosen_displays(&app, &windows)?;
+            displays.write(&shell.displays_path()).map_err(text)?;
+            displays
+        }
+        None => usual_displays(&app).map_err(text)?,
+    };
+    show(&app, &displays).map_err(text)
+}
+
+/// Takes the site off the displays. It stays open in the editor.
+#[tauri::command]
+async fn stop_presenting(app: AppHandle) -> Result<(), String> {
+    close_surfaces(&app).map_err(text)
+}
+
+/// Shows the launcher: other sites, the displays, colour, calibration and updates.
+#[tauri::command]
+async fn open_home(app: AppHandle) -> Result<(), String> {
+    open_launcher(&app).map_err(text)
 }
 
 #[tauri::command]

@@ -2,6 +2,7 @@
 //! Contract in `docs/contracts/site.md`.
 
 mod bake;
+pub mod create;
 mod crs;
 mod geotiff;
 mod manifest;

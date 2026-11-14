@@ -34,8 +34,8 @@ pnpm app          # build the surfaces and run the app from source
 pnpm app:build    # make an installer for this computer (target/release/bundle)
 ```
 
-The app opens a launcher where you pick a site and say which display is the table and which is the TV, then opens one borderless fullscreen window per display.
-The choice is remembered, so the next start goes straight to the table. Ctrl+Shift+S brings the launcher back and Ctrl+Shift+Q quits.
+The app opens a launcher where you pick or create a site. **Open in editor** opens it for authoring; **Present** puts it on the displays you chose, one borderless fullscreen window each, and the editor has the same Present button.
+The display choice is remembered, and a table can be set to start by itself. While presenting, Ctrl+Shift+E goes back to the editor, Ctrl+Shift+S brings the launcher back and Ctrl+Shift+Q quits.
 The launcher's Colour tab boosts or corrects the colours of each display (saturation, contrast, brightness, gamma, white balance), live on the running table, with presets and a test card.
 The Calibration tab starts the projector calibration tool on the table.
 The Updates tab says when a newer version is published, shows what it brings and any breaking changes, and installs it; see [docs/RELEASING.md](docs/RELEASING.md).

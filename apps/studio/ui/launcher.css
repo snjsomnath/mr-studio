@@ -119,3 +119,13 @@ progress { width: 220px; accent-color: var(--accent); }
 .md code { padding: 1px 4px; border-radius: 4px; background: #0f131a; font: 12px ui-monospace, Menlo, Consolas, monospace; }
 .md pre { padding: 8px 10px; border-radius: 8px; background: #0f131a; overflow: auto; }
 .md a { color: var(--tv); cursor: pointer; }
+
+dialog { width: min(520px, 90vw); padding: 20px 22px; border: 1px solid var(--line, #2a3140); border-radius: 12px; background: var(--panel, #131822); color: inherit; }
+dialog::backdrop { background: rgba(0, 0, 0, 0.55); }
+dialog h2 { margin: 0 0 14px; }
+dialog label { display: grid; gap: 5px; margin-bottom: 12px; font-size: 13px; }
+dialog input { width: 100%; box-sizing: border-box; }
+dialog .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+dialog .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+dialog input { padding: 6px 8px; border-radius: 8px; border: 1px solid var(--line); background: #0f131a; color: inherit; font: inherit; flex: none; min-width: 0; }
+.actions button { white-space: nowrap; }
