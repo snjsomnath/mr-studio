@@ -65,7 +65,7 @@ The editor window is the only remote page with access to the shell, and only to 
 | `open_home` | Opens the launcher |
 | `quit` | Quits the app |
 
-The shell adds a small bar to the editor window with Present, Stop presenting and "Sites and displays". When the page has an element with `data-shell-present` (its own Present button) the bar leaves Present to the page and shows Stop only while presenting. A page that sets `window.mrsShellControls = true` before it finishes loading gets no bar. The editor at `/edit` does this: its title bar has Present, which becomes Stop presenting, and Sites and displays. The page must work without `window.__TAURI__` too, for an editor opened in a browser.
+The shell adds a small bar to the editor window with Present, Stop presenting and "Sites and displays". When the page has an element with `data-shell-present` (its own Present button) the bar leaves Present to the page and shows Stop only while presenting. A page that sets `window.mrsShellControls = true` before it finishes loading gets no bar. The editor at `/edit` does this: its title bar has Present, which becomes Stop presenting, and Home. The page must work without `window.__TAURI__` too, for an editor opened in a browser.
 
 What the shell does when it starts:
 
@@ -116,7 +116,9 @@ Surface URLs served by the host:
 | `/phone` | Phone controller |
 | `/dev` | Table view with controls side by side, for layer development |
 | `/compose` | Scene composer: layer palette, table view and the scene's stack. Joins with the `dev` role |
-| `/edit` | The editor: the authoring window around the live table. The home screen holds layers of category `base` and `ambient`; every other layer is a layer of its own. Joins with the `dev` role |
+| `/edit` | The editor: the authoring window around the live table. The home screen holds layers of category `base` and `ambient`; every other layer is a layer of its own. Joins with the `dev` role. With `?welcome=1` or `?setup=1`, or when the table has no layers yet, it opens in the setup guide |
+| `/new` | The first step of the setup wizard, for a table that does not exist yet: name, place and size. It joins no session. Inside the desktop app it calls `create_site { site: { name, lat, lon, width_m, height_m } }`, then `open_site { path, welcome: true }`; Cancel calls `open_home` |
+| `/features.json` | What this build of the surfaces offers the shell: `{ "new_table_wizard": true }` |
 | `/site/*` | Files from the active site package (read only) |
 | `/api/model` | The site's digital twin mesh (see model.md) |
 | `/ws` | WebSocket endpoint |
@@ -185,7 +187,7 @@ Requests:
 | `scene.add` | `{ use, id?, index?, active?, params? }` | tv, dev | Adds a layer from the catalogue at `index` (default: on top, active). Returns `{ id }`; without `id` the first copy is named after the layer and later ones `<layer>-2`, `-3`, ... |
 | `scene.remove` | `{ layer }` | tv, dev | Takes a layer out of the scene |
 | `scene.move` | `{ layer, index }` | tv, dev | Moves a layer to `index` in the draw order (0 is the bottom) |
-| `scene.set` | `{ layer, params?, active?, button? }` | tv, dev | Like `layer.set` and `layer.activate`, and also saved as the layer's starting state. `button` is `{ name?, description?, icon?, side? }`: text sets a field, `null` clears it, a field left out stays. `scene.add` takes `button` too |
+| `scene.set` | `{ layer, params?, active?, button?, hide? }` | tv, dev | Like `layer.set` and `layer.activate`, and also saved as the layer's starting state. `button` is `{ name?, description?, icon?, side? }`: text sets a field, `null` clears it, a field left out stays. `hide` is the whole list of control ids the controller and phones leave out. `scene.add` takes `button` and `hide` too |
 
 In every `layer.*` and `tool.input` request, `layer` is the instance id.
 The `scene.*` requests rewrite the `layers` list of `site.json` before they take effect, and fail without changing anything if it cannot be saved.

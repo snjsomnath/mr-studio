@@ -266,7 +266,7 @@ export class Controller {
         card.classList.toggle('is-active', state.active);
         body.hidden = !state.active;
         for (const w of widgets) {
-          w.row.hidden = !isVisible(w.control, state.params);
+          w.row.hidden = !isVisible(w.control, state.params) || Boolean(state.hide?.includes(w.control.id));
           w.sync(state.params[w.control.id]);
         }
       },
@@ -330,7 +330,7 @@ export class Controller {
         card.classList.toggle('is-active', state.active);
         body.hidden = !state.active;
         for (const w of widgets) {
-          w.row.hidden = !isVisible(w.control, state.params);
+          w.row.hidden = !isVisible(w.control, state.params) || (phone && Boolean(state.hide?.includes(w.control.id)));
           w.sync(state.params[w.control.id]);
         }
         tools?.sync(state.active);

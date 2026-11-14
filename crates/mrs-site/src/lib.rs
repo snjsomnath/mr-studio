@@ -309,7 +309,7 @@ mod tests {
     }
 
     fn layer(name: &str, id: Option<&str>) -> LayerRef {
-        LayerRef { r#use: name.into(), id: id.map(String::from), active: true, params: Default::default(), button: Default::default() }
+        LayerRef { r#use: name.into(), id: id.map(String::from), active: true, params: Default::default(), button: Default::default(), hide: Vec::new() }
     }
 
     #[test]

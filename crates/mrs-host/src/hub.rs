@@ -95,6 +95,9 @@ pub struct LayerState {
     pub shared: Map<String, Value>,
     /// How the site offers the layer on the controller. Empty fields fall back to the layer package.
     pub button: LayerButton,
+    /// Ids of the controls the controller and phones leave out.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub hide: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -248,6 +251,8 @@ impl Hub {
             params,
             shared: Map::new(),
             button: saved.button.clone(),
+            // A control the layer package no longer has is not worth refusing the site over.
+            hide: saved.hide.iter().filter(|id| layer.controls.iter().any(|c| &c.id == *id)).cloned().collect(),
         };
         Ok(Instance { id, def, saved, state })
     }
@@ -497,6 +502,7 @@ impl Hub {
                         _ => return Err("params must be an object".into()),
                     },
                     button: button_patch(LayerButton::default(), &p["button"])?,
+                    hide: hide_list(&self.catalog[def], &p["hide"])?.unwrap_or_default(),
                 };
                 let instance = Self::instance(&self.catalog, def, saved, false).map_err(|e| e.to_string())?;
                 let index = p["index"].as_u64().map_or(scene.len(), |i| (i as usize).min(scene.len()));
@@ -532,6 +538,10 @@ impl Hub {
                 let button = button_patch(instance.saved.button.clone(), &p["button"])?;
                 instance.state.button = button.clone();
                 instance.saved.button = button;
+                if let Some(hide) = hide_list(&self.catalog[instance.def], &p["hide"])? {
+                    instance.state.hide = hide.clone();
+                    instance.saved.hide = hide;
+                }
                 changed_layer = Some(index);
             }
             other => return Err(format!("unknown method '{other}'")),
@@ -599,6 +609,27 @@ fn clean_geometry(kind: ToolKind, geometry: &Value) -> Result<Value, String> {
         }
     };
     Ok(json!({ "type": name, "coordinates": cleaned }))
+}
+
+/// Reads the `hide` of a `scene.*` request: the whole list of control ids to leave off the
+/// controller and phones. Absent keeps what is there.
+fn hide_list(layer: &LayerDef, value: &Value) -> Result<Option<Vec<String>>, String> {
+    let list = match value {
+        Value::Null => return Ok(None),
+        Value::Array(list) => list,
+        _ => return Err("hide must be a list of control ids".into()),
+    };
+    let mut hide: Vec<String> = Vec::new();
+    for id in list {
+        let id = id.as_str().ok_or("hide must be a list of control ids")?;
+        if !layer.controls.iter().any(|c| c.id == id) {
+            return Err(format!("layer '{}' has no control '{id}'", layer.id));
+        }
+        if !hide.iter().any(|h| h == id) {
+            hide.push(id.to_string());
+        }
+    }
+    Ok(Some(hide))
 }
 
 /// Applies a `button` patch from a `scene.*` request: a string sets a field, `null` clears it,

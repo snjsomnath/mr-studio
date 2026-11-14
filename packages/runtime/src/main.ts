@@ -25,6 +25,15 @@ function el(tag: string, className: string, text?: string): HTMLElement {
 async function main() {
   const app = document.getElementById('app')!;
   const segment = location.pathname.split('/').filter(Boolean)[0];
+  // The first step of the setup wizard, for a table that does not exist yet. It needs no session.
+  if (segment === 'new') {
+    document.body.dataset.role = 'edit';
+    document.querySelector('meta[name="color-scheme"]')?.setAttribute('content', 'light');
+    (window as { mrsShellControls?: boolean }).mrsShellControls = true;
+    const { newTable } = await import('./editor/new-table.ts');
+    newTable(app);
+    return;
+  }
   // The scene composer is an operator's tool: it joins with the dev role and has its own layout.
   const composing = segment === 'compose';
   // The editor is the authoring window around the live table. It joins with the dev role too.

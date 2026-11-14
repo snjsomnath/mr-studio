@@ -157,6 +157,9 @@ pub struct LayerRef {
     /// How the layer is offered on the controller. What is left out comes from the layer package.
     #[serde(default, skip_serializing_if = "LayerButton::is_empty")]
     pub button: LayerButton,
+    /// Ids of the layer's controls that the controller and phones do not show. The editor still does.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub hide: Vec<String>,
 }
 
 /// The button that opens a layer on the controller: the words and icon the site's
