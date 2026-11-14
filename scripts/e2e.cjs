@@ -497,6 +497,61 @@ async function main() {
 
     const real = errors.filter((e) => !/wrong session code|WebSocket/.test(e));
     assert.deepEqual(real, [], 'no page errors');
+    // ---- The setup wizard ----
+    // A new table opens in the guide; here it runs on the sample, whose name and place are already set.
+    const guide = await open('/edit?welcome=1', { width: 1440, height: 900 });
+    await guide.locator('.wz h2', { hasText: 'The map at rest' }).waitFor();
+    assert.equal(await guide.locator('.wz input[data-layer="trees"]').isChecked(), true);
+    await guide.getByRole('button', { name: 'Next' }).click();
+    // A layer switched on joins the scene and is saved; switched off it is gone again.
+    await guide.locator('.wz-choice', { hasText: 'Building blocks' }).click();
+    await guide.waitForFunction(() => document.querySelector('.wz input[data-layer="blocks-demo"]')?.checked === true);
+    assert.equal(savedLayers().at(-1).use, 'blocks-demo');
+    await guide.locator('.wz-choice', { hasText: 'Building blocks' }).click();
+    await guide.waitForFunction(() => document.querySelector('.wz input[data-layer="blocks-demo"]')?.checked === false);
+    assert.equal(savedLayers().some((l) => l.use === 'blocks-demo'), false);
+    await guide.getByRole('button', { name: 'Next' }).click();
+    // Buttons are named beside the live controller.
+    const live = guide.frameLocator('.ed-preview iframe');
+    await live.locator('.layer-button', { hasText: 'Wind' }).waitFor();
+    await guide.getByLabel('Name of Wind').fill('Windy corners');
+    await guide.getByLabel('Name of Wind').blur();
+    await live.locator('.layer-button', { hasText: 'Windy corners' }).waitFor();
+    assert.equal(savedLayers().find((l) => l.use === 'wind').button.name, 'Windy corners');
+    await guide.getByLabel('Name of Wind').fill('');
+    await guide.getByLabel('Name of Wind').blur();
+    await live.locator('.layer-button', { hasText: 'Wind' }).waitFor();
+    await guide.getByRole('button', { name: 'Next' }).click();
+    await guide.getByText('6 layers, each a button on the controller').waitFor();
+    if (shots) await guide.screenshot({ path: path.join(shots, 'wizard.png') });
+    // Leaving the guide lands in the editor, and the guide stays one click away.
+    await guide.getByRole('button', { name: 'Fine-tune in the editor' }).click();
+    await guide.locator('.ed-tree .ed-row[data-context="home"]').waitFor();
+    assert.equal(await guide.locator('.wz').count(), 0);
+    await guide.getByRole('button', { name: 'Setup guide' }).click();
+    await guide.locator('.wz h2', { hasText: 'Set up Sample district' }).waitFor();
+    await guide.close();
+
+    // The wizard's first step is a page of its own, for a table that does not exist yet. The app creates the table.
+    const fresh = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+    await fresh.addInitScript(() => {
+      window.shellCalls = [];
+      window.__TAURI__ = { core: { invoke: async (command, args) => (window.shellCalls.push([command, args]), '/sites/harbour') } };
+    });
+    await fresh.goto(base + '/new');
+    await fresh.getByLabel('Name').fill('Harbour');
+    await fresh.getByRole('button', { name: 'Create the table' }).click();
+    await fresh.getByRole('alert').getByText(/Paste the coordinates/).waitFor();
+    await fresh.getByLabel('Centre of the table').fill('https://www.openstreetmap.org/#map=16/57.7069/11.9386');
+    await fresh.getByRole('button', { name: 'Create the table' }).click();
+    await fresh.waitForFunction(() => window.shellCalls.length === 2);
+    assert.deepEqual(await fresh.evaluate(() => window.shellCalls), [
+      ['create_site', { site: { name: 'Harbour', lat: 57.7069, lon: 11.9386, width_m: 1000, height_m: 600 } }],
+      ['open_site', { path: '/sites/harbour', welcome: true }],
+    ]);
+    await fresh.close();
+    assert.deepEqual(await (await fetch(base + '/features.json')).json(), { new_table_wizard: true });
+
     // Inside the desktop app the editor drives the shell itself: Present becomes Stop presenting.
     const shelled = await browser.newPage({ viewport: { width: 1440, height: 900 } });
     await shelled.addInitScript(() => {

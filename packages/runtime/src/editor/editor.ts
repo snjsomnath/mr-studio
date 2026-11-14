@@ -6,6 +6,7 @@ import type { Widget } from '../controls.ts';
 import { paramSender } from '../layer-manager.ts';
 import type { Store } from '../store.ts';
 import { LAYER_ICONS, icon } from './icons.ts';
+import { Wizard } from './wizard.ts';
 import './editor.css';
 
 /**
@@ -59,12 +60,18 @@ export class Editor {
   private readonly notice = el('div', 'ed-notice');
   private readonly inspector = el('aside', 'ed-inspector');
   private readonly saved = el('span', 'ed-saved');
+  private readonly shell = el('div', 'ed');
+  private readonly body = el('div', 'ed-body');
+  /** The live controller, shown in the middle in place of the map. */
+  private readonly preview = el('div', 'ed-preview');
+  private presentButton!: HTMLButtonElement;
+  private wizard: Wizard | null = null;
 
   constructor(root: HTMLElement, store: Store, connection: Connection) {
     this.store = store;
     this.connection = connection;
 
-    const shell = el('div', 'ed');
+    const { shell, body } = this;
     const left = el('aside', 'ed-left');
     const name = el('header', 'ed-left-head');
     name.append(el('strong', undefined, store.state.site.name));
@@ -72,9 +79,9 @@ export class Editor {
 
     const centre = el('main', 'ed-centre');
     this.notice.hidden = true;
-    centre.append(this.canvasHead, this.canvas, this.notice);
+    this.preview.hidden = true;
+    centre.append(this.canvasHead, this.canvas, this.preview, this.notice);
 
-    const body = el('div', 'ed-body');
     body.append(left, centre, this.inspector);
     shell.append(this.titleBar(), this.tabs, this.ribbon, body, this.statusBar());
     root.append(shell);
@@ -83,6 +90,72 @@ export class Editor {
     this.render();
     store.onScene(() => this.render());
     store.onLayer((id, state) => this.sync.get(id)?.(state));
+
+    // A new table opens in the setup guide, and so does one with nothing on it yet.
+    const query = new URLSearchParams(location.search);
+    const created = query.has('welcome') || query.has('setup');
+    if (created || this.instances().every((i) => isAmbient(i.manifest))) this.openWizard(created);
+  }
+
+  // ---- The setup guide --------------------------------------------------------
+
+  private openWizard(created = false): void {
+    if (this.wizard) return;
+    this.wizard = new Wizard(
+      {
+        store: this.store,
+        send: (method, params) => this.send(method, params),
+        add: (manifest) => this.add(manifest),
+        show: (id) => this.show(id),
+        controller: (shown) => this.showController(shown),
+        present: () => this.presentButton.click(),
+        close: () => this.closeWizard(),
+      },
+      { created },
+    );
+    this.shell.classList.add('is-setup');
+    this.body.prepend(this.wizard.element);
+    this.render();
+  }
+
+  private closeWizard(): void {
+    this.wizard?.element.remove();
+    this.wizard = null;
+    this.shell.classList.remove('is-setup');
+    this.context = { kind: 'home' };
+    this.show(null);
+    this.render();
+  }
+
+  /** Opens one layer on the map and closes the rest, as its button on the controller does. Null leaves the map at rest. */
+  private show(id: string | null): void {
+    const { store, connection } = this;
+    const alongside = id !== null && store.manifest(store.state.layers[id]?.layer ?? '')?.alongside;
+    for (const other of store.state.scene) {
+      const state = store.state.layers[other];
+      const manifest = state && store.manifest(state.layer);
+      if (!state || !manifest || isAmbient(manifest)) continue;
+      const wanted = other === id || (state.active && id !== null && Boolean(alongside || manifest.alongside));
+      if (state.active !== wanted) void connection.request('layer.activate', { layer: other, active: wanted }).catch(() => {});
+    }
+  }
+
+  /** Swaps the map for the live controller in the middle of the window. */
+  private showController(shown: boolean): void {
+    if (shown && !this.preview.firstChild) {
+      const frame = el('iframe');
+      frame.src = '/tv';
+      frame.title = 'The controller, live';
+      this.preview.append(frame);
+      // The controller is laid out for a full screen; it is scaled down to fit.
+      const fit = (): void => {
+        const scale = Math.min((this.preview.clientWidth - 48) / 1600, (this.preview.clientHeight - 48) / 900);
+        frame.style.transform = `translate(-50%, -50%) scale(${Math.max(0.1, scale)})`;
+      };
+      new ResizeObserver(fit).observe(this.preview);
+    }
+    this.preview.hidden = !shown;
+    this.canvas.hidden = shown;
   }
 
   // ---- Requests -------------------------------------------------------------
@@ -144,6 +217,9 @@ export class Editor {
 
   private go(context: Context): void {
     this.context = context;
+    // Choosing a layer shows it on the map, the way pressing its button does; the home screen is the map at rest.
+    if (context.kind === 'layer') this.show(context.id);
+    if (context.kind === 'home') this.show(null);
     this.render();
   }
 
@@ -160,7 +236,12 @@ export class Editor {
     const preview = button('ed-button', 'Preview', 'play');
     preview.title = 'Open the table in a window on this screen';
     preview.addEventListener('click', () => window.open('/table', 'mrstudio-preview'));
+    const guide = button('ed-button', 'Setup guide', 'route');
+    guide.title = 'Walk through setting up this table, step by step';
+    guide.addEventListener('click', () => (this.wizard ? this.closeWizard() : this.openWizard()));
+    actions.append(guide);
     const present = button('ed-button is-primary', 'Present', 'tv');
+    this.presentButton = present;
     // Tells the desktop shell that this page has its own Present control.
     present.dataset.shellPresent = '';
     const invoke = shell();
@@ -400,7 +481,6 @@ export class Editor {
       row.append(side);
       this.sync.set(id, (next) => {
         const button = layerButton(id, manifest, next, defaultSide(this.store));
-        row.classList.toggle('is-off', !next.active);
         row.querySelector('.ed-row-label')!.textContent = button.name;
         row.querySelector('.ed-row-icon')!.replaceChildren(icon(button.icon));
         side.textContent = button.side === 'right' ? 'Right' : 'Left';
@@ -437,6 +517,9 @@ export class Editor {
       detail = 'The screen beside the table: layer buttons, controls, legend and dashboard';
       notice = 'The map stays visual. Words, buttons and numbers live on the controller. Arranging it here comes with a later step of the editor. Open it from View to see it live.';
     }
+    if (this.wizard) return;
+    this.showController(context.kind === 'controller');
+    if (context.kind === 'controller') notice = null;
     const badge = el('span', 'ed-row-icon');
     badge.append(icon(iconName));
     this.canvasHead.replaceChildren(badge, el('strong', undefined, title), el('span', undefined, detail));
@@ -585,7 +668,15 @@ export class Editor {
       nodes.push(this.settings(layer.id, layer.manifest));
     } else {
       nodes.push(head(context.kind === 'controller' ? 'tv' : 'phone', context.kind === 'controller' ? 'Controller' : 'Phones', ''));
-      nodes.push(el('p', 'ed-empty', 'Nothing to set here yet.'));
+      nodes.push(
+        el(
+          'p',
+          'ed-empty',
+          context.kind === 'controller'
+            ? 'This is the controller as visitors see it, live. Press a button to try it. To change a button, choose its layer on the left.'
+            : `Visitors join with the code ${this.store.state.session.code}. Choosing what phones may control comes later.`,
+        ),
+      );
     }
     this.inspector.replaceChildren(...nodes);
   }
