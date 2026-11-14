@@ -67,6 +67,7 @@ apps/
   studio/         Tauri shell (embeds mrs-host)
 packages/
   sdk/            @mrstudio/sdk: layer API, protocol types, engine client, field rendering
+  dashboard/      @mrstudio/dashboard: the TV panel grid, widgets, density budget, themes
   runtime/        @mrstudio/runtime: surfaces (table, tv, phone, dev), layer manager, generated controls
   layers/         core layer packages (sunlight first, then wind, stormwater, isovist, ...)
 sites/
@@ -85,6 +86,7 @@ docs/contracts/   the interface contracts below
 | Site package format | [contracts/site.md](contracts/site.md) | `mrs-site` |
 | App, display and session model, wire protocol | [contracts/session.md](contracts/session.md) | `mrs-host` |
 | Mobile controller | [contracts/mobile.md](contracts/mobile.md) | `@mrstudio/runtime` |
+| TV dashboard: panels, widgets, density budget, themes | [contracts/dashboard.md](contracts/dashboard.md), design in [DASHBOARD.md](DASHBOARD.md) | `@mrstudio/dashboard` |
 
 ## Key decisions
 
@@ -92,6 +94,7 @@ docs/contracts/   the interface contracts below
 - **The host schedules the engine.** A job with subscribers is stepped inside a frame budget and pushes a frame only when its revision changes. Layers never poll.
 - **The simulation grid is aligned to the table.** The grid is a rotated rectangle around the site origin, so no cells are wasted on area the table does not show. Kernels read the rotation from the scene.
 - **Local metric coordinates.** The engine works in east/north metres on a tangent plane at the site origin. That needs no projection library, is accurate to centimetres over a few kilometres, and works anywhere in the world. Site prep reprojects source data to WGS84.
+- **The TV has a budget.** Dashboard panels sit on a fixed 12 by 6 grid, come in eight sizes and each spend a counted share of what one screen may ask a visitor to read. A panel over its budget is refused; too many panels become another page. Sites restyle through tokens and cannot change the rules.
 - **Controls are data.** A layer declares its controls in the manifest. The TV and phone UIs are generated from them, and the host validates every change against them.
 - **Python stays outside the app process.** Data preparation and research models run as services declared in the site or layer manifest and reached through the host gateway.
 

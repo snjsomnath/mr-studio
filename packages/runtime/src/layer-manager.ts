@@ -15,20 +15,29 @@ interface Running {
   stopped: boolean;
 }
 
-/** Sends param changes for a layer, at most one request per animation frame. */
-export function paramSender(connection: Connection, layer: string): (patch: Record<string, unknown>) => void {
+/**
+ * Sends param changes for a layer, at most one request per animation frame, carrying the
+ * latest values. `minInterval` (ms) spaces the requests further apart; phones use it to
+ * stay inside the host's per-phone request limit while a slider is dragged.
+ */
+export function paramSender(connection: Connection, layer: string, minInterval = 0): (patch: Record<string, unknown>) => void {
   let pending: Record<string, unknown> | null = null;
+  let last = -Infinity;
+  const flush = () => {
+    const params = pending!;
+    pending = null;
+    last = performance.now();
+    connection.request('layer.set', { layer, params }).catch((error) => console.warn(`[${layer}] ${error.message}`));
+  };
   return (patch) => {
     if (pending) {
       Object.assign(pending, patch);
       return;
     }
     pending = { ...patch };
-    requestAnimationFrame(() => {
-      const params = pending!;
-      pending = null;
-      connection.request('layer.set', { layer, params }).catch((error) => console.warn(`[${layer}] ${error.message}`));
-    });
+    const wait = last + minInterval - performance.now();
+    if (wait > 0) setTimeout(flush, wait);
+    else requestAnimationFrame(flush);
   };
 }
 
@@ -107,6 +116,7 @@ export class LayerManager {
       } as EngineClient,
       map: this.view.handle(id, track),
       model: this.view.modelHandle(id, track),
+      pointer: this.view.pointer(track),
       publish: (values) => {
         const patch: Record<string, unknown> = {};
         for (const [key, value] of Object.entries(values)) {
