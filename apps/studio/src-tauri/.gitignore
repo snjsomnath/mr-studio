@@ -1,2 +1,3 @@
 gen/
 staged/
+tauri.release.conf.json

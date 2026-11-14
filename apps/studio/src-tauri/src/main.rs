@@ -10,6 +10,7 @@
 mod colour;
 mod config;
 mod sites;
+mod updates;
 
 use std::collections::BTreeMap;
 use std::net::SocketAddr;
@@ -26,8 +27,10 @@ use mrs_host::{HostConfig, Role, RunningHost};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sites::SiteEntry;
-use tauri::{AppHandle, Manager, PhysicalPosition, State, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
+use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, State, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 use tauri_plugin_dialog::DialogExt;
+use tauri_plugin_opener::OpenerExt;
+use tauri_plugin_updater::UpdaterExt;
 
 const LAUNCHER: &str = "launcher";
 const PORT: u16 = 4170;
@@ -58,6 +61,8 @@ struct Shell {
     generation: AtomicU32,
     /// The open surface windows and the display each one is on: (window label, display index).
     surfaces: Mutex<Vec<(String, usize)>>,
+    /// The result of the last look for a newer version.
+    updates: Mutex<Option<Result<updates::Available, String>>>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -96,6 +101,8 @@ fn main() -> anyhow::Result<()> {
             tauri::async_runtime::spawn(async move { report(open_launcher(&app)) });
         }))
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             launcher_state,
             add_site,
@@ -111,7 +118,12 @@ fn main() -> anyhow::Result<()> {
             set_layer_intensity,
             calibration_state,
             calibration_mode,
-            calibration_clear
+            calibration_clear,
+            update_state,
+            check_updates,
+            set_update_check,
+            install_update,
+            open_link
         ])
         .setup(|app| {
             let paths = app.path();
@@ -136,9 +148,18 @@ fn main() -> anyhow::Result<()> {
                 error: Mutex::new(None),
                 generation: AtomicU32::new(0),
                 surfaces: Mutex::new(Vec::new()),
+                updates: Mutex::new(None),
             });
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move { startup(handle).await });
+            if !app.state::<Shell>().settings().skip_update_check {
+                let handle = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    // After the table is up; nothing waits for this.
+                    tokio::time::sleep(Duration::from_secs(5)).await;
+                    look_for_updates(&handle).await;
+                });
+            }
             Ok(())
         })
         .run(tauri::generate_context!())
@@ -249,6 +270,12 @@ async fn launch(app: &AppHandle, site: PathBuf, displays: Displays, lan: bool) -
     *shell.running.lock().unwrap() = None;
     if let Some(old) = host.take() {
         old.stop(Duration::from_secs(2)).await;
+    }
+
+    // A site saved by an older version is brought up to this version's format, on disk,
+    // with the original kept beside it. A site from a newer version is refused with advice.
+    if let Some(done) = mrs_site::migrate::upgrade_site(&site)? {
+        tracing::info!("upgraded {} from site format {} to {}: {}", site.display(), done.from, done.to, done.changes.join("; "));
     }
 
     let ip = if lan { [0, 0, 0, 0] } else { [127, 0, 0, 1] };
@@ -730,4 +757,105 @@ async fn calibration_mode(app: AppHandle, shell: State<'_, Shell>, active: bool)
 async fn calibration_clear(shell: State<'_, Shell>) -> Result<(), String> {
     let host = shell.host.lock().await;
     host.as_ref().ok_or("Start a session first.")?.state.calibration_request("calibration.set", &json!({ "projector": null })).map(|_| ())
+}
+
+// Updates: what is new comes from the published releases (updates.rs); installing is the
+// Tauri updater's job, from the signed files of the latest release.
+
+#[derive(Serialize)]
+struct UpdateState {
+    current: String,
+    /// The app looks for a newer version when it starts.
+    automatic: bool,
+    /// This build can install an update itself. Otherwise the button opens the download page.
+    can_install: bool,
+    /// None until the first look has finished.
+    available: Option<updates::Available>,
+    /// Why the last look failed, for example no internet.
+    error: Option<String>,
+}
+
+fn current_version(app: &AppHandle) -> semver::Version {
+    app.package_info().version.clone()
+}
+
+/// Asks for the published releases, remembers the answer and tells the launcher.
+async fn look_for_updates(app: &AppHandle) {
+    let result = updates::check(&current_version(app)).await.map_err(text);
+    match &result {
+        Ok(found) => {
+            tracing::info!("update check: {}", found.latest.as_deref().map_or("up to date".into(), |v| format!("{v} is available")))
+        }
+        Err(e) => tracing::warn!("update check failed: {e}"),
+    }
+    *app.state::<Shell>().updates.lock().unwrap() = Some(result);
+    let _ = app.emit_to(LAUNCHER, "updates", ());
+}
+
+#[tauri::command]
+fn update_state(app: AppHandle, shell: State<'_, Shell>) -> UpdateState {
+    let (available, error) = match shell.updates.lock().unwrap().clone() {
+        Some(Ok(found)) => (Some(found), None),
+        Some(Err(e)) => (None, Some(e)),
+        None => (None, None),
+    };
+    UpdateState {
+        current: current_version(&app).to_string(),
+        automatic: !shell.settings().skip_update_check,
+        can_install: updates::public_key().is_some(),
+        available,
+        error,
+    }
+}
+
+#[tauri::command]
+async fn check_updates(app: AppHandle) -> Result<(), String> {
+    look_for_updates(&app).await;
+    Ok(())
+}
+
+#[tauri::command]
+fn set_update_check(shell: State<'_, Shell>, automatic: bool) -> Result<(), String> {
+    let mut settings = shell.settings();
+    settings.skip_update_check = !automatic;
+    settings.write(&shell.settings_path()).map_err(text)
+}
+
+/// Downloads the latest release, checks its signature, installs it and restarts the app.
+/// A build without the signing key opens the download page instead.
+#[tauri::command]
+async fn install_update(app: AppHandle) -> Result<(), String> {
+    let Some(key) = updates::public_key() else {
+        return app.opener().open_url(updates::DOWNLOAD_PAGE, None::<&str>).map_err(text);
+    };
+    let feed = std::env::var("MRS_UPDATE_FEED").unwrap_or_else(|_| updates::FEED_URL.into());
+    let updater = app.updater_builder().pubkey(key).endpoints(vec![feed.parse().map_err(text)?]).map_err(text)?.build().map_err(text)?;
+    let update = updater
+        .check()
+        .await
+        .map_err(text)?
+        .ok_or("The newest release has no installer for this computer yet. Try again in a few minutes.")?;
+    tracing::info!("installing MR Studio {}", update.version);
+    let mut received = 0u64;
+    let progress = app.clone();
+    update
+        .download_and_install(
+            move |chunk, total| {
+                received += chunk as u64;
+                let _ = progress.emit_to(LAUNCHER, "update-progress", json!({ "received": received, "total": total }));
+            },
+            || {},
+        )
+        .await
+        .map_err(text)?;
+    app.restart()
+}
+
+/// Opens a link from the release notes in the person's browser.
+#[tauri::command]
+fn open_link(app: AppHandle, url: String) -> Result<(), String> {
+    if !url.starts_with("https://") {
+        return Err("Only https links are opened.".into());
+    }
+    app.opener().open_url(url, None::<&str>).map_err(text)
 }

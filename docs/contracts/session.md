@@ -36,7 +36,8 @@ The launcher is the shell's own window with the site picker and the display pick
   "sites": ["D:/sites/chalmers"],   // site folders added by hand
   "site": "D:/sites/chalmers",      // the site that ran last
   "lan": false,                     // listen on the local network so phones can join
-  "autostart": true                 // start `site` on the saved displays without showing the launcher
+  "autostart": true,                // start `site` on the saved displays without showing the launcher
+  "skip_update_check": false        // true stops the look for a newer version at start-up
 }
 ```
 

@@ -15,6 +15,7 @@
         <button type="button" role="tab" data-tab="setup" aria-selected="true">Setup</button>
         <button type="button" role="tab" data-tab="colour" aria-selected="false">Colour</button>
         <button type="button" role="tab" data-tab="calibration" aria-selected="false">Calibration</button>
+        <button type="button" role="tab" data-tab="updates" aria-selected="false">Updates<span id="updates-badge" class="badge" hidden></span></button>
       </nav>
       <span id="running" hidden></span>
     </header>
@@ -90,6 +91,24 @@
       </section>
     </main>
 
+    <main id="tab-updates" class="single" hidden>
+      <section aria-labelledby="updates-title">
+        <div class="section-head">
+          <h2 id="updates-title">Updates</h2>
+          <button id="updates-check" type="button" class="quiet">Check now</button>
+        </div>
+        <p id="updates-status" class="status"></p>
+        <div id="updates-breaking" class="breaking" role="alert" hidden></div>
+        <div class="presets">
+          <button id="updates-install" type="button" class="primary" hidden></button>
+          <progress id="updates-progress" max="1" value="0" hidden></progress>
+          <span id="updates-note" class="hint"></span>
+        </div>
+        <div id="updates-notes" class="notes"></div>
+        <label class="check"><input id="updates-automatic" type="checkbox" /> Look for a new version when the app starts</label>
+      </section>
+    </main>
+
     <footer>
       <div class="options">
         <label class="check"><input id="autostart" type="checkbox" /> Start like this every time the app opens</label>
@@ -105,5 +124,7 @@
     <script src="launcher.js"></script>
     <script src="colour.js"></script>
     <script src="calibration.js"></script>
+    <script src="markdown.js"></script>
+    <script src="updates.js"></script>
   </body>
 </html>

@@ -6,6 +6,7 @@ mod crs;
 mod geotiff;
 mod manifest;
 mod mesh;
+pub mod migrate;
 mod projection;
 mod twin;
 
@@ -72,8 +73,11 @@ impl Site {
         let dir = dir.as_ref().to_path_buf();
         let path = dir.join("site.json");
         let text = std::fs::read_to_string(&path).map_err(|source| SiteError::Io { path: path.clone(), source })?;
-        let manifest: SiteManifest =
-            serde_json::from_str(&text).map_err(|e| SiteError::Parse { path: path.clone(), message: e.to_string() })?;
+        // A site written for an older format is upgraded as it is read; see `migrate`.
+        let parse = |message: String| SiteError::Parse { path: path.clone(), message };
+        let mut document: serde_json::Value = serde_json::from_str(&text).map_err(|e| parse(e.to_string()))?;
+        migrate::upgrade(&mut document).map_err(parse)?;
+        let manifest: SiteManifest = serde_json::from_value(document).map_err(|e| parse(e.to_string()))?;
         let path = dir.join("calibration.json");
         let calibration = match std::fs::read_to_string(&path) {
             Ok(text) => Some(serde_json::from_str(&text).map_err(|e| SiteError::Parse { path: path.clone(), message: e.to_string() })?),
@@ -283,10 +287,9 @@ mod tests {
         // The host writes the model surface's projector calibration into the same file.
         let only_projector: Calibration = serde_json::from_str(r#"{ "projector": { "version": 1 } }"#).unwrap();
         assert_eq!(only_projector.table, None);
-        let both: Calibration = serde_json::from_str(
-            r#"{ "table": { "center": { "lon": 12, "lat": 57 }, "zoom": 16, "bearing": 0 }, "projector": null }"#,
-        )
-        .unwrap();
+        let both: Calibration =
+            serde_json::from_str(r#"{ "table": { "center": { "lon": 12, "lat": 57 }, "zoom": 16, "bearing": 0 }, "projector": null }"#)
+                .unwrap();
         assert_eq!(both.table.map(|t| t.zoom), Some(16.0));
     }
 }

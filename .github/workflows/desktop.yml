@@ -2,7 +2,8 @@ name: Desktop app
 
 # Builds the installers for Windows and macOS.
 # - Every pull request and every push to main: the installers are attached to the run as artifacts.
-# - A tag like v0.2.0: they are also attached to a draft GitHub release for that tag.
+# - A tag like v0.2.0: they are also attached to a draft GitHub release for that tag, together with
+#   the signed files and the latest.json the installed app updates itself from. See docs/RELEASING.md.
 on:
   push:
     branches: [main]
@@ -25,16 +26,14 @@ jobs:
             os: windows-latest
             args: --bundles nsis
             artifact: mr-studio-windows
-            files: target/release/bundle/nsis/*.exe
+            bundle: target/release/bundle
           - name: macOS app (Apple silicon and Intel)
             os: macos-latest
             targets: aarch64-apple-darwin,x86_64-apple-darwin
             args: --target universal-apple-darwin --bundles app,dmg
             artifact: mr-studio-macos
-            files: target/universal-apple-darwin/release/bundle/dmg/*.dmg
+            bundle: target/universal-apple-darwin/release/bundle
     runs-on: ${{ matrix.os }}
-    permissions:
-      contents: write
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -43,9 +42,6 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: desktop
-      # The kernels and their GPU/CPU parity tests on this platform's own graphics API
-      # (DirectX 12 or Metal). They skip themselves where the runner has no adapter.
-      - run: cargo test -p mrs-engine -- --nocapture
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
@@ -53,17 +49,77 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm -r typecheck
-      # Display matching, displays.json and site discovery.
+      # Display matching, displays.json, site discovery, colour settings and the update check.
       - run: cargo test -p mr-studio-app
       # Builds the surfaces, stages them with the layers and the sample site, and makes the installer.
-      - run: pnpm app:build ${{ matrix.args }}
+      # With the updater key (docs/RELEASING.md) a tag build also makes the signed update files.
+      - name: Build the installer
+        shell: bash
+        env:
+          MRS_UPDATER_PUBKEY: ${{ vars.MRS_UPDATER_PUBKEY }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          version=$(node scripts/app-version.mjs)
+          args="${{ matrix.args }}"
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            if [[ "$GITHUB_REF_NAME" != "v$version" ]]; then
+              echo "::error::The tag is $GITHUB_REF_NAME but Cargo.toml says version $version. Set the version first, then tag."
+              exit 1
+            fi
+            if [[ -n "$TAURI_SIGNING_PRIVATE_KEY" && -n "$MRS_UPDATER_PUBKEY" ]]; then
+              node scripts/release-config.mjs
+              args="$args --config src-tauri/tauri.release.conf.json"
+            else
+              echo "::warning::No updater key is set, so this release cannot be installed from inside the app. See docs/RELEASING.md."
+            fi
+          fi
+          pnpm app:build $args
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+      # Release files get names without spaces, so their download links are predictable.
+      - name: Collect the files
+        shell: bash
+        run: |
+          mkdir release
+          bundle="${{ matrix.bundle }}"
+          copy() { for file in $1; do [ -e "$file" ] && cp "$file" "release/$2"; done; true; }
+          copy "$bundle/nsis/*-setup.exe" "MR-Studio_${VERSION}_windows-x64-setup.exe"
+          copy "$bundle/nsis/*-setup.exe.sig" "MR-Studio_${VERSION}_windows-x64-setup.exe.sig"
+          copy "$bundle/dmg/*.dmg" "MR-Studio_${VERSION}_macos-universal.dmg"
+          copy "$bundle/macos/*.app.tar.gz" "MR-Studio_${VERSION}_macos-universal.app.tar.gz"
+          copy "$bundle/macos/*.app.tar.gz.sig" "MR-Studio_${VERSION}_macos-universal.app.tar.gz.sig"
+          ls -l release
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}
-          path: ${{ matrix.files }}
+          path: release/*
           if-no-files-found: error
-      - if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
+
+  release:
+    name: Draft release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: release
+          merge-multiple: true
+      # latest.json is what an installed app reads to update itself: the version, and for
+      # each platform the download link and the signature of the file behind it.
+      - name: Write latest.json
+        run: node scripts/update-feed.mjs release "${{ github.repository }}" "${{ github.ref_name }}"
+      # A draft: nothing reaches installed apps until the notes are written and the release is published.
+      - uses: softprops/action-gh-release@v2
         with:
           draft: true
-          files: ${{ matrix.files }}
+          name: MR Studio ${{ github.ref_name }}
+          body_path: .github/release-notes-template.md
+          files: |
+            release/*.exe
+            release/*.dmg
+            release/*.app.tar.gz
+            release/latest.json

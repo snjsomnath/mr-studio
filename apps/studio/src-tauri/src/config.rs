@@ -132,6 +132,8 @@ pub struct Settings {
     pub lan: bool,
     /// Start the last site on the saved displays without showing the launcher.
     pub autostart: bool,
+    /// Do not look for a newer version when the app starts. Checking is the default.
+    pub skip_update_check: bool,
 }
 
 impl Settings {
