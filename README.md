@@ -16,6 +16,7 @@ pnpm dev
 
 Open <http://localhost:5173/dev>. That is the layer dev mode: the table view of the sample site with the generated controls beside it, with hot reload.
 `/table`, `/tv` and `/phone?c=<session code>` are the real surfaces; the session code is printed when the host starts.
+To join from a real phone, run `pnpm dev -- --lan` and scan the QR code shown on `/tv` or `/dev`.
 
 ```bash
 cargo run -p mrs-cli -- validate sites/sample      # check a site and report its scene
@@ -46,7 +47,7 @@ crates/mrs-cli       the `mrstudio` command
 apps/studio          desktop shell (Tauri): one window per display
 packages/sdk         @mrstudio/sdk: layer API, connection, engine client
 packages/runtime     the surfaces: table, tv, phone, dev
-packages/layers      core layers; sunlight is the reference
+packages/layers      core layers; sunlight is the reference, sketch the reference for phone tools
 sites/sample         a small synthetic site for tests and dev mode
 ```
 
@@ -81,10 +82,11 @@ The GPU tests need a Vulkan, Metal or DirectX 12 adapter. Without one they are s
 | Engine: scene, jobs, sunlight kernel on GPU and CPU, parity tests | Working |
 | Site format, validation, scene bake from footprints, terrain and trees | Working |
 | Host: session state, roles, validated params, field streaming | Working |
+| Phones: QR join, slots that survive a reload (60 s hold), per-phone rate limit, point, line and polygon tools | Working; tested in a desktop browser, not yet on a real phone |
 | Surfaces: table, TV, phone, dev, with generated controls | Working, first version |
 | Sunlight layer (shadows, sun hours, animation, TV panel) | Working |
 | Desktop app: launcher (site and display picker), fullscreen per display, colour per display, installers from CI | Working on Linux with two displays. The earlier shell started on macOS (Apple M4 Pro, Metal); the launcher, fullscreen placement and the installers still need a first run on real Windows and macOS hardware |
 | Wind, stormwater, isovist kernels and layers | Not started; see the work packages in ARCHITECTURE.md |
-| Calibration, basemap tiles, QR join, phone tools | Not started |
+| Calibration, basemap tiles | Not started |
 | Chalmers, Lindholmen and Universeum site packages | Not started |
 | Python services gateway (ECOM, CoolPaths, site prep) | Not started |

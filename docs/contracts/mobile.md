@@ -4,17 +4,22 @@ The phone UI is a surface like any other. It is served by the studio's own host 
 
 ## Joining
 
-1. The TV shows a QR code for `http://<studio-lan-address>:<port>/phone?c=<code>`. The code is the session's join code.
+1. The TV shows a QR code for `http://<studio-lan-address>:<port>/phone?c=<code>` (the session's `join_url`), with the address and the code beside it for typing. The code is the session's join code. `/phone` without a code asks for it.
 2. The phone opens the page and sends `hello` with `role: 'phone'` and the code.
 3. The host assigns a free slot (number and colour) and announces it to every surface.
-4. A slot is released when its phone disconnects. Planned: a `resume` token so a reload or a brief drop returns to the same slot, with the slot held for 60 seconds.
+4. The `welcome` carries a `resume` token. The page keeps it (local storage, per session code) and sends it in every later `hello`.
+5. When a phone's connection ends, its slot is held for 60 seconds and shown as away (`connected: false`). A `hello` with the token inside that time returns the phone to the same slot and colour. After 60 seconds the slot is released and the token is worthless.
 
-The host limits the number of phones (default 8) and answers further joins with a "session full" error the page shows.
+The host limits the number of phones (default 8) and answers further joins with a "session full" error the page shows. Held slots count as taken.
+A phone that goes silent without closing (asleep, out of range) is noticed within 30 seconds, and its hold starts then.
+One token is one phone: a second tab with the same token takes the slot over and the first tab is told to stop.
 
 ## What a phone can do
 
 - See the active layers and change the controls marked `phone: true`.
 - Use a layer's tools: tap a point, draw a line or polygon on a small map of the table area. The result is sent as `tool.input` in WGS84.
+  A point is sent on touch and follows a dragged finger. A line or polygon is built corner by corner (with undo) and sent when the person presses send.
+  The map shows the site's building footprints and maps finger positions through the site's `corners`, so it needs no map library and no internet.
 - Press actions marked `phone: true`.
 
 A phone cannot activate layers, publish values or open engine streams. The host enforces this by role; the page hiding a control is not the protection.
@@ -22,7 +27,8 @@ A phone cannot activate layers, publish values or open engine streams. The host 
 ## Limits
 
 - Surfaces coalesce param changes: at most one request per animation frame, carrying the latest values.
-- Planned: the host accepts at most 20 requests per second per phone and drops the rest.
+- On a phone, repeated requests of one kind (a dragged slider, a dragged point) are spaced at least 80 ms apart.
+- The host accepts at most 20 requests per second per phone and refuses the rest with `rate limited`. The limit belongs to the slot, so reconnecting does not reset it.
 
 ## Reaching the studio
 

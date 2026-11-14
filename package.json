@@ -7,7 +7,7 @@
     "dev": "node scripts/dev.mjs",
     "build": "pnpm --filter @mrstudio/runtime build",
     "typecheck": "pnpm -r typecheck",
-    "test": "cargo test && pnpm -r typecheck && pnpm --filter @mrstudio/sdk test",
+    "test": "cargo test && pnpm -r typecheck && pnpm --filter @mrstudio/sdk test && pnpm --filter @mrstudio/dashboard test",
     "test:e2e": "pnpm build && cargo build -p mrs-cli && node scripts/e2e.cjs",
     "app": "pnpm build && cargo run -p mr-studio-app",
     "app:build": "pnpm build && pnpm --filter @mrstudio/studio exec tauri build"
@@ -16,5 +16,8 @@
     "onlyBuiltDependencies": [
       "esbuild"
     ]
+  },
+  "devDependencies": {
+    "jsqr": "^1.4.0"
   }
 }

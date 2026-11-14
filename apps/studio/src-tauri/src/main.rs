@@ -257,6 +257,7 @@ async fn launch(app: &AppHandle, site: PathBuf, displays: Displays, lan: bool) -
         web_dir: Some(shell.resources.join("web")),
         bind: SocketAddr::from((ip, port)),
         backend: Backend::Auto,
+        session: Default::default(),
     })
     .await?;
     let running = Running {

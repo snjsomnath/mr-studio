@@ -4,6 +4,7 @@
 mod bake;
 mod manifest;
 mod projection;
+mod twin;
 
 use std::path::{Component, Path, PathBuf};
 
@@ -51,6 +52,8 @@ pub struct SiteInfo {
     pub branding: Branding,
     /// Site-relative path of the building footprints, for the table's context drawing.
     pub buildings: Option<String>,
+    /// The site's TV dashboard settings (theme, pages), as written. Validated on the TV by `@mrstudio/dashboard`.
+    pub tv: Option<serde_json::Value>,
 }
 
 impl Site {
@@ -171,6 +174,7 @@ impl Site {
             basemap: m.basemap.clone(),
             branding: m.branding.clone(),
             buildings: m.scene.buildings.as_ref().map(|b| b.path.clone()),
+            tv: m.tv.clone(),
         }
     }
 
