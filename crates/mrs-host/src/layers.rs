@@ -172,6 +172,12 @@ pub fn load_for_site(site: &Site, core_layers: &Path) -> anyhow::Result<Vec<Laye
         if !layer.r#use.starts_with('.') && def.id != layer.r#use {
             bail!("{} declares id '{}', expected '{}'", dir.display(), def.id, layer.r#use);
         }
+        for name in def.manifest["requires"]["data"].as_array().map(Vec::as_slice).unwrap_or(&[]) {
+            let name = name.as_str().ok_or_else(|| anyhow!("layer '{}': requires.data must be dataset names", def.id))?;
+            if !site.manifest.data.contains_key(name) {
+                bail!("layer '{}' needs the dataset '{name}'; add it under \"data\" in site.json", def.id);
+            }
+        }
         if defs.iter().any(|d| d.id == def.id) {
             bail!("layer '{}' is listed twice in site.json", def.id);
         }
@@ -222,6 +228,17 @@ mod tests {
         let d = def();
         assert!(d.validate(&patch(json!({ "hour": 9 })), true).is_ok());
         assert!(d.validate(&patch(json!({ "mode": "b" })), true).is_err());
+    }
+
+    #[test]
+    fn a_layer_needs_its_datasets() {
+        let repo = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let mut site = Site::load(repo.join("sites/sample")).unwrap();
+        assert!(site.manifest.layers.iter().any(|l| l.r#use == "coolpaths"));
+        assert!(load_for_site(&site, &repo.join("packages/layers")).is_ok());
+        site.manifest.data.remove("walkways");
+        let error = load_for_site(&site, &repo.join("packages/layers")).unwrap_err().to_string();
+        assert!(error.contains("coolpaths") && error.contains("walkways"), "{error}");
     }
 
     #[test]

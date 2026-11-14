@@ -1,4 +1,4 @@
-// End-to-end check in a real browser: the host, the engine, three surfaces and the sunlight layer.
+// End-to-end check in a real browser: the host, the engine, three surfaces and the core layers.
 //   pnpm build && cargo build -p mrs-cli && node scripts/e2e.cjs [screenshot-dir]
 // Needs Playwright with Chromium (`npm i -g playwright && npx playwright install chromium`).
 const { spawn } = require('node:child_process');
@@ -36,6 +36,9 @@ async function main() {
       return page;
     };
 
+    // Controls are looked up inside their layer's card: layers may share control names.
+    const sunlight = (page) => page.locator('.layer-card', { hasText: 'Sunlight' });
+
     // The dev surface renders the layer that site.json turns on.
     const dev = await open('/dev', { width: 1500, height: 800 });
     const table = dev.locator('.table-surface');
@@ -46,7 +49,7 @@ async function main() {
 
     // A change made on the TV reaches the host, the engine and the dev surface.
     const tv = await open('/tv', { width: 900, height: 900 });
-    await tv.getByLabel('Time of day').fill('8.5');
+    await sunlight(tv).getByLabel('Time of day').fill('8.5');
     await dev.getByText('08:30').waitFor();
     await dev.getByText(/bearing 9\d/).waitFor();
     await dev.waitForTimeout(500);
@@ -60,12 +63,12 @@ async function main() {
     await dev.waitForTimeout(500);
     const day = await table.screenshot();
     assert.notDeepEqual(day, morning, 'sun hours should look different from shadows');
-    assert.equal(await tv.getByLabel('Time of day').isVisible(), false, 'the time control hides in sun hours mode');
+    assert.equal(await sunlight(tv).getByLabel('Time of day').isVisible(), false, 'the time control hides in sun hours mode');
     if (shots) await dev.screenshot({ path: path.join(shots, 'dev-sun-hours.png') });
 
     // Turning the layer off clears the table.
     await tv.getByLabel('Turn Sunlight on or off').uncheck();
-    await dev.locator('.layer-card:not(.is-active)').waitFor();
+    await dev.locator('.layer-card:not(.is-active)', { hasText: 'Sunlight' }).waitFor();
     await dev.waitForTimeout(500);
     const off = await table.screenshot();
     assert.notDeepEqual(off, day, 'the overlay should disappear when the layer is off');
@@ -76,11 +79,11 @@ async function main() {
     const stranger = await open('/phone', { width: 390, height: 800 });
     await stranger.getByText(/wrong session code/).waitFor();
     const phone = await open(`/phone?c=${code}`, { width: 390, height: 800 });
-    await phone.getByLabel('Time of day').waitFor();
+    await sunlight(phone).getByLabel('Time of day').waitFor();
     assert.equal(await phone.getByLabel('Turn Sunlight on or off').count(), 0);
     assert.equal(await phone.getByText('Opacity').count(), 0);
     await tv.getByText('1 phones').waitFor();
-    await phone.getByLabel('Time of day').fill('18');
+    await sunlight(phone).getByLabel('Time of day').fill('18');
     await tv.getByText('18:00').waitFor();
     // The table recomputed for the phone's time and published the new sun position to the TV.
     await tv.getByText(/sun 2\d\.\d° up, bearing 2[5-8]\d/).waitFor();
@@ -88,6 +91,46 @@ async function main() {
       await phone.screenshot({ path: path.join(shots, 'phone.png') });
       await tv.screenshot({ path: path.join(shots, 'tv.png') });
     }
+
+    // CoolPaths: routes over the site's walkways, costed by the engine's shade.
+    const card = (name) => tv.locator('.layer-card', { hasText: name });
+    await tv.getByLabel('Turn Sunlight on or off').uncheck();
+    await tv.getByLabel('Turn Cool paths on or off').check();
+    const cool = card('Cool paths');
+    await cool.getByText(/less sun|already the coolest/).waitFor();
+    await dev.waitForTimeout(500);
+    const walk = await table.screenshot();
+    assert.notDeepEqual(walk, off, 'the network and routes should be drawn');
+    assert.match(await cool.locator('[data-route="shortest"] .coolpaths-length').textContent(), /^\d+ m$/);
+    if (shots) await dev.screenshot({ path: path.join(shots, 'dev-coolpaths.png') });
+    // A phone may ask for another walk, and the table answers with a different one.
+    await phone.getByRole('button', { name: 'Try another walk' }).click();
+    await dev.waitForTimeout(800);
+    assert.notDeepEqual(await table.screenshot(), walk, 'another walk should be drawn');
+    // With no detour allowed the coolest walk is the shortest one.
+    await cool.getByLabel('Longest detour').fill('0');
+    await cool.getByText('the shortest walk is already the coolest').waitFor();
+    // At night there is no sun to avoid.
+    await cool.getByLabel('Time of day').fill('1');
+    await cool.getByText(/the sun is down/).waitFor();
+    await cool.getByText('0 m in the sun').first().waitFor();
+    await tv.getByLabel('Turn Cool paths on or off').uncheck();
+
+    // Mobility: the site's trips played over time.
+    await tv.getByLabel('Turn Mobility on or off').check();
+    const moving = card('Mobility');
+    await moving.getByText(/of 60 arrived/).first().waitFor();
+    await moving.getByLabel('Play', { exact: true }).uncheck();
+    await moving.getByLabel('Time', { exact: true }).fill('0');
+    await moving.getByText('0 of 60 arrived').first().waitFor();
+    await dev.waitForTimeout(500);
+    const start = await table.screenshot();
+    if (shots) await dev.screenshot({ path: path.join(shots, 'dev-mobility.png') });
+    await moving.getByLabel('Time', { exact: true }).fill('100');
+    await moving.getByText('60 of 60 arrived').nth(1).waitFor();
+    await dev.waitForTimeout(500);
+    assert.notDeepEqual(await table.screenshot(), start, 'travellers should move with the time');
+    await tv.getByLabel('Turn Mobility on or off').uncheck();
 
     const real = errors.filter((e) => !/wrong session code|WebSocket/.test(e));
     assert.deepEqual(real, [], 'no page errors');

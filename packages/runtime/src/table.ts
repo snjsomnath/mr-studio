@@ -1,8 +1,9 @@
-import type { Colormap, FieldOverlay, FieldOverlayStyle, MapHandle, SiteInfo } from '@mrstudio/sdk';
+import type { CanvasOverlay, Colormap, FieldOverlay, FieldOverlayStyle, MapHandle, SiteInfo } from '@mrstudio/sdk';
 import maplibregl from 'maplibre-gl';
 import type { StyleSpecification } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 
+import { MapCanvasOverlay } from './canvas-overlay.ts';
 import { MapFieldOverlay } from './field-overlay.ts';
 
 const EARTH_CIRCUMFERENCE_M = 40_075_016.686;
@@ -64,6 +65,11 @@ export class TableView {
         this.container.append(element);
         track(() => element.remove());
         return element;
+      },
+      addCanvas: (id: string, style?: { opacity?: number }): CanvasOverlay => {
+        const overlay = new MapCanvasOverlay(this.map, this.container, `canvas:${layer}:${id}`, this.site, style);
+        track(() => overlay.remove());
+        return overlay;
       },
     };
   }

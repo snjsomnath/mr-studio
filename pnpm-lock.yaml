@@ -8,6 +8,32 @@ importers:
 
   .: {}
 
+  packages/layers/coolpaths:
+    dependencies:
+      '@mrstudio/sdk':
+        specifier: workspace:*
+        version: link:../../sdk
+    devDependencies:
+      '@types/node':
+        specifier: ^22.0.0
+        version: 22.20.5
+      typescript:
+        specifier: ^5.9.0
+        version: 5.9.3
+
+  packages/layers/mobility:
+    dependencies:
+      '@mrstudio/sdk':
+        specifier: workspace:*
+        version: link:../../sdk
+    devDependencies:
+      '@types/node':
+        specifier: ^22.0.0
+        version: 22.20.5
+      typescript:
+        specifier: ^5.9.0
+        version: 5.9.3
+
   packages/layers/sunlight:
     dependencies:
       '@mrstudio/sdk':
