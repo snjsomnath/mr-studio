@@ -31,7 +31,8 @@ pub fn manifest(id: &str, name: &str, lon: f64, lat: f64, width_m: f64, height_m
         "table": { "width_cm": 100, "height_cm": (100.0 * height_m / width_m * 100.0).round() / 100.0 },
         "scene": { "cell_m": 1 },
         "basemap": { "background": "#0b0e14", "style": null },
-        "layers": [{ "use": "basemap", "active": true }, { "use": "sunlight", "active": true }],
+        // The table rests on its base map; sunlight is there to open, as a first layer to try.
+        "layers": [{ "use": "basemap", "active": true }, { "use": "sunlight", "active": false }],
         "branding": { "title": "MR Studio" }
     })
 }

@@ -30,6 +30,8 @@ fn main() {
         "stop_presenting",
         "presenting_state",
         "open_home",
+        "open_settings",
+        "new_table",
         "quit",
         "colour_state",
         "set_colour",

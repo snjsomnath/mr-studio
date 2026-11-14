@@ -28,7 +28,7 @@ A display is matched by name first (exactly, then as part of the name), then by 
 `role` is `table`, `tv` or `dev`. A window whose display is not connected opens on the primary display.
 The shell never uses browser popups, so there are no permission prompts.
 
-The launcher is the shell's own window with the site picker and the display picker. It writes `displays.json`, and keeps its other choices in `studio.json` beside it:
+The shell has two windows of its own. **Home** is the first one: the tables on this computer, **New table** and **Open a folder**. **Displays and settings** (called the launcher below) has the display picker, colour, calibration and updates. It writes `displays.json`, and keeps its other choices in `studio.json` beside it:
 
 ```jsonc
 // studio.json
@@ -46,7 +46,8 @@ The launcher is the shell's own window with the site picker and the display pick
 
 A site that is open is in one of two states: open in the editor, or also presented on the displays. Both use the same running host, so what is authored is what is shown.
 
-- **Open in editor** (the launcher's main button, and what happens after **New site**) runs the site and opens the editor window: the host's `/edit` page in a normal window. Nothing goes on the displays.
+- Opening a table from Home runs the site and opens the editor window: the host's `/edit` page in a normal window. Nothing goes on the displays. Closing the editor window leads back to Home.
+- **New table** is a wizard. With `features.json` in the web bundle saying `{ "new_table_wizard": true }`, the editor window opens at `/new` (over the sample site, because a host needs a site) and that page asks the first questions and calls `create_site` then `open_site`. Without it, Home asks for the name, the place (coordinates or a pasted map link) and the size itself. Either way the new table opens at `/edit?welcome=1`, where the editor continues the wizard.
 - **Present** opens the surface windows on the displays; **Stop presenting** closes them. The editor stays open and the session keeps its state. The launcher's Present button does the same for a site without opening the editor.
 - A new site is created in the sites folder with a base map and sunlight; the same code backs `mrstudio new-site`.
 
@@ -57,7 +58,10 @@ The editor window is the only remote page with access to the shell, and only to 
 | `presenting_state` | `{ version, site, presenting, displays, windows }`: the connected displays and the windows Present would open |
 | `present { windows? }` | Presents. `windows` is a list of `{ display, role, fullscreen }` (display by index in `displays`) and is saved as `displays.json`; without it the saved displays are used |
 | `stop_presenting` | Closes the surface windows |
-| `identify` | Shows each display's number on it for a few seconds |
+| `open_home` | Opens Home |
+| `open_settings` | Opens Displays and settings |
+| `create_site { site: { name, lat, lon, width_m, height_m } }` | Creates a table in the sites folder with a base map, and sunlight ready to open. Returns its folder |
+| `open_site { path, welcome? }` | Runs that table and shows it in the editor window, at `/edit`, or `/edit?welcome=1` when `welcome` is true |
 | `open_home` | Opens the launcher |
 | `quit` | Quits the app |
 
@@ -67,15 +71,16 @@ What the shell does when it starts:
 
 | Start | Result |
 | --- | --- |
-| `displays.json` exists, `autostart` is on and `site` is set | Presents the site on the saved displays, with no editor. If that fails, the launcher opens and says why |
-| Anything else, or `mr-studio --setup` | The launcher opens. With no `displays.json` it suggests the table on the second display and the TV on the primary one, or one `dev` window if there is a single display |
+| `displays.json` exists, `autostart` is on and `site` is set | Presents the site on the saved displays, with no editor. If that fails, Home opens and says why |
+| Anything else | Home opens |
+| `mr-studio --setup` | Displays and settings opens. With no `displays.json` it suggests the table on the second display and the TV on the primary one, or one `dev` window if there is a single display |
 | `mr-studio <site folder>` or `MRS_SITE` | Presents that site on the saved displays, or in one windowed `dev` window if there are none |
 
 The site picker lists site folders added by hand, the packages in the sites folder (`Documents/MR Studio/sites`, or `sites` in the app's data folder on a computer without Documents), and the sample site shipped inside the app.
 With `lan` off the host listens on this computer only (127.0.0.1), so Windows shows no firewall prompt. The host uses port 4170, or a free port if that one is taken.
 
 In a running session, Ctrl+Shift+S (Cmd on macOS) in any window opens the launcher, Ctrl+Shift+Q quits, and Ctrl+Shift+E on a surface stops presenting and goes back to the editor. A surface asks for these by navigating to `/__shell/setup`, `/__shell/quit` or `/__shell/edit`, which the shell intercepts; surfaces have no other access to the shell.
-Starting the app a second time brings up the launcher of the one already running.
+Starting the app a second time brings up Home of the one already running.
 
 ### Colour per display
 

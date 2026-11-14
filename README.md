@@ -36,7 +36,7 @@ pnpm app          # build the surfaces and run the app from source
 pnpm app:build    # make an installer for this computer (target/release/bundle)
 ```
 
-The app opens a launcher where you pick or create a site. **Open in editor** opens it for authoring; **Present** puts it on the displays you chose, one borderless fullscreen window each, and the editor has the same Present button.
+The app opens on Home: your tables, **New table** (a short wizard: name, place, size, then the editor takes you through the map, the layers and the controller) and **Open a folder**. A table opens in the editor; **Present** there puts it on the displays you chose under Displays and settings, one borderless fullscreen window each.
 The display choice is remembered, and a table can be set to start by itself. While presenting, Ctrl+Shift+E goes back to the editor, Ctrl+Shift+S brings the launcher back and Ctrl+Shift+Q quits.
 The launcher's Colour tab boosts or corrects the colours of each display (saturation, contrast, brightness, gamma, white balance), live on the running table, with presets and a test card.
 The Calibration tab starts the projector calibration tool on the table.

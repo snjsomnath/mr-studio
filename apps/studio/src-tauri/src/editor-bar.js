@@ -45,8 +45,8 @@
     note.hidden = true;
     const home = document.createElement('button');
     home.type = 'button';
-    home.textContent = 'Sites and displays';
-    home.title = 'Other sites, which display shows what, colour, calibration and updates';
+    home.textContent = 'Home';
+    home.title = 'Other tables and a new table. Displays and settings are there too.';
     const go = document.createElement('button');
     go.type = 'button';
     bar.append(note, home, go);
