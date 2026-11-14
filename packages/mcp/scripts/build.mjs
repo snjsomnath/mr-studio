@@ -5,14 +5,14 @@
 import { build } from 'esbuild';
 import { mkdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const pkg = resolve(here, '..');
 const root = resolve(pkg, '..', '..');
 
 // The catalog loader is TypeScript; Node 22.18+ runs it directly.
-const { loadLive } = await import(join(pkg, 'src', 'core.ts'));
+const { loadLive } = await import(pathToFileURL(join(pkg, 'src', 'core.ts')).href);
 const catalog = loadLive(root);
 const snapshot = { ...catalog, root: null, source: 'snapshot' };
 
