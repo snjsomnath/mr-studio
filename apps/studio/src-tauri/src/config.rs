@@ -83,20 +83,40 @@ impl Displays {
         Ok(())
     }
 
-    /// What to suggest on a machine that has no displays.json yet: the controls on the
-    /// primary display and the table on the first other one, or a dev window if there is only one.
+    /// What Present uses when nobody chose: the controls fullscreen on the primary display
+    /// and the table fullscreen on the first other one, or the table alone when there is
+    /// only one display (the controller is then in the editor's preview).
     pub fn suggest(displays: &[Display]) -> Self {
         let primary = displays.iter().find(|d| d.primary).or(displays.first());
         let other = displays.iter().find(|d| Some(d.index) != primary.map(|p| p.index));
+        let window = |role: &str, display: &Display| WindowSpec { role: role.into(), display: display.reference(), fullscreen: true };
         match (primary, other) {
-            (Some(tv), Some(table)) => Self {
-                windows: vec![
-                    WindowSpec { role: "table".into(), display: table.reference(), fullscreen: true },
-                    WindowSpec { role: "tv".into(), display: tv.reference(), fullscreen: true },
-                ],
-            },
+            (Some(tv), Some(table)) => Self { windows: vec![window("table", table), window("tv", tv)] },
+            (Some(only), None) => Self { windows: vec![window("table", only)] },
             _ => Self::dev(),
         }
+    }
+
+    /// Whether a saved choice still fits the displays that are connected: each window finds
+    /// its display and no two share one. A choice of the dev window alone is what older
+    /// versions saved before anything was set up, so it does not count as a choice.
+    pub fn fits(&self, displays: &[Display]) -> bool {
+        if self.windows.is_empty() || self.windows.iter().all(|w| w.role == "dev") {
+            return false;
+        }
+        let mut used = Vec::new();
+        self.windows.iter().all(|w| match w.display.resolve(displays) {
+            Some(d) if !used.contains(&d.index) => {
+                used.push(d.index);
+                true
+            }
+            _ => false,
+        })
+    }
+
+    /// The saved choice when it fits, else the suggestion.
+    pub fn usual(saved: Option<Self>, displays: &[Display]) -> Self {
+        saved.filter(|s| s.fits(displays)).unwrap_or_else(|| Self::suggest(displays))
     }
 }
 
@@ -230,12 +250,31 @@ mod tests {
     }
 
     #[test]
-    fn two_displays_suggest_table_and_tv_and_one_suggests_dev() {
+    fn two_displays_suggest_table_and_tv_and_one_suggests_the_table() {
         let two = Displays::suggest(&[display(0, "LAPTOP", true), display(1, "EPSON PJ", false)]);
         assert_eq!(
             two.windows.iter().map(|w| (w.role.as_str(), w.display.index)).collect::<Vec<_>>(),
             [("table", Some(1)), ("tv", Some(0))]
         );
-        assert_eq!(Displays::suggest(&[display(0, "LAPTOP", true)]), Displays::dev());
+        let one = Displays::suggest(&[display(0, "LAPTOP", true)]);
+        assert_eq!(one.windows.len(), 1);
+        assert_eq!((one.windows[0].role.as_str(), one.windows[0].display.index, one.windows[0].fullscreen), ("table", Some(0), true));
+    }
+
+    #[test]
+    fn a_saved_choice_is_used_only_while_it_fits() {
+        let two = [display(0, "LAPTOP", true), display(1, "EPSON PJ", false)];
+        let one = [display(0, "LAPTOP", true)];
+        let spec = |role: &str, name: &str| WindowSpec { role: role.into(), display: wanted(Some(name), None), fullscreen: true };
+        let saved = Displays { windows: vec![spec("table", "LAPTOP"), spec("tv", "EPSON PJ")] };
+        assert!(saved.fits(&two));
+        assert_eq!(Displays::usual(Some(saved.clone()), &two), saved);
+        // The projector is unplugged: both windows would land on the laptop.
+        assert!(!saved.fits(&one));
+        assert_eq!(Displays::usual(Some(saved), &one), Displays::suggest(&one));
+        // What older versions saved before anything was chosen.
+        assert!(!Displays::dev().fits(&two));
+        let same = Displays { windows: vec![spec("table", "LAPTOP"), spec("tv", "LAPTOP")] };
+        assert!(!same.fits(&two));
     }
 }

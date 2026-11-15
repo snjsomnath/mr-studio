@@ -48,7 +48,7 @@ A site that is open is in one of two states: open in the editor, or also present
 
 - Opening a table from Home runs the site and opens the editor window: the host's `/edit` page in a normal window. Nothing goes on the displays. Closing the editor window leads back to Home.
 - **New table** is a wizard. With `features.json` in the web bundle saying `{ "new_table_wizard": true }`, the editor window opens at `/new` (over the sample site, because a host needs a site) and that page asks the first questions and calls `create_site` then `open_site`. Without it, Home asks for the name, the place (coordinates or a pasted map link) and the size itself. Either way the new table opens at `/edit?welcome=1`, where the editor continues the wizard.
-- **Present** opens the surface windows on the displays; **Stop presenting** closes them. The editor stays open and the session keeps its state. The launcher's Present button does the same for a site without opening the editor.
+- **Present** opens the surface windows on the displays; **Stop presenting** (or Esc on a surface while the editor is open) closes them. Without a saved choice that still fits the connected displays, Present puts the table fullscreen on a display other than the primary one and the controller (`tv`) fullscreen on the primary one; with a single display, the table alone goes fullscreen on it. A saved choice fits when every window finds its display and no two windows share one; a saved `dev` window alone, which older versions wrote before anything was chosen, does not count. The editor stays open and the session keeps its state. The launcher's Present button does the same for a site without opening the editor.
 - A new site is created in the sites folder with a base map and sunlight; the same code backs `mrstudio new-site`.
 
 The editor window is the only remote page with access to the shell, and only to these commands, through `window.__TAURI__.core.invoke` (see `capabilities/editor.json`):
@@ -56,11 +56,11 @@ The editor window is the only remote page with access to the shell, and only to 
 | Command | Does |
 | --- | --- |
 | `presenting_state` | `{ version, site, presenting, displays, windows }`: the connected displays and the windows Present would open |
-| `present { windows? }` | Presents. `windows` is a list of `{ display, role, fullscreen }` (display by index in `displays`) and is saved as `displays.json`; without it the saved displays are used |
+| `present { windows? }` | Presents. `windows` is a list of `{ display, role, fullscreen }` (display by index in `displays`) and is saved as `displays.json`; without it the saved displays are used while they fit, else the automatic choice above |
 | `stop_presenting` | Closes the surface windows |
 | `open_home` | Opens Home |
 | `open_settings` | Opens Displays and settings |
-| `create_site { site: { name, lat, lon, width_m, height_m } }` | Creates a table in the sites folder with a base map, and sunlight ready to open. Returns its folder |
+| `create_site { site: { name, lat, lon, width_m, height_m, rotation_deg? } }` | Creates a table in the sites folder with a base map, and sunlight ready to open. `rotation_deg` turns it clockwise from north (default 0). Returns its folder |
 | `open_site { path, welcome? }` | Runs that table and shows it in the editor window, at `/edit`, or `/edit?welcome=1` when `welcome` is true |
 | `open_home` | Opens the launcher |
 | `quit` | Quits the app |
@@ -73,13 +73,13 @@ What the shell does when it starts:
 | --- | --- |
 | `displays.json` exists, `autostart` is on and `site` is set | Presents the site on the saved displays, with no editor. If that fails, Home opens and says why |
 | Anything else | Home opens |
-| `mr-studio --setup` | Displays and settings opens. With no `displays.json` it suggests the table on the second display and the TV on the primary one, or one `dev` window if there is a single display |
-| `mr-studio <site folder>` or `MRS_SITE` | Presents that site on the saved displays, or in one windowed `dev` window if there are none |
+| `mr-studio --setup` | Displays and settings opens. With no `displays.json` it suggests the table on the second display and the TV on the primary one, or the table alone if there is a single display |
+| `mr-studio <site folder>` or `MRS_SITE` | Presents that site on the saved displays, or on the automatic choice when none fit |
 
 The site picker lists site folders added by hand, the packages in the sites folder (`Documents/MR Studio/sites`, or `sites` in the app's data folder on a computer without Documents), and the sample site shipped inside the app.
 With `lan` off the host listens on this computer only (127.0.0.1), so Windows shows no firewall prompt. The host uses port 4170, or a free port if that one is taken.
 
-In a running session, Ctrl+Shift+S (Cmd on macOS) in any window opens the launcher, Ctrl+Shift+Q quits, and Ctrl+Shift+E on a surface stops presenting and goes back to the editor. A surface asks for these by navigating to `/__shell/setup`, `/__shell/quit` or `/__shell/edit`, which the shell intercepts; surfaces have no other access to the shell.
+In a running session, Ctrl+Shift+S (Cmd on macOS) in any window opens the launcher, Ctrl+Shift+Q quits, and Ctrl+Shift+E on a surface stops presenting and goes back to the editor. Esc on a surface does the same when an editor window is open; a table presenting by itself ignores it, and so does any page that handled the key itself (`preventDefault`). A surface asks for these by navigating to `/__shell/setup`, `/__shell/quit`, `/__shell/edit` or `/__shell/escape`, which the shell intercepts; surfaces have no other access to the shell.
 Starting the app a second time brings up Home of the one already running.
 
 ### Colour per display
@@ -117,7 +117,7 @@ Surface URLs served by the host:
 | `/dev` | Table view with controls side by side, for layer development |
 | `/compose` | Scene composer: layer palette, table view and the scene's stack. Joins with the `dev` role |
 | `/edit` | The editor: the authoring window around the live table. The home screen holds layers of category `base` and `ambient`; every other layer is a layer of its own. Joins with the `dev` role. With `?welcome=1` or `?setup=1`, or when the table has no layers yet, it opens in the setup guide |
-| `/new` | The first step of the setup wizard, for a table that does not exist yet: name, place and size. It joins no session. Inside the desktop app it calls `create_site { site: { name, lat, lon, width_m, height_m } }`, then `open_site { path, welcome: true }`; Cancel calls `open_home` |
+| `/new` | The first step of the setup wizard, for a table that does not exist yet: name, place and size. It joins no session. Inside the desktop app it calls `create_site { site: { name, lat, lon, width_m, height_m, rotation_deg? } }`, then `open_site { path, welcome: true }`; Cancel calls `open_home` |
 | `/features.json` | What this build of the surfaces offers the shell: `{ "new_table_wizard": true }` |
 | `/site/*` | Files from the active site package (read only) |
 | `/api/model` | The site's digital twin mesh (see model.md) |

@@ -59,6 +59,11 @@ window.addEventListener('keydown', (event) => {
   event.preventDefault();
   window.location.href = '/__shell/' + action;
 }, true);
+// Esc leaves presenting, unless the page used the key itself (closing a panel, say).
+window.addEventListener('keydown', (event) => {
+  if (event.key !== 'Escape' || event.defaultPrevented || event.repeat) return;
+  window.location.href = '/__shell/escape';
+});
 ";
 
 struct Shell {
@@ -228,7 +233,7 @@ async fn startup(app: AppHandle) {
     };
     if let Some(site) = site {
         let started = match launch(&app, site, settings.lan).await {
-            Ok(()) => show(&app, &saved.unwrap_or_else(Displays::dev)),
+            Ok(()) => usual_displays(&app).and_then(|displays| show(&app, &displays)),
             Err(e) => Err(e),
         };
         match started {
@@ -448,14 +453,14 @@ fn show(app: &AppHandle, displays: &Displays) -> anyhow::Result<()> {
     open_surfaces(app, port, displays)
 }
 
-/// The displays to present on when nobody says: the saved ones, or a suggestion for
-/// what is connected.
+/// The displays to present on when nobody says: the saved choice while it fits what is
+/// connected, else the table and the controller fullscreen on displays of their own.
 fn usual_displays(app: &AppHandle) -> anyhow::Result<Displays> {
-    let saved = Displays::read(&app.state::<Shell>().displays_path())?;
-    Ok(match saved {
-        Some(saved) => saved,
-        None => Displays::suggest(&list_displays(app)?),
-    })
+    let saved = Displays::read(&app.state::<Shell>().displays_path()).unwrap_or_else(|e| {
+        tracing::warn!("displays.json: {e}; presenting on the suggested displays");
+        None
+    });
+    Ok(Displays::usual(saved, &list_displays(app)?))
 }
 
 /// Opens the running site in the editor window, at `page` of the host: `edit` for the
@@ -542,7 +547,8 @@ fn open_surfaces(app: &AppHandle, port: u16, displays: &Displays) -> anyhow::Res
                 "{SHORTCUTS}\n{}\n{}\n{}",
                 colour::SCRIPT,
                 colour.script(),
-                if spec.role == "table" { "" } else { SURFACE_EXIT }
+                // The table shows the way back only when it is alone, on the author's own screen.
+                if spec.role == "table" && displays.windows.len() > 1 { "" } else { SURFACE_EXIT }
             ))
             .on_navigation(move |url| match url.path().strip_prefix("/__shell/") {
                 Some(action) => {
@@ -609,6 +615,10 @@ fn shell_action(app: &AppHandle, action: &str) {
             let role = view["window/".len()..].to_string();
             drop(tauri::async_runtime::spawn(async move { report(open_view(&app, &role)) }));
         }
+        // Esc on a surface: the way back for the author, as in a slideshow. A table that
+        // presents by itself, with no editor open, ignores it.
+        "escape" if app.get_webview_window(EDITOR).is_some() => shell_action(&app, "edit"),
+        "escape" => {}
         "quit" => app.exit(0),
         other => tracing::warn!("unknown shell action '{other}'"),
     }
@@ -627,7 +637,8 @@ struct LauncherState {
     site: Option<PathBuf>,
     displays: Vec<Display>,
     windows: Vec<Assigned>,
-    /// A displays.json exists on this machine.
+    /// The displays were chosen by hand and the choice fits what is connected. Otherwise
+    /// `windows` is the automatic choice.
     configured: bool,
     lan: bool,
     autostart: bool,
@@ -663,7 +674,8 @@ fn launcher_state(app: AppHandle, shell: State<'_, Shell>) -> Result<LauncherSta
         error.get_or_insert(format!("displays.json could not be read ({e}). Choose the displays again."));
         None
     });
-    let windows = saved.clone().unwrap_or_else(|| Displays::suggest(&displays)).windows;
+    let configured = saved.as_ref().is_some_and(|s| s.fits(&displays));
+    let windows = Displays::usual(saved, &displays).windows;
     let assigned = windows.iter().filter_map(|w| {
         let display =
             w.display.resolve(&displays).or_else(|| displays.iter().find(|d| d.primary).filter(|_| w.display == Default::default()))?;
@@ -686,7 +698,7 @@ fn launcher_state(app: AppHandle, shell: State<'_, Shell>) -> Result<LauncherSta
         sites_folder: shell.sites_folders.first().cloned(),
         windows: assigned.collect(),
         displays,
-        configured: saved.is_some(),
+        configured,
         lan: settings.lan,
         // A table that starts by itself is a choice for a finished installation, never the default.
         autostart: settings.autostart,
@@ -847,6 +859,9 @@ struct NewSite {
     lon: f64,
     width_m: f64,
     height_m: f64,
+    /// Turns the table clockwise from north. Left out, the table faces north.
+    #[serde(default)]
+    rotation_deg: f64,
 }
 
 /// Makes an empty site in the sites folder and returns where. The caller opens it.
@@ -859,7 +874,7 @@ fn create_site(shell: State<'_, Shell>, site: NewSite) -> Result<PathBuf, String
         return Err("Give the site a name with at least one letter or digit.".into());
     }
     let dir = folder.join(&id);
-    mrs_site::create::create(&dir, name, site.lon, site.lat, site.width_m, site.height_m, 0.0).map_err(text)?;
+    mrs_site::create::create(&dir, name, site.lon, site.lat, site.width_m, site.height_m, site.rotation_deg).map_err(text)?;
     Ok(dir)
 }
 
