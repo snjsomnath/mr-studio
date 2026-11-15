@@ -153,6 +153,45 @@ interface LayerState {
 `session.join_url` is the address the TV's QR code carries, `http://<address>:<port>/phone?c=<code>`.
 The host works the address out from the interface it listens on. It is `null` when the host listens on the loopback interface only, and it can be set outright (`SessionOptions::public_url`, `mrstudio dev --public-url`) when phones reach the studio through something else, such as the web dev server or a relay.
 
+## Bringing data into a site
+
+Two HTTP endpoints take a file as the request body (any content type), with its name in an `X-Filename` header. Only this computer may call them: the host listens on the network while presenting, and a request from another address gets 403.
+
+```
+POST /api/data/inspect?target=<target>[&crop=1][&swap=1]   reads and checks, writes nothing
+POST /api/data/import?target=<target>[&crop=1][&swap=1]    the same, then saves, re-bakes and sends `site.changed`
+```
+
+| `target` | Accepts | Saved as | `site.json` |
+| --- | --- | --- | --- |
+| `buildings` | GeoJSON polygons | `data/buildings.geojson` | `scene.buildings` (`height_property` set to what was found) |
+| `trees` | GeoJSON points, or CSV with position columns | `data/trees.geojson` | `scene.trees` |
+| `walkways` | GeoJSON lines | `data/walkways.geojson` | `data.walkways` |
+| `trips` | The mobility layer's `trips.json` | `data/trips.json` | `data.trips` |
+| `data:<name>` | GeoJSON, or CSV with position columns | `data/<name>.geojson` | `data.<name>` |
+
+Settings already in `scene.buildings` or `scene.trees` are kept. Coordinates that are not WGS84 are recognised when the file names its system or when SWEREF99 TM, a SWEREF99 local zone or the site's UTM zone puts them on the table, and are converted. Buildings with only `building:levels` (or `levels`, `floors`, `våningar`) get a height of 3 m a storey. `crop=1` leaves out what lies more than a tenth of the table's size outside it; `swap=1` reads the first coordinate as latitude.
+
+Both answer with a report: 200 when it can be imported, 422 when a blocker stops it (nothing is written), 400 for a bad request such as an unknown target.
+
+```ts
+interface ImportReport {
+  ok: boolean;
+  target: string;            // 'buildings', 'trees', 'walkways', 'trips' or the dataset name
+  summary: string;           // one sentence: '788 buildings, 702 with a height'
+  count: number;             // items read
+  inside: number;            // on the table
+  outside: number;
+  crs?: { code: string; guessed: boolean };   // 'EPSG:3006', guessed when the file did not say
+  height_property?: string;  // buildings and trees
+  issues: { code: string; severity: 'blocker' | 'warning' | 'note'; message: string; fix?: 'crop' | 'swap' }[];
+  preview?: GeoJSON.FeatureCollection;        // what will be written, WGS84, in file order, at most 5000 features; not for trips
+  path?: string;             // after an import: where it was saved
+}
+```
+
+`message` is written for the author and can be shown as it is. `fix` names the option that applies the recommended fix, so an editor can offer it as a button and send the same file again with that option.
+
 ## Wire protocol
 
 Text frames are JSON. Binary frames are engine field frames (see engine.md).
@@ -204,6 +243,7 @@ Events:
 | `tool.input` | `{ layer, tool, geometry, from, participant? }` |
 | `calibration` | `{ projector }` after a calibration was saved or cleared |
 | `calibration.mode` | `{ active }` |
+| `site.changed` | `{ site: SiteInfo }` after data was imported: the scene is re-baked and the engine and twin already use it. Replace `state.site`; layers that read site data at start need a reload |
 
 Rules:
 
