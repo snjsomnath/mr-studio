@@ -13,6 +13,7 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 use serde_json::{json, Map, Value};
 
+use crate::geotiff::GeoRaster;
 use crate::{Crs, Projection, Site, SiteError};
 
 /// The most features a report's preview carries. The import itself keeps them all.
@@ -33,6 +34,8 @@ pub enum Target {
     Walkways,
     /// The mobility layer's `trips.json`: the `trips` dataset.
     Trips,
+    /// Ground elevation as a GeoTIFF: `scene.terrain`.
+    Terrain,
     /// Any other GeoJSON dataset, by name.
     Data(String),
 }
@@ -45,9 +48,10 @@ impl Target {
             "trees" => Self::Trees,
             "walkways" => Self::Walkways,
             "trips" => Self::Trips,
+            "terrain" => Self::Terrain,
             other => {
                 let name = other.strip_prefix("data:").ok_or_else(|| {
-                    format!("'{other}' is not something a table can take; use buildings, trees, walkways, trips or data:<name>")
+                    format!("'{other}' is not something a table can take; use buildings, trees, walkways, trips, terrain or data:<name>")
                 })?;
                 if name.is_empty() || !name.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '-') {
                     return Err("a dataset name is lowercase letters, digits, dashes and underscores".into());
@@ -57,6 +61,7 @@ impl Target {
                     "trees" => Self::Trees,
                     "walkways" => Self::Walkways,
                     "trips" => Self::Trips,
+                    "terrain" => Self::Terrain,
                     _ => Self::Data(name.to_string()),
                 }
             }
@@ -70,6 +75,7 @@ impl Target {
             Self::Trees => "trees",
             Self::Walkways => "walkways",
             Self::Trips => "trips",
+            Self::Terrain => "terrain",
             Self::Data(name) => name,
         }
     }
@@ -78,6 +84,7 @@ impl Target {
     pub fn path(&self) -> String {
         match self {
             Self::Trips => "data/trips.json".into(),
+            Self::Terrain => "data/terrain.tif".into(),
             other => format!("data/{}.geojson", other.name()),
         }
     }
@@ -89,6 +96,7 @@ impl Target {
             Self::Trees => ("tree", "trees"),
             Self::Walkways => ("path", "paths"),
             Self::Trips => ("trip", "trips"),
+            Self::Terrain => ("terrain", "terrain"),
             Self::Data(_) => ("feature", "features"),
         }
     }
@@ -99,7 +107,7 @@ impl Target {
             Self::Buildings => Some(Shape::Area),
             Self::Trees => Some(Shape::Point),
             Self::Walkways => Some(Shape::Line),
-            Self::Trips | Self::Data(_) => None,
+            Self::Trips | Self::Terrain | Self::Data(_) => None,
         }
     }
 }
@@ -204,6 +212,8 @@ pub struct Options {
     pub crop: bool,
     /// Read the first coordinate as latitude.
     pub swap: bool,
+    /// The EPSG code of a terrain GeoTIFF that does not name its coordinate system.
+    pub crs: Option<u32>,
 }
 
 /// A file read and checked, ready for `apply`.
@@ -213,6 +223,8 @@ pub struct Prepared {
     pub report: Report,
     /// The file to write, when the report is ok.
     content: Option<Vec<u8>>,
+    /// For terrain: the coordinate system the author named, written beside the path.
+    terrain_crs: Option<String>,
 }
 
 /// Reads and checks `bytes` (a file called `filename`) as `target` for `site`. Writes nothing.
@@ -235,7 +247,12 @@ pub fn inspect(site: &Site, target: &Target, filename: &str, bytes: &[u8], optio
             path: None,
         },
         content: None,
+        terrain_crs: None,
     };
+
+    if *target == Target::Terrain {
+        return terrain(site, bytes, options.crs);
+    }
 
     let text = match decode(bytes) {
         Ok((text, recoded)) => {
@@ -413,6 +430,7 @@ pub fn inspect(site: &Site, target: &Target, filename: &str, bytes: &[u8], optio
             path: None,
         },
         content: Some(content),
+        terrain_crs: None,
     }
 }
 
@@ -446,7 +464,7 @@ pub fn apply(site: &Site, mut prepared: Prepared) -> Result<(Site, Report), Site
     let before = std::fs::read_to_string(&manifest_path).map_err(io(&manifest_path))?;
     let parse = |e: serde_json::Error| SiteError::Parse { path: manifest_path.clone(), message: e.to_string() };
     let mut document: Value = serde_json::from_str(&before).map_err(parse)?;
-    point_at(&mut document, &prepared.target, &relative, prepared.report.height_property.as_deref());
+    point_at(&mut document, &prepared.target, &relative, prepared.report.height_property.as_deref(), prepared.terrain_crs.as_deref());
     write_atomically(&manifest_path, &(serde_json::to_string_pretty(&document).map_err(parse)? + "\n"))?;
     match Site::load(&site.dir) {
         Ok(updated) => {
@@ -468,7 +486,7 @@ fn write_atomically(path: &PathBuf, text: &str) -> Result<(), SiteError> {
 }
 
 /// Points the manifest at the imported file, keeping any settings already there.
-fn point_at(document: &mut Value, target: &Target, path: &str, height_property: Option<&str>) {
+fn point_at(document: &mut Value, target: &Target, path: &str, height_property: Option<&str>, terrain_crs: Option<&str>) {
     let scene_entry = |document: &mut Value, key: &str| {
         let scene = &mut document["scene"];
         if !scene[key].is_object() {
@@ -483,6 +501,14 @@ fn point_at(document: &mut Value, target: &Target, path: &str, height_property: 
     match target {
         Target::Buildings => scene_entry(document, "buildings"),
         Target::Trees => scene_entry(document, "trees"),
+        Target::Terrain => {
+            // A GeoTIFF carries its own size and place, so the raw format's keys and the old
+            // file's `crs` go; `crs` is written only when the author had to name it.
+            document["scene"]["terrain"] = json!({ "path": path });
+            if let Some(code) = terrain_crs {
+                document["scene"]["terrain"]["crs"] = json!(code);
+            }
+        }
         other => {
             if !document["data"].is_object() {
                 document["data"] = json!({});
@@ -716,7 +742,7 @@ fn trips(site: &Site, target: &Target, text: &str, mut issues: Vec<Issue>) -> Pr
             ));
             report.summary = "Not a trips file.".into();
             report.issues = issues;
-            return Prepared { target: target.clone(), report, content: None };
+            return Prepared { target: target.clone(), report, content: None, terrain_crs: None };
         }
     };
     let Some(list) = value["trips"].as_array() else {
@@ -727,7 +753,7 @@ fn trips(site: &Site, target: &Target, text: &str, mut issues: Vec<Issue>) -> Pr
         ));
         report.summary = "Not a trips file.".into();
         report.issues = issues;
-        return Prepared { target: target.clone(), report, content: None };
+        return Prepared { target: target.clone(), report, content: None, terrain_crs: None };
     };
     let frame = Frame::new(site);
     let mut broken = 0;
@@ -776,7 +802,137 @@ fn trips(site: &Site, target: &Target, text: &str, mut issues: Vec<Issue>) -> Pr
     report.ok = !issues.iter().any(|i| i.severity == Severity::Blocker);
     report.issues = issues;
     let content = report.ok.then(|| json_file(&value));
-    Prepared { target: target.clone(), report, content }
+    Prepared { target: target.clone(), report, content, terrain_crs: None }
+}
+
+// ---- Terrain -----------------------------------------------------------------
+
+/// A GeoTIFF of ground heights: read it as the bake would, and say how much of the table it covers.
+fn terrain(site: &Site, bytes: &[u8], crs: Option<u32>) -> Prepared {
+    let mut issues = Vec::new();
+    let mut report = Report {
+        ok: false,
+        target: "terrain".into(),
+        summary: String::new(),
+        count: 0,
+        inside: 0,
+        outside: 0,
+        crs: None,
+        height_property: None,
+        issues: Vec::new(),
+        preview: None,
+        path: None,
+    };
+    let done = |mut report: Report, issues: Vec<Issue>, content: Option<Vec<u8>>, terrain_crs: Option<String>| {
+        report.ok = content.is_some() && !issues.iter().any(|i| i.severity == Severity::Blocker);
+        report.issues = issues;
+        Prepared { target: Target::Terrain, report, content, terrain_crs }
+    };
+    if !matches!(bytes, [0x49, 0x49, 0x2a, 0x00, ..] | [0x4d, 0x4d, 0x00, 0x2a, ..]) {
+        issues.push(Issue::new("read.unknown", Severity::Blocker, "Terrain is a GeoTIFF of ground heights, and this file is not a TIFF."));
+        report.summary = "Not a GeoTIFF.".into();
+        return done(report, issues, None, None);
+    }
+    let named = match crs.map(|code| (code, Crs::from_epsg(code))) {
+        Some((code, None)) => {
+            let message = format!("EPSG:{code} can't be converted yet; use one of {}.", Crs::SUPPORTED);
+            issues.push(Issue::new("coords.unsupported", Severity::Blocker, message));
+            report.summary = "Unsupported coordinate system.".into();
+            return done(report, issues, None, None);
+        }
+        Some((_, crs)) => crs,
+        None => None,
+    };
+    // The reader works on a file; a scratch copy in the system's temporary folder.
+    let scratch = std::env::temp_dir().join(format!("mrs-terrain-{}-{:p}.tif", std::process::id(), bytes.as_ptr()));
+    if let Err(e) = std::fs::write(&scratch, bytes) {
+        issues.push(Issue::new("read.io", Severity::Blocker, format!("The file could not be read: {e}.")));
+        return done(report, issues, None, None);
+    }
+    let mut read = GeoRaster::read(&scratch, named).map(|raster| (raster, crs, false));
+    // A file that only cites its system: try the ones a site's terrain comes in, and keep
+    // the first that lands on the table.
+    if matches!(&read, Err(e) if e.contains("coordinate system")) && named.is_none() {
+        let utm_zone = ((site.manifest.origin.lon + 180.0) / 6.0).floor() as u32 + 1;
+        let candidates = [3006].into_iter().chain(3007..=3018).chain([32600 + utm_zone, 25800 + utm_zone, 4326]);
+        for code in candidates {
+            if let Ok(raster) = GeoRaster::read(&scratch, Crs::from_epsg(code)) {
+                if coverage(site, &raster).0 > 0 {
+                    read = Ok((raster, Some(code), true));
+                    break;
+                }
+            }
+        }
+    }
+    let _ = std::fs::remove_file(&scratch);
+    let (raster, crs, guessed) = match read {
+        Ok(read) => read,
+        Err(e) => {
+            let (code, message) = if e.contains("coordinate system") {
+                ("coords.unknown", "The GeoTIFF does not say which coordinate system it is in, and none that MR Studio knows puts it on your table. Choose its coordinate system.".to_string())
+            } else {
+                ("read.geotiff", format!("The GeoTIFF can't be read as ground heights: {e}."))
+            };
+            issues.push(Issue::new(code, Severity::Blocker, message));
+            report.summary = "A GeoTIFF that can't be placed.".into();
+            return done(report, issues, None, None);
+        }
+    };
+    if guessed {
+        let code = crs.expect("guessed");
+        issues.push(Issue::new(
+            "coords.projected",
+            Severity::Note,
+            format!("The file does not name its coordinate system. Read as EPSG:{code}, it lands on your table."),
+        ));
+    }
+    let (covered, total, low, high) = coverage(site, &raster);
+    report.count = 1;
+    report.crs = Some(CrsReport { code: crs.map_or_else(|| "from the file".into(), |c| format!("EPSG:{c}")), guessed });
+    if covered == 0 {
+        issues.push(Issue::new(
+            "extent.outside_all",
+            Severity::Blocker,
+            "The GeoTIFF does not cover any of your table. Check that it is the right area and coordinate system.",
+        ));
+        report.outside = 1;
+        report.summary = format!("A {} x {} raster that misses the table.", raster.width, raster.height);
+        return done(report, issues, None, None);
+    }
+    report.inside = 1;
+    let share = covered as f64 / total as f64;
+    if share < 0.99 {
+        let message = format!("It covers about {:.0}% of the table; the rest is set to its lowest ground, {low:.0} m.", share * 100.0);
+        issues.push(Issue::new("extent.partial", Severity::Warning, message));
+    }
+    if let Some(existing) = site.manifest.scene.terrain.as_ref() {
+        issues.push(Issue::new("data.replaces", Severity::Note, format!("This replaces the table's terrain ({}).", existing.path)));
+    }
+    report.summary = format!("Ground from {low:.0} to {high:.0} m, covering {:.0}% of the table", (share * 100.0).min(100.0));
+    let terrain_crs = crs.map(|c| format!("EPSG:{c}"));
+    done(report, issues, Some(bytes.to_vec()), terrain_crs)
+}
+
+/// Samples the table on a coarse grid, as the bake will at full resolution: how many
+/// samples the raster covers, of how many, and the lowest and highest ground among them.
+fn coverage(site: &Site, raster: &GeoRaster) -> (usize, usize, f32, f32) {
+    let (projection, grid) = (site.projection(), site.grid());
+    let (columns, rows) = (48, 30);
+    let (mut low, mut high, mut covered) = (f32::INFINITY, f32::NEG_INFINITY, 0);
+    for r in 0..rows {
+        for c in 0..columns {
+            let col = (c as f64 + 0.5) / columns as f64 * grid.width as f64;
+            let row = (r as f64 + 0.5) / rows as f64 * grid.height as f64;
+            let (east, north) = grid.cell_to_local(col, row);
+            let p = projection.to_lonlat(east, north);
+            if let Some(z) = raster.sample(p.lon, p.lat) {
+                covered += 1;
+                low = low.min(z);
+                high = high.max(z);
+            }
+        }
+    }
+    (covered, columns * rows, low, high)
 }
 
 // ---- Coordinates -------------------------------------------------------------
@@ -1000,7 +1156,12 @@ mod tests {
 
     /// A copy of the sample site in a fresh temporary folder.
     fn scratch(name: &str) -> Site {
-        let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../sites/sample");
+        scratch_of("sample", name)
+    }
+
+    /// A copy of one of the repository's sites in a fresh temporary folder.
+    fn scratch_of(site: &str, name: &str) -> Site {
+        let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../sites").join(site);
         let dir = std::env::temp_dir().join(format!("mrs-import-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         copy(&source, &dir);
@@ -1100,7 +1261,7 @@ mod tests {
         let r = inspect(&site, &Target::Trees, "t.geojson", &swapped, Options::default()).report;
         assert!(!r.ok);
         assert_eq!(r.issues.last().map(|i| (i.code, i.fix)), Some(("coords.swapped", Some("swap"))));
-        let fixed = inspect(&site, &Target::Trees, "t.geojson", &swapped, Options { swap: true, crop: false }).report;
+        let fixed = inspect(&site, &Target::Trees, "t.geojson", &swapped, Options { swap: true, ..Default::default() }).report;
         assert!(fixed.ok, "{:?}", fixed.issues);
 
         let stockholm = collection(vec![
@@ -1171,10 +1332,73 @@ mod tests {
         ]);
         let r = inspect(&site3, &Target::Data("counters".into()), "c.geojson", &far_and_near, Options::default()).report;
         assert_eq!(r.issues[0].fix, Some("crop"));
-        let cropped = inspect(&site3, &Target::Data("counters".into()), "c.geojson", &far_and_near, Options { crop: true, swap: false });
+        let cropped =
+            inspect(&site3, &Target::Data("counters".into()), "c.geojson", &far_and_near, Options { crop: true, ..Default::default() });
         let (site4, _) = apply(&site3, cropped).unwrap();
         let written: Value = serde_json::from_slice(&std::fs::read(site4.dir.join("data/counters.geojson")).unwrap()).unwrap();
         assert_eq!(written["features"].as_array().unwrap().len(), 1);
         std::fs::remove_dir_all(&site.dir).unwrap();
+    }
+
+    #[test]
+    fn terrain_from_a_national_grid_geotiff() {
+        let repo = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../sites/chalmers/data");
+        let tif = std::fs::read(repo.join("terrain.tif")).unwrap();
+
+        // The sample district lies a few hundred metres north of the campus raster.
+        let sample = scratch("terrain-miss");
+        let r = inspect(&sample, &Target::Terrain, "terrain.tif", &tif, Options::default()).report;
+        // The file only cites its grid, and no grid puts it on this table.
+        assert_eq!(codes(&r), ["coords.unknown"]);
+        let named = inspect(&sample, &Target::Terrain, "terrain.tif", &tif, Options { crs: Some(3006), ..Default::default() }).report;
+        assert_eq!(codes(&named), ["extent.outside_all"]);
+        assert!(inspect(&sample, &Target::Terrain, "t.geojson", b"{}", Options::default()).report.issues[0].message.contains("not a TIFF"));
+        assert_eq!(
+            inspect(&sample, &Target::Terrain, "t.tif", &tif, Options { crs: Some(2154), ..Default::default() }).report.issues[0].code,
+            "coords.unsupported"
+        );
+        std::fs::remove_dir_all(&sample.dir).unwrap();
+
+        // A new table on the campus takes it, and the bake raises the ground.
+        let base = std::env::temp_dir().join(format!("mrs-import-campus-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let campus = Site::load(&{
+            let dir = base.join("campus");
+            crate::create::create(&dir, "Campus", 11.977769, 57.688384, 1250.0, 750.0, -92.555).unwrap();
+            dir
+        })
+        .unwrap();
+        let prepared = inspect(&campus, &Target::Terrain, "terrain.tif", &tif, Options::default());
+        assert!(prepared.report.ok, "{:?}", prepared.report.issues);
+        assert_eq!(codes(&prepared.report), ["coords.projected"]);
+        assert!(
+            prepared.report.summary.starts_with("Ground from") && prepared.report.summary.ends_with("100% of the table"),
+            "{}",
+            prepared.report.summary
+        );
+        let (campus, _) = apply(&campus, prepared).unwrap();
+        let terrain = campus.manifest.scene.terrain.as_ref().unwrap();
+        // The grid was found by trying, so it is written down for the bake.
+        assert_eq!((terrain.path.as_str(), terrain.width, terrain.crs.as_deref()), ("data/terrain.tif", None, Some("EPSG:3006")));
+        let (scene, stats) = campus.bake().unwrap();
+        assert_eq!(stats.terrain_missing_cells, 0);
+        let (low, high) = scene.dtm.iter().fold((f32::MAX, f32::MIN), |(a, b), &z| (a.min(z), b.max(z)));
+        assert!(high - low > 10.0, "{low} {high}");
+
+        // A whole campus of buildings and trees, as exported for the old app.
+        let started = std::time::Instant::now();
+        let buildings = std::fs::read(repo.join("buildings.geojson")).unwrap();
+        let prepared = inspect(&campus, &Target::Buildings, "buildings.geojson", &buildings, Options::default());
+        assert!(prepared.report.ok && prepared.report.count == 788, "{:?}", prepared.report);
+        let (campus, _) = apply(&campus, prepared).unwrap();
+        let trees = std::fs::read(repo.join("trees.geojson")).unwrap();
+        let prepared = inspect(&campus, &Target::Trees, "trees.geojson", &trees, Options::default());
+        assert_eq!(prepared.report.count, 8120);
+        assert_eq!(prepared.report.preview.as_ref().unwrap()["features"].as_array().unwrap().len(), PREVIEW_LIMIT);
+        let (campus, _) = apply(&campus, prepared).unwrap();
+        let (_, stats) = campus.bake().unwrap();
+        assert!(stats.buildings > 700 && stats.trees > 7000, "{stats:?}");
+        assert!(started.elapsed().as_secs_f64() < 20.0, "{:?}", started.elapsed());
+        std::fs::remove_dir_all(&base).unwrap();
     }
 }

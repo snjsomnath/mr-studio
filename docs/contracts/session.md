@@ -158,8 +158,8 @@ The host works the address out from the interface it listens on. It is `null` wh
 Two HTTP endpoints take a file as the request body (any content type), with its name in an `X-Filename` header. Only this computer may call them: the host listens on the network while presenting, and a request from another address gets 403.
 
 ```
-POST /api/data/inspect?target=<target>[&crop=1][&swap=1]   reads and checks, writes nothing
-POST /api/data/import?target=<target>[&crop=1][&swap=1]    the same, then saves, re-bakes and sends `site.changed`
+POST /api/data/inspect?target=<target>[&crop=1][&swap=1][&crs=EPSG:<code>]   reads and checks, writes nothing
+POST /api/data/import?target=<target>[&crop=1][&swap=1][&crs=EPSG:<code>]    the same, then saves, re-bakes and sends `site.changed`
 ```
 
 | `target` | Accepts | Saved as | `site.json` |
@@ -168,9 +168,10 @@ POST /api/data/import?target=<target>[&crop=1][&swap=1]    the same, then saves,
 | `trees` | GeoJSON points, or CSV with position columns | `data/trees.geojson` | `scene.trees` |
 | `walkways` | GeoJSON lines | `data/walkways.geojson` | `data.walkways` |
 | `trips` | The mobility layer's `trips.json` | `data/trips.json` | `data.trips` |
+| `terrain` | A GeoTIFF of ground heights | `data/terrain.tif` | `scene.terrain` (`crs` only when the file does not name it) |
 | `data:<name>` | GeoJSON, or CSV with position columns | `data/<name>.geojson` | `data.<name>` |
 
-Settings already in `scene.buildings` or `scene.trees` are kept. Coordinates that are not WGS84 are recognised when the file names its system or when SWEREF99 TM, a SWEREF99 local zone or the site's UTM zone puts them on the table, and are converted. Buildings with only `building:levels` (or `levels`, `floors`, `våningar`) get a height of 3 m a storey. `crop=1` leaves out what lies more than a tenth of the table's size outside it; `swap=1` reads the first coordinate as latitude.
+Settings already in `scene.buildings` or `scene.trees` are kept. Coordinates that are not WGS84 are recognised when the file names its system or when SWEREF99 TM, a SWEREF99 local zone or the site's UTM zone puts them on the table, and are converted. Buildings with only `building:levels` (or `levels`, `floors`, `våningar`) get a height of 3 m a storey. A terrain GeoTIFF that only cites its grid is tried as SWEREF99 TM, the local zones, the site's UTM zone and WGS84, and the first that covers the table is kept and written as `crs`; `crs=EPSG:<code>` names it outright. Its report says how much of the table it covers and the range of ground heights. `crop=1` leaves out what lies more than a tenth of the table's size outside it; `swap=1` reads the first coordinate as latitude.
 
 Both answer with a report: 200 when it can be imported, 422 when a blocker stops it (nothing is written), 400 for a bad request such as an unknown target.
 
@@ -184,7 +185,7 @@ interface ImportReport {
   outside: number;
   crs?: { code: string; guessed: boolean };   // 'EPSG:3006', guessed when the file did not say
   height_property?: string;  // buildings and trees
-  issues: { code: string; severity: 'blocker' | 'warning' | 'note'; message: string; fix?: 'crop' | 'swap' }[];
+  issues: { code: string; severity: 'blocker' | 'warning' | 'note'; message: string; fix?: 'crop' | 'swap' }[];   // a terrain with code 'coords.unknown' needs `crs`
   preview?: GeoJSON.FeatureCollection;        // what will be written, WGS84, in file order, at most 5000 features; not for trips
   path?: string;             // after an import: where it was saved
 }
