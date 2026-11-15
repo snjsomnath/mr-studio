@@ -299,8 +299,9 @@ export class Wizard {
             });
             line.append(apply);
           }
-          if (issue.code === 'coords.unknown') {
+          if (issue.code === 'coords.unknown' || (pending.crs && issue.code === 'extent.outside_all')) {
             // The file does not say where it is; the author names its coordinate system and it is read again.
+            // A system that puts the file off the table can be changed for another.
             const code = el('input');
             Object.assign(code, { type: 'text', inputMode: 'numeric', placeholder: 'EPSG code, such as 3006', ariaLabel: 'EPSG code of the file', value: pending.crs?.replace('EPSG:', '') ?? '' });
             const again = el('button', 'ed-button', 'Read it again');
