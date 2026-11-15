@@ -522,12 +522,12 @@ async function main() {
     await guide.getByLabel('File for Trees').setInputFiles(path.join(site, 'data', 'trees.geojson'));
     await guide.locator('.wz-place[data-target="trees"] .wz-summary', { hasText: /trees/ }).waitFor();
     if (shots) await guide.screenshot({ path: path.join(shots, 'wizard-place.png') });
-    const before = fs.statSync(path.join(site, 'data', 'trees.geojson')).mtimeMs;
+    const written = fs.statSync(path.join(site, 'data', 'trees.geojson')).mtimeMs;
     await guide.getByRole('button', { name: 'Add to the table' }).click();
     // Every surface starts again with the new data, and the guide comes back where it was.
     await guide.waitForFunction(() => !document.querySelector('.wz-report') && document.querySelector('.wz h2')?.textContent === 'Your place');
     await guide.locator('.wz-place[data-target="trees"] .wz-state', { hasText: 'On the table' }).waitFor();
-    assert.ok(fs.statSync(path.join(site, 'data', 'trees.geojson')).mtimeMs > before, 'the file is written into the table');
+    assert.ok(fs.statSync(path.join(site, 'data', 'trees.geojson')).mtimeMs > written, 'the file is written into the table');
     // A file that is not what was asked for is refused with a reason, and nothing is written.
     await guide.getByLabel('File for Buildings').setInputFiles(path.join(site, 'data', 'trees.geojson'));
     await guide.locator('.wz-place[data-target="buildings"] .wz-issue.is-blocker').waitFor();
