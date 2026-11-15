@@ -270,6 +270,9 @@ impl Site {
         if let Some(t) = &m.scene.trees {
             data.insert("trees".to_string(), t.path.clone());
         }
+        if let Some(t) = &m.scene.terrain {
+            data.insert("terrain".to_string(), t.path.clone());
+        }
         data.extend(m.data.clone());
         data
     }

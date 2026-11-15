@@ -34,6 +34,7 @@ interface ImportReport {
 /** The files a table is made from. Each is brought in on its own. */
 const PLACE_DATA: { target: string; name: string; icon: string; about: string; accept: string }[] = [
   { target: 'buildings', name: 'Buildings', icon: 'blocks', about: 'Footprints with heights. They cast the shadows and shape the wind. GeoJSON.', accept: '.geojson,.json' },
+  { target: 'terrain', name: 'Ground', icon: 'map', about: 'The height of the land, so hills shade and shelter as they do outside. A GeoTIFF.', accept: '.tif,.tiff' },
   { target: 'trees', name: 'Trees', icon: 'tree', about: 'Where the trees stand. GeoJSON points, or a CSV with coordinates.', accept: '.geojson,.json,.csv' },
   { target: 'walkways', name: 'Walking paths', icon: 'footprints', about: 'Lines people can walk along. Cool paths needs them. GeoJSON.', accept: '.geojson,.json' },
   { target: 'trips', name: 'Trips', icon: 'route', about: 'Journeys through the day. Mobility needs them. A trips.json file.', accept: '.json' },
@@ -42,6 +43,8 @@ const PLACE_DATA: { target: string; name: string; icon: string; about: string; a
 interface Pending {
   file: File;
   options: Set<'crop' | 'swap'>;
+  /** `EPSG:<code>`, named by the author when the file does not say and the host cannot tell. */
+  crs?: string;
   report?: ImportReport;
   busy: boolean;
   failed?: string;
@@ -296,6 +299,24 @@ export class Wizard {
             });
             line.append(apply);
           }
+          if (issue.code === 'coords.unknown') {
+            // The file does not say where it is; the author names its coordinate system and it is read again.
+            const code = el('input');
+            Object.assign(code, { type: 'text', inputMode: 'numeric', placeholder: 'EPSG code, such as 3006', ariaLabel: 'EPSG code of the file', value: pending.crs?.replace('EPSG:', '') ?? '' });
+            const again = el('button', 'ed-button', 'Read it again');
+            again.type = 'button';
+            const retry = (): void => {
+              const digits = code.value.replace(/\D/g, '');
+              if (!digits) return;
+              pending.crs = `EPSG:${digits}`;
+              void this.check(item.target, false);
+            };
+            again.addEventListener('click', retry);
+            code.addEventListener('keydown', (event) => event.key === 'Enter' && retry());
+            const ask = el('span', 'wz-crs');
+            ask.append(code, again);
+            line.append(ask);
+          }
           report.append(line);
         }
       }
@@ -326,6 +347,7 @@ export class Wizard {
     this.render();
     const query = new URLSearchParams({ target });
     for (const option of pending.options) query.set(option, '1');
+    if (pending.crs) query.set('crs', pending.crs);
     try {
       const response = await fetch(`/api/data/${write ? 'import' : 'inspect'}?${query}`, { method: 'POST', headers: { 'X-Filename': encodeURIComponent(pending.file.name) }, body: pending.file });
       // 200 and 422 both carry the report; anything else is a plain message.

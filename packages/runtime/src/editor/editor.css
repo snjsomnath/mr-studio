@@ -1105,3 +1105,18 @@ body[data-role='edit'] .ed-surface .table-frame {
   gap: 8px;
   margin-top: 10px;
 }
+
+.wz-crs {
+  display: flex;
+  gap: 8px;
+}
+
+.wz-crs input {
+  width: 200px;
+  padding: 6px 8px;
+  border: 1px solid var(--ed-line);
+  border-radius: 6px;
+  font: inherit;
+  color: var(--ed-text);
+  background-color: var(--ed-panel);
+}
