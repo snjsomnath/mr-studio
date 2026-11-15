@@ -360,6 +360,27 @@ body[data-role='edit'] {
   color: var(--ed-text-2);
 }
 
+.ed-next {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 16px;
+  background-color: var(--ed-accent-soft);
+  border-bottom: 1px solid var(--ed-line);
+}
+
+.ed-next[hidden] {
+  display: none;
+}
+
+.ed-next strong {
+  color: var(--ed-accent);
+}
+
+.ed-next > span {
+  flex: 1;
+}
+
 .ed-canvas {
   flex: 1;
   min-height: 0;
@@ -641,6 +662,7 @@ body[data-role='edit'] .table-surface {
 .ed.is-setup .ed-left,
 .ed.is-setup .ed-inspector,
 .ed.is-setup .ed-canvas-head,
+.ed.is-setup .ed-next,
 .ed.is-setup .ed-notice {
   display: none;
 }

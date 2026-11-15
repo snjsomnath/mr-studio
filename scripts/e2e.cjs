@@ -562,6 +562,8 @@ async function main() {
     await guide.getByRole('button', { name: 'Fine-tune in the editor' }).click();
     await guide.locator('.ed-tree .ed-row[data-context="home"]').waitFor();
     assert.equal(await guide.locator('.wz').count(), 0);
+    // A table with its place, its map at rest and its layers has nothing left to ask for.
+    assert.equal(await guide.locator('.ed-next').isVisible(), false);
     await guide.getByRole('button', { name: 'Setup guide' }).click();
     await guide.locator('.wz h2', { hasText: 'Set up Sample district' }).waitFor();
     await guide.close();
