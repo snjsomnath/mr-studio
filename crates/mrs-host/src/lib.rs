@@ -246,6 +246,9 @@ struct ImportQuery {
     crop: Option<String>,
     #[serde(default)]
     swap: Option<String>,
+    /// `EPSG:3006`, for a terrain GeoTIFF that does not say.
+    #[serde(default)]
+    crs: Option<String>,
 }
 
 fn flag(value: &Option<String>) -> bool {
@@ -287,7 +290,12 @@ async fn data_request(
         return (StatusCode::FORBIDDEN, Json(json!({ "error": "data can only be added from this computer" }))).into_response();
     }
     let filename = headers.get("x-filename").and_then(|v| v.to_str().ok()).unwrap_or("").to_string();
-    let options = Options { crop: flag(&query.crop), swap: flag(&query.swap) };
+    let crs = match query.crs.as_deref().map(|c| c.trim().trim_start_matches("EPSG:").trim_start_matches("epsg:").parse::<u32>()) {
+        None => None,
+        Some(Ok(code)) => Some(code),
+        Some(Err(_)) => return (StatusCode::BAD_REQUEST, Json(json!({ "error": "crs must look like EPSG:3006" }))).into_response(),
+    };
+    let options = Options { crop: flag(&query.crop), swap: flag(&query.swap), crs };
     match state.import_data(&query.target, &filename, body.to_vec(), options, write).await {
         Ok(report) if report.ok => (StatusCode::OK, Json(json!(report))).into_response(),
         Ok(report) => (StatusCode::UNPROCESSABLE_ENTITY, Json(json!(report))).into_response(),
