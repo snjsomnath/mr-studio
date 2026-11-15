@@ -5,7 +5,7 @@
 //! `layers` list of `site.json`, and the `scene.*` requests edit both together.
 
 use std::hash::{BuildHasher, Hasher};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
 
 use mrs_site::{is_instance_id, LayerButton, LayerRef, Site, SiteInfo};
@@ -189,7 +189,8 @@ impl Inner {
 
 pub struct Hub {
     site: Site,
-    info: SiteInfo,
+    /// Replaced when data is imported into the site.
+    info: RwLock<SiteInfo>,
     session: SessionInfo,
     options: SessionOptions,
     /// Every layer that can be added to a scene.
@@ -224,7 +225,7 @@ impl Hub {
         let (events, _) = broadcast::channel(256);
         Ok(Self {
             site: site.clone(),
-            info: site.info(),
+            info: RwLock::new(site.info()),
             session,
             options,
             catalog,
@@ -261,8 +262,14 @@ impl Hub {
         &self.session
     }
 
-    pub fn site(&self) -> &SiteInfo {
-        &self.info
+    pub fn site(&self) -> SiteInfo {
+        self.info.read().unwrap().clone()
+    }
+
+    /// Takes the site as it is after its data changed, and tells every surface.
+    pub fn site_changed(&self, info: SiteInfo) {
+        *self.info.write().unwrap() = info.clone();
+        self.emit("site.changed", json!({ "site": info }));
     }
 
     pub fn subscribe(&self) -> broadcast::Receiver<String> {
@@ -383,7 +390,7 @@ impl Hub {
             "state": {
                 "protocol": PROTOCOL,
                 "session": self.session,
-                "site": self.info,
+                "site": &*self.info.read().unwrap(),
                 "scene": inner.order(),
                 "layers": inner.layers(),
                 "participants": inner.participants(),
@@ -478,7 +485,7 @@ impl Hub {
                 }
                 let wanted = p["use"].as_str().ok_or("missing use")?;
                 let def = self.catalog.iter().position(|d| d.id == wanted).ok_or_else(|| format!("unknown layer '{wanted}'"))?;
-                if let Some(name) = self.catalog[def].missing_data(&self.info.data).map_err(|e| e.to_string())? {
+                if let Some(name) = self.catalog[def].missing_data(&self.info.read().unwrap().data).map_err(|e| e.to_string())? {
                     return Err(format!("this site has no '{name}' dataset, which the layer needs"));
                 }
                 let base = &self.catalog[def].id;

@@ -5,6 +5,7 @@ mod bake;
 pub mod create;
 mod crs;
 mod geotiff;
+pub mod import;
 mod manifest;
 mod mesh;
 pub mod migrate;
