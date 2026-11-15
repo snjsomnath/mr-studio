@@ -59,8 +59,10 @@ Every file below then lands on the table (the sample site `sites/sample` uses th
 
 ## Checked against main (548dc67)
 
-Every file above was brought in through the editor's Your place step on a blank table at this
-frame. Buildings, ground, trees, walking paths and trips land on the table (the district runs a
-little past the table edge on purpose, so 23 buildings and 35 trees are offered for cropping).
-Each `broken/` file gave the message listed. Streets, zones, sensors, the time series and the
+Brought in through the editor's Your place step on a blank table at this frame: buildings,
+ground (SWEREF99 TM), trees (both CSVs), walking paths and trips all land on the table (the district
+runs a little past the table edge on purpose, so 23 buildings and 35 trees are offered for
+cropping). Both SWEREF99 TM building files, the 3 km offset, swapped lat/lon, missing heights and
+points-as-paths gave the messages listed. Not yet tried in the editor: `buildings-half-off`,
+`trees-no-position.csv` and `terrain-wgs84.tif`. Streets, zones, sensors, the time series and the
 image overlay have no editor door yet; they're here for the issues that add one.
