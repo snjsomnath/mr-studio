@@ -2,7 +2,6 @@
 // whenever the pointer goes to the top edge, the way back to the editor.
 (() => {
   if (window.top !== window) return;
-  const mac = /Mac/i.test(navigator.platform);
   function build() {
     const host = document.createElement('div');
     Object.assign(host.style, { position: 'fixed', top: '10px', left: '50%', transform: 'translateX(-50%)', zIndex: '2147483000' });
@@ -22,7 +21,7 @@
     button.type = 'button';
     button.append('Back to the editor ');
     const keys = document.createElement('kbd');
-    keys.textContent = mac ? '⌘⇧E' : 'Ctrl+Shift+E';
+    keys.textContent = 'Esc';
     button.append(keys);
     button.addEventListener('click', () => (window.location.href = '/__shell/edit'));
     root.append(style, button);
