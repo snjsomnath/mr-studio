@@ -510,11 +510,30 @@ async function main() {
     await tv.locator('.controller-right .layer-button', { hasText: 'Mobility' }).waitFor();
     assert.deepEqual(savedLayers().map((l) => l.id ?? l.use), ['basemap', 'sunlight', 'building-lights', 'cars', 'transit', 'trees', 'slideshow', 'sketch', 'coolpaths', 'mobility', 'wind']);
 
-    const real = errors.filter((e) => !/wrong session code|WebSocket/.test(e));
+    // A refused file answers 422, which the browser logs on its own.
+    const real = errors.filter((e) => !/wrong session code|WebSocket|status of 422/.test(e));
     assert.deepEqual(real, [], 'no page errors');
     // ---- The setup wizard ----
     // A new table opens in the guide; here it runs on the sample, whose name and place are already set.
     const guide = await open('/edit?welcome=1', { width: 1440, height: 900 });
+    // It starts with the place itself: the files the table is made from. The host checks a file, then brings it in.
+    await guide.locator('.wz h2', { hasText: 'Your place' }).waitFor();
+    assert.equal(await guide.locator('.wz-place[data-target="buildings"] .wz-state').textContent(), 'On the table');
+    await guide.getByLabel('File for Trees').setInputFiles(path.join(site, 'data', 'trees.geojson'));
+    await guide.locator('.wz-place[data-target="trees"] .wz-summary', { hasText: /trees/ }).waitFor();
+    if (shots) await guide.screenshot({ path: path.join(shots, 'wizard-place.png') });
+    const written = fs.statSync(path.join(site, 'data', 'trees.geojson')).mtimeMs;
+    await guide.getByRole('button', { name: 'Add to the table' }).click();
+    // Every surface starts again with the new data, and the guide comes back where it was.
+    await guide.waitForFunction(() => !document.querySelector('.wz-report') && document.querySelector('.wz h2')?.textContent === 'Your place');
+    await guide.locator('.wz-place[data-target="trees"] .wz-state', { hasText: 'On the table' }).waitFor();
+    assert.ok(fs.statSync(path.join(site, 'data', 'trees.geojson')).mtimeMs > written, 'the file is written into the table');
+    // A file that is not what was asked for is refused with a reason, and nothing is written.
+    await guide.getByLabel('File for Buildings').setInputFiles(path.join(site, 'data', 'trees.geojson'));
+    await guide.locator('.wz-place[data-target="buildings"] .wz-issue.is-blocker').waitFor();
+    assert.equal(await guide.locator('.wz-place[data-target="buildings"]').getByRole('button', { name: 'Add to the table' }).isDisabled(), true);
+    await guide.locator('.wz-place[data-target="buildings"]').getByRole('button', { name: 'Cancel' }).click();
+    await guide.getByRole('button', { name: 'Next' }).click();
     await guide.locator('.wz h2', { hasText: 'The map at rest' }).waitFor();
     assert.equal(await guide.locator('.wz input[data-layer="trees"]').isChecked(), true);
     await guide.getByRole('button', { name: 'Next' }).click();

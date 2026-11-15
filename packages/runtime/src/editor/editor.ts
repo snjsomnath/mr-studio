@@ -103,12 +103,29 @@ export class Editor {
     // A new table opens in the setup guide, and so does one with nothing on it yet.
     const query = new URLSearchParams(location.search);
     const created = query.has('welcome') || query.has('setup');
-    if (created || this.instances().every((i) => isAmbient(i.manifest))) this.openWizard(created);
+    // After data is brought in the page reloads; the guide comes back at the step it was on.
+    let resume: number | undefined;
+    try {
+      const kept = sessionStorage.getItem('mrs-setup-step');
+      sessionStorage.removeItem('mrs-setup-step');
+      if (kept !== null) resume = Number(kept);
+    } catch {
+      // No session storage: the guide starts over.
+    }
+    if (resume !== undefined || created || this.instances().every((i) => isAmbient(i.manifest))) this.openWizard(created, resume);
+    connection.on('site.changed', () => {
+      try {
+        if (this.wizard) sessionStorage.setItem('mrs-setup-step', String(this.wizard.step));
+      } catch {
+        // As above.
+      }
+      location.reload();
+    });
   }
 
   // ---- The setup guide --------------------------------------------------------
 
-  private openWizard(created = false): void {
+  private openWizard(created = false, step?: number): void {
     if (this.wizard) return;
     this.wizard = new Wizard(
       {
@@ -120,7 +137,7 @@ export class Editor {
         present: () => this.presentButton.click(),
         close: () => this.closeWizard(),
       },
-      { created },
+      { created, step },
     );
     this.shell.classList.add('is-setup');
     this.body.prepend(this.wizard.element);
@@ -378,7 +395,7 @@ export class Editor {
     tool.dataset.layer = manifest.id;
     const data = this.store.state.site.data ?? {};
     const missing = (manifest.requires?.data ?? []).filter((name) => !(name in data));
-    tool.title = missing.length > 0 ? `${manifest.description ?? manifest.name}. This table has no ${missing.join(' or ')} data yet.` : (manifest.description ?? manifest.name);
+    tool.title = missing.length > 0 ? `${manifest.description ?? manifest.name}. This table has no ${missing.join(' or ')} data yet. Bring it in with Add data.` : (manifest.description ?? manifest.name);
     tool.disabled = missing.length > 0;
     tool.addEventListener('click', () => void this.add(manifest));
     return tool;
@@ -433,6 +450,11 @@ export class Editor {
       tool.addEventListener('click', () => window.open(path, `mrstudio-${label.toLowerCase()}`));
       return tool;
     };
+    const data = button('ed-tool is-large', 'Add data', 'map', 20);
+    data.title = 'Bring in buildings, trees, walking paths or trips from a file';
+    data.addEventListener('click', () => this.openWizard(false, 1));
+    groups.push(this.group('Your place', data));
+
     const windows = this.group(
       'Open in a window',
       ...this.column([open('Map', 'table', '/table', 'The map projected on the table'), open('Controller', 'tv', '/tv', 'The screen beside the table'), open('Developer', 'code', '/dev', 'Map, dashboard and every control on one page')]),

@@ -18,7 +18,34 @@ export interface WizardHost {
   close(): void;
 }
 
-export const WIZARD_STEPS = ['Welcome', 'The map at rest', 'Layers', 'Buttons', 'Ready'] as const;
+export const WIZARD_STEPS = ['Welcome', 'Your place', 'The map at rest', 'Layers', 'Buttons', 'Ready'] as const;
+const PLACE = 1;
+const REST = 2;
+const LAYERS = 3;
+const BUTTONS = 4;
+
+/** What the host says about a file before and after it is brought into the table (see session.md). */
+interface ImportReport {
+  ok: boolean;
+  summary: string;
+  issues: { code: string; severity: 'blocker' | 'warning' | 'note'; message: string; fix?: 'crop' | 'swap' }[];
+}
+
+/** The files a table is made from. Each is brought in on its own. */
+const PLACE_DATA: { target: string; name: string; icon: string; about: string; accept: string }[] = [
+  { target: 'buildings', name: 'Buildings', icon: 'blocks', about: 'Footprints with heights. They cast the shadows and shape the wind. GeoJSON.', accept: '.geojson,.json' },
+  { target: 'trees', name: 'Trees', icon: 'tree', about: 'Where the trees stand. GeoJSON points, or a CSV with coordinates.', accept: '.geojson,.json,.csv' },
+  { target: 'walkways', name: 'Walking paths', icon: 'footprints', about: 'Lines people can walk along. Cool paths needs them. GeoJSON.', accept: '.geojson,.json' },
+  { target: 'trips', name: 'Trips', icon: 'route', about: 'Journeys through the day. Mobility needs them. A trips.json file.', accept: '.json' },
+];
+
+interface Pending {
+  file: File;
+  options: Set<'crop' | 'swap'>;
+  report?: ImportReport;
+  busy: boolean;
+  failed?: string;
+}
 
 /** The list of steps down the side of the wizard. `done` steps before `current` are ticked. */
 export function stepList(names: readonly string[], current: number, go?: (index: number) => void): HTMLElement {
@@ -47,18 +74,20 @@ export function stepList(names: readonly string[], current: number, go?: (index:
  */
 export class Wizard {
   readonly element = el('aside', 'wz');
-  private step: number;
+  step: number;
+  /** Files chosen in "Your place" that are being checked or await a yes. */
+  private pending = new Map<string, Pending>();
   private readonly host: WizardHost;
   /** Whether a "Name and place" step came before this one, in the app's new-table page. */
   private readonly created: boolean;
 
-  constructor(host: WizardHost, options: { created?: boolean } = {}) {
+  constructor(host: WizardHost, options: { created?: boolean; step?: number } = {}) {
     this.host = host;
     this.created = options.created ?? false;
     // Someone who has just named and placed the table has had the welcome.
-    this.step = this.created ? 1 : 0;
+    this.step = options.step ?? (this.created ? PLACE : 0);
     host.store.onScene(() => this.render());
-    host.store.onLayer(() => this.step === 3 && this.syncButtons());
+    host.store.onLayer(() => this.step === BUTTONS && this.syncButtons());
     this.render();
   }
 
@@ -94,7 +123,7 @@ export class Wizard {
     const instances = this.instances();
     const layers = instances.filter((i) => !isAmbient(i.manifest));
     this.syncButtons = () => {};
-    host.controller(this.step === 3);
+    host.controller(this.step === BUTTONS);
 
     if (this.step === 0) {
       host.show(null);
@@ -115,11 +144,15 @@ export class Wizard {
         cards.append(card);
       }
       body.append(cards);
-    } else if (this.step === 1) {
+    } else if (this.step === PLACE) {
+      host.show(null);
+      title('Your place', 'Bring in the files your table is made from. They are copied into the table and stay on this computer. Buildings matter most; the rest can come later.');
+      for (const item of PLACE_DATA) body.append(this.placeRow(item));
+    } else if (this.step === REST) {
       host.show(null);
       title('The map at rest', 'What the table shows when nobody is using it. Pick a base map and some life to make it feel like a place.');
       body.append(this.choices(host.store.manifests.filter(isAmbient), instances, false));
-    } else if (this.step === 2) {
+    } else if (this.step === LAYERS) {
       title('Layers', 'Each layer answers one question, such as where the sun falls. Every layer you pick becomes a button on the controller.');
       body.append(this.choices(host.store.manifests.filter((m) => !isAmbient(m)), instances, true));
       const added = layers.find((i) => i.manifest.id === this.fresh);
@@ -128,7 +161,7 @@ export class Wizard {
         host.show(added.id);
       }
       if (layers.length === 0) body.append(el('p', 'wz-hint', 'Pick at least one layer to give the table something to show.'));
-    } else if (this.step === 3) {
+    } else if (this.step === BUTTONS) {
       host.show(layers[0]?.id ?? null);
       title('Buttons', 'Give each button words a visitor understands, and choose its side of the controller. The controller on the right is live.');
       if (layers.length === 0) body.append(el('p', 'wz-hint', 'There are no layers yet. Go back a step and pick one.'));
@@ -215,6 +248,96 @@ export class Wizard {
     head.append(stepList(this.names(), this.step, (index) => this.go(index)));
     // Typing in a field must survive a redraw caused by someone else's change.
     this.element.replaceChildren(head, body, foot);
+  }
+
+  /** One kind of data in "Your place": whether the table has it, a file picker, and what the host says about the chosen file. */
+  private placeRow(item: (typeof PLACE_DATA)[number]): HTMLElement {
+    const { host } = this;
+    const has = item.target in (host.store.state.site.data ?? {});
+    const pending = this.pending.get(item.target);
+    const box = el('div', 'wz-place');
+    box.dataset.target = item.target;
+    const row = el('div', 'wz-choice');
+    const badge = el('span', 'wz-badge');
+    badge.append(icon(item.icon, 20));
+    const words = el('div');
+    words.append(el('strong', undefined, item.name), el('p', undefined, item.about));
+    const state = el('span', has ? 'wz-state is-have' : 'wz-state', has ? 'On the table' : 'Not yet');
+    if (has) state.prepend(icon('check', 12));
+    const input = el('input');
+    Object.assign(input, { type: 'file', accept: item.accept, hidden: true, ariaLabel: `File for ${item.name}` });
+    const choose = el('button', 'ed-button', has ? 'Replace' : 'Choose a file');
+    choose.type = 'button';
+    choose.addEventListener('click', () => input.click());
+    input.addEventListener('change', () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      this.pending.set(item.target, { file, options: new Set(), busy: true });
+      void this.check(item.target, false);
+    });
+    row.append(badge, words, state, choose, input);
+    box.append(row);
+
+    if (pending) {
+      const report = el('div', 'wz-report');
+      if (pending.busy) report.append(el('p', undefined, `Reading ${pending.file.name}…`));
+      else if (pending.failed) report.append(el('p', 'wz-issue is-blocker', pending.failed));
+      else if (pending.report) {
+        report.append(el('p', 'wz-summary', pending.report.summary));
+        for (const issue of pending.report.issues) {
+          const line = el('p', `wz-issue is-${issue.severity}`, issue.message);
+          const fix = issue.fix;
+          if (fix && !pending.options.has(fix)) {
+            const apply = el('button', 'ed-button', fix === 'crop' ? 'Leave out what is off the table' : 'Swap latitude and longitude');
+            apply.type = 'button';
+            apply.addEventListener('click', () => {
+              pending.options.add(fix);
+              void this.check(item.target, false);
+            });
+            line.append(apply);
+          }
+          report.append(line);
+        }
+      }
+      const actions = el('div', 'wz-report-actions');
+      const add = el('button', 'ed-button is-primary', 'Add to the table');
+      add.type = 'button';
+      add.disabled = pending.busy || !pending.report?.ok;
+      add.addEventListener('click', () => void this.check(item.target, true));
+      const cancel = el('button', 'ed-button', 'Cancel');
+      cancel.type = 'button';
+      cancel.addEventListener('click', () => {
+        this.pending.delete(item.target);
+        this.render();
+      });
+      actions.append(add, cancel);
+      report.append(actions);
+      box.append(report);
+    }
+    return box;
+  }
+
+  /** Sends the chosen file to the host: to be checked, or with `write` to be brought into the table. */
+  private async check(target: string, write: boolean): Promise<void> {
+    const pending = this.pending.get(target);
+    if (!pending) return;
+    pending.busy = true;
+    pending.failed = undefined;
+    this.render();
+    const query = new URLSearchParams({ target });
+    for (const option of pending.options) query.set(option, '1');
+    try {
+      const response = await fetch(`/api/data/${write ? 'import' : 'inspect'}?${query}`, { method: 'POST', headers: { 'X-Filename': encodeURIComponent(pending.file.name) }, body: pending.file });
+      // 200 and 422 both carry the report; anything else is a plain message.
+      if (response.status === 200 || response.status === 422) pending.report = (await response.json()) as ImportReport;
+      else pending.failed = (await response.text()) || `The table refused the file (${response.status}).`;
+      // After a successful import the host tells every surface the site changed, and the editor reloads into this step.
+      if (write && response.status === 200) this.pending.delete(target);
+    } catch (error) {
+      pending.failed = `The file could not be sent: ${(error as Error).message}`;
+    }
+    pending.busy = false;
+    this.render();
   }
 
   /** One row per layer package with a switch: on means the table has it. */
