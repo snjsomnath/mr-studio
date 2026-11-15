@@ -125,6 +125,8 @@ async function main() {
   }
   if (role === 'tv' || role === 'dev') {
     const dash = el('main', 'dash');
+    // On the controller screen the open layer's words and controls sit above its panels.
+    if (role === 'tv') stage.append(el('div', 'open-layers'));
     stage.append(dash);
     if (role === 'tv') app.append(stage);
     mountDashboard(dash, store, connection, role === 'dev');
@@ -145,7 +147,7 @@ async function main() {
     // The controller screen has the layer buttons down both sides of the dashboard.
     const second = role === 'tv' ? el('aside', 'controller controller-right') : null;
     const rightCards = el('div', 'cards');
-    new Controller(cards, store, connection, role, second ? rightCards : undefined);
+    new Controller(cards, store, connection, role, second ? rightCards : undefined, second ? (stage.querySelector<HTMLElement>('.open-layers') ?? undefined) : undefined);
 
     if (!phone) {
       const foot = second ?? side;

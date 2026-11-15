@@ -173,14 +173,71 @@ body[data-role='tv'][data-rail='none'] .controller {
   color: var(--accent-ink);
 }
 
-.layer-button-card .layer-body {
-  padding-top: 0;
+body[data-role='tv'] .controller {
+  width: clamp(190px, 14vw, 280px);
 }
 
-.layer-about {
+/* The open layer, in the centre of the controller screen. */
+.open-layers {
+  flex: none;
+  max-height: 46%;
+  overflow-y: auto;
+  padding: 28px 32px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.layer-card.layer-open {
+  border: 0;
+  background: none;
+  padding: 0;
+}
+
+.layer-card.layer-open > header {
+  justify-content: flex-start;
+  padding: 0;
+}
+
+.layer-open[hidden],
+.layer-welcome[hidden] {
+  display: none;
+}
+
+.layer-open-head {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.layer-open-head .layer-button-icon {
+  width: 48px;
+  height: 48px;
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.layer-open-name,
+.layer-welcome h2 {
   margin: 0;
+  font-size: 1.7rem;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.layer-about,
+.layer-welcome p {
+  margin: 2px 0 0;
   color: var(--muted);
-  font-size: 0.85rem;
+  font-size: 1rem;
+}
+
+.layer-open .controls {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 14px 32px;
+  align-items: start;
 }
 
 .home-button {
