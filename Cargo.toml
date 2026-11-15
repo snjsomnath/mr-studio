@@ -32,6 +32,7 @@ tracing = "0.1"
 tracing-subscriber = "0.3"
 wgpu = { version = "30", default-features = false, features = ["std", "parking_lot", "dx12", "metal", "vulkan", "wgsl"] }
 futures-util = "0.3"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 
 [profile.dev.package."*"]
 opt-level = 2

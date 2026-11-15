@@ -186,10 +186,23 @@ interface ImportReport {
   crs?: { code: string; guessed: boolean };   // 'EPSG:3006', guessed when the file did not say
   height_property?: string;  // buildings and trees
   issues: { code: string; severity: 'blocker' | 'warning' | 'note'; message: string; fix?: 'crop' | 'swap' }[];   // a terrain with code 'coords.unknown' needs `crs`
-  preview?: GeoJSON.FeatureCollection;        // what will be written, WGS84, in file order, at most 5000 features; not for trips
+  preview?: GeoJSON.FeatureCollection;        // what was read, WGS84, in file order, at most 5000 features, on and off the table (before any crop), also on an 'extent.outside_all' refusal; not for trips or terrain
   path?: string;             // after an import: where it was saved
 }
 ```
+
+### From OpenStreetMap
+
+Add `source=osm` and send an empty body: the host asks OpenStreetMap (Overpass) for the table's extent plus a tenth on each side and reads the answer as a GeoJSON file, so the report, options and saving are the same as for a file. It is never done unless the author asks.
+
+| `target` | What is fetched |
+| --- | --- |
+| `buildings` | `building` ways and multipolygon relations; `height` or `building:levels` give the height |
+| `trees` | `natural=tree` points |
+| `walkways` | `highway` footway, path, pedestrian, steps, cycleway, track, living street, residential, service, unclassified |
+| `data:roads` | `highway` streets, motorway to service, with `kind: 'street'` for the cars layer |
+
+Every OSM tag is kept as a property, with `osm_id` (`way/123`). The saved file carries `source: { name: 'OpenStreetMap', layer, attribution: '© OpenStreetMap contributors', licence: 'ODbL-1.0', fetched: 'YYYY-MM-DD' }`, and the report has a note with code `source.osm`: the credit must be shown wherever the table is. A refusal is a 422 report with one blocker: `osm.unavailable` (trips, terrain or another dataset name), `osm.offline` (no answer; try again) or `osm.empty` (nothing mapped there). `MRS_OVERPASS_URL` points the host at another Overpass server.
 
 `message` is written for the author and can be shown as it is. `fix` names the option that applies the recommended fix, so an editor can offer it as a button and send the same file again with that option.
 

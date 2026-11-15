@@ -718,3 +718,66 @@ async fn a_new_table_takes_its_buildings_without_a_restart() {
     host.shutdown().await;
     let _ = std::fs::remove_dir_all(&base);
 }
+
+/// A stand-in for Overpass that answers every query with `answer`, and the queries it got.
+async fn overpass(answer: Value) -> (String, std::sync::Arc<std::sync::Mutex<Vec<String>>>) {
+    let asked = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let log = asked.clone();
+    let app = axum::Router::new().route(
+        "/api/interpreter",
+        axum::routing::post(move |body: String| {
+            let (log, answer) = (log.clone(), answer.clone());
+            async move {
+                log.lock().unwrap().push(body);
+                axum::Json(answer)
+            }
+        }),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}/api/interpreter", listener.local_addr().unwrap());
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    (url, asked)
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn buildings_come_from_openstreetmap_when_asked() {
+    let base = std::env::temp_dir().join(format!("mrs-host-osm-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&base);
+    let dir = base.join("osm-place");
+    mrs_site::create::create(&dir, "OSM place", 11.97, 57.70, 1000.0, 600.0, 0.0).unwrap();
+    let ring = |lat: f64, lon: f64| {
+        let p = |dy: f64, dx: f64| json!({ "lat": lat + dy, "lon": lon + dx });
+        json!([p(0.0, 0.0), p(0.0, 0.0003), p(0.0002, 0.0003), p(0.0002, 0.0), p(0.0, 0.0)])
+    };
+    // One building on the table, one in the fetch margin just west of it.
+    let (url, asked) = overpass(json!({ "elements": [
+        { "type": "way", "id": 1, "tags": { "building": "yes", "height": "14" }, "geometry": ring(57.700, 11.970) },
+        { "type": "way", "id": 2, "tags": { "building": "house", "building:levels": "2" }, "geometry": ring(57.700, 11.9610) },
+    ] }))
+    .await;
+    std::env::set_var("MRS_OVERPASS_URL", &url);
+    let host = host_for(dir.clone()).await;
+    let mut table = Surface::join(&host, "table", None).await.unwrap();
+
+    let (status, report) = http_post(&host, "/api/data/inspect?target=buildings&source=osm", "", b"").await;
+    assert_eq!(status, 200, "{report}");
+    assert_eq!((report["count"].as_u64(), report["inside"].as_u64()), (Some(2), Some(1)));
+    assert_eq!(report["preview"]["features"].as_array().unwrap().len(), 2, "the preview shows what lies off the table too");
+    assert!(report["issues"].as_array().unwrap().iter().any(|i| i["code"] == "source.osm"), "{report}");
+    let query = asked.lock().unwrap()[0].clone();
+    assert!(query.starts_with("data=") && query.contains("building"), "{query}");
+
+    let (status, report) = http_post(&host, "/api/data/import?target=buildings&source=osm&crop=1", "", b"").await;
+    assert_eq!(status, 200, "{report}");
+    assert_eq!(report["path"], "data/buildings.geojson");
+    table.event("site.changed").await;
+    let saved: Value = serde_json::from_slice(&std::fs::read(dir.join("data/buildings.geojson")).unwrap()).unwrap();
+    assert_eq!(saved["source"]["attribution"], "© OpenStreetMap contributors");
+
+    // OpenStreetMap has no trips or ground heights.
+    let (status, report) = http_post(&host, "/api/data/inspect?target=trips&source=osm", "", b"").await;
+    assert_eq!(status, 422);
+    assert_eq!(report["issues"][0]["code"], "osm.unavailable");
+    host.shutdown().await;
+    let _ = std::fs::remove_dir_all(&base);
+}
