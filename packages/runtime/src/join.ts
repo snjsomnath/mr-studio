@@ -54,7 +54,7 @@ export function joinPanel(store: Store): HTMLElement {
     const { join_url: url, code } = store.state.session;
     panel.querySelector('.join-qr')?.remove();
     if (!url) {
-      text.replaceChildren(el('h2', '', 'Phones cannot join yet'), el('p', '', 'This table is only reachable from this computer. In the MR Studio app, turn on “Let phones on this network join” in the settings. From the command line, start it with --lan.'));
+      text.replaceChildren(el('h2', '', 'Phones cannot join yet'), el('p', '', 'Turn on “Let phones on this network join” in the MR Studio app's settings, or start with --lan from the command line.'));
       return;
     }
     const qr = el('div', 'join-qr');

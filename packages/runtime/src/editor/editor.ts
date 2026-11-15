@@ -54,6 +54,7 @@ export class Editor {
   private readonly ribbon = el('div', 'ed-ribbon');
   private readonly tree = el('nav', 'ed-tree');
   private readonly canvasHead = el('header', 'ed-canvas-head');
+  private readonly surfaces = el('div', 'ed-surfaces');
   private readonly notice = el('div', 'ed-notice');
   private readonly inspector = el('aside', 'ed-inspector');
   private readonly saved = el('span', 'ed-saved');
@@ -76,8 +77,16 @@ export class Editor {
 
     const centre = el('main', 'ed-centre');
     this.notice.hidden = true;
-    this.preview.hidden = true;
-    centre.append(this.canvasHead, this.canvas, this.preview, this.notice);
+    // The two surfaces an author shapes, side by side and live: what the table shows, and what a visitor gets to press.
+    const surface = (kind: string, title: string, detail: string, content: HTMLElement) => {
+      const box = el('section', `ed-surface is-${kind}`);
+      const caption = el('h3', 'ed-surface-caption');
+      caption.append(el('strong', undefined, title), el('span', undefined, detail));
+      box.append(caption, content);
+      return box;
+    };
+    this.surfaces.append(surface('map', 'Map', 'Projected on the table. Visual only.', this.canvas), surface('controller', 'Controller', 'The screen beside the table. Buttons, words and controls.', this.preview));
+    centre.append(this.canvasHead, this.surfaces, this.notice);
 
     body.append(left, centre, this.inspector);
     shell.append(this.titleBar(), this.ribbon, body, this.statusBar());
@@ -86,7 +95,10 @@ export class Editor {
     this.setSaved();
     this.render();
     store.onScene(() => this.render());
-    store.onLayer((id, state) => this.sync.get(id)?.(state));
+    store.onLayer((id, state) => {
+      this.sync.get(id)?.(state);
+      this.follow(id, state);
+    });
 
     // A new table opens in the setup guide, and so does one with nothing on it yet.
     const query = new URLSearchParams(location.search);
@@ -138,21 +150,33 @@ export class Editor {
   }
 
   /** Swaps the map for the live controller in the middle of the window. */
-  private showController(shown: boolean): void {
-    if (shown && !this.preview.firstChild) {
+  private showController(only: boolean): void {
+    if (!this.preview.firstChild) {
       const frame = el('iframe');
       frame.src = '/tv';
       frame.title = 'The controller, live';
       this.preview.append(frame);
       // The controller is laid out for a full screen; it is scaled down to fit.
       const fit = (): void => {
-        const scale = Math.min((this.preview.clientWidth - 48) / 1600, (this.preview.clientHeight - 48) / 900);
+        const scale = Math.min((this.preview.clientWidth - 32) / 1600, (this.preview.clientHeight - 32) / 900);
         frame.style.transform = `translate(-50%, -50%) scale(${Math.max(0.1, scale)})`;
       };
       new ResizeObserver(fit).observe(this.preview);
     }
-    this.preview.hidden = !shown;
-    this.canvas.hidden = shown;
+    // The map and the controller are on show together; `only` gives the controller the whole space.
+    this.surfaces.classList.toggle('is-controller-only', only);
+  }
+
+  /** A press on the live controller selects that layer here, so the two stay in step. */
+  private follow(id: string, state: LayerState): void {
+    if (this.wizard || (this.context.kind !== 'home' && this.context.kind !== 'layer')) return;
+    const manifest = this.store.manifest(state.layer);
+    if (!manifest || isAmbient(manifest)) return;
+    const mine = this.context.kind === 'layer' && this.context.id === id;
+    if (state.active && !mine && !manifest.alongside) this.context = { kind: 'layer', id };
+    else if (!state.active && mine) this.context = { kind: 'home' };
+    else return;
+    this.render();
   }
 
   // ---- Requests -------------------------------------------------------------

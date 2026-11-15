@@ -136,6 +136,8 @@ export function defaultSide(store: Store): 'left' | 'right' {
 }
 
 interface Card {
+  /** On the controller screen: the open layer's part of the centre. */
+  body?: HTMLElement;
   element: HTMLElement;
   sync(state: LayerState): void;
   dispose(): void;
@@ -145,8 +147,8 @@ interface Card {
  * The controller. On a phone and on the developer page it is one card per layer with
  * an on/off switch and the controls generated from its manifest. On the controller
  * screen beside the table (`right` is given) each layer is a button on the left or the
- * right side; pressing one opens that layer and closes the others, and an open layer
- * shows its controls under its button. The map's ambient layers have no button.
+ * right side; pressing one opens that layer and closes the others, and the open layer's
+ * words and controls are in the centre. The map's ambient layers have no button.
  * The layer's panels are on the dashboard canvas.
  */
 export class Controller {
@@ -154,14 +156,20 @@ export class Controller {
   /** The side each button was last placed on. */
   private sides = new Map<string, string>();
   private readonly right: HTMLElement | undefined;
+  /** Where the open layer's words and controls go on the controller screen. */
+  private readonly centre: HTMLElement | undefined;
+  private readonly welcome = el('div', 'layer-welcome');
   private readonly root: HTMLElement;
   private readonly store: Store;
   private readonly connection: Connection;
   private readonly role: Role;
 
-  constructor(root: HTMLElement, store: Store, connection: Connection, role: Role, right?: HTMLElement) {
+  constructor(root: HTMLElement, store: Store, connection: Connection, role: Role, right?: HTMLElement, centre?: HTMLElement) {
     this.root = root;
     this.right = right;
+    this.centre = centre;
+    const { site } = store.state;
+    this.welcome.append(el('h2', undefined, site.branding.title ?? site.name), el('p', undefined, 'Choose a layer on either side to bring it to the table.'));
     this.store = store;
     this.connection = connection;
     this.role = role;
@@ -206,6 +214,14 @@ export class Controller {
     }
     this.root.replaceChildren(...elements);
     this.right?.replaceChildren(...onRight);
+    if (this.centre) {
+      // The layer that was opened comes first; a tool kept alongside it follows.
+      const ids = [...store.state.scene].reverse();
+      const kept = (id: string) => Boolean(store.manifest(store.state.layers[id]?.layer ?? '')?.alongside);
+      const bodies = [...ids.filter((id) => !kept(id)), ...ids.filter(kept)].flatMap((id) => this.cards.get(id)?.body ?? []);
+      this.centre.replaceChildren(this.welcome, ...bodies);
+      this.rest();
+    }
   }
 
   /** Opens a layer on the controller screen. The others close, except the ones made to run alongside. */
@@ -221,10 +237,13 @@ export class Controller {
     void connection.request('layer.activate', { layer: id, active: true }).catch(() => {});
   }
 
-  /** A layer on the controller screen: a button, with the layer's words and controls under it while it is open. */
+  /**
+   * A layer on the controller screen: a button on one side, and in the centre, while the
+   * layer is open, its name, its line of description and its controls.
+   */
   private button(id: string, manifest: LayerManifest): Card {
     const { store, connection } = this;
-    const card = el('section', 'layer-card layer-button-card');
+    const card = el('div', 'layer-button-card');
     const press = el('button', 'layer-button');
     press.type = 'button';
     const badge = el('span', 'layer-button-icon');
@@ -234,9 +253,17 @@ export class Controller {
       if (store.state.layers[id]?.active) void connection.request('layer.activate', { layer: id, active: false }).catch(() => {});
       else this.open(id);
     });
+    card.append(press);
 
-    const body = el('div', 'layer-body');
+    const body = el('section', 'layer-card layer-open');
+    body.dataset.layer = id;
+    const heading = el('h2', 'layer-open-name');
     const about = el('p', 'layer-about');
+    const words = el('header', 'layer-open-head');
+    const mark = el('span', 'layer-button-icon');
+    const text = el('div');
+    text.append(heading, about);
+    words.append(mark, text);
     const send = paramSender(connection, id);
     const widgets = (manifest.controls ?? []).map((control) =>
       widget(
@@ -247,18 +274,22 @@ export class Controller {
     );
     const controls = el('div', 'controls');
     controls.append(...widgets.map((w) => w.row));
-    body.append(about);
+    body.append(words);
     if (widgets.length > 0) body.append(controls);
-    card.append(press, body);
 
     let shown: string | undefined;
     return {
       element: card,
-      dispose: () => {},
+      body,
+      dispose: () => body.remove(),
       sync: (state) => {
         const button = layerButton(id, manifest, state, defaultSide(store));
         name.textContent = button.name;
-        if (shown !== button.icon) badge.replaceChildren(icon(button.icon, 20));
+        heading.textContent = button.name;
+        if (shown !== button.icon) {
+          badge.replaceChildren(icon(button.icon, 20));
+          mark.replaceChildren(icon(button.icon, 24));
+        }
         shown = button.icon;
         about.textContent = button.description;
         about.hidden = !button.description;
@@ -269,8 +300,21 @@ export class Controller {
           w.row.hidden = !isVisible(w.control, state.params) || Boolean(state.hide?.includes(w.control.id));
           w.sync(state.params[w.control.id]);
         }
+        this.rest();
       },
     };
+  }
+
+  /** The centre says what to do while no layer is open. */
+  private rest(): void {
+    if (!this.centre) return;
+    const { store } = this;
+    const open = store.state.scene.some((id) => {
+      const state = store.state.layers[id];
+      const manifest = state && store.manifest(state.layer);
+      return Boolean(state?.active && manifest && !isAmbient(manifest));
+    });
+    this.welcome.hidden = open;
   }
 
   private card(id: string, manifest: LayerManifest): Card {
