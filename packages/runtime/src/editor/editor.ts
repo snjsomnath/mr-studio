@@ -56,6 +56,8 @@ export class Editor {
   private readonly canvasHead = el('header', 'ed-canvas-head');
   private readonly surfaces = el('div', 'ed-surfaces');
   private readonly notice = el('div', 'ed-notice');
+  /** The one thing this table still lacks, with the way to it. */
+  private readonly next = el('div', 'ed-next');
   private readonly inspector = el('aside', 'ed-inspector');
   private readonly saved = el('span', 'ed-saved');
   private readonly shell = el('div', 'ed');
@@ -86,7 +88,7 @@ export class Editor {
       return box;
     };
     this.surfaces.append(surface('map', 'Map', 'Projected on the table. Visual only.', this.canvas), surface('controller', 'Controller', 'The screen beside the table. Buttons, words and controls.', this.preview));
-    centre.append(this.canvasHead, this.surfaces, this.notice);
+    centre.append(this.canvasHead, this.next, this.surfaces, this.notice);
 
     body.append(left, centre, this.inspector);
     shell.append(this.titleBar(), this.ribbon, body, this.statusBar());
@@ -368,7 +370,23 @@ export class Editor {
     this.renderTree(instances);
     this.renderCanvas(instances);
     this.renderInspector(instances);
+    this.renderNext(instances);
     for (const { id, state } of instances) this.sync.get(id)?.(state);
+  }
+
+  /** A table that is not ready yet says what it still lacks, one thing at a time, and offers the step of the guide that gives it. */
+  private renderNext(instances: { id: string; manifest: LayerManifest; state: LayerState }[]): void {
+    const data = this.store.state.site.data ?? {};
+    let lack: { text: string; action: string; step: number } | null = null;
+    if (!('buildings' in data)) lack = { text: 'This table has no buildings yet, so the map is empty.', action: 'Bring in your place', step: 1 };
+    else if (!instances.some((i) => isAmbient(i.manifest))) lack = { text: 'Nothing is shown on the map at rest yet.', action: 'Choose the map at rest', step: 2 };
+    else if (instances.every((i) => isAmbient(i.manifest))) lack = { text: 'There are no layers yet. Each layer becomes a button on the controller.', action: 'Choose layers', step: 3 };
+    this.next.hidden = lack === null || this.wizard !== null;
+    if (!lack) return;
+    const go = button('ed-button is-primary', lack.action, 'route');
+    const { step } = lack;
+    go.addEventListener('click', () => this.openWizard(false, step));
+    this.next.replaceChildren(el('strong', undefined, 'Next'), el('span', undefined, lack.text), go);
   }
 
   private group(name: string, ...children: HTMLElement[]): HTMLElement {
