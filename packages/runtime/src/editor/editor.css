@@ -1021,3 +1021,65 @@ body[data-role='edit'] .ed-surface .table-frame {
 .ed-surfaces.is-controller-only .ed-surface.is-map {
   display: none;
 }
+
+/* ---- Your place: bringing files in ---- */
+
+.wz-place {
+  margin-bottom: 8px;
+}
+
+.wz-place .wz-choice {
+  cursor: default;
+}
+
+.wz-state {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--ed-text-2);
+  font-size: 12px;
+}
+
+.wz-state.is-have {
+  color: #1d7a46;
+}
+
+.wz-report {
+  margin: -1px 0 0;
+  padding: 10px 12px;
+  border: 1px solid var(--ed-line);
+  border-top-style: dashed;
+  border-radius: 0 0 8px 8px;
+  background: #fafbfc;
+}
+
+.wz-report p {
+  margin: 0 0 6px;
+}
+
+.wz-summary {
+  font-weight: 600;
+}
+
+.wz-issue {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  color: var(--ed-text-2);
+}
+
+.wz-issue.is-blocker {
+  color: #a4281b;
+}
+
+.wz-issue.is-warning {
+  color: #8a5a00;
+}
+
+.wz-report-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}

@@ -79,6 +79,8 @@ async function main() {
 
   const status = el('div', 'connection', 'Reconnecting…');
   status.hidden = true;
+  // New data was brought into the site: layers read their data once, so every surface starts again. The editor does this itself.
+  if (!editing) connection.on('site.changed', () => location.reload());
   connection.on('disconnected', () => (status.hidden = false));
   connection.on('welcome', () => (status.hidden = true));
   document.body.append(status);
