@@ -485,7 +485,11 @@ async function main() {
     await tv.locator('.controller-right .layer-button', { hasText: 'Getting here' }).waitFor();
     // Opening a layer closes the one that was open, except a layer made to run alongside.
     await press('Sunlight', true);
+    // The editor shows the live controller beside the map, and follows a press on it.
+    await editor.locator('.ed-tree .ed-row[data-layer="sunlight"][aria-current="true"]').waitFor();
+    await editor.frameLocator('.ed-preview iframe').locator('.layer-open-name', { hasText: 'Sunlight' }).waitFor();
     await press('Getting here', true);
+    await editor.locator('.ed-tree .ed-row[data-layer="mobility"][aria-current="true"]').waitFor();
     await tv.getByText('How people reach the square').waitFor();
     await tv.locator('.layer-button[aria-pressed="false"]', { hasText: 'Sunlight' }).waitFor();
     await tv.locator('.layer-button[aria-pressed="true"]', { hasText: 'Sketch' }).waitFor();
@@ -494,6 +498,9 @@ async function main() {
     await tv.getByRole('button', { name: 'Home', exact: true }).click();
     await tv.locator('.layer-button[aria-pressed="false"]', { hasText: 'Getting here' }).waitFor();
     await tv.locator('.layer-button[aria-pressed="false"]', { hasText: 'Sketch' }).waitFor();
+    await tv.getByText('Choose a layer on either side').waitFor();
+    await editor.locator('.ed-row[data-context="home"][aria-current="true"]').waitFor();
+    await editor.locator('.ed-tree .ed-row[data-layer="mobility"]').click();
     if (shots) await editor.screenshot({ path: path.join(shots, 'editor.png') });
     await editor.getByLabel('Name').fill('');
     await editor.getByLabel('Name').blur();
