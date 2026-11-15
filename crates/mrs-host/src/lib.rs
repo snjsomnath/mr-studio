@@ -21,6 +21,7 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use mrs_engine::Backend;
 use mrs_site::import::{self, Options, Report, Target};
+use mrs_site::osm::{self, OsmLayer};
 use mrs_site::Site;
 use serde_json::{json, Value};
 use tower_http::services::{ServeDir, ServeFile};
@@ -56,6 +57,9 @@ pub struct AppState {
     imports: tokio::sync::Mutex<()>,
 }
 
+/// Where OpenStreetMap is asked; `MRS_OVERPASS_URL` points elsewhere (a mirror, or a test).
+const OVERPASS_URL: &str = "https://overpass-api.de/api/interpreter";
+
 /// The largest file `/api/data/*` accepts.
 pub const MAX_IMPORT_BYTES: usize = 256 * 1024 * 1024;
 
@@ -73,6 +77,45 @@ impl AppState {
     /// Reads and checks a file for `target` and, with `write`, saves it into the site,
     /// re-bakes the scene, swaps it into the engine and tells every surface (`site.changed`).
     /// The report is the same either way; a blocker leaves the site untouched.
+    /// Asks OpenStreetMap for one layer around the table, as a GeoJSON file `import_data` takes.
+    /// The refusal is a report: no network, a busy server, or nothing mapped there.
+    pub async fn fetch_osm(&self, target: &Target) -> Result<Vec<u8>, Report> {
+        let layer = OsmLayer::for_target(target).map_err(|why| Report::refused(target, "osm.unavailable", why.clone(), why))?;
+        let dir = self.site.dir.clone();
+        let bounds = tokio::task::spawn_blocking(move || Site::load(&dir).map(|site| osm::bounds(&site)))
+            .await
+            .map_err(|e| e.to_string())
+            .and_then(|r| r.map_err(|e| e.to_string()))
+            .map_err(|e| Report::refused(target, "site.unreadable", e.clone(), e))?;
+        let offline = |detail: String| {
+            tracing::warn!("OpenStreetMap fetch failed: {detail}");
+            Report::refused(
+                target,
+                "osm.offline",
+                "We can't reach OpenStreetMap right now. Check the internet connection and try again in a minute.",
+                "OpenStreetMap did not answer.",
+            )
+        };
+        let url = std::env::var("MRS_OVERPASS_URL").unwrap_or_else(|_| OVERPASS_URL.to_string());
+        let client = reqwest::Client::builder()
+            .user_agent("MR Studio")
+            .timeout(std::time::Duration::from_secs(120))
+            .build()
+            .map_err(|e| offline(e.to_string()))?;
+        let response = client.post(&url).form(&[("data", osm::query(layer, bounds))]).send().await.map_err(|e| offline(e.to_string()))?;
+        if !response.status().is_success() {
+            return Err(offline(format!("{url} answered {}", response.status())));
+        }
+        let answer: Value = response.json().await.map_err(|e| offline(e.to_string()))?;
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs());
+        let collection = osm::to_geojson(layer, &answer, &osm::date(now));
+        if osm::count(&collection) == 0 {
+            let words = osm::nothing_found(layer);
+            return Err(Report::refused(target, "osm.empty", words.clone(), words));
+        }
+        Ok(serde_json::to_vec(&collection).expect("json"))
+    }
+
     pub async fn import_data(&self, target: &str, filename: &str, bytes: Vec<u8>, options: Options, write: bool) -> Result<Report, String> {
         let target = Target::parse(target)?;
         let _one = self.imports.lock().await;
@@ -249,6 +292,9 @@ struct ImportQuery {
     /// `EPSG:3006`, for a terrain GeoTIFF that does not say.
     #[serde(default)]
     crs: Option<String>,
+    /// `osm`: fetch the data from OpenStreetMap instead of reading the body.
+    #[serde(default)]
+    source: Option<String>,
 }
 
 fn flag(value: &Option<String>) -> bool {
@@ -289,14 +335,31 @@ async fn data_request(
     if !from.ip().is_loopback() {
         return (StatusCode::FORBIDDEN, Json(json!({ "error": "data can only be added from this computer" }))).into_response();
     }
-    let filename = headers.get("x-filename").and_then(|v| v.to_str().ok()).unwrap_or("").to_string();
+    let mut filename = headers.get("x-filename").and_then(|v| v.to_str().ok()).unwrap_or("").to_string();
+    let mut body = body.to_vec();
+    match query.source.as_deref() {
+        None | Some("") | Some("file") => {}
+        Some("osm") => {
+            let target = match Target::parse(&query.target) {
+                Ok(target) => target,
+                Err(error) => return (StatusCode::BAD_REQUEST, Json(json!({ "error": error }))).into_response(),
+            };
+            match state.fetch_osm(&target).await {
+                Ok(bytes) => (body, filename) = (bytes, "openstreetmap.geojson".into()),
+                Err(report) => return (StatusCode::UNPROCESSABLE_ENTITY, Json(json!(report))).into_response(),
+            }
+        }
+        Some(other) => {
+            return (StatusCode::BAD_REQUEST, Json(json!({ "error": format!("source must be osm, not '{other}'") }))).into_response()
+        }
+    }
     let crs = match query.crs.as_deref().map(|c| c.trim().trim_start_matches("EPSG:").trim_start_matches("epsg:").parse::<u32>()) {
         None => None,
         Some(Ok(code)) => Some(code),
         Some(Err(_)) => return (StatusCode::BAD_REQUEST, Json(json!({ "error": "crs must look like EPSG:3006" }))).into_response(),
     };
     let options = Options { crop: flag(&query.crop), swap: flag(&query.swap), crs };
-    match state.import_data(&query.target, &filename, body.to_vec(), options, write).await {
+    match state.import_data(&query.target, &filename, body, options, write).await {
         Ok(report) if report.ok => (StatusCode::OK, Json(json!(report))).into_response(),
         Ok(report) => (StatusCode::UNPROCESSABLE_ENTITY, Json(json!(report))).into_response(),
         Err(error) => (StatusCode::BAD_REQUEST, Json(json!({ "error": error }))).into_response(),

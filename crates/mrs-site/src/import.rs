@@ -14,6 +14,7 @@ use serde::Serialize;
 use serde_json::{json, Map, Value};
 
 use crate::geotiff::GeoRaster;
+use crate::osm;
 use crate::{Crs, Projection, Site, SiteError};
 
 /// The most features a report's preview carries. The import itself keeps them all.
@@ -205,6 +206,25 @@ pub struct Report {
     pub path: Option<String>,
 }
 
+impl Report {
+    /// A report that stops before reading anything: one blocker, nothing counted.
+    pub fn refused(target: &Target, code: &'static str, message: impl Into<String>, summary: impl Into<String>) -> Self {
+        Self {
+            ok: false,
+            target: target.name().to_string(),
+            summary: summary.into(),
+            count: 0,
+            inside: 0,
+            outside: 0,
+            crs: None,
+            height_property: None,
+            issues: vec![Issue::new(code, Severity::Blocker, message)],
+            preview: None,
+            path: None,
+        }
+    }
+}
+
 /// Choices the author made after a first look.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Options {
@@ -336,7 +356,9 @@ pub fn inspect(site: &Site, target: &Target, filename: &str, bytes: &[u8], optio
         });
     }
 
-    // Where it lands.
+    // Where it lands. The preview is taken before any crop, so the editor can draw
+    // what lies off the table against the table's outline.
+    let preview = preview_of(&features);
     let frame = Frame::new(site);
     let inside = features.iter().filter(|f| frame.touches(&f["geometry"], 0.0)).count();
     let count = features.len();
@@ -347,6 +369,8 @@ pub fn inspect(site: &Site, target: &Target, filename: &str, bytes: &[u8], optio
         issues.push(Issue::new("extent.outside_all", Severity::Blocker, message));
         let mut refused = refuse(issues, format!("{count} {plural}, none on the table."));
         (refused.report.count, refused.report.outside) = (count, count);
+        refused.report.crs = Some(CrsReport { code: crs.code, guessed: crs.guessed });
+        refused.report.preview = Some(preview);
         return refused;
     }
     if options.crop {
@@ -408,11 +432,14 @@ pub fn inspect(site: &Site, target: &Target, filename: &str, bytes: &[u8], optio
         issues.push(Issue::new("data.replaces", Severity::Note, format!("This replaces the table's {} ({existing}).", target.name())));
     }
 
-    let collection = json!({ "type": "FeatureCollection", "features": features });
-    let preview = json!({
-        "type": "FeatureCollection",
-        "features": collection["features"].as_array().map(|f| f.iter().take(PREVIEW_LIMIT).cloned().collect::<Vec<_>>()),
-    });
+    let mut collection = json!({ "type": "FeatureCollection", "features": features });
+    if let Some(source) = source_of(&text) {
+        if source["name"] == "OpenStreetMap" {
+            let message = format!("From OpenStreetMap ({}, ODbL). Show this credit wherever the table is shown.", osm::ATTRIBUTION);
+            issues.push(Issue::new("source.osm", Severity::Note, message));
+        }
+        collection["source"] = source;
+    }
     let content = json_file(&collection);
     Prepared {
         target: target.clone(),
@@ -432,6 +459,20 @@ pub fn inspect(site: &Site, target: &Target, filename: &str, bytes: &[u8], optio
         content: Some(content),
         terrain_crs: None,
     }
+}
+
+/// The first features, in file order, for the editor to draw.
+fn preview_of(features: &[Value]) -> Value {
+    json!({ "type": "FeatureCollection", "features": features.iter().take(PREVIEW_LIMIT).cloned().collect::<Vec<_>>() })
+}
+
+/// A GeoJSON file's top-level `source` member (where the data came from), kept on import.
+fn source_of(text: &str) -> Option<Value> {
+    if !text.contains("\"source\"") {
+        return None;
+    }
+    let value: Value = serde_json::from_str(text.trim_start_matches('\u{feff}')).ok()?;
+    value.get("source").filter(|s| s.is_object()).cloned()
 }
 
 /// Compact JSON with a final newline.

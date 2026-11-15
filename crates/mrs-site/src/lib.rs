@@ -9,6 +9,7 @@ pub mod import;
 mod manifest;
 mod mesh;
 pub mod migrate;
+pub mod osm;
 mod projection;
 mod twin;
 
