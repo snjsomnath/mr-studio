@@ -17,7 +17,6 @@ import './editor.css';
  */
 type Context = { kind: 'home' } | { kind: 'layer'; id: string } | { kind: 'controller' } | { kind: 'phone' };
 
-type Tab = 'home' | 'insert' | 'view';
 
 type Invoke = (command: string, args?: object) => Promise<unknown>;
 
@@ -46,14 +45,12 @@ export class Editor {
   private context: Context = { kind: 'home' };
   /** The home screen item whose settings are open. */
   private homeItem: string | null = null;
-  private tab: Tab = 'insert';
   /** A layer this editor just added, to select once it is in the scene. */
   private added: string | null = null;
   private sync = new Map<string, (state: LayerState) => void>();
 
   private readonly store: Store;
   private readonly connection: Connection;
-  private readonly tabs = el('div', 'ed-tabs');
   private readonly ribbon = el('div', 'ed-ribbon');
   private readonly tree = el('nav', 'ed-tree');
   private readonly canvasHead = el('header', 'ed-canvas-head');
@@ -83,7 +80,7 @@ export class Editor {
     centre.append(this.canvasHead, this.canvas, this.preview, this.notice);
 
     body.append(left, centre, this.inspector);
-    shell.append(this.titleBar(), this.tabs, this.ribbon, body, this.statusBar());
+    shell.append(this.titleBar(), this.ribbon, body, this.statusBar());
     root.append(shell);
 
     this.setSaved();
@@ -208,7 +205,7 @@ export class Editor {
     return list;
   }
 
-  /** The instance the Home tab's tools act on. */
+  /** The instance the ribbon's tools act on. */
   private target(): string | null {
     if (this.context.kind === 'layer') return this.context.id;
     if (this.context.kind === 'home') return this.homeItem;
@@ -326,34 +323,11 @@ export class Editor {
     if (this.context.kind === 'layer' && !instances.some((i) => i.id === (this.context as { id: string }).id)) this.context = { kind: 'home' };
     if (this.homeItem && !instances.some((i) => i.id === this.homeItem)) this.homeItem = null;
     this.sync.clear();
-    this.renderTabs();
     this.renderRibbon(instances);
     this.renderTree(instances);
     this.renderCanvas(instances);
     this.renderInspector(instances);
     for (const { id, state } of instances) this.sync.get(id)?.(state);
-  }
-
-  private renderTabs(): void {
-    const names: [Tab, string][] = [
-      ['home', 'Home'],
-      ['insert', 'Insert'],
-      ['view', 'View'],
-    ];
-    this.tabs.setAttribute('role', 'tablist');
-    this.tabs.replaceChildren(
-      ...names.map(([id, label]) => {
-        const tab = el('button', 'ed-tab', label);
-        tab.type = 'button';
-        tab.setAttribute('role', 'tab');
-        tab.setAttribute('aria-selected', String(this.tab === id));
-        tab.addEventListener('click', () => {
-          this.tab = id;
-          this.render();
-        });
-        return tab;
-      }),
-    );
   }
 
   private group(name: string, ...children: HTMLElement[]): HTMLElement {
@@ -391,47 +365,56 @@ export class Editor {
     const target = this.target();
     const selected = instances.find((i) => i.id === target);
 
-    if (this.tab === 'insert') {
-      const ambient = this.store.manifests.filter(isAmbient);
-      const layers = this.store.manifests.filter((m) => !isAmbient(m));
-      // On the home screen the ambient life comes first; inside a layer it is not offered at all.
-      if (this.context.kind === 'home' && ambient.length > 0) groups.push(this.group('Ambient life', ...this.column(ambient.map((m) => this.insertTool(m, false)))));
-      if (layers.length > 0) groups.push(this.group('New layer', ...layers.map((m) => this.insertTool(m, true))));
-    } else if (this.tab === 'home') {
-      const show = button('ed-tool is-large', selected?.state.active ? 'Hide' : 'Show', selected?.state.active ? 'eye-off' : 'eye', 20);
-      show.title = 'Show or hide this on the table';
-      show.addEventListener('click', () => selected && void this.send('scene.set', { layer: selected.id, active: !selected.state.active }));
+    // One ribbon whose tools follow what is being edited: what can be added here, then what can be done to the selection.
+    const { kind } = this.context;
+    const ambient = this.store.manifests.filter(isAmbient);
+    const layers = this.store.manifests.filter((m) => !isAmbient(m));
+    if (kind === 'home' && ambient.length > 0) groups.push(this.group('Add to the map at rest', ...this.column(ambient.map((m) => this.insertTool(m, false)))));
+    if (kind !== 'phone' && layers.length > 0) groups.push(this.group('Add a layer', ...layers.map((m) => this.insertTool(m, true))));
+
+    if (selected && (kind === 'home' || kind === 'layer')) {
+      const onMap = isAmbient(selected.manifest);
+      const tools: HTMLElement[] = [];
+      if (onMap) {
+        const show = button('ed-tool', selected.state.active ? 'Hide' : 'Show', selected.state.active ? 'eye-off' : 'eye');
+        show.title = 'Show or hide this on the map at rest';
+        show.addEventListener('click', () => void this.send('scene.set', { layer: selected.id, active: !selected.state.active }));
+        tools.push(show);
+      }
       // Forward and back step over the neighbours of the same kind: home screen items among themselves, layers among themselves.
       const scene = this.store.state.scene;
-      const peers = selected ? instances.filter((i) => isAmbient(i.manifest) === isAmbient(selected.manifest)).map((i) => i.id) : [];
-      const place = selected ? peers.indexOf(selected.id) : -1;
+      const peers = instances.filter((i) => isAmbient(i.manifest) === onMap).map((i) => i.id);
+      const place = peers.indexOf(selected.id);
       // `peers` runs top first, so the one in front is the one before.
       const front = place > 0 ? peers[place - 1] : undefined;
-      const behind = place >= 0 ? peers[place + 1] : undefined;
-      const up = button('ed-tool', 'Bring forward', 'up');
-      up.title = 'Draw this above the next one';
+      const behind = peers[place + 1];
+      const up = button('ed-tool', onMap ? 'Bring forward' : 'Move up', 'up');
+      up.title = onMap ? 'Draw this above the next one' : 'Move this button up on the controller';
       up.disabled = !front;
-      up.addEventListener('click', () => selected && front && void this.send('scene.move', { layer: selected.id, index: scene.indexOf(front) }));
-      const down = button('ed-tool', 'Send back', 'down');
-      down.title = 'Draw this below the previous one';
+      up.addEventListener('click', () => front && void this.send('scene.move', { layer: selected.id, index: scene.indexOf(front) }));
+      const down = button('ed-tool', onMap ? 'Send back' : 'Move down', 'down');
+      down.title = onMap ? 'Draw this below the previous one' : 'Move this button down on the controller';
       down.disabled = !behind;
-      down.addEventListener('click', () => selected && behind && void this.send('scene.move', { layer: selected.id, index: scene.indexOf(behind) }));
+      down.addEventListener('click', () => behind && void this.send('scene.move', { layer: selected.id, index: scene.indexOf(behind) }));
       const remove = button('ed-tool', 'Remove', 'trash');
       remove.title = 'Take this out of the table';
-      remove.addEventListener('click', () => selected && void this.send('scene.remove', { layer: selected.id }));
-      for (const tool of [show, remove]) tool.disabled = !selected;
-      groups.push(this.group(selected ? layerButton(selected.id, selected.manifest, selected.state).name : 'Nothing selected', show, ...this.column([up, down, remove])));
-    } else {
-      const open = (label: string, iconName: string, path: string, tip: string) => {
-        const tool = button('ed-tool is-large', label, iconName, 20);
-        tool.title = tip;
-        tool.addEventListener('click', () => window.open(path, `mrstudio-${label.toLowerCase()}`));
-        return tool;
-      };
-      groups.push(
-        this.group('Open in a window', open('Map', 'table', '/table', 'The map projected on the table'), open('Controller', 'tv', '/tv', 'The screen beside the table'), open('Developer', 'code', '/dev', 'Table, dashboard and every control on one page')),
-      );
+      remove.addEventListener('click', () => void this.send('scene.remove', { layer: selected.id }));
+      tools.push(up, down, remove);
+      groups.push(this.group(layerButton(selected.id, selected.manifest, selected.state).name, ...this.column(tools)));
     }
+
+    const open = (label: string, iconName: string, path: string, tip: string) => {
+      const tool = button('ed-tool', label, iconName);
+      tool.title = tip;
+      tool.addEventListener('click', () => window.open(path, `mrstudio-${label.toLowerCase()}`));
+      return tool;
+    };
+    const windows = this.group(
+      'Open in a window',
+      ...this.column([open('Map', 'table', '/table', 'The map projected on the table'), open('Controller', 'tv', '/tv', 'The screen beside the table'), open('Developer', 'code', '/dev', 'Map, dashboard and every control on one page')]),
+    );
+    windows.classList.add('is-last');
+    groups.push(windows);
     this.ribbon.replaceChildren(...groups);
   }
 
@@ -467,12 +450,11 @@ export class Editor {
     plus.title = 'New layer';
     plus.append(icon('plus', 14));
     plus.addEventListener('click', () => {
-      this.tab = 'insert';
-      this.render();
+      this.ribbon.querySelector<HTMLElement>('.ed-tool.is-large')?.focus();
     });
     title.append(plus);
     nodes.push(title);
-    if (layers.length === 0) nodes.push(el('p', 'ed-empty', 'No layers yet. Each layer becomes a button on the controller. Add one from Insert.'));
+    if (layers.length === 0) nodes.push(el('p', 'ed-empty', 'No layers yet. Each layer becomes a button on the controller. Pick one under Add a layer, above.'));
     for (const { id, manifest, state } of layers) {
       const as = layerButton(id, manifest, state);
       const row = this.treeRow(as.name, '', as.icon, context.kind === 'layer' && context.id === id, () => this.go({ kind: 'layer', id }));
@@ -515,7 +497,7 @@ export class Editor {
       iconName = 'tv';
       title = 'Controller';
       detail = 'The screen beside the table: layer buttons, controls, legend and dashboard';
-      notice = 'The map stays visual. Words, buttons and numbers live on the controller. Arranging it here comes with a later step of the editor. Open it from View to see it live.';
+      notice = 'The map stays visual. Words, buttons and numbers live on the controller. Arranging it here comes with a later step of the editor. ';
     }
     if (this.wizard) return;
     this.showController(context.kind === 'controller');
@@ -601,7 +583,9 @@ export class Editor {
   private settings(id: string, manifest: LayerManifest): HTMLElement {
     const section = el('section', 'ed-section');
     const shown = el('div', 'control control-toggle');
-    const label = el('label', 'control-label', 'Shown on the table');
+    const label = el('label', 'control-label', 'Shown on the map');
+    // A layer is opened by its button, so only the map's own things have this switch.
+    shown.hidden = !isAmbient(manifest);
     const power = el('input');
     Object.assign(power, { type: 'checkbox', className: 'switch', id: `shown-${id}` });
     label.htmlFor = power.id;
@@ -670,7 +654,7 @@ export class Editor {
       const ambient = instances.filter((i) => isAmbient(i.manifest));
       const section = el('section', 'ed-section');
       section.append(el('h3', undefined, 'On the home screen'));
-      if (ambient.length === 0) section.append(el('p', 'ed-empty', 'Nothing yet. Add a base map and some ambient life from Insert.'));
+      if (ambient.length === 0) section.append(el('p', 'ed-empty', 'Nothing yet. Add a base map and some ambient life from the toolbar above.'));
       for (const { id, manifest, state } of ambient) {
         const row = this.treeRow(layerButton(id, manifest).name, '', manifest.icon, this.homeItem === id, () => {
           this.homeItem = this.homeItem === id ? null : id;
