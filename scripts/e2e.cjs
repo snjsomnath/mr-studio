@@ -533,6 +533,17 @@ async function main() {
     await guide.locator('.wz-place[data-target="buildings"] .wz-issue.is-blocker').waitFor();
     assert.equal(await guide.locator('.wz-place[data-target="buildings"]').getByRole('button', { name: 'Add to the table' }).isDisabled(), true);
     await guide.locator('.wz-place[data-target="buildings"]').getByRole('button', { name: 'Cancel' }).click();
+    // A ground file that does not say where it is: the author names its coordinate system, and it is read again.
+    const ground = guide.locator('.wz-place[data-target="terrain"]');
+    await guide.getByLabel('File for Ground').setInputFiles(path.join(root, 'sites', 'chalmers', 'data', 'terrain.tif'));
+    await guide.getByLabel('EPSG code of the file').fill('3006');
+    await ground.getByRole('button', { name: 'Read it again' }).click();
+    // Read as that system it lies far from this table, and the host says so.
+    await ground.locator('.wz-issue.is-blocker', { hasText: /table/ }).waitFor();
+    // The code stays in reach, to try another.
+    assert.equal(await guide.getByLabel('EPSG code of the file').inputValue(), '3006');
+    assert.equal(await ground.getByRole('button', { name: 'Add to the table' }).isDisabled(), true);
+    await ground.getByRole('button', { name: 'Cancel' }).click();
     await guide.getByRole('button', { name: 'Next' }).click();
     await guide.locator('.wz h2', { hasText: 'The map at rest' }).waitFor();
     assert.equal(await guide.locator('.wz input[data-layer="trees"]').isChecked(), true);
