@@ -1,7 +1,8 @@
 import type { LayerManifest, LayerState } from '@mrstudio/sdk';
-import { defaultSide, el, isAmbient, isOffered, layerButton } from '../controls.ts';
+import { defaultSideOf, el, isAmbient, isOffered, layerButton } from '../controls.ts';
 import type { Store } from '../store.ts';
 import { icon } from './icons.ts';
+import { Importer, TARGETS, targetFor } from './importer.ts';
 import { parsePlace } from './place.ts';
 
 /** What the wizard needs from the editor around it. */
@@ -19,6 +20,8 @@ export interface WizardHost {
   close(): void;
   /** Called before the table is moved, so the guide comes back at `step` once every surface has reloaded. */
   resumeAt(step: number): void;
+  /** Holds back the reload that a change of site causes, until released. */
+  hold(on: boolean): void;
 }
 
 /** One name for the table when no layer is open, used everywhere in the editor and the guide. */
@@ -31,37 +34,10 @@ const REST = 2;
 const LAYERS = 3;
 const BUTTONS = 4;
 
-/** What the host says about a file before and after it is brought into the table (see session.md). */
-interface ImportReport {
-  ok: boolean;
-  summary: string;
-  issues: { code: string; severity: 'blocker' | 'warning' | 'note'; message: string; fix?: 'crop' | 'swap' }[];
-}
-
-/** The files a table is made from. Each is brought in on its own. */
-const PLACE_DATA: { target: string; dataset: string; name: string; icon: string; about: string; accept: string }[] = [
-  { target: 'buildings', dataset: 'buildings', name: 'Buildings', icon: 'blocks', about: 'Footprints with heights. They cast the shadows and shape the wind. GeoJSON.', accept: '.geojson,.json' },
-  { target: 'terrain', dataset: 'terrain', name: 'Ground', icon: 'map', about: 'The height of the land, so hills shade and shelter as they do outside. A GeoTIFF.', accept: '.tif,.tiff' },
-  { target: 'trees', dataset: 'trees', name: 'Trees', icon: 'tree', about: 'Where the trees stand. GeoJSON points, or a CSV with coordinates.', accept: '.geojson,.json,.csv' },
-  { target: 'data:roads', dataset: 'roads', name: 'Streets', icon: 'car', about: 'The street network, as lines. Traffic drives along it. GeoJSON.', accept: '.geojson,.json' },
-  { target: 'walkways', dataset: 'walkways', name: 'Walking paths', icon: 'footprints', about: 'Lines people can walk along. Cool paths needs them. GeoJSON.', accept: '.geojson,.json' },
-  { target: 'trips', dataset: 'trips', name: 'Trips', icon: 'route', about: 'Journeys through the day. Mobility needs them. A trips.json file.', accept: '.json' },
-];
-
 /** How a dataset a layer needs is named to an author. */
 function dataName(dataset: string): string {
-  const known = PLACE_DATA.find((item) => item.dataset === dataset);
+  const known = targetFor(dataset);
   return known ? `${known.name.toLowerCase()} data` : `${dataset} data`;
-}
-
-interface Pending {
-  file: File;
-  options: Set<'crop' | 'swap'>;
-  /** `EPSG:<code>`, named by the author when the file does not say and the host cannot tell. */
-  crs?: string;
-  report?: ImportReport;
-  busy: boolean;
-  failed?: string;
 }
 
 /** The list of steps down the side of the wizard. `done` steps before `current` are ticked. */
@@ -92,8 +68,8 @@ export function stepList(names: readonly string[], current: number, go?: (index:
 export class Wizard {
   readonly element = el('aside', 'wz');
   step: number;
-  /** Files chosen in "Your place" that are being checked or await a yes. */
-  private pending = new Map<string, Pending>();
+  /** One importer per row of "Your place", kept across redraws so a file being checked stays. */
+  private importers = new Map<string, Importer>();
   private readonly host: WizardHost;
   /** The row of "Your place" that a layer needing data sent the author to. */
   private wanted: string | null = null;
@@ -163,7 +139,7 @@ export class Wizard {
     } else if (this.step === PLACE) {
       host.show(null);
       title('Your place', 'Bring in the files your table is made from. They are copied into the table and stay on this computer. Buildings matter most; the rest can come later.');
-      for (const item of PLACE_DATA) body.append(this.placeRow(item));
+      for (const item of TARGETS) body.append(this.importer(item.target).element);
       if (this.returnTo !== null && this.returnTo !== PLACE) {
         const to = this.returnTo;
         const back = el('button', 'ed-button', `Back to ${WIZARD_STEPS[to]}`);
@@ -227,7 +203,7 @@ export class Wizard {
         syncs.push(() => {
           const state = host.store.state.layers[id];
           if (!state) return;
-          const button = layerButton(id, manifest, state, defaultSide(host.store));
+          const button = layerButton(id, manifest, state, defaultSideOf(host.store, id));
           if (shown !== button.icon) badge.replaceChildren(icon(button.icon, 20));
           shown = button.icon;
           if (document.activeElement !== name) name.value = state.button?.name ?? '';
@@ -298,90 +274,15 @@ export class Wizard {
     this.element.replaceChildren(head, body, foot);
   }
 
-  /** One kind of data in "Your place": whether the table has it, a file picker, and what the host says about the chosen file. */
-  private placeRow(item: (typeof PLACE_DATA)[number]): HTMLElement {
-    const { host } = this;
-    const has = item.dataset in (host.store.state.site.data ?? {});
-    const pending = this.pending.get(item.target);
-    const box = el('div', 'wz-place');
-    box.dataset.target = item.target;
-    const row = el('div', 'wz-choice');
-    const badge = el('span', 'wz-badge');
-    badge.append(icon(item.icon, 20));
-    const words = el('div');
-    words.append(el('strong', undefined, item.name), el('p', undefined, item.about));
-    const state = el('span', has ? 'wz-state is-have' : 'wz-state', has ? 'On the table' : 'Not yet');
-    if (has) state.prepend(icon('check', 12));
-    const input = el('input');
-    Object.assign(input, { type: 'file', accept: item.accept, hidden: true, ariaLabel: `File for ${item.name}` });
-    const choose = el('button', 'ed-button', has ? 'Replace' : 'Choose a file');
-    choose.type = 'button';
-    choose.addEventListener('click', () => input.click());
-    input.addEventListener('change', () => {
-      const file = input.files?.[0];
-      if (!file) return;
-      this.pending.set(item.target, { file, options: new Set(), busy: true });
-      void this.check(item.target, false);
-    });
-    row.append(badge, words, state, choose, input);
-    box.append(row);
-
-    if (pending) {
-      const report = el('div', 'wz-report');
-      if (pending.busy) report.append(el('p', undefined, `Reading ${pending.file.name}…`));
-      else if (pending.failed) report.append(el('p', 'wz-issue is-blocker', pending.failed));
-      else if (pending.report) {
-        report.append(el('p', 'wz-summary', pending.report.summary));
-        for (const issue of pending.report.issues) {
-          const line = el('p', `wz-issue is-${issue.severity}`, issue.message);
-          const fix = issue.fix;
-          if (fix && !pending.options.has(fix)) {
-            const apply = el('button', 'ed-button', fix === 'crop' ? 'Leave out what is off the table' : 'Swap latitude and longitude');
-            apply.type = 'button';
-            apply.addEventListener('click', () => {
-              pending.options.add(fix);
-              void this.check(item.target, false);
-            });
-            line.append(apply);
-          }
-          if (issue.code === 'coords.unknown' || (pending.crs && issue.code === 'extent.outside_all')) {
-            // The file does not say where it is; the author names its coordinate system and it is read again.
-            // A system that puts the file off the table can be changed for another.
-            const code = el('input');
-            Object.assign(code, { type: 'text', inputMode: 'numeric', placeholder: 'EPSG code, such as 3006', ariaLabel: 'EPSG code of the file', value: pending.crs?.replace('EPSG:', '') ?? '' });
-            const again = el('button', 'ed-button', 'Read it again');
-            again.type = 'button';
-            const retry = (): void => {
-              const digits = code.value.replace(/\D/g, '');
-              if (!digits) return;
-              pending.crs = `EPSG:${digits}`;
-              void this.check(item.target, false);
-            };
-            again.addEventListener('click', retry);
-            code.addEventListener('keydown', (event) => event.key === 'Enter' && retry());
-            const ask = el('span', 'wz-crs');
-            ask.append(code, again);
-            line.append(ask);
-          }
-          report.append(line);
-        }
-      }
-      const actions = el('div', 'wz-report-actions');
-      const add = el('button', 'ed-button is-primary', 'Add to the table');
-      add.type = 'button';
-      add.disabled = pending.busy || !pending.report?.ok;
-      add.addEventListener('click', () => void this.check(item.target, true));
-      const cancel = el('button', 'ed-button', 'Cancel');
-      cancel.type = 'button';
-      cancel.addEventListener('click', () => {
-        this.pending.delete(item.target);
-        this.render();
-      });
-      actions.append(add, cancel);
-      report.append(actions);
-      box.append(report);
-    }
-    return box;
+  /** The importer for one row of "Your place", made once and redrawn with the table. */
+  private importer(target: string): Importer {
+    let importer = this.importers.get(target);
+    if (!importer) {
+      importer = new Importer({ site: () => this.host.store.state.site, hold: (on) => this.host.hold(on) }, target);
+      this.importers.set(target, importer);
+    } else importer.render();
+    importer.element.classList.remove('is-wanted');
+    return importer;
   }
 
   /** Opens "Your place" at one row. After the file is in, Next returns to `from`. */
@@ -513,30 +414,6 @@ export class Wizard {
     }
   }
 
-  /** Sends the chosen file to the host: to be checked, or with `write` to be brought into the table. */
-  private async check(target: string, write: boolean): Promise<void> {
-    const pending = this.pending.get(target);
-    if (!pending) return;
-    pending.busy = true;
-    pending.failed = undefined;
-    this.render();
-    const query = new URLSearchParams({ target });
-    for (const option of pending.options) query.set(option, '1');
-    if (pending.crs) query.set('crs', pending.crs);
-    try {
-      const response = await fetch(`/api/data/${write ? 'import' : 'inspect'}?${query}`, { method: 'POST', headers: { 'X-Filename': encodeURIComponent(pending.file.name) }, body: pending.file });
-      // 200 and 422 both carry the report; anything else is a plain message.
-      if (response.status === 200 || response.status === 422) pending.report = (await response.json()) as ImportReport;
-      else pending.failed = (await response.text()) || `The table refused the file (${response.status}).`;
-      // After a successful import the host tells every surface the site changed, and the editor reloads into this step.
-      if (write && response.status === 200) this.pending.delete(target);
-    } catch (error) {
-      pending.failed = `The file could not be sent: ${(error as Error).message}`;
-    }
-    pending.busy = false;
-    this.render();
-  }
-
   /** One row per layer package with a switch: on means the table has it. */
   private choices(manifests: LayerManifest[], instances: { id: string; manifest: LayerManifest }[], preview: boolean): HTMLElement {
     const { host } = this;
@@ -554,7 +431,7 @@ export class Wizard {
       const about = lacking ? `Needs ${missing.map(dataName).join(' and ')}, which this table does not have yet.` : (manifest.description ?? '');
       if (about) words.append(el('p', undefined, about));
       // A layer that needs data offers the way to it, and the guide comes back here afterwards.
-      const source = lacking ? PLACE_DATA.find((item) => item.dataset === missing[0]) : undefined;
+      const source = lacking ? targetFor(missing[0]!) : undefined;
       if (source) {
         const bring = el('button', 'ed-button wz-bring', `Bring in ${source.name.toLowerCase()}`);
         bring.type = 'button';

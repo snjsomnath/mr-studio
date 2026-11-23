@@ -104,9 +104,11 @@ async function main() {
       if ((await button.getAttribute('aria-pressed')) !== String(on)) await button.click();
       await tv.locator(`.layer-button[aria-pressed="${on}"]`, { hasText: name }).waitFor();
     };
-    // The map's ambient layers have no button there, and the buttons default to the left side.
+    // The map's ambient layers have no button there, and unplaced buttons are shared out over both sides.
     assert.equal(await tv.locator('.layer-button', { hasText: 'Traffic' }).count(), 0);
-    assert.equal(await tv.locator('.controller-right .layer-button-card').count(), 0);
+    const leftButtons = await tv.locator('.controller:not(.controller-right) .layer-button-card').count();
+    const rightButtons = await tv.locator('.controller-right .layer-button-card').count();
+    assert.ok(rightButtons > 0 && leftButtons >= rightButtons && leftButtons - rightButtons <= 1, `buttons ${leftButtons} left, ${rightButtons} right`);
     await press('Sunlight', true);
     await dev.getByText(/sun [\d.]+° up/).waitFor();
     await dev.waitForTimeout(500);
@@ -537,7 +539,8 @@ async function main() {
     await guide.getByRole('button', { name: 'Move the table' }).click();
     await guide.waitForFunction(() => document.querySelector('.wz h2')?.textContent === 'Your place' && document.querySelector('.ed-name strong')?.textContent === 'Sample square');
     assert.equal(JSON.parse(fs.readFileSync(path.join(site, 'site.json'), 'utf8')).name, 'Sample square');
-    await tv.locator('.controller-header p', { hasText: 'Sample square' }).waitFor();
+    // The controller screen has no header in its rails any more; it carries the site's name in its title.
+    await tv.waitForFunction(() => document.title.endsWith('· Sample square'));
     assert.equal(await guide.locator('.wz-place[data-target="buildings"] .wz-state').textContent(), 'On the table');
     await guide.getByLabel('File for Trees').setInputFiles(path.join(site, 'data', 'trees.geojson'));
     await guide.locator('.wz-place[data-target="trees"] .wz-summary', { hasText: /trees/ }).waitFor();
@@ -604,6 +607,32 @@ async function main() {
     await guide.getByRole('button', { name: 'Setup guide' }).click();
     await guide.locator('.wz h2', { hasText: 'Name and place' }).waitFor();
     await guide.close();
+
+    // ---- Add data: the same importer as Your place, with the kind of data left to the author ----
+    const adder = await open('/edit', { width: 1440, height: 900 });
+    await adder.locator('.ed-ribbon').getByText('Add data').click();
+    const dialog = adder.locator('dialog.im-dialog');
+    // Each kind explains what its file should look like.
+    await dialog.locator('.im-example', { hasText: 'GeoJSON polygons' }).waitFor();
+    await dialog.getByLabel('What the file holds').selectOption('own');
+    await dialog.getByLabel('Name of the dataset').fill('Places');
+    await dialog.getByLabel('File for the dataset').setInputFiles(path.join(root, 'samples', 'kit', 'places.geojson'));
+    // What was read is drawn against the table's outline before anything is written.
+    await dialog.locator('.im-map .im-map-table').waitFor();
+    assert.equal(await dialog.locator('.im-map-data circle').count(), 6);
+    await dialog.getByRole('button', { name: 'Add to the table' }).click();
+    await adder.waitForFunction(() => !document.querySelector('dialog.im-dialog'));
+    await adder.locator('.ed-tree .ed-row[data-context="home"]').waitFor();
+    assert.equal(JSON.parse(fs.readFileSync(path.join(site, 'site.json'), 'utf8')).data.places, 'data/places.geojson');
+    // In Your place each row has its "?" and, where OpenStreetMap has the data, a fetch beside the file.
+    await adder.getByRole('button', { name: 'Setup guide' }).click();
+    await adder.locator('.wz-step button', { hasText: 'Your place' }).click();
+    const streets = adder.locator('.wz-place[data-target="data:roads"]');
+    await streets.getByRole('button', { name: 'What a streets file looks like' }).click();
+    await streets.locator('.im-example', { hasText: 'LineString' }).waitFor();
+    assert.equal(await streets.getByRole('button', { name: 'From OpenStreetMap' }).count(), 1);
+    assert.equal(await adder.locator('.wz-place[data-target="trips"]').getByRole('button', { name: 'From OpenStreetMap' }).count(), 0);
+    await adder.close();
 
     // The wizard's first step is a page of its own, for a table that does not exist yet. The app creates the table.
     const fresh = await browser.newPage({ viewport: { width: 1440, height: 900 } });
