@@ -151,6 +151,29 @@ impl AppState {
     }
 }
 
+impl AppState {
+    /// Renames, moves, resizes or turns the table (`Site::place`), re-bakes the scene for the
+    /// ground it now covers and tells every surface (`site.changed`).
+    pub async fn place_site(&self, place: mrs_site::Place) -> Result<mrs_site::SiteInfo, String> {
+        let _one = self.imports.lock().await;
+        let dir = self.site.dir.clone();
+        let rebuilt = tokio::task::spawn_blocking(move || -> Result<_, String> {
+            let site = Site::load(&dir).map_err(|e| e.to_string())?.place(&place).map_err(|e| e.to_string())?;
+            let (scene, stats) = site.bake().map_err(|e| format!("the table was moved, but its scene could not be rebuilt: {e}"))?;
+            tracing::info!("re-baked after a move: {} buildings, {} trees", stats.buildings, stats.trees);
+            let twin = Bytes::from(site.twin(&scene).map_err(|e| e.to_string())?.encode());
+            Ok((scene, twin, site.info(), site.manifest.origin))
+        })
+        .await
+        .map_err(|e| e.to_string())?;
+        let (scene, twin, info, origin) = rebuilt?;
+        self.engine.relocate(scene, origin).await?;
+        *self.twin.write().unwrap() = twin;
+        self.hub.site_changed(info.clone());
+        Ok(info)
+    }
+}
+
 /// A running host. Dropping it does not stop the server; call `shutdown`.
 pub struct RunningHost {
     pub addr: SocketAddr,
@@ -262,6 +285,7 @@ fn router(state: Arc<AppState>, web_dir: Option<PathBuf>) -> Router {
         .route("/api/model", get(model))
         .route("/api/data/inspect", post(inspect_data))
         .route("/api/data/import", post(import_data))
+        .route("/api/site/place", post(place_site))
         .layer(DefaultBodyLimit::max(MAX_IMPORT_BYTES))
         .nest_service("/site", ServeDir::new(&state.site.dir));
     app = match web_dir {
@@ -321,6 +345,26 @@ async fn import_data(
     body: Bytes,
 ) -> axum::response::Response {
     data_request(state, from, query, headers, body, true).await
+}
+
+/// `POST /api/site/place`, `{ name?, origin: { lon, lat }, extent: { width_m, height_m, rotation_deg } }`:
+/// renames, moves, resizes or turns the table. Answers with the site as surfaces see it.
+async fn place_site(
+    State(state): State<Arc<AppState>>,
+    ConnectInfo(from): ConnectInfo<SocketAddr>,
+    body: Bytes,
+) -> axum::response::Response {
+    if !from.ip().is_loopback() {
+        return (StatusCode::FORBIDDEN, Json(json!({ "error": "the table can only be moved from this computer" }))).into_response();
+    }
+    let place: mrs_site::Place = match serde_json::from_slice(&body) {
+        Ok(place) => place,
+        Err(e) => return (StatusCode::BAD_REQUEST, Json(json!({ "error": e.to_string() }))).into_response(),
+    };
+    match state.place_site(place).await {
+        Ok(info) => Json(json!({ "site": info })).into_response(),
+        Err(error) => (StatusCode::UNPROCESSABLE_ENTITY, Json(json!({ "error": error }))).into_response(),
+    }
 }
 
 async fn data_request(

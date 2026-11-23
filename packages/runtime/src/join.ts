@@ -40,10 +40,15 @@ export function qrSvg(text: string): SVGSVGElement {
   return svg;
 }
 
+/** How long a phone that lost its connection still shows as reconnecting. */
+const AWAY_MS = 2 * 60 * 1000;
+
 /**
  * The TV's invitation: the QR code for the session's join address, the address
- * and code to type instead, and who has joined, in their slot colours.
+ * and code to type instead, and who has joined, in their slot colours. Hidden
+ * while phones cannot join.
  */
+
 export function joinPanel(store: Store): HTMLElement {
   const panel = el('section', 'join');
   const text = el('div', 'join-text');
@@ -53,8 +58,10 @@ export function joinPanel(store: Store): HTMLElement {
   const invite = () => {
     const { join_url: url, code } = store.state.session;
     panel.querySelector('.join-qr')?.remove();
+    // Visitors only see an invitation they can use. Why phones cannot join is for the operator, in the editor.
+    panel.hidden = !url;
     if (!url) {
-      text.replaceChildren(el('h2', '', 'Phones cannot join yet'), el('p', '', 'Turn on “Let phones on this network join” in the settings of the MR Studio app, or start with --lan from the command line.'));
+      text.replaceChildren();
       return;
     }
     const qr = el('div', 'join-qr');
@@ -67,10 +74,16 @@ export function joinPanel(store: Store): HTMLElement {
     text.replaceChildren(el('h2', '', 'Join from your phone'), el('p', '', 'Scan with your camera,'), address);
   };
 
+  const away = new Map<number, number>();
   const show = () => {
     const participants = store.state.participants;
+    // A phone that has been gone for a while is not shown; one that is reconnecting is, faded.
+    const now = Date.now();
+    for (const p of participants) if (p.connected) away.delete(p.slot);
+    else if (!away.has(p.slot)) away.set(p.slot, now);
+    const visible = participants.filter((p) => p.connected || now - (away.get(p.slot) ?? now) < AWAY_MS);
     people.replaceChildren(
-      ...participants.map((p) => {
+      ...visible.map((p) => {
         const dot = el('span', 'join-person', String(p.slot + 1));
         dot.style.background = p.colour;
         dot.classList.toggle('is-away', !p.connected);
@@ -87,6 +100,7 @@ export function joinPanel(store: Store): HTMLElement {
   panel.querySelector('.join-crowd')!.append(people, count);
   invite();
   show();
+  setInterval(() => store.state.participants.some((p) => !p.connected) && show(), 30_000);
   // A reconnect can land in a new session (the host restarted), with a new code.
   let shown = store.state.session.join_url;
   store.onParticipants(() => {

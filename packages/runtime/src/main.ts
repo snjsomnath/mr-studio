@@ -5,7 +5,7 @@ import { themeVariables } from '@mrstudio/dashboard';
 import '@mrstudio/dashboard/src/dashboard.css';
 
 import { Composer } from './compose.ts';
-import { Controller, isAmbient } from './controls.ts';
+import { Controller } from './controls.ts';
 import { mountDashboard } from './dashboard.ts';
 import { joinPanel } from './join.ts';
 import { LayerManager } from './layer-manager.ts';
@@ -153,25 +153,16 @@ async function main() {
 
     if (!phone) {
       const foot = second ?? side;
-      if (second) {
-        second.append(rightCards);
-        const home = el('button', 'layer-button home-button', 'Home');
-        (home as HTMLButtonElement).type = 'button';
-        home.title = 'Close every layer and show the map at rest';
-        home.addEventListener('click', () => {
-          for (const id of store.state.scene) {
-            const state = store.state.layers[id];
-            const manifest = state && store.manifest(state.layer);
-            if (state?.active && manifest && !isAmbient(manifest)) void connection.request('layer.activate', { layer: id, active: false }).catch(() => {});
-          }
-        });
-        second.append(home);
-      }
+      // No Home button: pressing the open layer's button again closes it and leaves the map at rest (#74).
+      if (second) second.append(rightCards);
       foot.append(joinPanel(store));
-      const footer = el('footer', 'controller-footer');
-      const info = await connection.request<{ backend: string; adapter: string | null }>('engine.info').catch(() => null);
-      footer.append(el('span', '', `Session ${store.state.session.code}`), el('span', '', info ? `Engine: ${info.adapter ?? `${info.backend} reference`}` : ''));
-      foot.append(footer);
+      // The session and the engine are for whoever runs the table: the developer page has them, the visitors' controller does not.
+      if (role === 'dev') {
+        const footer = el('footer', 'controller-footer');
+        const info = await connection.request<{ backend: string; adapter: string | null }>('engine.info').catch(() => null);
+        footer.append(el('span', '', `Session ${store.state.session.code}`), el('span', '', info ? `Engine: ${info.adapter ?? `${info.backend} reference`}` : ''));
+        foot.append(footer);
+      }
     }
     app.append(side);
     if (second) app.append(second);

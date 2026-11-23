@@ -39,6 +39,7 @@ enum Command {
     Close { conn: u64, stream: u32 },
     CloseConnection(u64),
     LoadScene(SceneData, oneshot::Sender<Result<(), String>>),
+    Relocate(SceneData, LonLat, oneshot::Sender<Result<(), String>>),
 }
 
 #[derive(Clone)]
@@ -111,12 +112,20 @@ impl EngineHandle {
         rx.await.map_err(|e| e.to_string())?
     }
 
+    /// Replaces the scene of a table that moved or changed size. Every stream is closed, since
+    /// its fields no longer fit; surfaces reload on `site.changed` and open new ones.
+    pub async fn relocate(&self, scene: SceneData, origin: LonLat) -> Result<(), String> {
+        let (reply, rx) = oneshot::channel();
+        self.send(Command::Relocate(scene, origin, reply)).map_err(|e| e.to_string())?;
+        rx.await.map_err(|e| e.to_string())?
+    }
+
     pub fn close_connection(&self, conn: u64) {
         let _ = self.send(Command::CloseConnection(conn));
     }
 }
 
-fn run(mut engine: Engine, origin: LonLat, rx: mpsc::Receiver<Command>) {
+fn run(mut engine: Engine, mut origin: LonLat, rx: mpsc::Receiver<Command>) {
     let mut streams: HashMap<u32, Stream> = HashMap::new();
     let mut next_stream = 1u32;
     let mut busy = false;
@@ -160,6 +169,13 @@ fn run(mut engine: Engine, origin: LonLat, rx: mpsc::Receiver<Command>) {
                     }
                 }
                 Command::LoadScene(scene, reply) => {
+                    let _ = reply.send(engine.load_scene(scene).map_err(|e| e.to_string()));
+                }
+                Command::Relocate(scene, at, reply) => {
+                    for (_, stream) in streams.drain() {
+                        engine.drop_job(stream.job);
+                    }
+                    origin = at;
                     let _ = reply.send(engine.load_scene(scene).map_err(|e| e.to_string()));
                 }
                 Command::CloseConnection(conn) => {

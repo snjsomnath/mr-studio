@@ -411,17 +411,17 @@ pub fn inspect(site: &Site, target: &Target, filename: &str, bytes: &[u8], optio
             height_property = Some(property);
         }
         Target::Trees => {
-            let property = ["height", "height_m", "höjd", "hojd", "h"]
-                .into_iter()
-                .find(|p| features.iter().any(|f| number(&f["properties"][*p]).is_some_and(|h| h > 0.0)));
-            let known = property.map_or(0, |p| features.iter().filter(|f| number(&f["properties"][p]).is_some_and(|h| h > 0.0)).count());
+            let names = property_names(&features, &["height", "height_m", "höjd", "hojd", "höjd_m", "hojd_m", "trädhöjd", "tradhojd", "h"]);
+            let property = names.iter().find(|p| features.iter().any(|f| number(&f["properties"][p.as_str()]).is_some_and(|h| h > 0.0)));
+            let known =
+                property.map_or(0, |p| features.iter().filter(|f| number(&f["properties"][p.as_str()]).is_some_and(|h| h > 0.0)).count());
             if known < features.len() {
                 let default = site.manifest.scene.trees.as_ref().map_or(8.0, |t| t.default_height_m);
                 let message = format!("{} {plural} have no height and will stand {default} m tall.", features.len() - known);
                 issues.push(Issue::new("height.missing", Severity::Note, message));
             }
             summary = format!("{summary}, {known} with a height");
-            height_property = Some(property.unwrap_or("height").to_string());
+            height_property = Some(property.cloned().unwrap_or_else(|| "height".to_string()));
         }
         _ => {}
     }
@@ -1149,22 +1149,37 @@ impl Frame {
 
 // ---- Heights -----------------------------------------------------------------
 
+/// The properties of `features` that go by one of `names`, whatever their case
+/// ("Höjd" for "höjd"), as they are spelled in the file and in the order of `names`.
+fn property_names(features: &[Value], names: &[&str]) -> Vec<String> {
+    let mut keys = std::collections::BTreeSet::new();
+    for feature in features {
+        if let Some(properties) = feature["properties"].as_object() {
+            keys.extend(properties.keys().cloned());
+        }
+    }
+    names.iter().flat_map(|name| keys.iter().filter(|k| k.to_lowercase() == *name).cloned().collect::<Vec<_>>()).collect()
+}
+
 /// Finds the property that holds building heights; fills in `height` from storeys where
 /// only those are known. Returns the property, how many had a height and how many were estimated.
 fn building_heights(features: &mut [Value]) -> (String, usize, usize) {
     let has = |f: &Value, p: &str| number(&f["properties"][p]).is_some_and(|h| h > 0.0);
-    let heights = ["height", "height_m", "building:height", "höjd", "hojd", "hojd_m"];
+    let heights = property_names(features, &["height", "height_m", "building:height", "höjd", "hojd", "höjd_m", "hojd_m"]);
     let property =
-        heights.into_iter().max_by_key(|p| features.iter().filter(|f| has(f, p)).count()).filter(|p| features.iter().any(|f| has(f, p)));
-    let property = property.unwrap_or("height").to_string();
-    let storeys = ["building:levels", "levels", "floors", "storeys", "vaningar", "våningar", "antal_vaningar"];
+        heights.iter().max_by_key(|p| features.iter().filter(|f| has(f, p)).count()).filter(|p| features.iter().any(|f| has(f, p)));
+    let property = property.cloned().unwrap_or_else(|| "height".to_string());
+    let storeys = property_names(
+        features,
+        &["building:levels", "levels", "floors", "storeys", "vaningar", "våningar", "antal_vaningar", "antal_våningar"],
+    );
     let known = features.iter().filter(|f| has(f, &property)).count();
     let mut estimated = 0;
     for feature in features.iter_mut() {
         if has(feature, &property) {
             continue;
         }
-        if let Some(levels) = storeys.iter().find_map(|p| number(&feature["properties"][*p]).filter(|l| *l > 0.0)) {
+        if let Some(levels) = storeys.iter().find_map(|p| number(&feature["properties"][p.as_str()]).filter(|l| *l > 0.0)) {
             feature["properties"][&property] = json!(levels * METRES_PER_STOREY);
             estimated += 1;
         }
@@ -1344,6 +1359,23 @@ mod tests {
         let (updated, _) = apply(&site, prepared).unwrap();
         assert_eq!(updated.manifest.scene.trees.as_ref().unwrap().height_property, "höjd");
         assert_eq!(updated.manifest.scene.trees.as_ref().unwrap().crown_radius_m, 3.5, "settings already there are kept");
+        std::fs::remove_dir_all(&site.dir).unwrap();
+    }
+
+    #[test]
+    fn swedish_column_names_in_any_case() {
+        let site = scratch("case");
+        let csv = "Latitud,Longitud,Höjd\n57.7001,11.9701,9.5\n57.7002,11.9702,6\n".as_bytes();
+        let r = inspect(&site, &Target::Trees, "trees.csv", csv, Options::default()).report;
+        assert!(r.ok, "{:?}", r.issues);
+        assert_eq!(r.height_property.as_deref(), Some("Höjd"));
+        assert!(r.summary.contains("2 with a height"), "{}", r.summary);
+        assert!(!codes(&r).contains(&"height.missing"));
+
+        let mut features = vec![json!({ "properties": { "Antal_Våningar": "4" } }), json!({ "properties": { "HÖJD": 12 } })];
+        let (property, known, estimated) = building_heights(&mut features);
+        assert_eq!((property.as_str(), known, estimated), ("HÖJD", 1, 1));
+        assert_eq!(features[0]["properties"]["HÖJD"], json!(4.0 * METRES_PER_STOREY));
         std::fs::remove_dir_all(&site.dir).unwrap();
     }
 
