@@ -4,6 +4,7 @@
   "name": "Wind",
   "description": "How the wind moves between buildings and through trees",
   "icon": "wind",
+  "attract": { "effect": "wind" },
   "requires": { "kernels": ["wind"] },
   "controls": [
     { "id": "speed", "type": "range", "label": "Wind speed", "min": 1, "max": 20, "step": 0.5, "unit": "m/s", "default": 5, "phone": true, "tier": "more" },

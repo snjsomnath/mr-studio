@@ -4,6 +4,7 @@
   "name": "Web map (WMS)",
   "description": "A map from a WMS service, such as a planning map or an aerial photo, laid over the table",
   "icon": "map",
+  "attract": { "effect": "grid" },
   "category": "media",
   "controls": [
     {

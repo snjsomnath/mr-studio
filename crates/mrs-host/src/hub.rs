@@ -769,6 +769,8 @@ impl Hub {
                 "theme_name" => value.as_str().is_some_and(|s| !s.is_empty() && s.len() <= 40),
                 "rail_style" => matches!(value.as_str(), Some("icons" | "labelled")),
                 "about" => value.is_object() && value.to_string().len() <= 8_000,
+                "idle_reset_s" => value.as_f64().is_some_and(|s| (0.0..=3600.0).contains(&s)),
+                "attract_s" => value.as_f64().is_some_and(|s| (2.0..=30.0).contains(&s)),
                 _ => return Err(format!("'{key}' is not a controller setting that can be changed here")),
             };
             if value.is_null() {
@@ -1575,6 +1577,17 @@ mod tests {
         assert_eq!(layer(&hub, "sunlight")["active"], true);
         assert_eq!(layer(&hub, "slideshow")["step"], Value::Null);
         assert!(dev("layer.step", json!({ "layer": "slideshow", "to": "next" })).is_err(), "closed");
+    }
+
+    #[test]
+    fn the_home_screen_timings_are_table_settings() {
+        let hub = scratch_hub("home-timings");
+        let dev = |method: &str, p: Value| hub.request(Role::Dev, 0, method, &p);
+        let tv = dev("site.tv", json!({ "tv": { "idle_reset_s": 60, "attract_s": 6 } })).unwrap();
+        assert_eq!((tv["tv"]["idle_reset_s"].clone(), tv["tv"]["attract_s"].clone()), (json!(60), json!(6)));
+        assert!(dev("site.tv", json!({ "tv": { "idle_reset_s": 0 } })).is_ok(), "0 is never");
+        assert!(dev("site.tv", json!({ "tv": { "idle_reset_s": -1 } })).is_err());
+        assert!(dev("site.tv", json!({ "tv": { "attract_s": 1 } })).is_err(), "too quick to read");
     }
 
     #[test]

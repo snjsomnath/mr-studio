@@ -1,6 +1,7 @@
 import { isVisible } from '@mrstudio/sdk';
 import type { Connection, Control, LayerManifest, LegendRow, TextControl, LayerState, PanelContext, PanelHandlers, Role, TvAbout } from '@mrstudio/sdk';
 
+import { AttractLoop, effectOf } from './attract.ts';
 import { icon } from './editor/icons.ts';
 import { baseContext, paramSender } from './layer-manager.ts';
 import { layerModule } from './registry.ts';
@@ -509,7 +510,11 @@ export class Controller {
   private readonly right: HTMLElement | undefined;
   /** Where the open layer's words and controls go on the controller screen. */
   private readonly centre: HTMLElement | undefined;
-  private readonly welcome = el('div', 'layer-welcome');
+  /** The home screen: the site's title over the attract loop (#74). */
+  private readonly welcome: HTMLElement;
+  private readonly attract: AttractLoop | undefined;
+  /** When someone last touched the controller, for the idle reset (#74). */
+  private lastInput = performance.now();
   /** The site's About page in the centre, when `tv.about` gives it words. */
   private readonly about: HTMLElement | undefined;
   private aboutButton: HTMLButtonElement | undefined;
@@ -523,13 +528,23 @@ export class Controller {
     this.right = right;
     this.centre = centre;
     const { site } = store.state;
-    this.welcome.append(el('h2', undefined, site.branding.title ?? site.name), el('p', undefined, 'Choose a layer to bring it to the table.'));
     this.store = store;
+    if (centre) {
+      const credits = (site.tv?.about?.credits ?? []).map((c) => (c.role ? `${c.role}: ${c.name}` : c.name)).join('  ·  ');
+      this.attract = new AttractLoop(site.branding.title ?? site.name, () => this.attractStops(), { stepS: site.tv?.attract_s, credits: credits || undefined });
+      this.welcome = this.attract.element;
+    } else {
+      this.welcome = el('div', 'layer-welcome');
+      this.welcome.append(el('h2', undefined, site.branding.title ?? site.name), el('p', undefined, 'Choose a layer to bring it to the table.'));
+    }
     this.connection = connection;
     this.role = role;
     this.about = centre && site.tv?.about ? aboutPage(site.tv.about, site.branding.title ?? site.name) : undefined;
     this.arrange();
-    if (centre) this.listenForKeys();
+    if (centre) {
+      this.listenForKeys();
+      this.idleReset();
+    }
     store.onLayer((id, state) => {
       // Opening a layer closes the About page.
       const manifest = store.manifest(state.layer);
@@ -789,6 +804,35 @@ export class Controller {
     // A tool kept alongside (the phones' sketch) is not a layer the visitor chose.
     const chosen = this.openLayers().filter((id) => !this.store.manifest(this.store.state.layers[id]!.layer)?.alongside);
     this.welcome.hidden = this.aboutOpen || chosen.length > 0;
+    if (this.attract) this.attract.active = !this.welcome.hidden;
+  }
+
+  /** The layers the attract loop shows, in the order of the rails. */
+  private attractStops() {
+    return railButtons(this.store).flatMap(({ id }) => {
+      const state = this.store.state.layers[id];
+      const manifest = state && this.store.manifest(state.layer);
+      if (!manifest) return [];
+      const { name, description } = layerButton(id, manifest, state);
+      return [{ id, name, description, effect: effectOf(manifest) }];
+    });
+  }
+
+  /**
+   * After a quiet spell the controller goes home, as if Reset were pressed (#74), so the next
+   * visitor finds the welcome, not the last visitor's layer. `tv.idle_reset_s` sets the spell
+   * (default 3 minutes, 0 for never); `?idle=` in the address overrides it on this screen.
+   */
+  private idleReset(): void {
+    const touched = () => (this.lastInput = performance.now());
+    for (const kind of ['pointerdown', 'keydown', 'wheel'] as const) window.addEventListener(kind, touched, { capture: true, passive: true });
+    const fromAddress = Number(new URLSearchParams(location.search).get('idle'));
+    setInterval(() => {
+      const seconds = Number.isFinite(fromAddress) && fromAddress > 0 ? fromAddress : (this.store.state.site.tv?.idle_reset_s ?? 180);
+      if (seconds <= 0 || performance.now() - this.lastInput < seconds * 1000) return;
+      if (this.welcome.hidden) this.reset();
+      touched();
+    }, 1000);
   }
 
   private get aboutOpen(): boolean {

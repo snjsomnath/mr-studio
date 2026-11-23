@@ -4,6 +4,7 @@
   "name": "Cool paths",
   "description": "The shortest walk between two points, and the one that stays in the shade",
   "icon": "footprints",
+  "attract": { "effect": "sun" },
   "requires": { "kernels": ["sunlight"], "data": ["walkways"] },
   "controls": [
     { "id": "date", "type": "date", "label": "Date", "default": "2026-07-15", "phone": true },

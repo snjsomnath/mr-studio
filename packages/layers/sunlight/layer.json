@@ -4,6 +4,7 @@
   "name": "Sunlight",
   "description": "Shadows at any moment, or hours of direct sun over a day",
   "icon": "sun",
+  "attract": { "effect": "sun" },
   "requires": { "kernels": ["sunlight"] },
   "controls": [
     {

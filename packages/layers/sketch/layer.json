@@ -4,6 +4,7 @@
   "name": "Sketch",
   "description": "Mark places, routes and areas on the table from a phone",
   "icon": "pencil",
+  "attract": { "effect": "waves" },
   "alongside": true,
   "controls": [
     { "id": "opacity", "type": "range", "label": "Opacity", "min": 0.2, "max": 1, "step": 0.05, "default": 1, "tier": "more" },

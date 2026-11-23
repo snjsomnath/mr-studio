@@ -4,6 +4,7 @@
   "name": "Mobility",
   "description": "People on the move: trips played over time, and a map of how travel differs from place to place",
   "icon": "route",
+  "attract": { "effect": "particles" },
   "requires": { "data": ["trips"] },
   "controls": [
     { "id": "play", "type": "toggle", "label": "Play", "default": true, "phone": true, "tier": "more" },

@@ -4,6 +4,7 @@
   "name": "Map data",
   "description": "A GeoJSON dataset of the site drawn on the table, coloured by category, revealed one category at a time",
   "icon": "layers",
+  "attract": { "effect": "grid" },
   "category": "analysis",
   "controls": [
     { "id": "dataset", "type": "text", "label": "Dataset", "default": "", "tier": "more" },

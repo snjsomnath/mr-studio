@@ -4,6 +4,7 @@
   "name": "Building blocks",
   "description": "Two scenes assembled from the SDK's building blocks, with pointer interactions",
   "icon": "blocks",
+  "attract": { "effect": "particles" },
   "controls": [
     {
       "id": "scene", "type": "select", "label": "Scene", "default": "gravity",
