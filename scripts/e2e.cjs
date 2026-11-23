@@ -868,7 +868,7 @@ async function main() {
         window.shellCalls.push(command === 'open_view' ? `open_view ${args.role}` : command === 'file_action' ? `file_action ${args.action}` : command);
         if (command === 'present') presenting = true;
         if (command === 'stop_presenting') presenting = false;
-        if (command === 'colour_state') return { displays: [{ display: 0, name: 'Projector', role: null, colour: { saturation: 1.4, contrast: 1, brightness: 1, gamma: 1, temperature: 0, tint: 0 } }], presets: [], layers: [] };
+        if (command === 'colour_state') return { displays: [{ display: 0, name: 'Projector', role: null, colour: { saturation: 1.4, contrast: 1, brightness: 1, gamma: 1.2, temperature: 0.3, tint: 0 } }], presets: [], layers: [] };
         return { presenting };
       } } };
     });
@@ -884,9 +884,13 @@ async function main() {
     // The Display tab (#151): the colour pass of each display, previewed on the editor's map while it is open.
     await shelled.getByRole('tab', { name: 'Display' }).click();
     await shelled.locator('.dt-slider').first().waitFor();
-    await shelled.waitForFunction(() => document.querySelector('.ed-canvas').style.filter.includes('saturate(1.4'));
+    await shelled.waitForFunction(() => document.querySelector('.ed-canvas .table-surface').style.filter.includes('saturate(1.4'));
+    // Midtones and white balance are blended layers, never an SVG filter, which froze WebKit on the Mac (#181).
+    assert.deepEqual(await shelled.$$eval('.ed-canvas .dt-colour-layer', (nodes) => nodes.map((n) => getComputedStyle(n).mixBlendMode)), ['soft-light', 'multiply']);
+    assert.equal(await shelled.evaluate(() => document.querySelectorAll('svg filter').length), 0);
     await shelled.getByRole('tab', { name: 'Edit' }).click();
-    assert.equal(await shelled.$eval('.ed-canvas', (n) => n.style.filter), '', 'the preview goes with the tab');
+    assert.equal(await shelled.$eval('.ed-canvas .table-surface', (n) => n.style.filter), '', 'the preview goes with the tab');
+    assert.equal(await shelled.$$eval('.ed-canvas .dt-colour-layer', (nodes) => nodes.length), 0);
     await shelled.getByRole('button', { name: 'All tables', exact: true }).click();
     assert.equal(await shelled.evaluate(() => window.mrsShellControls), true);
     // "All tables" goes through the File menu's action (#130): it keeps a picture of the map first, then asks the app.

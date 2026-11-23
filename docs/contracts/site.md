@@ -184,10 +184,10 @@ What the player draws today (`packages/sdk/src/recipe.ts`; WMS and tiles data ar
 | `flows.csv` | `from,to,volume` | comets fly between places picked by weight |
 | `links.csv` | `from,to` | places sharing a category are linked |
 
-Names in the tables match the places' `name`, case-insensitive; names that match nothing are reported. Streets and buildings come from the site, never per motion. The builder's ? button shows each motion's setup with an example. The sample kit has all four (`samples/kit`).
+Names in the tables match the places' `name`, case-insensitive; names that match nothing are reported. Streets and buildings come from the site, never per motion. The builder's ? button shows each motion's setup with an example. The sample kit has all four (`samples/kit`). The tables come in through Add data as "Something else, by a name of its own": a CSV without position columns is kept as `data/<name>.csv` (comma separated, UTF-8, decimal commas read as points) rather than refused.
 
 - Sizes are millimetres on the physical table (visualisation.md E5), turned into metres by `table.width_cm`.
-- A colour is a palette slot (`"@accent"`), `"#rrggbb"`, or driven by a column: `{ "by": "kind", "kind": "category", "colors"?: { "<value>": "@cat2" } }` (six values shown, the rest grouped as Others) or `{ "by": "population", "kind": "number", "ramp": "sun", "classes": "continuous" | "equal" | "quantile", "count": 5 }`. A size may be `{ "by": "<column>", "range": [2, 8] }`.
+- A colour is a palette slot (`"@accent"`), `"#rrggbb"`, or driven by a column: `{ "by": "kind", "kind": "category", "scheme"?: "auto" | "palette" | "epc", "colors"?: { "<value>": "@cat2" } }` (six values shown, the rest grouped as Others; values that already have known colours, such as energy classes A to G, keep them and their order unless `scheme` is `palette`; `colors` wins over both, #207) or `{ "by": "population", "kind": "number", "ramp": "sun", "classes": "continuous" | "equal" | "quantile", "count": 5 }`. A size may be `{ "by": "<column>", "range": [2, 8] }`.
 - A data `path` or dataset may be GeoJSON, or a CSV of points with `lon` and `lat` columns.
 - The builder writes the legend the looks give into `legend`.
 

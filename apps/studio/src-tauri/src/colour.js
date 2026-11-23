@@ -1,8 +1,11 @@
 // Injected by the shell into every surface window: the final colour pass for the
-// display the window is on. One CSS filter on the root element covers the map, the
-// field overlays and every decoration, whatever drew them.
+// display the window is on. Only what a GPU composites cheaply is used (#181): CSS
+// filter functions on the root element for saturation, contrast and brightness, and two
+// blended layers over the page for midtones (soft-light grey) and white balance
+// (multiply by channel gains). SVG filters made WebKit on the Mac redraw in software and
+// freeze over the animated map, so there are none. The editor's preview does the same
+// (packages/runtime/src/editor/display-tab.ts): change both together.
 (() => {
-  const SVG = 'http://www.w3.org/2000/svg';
   const fmt = (n) => Number(n).toFixed(4);
 
   // White balance as channel gains, scaled so no channel goes above 1 (nothing clips).
@@ -12,43 +15,49 @@
     return raw.map((g) => g / top);
   }
 
-  function filterFor(s) {
-    const neutralBalance = s.temperature === 0 && s.tint === 0;
-    if (s.saturation === 1 && s.contrast === 1 && s.brightness === 1 && s.gamma === 1 && neutralBalance) return '';
-    // The built-in functions are the cheapest path, so use them whenever they are enough.
-    if (s.gamma === 1 && neutralBalance) return `saturate(${fmt(s.saturation)}) contrast(${fmt(s.contrast)}) brightness(${fmt(s.brightness)})`;
+  // The soft-light grey whose curve puts mid grey where gamma would: black and white stay put.
+  function midtoneGrey(gamma) {
+    const target = Math.pow(0.5, 1 / gamma);
+    const level = target <= 0.5 ? 2 * target - 0.5 : ((target - 0.5) / (Math.SQRT1_2 - 0.5) + 1) / 2;
+    return Math.round(Math.min(1, Math.max(0, level)) * 255);
+  }
 
-    let svg = document.getElementById('mrs-colour');
-    if (!svg) {
-      svg = document.createElementNS(SVG, 'svg');
-      svg.id = 'mrs-colour';
-      svg.setAttribute('aria-hidden', 'true');
-      svg.style.cssText = 'position:fixed;width:0;height:0;pointer-events:none';
-      (document.body ?? document.documentElement).append(svg);
+  function layer(id, blend) {
+    let node = document.getElementById(id);
+    if (!node && document.body) {
+      node = document.createElement('div');
+      node.id = id;
+      node.setAttribute('aria-hidden', 'true');
+      node.style.cssText = `position:fixed;inset:0;pointer-events:none;z-index:2147483647;mix-blend-mode:${blend}`;
+      document.body.append(node);
     }
-    const [r, g, b] = gains(s.temperature, s.tint);
-    const slope = fmt(s.contrast * s.brightness);
-    const intercept = fmt(s.brightness * (0.5 - 0.5 * s.contrast));
-    const each = (attributes) => ['R', 'G', 'B'].map((c) => `<feFunc${c} ${attributes}/>`).join('');
-    // Same order as the simple path: saturation, white balance, gamma, contrast, brightness.
-    svg.innerHTML = `<filter id="mrs-colour-filter" color-interpolation-filters="sRGB" x="0" y="0" width="100%" height="100%">
-      <feColorMatrix type="saturate" values="${fmt(s.saturation)}"/>
-      <feColorMatrix type="matrix" values="${fmt(r)} 0 0 0 0  0 ${fmt(g)} 0 0 0  0 0 ${fmt(b)} 0 0  0 0 0 1 0"/>
-      <feComponentTransfer>${each(`type="gamma" amplitude="1" exponent="${fmt(1 / s.gamma)}" offset="0"`)}</feComponentTransfer>
-      <feComponentTransfer>${each(`type="linear" slope="${slope}" intercept="${intercept}"`)}</feComponentTransfer>
-    </filter>`;
-    return 'url(#mrs-colour-filter)';
+    return node;
   }
 
   let current = null;
   function apply() {
-    if (current) document.documentElement.style.filter = filterFor(current);
+    const s = current;
+    if (!s) return;
+    const plain = s.saturation === 1 && s.contrast === 1 && s.brightness === 1;
+    document.documentElement.style.filter = plain ? '' : `saturate(${fmt(s.saturation)}) contrast(${fmt(s.contrast)}) brightness(${fmt(s.brightness)})`;
+    const mid = layer('mrs-colour-midtones', 'soft-light');
+    if (mid) {
+      const grey = midtoneGrey(s.gamma);
+      mid.style.display = s.gamma === 1 ? 'none' : '';
+      mid.style.background = `rgb(${grey}, ${grey}, ${grey})`;
+    }
+    const balance = layer('mrs-colour-balance', 'multiply');
+    if (balance) {
+      const [r, g, b] = gains(s.temperature, s.tint).map((v) => Math.round(v * 255));
+      balance.style.display = s.temperature === 0 && s.tint === 0 ? 'none' : '';
+      balance.style.background = `rgb(${r}, ${g}, ${b})`;
+    }
   }
   window.__mrsColour = (settings) => {
     current = settings;
     apply();
   };
-  // The script runs before the page exists; the gamma path needs a body to hold its filter.
+  // The script runs before the page exists; the blended layers need a body.
   document.addEventListener('DOMContentLoaded', apply);
 
   // Colour bars, grey steps and a smooth ramp, to judge the settings on the real surface.
@@ -60,7 +69,7 @@
     const greys = Array.from({ length: 16 }, (_, i) => `rgb(${i * 17} ${i * 17} ${i * 17})`);
     const card = document.createElement('div');
     card.id = 'mrs-test-card';
-    card.style.cssText = 'position:fixed;inset:0;z-index:2147483647;display:grid;grid-template-rows:5fr 2fr 1fr 1fr 1fr 1fr';
+    card.style.cssText = 'position:fixed;inset:0;z-index:2147483646;display:grid;grid-template-rows:5fr 2fr 1fr 1fr 1fr 1fr';
     const rows = [steps(bars), steps(greys), 'linear-gradient(90deg, #000, #fff)', 'linear-gradient(90deg, #000, #f00)', 'linear-gradient(90deg, #000, #0f0)', 'linear-gradient(90deg, #000, #00f)'];
     for (const background of rows) {
       const row = document.createElement('div');

@@ -63,7 +63,6 @@ const same = (a: Colour, b: Colour) => SLIDERS.every(([key]) => Math.abs(a[key] 
 
 // ---- The colour pass, for the preview in the editor --------------------------------------
 
-const SVG = 'http://www.w3.org/2000/svg';
 const fmt = (n: number) => n.toFixed(4);
 
 /** White balance as channel gains, scaled so no channel goes above 1 (as the surfaces do). */
@@ -73,33 +72,43 @@ function gains(temperature: number, tint: number): number[] {
   return raw.map((g) => g / top);
 }
 
+/** The soft-light grey whose curve puts mid grey where gamma would: black and white stay put. */
+function midtoneGrey(gamma: number): number {
+  const target = Math.pow(0.5, 1 / gamma);
+  const level = target <= 0.5 ? 2 * target - 0.5 : ((target - 0.5) / (Math.SQRT1_2 - 0.5) + 1) / 2;
+  return Math.round(Math.min(1, Math.max(0, level)) * 255);
+}
+
 /**
- * The CSS filter that gives the same result as the shell's colour pass on a surface
- * (apps/studio/src-tauri/src/colour.js). Kept in step with it by hand: change both together.
+ * Shows a display's colour pass on `target`, or takes it off with null. The same pass as
+ * the shell's on a surface (apps/studio/src-tauri/src/colour.js), so change both together:
+ * CSS filter functions for saturation, contrast and brightness, and two blended layers for
+ * midtones (soft-light grey) and white balance (multiply by channel gains). No SVG filters:
+ * WebKit on the Mac draws those in software and froze over the animated map (#181).
  */
-export function colourFilter(s: Colour): string {
-  const neutralBalance = s.temperature === 0 && s.tint === 0;
-  if (same(s, NEUTRAL)) return '';
-  if (s.gamma === 1 && neutralBalance) return `saturate(${fmt(s.saturation)}) contrast(${fmt(s.contrast)}) brightness(${fmt(s.brightness)})`;
-  let svg = document.getElementById('mrs-colour-preview') as SVGSVGElement | null;
-  if (!svg) {
-    svg = document.createElementNS(SVG, 'svg') as SVGSVGElement;
-    svg.id = 'mrs-colour-preview';
-    svg.setAttribute('aria-hidden', 'true');
-    svg.style.cssText = 'position:fixed;width:0;height:0;pointer-events:none';
-    document.body.append(svg);
-  }
-  const [r, g, b] = gains(s.temperature, s.tint);
-  const slope = fmt(s.contrast * s.brightness);
-  const intercept = fmt(s.brightness * (0.5 - 0.5 * s.contrast));
-  const each = (attributes: string) => ['R', 'G', 'B'].map((c) => `<feFunc${c} ${attributes}/>`).join('');
-  svg.innerHTML = `<filter id="mrs-colour-preview-filter" color-interpolation-filters="sRGB" x="0" y="0" width="100%" height="100%">
-    <feColorMatrix type="saturate" values="${fmt(s.saturation)}"/>
-    <feColorMatrix type="matrix" values="${fmt(r!)} 0 0 0 0  0 ${fmt(g!)} 0 0 0  0 0 ${fmt(b!)} 0 0  0 0 0 1 0"/>
-    <feComponentTransfer>${each(`type="gamma" amplitude="1" exponent="${fmt(1 / s.gamma)}" offset="0"`)}</feComponentTransfer>
-    <feComponentTransfer>${each(`type="linear" slope="${slope}" intercept="${intercept}"`)}</feComponentTransfer>
-  </filter>`;
-  return 'url(#mrs-colour-preview-filter)';
+export function previewColour(target: HTMLElement, s: Colour | null): void {
+  const on = s !== null && !same(s, NEUTRAL);
+  const plain = !s || (s.saturation === 1 && s.contrast === 1 && s.brightness === 1);
+  target.style.filter = on && !plain ? `saturate(${fmt(s!.saturation)}) contrast(${fmt(s!.contrast)}) brightness(${fmt(s!.brightness)})` : '';
+  if (on && getComputedStyle(target).position === 'static') target.style.position = 'relative';
+  const layer = (name: string, blend: string, show: boolean, background: string) => {
+    let node = target.querySelector<HTMLElement>(`:scope > .dt-colour-${name}`);
+    if (!show) {
+      node?.remove();
+      return;
+    }
+    if (!node) {
+      node = el('div', `dt-colour-layer dt-colour-${name}`);
+      node.setAttribute('aria-hidden', 'true');
+      node.style.mixBlendMode = blend;
+      target.append(node);
+    }
+    node.style.background = background;
+  };
+  const grey = s ? midtoneGrey(s.gamma) : 128;
+  layer('midtones', 'soft-light', on && s!.gamma !== 1, `rgb(${grey}, ${grey}, ${grey})`);
+  const [r, g, b] = s ? gains(s.temperature, s.tint).map((v) => Math.round(v * 255)) : [255, 255, 255];
+  layer('balance', 'multiply', on && (s!.temperature !== 0 || s!.tint !== 0), `rgb(${r}, ${g}, ${b})`);
 }
 
 // ---- The tab ------------------------------------------------------------------------------
@@ -203,6 +212,13 @@ export class DisplayTab {
   private readonly problem = el('span', 'dt-status is-error');
   private readonly sliders = new Map<keyof Colour, ReturnType<typeof slider>>();
   private popover: HTMLElement | null = null;
+  /** The calibration guide, while it is open (#181). */
+  private guide: HTMLElement | null = null;
+  private guideTimer: number | null = null;
+  /** A window shows the table, so the tool has somewhere to open; null when it cannot be known (a browser). */
+  private tableShown: boolean | null = null;
+  /** Saved while the guide was open, to tick its last step. */
+  private savedNow = false;
   private stopAway: (() => void) | null = null;
   private readonly sendColour: (value: { display: number; colour: Colour }) => void;
   private readonly sendLayer: (value: { layer: string; intensity: number }) => void;
@@ -241,6 +257,7 @@ export class DisplayTab {
     });
     connection.on('calibration', (p: { projector: ProjectorCalibration | null }) => {
       this.calibrated = Boolean(p.projector);
+      if (p.projector && this.guide) this.savedNow = true;
       this.drawCalibration();
     });
   }
@@ -253,6 +270,7 @@ export class DisplayTab {
   private say(message: string | null): void {
     this.problem.textContent = message ?? '';
     this.problem.hidden = !message;
+    if (this.guide) this.fillGuide(this.guide);
   }
 
   private current(): DisplayColour | undefined {
@@ -349,8 +367,8 @@ export class DisplayTab {
   }
 
   private projectorGroup(): HTMLElement {
-    this.calibrateButton.title = 'Open the calibration tool on the projected table: move a marker onto each corner of the model. Present first, or open the Map in a window.';
-    this.calibrateButton.addEventListener('click', () => void this.calibrate(!this.calibrating));
+    this.calibrateButton.title = 'Line the projected map up with the physical model, step by step';
+    this.calibrateButton.addEventListener('click', () => (this.guide ? this.closeGuide() : this.openGuide()));
     this.clearButton.title = 'Forget the calibration, so the table is shown flat again';
     this.clearButton.addEventListener('click', () => {
       this.connection.request('calibration.set', { projector: null }).catch((error) => this.say(text(error)));
@@ -395,6 +413,7 @@ export class DisplayTab {
   /** The tab is put away: no preview, no test card, no calibration tool left open by it. */
   hide(): void {
     this.open = false;
+    this.closeGuide();
     this.setTestCard(false);
     this.closeLayers();
     this.drawPreview();
@@ -459,14 +478,163 @@ export class DisplayTab {
     const colour = this.current()?.colour;
     this.previewButton.setAttribute('aria-pressed', String(this.previewOn));
     this.previewButton.classList.toggle('is-on', this.previewOn);
-    this.preview.style.filter = this.open && this.previewOn && colour ? colourFilter(colour) : '';
+    // On the table itself, not the grey around it.
+    const surface = this.preview.querySelector<HTMLElement>('.table-surface') ?? this.preview;
+    previewColour(surface, this.open && this.previewOn && colour ? colour : null);
   }
 
   private drawCalibration(): void {
-    this.calibrateButton.replaceChildren(icon(this.calibrating ? 'check' : 'crosshair', 20), el('span', undefined, this.calibrating ? 'Done' : 'Calibrate'));
-    this.calibrateButton.classList.toggle('is-on', this.calibrating);
-    this.calibrationStatus.textContent = this.calibrated ? 'Calibrated' : 'Shown flat';
+    this.calibrateButton.classList.toggle('is-on', this.guide !== null || this.calibrating);
+    this.calibrationStatus.textContent = this.calibrated ? 'Calibrated' : 'Not calibrated';
     this.clearButton.disabled = !this.calibrated;
+    if (this.guide) this.fillGuide(this.guide);
+  }
+
+  // ---- The calibration guide (#181) ---------------------------------------------------
+
+  private openGuide(): void {
+    this.closeLayers();
+    const guide = el('section', 'dt-guide');
+    guide.setAttribute('role', 'dialog');
+    guide.ariaLabel = 'Calibrate the projector';
+    const box = this.calibrateButton.getBoundingClientRect();
+    guide.style.top = `${box.bottom + 6}px`;
+    guide.style.left = `${Math.max(8, Math.min(box.left, window.innerWidth - 412))}px`;
+    (this.preview.closest('.ed') ?? document.body).append(guide);
+    this.guide = guide;
+    this.savedNow = false;
+    void this.checkTable();
+    // Whether the map is on the projector can change from elsewhere (Present, Esc on the table).
+    this.guideTimer = window.setInterval(() => void this.checkTable(), 2000);
+    this.drawCalibration();
+  }
+
+  private closeGuide(): void {
+    if (this.guideTimer !== null) window.clearInterval(this.guideTimer);
+    this.guideTimer = null;
+    this.guide?.remove();
+    this.guide = null;
+    this.drawCalibration();
+  }
+
+  private async checkTable(): Promise<void> {
+    if (!this.invoke) return;
+    try {
+      const state = (await this.call('calibration_state')) as { table: boolean };
+      if (state.table !== this.tableShown) {
+        this.tableShown = state.table;
+        this.drawCalibration();
+      }
+    } catch {
+      // An older app: leave it unknown.
+    }
+  }
+
+  private fillGuide(guide: HTMLElement): void {
+    const desktop = Boolean(this.invoke);
+    const shown = this.tableShown === true || this.calibrating;
+    const head = el('header', 'dt-guide-head');
+    const close = el('button', 'dt-guide-close', '×');
+    close.type = 'button';
+    close.ariaLabel = 'Close';
+    close.addEventListener('click', () => this.closeGuide());
+    head.append(el('strong', undefined, 'Line the map up with the model'), close);
+
+    const lead = el(
+      'p',
+      'dt-guide-lead',
+      'Calibration teaches MR Studio where the projector’s light falls on your physical model, so the map lands on the right buildings. Do it once for each projector set-up, and again if the projector or the model moves.',
+    );
+
+    const steps = el('ol', 'dt-steps');
+    const step = (done: boolean, active: boolean, title: string, detail: string, ...actions: HTMLElement[]) => {
+      const item = el('li', `dt-step${done ? ' is-done' : ''}${active ? ' is-active' : ''}`);
+      const mark = el('span', 'dt-step-mark');
+      if (done) mark.append(icon('check', 14));
+      const body = el('div', 'dt-step-body');
+      body.append(el('strong', undefined, title), el('p', undefined, detail));
+      if (actions.length > 0) {
+        const row = el('div', 'dt-step-actions');
+        row.append(...actions);
+        body.append(row);
+      }
+      item.append(mark, body);
+      return item;
+    };
+    const action = (label: string, primary: boolean, run: () => void) => {
+      const node = el('button', primary ? 'ed-button is-primary' : 'ed-button', label);
+      node.type = 'button';
+      node.addEventListener('click', run);
+      return node;
+    };
+
+    // 1. The map must be on the projector, since that is where the tool draws.
+    const present = desktop
+      ? action('Present', true, () => {
+          void this.call('present')
+            .then(() => this.checkTable())
+            .catch((error) => this.say(text(error)));
+        })
+      : action('Open the Map', true, () => window.open('/table', 'mrstudio-table'));
+    steps.append(
+      step(
+        shown,
+        !shown,
+        'Show the map on the projector',
+        desktop
+          ? shown
+            ? 'The map is on its display.'
+            : 'Present, so the map is projected on the model. With one screen, the map takes it over; Esc brings you back.'
+          : 'Open the Map and drag its window onto the projector, full screen.',
+        ...(shown ? [] : [present]),
+      ),
+    );
+
+    // 2. Open the tool there.
+    const start = action(this.calibrating ? 'Stop calibrating' : 'Start calibrating', !this.calibrating, () => void this.calibrate(!this.calibrating));
+    start.disabled = desktop && !shown;
+    steps.append(
+      step(
+        this.calibrating || this.savedNow,
+        shown && !this.calibrating && !this.savedNow,
+        'Open the tool on the table',
+        'A cross of light and a small panel appear on the projected table. It needs the buildings or a 3D model of the place.',
+        start,
+      ),
+    );
+
+    // 3. The corners, done on the table itself.
+    steps.append(
+      step(
+        this.savedNow,
+        this.calibrating && !this.savedNow,
+        'Put the cross on each corner',
+        'The panel on the table names a corner of the model and shows it on a small map. Move the mouse onto the table’s screen and click or drag until the cross’s light sits exactly on that corner of the real model. Arrow keys nudge it; hold Shift for bigger steps. Press Next, or Skip a corner you cannot see.',
+      ),
+    );
+
+    // 4. Save.
+    steps.append(
+      step(
+        this.savedNow,
+        false,
+        'Save',
+        'After at least 6 of the 10 corners, press Save on the table. The map then follows the model, buildings and all.',
+      ),
+    );
+
+    const foot = el('footer', 'dt-guide-foot');
+    foot.append(el('span', `dt-guide-state${this.calibrated ? ' is-ok' : ''}`, this.calibrated ? 'This table is calibrated.' : 'This table is shown flat, not calibrated.'));
+    if (this.calibrated) {
+      const flat = action('Use a flat table', false, () => {
+        this.connection.request('calibration.set', { projector: null }).catch((error) => this.say(text(error)));
+      });
+      flat.title = 'Forget the calibration, so the map is drawn flat and straight down again';
+      foot.append(flat);
+    }
+    const problem = el('p', 'dt-guide-problem', this.problem.textContent ?? '');
+    problem.hidden = !this.problem.textContent;
+    guide.replaceChildren(head, lead, steps, problem, foot);
   }
 
   private setColour(colour: Colour): void {
@@ -515,7 +683,8 @@ export class DisplayTab {
       if (this.invoke) {
         // The tool runs on the projected table, so a window must be showing it.
         const state = (await this.call('calibration_state')) as { table: boolean };
-        if (active && !state.table) throw new Error('Present first, or open the Map in a window, then calibrate on it.');
+        this.tableShown = state.table;
+        if (active && !state.table) throw new Error('The map is not on a screen yet. Present first, then start calibrating.');
         await this.call('calibration_mode', { active });
       } else await this.connection.request('calibration.mode', { active });
       this.calibrating = active;
@@ -536,7 +705,7 @@ export class DisplayTab {
     const box = this.layersButton.getBoundingClientRect();
     popover.style.left = `${Math.max(8, Math.min(box.left, window.innerWidth - 336))}px`;
     popover.style.top = `${box.bottom + 6}px`;
-    document.body.append(popover);
+    (this.preview.closest('.ed') ?? document.body).append(popover);
     this.popover = popover;
     this.layersButton.classList.add('is-on');
     // A press anywhere else puts it away, even on the map, which keeps its clicks to itself.

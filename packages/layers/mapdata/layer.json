@@ -9,6 +9,14 @@
     { "id": "dataset", "type": "text", "label": "Dataset", "default": "", "tier": "more" },
     { "id": "colorBy", "type": "text", "label": "Colour by", "default": "", "tier": "more" },
     { "id": "color", "type": "color", "label": "Colour", "default": "#4dabf7", "tier": "more" },
+    {
+      "id": "scheme", "type": "select", "label": "Category colours", "default": "auto", "tier": "more",
+      "options": [
+        { "value": "auto", "label": "Their own, when they have them" },
+        { "value": "palette", "label": "The table palette" },
+        { "value": "epc", "label": "Energy classes (A to G)" }
+      ]
+    },
     { "id": "reveal", "type": "toggle", "label": "Next reveals one category at a time", "default": true, "tier": "more" },
     { "id": "width", "type": "range", "label": "Line width", "min": 0.5, "max": 8, "step": 0.5, "default": 2, "tier": "more" },
     { "id": "opacity", "type": "range", "label": "Opacity", "min": 0.1, "max": 1, "step": 0.05, "default": 0.9, "tier": "more" }
