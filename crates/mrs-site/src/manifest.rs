@@ -507,6 +507,25 @@ pub struct RecipeBlock {
     pub props: Map<String, Value>,
 }
 
+/// The table's palette: one of the built-in sets the SDK knows (`night` when missing) and
+/// the slots this table overrides, by slot name, as `#rrggbb`. Layers and custom layers
+/// refer to slots (`@accent`, `@cat3`), so changing the palette recolours them all.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Palette {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub set: Option<String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub slots: BTreeMap<String, String>,
+}
+
+impl Palette {
+    /// Whether a value is a colour a slot can hold: `#rrggbb`.
+    pub fn is_colour(value: &str) -> bool {
+        value.len() == 7 && value.starts_with('#') && value[1..].chars().all(|c| c.is_ascii_hexdigit())
+    }
+}
+
 /// One row of a layer's legend on the controller (present.md, Stage).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -570,6 +589,9 @@ pub struct SiteManifest {
     /// Custom layers saved in this site, by id. A scene uses one as `custom:<id>`.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub custom: BTreeMap<String, CustomLayer>,
+    /// The table's colours (#93): a built-in set and the slots this table changes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub palette: Option<Palette>,
     #[serde(default)]
     pub tv: Option<Value>,
     #[serde(default)]

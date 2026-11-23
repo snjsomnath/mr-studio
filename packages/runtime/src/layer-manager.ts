@@ -1,6 +1,7 @@
 import { EngineClient } from '@mrstudio/sdk';
 import type { Connection, LayerModule, LayerState, PanelContext, TableContext, TableHandlers, ToolInput } from '@mrstudio/sdk';
 
+import { recipeModule } from './recipe-player.ts';
 import { layerModule } from './registry.ts';
 import { changedKeys } from './store.ts';
 import type { Store } from './store.ts';
@@ -108,7 +109,15 @@ export class LayerManager {
   private async start(id: string): Promise<void> {
     // `id` names the instance; the code comes from the layer package it runs.
     const layer = this.store.layer(id).layer;
-    const module = layerModule(layer) as LayerModule | undefined;
+    // A custom layer has no code: the recipe player draws it from its manifest, and restyles as it is saved again.
+    const manifest = this.store.manifest(layer);
+    const module = (layerModule(layer) as LayerModule | undefined) ??
+      (manifest?.custom
+        ? recipeModule(
+            () => this.store.manifest(layer),
+            (callback) => this.store.onCatalog((changed) => (changed === layer || changed === '') && callback()),
+          )
+        : undefined);
     if (!module?.table) {
       if (!module) console.warn(`layer '${layer}' is not part of this build`);
       return;

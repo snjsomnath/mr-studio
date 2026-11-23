@@ -12,6 +12,7 @@ export class Store {
   private sceneListeners = new Set<(scene: string[]) => void>();
   private removedListeners = new Set<(layer: string) => void>();
   private tvListeners = new Set<(tv: TvConfig | null) => void>();
+  private catalogListeners = new Set<(layer: string) => void>();
 
   constructor(connection: Connection, welcome: Welcome) {
     this.state = welcome.state;
@@ -28,10 +29,26 @@ export class Store {
       this.state.site.tv = p.tv;
       for (const listener of this.tvListeners) listener(p.tv);
     });
+    // A custom layer was saved or removed (the layer builder), or the table's palette changed.
+    connection.on('catalog.changed', (p: { manifest: LayerManifest }) => {
+      const at = this.manifests.findIndex((m) => m.id === p.manifest.id);
+      if (at >= 0) this.manifests[at] = p.manifest;
+      else this.manifests.push(p.manifest);
+      for (const listener of this.catalogListeners) listener(p.manifest.id);
+    });
+    connection.on('catalog.removed', (p: { id: string }) => {
+      this.manifests = this.manifests.filter((m) => m.id !== p.id);
+      for (const listener of this.catalogListeners) listener(p.id);
+    });
+    connection.on('palette.changed', (p: { palette: SessionState['site']['palette'] }) => {
+      this.state.site = { ...this.state.site, palette: p.palette };
+      for (const listener of this.catalogListeners) listener('');
+    });
     // After a reconnect or a resync, take the host's state wholesale.
     const replace = (message: Welcome) => {
       this.surface = message.surface ?? this.surface;
       this.state = { ...message.state, scene: this.state.scene, layers: this.state.layers };
+      this.manifests = message.manifests ?? this.manifests;
       this.setScene(message.state.scene, message.state.layers);
       for (const listener of this.participantListeners) listener(this.state.participants);
     };
@@ -58,6 +75,15 @@ export class Store {
   /** The catalogue entry for a layer package. */
   manifest(layer: string): LayerManifest | undefined {
     return this.manifests.find((manifest) => manifest.id === layer);
+  }
+
+  /**
+   * Runs when a layer of the catalogue was saved, added or removed (by its id), or with
+   * an empty id when the table's palette changed. Returns a function that stops it.
+   */
+  onCatalog(listener: (layer: string) => void): () => void {
+    this.catalogListeners.add(listener);
+    return () => this.catalogListeners.delete(listener);
   }
 
   /** Runs after layers were added to, removed from or reordered in the scene. */

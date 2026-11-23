@@ -250,6 +250,8 @@ export interface SiteInfo {
   /** Datasets layers may read, by name: site-relative paths served under `/site/`. */
   data: Record<string, string>;
   tv?: TvConfig | null;
+  /** The table's palette (#93): a built-in set and the slots it changes. Resolve with `resolvePalette`. */
+  palette?: { set?: string; slots?: Record<string, string> } | null;
   /** The 3D model of the site (`scene.mesh`, docs/contracts/site.md), and whether footprints are raised beside it. */
   mesh?: SiteMesh;
 }

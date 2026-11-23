@@ -87,6 +87,7 @@ Rules:
 - `layers[].button` is how the layer is offered on the controller: `{ "name", "description", "icon", "side", "group", "order" }`, all optional. `name` (up to 40 characters) and `description` (up to 200) replace the layer package's own words, `icon` is an icon name in lowercase letters, digits and dashes, `side` is `"left"` or `"right"`, `group` (up to 40 characters) puts it in a named group of its rail, and `order` (a number, lower first) places it there. The map never shows these; they are for the controller and phones. How the controller uses them is in [present.md](present.md).
 - `layers[].items` and `layers[].steps`: see [Layers, items and sequences](#layers-items-and-sequences).
 - `custom`: see [Custom layers](#custom-layers).
+- `palette` is the table's colours (#93): `{ "set": "night", "slots": { "accent": "#ff8a4c" } }`. `set` is one of the SDK's built-in sets (`night`, the default, `ember`, `harbour`; `PALETTE_SETS` in `packages/sdk/src/palette.ts`), and `slots` changes single slots, each `#rrggbb`. The slots are `accent`, `focus`, `warm`, `cool`, `green`, `warning`, `neutral` and `cat1` to `cat8`, with the meanings in [visualisation.md](../visualisation.md) C4. Custom layers name colours by slot (`"@warm"`), so changing the palette recolours them.
 - `table.front` is the edge of the projected image where visitors stand: `"bottom"` (the default), `"top"`, `"left"` or `"right"`. For a viewer at the front, the model hides what is projected on the far side, so ribbons and other at-a-glance info go to the front first, and a ribbon set to `"auto"` prefers it, then the two sides next to it, and uses the far side last.
 - `table.ribbons` says what the projector's blank space around the model shows, per side (`top`, `bottom`, `left`, `right`): `"off"`, `"auto"` (use the free band when there is one) or `{ "cm": 9 }`. See [present.md](present.md), Ribbon.
 - `data` maps a dataset name to a file in the site. Layers ask for datasets by name (`requires.data` in `layer.json`), never by path. The scene's `buildings`, `trees` and `terrain` are always available under those names. Names the core layers read: `roads` (LineStrings; optional `width` in metres and `kind`), `transit` (see `packages/layers/transit/README.md`), `slideshow` (see `packages/layers/slideshow/README.md`).
@@ -155,7 +156,23 @@ Removing a layer from the scene also removes the steps that showed it.
 - `controls` are written as in layer.json. A control's `bind` names the block prop it drives, `look.<block id>.<prop>`.
 - `legend` and `attract` are the controller's, as in [present.md](present.md).
 
-The host offers each custom layer to surfaces as a layer manifest with the recipe under `custom`. Until the runtime's recipe player lands with the layer editor (#38), a custom layer can be placed, named and stepped through but draws nothing on the table.
+The host offers each custom layer to surfaces as a layer manifest with the recipe under `custom`, and the runtime's recipe player (`packages/runtime/src/recipe-player.ts`) draws it. The editor's layer builder writes recipes with `custom.save` (session.md).
+
+What the player draws today (`packages/sdk/src/recipe.ts`; WMS and tiles data are drawn by the WMS layer, not yet by a recipe):
+
+| Stage | Block | Props |
+| --- | --- | --- |
+| look | `points` | `color`, `radius_mm`, `opacity`, `glow` (0–1), `core`, `stroke`, `stroke_mm`, `label` (a column; place names only), `legend` |
+| look | `lines` | `color`, `width_mm`, `opacity`, `glow`, `casing`, `dash` (`solid`, `dashed`, `dotted`), `dash_mm`, `gap_mm`, `legend` |
+| look | `fill` | `color`, `opacity`, `stroke`, `stroke_mm`, `edge_glow`, `shadow_mm` (a soft shadow instead of height), `hatch`, `legend` |
+| motion | `pulse` (on points or fill) | `period_s`, `size_mm`, `rings`, `direction` (1 out, -1 in) |
+| motion | `draw-in` (on lines) | `duration_s`, `stagger` |
+| motion | `flow` (on lines) | `speed_mm` |
+
+- Sizes are millimetres on the physical table (visualisation.md E5), turned into metres by `table.width_cm`.
+- A colour is a palette slot (`"@accent"`), `"#rrggbb"`, or driven by a column: `{ "by": "kind", "kind": "category", "colors"?: { "<value>": "@cat2" } }` (six values shown, the rest grouped as Others) or `{ "by": "population", "kind": "number", "ramp": "sun", "classes": "continuous" | "equal" | "quantile", "count": 5 }`. A size may be `{ "by": "<column>", "range": [2, 8] }`.
+- A data `path` or dataset may be GeoJSON, or a CSV of points with `lon` and `lat` columns.
+- The builder writes the legend the looks give into `legend`.
 
 ## Composing a scene
 

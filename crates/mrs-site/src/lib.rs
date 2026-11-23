@@ -88,6 +88,9 @@ pub struct SiteInfo {
     pub data: BTreeMap<String, String>,
     /// The site's TV dashboard settings (theme, pages), as written. Validated on the TV by `@mrstudio/dashboard`.
     pub tv: Option<serde_json::Value>,
+    /// The table's palette (#93), as written. Surfaces resolve it against the SDK's sets.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub palette: Option<Palette>,
     /// The 3D model of the site (`scene.mesh`), for the editor to place it again.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mesh: Option<MeshInfo>,
@@ -233,6 +236,18 @@ impl Site {
                     if !(cm.is_finite() && cm > 0.0) {
                         out.push(format!("table.ribbons.{side}: cm must be a positive number of centimetres"));
                     }
+                }
+            }
+        }
+        if let Some(palette) = &m.palette {
+            if palette.set.as_deref().is_some_and(|set| !is_instance_id(set)) {
+                out.push("palette.set: a palette set is a name in lowercase letters, digits and dashes".into());
+            }
+            for (slot, colour) in &palette.slots {
+                if !is_instance_id(slot) || !Palette::is_colour(colour) {
+                    out.push(format!(
+                        "palette.slots.{slot}: a slot is a name in lowercase letters, digits and dashes holding a colour as #rrggbb"
+                    ));
                 }
             }
         }
@@ -437,6 +452,7 @@ impl Site {
             calibration: self.calibration.and_then(|c| c.table),
             data: self.data(),
             tv: m.tv.clone(),
+            palette: m.palette.clone(),
             mesh: m.scene.mesh.clone().map(|mesh| MeshInfo { mesh, extrude: m.scene.buildings.as_ref().is_none_or(|b| b.extrude) }),
         }
     }
@@ -461,37 +477,67 @@ impl Site {
     /// Rewrites the `layers` list of `site.json` and leaves every other key as it was written.
     /// The file is replaced in one step, so a crash cannot leave half a manifest behind.
     pub fn save_layers(&self, layers: &[LayerRef]) -> Result<(), SiteError> {
-        let layers = serde_json::to_value(layers).map_err(|e| SiteError::Parse { path: self.dir.join("site.json"), message: e.to_string() })?;
-        self.save_key("layers", layers)
+        let layers = serde_json::to_value(layers).map_err(|e| self.parse_error(e))?;
+        self.save_key("layers", Some(layers))
     }
 
     /// Rewrites the `tv` settings of `site.json` (theme, rail style, About page…) and leaves every
     /// other key as it was written. `null` removes them. The TV checks what is inside.
     pub fn save_tv(&self, tv: serde_json::Value) -> Result<(), SiteError> {
-        self.save_key("tv", tv)
+        self.save_key("tv", (!tv.is_null()).then_some(tv))
     }
 
-    /// Rewrites one top-level key of `site.json`, checking that the result still loads, and
-    /// replaces the file in one step.
-    fn save_key(&self, key: &str, new: serde_json::Value) -> Result<(), SiteError> {
+    /// Saves the custom layers under `custom` (none removes the key), leaving everything else as written.
+    pub fn save_custom(&self, custom: &BTreeMap<String, CustomLayer>) -> Result<(), SiteError> {
+        let value = (!custom.is_empty()).then(|| serde_json::to_value(custom)).transpose().map_err(|e| self.parse_error(e))?;
+        self.save_key("custom", value)
+    }
+
+    /// Saves the table's palette (none removes it), leaving everything else as written.
+    pub fn save_palette(&self, palette: Option<&Palette>) -> Result<(), SiteError> {
+        let value = palette.map(serde_json::to_value).transpose().map_err(|e| self.parse_error(e))?;
+        self.save_key("palette", value)
+    }
+
+    /// The custom layers as site.json now has them on disk.
+    pub fn saved_custom(&self) -> Result<BTreeMap<String, CustomLayer>, SiteError> {
+        let value = self.read_document()?;
+        serde_json::from_value(value.get("custom").cloned().unwrap_or_else(|| serde_json::json!({}))).map_err(|e| self.parse_error(e))
+    }
+
+    fn parse_error(&self, e: serde_json::Error) -> SiteError {
+        SiteError::Parse { path: self.dir.join("site.json"), message: e.to_string() }
+    }
+
+    fn read_document(&self) -> Result<serde_json::Value, SiteError> {
+        let path = self.dir.join("site.json");
+        let text = std::fs::read_to_string(&path).map_err(|source| SiteError::Io { path: path.clone(), source })?;
+        serde_json::from_str(&text).map_err(|e| self.parse_error(e))
+    }
+
+    /// Rewrites one top-level key of site.json (`None` removes it), checking that the
+    /// result still loads, and replaces the file in one step.
+    fn save_key(&self, key: &str, replacement: Option<serde_json::Value>) -> Result<(), SiteError> {
         let path = self.dir.join("site.json");
         let io = |source| SiteError::Io { path: path.clone(), source };
-        let parse = |e: serde_json::Error| SiteError::Parse { path: path.clone(), message: e.to_string() };
-        let text = std::fs::read_to_string(&path).map_err(io)?;
-        let mut value: serde_json::Value = serde_json::from_str(&text).map_err(parse)?;
-        match (new, value.as_object_mut()) {
-            (serde_json::Value::Null, Some(object)) => {
+        let mut value = self.read_document()?;
+        let object =
+            value.as_object_mut().ok_or_else(|| SiteError::Parse { path: path.clone(), message: "site.json is not an object".into() })?;
+        match replacement {
+            Some(replacement) => {
+                object.insert(key.to_string(), replacement);
+            }
+            None => {
                 object.remove(key);
             }
-            (new, _) => value[key] = new,
         }
         // What is written must load again.
-        let manifest: SiteManifest = serde_json::from_value(value.clone()).map_err(parse)?;
+        let manifest: SiteManifest = serde_json::from_value(value.clone()).map_err(|e| self.parse_error(e))?;
         let problems = Site { dir: self.dir.clone(), manifest, calibration: self.calibration }.problems();
         if !problems.is_empty() {
             return Err(SiteError::Invalid(problems));
         }
-        let text = serde_json::to_string_pretty(&value).map_err(parse)? + "\n";
+        let text = serde_json::to_string_pretty(&value).map_err(|e| self.parse_error(e))? + "\n";
         let temporary = self.dir.join("site.json.tmp");
         std::fs::write(&temporary, text).map_err(io)?;
         std::fs::rename(&temporary, &path).map_err(io)
