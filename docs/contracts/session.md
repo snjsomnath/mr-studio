@@ -269,6 +269,7 @@ Text frames are JSON. Binary frames are engine field frames (see engine.md).
 // surface to host
 { t: 'hello', protocol: 1, role: 'table' | 'tv' | 'phone' | 'dev', code?: string, resume?: string }
 { t: 'req', id: number, m: string, p?: object }
+{ t: 'alive', window: string, fps: number }  // table and tv windows of the desktop app, every 2 s (see Running unattended)
 
 // host to surface
 { t: 'welcome', surface: number, state: SessionState, manifests: LayerManifest[], resume?: string }   // manifests: every layer that can be in a scene
@@ -333,6 +334,32 @@ Events:
 | `site.problem` | `{ message, revision }`: site.json was changed outside MR Studio and does not load. The table keeps what it shows; undo puts the last good version back |
 | `site.tv`, `site.display` | `{ tv }`, `{ display }` after those settings changed |
 | `site.settings` | `{ name, timezone, branding }` after `site.table`, or an undo or outside edit of those keys. The controller starts again to show the new title and welcome line |
+
+### Running unattended (#79)
+
+A table in an exhibition runs all day with nobody at the computer.
+
+- **Engine.** The engine thread looks after itself. If it panics, or its GPU device is lost,
+  a new engine starts with the same scene. After a GPU failure it runs on the CPU until the
+  table is started again. Every surface gets `engine.restarted { message, backend }`: the
+  streams are gone, so the table and the controller reload. The incident goes to the
+  operator log.
+- **Windows.** Each table and controller window of the desktop app sends
+  `{ t: 'alive', window, fps }` every 2 s. `window` is the label the app gave it, as
+  `window.__MRS_WINDOW__`. Phones' and the editor's beats are ignored.
+- **Watchdog.** The app's watchdog (apps/studio/src-tauri/src/watchdog.rs) checks every 2 s:
+  - A window silent for 8 s is reloaded by navigation (a new or reloaded window gets 30 s to
+    load first), which works even when the page's
+    script has stopped. After two reloads that did not help, every window is opened again.
+  - A server that stopped by itself is started again and presented again.
+  - At the nightly restart time (`nightly_restart` in studio.json, "03:00"), a presented
+    table is started anew.
+- **Operator log.** `operator-YYYY-MM-DD.log` in the app's log folder, in local time. It
+  records starts, presenting, stopping, recoveries, engine incidents and nightly restarts.
+  90 days are kept. Displays and settings › Phones and startup has a button that shows it.
+- **Start with the computer.** "Start with this computer and present the last table by
+  itself" adds a login item: a LaunchAgent on macOS, a Run entry on Windows. The app starts
+  with `--at-login` and presents the last table on the saved screens.
 
 ### Settings: this computer or this table
 

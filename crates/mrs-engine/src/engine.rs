@@ -55,6 +55,11 @@ impl Engine {
         self.kernels.insert(kernel.info().id, kernel);
     }
 
+    /// Whether the GPU under this engine was lost. A lost engine is replaced, not repaired.
+    pub fn lost(&self) -> bool {
+        self.ctx.is_lost()
+    }
+
     pub fn info(&self) -> EngineInfo {
         EngineInfo {
             backend: self.ctx.backend,

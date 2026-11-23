@@ -77,6 +77,12 @@ async fn connection(socket: WebSocket, state: Arc<AppState>) {
                     Some(Ok(_)) => continue,
                 };
                 let Ok(message) = serde_json::from_str::<Value>(&text) else { continue };
+                // A table or controller window of the desktop app is alive and drawing (#79).
+                if message["t"] == "alive" && matches!(role, Role::Table | Role::Tv) {
+                    let window = message["window"].as_str().unwrap_or_default();
+                    state.health.beat(window, if role == Role::Table { "table" } else { "tv" }, message["fps"].as_f64().unwrap_or(0.0));
+                    continue;
+                }
                 if message["t"] != "req" {
                     continue;
                 }
