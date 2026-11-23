@@ -87,6 +87,9 @@ export function recipeModule(current: () => LayerManifest | undefined, watch: (c
       const surface = canvasSurface(ctx.map.addElement(), frame);
       let recipe: CustomLayer = current()?.custom ?? { name: '' };
       let shapes = new Map<string, Shapes>();
+      /** Street networks that crowds walk on, by dataset name. */
+      let streets = new Map<string, Shapes>();
+      const networks = () => [...new Set((recipe.motion ?? []).filter((m) => m.block === 'gravity').map((m) => String(m.props?.network ?? 'roads')))];
       let looks: CompiledLook[] = [];
       let dataKey = '';
       let styleKey = '';
@@ -106,13 +109,26 @@ export function recipeModule(current: () => LayerManifest | undefined, watch: (c
             }
           }),
         );
+        const nextStreets = new Map<string, Shapes>();
+        await Promise.all(
+          networks().map(async (name) => {
+            const url = dataUrl({ id: name, dataset: name }, ctx.site);
+            if (!url) return console.warn(`[custom ${recipe.name}] the site has no '${name}' dataset for a crowd to walk on`);
+            try {
+              nextStreets.set(name, readShapes(await loadData(url), frame));
+            } catch (error) {
+              console.warn(`[custom ${recipe.name}] ${name}: ${(error as Error).message}`);
+            }
+          }),
+        );
         shapes = next;
+        streets = nextStreets;
         styleKey = '';
       };
 
       // Restyles when the recipe, the control values or the palette changed; reloads only when the data did.
       const refresh = () => {
-        const nextData = JSON.stringify(recipe.data ?? []);
+        const nextData = JSON.stringify([recipe.data ?? [], networks()]);
         if (nextData !== dataKey) {
           dataKey = nextData;
           loading = loadAll().then(() => {
@@ -128,7 +144,11 @@ export function recipeModule(current: () => LayerManifest | undefined, watch: (c
         const mm = metresPerTableMm(ctx.site);
         const overrides = boundOverrides(recipe, ctx.params);
         looks = (recipe.look ?? [])
-          .map((block) => compileLook(block, (block.data && shapes.get(block.data)) || EMPTY, palette, mm, motionFor(recipe, block.id, overrides.motion), overrides.look[block.id]))
+          .map((block) => {
+            const motion = motionFor(recipe, block.id, overrides.motion);
+            if (motion.gravity) motion.gravity = { ...motion.gravity, streets: streets.get(String(motion.gravity.network ?? 'roads')) };
+            return compileLook(block, (block.data && shapes.get(block.data)) || EMPTY, palette, mm, motion, overrides.look[block.id]);
+          })
           .filter((look): look is CompiledLook => look !== null);
       };
 
