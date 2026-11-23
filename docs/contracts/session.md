@@ -147,8 +147,24 @@ interface LayerState {
   params: Record<string, unknown>;         // validated against the layer's controls
   shared: Record<string, unknown>;         // published by the table surface
   button: { name?: string; description?: string; icon?: string; side?: 'left' | 'right' };  // the site's own words for the layer on the controller; empty fields fall back to layer.json
+  parent?: string;                         // for an item: the layer it belongs to
+  steps?: Steps;                           // how Next moves through it, and a sequence's steps, as site.json has them
+  step?: StepState;                        // where Next is, while the layer is on (see below)
+  shown_by?: string;                       // for the layer a sequence is showing as its current step: that sequence
+}
+interface StepState {
+  index: number;                           // a sequence: its current step. Any other layer: how many sub-steps are revealed, 0..count
+  count: number;
+  sub?: { index: number; count: number };  // a sequence: the shown layer's sub-steps
+  playing: boolean;                        // moving on by itself (timed mode)
+  title?: string; description?: string; source?: string;  // a sequence's current step, for the controller's info strip
+  titles?: string[];                       // what each sub-step is called
 }
 ```
+
+**Steps.** A sequence (the slideshow) has `step` from the moment it turns on, at step 0. The host shows the current step's layer: it turns that layer on with the step's params (its own params come back when the step ends) and sets its `shown_by`; the layer shown before goes off. Turning the sequence off turns off the layer it shows. Opening a shown layer with `layer.activate` (its own button) takes it out of the sequence, so it stays on when the sequence closes. A sequence's own items come on only as its steps show them.
+
+A layer that reveals its parts one at a time reports how many with `layer.substeps` when it starts (`ctx.steps.define` in the SDK); its `step` then counts them, and a sequence showing it mirrors them in `step.sub`. Next on a sequence reveals the shown layer's next sub-step first; after the last one it moves on to the next step, or stays when the step's `next` (or the sequence's `reveal`) is `"stop"`. `"skip"` always moves on. `"previous"` goes to the start of the previous step. In timed mode the host moves on after each step's `duration_s` (default 8 s), playing sub-steps 1.4 s apart first. `loop` (default true) goes back to the first step after the last; without it a playing sequence stops at the end.
 
 `session.join_url` is the address the TV's QR code carries, `http://<address>:<port>/phone?c=<code>`.
 The host works the address out from the interface it listens on. It is `null` when the host listens on the loopback interface only, and it can be set outright (`SessionOptions::public_url`, `mrstudio dev --public-url`) when phones reach the studio through something else, such as the web dev server or a relay.
@@ -249,7 +265,9 @@ Requests:
 | `scene.remove` | `{ layer }` | tv, dev | Takes a layer, with its items, or one item out of the scene. Steps of a sequence that showed it go too; the answer says how many: `{ dropped_steps }` |
 | `scene.move` | `{ layer, index, parent? }` | tv, dev | Moves a layer (with its items) or an item to `index` in its list: the scene's layers (0 is the bottom), or its layer's items. `parent` moves it into another layer as an item; `parent: null` makes an item a layer of the scene. A layer with items, steps or a button cannot become an item |
 | `scene.set` | `{ layer, params?, active?, button?, hide?, steps? }` | tv, dev | Like `layer.set` and `layer.activate`, and also saved as the layer's starting state. For an item, `active` is whether it comes on with its layer. `button` is `{ name?, description?, icon?, side?, group?, order? }`: a value sets a field, `null` clears it, a field left out stays; items have none. `hide` is the whole list of control ids the controller and phones leave out. `steps` replaces the layer's steps whole (`null` clears them); only a sequence layer (`"sequence": true`) may have `steps.sequence`, and each step's params are checked against the layer it shows. `scene.add` takes `button` and `hide` too |
-| `layer.step` | `{ layer, to }` | planned | Moves a layer through its steps (`"next"`, `"previous"`, `"first"`, `"all"` or a number). Proposed in [present.md](present.md); built with the slideshow (#43) |
+| `layer.step` | `{ layer, to }` | all | Moves a layer that is on through its steps: `"next"`, `"previous"`, `"first"`, `"skip"` (the next step, whatever sub-steps are left), `"all"` (every sub-step revealed) or a step number. See Steps above |
+| `layer.play` | `{ layer, playing }` | all | Plays or pauses a layer's steps; the host moves them on |
+| `layer.substeps` | `{ layer, count, titles? }` | table, dev | A layer that is on says how many sub-steps it has (at most 64), with a name for each. 0 removes them |
 
 In every `layer.*` and `tool.input` request, `layer` is the instance id.
 Items are instances like any other: they are in `scene` (right after their layer) and `layers`, with `parent` in their state. Turning a layer on turns on its items that are set to come on with it, and turning it off turns all of them off, each with its own `state.layer` event. `layer.activate` on an item works only while its layer is on.

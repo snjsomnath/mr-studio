@@ -7,6 +7,7 @@ import { paramSender } from '../layer-manager.ts';
 import type { Store } from '../store.ts';
 import { LAYER_ICONS, icon } from './icons.ts';
 import { Importer, targetFor } from './importer.ts';
+import { slidesSection } from './slides.ts';
 import { AT_REST, Wizard } from './wizard.ts';
 import './editor.css';
 
@@ -236,6 +237,8 @@ export class Editor {
       const manifest = state && store.manifest(state.layer);
       // Items come and go with their layer; the host switches them.
       if (!state || !manifest || isAmbient(manifest) || state.parent) continue;
+      // A layer a slideshow is showing belongs to the slideshow while it stays open.
+      if (state.shown_by && state.shown_by === id) continue;
       const wanted = other === id || (state.active && id !== null && Boolean(alongside || manifest.alongside));
       if (state.active !== wanted) void connection.request('layer.activate', { layer: other, active: wanted }).catch(() => {});
     }
@@ -263,7 +266,8 @@ export class Editor {
   private follow(id: string, state: LayerState): void {
     if (this.wizard || (this.context.kind !== 'home' && this.context.kind !== 'layer')) return;
     const manifest = this.store.manifest(state.layer);
-    if (!manifest || isAmbient(manifest) || state.parent) return;
+    // A slideshow showing a layer is not someone opening that layer.
+    if (!manifest || isAmbient(manifest) || state.parent || state.shown_by) return;
     const mine = this.context.kind === 'layer' && this.context.id === id;
     if (state.active && !mine && !manifest.alongside) this.context = { kind: 'layer', id };
     else if (!state.active && mine) this.context = { kind: 'home' };
@@ -563,7 +567,10 @@ export class Editor {
     const layers = this.store.manifests.filter((m) => !isAmbient(m) && isOffered(m));
     if (kind === 'home' && ambient.length > 0) groups.push(this.group(AT_REST, ...this.column(ambient.map((m) => this.insertTool(m, false)))));
     // With a layer open, the map's ambient life goes into that layer: it shows while the layer is open.
-    if (kind === 'layer' && ambient.length > 0) {
+    const opened = kind === 'layer' ? this.store.state.layers[(this.context as { id: string }).id] : undefined;
+    // A slideshow's items are its slides, added from its Slides list.
+    const sequence = Boolean(opened && this.store.manifest(opened.layer)?.sequence);
+    if (kind === 'layer' && ambient.length > 0 && !sequence) {
       const layer = (this.context as { id: string }).id;
       groups.push(this.group('Add to this layer', ...this.column(ambient.map((m) => this.insertTool(m, false, layer)))));
     }
@@ -573,7 +580,7 @@ export class Editor {
       const parent = selected.state.parent ?? null;
       const onMap = isAmbient(selected.manifest) || parent !== null;
       const tools: HTMLElement[] = [];
-      if (onMap) {
+      if (onMap && !(parent && sequence)) {
         const on = parent ? this.comesOn(selected.id) : selected.state.active;
         const show = button('ed-tool', on ? 'Hide' : 'Show', on ? 'eye-off' : 'eye');
         show.title = parent ? 'Whether this comes on when its layer opens' : 'Show or hide this when no layer is open';
@@ -819,11 +826,14 @@ export class Editor {
   /** The settings form of one scene instance, generated from its manifest. */
   private settings(id: string, manifest: LayerManifest, title = 'Settings'): HTMLElement {
     const section = el('section', 'ed-section');
-    const item = Boolean(this.store.state.layers[id]?.parent);
+    const parentState = this.store.state.layers[this.store.state.layers[id]?.parent ?? ''];
+    const item = Boolean(parentState);
+    // A slide comes on when the slideshow reaches it, so it has no switch of its own.
+    const slide = Boolean(parentState && this.store.manifest(parentState.layer)?.sequence);
     const shown = el('div', 'control control-toggle');
     const label = el('label', 'control-label', item ? 'Comes on with the layer' : 'Shown on the map');
     // A layer is opened by its button, so only the map's own things and a layer's items have this switch.
-    shown.hidden = !isAmbient(manifest) && !item;
+    shown.hidden = (!isAmbient(manifest) && !item) || slide;
     const power = el('input');
     Object.assign(power, { type: 'checkbox', className: 'switch', id: `shown-${id}` });
     label.htmlFor = power.id;
@@ -948,8 +958,33 @@ export class Editor {
       const as = layerButton(layer.id, layer.manifest, layer.state);
       nodes.push(head(as.icon, as.name, 'Layer'));
       nodes.push(this.buttonSection(layer.id, layer.manifest));
-      nodes.push(this.settings(layer.id, layer.manifest));
-      nodes.push(this.itemsSection(layer.id, as.name, instances));
+      // A slideshow's slides come before its settings: they are what the author works on.
+      if (!layer.manifest.sequence) nodes.push(this.settings(layer.id, layer.manifest));
+      if (layer.manifest.sequence) {
+        nodes.push(
+          slidesSection(
+            {
+              store: this.store,
+              send: (method, params) => this.send(method, params),
+              select: (item) => {
+                this.layerItem = item;
+                this.render();
+              },
+              open: (other) => this.go({ kind: 'layer', id: other }),
+              watch: (callback) => {
+                const previous = this.sync.get(layer.id);
+                this.sync.set(layer.id, (next) => {
+                  previous?.(next);
+                  callback(next);
+                });
+              },
+              selected: this.layerItem,
+            },
+            layer.id,
+          ),
+        );
+        nodes.push(this.settings(layer.id, layer.manifest));
+      } else nodes.push(this.itemsSection(layer.id, as.name, instances));
       const open = instances.find((i) => i.id === this.layerItem && i.state.parent === layer.id);
       if (open) nodes.push(this.settings(open.id, open.manifest, open.manifest.name));
     } else {

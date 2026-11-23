@@ -118,6 +118,13 @@ export default defineLayer<Params>({
   manifest: manifest as LayerManifest,
 
   async table(ctx) {
+    // A slideshow made of layers draws nothing itself: the host shows each step's layer.
+    // The controller shows a sequence's titles and counter; nothing of the old slides is left on show.
+    const retire = () => ctx.publish({ index: 0, count: 0, title: '', description: '', source: '', legend: [], note: '' });
+    if (ctx.steps.state) {
+      retire();
+      return {};
+    }
     const canvas = ctx.map.addDrawing('slides', { opacity: ctx.params.opacity });
     const space = tableSpace(ctx.site);
     const configUrl = siteDataUrl(ctx.site, 'slideshow');
@@ -196,7 +203,19 @@ export default defineLayer<Params>({
       }
     });
 
+    let retired = false;
     ctx.onFrame((dt) => {
+      // Slides of layers were added while the old slides were on show.
+      if (ctx.steps.state) {
+        if (!retired) {
+          retired = true;
+          request++;
+          canvas.clear();
+          canvas.commit();
+          retire();
+        }
+        return;
+      }
       if (slides.length > 1 && ctx.params.play) {
         elapsed += dt;
         const seconds = ctx.params.seconds > 0 ? ctx.params.seconds : (slides[index()]?.duration ?? DEFAULT_DURATION_MS) / 1000;

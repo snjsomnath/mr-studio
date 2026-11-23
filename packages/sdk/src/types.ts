@@ -250,6 +250,32 @@ export interface LayerState {
   parent?: string;
   /** How Next moves through the layer, and a sequence's steps, as site.json has them. */
   steps?: Steps;
+  /** Where Next is while the layer is on: a sequence's current step, or the sub-steps the layer reported. */
+  step?: StepState;
+  /** For the layer a sequence is showing as its current step: that sequence. */
+  shown_by?: string;
+}
+
+/**
+ * Where Next is in a layer (docs/contracts/present.md, Steps). Moved with the host request
+ * `layer.step { layer, to: 'next' | 'previous' | 'first' | 'skip' | 'all' | number }`, and
+ * played or paused with `layer.play { layer, playing }`.
+ *
+ * For a sequence, `index` and `count` count its steps, and `sub` is the shown layer's
+ * sub-steps. For any other layer they count its sub-steps, and `index` is how many are
+ * revealed, from 0 to `count`.
+ */
+export interface StepState {
+  index: number;
+  count: number;
+  sub?: { index: number; count: number };
+  /** Moving on by itself: timed mode, or sub-steps played one after another. */
+  playing: boolean;
+  title?: string;
+  description?: string;
+  source?: string;
+  /** What each sub-step is called, for the controller's legend. */
+  titles?: string[];
 }
 
 /** The button that opens a layer on the controller, as the site's author set it. */
