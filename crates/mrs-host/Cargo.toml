@@ -20,6 +20,7 @@ tracing.workspace = true
 
 [dev-dependencies]
 tokio-tungstenite = "0.30"
+png = "0.18"
 
 [lints]
 workspace = true

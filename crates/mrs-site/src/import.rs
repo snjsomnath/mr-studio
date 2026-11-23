@@ -207,6 +207,11 @@ pub struct Report {
 }
 
 impl Report {
+    /// Adds a note, such as the credit for data fetched on the author's behalf.
+    pub fn note(&mut self, code: &'static str, message: impl Into<String>) {
+        self.issues.push(Issue::new(code, Severity::Note, message));
+    }
+
     /// A report that stops before reading anything: one blocker, nothing counted.
     pub fn refused(target: &Target, code: &'static str, message: impl Into<String>, summary: impl Into<String>) -> Self {
         Self {
@@ -519,7 +524,7 @@ pub fn apply(site: &Site, mut prepared: Prepared) -> Result<(Site, Report), Site
     }
 }
 
-fn write_atomically(path: &PathBuf, text: &str) -> Result<(), SiteError> {
+pub(crate) fn write_atomically(path: &PathBuf, text: &str) -> Result<(), SiteError> {
     let temporary = path.with_extension("json.tmp");
     let io = |source| SiteError::Io { path: path.clone(), source };
     std::fs::write(&temporary, text).map_err(io)?;

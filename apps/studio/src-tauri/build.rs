@@ -31,6 +31,7 @@ fn main() {
         "presenting_state",
         "open_home",
         "open_settings",
+        "open_view",
         "new_table",
         "quit",
         "colour_state",
@@ -47,6 +48,8 @@ fn main() {
         "set_update_check",
         "install_update",
         "open_link",
+        "file_action",
+        "table_details",
     ]);
     tauri_build::try_build(tauri_build::Attributes::new().app_manifest(commands)).expect("the Tauri build step");
 }

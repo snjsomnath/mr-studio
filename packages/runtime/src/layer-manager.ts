@@ -100,6 +100,8 @@ export class LayerManager {
     } else if (running?.ready) {
       const changed = changedKeys(previous?.params, state.params);
       if (changed.length > 0) this.guard(id, () => running.handlers.update?.(changed));
+      const revealed = state.step?.index ?? 0;
+      if (revealed !== (previous?.step?.index ?? 0)) this.guard(id, () => running.handlers.step?.(revealed));
     }
   }
 
@@ -137,6 +139,17 @@ export class LayerManager {
           if (JSON.stringify(published[key]) !== JSON.stringify(value)) patch[key] = published[key] = value;
         }
         if (Object.keys(patch).length > 0) this.connection.request('layer.publish', { layer: id, values: patch }).catch(() => {});
+      },
+      steps: {
+        define: (count, titles) => {
+          this.connection.request('layer.substeps', { layer: id, count, titles }).catch((error) => console.warn(`[${id}] sub-steps`, error));
+        },
+        get revealed() {
+          return store.state.layers[id]?.step?.index ?? 0;
+        },
+        get state() {
+          return store.state.layers[id]?.step;
+        },
       },
       onFrame: (callback) => running.frames.push(callback),
       onCleanup: track,

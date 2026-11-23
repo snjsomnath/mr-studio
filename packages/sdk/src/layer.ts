@@ -2,7 +2,7 @@ import type { PointerSample } from './blocks/interaction.ts';
 import type { Colormap } from './colormap.ts';
 import type { EngineClient } from './engine.ts';
 import type { ModelHandle } from './model.ts';
-import type { FieldFrame, LayerManifest, Params, SiteInfo, ToolGeometry, ToolInput } from './types.ts';
+import type { FieldFrame, LayerManifest, Params, SiteInfo, StepState, ToolGeometry, ToolInput } from './types.ts';
 
 export interface FieldOverlayStyle {
   colormap?: Colormap;
@@ -148,6 +148,8 @@ export interface TableContext<P = Params> extends ContextBase<P> {
   readonly pointer: TablePointer;
   /** Publishes derived values for panels. Only changed keys are sent. */
   publish(values: Record<string, unknown>): void;
+  /** Sub-steps: parts of the layer that Next reveals one at a time, such as the categories of a map. */
+  readonly steps: LayerSteps;
   /** Runs every animation frame while the layer is active. `dt` is seconds since the last call. */
   onFrame(callback: (dt: number) => void): void;
   /** Registers cleanup to run when the layer is turned off. */
@@ -167,6 +169,23 @@ export interface TableHandlers {
   action?(action: string): void;
   /** A spatial input arrived. */
   tool?(input: ToolInput): void;
+  /** Next or Previous changed how many sub-steps are revealed (`ctx.steps.revealed`). */
+  step?(revealed: number): void;
+}
+
+/**
+ * Sub-steps (docs/contracts/present.md, Steps). A layer that reveals its parts one at a
+ * time declares how many there are when it starts; the controller's Next then walks them,
+ * and inside a slideshow moves on to the next slide after the last one (or stops there,
+ * as the slide's Next behaviour says).
+ */
+export interface LayerSteps {
+  /** Declares `count` sub-steps, with a name for each for the controller. 0 removes them. */
+  define(count: number, titles?: string[]): void;
+  /** How many sub-steps are revealed now: 0 (the overview) to the count. */
+  readonly revealed: number;
+  /** The layer's steps as the host has them: a sequence's current step, or the sub-steps it defined. */
+  readonly state: StepState | undefined;
 }
 
 export interface PanelHandlers {

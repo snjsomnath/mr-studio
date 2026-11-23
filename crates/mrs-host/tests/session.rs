@@ -848,7 +848,7 @@ async fn a_new_table_takes_its_buildings_without_a_restart() {
     assert!(report["error"].as_str().unwrap().contains("not something a table can take"));
 
     // The table is renamed, moved and turned: the site is rewritten, the scene re-baked and every surface told.
-    let place = serde_json::to_vec(&json!({ "name": "Harbour", "origin": { "lon": 11.968, "lat": 57.6996 }, "extent": { "width_m": 400, "height_m": 250, "rotation_deg": 15 } })).unwrap();
+    let place = serde_json::to_vec(&json!({ "name": "Harbour", "origin": { "lon": 11.968, "lat": 57.6996 }, "extent": { "width_m": 400, "height_m": 250, "rotation_deg": 15 }, "table_width_cm": 80 })).unwrap();
     let (status, answer) = http_post(&host, "/api/site/place", "", &place).await;
     assert_eq!(status, 200, "{answer}");
     assert_eq!(answer["site"]["name"], "Harbour");
@@ -858,6 +858,8 @@ async fn a_new_table_takes_its_buildings_without_a_restart() {
     assert_eq!(changed["site"]["data"]["buildings"], "data/buildings.geojson", "the data stays");
     let saved: Value = serde_json::from_str(&std::fs::read_to_string(dir.join("site.json")).unwrap()).unwrap();
     assert_eq!(saved["origin"], json!({ "lon": 11.968, "lat": 57.6996 }));
+    // The table's width sets the model scale (400 m on 80 cm is 1 : 500); its height follows the shape.
+    assert_eq!(saved["table"], json!({ "width_cm": 80.0, "height_cm": 50.0 }));
     // A bad place is refused with the reason and changes nothing.
     let bad =
         serde_json::to_vec(&json!({ "origin": { "lon": 11.968, "lat": 95 }, "extent": { "width_m": 400, "height_m": 250 } })).unwrap();
@@ -904,10 +906,13 @@ async fn buildings_come_from_openstreetmap_when_asked() {
         json!([p(0.0, 0.0), p(0.0, 0.0003), p(0.0002, 0.0003), p(0.0002, 0.0), p(0.0, 0.0)])
     };
     // One building on the table, one in the fetch margin just west of it.
-    let (url, asked) = overpass(json!({ "elements": [
+    let (url, asked) = overpass(
+        json!({ "elements": [
         { "type": "way", "id": 1, "tags": { "building": "yes", "height": "14" }, "geometry": ring(57.700, 11.970) },
         { "type": "way", "id": 2, "tags": { "building": "house", "building:levels": "2" }, "geometry": ring(57.700, 11.9610) },
-    ] }), 1)
+    ] }),
+        1,
+    )
     .await;
     std::env::set_var("MRS_OVERPASS_URL", &url);
     let host = host_for(dir.clone()).await;
@@ -937,4 +942,93 @@ async fn buildings_come_from_openstreetmap_when_asked() {
     assert_eq!(report["issues"][0]["code"], "osm.unavailable");
     host.shutdown().await;
     let _ = std::fs::remove_dir_all(&base);
+}
+
+/// A Terrarium tile server whose ground rises 1 m per tile pixel eastwards, busy once per tile.
+async fn terrarium() -> (String, std::sync::Arc<std::sync::Mutex<Vec<String>>>) {
+    let asked = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+    let log = asked.clone();
+    let app = axum::Router::new().route(
+        "/{z}/{x}/{name}",
+        axum::routing::get(move |axum::extract::Path((z, x, name)): axum::extract::Path<(u32, u32, String)>| {
+            let log = log.clone();
+            async move {
+                let path = format!("{z}/{x}/{name}");
+                let first = {
+                    let mut log = log.lock().unwrap();
+                    log.push(path.clone());
+                    log.iter().filter(|p| **p == path).count() == 1
+                };
+                if first {
+                    return axum::response::IntoResponse::into_response(axum::http::StatusCode::SERVICE_UNAVAILABLE);
+                }
+                let mut bytes = Vec::new();
+                {
+                    let mut encoder = png::Encoder::new(&mut bytes, 256, 256);
+                    encoder.set_color(png::ColorType::Rgb);
+                    let mut writer = encoder.write_header().unwrap();
+                    // 32768 + 20 + column: (R, G) = (128, 20 + column), up to 275, which carries into R.
+                    let pixels: Vec<u8> = (0..256 * 256)
+                        .flat_map(|i| {
+                            let v = 32768 + 20 + (i % 256) as u32;
+                            [(v / 256) as u8, (v % 256) as u8, 0]
+                        })
+                        .collect();
+                    writer.write_image_data(&pixels).unwrap();
+                }
+                axum::response::IntoResponse::into_response(([(axum::http::header::CONTENT_TYPE, "image/png")], bytes))
+            }
+        }),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}", listener.local_addr().unwrap());
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    (url, asked)
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_ground_comes_from_free_elevation_when_asked() {
+    let base = std::env::temp_dir().join(format!("mrs-host-elevation-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&base);
+    let dir = base.join("hills");
+    mrs_site::create::create(&dir, "Hills", 11.97, 57.70, 1000.0, 600.0, 0.0).unwrap();
+    let (url, asked) = terrarium().await;
+    std::env::set_var("MRS_ELEVATION_URL", &url);
+    let host = host_for(dir.clone()).await;
+    let mut table = Surface::join(&host, "table", None).await.unwrap();
+
+    let (status, report) = http_post(&host, "/api/data/import?target=terrain&source=elevation", "", b"").await;
+    assert_eq!(status, 200, "{report}");
+    assert!(report["issues"].as_array().unwrap().iter().any(|i| i["code"] == "source.elevation"), "{report}");
+    table.event("site.changed").await;
+    let site = mrs_site::Site::load(&dir).unwrap();
+    assert!(site.manifest.scene.terrain.as_ref().is_some_and(|t| t.path.ends_with(".tif")), "the ground is a GeoTIFF");
+    // Every tile was busy once and asked again.
+    let asked = asked.lock().unwrap().clone();
+    assert!(!asked.is_empty() && asked.len() % 2 == 0, "{asked:?}");
+    assert!(asked.iter().all(|p| p.starts_with("14/")), "{asked:?}");
+
+    // Only the ground comes from the elevation service.
+    let (status, report) = http_post(&host, "/api/data/inspect?target=buildings&source=elevation", "", b"").await;
+    assert_eq!(status, 422);
+    assert_eq!(report["issues"][0]["code"], "elevation.unavailable");
+    host.shutdown().await;
+    let _ = std::fs::remove_dir_all(&base);
+}
+
+#[tokio::test]
+async fn the_editor_keeps_a_picture_of_the_table_for_home() {
+    let site = scratch_site("thumbnail");
+    let host = host_for(site.clone()).await;
+    let url = format!("http://{}/api/site/thumbnail", host.addr);
+    let client = reqwest::Client::new();
+    let jpeg = vec![0xFF, 0xD8, 0xFF, 0xE0, 1, 2, 3];
+    let sent = client.post(&url).body(jpeg.clone()).send().await.unwrap();
+    assert_eq!(sent.status(), 204);
+    assert_eq!(std::fs::read(site.join(mrs_host::THUMBNAIL)).unwrap(), jpeg);
+    // Anything but a JPEG is refused.
+    let refused = client.post(&url).body("<svg/>").send().await.unwrap();
+    assert_eq!(refused.status(), 400);
+    host.shutdown().await;
+    let _ = std::fs::remove_dir_all(&site);
 }

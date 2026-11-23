@@ -134,9 +134,17 @@ interface TableContext<P> {
   readonly map: MapHandle;              // field overlays
   readonly model: ModelHandle;          // the 3D model: fields, lights, materials, focus, pick (see model.md)
   readonly pointer: TablePointer;       // mouse, touch and pen on the table surface
+  readonly steps: LayerSteps;           // sub-steps that the controller's Next reveals one at a time
   onFrame(cb: (dt: number) => void): void;   // every animation frame while the layer is on
   onCleanup(cb: () => void): void;      // extra teardown
 }
+interface LayerSteps {
+  define(count: number, titles?: string[]): void;  // say how many parts Next reveals; call it when the layer starts
+  readonly revealed: number;            // how many are revealed now, 0 (the overview) to count
+  readonly state: StepState | undefined;  // the layer's steps as the host has them
+}
+// TableHandlers also has step?(revealed: number), called when Next or Previous changes `revealed`.
+
 
 // PanelContext has site, params, setParams, shared, onCleanup and `panel`, the id of the custom panel being drawn.
 
@@ -243,7 +251,7 @@ interface FlowOverlayStyle {
 Fields, flows, shapes and drawings (`addDrawing`) are drawn at the layer's place in the scene: above the layers before it in `site.json` and below those after it.
 A layer can be in a scene more than once. Each copy runs `table` on its own, with its own params, so state must live in the closure.
 
-Helpers in `@mrstudio/sdk` for drawing layers: `tableSpace(site)` turns WGS84 into table metres, `readSiteData(site, name)` and `siteDataUrl(site, name)` read a named dataset, `geojsonLines`, `geojsonPolygons` and `geojsonPoints` convert GeoJSON, `streetLines(site)` gives the `roads` dataset or a generated grid, `track`, `along` and `nearestAlong` move things along a polyline, and `seededRandom` keeps "random" scenes the same on every table.
+Helpers in `@mrstudio/sdk` for drawing layers: `tableSpace(site)` turns WGS84 into table metres, `readSiteData(site, name)` and `siteDataUrl(site, name)` read a named dataset, `geojsonLines`, `geojsonPolygons` and `geojsonPoints` convert GeoJSON, `streetLines(site)` gives the `roads` dataset (none when the site has none: nothing is made up), `track`, `along` and `nearestAlong` move things along a polyline, and `seededRandom` keeps "random" scenes the same on every table.
 `packages/layers/trees` is the smallest animated example and `packages/layers/basemap` the smallest static one.
 
 Elements (`addElement`) and canvases (`addCanvas`) sit above the whole scene, in the order they were added. They do not follow the scene's draw order yet.

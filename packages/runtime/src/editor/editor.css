@@ -78,6 +78,154 @@ body[data-role='edit'] {
   color: var(--ed-text);
 }
 
+button.ed-brand {
+  all: unset;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 28px;
+  padding: 0 8px;
+  margin-left: -8px;
+  border-radius: 6px;
+  font-weight: 600;
+  color: var(--ed-accent);
+  cursor: default;
+}
+
+button.ed-brand:hover {
+  background: #e3e6ec;
+}
+
+button.ed-brand:focus-visible {
+  outline: 2px solid var(--ed-accent);
+}
+
+/* ---- File menu (#130) ---- */
+
+.ed-file {
+  position: relative;
+  margin-left: -8px;
+}
+
+.ed-file-button {
+  all: unset;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 8px;
+  border-radius: 6px;
+  font-size: 13px;
+  color: var(--ed-text);
+}
+
+.ed-file-button:hover,
+.ed-file-button[aria-expanded='true'] {
+  background: #e3e6ec;
+}
+
+.ed-file-button:focus-visible {
+  outline: 2px solid var(--ed-accent);
+}
+
+.ed-file-menu {
+  position: absolute;
+  top: 32px;
+  left: 0;
+  z-index: 50;
+  min-width: 248px;
+  padding: 4px;
+  border: 1px solid var(--ed-line);
+  border-radius: 8px;
+  background: var(--ed-panel);
+  box-shadow: 0 8px 24px rgba(16, 24, 40, 0.14);
+}
+
+.ed-file-menu hr {
+  margin: 4px 6px;
+  border: 0;
+  border-top: 1px solid var(--ed-line);
+}
+
+.ed-file-item {
+  all: unset;
+  box-sizing: border-box;
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  width: 100%;
+  height: 28px;
+  align-items: center;
+  padding: 0 10px;
+  border-radius: 5px;
+  font-size: 13px;
+  color: var(--ed-text);
+}
+
+.ed-file-item:not(:disabled):hover,
+.ed-file-item:focus-visible {
+  background: var(--ed-accent);
+  color: #fff;
+}
+
+.ed-file-item:disabled {
+  color: #a0a6b1;
+}
+
+.ed-file-item kbd {
+  font: inherit;
+  font-size: 12px;
+  color: var(--ed-text-2);
+}
+
+.ed-file-item:not(:disabled):hover kbd,
+.ed-file-item:focus-visible kbd {
+  color: #fff;
+}
+
+.ed-saved.is-flash {
+  animation: ed-saved-flash 1.2s ease-out;
+}
+
+@keyframes ed-saved-flash {
+  0% {
+    color: var(--ed-accent);
+    transform: scale(1.08);
+  }
+  100% {
+    transform: none;
+  }
+}
+
+.ed-leave {
+  width: 380px;
+  padding: 18px 20px;
+  border: 1px solid var(--ed-line);
+  border-radius: 10px;
+  color: var(--ed-text);
+  box-shadow: 0 16px 40px rgba(16, 24, 40, 0.2);
+}
+
+.ed-leave::backdrop {
+  background: rgba(16, 24, 40, 0.25);
+}
+
+.ed-leave h2 {
+  margin: 0 0 8px;
+  font-size: 15px;
+}
+
+.ed-leave p {
+  margin: 0 0 16px;
+  color: var(--ed-text-2);
+}
+
+.ed-leave-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 .ed-name {
   flex: 1;
   display: flex;
@@ -298,6 +446,24 @@ body[data-role='edit'] {
 .ed-row[aria-current='true'] {
   background: var(--ed-accent-soft);
   color: #22388f;
+}
+
+/* A layer's item sits indented under its layer in the tree. */
+.ed-row.is-item {
+  position: relative;
+  padding-left: 28px;
+  min-height: 24px;
+}
+
+.ed-row.is-item::before {
+  content: '';
+  position: absolute;
+  left: 14px;
+  top: 0;
+  bottom: 50%;
+  width: 8px;
+  border-left: 1px solid var(--ed-line, #d5d9e0);
+  border-bottom: 1px solid var(--ed-line, #d5d9e0);
 }
 
 .ed-row.is-off .ed-row-label,
@@ -707,14 +873,27 @@ body[data-role='edit'] .table-surface {
   cursor: default;
 }
 
-.wz-dot {
-  display: grid;
-  place-items: center;
+.wz-dot,
+.im-help {
+  /* A glyph centred in a circle, the same in WebKit (the Mac app) and Chromium: a square
+     flex box with no padding, line height 1, and the line trimmed to the cap height where
+     the browser can, so the figure is centred, not its line box (#123). */
+  box-sizing: border-box;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
   width: 18px;
   height: 18px;
+  padding: 0;
   border-radius: 50%;
   border: 1px solid var(--ed-line);
   font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  text-box: trim-both cap alphabetic;
 }
 
 .wz-step button[aria-current='step'] {
@@ -900,6 +1079,96 @@ body[data-role='edit'] .table-surface {
   gap: 12px;
 }
 
+/* ---- Table size and model scale ---- */
+
+.wz-ratio {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.wz-ratio input {
+  flex: 1;
+  min-width: 0;
+}
+
+.wz-ratio-one {
+  font-weight: 400;
+  color: var(--ed-text-2);
+}
+
+.wz-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: -4px 0 8px;
+}
+
+.wz-chip {
+  padding: 3px 10px;
+  border: 1px solid var(--ed-line, #d5d9e0);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--ed-text);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.wz-chip:hover {
+  border-color: var(--ed-accent, #3557d4);
+}
+
+.wz-chip.is-pressed {
+  border-color: var(--ed-accent, #3557d4);
+  background: var(--ed-accent-soft, #e8edfc);
+  color: var(--ed-accent, #3557d4);
+  font-weight: 600;
+}
+
+.wz-pair + .wz-hint {
+  margin: -6px 0 14px;
+}
+
+.wz-map-slot {
+  margin-bottom: 14px;
+}
+
+.wz-scale-words {
+  margin: 0 0 14px;
+}
+
+.wz-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 12px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.wz-check input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--ed-accent, #3557d4);
+}
+
+.wz-tiles {
+  margin: 0 0 14px;
+  padding: 12px;
+  border: 1px solid var(--ed-line, #d5d9e0);
+  border-radius: 8px;
+}
+
+.wz-tiles .wz-field {
+  max-width: 50%;
+}
+
+.wz-tiles > p {
+  margin: 0;
+}
+
 .wz-problem {
   margin: 16px 0 0;
   padding: 8px 12px;
@@ -962,9 +1231,9 @@ body[data-role='edit'] .table-surface {
   cursor: nwse-resize;
 }
 
-.pm-handle.is-turn {
-  border-radius: 50%;
-  cursor: grab;
+.pm-turn button {
+  font-size: 15px;
+  line-height: 1;
 }
 
 .pm-note {
@@ -1208,16 +1477,42 @@ body[data-role='edit'] .ed-surface .table-frame {
 /* ---- The importer (#71): Your place rows and the Add data dialog ---- */
 .im-help {
   margin-left: 6px;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  border: 1px solid var(--ed-line, #d5d9e0);
   background: transparent;
   color: inherit;
-  font-size: 11px;
-  line-height: 1;
+  font-family: inherit;
   cursor: pointer;
-  vertical-align: 1px;
+  vertical-align: 2px;
+  appearance: none;
+}
+
+.im-busy {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--ed-text-2);
+}
+
+.im-spinner {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--ed-accent-soft);
+  border-top-color: var(--ed-accent);
+  border-radius: 50%;
+  animation: im-spin 0.8s linear infinite;
+}
+
+@keyframes im-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .im-spinner {
+    animation-duration: 2.4s;
+  }
 }
 
 .im-help[aria-expanded='true'] {
@@ -1451,4 +1746,188 @@ body[data-role='edit'] .ed-surface .table-frame {
   align-items: center;
   gap: 12px;
   margin-top: 10px;
+}
+
+/* ---- A slideshow's slides (#43) ---- */
+
+.ed-slide-list {
+  display: grid;
+  gap: 6px;
+  margin: 0 0 8px;
+  padding: 0;
+  list-style: none;
+}
+
+.ed-slide {
+  border: 1px solid var(--ed-line);
+  border-radius: 6px;
+  background: var(--ed-panel);
+}
+
+.ed-slide[aria-current='true'] {
+  border-color: var(--ed-accent, #3b5bdb);
+  box-shadow: 0 0 0 1px var(--ed-accent, #3b5bdb);
+}
+
+.ed-slide-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 6px 4px 8px;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  font-size: 13px;
+}
+
+.ed-slide-number {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--ed-chrome);
+  font-size: 11px;
+  color: var(--ed-text-2);
+}
+
+.ed-slide-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ed-slide-tools {
+  display: flex;
+  gap: 2px;
+  margin-left: auto;
+}
+
+.ed-slide-tool {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--ed-text-2);
+}
+
+.ed-slide-tool:hover:not(:disabled) {
+  background: var(--ed-chrome);
+  color: var(--ed-text);
+}
+
+.ed-slide-tool:disabled {
+  opacity: 0.35;
+}
+
+.ed-slide-details {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 8px 8px 34px;
+}
+
+.ed-slide-details input[type='text'] {
+  flex: 1 1 100%;
+}
+
+.ed-slide-details select {
+  flex: 1;
+  min-width: 0;
+}
+
+.ed-slide-seconds {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--ed-text-2);
+}
+
+.ed-slide-seconds input {
+  width: 56px;
+}
+
+.ed-slide-add {
+  width: 100%;
+  margin-bottom: 12px;
+}
+
+.ed-hint {
+  margin: 4px 0 0;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ed-text-2);
+}
+
+.ed-slides-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.ed-slides-head h3 {
+  margin: 0;
+}
+
+.ed-slide-position {
+  font-size: 12px;
+  color: var(--ed-text-2);
+}
+
+.ed-slide-try {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  padding: 2px 8px;
+  border: 1px solid var(--ed-line);
+  border-radius: 6px;
+  background: var(--ed-panel);
+  font-size: 12px;
+}
+
+.ed-slide.is-live .ed-slide-number {
+  background: var(--ed-accent);
+  color: #fff;
+}
+
+/* ---- A layer's style under its row in the guide (the base map at rest) ---- */
+
+.wz-style {
+  margin: -2px 0 4px;
+  padding: 12px 14px;
+  border: 1px solid var(--ed-line, #d5d9e0);
+  border-radius: 8px;
+  background: var(--ed-panel-2, #f7f8fa);
+}
+
+.wz-style .wz-field {
+  margin-bottom: 6px;
+}
+
+.wz-style select {
+  height: 32px;
+  padding: 0 8px;
+  border: 1px solid var(--ed-line, #d5d9e0);
+  border-radius: 6px;
+  background: #fff;
+  font: inherit;
+  font-weight: 400;
+}
+
+.wz-style p {
+  margin: 0;
+}
+
+.wz-style p:empty {
+  display: none;
 }

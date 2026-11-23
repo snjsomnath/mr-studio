@@ -36,6 +36,8 @@ export interface ImportTarget {
   accept: string;
   /** Whether OpenStreetMap can provide it. */
   osm: boolean;
+  /** Whether the free elevation service can provide it (the ground). */
+  elevation?: boolean;
   /** What a good file looks like, for the "?" beside the row. */
   example: string;
 }
@@ -60,6 +62,7 @@ export const TARGETS: ImportTarget[] = [
     about: 'The height of the land, so hills shade and shelter as they do outside. A GeoTIFF.',
     accept: '.tif,.tiff',
     osm: false,
+    elevation: true,
     example: 'A GeoTIFF of ground heights in metres, such as a Lantmäteriet elevation model. It may be larger than the table and on a national grid; if it does not say which, you will be asked for its EPSG code (3006 for SWEREF99 TM).',
   },
   {
@@ -117,7 +120,7 @@ export interface ImporterHost {
   cancel?(): void;
 }
 
-type Source = { kind: 'file'; file: File } | { kind: 'osm' };
+type Source = { kind: 'file'; file: File } | { kind: 'osm' } | { kind: 'elevation' };
 
 /** Turns lon/lat into metres on the table: x to the right, y up, from its centre. */
 export function tableMetres(site: SiteInfo): (lon: number, lat: number) => [number, number] {
@@ -239,6 +242,9 @@ export class Importer {
   private crs?: string;
   private report?: ImportReport;
   private busy = false;
+  /** When the work in hand began, and whether it writes, for the progress line. */
+  private busySince = 0;
+  private writing = false;
   private failed?: string;
   private help = false;
   /** In Add data: what the file is, and the name of a dataset of the author's own. */
@@ -345,6 +351,7 @@ export class Importer {
     });
     const choose = el('button', 'ed-button', has ? 'Replace' : 'Choose a file');
     choose.type = 'button';
+    choose.disabled = this.busy;
     choose.addEventListener('click', () => {
       if (this.chosen === 'own' && !this.target()) return this.say('Give the dataset a name first.');
       input.click();
@@ -353,9 +360,18 @@ export class Importer {
     if (item?.osm) {
       const fetchOsm = el('button', 'ed-button', 'From OpenStreetMap');
       fetchOsm.type = 'button';
+      fetchOsm.disabled = this.busy;
       fetchOsm.title = `Fetch ${item.name.toLowerCase()} around the table from OpenStreetMap. Needs the internet.`;
       fetchOsm.addEventListener('click', () => this.start({ kind: 'osm' }));
       buttons.push(fetchOsm);
+    }
+    if (item?.elevation) {
+      const fetchHeights = el('button', 'ed-button', 'Download free elevation');
+      fetchHeights.type = 'button';
+      fetchHeights.disabled = this.busy;
+      fetchHeights.title = 'Fetch ground heights around the table from free, worldwide elevation data (about 30 m detail). Needs the internet.';
+      fetchHeights.addEventListener('click', () => this.start({ kind: 'elevation' }));
+      buttons.push(fetchHeights);
     }
     return buttons;
   }
@@ -384,10 +400,37 @@ export class Importer {
     void this.check(false);
   }
 
+  /** A spinner and a line that says what is happening and for how long, updated every second (#124). */
+  private progress(what: string): HTMLElement {
+    const line = el('p', 'im-busy');
+    line.setAttribute('role', 'status');
+    const spinner = el('span', 'im-spinner');
+    spinner.setAttribute('aria-hidden', 'true');
+    const words = el('span');
+    line.append(spinner, words);
+    const osm = this.source?.kind === 'osm';
+    const heights = this.source?.kind === 'elevation';
+    const say = () => {
+      const seconds = Math.floor((Date.now() - this.busySince) / 1000);
+      const time = seconds >= 2 ? ` ${seconds} s` : '';
+      if (this.writing) words.textContent = `Bringing it into the table and rebuilding what it shows…${time}`;
+      else if (heights) words.textContent = seconds < 15 ? `Downloading free elevation…${time}` : `The elevation service is slow, so this can take a minute. It tries each piece again if it has to…${time}`;
+      else if (!osm) words.textContent = `Reading ${what}…${time}`;
+      else if (seconds < 15) words.textContent = `Asking OpenStreetMap…${time}`;
+      else words.textContent = `OpenStreetMap is busy, so this can take a minute. It tries again, on other servers if it has to…${time}`;
+    };
+    say();
+    const timer = setInterval(() => {
+      if (!line.isConnected || !this.busy) clearInterval(timer);
+      else say();
+    }, 1000);
+    return line;
+  }
+
   private reportBox(): HTMLElement {
     const report = el('div', 'wz-report');
-    const what = this.source?.kind === 'file' ? this.source.file.name : 'OpenStreetMap';
-    if (this.busy) report.append(el('p', undefined, this.source?.kind === 'osm' ? 'Asking OpenStreetMap…' : `Reading ${what}…`));
+    const what = this.source?.kind === 'file' ? this.source.file.name : this.source?.kind === 'elevation' ? 'free elevation' : 'OpenStreetMap';
+    if (this.busy) report.append(this.progress(what));
     else if (this.failed) report.append(el('p', 'wz-issue is-blocker', this.failed));
     else if (this.report) {
       const answer = this.report;
@@ -476,6 +519,7 @@ export class Importer {
     for (const option of this.options) query.set(option, '1');
     if (this.crs) query.set('crs', this.crs);
     if (this.source?.kind === 'osm') query.set('source', 'osm');
+    if (this.source?.kind === 'elevation') query.set('source', 'elevation');
     return query;
   }
 
@@ -487,6 +531,8 @@ export class Importer {
       return false;
     }
     this.busy = true;
+    this.busySince = Date.now();
+    this.writing = write;
     this.failed = undefined;
     this.render();
     let done = false;
@@ -516,6 +562,8 @@ export class Importer {
     const site = this.host.site();
     this.host.hold(true);
     this.busy = true;
+    this.busySince = Date.now();
+    this.writing = true;
     this.render();
     try {
       const response = await fetch('/api/site/place', {

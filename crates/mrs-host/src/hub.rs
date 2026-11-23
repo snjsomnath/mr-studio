@@ -9,7 +9,7 @@ use std::hash::{BuildHasher, Hasher};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
 
-use mrs_site::{is_instance_id, LayerButton, LayerItem, LayerRef, Site, SiteInfo, Steps};
+use mrs_site::{is_instance_id, LayerButton, LayerItem, LayerRef, Reveal, Site, SiteInfo, StepMode, Steps};
 use serde::Serialize;
 use serde_json::{json, Map, Value};
 use tokio::sync::{broadcast, Notify};
@@ -23,6 +23,12 @@ pub const MAX_SCENE_LAYERS: usize = 64;
 const SLOT_COLOURS: [&str; 8] = ["#ff6b6b", "#4dabf7", "#51cf66", "#fcc419", "#cc5de8", "#ff922b", "#20c997", "#f06595"];
 /// The most positions one tool input may carry.
 const MAX_VERTICES: usize = 256;
+/// How long a sequence step stays in timed mode when it gives no `duration_s`.
+const STEP_SECONDS: f64 = 8.0;
+/// The pause between sub-steps while a layer plays them (the Chalmers demo's).
+const SUB_STEP_SECONDS: f64 = 1.4;
+/// The most sub-steps a layer may report.
+const MAX_SUB_STEPS: usize = 64;
 
 /// How the session treats phones. The defaults are the contract's numbers.
 #[derive(Debug, Clone)]
@@ -105,6 +111,76 @@ pub struct LayerState {
     /// How Next moves through the layer, and a sequence's steps, as site.json has them.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub steps: Option<Steps>,
+    /// Where Next is, while the layer is on: a sequence's current step, or the sub-steps a
+    /// layer reported (`layer.substeps`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub step: Option<StepState>,
+    /// For the layer a sequence is showing as its current step: that sequence.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub shown_by: Option<String>,
+}
+
+/// Where Next is in a layer (`docs/contracts/present.md`, Steps). For a sequence, `index`
+/// and `count` count its steps and `sub` is the shown layer's sub-steps. For any other
+/// layer they count its sub-steps: `index` is how many are revealed, 0 to `count`.
+#[derive(Debug, Clone, Serialize)]
+pub struct StepState {
+    pub index: usize,
+    pub count: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sub: Option<SubSteps>,
+    /// Moving on by itself: timed mode, or sub-steps played one after another.
+    pub playing: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
+    /// For sub-steps: what each one is called, for the controller's legend.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub titles: Vec<String>,
+    /// When a playing layer moves on next.
+    #[serde(skip)]
+    due: Option<Instant>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct SubSteps {
+    pub index: usize,
+    pub count: usize,
+}
+
+/// Where a `layer.step` goes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum StepTo {
+    Next,
+    /// Next as the timer sends it: it never stops at the end of a step's sub-steps.
+    Auto,
+    /// To the next step, whatever sub-steps are left.
+    Skip,
+    Previous,
+    First,
+    /// Every sub-step revealed.
+    All,
+    At(usize),
+}
+
+impl StepTo {
+    fn parse(value: &Value) -> Result<Self, String> {
+        match value {
+            Value::String(s) => match s.as_str() {
+                "next" => Ok(Self::Next),
+                "skip" => Ok(Self::Skip),
+                "previous" => Ok(Self::Previous),
+                "first" => Ok(Self::First),
+                "all" => Ok(Self::All),
+                other => Err(format!("unknown step '{other}'; use next, previous, first, skip, all or a number")),
+            },
+            Value::Number(n) => n.as_u64().map(|n| Self::At(n as usize)).ok_or_else(|| "a step number is 0 or more".into()),
+            _ => Err("missing to".into()),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -204,6 +280,16 @@ fn saved_layers(scene: &[Instance]) -> Vec<LayerRef> {
 }
 
 /// The positions of a layer and its items: the layer at `at`, then everything with it as parent.
+/// The layer the sequence `id` is showing as its current step.
+fn shown(scene: &[Instance], id: &str) -> Option<usize> {
+    scene.iter().position(|i| i.state.shown_by.as_deref() == Some(id))
+}
+
+/// The catalogue index of the last instance pushed, while the scene is being built.
+fn parent_def(scene: &[Instance]) -> usize {
+    scene.last().map_or(0, |i| i.def)
+}
+
 fn block(scene: &[Instance], at: usize) -> std::ops::Range<usize> {
     let id = &scene[at].id;
     let end = at + 1 + scene[at + 1..].iter().take_while(|i| i.parent.as_ref() == Some(id)).count();
@@ -289,9 +375,11 @@ impl Hub {
             let parent = Self::instance(&catalog, find(&reference.r#use)?, layer, None, true)?;
             let on = parent.state.active;
             scene.push(parent);
+            // A sequence's items come on one at a time, as its steps show them.
+            let sequence = catalog[parent_def(&scene)].manifest["sequence"] == true;
             for item in &reference.items {
                 let mut item = Self::instance(&catalog, find(&item.r#use)?, item_ref(item), Some(reference.id.clone()), true)?;
-                item.state.active &= on;
+                item.state.active &= on && !sequence;
                 scene.push(item);
             }
         }
@@ -304,7 +392,7 @@ impl Hub {
         let join_url = join_base.map(|base| format!("{}/phone?c={code}", base.trim_end_matches('/')));
         let session = SessionInfo { id: format!("{:016x}", random_u64()), code, port, join_url };
         let (events, _) = broadcast::channel(256);
-        Ok(Self {
+        let hub = Self {
             site: site.clone(),
             info: RwLock::new(site.info()),
             session,
@@ -312,7 +400,17 @@ impl Hub {
             catalog,
             inner: Mutex::new(Inner { scene, seats: Vec::new(), next_surface: 1 }),
             events,
-        })
+        };
+        // A sequence that starts on shows its first step.
+        {
+            let mut inner = hub.inner.lock().unwrap();
+            for at in 0..inner.scene.len() {
+                if inner.scene[at].state.active && hub.is_sequence(&inner.scene[at]) {
+                    hub.switch(&mut inner.scene, at, true);
+                }
+            }
+        }
+        Ok(hub)
     }
 
     /// Builds an instance from a site.json entry. With `lenient`, params that do not
@@ -337,6 +435,8 @@ impl Hub {
             hide: saved.hide.iter().filter(|id| layer.controls.iter().any(|c| &c.id == *id)).cloned().collect(),
             parent: parent.clone(),
             steps: saved.steps.clone(),
+            step: None,
+            shown_by: None,
         };
         Ok(Instance { id, def, parent, saved, state })
     }
@@ -514,8 +614,73 @@ impl Hub {
                     return Err(format!("'{layer}' comes on with '{parent}'; open that layer first"));
                 }
             }
+            // Opened from its own button, a layer a sequence is showing leaves the sequence.
+            if active && inner.scene[index].state.shown_by.is_some() {
+                self.release(&mut inner.scene, index, false);
+            }
             self.switch(&mut inner.scene, index, active);
             return Ok(json!({}));
+        }
+        match method {
+            "layer.step" => {
+                let to = StepTo::parse(&p["to"])?;
+                if to == StepTo::Auto {
+                    return Err("missing to".into());
+                }
+                if !inner.scene[index].state.active {
+                    return Err(format!("'{layer}' is off; open it first"));
+                }
+                self.advance(&mut inner.scene, index, to, Instant::now())?;
+                return Ok(json!({}));
+            }
+            "layer.play" => {
+                let playing = p["playing"].as_bool().ok_or("missing playing")?;
+                let now = Instant::now();
+                let scene = &mut inner.scene;
+                let step = scene[index].state.step.as_mut().ok_or_else(|| format!("'{layer}' has no steps to play"))?;
+                step.playing = playing;
+                self.plan(scene, index, now);
+                self.emit_layer(&scene[index].id, &scene[index].state);
+                return Ok(json!({}));
+            }
+            "layer.substeps" => {
+                if !role.may_publish() {
+                    return Err("only the table reports a layer's sub-steps".into());
+                }
+                let count = p["count"].as_u64().ok_or("missing count")? as usize;
+                if count > MAX_SUB_STEPS {
+                    return Err(format!("a layer has at most {MAX_SUB_STEPS} sub-steps"));
+                }
+                let titles: Vec<String> = match &p["titles"] {
+                    Value::Null => Vec::new(),
+                    Value::Array(list) => {
+                        list.iter().take(count).map(|t| t.as_str().unwrap_or_default().chars().take(80).collect()).collect()
+                    }
+                    _ => return Err("titles is a list of words".into()),
+                };
+                let scene = &mut inner.scene;
+                if !scene[index].state.active {
+                    return Err(format!("'{layer}' is off"));
+                }
+                let timed = scene[index].saved.steps.as_ref().and_then(|s| s.mode) == Some(StepMode::Timed);
+                scene[index].state.step = (count > 0).then_some(StepState {
+                    index: 0,
+                    count,
+                    sub: None,
+                    playing: timed,
+                    title: None,
+                    description: None,
+                    source: None,
+                    titles,
+                    due: None,
+                });
+                let now = Instant::now();
+                self.plan(scene, index, now);
+                self.emit_layer(&scene[index].id, &scene[index].state);
+                self.mirror(scene, index, now);
+                return Ok(json!({}));
+            }
+            _ => {}
         }
         let def = &self.catalog[inner.scene[index].def];
         let state = &mut inner.scene[index].state;
@@ -763,7 +928,21 @@ impl Hub {
                 };
                 self.switch(&mut inner.scene, index, on);
             }
-            Some((index, None)) => self.emit_layer(&inner.scene[index].id, &inner.scene[index].state),
+            Some((index, None)) => {
+                let scene = &mut inner.scene;
+                // A sequence that is on shows its steps as they are now.
+                if !p["steps"].is_null() || p.get("steps").is_some() {
+                    if let Some(old) = shown(scene, &scene[index].id) {
+                        self.release(scene, old, true);
+                    }
+                    let at = scene[index].state.step.take().map_or(0, |s| s.index);
+                    if scene[index].state.active && self.is_sequence(&scene[index]) {
+                        let count = scene[index].saved.steps.as_ref().map_or(0, |s| s.sequence.len());
+                        self.show_step(scene, index, at.min(count.saturating_sub(1)), Instant::now());
+                    }
+                }
+                self.emit_layer(&scene[index].id, &scene[index].state)
+            }
             None => self.emit("state.scene", json!({ "scene": inner.order(), "layers": inner.layers() })),
         }
         Ok(result)
@@ -772,14 +951,229 @@ impl Hub {
     /// Turns an instance on or off and tells every surface. A layer's items follow it:
     /// on with it when they are set to come on, off with it always.
     fn switch(&self, scene: &mut [Instance], index: usize, active: bool) {
+        let sequence = self.is_sequence(&scene[index]);
+        if !active {
+            scene[index].state.step = None;
+        }
         scene[index].state.active = active;
-        self.emit_layer(&scene[index].id, &scene[index].state);
+        if sequence && !active {
+            if let Some(shown) = shown(scene, &scene[index].id) {
+                self.release(scene, shown, true);
+            }
+        }
+        // A sequence opens on its first step, so every surface sees its steps as it turns on.
+        if sequence && active && scene[index].state.step.is_none() {
+            self.show_step(scene, index, 0, Instant::now());
+        } else {
+            self.emit_layer(&scene[index].id, &scene[index].state);
+        }
         if scene[index].parent.is_none() {
             for n in block(scene, index).skip(1) {
-                let on = active && scene[n].saved.active;
+                // A sequence's own items come on only as its steps show them.
+                let on = active && scene[n].saved.active && !sequence;
                 if scene[n].state.active != on {
                     scene[n].state.active = on;
                     self.emit_layer(&scene[n].id, &scene[n].state);
+                }
+            }
+        }
+    }
+
+    /// A layer whose package is a sequence (the slideshow) and that has steps to show.
+    fn is_sequence(&self, instance: &Instance) -> bool {
+        self.catalog[instance.def].manifest["sequence"] == true && instance.saved.steps.as_ref().is_some_and(|s| !s.sequence.is_empty())
+    }
+
+    /// Shows step `to` of the sequence at `at`: the step's layer comes on with the step's
+    /// params, and the layer the sequence showed before goes off.
+    fn show_step(&self, scene: &mut [Instance], at: usize, to: usize, now: Instant) {
+        let id = scene[at].id.clone();
+        let steps = scene[at].saved.steps.clone().unwrap_or_default();
+        let Some(step) = steps.sequence.get(to) else { return };
+        if let Some(old) = shown(scene, &id) {
+            self.release(scene, old, true);
+        }
+        let playing = match &scene[at].state.step {
+            Some(state) => state.playing,
+            None => steps.mode == Some(StepMode::Timed),
+        };
+        scene[at].state.step = Some(StepState {
+            index: to,
+            count: steps.sequence.len(),
+            sub: None,
+            playing,
+            title: step.title.clone(),
+            description: step.description.clone(),
+            source: step.source.clone(),
+            titles: Vec::new(),
+            due: None,
+        });
+        self.plan(scene, at, now);
+        self.emit_layer(&id, &scene[at].state);
+        if let Some(n) = scene.iter().position(|i| i.id == step.layer) {
+            let mut params = self.catalog[scene[n].def].defaults();
+            params.extend(scene[n].saved.params.clone());
+            params.extend(step.params.clone());
+            scene[n].state.params = params;
+            scene[n].state.shown_by = Some(id);
+            scene[n].state.step = None;
+            self.switch(scene, n, true);
+        }
+    }
+
+    /// Takes a layer back from the sequence that showed it: its own params again, and off
+    /// with `off`.
+    fn release(&self, scene: &mut [Instance], n: usize, off: bool) {
+        let mut params = self.catalog[scene[n].def].defaults();
+        params.extend(scene[n].saved.params.clone());
+        scene[n].state.params = params;
+        scene[n].state.shown_by = None;
+        scene[n].state.step = None;
+        if off {
+            self.switch(scene, n, false);
+        } else {
+            self.emit_layer(&scene[n].id, &scene[n].state);
+        }
+    }
+
+    /// Moves a layer's steps. A sequence walks the shown layer's sub-steps first, then moves
+    /// to its next step unless the step says to stop. Any other layer walks its sub-steps.
+    fn advance(&self, scene: &mut [Instance], at: usize, to: StepTo, now: Instant) -> Result<(), String> {
+        let id = scene[at].id.clone();
+        let Some(state) = scene[at].state.step.clone() else {
+            return Err(format!("'{id}' has no steps"));
+        };
+        let looping = scene[at].saved.steps.as_ref().and_then(|s| s.r#loop).unwrap_or(true);
+        if self.is_sequence(&scene[at]) {
+            let steps = scene[at].saved.steps.clone().unwrap_or_default();
+            let shown = shown(scene, &id);
+            let sub = shown.and_then(|n| scene[n].state.step.as_ref().map(|s| (n, s.index, s.count)));
+            let reveal = steps.sequence.get(state.index).and_then(|s| s.next).or(steps.reveal).unwrap_or(Reveal::ThenNext);
+            let target = match to {
+                StepTo::Next | StepTo::Auto => match sub {
+                    Some((n, index, count)) if index < count => {
+                        self.set_sub(scene, n, index + 1, now);
+                        None
+                    }
+                    Some((_, _, count)) if count > 0 && reveal == Reveal::Stop && to == StepTo::Next => None,
+                    _ => Some(state.index + 1),
+                },
+                StepTo::Skip => Some(state.index + 1),
+                StepTo::Previous => Some(if state.index == 0 {
+                    if looping {
+                        state.count - 1
+                    } else {
+                        0
+                    }
+                } else {
+                    state.index - 1
+                }),
+                StepTo::First => Some(0),
+                StepTo::All => {
+                    if let Some((n, _, count)) = sub {
+                        self.set_sub(scene, n, count, now);
+                    }
+                    None
+                }
+                StepTo::At(n) if n >= state.count => return Err(format!("'{id}' has {} steps", state.count)),
+                StepTo::At(n) => Some(n),
+            };
+            match target {
+                Some(n) if n >= state.count && !looping => {
+                    // The end: a playing sequence stops there.
+                    if let Some(step) = scene[at].state.step.as_mut() {
+                        step.playing = false;
+                        step.due = None;
+                    }
+                    self.emit_layer(&id, &scene[at].state);
+                }
+                Some(n) => self.show_step(scene, at, n % state.count.max(1), now),
+                None => {}
+            }
+            return Ok(());
+        }
+        let index = match to {
+            StepTo::Next | StepTo::Auto | StepTo::Skip if state.index < state.count => state.index + 1,
+            StepTo::Next | StepTo::Skip if looping => 0,
+            StepTo::Next | StepTo::Auto | StepTo::Skip => {
+                if let Some(step) = scene[at].state.step.as_mut() {
+                    step.playing = false;
+                }
+                state.index
+            }
+            StepTo::Previous => state.index.saturating_sub(1),
+            StepTo::First => 0,
+            StepTo::All => state.count,
+            StepTo::At(n) => n.min(state.count),
+        };
+        self.set_sub(scene, at, index, now);
+        Ok(())
+    }
+
+    /// Reveals the first `index` sub-steps of a layer, and tells the sequence showing it.
+    fn set_sub(&self, scene: &mut [Instance], n: usize, index: usize, now: Instant) {
+        if let Some(step) = scene[n].state.step.as_mut() {
+            step.index = index;
+        }
+        self.plan(scene, n, now);
+        self.emit_layer(&scene[n].id, &scene[n].state);
+        self.mirror(scene, n, now);
+    }
+
+    /// Copies a shown layer's sub-steps into the sequence showing it, for the controller.
+    fn mirror(&self, scene: &mut [Instance], n: usize, now: Instant) {
+        let Some(by) = scene[n].state.shown_by.clone() else { return };
+        let Some(at) = scene.iter().position(|i| i.id == by) else { return };
+        let sub = scene[n].state.step.as_ref().map(|s| SubSteps { index: s.index, count: s.count });
+        let titles = scene[n].state.step.as_ref().map(|s| s.titles.clone()).unwrap_or_default();
+        if let Some(step) = scene[at].state.step.as_mut() {
+            step.sub = sub;
+            step.titles = titles;
+        }
+        self.plan(scene, at, now);
+        self.emit_layer(&by, &scene[at].state);
+    }
+
+    /// Sets when a playing layer moves on: the next sub-step after a short pause, otherwise
+    /// the next step after the step's duration.
+    fn plan(&self, scene: &mut [Instance], at: usize, now: Instant) {
+        let sequence = self.is_sequence(&scene[at]);
+        let duration = scene[at]
+            .state
+            .step
+            .as_ref()
+            .and_then(|s| scene[at].saved.steps.as_ref()?.sequence.get(s.index)?.duration_s)
+            .filter(|d| d.is_finite() && *d > 0.0)
+            .unwrap_or(STEP_SECONDS);
+        let Some(step) = scene[at].state.step.as_mut() else { return };
+        let left = match (sequence, step.sub) {
+            (true, Some(sub)) => sub.index < sub.count,
+            (true, None) => false,
+            (false, _) => step.index < step.count,
+        };
+        let seconds = if left { SUB_STEP_SECONDS } else { duration };
+        // Sub-steps are played by the sequence showing the layer, not by the layer itself.
+        let shown = scene[at].state.shown_by.is_some();
+        step.due = (step.playing && !shown && (sequence || left)).then(|| now + Duration::from_secs_f64(seconds));
+    }
+
+    /// Moves on every playing layer whose time has come. The host calls it a few times a second.
+    pub fn tick(&self) {
+        self.tick_at(Instant::now());
+    }
+
+    fn tick_at(&self, now: Instant) {
+        let mut inner = self.inner.lock().unwrap();
+        let scene = &mut inner.scene;
+        let due: Vec<String> = scene
+            .iter()
+            .filter(|i| i.state.active && i.state.step.as_ref().is_some_and(|s| s.playing && s.due.is_some_and(|d| d <= now)))
+            .map(|i| i.id.clone())
+            .collect();
+        for id in due {
+            if let Some(at) = scene.iter().position(|i| i.id == id) {
+                if let Err(e) = self.advance(scene, at, StepTo::Auto, now) {
+                    tracing::warn!("{id}: {e}");
                 }
             }
         }
@@ -943,6 +1337,146 @@ mod tests {
         let site = Site::load(dir).unwrap();
         let catalog = crate::layers::load_catalog(&site, &site.dir.join("../../packages/layers")).unwrap();
         Hub::new(&site, catalog, 4170, Some("http://10.0.0.5:4170/".into()), options).unwrap()
+    }
+
+    /// A hub on a private copy of the sample site, for tests that edit the scene.
+    fn scratch_hub(name: &str) -> Hub {
+        fn copy(from: &std::path::Path, to: &std::path::Path) {
+            std::fs::create_dir_all(to).unwrap();
+            for entry in std::fs::read_dir(from).unwrap() {
+                let entry = entry.unwrap();
+                let target = to.join(entry.file_name());
+                if entry.file_type().unwrap().is_dir() {
+                    copy(&entry.path(), &target);
+                } else {
+                    std::fs::copy(entry.path(), target).unwrap();
+                }
+            }
+        }
+        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let dir = std::env::temp_dir().join(format!("mrs-hub-test-{}-{name}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        copy(&root.join("sites/sample"), &dir);
+        let site = Site::load(&dir).unwrap();
+        let catalog = crate::layers::load_catalog(&site, &root.join("packages/layers")).unwrap();
+        Hub::new(&site, catalog, 4170, None, SessionOptions::default()).unwrap()
+    }
+
+    fn layer(hub: &Hub, id: &str) -> Value {
+        hub.welcome(0)["state"]["layers"][id].clone()
+    }
+
+    #[test]
+    fn a_sequence_shows_its_steps_and_next_walks_sub_steps_first() {
+        let hub = scratch_hub("steps");
+        let dev = |method: &str, p: Value| hub.request(Role::Dev, 0, method, &p);
+        dev("layer.activate", json!({ "layer": "trees", "active": false })).unwrap();
+        dev("scene.add", json!({ "use": "trees", "parent": "slideshow", "id": "slide-trees" })).unwrap();
+        let steps = json!({ "mode": "manual", "loop": false, "sequence": [
+            { "layer": "sunlight", "params": { "hour": 9 }, "title": "Morning" },
+            { "layer": "slide-trees", "params": { "size": 2 } },
+            { "layer": "trees", "next": "stop" }
+        ] });
+        dev("scene.set", json!({ "layer": "slideshow", "steps": steps })).unwrap();
+        assert_eq!(layer(&hub, "slide-trees")["active"], false, "a sequence's item waits for its step");
+
+        // Opening the slideshow shows the first step at once, with that step's params.
+        dev("layer.activate", json!({ "layer": "slideshow", "active": true })).unwrap();
+        let show = layer(&hub, "slideshow");
+        assert_eq!(show["step"], json!({ "index": 0, "count": 3, "playing": false, "title": "Morning" }));
+        let sun = layer(&hub, "sunlight");
+        assert_eq!(
+            (sun["active"].clone(), sun["params"]["hour"].clone(), sun["shown_by"].clone()),
+            (json!(true), json!(9.0), json!("slideshow"))
+        );
+
+        // Next: the sun study goes off with its own params back, the slideshow's own trees come on.
+        dev("layer.step", json!({ "layer": "slideshow", "to": "next" })).unwrap();
+        let sun = layer(&hub, "sunlight");
+        assert_eq!((sun["active"].clone(), sun["params"]["hour"].clone(), sun["shown_by"].clone()), (json!(false), json!(15), Value::Null));
+        assert_eq!(layer(&hub, "slide-trees")["active"], true);
+        assert_eq!(layer(&hub, "slide-trees")["params"]["size"], 2.0);
+
+        // A step's layer reports sub-steps: Next reveals them one by one, then moves on.
+        assert!(dev("layer.substeps", json!({ "layer": "slide-trees", "count": 2 })).is_ok());
+        assert!(
+            hub.request(Role::Phone, 0, "layer.substeps", &json!({ "layer": "slide-trees", "count": 2 })).is_err(),
+            "only the table reports"
+        );
+        assert_eq!(layer(&hub, "slideshow")["step"]["sub"], json!({ "index": 0, "count": 2 }));
+        dev("layer.step", json!({ "layer": "slideshow", "to": "next" })).unwrap();
+        assert_eq!(layer(&hub, "slide-trees")["step"]["index"], 1);
+        dev("layer.step", json!({ "layer": "slideshow", "to": "next" })).unwrap();
+        assert_eq!(layer(&hub, "slideshow")["step"]["sub"], json!({ "index": 2, "count": 2 }));
+        dev("layer.step", json!({ "layer": "slideshow", "to": "next" })).unwrap();
+        assert_eq!(layer(&hub, "slideshow")["step"]["index"], 2);
+        assert_eq!(layer(&hub, "slide-trees")["active"], false);
+
+        // The last step says stop: once its sub-steps are revealed, Next stays; skip moves on.
+        dev("layer.substeps", json!({ "layer": "trees", "count": 1, "titles": ["Oaks"] })).unwrap();
+        assert_eq!(layer(&hub, "slideshow")["step"]["titles"], json!(["Oaks"]));
+        dev("layer.step", json!({ "layer": "slideshow", "to": "next" })).unwrap();
+        dev("layer.step", json!({ "layer": "slideshow", "to": "next" })).unwrap();
+        assert_eq!(layer(&hub, "slideshow")["step"]["index"], 2, "stop holds the step");
+        // Without loop, skipping past the end stays on the last step.
+        dev("layer.step", json!({ "layer": "slideshow", "to": "skip" })).unwrap();
+        assert_eq!(layer(&hub, "slideshow")["step"]["index"], 2);
+        dev("layer.step", json!({ "layer": "slideshow", "to": "first" })).unwrap();
+        assert_eq!(layer(&hub, "sunlight")["active"], true);
+        assert_eq!(layer(&hub, "trees")["active"], false);
+        assert!(dev("layer.step", json!({ "layer": "slideshow", "to": 7 })).is_err());
+
+        // Opening a shown layer from its own button leaves the slideshow: closing the slideshow keeps it.
+        dev("layer.activate", json!({ "layer": "sunlight", "active": true })).unwrap();
+        assert_eq!(layer(&hub, "sunlight")["shown_by"], Value::Null);
+        assert_eq!(layer(&hub, "sunlight")["params"]["hour"], 15);
+        dev("layer.activate", json!({ "layer": "slideshow", "active": false })).unwrap();
+        assert_eq!(layer(&hub, "sunlight")["active"], true);
+        assert_eq!(layer(&hub, "slideshow")["step"], Value::Null);
+        assert!(dev("layer.step", json!({ "layer": "slideshow", "to": "next" })).is_err(), "closed");
+    }
+
+    #[test]
+    fn a_timed_sequence_moves_on_by_itself() {
+        let hub = scratch_hub("timed");
+        let dev = |method: &str, p: Value| hub.request(Role::Dev, 0, method, &p);
+        let steps = json!({ "mode": "timed", "sequence": [
+            { "layer": "sunlight", "duration_s": 5 },
+            { "layer": "wind" }
+        ] });
+        dev("scene.set", json!({ "layer": "slideshow", "steps": steps })).unwrap();
+        dev("layer.activate", json!({ "layer": "slideshow", "active": true })).unwrap();
+        assert_eq!(layer(&hub, "slideshow")["step"]["playing"], true);
+        let t0 = Instant::now();
+        hub.tick_at(t0 + Duration::from_secs(4));
+        assert_eq!(layer(&hub, "slideshow")["step"]["index"], 0);
+        hub.tick_at(t0 + Duration::from_secs(6));
+        assert_eq!(layer(&hub, "slideshow")["step"]["index"], 1);
+        assert_eq!(layer(&hub, "wind")["active"], true);
+        // The default step is eight seconds, and the sequence loops by default.
+        hub.tick_at(t0 + Duration::from_secs(13));
+        assert_eq!(layer(&hub, "slideshow")["step"]["index"], 1);
+        hub.tick_at(t0 + Duration::from_secs(15));
+        assert_eq!(layer(&hub, "slideshow")["step"]["index"], 0);
+        // Paused, it stays.
+        dev("layer.play", json!({ "layer": "slideshow", "playing": false })).unwrap();
+        hub.tick_at(t0 + Duration::from_secs(60));
+        assert_eq!(layer(&hub, "slideshow")["step"]["index"], 0);
+    }
+
+    #[test]
+    fn a_layer_of_its_own_walks_its_sub_steps() {
+        let hub = scratch_hub("substeps");
+        let dev = |method: &str, p: Value| hub.request(Role::Dev, 0, method, &p);
+        assert!(dev("layer.step", json!({ "layer": "trees", "to": "next" })).is_err(), "no sub-steps reported");
+        dev("layer.substeps", json!({ "layer": "trees", "count": 3 })).unwrap();
+        dev("layer.step", json!({ "layer": "trees", "to": "next" })).unwrap();
+        dev("layer.step", json!({ "layer": "trees", "to": "all" })).unwrap();
+        assert_eq!(layer(&hub, "trees")["step"]["index"], 3);
+        dev("layer.step", json!({ "layer": "trees", "to": "previous" })).unwrap();
+        assert_eq!(layer(&hub, "trees")["step"]["index"], 2);
+        dev("layer.activate", json!({ "layer": "trees", "active": false })).unwrap();
+        assert_eq!(layer(&hub, "trees")["step"], Value::Null, "reported again when it opens");
     }
 
     fn slots(hub: &Hub) -> Vec<(usize, bool)> {

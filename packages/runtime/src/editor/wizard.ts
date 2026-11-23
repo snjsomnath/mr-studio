@@ -1,9 +1,11 @@
 import { THEMES } from '@mrstudio/dashboard';
-import type { LayerManifest, LayerState } from '@mrstudio/sdk';
+import type { LayerManifest, LayerState, SelectControl } from '@mrstudio/sdk';
 import { defaultSideOf, el, isAmbient, isOffered, layerButton } from '../controls.ts';
 import type { Store } from '../store.ts';
 import { icon } from './icons.ts';
 import { Importer, TARGETS, targetFor } from './importer.ts';
+import { ModelImporter } from './model-import.ts';
+import { ScaleFields } from './place-scale.ts';
 import { PlaceMap } from './place-map.ts';
 import type { Placement } from './place-map.ts';
 import { parsePlace } from './place.ts';
@@ -76,13 +78,17 @@ export class Wizard {
   step: number;
   /** One importer per row of "Your place", kept across redraws so a file being checked stays. */
   private importers = new Map<string, Importer>();
+  private model: ModelImporter | null = null;
   private readonly host: WizardHost;
   /** The row of "Your place" that a layer needing data sent the author to. */
   private wanted: string | null = null;
   /** The "Name and place" form as the author left it, kept across redraws. */
-  private where: { name: string; centre: string; width: string; height: string; rotation: string } | null = null;
+  private where: { name: string; centre: string; width: string; height: string; rotation: string; table: string; tile: string } | null = null;
+  private scaleFields: ScaleFields | null = null;
   /** The map in "Name and place", made once: it keeps its view across redraws. */
   private placeMap: PlaceMap | null = null;
+  /** The tile grid's step in metres of ground, for the place map; null for none. */
+  private tileM: number | null = null;
   private moving = false;
   private problem = '';
 
@@ -91,7 +97,7 @@ export class Wizard {
     // Someone who has just named and placed the table goes on to what it is made of.
     this.step = options.step ?? (options.created ? PLACE : WHERE);
     host.store.onScene(() => this.render());
-    host.store.onLayer(() => this.step === BUTTONS && this.syncButtons());
+    host.store.onLayer(() => (this.step === BUTTONS || this.step === REST) && this.syncButtons());
     host.store.onTv(() => this.step === BUTTONS && this.syncLook());
     this.render();
   }
@@ -123,7 +129,8 @@ export class Wizard {
     for (const id of [...store.state.scene].reverse()) {
       const state = store.state.layers[id];
       const manifest = state && store.manifest(state.layer);
-      if (manifest) list.push({ id, manifest, state });
+      // The guide works with the table's own layers; a layer's items are edited in the editor.
+      if (manifest && !state.parent) list.push({ id, manifest, state });
     }
     return list;
   }
@@ -216,7 +223,11 @@ export class Wizard {
     } else if (this.step === PLACE) {
       host.show(null);
       title('Your place', 'Bring in the files your table is made from. They are copied into the table and stay on this computer. Buildings matter most; the rest can come later.');
-      for (const item of TARGETS) body.append(this.importer(item.target).element);
+      for (const item of TARGETS) {
+        body.append(this.importer(item.target).element);
+        // The 3D model sits under the buildings: it gives them their heights.
+        if (item.target === 'buildings') body.append(this.modelRow().element);
+      }
       if (this.returnTo !== null && this.returnTo !== PLACE) {
         const to = this.returnTo;
         const back = el('button', 'ed-button', `Back to ${WIZARD_STEPS[to]}`);
@@ -235,6 +246,7 @@ export class Wizard {
       host.show(null);
       title(AT_REST, 'What the map shows when no layer is open, and nobody is using the table. Pick a base map and some life to make it feel like a place.');
       body.append(this.choices(host.store.manifests.filter((m) => isAmbient(m) && isOffered(m)), instances, false));
+      this.syncButtons();
     } else if (this.step === LAYERS) {
       title('Layers', 'Each layer answers one question, such as where the sun falls. Every layer you pick becomes a button on the controller.');
       body.append(this.choices(host.store.manifests.filter((m) => !isAmbient(m) && (isOffered(m) || instances.some((i) => i.manifest.id === m.id))), instances, true));
@@ -363,6 +375,13 @@ export class Wizard {
     return importer;
   }
 
+  /** The "3D model" row of "Your place" (#56), made once and redrawn with the table. */
+  private modelRow(): ModelImporter {
+    if (!this.model) this.model = new ModelImporter({ site: () => this.host.store.state.site });
+    else this.model.render();
+    return this.model;
+  }
+
   /** Opens "Your place" at one row. After the file is in, Next returns to `from`. */
   bringIn(target: string, from = this.step): void {
     this.returnTo = from === PLACE ? null : from;
@@ -388,7 +407,7 @@ export class Wizard {
   })();
 
   /** The site's name and place as the form would write them. */
-  private placeValues(): { name: string; centre: string; width: string; height: string; rotation: string } {
+  private placeValues(): { name: string; centre: string; width: string; height: string; rotation: string; table: string; tile: string } {
     const { site } = this.host.store.state;
     return (
       this.where ?? {
@@ -397,6 +416,8 @@ export class Wizard {
         width: String(Math.round(site.extent.width_m)),
         height: String(Math.round(site.extent.height_m)),
         rotation: String(Math.round(site.extent.rotation_deg ?? 0)),
+        table: String(site.table?.width_cm ?? 100),
+        tile: String(site.table?.tile_cm ?? ''),
       }
     );
   }
@@ -412,7 +433,9 @@ export class Wizard {
       Math.abs(at.lon - site.origin.lon) > 1e-6 ||
       Number(this.where.width) !== Math.round(site.extent.width_m) ||
       Number(this.where.height) !== Math.round(site.extent.height_m) ||
-      turn(Number(this.where.rotation)) !== turn(Math.round(site.extent.rotation_deg ?? 0))
+      turn(Number(this.where.rotation)) !== turn(Math.round(site.extent.rotation_deg ?? 0)) ||
+      Number(this.where.table) !== (site.table?.width_cm ?? 100) ||
+      Number(this.where.tile || 0) !== (site.table?.tile_cm ?? 0)
     );
   }
 
@@ -434,10 +457,34 @@ export class Wizard {
         this.where = { ...this.placeValues(), [key]: node.value };
         this.problem = '';
         this.placeMap?.set(this.placement());
+        this.scaleFields?.refresh();
         this.nextWords();
       });
       return node;
     };
+    // The physical table and the model scale: the ground and the table follow each other at the scale.
+    this.scaleFields = new ScaleFields(
+      () => {
+        const v = this.placeValues();
+        return { width_m: Number(v.width), height_m: Number(v.height), table_cm: Number(v.table), tile_cm: v.tile ? Number(v.tile) : null };
+      },
+      (ground) => {
+        this.where = { ...this.placeValues(), width: String(ground.width_m), height: String(ground.height_m), table: String(ground.table_cm), tile: ground.tile_cm ? String(ground.tile_cm) : '' };
+        for (const key of ['width', 'height'] as const) {
+          const field = this.element.querySelector<HTMLInputElement>(`.wz-form input[name="${key}"]`);
+          if (field) field.value = this.where[key];
+        }
+        this.problem = '';
+        this.placeMap?.set(this.placement());
+        this.nextWords();
+      },
+      (tile_m) => {
+        this.tileM = tile_m;
+        this.placeMap?.tiles(tile_m);
+      },
+    );
+    // The map comes right after the centre, so the place is seen before it is fine-tuned.
+    const mapSlot = el('div', 'wz-map-slot');
     const size = el('div', 'wz-pair');
     size.append(
       field('Width, metres', input('width', { type: 'number', min: '100', max: '20000', step: '50' })),
@@ -446,8 +493,10 @@ export class Wizard {
     form.append(
       field('Name', input('name', { type: 'text', maxLength: 60 })),
       field('Centre of the table', input('centre', { type: 'text', placeholder: '57.6898, 11.9742' }), 'Paste coordinates, or a link copied from Google Maps or OpenStreetMap.'),
+      mapSlot,
+      this.scaleFields.element,
       size,
-      field('Turned', input('rotation', { type: 'number', min: '-180', max: '360', step: '1' }), 'Degrees clockwise from north for the top edge of the table. 0 puts north at the top.'),
+      field('Turned', input('rotation', { type: 'number', min: '-180', max: '360', step: '1' }), 'Turns the map under the table, in degrees clockwise from north. 0 puts north at the top. The table itself stays as it stands.'),
     );
     // The table on a map: click or drag to move it, drag the corner to scale it, the top handle to turn it.
     if (!this.placeMap) {
@@ -461,6 +510,7 @@ export class Wizard {
           height: String(place.height_m),
           rotation: String(place.rotation_deg),
         };
+        this.scaleFields?.refresh();
         for (const key of ['centre', 'width', 'height', 'rotation'] as const) {
           const field = this.element.querySelector<HTMLInputElement>(`.wz-form input[name="${key}"]`);
           if (field) field.value = this.where[key];
@@ -469,7 +519,8 @@ export class Wizard {
         this.nextWords();
       }, { data: buildings ? `/site/${buildings}` : undefined });
     }
-    form.append(this.placeMap.element, el('p', 'wz-hint', 'Click the map or drag the middle to move the table, drag its corner to cover more or less ground, and the round handle to turn it.'));
+    this.placeMap.tiles(this.tileM);
+    mapSlot.append(this.placeMap.element, el('p', 'wz-hint', 'Click the map or drag the middle to move the table, and drag its corner to cover more or less ground. Turn the map with the right mouse button, Ctrl and drag, or the arrows; the table stays upright, as it stands in the room.'));
     if (this.moving) form.append(el('p', 'wz-hint', 'Moving the table and rebuilding what it shows…'));
     if (this.problem) {
       const problem = el('p', 'wz-problem', this.problem);
@@ -507,6 +558,8 @@ export class Wizard {
     if (!at) return say('Paste the coordinates of the centre of the table, for example 57.6898, 11.9742.');
     if (!(width_m >= 100 && height_m >= 100 && width_m <= 20000 && height_m <= 20000)) return say('The width and the height must each be between 100 and 20 000 metres.');
     if (!Number.isFinite(rotation_deg)) return say('Turned is a number of degrees, such as 0 or 30.');
+    const tiles = this.scaleFields?.problem();
+    if (tiles) return say(tiles);
     this.moving = true;
     say('');
     this.host.resumeAt(next);
@@ -514,7 +567,7 @@ export class Wizard {
       const response = await fetch('/api/site/place', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: values.name.trim(), origin: { lat: at.lat, lon: at.lon }, extent: { width_m, height_m, rotation_deg } }),
+        body: JSON.stringify({ name: values.name.trim(), origin: { lat: at.lat, lon: at.lon }, extent: { width_m, height_m, rotation_deg }, table_width_cm: Number(values.table), tile_cm: values.tile ? Number(values.tile) : 0 }),
       });
       if (!response.ok) {
         const answer = await response.json().catch(() => null);
@@ -526,6 +579,36 @@ export class Wizard {
       this.moving = false;
       say(`The table could not be moved: ${(error as Error).message}`);
     }
+  }
+
+  /** A layer's style as a dropdown, with the credit its map asks for; the map beside shows it live. */
+  private stylePicker(id: string, control: SelectControl): HTMLElement {
+    const { host } = this;
+    const box = el('div', 'wz-style');
+    const select = el('select');
+    select.name = `${id}-style`;
+    for (const option of control.options) select.append(new Option(option.label, option.value));
+    const credit = el('p', 'wz-hint wz-credit');
+    const note = el('p', 'wz-hint');
+    const field = el('label', 'wz-field');
+    field.append(el('span', undefined, control.label), select);
+    box.append(field, credit, note);
+    select.addEventListener('change', () => void host.send('scene.set', { layer: id, params: { [control.id]: select.value } }));
+    const sync = (): void => {
+      const state = host.store.state.layers[id];
+      if (!state) return;
+      const value = String(state.params[control.id] ?? control.default);
+      if (document.activeElement !== select) select.value = value;
+      const source = typeof state.shared.source === 'string' ? state.shared.source : '';
+      credit.textContent = source ? `Map: ${source}` : '';
+      note.textContent = typeof state.shared.note === 'string' ? state.shared.note : '';
+    };
+    const before = this.syncButtons;
+    this.syncButtons = () => {
+      before();
+      sync();
+    };
+    return box;
   }
 
   /** One row per layer package with a switch: on means the table has it. */
@@ -541,8 +624,10 @@ export class Wizard {
       badge.append(icon(manifest.icon, 20));
       const words = el('div');
       words.append(el('strong', undefined, manifest.name));
-      const lacking = missing.length > 0 && mine.length === 0;
-      const about = lacking ? `Needs ${missing.map(dataName).join(' and ')}, which this table does not have yet.` : (manifest.description ?? '');
+      // Switched on without its data, a layer shows nothing; it says so, and offers the data, either way.
+      const lacking = missing.length > 0;
+      const needs = missing.map(dataName).join(' and ');
+      const about = !lacking ? (manifest.description ?? '') : mine.length > 0 ? `Shows nothing until this table has ${needs}.` : `Needs ${needs}, which this table does not have yet.`;
       if (about) words.append(el('p', undefined, about));
       // A layer that needs data offers the way to it, and the guide comes back here afterwards.
       const source = lacking ? targetFor(missing[0]!) : undefined;
@@ -570,6 +655,9 @@ export class Wizard {
       if (preview && mine[0]) row.addEventListener('pointerenter', () => host.show(mine[0]!.id));
       row.append(badge, words, power);
       list.append(row);
+      // A layer with a style to pick (the base map) offers it right under its row, at rest.
+      const style = manifest.controls?.find((c): c is SelectControl => c.id === 'style' && c.type === 'select');
+      if (!preview && style && mine[0]) list.append(this.stylePicker(mine[0].id, style));
     }
     return list;
   }

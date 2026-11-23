@@ -46,11 +46,14 @@ The remaining `panels` (built) are laid out under the zones, as today.
 
 ## 3. Steps: one model for "Next"
 
+**Built (#43, 2026-11-23):** `layer.step`, `layer.play` and `layer.substeps` on the host, `state.step` and `state.shown_by`, `ctx.steps` in the SDK, and the editor's Slides list. The live position is `state.step`, because `state.steps` holds the site.json settings. Details are in [session.md](session.md), Steps. The controller's ◀ ▶ and counter come with the stage (#76).
+
 Slideshow slides, category reveals and staged builds (the Campus Vision phases) are all **steps**. Every advance input sends the same host request, so all of them behave the same: the controller's ◀ ▶, phone buttons, keyboard arrows, a presentation clicker and an optional tap on the table.
 
 ```
-layer.step { layer, to: "next" | "previous" | "first" | "all" | number }   // host request, new
-state.steps = { index, count, sub?: { index, count }, playing, title?, description?, source? }
+layer.step { layer, to: "next" | "previous" | "first" | "skip" | "all" | number }   // host request
+layer.play { layer, playing }
+state.step = { index, count, sub?: { index, count }, playing, title?, description?, source?, titles? }
 ```
 
 A layer that has steps declares how it moves through them:
@@ -59,7 +62,7 @@ A layer that has steps declares how it moves through them:
 "steps": {
   "mode": "manual",            // manual | timed. The Chalmers slideshow is manual.
   "loop": true,                // after the last step, back to the first
-  "reveal": "then-next"        // inside a step with sub-steps: "stop" (demo behaviour) or "then-next"
+  "reveal": "then-next"        // after a step's last sub-step, Next "stop"s or moves on ("then-next", the default)
 }
 ```
 

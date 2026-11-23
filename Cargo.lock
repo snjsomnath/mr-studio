@@ -2597,6 +2597,7 @@ name = "mr-studio-app"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "base64 0.22.1",
  "mrs-engine",
  "mrs-host",
  "mrs-site",
@@ -2652,6 +2653,7 @@ dependencies = [
  "futures-util",
  "mrs-engine",
  "mrs-site",
+ "png",
  "reqwest 0.12.28",
  "serde",
  "serde_json",
@@ -2666,6 +2668,7 @@ name = "mrs-site"
 version = "0.1.0"
 dependencies = [
  "mrs-engine",
+ "png",
  "serde",
  "serde_json",
  "thiserror 2.0.21",

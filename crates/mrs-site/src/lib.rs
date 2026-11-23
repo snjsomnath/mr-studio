@@ -4,11 +4,13 @@
 mod bake;
 pub mod create;
 mod crs;
+pub mod elevation;
 mod geotiff;
 pub mod import;
 mod manifest;
 mod mesh;
 pub mod migrate;
+pub mod model;
 pub mod osm;
 mod projection;
 mod twin;
@@ -55,6 +57,14 @@ pub struct Place {
     pub name: Option<String>,
     pub origin: LonLat,
     pub extent: Extent,
+    /// The physical table's width in centimetres, or `None` to keep it. Its height follows the
+    /// ground's shape; together with the extent it sets the model scale (1 : extent / table).
+    #[serde(default)]
+    pub table_width_cm: Option<f64>,
+    /// The side of one square 3D-printed tile in centimetres: `None` keeps it, 0 means the
+    /// table is not printed in tiles.
+    #[serde(default)]
+    pub tile_cm: Option<f64>,
 }
 
 /// What surfaces need to know about the site.
@@ -78,6 +88,17 @@ pub struct SiteInfo {
     pub data: BTreeMap<String, String>,
     /// The site's TV dashboard settings (theme, pages), as written. Validated on the TV by `@mrstudio/dashboard`.
     pub tv: Option<serde_json::Value>,
+    /// The 3D model of the site (`scene.mesh`), for the editor to place it again.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mesh: Option<MeshInfo>,
+}
+
+/// `scene.mesh` as written, and whether the footprints are still raised beside it.
+#[derive(Debug, Clone, Serialize)]
+pub struct MeshInfo {
+    #[serde(flatten)]
+    pub mesh: Mesh,
+    pub extrude: bool,
 }
 
 impl Site {
@@ -175,8 +196,8 @@ impl Site {
         }
         if let Some(mesh) = &m.scene.mesh {
             check(&mut out, "scene.mesh.path", &mesh.path);
-            if !mesh.path.to_ascii_lowercase().ends_with(".stl") {
-                out.push("scene.mesh.path: only STL meshes are read so far".into());
+            if mesh::Format::of(&mesh.path).is_none() {
+                out.push("scene.mesh.path: a mesh is an STL, OBJ or GLB file".into());
             }
             if !(mesh.unit_m > 0.0) || !mesh.unit_m.is_finite() {
                 out.push("scene.mesh.unit_m must be positive".into());
@@ -416,6 +437,7 @@ impl Site {
             calibration: self.calibration.and_then(|c| c.table),
             data: self.data(),
             tv: m.tv.clone(),
+            mesh: m.scene.mesh.clone().map(|mesh| MeshInfo { mesh, extrude: m.scene.buildings.as_ref().is_none_or(|b| b.extrude) }),
         }
     }
 
@@ -497,6 +519,12 @@ impl Site {
         if !rotation_deg.is_finite() {
             return Err(invalid("the rotation must be a number of degrees"));
         }
+        if place.table_width_cm.is_some_and(|w| !(w.is_finite() && (10.0..=2000.0).contains(&w))) {
+            return Err(invalid("the table must be between 10 cm and 20 m wide"));
+        }
+        if place.tile_cm.is_some_and(|t| !(t.is_finite() && (0.0..=2000.0).contains(&t))) {
+            return Err(invalid("a tile must be between 0 and 20 m on a side"));
+        }
         let rotation_deg = rotation_deg.rem_euclid(360.0);
         let m = &self.manifest;
         let moved = m.origin != place.origin
@@ -524,9 +552,22 @@ impl Site {
         }
         value["origin"] = serde_json::json!({ "lon": lon, "lat": lat });
         value["extent"] = serde_json::json!({ "width_m": width_m, "height_m": height_m, "rotation_deg": rotation_deg });
-        // The physical table keeps its width; its height follows the ground's shape.
+        // The physical table keeps its width unless a new one is given; its height follows the ground's shape.
+        if let Some(width_cm) = place.table_width_cm {
+            if !value["table"].is_object() {
+                value["table"] = serde_json::json!({});
+            }
+            value["table"]["width_cm"] = width_cm.into();
+        }
         if let Some(width_cm) = value["table"]["width_cm"].as_f64() {
             value["table"]["height_cm"] = ((width_cm * height_m / width_m * 100.0).round() / 100.0).into();
+        }
+        if let (Some(tile_cm), Some(table)) = (place.tile_cm, value["table"].as_object_mut()) {
+            if tile_cm > 0.0 {
+                table.insert("tile_cm".into(), tile_cm.into());
+            } else {
+                table.remove("tile_cm");
+            }
         }
         let manifest: SiteManifest = serde_json::from_value(value.clone()).map_err(|e| parse(e.to_string()))?;
         let problems = Site { dir: self.dir.clone(), manifest, calibration: self.calibration }.problems();
