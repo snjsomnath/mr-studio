@@ -2,6 +2,7 @@
 // Contract in docs/contracts/model.md; change them together.
 import type { Colormap } from './colormap.ts';
 import type { FieldOverlay, FieldOverlayStyle } from './layer.ts';
+import type { FieldFrame } from './types.ts';
 
 export type SurfaceKind = 'ground' | 'roof' | 'wall';
 
@@ -97,6 +98,13 @@ export interface ModelHandle {
   addField(id: string, style: ModelFieldStyle & { colormap: Colormap }): FieldOverlay;
   /** Lights the twin. With any light on, unlit surfaces are dark, as on the physical model. */
   addLight<L extends ModelLight>(light: L): LightHandle<L>;
+  /**
+   * Sharp sun shadows over the table's extent, as a field frame to draw with a map field: 1 where the sun reaches the
+   * ground or a roof, 0 in shade, about 0.3 m per pixel. It comes from a GPU shadow map of the buildings' real
+   * footprints raised to their roofs, the ground and any imported model, so edges stay crisp at any table size, unlike
+   * a kernel field's cells. Resolves to null where there is no twin; use the kernel's field instead.
+   */
+  sunShadowMask(sun: { azimuth: number; altitude: number }): Promise<FieldFrame | null>;
   /** Changes how the picked surfaces look. A later call wins where two overlap. */
   setMaterial(target: SurfaceQuery, material: SurfaceMaterial): void;
   /** Dims everything except the picked surfaces. `null` ends the focus. */
