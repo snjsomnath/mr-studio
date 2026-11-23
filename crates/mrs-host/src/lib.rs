@@ -436,6 +436,7 @@ fn router(state: Arc<AppState>, web_dir: Option<PathBuf>) -> Router {
         .route("/api/data/import", post(import_data))
         .route("/api/data/model", post(model::post))
         .route("/api/data/sounds", get(list_sounds).post(save_sound))
+        .route("/api/data/field", get(data_field))
         .route("/api/site/place", post(place_site))
         .route("/api/site/thumbnail", post(save_thumbnail))
         .route("/api/wms", get(wms_map))
@@ -732,6 +733,36 @@ async fn save_thumbnail(
     match written {
         Ok(Ok(())) => StatusCode::NO_CONTENT.into_response(),
         Ok(Err(e)) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e.to_string() }))).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e.to_string() }))).into_response(),
+    }
+}
+
+#[derive(serde::Deserialize)]
+struct FieldQuery {
+    /// The dataset's name in site.json `data`.
+    name: String,
+    /// For a folder of hourly rasters, the hour (0 to 23).
+    #[serde(default)]
+    hour: Option<u32>,
+}
+
+/// `GET /api/data/field?name=pet&hour=14`: a raster dataset sampled on the site grid, as a binary
+/// field frame of f32 values (NaN where it has no data). 404 when a folder of hourly rasters has
+/// none for that hour, so a layer can fall back to what it works out itself (#196).
+async fn data_field(State(state): State<Arc<AppState>>, Query(query): Query<FieldQuery>) -> axum::response::Response {
+    let dir = state.site.dir.clone();
+    let FieldQuery { name, hour } = query;
+    let read = tokio::task::spawn_blocking(move || {
+        let site = Site::load(&dir).map_err(|e| e.to_string())?;
+        mrs_site::field::read(&site, &name, hour)
+    })
+    .await;
+    match read {
+        Ok(Ok(Some(field))) => {
+            ([(header::CONTENT_TYPE, "application/octet-stream"), (header::CACHE_CONTROL, "no-cache")], field.to_frame()).into_response()
+        }
+        Ok(Ok(None)) => (StatusCode::NOT_FOUND, Json(json!({ "error": "no raster for that hour" }))).into_response(),
+        Ok(Err(error)) => (StatusCode::UNPROCESSABLE_ENTITY, Json(json!({ "error": error }))).into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e.to_string() }))).into_response(),
     }
 }

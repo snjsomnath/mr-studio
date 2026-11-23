@@ -5,6 +5,7 @@ mod bake;
 pub mod create;
 mod crs;
 pub mod elevation;
+pub mod field;
 mod geotiff;
 pub mod import;
 mod manifest;
