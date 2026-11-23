@@ -483,6 +483,9 @@ async function main() {
     // The home screen holds the base map and the ambient life, and offers more of it.
     assert.deepEqual(await editor.locator('.ed-inspector .ed-row .ed-row-label').allTextContents(), ['Trees', 'Public transport', 'Traffic', 'Building lights', 'Base map']);
     await editor.locator('.ed-ribbon .ed-tool[data-layer="trees"]').click();
+    // Trees are already at rest, so the editor asks before adding a second one (#183).
+    await editor.locator('.ed-ask h2', { hasText: 'Trees is already on the map at rest' }).waitFor();
+    await editor.locator('.ed-ask [data-choice="add"]').click();
     await editor.locator('.ed-inspector .ed-row[data-layer="trees-2"][aria-current="true"]').waitFor();
     // Ambient life joins the home screen, under the layers.
     assert.equal(savedLayers()[6].id, 'trees-2');
@@ -491,11 +494,13 @@ async function main() {
     await editor.waitForFunction(() => document.querySelector('.ed-inspector .ed-row[data-layer="trees-2"]')?.classList.contains('is-off'));
     assert.equal(savedLayers()[6].active, false);
     // The ribbon's tools act on what is selected.
-    await editor.locator('.ed-ribbon').getByText('Send back').click();
+    await editor.locator('.ed-ribbon').getByText('Move down').click();
     await editor.waitForFunction(() => document.querySelectorAll('.ed-inspector .ed-row[data-layer]')[1]?.getAttribute('data-layer') === 'trees-2');
     assert.equal(savedLayers()[5].id, 'trees-2');
     await editor.locator('.ed-ribbon').getByText('Remove').click();
     await editor.locator('.ed-inspector .ed-row[data-layer="trees-2"]').waitFor({ state: 'detached' });
+    // The ribbon stays the same whatever is selected (#182): nothing selected greys the selection tools out.
+    assert.equal(await editor.locator('.ed-ribbon').getByRole('button', { name: 'Remove', exact: true }).isDisabled(), true);
     // Inside a layer the ambient tools add into that layer: an item that shows only while it is open (#69).
     await editor.locator('.ed-tree .ed-row[data-layer="mobility"]').click();
     await editor.locator('.ed-ribbon .ed-tool[data-layer="trees"]').click();
