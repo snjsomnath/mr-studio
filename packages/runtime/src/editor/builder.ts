@@ -27,11 +27,13 @@ import {
   PLACE_MOTIONS,
   SHARED_KNOBS,
   placeMotion,
+  soundColumns,
+  soundPath,
 } from '@mrstudio/sdk';
 import type { CustomLayer, GeometryKind, LayerManifest, Paint, RecipeBlock, ResolvedPalette, Shapes, SitePalette, Size } from '@mrstudio/sdk';
 
 import { el } from '../controls.ts';
-import { dataUrl, loadData } from '../recipe-player.ts';
+import { LISTEN_KEY, dataUrl, loadData } from '../recipe-player.ts';
 import type { Store } from '../store.ts';
 import { icon } from './icons.ts';
 import './builder.css';
@@ -791,8 +793,94 @@ export function builderSection(host: BuilderHost, manifest: LayerManifest, butto
     attract: ['Attract a crowd', 'Particles gather from all around and are pulled into each point. For pull and attention, not for people.'],
     gravity: ['Crowd on the streets', 'People walk to each point along the street network, more to the places that pull harder.'],
     timeline: ['Through time', 'Plays the layer through a date or year column: each feature appears when its time comes, with a brief flare.'],
+    sound: ['Sound', 'Points with a sound file (WAV, MP3, OGG) send out rings as they sound, like the bird-sounds demo. The table plays the sound.'],
     place: ['Place motion', 'Twenty-two ways to bring places alive, from ripples and orbiters to gravity wells that bend the streets. Pick one, then tune it.'],
   };
+  /** The rows of a sound motion (#150): where the sounds come from, how they play and the rings. */
+  const soundRows = (look: RecipeBlock, p: Record<string, any>, set: (key: string, value: unknown) => void, redraw: () => void): HTMLElement[] => {
+    const rows: HTMLElement[] = [];
+    const source = el('select');
+    source.setAttribute('aria-label', 'Sound from');
+    const file = el('select');
+    file.setAttribute('aria-label', 'Sound file');
+    const status = el('p', 'lb-hint');
+    const fileRow = field('Sound', file);
+    const showFile = () => (fileRow.style.display = p.column ? 'none' : '');
+    showFile();
+    let rowsOf: Record<string, unknown>[] = [];
+    const describe = (sounds: string[]) => {
+      const have = new Set(sounds);
+      const wanted = rowsOf.map((r) => soundPath(r, { column: p.column ?? null, file: p.file ?? null }));
+      const named = wanted.filter(Boolean).length;
+      const found = wanted.filter((w) => w && have.has(w)).length;
+      status.textContent = named === 0 ? 'No point names a sound yet.' : found === named ? `${found} of ${rowsOf.length} points have a sound.` : `${named - found} of ${named} sounds are not in this table yet. Add them with "Add sounds".`;
+    };
+    const fill = async () => {
+      const sounds = ((await fetch('/api/data/sounds').then((r) => r.json()).catch(() => ({ sounds: [] }))) as { sounds: string[] }).sounds ?? [];
+      file.replaceChildren(...sounds.map((path) => Object.assign(el('option'), { value: path.replace(/^data\/sounds\//, ''), textContent: path.replace(/^data\/sounds\//, ''), selected: path.endsWith(`/${p.file}`) })));
+      if (!p.column && !p.file && sounds[0]) set('file', sounds[0].replace(/^data\/sounds\//, ''));
+      describe(sounds);
+    };
+    void shapes(look).then((s) => {
+      rowsOf = (s?.spots ?? []).map((x) => (x.properties ?? {}) as Record<string, unknown>);
+      const columns = soundColumns(rowsOf);
+      if (p.column === undefined) p.column = columns[0] ?? null;
+      source.replaceChildren(
+        ...columns.map((c) => Object.assign(el('option'), { value: c, textContent: `Column: ${c}`, selected: c === p.column })),
+        Object.assign(el('option'), { value: '', textContent: 'One sound for every point', selected: !p.column }),
+      );
+      showFile();
+      void fill();
+    });
+    source.addEventListener('change', () => {
+      set('column', source.value || null);
+      showFile();
+      void fill();
+    });
+    file.addEventListener('change', () => set('file', file.value || null));
+    const add = button('action', 'Add sounds', 'plus');
+    add.title = 'WAV, MP3, OGG or M4A files, kept in this table as they are';
+    const picker = Object.assign(el('input'), { type: 'file', multiple: true, accept: 'audio/*,.wav,.mp3,.ogg,.m4a', hidden: true });
+    add.addEventListener('click', () => picker.click());
+    picker.addEventListener('change', async () => {
+      for (const f of picker.files ?? []) {
+        const response = await fetch(`/api/data/sounds?name=${encodeURIComponent(f.name)}`, { method: 'POST', body: f });
+        if (!response.ok) status.textContent = `${f.name}: ${((await response.json().catch(() => ({}))) as { error?: string }).error ?? response.status}`;
+      }
+      picker.value = '';
+      await fill();
+      // The table loads the new files on its next restyle.
+      set('column', p.column ?? null);
+    });
+    rows.push(field('Sound from', source), fileRow, field('', add, picker), status);
+    rows.push(field('Plays', segmented([['chorus', 'A few at a time'], ['loop', 'All, looping']] as const, p.trigger === 'loop' ? 'loop' : 'chorus', (v) => {
+      set('trigger', v);
+      redraw();
+    }, 'Plays')));
+    if (p.trigger !== 'loop') {
+      rows.push(field('At once', slider(p.voices ?? 3, 1, 8, 1, '', (v) => set('voices', v))));
+      rows.push(field('Quiet between', slider(p.gap_s ?? 1.5, 0, 10, 0.5, ' s', (v) => set('gap_s', v))));
+    }
+    rows.push(field('Volume', slider(Math.round((p.volume ?? 0.8) * 100), 0, 100, 5, ' %', (v) => set('volume', v / 100))));
+    rows.push(field('Ring reach', slider(p.reach_mm ?? 45, 10, 150, 5, ' mm', (v) => set('reach_mm', v))));
+    rows.push(field('Ring width', slider(p.width_mm ?? 2, 0.4, 5, 0.1, ' mm', (v) => set('width_mm', v))));
+    rows.push(field('Rings on', segmented([['0.2', 'Strong calls'], ['0.5', 'Calls'], ['0.85', 'Every note']] as const, (p.sensitivity ?? 0.5) < 0.35 ? '0.2' : (p.sensitivity ?? 0.5) > 0.7 ? '0.85' : '0.5', (v) => set('sensitivity', Number(v)), 'Rings on')));
+    let listening = false;
+    try {
+      listening = localStorage.getItem(LISTEN_KEY) === '1';
+    } catch {
+      // No storage: the editor stays quiet.
+    }
+    rows.push(field('Listen here', toggle(listening, (on) => {
+      try {
+        localStorage.setItem(LISTEN_KEY, on ? '1' : '0');
+      } catch {
+        // Nothing to remember it in.
+      }
+    }, 'Listen here')), el('p', 'lb-hint', 'The table plays the sounds. Turn this on to hear them in the editor too; the first click on the page lets the browser play sound.'));
+    return rows;
+  };
+
   /** The rows of a place motion (#160-163): which motion, its files, ? help and its knobs. */
   const placeRows = (p: Record<string, any>, set: (key: string, value: unknown) => void, redraw: () => void): HTMLElement[] => {
     const rows: HTMLElement[] = [];
@@ -938,6 +1026,8 @@ export function builderSection(host: BuilderHost, manifest: LayerManifest, butto
               drawWindow();
             }, 'Features')), windowRow);
             rows.push(el('p', 'lb-hint', 'No date is written on the map. Showing the current date on the controller comes with the controller legend (#76).'));
+          } else if (name === 'sound') {
+            rows.push(...soundRows(look, p, set, () => draw()));
           } else if (name === 'place') {
             rows.push(...placeRows(p, set, () => draw()));
           }
@@ -945,7 +1035,7 @@ export function builderSection(host: BuilderHost, manifest: LayerManifest, butto
         };
         const on = toggle(Boolean(existing), (checked) => {
           recipe.motion = recipe.motion!.filter((m) => !(m.on === look.id && m.block === name));
-          if (checked) recipe.motion!.push({ id: `${look.id}-${name}`, block: name, on: look.id, props: name === 'place' ? { motion: 'ripples' } : { ...(MOTION_DEFAULTS as Record<string, object>)[name] } });
+          if (checked) recipe.motion!.push({ id: `${look.id}-${name}`, block: name, on: look.id, props: name === 'place' ? { motion: 'ripples' } : name === 'sound' ? { trigger: 'chorus' } : { ...(MOTION_DEFAULTS as Record<string, object>)[name] } });
           save();
           draw();
         }, title);
