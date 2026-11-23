@@ -137,6 +137,7 @@ fn main() -> anyhow::Result<()> {
             presenting_state,
             open_home,
             open_settings,
+            open_view,
             new_table,
             quit,
             colour_state,
@@ -410,7 +411,7 @@ fn copy_dir(from: &Path, to: &Path) -> std::io::Result<()> {
 }
 
 /// Opens one surface of the running site in a normal window, for looking at it beside the editor.
-fn open_view(app: &AppHandle, role: &str) -> anyhow::Result<()> {
+fn show_view(app: &AppHandle, role: &str) -> anyhow::Result<()> {
     anyhow::ensure!(["table", "tv", "dev", "phone"].contains(&role), "'{role}' is not a view");
     let running = app.state::<Shell>().running.lock().unwrap().clone().context("no site is open")?;
     let label = format!("view-{role}");
@@ -613,7 +614,7 @@ fn shell_action(app: &AppHandle, action: &str) {
         // A page asked for a view of its own (the editor's "Open in a window").
         view if view.starts_with("window/") => {
             let role = view["window/".len()..].to_string();
-            drop(tauri::async_runtime::spawn(async move { report(open_view(&app, &role)) }));
+            drop(tauri::async_runtime::spawn(async move { report(show_view(&app, &role)) }));
         }
         // Esc on a surface: the way back for the author, as in a slideshow. A table that
         // presents by itself, with no editor open, ignores it.
@@ -947,6 +948,15 @@ async fn stop_presenting(app: AppHandle) -> Result<(), String> {
 #[tauri::command]
 async fn open_home(app: AppHandle) -> Result<(), String> {
     open_home_window(&app).map_err(text)
+}
+
+/// Opens one view of the open table (`table`, `tv`, `dev` or `phone`) in a window of its own,
+/// or brings it forward: the editor's Preview and "Open in a window". A command, like
+/// `present`, rather than `window.open` caught on its way out of the webview, which macOS
+/// does not reliably let through (#51).
+#[tauri::command]
+async fn open_view(app: AppHandle, role: String) -> Result<(), String> {
+    show_view(&app, &role).map_err(text)
 }
 
 /// Shows the displays and settings window: displays, colour, calibration and updates.
