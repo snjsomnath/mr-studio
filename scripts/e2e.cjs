@@ -459,9 +459,17 @@ async function main() {
     assert.equal(savedLayers()[5].id, 'trees-2');
     await editor.locator('.ed-ribbon').getByText('Remove').click();
     await editor.locator('.ed-inspector .ed-row[data-layer="trees-2"]').waitFor({ state: 'detached' });
-    // Inside a layer the ambient tools are not offered.
+    // Inside a layer the ambient tools add into that layer: an item that shows only while it is open (#69).
     await editor.locator('.ed-tree .ed-row[data-layer="mobility"]').click();
-    assert.equal(await editor.locator('.ed-ribbon .ed-tool[data-layer="trees"]').count(), 0);
+    await editor.locator('.ed-ribbon .ed-tool[data-layer="trees"]').click();
+    await editor.locator('.ed-tree .ed-row.is-item[data-layer="trees-2"][aria-current="true"]').waitFor();
+    await editor.locator('.ed-inspector [data-items="mobility"] .ed-row[data-layer="trees-2"]').waitFor();
+    assert.deepEqual(savedLayers().find((l) => l.id === 'mobility').items, [{ use: 'trees', id: 'trees-2' }]);
+    assert.ok(!savedLayers().some((l) => l.id === 'trees-2'), 'an item is not a layer of the scene');
+    await editor.getByLabel('Comes on with the layer').waitFor();
+    await editor.locator('.ed-ribbon').getByText('Remove').click();
+    await editor.locator('.ed-tree .ed-row[data-layer="trees-2"]').waitFor({ state: 'detached' });
+    assert.equal(savedLayers().find((l) => l.id === 'mobility').items, undefined);
     await editor.locator('.ed-ribbon .ed-tool[data-layer="sunlight"]').waitFor();
     await editor.locator('.ed-inspector').getByText('Show trips').waitFor();
     // The eye beside a setting takes that control off the controller, and it is saved. The editor keeps it.
