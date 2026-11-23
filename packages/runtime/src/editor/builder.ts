@@ -249,11 +249,13 @@ const PRESETS: Record<GeometryKind, { name: string; props: Record<string, unknow
   points: [
     { name: 'Glowing points', props: { color: '@accent', radius_mm: 4, glow: 0.8, core: true, opacity: 1 } },
     { name: 'Pulse from a hub', props: { color: '@warm', radius_mm: 5, glow: 0.6, core: true, opacity: 1 }, motion: { block: 'pulse', props: { period_s: 2, size_mm: 16, rings: 2, direction: 1 } } },
+    { name: 'Crowd to places', props: { color: '@warm', radius_mm: 4.5, glow: 0.7, core: true, opacity: 1 }, motion: { block: 'gravity', props: { ...MOTION_DEFAULTS.gravity } } },
     { name: 'Quiet dots', props: { color: '@neutral', radius_mm: 2.5, glow: 0, core: false, opacity: 0.8 } },
   ],
   lines: [
     { name: 'Bright route', props: { color: '@focus', width_mm: 3, glow: 0.5, casing: true, dash: 'solid' } },
     { name: 'Flow lines', props: { color: '@accent', width_mm: 2, glow: 0.4, casing: true, dash: 'solid' }, motion: { block: 'flow', props: { speed_mm: 14 } } },
+    { name: 'Commuter flows', props: { color: '@cool', width_mm: 1, glow: 0.2, casing: false, dash: 'solid', opacity: 0.45 }, motion: { block: 'particles', props: { ...MOTION_DEFAULTS.particles } } },
     { name: 'Drawn in', props: { color: '@warm', width_mm: 2.5, glow: 0.3, casing: true, dash: 'solid' }, motion: { block: 'draw-in', props: { duration_s: 2.5, stagger: true } } },
     { name: 'Dashed plan', props: { color: '@cool', width_mm: 1.5, glow: 0, casing: false, dash: 'dashed', dash_mm: 5, gap_mm: 3 } },
   ],
@@ -711,9 +713,12 @@ export function builderSection(host: BuilderHost, manifest: LayerManifest, butto
     pulse: ['Pulse', 'Rings travel out from each point, or an outline swells and fades. Slow, never a blink.'],
     'draw-in': ['Draw in', 'Lines draw themselves in when the layer opens, one after another, with a bright tip.'],
     flow: ['Flow', 'Dashes travel along each line, in the direction it was drawn.'],
+    particles: ['Particles', 'Lights travel along every line: traffic, flows, energy on its way.'],
+    attract: ['Attract a crowd', 'Particles gather from all around and are pulled into each point. For pull and attention, not for people.'],
+    gravity: ['Crowd on the streets', 'People walk to each point along the street network, more to the places that pull harder.'],
   };
   const motionTab = (): HTMLElement[] => {
-    const nodes: HTMLElement[] = [el('p', 'lb-lead', 'Motion is the strongest thing on the table, so keep one kind in focus. Particles, attractors and crowds that follow the streets come next.')];
+    const nodes: HTMLElement[] = [el('p', 'lb-lead', 'Motion is the strongest thing on the table: keep one kind in focus, and make any second one quieter.')];
     for (const look of recipe.look!) {
       const card = el('div', 'lb-card');
       const data = recipe.data!.find((d) => d.id === look.data);
@@ -744,6 +749,34 @@ export function builderSection(host: BuilderHost, manifest: LayerManifest, butto
             rows.push(field('One by one', toggle(p.stagger ?? true, (v) => set('stagger', v), 'One by one')));
           } else if (name === 'flow') {
             rows.push(field('Speed', slider(p.speed_mm ?? 12, 2, 60, 1, ' mm/s', (v) => set('speed_mm', v))));
+          } else if (name === 'particles') {
+            rows.push(field('Per line', slider(p.per_line ?? 2, 1, 8, 1, '', (v) => set('per_line', v))));
+            rows.push(field('Speed', slider(p.speed_mm ?? 20, 2, 80, 1, ' mm/s', (v) => set('speed_mm', v))));
+            rows.push(field('Size', slider(p.size_mm ?? 2.5, 0.5, 6, 0.1, ' mm', (v) => set('size_mm', v))));
+          } else if (name === 'attract' || name === 'gravity') {
+            if (name === 'gravity') {
+              // The streets the crowd walks on: a dataset of lines.
+              const streets = el('select');
+              const lines = vectorDatasets(host.store);
+              const preferred = ['roads', 'walkways', 'streets'].find((n) => lines.some((d) => d.name === n));
+              if (!p.network || !lines.some((d) => d.name === p.network)) p.network = preferred ?? lines[0]?.name ?? 'roads';
+              for (const d of lines) streets.append(Object.assign(el('option'), { value: d.name, textContent: d.name, selected: d.name === p.network }));
+              streets.addEventListener('change', () => set('network', streets.value));
+              rows.push(field('Streets', streets));
+            }
+            rows.push(field('How many', slider(p.count ?? 240, 20, 1000, 10, '', (v) => set('count', v))));
+            rows.push(field('Speed', slider(p.speed_mm ?? 10, 2, 50, 1, ' mm/s', (v) => set('speed_mm', v))));
+            if (name === 'attract') rows.push(field('From', slider(p.reach_mm ?? 60, 10, 200, 5, ' mm', (v) => set('reach_mm', v))));
+            rows.push(field('Size', slider(p.size_mm ?? 2, 0.5, 5, 0.1, ' mm', (v) => set('size_mm', v))));
+            if (name === 'gravity') rows.push(field('Trail', toggle(p.trail ?? true, (v) => set('trail', v), 'Trail')));
+            // Pull by a column: places with more of it draw more of the crowd.
+            const weight = el('select');
+            weight.append(Object.assign(el('option'), { value: '', textContent: 'All alike' }));
+            void shapes(look).then((s) => {
+              for (const c of profileColumns((s?.spots ?? []).map((x) => x.properties)).filter((c) => c.kind === 'number')) weight.append(Object.assign(el('option'), { value: c.name, textContent: c.name, selected: c.name === p.weight }));
+            });
+            weight.addEventListener('change', () => set('weight', weight.value || null));
+            rows.push(field('Pull by', weight));
           }
           sub.replaceChildren(...rows);
         };
