@@ -435,6 +435,7 @@ fn router(state: Arc<AppState>, web_dir: Option<PathBuf>) -> Router {
         .route("/api/data/inspect", post(inspect_data))
         .route("/api/data/import", post(import_data))
         .route("/api/data/model", post(model::post))
+        .route("/api/data/sounds", get(list_sounds).post(save_sound))
         .route("/api/site/place", post(place_site))
         .route("/api/site/thumbnail", post(save_thumbnail))
         .route("/api/wms", get(wms_map))
@@ -731,6 +732,40 @@ async fn save_thumbnail(
     match written {
         Ok(Ok(())) => StatusCode::NO_CONTENT.into_response(),
         Ok(Err(e)) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e.to_string() }))).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e.to_string() }))).into_response(),
+    }
+}
+
+#[derive(serde::Deserialize)]
+struct SoundQuery {
+    /// The file's own name; the saved name is made safe from it.
+    name: String,
+}
+
+/// `GET /api/data/sounds`: the site's sound files (#150), as `{ sounds: ["data/sounds/x.mp3"] }`.
+async fn list_sounds(State(state): State<Arc<AppState>>) -> axum::response::Response {
+    let dir = state.site.dir.clone();
+    match tokio::task::spawn_blocking(move || mrs_site::sound::list(&dir)).await {
+        Ok(sounds) => Json(json!({ "sounds": sounds })).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e.to_string() }))).into_response(),
+    }
+}
+
+/// `POST /api/data/sounds?name=Blackbird.mp3`: keeps a WAV, MP3, OGG or M4A file under
+/// `data/sounds/` as it came, for points that name it in a column. Answers `{ path }`.
+async fn save_sound(
+    State(state): State<Arc<AppState>>,
+    ConnectInfo(from): ConnectInfo<SocketAddr>,
+    Query(query): Query<SoundQuery>,
+    body: Bytes,
+) -> axum::response::Response {
+    if !from.ip().is_loopback() {
+        return (StatusCode::FORBIDDEN, Json(json!({ "error": "sounds are added from this computer only" }))).into_response();
+    }
+    let dir = state.site.dir.clone();
+    match tokio::task::spawn_blocking(move || mrs_site::sound::save(&dir, &query.name, &body)).await {
+        Ok(Ok(path)) => Json(json!({ "path": path })).into_response(),
+        Ok(Err(error)) => (StatusCode::UNPROCESSABLE_ENTITY, Json(json!({ "error": error }))).into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e.to_string() }))).into_response(),
     }
 }

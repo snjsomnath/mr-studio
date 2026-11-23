@@ -13,6 +13,7 @@ import {
   metresPerTableMm,
   motionFor,
   parseCsv,
+  SoundStage,
   placeFiles,
   readShapes,
   resolvePalette,
@@ -101,6 +102,18 @@ export function forgetData(url?: string): void {
   }
 }
 
+/** Where sounds are heard: the table, or the editor when its author turned listening on. */
+export const LISTEN_KEY = 'mrstudio.listen';
+function hearsSound(): boolean {
+  if (typeof document === 'undefined') return false;
+  if (document.body.dataset.role === 'table') return true;
+  try {
+    return localStorage.getItem(LISTEN_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
 /**
  * The table side of a custom layer. `current` reads the layer's manifest as it is now;
  * `watch` calls back when it is saved again.
@@ -131,6 +144,10 @@ export function recipeModule(current: () => LayerManifest | undefined, watch: (c
       };
       const networks = () => [...new Set((recipe.motion ?? []).filter((m) => m.block === 'gravity').map((m) => String(m.props?.network ?? 'roads')))];
       let looks: CompiledLook[] = [];
+      // Sounds play on the table itself; the editor's preview shows the rings silently unless
+      // the author asked to listen there (#150).
+      const sounds = new SoundStage({ audible: hearsSound() });
+      ctx.onCleanup(() => sounds.stop());
       let dataKey = '';
       let styleKey = '';
       let time = 0;
@@ -212,6 +229,7 @@ export function recipeModule(current: () => LayerManifest | undefined, watch: (c
           .map((block) => {
             const motion = motionFor(recipe, block.id, overrides.motion);
             if (motion.gravity) motion.gravity = { ...motion.gravity, streets: streets.get(String(motion.gravity.network ?? 'roads')) };
+            if (motion.sound) motion.sound = { ...motion.sound, stage: sounds };
             if (motion.place) {
               const { datasets, tables: csvs } = placeFiles(motion.place);
               const shapesOf = (name?: string) => (name ? extraShapes.get(name) : undefined);
@@ -226,6 +244,7 @@ export function recipeModule(current: () => LayerManifest | undefined, watch: (c
             return compileLook(block, (block.data && shapes.get(block.data)) || EMPTY, palette, mm, motion, overrides.look[block.id]);
           })
           .filter((look): look is CompiledLook => look !== null);
+        if (!(recipe.motion ?? []).some((m) => m.block === 'sound')) sounds.stop();
       };
 
       const stop = watch(() => {
@@ -240,6 +259,7 @@ export function recipeModule(current: () => LayerManifest | undefined, watch: (c
       ctx.onFrame((dt) => {
         time += dt;
         refresh();
+        sounds.audible = hearsSound();
         const view = surface.begin(time);
         const alpha = recipe.enter === 'fade' ? ease(time / FADE_S) : 1;
         for (const look of looks) look.draw(view, time, alpha);

@@ -12,6 +12,7 @@ mod mesh;
 pub mod migrate;
 pub mod model;
 pub mod osm;
+pub mod sound;
 mod projection;
 mod twin;
 
