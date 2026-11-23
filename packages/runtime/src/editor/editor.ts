@@ -697,6 +697,18 @@ export class Editor {
     Object.assign(description, { rows: 2, maxLength: 200, placeholder: manifest.description ?? 'One line about what this layer shows' });
     description.addEventListener('change', () => set({ description: description.value.trim() || null }));
 
+    // The group of buttons it sits in on its rail. The groups already in use are offered.
+    const group = el('input');
+    const known = el('datalist');
+    known.id = `ed-groups-${id}`;
+    Object.assign(group, { type: 'text', maxLength: 40, placeholder: 'None, for example Simulations' });
+    group.setAttribute('list', known.id);
+    group.addEventListener('focus', () => {
+      const names = new Set(Object.values(this.store.state.layers).flatMap((l) => (l.button?.group ? [l.button.group] : [])));
+      known.replaceChildren(...[...names].sort().map((n) => Object.assign(el('option'), { value: n })));
+    });
+    group.addEventListener('change', () => set({ group: group.value.trim() || null }));
+
     const side = el('div', 'segmented');
     side.setAttribute('role', 'radiogroup');
     side.setAttribute('aria-label', 'Side of the controller');
@@ -729,7 +741,7 @@ export class Editor {
     row.append(el('span', undefined, 'Side'), side);
     const iconRow = el('div', 'ed-field is-tall');
     iconRow.append(el('span', undefined, 'Icon'), icons);
-    section.append(el('h3', undefined, 'Button on the controller'), field('Name', name), field('Description', description), row, iconRow);
+    section.append(el('h3', undefined, 'Button on the controller'), field('Name', name), field('Description', description), field('Group', group), known, row, iconRow);
 
     const previous = this.sync.get(id);
     this.sync.set(id, (state) => {
@@ -737,6 +749,7 @@ export class Editor {
       const button = layerButton(id, manifest, state, defaultSideOf(this.store, id));
       if (document.activeElement !== name) name.value = state.button?.name ?? '';
       if (document.activeElement !== description) description.value = state.button?.description ?? '';
+      if (document.activeElement !== group) group.value = state.button?.group ?? '';
       for (const [value, option] of sides) option.setAttribute('aria-checked', String(value === button.side));
       for (const [value, option] of choices) option.setAttribute('aria-checked', String(value === button.icon));
       // The headings that show the layer's name follow it.

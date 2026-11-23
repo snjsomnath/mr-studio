@@ -144,33 +144,66 @@ export function defaultSide(store: Store): 'left' | 'right' {
   return store.state.site.tv?.rail === 'right' ? 'right' : 'left';
 }
 
+/** One button on a rail of the controller screen. */
+export interface RailButton {
+  id: string;
+  side: 'left' | 'right';
+  /** The group it sits in, such as "Simulations", or undefined for none. */
+  group: string | undefined;
+}
+
 /**
- * The side each layer button sits on, keyed by instance id. A button the author placed stays
- * there. When the site names a rail (`tv.rail`), the others go to it. Otherwise they are shared
- * out so both sides of the controller are used: from the top of the scene, the left side fills
- * to half of all the buttons, then the right.
+ * The layer buttons of the controller screen, in the order they sit down their rails.
+ *
+ * Order: by `button.order` (lowest first; buttons without one follow), then top of the scene
+ * first. Buttons of the same group are kept together, where the group's first button is.
+ *
+ * Side: a button the author placed stays there. When the site names a rail (`tv.rail`), the
+ * others go to it. Otherwise they are shared out so both sides are used: a group at a time,
+ * the left side fills to half of all the buttons, then the right.
  */
-export function buttonSides(store: Store): Map<string, 'left' | 'right'> {
+export function railButtons(store: Store): RailButton[] {
   const { state } = store;
-  const ids = [...state.scene].reverse().filter((id) => {
+  const scene = [...state.scene].reverse();
+  const ids = scene.filter((id) => {
     const manifest = store.manifest(state.layers[id]?.layer ?? '');
     // A layer's items have no button: they come on with their layer.
     return manifest !== undefined && !isAmbient(manifest) && !state.layers[id]?.parent;
   });
-  const sides = new Map<string, 'left' | 'right'>();
+  const order = (id: string) => state.layers[id]?.button?.order ?? Number.POSITIVE_INFINITY;
+  const sorted = [...ids].sort((a, b) => order(a) - order(b) || scene.indexOf(a) - scene.indexOf(b));
+  const groupOf = (id: string) => state.layers[id]?.button?.group?.trim() || undefined;
+  // Runs of buttons that move together: one per named group, and one per ungrouped button.
+  const runs: string[][] = [];
+  const named = new Map<string, string[]>();
+  for (const id of sorted) {
+    const group = groupOf(id);
+    if (group === undefined) runs.push([id]);
+    else if (named.has(group)) named.get(group)!.push(id);
+    else {
+      const run = [id];
+      named.set(group, run);
+      runs.push(run);
+    }
+  }
   const rail = state.site.tv?.rail;
   const half = Math.ceil(ids.length / 2);
   let left = ids.filter((id) => state.layers[id]?.button?.side === 'left').length;
-  for (const id of ids) {
-    const placed = state.layers[id]?.button?.side;
-    if (placed) sides.set(id, placed);
-    else if (rail === 'left' || rail === 'right') sides.set(id, rail);
-    else if (left < half) {
-      sides.set(id, 'left');
-      left++;
-    } else sides.set(id, 'right');
+  const out: RailButton[] = [];
+  for (const run of runs) {
+    const free = run.filter((id) => !state.layers[id]?.button?.side);
+    let side: 'left' | 'right';
+    if (rail === 'left' || rail === 'right') side = rail;
+    else side = left < half ? 'left' : 'right';
+    if (side === 'left') left += free.length;
+    for (const id of run) out.push({ id, side: state.layers[id]?.button?.side ?? side, group: groupOf(id) });
   }
-  return sides;
+  return out;
+}
+
+/** The side each layer button sits on, keyed by instance id (see `railButtons`). */
+export function buttonSides(store: Store): Map<string, 'left' | 'right'> {
+  return new Map(railButtons(store).map((b) => [b.id, b.side]));
 }
 
 /** The side a layer's button defaults to when its author has not placed it. */
@@ -220,7 +253,7 @@ export class Controller {
     store.onLayer((id, state) => {
       this.cards.get(id)?.sync(state);
       // A button moves when its author changes its side, and the buttons shared out around it may move too.
-      if (this.right && this.sides.has(id) && [...this.sides].some(([other, side]) => side !== this.sideOf(other))) this.arrange();
+      if (this.right && this.sides.has(id) && this.layoutKey() !== this.shown) this.arrange();
     });
     store.onRemoved((id) => {
       this.cards.get(id)?.dispose();
@@ -229,35 +262,55 @@ export class Controller {
     store.onScene(() => this.arrange());
   }
 
-  private sideOf(id: string): 'left' | 'right' {
-    const state = this.store.state.layers[id];
-    const manifest = state && this.store.manifest(state.layer);
-    return manifest ? layerButton(id, manifest, state, defaultSideOf(this.store, id)).side : 'left';
+  /** The rails as last laid out, to tell when a change of side, group or order moves a button. */
+  private shown = '';
+
+  private layoutKey(): string {
+    return JSON.stringify(railButtons(this.store));
   }
 
-  /** Lays the cards out with the top of the scene first, making cards for layers that are new. */
+  /**
+   * Lays the cards out, making cards for layers that are new. On the controller screen the
+   * buttons follow `railButtons` (order, groups, sides), with a group's name above it;
+   * elsewhere the top of the scene comes first.
+   */
   private arrange(): void {
     const { store } = this;
     const elements: HTMLElement[] = [];
     const onRight: HTMLElement[] = [];
-    for (const id of [...store.state.scene].reverse()) {
-      const state = store.state.layers[id];
-      const manifest = state && store.manifest(state.layer);
-      if (!manifest) continue;
-      // The map at rest and a layer's items have no button: items come on with their layer.
-      if (this.right && (isAmbient(manifest) || state.parent)) continue;
+    const make = (id: string, manifest: LayerManifest, state: LayerState) => {
       let card = this.cards.get(id);
       if (!card) {
         card = this.right ? this.button(id, manifest) : this.card(id, manifest);
         this.cards.set(id, card);
         card.sync(state);
       }
-      const side = this.right ? this.sideOf(id) : 'left';
-      this.sides.set(id, side);
-      (side === 'right' ? onRight : elements).push(card.element);
+      return card;
+    };
+    if (this.right) {
+      const last = { left: null as string | null | undefined, right: null as string | null | undefined };
+      for (const { id, side, group } of railButtons(store)) {
+        const state = store.state.layers[id]!;
+        const card = make(id, store.manifest(state.layer)!, state);
+        this.sides.set(id, side);
+        const list = side === 'right' ? onRight : elements;
+        // A gap and the group's name start each group; an ungrouped button after a group gets the gap only.
+        if (list.length > 0 && group !== last[side]) list.push(el('div', 'rail-gap'));
+        if (group !== undefined && group !== last[side]) list.push(el('div', 'rail-group', group));
+        last[side] = group;
+        list.push(card.element);
+      }
+    } else {
+      for (const id of [...store.state.scene].reverse()) {
+        const state = store.state.layers[id];
+        const manifest = state && store.manifest(state.layer);
+        if (!manifest) continue;
+        elements.push(make(id, manifest, state).element);
+      }
     }
     this.root.replaceChildren(...elements);
     this.right?.replaceChildren(...onRight);
+    if (this.right) this.shown = this.layoutKey();
     if (this.centre) {
       // The layer that was opened comes first; a tool kept alongside it follows.
       const ids = [...store.state.scene].reverse();
