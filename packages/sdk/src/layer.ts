@@ -48,8 +48,11 @@ export interface FlowOverlayStyle {
   colormap?: Colormap;
   /** The magnitude at the top of the colormap. Default: the frames' `max`. */
   max?: number;
-  /** `ribbons` are steady streamlines with a light travelling along them, `particles` fine specks with short tails. Default `ribbons`. */
-  mode?: 'ribbons' | 'particles';
+  /**
+   * `ribbons` are steady streamlines with a light travelling along them, `particles` fine specks with short tails,
+   * `droplets` glowing drops with longer trails that land anywhere on the flow, like rain on running water. Default `ribbons`.
+   */
+  mode?: 'ribbons' | 'particles' | 'droplets';
   /** Number of particles; ribbons use an eighth as many streamlines. Default 500. */
   count?: number;
   /** Share of the extent's longer side a tracer travels per second, per field unit. Default 0.04. */
@@ -58,6 +61,8 @@ export interface FlowOverlayStyle {
   opacity?: number;
   /** Lights building faces where the flow blows straight at them (needs `setFacades`). Default false. */
   facadeGlow?: boolean;
+  /** Speeds below this, in field units, draw nothing. Default 0.08. */
+  still?: number;
 }
 
 /** A vector field drawn on the table as moving tracers. Animation and drawing run on the surface. */

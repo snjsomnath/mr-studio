@@ -158,6 +158,13 @@ export interface TracerOptions {
   trailSeconds: number;
   /** Returns 0..1. Defaults to Math.random. */
   random?: () => number;
+  /**
+   * Where a replaced tracer comes back: `upwind` on the edges the flow enters through (wind),
+   * `anywhere` on any open cell (rain landing on running water). Default `upwind`.
+   */
+  spawn?: 'upwind' | 'anywhere';
+  /** Seconds a tracer may stand still before it is replaced. Default 2. */
+  maxStall?: number;
 }
 
 /**
@@ -183,6 +190,8 @@ export class Tracers {
   private readonly stalled: Float32Array;
   private readonly active: Uint8Array;
   private readonly random: () => number;
+  private readonly anywhere: boolean;
+  private readonly maxStall: number;
   private field: FlowField;
   private readonly a: [number, number] = [0, 0];
   private readonly b: [number, number] = [0, 0];
@@ -194,6 +203,8 @@ export class Tracers {
     this.count = options.count;
     this.trailSeconds = options.trailSeconds;
     this.random = options.random ?? Math.random;
+    this.anywhere = options.spawn === 'anywhere';
+    this.maxStall = options.maxStall ?? MAX_STALL;
     const n = this.count;
     this.x = new Float32Array(n);
     this.y = new Float32Array(n);
@@ -234,7 +245,7 @@ export class Tracers {
       }
       this.age[i]! += dt;
       this.stalled[i] = Math.hypot(this.x[i]! - oldX, this.y[i]! - oldY) < still ? this.stalled[i]! + dt : 0;
-      if (this.stalled[i]! > MAX_STALL || this.age[i]! > MAX_AGE) {
+      if (this.stalled[i]! > this.maxStall || this.age[i]! > MAX_AGE) {
         this.spawn(i, false);
         continue;
       }
@@ -295,7 +306,7 @@ export class Tracers {
     return true;
   }
 
-  /** Places a tracer: anywhere at the start, afterwards on the edges the flow enters through. */
+  /** Places a tracer: anywhere at the start, afterwards on the edges the flow enters through (or anywhere, if so configured). */
   private spawn(i: number, anywhere: boolean): void {
     const g = this.field;
     const r = this.random;
@@ -309,7 +320,7 @@ export class Tracers {
     for (let attempt = 0; attempt < 60; attempt++) {
       let x: number;
       let y: number;
-      if (anywhere) {
+      if (anywhere || this.anywhere) {
         x = r() * g.width;
         y = r() * g.height;
       } else if (r() * (Math.abs(wx) * g.height + Math.abs(wy) * g.width) < Math.abs(wx) * g.height) {

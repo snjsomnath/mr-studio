@@ -65,6 +65,8 @@ const LOOK = {
   facadeSoft: [5, 2, 0],
   /** Seconds of path a particle's tail can show. */
   tailSeconds: 0.24,
+  /** Rain on running water, after the Chalmers demo's stormwater glow sprites: a soft halo, a bright core and a trail. */
+  droplet: { halo: 4.5, haloOpacity: 0.4, core: 1.1, coreOpacity: 0.95, trail: 1.3, trailOpacity: 0.55, tailSeconds: 0.9, tailPixels: 46, maxStall: 4 },
 } as const;
 /** Speeds below this draw nothing: still air has no direction worth showing. */
 const STILL = 0.08;
@@ -218,7 +220,7 @@ export class MapFlowOverlay implements FlowOverlay, CustomLayerInterface {
   constructor(map: MapLibreMap, id: string, site: SiteInfo, style: FlowOverlayStyle & { colormap: Colormap }) {
     this.map = map;
     this.id = id;
-    this.style = { mode: 'ribbons', count: 500, rate: 0.04, opacity: 1, max: undefined, facadeGlow: false, ...style };
+    this.style = { mode: 'ribbons', count: 500, rate: 0.04, opacity: 1, max: undefined, facadeGlow: false, still: STILL, ...style };
     this.tableSize = [site.extent.width_m, site.extent.height_m];
     this.table = lut(this.style.colormap);
     const extent = mercatorExtent(site);
@@ -244,7 +246,7 @@ export class MapFlowOverlay implements FlowOverlay, CustomLayerInterface {
     const previous = this.style;
     this.style = { ...previous, ...style };
     if (style.colormap) this.table = lut(style.colormap);
-    if (this.style.count !== previous.count) {
+    if (this.style.count !== previous.count || this.style.mode !== previous.mode) {
       this.tracers = null;
       this.lines = null;
     }
@@ -328,7 +330,14 @@ export class MapFlowOverlay implements FlowOverlay, CustomLayerInterface {
       this.glow.update(dt);
       this.facadeGlow(this.glow, cellsPerPixel);
     }
-    if (this.style.mode === 'particles') {
+    if (this.style.mode === 'droplets') {
+      if (!this.tracers) {
+        const { tailSeconds, maxStall } = LOOK.droplet;
+        this.tracers = new Tracers(field, { count: Math.max(0, Math.round(this.style.count)), trailSeconds: tailSeconds + 0.06, spawn: 'anywhere', maxStall });
+      }
+      this.tracers.update(dt, rate);
+      this.droplets(field, this.tracers, cellsPerPixel);
+    } else if (this.style.mode === 'particles') {
       if (!this.tracers) this.tracers = new Tracers(field, { count: Math.max(0, Math.round(this.style.count)), trailSeconds: LOOK.tailSeconds + 0.06 });
       this.tracers.update(dt, rate);
       this.particles(field, this.tracers, cellsPerPixel);
@@ -476,7 +485,7 @@ export class MapFlowOverlay implements FlowOverlay, CustomLayerInterface {
       const hx = tracers.x[i]!;
       const hy = tracers.y[i]!;
       const speed = this.speedAt(field, hx, hy);
-      if (speed < STILL) continue;
+      if (speed < this.style.still) continue;
       // Stable variety in brightness and tail length, never random flicker.
       const variation = (i * GOLDEN) % 1;
       const brightness = 0.75 + 0.25 * variation;
@@ -526,6 +535,83 @@ export class MapFlowOverlay implements FlowOverlay, CustomLayerInterface {
         const tipHalf = (LOOK.particleTip.width + LOOK.particleTip.grow * visible) / 2;
         strips.point(hx, hy, rgba(255, 255, 255, visible * this.style.opacity), tipHalf);
         strips.point(tipX, tipY, rgba(255, 255, 255, 0), tipHalf);
+        strips.end(cellsPerPixel);
+      }
+    }
+  }
+
+  /** Glowing drops riding the flow: a trail fading behind, a soft halo and a bright core at the head. */
+  private droplets(field: FlowField, tracers: Tracers, cellsPerPixel: number): void {
+    const strips = this.strips;
+    const look = LOOK.droplet;
+    const pixelsPerCell = 1 / cellsPerPixel;
+    const { trailX, trailY, trailT, start, length, age } = tracers;
+    const now = tracers.time;
+    const cap = Tracers.capacity;
+    const opacity = this.style.opacity;
+    const still = this.style.still;
+    for (let i = 0; i < tracers.count; i++) {
+      const n = length[i]!;
+      if (n < 1) continue;
+      const hx = tracers.x[i]!;
+      const hy = tracers.y[i]!;
+      const speed = this.speedAt(field, hx, hy);
+      if (speed < still) continue;
+      const variation = (i * GOLDEN) % 1;
+      const edge = Math.min(hx, field.width - hx, hy, field.height - hy) * pixelsPerCell;
+      // Drops land softly, and fade where the water slows to nothing.
+      const visible = (0.7 + 0.3 * variation) * smooth(age[i]! / 0.35) * smooth(edge / 10) * smooth(speed / (still * 3));
+      if (visible <= 0.01) continue;
+      const tail = look.tailPixels * (0.7 + 0.6 * variation);
+
+      // The trail, from the head back along the recorded path.
+      let bx = hx;
+      let by = hy;
+      let distance = 0;
+      let dirX = 0;
+      let dirY = 0;
+      const base = i * cap;
+      const first = start[i]!;
+      strips.point(hx, hy, this.colour(speed, visible * look.trailOpacity), look.trail / 2);
+      for (let j = n - 1; j >= 0; j--) {
+        const slot = base + ((first + j) % cap);
+        const ax = trailX[slot]!;
+        const ay = trailY[slot]!;
+        const at = trailT[slot]!;
+        const age = now - at;
+        if (age > look.tailSeconds || distance >= tail) break;
+        const piece = Math.hypot(bx - ax, by - ay) * pixelsPerCell;
+        if (piece < 1e-6) continue;
+        if (!clearSegment(field, ax, ay, bx, by)) break;
+        if (dirX === 0 && dirY === 0) {
+          dirX = (bx - ax) / (piece * cellsPerPixel);
+          dirY = (by - ay) / (piece * cellsPerPixel);
+        }
+        distance += piece;
+        const fade = Math.max(0, 1 - age / look.tailSeconds) * Math.max(0, 1 - distance / tail);
+        strips.point(ax, ay, this.colour(speed, visible * look.trailOpacity * fade * fade), (look.trail / 2) * (0.4 + 0.6 * fade));
+        bx = ax;
+        by = ay;
+      }
+      strips.end(cellsPerPixel);
+
+      // The head: a round soft halo in the water's colour and a small bright core, drawn along the motion.
+      if (dirX === 0 && dirY === 0) {
+        field.sample(hx, hy, this.velocity);
+        const norm = Math.hypot(this.velocity[0], this.velocity[1]) || 1;
+        dirX = this.velocity[0] / norm;
+        dirY = this.velocity[1] / norm;
+      }
+      for (const [radius, alpha, white] of [
+        [look.halo, look.haloOpacity, false],
+        [look.core, look.coreOpacity, true],
+      ] as const) {
+        const reach = radius * cellsPerPixel;
+        for (const t of [-1, -0.6, 0, 0.6, 1]) {
+          const half = Math.max(0.15, radius * Math.sqrt(1 - t * t));
+          const colour = white ? rgba(235, 252, 255, visible * alpha * opacity) : this.colour(speed, visible * alpha);
+          strips.point(hx + dirX * reach * t, hy + dirY * reach * t, colour, white ? half : half * 0.35, white ? 0 : half * 0.65);
+        }
         strips.end(cellsPerPixel);
       }
     }

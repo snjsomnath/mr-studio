@@ -12,6 +12,7 @@ const PATHS: Record<string, string> = {
   map: 'M9 4 3 6v14l6-2 6 2 6-2V4l-6 2-6-2ZM9 4v14M15 6v14',
   sun: 'M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8ZM12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.4 1.4M17.6 17.6 19 19M5 19l1.4-1.4M17.6 6.4 19 5',
   wind: 'M3 9h11a3 3 0 1 0-3-3M3 13h15a3 3 0 1 1-3 3M3 17h6',
+  droplet: 'M12 3c3.500 4.500 6 8 6 11a6 6 0 0 1-12 0c0-3 2.500-6.500 6-11ZM9.500 15a2.500 2.500 0 0 0 2.500 2.500',
   lightbulb: 'M9 18h6M10 21h4M12 3a6 6 0 0 0-4 10.5c.7.7 1 1.5 1 2.5h6c0-1 .3-1.800 1-2.500A6 6 0 0 0 12 3Z',
   car: 'M5 11l1.500-4.500h11L19 11M4 11h16v6H4zM7 17v2M17 17v2M7.500 14h.01M16.500 14h.01',
   tram: 'M7 4h10a1 1 0 0 1 1 1v11H6V5a1 1 0 0 1 1-1ZM6 11h12M9 16l-2 4M15 16l2 4M9.500 13.500h.01M14.500 13.500h.01M9 2h6',
@@ -59,7 +60,7 @@ const PATHS: Record<string, string> = {
 };
 
 /** Icons an author can give a layer's button. */
-export const LAYER_ICONS = ['sun', 'wind', 'route', 'footprints', 'tram', 'car', 'tree', 'lightbulb', 'images', 'pencil', 'map', 'blocks', 'layers', 'home', 'eye', 'play'];
+export const LAYER_ICONS = ['sun', 'wind', 'droplet', 'route', 'footprints', 'tram', 'car', 'tree', 'lightbulb', 'images', 'pencil', 'map', 'blocks', 'layers', 'home', 'eye', 'play'];
 
 const NS = 'http://www.w3.org/2000/svg';
 

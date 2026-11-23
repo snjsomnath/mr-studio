@@ -146,6 +146,16 @@ importers:
         specifier: ^5.9.0
         version: 5.9.3
 
+  packages/layers/stormwater:
+    dependencies:
+      '@mrstudio/sdk':
+        specifier: workspace:*
+        version: link:../../sdk
+    devDependencies:
+      typescript:
+        specifier: ^5.9.0
+        version: 5.9.3
+
   packages/layers/sunlight:
     dependencies:
       '@mrstudio/sdk':
