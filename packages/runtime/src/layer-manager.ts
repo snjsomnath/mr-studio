@@ -1,11 +1,21 @@
 import { EngineClient } from '@mrstudio/sdk';
-import type { Connection, LayerModule, LayerState, PanelContext, TableContext, TableHandlers, ToolInput } from '@mrstudio/sdk';
+import type { Connection, LayerManifest, LayerModule, LayerState, PanelContext, TableContext, TableHandlers, ToolInput } from '@mrstudio/sdk';
 
 import { recipeModule } from './recipe-player.ts';
 import { layerModule } from './registry.ts';
 import { changedKeys } from './store.ts';
 import type { Store } from './store.ts';
 import type { TableView } from './table.ts';
+
+/**
+ * Part of the map at rest: a base or ambient layer, or a layer of the scene that site.json
+ * starts on and gives no button, such as a Map data layer colouring the streets (#204).
+ * Tools kept alongside the open layer (the phones' sketch) are not.
+ */
+export function isAtRest(manifest: LayerManifest, state: LayerState | undefined): boolean {
+  if (manifest.category === 'base' || manifest.category === 'ambient') return true;
+  return Boolean(state?.rest && !state.parent && !manifest.alongside);
+}
 
 interface Running {
   handlers: TableHandlers;
@@ -91,11 +101,11 @@ export class LayerManager {
     requestAnimationFrame(this.frame);
   }
 
-  /** A top-level `base` or `ambient` layer: part of the map at rest. */
+  /** A top-level `base` or `ambient` layer, or one site.json starts on without a button: part of the map at rest. */
   private atRest(id: string): boolean {
     const state = this.store.state.layers[id];
-    const category = state ? this.store.manifest(state.layer)?.category : undefined;
-    return Boolean(state && !state.parent && (category === 'base' || category === 'ambient'));
+    const manifest = state ? this.store.manifest(state.layer) : undefined;
+    return Boolean(state && manifest && !state.parent && isAtRest(manifest, state));
   }
 
   /** An open layer that turns the map at rest off, such as the slideshow (#205). */
