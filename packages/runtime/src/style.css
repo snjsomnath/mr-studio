@@ -12,6 +12,16 @@
   font-size: 16px;
 }
 
+/*
+ * The controller screen beside the table is designed at 1920x1080 and scales with the
+ * screen, so a 46-inch 4K TV shows the same layout as a 1080p one, only sharper.
+ * Everything in this file is in rem for that reason (hairlines stay in px).
+ * --mrs-ui-scale is the per-display "Controller size" (1 = as designed).
+ */
+:root:has(body[data-role='tv']) {
+  font-size: clamp(12px, calc(min(100vw / 120, 100vh / 67.5) * var(--mrs-ui-scale, 1)), 48px);
+}
+
 * {
   box-sizing: border-box;
 }
@@ -83,14 +93,14 @@ body[data-role='table'] .table-surface {
 /* In dev the table keeps the site's aspect ratio and fits whichever side is tight. */
 body[data-role='dev'] .table-frame,
 body[data-role='compose'] .table-frame {
-  padding: 24px;
+  padding: 1.5rem;
   container-type: size;
 }
 
 body[data-role='dev'] .table-surface,
 body[data-role='compose'] .table-surface {
   width: min(100cqw, 100cqh * var(--aspect, 1.6667));
-  border-radius: 6px;
+  border-radius: 0.375rem;
   overflow: hidden;
   box-shadow: 0 0 0 1px var(--line);
 }
@@ -98,7 +108,7 @@ body[data-role='compose'] .table-surface {
 /* ---- Controller ---- */
 
 .controller {
-  width: 380px;
+  width: 23.75rem;
   flex: none;
   display: flex;
   flex-direction: column;
@@ -108,7 +118,7 @@ body[data-role='compose'] .table-surface {
 
 body[data-role='phone'] .controller {
   width: 100%;
-  max-width: 720px;
+  max-width: 45rem;
   margin: 0 auto;
   border: 0;
 }
@@ -120,7 +130,7 @@ body[data-role='phone'] {
 /* The controller screen: layer buttons down both sides of the dashboard canvas. */
 body[data-role='tv'] .controller {
   order: -1;
-  width: clamp(240px, 17vw, 360px);
+  width: clamp(15rem, 17vw, 22.5rem);
   border-left: 0;
   border-right: 1px solid var(--line);
 }
@@ -132,7 +142,7 @@ body[data-role='tv'] .controller-right {
 }
 
 body[data-role='tv'] .controller-right .cards {
-  padding-top: 20px;
+  padding-top: 1.25rem;
 }
 
 body[data-role='tv'][data-rail='none'] .controller {
@@ -142,12 +152,12 @@ body[data-role='tv'][data-rail='none'] .controller {
 .layer-button {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 0.75rem;
   width: 100%;
-  min-height: 56px;
-  padding: 8px 14px;
+  min-height: 3.5rem;
+  padding: 0.5rem 0.875rem;
   border: 0;
-  border-radius: 12px;
+  border-radius: 0.75rem;
   background: transparent;
   color: var(--text);
   font: inherit;
@@ -161,11 +171,22 @@ body[data-role='tv'][data-rail='none'] .controller {
   flex: none;
   display: grid;
   place-items: center;
-  width: 36px;
-  height: 36px;
+  width: 2.25rem;
+  height: 2.25rem;
   border-radius: 50%;
   background: var(--panel);
   color: var(--muted);
+}
+
+/* Icons are drawn with a px size; let them grow with the text on a large screen. */
+.layer-button-icon svg {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+.layer-open-head .layer-button-icon svg {
+  width: 1.5rem;
+  height: 1.5rem;
 }
 
 .layer-button[aria-pressed='true'] .layer-button-icon {
@@ -174,7 +195,7 @@ body[data-role='tv'][data-rail='none'] .controller {
 }
 
 body[data-role='tv'] .controller {
-  width: clamp(190px, 14vw, 280px);
+  width: clamp(11.875rem, 14vw, 17.5rem);
 }
 
 /* The open layer, in the centre of the controller screen. */
@@ -182,10 +203,10 @@ body[data-role='tv'] .controller {
   flex: none;
   max-height: 46%;
   overflow-y: auto;
-  padding: 28px 32px 8px;
+  padding: 1.75rem 2rem 0.5rem;
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 1.25rem;
 }
 
 .layer-card.layer-open {
@@ -207,13 +228,13 @@ body[data-role='tv'] .controller {
 .layer-open-head {
   display: flex;
   align-items: center;
-  gap: 16px;
-  margin-bottom: 16px;
+  gap: 1rem;
+  margin-bottom: 1rem;
 }
 
 .layer-open-head .layer-button-icon {
-  width: 48px;
-  height: 48px;
+  width: 3rem;
+  height: 3rem;
   background: var(--accent);
   color: var(--accent-ink);
 }
@@ -235,25 +256,25 @@ body[data-role='tv'] .controller {
 
 .layer-open .controls {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-  gap: 14px 32px;
+  grid-template-columns: repeat(auto-fill, minmax(16.25rem, 1fr));
+  gap: 0.875rem 2rem;
   align-items: start;
 }
 
 .home-button {
   width: auto;
-  margin: 0 16px 12px;
+  margin: 0 1rem 0.75rem;
   justify-content: center;
   border: 1px solid var(--line);
   background: var(--card);
 }
 
 .controller-header {
-  padding: 20px 20px 12px;
+  padding: 1.25rem 1.25rem 0.75rem;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 0.75rem;
 }
 
 .controller-header h1 {
@@ -271,17 +292,17 @@ body[data-role='tv'] .controller {
 .cards {
   flex: 1;
   overflow-y: auto;
-  padding: 8px 16px 16px;
+  padding: 0.5rem 1rem 1rem;
   display: grid;
-  gap: 12px;
+  gap: 0.75rem;
   align-content: start;
 }
 
 .controller-footer {
   display: flex;
   justify-content: space-between;
-  gap: 12px;
-  padding: 10px 20px;
+  gap: 0.75rem;
+  padding: 0.625rem 1.25rem;
   border-top: 1px solid var(--line);
   color: var(--muted);
   font-size: 0.75rem;
@@ -290,7 +311,7 @@ body[data-role='tv'] .controller {
 .layer-card {
   background: var(--card);
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: 0.75rem;
 }
 
 .layer-card.is-active {
@@ -301,8 +322,8 @@ body[data-role='tv'] .controller {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 14px 16px;
+  gap: 0.75rem;
+  padding: 0.875rem 1rem;
 }
 
 .layer-title h2 {
@@ -317,19 +338,19 @@ body[data-role='tv'] .controller {
 }
 
 .layer-body {
-  padding: 4px 16px 16px;
+  padding: 0.25rem 1rem 1rem;
   display: grid;
-  gap: 16px;
+  gap: 1rem;
 }
 
 .controls {
   display: grid;
-  gap: 14px;
+  gap: 0.875rem;
 }
 
 .control {
   display: grid;
-  gap: 6px;
+  gap: 0.375rem;
 }
 
 .control[hidden],
@@ -364,7 +385,7 @@ body[data-role='tv'] .controller {
 input[type='range'] {
   width: 100%;
   accent-color: var(--accent);
-  height: 28px;
+  height: 1.75rem;
   margin: 0;
 }
 
@@ -373,8 +394,8 @@ input[type='text'] {
   background: var(--panel);
   color: var(--text);
   border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 6px 10px;
+  border-radius: 0.5rem;
+  padding: 0.375rem 0.625rem;
   font: inherit;
 }
 
@@ -382,16 +403,16 @@ input[type='text'] {
   display: flex;
   background: var(--panel);
   border: 1px solid var(--line);
-  border-radius: 10px;
-  padding: 3px;
-  gap: 3px;
+  border-radius: 0.625rem;
+  padding: 0.1875rem;
+  gap: 0.1875rem;
 }
 
 .segmented button {
   flex: 1;
-  min-height: 34px;
+  min-height: 2.125rem;
   border: 0;
-  border-radius: 7px;
+  border-radius: 0.4375rem;
   background: transparent;
   color: var(--muted);
   font: inherit;
@@ -405,9 +426,9 @@ input[type='text'] {
 }
 
 button.action {
-  min-height: 38px;
+  min-height: 2.375rem;
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: 0.625rem;
   background: var(--panel);
   color: var(--text);
   font: inherit;
@@ -417,10 +438,10 @@ button.action {
 .switch {
   appearance: none;
   flex: none;
-  width: 44px;
-  height: 26px;
+  width: 2.75rem;
+  height: 1.625rem;
   margin: 0;
-  border-radius: 13px;
+  border-radius: 0.8125rem;
   background: var(--line);
   position: relative;
   cursor: pointer;
@@ -430,10 +451,10 @@ button.action {
 .switch::after {
   content: '';
   position: absolute;
-  top: 3px;
-  left: 3px;
-  width: 20px;
-  height: 20px;
+  top: 0.1875rem;
+  left: 0.1875rem;
+  width: 1.25rem;
+  height: 1.25rem;
   border-radius: 50%;
   background: var(--text);
   transition: transform 0.15s;
@@ -444,7 +465,7 @@ button.action {
 }
 
 .switch:checked::after {
-  transform: translateX(18px);
+  transform: translateX(1.125rem);
   background: var(--accent-ink);
 }
 
@@ -456,7 +477,7 @@ button.action {
 /* ---- Scene composer ---- */
 
 .palette {
-  width: 300px;
+  width: 18.75rem;
   border-left: 0;
   border-right: 1px solid var(--line);
 }
@@ -465,11 +486,11 @@ button.action {
 .stack-list {
   flex: 1;
   overflow-y: auto;
-  padding: 4px 16px 16px;
+  padding: 0.25rem 1rem 1rem;
 }
 
 .palette-group h2 {
-  margin: 14px 0 8px;
+  margin: 0.875rem 0 0.5rem;
   font-size: 0.75rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -484,28 +505,28 @@ button.action {
 }
 
 .stack-empty {
-  padding: 28px 12px;
+  padding: 1.75rem 0.75rem;
   text-align: center;
   border: 1px dashed var(--line);
-  border-radius: 12px;
+  border-radius: 0.75rem;
 }
 
 .palette-item,
 .stack-head {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 0.625rem;
   touch-action: none;
   user-select: none;
   cursor: grab;
 }
 
 .palette-item {
-  padding: 10px 10px 10px 12px;
-  margin-bottom: 8px;
+  padding: 0.625rem 0.625rem 0.625rem 0.75rem;
+  margin-bottom: 0.5rem;
   background: var(--card);
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: 0.625rem;
 }
 
 .palette-text {
@@ -530,10 +551,10 @@ button.action {
 
 .icon-button {
   flex: none;
-  width: 32px;
-  height: 32px;
+  width: 2rem;
+  height: 2rem;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: 0.5rem;
   background: var(--panel);
   color: var(--text);
   font: inherit;
@@ -549,14 +570,14 @@ button.action {
 .stack-list {
   position: relative;
   display: grid;
-  gap: 8px;
+  gap: 0.5rem;
   align-content: start;
 }
 
 .stack-row {
   background: var(--card);
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: 0.625rem;
 }
 
 .stack-row.is-selected {
@@ -572,7 +593,7 @@ button.action {
 }
 
 .stack-head {
-  padding: 8px 10px;
+  padding: 0.5rem 0.625rem;
 }
 
 .stack-grip {
@@ -606,13 +627,13 @@ button.action {
 }
 
 .stack-settings {
-  padding: 6px 14px 14px;
+  padding: 0.375rem 0.875rem 0.875rem;
   border-top: 1px solid var(--line);
 }
 
 .compose-status {
   margin: 0;
-  padding: 10px 20px;
+  padding: 0.625rem 1.25rem;
   border-top: 1px solid var(--line);
   color: var(--muted);
   font-size: 0.75rem;
@@ -624,9 +645,9 @@ button.action {
 
 .drop-line {
   position: absolute;
-  left: 16px;
-  right: 16px;
-  height: 3px;
+  left: 1rem;
+  right: 1rem;
+  height: 0.1875rem;
   border-radius: 2px;
   background: var(--accent);
   pointer-events: none;
@@ -637,14 +658,14 @@ button.action {
   top: 0;
   left: 0;
   z-index: 10;
-  padding: 8px 14px;
-  border-radius: 10px;
+  padding: 0.5rem 0.875rem;
+  border-radius: 0.625rem;
   background: var(--accent);
   color: var(--accent-ink);
   font-weight: 600;
   font-size: 0.9rem;
   pointer-events: none;
-  box-shadow: 0 6px 20px rgb(0 0 0 / 0.5);
+  box-shadow: 0 0.375rem 1.25rem rgb(0 0 0 / 0.5);
 }
 
 body.is-dragging,
@@ -659,10 +680,10 @@ body.is-dragging * {
 
 .connection {
   position: fixed;
-  top: 12px;
+  top: 0.75rem;
   left: 50%;
   transform: translateX(-50%);
-  padding: 6px 14px;
+  padding: 0.375rem 0.875rem;
   border-radius: 999px;
   background: #5a2a2a;
   font-size: 0.85rem;
@@ -684,22 +705,22 @@ body.is-dragging * {
 .join {
   display: flex;
   align-items: center;
-  gap: 16px;
-  padding: 14px 20px;
+  gap: 1rem;
+  padding: 0.875rem 1.25rem;
   border-top: 1px solid var(--line);
 }
 
 .join-qr {
   flex: none;
-  width: 132px;
-  border-radius: 8px;
+  width: 8.25rem;
+  border-radius: 0.5rem;
   overflow: hidden;
   line-height: 0;
 }
 
 /* The TV is read from across the room. */
 body[data-role='tv'] .join-qr {
-  width: 220px;
+  width: 13.75rem;
 }
 
 .join-text {
@@ -708,7 +729,7 @@ body[data-role='tv'] .join-qr {
 }
 
 .join h2 {
-  margin: 0 0 4px;
+  margin: 0 0 0.25rem;
   font-size: 1rem;
 }
 
@@ -732,22 +753,22 @@ body[data-role='tv'] .join-qr {
 .join-crowd {
   flex: none;
   display: grid;
-  gap: 6px;
+  gap: 0.375rem;
   justify-items: end;
 }
 
 .join-people {
   display: grid;
   grid-template-columns: repeat(4, auto);
-  gap: 5px;
+  gap: 0.3125rem;
 }
 
 .join-person,
 .phone-badge i {
   display: grid;
   place-items: center;
-  width: 24px;
-  height: 24px;
+  width: 1.5rem;
+  height: 1.5rem;
   border-radius: 50%;
   color: #10131a;
   font-size: 0.8rem;
@@ -765,8 +786,8 @@ body[data-role='tv'] .join-qr {
   flex: none;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 5px 12px 5px 6px;
+  gap: 0.5rem;
+  padding: 0.3125rem 0.75rem 0.3125rem 0.375rem;
   border: 1px solid var(--line);
   border-radius: 999px;
   font-size: 0.85rem;
@@ -775,10 +796,10 @@ body[data-role='tv'] .join-qr {
 
 .door {
   margin: auto;
-  width: min(100%, 360px);
-  padding: 24px;
+  width: min(100%, 22.5rem);
+  padding: 1.5rem;
   display: grid;
-  gap: 14px;
+  gap: 0.875rem;
   text-align: center;
 }
 
@@ -794,13 +815,13 @@ body[data-role='tv'] .join-qr {
 
 .door form {
   display: grid;
-  gap: 12px;
+  gap: 0.75rem;
 }
 
 .door input {
-  height: 56px;
+  height: 3.5rem;
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: 0.75rem;
   background: var(--card);
   color: var(--text);
   font: inherit;
@@ -823,7 +844,7 @@ button.action:disabled {
 }
 
 .door button {
-  min-height: 48px;
+  min-height: 3rem;
 }
 
 .layer-card[hidden] {
@@ -832,19 +853,19 @@ button.action:disabled {
 
 .tools {
   display: grid;
-  gap: 10px;
+  gap: 0.625rem;
 }
 
 .tool-pad {
   display: grid;
-  gap: 8px;
+  gap: 0.5rem;
 }
 
 .tool-map {
   display: block;
   width: 100%;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: 0.5rem;
   background: var(--bg);
   /* Fingers draw here; the page must not scroll or zoom under them. */
   touch-action: none;
@@ -869,7 +890,7 @@ button.action:disabled {
 .tool-actions {
   display: grid;
   grid-template-columns: 1fr 1fr 2fr;
-  gap: 8px;
+  gap: 0.5rem;
 }
 
 .tool-actions[hidden] {
@@ -877,7 +898,7 @@ button.action:disabled {
 }
 
 .tool-actions button {
-  min-height: 44px;
+  min-height: 2.75rem;
 }
 
 /* Decorations layers draw over the table (see MapHandle.addElement). */
@@ -911,7 +932,7 @@ button.action:disabled {
   touch-action: none;
   user-select: none;
   color: #e8ecf4;
-  font-size: 14px;
+  font-size: 0.875rem;
 }
 
 /* Until the camera is solved the surface is dark, so only the marker's light falls on the model. */
@@ -935,7 +956,7 @@ button.action:disabled {
 .calibration-marker i:nth-child(1) {
   left: -22px;
   top: -0.5px;
-  width: 44px;
+  width: 2.75rem;
   height: 1px;
 }
 
@@ -943,15 +964,15 @@ button.action:disabled {
   left: -0.5px;
   top: -22px;
   width: 1px;
-  height: 44px;
+  height: 2.75rem;
 }
 
 .calibration-marker b {
   position: absolute;
   left: -9px;
   top: -9px;
-  width: 18px;
-  height: 18px;
+  width: 1.125rem;
+  height: 1.125rem;
   border: 1px solid #ffd24a;
   border-radius: 50%;
 }
@@ -962,33 +983,33 @@ button.action:disabled {
 
 .calibration-dot {
   margin: -9px 0 0 -9px;
-  width: 18px;
-  height: 18px;
+  width: 1.125rem;
+  height: 1.125rem;
   border-radius: 50%;
   border: 1px solid #4ade80;
   color: #4ade80;
-  font-size: 10px;
-  line-height: 16px;
+  font-size: 0.625rem;
+  line-height: 1rem;
   text-align: center;
 }
 
 .calibration-panel {
   position: absolute;
-  right: 16px;
-  bottom: 16px;
-  width: 292px;
-  padding: 16px;
+  right: 1rem;
+  bottom: 1rem;
+  width: 18.25rem;
+  padding: 1rem;
   display: grid;
-  gap: 10px;
+  gap: 0.625rem;
   cursor: default;
   background: rgb(14 18 26 / 0.94);
   border: 1px solid rgb(255 255 255 / 0.14);
-  border-radius: 10px;
+  border-radius: 0.625rem;
 }
 
 .calibration-panel h2 {
   margin: 0;
-  font-size: 16px;
+  font-size: 1rem;
   font-weight: 600;
 }
 
@@ -999,7 +1020,7 @@ button.action:disabled {
 
 .calibration-plan {
   display: block;
-  border-radius: 6px;
+  border-radius: 0.375rem;
 }
 
 .calibration-status {
@@ -1013,23 +1034,23 @@ button.action:disabled {
 }
 
 .calibration-help {
-  font-size: 12px;
+  font-size: 0.75rem;
   opacity: 0.6;
 }
 
 .calibration-row {
   display: flex;
-  gap: 8px;
+  gap: 0.5rem;
 }
 
 .calibration-row button {
   flex: 1;
-  padding: 7px 8px;
+  padding: 0.4375rem 0.5rem;
   font: inherit;
   color: inherit;
   background: rgb(255 255 255 / 0.08);
   border: 1px solid rgb(255 255 255 / 0.16);
-  border-radius: 6px;
+  border-radius: 0.375rem;
   cursor: pointer;
 }
 
