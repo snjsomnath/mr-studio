@@ -26,6 +26,7 @@
       ]
     },
     { "id": "backdrop", "type": "range", "label": "Speed map underneath", "min": 0, "max": 1, "step": 0.05, "default": 0.25 },
+    { "id": "facades", "type": "toggle", "label": "Light the walls the wind hits", "default": true },
     { "id": "trees", "type": "toggle", "label": "Trees slow the wind", "default": true },
     {
       "id": "detail", "type": "select", "label": "Detail", "default": "256",

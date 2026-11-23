@@ -522,3 +522,171 @@ export function ribbonLight(travel: number, time: number, id: number): number {
 }
 
 export { smooth as smoothstep01 };
+
+// ---- Facade glow ------------------------------------------------------------
+// Ported from the Chalmers demo's FacadeGlow (interactive_map animations/cfd-visuals.js).
+// Building faces light up where the wind blows straight at them. It is a
+// qualitative exposure proxy (the square of the wind blowing into the face),
+// not surface pressure.
+
+/** A short piece of a building's outline, in field cells, with its outward normal. */
+export interface FacadeEdge {
+  ax: number;
+  ay: number;
+  bx: number;
+  by: number;
+  nx: number;
+  ny: number;
+}
+
+/**
+ * Cuts building outlines (polygons of rings, outer ring first, in field cells,
+ * rows down) into pieces of at most `piece` cells with outward normals. Pieces
+ * whose middle lies outside the field are dropped.
+ */
+export function facadeEdges(polygons: [number, number][][][], width: number, height: number, piece = 1.5): FacadeEdge[] {
+  const edges: FacadeEdge[] = [];
+  for (const polygon of polygons) {
+    polygon.forEach((ring, ringIndex) => {
+      const n = ring.length > 1 && ring[0]![0] === ring[ring.length - 1]![0] && ring[0]![1] === ring[ring.length - 1]![1] ? ring.length - 1 : ring.length;
+      if (n < 3) return;
+      let area = 0;
+      for (let i = 0; i < n; i++) {
+        const a = ring[i]!;
+        const b = ring[(i + 1) % n]!;
+        area += a[0] * b[1] - b[0] * a[1];
+      }
+      if (Math.abs(area) < 1e-8) return;
+      // Holes wind the other way round, so their outside is the courtyard.
+      const orientation = Math.sign(area) * (ringIndex === 0 ? 1 : -1);
+      for (let i = 0; i < n; i++) {
+        const [ax, ay] = ring[i]!;
+        const [bx, by] = ring[(i + 1) % n]!;
+        const dx = bx - ax;
+        const dy = by - ay;
+        const length = Math.hypot(dx, dy);
+        if (length < 1e-6) continue;
+        const count = Math.ceil(length / piece);
+        const nx = (orientation * dy) / length;
+        const ny = (-orientation * dx) / length;
+        for (let j = 0; j < count; j++) {
+          const t0 = j / count;
+          const t1 = (j + 1) / count;
+          const mx = ax + dx * ((t0 + t1) / 2);
+          const my = ay + dy * ((t0 + t1) / 2);
+          if (mx < 0 || my < 0 || mx > width || my > height) continue;
+          edges.push({ ax: ax + dx * t0, ay: ay + dy * t0, bx: ax + dx * t1, by: ay + dy * t1, nx, ny });
+        }
+      }
+    });
+  }
+  return edges;
+}
+
+/** Seconds for the glow to build towards its target, and to fall back. */
+const GLOW_RISE = 1.5;
+const GLOW_FALL = 0.3;
+
+/** How brightly each facade piece glows, from the wind just outside it. */
+export class FacadeGlow {
+  readonly edges: FacadeEdge[];
+  /** Displayed glow of each edge, 0..1. */
+  readonly intensity: Float32Array;
+  /** Per edge, the probe stencils: [count, cell, weight, cell, weight, ...] per probe, one after another. */
+  private probes: Float64Array[] = [];
+  private blockedCount = -1;
+  private field: FlowField;
+
+  constructor(field: FlowField, edges: FacadeEdge[]) {
+    this.field = field;
+    this.edges = edges;
+    this.intensity = new Float32Array(edges.length);
+    this.place();
+  }
+
+  /** Swaps the field. Probes are placed again when its obstacles changed. */
+  setField(field: FlowField): void {
+    this.field = field;
+    this.place();
+  }
+
+  /**
+   * Places probes in the open air just outside each edge, out to about 2% of the
+   * table's longer side, stopping at the next building. Only edges with a building
+   * right behind them get probes. Obstacles show only once the wind blows, so this
+   * runs again whenever the obstacle mask changes.
+   */
+  place(): void {
+    const g = this.field;
+    let count = 0;
+    for (let n = 0; n < g.blocked.length; n++) count += g.blocked[n]!;
+    if (count === this.blockedCount && this.probes.length === this.edges.length) return;
+    this.blockedCount = count;
+    const solid = (x: number, y: number) => g.isBlocked(Math.floor(x), Math.floor(y)) && x >= 0 && y >= 0 && x < g.width && y < g.height;
+    const reach = Math.max(1.5, 0.0167 * Math.max(g.width, g.height));
+    this.probes = this.edges.map((edge) => {
+      const x = (edge.ax + edge.bx) / 2;
+      const y = (edge.ay + edge.by) / 2;
+      const data: number[] = [];
+      if (![0.25, 0.75, 1.25].some((d) => solid(x - edge.nx * d, y - edge.ny * d))) return new Float64Array(0);
+      let fluid = false;
+      let lastX = 0;
+      let lastY = 0;
+      for (let d = 0.5; d <= Math.max(1.5, reach * 1.5); d += 0.5) {
+        const px = x + edge.nx * d;
+        const py = y + edge.ny * d;
+        if (px < 0 || py < 0 || px >= g.width || py >= g.height) break;
+        if (solid(px, py)) {
+          if (fluid || d >= 1) break;
+          continue;
+        }
+        // Never sample through another building across a narrow gap.
+        if (fluid && g.crossesBlocked(lastX, lastY, px, py)) break;
+        const gx = px - 0.5;
+        const gy = py - 0.5;
+        const ix = Math.floor(gx);
+        const iy = Math.floor(gy);
+        const fx = gx - ix;
+        const fy = gy - iy;
+        const stencil: number[] = [];
+        for (let dy = 0; dy <= 1; dy++) {
+          for (let dx = 0; dx <= 1; dx++) {
+            const n = Math.max(0, Math.min(g.height - 1, iy + dy)) * g.width + Math.max(0, Math.min(g.width - 1, ix + dx));
+            if (!g.blocked[n]) stencil.push(n, (dx ? fx : 1 - fx) * (dy ? fy : 1 - fy));
+          }
+        }
+        data.push(stencil.length / 2, ...stencil);
+        fluid = true;
+        lastX = px;
+        lastY = py;
+      }
+      return Float64Array.from(data);
+    });
+  }
+
+  /** Moves each edge's glow towards the wind now blowing into it. Field units are m/s. */
+  update(dt: number): void {
+    const { u, v } = this.field;
+    const rise = 1 - Math.exp(-dt / GLOW_RISE);
+    const fall = 1 - Math.exp(-dt / GLOW_FALL);
+    for (let e = 0; e < this.edges.length; e++) {
+      const edge = this.edges[e]!;
+      const s = this.probes[e]!;
+      let incoming = 0;
+      for (let i = 0; i < s.length; ) {
+        const end = i + 1 + 2 * s[i]!;
+        i++;
+        let pu = 0;
+        let pv = 0;
+        for (; i < end; i += 2) {
+          pu += s[i + 1]! * u[s[i]!]!;
+          pv += s[i + 1]! * v[s[i]!]!;
+        }
+        incoming = Math.max(incoming, -(pu * edge.nx + pv * edge.ny));
+      }
+      const target = 1 - Math.exp(-(incoming * incoming) / 9);
+      const current = this.intensity[e]!;
+      this.intensity[e] = current + (target - current) * (target > current ? rise : fall);
+    }
+  }
+}
