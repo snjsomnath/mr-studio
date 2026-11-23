@@ -57,6 +57,8 @@ const PATHS: Record<string, string> = {
   bars: 'M4 5h16v14H4zM8 5v14M12 5v14M16 5v14',
   settings: 'M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6ZM12 2v3M12 19v3M2 12h3M19 12h3M4.900 4.900l2.100 2.100M17 17l2.100 2.100M4.900 19.100 7 17M17 7l2.100-2.100',
   save: 'M5 4h11l3 3v13H5zM8 4v5h7V4M8 20v-6h8v6',
+  undo: 'M9 14 4 9l5-5M4 9h10.500a5.500 5.500 0 0 1 0 11H11',
+  redo: 'M15 14l5-5-5-5M20 9H9.500a5.500 5.500 0 0 0 0 11H13',
 };
 
 /** Icons an author can give a layer's button. */

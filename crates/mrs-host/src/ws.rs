@@ -163,6 +163,9 @@ async fn request(state: &AppState, role: Role, surface: u64, message: &Value, ou
         }
         return state.calibration_request(method, p);
     }
+    if method.starts_with("history.") {
+        return state.history_request(role, surface, method, p).await;
+    }
     if !method.starts_with("engine.") {
         return state.hub.request(role, surface, method, p);
     }

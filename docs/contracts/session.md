@@ -299,6 +299,10 @@ Requests:
 | `custom.save` | `{ id, recipe }` | tv, dev | Saves a custom layer (site.md, Custom layers) under `custom` in site.json, new or replacing the one with that id, and offers it at once: every surface gets `catalog.changed { manifest }`. Instances of it on the table restyle in place and keep the params its controls still take. Refused for the id of a core layer. Returns `{ id, use }` (`use` is `custom:<id>`) |
 | `custom.remove` | `{ id }` | tv, dev | Removes a custom layer from site.json, refused while the table uses it. Surfaces get `catalog.removed { id }` |
 | `palette.set` | `{ palette }` | tv, dev | Saves the table's palette (`{ set?, slots? }`, site.md; `null` removes it). Surfaces get `palette.changed { palette }`, and the site's `palette` follows it; custom layers recolour at once |
+| `history.list` | `{}` | table, tv, dev | The table's revision history (see "Revision history" below): `{ revisions, head, can_undo, can_redo }`, newest first |
+| `history.undo` | `{}` | tv, dev | Puts back the version of site.json before the current one, whoever made the change. Answers like `history.list` |
+| `history.redo` | `{}` | tv, dev | Puts back the version undo last took away. A new change drops what could be redone |
+| `history.restore` | `{ revision }` | tv, dev | Brings back any kept revision as a new revision on top, so nothing is lost |
 | `layer.step` | `{ layer, to }` | all | Moves a layer that is on through its steps: `"next"`, `"previous"`, `"first"`, `"skip"` (the next step, whatever sub-steps are left), `"all"` (every sub-step revealed) or a step number. See Steps above |
 | `layer.play` | `{ layer, playing }` | all | Plays or pauses a layer's steps; the host moves them on |
 | `layer.substeps` | `{ layer, count, titles? }` | table, dev | A layer that is on says how many sub-steps it has (at most 64), with a name for each. 0 removes them |
@@ -322,7 +326,23 @@ Events:
 | `tool.input` | `{ layer, tool, geometry, from, participant? }` |
 | `calibration` | `{ projector }` after a calibration was saved or cleared |
 | `calibration.mode` | `{ active }` |
-| `site.changed` | `{ site: SiteInfo }` after data was imported: the scene is re-baked and the engine and twin already use it. Replace `state.site`; layers that read site data at start need a reload |
+| `site.changed` | `{ site: SiteInfo }` after data was imported, or an undo or outside edit changed more than the live keys: the scene is re-baked and the engine and twin already use it. Replace `state.site`; layers that read site data at start need a reload |
+| `history.changed` | `{ revision, head, stepped, can_undo, can_redo }` after every change to site.json, from any writer. `stepped` is true for undo and redo. `revision.surface` is the surface that made it, so an editor can say "changed by someone else" |
+| `site.problem` | `{ message, revision }`: site.json was changed outside MR Studio and does not load. The table keeps what it shows; undo puts the last good version back |
+| `site.tv`, `site.display` | `{ tv }`, `{ display }` after those settings changed |
+
+### Revision history
+
+The host keeps every version of `site.json` (#72), whoever wrote it, in one list:
+
+- **Who**: `by` is `editor` (a dev surface), `controller` (a tv surface), `import` (Add data, OpenStreetMap, elevation), `mcp` (the MCP server), `outside` (a text editor, `git pull`, any other program), `history` (a restore) or `start`.
+- **A revision** is `{ rev, at, by, summary, keys, surface? }`: `rev` counts up and is never reused, `at` is Unix seconds, `summary` is one line in plain words ("Added Sun study", "Changed outside MR Studio: the palette"), `keys` are the top-level keys of site.json that changed.
+- **Outside edits**: the host looks at `site.json` about once a second. A change it did not make becomes a revision and shows on every surface at once: the layers, custom layers, palette and the `tv` and `display` settings change live (`state.scene`, `catalog.*`, `palette.changed`, `site.tv`, `site.display`); anything else re-bakes the ground and sends `site.changed`. A file that does not load is recorded too and reported with `site.problem`.
+- **Naming an outside change**: a tool that writes site.json may first write `.mrstudio/next-change.json` in the site folder: `{ "by": "mcp", "summary": "Added trees", "at": <unix seconds> }`. The next outside change found within 30 seconds takes that name; the note is then deleted.
+- **Undo and redo** walk the list and rewrite site.json; the running table follows as for an outside edit. A version that no longer loads (a layer package that is gone) is refused and site.json stays as it was.
+- **A dragged slider** is one revision: the same change from the same surface within 3 seconds joins the revision before it.
+- **Two editors**: each change is written as it arrives, so the later one wins; the other editor learns of it from `history.changed` with another `surface`.
+- **Where**: `.mrstudio/history/` in the site folder, one file per revision and `head.json`, the newest 200 kept. It belongs to this computer: it is left out of Save As, copies, exports and the site's repository. Only `site.json` is versioned: a data file replaced by an import stays replaced after an undo, though site.json points back to the file it named before.
 
 Rules:
 

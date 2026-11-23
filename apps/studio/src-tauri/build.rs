@@ -91,7 +91,7 @@ fn stage(root: &Path, staged: &Path) -> io::Result<()> {
 
     // The sample site, so the app has something to show on first start.
     sync_dir(&root.join("sites/sample"), &staged.join("sites/sample"), &|path| {
-        !path.components().any(|c| c.as_os_str() == "scene" || c.as_os_str() == "tools")
+        !path.components().any(|c| c.as_os_str() == "scene" || c.as_os_str() == "tools" || c.as_os_str() == ".mrstudio")
     })
 }
 

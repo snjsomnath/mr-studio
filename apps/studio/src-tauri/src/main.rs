@@ -182,6 +182,9 @@ fn main() -> anyhow::Result<()> {
             if file_menu::ACTIONS.contains(&id) {
                 run_file_action(app, id);
             }
+            if file_menu::EDIT_ACTIONS.contains(&id) {
+                file_menu::tell_editor_edit(app, EDITOR, id);
+            }
         })
         .setup(|app| {
             let paths = app.path();
@@ -472,6 +475,10 @@ fn copy_dir(from: &Path, to: &Path) -> std::io::Result<()> {
     std::fs::create_dir_all(to)?;
     for entry in std::fs::read_dir(from)? {
         let entry = entry?;
+        // The example's revision history (#72) belongs to the example, not the copy.
+        if entry.file_name() == ".mrstudio" {
+            continue;
+        }
         let target = to.join(entry.file_name());
         if entry.file_type()?.is_dir() {
             copy_dir(&entry.path(), &target)?;
