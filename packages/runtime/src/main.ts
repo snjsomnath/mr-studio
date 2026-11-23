@@ -96,6 +96,7 @@ async function main() {
   const palette = el('aside', 'controller palette');
   if (composing) app.append(palette);
   if (role === 'table' || role === 'dev') {
+    let editor: import('./editor/editor.ts').Editor | null = null;
     const frame = el('div', 'table-frame');
     const surface = el('div', 'table-surface');
     surface.style.aspectRatio = `${site.extent.width_m} / ${site.extent.height_m}`;
@@ -105,7 +106,8 @@ async function main() {
       // The editor's chrome is light whatever the site's theme; only the table inside it is dark.
       document.querySelector('meta[name="color-scheme"]')?.setAttribute('content', 'light');
       const { Editor } = await import('./editor/editor.ts');
-      new Editor(app, store, connection).canvas.append(frame);
+      editor = new Editor(app, store, connection);
+      editor.canvas.append(frame);
     } else {
       stage.append(frame);
       app.append(stage);
@@ -114,6 +116,8 @@ async function main() {
     const { TableView } = await import('./table.ts');
     const view = new TableView(surface, site, role === 'table');
     await view.ready;
+    // The editor keeps a picture of the table for Home when it is left (#131).
+    if (editor) editor.snapshot = () => view.snapshot();
     const { installModel } = await import('./model/index.ts');
     await installModel(view, connection, role);
     new LayerManager(store, connection, view);

@@ -10,6 +10,7 @@
 
 mod colour;
 mod config;
+mod file_menu;
 mod sites;
 mod updates;
 
@@ -84,6 +85,8 @@ struct Shell {
     editor_stale: std::sync::atomic::AtomicBool,
     /// The result of the last look for a newer version.
     updates: Mutex<Option<Result<updates::Available, String>>>,
+    /// File menu actions that arrive twice (menu shortcut and page) run once.
+    file_debounce: file_menu::Debounce,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -153,8 +156,16 @@ fn main() -> anyhow::Result<()> {
             check_updates,
             set_update_check,
             install_update,
-            open_link
+            open_link,
+            file_action,
+            table_details
         ])
+        .on_menu_event(|app, event| {
+            let id = event.id().as_ref();
+            if file_menu::ACTIONS.contains(&id) {
+                run_file_action(app, id);
+            }
+        })
         .setup(|app| {
             let paths = app.path();
             let config_dir = paths.app_config_dir()?;
@@ -181,7 +192,12 @@ fn main() -> anyhow::Result<()> {
                 surfaces: Mutex::new(Vec::new()),
                 editor_stale: Default::default(),
                 updates: Mutex::new(None),
+                file_debounce: file_menu::Debounce::new(),
             });
+            // macOS has one menu bar for the app. Elsewhere the File menu sits on the editor window only.
+            if cfg!(target_os = "macos") {
+                app.set_menu(file_menu::app_menu(app.handle())?)?;
+            }
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move { startup(handle).await });
             if !app.state::<Shell>().settings().skip_update_check {
@@ -482,7 +498,10 @@ fn open_editor(app: &AppHandle, page: &str) -> anyhow::Result<()> {
         }
         None => {
             let handle = app.clone();
-            let window = WebviewWindowBuilder::new(app, EDITOR, WebviewUrl::External(url))
+            let builder = WebviewWindowBuilder::new(app, EDITOR, WebviewUrl::External(url));
+            #[cfg(not(target_os = "macos"))]
+            let builder = builder.menu(file_menu::editor_menu(app)?);
+            let window = builder
                 .title(title)
                 .inner_size(1440.0, 900.0)
                 .min_inner_size(960.0, 600.0)
@@ -497,12 +516,24 @@ fn open_editor(app: &AppHandle, page: &str) -> anyhow::Result<()> {
                 })
                 .build()?;
             // Closing the editor leads back to Home, as closing a document does, unless the
-            // table is being presented.
+            // table is being presented. The page first gets a moment to keep a picture of
+            // the map for the table's card on Home (#131).
             let handle = app.clone();
             window.on_window_event(move |event| {
-                if matches!(event, tauri::WindowEvent::CloseRequested { .. }) && !is_presenting(&handle) {
-                    report(open_home_window(&handle));
-                }
+                let tauri::WindowEvent::CloseRequested { api, .. } = event else { return };
+                api.prevent_close();
+                let Some(editor) = handle.get_webview_window(EDITOR) else { return };
+                let _ = editor.eval("window.mrsBeforeLeave && window.mrsBeforeLeave()");
+                let handle = handle.clone();
+                tauri::async_runtime::spawn(async move {
+                    tokio::time::sleep(Duration::from_millis(700)).await;
+                    if !is_presenting(&handle) {
+                        report(open_home_window(&handle));
+                    }
+                    if let Some(editor) = handle.get_webview_window(EDITOR) {
+                        report(editor.destroy().map_err(anyhow::Error::from));
+                    }
+                });
             });
             window
         }
@@ -707,6 +738,13 @@ fn launcher_state(app: AppHandle, shell: State<'_, Shell>) -> Result<LauncherSta
         presenting: is_presenting(&app),
         error,
     })
+}
+
+/// The size and picture of a table, for its card on Home. Separate from `launcher_state`
+/// so Home shows the list at once and fills these in as they come.
+#[tauri::command]
+async fn table_details(path: PathBuf) -> Result<sites::Details, String> {
+    tokio::task::spawn_blocking(move || sites::details(&path)).await.map_err(text)
 }
 
 /// Asks for a folder and adds it to the picker. `None` when the dialog was cancelled.
@@ -963,6 +1001,133 @@ async fn open_view(app: AppHandle, role: String) -> Result<(), String> {
 #[tauri::command]
 async fn open_settings(app: AppHandle) -> Result<(), String> {
     open_launcher(&app).map_err(text)
+}
+
+/// The File menu, from the editor page's own File button and its keys (#130).
+/// `checked` says the page has already made sure nothing is still being saved; without
+/// it an action that leaves the table, or Save, is handed to the page to check first.
+#[tauri::command]
+fn file_action(app: AppHandle, action: String, checked: Option<bool>) -> Result<(), String> {
+    if !file_menu::ACTIONS.contains(&action.as_str()) {
+        return Err(format!("'{action}' is not a File menu action"));
+    }
+    if checked == Some(true) {
+        perform_file_action(&app, &action);
+    } else {
+        run_file_action(&app, &action);
+    }
+    Ok(())
+}
+
+/// Runs one File menu action. Off the event loop: windows are opened and closed, and a
+/// dialog waits for the person.
+fn run_file_action(app: &AppHandle, action: &str) {
+    if !app.state::<Shell>().file_debounce.allow(action) {
+        return;
+    }
+    // Save, and anything that leaves the table, goes past the editor page first: it waits for
+    // a change still on its way to the host and asks if one could not be saved. It then
+    // calls `file_action` with `checked`. Close only when the editor is the window in front.
+    if let Some(editor) = app.get_webview_window(EDITOR) {
+        let ask = match action {
+            "save" | "save_as" | "home" | "open" | "new" => true,
+            "close" => editor.is_focused().unwrap_or(false),
+            _ => false,
+        };
+        if ask {
+            file_menu::tell_editor(app, EDITOR, json!({ "action": "ask", "then": action }));
+            return;
+        }
+    }
+    perform_file_action(app, action);
+}
+
+fn perform_file_action(app: &AppHandle, action: &str) {
+    let app = app.clone();
+    let action = action.to_string();
+    tauri::async_runtime::spawn(async move {
+        let done = match action.as_str() {
+            "new" => {
+                let shell = app.state::<Shell>();
+                match new_table(app.clone(), shell).await {
+                    // Without the editor's wizard, Home asks the first questions.
+                    Ok(false) => open_home_window(&app),
+                    Ok(true) => Ok(()),
+                    Err(e) => Err(anyhow::anyhow!(e)),
+                }
+            }
+            "open" | "home" => open_home_window(&app),
+            "settings" => open_launcher(&app),
+            // Every change is written as it is made, and the page has checked that nothing is
+            // still on its way: Save has nothing left to write. With the revision history
+            // (#72) it will also mark a save point here.
+            "save" => Ok(()),
+            "save_as" => save_as(&app).await,
+            "reveal" => {
+                let site = app.state::<Shell>().running.lock().unwrap().as_ref().map(|r| r.site.join("site.json"));
+                match site {
+                    Some(site) => app.opener().reveal_item_in_dir(site).map_err(anyhow::Error::from),
+                    None => Ok(()),
+                }
+            }
+            "close" => close_focused(&app),
+            other => Err(anyhow::anyhow!("unknown File action '{other}'")),
+        };
+        if let Err(e) = done {
+            tracing::error!("File > {action}: {e:#}");
+            file_menu::tell_editor(&app, EDITOR, json!({ "action": "problem", "message": format!("{e:#}") }));
+        }
+    });
+}
+
+/// Close: the editor goes back to Home, as closing a document does; another of the app's
+/// own windows just closes. The table and TV windows are left alone (Esc and the way back
+/// on them are for that).
+fn close_focused(app: &AppHandle) -> anyhow::Result<()> {
+    let focused = app.webview_windows().into_iter().find(|(_, w)| w.is_focused().unwrap_or(false));
+    match focused {
+        Some((label, window)) if label == EDITOR => {
+            open_home_window(app)?;
+            window.close()?;
+        }
+        Some((label, window)) if !label.starts_with("surface-") => window.close()?,
+        _ => {}
+    }
+    Ok(())
+}
+
+/// Save As: the person names the copy in the system's save dialog, the table's folder is
+/// copied there with its own id and name, and the editor switches to the copy. The original
+/// stays as it was.
+async fn save_as(app: &AppHandle) -> anyhow::Result<()> {
+    let shell = app.state::<Shell>();
+    let Some(running) = shell.running.lock().unwrap().clone() else { return Ok(()) };
+    let folder = file_menu::default_folder(&running.site, &shell.sites_folders);
+    let (send, receive) = tokio::sync::oneshot::channel();
+    let mut dialog = app.dialog().file().set_title("Save table as").set_directory(&folder).set_file_name(format!("{} copy", running.name));
+    if let Some(window) = app.get_webview_window(EDITOR) {
+        dialog = dialog.set_parent(&window);
+    }
+    dialog.save_file(move |path| {
+        let _ = send.send(path);
+    });
+    let Some(target) = receive.await.ok().flatten() else { return Ok(()) };
+    let target = target.into_path().context("the chosen place is not a folder on this computer")?;
+    let name = file_menu::name_from(&target).context("Give the table a name.")?;
+    // The dialog may have added an extension; the folder is named as the table is.
+    let target = target.with_file_name(&name);
+    file_menu::copy_table(&running.site, &target, &name)?;
+    tracing::info!("saved '{}' as '{name}' in {}", running.name, target.display());
+    // A copy outside the sites folder is remembered, so Home lists it.
+    let mut settings = shell.settings();
+    let in_sites_folder = shell.sites_folders.iter().any(|f| target.parent() == Some(f.as_path()));
+    let target = sites::canonical(target);
+    if !in_sites_folder && !settings.sites.contains(&target) {
+        settings.sites.push(target.clone());
+        settings.write(&shell.settings_path())?;
+    }
+    // The editor reloads on the copy, whose name is in its title.
+    open_site(app.clone(), app.state::<Shell>(), target, None).await.map_err(|e| anyhow::anyhow!(e))
 }
 
 #[tauri::command]

@@ -35,6 +35,7 @@
     "allow-install-update",
     "allow-open-link",
     "allow-open-settings",
-    "allow-new-table"
+    "allow-new-table",
+    "allow-table-details"
   ]
 }
