@@ -543,7 +543,9 @@ export class Editor {
       brand.title = 'All tables. Everything here is already saved.';
       brand.addEventListener('click', () => void this.file('home'));
     }
-    const file = fileButton(Boolean(invoke), (action) => void this.file(action));
+    // In the app the File menu is native (the Mac menu bar, the editor window's menu bar on
+    // Windows), so the button would repeat it (#148). A browser has no menu: it gets the button.
+    const file = invoke ? null : fileButton(false, (action) => void this.file(action));
     const name = el('div', 'ed-name');
     name.append(el('strong', undefined, this.store.state.site.name), this.saved);
 
@@ -607,7 +609,7 @@ export class Editor {
       void refresh();
     }
     actions.append(preview, present);
-    bar.append(brand, file, name, actions);
+    bar.append(brand, ...(file ? [file] : []), name, actions);
     return bar;
   }
 

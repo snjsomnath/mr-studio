@@ -2,13 +2,18 @@
 // blocks style one dataset each, by geometry: `points`, `lines` or `fill`. Every style
 // property is fixed, or driven by a column (L2); colours are palette slots or `#hex` (C8);
 // sizes are millimetres on the physical table (E5), so a look reads the same on every
-// table. Motion blocks act on a look block: `pulse`, `draw-in` and `flow` here; particles,
-// attractors and routed gravity come with #96. Everything is 2D, from straight above (E1):
-// height and value become colour, outline, glow or a soft shadow, never extrusion.
+// table. Motion blocks act on a look block: `pulse`, `draw-in`, `flow`, `particles` along
+// lines, `attract` (a crowd pulled into points) and `gravity` (people walking to points
+// along the street network, #96). Everything is 2D, from straight above (E1): height and
+// value become colour, outline, glow or a soft shadow, never extrusion.
 
 import { clamp01, css, ease } from './blocks/scale.ts';
 import type { Rgba } from './blocks/scale.ts';
-import { drawRings } from './blocks/draw.ts';
+import { drawDots, drawRings } from './blocks/draw.ts';
+import { Swarm, aroundRing, particleAlpha, pathHeads, pickWeighted, pullTowards, seeded } from './blocks/motion.ts';
+import { StreetNetwork } from './blocks/network.ts';
+import { pointAlong } from './blocks/geo.ts';
+import type { MeasuredPath } from './blocks/geo.ts';
 import type { Area, Path, Shapes, Spot } from './blocks/sources.ts';
 import type { View } from './blocks/view.ts';
 import type { Point } from './blocks/geo.ts';
@@ -103,15 +108,47 @@ export interface FlowProps {
   /** Table millimetres per second the dashes travel. */
   speed_mm: number;
 }
+/** Lights travelling along every line, as a pure function of time. */
+export interface ParticlesProps {
+  /** Lights on each line at once. */
+  per_line: number;
+  speed_mm: number;
+  size_mm: number;
+}
+/** A crowd of free particles drawn in to each point from around it: attention, pull (M8: free particles are for abstract forces). */
+export interface AttractProps {
+  /** Particles in flight at once. */
+  count: number;
+  speed_mm: number;
+  /** How far out they start, in table mm. */
+  reach_mm: number;
+  /** A numeric column that makes some points pull harder, or null for all alike. */
+  weight: string | null;
+  size_mm: number;
+}
+/** People walking to each point along the street network (#96, M8: motion follows the place). */
+export interface GravityProps {
+  /** The site dataset whose lines are the streets. */
+  network: string;
+  count: number;
+  speed_mm: number;
+  weight: string | null;
+  size_mm: number;
+  /** A short fading trail behind each walker. */
+  trail: boolean;
+}
 export const MOTION_DEFAULTS = {
   pulse: { period_s: 2, size_mm: 14, rings: 2, direction: 1 } satisfies PulseProps,
   'draw-in': { duration_s: 1.2, stagger: true } satisfies DrawInProps,
   flow: { speed_mm: 12 } satisfies FlowProps,
+  particles: { per_line: 2, speed_mm: 20, size_mm: 2.5 } satisfies ParticlesProps,
+  attract: { count: 300, speed_mm: 12, reach_mm: 60, weight: null, size_mm: 1.5 } satisfies AttractProps,
+  gravity: { network: 'roads', count: 240, speed_mm: 10, weight: null, size_mm: 2, trail: true } satisfies GravityProps,
 };
 /** Which motions fit which look (L1: verbs fit the form). */
 export const MOTIONS_FOR: Record<GeometryKind, (keyof typeof MOTION_DEFAULTS)[]> = {
-  points: ['pulse'],
-  lines: ['draw-in', 'flow'],
+  points: ['pulse', 'attract', 'gravity'],
+  lines: ['draw-in', 'flow', 'particles'],
   fill: ['pulse'],
 };
 
@@ -294,6 +331,10 @@ export interface LookMotion {
   pulse?: Partial<PulseProps>;
   drawIn?: Partial<DrawInProps>;
   flow?: Partial<FlowProps>;
+  particles?: Partial<ParticlesProps>;
+  attract?: Partial<AttractProps>;
+  /** `streets` is the network dataset in table metres, loaded by whoever draws the recipe. */
+  gravity?: Partial<GravityProps> & { streets?: Shapes };
 }
 
 function trace(view: View, points: readonly Point[], close: boolean): void {
@@ -325,11 +366,16 @@ export function compileLook(block: RecipeBlock, shapes: Shapes, palette: Resolve
     const radius = sizeScale(props.radius_mm, rows, 4);
     const stroke = props.stroke ? paletteColour(props.stroke, palette) : null;
     const pulse = motion.pulse ? { ...MOTION_DEFAULTS.pulse, ...motion.pulse } : null;
+    const attract = motion.attract ? attractCrowd(shapes.spots, paint, { ...MOTION_DEFAULTS.attract, ...motion.attract }, mm) : null;
+    const walkers = motion.gravity ? streetCrowd(shapes.spots, paint, { ...MOTION_DEFAULTS.gravity, ...motion.gravity }, motion.gravity.streets, mm) : null;
     return {
       id: block.id,
       kind,
       legend: legendRows(block, paint, 'point', palette, props.color),
       draw(view, time, alpha) {
+        // Crowds go under the points they are drawn to.
+        attract?.draw(view, time, alpha);
+        walkers?.draw(view, time, alpha);
         drawPoints(view, shapes.spots, { paint, radius, props, stroke, pulse, px: (m) => px(view, m), time, alpha });
       },
     };
@@ -341,12 +387,17 @@ export function compileLook(block: RecipeBlock, shapes: Shapes, palette: Resolve
     const width = sizeScale(props.width_mm, rows, 2);
     const drawIn = motion.drawIn ? { ...MOTION_DEFAULTS['draw-in'], ...motion.drawIn } : null;
     const flow = motion.flow ? { ...MOTION_DEFAULTS.flow, ...motion.flow } : null;
+    const particles = motion.particles ? { ...MOTION_DEFAULTS.particles, ...motion.particles } : null;
     return {
       id: block.id,
       kind,
       legend: legendRows(block, paint, 'line', palette, props.color),
       draw(view, time, alpha) {
         drawLines(view, shapes.paths, { paint, width, props, drawIn, flow, px: (m) => px(view, m), time, alpha });
+        if (particles) {
+          const heads = pathHeads(shapes.paths, time, { speed: Math.max(0.1, particles.speed_mm * mm), count: Math.max(1, Math.round(particles.per_line)) });
+          drawDots(view, heads.map((h) => ({ point: h.point, colour: paint.colour(shapes.paths[h.path]!.properties), alpha: h.alpha * alpha, size: Math.max(1, px(view, particles.size_mm)) / view.detail })));
+        }
       },
     };
   }
@@ -654,6 +705,129 @@ function drawFills(view: View, areas: readonly Area[], o: FillsDraw): void {
   }
 }
 
+// ---- Crowds ----------------------------------------------------------------------------
+
+interface Crowd {
+  draw(view: View, time: number, alpha: number): void;
+}
+
+/** Each point's pull, from a numeric column or alike. */
+function weights(spots: readonly Spot[], column: string | null): { spot: Spot; weight: number; index: number }[] {
+  return spots.map((spot, index) => {
+    const value = column ? Number(spot.properties?.[column]) : 1;
+    return { spot, index, weight: Number.isFinite(value) && value > 0 ? value : column ? 0.1 : 1 };
+  });
+}
+
+/** A step from the time each frame passes in, so stateful crowds need no clock of their own. */
+function stepper(): (time: number) => number {
+  let last: number | null = null;
+  return (time) => {
+    const dt = last === null ? 0 : Math.min(0.1, Math.max(0, time - last));
+    last = time;
+    return dt;
+  };
+}
+
+/** Free particles that appear around each point and are pulled into it, weighted by a column. */
+function attractCrowd(spots: readonly Spot[], paint: PaintScale, o: AttractProps, mm: number): Crowd | null {
+  const places = weights(spots, o.weight);
+  if (places.length === 0) return null;
+  const reach = Math.max(1, o.reach_mm * mm);
+  const speed = Math.max(0.1, o.speed_mm * mm);
+  const random = seeded(7);
+  const swarm = new Swarm({
+    max: Math.max(1, Math.round(o.count)),
+    spawnRate: Math.max(1, o.count / 3),
+    random,
+    spawn: (r) => {
+      const place = pickWeighted(places, r)!;
+      const [x, y] = aroundRing(place.spot.point, reach, r, 0.35);
+      return { x, y, lifetime: (reach / speed) * 3, tag: place };
+    },
+    steer: pullTowards((p) => (p.tag as { spot: Spot }).spot.point, { speed, radius_m: reach * 0.5, wander: 0.5, arrive_m: Math.max(0.5, reach * 0.06) }),
+  });
+  const step = stepper();
+  return {
+    draw(view, time, alpha) {
+      swarm.step(step(time));
+      drawDots(
+        view,
+        swarm.particles.map((p) => ({ point: [p.x, p.y] as Point, colour: paint.colour((p.tag as { spot: Spot }).spot.properties), alpha: particleAlpha(p) * alpha * 0.85, size: Math.max(0.8, o.size_mm * mm * view.scale) / view.detail })),
+        { core: false },
+      );
+    },
+  };
+}
+
+interface Walker {
+  route: MeasuredPath;
+  travelled: number;
+  speed: number;
+  place: Spot;
+}
+
+/**
+ * People walking to each point along the street network: each walker starts at a random
+ * street corner and follows the shortest route to a point picked by weight (Cultural
+ * Gravity, kept on the streets). Without streets it draws nothing.
+ */
+function streetCrowd(spots: readonly Spot[], paint: PaintScale, o: GravityProps, streets: Shapes | undefined, mm: number): Crowd | null {
+  if (!streets || streets.paths.length === 0 || spots.length === 0) return null;
+  const network = new StreetNetwork(streets.paths.map((p) => p.points), Math.max(0.5, 0.6 * mm));
+  const places = weights(spots, o.weight)
+    .map((place) => {
+      const tree = network.treeTo(place.spot.point);
+      return { ...place, tree, starts: network.reachable(tree) };
+    })
+    .filter((place) => place.starts.length > 0);
+  if (places.length === 0) return null;
+  const random = seeded(11);
+  const speed = Math.max(0.1, o.speed_mm * mm);
+  const walkers: Walker[] = [];
+  const max = Math.max(1, Math.round(o.count));
+  const spawn = (spread: boolean) => {
+    const place = pickWeighted(places, random)!;
+    const start = place.starts[Math.floor(random() * place.starts.length)]!;
+    const route = network.follow(place.tree, start, place.spot.point);
+    if (!route || route.length <= 0) return;
+    // A crowd already under way when the layer opens, rather than everyone setting off at once.
+    walkers.push({ route, travelled: spread ? random() * route.length * 0.9 : 0, speed: speed * (0.75 + random() * 0.5), place: place.spot });
+  };
+  for (let i = 0; i < max; i++) spawn(true);
+  const step = stepper();
+  const gap = 2.2 * mm;
+  return {
+    draw(view, time, alpha) {
+      const dt = step(time);
+      let kept = 0;
+      for (const walker of walkers) {
+        walker.travelled += walker.speed * dt;
+        if (walker.travelled < walker.route.length) walkers[kept++] = walker;
+      }
+      walkers.length = kept;
+      while (walkers.length < max) spawn(false);
+      const size = Math.max(0.8, o.size_mm * mm * view.scale) / view.detail;
+      const dots: { point: Point; colour: Rgba; alpha: number; size: number }[] = [];
+      for (const walker of walkers) {
+        const colour = paint.colour(walker.place.properties);
+        const share = walker.travelled / walker.route.length;
+        // Fade in as they leave, out as they arrive.
+        const fade = Math.min(1, walker.travelled / (gap * 4)) * Math.min(1, (walker.route.length - walker.travelled) / (gap * 2));
+        dots.push({ point: pointAlong(walker.route, share).point, colour, alpha: alpha * fade, size });
+        if (o.trail) {
+          for (let k = 1; k <= 3; k++) {
+            const back = walker.travelled - k * gap;
+            if (back <= 0) break;
+            dots.push({ point: pointAlong(walker.route, back / walker.route.length).point, colour, alpha: alpha * fade * (0.45 - k * 0.12), size: size * (1 - k * 0.18) });
+          }
+        }
+      }
+      drawDots(view, dots);
+    },
+  };
+}
+
 // ---- Whole recipes ---------------------------------------------------------------------
 
 /** The motion blocks acting on a look block, as compileLook takes them. */
@@ -665,6 +839,9 @@ export function motionFor(recipe: Pick<CustomLayer, 'motion'>, look: string, ove
     if (block.block === 'pulse') motion.pulse = props as Partial<PulseProps>;
     if (block.block === 'draw-in') motion.drawIn = props as Partial<DrawInProps>;
     if (block.block === 'flow') motion.flow = props as Partial<FlowProps>;
+    if (block.block === 'particles') motion.particles = props as Partial<ParticlesProps>;
+    if (block.block === 'attract') motion.attract = props as Partial<AttractProps>;
+    if (block.block === 'gravity') motion.gravity = props as Partial<GravityProps>;
   }
   return motion;
 }

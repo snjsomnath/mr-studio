@@ -86,10 +86,19 @@ async function main() {
   document.body.append(status);
 
   // The site's theme also colours the controls, so the rail and the dashboard read as one screen.
-  const theme = themeVariables(site.tv?.theme).variables;
+  // It follows the setup guide live: a theme picked there restyles this screen at once.
   const names = { '--bg': '--mrs-bg', '--panel': '--mrs-panel', '--card': '--mrs-panel', '--line': '--mrs-line', '--text': '--mrs-text', '--muted': '--mrs-muted', '--accent': '--mrs-accent', '--accent-ink': '--mrs-accent-ink' };
-  if (site.tv?.theme && !editing) for (const [own, token] of Object.entries(names)) document.documentElement.style.setProperty(own, theme[token]!);
-  document.body.dataset.rail = site.tv?.rail ?? 'left';
+  const applyTv = (tv: typeof site.tv) => {
+    const theme = themeVariables(tv?.theme).variables;
+    for (const [own, token] of Object.entries(names)) {
+      if (tv?.theme && !editing) document.documentElement.style.setProperty(own, theme[token]!);
+      else document.documentElement.style.removeProperty(own);
+    }
+    document.body.dataset.rail = tv?.rail ?? 'left';
+    document.body.dataset.railStyle = tv?.rail_style === 'labelled' ? 'labelled' : 'icons';
+  };
+  applyTv(site.tv);
+  store.onTv(applyTv);
 
   // The table (and the table half of dev) renders layers. Dev shows the TV's dashboard under it.
   const stage = el('div', 'stage');
@@ -153,7 +162,7 @@ async function main() {
     // The controller screen has the layer buttons down both sides of the dashboard.
     const second = role === 'tv' ? el('aside', 'controller controller-right') : null;
     const rightCards = el('div', 'cards');
-    new Controller(cards, store, connection, role, second ? rightCards : undefined, second ? (stage.querySelector<HTMLElement>('.open-layers') ?? undefined) : undefined);
+    const controller = new Controller(cards, store, connection, role, second ? rightCards : undefined, second ? (stage.querySelector<HTMLElement>('.open-layers') ?? undefined) : undefined);
 
     if (!phone) {
       const foot = second ?? side;
@@ -168,6 +177,8 @@ async function main() {
         foot.append(footer);
       }
     }
+    // The dashed core buttons (Reset, About) sit at the foot of the rail the buttons start on.
+    if (second) (site.tv?.rail === 'right' ? second : side).append(controller.actions());
     app.append(side);
     if (second) app.append(second);
   }

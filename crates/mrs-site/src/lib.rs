@@ -481,6 +481,12 @@ impl Site {
         self.save_key("layers", Some(layers))
     }
 
+    /// Rewrites the `tv` settings of `site.json` (theme, rail style, About page…) and leaves every
+    /// other key as it was written. `null` removes them. The TV checks what is inside.
+    pub fn save_tv(&self, tv: serde_json::Value) -> Result<(), SiteError> {
+        self.save_key("tv", (!tv.is_null()).then_some(tv))
+    }
+
     /// Saves the custom layers under `custom` (none removes the key), leaving everything else as written.
     pub fn save_custom(&self, custom: &BTreeMap<String, CustomLayer>) -> Result<(), SiteError> {
         let value = (!custom.is_empty()).then(|| serde_json::to_value(custom)).transpose().map_err(|e| self.parse_error(e))?;

@@ -69,6 +69,7 @@ constant or a function of the shape, which is how data drives the picture. Block
 | Spots | `drawSpots`, `drawLabel`, `clusterPoints` | Markers with halo, core and label; clustering for dense data |
 | Rings | `drawRings`, `drawGlow` | Rings travelling outward or inward, or rippling in place; a soft catchment disc |
 | Travelling lights | `pathHeads`, `drawDots` | Lights along lines as a pure function of time, by period or by speed, any number per line |
+| Street network | `StreetNetwork` | Lines snapped into a graph; shortest routes (`route`), a tree of routes to one place (`treeTo`, `follow`) and the nodes that reach it. Crowds walk the streets, not across buildings (M8) |
 | Particles | `Swarm`, `pullTowards`, `gravity`, `followField`, `pickWeighted`, `aroundRing`, `particleAlpha` | A crowd that is spawned, steered and retired. Steering is pluggable: to a target, by the pull of all attractors, or along any field |
 | Data fields | `heatField`, `gravityField`, `siteRaster` | Rasters made from data, returned as a `FieldFrame` and drawn with `ctx.map.addField` like a kernel's |
 | Field readers | `sampleField`, `fieldGradient`, `contours` | Work on kernel frames and data fields alike |
@@ -171,7 +172,7 @@ composition. Old line counts are from `main`.
 | Timeline strip with day and night | `timeline(clock)` published; drawn by the dashboard's timeline widget |
 | Bottom ribbon: demand, solar, battery, grid, share bar | `stat`, `bars`, `shares` published; drawn by dashboard widgets |
 | Click a building for its numbers | `Probe` + `ctx.publish` |
-| Vehicles arriving and leaving at chargers | `Agent`-like motion along a `Path` by schedule: `pointAlong` and a timed leg. Street routing itself is a service or the planned network router kernel |
+| Vehicles arriving and leaving at chargers | `Agent`-like motion along a `Path` by schedule: `pointAlong` and a timed leg. Street routes come from `StreetNetwork` |
 | Sound | Not a visual block; an audio cue block is on the backlog |
 
 What remains ECOM-specific is small: the palette, the wording, the mapping from the dispatch
@@ -222,7 +223,7 @@ the thread named.
 
 | Group | Item | Where |
 | --- | --- | --- |
-| Engine | Raycaster, grid diffusion, shallow water, network router, agent simulation | Kernels (engine threads) |
+| Engine | Raycaster, grid diffusion, shallow water, agent simulation (the network router is built as the `StreetNetwork` block; a threaded kernel only if networks outgrow the frame) | Kernels (engine threads) |
 | Data | Scenario store, time cube (series per cell), geo-join (points in areas) | block |
 | Data | Live stream adapter (MQTT, WebSocket) behind the `Source` interface | block, with the host gateway |
 | Data | Offline cache for live sources | Host |

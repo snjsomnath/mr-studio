@@ -79,7 +79,7 @@ with it and how much it must be explained. Two more dimensions (§3.3) are new f
 |---|---|---|---|
 | **Point** | Stops, sensors, places, events | Spot with halo, glow, pulse or ripple rings, radiate lines to other points, attractor that draws a crowd, icon, appear on a step | `drawSpots`, `drawRings`, `drawGlow`, `pullTowards`; Cultural Gravity |
 | **Line / route** | A walk, a transit line, a planned path | Bright line with dark casing, width or colour by value, dashes, draw-in reveal, travelling lights, particles flowing along it | `drawPaths`, `pathHeads`; CoolPaths routes |
-| **Network** | Streets, footpaths, cycle lanes | Hierarchy by width and brightness, glow, flow particles that stay on the network, routing between places | `drawPaths`, network router (#96, not built); CoolPaths sun exposure per edge |
+| **Network** | Streets, footpaths, cycle lanes | Hierarchy by width and brightness, glow, flow particles that stay on the network, routing between places | `drawPaths`, `StreetNetwork` router (#96); CoolPaths sun exposure per edge |
 | **Area** | Zones, plots, parks, catchments | Flat fill by category or value, outline, edge glow, hatch, fill like a vessel, pulse the outline | `drawAreas`; #94, #95 |
 | **Field / raster** | Sun hours, wind speed, heat, noise, delay | Colour wash on the ground with a ramp, soft edges, threshold flag, contours, time scrub, lens | `ctx.map.addField`, `heatField`, `contours`, `Lens`; Sunlight, Wind, Mobility cells |
 | **Buildings** (the model itself) | Energy use, age, solar potential | Light the roof by value or category, highlight, glow, fill like a vessel, x-ray lens, radiate lines | `drawAreas` on footprints; #38 "click a building" |

@@ -35,6 +35,8 @@ const PATHS: Record<string, string> = {
   check: 'M5 12.500l4.500 4.500L19 7.500',
   alert: 'M12 4 2.500 20h19L12 4ZM12 10v5M12 17.500h.01',
   code: 'M8 7l-5 5 5 5M16 7l5 5-5 5',
+  reset: 'M4 12a8 8 0 1 0 2.300-5.700M4 4v4h4',
+  info: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18ZM12 11v6M12 7.500h.01',
   point: 'M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6ZM12 4a8 8 0 1 0 0 16 8 8 0 0 0 0-16Z',
   line: 'M4 18c4 0 4-12 8-12s4 12 8 12',
   polygon: 'M5 7l6-3 8 4-2 10-11 2z',
@@ -47,7 +49,6 @@ const PATHS: Record<string, string> = {
   crosshair: 'M12 5a7 7 0 1 0 0 14 7 7 0 0 0 0-14ZM12 2v5M12 17v5M2 12h5M17 12h5',
   bars: 'M4 5h16v14H4zM8 5v14M12 5v14M16 5v14',
   settings: 'M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6ZM12 2v3M12 19v3M2 12h3M19 12h3M4.900 4.900l2.100 2.100M17 17l2.100 2.100M4.900 19.100 7 17M17 7l2.100-2.100',
-  reset: 'M4 12a8 8 0 1 0 2.300-5.700M4 4v4h4',
   save: 'M5 4h11l3 3v13H5zM8 4v5h7V4M8 20v-6h8v6',
 };
 

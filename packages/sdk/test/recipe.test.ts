@@ -123,3 +123,34 @@ test('every look draws on a pen without throwing, and gives its legend', () => {
   assert.ok(calls.includes('stroke') && calls.includes('fill') && calls.includes('fillText'));
   assert.equal(compileLook({ id: 'x', block: 'unknown' }, shapes, palette, 1), null);
 });
+
+test('the street network joins lines that meet and routes along them, not across', async () => {
+  const { StreetNetwork } = await import('../src/index.ts');
+  // An L of streets: along the top, then down the right. The straight line from start to end crosses the block.
+  const network = new StreetNetwork([
+    [[0, 0], [50, 0], [100, 0]],
+    [[100.5, 0.4], [100, 50], [100, 100]],
+    [[300, 300], [310, 300]],
+  ]);
+  assert.equal(network.size, 7, 'the corner snaps into one node');
+  const route = network.route([0, 0], [100, 100])!;
+  assert.ok(route, 'a route exists');
+  assert.ok(Math.abs(route.length - 200) < 1, `it walks the streets, ${route.length} m`);
+  assert.equal(network.route([0, 0], [305, 300]), null, 'no route to streets that do not join');
+  const tree = network.treeTo([310, 300]);
+  assert.equal(network.follow(tree, network.nearest([0, 0])), null, 'unconnected streets have no route');
+  assert.deepEqual(network.reachable(tree).length, 1);
+});
+
+test('crowds draw for points with streets, and particles for lines', () => {
+  const pen = new Proxy({}, { get: (_, key) => (key === 'createRadialGradient' ? () => ({ addColorStop() {} }) : () => {}), set: () => true }) as unknown as Pen;
+  const view: View = { pen, scale: 2, time: 0, detail: 1, toPx: ([x, y]) => [x * 2, y * 2] };
+  const streets: Shapes = { spots: [], areas: [], paths: [{ id: 1, points: [[0, 0], [100, 0]], stations: [0, 100], length: 100, properties: {} }] };
+  const shapes: Shapes = { areas: [], paths: streets.paths, spots: [{ id: 1, point: [100, 0], properties: { visitors: 5 } }] };
+  const palette = resolvePalette();
+  const points = compileLook({ id: 'p', block: 'points' }, shapes, palette, 0.5, { attract: { count: 20 }, gravity: { count: 10, weight: 'visitors', streets } })!;
+  for (let t = 0; t < 2; t += 0.1) points.draw(view, t, 1);
+  const lines = compileLook({ id: 'l', block: 'lines' }, shapes, palette, 0.5, { particles: { per_line: 3 } })!;
+  lines.draw(view, 1, 1);
+  assert.deepEqual(motionFor({ motion: [{ id: 'g', block: 'gravity', on: 'p', props: { network: 'roads' } }] }, 'p'), { gravity: { network: 'roads' } });
+});
