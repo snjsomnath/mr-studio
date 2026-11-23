@@ -634,6 +634,13 @@ impl Hub {
             }
             return self.author(&mut inner, method, p);
         }
+        if method == "layers.reset" {
+            if !role.may_activate() {
+                return Err("phones cannot turn layers on or off".into());
+            }
+            self.reset(&mut inner.scene);
+            return Ok(json!({}));
+        }
         let layer = p["layer"].as_str().ok_or("missing layer")?;
         let index = inner.position(layer)?;
         if method == "layer.activate" {
@@ -1135,6 +1142,34 @@ impl Hub {
         }
     }
 
+    /// Puts the table back the way site.json starts it (the controller's Reset view, #198):
+    /// layers that were opened go off, the map at rest comes back on, and every layer has
+    /// its saved params again. Live changes made in the editor are not saved, so they go too.
+    fn reset(&self, scene: &mut [Instance]) {
+        for at in 0..scene.len() {
+            if scene[at].parent.is_none() && scene[at].state.active && !scene[at].saved.active {
+                self.switch(scene, at, false);
+            }
+        }
+        for at in 0..scene.len() {
+            // A layer a sequence shows has the step's params until the sequence lets it go.
+            if scene[at].state.shown_by.is_some() {
+                continue;
+            }
+            let mut params = self.catalog()[scene[at].def].defaults();
+            params.extend(scene[at].saved.params.clone());
+            if scene[at].state.params != params {
+                scene[at].state.params = params;
+                self.emit_layer(&scene[at].id, &scene[at].state);
+            }
+        }
+        for at in 0..scene.len() {
+            if scene[at].parent.is_none() && !scene[at].state.active && scene[at].saved.active {
+                self.switch(scene, at, true);
+            }
+        }
+    }
+
     /// A layer whose package is a sequence (the slideshow) and that has steps to show.
     fn is_sequence(&self, instance: &Instance) -> bool {
         self.catalog()[instance.def].manifest["sequence"] == true && instance.saved.steps.as_ref().is_some_and(|s| !s.sequence.is_empty())
@@ -1520,6 +1555,20 @@ mod tests {
 
     fn layer(hub: &Hub, id: &str) -> Value {
         hub.welcome(0)["state"]["layers"][id].clone()
+    }
+
+    #[test]
+    fn reset_puts_the_table_back_the_way_it_starts() {
+        let hub = scratch_hub("reset");
+        let dev = |method: &str, p: Value| hub.request(Role::Dev, 0, method, &p);
+        dev("layer.activate", json!({ "layer": "sunlight", "active": true })).unwrap();
+        dev("layer.set", json!({ "layer": "sunlight", "params": { "hour": 9 } })).unwrap();
+        dev("layer.activate", json!({ "layer": "trees", "active": false })).unwrap();
+        hub.request(Role::Tv, 0, "layers.reset", &json!({})).unwrap();
+        let sun = layer(&hub, "sunlight");
+        assert_eq!((sun["active"].clone(), sun["params"]["hour"].clone()), (json!(false), json!(15)));
+        assert_eq!(layer(&hub, "trees")["active"], true, "the map at rest comes back");
+        assert!(hub.request(Role::Phone, 0, "layers.reset", &json!({})).is_err(), "not from a phone");
     }
 
     #[test]

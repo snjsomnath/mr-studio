@@ -301,7 +301,31 @@ body[data-role='tv'] .action-button:hover .layer-button-icon {
   color: var(--text);
 }
 
-/* The About page in the centre: the site's words, then who made it. */
+body[data-role='tv'] .rail-actions .rail-group {
+  margin: 0.25rem 0 -0.25rem;
+}
+
+body[data-role='tv'] .action-button[aria-pressed='true'] .layer-button-icon {
+  border-style: solid;
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+/* The About page in the centre: the logos, the site's words, then who made it. */
+.about-logos {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.about-logo {
+  height: 4.5rem;
+  max-width: 16rem;
+  object-fit: contain;
+}
+
 .about-page .layer-about {
   max-width: 50rem;
   font-size: 1.125rem;

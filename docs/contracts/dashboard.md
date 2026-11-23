@@ -37,8 +37,10 @@ A layer that has a `panel` function but no `panels` gets one `custom` tile.
   "rail_style": "icons",           // icons (square icon, short name under it; default) | labelled (icon and name side by side, wider rail)
   "about": {                       // optional: the controller's About button and page. Without it there is no About button
     "title": "About this table", "text": "A few lines on what the table is.",
+    "logos": [ { "path": "media/logo.png", "name": "Who it stands for" } ],   // site-relative images; default branding.logo
     "credits": [ { "role": "Development lead", "name": "…", "note": "optional line" } ]
   },
+  "map_controls": true,            // Reset view, Full screen and Calibrate on the controller (default); false leaves Reset alone
   "theme": { "color.accent": "#c2410c", "shape.radius": "none" },   // style tokens only
   "rotate_s": 12,                  // seconds per page, 6 to 60
   "pages": [                       // optional: replaces the automatic layout

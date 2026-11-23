@@ -225,6 +225,11 @@ export interface TvConfig {
   idle_reset_s?: number;
   /** Seconds each layer stays up on the home screen's attract loop. Default 4. */
   attract_s?: number;
+  /**
+   * The controller's Map controls group (#198): Reset view, Full screen and Calibrate, for
+   * whoever runs the table. Default true; false leaves only Reset, for a table visitors run alone.
+   */
+  map_controls?: boolean;
 }
 
 /** The site's About page on the controller: a title, a few lines, and who made it. */
@@ -232,6 +237,8 @@ export interface TvAbout {
   title?: string;
   text?: string;
   credits?: { role?: string; name: string; note?: string }[];
+  /** Logos along the top of the Credits page: images in the site folder, with the name each stands for. Without them, `branding.logo`. */
+  logos?: { path: string; name?: string }[];
 }
 
 // ---- Site and session -----------------------------------------------------
