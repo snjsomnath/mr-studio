@@ -36,8 +36,9 @@ export function mountDashboard(root: HTMLElement, store: Store, connection: Conn
         shared: state()?.shared ?? {},
         site: store.state.site as unknown as Record<string, unknown>,
       }),
-      // A panel that reads a layer is only up while that layer is on.
-      active: () => layer === undefined || state()?.active === true,
+      // A panel that reads a layer is only up while that layer is on. A slideshow made of layers
+      // has nothing of its own to show: the controller's step strip speaks for it (#43).
+      active: () => layer === undefined || (state()?.active === true && !(state()?.step && store.manifest(state()!.layer)?.sequence)),
       custom: (el) => {
         const module = state() ? layerModule(state()!.layer) : undefined;
         if (!module?.panel) return;

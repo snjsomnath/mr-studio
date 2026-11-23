@@ -48,6 +48,8 @@ The remaining `panels` (built) are laid out under the zones, as today.
 
 **Built (#43, 2026-11-23):** `layer.step`, `layer.play` and `layer.substeps` on the host, `state.step` and `state.shown_by`, `ctx.steps` in the SDK, and the editor's Slides list. The live position is `state.step`, because `state.steps` holds the site.json settings. Details are in [session.md](session.md), Steps. The controller's ◀ ▶ and counter come with the stage (#76).
 
+**Built (controller, 2026-11-23):** a layer with `state.step` gets a step strip in the centre: ◀, play or pause and ▶ (`layer.step`, `layer.play`), the counter, the step's title (or the shown layer's name), its line and its source, and the sub-steps as a row of names with the current one marked. ← and → (and Page Up and Page Down, for a clicker) move the open layer's steps, and Shift+→ skips. A layer a slideshow shows (`shown_by`) is part of the slideshow: its button gets a dashed ring instead of being pressed, it is not a second open layer, Reset and opening another layer close the slideshow and the host takes the shown layer off with it, and pressing its own button takes it out of the slideshow, which closes. A slideshow made of layers hides its old slide controls and its panel.
+
 Slideshow slides, category reveals and staged builds (the Campus Vision phases) are all **steps**. Every advance input sends the same host request, so all of them behave the same: the controller's ◀ ▶, phone buttons, keyboard arrows, a presentation clicker and an optional tap on the table.
 
 ```
