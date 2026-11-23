@@ -9,6 +9,7 @@ export * from './time.ts';
 export * from './controls.ts';
 export * from './geo.ts';
 export * from './solar.ts';
+export * from './comfort.ts';
 export * from './table-space.ts';
 export * from './data.ts';
 export * from './model.ts';

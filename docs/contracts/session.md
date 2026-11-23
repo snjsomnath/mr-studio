@@ -173,6 +173,14 @@ A layer that reveals its parts one at a time reports how many with `layer.subste
 `session.join_url` is the address the TV's QR code carries, `http://<address>:<port>/phone?c=<code>`.
 The host works the address out from the interface it listens on. It is `null` when the host listens on the loopback interface only, and it can be set outright (`SessionOptions::public_url`, `mrstudio dev --public-url`) when phones reach the studio through something else, such as the web dev server or a relay.
 
+## Rasters on the site grid
+
+```
+GET /api/data/field?name=<dataset>[&hour=<0-23>]
+```
+
+Reads a raster dataset of the site (`data` in site.json: a GeoTIFF, or a folder of one GeoTIFF per hour whose file names end in the two-digit hour) and samples it at the centre of every grid cell. Answers a version 1 field frame (engine.md) with f32 values, NaN where the raster has no data; 404 when the folder has no raster for that hour, 422 when the dataset is missing or unreadable. Cool paths reads the Chalmers demo's prepared PET this way (#196).
+
 ## Bringing data into a site
 
 Two HTTP endpoints take a file as the request body (any content type), with its name in an `X-Filename` header. Only this computer may call them: the host listens on the network while presenting, and a request from another address gets 403.

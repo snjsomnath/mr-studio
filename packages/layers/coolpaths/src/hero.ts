@@ -1,11 +1,11 @@
 // Cool paths' hero on the controller (#76): the time of day, which is what moves the shade.
 // The sky follows the sun, the band at the foot lights the hours of daylight, and the facts
-// say how much sun the coolest walk saves at that moment.
+// say how much heat (PET times metres) the coolest walk saves at that moment.
 import { formatHour, sunPosition, timelineHero, zonedTimeToUtc } from '@mrstudio/sdk';
 import type { HeroFact, PanelContext, PanelHandlers } from '@mrstudio/sdk';
 
 type Params = { date: string; hour: number; play: boolean };
-type Walk = { length: number; sun: number } | null;
+type Walk = { length: number; sun: number; heat: number; pet: number } | null;
 type Shared = { ready?: boolean; sunUp?: boolean; shortest?: Walk; coolest?: Walk; same?: boolean };
 
 /** The sky for a sun height: night, golden hour or day (as Sunlight's). */
@@ -36,13 +36,14 @@ export function coolpathsHero(ctx: PanelContext<Params>, el: HTMLElement): Panel
   const facts = (): HeroFact[] => {
     const s = ctx.shared as Shared;
     if (!s.ready) return [{ label: 'The walks', value: 'Working out…' }];
-    if (s.sunUp === false) return [{ label: 'The sun', value: 'is down' }];
     if (!s.shortest || !s.coolest) return [];
-    if (s.same || s.shortest.sun <= s.coolest.sun) return [{ label: 'The coolest walk', value: 'is the shortest' }];
-    const saved = Math.round((1 - s.coolest.sun / Math.max(1, s.shortest.sun)) * 100);
+    const feels = { label: 'Feels like', value: `${s.shortest.pet.toFixed(1)} °C PET` };
+    if (s.sunUp === false) return [{ label: 'The sun', value: 'is down' }, feels];
+    if (s.same || s.shortest.heat <= s.coolest.heat) return [{ label: 'The coolest walk', value: 'is the shortest' }, feels];
+    const saved = Math.round((1 - s.coolest.heat / Math.max(1, s.shortest.heat)) * 100);
     const further = s.coolest.length - s.shortest.length;
     return [
-      { label: 'Coolest walk', value: `${saved}% less sun` },
+      { label: 'Coolest walk', value: `${saved}% less heat` },
       { label: 'For', value: further > 0 ? `${further} m more` : 'no extra walk' },
     ];
   };

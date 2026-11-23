@@ -1,9 +1,29 @@
-import { clipToTable, colormaps, defineLayer, formatHour, loadSiteData, paletteHex, sample, siteProjection, tableFrame, tablePalette, zonedTimeToUtc } from '@mrstudio/sdk';
+import {
+  airTemperatureAt,
+  clipToTable,
+  defineLayer,
+  formatHour,
+  hasSiteData,
+  loadSiteData,
+  loadSiteField,
+  paletteHex,
+  petColormap,
+  petColour,
+  petFeeling,
+  quantisePet,
+  sample,
+  siteProjection,
+  sunPosition,
+  sunShadeComfort,
+  tableFrame,
+  tablePalette,
+  zonedTimeToUtc,
+} from '@mrstudio/sdk';
 import type { CanvasOverlay, FieldFrame, LayerManifest, PointerSample, TableContext, ToolInput } from '@mrstudio/sdk';
 
 import manifest from '../layer.json';
 import { coolpathsHero } from './hero.ts';
-import { buildNetwork, exampleWalk, pointAlongRoute, route, setExposure, snap } from './network.ts';
+import { buildNetwork, exampleWalk, pointAlongRoute, route, setExposure, setPet, snap } from './network.ts';
 import type { LonLat, Network, Route, RoutePair } from './network.ts';
 
 interface Params {
@@ -13,7 +33,26 @@ interface Params {
   detour: number;
   network: boolean;
   shade: boolean;
+  air: number;
+  humidity: number;
+  wind: number;
 }
+
+/** What the controller shows for one walk. */
+export interface WalkSummary {
+  length: number;
+  /** Metres in direct sun. */
+  sun: number;
+  /** Heat exposure, °C·m. */
+  heat: number;
+  /** Mean PET, °C. */
+  pet: number;
+  /** PET along the walk: [metres, °C], thinned for the wire. */
+  profile: [number, number][];
+}
+
+/** The optional dataset of prepared thermal comfort: a folder of hourly PET (or UTCI) GeoTIFFs, as the Chalmers demo makes. */
+const PREPARED = 'pet';
 
 /** Hours of the day that pass per second while animating. */
 const PLAY_HOURS_PER_SECOND = 1.5;
@@ -34,11 +73,34 @@ type End = 'from' | 'to';
 /** The coolest walk is green (vegetation, shade) and the shortest is the focus colour, both from the table's palette (#93). */
 const coolColour = (site: TableContext['site']) => paletteHex('@green', tablePalette(site));
 const shortColour = (site: TableContext['site']) => paletteHex('@focus', tablePalette(site));
-/** Path colours from shade to full sun. */
-const RAMP = ['#38bdf8', '#7dd3fc', '#fde68a', '#fbbf24', '#fb923c', '#ef4444'];
+/** Path colours: PET in steps of 2 °C over the demo's range, drawn as one stroke per step. */
+const PET_BINS = Array.from({ length: 13 }, (_, i) => 20 + i * 2);
 
 function kernelParams(ctx: TableContext<Params>) {
   return { mode: 'instant', time: zonedTimeToUtc(ctx.params.date, ctx.params.hour, ctx.site.timezone), trees: true };
+}
+
+/** Day of the year of an ISO date, 1 to 366. */
+function dayOfYear(date: string): number {
+  const ms = Date.parse(`${date}T12:00:00Z`);
+  if (!Number.isFinite(ms)) return 196;
+  const start = Date.UTC(new Date(ms).getUTCFullYear(), 0, 1);
+  return Math.floor((ms - start) / 86_400_000) + 1;
+}
+
+/** Sun and shade PET for the layer's date, time and weather. */
+export function comfortFor(params: Pick<Params, 'date' | 'hour' | 'air' | 'humidity' | 'wind'>, site: Pick<TableContext['site'], 'origin' | 'timezone'>) {
+  const utc = Date.parse(zonedTimeToUtc(params.date, params.hour, site.timezone));
+  const altitude = sunPosition(utc, site.origin.lat, site.origin.lon).altitude;
+  const airC = airTemperatureAt(params.hour, params.air);
+  return { airC, altitude, ...sunShadeComfort({ airC, humidity: params.humidity, windMs: params.wind }, altitude, { dayOfYear: dayOfYear(params.date) }) };
+}
+
+/** At most `points` points of a profile, keeping its ends. */
+function thin(profile: [number, number][], points = 48): [number, number][] {
+  if (profile.length <= points) return profile.map(([d, v]) => [Math.round(d), Math.round(v * 10) / 10]);
+  const step = (profile.length - 1) / (points - 1);
+  return Array.from({ length: points }, (_, i) => profile[Math.round(i * step)]!).map(([d, v]) => [Math.round(d), Math.round(v * 10) / 10]);
 }
 
 function trace(overlay: CanvasOverlay, coordinates: LonLat[]): void {
@@ -58,7 +120,8 @@ export default defineLayer<Params>({
   async table(ctx) {
     const projection = siteProjection(ctx.site);
     const distance = projection.distance;
-    const shade = ctx.map.addField('shade', { colormap: colormaps.daylight, opacity: ctx.params.shade ? 0.75 : 0 });
+    // The heat map: PET over the ground, from the prepared study or worked out from the shade.
+    const shade = ctx.map.addField('shade', { colormap: petColormap(140), opacity: ctx.params.shade ? 0.75 : 0 });
     const paths = ctx.map.addCanvas('paths');
     const walk = ctx.map.addCanvas('walk');
 
@@ -71,6 +134,15 @@ export default defineLayer<Params>({
     let seed = 0;
     let pair: RoutePair | null = null;
     let sunUp = true;
+    let comfort = comfortFor(ctx.params, ctx.site);
+    /** Prepared PET for the hour on show, when the site has the dataset and a raster for that hour. */
+    let prepared: FieldFrame | null = null;
+    const preparedByHour = new Map<number, Promise<FieldFrame | null>>();
+    let preparedHour = -1;
+    let revision = 0;
+    let heatCells: Uint8Array | null = null;
+    /** Cells under a building, on the site grid: the heat map leaves roofs clear, as the demo does. */
+    let roofs: Uint8Array | null = null;
     let pathsDrawn = -1;
     let pathsDirty = true;
     let clock = 0;
@@ -87,13 +159,118 @@ export default defineLayer<Params>({
       return sample(frame, c, r);
     }
 
+    /** Prepared PET at a point, NaN where the raster has no data. */
+    function preparedAt(point: LonLat): number {
+      if (!prepared) return Number.NaN;
+      const [col, row] = projection.toGrid(point);
+      const c = Math.floor((col * prepared.width) / ctx.site.grid.width);
+      const r = Math.floor((row * prepared.height) / ctx.site.grid.height);
+      if (c < 0 || r < 0 || c >= prepared.width || r >= prepared.height) return Number.NaN;
+      return sample(prepared, c, r);
+    }
+
+    /** PET of a place from its share of sun, when nothing prepared covers it. */
+    const estimate = (exposure: number) => comfort.shade.pet + exposure * (comfort.sun.pet - comfort.shade.pet);
+
+    /** Works out every path's sun and PET, and the heat map, from the shade and the prepared PET. */
+    function assess(): void {
+      if (!frame) return;
+      setExposure(network, lit, ctx.site.grid.cell_m, distance);
+      setPet(network, (edge) => estimate(edge.exposure), prepared ? preparedAt : null, ctx.site.grid.cell_m, distance);
+      const source = prepared ?? frame;
+      const cells = source.width * source.height;
+      if (heatCells?.length !== cells) heatCells = new Uint8Array(cells);
+      if (prepared) quantisePet(prepared.data, heatCells);
+      else {
+        const values = new Float32Array(cells);
+        for (let i = 0; i < cells; i++) values[i] = estimate(sample(frame, i % frame.width, Math.floor(i / frame.width)));
+        quantisePet(values, heatCells);
+      }
+      if (roofs) {
+        const { width, height } = ctx.site.grid;
+        for (let i = 0; i < cells; i++) {
+          const col = Math.floor(((i % source.width) * width) / source.width);
+          const row = Math.floor((Math.floor(i / source.width) * height) / source.height);
+          if (roofs[row * width + col]) heatCells[i] = 0;
+        }
+      }
+      shade.set({ stream: 0, field: 0, width: source.width, height: source.height, revision: ++revision, min: 0, max: 1, progress: 1, data: heatCells });
+    }
+
+    /** Rasterises the footprints onto the site grid. */
+    function rasterise(geojson: { features?: { geometry?: { type?: string; coordinates?: unknown } | null }[] }): Uint8Array {
+      const { width, height } = ctx.site.grid;
+      const canvas = new OffscreenCanvas(width, height);
+      const g = canvas.getContext('2d')!;
+      g.beginPath();
+      for (const feature of geojson.features ?? []) {
+        const geometry = feature.geometry;
+        const polygons = geometry?.type === 'Polygon' ? [geometry.coordinates] : geometry?.type === 'MultiPolygon' ? (geometry.coordinates as unknown[]) : [];
+        for (const rings of polygons as number[][][][]) {
+          for (const ring of rings) {
+            ring.forEach((p, i) => {
+              const [col, row] = projection.toGrid([p[0]!, p[1]!]);
+              if (i === 0) g.moveTo(col, row);
+              else g.lineTo(col, row);
+            });
+            g.closePath();
+          }
+        }
+      }
+      g.fill('evenodd');
+      const pixels = g.getImageData(0, 0, width, height).data;
+      const mask = new Uint8Array(width * height);
+      for (let i = 0; i < mask.length; i++) mask[i] = pixels[i * 4 + 3]! > 127 ? 1 : 0;
+      return mask;
+    }
+    if (hasSiteData(ctx.site, 'buildings') && typeof OffscreenCanvas !== 'undefined') {
+      loadSiteData<Parameters<typeof rasterise>[0]>(ctx.site, 'buildings')
+        .then((geojson) => {
+          roofs = rasterise(geojson);
+          assess();
+        })
+        .catch((error) => console.warn('[coolpaths] footprints not read', error));
+    }
+
+    /** Fetches the prepared PET for the hour on show (once per hour), then assesses again. */
+    function loadPrepared(): void {
+      if (!hasSiteData(ctx.site, PREPARED)) return;
+      const hour = Math.floor(ctx.params.hour) % 24;
+      if (hour === preparedHour) return;
+      preparedHour = hour;
+      let pending = preparedByHour.get(hour);
+      if (!pending) {
+        pending = loadSiteField(ctx.site, PREPARED, hour).catch((error) => {
+          console.warn('[coolpaths] prepared PET not read', error);
+          return null;
+        });
+        preparedByHour.set(hour, pending);
+      }
+      void pending.then((field) => {
+        if (preparedHour !== hour) return;
+        prepared = field;
+        assess();
+        reroute();
+      });
+    }
+
     function reroute(): void {
       pair = route(network, from, to, ctx.params.detour / 100);
       pathsDirty = true;
-      const summary = (r: Route) => ({ length: round(r.length), sun: round(r.sun) });
+      const summary = (r: Route): WalkSummary => ({
+        length: round(r.length),
+        sun: round(r.sun),
+        heat: round(r.heat),
+        pet: r.length > 0 ? Math.round((r.heat / r.length) * 10) / 10 : 0,
+        profile: thin(r.profile),
+      });
       ctx.publish({
         ready: frame !== null,
         sunUp,
+        source: prepared ? 'prepared' : 'estimate',
+        air: Math.round(comfort.airC * 10) / 10,
+        petSun: Math.round(comfort.sun.pet * 10) / 10,
+        petShade: Math.round(comfort.shade.pet * 10) / 10,
         shortest: pair ? summary(pair.shortest) : null,
         coolest: pair ? summary(pair.coolest) : null,
         same: pair ? pair.coolest === pair.shortest : true,
@@ -119,14 +296,15 @@ export default defineLayer<Params>({
     stream.on('shadow', (next) => {
       const first = frame === null;
       frame = next;
-      shade.set(next);
-      setExposure(network, lit, ctx.site.grid.cell_m, distance);
+      assess();
       if (first) pickExample();
       else reroute();
     });
     stream.onStatus((status) => {
       sunUp = status.info.sun.altitude_deg > 0;
     });
+    sunUp = comfort.altitude > 0;
+    loadPrepared();
 
     function drawPaths(): void {
       const g = paths.context;
@@ -141,12 +319,11 @@ export default defineLayer<Params>({
         // One stroke per colour keeps a large network cheap to draw.
         g.lineWidth = Math.max(1.5, 1.8 * scale);
         g.globalAlpha = 0.75;
-        RAMP.forEach((colour, bin) => {
+        const bin = (pet: number) => Math.min(PET_BINS.length - 1, Math.max(0, Math.round((pet - PET_BINS[0]!) / 2)));
+        PET_BINS.forEach((pet, index) => {
           g.beginPath();
-          for (const edge of network.edges) {
-            if (Math.min(RAMP.length - 1, Math.floor(edge.exposure * RAMP.length)) === bin) trace(paths, edge.coordinates);
-          }
-          g.strokeStyle = colour;
+          for (const edge of network.edges) if (bin(edge.pet) === index) trace(paths, edge.coordinates);
+          g.strokeStyle = petColour(pet);
           g.stroke();
         });
         g.globalAlpha = 1;
@@ -375,7 +552,18 @@ export default defineLayer<Params>({
         if (changed.includes('shade')) shade.setStyle({ opacity: ctx.params.shade ? 0.75 : 0 });
         if (changed.includes('network')) pathsDirty = true;
         if (changed.includes('detour')) reroute();
-        if (changed.includes('date') || changed.includes('hour')) stream.set(kernelParams(ctx));
+        if (['date', 'hour', 'air', 'humidity', 'wind'].some((key) => changed.includes(key as keyof Params))) {
+          comfort = comfortFor(ctx.params, ctx.site);
+          sunUp = comfort.altitude > 0;
+        }
+        if (changed.includes('date') || changed.includes('hour')) {
+          stream.set(kernelParams(ctx));
+          loadPrepared();
+        } else if (['air', 'humidity', 'wind'].some((key) => changed.includes(key as keyof Params)) && frame) {
+          // Weather moves the estimate only; the shade is the same.
+          assess();
+          reroute();
+        }
       },
       action(id) {
         if (id === 'example' && frame) pickExample();
@@ -394,68 +582,100 @@ export default defineLayer<Params>({
   // The controller's hero: the time of day, which moves the shade (#76).
   hero: (ctx, el) => coolpathsHero(ctx as never, el),
 
+  // The controller compares the two walks as the Chalmers demo does: distance, mean PET, heat exposure,
+  // and PET along each walk.
   panel(ctx, el) {
     el.innerHTML = `
       <style>
-        .coolpaths-panel { display: grid; grid-template-columns: 1fr 1fr; gap: 0.4em 1.2em; font-size: 0.9em; line-height: 1.2; font-variant-numeric: tabular-nums; }
-        .coolpaths-head { grid-column: 1 / -1; display: flex; justify-content: space-between; align-items: baseline; gap: 0.6em; min-width: 0; }
-        .coolpaths-clock { font-size: 1.3em; font-weight: 600; line-height: 1.1; }
-        .coolpaths-verdict { opacity: 0.8; text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .coolpaths-route { display: grid; grid-template-columns: auto 1fr auto; gap: 0.2em 0.5em; align-items: center; min-width: 0; }
-        .coolpaths-route[hidden] { display: none; }
-        .coolpaths-swatch { width: 1.2em; height: 0.35em; border-radius: 0.2em; }
-        .coolpaths-bar { grid-column: 1 / -1; height: 0.5em; border-radius: 0.25em; background: #38bdf8; overflow: hidden; }
-        .coolpaths-bar i { display: block; height: 100%; background: #fb923c; }
-        .coolpaths-note { font-size: 0.8em; opacity: 0.7; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .coolpaths-key { grid-column: 1 / -1; }
-        .coolpaths-ramp { height: 0.4em; border-radius: 0.2em; background: linear-gradient(to right, ${RAMP.join(', ')}); }
-        .coolpaths-ticks { display: flex; justify-content: space-between; font-size: 0.8em; opacity: 0.7; margin-top: 0.2em; }
+        .coolpaths-panel { display: grid; gap: 0.2em; font-size: 0.9em; line-height: 1.1; font-variant-numeric: tabular-nums; min-width: 0; }
+        .coolpaths-head { display: flex; align-items: baseline; justify-content: space-between; gap: 0.8em; min-width: 0; }
+        .coolpaths-verdict { font-size: 1em; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .coolpaths-source { flex: none; max-width: 45%; font-size: 0.72em; opacity: 0.6; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .coolpaths-table { display: grid; grid-template-columns: auto auto auto auto minmax(3em, 1fr); gap: 0.1em 1em; align-items: center; }
+        .coolpaths-unit { font-size: 0.7em; font-weight: 400; opacity: 0.7; }
+        .coolpaths-table > * { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+        .coolpaths-name { display: flex; align-items: center; gap: 0.45em; }
+        .coolpaths-swatch { flex: none; width: 1.1em; height: 0.35em; border-radius: 0.2em; }
+        .coolpaths-value { font-size: 1.05em; font-weight: 600; }
+        .coolpaths-table [hidden] { display: none; }
+        .coolpaths-along { display: block; width: 100%; height: 1em; border-radius: 0.2em; }
       </style>
       <div class="coolpaths-panel">
-        <div class="coolpaths-head"><span class="coolpaths-clock"></span><span class="coolpaths-verdict"></span></div>
-        <div class="coolpaths-route" data-route="shortest">
-          <span class="coolpaths-swatch" style="background:${shortColour(ctx.site)}"></span><span>Shortest walk</span><span class="coolpaths-length"></span>
-          <div class="coolpaths-bar"><i></i></div><span class="coolpaths-note" style="grid-column:1/-1"></span>
+        <div class="coolpaths-head"><span class="coolpaths-verdict"></span><span class="coolpaths-source"></span></div>
+        <div class="coolpaths-table">
+          ${(['shortest', 'coolest'] as const)
+            .map(
+              (name) => `
+          <span class="coolpaths-name" data-route="${name}"><span class="coolpaths-swatch" style="background:${name === 'shortest' ? shortColour(ctx.site) : coolColour(ctx.site)}"></span>${name === 'shortest' ? 'Shortest' : 'Coolest'}</span>
+          <span class="coolpaths-value" data-route="${name}" data-fact="length"></span>
+          <span class="coolpaths-value" data-route="${name}" data-fact="pet"></span>
+          <span class="coolpaths-value" data-route="${name}" data-fact="heat"></span>
+          <svg class="coolpaths-along" data-route="${name}" data-fact="along" viewBox="0 0 300 40" preserveAspectRatio="none" aria-label="PET along the ${name} walk"></svg>`,
+            )
+            .join('')}
         </div>
-        <div class="coolpaths-route" data-route="coolest">
-          <span class="coolpaths-swatch" style="background:${coolColour(ctx.site)}"></span><span>Coolest walk</span><span class="coolpaths-length"></span>
-          <div class="coolpaths-bar"><i></i></div><span class="coolpaths-note" style="grid-column:1/-1"></span>
-        </div>
-        <div class="coolpaths-key"><div class="coolpaths-ramp"></div><div class="coolpaths-ticks"><span>path in shade</span><span>in sun</span></div></div>
       </div>`;
-    const clock = el.querySelector<HTMLElement>('.coolpaths-clock')!;
     const verdict = el.querySelector<HTMLElement>('.coolpaths-verdict')!;
+    const source = el.querySelector<HTMLElement>('.coolpaths-source')!;
+    const walk = (name: 'shortest' | 'coolest') => ctx.shared[name] as WalkSummary | null | undefined;
 
-    function show(name: 'shortest' | 'coolest', longest: number): void {
-      const row = el.querySelector<HTMLElement>(`[data-route="${name}"]`)!;
-      const value = ctx.shared[name] as { length: number; sun: number } | null | undefined;
-      row.hidden = !value;
+    /** PET along a walk, on the PET colours, over the longer walk's distance and both walks' range, so the two rows compare. */
+    function along(svg: SVGSVGElement, value: WalkSummary, colour: string, scale: { longest: number; lo: number; hi: number }): void {
+      const x = (d: number) => (d / scale.longest) * 300;
+      const y = (v: number) => 37 - ((v - scale.lo) / Math.max(1, scale.hi - scale.lo)) * 34;
+      const points = value.profile.map(([d, v]) => `${x(d).toFixed(1)},${y(v).toFixed(1)}`).join(' ');
+      const end = x(value.length).toFixed(1);
+      // The area under the line takes the PET colour of each stretch.
+      const stops = value.profile.map(([d, v]) => `<stop offset="${(d / Math.max(1, value.length)).toFixed(4)}" stop-color="${petColour(v)}"/>`).join('');
+      svg.innerHTML = `
+        <defs><linearGradient id="coolpaths-along-${svg.dataset.route}" x1="0" x2="${end}" y1="0" y2="0" gradientUnits="userSpaceOnUse">${stops}</linearGradient></defs>
+        <polygon points="0,40 ${points} ${end},40" fill="url(#coolpaths-along-${svg.dataset.route})" opacity="0.45"/>
+        <polyline points="${points}" fill="none" stroke="${colour}" stroke-width="2" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`;
+    }
+
+    function show(name: 'shortest' | 'coolest', hidden: boolean, scale: { longest: number; lo: number; hi: number }): void {
+      const value = walk(name);
+      el.querySelectorAll<HTMLElement | SVGElement>(`[data-route="${name}"]`).forEach((cell) => cell.toggleAttribute('hidden', hidden || !value));
       if (!value) return;
-      row.querySelector<HTMLElement>('.coolpaths-length')!.textContent = `${value.length} m`;
-      // The bar's width is the walk's length and its orange part the metres in sun.
-      const bar = row.querySelector<HTMLElement>('.coolpaths-bar')!;
-      bar.style.width = `${(value.length / longest) * 100}%`;
-      bar.querySelector<HTMLElement>('i')!.style.width = `${value.length > 0 ? (value.sun / value.length) * 100 : 0}%`;
-      row.querySelector<HTMLElement>('.coolpaths-note')!.textContent = `${value.sun} m sun, ${value.length - value.sun} m shade`;
+      const fact = (id: string) => el.querySelector<HTMLElement>(`[data-route="${name}"][data-fact="${id}"]`)!;
+      fact('length').textContent = `${value.length} m`;
+      // Mean PET and heat exposure (PET times metres), as the demo compares them.
+      fact('pet').innerHTML = `${value.pet.toFixed(1)} °C <span class="coolpaths-unit">PET</span>`;
+      fact('pet').style.color = petColour(value.pet);
+      fact('heat').innerHTML = `${(value.heat / 1000).toFixed(1)}k °C·m <span class="coolpaths-unit">heat</span>`;
+      along(el.querySelector<SVGSVGElement>(`svg[data-route="${name}"]`)!, value, name === 'shortest' ? shortColour(ctx.site) : coolColour(ctx.site), scale);
     }
 
     function update() {
       const { ready, sunUp, same } = ctx.shared;
-      const shortest = ctx.shared.shortest as { length: number; sun: number } | null | undefined;
-      const coolest = ctx.shared.coolest as { length: number; sun: number } | null | undefined;
-      clock.textContent = formatHour(ctx.params.hour);
-      const longest = Math.max(shortest?.length ?? 1, coolest?.length ?? 1);
-      show('shortest', longest);
-      show('coolest', longest);
-      if (!ready) verdict.textContent = 'working out the shade…';
-      else if (!shortest || !coolest) verdict.textContent = 'these two points are not connected';
-      else if (sunUp === false) verdict.textContent = 'the sun is down: every path is in shade';
-      else if (same || shortest.sun === 0) verdict.textContent = 'the shortest walk is already the coolest';
+      const shortest = walk('shortest');
+      const coolest = walk('coolest');
+      const walks = [shortest, coolest].filter((w): w is WalkSummary => !!w);
+      const values = walks.flatMap((w) => w.profile.map(([, v]) => v));
+      const scale = {
+        longest: Math.max(1, ...walks.map((w) => w.length)),
+        lo: values.length ? Math.floor(Math.min(...values) - 1) : 20,
+        hi: values.length ? Math.ceil(Math.max(...values) + 1) : 44,
+      };
+      show('shortest', false, scale);
+      show('coolest', same === true, scale);
+      let text: string;
+      if (!ready) text = 'working out the shade…';
+      else if (!shortest || !coolest) text = 'these two points are not connected';
+      else if (same || shortest.heat <= coolest.heat) text = sunUp === false ? 'the sun is down: the shortest walk is the coolest' : 'the shortest walk is already the coolest';
       else {
         const further = Math.round((coolest.length / shortest.length - 1) * 100);
-        const less = Math.round((1 - coolest.sun / shortest.sun) * 100);
-        verdict.textContent = `${further > 0 ? `${further}% further` : 'no further'}, ${less}% less sun`;
+        const less = Math.round((1 - coolest.heat / shortest.heat) * 100);
+        text = `${further > 0 ? `${further}% further` : 'no further'}, ${less}% less heat`;
       }
+      verdict.textContent = `${formatHour(ctx.params.hour)}: ${text}`;
+      // How the shortest walk feels, on the PET scale, for whoever reads the controller up close.
+      verdict.title = shortest ? `The shortest walk feels ${petFeeling(shortest.pet)}` : '';
+      const air = ctx.shared.air as number | undefined;
+      source.textContent =
+        ctx.shared.source === 'prepared'
+          ? 'prepared PET'
+          : `estimated PET, air ${air ?? '–'} °C`;
     }
     update();
     return { update };
