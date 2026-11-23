@@ -31,6 +31,7 @@ fn main() {
         "presenting_state",
         "open_home",
         "open_settings",
+        "open_view",
         "new_table",
         "quit",
         "colour_state",

@@ -27,6 +27,18 @@ function shell(): Invoke | undefined {
   return (window as { __TAURI__?: { core?: { invoke?: Invoke } } }).__TAURI__?.core?.invoke;
 }
 
+/**
+ * Opens one view of the table in a window of its own. The desktop app is asked directly,
+ * as Present is: macOS does not reliably let `window.open` out of the webview (#51). A
+ * browser, or an older app without the command, opens a window the usual way.
+ */
+function openView(role: 'table' | 'tv' | 'dev'): void {
+  const fallback = () => window.open(`/${role}`, `mrstudio-${role}`);
+  const invoke = shell();
+  if (invoke) invoke('open_view', { role }).catch(fallback);
+  else fallback();
+}
+
 function button(className: string, label: string, iconName?: string, size = 16): HTMLButtonElement {
   const node = el('button', className);
   node.type = 'button';
@@ -373,7 +385,7 @@ export class Editor {
     const actions = el('div', 'ed-actions');
     const preview = button('ed-button', 'Preview', 'play');
     preview.title = 'Open the table in a window on this screen';
-    preview.addEventListener('click', () => window.open('/table', 'mrstudio-preview'));
+    preview.addEventListener('click', () => openView('table'));
     const guide = button('ed-button', 'Setup guide', 'route');
     this.guideButton = guide;
     guide.addEventListener('click', () => (this.wizard ? this.closeWizard() : this.openWizard()));
@@ -613,10 +625,10 @@ export class Editor {
       groups.push(this.group(layerButton(selected.id, selected.manifest, selected.state).name, ...this.column(tools)));
     }
 
-    const open = (label: string, iconName: string, path: string, tip: string) => {
+    const open = (label: string, iconName: string, role: 'table' | 'tv' | 'dev', tip: string) => {
       const tool = button('ed-tool', label, iconName);
       tool.title = tip;
-      tool.addEventListener('click', () => window.open(path, `mrstudio-${label.toLowerCase()}`));
+      tool.addEventListener('click', () => openView(role));
       return tool;
     };
     const data = button('ed-tool is-large', 'Add data', 'map', 20);
@@ -626,7 +638,7 @@ export class Editor {
 
     const windows = this.group(
       'Open in a window',
-      ...this.column([open('Map', 'table', '/table', 'The map projected on the table'), open('Controller', 'tv', '/tv', 'The screen beside the table'), open('Developer', 'code', '/dev', 'Map, dashboard and every control on one page')]),
+      ...this.column([open('Map', 'table', 'table', 'The map projected on the table'), open('Controller', 'tv', 'tv', 'The screen beside the table'), open('Developer', 'code', 'dev', 'Map, dashboard and every control on one page')]),
     );
     windows.classList.add('is-last');
     groups.push(windows);

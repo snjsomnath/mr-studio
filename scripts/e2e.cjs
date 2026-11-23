@@ -715,8 +715,8 @@ async function main() {
     await shelled.addInitScript(() => {
       window.shellCalls = [];
       let presenting = false;
-      window.__TAURI__ = { core: { invoke: async (command) => {
-        window.shellCalls.push(command);
+      window.__TAURI__ = { core: { invoke: async (command, args) => {
+        window.shellCalls.push(command === 'open_view' ? `open_view ${args.role}` : command);
         if (command === 'present') presenting = true;
         if (command === 'stop_presenting') presenting = false;
         return { presenting };
@@ -726,9 +726,17 @@ async function main() {
     await shelled.getByRole('button', { name: 'Present', exact: true }).click();
     await shelled.getByRole('button', { name: 'Stop presenting' }).click();
     await shelled.getByRole('button', { name: 'Present', exact: true }).waitFor();
+    // Preview and "Open in a window" ask the app for a window, rather than window.open, which macOS drops (#51).
+    let popups = 0;
+    shelled.on('popup', () => popups++);
+    await shelled.getByRole('button', { name: 'Preview', exact: true }).click();
+    for (const name of ['Map', 'Controller', 'Developer']) await shelled.locator('.ed-ribbon').getByRole('button', { name, exact: true }).click();
     await shelled.getByRole('button', { name: 'All tables', exact: true }).click();
     assert.equal(await shelled.evaluate(() => window.mrsShellControls), true);
-    assert.deepEqual(await shelled.evaluate(() => window.shellCalls.filter((c) => c !== 'presenting_state')), ['present', 'stop_presenting', 'open_home']);
+    assert.deepEqual(await shelled.evaluate(() => window.shellCalls.filter((c) => c !== 'presenting_state')), [
+      'present', 'stop_presenting', 'open_view table', 'open_view table', 'open_view tv', 'open_view dev', 'open_home',
+    ]);
+    assert.equal(popups, 0, 'no browser window is opened inside the app');
     await shelled.close();
 
     console.log('e2e passed');
