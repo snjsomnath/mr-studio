@@ -418,8 +418,10 @@ export default defineLayer<Params>({
       canvas.clear();
       g.lineCap = 'round';
       g.lineJoin = 'round';
+      // Made-up lines are only for simulated vehicles. Under live vehicles they would be streets no real line runs on.
+      const network = ctx.params.source === 'live' && generated ? [] : routes;
       if (ctx.params.routes) {
-        for (const route of routes) {
+        for (const route of network) {
           g.strokeStyle = withAlpha(route.colour, 0.3);
           g.lineWidth = 2.5;
           g.beginPath();
@@ -429,7 +431,7 @@ export default defineLayer<Params>({
       }
       if (ctx.params.stops) {
         g.lineWidth = 1.2;
-        for (const route of routes) {
+        for (const route of network) {
           g.strokeStyle = withAlpha(route.colour, 0.9);
           g.fillStyle = '#0b0e14';
           for (const stop of route.stops) {
@@ -465,7 +467,7 @@ export default defineLayer<Params>({
       ctx.publish({
         vehicles: vehicles.length,
         status: isLive ? feedState : generated ? (routes.length > 0 ? 'This site has no transit data, so the lines are made up along its streets' : 'This site has no transit data or streets, so there is nothing to show') : '',
-        lines: routes.map((route) => ({ line: route.line, mode: route.mode, colour: route.colour })),
+        lines: (isLive && generated ? [] : routes).map((route) => ({ line: route.line, mode: route.mode, colour: route.colour })),
       });
     });
 

@@ -81,6 +81,12 @@ async function main() {
   status.hidden = true;
   // New data was brought into the site: layers read their data once, so every surface starts again. The editor does this itself.
   if (!editing) connection.on('site.changed', () => location.reload());
+  // A reconnect that lands on a restarted host (another table opened, the app relaunched) starts the page again:
+  // layers read their data once, and reads made while the host was down came back empty (#222).
+  if (!phone) {
+    const first = welcome.state.session.id;
+    connection.on('welcome', (message: typeof welcome) => message !== welcome && message.state.session.id !== first && location.reload());
+  }
   connection.on('disconnected', () => (status.hidden = false));
   connection.on('welcome', () => (status.hidden = true));
   document.body.append(status);

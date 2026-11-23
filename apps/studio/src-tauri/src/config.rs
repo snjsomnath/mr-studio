@@ -49,6 +49,95 @@ pub struct Display {
     pub height: u32,
     pub scale: f64,
     pub primary: bool,
+    /// The make and model, when the system knows it (`EPSON PJ`). On Windows `name` is
+    /// `\\.\DISPLAY1` and this comes from the display's EDID instead.
+    pub model: Option<String>,
+    /// What the display looks like, from its make and model (#188).
+    pub kind: Option<Kind>,
+}
+
+/// A projector shows the table; a TV is the controller.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Kind {
+    Projector,
+    Tv,
+}
+
+/// Words in a display's name that say what it is, whoever made it.
+const PROJECTOR_WORDS: [&str; 5] = ["projector", "beamer", "pj", "dlp", "proj"];
+const TV_WORDS: [&str; 4] = ["tv", "hdtv", "bravia", "uhd tv"];
+/// Makers that sell projectors, and next to nothing else with a screen.
+const PROJECTOR_MAKERS: [&str; 18] = [
+    "epson",
+    "optoma",
+    "christie",
+    "barco",
+    "vivitek",
+    "infocus",
+    "xgimi",
+    "casio",
+    "ricoh",
+    "hitachi",
+    "sanyo",
+    "maxell",
+    "boxlight",
+    "nebula",
+    "dangbei",
+    "jvc",
+    "digital projection",
+    "panasonic pt",
+];
+/// Makers whose projectors are as common as their monitors: a projector unless a word says otherwise.
+const MOSTLY_PROJECTOR_MAKERS: [&str; 4] = ["benq", "viewsonic", "nec", "acer"];
+/// Makers of TVs. Samsung and Philips make monitors too, so they count for less than a word.
+/// LG is left out: its TVs say "LG TV" and its monitors only "LG".
+const TV_MAKERS: [&str; 14] = [
+    "samsung",
+    "philips",
+    "sony",
+    "tcl",
+    "hisense",
+    "sharp",
+    "toshiba",
+    "vizio",
+    "panasonic",
+    "grundig",
+    "insignia",
+    "skyworth",
+    "loewe",
+    "thomson",
+];
+
+impl Kind {
+    /// Guesses from a display's make and model. `None` for a laptop screen, a monitor
+    /// or a name that says nothing, such as `HDMI-1`.
+    pub fn guess(model: &str) -> Option<Self> {
+        let (projector, tv) = Self::scores(model);
+        match projector.cmp(&tv) {
+            std::cmp::Ordering::Greater => Some(Self::Projector),
+            std::cmp::Ordering::Less => Some(Self::Tv),
+            std::cmp::Ordering::Equal => None,
+        }
+    }
+
+    /// How much the name sounds like a projector and like a TV.
+    fn scores(model: &str) -> (u8, u8) {
+        let lower = model.to_lowercase();
+        let words: Vec<&str> = lower.split(|c: char| !c.is_ascii_alphanumeric()).filter(|w| !w.is_empty()).collect();
+        // A maker or word of several parts is matched as text; one word is matched whole,
+        // so "lg" is not found in "ultragear".
+        let has = |term: &str| if term.contains(' ') { lower.contains(term) } else { words.contains(&term) };
+        let projector = if PROJECTOR_WORDS.iter().any(|w| has(w)) {
+            3
+        } else if PROJECTOR_MAKERS.iter().any(|m| has(m)) {
+            2
+        } else {
+            u8::from(MOSTLY_PROJECTOR_MAKERS.iter().any(|m| has(m)))
+        };
+        let tv = if TV_WORDS.iter().any(|w| has(w)) { 3 } else { u8::from(TV_MAKERS.iter().any(|m| has(m))) };
+        (projector, tv)
+    }
 }
 
 impl Displays {
@@ -83,15 +172,24 @@ impl Displays {
         Ok(())
     }
 
-    /// What Present uses when nobody chose: the controls fullscreen on the primary display
-    /// and the table fullscreen on the first other one, or the table alone when there is
-    /// only one display (the controller is then in the editor's preview).
+    /// What Present uses when nobody chose (#188). The table goes on a projector, by its
+    /// maker, else on the first display that is not the primary one; the controller goes on
+    /// a TV, else on the primary display. With one display there is only the table (the
+    /// controller is then in the editor's preview).
     pub fn suggest(displays: &[Display]) -> Self {
         let primary = displays.iter().find(|d| d.primary).or(displays.first());
-        let other = displays.iter().find(|d| Some(d.index) != primary.map(|p| p.index));
+        let is_primary = |d: &Display| Some(d.index) == primary.map(|p| p.index);
+        let projector = displays.iter().filter(|d| d.kind == Some(Kind::Projector)).min_by_key(|d| is_primary(d));
+        let table = projector.or_else(|| displays.iter().find(|d| !is_primary(d))).or(primary);
+        let others = || displays.iter().filter(|d| Some(d.index) != table.map(|t| t.index));
+        let tv = others()
+            .filter(|d| d.kind == Some(Kind::Tv))
+            .min_by_key(|d| is_primary(d))
+            .or_else(|| others().find(|d| is_primary(d)))
+            .or_else(|| others().next());
         let window = |role: &str, display: &Display| WindowSpec { role: role.into(), display: display.reference(), fullscreen: true };
-        match (primary, other) {
-            (Some(tv), Some(table)) => Self { windows: vec![window("table", table), window("tv", tv)] },
+        match (table, tv) {
+            (Some(table), Some(tv)) => Self { windows: vec![window("table", table), window("tv", tv)] },
             (Some(only), None) => Self { windows: vec![window("table", only)] },
             _ => Self::dev(),
         }
@@ -198,7 +296,53 @@ mod tests {
     use super::*;
 
     fn display(index: usize, name: &str, primary: bool) -> Display {
-        Display { index, name: Some(name.into()), x: index as i32 * 1920, y: 0, width: 1920, height: 1080, scale: 1.0, primary }
+        let (model, kind) = (Some(name.to_string()), Kind::guess(name));
+        Display {
+            index,
+            name: Some(name.into()),
+            x: index as i32 * 1920,
+            y: 0,
+            width: 1920,
+            height: 1080,
+            scale: 1.0,
+            primary,
+            model,
+            kind,
+        }
+    }
+
+    fn roles(displays: &[Display]) -> Vec<(String, usize)> {
+        Displays::suggest(displays).windows.iter().map(|w| (w.role.clone(), w.display.index.unwrap())).collect()
+    }
+
+    #[test]
+    fn projectors_and_tvs_are_told_apart_by_maker() {
+        for projector in ["EPSON PJ", "Optoma UHD50X", "BenQ W2700", "ViewSonic PX701", "XGIMI HORIZON", "LG Projector HU810P", "Barco F80"]
+        {
+            assert_eq!(Kind::guess(projector), Some(Kind::Projector), "{projector}");
+        }
+        for tv in ["SAMSUNG", "LG TV SSCR2", "Sony TV", "BRAVIA 4K", "Philips FTV", "TCL 55C", "Hisense", "VIZIO V505"] {
+            assert_eq!(Kind::guess(tv), Some(Kind::Tv), "{tv}");
+        }
+        for neither in ["Color LCD", "DELL U2720Q", "HDMI-1", r"\\.\DISPLAY1", "LG ULTRAGEAR", "Built-in Retina Display", ""] {
+            assert_eq!(Kind::guess(neither), None, "{neither}");
+        }
+    }
+
+    #[test]
+    fn the_table_goes_on_the_projector_and_the_controller_on_the_tv() {
+        // Laptop first, then the TV, then the projector: position alone would get it wrong.
+        let three = [display(0, "Color LCD", true), display(1, "SAMSUNG", false), display(2, "EPSON PJ", false)];
+        assert_eq!(roles(&three), [("table".to_string(), 2), ("tv".to_string(), 1)]);
+        // The projector is the primary display and the TV is not.
+        let swapped = [display(0, "EPSON PJ", true), display(1, "LG TV SSCR2", false)];
+        assert_eq!(roles(&swapped), [("table".to_string(), 0), ("tv".to_string(), 1)]);
+        // No TV: the controller stays on the primary display.
+        let no_tv = [display(0, "Color LCD", true), display(1, "DELL U2720Q", false), display(2, "BenQ W2700", false)];
+        assert_eq!(roles(&no_tv), [("table".to_string(), 2), ("tv".to_string(), 0)]);
+        // Names that say nothing: as before, the table on the other display.
+        let plain = [display(0, "HDMI-1", false), display(1, "eDP-1", true)];
+        assert_eq!(roles(&plain), [("table".to_string(), 0), ("tv".to_string(), 1)]);
     }
 
     fn wanted(name: Option<&str>, index: Option<usize>) -> DisplayRef {

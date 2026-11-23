@@ -39,6 +39,33 @@ interface LayerIntensity {
   active: boolean;
   intensity: number;
 }
+/** A connected display, as the desktop app lists it (#188). */
+interface Screen {
+  index: number;
+  name: string | null;
+  model: string | null;
+  kind: 'projector' | 'tv' | null;
+  width: number;
+  height: number;
+  primary: boolean;
+}
+interface Assigned {
+  display: number;
+  role: string;
+  fullscreen: boolean;
+}
+interface Screens {
+  displays: Screen[];
+  windows: Assigned[];
+  configured: boolean;
+}
+
+/** How a display is listed in the Table and Controller pickers. */
+export function screenLabel(d: Screen): string {
+  const kind = d.kind === 'projector' ? ' · projector' : d.kind === 'tv' ? ' · TV' : d.primary ? ' · main screen' : '';
+  return `${d.index + 1} · ${d.model ?? d.name ?? 'Display'}${kind}`;
+}
+
 interface ColourState {
   displays: DisplayColour[];
   presets: Preset[];
@@ -196,6 +223,11 @@ export class DisplayTab {
   private calibrating = false;
   private calibrated = false;
 
+  private readonly tableSelect = el('select', 'dt-select');
+  private readonly controllerSelect = el('select', 'dt-select');
+  private readonly identifyButton = tool('Identify', 'info');
+  private readonly autoButton = tool('Automatic', 'sparkle');
+  private screens: Screens | null = null;
   private readonly displaySelect = el('select', 'dt-select');
   private readonly presetSelect = el('select', 'dt-select');
   private readonly presetName = el('input', 'dt-input');
@@ -233,13 +265,16 @@ export class DisplayTab {
     this.sendColour = latest((value) => this.call('set_colour', value), fail);
     this.sendLayer = latest((value) => this.call('set_layer_intensity', value), fail);
 
+    // In the order a table is set up: which screen is which, line the map up, then colour.
     const groups: HTMLElement[] = [];
+    if (invoke) groups.push(this.screensGroup());
+    groups.push(this.projectorGroup());
     if (invoke) groups.push(...this.colourGroups());
     else {
       const note = el('p', 'dt-note', 'The colour of each display is set in the MR Studio desktop app, where the table is projected.');
       groups.push(group('Colour', note));
     }
-    groups.push(this.qualityGroup(), this.projectorGroup());
+    groups.push(this.qualityGroup());
     if (invoke) {
       const more = tool('Displays and settings', 'settings', true);
       more.title = 'Which display shows the table and the controller, updates, and every display setting';
@@ -275,6 +310,125 @@ export class DisplayTab {
 
   private current(): DisplayColour | undefined {
     return this.state?.displays.find((d) => d.display === this.display);
+  }
+
+  /** Which display shows the table and which the controller (#188). */
+  private screensGroup(): HTMLElement {
+    const picker = (label: string, select: HTMLSelectElement, tip: string) => {
+      const row = el('label', 'dt-slider dt-picker');
+      row.title = tip;
+      select.ariaLabel = label;
+      row.append(el('span', 'dt-slider-label', label), select);
+      return row;
+    };
+    this.tableSelect.addEventListener('change', () => this.chooseScreen('table'));
+    this.controllerSelect.addEventListener('change', () => this.chooseScreen('tv'));
+    this.identifyButton.title = 'Show each display’s number on it for a moment';
+    this.identifyButton.addEventListener('click', () => void this.call('identify').catch((error) => this.say(text(error))));
+    this.autoButton.addEventListener('click', () => {
+      if (this.screens?.configured) void this.saveScreens([]);
+    });
+    const actions = el('div', 'dt-row');
+    actions.append(this.identifyButton, this.autoButton);
+    return group(
+      'Screens',
+      column(
+        picker('Table', this.tableSelect, 'The display that projects the map onto the table, usually the projector'),
+        picker('Controller', this.controllerSelect, 'The display with the controls, usually the TV beside the table'),
+        actions,
+      ),
+    );
+  }
+
+  private async loadScreens(): Promise<void> {
+    try {
+      const state = (await this.call('presenting_state')) as Partial<Screens> | null;
+      // An older desktop app sends neither list.
+      this.screens = {
+        displays: state?.displays ?? [],
+        windows: state?.windows ?? [],
+        configured: Boolean(state?.configured),
+      };
+    } catch (error) {
+      this.say(text(error));
+      return;
+    }
+    this.drawScreens();
+  }
+
+  private drawScreens(): void {
+    const screens = this.screens;
+    if (!screens) return;
+    const on = (role: string) => screens.windows.find((w) => w.role === role)?.display;
+    const fill = (select: HTMLSelectElement, value: number | undefined, none: string | null) => {
+      const options = screens.displays.map((d) => {
+        const option = el('option', undefined, screenLabel(d));
+        option.value = String(d.index);
+        option.title = `${d.width}×${d.height} pixels`;
+        return option;
+      });
+      if (none !== null) {
+        const option = el('option', undefined, none);
+        option.value = '';
+        options.push(option);
+      }
+      select.replaceChildren(...options);
+      select.value = value === undefined ? '' : String(value);
+      select.disabled = screens.displays.length === 0;
+    };
+    fill(this.tableSelect, on('table'), null);
+    fill(this.controllerSelect, on('tv'), 'None: use the preview here');
+    // Automatic is on while the choice is MR Studio's guess; picking by hand turns it off.
+    this.autoButton.classList.toggle('is-on', !screens.configured);
+    this.autoButton.setAttribute('aria-pressed', String(!screens.configured));
+    this.autoButton.title = screens.configured
+      ? 'Chosen by hand. Click to let MR Studio choose again: the table on a projector and the controller on a TV, by their makers'
+      : screens.displays.length < 2
+        ? 'One display: the table goes on it, and the controller is the preview here'
+        : 'Chosen automatically: the table on a projector and the controller on a TV, by their makers';
+  }
+
+  /** A picker changed. When both would share a display, the other role takes the one this left. */
+  private chooseScreen(role: 'table' | 'tv'): void {
+    const screens = this.screens;
+    if (!screens) return;
+    const was = (r: string) => screens.windows.find((w) => w.role === r)?.display ?? null;
+    const read = (select: HTMLSelectElement) => (select.value === '' ? null : Number(select.value));
+    let table = read(this.tableSelect);
+    let tv = read(this.controllerSelect);
+    if (table !== null && table === tv) {
+      if (role === 'table') tv = was('table');
+      else {
+        const other = was('tv') ?? screens.displays.find((d) => d.index !== tv)?.index ?? null;
+        // With one display the table keeps it, and the controller stays in the preview.
+        if (other === null) tv = null;
+        else table = other;
+      }
+    }
+    if (tv === table) tv = null;
+    const windows: Assigned[] = [];
+    if (table !== null) windows.push({ display: table, role: 'table', fullscreen: true });
+    if (tv !== null) windows.push({ display: tv, role: 'tv', fullscreen: true });
+    // A dev window set up in Displays and settings stays.
+    windows.push(...screens.windows.filter((w) => w.role === 'dev' && !windows.some((o) => o.display === w.display)));
+    void this.saveScreens(windows);
+  }
+
+  private async saveScreens(windows: Assigned[]): Promise<void> {
+    try {
+      await this.call('save_displays', { windows });
+      this.say(null);
+    } catch (error) {
+      this.say(text(error));
+    }
+    await this.loadScreens();
+    // The colour list names each display's role.
+    try {
+      this.state = (await this.call('colour_state')) as ColourState;
+      this.draw();
+    } catch {
+      // Shown by the next refresh.
+    }
   }
 
   private colourGroups(): HTMLElement[] {
@@ -389,6 +543,7 @@ export class DisplayTab {
       .catch(() => {});
     this.drawCalibration();
     if (!this.invoke) return;
+    void this.loadScreens();
     try {
       this.state = (await this.call('colour_state')) as ColourState;
     } catch (error) {
