@@ -357,6 +357,8 @@ async function main() {
     assert.notDeepEqual(walk, off, 'the network and routes should be drawn');
     assert.match(await coolPanel.locator('[data-route="shortest"] .coolpaths-length').textContent(), /^\d+ m$/);
     if (shots) await dev.screenshot({ path: path.join(shots, 'dev-coolpaths.png') });
+    // Its hero is the time of day, and says what the coolest walk saves (#76).
+    await cool.locator('.mrs-hero-fact', { hasText: /% less sun|is the shortest/ }).waitFor();
     // Its main action is one large button at the top of its stage (#76).
     assert.equal(await cool.locator('.controls-primary button.action', { hasText: 'Try another walk' }).count(), 1);
     if (shots) await tv.screenshot({ path: path.join(shots, 'tv-coolpaths.png') });
@@ -368,7 +370,12 @@ async function main() {
     await cool.getByLabel('Longest detour').fill('0');
     await coolPanel.getByText('the shortest walk is already the coolest').waitFor();
     // At night there is no sun to avoid.
-    await cool.getByLabel('Time of day').fill('1');
+    // The time is set on the hero (#76): Home is midnight, and → moves a quarter of an hour.
+    await cool.getByRole('slider', { name: 'Time of day' }).focus();
+    await tv.keyboard.press('Home');
+    for (let i = 0; i < 4; i++) await tv.keyboard.press('ArrowRight');
+    await cool.locator('.mrs-hero-readout b', { hasText: '01:00' }).waitFor();
+    await cool.locator('.mrs-hero-fact', { hasText: 'is down' }).waitFor();
     await coolPanel.getByText(/the sun is down/).waitFor();
     await coolPanel.getByText(/^0 m sun,/).first().waitFor();
     await press('Cool paths', false);
@@ -378,13 +385,21 @@ async function main() {
     const moving = card('Mobility');
     const movingPanel = tv.locator('[data-panel="mobility/panel"]');
     await movingPanel.getByText(/of 60 arrived/).first().waitFor();
-    await moving.getByLabel('Play', { exact: true }).uncheck();
-    await moving.getByLabel('Time', { exact: true }).fill('0');
+    // The trips are played and scrubbed on the hero (#76): pause, then Home and End.
+    await moving.getByRole('button', { name: 'Pause' }).click();
+    await moving.getByRole('button', { name: 'Play' }).waitFor();
+    const tripsClock = moving.getByRole('slider', { name: 'Time of the trips' });
+    await tripsClock.focus();
+    await tv.keyboard.press('Home');
     await movingPanel.getByText('0 of 60 arrived').first().waitFor();
+    await moving.locator('.mrs-hero-readout b', { hasText: /^0:00min$/ }).waitFor();
     await dev.waitForTimeout(500);
     const start = await table.screenshot();
     if (shots) await dev.screenshot({ path: path.join(shots, 'dev-mobility.png') });
-    await moving.getByLabel('Time', { exact: true }).fill('100');
+    await tripsClock.focus();
+    await tv.keyboard.press('End');
+    await moving.locator('.mrs-hero-fact', { hasText: '60 of 60' }).first().waitFor();
+    if (shots) await tv.screenshot({ path: path.join(shots, 'tv-mobility.png') });
     await movingPanel.getByText('60 of 60 arrived').nth(1).waitFor();
     await dev.waitForTimeout(500);
     assert.notDeepEqual(await table.screenshot(), start, 'travellers should move with the time');
@@ -594,7 +609,7 @@ async function main() {
     assert.deepEqual(savedLayers().find((l) => l.use === 'mobility').hide, ['trips']);
     await press('Mobility', true);
     assert.equal(await card('Mobility').getByText('Show trips').isVisible(), false);
-    assert.equal(await card('Mobility').getByLabel('Play', { exact: true }).isVisible(), true);
+    assert.equal(await card('Mobility').getByRole('radiogroup', { name: 'Speed' }).isVisible(), true);
     await editor.getByRole('switch', { name: 'Show Show trips on the controller' }).click();
     await card('Mobility').getByText('Show trips').waitFor();
     assert.equal(savedLayers().find((l) => l.use === 'mobility').hide, undefined);

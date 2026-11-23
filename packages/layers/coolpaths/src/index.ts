@@ -2,6 +2,7 @@ import { colormaps, defineLayer, formatHour, loadSiteData, paletteHex, sample, s
 import type { CanvasOverlay, FieldFrame, LayerManifest, PointerSample, TableContext, ToolInput } from '@mrstudio/sdk';
 
 import manifest from '../layer.json';
+import { coolpathsHero } from './hero.ts';
 import { buildNetwork, exampleWalk, pointAlongRoute, route, setExposure, snap } from './network.ts';
 import type { LonLat, Network, Route, RoutePair } from './network.ts';
 
@@ -376,6 +377,9 @@ export default defineLayer<Params>({
       },
     };
   },
+
+  // The controller's hero: the time of day, which moves the shade (#76).
+  hero: (ctx, el) => coolpathsHero(ctx as never, el),
 
   panel(ctx, el) {
     el.innerHTML = `
