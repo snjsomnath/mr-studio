@@ -3,6 +3,7 @@ import { defaultSideOf, el, isAmbient, isOffered, layerButton } from '../control
 import type { Store } from '../store.ts';
 import { icon } from './icons.ts';
 import { Importer, TARGETS, targetFor } from './importer.ts';
+import { ModelImporter } from './model-import.ts';
 import { ScaleFields } from './place-scale.ts';
 import { PlaceMap } from './place-map.ts';
 import type { Placement } from './place-map.ts';
@@ -76,6 +77,7 @@ export class Wizard {
   step: number;
   /** One importer per row of "Your place", kept across redraws so a file being checked stays. */
   private importers = new Map<string, Importer>();
+  private model: ModelImporter | null = null;
   private readonly host: WizardHost;
   /** The row of "Your place" that a layer needing data sent the author to. */
   private wanted: string | null = null;
@@ -149,7 +151,11 @@ export class Wizard {
     } else if (this.step === PLACE) {
       host.show(null);
       title('Your place', 'Bring in the files your table is made from. They are copied into the table and stay on this computer. Buildings matter most; the rest can come later.');
-      for (const item of TARGETS) body.append(this.importer(item.target).element);
+      for (const item of TARGETS) {
+        body.append(this.importer(item.target).element);
+        // The 3D model sits under the buildings: it gives them their heights.
+        if (item.target === 'buildings') body.append(this.modelRow().element);
+      }
       if (this.returnTo !== null && this.returnTo !== PLACE) {
         const to = this.returnTo;
         const back = el('button', 'ed-button', `Back to ${WIZARD_STEPS[to]}`);
@@ -293,6 +299,13 @@ export class Wizard {
     } else importer.render();
     importer.element.classList.remove('is-wanted');
     return importer;
+  }
+
+  /** The "3D model" row of "Your place" (#56), made once and redrawn with the table. */
+  private modelRow(): ModelImporter {
+    if (!this.model) this.model = new ModelImporter({ site: () => this.host.store.state.site });
+    else this.model.render();
+    return this.model;
   }
 
   /** Opens "Your place" at one row. After the file is in, Next returns to `from`. */
