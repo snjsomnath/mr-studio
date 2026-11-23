@@ -45,8 +45,8 @@ export interface PlaceData {
   /** Points a motion reaches out to (spokes, density): a targets dataset, or none. */
   targets: Point[];
   streets: StreetNetwork | null;
-  /** Building footprints as boxes in table metres. */
-  buildings: { point: Point; w: number; h: number }[];
+  /** Building footprints in table metres: the outer ring of each polygon, plus the bounding box. */
+  buildings: { point: Point; w: number; h: number; outline: Point[][] }[];
   /** The table, in metres. */
   frame: { width: number; height: number };
   /** Problems an author should see (a flow naming a place that is not there, a weight that is not a number). */
@@ -231,7 +231,7 @@ export function placeData(
   const buildings = (extras.buildings?.areas ?? []).map((area) => {
     let [minX, minY, maxX, maxY] = [Infinity, Infinity, -Infinity, -Infinity];
     for (const polygon of area.polygons) for (const [x, y] of polygon[0] ?? []) [minX, minY, maxX, maxY] = [Math.min(minX, x), Math.min(minY, y), Math.max(maxX, x), Math.max(maxY, y)];
-    return { point: area.centre, w: maxX - minX, h: maxY - minY };
+    return { point: area.centre, w: maxX - minX, h: maxY - minY, outline: area.polygons.map((polygon) => [...(polygon[0] ?? [])]).filter((ring) => ring.length > 2) };
   }).filter((b) => Number.isFinite(b.w));
   const targets = (extras.targets?.spots ?? []).map((s) => s.point);
   return { places, activity, hasActivity, flows, links, targets, streets, buildings, frame, problems };

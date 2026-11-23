@@ -166,6 +166,21 @@ class Painter {
     this.pen.lineTo(x1, y1);
     this.pen.stroke();
   }
+  /** Fills a footprint (rings in du), each point moved by `move` first. */
+  footprint(rings: [number, number][][], fill: string, move?: (x: number, y: number) => [number, number]): void {
+    const pen = this.pen;
+    pen.beginPath();
+    for (const ring of rings) {
+      ring.forEach(([x, y], i) => {
+        const [px, py] = move ? this.x(...move(x, y)) : this.x(x, y);
+        if (i === 0) pen.moveTo(px, py);
+        else pen.lineTo(px, py);
+      });
+      pen.closePath();
+    }
+    pen.fillStyle = fill;
+    pen.fill();
+  }
   /** Draws an off-screen raster over the whole table. */
   raster(canvas: Canvas, W: number, H: number): void {
     const [x0, y0] = this.x(0, 0);
@@ -187,6 +202,8 @@ interface Scene {
   /** Street distance (du) from each place to every node. */
   pdist: Float64Array[];
   buildings: [number, number, number, number][];
+  /** Each building's footprint rings, in du, matching `buildings`. */
+  footprints: [number, number][][][];
   targets: { x: number; y: number }[];
 }
 
@@ -218,6 +235,7 @@ function sceneOf(data: PlaceData, u: number): Scene {
     pdist,
     buildings: data.buildings.map((b) => [b.point[0] / u, b.point[1] / u, b.w / u, b.h / u]),
     targets: data.targets.map(([x, y]) => ({ x: x / u, y: y / u })),
+    footprints: data.buildings.map((b) => b.outline.map((ring) => ring.map(([x, y]) => [x / u, y / u] as [number, number]))),
   };
   byU.set(u, scene);
   return scene;
@@ -929,14 +947,13 @@ M.push({
       draw: (view, time, alpha) =>
         frame(view, time, alpha, (p, t) => {
           // Blocks as faint footprints over the base map, shrinking as they are pulled in.
-          p.pen.fillStyle = css(ground, 0.9);
-          for (const [x, y, w, h] of scene.buildings) {
+          scene.buildings.forEach(([x, y], n) => {
             const [a, b] = warp(x, y, t);
             const { sum } = pullAt(scene, mass, x, y, t);
             const s = 1 - Math.min(k.shrink!, sum * 0.03);
-            const [px, py] = p.x(a - (w * s) / 2, b - (h * s) / 2);
-            p.pen.fillRect(px, py, p.l(w * s), p.l(h * s));
-          }
+            // The footprint moves with its centre and shrinks around it.
+            p.footprint(scene.footprints[n]!, css(ground, 0.9), (vx, vy) => [a + (vx - x) * s, b + (vy - y) * s]);
+          });
           for (const [a0, b0] of scene.edges) {
             const A = scene.nodes[a0]!, B = scene.nodes[b0]!;
             let prev = warp(A.x, A.y, t);
@@ -1023,17 +1040,16 @@ M.push({
     return {
       draw: (view, time, alpha) =>
         frame(view, time, alpha, (p, t) => {
-          for (const [x, y, w, h] of scene.buildings) {
+          scene.buildings.forEach(([x, y], n) => {
             const { best, bv } = pullAt(scene, mass, x, y, t, k.reach! * k.reach!);
             const pl = scene.places[best]!;
             const d = Math.hypot(x - pl.x, y - pl.y);
             const wave = k.wave! > 0 ? Math.exp(-(((d - ((t * 260 * k.wave! + best * 300) % 900)) / 60) ** 2)) * mass(best, t) : 0;
             const a = clamp((bv - 1.2) / 7, 0, 0.8) * k.base! + wave * 0.8;
-            if (a < 0.04) continue;
-            p.pen.fillStyle = css(pl.c, Math.min(1, a));
-            const [px, py] = p.x(x - w / 2, y - h / 2);
-            p.pen.fillRect(px, py, p.l(w), p.l(h));
-          }
+            if (a < 0.04) return;
+            // The building's own footprint lights up, not a box around it.
+            p.footprint(scene.footprints[n]!, css(pl.c, Math.min(1, a)));
+          });
           scene.places.forEach((pl, i) => p.glow(pl.x, pl.y, 40 + 40 * mass(i, t), pl.c, 0.6));
         }),
     };
