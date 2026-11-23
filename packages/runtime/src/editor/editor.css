@@ -1423,6 +1423,15 @@ body[data-role='edit'] .ed-surface .table-frame {
   color: #1d7a46;
 }
 
+.wz-state.is-off {
+  color: #8a5a00;
+}
+
+.im-off {
+  margin: 6px 0 0;
+  font-size: 13px;
+}
+
 .wz-report {
   margin: -1px 0 0;
   padding: 10px 12px;

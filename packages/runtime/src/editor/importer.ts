@@ -1,4 +1,4 @@
-import { classBreaks, columnNumbers, paintScale, profileColumns, rampColour, tablePalette } from '@mrstudio/sdk';
+import { classBreaks, columnNumbers, paintScale, profileColumns, rampColour, siteDataUrl, STRAY_REACH, tablePalette, tableReach, tableSpace } from '@mrstudio/sdk';
 import type { GeometryKind, PaintBy, Paint, SiteInfo } from '@mrstudio/sdk';
 
 import { el } from '../controls.ts';
@@ -149,6 +149,50 @@ function positions(coordinates: unknown, out: [number, number][] = []): [number,
   if (Array.isArray(coordinates) && typeof coordinates[0] === 'number') out.push([coordinates[0] as number, coordinates[1] as number]);
   else if (Array.isArray(coordinates)) for (const inner of coordinates) positions(inner, out);
   return out;
+}
+
+/**
+ * How much of the table a dataset reaches (see `tableReach`), kept per file and per place of the table.
+ * Data stays where it is in the world when a table moves, so a table moved or started from another
+ * place can keep data that lies beside it and shows as a scrap at one edge (#180).
+ */
+const reaches = new Map<string, Promise<number | null>>();
+export function reach(site: SiteInfo, dataset: string): Promise<number | null> {
+  const url = siteDataUrl(site, dataset);
+  if (!url || !/\.(geo)?json$/i.test(url)) return Promise.resolve(null);
+  const key = `${url}|${JSON.stringify(site.corners)}`;
+  let found = reaches.get(key);
+  if (!found) {
+    found = (async () => {
+      try {
+        const response = await fetch(url, { cache: 'no-cache' });
+        if (!response.ok) return null;
+        const document = await response.json();
+        const space = tableSpace(site);
+        const lines: [number, number][][] = [];
+        for (const feature of document?.features ?? []) {
+          const geometry = feature?.geometry;
+          // Lines are followed along their length; every other shape counts by its corners.
+          const parts = geometry?.type === 'LineString' ? [geometry.coordinates] : geometry?.type === 'MultiLineString' ? geometry.coordinates : null;
+          if (parts) for (const part of parts) lines.push(positions(part).map(([lon, lat]) => space.toTable(lon, lat)));
+          else for (const [lon, lat] of positions(geometry?.coordinates)) lines.push([space.toTable(lon, lat)]);
+        }
+        return lines.length ? tableReach(lines, space) : null;
+      } catch {
+        return null;
+      }
+    })();
+    reaches.set(key, found);
+  }
+  return found;
+}
+
+/** Words for a dataset that reaches only a corner of the table, or null when it covers it. */
+export function reachWords(share: number | null, plural: string): string | null {
+  if (share === null || share >= STRAY_REACH) return null;
+  const fix = `They may be from another place. Replace them with a file${['buildings', 'streets', 'trees'].includes(plural) ? ', or from OpenStreetMap' : ''}.`;
+  if (share === 0) return `None of these ${plural} are on the table. ${fix}`;
+  return `These ${plural} reach only ${Math.round(share * 100)}% of the table, a scrap at one edge. ${fix}`;
 }
 
 const SVG = 'http://www.w3.org/2000/svg';
@@ -316,9 +360,23 @@ export class Importer {
       words.append(name, el('p', undefined, item.about));
       const state = el('span', has ? 'wz-state is-have' : 'wz-state', has ? 'On the table' : 'Not yet');
       if (has) state.prepend(icon('check', 12));
+      // Data from another place: a dataset that lies mostly beside the table says so (#180).
+      const off = el('p', 'wz-issue is-warning im-off');
+      off.hidden = true;
+      off.setAttribute('role', 'status');
+      if (has) {
+        void reach(host.site(), item.dataset).then((share) => {
+          const words = reachWords(share, item.name.toLowerCase());
+          if (!words) return;
+          state.className = 'wz-state is-off';
+          state.textContent = 'Off the table';
+          off.textContent = words;
+          off.hidden = false;
+        });
+      }
       const actions = el('div', 'im-actions');
       actions.append(...this.sourceButtons(item, has));
-      words.append(actions);
+      words.append(off, actions);
       row.append(badge, words, state);
       nodes.push(row);
       if (this.help) nodes.push(el('pre', 'im-example', item.example));
