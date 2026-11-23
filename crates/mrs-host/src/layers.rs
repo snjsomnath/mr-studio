@@ -215,6 +215,30 @@ fn read_manifest(dir: &Path) -> anyhow::Result<LayerDef> {
 
 /// Loads the layer catalogue: every core layer package, then the site-only layers the
 /// site lists. A broken core layer the site does not use is skipped with a warning.
+/// The layer.json a custom layer stands for: its words, controls, legend and attract effect,
+/// with the recipe itself under `custom` for the runtime to draw.
+fn custom_manifest(id: &str, recipe: &mrs_site::CustomLayer) -> Value {
+    let mut manifest = serde_json::json!({
+        "api": LAYER_API,
+        "id": id,
+        "name": recipe.name,
+        "description": recipe.description.clone().unwrap_or_default(),
+        "category": recipe.category.clone().unwrap_or_else(|| "analysis".into()),
+        "controls": recipe.controls,
+        "custom": recipe,
+    });
+    if let Some(icon) = &recipe.icon {
+        manifest["icon"] = icon.clone().into();
+    }
+    if !recipe.legend.is_empty() {
+        manifest["legend"] = serde_json::to_value(&recipe.legend).unwrap_or_default();
+    }
+    if let Some(attract) = &recipe.attract {
+        manifest["attract"] = serde_json::to_value(attract).unwrap_or_default();
+    }
+    manifest
+}
+
 pub fn load_catalog(site: &Site, core_layers: &Path) -> anyhow::Result<Vec<LayerDef>> {
     let mut defs: Vec<LayerDef> = Vec::new();
     let mut folders: Vec<_> = match std::fs::read_dir(core_layers) {
@@ -224,7 +248,7 @@ pub fn load_catalog(site: &Site, core_layers: &Path) -> anyhow::Result<Vec<Layer
     folders.sort();
     for dir in folders {
         let name = dir.file_name().and_then(|n| n.to_str()).unwrap_or_default().to_string();
-        let used = site.manifest.layers.iter().any(|l| l.r#use == name);
+        let used = site.instances().iter().any(|(used, _, _)| *used == name);
         let def = read_manifest(&dir).and_then(|def| {
             if def.id != name {
                 bail!("{} declares id '{}', expected '{name}'", dir.display(), def.id);
@@ -237,26 +261,35 @@ pub fn load_catalog(site: &Site, core_layers: &Path) -> anyhow::Result<Vec<Layer
             Err(e) => tracing::warn!("layer '{name}' is left out of the palette: {e:#}"),
         }
     }
-    for layer in &site.manifest.layers {
-        if layer.r#use.starts_with('.') {
-            if defs.iter().any(|d| d.source == layer.r#use) {
+    // The site's custom layers: recipes that the runtime draws from the blocks they list.
+    for (id, recipe) in &site.manifest.custom {
+        if defs.iter().any(|d| &d.id == id) {
+            bail!("the custom layer '{id}' has the id of a core layer; give it another id");
+        }
+        let mut def = LayerDef::parse(custom_manifest(id, recipe)).map_err(|e| anyhow!("custom layer '{id}': {e:#}"))?;
+        def.source = format!("{}{id}", mrs_site::CUSTOM_PREFIX);
+        defs.push(def);
+    }
+    for (used, _, _) in site.instances() {
+        if used.starts_with('.') {
+            if defs.iter().any(|d| d.source == used) {
                 continue;
             }
-            let dir = site.resolve(&layer.r#use).ok_or_else(|| anyhow!("layer path '{}' leaves the site folder", layer.r#use))?;
+            let dir = site.resolve(used).ok_or_else(|| anyhow!("layer path '{used}' leaves the site folder"))?;
             let mut def = read_manifest(&dir)?;
             if defs.iter().any(|d| d.id == def.id) {
                 bail!("{} declares id '{}', which another layer already uses", dir.display(), def.id);
             }
-            def.source = layer.r#use.clone();
+            def.source = used.to_string();
             defs.push(def);
-        } else if !defs.iter().any(|d| d.source == layer.r#use) {
-            bail!("site.json uses layer '{}', which is not in {}", layer.r#use, core_layers.display());
+        } else if !defs.iter().any(|d| d.source == used) {
+            bail!("site.json uses layer '{used}', which is not in {}", core_layers.display());
         }
     }
     // A layer the site uses must find the datasets it requires. Layers only in the palette need not.
     let data = site.data();
-    for layer in &site.manifest.layers {
-        let Some(def) = defs.iter().find(|d| d.source == layer.r#use) else { continue };
+    for (used, _, _) in site.instances() {
+        let Some(def) = defs.iter().find(|d| d.source == used) else { continue };
         if let Some(name) = def.missing_data(&data)? {
             bail!("layer '{}' needs the dataset '{name}'; add it under \"data\" in site.json", def.id);
         }

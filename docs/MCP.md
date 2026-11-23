@@ -18,7 +18,9 @@ The server writes `site.json`, never layer code. When a project needs a new laye
 | `list_building_blocks` | Visual, data, interaction and TV primitives, each marked built or planned from the code itself |
 | `create_site` | A new site package: `site.json`, `data/`, `requests/`, README, `.gitignore` |
 | `get_site`, `update_site` | Read a site with effective params; change settings (place, table, scene sources, basemap, branding, tv) |
-| `add_layer`, `set_layer`, `move_layer`, `remove_layer` | Compose the scene; params are checked against the layer's controls with the host's rules |
+| `add_layer`, `set_layer`, `move_layer`, `remove_layer` | Compose the scene by instance id: layers, items inside a layer (`parent`), and buttons with groups; params are checked against the layer's controls with the host's rules |
+| `set_steps` | How Next moves through a layer, and a slideshow's sequence of layers |
+| `save_custom_layer` | Save or remove a custom layer: a recipe of data, look, motion and interaction blocks, used as `custom:<id>` |
 | `validate_site` | The site and layer contracts, plus `mrstudio validate` when the CLI is installed |
 | `preview_site` | The command and URLs to preview the site on this machine |
 | `check_layer_idea` | Says whether an idea is an existing layer to configure, a new core layer from existing blocks, or needs new blocks or kernels |

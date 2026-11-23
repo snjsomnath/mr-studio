@@ -13,9 +13,9 @@ import { BLOCKS, type BlockDef } from './blocks.ts';
 
 export interface LayerEntry {
   id: string;
-  /** "core" for a layer shipped in the app, "site" for a site-only package. */
-  origin: 'core' | 'site';
-  /** For site layers: the value to put in site.json `use`, e.g. "./layers/artwork". */
+  /** "core" for a layer shipped in the app, "site" for a site-only package, "custom" for a custom layer saved in site.json. */
+  origin: 'core' | 'site' | 'custom';
+  /** The value to put in site.json `use`: "sunlight", "./layers/artwork" or "custom:heat-walk". */
   use: string;
   manifest: Record<string, any>;
 }

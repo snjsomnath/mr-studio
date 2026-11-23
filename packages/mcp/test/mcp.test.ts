@@ -159,14 +159,48 @@ describe('server over stdio', () => {
     assert.deepEqual(manifest.layers.map((l: any) => l.use), ['basemap', 'sunlight']);
     assert.equal(manifest.layers[1].params.hour, 17.05);
 
-    // A second sunlight is allowed but flagged, then moved and removed.
+    // A second sunlight gets its own id; then it is moved and removed by that id.
+    assert.deepEqual(manifest.layers.map((l: any) => l.id), ['basemap', 'sunlight'], 'every entry has its id');
     assert.equal((await call(client, 'add_layer', { site: 'harbour', use: 'sunlight', params: { mode: 'day' }, position: 0 })).isError, false);
     const two = await call(client, 'get_site', { site: 'harbour' });
     assert.equal(two.data.scene.length, 3);
-    assert.ok(two.data.issues.some((i: any) => /again/.test(i.message)));
-    assert.equal((await call(client, 'move_layer', { site: 'harbour', index: 0, to: 1 })).isError, false);
-    assert.equal((await call(client, 'set_layer', { site: 'harbour', use: 'sunlight', active: false })).isError, true, 'ambiguous use needs an index');
-    assert.equal((await call(client, 'remove_layer', { site: 'harbour', index: 1 })).isError, false);
+    assert.equal(two.data.scene[0].id, 'sunlight-2');
+    assert.equal((await call(client, 'move_layer', { site: 'harbour', id: 'sunlight-2', to: 1 })).isError, false);
+    assert.equal((await call(client, 'set_layer', { site: 'harbour', use: 'sunlight', active: false })).isError, true, 'ambiguous use needs an id');
+    assert.equal((await call(client, 'add_layer', { site: 'harbour', use: 'trees', id: 'sunlight' })).isError, true, 'ids are unique');
+
+    // Items: trees that show only with the sun study, and a button in a group.
+    const item = await call(client, 'add_layer', { site: 'harbour', use: 'trees', parent: 'sunlight' });
+    assert.equal(item.isError, false, item.text);
+    assert.equal((await call(client, 'set_layer', { site: 'harbour', id: 'trees', button: { name: 'Trees' } })).isError, true, 'an item has no button');
+    assert.equal((await call(client, 'set_layer', { site: 'harbour', id: 'sunlight', button: { group: 'Simulations', order: 1 } })).isError, false);
+    let saved = JSON.parse(readFileSync(join(dir, 'site.json'), 'utf8'));
+    const sun = saved.layers.find((l: any) => l.id === 'sunlight');
+    assert.deepEqual(sun.items, [{ use: 'trees', id: 'trees' }]);
+    assert.deepEqual(sun.button, { group: 'Simulations', order: 1 });
+
+    // A sequence: only the slideshow may show other layers, and only layers that exist.
+    assert.equal((await call(client, 'add_layer', { site: 'harbour', use: 'slideshow', id: 'tour' })).isError, false);
+    const steps = { mode: 'manual', loop: true, sequence: [{ layer: 'sunlight', params: { hour: 9 }, title: 'Morning' }, { layer: 'sunlight-2' }] };
+    const setSteps = await call(client, 'set_steps', { site: 'harbour', id: 'tour', steps });
+    assert.equal(setSteps.isError, false, setSteps.text);
+    assert.equal((await call(client, 'set_steps', { site: 'harbour', id: 'tour', steps: { sequence: [{ layer: 'ghost' }] } })).isError, true);
+    assert.equal((await call(client, 'set_steps', { site: 'harbour', id: 'sunlight', steps: { sequence: [{ layer: 'tour' }] } })).isError, true);
+
+    // Custom layers: saved recipes, used as custom:<id>, refused while in use.
+    const recipe = { name: 'Bright paths', data: [{ id: 'aerial', wms: { url: 'https://example.org/wms', layers: 'ortho' } }], look: [{ id: 'photo', block: 'raster', data: 'aerial' }] };
+    assert.equal((await call(client, 'save_custom_layer', { site: 'harbour', id: 'bright', recipe })).isError, false);
+    assert.equal((await call(client, 'save_custom_layer', { site: 'harbour', id: 'broken', recipe: { name: 'x', look: [{ id: 'a', block: 'lines', data: 'nope' }] } })).isError, true);
+    const custom = await call(client, 'add_layer', { site: 'harbour', use: 'custom:bright' });
+    assert.equal(custom.isError, false, custom.text);
+    assert.equal((await call(client, 'save_custom_layer', { site: 'harbour', id: 'bright', recipe: null })).isError, true, 'still in use');
+    const listed = await call(client, 'list_layers', { site: 'harbour', include_roadmap: false });
+    assert.ok(listed.data.available.some((l: any) => l.use === 'custom:bright'));
+
+    // Removing a layer takes its items and the steps that showed it.
+    assert.equal((await call(client, 'remove_layer', { site: 'harbour', id: 'sunlight-2' })).isError, false);
+    saved = JSON.parse(readFileSync(join(dir, 'site.json'), 'utf8'));
+    assert.deepEqual(saved.layers.find((l: any) => l.id === 'tour').steps.sequence.map((s: any) => s.layer), ['sunlight']);
 
     // Settings: allowed keys merge; unknown keys point at a module request.
     assert.equal((await call(client, 'update_site', { site: 'harbour', set: { basemap: { background: '#101418' } } })).isError, false);
@@ -197,7 +231,7 @@ describe('server over stdio', () => {
     assert.equal(invalid.isError, true);
     if (invalid.data.cli.ran) assert.equal(invalid.data.cli.ok, false, 'mrstudio validate refuses the unknown key too');
     assert.ok(invalid.data.issues.some((i: any) => i.path === 'extra'));
-    assert.ok(invalid.data.issues.some((i: any) => i.path === 'layers[2].use'));
+    assert.ok(invalid.data.issues.some((i: any) => /^layers\[\d+\]\.use$/.test(i.path)));
   });
 
   test('routes layer ideas to configuration or a core request', async () => {

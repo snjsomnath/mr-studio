@@ -55,10 +55,30 @@ pub struct AppState {
     pub calibration: Calibration,
     /// One import at a time.
     imports: tokio::sync::Mutex<()>,
+    /// The last OpenStreetMap answer, so Import brings in what the preview showed without asking again.
+    osm_cache: std::sync::Mutex<Option<OsmFetch>>,
 }
 
-/// Where OpenStreetMap is asked; `MRS_OVERPASS_URL` points elsewhere (a mirror, or a test).
-const OVERPASS_URL: &str = "https://overpass-api.de/api/interpreter";
+/// One OpenStreetMap fetch: for which layer and ground, when, and the GeoJSON it became.
+struct OsmFetch {
+    key: String,
+    at: std::time::Instant,
+    bytes: Vec<u8>,
+}
+
+/// How long a fetch is reused: long enough to look at the preview, short enough to stay fresh.
+const OSM_REUSE: std::time::Duration = std::time::Duration::from_secs(15 * 60);
+
+/// Where OpenStreetMap is asked, in order: the main Overpass server, then public mirrors.
+/// `MRS_OVERPASS_URL` replaces the list with one server (a mirror of your own, or a test).
+const OVERPASS_URLS: [&str; 3] = [
+    "https://overpass-api.de/api/interpreter",
+    "https://overpass.kumi.systems/api/interpreter",
+    "https://overpass.private.coffee/api/interpreter",
+];
+
+/// Tries in all before a fetch gives up, waiting 1, 2, then 4 seconds between them.
+const OVERPASS_TRIES: u32 = 4;
 
 /// The largest file `/api/data/*` accepts.
 pub const MAX_IMPORT_BYTES: usize = 256 * 1024 * 1024;
@@ -96,24 +116,52 @@ impl AppState {
                 "OpenStreetMap did not answer.",
             )
         };
-        let url = std::env::var("MRS_OVERPASS_URL").unwrap_or_else(|_| OVERPASS_URL.to_string());
+        // The preview and the import ask for the same thing a minute apart: the second one reuses the first.
+        let key = format!("{layer:?} {bounds:?}");
+        if let Some(fetch) = self.osm_cache.lock().unwrap().as_ref().filter(|f| f.key == key && f.at.elapsed() < OSM_REUSE) {
+            return Ok(fetch.bytes.clone());
+        }
+        let urls: Vec<String> = match std::env::var("MRS_OVERPASS_URL") {
+            Ok(url) => vec![url],
+            Err(_) => OVERPASS_URLS.iter().map(|u| u.to_string()).collect(),
+        };
         let client = reqwest::Client::builder()
             .user_agent("MR Studio")
             .timeout(std::time::Duration::from_secs(120))
             .build()
             .map_err(|e| offline(e.to_string()))?;
-        let response = client.post(&url).form(&[("data", osm::query(layer, bounds))]).send().await.map_err(|e| offline(e.to_string()))?;
-        if !response.status().is_success() {
-            return Err(offline(format!("{url} answered {}", response.status())));
+        let query = osm::query(layer, bounds);
+        // Overpass is often busy (429, 502, 504): try again after a pause, on the next mirror.
+        let mut answer = None;
+        let mut last = String::new();
+        for attempt in 0..OVERPASS_TRIES {
+            if attempt > 0 {
+                tokio::time::sleep(std::time::Duration::from_secs(1 << (attempt - 1))).await;
+            }
+            let url = &urls[attempt as usize % urls.len()];
+            match client.post(url).form(&[("data", &query)]).send().await {
+                Ok(response) if response.status().is_success() => match response.json::<Value>().await {
+                    Ok(value) => {
+                        answer = Some(value);
+                        break;
+                    }
+                    Err(e) => last = format!("{url}: {e}"),
+                },
+                Ok(response) => last = format!("{url} answered {}", response.status()),
+                Err(e) => last = format!("{url}: {e}"),
+            }
+            tracing::info!("OpenStreetMap try {} of {OVERPASS_TRIES} failed: {last}", attempt + 1);
         }
-        let answer: Value = response.json().await.map_err(|e| offline(e.to_string()))?;
+        let Some(answer) = answer else { return Err(offline(last)) };
         let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs());
         let collection = osm::to_geojson(layer, &answer, &osm::date(now));
         if osm::count(&collection) == 0 {
             let words = osm::nothing_found(layer);
             return Err(Report::refused(target, "osm.empty", words.clone(), words));
         }
-        Ok(serde_json::to_vec(&collection).expect("json"))
+        let bytes = serde_json::to_vec(&collection).expect("json");
+        *self.osm_cache.lock().unwrap() = Some(OsmFetch { key, at: std::time::Instant::now(), bytes: bytes.clone() });
+        Ok(bytes)
     }
 
     pub async fn import_data(&self, target: &str, filename: &str, bytes: Vec<u8>, options: Options, write: bool) -> Result<Report, String> {
@@ -238,7 +286,7 @@ pub async fn start(config: HostConfig) -> anyhow::Result<RunningHost> {
         None => tracing::info!("listening on this computer only; phones cannot join"),
     }
     let hub = Hub::new(&site, catalog, addr.port(), join_base, config.session.clone())?;
-    let state = Arc::new(AppState { hub, engine, site, twin: RwLock::new(twin), calibration, imports: Default::default() });
+    let state = Arc::new(AppState { hub, engine, site, twin: RwLock::new(twin), calibration, imports: Default::default(), osm_cache: Default::default() });
     let app = router(state.clone(), config.web_dir.clone());
 
     let (shutdown, stop) = tokio::sync::oneshot::channel::<()>();

@@ -26,7 +26,7 @@ pub use manifest::*;
 pub use projection::Projection;
 
 /// The site format this build reads.
-pub const FORMAT: u32 = 2;
+pub const FORMAT: u32 = 3;
 
 #[derive(Debug, Error)]
 pub enum SiteError {
@@ -205,19 +205,167 @@ impl Site {
             }
             check(&mut out, &format!("data.{name}"), path);
         }
+        out.extend(self.scene_problems());
+        if let Some(table) = &m.table {
+            for (side, ribbon) in table.ribbons.sides() {
+                if let Some(Ribbon::Size(RibbonSize { cm })) = ribbon {
+                    if !(cm.is_finite() && cm > 0.0) {
+                        out.push(format!("table.ribbons.{side}: cm must be a positive number of centimetres"));
+                    }
+                }
+            }
+        }
+        out.extend(self.custom_problems());
+        out
+    }
+
+    /// Every instance of the scene, top to bottom of the file: each layer, then its items.
+    /// Gives the instance's `use`, its id and the id of the layer that owns it.
+    pub fn instances(&self) -> Vec<(&str, &str, Option<&str>)> {
+        let mut out = Vec::new();
+        for layer in &self.manifest.layers {
+            out.push((layer.r#use.as_str(), layer.id.as_str(), None));
+            for item in &layer.items {
+                out.push((item.r#use.as_str(), item.id.as_str(), Some(layer.id.as_str())));
+            }
+        }
+        out
+    }
+
+    /// Ids, uses, buttons, items and steps of the scene.
+    fn scene_problems(&self) -> Vec<String> {
+        let m = &self.manifest;
+        let mut out = Vec::new();
         let mut seen = BTreeSet::new();
+        for (used, id, parent) in self.instances() {
+            let at = match parent {
+                Some(parent) => format!("layer '{parent}', item '{id}'"),
+                None => format!("layer '{id}'"),
+            };
+            if !is_instance_id(id) {
+                out.push(format!("{at}: an id is lowercase letters, digits and dashes, up to 40"));
+            }
+            if !seen.insert(id) {
+                out.push(format!("'{id}' names two entries of the scene; every layer and item needs its own id"));
+            }
+            if let Some(custom) = used.strip_prefix(CUSTOM_PREFIX) {
+                if !m.custom.contains_key(custom) {
+                    out.push(format!("{at}: uses the custom layer '{custom}', which is not under \"custom\""));
+                }
+            } else if used.starts_with('.') {
+                let label = format!("{at}: use");
+                match self.resolve(&format!("{used}/layer.json")) {
+                    None => out.push(format!("{label}: '{used}' must be a relative path inside the site folder")),
+                    Some(full) if !full.exists() => out.push(format!("{label}: '{used}' has no layer.json")),
+                    _ => {}
+                }
+            }
+        }
+        let top: BTreeSet<&str> = m.layers.iter().map(|l| l.id.as_str()).collect();
+        let sequences: BTreeSet<&str> =
+            m.layers.iter().filter(|l| l.steps.as_ref().is_some_and(|s| !s.sequence.is_empty())).map(|l| l.id.as_str()).collect();
         for layer in &m.layers {
-            if layer.r#use.starts_with('.') {
-                check(&mut out, "layers[].use", &format!("{}/layer.json", layer.r#use));
-            }
-            if let Some(id) = layer.id.as_deref().filter(|id| !is_instance_id(id)) {
-                out.push(format!("layers[].id '{id}' must be lowercase letters, digits and dashes"));
-            }
+            let id = &layer.id;
             if let Some(problem) = layer.button.problem() {
-                out.push(format!("layer '{}': {problem}", layer.instance_hint()));
+                out.push(format!("layer '{id}': {problem}"));
             }
-            if !seen.insert(layer.instance_hint()) {
-                out.push(format!("layer '{}' is listed twice; give one entry its own \"id\"", layer.instance_hint()));
+            let Some(steps) = &layer.steps else { continue };
+            for (n, step) in steps.sequence.iter().enumerate() {
+                let at = format!("layer '{id}', step {}", n + 1);
+                let own = layer.items.iter().any(|i| i.id == step.layer);
+                if step.layer == *id {
+                    out.push(format!("{at}: a sequence cannot show itself"));
+                } else if sequences.contains(step.layer.as_str()) {
+                    out.push(format!("{at}: '{}' is a sequence too; a step shows one layer, not another sequence", step.layer));
+                } else if !own && !top.contains(step.layer.as_str()) {
+                    out.push(format!("{at}: shows '{}', which is neither a layer of the scene nor an item of this one", step.layer));
+                }
+                if step.duration_s.is_some_and(|d| !(d.is_finite() && d > 0.0)) {
+                    out.push(format!("{at}: duration_s must be a positive number of seconds"));
+                }
+                if step.transition_s.is_some_and(|d| !(d.is_finite() && d >= 0.0)) {
+                    out.push(format!("{at}: transition_s must be zero or more seconds"));
+                }
+                let long = |text: &Option<String>, most: usize| text.as_deref().is_some_and(|t| t.chars().count() > most);
+                if long(&step.title, 80) || long(&step.description, 300) || long(&step.source, 200) {
+                    out.push(format!("{at}: a step's title is at most 80 characters, its description 300 and its source 200"));
+                }
+            }
+        }
+        out
+    }
+
+    /// The recipes under `custom`.
+    fn custom_problems(&self) -> Vec<String> {
+        let mut out = Vec::new();
+        let datasets = self.data();
+        for (id, recipe) in &self.manifest.custom {
+            let at = format!("custom layer '{id}'");
+            if !is_instance_id(id) {
+                out.push(format!("{at}: an id is lowercase letters, digits and dashes, up to 40"));
+            }
+            let name = recipe.name.trim().chars().count();
+            if name == 0 || name > LayerButton::MAX_NAME {
+                out.push(format!("{at}: a name is 1 to {} characters", LayerButton::MAX_NAME));
+            }
+            if recipe.category.as_deref().is_some_and(|c| !["base", "ambient", "analysis", "media"].contains(&c)) {
+                out.push(format!("{at}: category is base, ambient, analysis or media"));
+            }
+            if recipe.icon.as_deref().is_some_and(|icon| !is_instance_id(icon)) {
+                out.push(format!("{at}: an icon is a name in lowercase letters, digits and dashes"));
+            }
+            let mut sources = BTreeSet::new();
+            for data in &recipe.data {
+                let at = format!("{at}, data '{}'", data.id);
+                if !is_instance_id(&data.id) || !sources.insert(data.id.as_str()) {
+                    out.push(format!("{at}: each data entry needs its own id in lowercase letters, digits and dashes"));
+                }
+                if data.sources() != 1 {
+                    out.push(format!("{at}: give exactly one of dataset, path, wms and tiles"));
+                }
+                if let Some(name) = data.dataset.as_deref().filter(|name| !datasets.contains_key(*name)) {
+                    out.push(format!("{at}: the site has no dataset '{name}'"));
+                }
+                if let Some(path) = &data.path {
+                    match self.resolve(path) {
+                        None => out.push(format!("{at}: '{path}' must be a relative path inside the site folder")),
+                        Some(full) if !full.exists() => out.push(format!("{at}: '{path}' does not exist")),
+                        _ => {}
+                    }
+                }
+                let web = |url: &str| url.starts_with("https://") || url.starts_with("http://");
+                if data.wms.as_ref().is_some_and(|w| !web(&w.url) || w.layers.trim().is_empty()) {
+                    out.push(format!("{at}: a WMS needs an http(s) url and the names of its layers"));
+                }
+                if data.tiles.as_deref().is_some_and(|t| !web(t) || !["{z}", "{x}", "{y}"].iter().all(|p| t.contains(p))) {
+                    out.push(format!("{at}: tiles is an http(s) URL with {{z}}, {{x}} and {{y}}"));
+                }
+            }
+            let look: BTreeSet<&str> = recipe.look.iter().map(|b| b.id.as_str()).collect();
+            let mut blocks = BTreeSet::new();
+            for (stage, list) in [("look", &recipe.look), ("motion", &recipe.motion), ("interaction", &recipe.interaction)] {
+                for block in list {
+                    let at = format!("{at}, {stage} '{}'", block.id);
+                    if !is_instance_id(&block.id) || !blocks.insert(block.id.as_str()) {
+                        out.push(format!("{at}: each block needs its own id in lowercase letters, digits and dashes"));
+                    }
+                    if !is_instance_id(&block.block) {
+                        out.push(format!("{at}: block is a block name such as lines or glow"));
+                    }
+                    if let Some(data) = block.data.as_deref().filter(|d| !sources.contains(d)) {
+                        out.push(format!("{at}: reads data '{data}', which the layer does not have"));
+                    }
+                    if let Some(on) = block.on.as_deref().filter(|on| !look.contains(on)) {
+                        out.push(format!("{at}: acts on '{on}', which is not one of its look blocks"));
+                    }
+                }
+            }
+            if recipe.controls.iter().any(|c| !c["id"].is_string() || !c["type"].is_string()) {
+                out.push(format!("{at}: every control needs an id and a type, as in layer.json"));
+            }
+            let mut legend = BTreeSet::new();
+            if recipe.legend.iter().any(|item| !legend.insert(item.id.as_str()) || item.label.trim().is_empty()) {
+                out.push(format!("{at}: every legend row needs its own id and a label"));
             }
         }
         out
@@ -388,28 +536,147 @@ mod tests {
         Site::load(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../sites/sample")).unwrap()
     }
 
-    fn layer(name: &str, id: Option<&str>) -> LayerRef {
+    fn layer(name: &str, id: &str) -> LayerRef {
         LayerRef {
             r#use: name.into(),
-            id: id.map(String::from),
+            id: id.into(),
             active: true,
             params: Default::default(),
             button: Default::default(),
             hide: Vec::new(),
+            items: Vec::new(),
+            steps: None,
         }
     }
 
+    fn item(name: &str, id: &str) -> LayerItem {
+        LayerItem { r#use: name.into(), id: id.into(), active: true, params: Default::default(), hide: Vec::new() }
+    }
+
+    fn problems_with(site: &Site, needle: &str) -> bool {
+        site.problems().iter().any(|p| p.contains(needle))
+    }
+
     #[test]
-    fn the_same_layer_twice_needs_an_id() {
+    fn every_layer_and_item_has_its_own_id() {
         let mut site = sample();
-        site.manifest.layers = vec![layer("cars", None), layer("cars", None)];
-        assert!(site.problems().iter().any(|p| p.contains("listed twice")), "{:?}", site.problems());
-        site.manifest.layers = vec![layer("cars", None), layer("cars", Some("rush-hour"))];
+        site.manifest.layers = vec![layer("cars", "cars"), layer("cars", "cars")];
+        assert!(problems_with(&site, "names two entries"), "{:?}", site.problems());
+        site.manifest.layers = vec![layer("cars", "cars"), layer("cars", "rush-hour")];
         assert!(site.problems().is_empty(), "{:?}", site.problems());
-        site.manifest.layers = vec![layer("cars", Some("Rush Hour"))];
-        assert!(site.problems().iter().any(|p| p.contains("lowercase")));
-        // A site-only layer is known by its folder name.
-        assert_eq!(layer("./layers/artwork", None).instance_hint(), "artwork");
+        site.manifest.layers = vec![layer("cars", "Rush Hour")];
+        assert!(problems_with(&site, "lowercase"));
+        // An item shares the id space with the layers.
+        let mut sun = layer("sunlight", "sun");
+        sun.items = vec![item("transit", "cars")];
+        site.manifest.layers = vec![layer("cars", "cars"), sun];
+        assert!(problems_with(&site, "'cars' names two entries"), "{:?}", site.problems());
+        site.manifest.layers[1].items[0].id = "sun-transit".into();
+        assert!(site.problems().is_empty(), "{:?}", site.problems());
+        // The id a format 2 entry had without one.
+        assert_eq!(LayerRef::default_id("./layers/artwork"), "artwork");
+        assert_eq!(LayerRef::default_id("custom:heat-walk"), "heat-walk");
+    }
+
+    #[test]
+    fn a_sequence_shows_layers_of_the_scene_or_its_own_items() {
+        let mut site = sample();
+        let step = |layer: &str| SequenceStep {
+            layer: layer.into(),
+            params: Default::default(),
+            duration_s: Some(8.0),
+            transition: Some(Transition::Fade),
+            transition_s: None,
+            next: None,
+            title: None,
+            description: None,
+            source: None,
+        };
+        let mut tour = layer("slideshow", "tour");
+        tour.items = vec![item("trees", "tour-trees")];
+        tour.steps = Some(Steps { sequence: vec![step("sun"), step("tour-trees")], ..Default::default() });
+        site.manifest.layers = vec![layer("sunlight", "sun"), tour.clone()];
+        assert!(site.problems().is_empty(), "{:?}", site.problems());
+
+        tour.steps.as_mut().unwrap().sequence.push(step("nowhere"));
+        tour.steps.as_mut().unwrap().sequence.push(step("tour"));
+        tour.steps.as_mut().unwrap().sequence[0].duration_s = Some(0.0);
+        site.manifest.layers = vec![layer("sunlight", "sun"), tour.clone()];
+        assert!(problems_with(&site, "step 3: shows 'nowhere'"), "{:?}", site.problems());
+        assert!(problems_with(&site, "step 4: a sequence cannot show itself"));
+        assert!(problems_with(&site, "step 1: duration_s"));
+
+        // Another layer's item is not this sequence's to show, and sequences do not nest.
+        let mut sun = layer("sunlight", "sun");
+        sun.items = vec![item("transit", "sun-transit")];
+        let mut other = layer("slideshow", "other");
+        other.steps = Some(Steps { sequence: vec![step("sun-transit"), step("tour")], ..Default::default() });
+        tour.steps = Some(Steps { sequence: vec![step("sun")], ..Default::default() });
+        site.manifest.layers = vec![sun, tour, other];
+        assert!(problems_with(&site, "shows 'sun-transit', which is neither"), "{:?}", site.problems());
+        assert!(problems_with(&site, "'tour' is a sequence too"));
+    }
+
+    #[test]
+    fn a_custom_layer_is_a_checked_recipe() {
+        let mut site = sample();
+        let recipe: CustomLayer = serde_json::from_value(serde_json::json!({
+            "name": "Heat walk", "icon": "route", "category": "analysis",
+            "data": [
+                { "id": "paths", "dataset": "walkways" },
+                { "id": "photo", "wms": { "url": "https://example.org/wms", "layers": "ortho" } }
+            ],
+            "look": [{ "id": "lines", "block": "lines", "data": "paths", "props": { "color": "#ff8800", "width": 3 } }],
+            "motion": [{ "id": "glow", "block": "glow", "on": "lines" }],
+            "interaction": [{ "id": "tap", "block": "tap-info", "data": "paths" }],
+            "enter": "fade",
+            "controls": [{ "id": "width", "type": "range", "label": "Width", "min": 1, "max": 8, "step": 1, "default": 3, "bind": "look.lines.width" }],
+            "legend": [{ "id": "hot", "label": "Hot", "color": "#ff4400", "shape": "line" }],
+            "attract": { "effect": "particles" }
+        }))
+        .unwrap();
+        site.manifest.custom.insert("heat-walk".into(), recipe.clone());
+        site.manifest.layers.push(layer("custom:heat-walk", "heat-walk"));
+        assert!(site.problems().is_empty(), "{:?}", site.problems());
+
+        site.manifest.layers.push(layer("custom:nothing", "nothing"));
+        assert!(problems_with(&site, "uses the custom layer 'nothing'"));
+        site.manifest.layers.pop();
+
+        let mut bad = recipe;
+        bad.data[0].path = Some("../outside.geojson".into());
+        bad.data[1].wms.as_mut().unwrap().url = "ftp://x".into();
+        bad.motion[0].on = Some("paths".into());
+        bad.look[0].data = Some("nope".into());
+        site.manifest.custom.insert("heat-walk".into(), bad);
+        assert!(problems_with(&site, "data 'paths': give exactly one"), "{:?}", site.problems());
+        assert!(problems_with(&site, "a WMS needs"));
+        assert!(problems_with(&site, "acts on 'paths'"));
+        assert!(problems_with(&site, "reads data 'nope'"));
+    }
+
+    #[test]
+    fn buttons_and_ribbons_are_checked() {
+        let mut site = sample();
+        site.manifest.layers[1].button.group = Some(" ".into());
+        assert!(problems_with(&site, "a button group"));
+        site.manifest.layers[1].button.group = Some("Simulations".into());
+        site.manifest.layers[1].button.order = Some(2.0);
+        assert!(site.problems().is_empty(), "{:?}", site.problems());
+        let table: Table = serde_json::from_value(serde_json::json!({
+            "width_cm": 100, "height_cm": 60, "front": "left", "ribbons": { "bottom": { "cm": 9 }, "top": "auto", "left": "off" }
+        }))
+        .unwrap();
+        assert_eq!(table.front, Some(TableSide::Left));
+        assert!(serde_json::from_value::<Table>(serde_json::json!({ "width_cm": 1, "height_cm": 1, "front": "near" })).is_err());
+        assert_eq!(table.ribbons.bottom, Some(Ribbon::Size(RibbonSize { cm: 9.0 })));
+        assert_eq!(table.ribbons.top, Some(Ribbon::Mode(RibbonMode::Auto)));
+        assert!(
+            serde_json::from_value::<Table>(serde_json::json!({ "width_cm": 1, "height_cm": 1, "ribbons": { "top": "wide" } })).is_err()
+        );
+        site.manifest.table =
+            Some(Table { ribbons: Ribbons { bottom: Some(Ribbon::Size(RibbonSize { cm: -1.0 })), ..table.ribbons }, ..table });
+        assert!(problems_with(&site, "table.ribbons.bottom"));
     }
 
     #[test]
@@ -425,7 +692,7 @@ mod tests {
 
     fn site(data: &str) -> Site {
         let text = format!(
-            r#"{{ "format": 2, "id": "t", "name": "T", "origin": {{ "lon": 12, "lat": 57 }},
+            r#"{{ "format": 3, "id": "t", "name": "T", "origin": {{ "lon": 12, "lat": 57 }},
                  "extent": {{ "width_m": 100, "height_m": 100 }}, "scene": {{ "cell_m": 1 }}, "data": {data} }}"#
         );
         // The crate's own folder stands in for a site folder: Cargo.toml exists in it.

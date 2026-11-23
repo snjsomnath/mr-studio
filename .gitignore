@@ -6,3 +6,4 @@ dist/
 sites/*/scene/
 # The demo site's projector calibration belongs to whichever machine made it.
 sites/sample/calibration.json
+sites/*/site.format-*.json

@@ -1,5 +1,5 @@
 {
-  "format": 2,
+  "format": 3,
   "id": "sample",
   "name": "Sample district",
   "origin": {
@@ -50,10 +50,12 @@
   "layers": [
     {
       "use": "basemap",
+      "id": "basemap",
       "active": true
     },
     {
       "use": "sunlight",
+      "id": "sunlight",
       "active": false,
       "params": {
         "date": "2026-06-21",
@@ -63,38 +65,47 @@
     },
     {
       "use": "building-lights",
+      "id": "building-lights",
       "active": true
     },
     {
       "use": "cars",
+      "id": "cars",
       "active": true
     },
     {
       "use": "transit",
+      "id": "transit",
       "active": true
     },
     {
       "use": "trees",
+      "id": "trees",
       "active": true
     },
     {
       "use": "slideshow",
+      "id": "slideshow",
       "active": false
     },
     {
       "use": "sketch",
+      "id": "sketch",
       "active": true
     },
     {
       "use": "coolpaths",
+      "id": "coolpaths",
       "active": false
     },
     {
       "use": "mobility",
+      "id": "mobility",
       "active": false
     },
     {
       "use": "wind",
+      "id": "wind",
       "active": false
     }
   ],
