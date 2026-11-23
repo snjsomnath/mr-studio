@@ -50,16 +50,25 @@ export function newTable(root: HTMLElement): void {
   Object.assign(turned, { type: 'number', min: '-180', max: '360', step: '1', value: '0' });
   const size = el('div', 'wz-pair');
   size.append(field('Width, metres', width), field('Height, metres', height));
-  // The physical table and the model scale: a scale sets the ground's size, keeping its shape.
+  // The physical table and the model scale: the ground and the table follow each other at the scale.
   let tableCm = 100;
+  let tileCm: number | null = null;
+  let tileM: number | null = null;
+  // The map is made below; until then the grid waits in tileM.
+  let ready: PlaceMap | null = null;
   const scale = new ScaleFields(
-    () => ({ width_m: Number(width.value), height_m: Number(height.value), table_cm: tableCm }),
+    () => ({ width_m: Number(width.value), height_m: Number(height.value), table_cm: tableCm, tile_cm: tileCm }),
     (ground) => {
       width.value = String(ground.width_m);
       height.value = String(ground.height_m);
       tableCm = ground.table_cm;
+      tileCm = ground.tile_cm ?? null;
       map.set(placement());
       if (invoke) say('');
+    },
+    (tile_m) => {
+      tileM = tile_m;
+      ready?.tiles(tile_m);
     },
   );
   body.append(
@@ -106,6 +115,8 @@ export function newTable(root: HTMLElement): void {
     scale.refresh();
     if (invoke) say('');
   });
+  ready = map;
+  map.tiles(tileM);
   canvas.append(map.element, el('p', 'wz-hint pm-help', 'Click the map to put the table there, or drag its middle. Drag its corner to cover more or less ground. Turn the map with the right mouse button, Ctrl and drag, or the arrows; the table stays upright, as it stands in the room.'));
   for (const input of [place, width, height, turned]) input.addEventListener('input', () => {
     map.set(placement());
@@ -126,10 +137,12 @@ export function newTable(root: HTMLElement): void {
     if (!title) return say('Give the table a name.');
     if (!at) return say('Paste the coordinates of the centre of the table, for example 57.6898, 11.9742.');
     if (!(width_m >= 100 && height_m >= 100)) return say('The width and the height must each be at least 100 metres.');
+    const tiles = scale.problem();
+    if (tiles) return say(tiles);
     say('');
     create.disabled = true;
     try {
-      const path = await invoke!('create_site', { site: { name: title, lat: at.lat, lon: at.lon, width_m, height_m, rotation_deg: rotation(), table_width_cm: tableCm } });
+      const path = await invoke!('create_site', { site: { name: title, lat: at.lat, lon: at.lon, width_m, height_m, rotation_deg: rotation(), table_width_cm: tableCm, tile_cm: tileCm ?? 0 } });
       await invoke!('open_site', { path, welcome: true });
     } catch (error) {
       say(String(error));

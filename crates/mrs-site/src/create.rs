@@ -100,6 +100,7 @@ mod tests {
             origin: crate::LonLat { lon, lat },
             extent: crate::Extent { width_m: w, height_m: h, rotation_deg: r },
             table_width_cm: None,
+            tile_cm: None,
         };
         let moved = site.place(&place(Some(" Old harbour "), 11.95, 57.70, 1600.0, 1000.0, -30.0)).unwrap();
         assert_eq!(moved.manifest.name, "Old harbour");
@@ -115,6 +116,17 @@ mod tests {
         assert_eq!((table.width_cm, table.height_cm), (160.0, 100.0));
         assert!(kept.place(&crate::Place { table_width_cm: Some(1.0), ..place(None, 11.95, 57.70, 1600.0, 1000.0, 330.0) }).is_err());
         wider.place(&crate::Place { table_width_cm: Some(100.0), ..place(None, 11.95, 57.70, 1600.0, 1000.0, 330.0) }).unwrap();
+        // 1000 × 600 m at 1 : 1250 is an 80 × 48 cm table, printed in 16 cm tiles; 0 drops the tiles.
+        let printed = wider
+            .place(&crate::Place { table_width_cm: Some(80.0), tile_cm: Some(16.0), ..place(None, 11.95, 57.70, 1000.0, 600.0, 330.0) })
+            .unwrap();
+        let table = printed.manifest.table.unwrap();
+        assert_eq!((table.width_cm, table.height_cm, table.tile_cm), (80.0, 48.0, Some(16.0)));
+        let kept_tiles = printed.place(&place(None, 11.95, 57.70, 1000.0, 600.0, 330.0)).unwrap();
+        assert_eq!(kept_tiles.manifest.table.unwrap().tile_cm, Some(16.0), "no tile size keeps the tiles");
+        let plain = kept_tiles.place(&crate::Place { tile_cm: Some(0.0), ..place(None, 11.95, 57.70, 1000.0, 600.0, 330.0) }).unwrap();
+        assert_eq!(plain.manifest.table.unwrap().tile_cm, None);
+        plain.place(&crate::Place { table_width_cm: Some(100.0), ..place(None, 11.95, 57.70, 1600.0, 1000.0, 330.0) }).unwrap();
 
         assert!(site.place(&place(Some(""), 11.95, 57.70, 1000.0, 600.0, 0.0)).is_err());
         assert!(site.place(&place(None, 11.95, 97.0, 1000.0, 600.0, 0.0)).is_err());

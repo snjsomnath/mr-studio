@@ -943,3 +943,75 @@ async fn buildings_come_from_openstreetmap_when_asked() {
     host.shutdown().await;
     let _ = std::fs::remove_dir_all(&base);
 }
+
+/// A Terrarium tile server whose ground rises 1 m per tile pixel eastwards, busy once per tile.
+async fn terrarium() -> (String, std::sync::Arc<std::sync::Mutex<Vec<String>>>) {
+    let asked = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+    let log = asked.clone();
+    let app = axum::Router::new().route(
+        "/{z}/{x}/{name}",
+        axum::routing::get(move |axum::extract::Path((z, x, name)): axum::extract::Path<(u32, u32, String)>| {
+            let log = log.clone();
+            async move {
+                let path = format!("{z}/{x}/{name}");
+                let first = {
+                    let mut log = log.lock().unwrap();
+                    log.push(path.clone());
+                    log.iter().filter(|p| **p == path).count() == 1
+                };
+                if first {
+                    return axum::response::IntoResponse::into_response(axum::http::StatusCode::SERVICE_UNAVAILABLE);
+                }
+                let mut bytes = Vec::new();
+                {
+                    let mut encoder = png::Encoder::new(&mut bytes, 256, 256);
+                    encoder.set_color(png::ColorType::Rgb);
+                    let mut writer = encoder.write_header().unwrap();
+                    // 32768 + 20 + column: (R, G) = (128, 20 + column), up to 275, which carries into R.
+                    let pixels: Vec<u8> = (0..256 * 256)
+                        .flat_map(|i| {
+                            let v = 32768 + 20 + (i % 256) as u32;
+                            [(v / 256) as u8, (v % 256) as u8, 0]
+                        })
+                        .collect();
+                    writer.write_image_data(&pixels).unwrap();
+                }
+                axum::response::IntoResponse::into_response(([(axum::http::header::CONTENT_TYPE, "image/png")], bytes))
+            }
+        }),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}", listener.local_addr().unwrap());
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    (url, asked)
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_ground_comes_from_free_elevation_when_asked() {
+    let base = std::env::temp_dir().join(format!("mrs-host-elevation-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&base);
+    let dir = base.join("hills");
+    mrs_site::create::create(&dir, "Hills", 11.97, 57.70, 1000.0, 600.0, 0.0).unwrap();
+    let (url, asked) = terrarium().await;
+    std::env::set_var("MRS_ELEVATION_URL", &url);
+    let host = host_for(dir.clone()).await;
+    let mut table = Surface::join(&host, "table", None).await.unwrap();
+
+    let (status, report) = http_post(&host, "/api/data/import?target=terrain&source=elevation", "", b"").await;
+    assert_eq!(status, 200, "{report}");
+    assert!(report["issues"].as_array().unwrap().iter().any(|i| i["code"] == "source.elevation"), "{report}");
+    table.event("site.changed").await;
+    let site = mrs_site::Site::load(&dir).unwrap();
+    assert!(site.manifest.scene.terrain.as_ref().is_some_and(|t| t.path.ends_with(".tif")), "the ground is a GeoTIFF");
+    // Every tile was busy once and asked again.
+    let asked = asked.lock().unwrap().clone();
+    assert!(!asked.is_empty() && asked.len() % 2 == 0, "{asked:?}");
+    assert!(asked.iter().all(|p| p.starts_with("14/")), "{asked:?}");
+
+    // Only the ground comes from the elevation service.
+    let (status, report) = http_post(&host, "/api/data/inspect?target=buildings&source=elevation", "", b"").await;
+    assert_eq!(status, 422);
+    assert_eq!(report["issues"][0]["code"], "elevation.unavailable");
+    host.shutdown().await;
+    let _ = std::fs::remove_dir_all(&base);
+}

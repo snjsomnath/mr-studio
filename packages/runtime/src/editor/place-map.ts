@@ -73,6 +73,18 @@ export function outline(place: Placement): [number, number][] {
   return [...ring, ring[0]!];
 }
 
+/** Lines between square tiles `tile_m` on a side, inside the table's outline. */
+export function tileLines(place: Placement, tile_m: number): [number, number][][] {
+  const w = place.width_m / 2;
+  const h = place.height_m / 2;
+  const lines: [number, number][][] = [];
+  // Too many lines to read (or a tile no bigger than a hair) draws none.
+  if (!(tile_m > 0) || place.width_m / tile_m > 200 || place.height_m / tile_m > 200) return lines;
+  for (let x = -w + tile_m; x < w - tile_m * 0.01; x += tile_m) lines.push([offset(place, x, h), offset(place, x, -h)]);
+  for (let y = h - tile_m; y > -h + tile_m * 0.01; y -= tile_m) lines.push([offset(place, -w, y), offset(place, w, y)]);
+  return lines;
+}
+
 /** Degrees as a whole bearing from 0 up to 360. */
 const bearingOf = (degrees: number) => ((Math.round(degrees) % 360) + 360) % 360;
 
@@ -116,6 +128,8 @@ export class PlaceMap {
   private readonly note = el('p', 'pm-note');
   private framed = false;
   private shown = false;
+  /** The side of a 3D-printed tile in metres of ground, or null for no tile grid. */
+  private tile_m: number | null = null;
 
   private readonly onChange: (place: Placement) => void;
 
@@ -199,6 +213,7 @@ export class PlaceMap {
     // Once the style is read, not on load: load waits for tiles, which may never come offline.
     this.map.once('style.load', () => {
       this.map.addSource('table', { type: 'geojson', data: this.geojson() });
+      this.map.addSource('tiles', { type: 'geojson', data: this.tileGeojson() });
       if (options.data) {
         // What is already on the table, so it can be lined up with the map.
         this.map.addSource('data', { type: 'geojson', data: options.data });
@@ -206,6 +221,7 @@ export class PlaceMap {
         this.map.addLayer({ id: 'data-line', type: 'line', source: 'data', paint: { 'line-color': '#3557d4', 'line-width': 0.8, 'line-opacity': 0.6 } });
       }
       this.map.addLayer({ id: 'table-fill', type: 'fill', source: 'table', paint: { 'fill-color': '#f3ad3d', 'fill-opacity': 0.12 } });
+      this.map.addLayer({ id: 'tiles-line', type: 'line', source: 'tiles', paint: { 'line-color': '#c77d00', 'line-width': 1, 'line-opacity': 0.7 } });
       this.map.addLayer({ id: 'table-line', type: 'line', source: 'table', paint: { 'line-color': '#c77d00', 'line-width': 2, 'line-dasharray': [3, 2] } });
       this.draw();
     });
@@ -232,6 +248,17 @@ export class PlaceMap {
     if (frame || (place && (moved || resized))) this.frame();
   }
 
+  /** Draws the 3D-printing tile grid, `tile_m` metres of ground on a side; null hides it. */
+  tiles(tile_m: number | null): void {
+    this.tile_m = tile_m && tile_m > 0 ? tile_m : null;
+    (this.map.getSource('tiles') as GeoJSONSource | undefined)?.setData(this.tileGeojson());
+  }
+
+  private tileGeojson(): { type: 'FeatureCollection'; features: { type: 'Feature'; properties: object; geometry: { type: 'MultiLineString'; coordinates: [number, number][][] } }[] } {
+    const lines = this.place && this.tile_m ? tileLines(this.place, this.tile_m) : [];
+    return { type: 'FeatureCollection', features: lines.length ? [{ type: 'Feature', properties: {}, geometry: { type: 'MultiLineString', coordinates: lines } }] : [] };
+  }
+
   private turnBy(degrees: number): void {
     if (!this.place) return;
     this.change({ rotation_deg: bearingOf(this.place.rotation_deg + degrees) });
@@ -245,7 +272,10 @@ export class PlaceMap {
       this.frame();
     } else this.place = { ...this.place, ...patch };
     if (redraw) this.draw();
-    else (this.map.getSource('table') as GeoJSONSource | undefined)?.setData(this.geojson());
+    else {
+      (this.map.getSource('table') as GeoJSONSource | undefined)?.setData(this.geojson());
+      (this.map.getSource('tiles') as GeoJSONSource | undefined)?.setData(this.tileGeojson());
+    }
     this.onChange(this.place);
   }
 
@@ -258,6 +288,7 @@ export class PlaceMap {
 
   private draw(): void {
     (this.map.getSource('table') as GeoJSONSource | undefined)?.setData(this.geojson());
+    (this.map.getSource('tiles') as GeoJSONSource | undefined)?.setData(this.tileGeojson());
     const place = this.place;
     const markers = [this.centre, this.corner];
     if (!place) {

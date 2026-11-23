@@ -990,6 +990,37 @@ body[data-role='edit'] .table-surface {
   margin: 0 0 14px;
 }
 
+.wz-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 12px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.wz-check input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--ed-accent, #3557d4);
+}
+
+.wz-tiles {
+  margin: 0 0 14px;
+  padding: 12px;
+  border: 1px solid var(--ed-line, #d5d9e0);
+  border-radius: 8px;
+}
+
+.wz-tiles .wz-field {
+  max-width: 50%;
+}
+
+.wz-tiles > p {
+  margin: 0;
+}
+
 .wz-problem {
   margin: 16px 0 0;
   padding: 8px 12px;
@@ -1631,4 +1662,36 @@ body[data-role='edit'] .ed-surface .table-frame {
 .ed-slide.is-live .ed-slide-number {
   background: var(--ed-accent);
   color: #fff;
+}
+
+/* ---- A layer's style under its row in the guide (the base map at rest) ---- */
+
+.wz-style {
+  margin: -2px 0 4px;
+  padding: 12px 14px;
+  border: 1px solid var(--ed-line, #d5d9e0);
+  border-radius: 8px;
+  background: var(--ed-panel-2, #f7f8fa);
+}
+
+.wz-style .wz-field {
+  margin-bottom: 6px;
+}
+
+.wz-style select {
+  height: 32px;
+  padding: 0 8px;
+  border: 1px solid var(--ed-line, #d5d9e0);
+  border-radius: 6px;
+  background: #fff;
+  font: inherit;
+  font-weight: 400;
+}
+
+.wz-style p {
+  margin: 0;
+}
+
+.wz-style p:empty {
+  display: none;
 }
