@@ -3,7 +3,7 @@ import { test } from 'node:test';
 
 import { lut, colormaps, stretch } from '../src/colormap.ts';
 import { isVisible } from '../src/controls.ts';
-import { clearSegment, FlowField, ribbonLight, Streamlines, traceStreamline, Tracers } from '../src/flow.ts';
+import { clearSegment, FacadeGlow, facadeEdges, FlowField, ribbonLight, Streamlines, traceStreamline, Tracers } from '../src/flow.ts';
 import { parseFrame, sample } from '../src/frame.ts';
 import type { FieldFrame } from '../src/types.ts';
 import { lonLatToTable, siteProjection, tableToLonLat } from '../src/geo.ts';
@@ -180,6 +180,33 @@ test('streamlines run whole through the gap, never through the wall, and morph i
   assert.deepEqual(lines.lines.map((line) => line.points.map((p) => p.station).join()), before);
   assert.equal(lines.lines[0]!.points.find((p) => p.station === 2), point, 'the drawn point is kept and eased, not replaced');
   assert.ok(point.travel < point.targetTravel * 2 && point.travel > point.targetTravel, 'easing towards the shorter travel time');
+});
+
+test('facades facing the wind glow, the sheltered side stays dark (#174)', () => {
+  const field = gapField('f32', 4);
+  // The top half of the wall, wound either way round: the normals still point out.
+  for (const ring of [
+    [[10, 0], [12, 0], [12, 8], [10, 8], [10, 0]],
+    [[10, 0], [10, 8], [12, 8], [12, 0]],
+  ] as [number, number][][]) {
+    const edges = facadeEdges([[ring]], field.width, field.height, 1);
+    const glow = new FacadeGlow(field, edges);
+    for (let k = 0; k < 120; k++) glow.update(1 / 30);
+    const lit = (pick: (e: (typeof edges)[number]) => boolean) => edges.map((e, i) => [e, glow.intensity[i]!] as const).filter(([e]) => pick(e));
+    const windward = lit((e) => e.ax === 10 && e.bx === 10 && Math.max(e.ay, e.by) < 7);
+    const leeward = lit((e) => e.ax === 12 && e.bx === 12);
+    assert.ok(windward.length > 3 && windward.every(([e, v]) => e.nx === -1 && v > 0.7), 'the face into a 4 m/s wind glows');
+    assert.ok(leeward.length > 3 && leeward.every(([e, v]) => e.nx === 1 && v === 0), 'the face out of the wind stays dark');
+  }
+  // It builds slowly and lets go fast.
+  const edges = facadeEdges([[[[10, 0], [12, 0], [12, 8], [10, 8]]]], field.width, field.height, 1);
+  const glow = new FacadeGlow(field, edges);
+  const face = edges.findIndex((e) => e.nx === -1 && e.ay < 6);
+  glow.update(0.5);
+  assert.ok(glow.intensity[face]! < 0.5, 'half a second in, still building');
+  glow.setField(gapField('f32', 0.5));
+  glow.update(0.5);
+  assert.ok(glow.intensity[face]! < 0.1, 'and gone within half a second when the wind drops');
 });
 
 test('the light along a ribbon is a soft pulse that moves downstream', () => {

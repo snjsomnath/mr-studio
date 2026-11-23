@@ -1,4 +1,4 @@
-import { colormaps, cssGradient, defineLayer, stretch } from '@mrstudio/sdk';
+import { colormaps, cssGradient, defineLayer, geojsonPolygons, readSiteData, stretch, tableSpace } from '@mrstudio/sdk';
 import type { FieldFrame, FlowOverlay, LayerManifest, TableContext } from '@mrstudio/sdk';
 
 import manifest from '../layer.json';
@@ -9,6 +9,7 @@ interface Params {
   style: 'ribbons' | 'particles' | 'map';
   scale: string;
   trees: boolean;
+  facades: boolean;
   detail: string;
   playback: number;
   opacity: number;
@@ -42,10 +43,14 @@ export default defineLayer<Params>({
       max: Number(ctx.params.scale),
       rate: TRACER_RATE * ctx.params.playback,
       opacity: ctx.params.opacity,
+      // Walls the wind blows straight at glow warm, as in the Chalmers demo (#174).
+      facadeGlow: ctx.params.facades ?? true,
     });
 
     const speed = ctx.map.addField('speed', { colormap: ramp(), opacity: mapOpacity() });
     let flow: FlowOverlay | null = null;
+    // Building outlines for the facade glow, in table metres; none on a site without buildings.
+    const buildings = geojsonPolygons(await readSiteData(ctx.site, 'buildings'), tableSpace(ctx.site)).map((p) => p.geometry as [number, number][][]);
     let u: FieldFrame | null = null;
     let v: FieldFrame | null = null;
     const restyle = () => {
@@ -57,6 +62,7 @@ export default defineLayer<Params>({
         flow.setStyle(flowStyle());
       } else {
         flow = ctx.map.addFlow('flow', flowStyle());
+        flow.setFacades(buildings);
         if (u && v) flow.set(u, v);
       }
     };
@@ -87,7 +93,7 @@ export default defineLayer<Params>({
 
     return {
       update(changed) {
-        if (changed.some((key) => key === 'style' || key === 'scale' || key === 'opacity' || key === 'backdrop' || key === 'playback')) restyle();
+        if (changed.some((key) => key === 'style' || key === 'scale' || key === 'opacity' || key === 'backdrop' || key === 'playback' || key === 'facades')) restyle();
         if (changed.some((key) => key === 'speed' || key === 'direction' || key === 'trees' || key === 'detail')) stream.set(kernelParams(ctx));
       },
     };

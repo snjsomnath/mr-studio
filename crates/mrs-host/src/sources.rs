@@ -174,6 +174,17 @@ pub struct Connection {
     /// The user name or client id. Not a secret, so it can be shown.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub user: String,
+    /// Whether a key was saved for it. Kept here so that listing sources never asks the
+    /// keychain: on macOS that can open an "allow" prompt, and nothing should wait on one
+    /// just to draw the Sources page. Files from before this field count as having a key.
+    #[serde(default)]
+    pub has_secret: Option<bool>,
+}
+
+impl Connection {
+    pub fn keyed(&self) -> bool {
+        self.has_secret.unwrap_or(false)
+    }
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -202,14 +213,10 @@ pub struct Status {
 pub struct View {
     #[serde(flatten)]
     pub connection: Connection,
-    pub has_secret: bool,
     /// It can be used: it is open, or its key is there.
     pub ready: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub status: Option<Status>,
-    /// The keychain could not be read, for example because access was refused.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub problem: Option<String>,
 }
 
 /// A change from the Sources page. Fields left out keep their value.
@@ -319,7 +326,7 @@ impl std::fmt::Display for Refusal {
 /// The app's connections and their keys. One per app; the host and the Sources page share it.
 pub struct Sources {
     path: Option<PathBuf>,
-    vault: Box<dyn Vault>,
+    vault: std::sync::Arc<dyn Vault>,
     list: RwLock<Vec<Connection>>,
     /// Keys already read, so the Keychain is asked once per run (macOS may ask to allow it).
     secrets: Mutex<HashMap<String, Option<String>>>,
@@ -338,7 +345,14 @@ impl Sources {
     /// Reads `path` (a missing file is an empty list) and keeps secrets in `vault`.
     pub fn open(path: PathBuf, vault: Box<dyn Vault>) -> anyhow::Result<Self> {
         let list = match std::fs::read_to_string(&path) {
-            Ok(text) => serde_json::from_str::<File>(&text)?.sources,
+            Ok(text) => serde_json::from_str::<File>(&text)?
+                .sources
+                .into_iter()
+                .map(|mut c| {
+                    c.has_secret = Some(c.has_secret.unwrap_or(c.auth != Auth::None));
+                    c
+                })
+                .collect(),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Vec::new(),
             Err(e) => return Err(e.into()),
         };
@@ -354,7 +368,7 @@ impl Sources {
         let client = reqwest::Client::builder().user_agent("MR Studio").timeout(Duration::from_secs(30)).build().expect("an HTTP client");
         Self {
             path,
-            vault,
+            vault: vault.into(),
             list: RwLock::new(list),
             secrets: Default::default(),
             status: Default::default(),
@@ -371,11 +385,16 @@ impl Sources {
         self.list.read().unwrap().iter().find(|c| c.id == id).cloned()
     }
 
-    fn secret(&self, id: &str) -> Result<Option<String>, String> {
-        if let Some(known) = self.secrets.lock().unwrap().get(id) {
-            return Ok(known.clone());
+    /// The key, read from the keychain once per run. The read runs off the async workers:
+    /// a keychain prompt then holds up only the request that needs the key.
+    async fn secret(&self, id: &str) -> Result<Option<String>, String> {
+        let known = self.secrets.lock().unwrap().get(id).cloned();
+        if let Some(known) = known {
+            return Ok(known);
         }
-        let secret = self.vault.get(id)?.filter(|s| !s.is_empty());
+        let vault = self.vault.clone();
+        let owned = id.to_string();
+        let secret = tokio::task::spawn_blocking(move || vault.get(&owned)).await.map_err(|e| e.to_string())??.filter(|s| !s.is_empty());
         self.secrets.lock().unwrap().insert(id.into(), secret.clone());
         Ok(secret)
     }
@@ -386,12 +405,8 @@ impl Sources {
         let status = self.status.lock().unwrap().clone();
         list.into_iter()
             .map(|connection| {
-                let (has_secret, problem) = match self.secret(&connection.id) {
-                    Ok(secret) => (secret.is_some(), None),
-                    Err(e) => (false, Some(format!("The key could not be read from the keychain: {e}"))),
-                };
-                let ready = connection.auth == Auth::None || has_secret;
-                View { status: status.get(&connection.id).cloned(), connection, has_secret, ready, problem }
+                let ready = connection.auth == Auth::None || connection.keyed();
+                View { status: status.get(&connection.id).cloned(), connection, ready }
             })
             .collect()
     }
@@ -421,7 +436,16 @@ impl Sources {
                 if list.iter().any(|c| c.id == id) {
                     return Err(format!("there is already a source called '{id}'"));
                 }
-                Connection { id, kind, name: t.name.into(), url: t.url.into(), auth: t.auth, param: t.param.into(), user: String::new() }
+                Connection {
+                    id,
+                    kind,
+                    name: t.name.into(),
+                    url: t.url.into(),
+                    auth: t.auth,
+                    param: t.param.into(),
+                    user: String::new(),
+                    has_secret: Some(false),
+                }
             }
         };
         let before = connection.clone();
@@ -457,9 +481,11 @@ impl Sources {
             }
             self.vault.set(&connection.id, secret)?;
             self.secrets.lock().unwrap().insert(connection.id.clone(), Some(secret.clone()));
+            connection.has_secret = Some(true);
         } else if change.forget_secret || moved {
             self.vault.delete(&connection.id)?;
             self.secrets.lock().unwrap().insert(connection.id.clone(), None);
+            connection.has_secret = Some(false);
         }
         if new_secret.is_some() || change.forget_secret || moved || before != connection {
             self.status.lock().unwrap().remove(&connection.id);
@@ -514,11 +540,17 @@ impl Sources {
     }
 
     async fn sign(&self, connection: &Connection, mut url: reqwest::Url, fresh_token: bool) -> Result<reqwest::RequestBuilder, Refusal> {
-        let secret = || -> Result<String, Refusal> {
-            self.secret(&connection.id)
-                .map_err(|e| Refusal::new(500, format!("the key for {} could not be read: {e}", connection.name)))?
-                .ok_or_else(|| Refusal::new(424, format!("{} needs a key: add it in Sources", connection.name)))
+        let key = if connection.auth == Auth::None {
+            None
+        } else {
+            Some(
+                self.secret(&connection.id)
+                    .await
+                    .map_err(|e| Refusal::new(500, format!("the key for {} could not be read from the keychain: {e}", connection.name)))?
+                    .ok_or_else(|| Refusal::new(424, format!("{} needs a key: add it in Sources", connection.name)))?,
+            )
         };
+        let secret = || -> Result<String, Refusal> { Ok(key.clone().unwrap_or_default()) };
         Ok(match connection.auth {
             Auth::None => self.client.get(url),
             Auth::Query => {
@@ -617,11 +649,9 @@ impl Sources {
                 Ok("Signed in. Live vehicles can be shown.".into())
             }
             Kind::Mapbox if c.auth == Auth::Query => {
+                let token = self.secret(&c.id).await.ok().flatten().ok_or_else(|| Refusal::new(424, "Add the access token first."))?;
                 let mut url = parse(&format!("{host}/tokens/v2"))?;
-                url.query_pairs_mut().append_pair(
-                    &c.param,
-                    &self.secret(&c.id).ok().flatten().ok_or_else(|| Refusal::new(424, "Add the access token first."))?,
-                );
+                url.query_pairs_mut().append_pair(&c.param, &token);
                 let answer = send(self.client.get(url)).await?;
                 let body: Value = answer.json().await.unwrap_or(Value::Null);
                 match body["code"].as_str() {
@@ -815,6 +845,7 @@ mod tests {
         assert_eq!(v.connection.id, "mapbox");
         assert_eq!(v.connection.param, "access_token");
         assert!(!v.ready, "a key is still needed");
+        assert_eq!(v.connection.has_secret, Some(false));
         assert!(sources.save(change(Kind::Mapbox)).is_err(), "one Mapbox per computer");
     }
 
@@ -839,7 +870,7 @@ mod tests {
         assert!(!file.contains("secret-value"), "the key stays out of sources.json: {file}");
         let listed = serde_json::to_string(&sources.page()).unwrap();
         assert!(!listed.contains("secret-value"));
-        assert!(sources.list()[0].ready && sources.list()[0].has_secret);
+        assert!(sources.list()[0].ready && sources.list()[0].connection.keyed());
         let _ = std::fs::remove_dir_all(dir);
     }
 
@@ -854,11 +885,11 @@ mod tests {
                 ..Default::default()
             })
             .unwrap();
-        assert!(same.has_secret, "same server keeps the key");
+        assert!(same.connection.keyed(), "same server keeps the key");
         let moved = sources
             .save(Change { id: Some("mapbox".into()), url: Some("https://evil.example.org/{z}/{x}/{y}".into()), ..Default::default() })
             .unwrap();
-        assert!(!moved.has_secret, "another server loses it");
+        assert!(!moved.connection.keyed(), "another server loses it");
     }
 
     #[tokio::test]
@@ -890,6 +921,35 @@ mod tests {
         let refusal = sources.request("carto", tile).await.unwrap_err();
         assert_eq!(refusal.status, 424);
         assert!(refusal.message.contains("needs a key"));
+    }
+
+    /// A keychain that would show an "allow" prompt: reading it must not be needed to list sources.
+    struct Prompting;
+    impl Vault for Prompting {
+        fn get(&self, _: &str) -> Result<Option<String>, String> {
+            panic!("listing sources must not read the keychain")
+        }
+        fn set(&self, _: &str, _: &str) -> Result<(), String> {
+            Ok(())
+        }
+        fn delete(&self, _: &str) -> Result<(), String> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn listing_never_reads_the_keychain() {
+        let dir = std::env::temp_dir().join(format!("mrs-sources-list-{}", std::process::id()));
+        let path = dir.join("sources.json");
+        std::fs::create_dir_all(&dir).unwrap();
+        // A file from before `has_secret` was kept: a source that signs in counts as keyed.
+        std::fs::write(&path, r#"{"format":1,"sources":[{"id":"mapbox","kind":"mapbox","name":"Mapbox","url":"https://api.mapbox.com/{z}/{x}/{y}","auth":"query","param":"access_token"}]}"#).unwrap();
+        let sources = Sources::open(path, Box::new(Prompting)).unwrap();
+        let listed = sources.list();
+        assert!(listed[0].ready && listed[0].connection.keyed());
+        sources.save(Change { kind: Some(Kind::Carto), secret: Some("k".into()), ..Default::default() }).unwrap();
+        assert!(sources.page()["sources"][1]["has_secret"].as_bool().unwrap());
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]

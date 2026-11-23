@@ -45,6 +45,17 @@
       <h2>Your tables</h2>
       <ul id="tables" class="tables"></ul>
       <p id="tables-hint" class="hint"></p>
+
+      <dialog id="delete-dialog" class="confirm" aria-labelledby="delete-title">
+        <h2 id="delete-title">Delete this table?</h2>
+        <p>Its folder<span id="delete-size"></span>, with its data, pictures and calibration, moves to the <span class="trash-name">Trash</span>. You can put it back from there until the <span class="trash-name">Trash</span> is emptied.</p>
+        <p class="folder-path" id="delete-folder"></p>
+        <p id="delete-error" class="error" role="alert" hidden></p>
+        <div class="actions">
+          <button type="button" id="delete-cancel">Cancel</button>
+          <button type="button" id="delete-confirm" class="danger">Move to Trash</button>
+        </div>
+      </dialog>
     </main>
 
     <main id="view-new" hidden>

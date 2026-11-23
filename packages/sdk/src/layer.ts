@@ -56,6 +56,8 @@ export interface FlowOverlayStyle {
   rate?: number;
   /** 0..1, multiplied with the colormap's own alpha. */
   opacity?: number;
+  /** Lights building faces where the flow blows straight at them (needs `setFacades`). Default false. */
+  facadeGlow?: boolean;
 }
 
 /** A vector field drawn on the table as moving tracers. Animation and drawing run on the surface. */
@@ -63,6 +65,8 @@ export interface FlowOverlay {
   /** The two components of the same revision, towards the right and towards the bottom of the table. Cells where both are zero are obstacles. */
   set(u: FieldFrame, v: FieldFrame): void;
   setStyle(style: FlowOverlayStyle): void;
+  /** Building outlines for the facade glow: polygons of rings, outer ring first, in table metres. */
+  setFacades(polygons: [number, number][][][]): void;
   remove(): void;
 }
 
