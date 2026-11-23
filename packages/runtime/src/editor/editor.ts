@@ -6,6 +6,7 @@ import type { Widget } from '../controls.ts';
 import { paramSender } from '../layer-manager.ts';
 import type { Store } from '../store.ts';
 import { LAYER_ICONS, icon } from './icons.ts';
+import { Importer, targetFor } from './importer.ts';
 import { AT_REST, Wizard } from './wizard.ts';
 import './editor.css';
 
@@ -24,9 +25,6 @@ type Invoke = (command: string, args?: object) => Promise<unknown>;
 function shell(): Invoke | undefined {
   return (window as { __TAURI__?: { core?: { invoke?: Invoke } } }).__TAURI__?.core?.invoke;
 }
-
-/** Where in "Your place" each dataset a layer may need is brought in. */
-const PLACE_TARGETS: Record<string, string> = { buildings: 'buildings', terrain: 'terrain', trees: 'trees', roads: 'data:roads', walkways: 'walkways', trips: 'trips' };
 
 function button(className: string, label: string, iconName?: string, size = 16): HTMLButtonElement {
   const node = el('button', className);
@@ -72,6 +70,9 @@ export class Editor {
   private wizard: Wizard | null = null;
   /** The guide step to come back at after the next reload, when it is not the one on show. */
   private resumeStep: number | null = null;
+  /** While held, a change of site waits to reload the page; `true` once one came in. */
+  private held = false;
+  private reloadWaiting = false;
 
   constructor(root: HTMLElement, store: Store, connection: Connection) {
     this.store = store;
@@ -123,14 +124,29 @@ export class Editor {
     }
     if (resume !== undefined || created || this.instances().every((i) => isAmbient(i.manifest))) this.openWizard(created, resume);
     connection.on('site.changed', () => {
-      try {
-        const step = this.resumeStep ?? this.wizard?.step;
-        if (step !== undefined) sessionStorage.setItem('mrs-setup-step', String(step));
-      } catch {
-        // As above.
+      if (this.held) {
+        this.reloadWaiting = true;
+        return;
       }
-      location.reload();
+      this.reload();
     });
+  }
+
+  /** Two changes that must land as one (move the table, then bring in a file) hold back the reload in between. */
+  private hold(on: boolean): void {
+    this.held = on;
+    if (!on && this.reloadWaiting) this.reload();
+  }
+
+  /** Starts again with the site as it now is, coming back to the guide's step. */
+  private reload(): void {
+    try {
+      const step = this.resumeStep ?? this.wizard?.step;
+      if (step !== undefined) sessionStorage.setItem('mrs-setup-step', String(step));
+    } catch {
+      // As above.
+    }
+    location.reload();
   }
 
   // ---- The setup guide --------------------------------------------------------
@@ -147,6 +163,7 @@ export class Editor {
         present: () => this.presentButton.click(),
         close: () => this.closeWizard(),
         resumeAt: (step) => (this.resumeStep = step < 0 ? null : step),
+        hold: (on) => this.hold(on),
       },
       { created, step },
     );
@@ -164,6 +181,23 @@ export class Editor {
     guide.setAttribute('aria-pressed', String(open));
     guide.classList.toggle('is-pressed', open);
     guide.title = open ? 'Leave the guide and work in the full editor. The guide stays one click away.' : 'Walk through setting up this table, step by step';
+  }
+
+  /** The Add data dialog: the same importer as "Your place", with the kind of data left to the author. */
+  private addData(): void {
+    const dialog = el('dialog', 'im-dialog');
+    dialog.ariaLabel = 'Add data';
+    const head = el('header', 'im-dialog-head');
+    const close = el('button', 'ed-icon-button', '×');
+    close.type = 'button';
+    close.ariaLabel = 'Close';
+    close.addEventListener('click', () => dialog.close());
+    head.append(el('h2', undefined, 'Add data'), close);
+    const importer = new Importer({ site: () => this.store.state.site, hold: (on) => this.hold(on), cancel: () => dialog.close() });
+    dialog.append(head, el('p', 'wz-lead', 'Bring a file into the table, or fetch it from OpenStreetMap. It is copied into the table and stays on this computer.'), importer.element);
+    dialog.addEventListener('close', () => dialog.remove());
+    this.shell.append(dialog);
+    dialog.showModal();
   }
 
   /** Opens the guide at "Your place", at the row for `target`. */
@@ -440,15 +474,16 @@ export class Editor {
   /** A table that is not ready yet says what it still lacks, one thing at a time, and offers the step of the guide that gives it. */
   private renderNext(instances: { id: string; manifest: LayerManifest; state: LayerState }[]): void {
     const data = this.store.state.site.data ?? {};
-    let lack: { text: string; action: string; step: number } | null = null;
+    let lack: { text: string; action: string; step: number; target?: string } | null = null;
     if (!('buildings' in data)) lack = { text: 'This table has no buildings yet, so the map is empty.', action: 'Bring in your place', step: 1 };
     else if (!instances.some((i) => isAmbient(i.manifest))) lack = { text: 'The map shows nothing when no layer is open.', action: `Choose what shows ${AT_REST.toLowerCase()}`, step: 2 };
     else if (instances.every((i) => isAmbient(i.manifest))) lack = { text: 'There are no layers yet. Each layer becomes a button on the controller.', action: 'Choose layers', step: 3 };
+    else if (instances.some((i) => i.manifest.id === 'cars') && !('roads' in data)) lack = { text: 'Traffic has no streets to drive on, so it makes up a grid.', action: 'Bring in streets', step: 1, target: 'data:roads' };
     this.next.hidden = lack === null || this.wizard !== null;
     if (!lack) return;
     const go = button('ed-button is-primary', lack.action, 'route');
-    const { step } = lack;
-    go.addEventListener('click', () => this.openWizard(false, step));
+    const { step, target } = lack;
+    go.addEventListener('click', () => (target ? this.bringIn(target) : this.openWizard(false, step)));
     this.next.replaceChildren(el('strong', undefined, 'Next'), el('span', undefined, lack.text), go);
   }
 
@@ -476,7 +511,7 @@ export class Editor {
     tool.dataset.layer = manifest.id;
     const data = this.store.state.site.data ?? {};
     const missing = (manifest.requires?.data ?? []).filter((name) => !(name in data));
-    const source = missing[0] ? PLACE_TARGETS[missing[0]] : undefined;
+    const source = missing[0] ? targetFor(missing[0])?.target : undefined;
     tool.title = missing.length > 0 ? `${manifest.description ?? manifest.name}. This table has no ${missing.join(' or ')} data yet.${source ? ' Click to bring it in.' : ''}` : (manifest.description ?? manifest.name);
     tool.classList.toggle('is-needs', missing.length > 0);
     // A layer that needs data takes the author to the place to bring it in, rather than doing nothing.
@@ -538,8 +573,8 @@ export class Editor {
       return tool;
     };
     const data = button('ed-tool is-large', 'Add data', 'map', 20);
-    data.title = 'Bring in buildings, ground, trees, streets, walking paths or trips from a file';
-    data.addEventListener('click', () => this.openWizard(false, 1));
+    data.title = 'Bring in a file or OpenStreetMap data: buildings, ground, trees, streets, walking paths, trips or a dataset of your own';
+    data.addEventListener('click', () => this.addData());
     groups.push(this.group('Your place', data));
 
     const windows = this.group(
