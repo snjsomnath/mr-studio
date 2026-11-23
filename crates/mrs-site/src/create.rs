@@ -32,7 +32,7 @@ pub fn manifest(id: &str, name: &str, lon: f64, lat: f64, width_m: f64, height_m
         "scene": { "cell_m": 1 },
         "basemap": { "background": "#0b0e14", "style": null },
         // The table rests on its base map; sunlight is there to open, as a first layer to try.
-        "layers": [{ "use": "basemap", "active": true }, { "use": "sunlight", "active": false }],
+        "layers": [{ "use": "basemap", "id": "basemap", "active": true }, { "use": "sunlight", "id": "sunlight", "active": false }],
         "branding": { "title": "MR Studio" }
     })
 }

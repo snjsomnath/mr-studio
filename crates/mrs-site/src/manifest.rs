@@ -27,6 +27,53 @@ pub struct Table {
     pub height_cm: f64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tile_cm: Option<f64>,
+    /// What the projector's blank space around the model shows, per side (present.md, Ribbon).
+    #[serde(default, skip_serializing_if = "Ribbons::is_empty")]
+    pub ribbons: Ribbons,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Ribbons {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub top: Option<Ribbon>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bottom: Option<Ribbon>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub left: Option<Ribbon>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub right: Option<Ribbon>,
+}
+
+impl Ribbons {
+    pub fn is_empty(&self) -> bool {
+        *self == Self::default()
+    }
+
+    pub fn sides(&self) -> [(&'static str, Option<Ribbon>); 4] {
+        [("top", self.top), ("bottom", self.bottom), ("left", self.left), ("right", self.right)]
+    }
+}
+
+/// One side's ribbon: `"off"`, `"auto"` (use the free band when there is one) or a size.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum Ribbon {
+    Mode(RibbonMode),
+    Size(RibbonSize),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum RibbonMode {
+    Off,
+    Auto,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RibbonSize {
+    pub cm: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -144,11 +191,11 @@ pub struct Branding {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct LayerRef {
-    /// A core layer id, or a relative path to a site-only layer package.
+    /// What the instance runs: a core layer id, a relative path to a site-only layer package,
+    /// or `custom:<id>` for a custom layer saved in the site's `custom`.
     pub r#use: String,
-    /// Names this entry when the same layer is used more than once. Defaults to the layer's id.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub id: Option<String>,
+    /// Names this instance. Unique in the whole scene, items included; steps and the session refer to it.
+    pub id: String,
     /// Whether the layer starts active.
     #[serde(default)]
     pub active: bool,
@@ -160,10 +207,103 @@ pub struct LayerRef {
     /// Ids of the layer's controls that the controller and phones do not show. The editor still does.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub hide: Vec<String>,
+    /// Instances that belong to this layer: shown while it is open, gone when it closes.
+    /// Drawn on top of it, in this order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub items: Vec<LayerItem>,
+    /// How Next moves through the layer, and for a sequence (a slideshow) the steps themselves.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub steps: Option<Steps>,
+}
+
+/// An instance owned by a layer (public transport inside a sun study, a data visual on a
+/// slide). It has no button: it comes on and goes off with its layer.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LayerItem {
+    pub r#use: String,
+    pub id: String,
+    /// Whether it comes on when its layer opens.
+    #[serde(default = "yes", skip_serializing_if = "is_true")]
+    pub active: bool,
+    #[serde(default, skip_serializing_if = "Map::is_empty")]
+    pub params: Map<String, Value>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub hide: Vec<String>,
+}
+
+/// How Next moves through a layer (`docs/contracts/present.md`, Steps).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Steps {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mode: Option<StepMode>,
+    /// After the last step, back to the first.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub r#loop: Option<bool>,
+    /// What Next does when a step's sub-steps (category reveals, staged builds) are done.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reveal: Option<Reveal>,
+    /// The steps of a sequence: other instances shown one after another. Only for layers
+    /// whose layer.json says `"sequence": true`, such as the slideshow.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sequence: Vec<SequenceStep>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum StepMode {
+    Manual,
+    Timed,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Reveal {
+    /// Next stops at the last sub-step; moving on needs Shift+Next (the Chalmers demo).
+    Stop,
+    /// Next moves on to the next step after the last sub-step.
+    ThenNext,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Transition {
+    Cut,
+    Fade,
+}
+
+/// One step of a sequence. It shows another instance: a layer of the scene (which keeps its
+/// own button) or one of the sequence's own items (which exist only inside it).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SequenceStep {
+    /// The instance id this step shows.
+    pub layer: String,
+    /// Params the instance takes for this step only, such as another hour of the day.
+    #[serde(default, skip_serializing_if = "Map::is_empty")]
+    pub params: Map<String, Value>,
+    /// How long the step stays in timed mode.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub duration_s: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transition: Option<Transition>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transition_s: Option<f64>,
+    /// Overrides the sequence's `reveal` for this step.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub next: Option<Reveal>,
+    /// For the controller's info strip. The table never shows them.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
 }
 
 /// The button that opens a layer on the controller: the words and icon the site's
-/// author chose for it, and the side of the controller it sits on.
+/// author chose for it, and where on the controller it sits.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct LayerButton {
@@ -176,6 +316,12 @@ pub struct LayerButton {
     pub icon: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub side: Option<ButtonSide>,
+    /// The group of buttons it sits in on its rail, such as "Simulations".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub group: Option<String>,
+    /// Its place in the rail; lower first. Buttons without one follow the scene order.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub order: Option<f64>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -208,17 +354,144 @@ impl LayerButton {
         if self.icon.as_deref().is_some_and(|icon| !crate::is_instance_id(icon)) {
             return Some("a button icon is a name in lowercase letters, digits and dashes".into());
         }
+        if self.group.as_deref().is_some_and(|g| g.trim().is_empty()) || length(&self.group) > Self::MAX_NAME {
+            return Some(format!("a button group is a name of 1 to {} characters", Self::MAX_NAME));
+        }
+        if self.order.is_some_and(|o| !o.is_finite()) {
+            return Some("a button order is a number".into());
+        }
         None
     }
 }
 
-impl LayerRef {
-    /// The id this entry's state is keyed by, as far as the site file alone can tell:
-    /// the explicit `id`, or the last segment of `use`.
-    pub fn instance_hint(&self) -> &str {
-        self.id.as_deref().unwrap_or_else(|| self.r#use.trim_end_matches('/').rsplit('/').next().unwrap_or(&self.r#use))
+/// A custom layer: a recipe of blocks the layer editor saves (#38), run by the runtime
+/// without code of its own. data, then look, motion and interaction, in that order.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CustomLayer {
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon: Option<String>,
+    /// `base`, `ambient`, `analysis` (the default) or `media`, as in layer.json.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub category: Option<String>,
+    /// What it shows: datasets of the site, files in the site, or map services.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub data: Vec<RecipeData>,
+    /// How each dataset is drawn (2D only): points, lines, fills, rasters and their styles.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub look: Vec<RecipeBlock>,
+    /// What moves: reveals, pulses, particles, attractors, time.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub motion: Vec<RecipeBlock>,
+    /// What a visitor can do: tap, step, pointer.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub interaction: Vec<RecipeBlock>,
+    /// How the layer comes onto the table and leaves it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enter: Option<Transition>,
+    /// Controls, as in layer.json. A control's `bind` names the block prop it drives: `look.<block id>.<prop>`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub controls: Vec<Value>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub legend: Vec<LegendItem>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub attract: Option<Attract>,
+}
+
+/// One source of a custom layer. Exactly one of `dataset`, `path`, `wms` and `tiles`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RecipeData {
+    pub id: String,
+    /// A named dataset of the site (`data`, or the scene's buildings, trees and terrain).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dataset: Option<String>,
+    /// A file in the site folder: GeoJSON, GeoTIFF, CSV points, an image or a video.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wms: Option<Wms>,
+    /// An XYZ tile URL template with `{z}`, `{x}` and `{y}`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tiles: Option<String>,
+}
+
+impl RecipeData {
+    pub fn sources(&self) -> usize {
+        [self.dataset.is_some(), self.path.is_some(), self.wms.is_some(), self.tiles.is_some()].iter().filter(|s| **s).count()
     }
 }
+
+/// A WMS map. Sign-in, when the service needs it, comes from the app's Sources manager by
+/// `source`; nothing secret is in the site.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Wms {
+    pub url: String,
+    pub layers: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub styles: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub format: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
+}
+
+/// One block in a custom layer's recipe. The block names are the SDK's (docs/blocks.md).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RecipeBlock {
+    /// Names the block so controls and other blocks can refer to it.
+    pub id: String,
+    /// Which block: `points`, `lines`, `fill`, `raster`, `glow`, `pulse`, `particles`, `tap-info`…
+    pub block: String,
+    /// The data it draws or reads, by `data[].id`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub data: Option<String>,
+    /// For motion and interaction: the look block it acts on.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub on: Option<String>,
+    #[serde(default, skip_serializing_if = "Map::is_empty")]
+    pub props: Map<String, Value>,
+}
+
+/// One row of a layer's legend on the controller (present.md, Stage).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LegendItem {
+    pub id: String,
+    pub label: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shape: Option<String>,
+}
+
+/// The effect behind a layer on the controller's attract loop (present.md, Button).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Attract {
+    pub effect: String,
+}
+
+impl LayerRef {
+    /// The id this entry's state is keyed by.
+    pub fn instance_hint(&self) -> &str {
+        &self.id
+    }
+
+    /// The default id for an entry that uses `use`: the last segment of a path, or the custom layer's id.
+    pub fn default_id(r#use: &str) -> &str {
+        let name = r#use.strip_prefix(CUSTOM_PREFIX).unwrap_or(r#use);
+        name.trim_end_matches('/').rsplit('/').next().unwrap_or(name)
+    }
+}
+
+/// What `use` starts with for a custom layer saved in the site.
+pub const CUSTOM_PREFIX: &str = "custom:";
 
 /// Whether a string can be a layer instance id: lowercase letters, digits and dashes.
 pub fn is_instance_id(id: &str) -> bool {
@@ -245,6 +518,9 @@ pub struct SiteManifest {
     pub basemap: Basemap,
     #[serde(default)]
     pub layers: Vec<LayerRef>,
+    /// Custom layers saved in this site, by id. A scene uses one as `custom:<id>`.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub custom: BTreeMap<String, CustomLayer>,
     #[serde(default)]
     pub tv: Option<Value>,
     #[serde(default)]

@@ -25,7 +25,10 @@ pub struct Step {
 
 /// The steps from the first format to `FORMAT`, in order. A new format adds one
 /// `Step` here and a test with a document of the format before it.
-pub const STEPS: &[Step] = &[Step { from: 1, summary: "the base map is now a layer, drawn first", apply: basemap_becomes_a_layer }];
+pub const STEPS: &[Step] = &[
+    Step { from: 1, summary: "the base map is now a layer, drawn first", apply: basemap_becomes_a_layer },
+    Step { from: 2, summary: "every layer in the scene now has its own id", apply: every_layer_has_an_id },
+];
 
 /// Format 1 drew the ground, streets and building footprints by itself, under every
 /// layer. Format 2 draws only what `layers` lists, so the base map joins the list at
@@ -35,6 +38,33 @@ fn basemap_becomes_a_layer(site: &mut Map<String, Value>) -> Result<(), String> 
     let layers = layers.as_array_mut().ok_or("\"layers\" is not a list")?;
     if !layers.iter().any(|layer| layer["use"] == "basemap") {
         layers.insert(0, serde_json::json!({ "use": "basemap", "active": true }));
+    }
+    Ok(())
+}
+
+/// Format 3 lets a layer own items, a sequence refer to layers and a scene use custom
+/// layers, all by instance id. Format 2 left the id out when it was the layer's own, so the
+/// upgrade writes it into every entry: the id format 2 used, which is what the session's
+/// state and the editor already call it.
+fn every_layer_has_an_id(site: &mut Map<String, Value>) -> Result<(), String> {
+    let Some(layers) = site.get_mut("layers") else { return Ok(()) };
+    let layers = layers.as_array_mut().ok_or("\"layers\" is not a list")?;
+    for layer in layers {
+        let entry = layer.as_object_mut().ok_or("a layer entry is not an object")?;
+        if entry.get("id").is_some_and(|id| !id.is_null()) {
+            continue;
+        }
+        let used = entry.get("use").and_then(Value::as_str).ok_or("a layer entry has no \"use\"")?;
+        let id = crate::LayerRef::default_id(used).to_string();
+        // Keep "use" first and "id" second, so the file still reads well.
+        let rest: Vec<(String, Value)> = std::mem::take(entry).into_iter().collect();
+        for (key, value) in rest.iter().filter(|(key, _)| key == "use") {
+            entry.insert(key.clone(), value.clone());
+        }
+        entry.insert("id".into(), id.into());
+        for (key, value) in rest.into_iter().filter(|(key, _)| key != "use" && key != "id") {
+            entry.insert(key, value);
+        }
     }
     Ok(())
 }
@@ -159,18 +189,50 @@ mod tests {
     #[test]
     fn format_1_gains_the_base_map_layer() {
         let mut site = json!({ "format": 1, "layers": [{ "use": "sunlight", "active": true }] });
-        let done = upgrade(&mut site).unwrap().unwrap();
-        assert_eq!((done.from, done.to), (1, FORMAT));
-        assert_eq!(done.changes, ["the base map is now a layer, drawn first"]);
+        (STEPS[0].apply)(site.as_object_mut().unwrap()).unwrap();
         assert_eq!(site["layers"], json!([{ "use": "basemap", "active": true }, { "use": "sunlight", "active": true }]));
 
         // A site that already lists the base map keeps its place and settings, and one without layers gets the list.
         let mut placed = json!({ "format": 1, "layers": [{ "use": "sunlight" }, { "use": "basemap", "active": false }] });
-        upgrade(&mut placed).unwrap();
+        (STEPS[0].apply)(placed.as_object_mut().unwrap()).unwrap();
         assert_eq!(placed["layers"], json!([{ "use": "sunlight" }, { "use": "basemap", "active": false }]));
         let mut bare = json!({ "format": 1 });
-        upgrade(&mut bare).unwrap();
+        (STEPS[0].apply)(bare.as_object_mut().unwrap()).unwrap();
         assert_eq!(bare["layers"], json!([{ "use": "basemap", "active": true }]));
+    }
+
+    #[test]
+    fn format_2_names_every_layer() {
+        let mut site = json!({ "format": 2, "layers": [
+            { "use": "basemap", "active": true },
+            { "use": "cars", "id": "rush-hour", "params": { "density": 30 } },
+            { "use": "./layers/artwork/" }
+        ] });
+        (STEPS[1].apply)(site.as_object_mut().unwrap()).unwrap();
+        assert_eq!(
+            site["layers"],
+            json!([
+                { "use": "basemap", "id": "basemap", "active": true },
+                { "use": "cars", "id": "rush-hour", "params": { "density": 30 } },
+                { "use": "./layers/artwork/", "id": "artwork" }
+            ])
+        );
+        let text = serde_json::to_string(&site["layers"][0]).unwrap();
+        assert!(text.starts_with(r#"{"use":"basemap","id":"basemap""#), "use comes first, then id: {text}");
+        let mut bare = json!({ "format": 2 });
+        (STEPS[1].apply)(bare.as_object_mut().unwrap()).unwrap();
+        assert_eq!(bare, json!({ "format": 2 }));
+    }
+
+    #[test]
+    fn a_format_1_site_reaches_format_3() {
+        let mut site = json!({ "format": 1, "layers": [{ "use": "sunlight", "active": true }] });
+        let done = upgrade(&mut site).unwrap().unwrap();
+        assert_eq!((done.from, done.to, done.changes.len()), (1, 3, 2));
+        assert_eq!(
+            site["layers"],
+            json!([{ "use": "basemap", "id": "basemap", "active": true }, { "use": "sunlight", "id": "sunlight", "active": true }])
+        );
     }
 
     #[test]

@@ -490,7 +490,7 @@ async fn the_scene_is_composed_and_saved() {
     let event = table.event("state.layer").await;
     assert_eq!((&event["state"]["params"]["size"], &event["state"]["active"]), (&json!(3.0), &json!(false)));
     let trees = saved_layers(&site).into_iter().find(|l| l["use"] == "trees").unwrap();
-    assert_eq!(trees, json!({ "use": "trees", "active": false, "params": { "size": 3.0 } }));
+    assert_eq!(trees, json!({ "use": "trees", "id": "trees", "active": false, "params": { "size": 3.0 } }));
     let live_only = saved_layers(&site).into_iter().find(|l| l["id"] == "cars-2").unwrap();
     assert_eq!(live_only["params"], json!({ "density": 30.0 }), "layer.set is not written to site.json");
 
@@ -566,6 +566,137 @@ async fn the_scene_is_composed_and_saved() {
     let mut rewritten: Value = serde_json::from_str(&std::fs::read_to_string(site.join("site.json")).unwrap()).unwrap();
     rewritten["layers"] = original["layers"].clone();
     assert_eq!(rewritten, original);
+    let _ = std::fs::remove_dir_all(&site);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn layers_hold_items_and_sequences_show_layers() {
+    let site = scratch_site("items");
+    let host = host_for(site.clone()).await;
+    let mut editor = Surface::join(&host, "dev", None).await.unwrap();
+    let mut table = Surface::join(&host, "table", None).await.unwrap();
+    let saved = |id: &str| saved_layers(&site).into_iter().find(|l| l["id"] == id).unwrap();
+
+    // Public transport inside the sun study: an item, drawn right on top of its layer, off while it is closed.
+    let added = editor.request("scene.add", json!({ "use": "transit", "parent": "sunlight" })).await.unwrap();
+    assert_eq!(added["id"], "transit-2", "the map at rest keeps its own 'transit'");
+    let event = table.event("state.scene").await;
+    let scene: Vec<&str> = event["scene"].as_array().unwrap().iter().map(|v| v.as_str().unwrap()).collect();
+    let at = scene.iter().position(|id| *id == "sunlight").unwrap();
+    assert_eq!(scene[at + 1], "transit-2");
+    assert_eq!(event["layers"]["transit-2"]["parent"], "sunlight");
+    assert_eq!(event["layers"]["transit-2"]["active"], false, "the sun study is closed");
+    assert_eq!(saved("sunlight")["items"], json!([{ "use": "transit", "id": "transit-2" }]));
+    assert!(saved_layers(&site).iter().all(|l| l["id"] != "transit-2"), "an item is not a layer of the scene");
+
+    // Opening the layer brings its items; an item cannot open on its own; closing takes them away.
+    assert!(editor.request("layer.activate", json!({ "layer": "transit-2", "active": true })).await.is_err());
+    editor.request("layer.activate", json!({ "layer": "sunlight", "active": true })).await.unwrap();
+    assert_eq!(table.event("state.layer").await["layer"], "sunlight");
+    let item = table.event("state.layer").await;
+    assert_eq!((item["layer"].as_str().unwrap(), &item["state"]["active"]), ("transit-2", &json!(true)));
+    editor.request("layer.activate", json!({ "layer": "transit-2", "active": false })).await.unwrap();
+    assert_eq!(table.event("state.layer").await["state"]["active"], false);
+    editor.request("layer.activate", json!({ "layer": "sunlight", "active": false })).await.unwrap();
+    table.event("state.layer").await;
+    // An item set not to come on stays off when its layer opens.
+    editor.request("scene.set", json!({ "layer": "transit-2", "active": false })).await.unwrap();
+    assert_eq!(saved("sunlight")["items"][0]["active"], false);
+    editor.request("layer.activate", json!({ "layer": "sunlight", "active": true })).await.unwrap();
+    table.event("state.layer").await;
+    assert!(host.state.hub.welcome(0)["state"]["layers"]["transit-2"]["active"] == false);
+    // Items have no buttons and hold no items.
+    assert!(editor.request("scene.set", json!({ "layer": "transit-2", "button": { "name": "Buses" } })).await.is_err());
+    assert!(editor.request("scene.add", json!({ "use": "trees", "parent": "transit-2" })).await.is_err());
+    assert!(editor.request("scene.add", json!({ "use": "trees", "parent": "ghost" })).await.is_err());
+
+    // Moving: a layer of the scene into another as an item, and back out.
+    editor.request("scene.move", json!({ "layer": "cars", "parent": "sunlight", "index": 0 })).await.unwrap();
+    table.event("state.scene").await;
+    assert_eq!(
+        saved("sunlight")["items"].as_array().unwrap().iter().map(|i| i["id"].clone()).collect::<Vec<_>>(),
+        [json!("cars"), json!("transit-2")]
+    );
+    editor.request("scene.move", json!({ "layer": "cars", "parent": null, "index": 0 })).await.unwrap();
+    table.event("state.scene").await;
+    assert_eq!(saved_layers(&site)[0]["id"], "cars");
+    // A layer moves with its items.
+    editor.request("scene.move", json!({ "layer": "sunlight", "index": 0 })).await.unwrap();
+    let event = table.event("state.scene").await;
+    assert_eq!(event["scene"].as_array().unwrap()[0..2], [json!("sunlight"), json!("transit-2")]);
+    assert!(editor.request("scene.move", json!({ "layer": "sunlight", "parent": "trees", "index": 0 })).await.is_err(), "it has items");
+
+    // A sequence: the slideshow shows the sun study, then the trees at another size.
+    let steps = json!({ "mode": "manual", "loop": true, "sequence": [
+        { "layer": "sunlight", "params": { "hour": 9 }, "title": "Morning", "transition": "fade" },
+        { "layer": "trees", "params": { "size": 2 }, "duration_s": 8 }
+    ] });
+    editor.request("scene.set", json!({ "layer": "slideshow", "steps": steps })).await.unwrap();
+    let event = table.event("state.layer").await;
+    assert_eq!(event["state"]["steps"]["sequence"][0]["params"]["hour"], 9.0);
+    assert_eq!(saved("slideshow")["steps"]["sequence"][1], json!({ "layer": "trees", "params": { "size": 2.0 }, "duration_s": 8.0 }));
+    for bad in [
+        json!({ "sequence": [{ "layer": "ghost" }] }),
+        json!({ "sequence": [{ "layer": "slideshow" }] }),
+        json!({ "sequence": [{ "layer": "sunlight", "params": { "hour": "noon" } }] }),
+        json!({ "mode": "sometimes" }),
+    ] {
+        assert!(editor.request("scene.set", json!({ "layer": "slideshow", "steps": bad })).await.is_err(), "{bad} should be refused");
+    }
+    assert!(
+        editor.request("scene.set", json!({ "layer": "trees", "steps": { "sequence": [{ "layer": "sunlight" }] } })).await.is_err(),
+        "only a sequence layer shows other layers"
+    );
+    editor.request("scene.set", json!({ "layer": "trees", "steps": { "reveal": "then-next" } })).await.unwrap();
+    table.event("state.layer").await;
+    // Removing a layer drops the steps that showed it.
+    let removed = editor.request("scene.remove", json!({ "layer": "sunlight" })).await.unwrap();
+    assert_eq!(removed["dropped_steps"], 1);
+    let event = table.event("state.scene").await;
+    assert!(event["layers"].get("transit-2").is_none(), "its items go with it");
+    assert_eq!(saved("slideshow")["steps"]["sequence"].as_array().unwrap().len(), 1);
+
+    // Groups and order for the controller's rails.
+    editor.request("scene.set", json!({ "layer": "trees", "button": { "group": "Nature", "order": 2 } })).await.unwrap();
+    assert_eq!(table.event("state.layer").await["state"]["button"], json!({ "group": "Nature", "order": 2.0 }));
+    assert!(editor.request("scene.set", json!({ "layer": "trees", "button": { "order": "first" } })).await.is_err());
+    host.shutdown().await;
+
+    // What was saved starts the next session the same way.
+    let host = host_for(site.clone()).await;
+    let tv = Surface::join(&host, "tv", None).await.unwrap();
+    assert_eq!(tv.welcome["state"]["layers"]["slideshow"]["steps"]["mode"], "manual");
+    host.shutdown().await;
+    let _ = std::fs::remove_dir_all(&site);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_custom_layer_is_offered_and_used_like_any_layer() {
+    let site = scratch_site("custom");
+    let mut manifest: Value = serde_json::from_str(&std::fs::read_to_string(site.join("site.json")).unwrap()).unwrap();
+    manifest["custom"] = json!({ "heat-walk": {
+        "name": "Heat walk", "icon": "route",
+        "data": [{ "id": "paths", "dataset": "walkways" }],
+        "look": [{ "id": "lines", "block": "lines", "data": "paths", "props": { "width": 3 } }],
+        "controls": [{ "id": "width", "type": "range", "label": "Width", "min": 1, "max": 8, "step": 1, "default": 3, "bind": "look.lines.width" }]
+    } });
+    std::fs::write(site.join("site.json"), manifest.to_string()).unwrap();
+    let host = host_for(site.clone()).await;
+    let mut editor = Surface::join(&host, "dev", None).await.unwrap();
+    let offered = editor.welcome["manifests"].as_array().unwrap().iter().find(|m| m["id"] == "heat-walk").cloned().unwrap();
+    assert_eq!((offered["name"].as_str(), offered["category"].as_str()), (Some("Heat walk"), Some("analysis")));
+    assert_eq!(offered["custom"]["look"][0]["block"], "lines");
+    let added = editor.request("scene.add", json!({ "use": "custom:heat-walk", "params": { "width": 5 } })).await.unwrap();
+    assert_eq!(added["id"], "heat-walk");
+    assert_eq!(
+        saved_layers(&site).last().unwrap(),
+        &json!({ "use": "custom:heat-walk", "id": "heat-walk", "active": true, "params": { "width": 5.0 } })
+    );
+    assert!(
+        editor.request("scene.add", json!({ "use": "custom:heat-walk", "params": { "width": 50 } })).await.is_ok(),
+        "clamped like any control"
+    );
+    host.shutdown().await;
     let _ = std::fs::remove_dir_all(&site);
 }
 
