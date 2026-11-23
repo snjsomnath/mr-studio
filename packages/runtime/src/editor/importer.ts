@@ -401,6 +401,7 @@ export class Importer {
         const field = el('label', 'wz-field');
         field.append(el('span', undefined, 'Its name'), own, el('small', undefined, 'Layers ask for data by this name. Lowercase letters, digits and dashes.'));
         kind.append(field);
+        kind.append(el('p', 'im-about', 'GeoJSON, or a CSV with lat and lon columns. A CSV without positions, such as activity through the day or flows and links between places, is kept as a table that place motions join to places by name or id.'));
       }
       nodes.push(kind);
       if (item) nodes.push(el('p', 'im-about', item.about), el('pre', 'im-example', item.example));
