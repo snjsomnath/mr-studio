@@ -680,6 +680,11 @@ impl Hub {
                 if !scene[index].state.active {
                     return Err(format!("'{layer}' is off"));
                 }
+                // Every view of the table running the layer reports its sub-steps as it starts. The same
+                // sub-steps again (a projector and an editor, or a view joining late) keep the reveal where it is.
+                if scene[index].state.step.as_ref().is_some_and(|s| s.count == count && s.titles == titles) {
+                    return Ok(json!({}));
+                }
                 let timed = scene[index].saved.steps.as_ref().and_then(|s| s.mode) == Some(StepMode::Timed);
                 scene[index].state.step = (count > 0).then_some(StepState {
                     index: 0,
@@ -1538,6 +1543,9 @@ mod tests {
         );
         assert_eq!(layer(&hub, "slideshow")["step"]["sub"], json!({ "index": 0, "count": 2 }));
         dev("layer.step", json!({ "layer": "slideshow", "to": "next" })).unwrap();
+        assert_eq!(layer(&hub, "slide-trees")["step"]["index"], 1);
+        // A second view of the table starting the layer reports the same sub-steps: the reveal stays.
+        dev("layer.substeps", json!({ "layer": "slide-trees", "count": 2 })).unwrap();
         assert_eq!(layer(&hub, "slide-trees")["step"]["index"], 1);
         dev("layer.step", json!({ "layer": "slideshow", "to": "next" })).unwrap();
         assert_eq!(layer(&hub, "slideshow")["step"]["sub"], json!({ "index": 2, "count": 2 }));
