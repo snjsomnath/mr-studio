@@ -50,6 +50,20 @@ export interface SunLight extends LightBase {
   sky?: { color?: string; intensity?: number };
 }
 
+/** Shadows of the sun on the twin; see `ModelHandle.addSunShadows`. */
+export interface SunShadows {
+  /** Compass bearing of the sun, clockwise from north, degrees. */
+  azimuth: number;
+  /** Angle above the horizon, degrees. At or below 0 everything is in shade. */
+  altitude: number;
+  /** CSS colour of sunlit ground and roofs. */
+  light: string;
+  /** CSS colour of shade. */
+  shade: string;
+  /** 0 hides the shadows, 1 is solid. Default 1. */
+  opacity?: number;
+}
+
 export interface PointLight extends LightBase {
   type: 'point';
   position: ModelPoint;
@@ -97,6 +111,13 @@ export interface ModelHandle {
   addField(id: string, style: ModelFieldStyle & { colormap: Colormap }): FieldOverlay;
   /** Lights the twin. With any light on, unlit surfaces are dark, as on the physical model. */
   addLight<L extends ModelLight>(light: L): LightHandle<L>;
+  /**
+   * Sun shadows painted on the twin's ground and roofs, seen from above: what the sun reaches takes `light`, the rest
+   * `shade`. They come from a GPU shadow map of sharp casters (building footprints raised to their roofs, the ground,
+   * an imported model), so edges stay crisp at any table size, unlike a kernel field's cells. The twin is not lit, and
+   * the rest of the table keeps its own look. Null where there is no twin; draw a kernel field instead.
+   */
+  addSunShadows(shadows: SunShadows): { set(patch: Partial<SunShadows>): void; remove(): void } | null;
   /** Changes how the picked surfaces look. A later call wins where two overlap. */
   setMaterial(target: SurfaceQuery, material: SurfaceMaterial): void;
   /** Dims everything except the picked surfaces. `null` ends the focus. */

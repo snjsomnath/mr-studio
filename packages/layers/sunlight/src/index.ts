@@ -1,5 +1,5 @@
 import { defineLayer, formatHour, zonedTimeToUtc } from '@mrstudio/sdk';
-import type { FieldStream, LayerManifest, LightHandle, SunLight, TableContext } from '@mrstudio/sdk';
+import type { Colormap, FieldStream, LayerManifest, LightHandle, SunLight, SunShadows, TableContext } from '@mrstudio/sdk';
 
 import manifest from '../layer.json';
 import { skyColormap, skyLight, sunAt, sunDay, sunHoursColormap, thresholdColormap, treeHoursColormap, treeShadeColormap } from './look.ts';
@@ -52,7 +52,30 @@ export default defineLayer<Params>({
     });
     // Tree shade is drawn over the light in its own colour, on the twin's ground and roofs.
     const treeOverlay = ctx.model.addField('tree-shade', { colormap: treeShadeColormap, opacity: 0, soften: SOFTEN_CELLS, glide: GLIDE_SECONDS });
-    const treeOpacity = () => (ctx.params.trees && ctx.params.treeColor ? ctx.params.opacity : 0);
+    // Buildings and the ground cast sharp shadows on the twin from a shadow map (#133). The engine's shadow field,
+    // drawn from its cells, is the fallback when there is no twin, and still gives trees their soft shade.
+    let shadows: ReturnType<typeof ctx.model.addSunShadows> | undefined;
+    const sharp = () => ctx.params.mode === 'instant' && !ctx.params.relight;
+    function sunShadows(): SunShadows {
+      const sun = sunNow();
+      const [shade, , light] = skyColormap(sun.altitude).stops;
+      const css = (stop: Colormap['stops'][number]) => `rgb(${stop[1]} ${stop[2]} ${stop[3]})`;
+      return { azimuth: sun.azimuth, altitude: sun.altitude, light: css(light!), shade: css(shade!), opacity: (ctx.params.opacity * light![4]) / 255 };
+    }
+    function reshadow() {
+      if (!sharp()) {
+        shadows?.remove();
+        shadows = undefined;
+      } else if (shadows) shadows.set(sunShadows());
+      else if (shadows === undefined) shadows = ctx.model.addSunShadows(sunShadows());
+    }
+    // Without their own colour, trees shade in the same colour as buildings.
+    const treeColormap = (): Colormap => {
+      if (ctx.params.treeColor || !shadows) return treeShadeColormap;
+      const [shade] = skyColormap(sunNow().altitude).stops;
+      return { stops: [[0, shade![1], shade![2], shade![3], 0], [1, shade![1], shade![2], shade![3], shade![4]]] };
+    };
+    const treeOpacity = () => (ctx.params.trees && (ctx.params.treeColor || shadows) ? ctx.params.opacity : 0);
     const path = new SunPath(ctx.map.addElement(), ctx.site.extent.rotation_deg);
     let stream: FieldStream | null = null;
     let generation = 0;
@@ -91,12 +114,13 @@ export default defineLayer<Params>({
       const day = ctx.params.mode === 'day';
       const sun = sunNow();
       relight();
+      reshadow();
       overlay.setStyle({
         colormap: day ? hoursColormap(ctx.params.threshold, daylightHours) : skyColormap(sun.altitude),
         soften: day ? 1 : SOFTEN_CELLS,
-        opacity: relit() ? 0 : ctx.params.opacity,
+        opacity: relit() || shadows ? 0 : ctx.params.opacity,
       });
-      treeOverlay.setStyle({ colormap: day ? treeHoursColormap : treeShadeColormap, soften: day ? 1 : SOFTEN_CELLS, opacity: treeOpacity() });
+      treeOverlay.setStyle({ colormap: day ? treeHoursColormap : treeColormap(), soften: day ? 1 : SOFTEN_CELLS, opacity: treeOpacity() });
       path.setVisible(ctx.params.path);
       path.setSun(day ? { ...sun, altitude: -90 } : sun);
       // The TV's colour key shows the ramp the table is using right now.

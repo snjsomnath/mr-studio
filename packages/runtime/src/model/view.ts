@@ -13,6 +13,7 @@ import type {
   SiteInfo,
   SpotLight,
   SunLight,
+  SunShadows,
   SurfaceMaterial,
   SurfaceQuery,
   TwinMesh,
@@ -20,7 +21,9 @@ import type {
 import type { Map as MapLibreMap } from 'maplibre-gl';
 import * as THREE from 'three';
 
+import { cssColor } from './colour.ts';
 import { ModelFieldOverlay, premultipliedOver } from './field.ts';
+import { SunShadowPass, type Footprint } from './sun-shadows.ts';
 
 const DRAPE_VERTEX = /* glsl */ `
 attribute float kind;
@@ -73,6 +76,8 @@ void main() {
 interface BuildingInfo {
   id: string;
   properties: Record<string, unknown>;
+  /** Polygons in local metres, each its outer ring then holes. */
+  polygons: [number, number][][][];
 }
 
 interface LightEntry {
@@ -104,17 +109,10 @@ function tangentPlane(origin: { lon: number; lat: number }) {
   const perDegLat = (((A * (1 - E2)) / s ** 1.5) * Math.PI) / 180;
   return {
     toLonLat: (east: number, north: number): [number, number] => [origin.lon + east / perDegLon, origin.lat + north / perDegLat],
+    toLocal: (lon: number, lat: number): [number, number] => [(lon - origin.lon) * perDegLon, (lat - origin.lat) * perDegLat],
   };
 }
 
-const colourParser = document.createElement('canvas').getContext('2d')!;
-
-/** Any CSS colour as a three.js colour. The canvas normalises it to a form three.js reads. */
-function cssColor(value: string, into: THREE.Color): THREE.Color {
-  colourParser.fillStyle = '#ffffff';
-  colourParser.fillStyle = value;
-  return into.set(colourParser.fillStyle);
-}
 
 const asArray = <T>(value: T | T[] | undefined): T[] | undefined => (value === undefined ? undefined : Array.isArray(value) ? value : [value]);
 
@@ -147,6 +145,7 @@ export class ModelView {
   private materials: MaterialEntry[] = [];
   private focuses: FocusEntry[] = [];
   private buildings: BuildingInfo[] | null = null;
+  private readonly sunPasses = new Map<SunShadowPass, string>();
   private saved: ProjectorCalibration | null = null;
   /** `undefined` follows the saved calibration; anything else replaces it, as the calibration tool does while it works. */
   private override: ProjectorCalibration | null | undefined = undefined;
@@ -378,6 +377,7 @@ export class ModelView {
     this.drape.visible = this.draped && this.solo === null;
     for (const field of this.fields) field.setHidden(!shown(field.layer));
     for (const light of this.lights) for (const object of light.objects) object.visible = shown(light.layer);
+    for (const [pass, layer] of this.sunPasses) pass.setShown(shown(layer));
     this.focusMesh.visible = this.focuses.length > 0 && this.solo === null;
     this.container.classList.toggle('is-projector', this.calibrated);
     this.invalidate();
@@ -418,16 +418,34 @@ export class ModelView {
     if (!this.site.data.buildings) return;
     try {
       const response = await fetch(`/site/${this.site.data.buildings}`);
-      const collection = (await response.json()) as { features?: { id?: unknown; properties?: Record<string, unknown> | null }[] };
+      const collection = (await response.json()) as {
+        features?: { id?: unknown; properties?: Record<string, unknown> | null; geometry?: { type?: string; coordinates?: unknown } | null }[];
+      };
+      const plane = tangentPlane(this.site.origin);
+      const local = (ring: number[][]) => ring.map(([lon, lat]) => plane.toLocal(lon!, lat!));
+      const polygonsOf = (geometry: { type?: string; coordinates?: unknown } | null | undefined): [number, number][][][] => {
+        if (geometry?.type === 'Polygon') return [(geometry.coordinates as number[][][]).map(local)];
+        if (geometry?.type === 'MultiPolygon') return (geometry.coordinates as number[][][][]).map((polygon) => polygon.map(local));
+        return [];
+      };
       this.buildings = (collection.features ?? []).map((feature, index) => ({
         id: String(feature.id ?? feature.properties?.id ?? index),
         properties: feature.properties ?? {},
+        polygons: polygonsOf(feature.geometry),
       }));
       this.applyMaterials();
       this.applyFocus();
+      for (const pass of this.sunPasses.keys()) pass.setFootprints(this.footprints());
     } catch (error) {
       console.warn('building footprints could not be read; buildings are known by number only', error);
     }
+  }
+
+  /** The buildings' footprints, in the form sun shadows take them. */
+  private footprints(): Footprint[] {
+    // A ring repeats its first point at the end; casters do not need it twice.
+    const open = (ring: [number, number][]) => (ring.length > 1 && ring[0]![0] === ring.at(-1)![0] && ring[0]![1] === ring.at(-1)![1] ? ring.slice(0, -1) : ring);
+    return (this.buildings ?? []).flatMap((building, index) => building.polygons.map((rings) => ({ number: index + 1, rings: rings.map(open) })));
   }
 
   private buildingId(number: number): string | undefined {
@@ -669,6 +687,34 @@ export class ModelView {
           set: (patch) => {
             Object.assign(entry.spec, patch);
             entry.apply();
+            view.invalidate();
+          },
+          remove,
+        };
+      },
+      addSunShadows: (shadows: SunShadows) => {
+        const pass = new SunShadowPass(view.geometry, view.twin, view.centre, view.radius, view.renderer.capabilities.maxTextureSize, shadows);
+        if (view.buildings) pass.setFootprints(view.footprints());
+        view.sunPasses.set(pass, layer);
+        pass.setShown(view.solo === null || view.solo === layer);
+        // The passes cast for the twin, from the buildings' real outlines rather than its cells.
+        view.base.castShadow = false;
+        view.scene.add(...pass.objects);
+        view.invalidate();
+        let removed = false;
+        const remove = () => {
+          if (removed) return;
+          removed = true;
+          view.sunPasses.delete(pass);
+          view.scene.remove(...pass.objects);
+          pass.dispose();
+          view.base.castShadow = view.sunPasses.size === 0;
+          view.invalidate();
+        };
+        track(remove);
+        return {
+          set: (patch: Partial<SunShadows>) => {
+            pass.set(patch);
             view.invalidate();
           },
           remove,
