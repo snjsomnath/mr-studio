@@ -113,6 +113,9 @@ export interface Steps {
   loop?: boolean;
   /** What Next does once a step's sub-steps are done. */
   reveal?: 'stop' | 'then-next';
+  /** How a sequence goes from one step to the next, unless a step says otherwise (#43). Default a 0.7 s fade. */
+  transition?: 'cut' | 'fade' | 'dip';
+  transition_s?: number;
   sequence?: SequenceStep[];
 }
 
@@ -121,7 +124,8 @@ export interface SequenceStep {
   layer: string;
   params?: Params;
   duration_s?: number;
-  transition?: 'cut' | 'fade';
+  /** `fade` cross-fades; `dip` fades out to the empty map, then in. */
+  transition?: 'cut' | 'fade' | 'dip';
   transition_s?: number;
   next?: 'stop' | 'then-next';
   title?: string;

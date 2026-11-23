@@ -293,6 +293,12 @@ pub struct Steps {
     /// What Next does when a step's sub-steps (category reveals, staged builds) are done.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reveal: Option<Reveal>,
+    /// How a sequence goes from one step to the next, unless a step says otherwise (#43).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transition: Option<StepTransition>,
+    /// How long that transition takes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transition_s: Option<f64>,
     /// The steps of a sequence: other instances shown one after another. Only for layers
     /// whose layer.json says `"sequence": true`, such as the slideshow.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -322,6 +328,16 @@ pub enum Transition {
     Fade,
 }
 
+/// How a sequence goes from one step to the next (#43). `Fade` cross-fades the two layers;
+/// `Dip` fades the old one out to the empty map, then the new one in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum StepTransition {
+    Cut,
+    Fade,
+    Dip,
+}
+
 /// One step of a sequence. It shows another instance: a layer of the scene (which keeps its
 /// own button) or one of the sequence's own items (which exist only inside it).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -336,7 +352,7 @@ pub struct SequenceStep {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub duration_s: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub transition: Option<Transition>,
+    pub transition: Option<StepTransition>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub transition_s: Option<f64>,
     /// Overrides the sequence's `reveal` for this step.

@@ -436,6 +436,7 @@ fn router(state: Arc<AppState>, web_dir: Option<PathBuf>) -> Router {
         .route("/api/data/import", post(import_data))
         .route("/api/data/model", post(model::post))
         .route("/api/data/sounds", get(list_sounds).post(save_sound))
+        .route("/api/data/media", get(list_media).post(save_media))
         .route("/api/site/place", post(place_site))
         .route("/api/site/thumbnail", post(save_thumbnail))
         .route("/api/wms", get(wms_map))
@@ -764,6 +765,34 @@ async fn save_sound(
     }
     let dir = state.site.dir.clone();
     match tokio::task::spawn_blocking(move || mrs_site::sound::save(&dir, &query.name, &body)).await {
+        Ok(Ok(path)) => Json(json!({ "path": path })).into_response(),
+        Ok(Err(error)) => (StatusCode::UNPROCESSABLE_ENTITY, Json(json!({ "error": error }))).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e.to_string() }))).into_response(),
+    }
+}
+
+/// `GET /api/data/media`: the site's pictures and video (#197), as `{ media: ["data/media/x.png"] }`.
+async fn list_media(State(state): State<Arc<AppState>>) -> axum::response::Response {
+    let dir = state.site.dir.clone();
+    match tokio::task::spawn_blocking(move || mrs_site::media::list(&dir)).await {
+        Ok(media) => Json(json!({ "media": media })).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e.to_string() }))).into_response(),
+    }
+}
+
+/// `POST /api/data/media?name=Aerial.png`: keeps a picture or video under `data/media/` as it
+/// came, for a slideshow's picture and video steps. Answers `{ path }`.
+async fn save_media(
+    State(state): State<Arc<AppState>>,
+    ConnectInfo(from): ConnectInfo<SocketAddr>,
+    Query(query): Query<SoundQuery>,
+    body: Bytes,
+) -> axum::response::Response {
+    if !from.ip().is_loopback() {
+        return (StatusCode::FORBIDDEN, Json(json!({ "error": "pictures and video are added from this computer only" }))).into_response();
+    }
+    let dir = state.site.dir.clone();
+    match tokio::task::spawn_blocking(move || mrs_site::media::save(&dir, &query.name, &body)).await {
         Ok(Ok(path)) => Json(json!({ "path": path })).into_response(),
         Ok(Err(error)) => (StatusCode::UNPROCESSABLE_ENTITY, Json(json!({ "error": error }))).into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e.to_string() }))).into_response(),

@@ -1110,7 +1110,8 @@ impl Hub {
         if scene[index].parent.is_none() {
             for n in block(scene, index).skip(1) {
                 // A sequence's own items come on only as its steps show them.
-                let on = active && scene[n].saved.active && !sequence;
+                // The item the sequence has just shown as its first step stays on (#197).
+                let on = if sequence { active && scene[n].state.shown_by.as_deref() == Some(scene[index].id.as_str()) } else { active && scene[n].saved.active };
                 if scene[n].state.active != on {
                     scene[n].state.active = on;
                     self.emit_layer(&scene[n].id, &scene[n].state);
@@ -1504,6 +1505,19 @@ mod tests {
 
     fn layer(hub: &Hub, id: &str) -> Value {
         hub.welcome(0)["state"]["layers"][id].clone()
+    }
+
+    #[test]
+    fn a_sequence_that_opens_on_one_of_its_own_items_shows_it() {
+        let hub = scratch_hub("first-item");
+        let dev = |method: &str, p: Value| hub.request(Role::Dev, 0, method, &p);
+        dev("scene.add", json!({ "use": "trees", "parent": "slideshow", "id": "slide-trees" })).unwrap();
+        dev("scene.set", json!({ "layer": "slideshow", "steps": { "sequence": [{ "layer": "slide-trees" }, { "layer": "sunlight" }] } })).unwrap();
+        dev("layer.activate", json!({ "layer": "slideshow", "active": true })).unwrap();
+        let trees = layer(&hub, "slide-trees");
+        assert_eq!((trees["active"].clone(), trees["shown_by"].clone()), (json!(true), json!("slideshow")));
+        dev("layer.activate", json!({ "layer": "slideshow", "active": false })).unwrap();
+        assert_eq!(layer(&hub, "slide-trees")["active"], false);
     }
 
     #[test]

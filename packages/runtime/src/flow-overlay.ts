@@ -226,6 +226,19 @@ export class MapFlowOverlay implements FlowOverlay, CustomLayerInterface {
     this.corners = extent.corners;
   }
 
+  private gain = 1;
+
+  /** The style's opacity times the layer's intensity (which only fades it). */
+  private get alpha(): number {
+    return (this.style.opacity ?? 1) * this.gain;
+  }
+
+  /** The layer's intensity, set by the runtime from host state. Not part of the layer API. */
+  setGain(gain: number): void {
+    this.gain = Math.min(1, Math.max(0, gain));
+    this.map.triggerRepaint();
+  }
+
   set(u: FieldFrame, v: FieldFrame): void {
     this.target = FlowField.fromFrames(u, v);
     this.frameMax = Math.max(Math.abs(u.max), Math.abs(v.max)) || 1;
@@ -386,14 +399,14 @@ export class MapFlowOverlay implements FlowOverlay, CustomLayerInterface {
   private colour(speed: number, alpha: number): number {
     const k = Math.min(255, Math.max(0, Math.round((speed / (this.style.max ?? this.frameMax)) * 255))) * 4;
     const t = this.table;
-    return rgba(t[k]!, t[k + 1]!, t[k + 2]!, alpha * (t[k + 3]! / 255) * this.style.opacity);
+    return rgba(t[k]!, t[k + 1]!, t[k + 2]!, alpha * (t[k + 3]! / 255) * this.alpha);
   }
 
   /** Building faces in the wind glow warm, as three nested strokes for a soft halo. */
   private facadeGlow(glow: FacadeGlow, cellsPerPixel: number): void {
     const strips = this.strips;
     const { edges, intensity } = glow;
-    const opacity = this.style.opacity;
+    const opacity = this.alpha;
     LOOK.facade.forEach(([width, strength, [r, g, b]], pass) => {
       const soft = LOOK.facadeSoft[pass]!;
       const half = Math.max(0.5, width / 2 - soft);
@@ -426,7 +439,7 @@ export class MapFlowOverlay implements FlowOverlay, CustomLayerInterface {
   /** Streamlines coloured by speed, with a soft white light travelling along each. */
   private ribbons(field: FlowField, lines: Streamlines, cellsPerPixel: number): void {
     const strips = this.strips;
-    const opacity = this.style.opacity;
+    const opacity = this.alpha;
     const lightHalf = (light: number) => (LOOK.ribbonLight.width + LOOK.ribbonLight.grow * light) / 2;
     for (const line of lines.lines) {
       const points = line.points;
@@ -524,7 +537,7 @@ export class MapFlowOverlay implements FlowOverlay, CustomLayerInterface {
       strips.end(cellsPerPixel);
       if (tipX !== hx || tipY !== hy) {
         const tipHalf = (LOOK.particleTip.width + LOOK.particleTip.grow * visible) / 2;
-        strips.point(hx, hy, rgba(255, 255, 255, visible * this.style.opacity), tipHalf);
+        strips.point(hx, hy, rgba(255, 255, 255, visible * this.alpha), tipHalf);
         strips.point(tipX, tipY, rgba(255, 255, 255, 0), tipHalf);
         strips.end(cellsPerPixel);
       }

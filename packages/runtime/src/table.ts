@@ -33,7 +33,7 @@ export class TableView {
   private owned = new Map<string, string[]>();
   private calibrated: boolean;
   /** What each layer has drawn, so its intensity can be applied to all of it. */
-  private drawn = new Map<string, { overlays: Set<MapFieldOverlay>; elements: Set<HTMLElement>; canvases: Map<string, number>; intensity: number }>();
+  private drawn = new Map<string, { overlays: Set<{ setGain(gain: number): void }>; elements: Set<HTMLElement>; canvases: Map<string, number>; intensity: number }>();
 
   /** `calibrated` applies the site's table calibration, when it has one. */
   constructor(container: HTMLElement, site: SiteInfo, calibrated = false) {
@@ -150,21 +150,33 @@ export class TableView {
       },
       addCanvas: (id: string, style?: { opacity?: number }): CanvasOverlay => {
         const overlay = new MapCanvasOverlay(this.map, this.container, `canvas:${instance}:${id}`, this.site, style);
-        track(() => overlay.remove());
+        overlay.setGain(drawn.intensity);
+        drawn.overlays.add(overlay);
+        track(() => {
+          drawn.overlays.delete(overlay);
+          overlay.remove();
+        });
         return overlay;
       },
       addFlow: (id: string, style: FlowOverlayStyle & { colormap: Colormap }): FlowOverlay => {
         const overlay = new MapFlowOverlay(this.map, `flow:${instance}:${id}`, this.site, style);
         add(`flow:${instance}:${id}`, overlay);
+        overlay.setGain(drawn.intensity);
+        drawn.overlays.add(overlay);
         track(() => {
+          drawn.overlays.delete(overlay);
           overlay.remove();
           forget(`flow:${instance}:${id}`);
         });
         return overlay;
       },
       addShapes: (name: string, style?: { opacity?: number }): ShapeOverlay => {
-        const overlay = this.shapes(`shapes:${instance}:${name}`, style?.opacity ?? 1, add, forget);
-        track(() => overlay.remove());
+        const overlay = this.shapes(`shapes:${instance}:${name}`, style?.opacity ?? 1, add, forget, drawn.intensity);
+        drawn.overlays.add(overlay);
+        track(() => {
+          drawn.overlays.delete(overlay);
+          overlay.remove();
+        });
         return overlay;
       },
     };
@@ -176,7 +188,8 @@ export class TableView {
     opacity: number,
     add: (id: string, layer: maplibregl.AddLayerObject) => void,
     forget: (id: string) => void,
-  ): ShapeOverlay {
+    intensity: number,
+  ): ShapeOverlay & { setGain(gain: number): void } {
     const map = this.map;
     const colour = ['coalesce', ['get', 'colour'], '#ffffff'] as unknown as string;
     map.addSource(source, { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
@@ -197,7 +210,11 @@ export class TableView {
       filter: is('Point'),
       paint: { 'circle-color': colour, 'circle-radius': 9, 'circle-stroke-color': '#000000', 'circle-stroke-width': 2 },
     });
-    const setOpacity = (value: number) => {
+    let base = opacity;
+    let gain = Math.min(1, Math.max(0, intensity));
+    const setOpacity = (raw: number) => {
+      base = raw;
+      const value = raw * gain;
       map.setPaintProperty(`${source}:fill`, 'fill-opacity', 0.25 * value);
       map.setPaintProperty(`${source}:line`, 'line-opacity', value);
       map.setPaintProperty(`${source}:point`, 'circle-opacity', value);
@@ -214,6 +231,10 @@ export class TableView {
         });
       },
       setOpacity: (value: number) => !removed && setOpacity(value),
+      setGain: (value: number) => {
+        gain = Math.min(1, Math.max(0, value));
+        if (!removed) setOpacity(base);
+      },
       remove: () => {
         if (removed) return;
         removed = true;

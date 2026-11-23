@@ -125,11 +125,15 @@ A template in the New layer gallery (#59) is not a definition. Adding one writes
 | `layer` | The instance id it shows. Required |
 | `params` | Params the layer takes for this step only, checked against its controls, such as another hour of the day |
 | `duration_s` | How long the step stays in timed mode |
-| `transition`, `transition_s` | `"cut"` or `"fade"`, and how long the fade takes |
+| `transition`, `transition_s` | How the step comes in: `"cut"`, `"fade"` (a cross-fade) or `"dip"` (the old step fades out to the empty map, then this one fades in), and how many seconds that takes (0 to 10). Unset, the sequence's own `steps.transition` and `steps.transition_s` apply, and without those a 0.7 s fade |
 | `next` | This step's own `reveal` |
 | `title`, `description`, `source` | For the controller's info strip (up to 80, 300 and 200 characters). The table never shows them |
 
 Removing a layer from the scene also removes the steps that showed it.
+
+The step going out stays on the table until the step coming in has started (its data loaded), so a slow web map never leaves the table empty; then both run the transition together.
+
+**Pictures and video** (#197) are steps too: a `media` item whose `file` is a picture (PNG, JPEG, WebP, GIF) or a video (MP4, WebM) inside the site, usually under `data/media/` where the editor keeps the files it is given. It is laid over the whole table with `fit` (`stretch`, `contain`, `cover`), `rotation` (`"0"`, `"90"`, `"180"`, `"270"`) and `opacity`. A video plays from the start while its step is on show.
 
 ## Custom layers
 

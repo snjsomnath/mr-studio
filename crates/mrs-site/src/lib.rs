@@ -12,6 +12,7 @@ mod mesh;
 pub mod migrate;
 pub mod model;
 pub mod osm;
+pub mod media;
 pub mod sound;
 mod projection;
 mod twin;
@@ -310,6 +311,9 @@ impl Site {
                 out.push(format!("layer '{id}': {problem}"));
             }
             let Some(steps) = &layer.steps else { continue };
+            if steps.transition_s.is_some_and(|d| !(d.is_finite() && (0.0..=10.0).contains(&d))) {
+                out.push(format!("layer '{id}': steps.transition_s must be 0 to 10 seconds"));
+            }
             for (n, step) in steps.sequence.iter().enumerate() {
                 let at = format!("layer '{id}', step {}", n + 1);
                 let own = layer.items.iter().any(|i| i.id == step.layer);
@@ -323,8 +327,8 @@ impl Site {
                 if step.duration_s.is_some_and(|d| !(d.is_finite() && d > 0.0)) {
                     out.push(format!("{at}: duration_s must be a positive number of seconds"));
                 }
-                if step.transition_s.is_some_and(|d| !(d.is_finite() && d >= 0.0)) {
-                    out.push(format!("{at}: transition_s must be zero or more seconds"));
+                if step.transition_s.is_some_and(|d| !(d.is_finite() && (0.0..=10.0).contains(&d))) {
+                    out.push(format!("{at}: transition_s must be 0 to 10 seconds"));
                 }
                 let long = |text: &Option<String>, most: usize| text.as_deref().is_some_and(|t| t.chars().count() > most);
                 if long(&step.title, 80) || long(&step.description, 300) || long(&step.source, 200) {
@@ -701,7 +705,7 @@ mod tests {
             layer: layer.into(),
             params: Default::default(),
             duration_s: Some(8.0),
-            transition: Some(Transition::Fade),
+            transition: Some(StepTransition::Fade),
             transition_s: None,
             next: None,
             title: None,
