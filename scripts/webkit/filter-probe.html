@@ -1,0 +1,23 @@
+<!doctype html><meta charset="utf-8"><title>filter probe</title>
+<style>
+body{margin:0;background:#fff;font:14px sans-serif;display:grid;grid-template-columns:repeat(3,300px);gap:16px;padding:16px}
+.box{width:300px;height:200px} p{margin:4px 0}
+</style>
+<svg width="0" height="0" style="position:fixed">
+  <filter id="f" color-interpolation-filters="sRGB" x="0" y="0" width="100%" height="100%">
+    <feColorMatrix type="saturate" values="2.5"/>
+    <feComponentTransfer><feFuncR type="gamma" amplitude="1" exponent="0.5" offset="0"/><feFuncG type="gamma" amplitude="1" exponent="0.5" offset="0"/><feFuncB type="gamma" amplitude="1" exponent="0.5" offset="0"/></feComponentTransfer>
+  </filter>
+</svg>
+<div><p>A WebGL, no filter</p><div class="box" id="a"></div></div>
+<div><p>B WebGL, CSS saturate+contrast</p><div class="box" id="b" style="filter:saturate(2.5) contrast(1.5)"></div></div>
+<div><p>C WebGL, SVG url(#f)</p><div class="box" id="c" style="filter:url(#f)"></div></div>
+<div><p>D 2D canvas, SVG url(#f)</p><div class="box" id="d" style="filter:url(#f)"></div></div>
+<div><p>E div colours, SVG url(#f)</p><div class="box" id="e" style="filter:url(#f);background:linear-gradient(90deg,rgb(160,90,90),rgb(90,160,90),rgb(90,90,160))"></div></div>
+<div><p>F WebGL, CSS hue-rotate(90deg)</p><div class="box" id="g" style="filter:hue-rotate(90deg)"></div></div>
+<script>
+function gl(id){const c=document.createElement('canvas');c.width=300;c.height=200;c.style.cssText='width:300px;height:200px';document.getElementById(id).append(c);const g=c.getContext('webgl',{preserveDrawingBuffer:true});g.enable(g.SCISSOR_TEST);[[160,90,90],[90,160,90],[90,90,160]].forEach((col,i)=>{g.scissor(i*100,0,100,200);g.clearColor(col[0]/255,col[1]/255,col[2]/255,1);g.clear(g.COLOR_BUFFER_BIT)});}
+['a','b','c','g'].forEach(gl);
+const c=document.createElement('canvas');c.width=300;c.height=200;document.getElementById('d').append(c);const x=c.getContext('2d');[[160,90,90],[90,160,90],[90,90,160]].forEach((col,i)=>{x.fillStyle=`rgb(${col})`;x.fillRect(i*100,0,100,200)});
+document.title='DONE';
+</script>

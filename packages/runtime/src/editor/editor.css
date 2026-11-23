@@ -2127,6 +2127,147 @@ body[data-role='edit'] .ed-surface .table-frame {
   grid-template-columns: 128px 1fr 32px;
 }
 
+/* ---- The calibration guide (#181) ---- */
+
+.dt-guide {
+  position: fixed;
+  z-index: 50;
+  width: 404px;
+  max-height: calc(100vh - 200px);
+  overflow: auto;
+  padding: 16px;
+  border: 1px solid #dcdfe5;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 12px 32px rgba(27, 31, 39, 0.18);
+  font-family: -apple-system, 'Segoe UI Variable', 'Segoe UI', Inter, system-ui, sans-serif;
+  font-size: 13px;
+  line-height: 18px;
+  color: #1b1f27;
+}
+
+.dt-guide-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 14px;
+}
+
+.dt-guide-close {
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  font-size: 18px;
+  color: #565d6a;
+  cursor: pointer;
+}
+
+.dt-guide-close:hover {
+  background: #f2f3f6;
+}
+
+.dt-guide-lead {
+  margin: 6px 0 12px;
+  color: #565d6a;
+}
+
+.dt-steps {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: step;
+}
+
+.dt-step {
+  display: flex;
+  gap: 10px;
+  padding: 10px 0;
+  border-top: 1px solid #eceef2;
+  counter-increment: step;
+  color: #8a909c;
+}
+
+.dt-step.is-active,
+.dt-step.is-done {
+  color: #1b1f27;
+}
+
+.dt-step-mark {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: 1.5px solid currentColor;
+  border-radius: 50%;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.dt-step-mark:empty::before {
+  content: counter(step);
+}
+
+.dt-step.is-active .dt-step-mark {
+  border-color: #3557d4;
+  background: #3557d4;
+  color: #ffffff;
+}
+
+.dt-step.is-done .dt-step-mark {
+  border-color: #1f8f5a;
+  background: #1f8f5a;
+  color: #ffffff;
+}
+
+.dt-step-body p {
+  margin: 2px 0 0;
+  color: #565d6a;
+}
+
+.dt-step:not(.is-active):not(.is-done) .dt-step-body p {
+  color: #8a909c;
+}
+
+.dt-step-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.dt-guide-problem {
+  margin: 8px 0 0;
+  color: #b42318;
+}
+
+.dt-guide-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 8px;
+  padding-top: 10px;
+  border-top: 1px solid #eceef2;
+}
+
+.dt-guide-state {
+  color: #565d6a;
+}
+
+.dt-guide-state.is-ok {
+  color: #1f8f5a;
+  font-weight: 600;
+}
+
+/* The colour pass previewed on the editor's map (#181). */
+.dt-colour-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 1000;
+  pointer-events: none;
 /* The ribbon stays put (#182): a group's name never widens it, so changing the selection moves nothing. */
 .ed-group-name {
   width: 0;
