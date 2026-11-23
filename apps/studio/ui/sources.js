@@ -65,7 +65,6 @@
   }
 
   function pill(source) {
-    if (source.problem) return el('span', { className: 'pill bad', textContent: 'Keychain problem' });
     if (!source.ready) return el('span', { className: 'pill warn', textContent: 'Needs a key' });
     if (source.status?.ok === false) return el('span', { className: 'pill bad', textContent: 'Test failed' });
     if (source.status?.ok) return el('span', { className: 'pill good', textContent: 'Works' });
@@ -126,7 +125,7 @@
     form.append(fields);
 
     const result = el('p', { className: 'result', hidden: true });
-    const shown = fresh.get(source.id) ?? (source.problem ? { ok: false, message: source.problem } : null);
+    const shown = fresh.get(source.id);
     if (shown) Object.assign(result, { hidden: false, className: `result ${shown.ok ? 'good' : 'bad'}`, textContent: shown.message });
     form.append(result);
 
