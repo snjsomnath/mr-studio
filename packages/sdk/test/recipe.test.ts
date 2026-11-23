@@ -167,3 +167,14 @@ test('core layers read the table palette cheaply and see it change', async () =>
   site.palette = { set: 'ember', slots: { green: '#00ff88' } };
   assert.equal(tablePalette(site).slots.green, '#00ff88');
 });
+
+test('natural breaks put the class edges in the gaps of the data', async () => {
+  const { classBreaks, naturalBreaks } = await import('../src/index.ts');
+  assert.deepEqual(classBreaks([31, 1, 12, 2, 10, 3, 30, 11], 'natural', 3), [10, 30]);
+  assert.deepEqual(naturalBreaks([5, 5, 5], 3), [], 'one value cannot be split');
+  assert.deepEqual(naturalBreaks([1, 1, 9, 9], 4), [9], 'no more classes than distinct values');
+  // Large inputs are sampled, and still find the gap.
+  const many = [...Array.from({ length: 3000 }, (_, i) => i % 50), ...Array.from({ length: 3000 }, (_, i) => 1000 + (i % 50))].sort((a, b) => a - b);
+  const [edge] = naturalBreaks(many, 2);
+  assert.ok(edge! >= 1000 && edge! <= 1001, `edge at ${edge}`);
+});

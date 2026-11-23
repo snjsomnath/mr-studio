@@ -202,7 +202,9 @@ How common profiles turn into a design, with the 2.0 layer that shows it.
   `tv.theme`, so changing it recolours everything. The picker warns when a colour is too dark to project.
 - **C9** **Colour by data on import** (#94): categorical (a slot per value, "others" grouped) or numeric
   (sequential or diverging; equal, quantile, natural breaks or custom classes). It becomes the dataset's
-  default style and legend.
+  default style and legend. Built: Add data's "Show it on the table" step colours an own dataset by a
+  column with a live preview, legend and histogram (natural breaks by default, `naturalBreaks` in
+  recipe.ts), and makes it a custom layer. Custom stops and diverging ramps on import are still to come.
 
 ## 7. Motion
 

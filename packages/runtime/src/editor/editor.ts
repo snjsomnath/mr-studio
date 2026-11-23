@@ -5,7 +5,7 @@ import { defaultSideOf, el, isAmbient, isOffered, layerButton, widget } from '..
 import type { Widget } from '../controls.ts';
 import { paramSender } from '../layer-manager.ts';
 import type { Store } from '../store.ts';
-import { builderSection, newCustomLayer, paletteDialog } from './builder.ts';
+import { builderSection, layerFromImport, newCustomLayer, paletteDialog } from './builder.ts';
 import type { BuilderHost } from './builder.ts';
 import { LAYER_ICONS, icon } from './icons.ts';
 import { Importer, targetFor } from './importer.ts';
@@ -227,7 +227,16 @@ export class Editor {
     close.ariaLabel = 'Close';
     close.addEventListener('click', () => dialog.close());
     head.append(el('h2', undefined, 'Add data'), close);
-    const importer = new Importer({ site: () => this.store.state.site, hold: (on) => this.hold(on), cancel: () => dialog.close() });
+    const importer = new Importer({
+      site: () => this.store.state.site,
+      hold: (on) => this.hold(on),
+      cancel: () => dialog.close(),
+      // Coloured as it came in (#94): the data gets a layer of its own on the table.
+      showAs: async (layer) => {
+        await layerFromImport(this.builderHost(), layer);
+        dialog.close();
+      },
+    });
     dialog.append(head, el('p', 'wz-lead', 'Bring a file into the table, or fetch it from OpenStreetMap. It is copied into the table and stays on this computer.'), importer.element);
     dialog.addEventListener('close', () => dialog.remove());
     this.shell.append(dialog);

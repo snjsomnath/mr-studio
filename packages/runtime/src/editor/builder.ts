@@ -302,7 +302,7 @@ const PRESETS: Record<GeometryKind, { name: string; props: Record<string, unknow
 };
 
 /** An id for a new custom layer from its name, free in the catalogue. */
-function freeId(store: Store, name: string): string {
+export function freeId(store: Store, name: string): string {
   const base = (name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'custom').slice(0, 32);
   const taken = (id: string) => store.manifests.some((m) => m.id === id) || id in store.state.layers;
   for (let n = 1; ; n++) {
@@ -322,6 +322,18 @@ export function startingRecipe(name: string, dataset: string, kind: GeometryKind
     data: [{ id: 'data', dataset }],
     look: [{ id: 'look', block: kind, data: 'data', props: { ...LOOK_DEFAULTS[kind], ...preset.props } }],
   };
+}
+
+/**
+ * A layer for a dataset just brought in, coloured as the author chose in the import (#94):
+ * the starting recipe for its geometry with that paint, saved and put on the table.
+ */
+export async function layerFromImport(host: BuilderHost, layer: { dataset: string; kind: GeometryKind; paint: Paint }): Promise<void> {
+  const title = layer.dataset.replace(/[-_]+/g, ' ').replace(/^./, (c) => c.toUpperCase());
+  const id = freeId(host.store, title);
+  const recipe = startingRecipe(title, layer.dataset, layer.kind);
+  recipe.look![0]!.props = { ...recipe.look![0]!.props, color: layer.paint };
+  if (await host.send('custom.save', { id, recipe })) await host.addLayer(`custom:${id}`);
 }
 
 /**
@@ -694,7 +706,7 @@ export function builderSection(host: BuilderHost, manifest: LayerManifest, butto
           ramps.append(b);
         }
         rows.push(field('Ramp', ramps));
-        rows.push(field('Classes', segmented([['continuous', 'Smooth'], ['equal', 'Equal'], ['quantile', 'Quantile']] as const, by.classes ?? 'continuous', (v) => {
+        rows.push(field('Classes', segmented([['continuous', 'Smooth'], ['equal', 'Equal'], ['quantile', 'Quantile'], ['natural', 'Natural']] as const, by.classes ?? 'continuous', (v) => {
           by.classes = v;
           onChange(by);
           draw();

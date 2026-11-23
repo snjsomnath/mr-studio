@@ -35,8 +35,8 @@ export interface PaintBy {
   colors?: Record<string, string>;
   /** For numbers: the ramp's name in the palette. Default `sun`. */
   ramp?: string;
-  /** For numbers: a smooth ramp, or classes of equal width or equal count. Default `continuous`. */
-  classes?: 'continuous' | 'equal' | 'quantile';
+  /** For numbers: a smooth ramp, or classes of equal width, equal count, or natural breaks (Jenks). Default `continuous`. */
+  classes?: 'continuous' | 'equal' | 'quantile' | 'natural';
   /** How many classes, 2 to 7. Default 5. */
   count?: number;
 }
@@ -215,16 +215,76 @@ export function profileColumns(rows: readonly Props[]): { name: string; kind: 'n
 }
 
 /** Class breaks for numbers: the upper bound of each class but the last. */
-export function classBreaks(values: readonly number[], classes: 'equal' | 'quantile', count: number): number[] {
+export function classBreaks(values: readonly number[], classes: 'equal' | 'quantile' | 'natural', count: number): number[] {
   const n = Math.max(2, Math.min(7, Math.round(count)));
   if (values.length === 0) return [];
   const sorted = [...values].sort((a, b) => a - b);
+  if (classes === 'natural') return naturalBreaks(sorted, n);
   const lo = sorted[0]!;
   const hi = sorted[sorted.length - 1]!;
   const breaks: number[] = [];
   for (let i = 1; i < n; i++) {
     if (classes === 'equal') breaks.push(lo + ((hi - lo) * i) / n);
     else breaks.push(sorted[Math.min(sorted.length - 1, Math.floor((sorted.length * i) / n))]!);
+  }
+  return breaks;
+}
+
+/** Values at most this many go into natural breaks; more are sampled evenly, so it stays fast. */
+const NATURAL_SAMPLE = 1000;
+
+/**
+ * Natural breaks (Fisher-Jenks): the class boundaries that keep each class as tight as it can
+ * be, so gaps in the data become edges between colours. `sorted` is ascending. Returns
+ * `n - 1` breaks, each the lowest value of the class above it.
+ */
+export function naturalBreaks(sorted: readonly number[], n: number): number[] {
+  let data = sorted;
+  if (data.length > NATURAL_SAMPLE) {
+    const step = (data.length - 1) / (NATURAL_SAMPLE - 1);
+    data = Array.from({ length: NATURAL_SAMPLE }, (_, i) => sorted[Math.round(i * step)]!);
+  }
+  const m = data.length;
+  const k = Math.min(n, new Set(data).size);
+  if (k < 2) return [];
+  // Prefix sums give any run's squared deviation in constant time.
+  const sum = new Float64Array(m + 1);
+  const sq = new Float64Array(m + 1);
+  for (let i = 0; i < m; i++) {
+    sum[i + 1] = sum[i]! + data[i]!;
+    sq[i + 1] = sq[i]! + data[i]! * data[i]!;
+  }
+  const cost = (from: number, to: number) => {
+    // Values from..to-1.
+    const count = to - from;
+    const s = sum[to]! - sum[from]!;
+    return sq[to]! - sq[from]! - (s * s) / count;
+  };
+  // best[c][i]: least cost of the first i values in c classes; start[c][i]: where the last class begins.
+  let best = new Float64Array(m + 1).fill(Infinity);
+  for (let i = 1; i <= m; i++) best[i] = cost(0, i);
+  const starts: Int32Array[] = [];
+  for (let c = 2; c <= k; c++) {
+    const next = new Float64Array(m + 1).fill(Infinity);
+    const start = new Int32Array(m + 1);
+    for (let i = c; i <= m; i++) {
+      for (let j = c - 1; j < i; j++) {
+        const total = best[j]! + cost(j, i);
+        if (total < next[i]!) {
+          next[i] = total;
+          start[i] = j;
+        }
+      }
+    }
+    starts.push(start);
+    best = next;
+  }
+  const breaks: number[] = [];
+  let end = m;
+  for (let c = k; c >= 2; c--) {
+    const j = starts[c - 2]![end]!;
+    breaks.unshift(data[j]!);
+    end = j;
   }
   return breaks;
 }
@@ -288,7 +348,8 @@ export function paintScale(paint: Paint | undefined, rows: readonly Props[], pal
       while (i < breaks.length && n > breaks[i]!) i++;
       return colours[i]!;
     },
-    legend: colours.map((c, i) => ({ label: `${format(bounds[i]!)} – ${format(bounds[i + 1]!)}`, color: hexOf(c) })),
+    // A class of one value (natural breaks can isolate an outlier) is labelled by that value alone.
+    legend: colours.map((c, i) => ({ label: format(bounds[i]!) === format(bounds[i + 1]!) ? format(bounds[i]!) : `${format(bounds[i]!)} – ${format(bounds[i + 1]!)}`, color: hexOf(c) })),
   };
 }
 
