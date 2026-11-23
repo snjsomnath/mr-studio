@@ -64,6 +64,8 @@ The editor window is the only remote page with access to the shell, and only to 
 | `open_site { path, welcome? }` | Runs that table and shows it in the editor window, at `/edit`, or `/edit?welcome=1` when `welcome` is true |
 | `open_home` | Opens the launcher |
 | `quit` | Quits the app |
+| `colour_state`, `set_colour { display, colour }`, `save_preset { name, colour }`, `delete_preset { name }`, `test_card { display, on }`, `set_layer_intensity { layer, intensity }` | The colour pass of each display and how strongly each layer is drawn, the same commands as the Colour tab of Displays and settings. Used by the editor's Display ribbon tab (#151) |
+| `calibration_state`, `calibration_mode { active }`, `calibration_clear` | Whether a window shows the table, and opening or closing the calibration tool there (#153) |
 
 The shell adds a small bar to the editor window with Present, Stop presenting and "Sites and displays". When the page has an element with `data-shell-present` (its own Present button) the bar leaves Present to the page and shows Stop only while presenting. A page that sets `window.mrsShellControls = true` before it finishes loading gets no bar. The editor at `/edit` does this: its title bar has Present, which becomes Stop presenting, and Home. The page must work without `window.__TAURI__` too, for an editor opened in a browser.
 
