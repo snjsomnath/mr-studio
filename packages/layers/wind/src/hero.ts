@@ -73,7 +73,13 @@ export function windHero(ctx: PanelContext<Params>, el: HTMLElement): PanelHandl
 
   /** What the finger holds while dragging, so the dial and the air follow at once. */
   let held: Partial<Params> = {};
-  const now = (): Params => ({ speed: held.speed ?? ctx.params.speed, direction: held.direction ?? ctx.params.direction });
+  /** What the keys last set, until the layer's params catch up, so quick presses add up. */
+  let keyed: Partial<Params> = {};
+  const now = (): Params => {
+    if (keyed.speed === ctx.params.speed) delete keyed.speed;
+    if (keyed.direction === ctx.params.direction) delete keyed.direction;
+    return { speed: held.speed ?? keyed.speed ?? ctx.params.speed, direction: held.direction ?? keyed.direction ?? ctx.params.direction };
+  };
   const rotation = () => ctx.site.extent.rotation_deg ?? 0;
   const rem = () => parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
   const size = () => ({ w: root.clientWidth, h: root.clientHeight, rem: rem() });
@@ -240,8 +246,12 @@ export function windHero(ctx: PanelContext<Params>, el: HTMLElement): PanelHandl
     if (small === undefined && large === undefined) return;
     event.preventDefault();
     event.stopPropagation();
-    if (onBand) ctx.setParams({ speed: Math.min(MAX, Math.max(MIN, ctx.params.speed + (small ?? 0) * 0.5 + (large ?? 0) * 5)) });
-    else ctx.setParams({ direction: (((ctx.params.direction + (small ?? 0) * 5 + (large ?? 0) * 45) % 360) + 360) % 360 });
+    const { speed, direction } = now();
+    if (onBand) keyed.speed = Math.min(MAX, Math.max(MIN, speed + (small ?? 0) * 0.5 + (large ?? 0) * 5));
+    else keyed.direction = (((direction + (small ?? 0) * 5 + (large ?? 0) * 45) % 360) + 360) % 360;
+    ctx.setParams({ ...keyed });
+    draw();
+    if (onDial) art.querySelector<SVGGElement>('.wind-hero-dial')?.focus();
   });
 
   const resize = new ResizeObserver(() => draw());
