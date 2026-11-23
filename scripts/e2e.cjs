@@ -71,8 +71,12 @@ async function main() {
     }
     const code = /session code (\d+)/.exec(log)[1];
     const errors = [];
+    // Base map tiles come from the internet, which a test does not reach: every tile is a plain light square.
+    const tile = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAQAAAAEACAIAAADTED8xAAAB/0lEQVR42u3TsQkAAAgEsd9/XMXe2hkMZIKDS/XAW5EAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwAAYQAUMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA2AAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAOogAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAADAAGAAOAAcAAYAAwABgADAAGAAOAAcAAYAAwABgADAAGAAOAAcAAYAAwABgADAAGAAOAAcAAYAAwABgADAAGAAOAAcAAYAAwABgADAAGAAOAAcAAYAAwABgArgUn3irHh0b72wAAAABJRU5ErkJggg==', 'base64');
+    const mockTiles = (page) => page.route(/basemaps\.cartocdn\.com|tile\.openstreetmap\.org/, (route) => route.fulfill({ contentType: 'image/png', body: tile }));
     const open = async (url, viewport) => {
       const page = await browser.newPage({ viewport });
+      await mockTiles(page);
       page.on('pageerror', (e) => errors.push(`${url}: ${e.message}`));
       page.on('console', (m) => m.type() === 'error' && errors.push(`${url}: ${m.text()}`));
       await page.goto(base + url);
@@ -636,6 +640,7 @@ async function main() {
 
     // The wizard's first step is a page of its own, for a table that does not exist yet. The app creates the table.
     const fresh = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+    await mockTiles(fresh);
     await fresh.addInitScript(() => {
       window.shellCalls = [];
       window.__TAURI__ = { core: { invoke: async (command, args) => (window.shellCalls.push([command, args]), '/sites/harbour') } };
@@ -645,10 +650,38 @@ async function main() {
     await fresh.getByRole('button', { name: 'Create the table' }).click();
     await fresh.getByRole('alert').getByText(/Paste the coordinates/).waitFor();
     await fresh.getByLabel('Centre of the table').fill('https://www.openstreetmap.org/#map=16/57.7069/11.9386');
+    // The table shows on the map; dragging its round handle turns it, and the fields follow.
+    await fresh.locator('.pm-handle.is-turn').waitFor();
+    const turnHandle = await fresh.locator('.pm-handle.is-turn').boundingBox();
+    const middle = await fresh.locator('.pm-handle.is-centre').boundingBox();
+    const cx = middle.x + middle.width / 2;
+    const cy = middle.y + middle.height / 2;
+    const reach = cy - (turnHandle.y + turnHandle.height / 2);
+    await fresh.mouse.move(turnHandle.x + turnHandle.width / 2, turnHandle.y + turnHandle.height / 2);
+    await fresh.mouse.down();
+    await fresh.mouse.move(cx + reach, cy, { steps: 8 });
+    await fresh.mouse.up();
+    // A quarter turn: the drag ended close to a right angle, which the handle snaps to.
+    assert.equal(await fresh.getByLabel('Turned').inputValue(), '90');
+    // Dragging the corner in covers less ground, keeping the table's shape. The map has reframed the turned table.
+    await fresh.waitForTimeout(200);
+    const after = await fresh.locator('.pm-handle.is-centre').boundingBox();
+    const [mx, my] = [after.x + after.width / 2, after.y + after.height / 2];
+    const cornerHandle = await fresh.locator('.pm-handle.is-corner').boundingBox();
+    await fresh.mouse.move(cornerHandle.x + cornerHandle.width / 2, cornerHandle.y + cornerHandle.height / 2);
+    await fresh.mouse.down();
+    await fresh.mouse.move(mx + (cornerHandle.x + cornerHandle.width / 2 - mx) * 0.7, my + (cornerHandle.y + cornerHandle.height / 2 - my) * 0.7, { steps: 8 });
+    await fresh.mouse.up();
+    const [grownWidth, grownHeight] = [Number(await fresh.getByLabel('Width, metres').inputValue()), Number(await fresh.getByLabel('Height, metres').inputValue())];
+    assert.ok(grownWidth > 600 && grownWidth < 800, `the corner takes the table to 70% of its width, got ${grownWidth}`);
+    assert.ok(Math.abs(grownWidth / grownHeight - 1000 / 600) < 0.05, 'the shape is kept');
+    if (shots) await fresh.screenshot({ path: path.join(shots, 'new-table-map.png') });
+    await fresh.getByLabel('Width, metres').fill('1000');
+    await fresh.getByLabel('Height, metres').fill('600');
     await fresh.getByRole('button', { name: 'Create the table' }).click();
     await fresh.waitForFunction(() => window.shellCalls.length === 2);
     assert.deepEqual(await fresh.evaluate(() => window.shellCalls), [
-      ['create_site', { site: { name: 'Harbour', lat: 57.7069, lon: 11.9386, width_m: 1000, height_m: 600 } }],
+      ['create_site', { site: { name: 'Harbour', lat: 57.7069, lon: 11.9386, width_m: 1000, height_m: 600, rotation_deg: 90 } }],
       ['open_site', { path: '/sites/harbour', welcome: true }],
     ]);
     await fresh.close();

@@ -3,6 +3,8 @@ import { defaultSideOf, el, isAmbient, isOffered, layerButton } from '../control
 import type { Store } from '../store.ts';
 import { icon } from './icons.ts';
 import { Importer, TARGETS, targetFor } from './importer.ts';
+import { PlaceMap } from './place-map.ts';
+import type { Placement } from './place-map.ts';
 import { parsePlace } from './place.ts';
 
 /** What the wizard needs from the editor around it. */
@@ -33,6 +35,9 @@ const PLACE = 1;
 const REST = 2;
 const LAYERS = 3;
 const BUTTONS = 4;
+
+/** Degrees as a bearing from 0 up to 360, so -93 and 267 are the same turn. */
+const turn = (degrees: number) => ((degrees % 360) + 360) % 360;
 
 /** How a dataset a layer needs is named to an author. */
 function dataName(dataset: string): string {
@@ -75,6 +80,8 @@ export class Wizard {
   private wanted: string | null = null;
   /** The "Name and place" form as the author left it, kept across redraws. */
   private where: { name: string; centre: string; width: string; height: string; rotation: string } | null = null;
+  /** The map in "Name and place", made once: it keeps its view across redraws. */
+  private placeMap: PlaceMap | null = null;
   private moving = false;
   private problem = '';
 
@@ -334,7 +341,7 @@ export class Wizard {
       Math.abs(at.lon - site.origin.lon) > 1e-6 ||
       Number(this.where.width) !== Math.round(site.extent.width_m) ||
       Number(this.where.height) !== Math.round(site.extent.height_m) ||
-      Number(this.where.rotation) !== Math.round(site.extent.rotation_deg ?? 0)
+      turn(Number(this.where.rotation)) !== turn(Math.round(site.extent.rotation_deg ?? 0))
     );
   }
 
@@ -351,12 +358,12 @@ export class Wizard {
     const input = (key: keyof typeof values, attributes: object) => {
       const node = el('input');
       Object.assign(node, attributes, { value: values[key] });
+      node.name = key;
       node.addEventListener('input', () => {
         this.where = { ...this.placeValues(), [key]: node.value };
         this.problem = '';
-        // Only the footer's words change while typing, so the field keeps its focus.
-        const next = this.element.querySelector<HTMLButtonElement>('.wz-foot .is-primary');
-        if (next) next.textContent = this.placeChanged() ? 'Move the table' : 'Next';
+        this.placeMap?.set(this.placement());
+        this.nextWords();
       });
       return node;
     };
@@ -371,6 +378,27 @@ export class Wizard {
       size,
       field('Turned', input('rotation', { type: 'number', min: '-180', max: '360', step: '1' }), 'Degrees clockwise from north for the top edge of the table. 0 puts north at the top.'),
     );
+    // The table on a map: click or drag to move it, drag the corner to scale it, the top handle to turn it.
+    if (!this.placeMap) {
+      const buildings = this.host.store.state.site.data?.buildings;
+      this.placeMap = new PlaceMap(this.placement(), (place) => {
+        const values = this.placeValues();
+        this.where = {
+          ...values,
+          centre: `${place.lat.toFixed(5)}, ${place.lon.toFixed(5)}`,
+          width: String(place.width_m),
+          height: String(place.height_m),
+          rotation: String(place.rotation_deg),
+        };
+        for (const key of ['centre', 'width', 'height', 'rotation'] as const) {
+          const field = this.element.querySelector<HTMLInputElement>(`.wz-form input[name="${key}"]`);
+          if (field) field.value = this.where[key];
+        }
+        this.problem = '';
+        this.nextWords();
+      }, { data: buildings ? `/site/${buildings}` : undefined });
+    }
+    form.append(this.placeMap.element, el('p', 'wz-hint', 'Click the map or drag the middle to move the table, drag its corner to cover more or less ground, and the round handle to turn it.'));
     if (this.moving) form.append(el('p', 'wz-hint', 'Moving the table and rebuilding what it shows…'));
     if (this.problem) {
       const problem = el('p', 'wz-problem', this.problem);
@@ -378,6 +406,21 @@ export class Wizard {
       form.append(problem);
     }
     return form;
+  }
+
+  /** The placement the form describes, or null while the centre cannot be read. */
+  private placement(): Placement | null {
+    const values = this.placeValues();
+    const at = parsePlace(values.centre);
+    const [width_m, height_m, rotation_deg] = [Number(values.width), Number(values.height), Number(values.rotation)];
+    if (!at || !(width_m > 0 && height_m > 0) || !Number.isFinite(rotation_deg)) return null;
+    return { ...at, width_m, height_m, rotation_deg: ((rotation_deg % 360) + 360) % 360 };
+  }
+
+  /** Only the footer's words change while the place is edited, so a field keeps its focus. */
+  private nextWords(): void {
+    const next = this.element.querySelector<HTMLButtonElement>('.wz-foot .is-primary');
+    if (next) next.textContent = this.placeChanged() ? 'Move the table' : 'Next';
   }
 
   /** Writes the new name and place, then carries on at `next` once every surface has reloaded. */
