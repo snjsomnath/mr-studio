@@ -36,6 +36,7 @@
     "allow-open-link",
     "allow-open-settings",
     "allow-new-table",
-    "allow-table-details"
+    "allow-table-details",
+    "allow-open-sources"
   ]
 }

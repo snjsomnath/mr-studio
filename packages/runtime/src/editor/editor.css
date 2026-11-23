@@ -638,7 +638,8 @@ body[data-role='edit'] .table-surface {
 }
 
 .ed input[type='date'],
-.ed input[type='text'] {
+.ed input[type='text'],
+.ed select.control-source {
   height: 24px;
   padding: 0 8px;
   border-radius: 4px;

@@ -1,9 +1,12 @@
 //! `GET /api/wms`: one WMS map image for the table, fetched by the host. Surfaces cannot
 //! fetch most WMS services themselves (no CORS headers), and a picture from another origin
-//! cannot be drawn on the table. Services that need a sign-in come with #41/#42.
+//! cannot be drawn on the table. A service that needs a sign-in names a source from the
+//! Sources manager (`source=<id>`, #41/#42): the host adds its key, and the table never sees it.
 
 use axum::http::{header, StatusCode};
 use axum::response::{IntoResponse, Response};
+
+use crate::sources::Sources;
 
 /// The largest image the table asks for, per side.
 const MAX_SIDE: u32 = 4096;
@@ -11,7 +14,12 @@ const MAX_SIDE: u32 = 4096;
 #[derive(Debug, serde::Deserialize)]
 pub struct WmsQuery {
     /// The service address, such as `https://ows.example.org/wms`. Its own query is kept.
+    /// With a `source`, empty means the source's own address.
+    #[serde(default)]
     pub url: String,
+    /// A connection in the Sources manager whose key or login signs the request.
+    #[serde(default)]
+    pub source: Option<String>,
     pub layers: String,
     #[serde(default)]
     pub styles: Option<String>,
@@ -29,9 +37,16 @@ pub fn get_map_url(q: &WmsQuery) -> Result<reqwest::Url, String> {
     if !matches!(url.scheme(), "http" | "https") {
         return Err("the WMS address must start with http:// or https://".into());
     }
-    let numbers: Vec<f64> = q.bbox.split(',').map(|v| v.trim().parse::<f64>()).collect::<Result<_, _>>().map_err(|_| "bbox must be four numbers")?;
+    let numbers: Vec<f64> =
+        q.bbox.split(',').map(|v| v.trim().parse::<f64>()).collect::<Result<_, _>>().map_err(|_| "bbox must be four numbers")?;
     let [w, s, e, n] = numbers[..] else { return Err("bbox must be four numbers".into()) };
-    if !(w < e && s < n && (-180.0..=180.0).contains(&w) && (-180.0..=180.0).contains(&e) && (-90.0..=90.0).contains(&s) && (-90.0..=90.0).contains(&n)) {
+    if !(w < e
+        && s < n
+        && (-180.0..=180.0).contains(&w)
+        && (-180.0..=180.0).contains(&e)
+        && (-90.0..=90.0).contains(&s)
+        && (-90.0..=90.0).contains(&n))
+    {
         return Err("bbox must be minLon,minLat,maxLon,maxLat".into());
     }
     if q.width == 0 || q.height == 0 || q.width > MAX_SIDE || q.height > MAX_SIDE {
@@ -46,7 +61,18 @@ pub fn get_map_url(q: &WmsQuery) -> Result<reqwest::Url, String> {
         .filter(|(k, _)| {
             !matches!(
                 k.to_ascii_lowercase().as_str(),
-                "service" | "version" | "request" | "layers" | "styles" | "format" | "srs" | "crs" | "bbox" | "width" | "height" | "transparent"
+                "service"
+                    | "version"
+                    | "request"
+                    | "layers"
+                    | "styles"
+                    | "format"
+                    | "srs"
+                    | "crs"
+                    | "bbox"
+                    | "width"
+                    | "height"
+                    | "transparent"
             )
         })
         .map(|(k, v)| (k.into_owned(), v.into_owned()))
@@ -68,25 +94,51 @@ pub fn get_map_url(q: &WmsQuery) -> Result<reqwest::Url, String> {
     Ok(url)
 }
 
-pub async fn get_map(q: WmsQuery) -> Response {
+pub async fn get_map(sources: &Sources, mut q: WmsQuery) -> Response {
+    let source = q.source.take().filter(|s| !s.trim().is_empty());
+    if let Some(id) = &source {
+        if q.url.trim().is_empty() {
+            match sources.connection(id) {
+                Some(c) => q.url = c.url,
+                None => return (StatusCode::NOT_FOUND, format!("there is no source called '{id}'")).into_response(),
+            }
+        }
+    }
     let url = match get_map_url(&q) {
         Ok(url) => url,
         Err(e) => return (StatusCode::BAD_REQUEST, e).into_response(),
     };
-    let client = match reqwest::Client::builder().user_agent("MR Studio").timeout(std::time::Duration::from_secs(30)).build() {
-        Ok(client) => client,
-        Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    let request = match &source {
+        Some(id) => match sources.request(id, url).await {
+            Ok(request) => request,
+            Err(refusal) => {
+                return (StatusCode::from_u16(refusal.status).unwrap_or(StatusCode::BAD_GATEWAY), refusal.message).into_response()
+            }
+        },
+        None => match reqwest::Client::builder().user_agent("MR Studio").timeout(std::time::Duration::from_secs(30)).build() {
+            Ok(client) => client.get(url),
+            Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+        },
     };
-    let answer = match client.get(url).send().await {
+    // Never repeat the address: with a source it may carry the key.
+    let answer = match request.send().await {
         Ok(answer) => answer,
-        Err(e) => return (StatusCode::BAD_GATEWAY, format!("the WMS service could not be reached: {e}")).into_response(),
+        Err(e) => return (StatusCode::BAD_GATEWAY, format!("the WMS service could not be reached: {}", e.without_url())).into_response(),
     };
     let status = answer.status();
     let kind = answer.headers().get(header::CONTENT_TYPE).and_then(|v| v.to_str().ok()).unwrap_or("").to_string();
     let body = match answer.bytes().await {
         Ok(body) => body,
-        Err(e) => return (StatusCode::BAD_GATEWAY, format!("the WMS service stopped answering: {e}")).into_response(),
+        Err(e) => return (StatusCode::BAD_GATEWAY, format!("the WMS service stopped answering: {}", e.without_url())).into_response(),
     };
+    if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
+        let words = if source.is_some() {
+            "the WMS service did not accept the key or login"
+        } else {
+            "the WMS service wants a sign-in: add it in Sources and choose it for this map"
+        };
+        return (StatusCode::BAD_GATEWAY, format!("{words} ({status})")).into_response();
+    }
     // Services answer errors as XML with status 200; only a picture is passed on.
     if !status.is_success() || !kind.starts_with("image/") {
         let said: String = String::from_utf8_lossy(&body[..body.len().min(400)]).chars().filter(|c| !c.is_control()).collect();
@@ -102,6 +154,7 @@ mod tests {
     fn query(url: &str) -> WmsQuery {
         WmsQuery {
             url: url.into(),
+            source: None,
             layers: "roads".into(),
             styles: None,
             format: None,

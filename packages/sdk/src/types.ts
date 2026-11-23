@@ -50,6 +50,12 @@ export interface ColorControl extends ControlBase {
 export interface TextControl extends ControlBase {
   type: 'text';
   default: string;
+  /**
+   * The value is the id of a source from the Sources manager (#41) of one of these kinds
+   * (`vasttrafik`, `lantmateriet`, `mapbox`, `carto`, `wms`, `wmts`, `arcgis`, `tiles`). The
+   * editor offers the sources set up on this computer; the host signs requests with its key.
+   */
+  sources?: string[];
 }
 export interface ActionControl extends ControlBase {
   type: 'action';

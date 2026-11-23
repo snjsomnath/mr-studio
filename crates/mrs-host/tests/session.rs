@@ -61,6 +61,7 @@ async fn start(site_dir: PathBuf, options: SessionOptions) -> RunningHost {
         // The CPU reference keeps these tests independent of the machine's GPU.
         backend: Backend::Cpu,
         session: options,
+        sources: std::sync::Arc::new(mrs_host::Sources::in_memory()),
     })
     .await
     .unwrap()
@@ -745,6 +746,7 @@ async fn calibration_is_saved_shared_and_survives_a_restart() {
             bind: "127.0.0.1:0".parse().unwrap(),
             backend: Backend::Cpu,
             session: Default::default(),
+            sources: std::sync::Arc::new(mrs_host::Sources::in_memory()),
         })
         .await
         .unwrap()
@@ -1031,4 +1033,108 @@ async fn the_editor_keeps_a_picture_of_the_table_for_home() {
     assert_eq!(refused.status(), 400);
     host.shutdown().await;
     let _ = std::fs::remove_dir_all(&site);
+}
+
+/// A stand-in map service on this computer that remembers how each request was signed.
+async fn signing_service() -> (std::net::SocketAddr, std::sync::Arc<std::sync::Mutex<Vec<String>>>) {
+    use axum::http::HeaderMap;
+    let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+    let log = seen.clone();
+    let app = axum::Router::new().fallback(move |uri: axum::http::Uri, headers: HeaderMap| {
+        let log = log.clone();
+        async move {
+            let auth = headers.get("authorization").and_then(|v| v.to_str().ok()).unwrap_or("-").to_string();
+            log.lock().unwrap().push(format!("{uri} {auth}"));
+            if uri.path().ends_with("token") {
+                return ([("content-type", "application/json")], r#"{"access_token":"T1","expires_in":3600}"#.as_bytes().to_vec());
+            }
+            if uri.path().contains("positions") {
+                return (
+                    [("content-type", "application/json")],
+                    br#"[{"detailsReference":"a","latitude":57.7,"longitude":11.97,"line":{"name":"6","transportMode":"tram"}}]"#.to_vec(),
+                );
+            }
+            ([("content-type", "image/png")], vec![0x89, b'P', b'N', b'G'])
+        }
+    });
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    (addr, seen)
+}
+
+#[tokio::test]
+async fn sources_keep_keys_on_the_host_and_sign_requests_for_the_table() {
+    let (service, seen) = signing_service().await;
+    let host = host().await;
+    let base = format!("http://{}", host.addr);
+    let client = reqwest::Client::new();
+
+    // A page from another site in the same browser may not add a source.
+    let foreign = client
+        .post(format!("{base}/api/sources"))
+        .header("origin", "https://evil.example.org")
+        .json(&json!({ "kind": "tiles", "name": "Tiles", "url": format!("http://{service}/{{z}}/{{x}}/{{y}}.png") }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(foreign.status(), 403);
+
+    // The editor adds a tile source with a key; the key is never listed.
+    let saved = client
+        .post(format!("{base}/api/sources"))
+        .header("origin", &base)
+        .json(&json!({ "kind": "tiles", "name": "My tiles", "url": format!("http://{service}/{{z}}/{{x}}/{{y}}.png"), "auth": "query", "param": "key", "secret": "s3cret-key" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(saved.status(), 200);
+    let listed = client.get(format!("{base}/api/sources")).send().await.unwrap().text().await.unwrap();
+    assert!(listed.contains("\"has_secret\":true") && !listed.contains("s3cret-key"), "{listed}");
+
+    // A tile through the host carries the key to the service, and only the picture comes back.
+    let tile = client.get(format!("{base}/api/sources/my-tiles/tile/3/2/1.png")).send().await.unwrap();
+    assert_eq!(tile.status(), 200);
+    assert_eq!(tile.headers()["content-type"], "image/png");
+    assert!(seen.lock().unwrap().last().unwrap().starts_with("/3/2/1.png?key=s3cret-key"));
+
+    // The proxy refuses addresses on any other server.
+    let elsewhere =
+        client.get(format!("{base}/api/sources/my-tiles/proxy")).query(&[("url", "https://example.org/x")]).send().await.unwrap();
+    assert_eq!(elsewhere.status(), 403);
+
+    // A WMS with a login: the table names the source, the host adds the password.
+    client
+        .post(format!("{base}/api/sources"))
+        .json(&json!({ "kind": "wms", "name": "City WMS", "url": format!("http://{service}/wms"), "auth": "basic", "user": "anna", "secret": "pw" }))
+        .send()
+        .await
+        .unwrap();
+    let map = client
+        .get(format!("{base}/api/wms"))
+        .query(&[("source", "city-wms"), ("layers", "roads"), ("bbox", "11.9,57.6,12.0,57.7"), ("width", "64"), ("height", "64")])
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(map.status(), 200);
+    assert!(seen.lock().unwrap().last().unwrap().ends_with("Basic YW5uYTpwdw=="));
+
+    // Västtrafik: client credentials are traded for a token, and positions become vehicles.
+    client
+        .post(format!("{base}/api/sources"))
+        .json(&json!({ "kind": "vasttrafik", "url": format!("http://{service}"), "secret": "a2V5" }))
+        .send()
+        .await
+        .unwrap();
+    let vehicles: Value =
+        client.get(format!("{base}/api/transit/vasttrafik/vehicles?bbox=11.9,57.6,12.0,57.7")).send().await.unwrap().json().await.unwrap();
+    assert_eq!(vehicles["vehicles"][0]["line"], "6");
+    let log = seen.lock().unwrap().clone();
+    assert!(log.iter().any(|l| l.starts_with("/token") && l.ends_with("Basic a2V5")), "{log:?}");
+    assert!(log.iter().any(|l| l.contains("/pr/v4/positions") && l.ends_with("Bearer T1")), "{log:?}");
+
+    // Test says plainly when it works.
+    let status: Value = client.post(format!("{base}/api/sources/my-tiles/test")).send().await.unwrap().json().await.unwrap();
+    assert_eq!(status["ok"], true, "{status}");
+    host.shutdown().await;
 }

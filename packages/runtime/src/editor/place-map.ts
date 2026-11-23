@@ -1,5 +1,5 @@
 import maplibregl from 'maplibre-gl';
-import type { GeoJSONSource, StyleSpecification } from 'maplibre-gl';
+import type { GeoJSONSource, RasterTileSource, StyleSpecification } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 
 import { el } from '../controls.ts';
@@ -26,6 +26,29 @@ export const BASEMAPS = [
     needsKey: true,
   },
 ] as const;
+
+/**
+ * A base map with a key from the Sources manager, when one is set up and ready: CARTO's
+ * light map first, then Mapbox. The tiles come through the host, which adds the key, so
+ * the key never reaches this page (#111). `null` without one, or in a page with no host.
+ */
+export async function keyedBasemap(): Promise<{ tiles: string[]; attribution: string } | null> {
+  try {
+    const response = await fetch('/api/sources', { cache: 'no-store' });
+    if (!response.ok) return null;
+    const page = (await response.json()) as { sources?: { id: string; kind: string; ready: boolean; auth: string }[] };
+    for (const [kind, attribution] of [
+      ['carto', '© OpenStreetMap contributors © CARTO'],
+      ['mapbox', '© Mapbox © OpenStreetMap contributors'],
+    ] as const) {
+      const source = page.sources?.find((s) => s.kind === kind && s.ready && s.auth !== 'none');
+      if (source) return { tiles: [`${location.origin}/api/sources/${encodeURIComponent(source.id)}/tile/{z}/{x}/{y}`], attribution };
+    }
+  } catch {
+    // No host, or not on this computer: the keyless map stays.
+  }
+  return null;
+}
 
 /** Where the map opens before a place is given: Gothenburg, at city zoom. */
 export const START = { lat: 57.7089, lon: 11.9746, zoom: 11 };
@@ -175,6 +198,13 @@ export class PlaceMap {
       const nearest = Math.round(bearing / 90) * 90;
       if (bearing !== nearest && Math.abs(bearing - nearest) <= 3) this.change({ rotation_deg: nearest % 360 });
       else this.change({ rotation_deg: bearing });
+    });
+    // With a base map key in Sources, its tiles replace the keyless ones.
+    void keyedBasemap().then((keyed) => {
+      if (!keyed) return;
+      const swap = () => (this.map.getSource('base') as RasterTileSource | undefined)?.setTiles(keyed.tiles);
+      if (this.map.isStyleLoaded()) swap();
+      else this.map.once('load', swap);
     });
     let failed = 0;
     this.map.on('error', (event) => {
