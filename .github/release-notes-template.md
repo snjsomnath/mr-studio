@@ -11,6 +11,7 @@ that caused them. Keep them, add yours, and empty the lists again after publishi
 ## Breaking changes
 
 - Site format 2: the base map is a layer. Older sites are upgraded when opened, and the original file is kept beside the new one as `site.format-1.json`.
+- Site format 3: every layer in a table has its own id, layers can hold items, a slideshow can be a sequence of layers, and custom layers are saved in the table. Older tables are upgraded when opened, and the original file is kept as `site.format-2.json`. A format 3 table does not open in an older version of the app.
 - Tables that hide some of a layer's controls (a new choice in the editor) do not open in an older version of the app. Update the app on every computer that opens them.
 
 ## New

@@ -1,6 +1,6 @@
 # Presentation contract
 
-Status: **proposed** (2026-11-23). It goes into site format 3 (#70); nothing here is built yet except where marked.
+Status: **proposed** (2026-11-23). The site.json fields are in site format 3 (#70): `button.group`, `button.order`, `steps` (with `sequence`) and `table.ribbons` are stored, validated and sent to surfaces. Nothing else here is built yet except where marked.
 
 MR Studio has three surfaces for visitors: the **controller** beside the table, the **table** (the projected map) and the **phones**. The map is clean and mostly visual. Words and controls live on the controller and the phones. This contract is the one vocabulary they all read, so that each new feature is something every layer fills in, not a screen built by hand for one site. It comes from the Chalmers campus demo controller (`Nodal-Works/interactive_map`), reviewed in #74–#78 and #43.
 
@@ -79,6 +79,7 @@ Most projectors light more than the model. The table surface works out the free 
   "ribbons": { "bottom": { "cm": 9 }, "top": "auto", "left": "off", "right": "off" } }
 ```
 
+- `table.front` (site format 3; default `"bottom"`) is the edge where visitors stand. `"auto"` prefers the front, then the two sides next to it, and uses the far side last, because the model hides the far side from a viewer at the front.
 - A side is used only if it has at least about 4 cm free. Sizes are in cm and turned into px through the calibration.
 - What a ribbon shows comes from the layer: `panels` entries marked `"ribbon": true`, drawn with the dashboard widgets in a strip layout. With no layer open, the core **join QR** ribbon shows if phones can join.
 - One ribbon is shown at a time: the open layer's, otherwise the home ribbon. If more than one is available, the operator can pick on the controller.

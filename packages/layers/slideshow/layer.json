@@ -5,6 +5,7 @@
   "description": "Images, video and map data shown on the table one after another",
   "icon": "images",
   "category": "media",
+  "sequence": true,
   "requires": { "data": ["slideshow"] },
   "controls": [
     { "id": "slide", "type": "range", "label": "Slide", "min": 1, "max": 200, "step": 1, "default": 1, "phone": true },

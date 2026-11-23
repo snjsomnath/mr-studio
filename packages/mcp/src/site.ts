@@ -9,7 +9,7 @@ import { delimiter, isAbsolute, join, relative, resolve } from 'node:path';
 
 import { readLayerDir, type Catalog, type LayerEntry, type SiteSchema } from './core.ts';
 
-export const SITE_FORMAT = 2;
+export const SITE_FORMAT = 3;
 
 export interface Issue {
   level: 'error' | 'warning' | 'note';
@@ -20,20 +20,63 @@ export interface Issue {
 export type SiteManifest = Record<string, any>;
 
 // The keys mrs-site accepts. Unknown keys are an error there. The catalog normally carries the
-// schema read from the core's own manifest.rs; this copy of format 2 is the fallback.
+// schema read from the core's own manifest.rs; this copy of format 3 is the fallback.
 const FALLBACK_SCHEMA: SiteSchema = {
-  '': { fields: ['format', 'id', 'name', 'origin', 'extent', 'timezone', 'table', 'scene', 'basemap', 'layers', 'tv', 'branding'], required: ['format', 'id', 'name', 'origin', 'extent', 'scene'] },
+  '': { fields: ['format', 'id', 'name', 'origin', 'extent', 'timezone', 'table', 'scene', 'data', 'basemap', 'layers', 'custom', 'tv', 'branding'], required: ['format', 'id', 'name', 'origin', 'extent', 'scene'] },
   origin: { fields: ['lon', 'lat'], required: ['lon', 'lat'] },
   extent: { fields: ['width_m', 'height_m', 'rotation_deg'], required: ['width_m', 'height_m'] },
-  table: { fields: ['width_cm', 'height_cm', 'tile_cm'], required: ['width_cm', 'height_cm'] },
+  table: { fields: ['width_cm', 'height_cm', 'tile_cm', 'front', 'ribbons'], required: ['width_cm', 'height_cm'] },
+  'table.ribbons': { fields: ['top', 'bottom', 'left', 'right'], required: [] },
   scene: { fields: ['cell_m', 'buildings', 'terrain', 'trees'], required: ['cell_m'] },
   'scene.buildings': { fields: ['path', 'height_property', 'default_height_m'], required: ['path'] },
   'scene.terrain': { fields: ['path', 'width', 'height'], required: ['path', 'width', 'height'] },
   'scene.trees': { fields: ['path', 'height_property', 'default_height_m', 'crown_radius_m'], required: ['path'] },
   basemap: { fields: ['background', 'style'], required: [] },
   branding: { fields: ['title', 'logo'], required: [] },
-  'layers[]': { fields: ['use', 'id', 'params', 'active', 'button', 'hide'], required: ['use'] },
+  'layers[]': { fields: ['use', 'id', 'active', 'params', 'button', 'hide', 'items', 'steps'], required: ['use', 'id'] },
+  'layers[].button': { fields: ['name', 'description', 'icon', 'side', 'group', 'order'], required: [] },
+  'layers[].items[]': { fields: ['use', 'id', 'active', 'params', 'hide'], required: ['use', 'id'] },
+  'layers[].steps': { fields: ['mode', 'loop', 'reveal', 'sequence'], required: [] },
+  'layers[].steps.sequence[]': { fields: ['layer', 'params', 'duration_s', 'transition', 'transition_s', 'next', 'title', 'description', 'source'], required: ['layer'] },
 };
+
+/** What `use` starts with for a custom layer saved in the site. */
+export const CUSTOM_PREFIX = 'custom:';
+
+/** A site's custom layers as layer entries, so they are offered and checked like any layer. */
+export function customLayers(manifest: SiteManifest | null | undefined): LayerEntry[] {
+  const custom = manifest?.custom;
+  if (!custom || typeof custom !== 'object') return [];
+  return Object.entries(custom).map(([id, recipe]: [string, any]) => ({
+    id,
+    origin: 'custom' as const,
+    use: `${CUSTOM_PREFIX}${id}`,
+    manifest: { api: 1, id, name: recipe?.name ?? id, description: recipe?.description ?? '', icon: recipe?.icon, category: recipe?.category ?? 'analysis', controls: recipe?.controls ?? [], custom: recipe },
+  }));
+}
+
+function siteOrNull(dir: string | null): SiteManifest | null {
+  if (!dir) return null;
+  try {
+    return readSite(dir);
+  } catch {
+    return null;
+  }
+}
+
+/** The id an entry gets when none is given: the layer's own, then `-2`, `-3`… past ids already used. */
+export function freeId(manifest: SiteManifest, use: string): string {
+  const base = (use.startsWith(CUSTOM_PREFIX) ? use.slice(CUSTOM_PREFIX.length) : use).replace(/\/+$/, '').split('/').pop() || 'layer';
+  const used = new Set(instanceIds(manifest));
+  if (!used.has(base)) return base;
+  for (let n = 2; ; n++) if (!used.has(`${base}-${n}`)) return `${base}-${n}`;
+}
+
+/** Every instance id in the scene, layers and their items. */
+export function instanceIds(manifest: SiteManifest): string[] {
+  const layers: any[] = Array.isArray(manifest.layers) ? manifest.layers : [];
+  return layers.flatMap((l) => [l?.id, ...(Array.isArray(l?.items) ? l.items.map((i: any) => i?.id) : [])]).filter((id): id is string => typeof id === 'string');
+}
 
 export function sitePath(dir: string): string {
   return join(dir, 'site.json');
@@ -63,10 +106,12 @@ export function inside(dir: string, path: string): boolean {
 /** The layers a site can use: the core's and its own `layers/` packages. */
 export function availableLayers(catalog: Catalog, dir: string | null): LayerEntry[] {
   const site = dir ? readLayerDir(join(dir, 'layers'), 'site') : [];
-  return [...catalog.layers, ...site];
+  return [...catalog.layers, ...site, ...customLayers(siteOrNull(dir))];
 }
 
-export function findLayer(catalog: Catalog, dir: string | null, use: string): LayerEntry | undefined {
+/** The layer a `use` names. A custom layer is read from `manifest` when given, else from the site's file. */
+export function findLayer(catalog: Catalog, dir: string | null, use: string, manifest?: SiteManifest): LayerEntry | undefined {
+  if (use.startsWith(CUSTOM_PREFIX)) return customLayers(manifest ?? siteOrNull(dir)).find((l) => l.use === use);
   if (use.startsWith('.')) {
     if (!dir) return undefined;
     const path = join(dir, use, 'layer.json');
@@ -212,6 +257,7 @@ export function validateManifest(manifest: SiteManifest, dir: string | null, cat
   const t = manifest.table;
   if (t !== undefined && t !== null) {
     if (!isNum(t.width_cm) || !isNum(t.height_cm) || t.width_cm <= 0 || t.height_cm <= 0) err('table', 'needs positive width_cm and height_cm');
+    if (t.front !== undefined && !['top', 'bottom', 'left', 'right'].includes(t.front)) err('table.front', "is the edge where visitors stand: 'bottom', 'top', 'left' or 'right'");
     else if (e && isNum(e.width_m) && isNum(e.height_m) && e.height_m > 0) {
       const a = e.width_m / e.height_m;
       const b = t.width_cm / t.height_cm;
@@ -248,21 +294,32 @@ export function validateManifest(manifest: SiteManifest, dir: string | null, cat
     else if (!existsSync(join(dir, logo))) err('branding.logo', `${logo} does not exist`);
   }
 
-  // Layers: the scene, bottom to top.
+  // Layers: the scene, bottom to top. Each may hold items, and a sequence holds steps.
   const layers = manifest.layers;
   if (layers !== undefined && !Array.isArray(layers)) err('layers', 'must be a list');
-  const seen = new Map<string, number>();
-  (Array.isArray(layers) ? layers : []).forEach((ref: any, i: number) => {
-    const at = `layers[${i}]`;
-    if (!ref || typeof ref.use !== 'string') return err(at, "needs 'use': a core layer id or ./layers/<name>");
-    if (seen.has(ref.use)) warn(at, `uses '${ref.use}' again (also layers[${seen.get(ref.use)}]); layer state is keyed by id, so both entries share one state until per-entry ids land in the core`);
-    seen.set(ref.use, i);
-    const layer = findLayer(catalog, dir, ref.use);
+  const list: any[] = Array.isArray(layers) ? layers : [];
+  const seen = new Map<string, string>();
+  const checkInstance = (ref: any, at: string, item: boolean): LayerEntry | undefined => {
+    if (!ref || typeof ref.use !== 'string') {
+      err(at, "needs 'use': a core layer id, ./layers/<name> or custom:<id>");
+      return undefined;
+    }
+    if (typeof ref.id !== 'string' || !/^[a-z0-9-]{1,40}$/.test(ref.id)) err(`${at}.id`, 'every layer and item needs an id: lowercase letters, digits and dashes');
+    else if (seen.has(ref.id)) err(`${at}.id`, `'${ref.id}' is also ${seen.get(ref.id)}; every layer and item needs its own id`);
+    else seen.set(ref.id, at);
+    const layer = findLayer(catalog, dir, ref.use, manifest);
     if (!layer) {
       const ids = catalog.layers.map((l) => l.id).join(', ');
-      return err(`${at}.use`, ref.use.startsWith('.') ? `no layer.json at ${ref.use} inside the site` : `'${ref.use}' is not a core layer in MR Studio ${catalog.version}. Core layers: ${ids}`);
+      const why = ref.use.startsWith(CUSTOM_PREFIX)
+        ? `there is no custom layer '${ref.use.slice(CUSTOM_PREFIX.length)}' under "custom"`
+        : ref.use.startsWith('.')
+          ? `no layer.json at ${ref.use} inside the site`
+          : `'${ref.use}' is not a core layer in MR Studio ${catalog.version}. Core layers: ${ids}`;
+      err(`${at}.use`, why);
+      return undefined;
     }
     if (ref.active !== undefined && typeof ref.active !== 'boolean') err(`${at}.active`, 'must be true or false');
+    if (item && ref.active === false) note(at, `item '${ref.id}' is set not to come on with its layer`);
     if (ref.params !== undefined) {
       if (!ref.params || typeof ref.params !== 'object' || Array.isArray(ref.params)) err(`${at}.params`, 'must be an object');
       else issues.push(...checkParams(layer, ref.params, `${at}.params`).issues);
@@ -274,7 +331,77 @@ export function validateManifest(manifest: SiteManifest, dir: string | null, cat
     if (layer.origin === 'site') {
       warn(at, `'${ref.use}' is a site-only layer. The runtime only bundles core layer code today, so it will not draw. If the scene needs it, propose it to the core with draft_module_request.`);
     }
+    if (layer.origin === 'custom') note(at, `'${ref.use}' is a custom layer; the runtime draws custom layers once the layer editor (#38) lands`);
+    return layer;
+  };
+  const found = list.map((ref, i) => {
+    const layer = checkInstance(ref, `layers[${i}]`, false);
+    if (ref?.items !== undefined && !Array.isArray(ref.items)) err(`layers[${i}].items`, 'must be a list');
+    (Array.isArray(ref?.items) ? ref.items : []).forEach((child: any, j: number) => checkInstance(child, `layers[${i}].items[${j}]`, true));
+    return layer;
   });
+  const sequences = new Set(list.filter((l) => Array.isArray(l?.steps?.sequence) && l.steps.sequence.length).map((l) => l.id));
+  list.forEach((ref, i) => {
+    const steps = ref?.steps;
+    if (steps === undefined) return;
+    const at = `layers[${i}].steps`;
+    if (!steps || typeof steps !== 'object' || Array.isArray(steps)) return err(at, 'must be an object');
+    if (steps.mode !== undefined && !['manual', 'timed'].includes(steps.mode)) err(`${at}.mode`, "is 'manual' or 'timed'");
+    if (steps.reveal !== undefined && !['stop', 'then-next'].includes(steps.reveal)) err(`${at}.reveal`, "is 'stop' or 'then-next'");
+    if (steps.sequence === undefined) return;
+    if (!Array.isArray(steps.sequence)) return err(`${at}.sequence`, 'must be a list of steps');
+    if (steps.sequence.length && found[i] && found[i]!.manifest.sequence !== true) err(`${at}.sequence`, `only a sequence layer, such as the slideshow, shows other layers; '${ref.use}' is not one`);
+    steps.sequence.forEach((step: any, n: number) => {
+      const here = `${at}.sequence[${n}]`;
+      const own = Array.isArray(ref.items) && ref.items.some((item: any) => item?.id === step?.layer);
+      const top = list.find((l) => l?.id === step?.layer);
+      if (typeof step?.layer !== 'string') return err(here, "needs 'layer': the id of the layer the step shows");
+      if (step.layer === ref.id) return err(here, 'a sequence cannot show itself');
+      if (sequences.has(step.layer)) return err(here, `'${step.layer}' is a sequence too; a step shows one layer`);
+      if (!own && !top) return err(here, `shows '${step.layer}', which is neither a layer of the scene nor an item of this one`);
+      if (step.duration_s !== undefined && !(isNum(step.duration_s) && step.duration_s > 0)) err(`${here}.duration_s`, 'must be a positive number of seconds');
+      if (step.transition !== undefined && !['cut', 'fade'].includes(step.transition)) err(`${here}.transition`, "is 'cut' or 'fade'");
+      const shown = own ? ref.items.find((item: any) => item?.id === step.layer) : top;
+      const layer = shown && findLayer(catalog, dir, shown.use, manifest);
+      if (layer && step.params !== undefined) issues.push(...checkParams(layer, step.params, `${here}.params`).issues);
+    });
+  });
+
+  // Custom layers: recipes the layer editor saves.
+  const datasets = new Set([...Object.keys(manifest.data ?? {}), ...['buildings', 'trees', 'terrain'].filter((k) => manifest.scene?.[k])]);
+  for (const [id, recipe] of Object.entries((manifest.custom ?? {}) as Record<string, any>)) {
+    const at = `custom.${id}`;
+    if (!/^[a-z0-9-]{1,40}$/.test(id)) err(at, 'a custom layer id is lowercase letters, digits and dashes');
+    if (catalog.layers.some((l) => l.id === id)) err(at, `'${id}' is a core layer's id; give the custom layer another`);
+    if (!recipe || typeof recipe !== 'object') {
+      err(at, 'must be an object with at least a name');
+      continue;
+    }
+    if (typeof recipe.name !== 'string' || !recipe.name.trim() || recipe.name.length > 40) err(`${at}.name`, 'is 1 to 40 characters');
+    const sources = new Set<string>();
+    (Array.isArray(recipe.data) ? recipe.data : []).forEach((d: any, n: number) => {
+      const here = `${at}.data[${n}]`;
+      if (typeof d?.id !== 'string') return err(here, "needs an 'id'");
+      sources.add(d.id);
+      const kinds = ['dataset', 'path', 'wms', 'tiles'].filter((k) => d[k] !== undefined);
+      if (kinds.length !== 1) err(here, 'give exactly one of dataset, path, wms and tiles');
+      if (typeof d.dataset === 'string' && !datasets.has(d.dataset)) err(`${here}.dataset`, `the site has no dataset '${d.dataset}'`);
+      if (typeof d.path === 'string' && dir) {
+        if (!inside(dir, d.path)) err(`${here}.path`, 'must stay inside the site folder');
+        else if (!existsSync(join(dir, d.path))) err(`${here}.path`, `${d.path} does not exist`);
+      }
+      if (d.wms !== undefined && !(typeof d.wms?.url === 'string' && /^https?:\/\//.test(d.wms.url) && typeof d.wms?.layers === 'string')) err(`${here}.wms`, 'needs an http(s) url and the names of its layers');
+    });
+    const look = new Set((Array.isArray(recipe.look) ? recipe.look : []).map((b: any) => b?.id));
+    for (const stage of ['look', 'motion', 'interaction']) {
+      (Array.isArray(recipe[stage]) ? recipe[stage] : []).forEach((block: any, n: number) => {
+        const here = `${at}.${stage}[${n}]`;
+        if (typeof block?.id !== 'string' || typeof block?.block !== 'string') return err(here, "needs an 'id' and a 'block' name");
+        if (block.data !== undefined && !sources.has(block.data)) err(`${here}.data`, `the layer has no data '${block.data}'`);
+        if (block.on !== undefined && !look.has(block.on)) err(`${here}.on`, `'${block.on}' is not one of its look blocks`);
+      });
+    }
+  }
   if (Array.isArray(layers) && layers.length === 0) note('layers', 'the scene is empty; add a layer');
   if (Array.isArray(layers) && !layers.some((l: any) => l?.active)) note('layers', 'no layer starts active; the table will show only the base map until someone turns one on');
 
@@ -339,7 +466,7 @@ export function newSiteManifest(spec: NewSite): SiteManifest {
   // One metre cells up to about two million cells, coarser for larger areas.
   const area = spec.width_m * spec.height_m;
   const cell = spec.cell_m ?? (area > 2_000_000 ? Math.ceil(Math.sqrt(area / 2_000_000)) : 1);
-  return {
+  const manifest: SiteManifest = {
     format: SITE_FORMAT,
     id: spec.id ?? slug(spec.name),
     name: spec.name,
@@ -349,9 +476,15 @@ export function newSiteManifest(spec: NewSite): SiteManifest {
     table: { width_cm: tableW, height_cm: tableH },
     scene: { cell_m: cell },
     basemap: { background: spec.background ?? '#0b0e14', style: null },
-    layers: spec.layers ?? [{ use: 'basemap', active: true }, { use: 'sunlight', active: true }],
+    layers: [] as any[],
     branding: { title: spec.title ?? spec.name },
   };
+  // Every entry gets its id, as the host writes them.
+  for (const layer of spec.layers ?? [{ use: 'basemap', active: true }, { use: 'sunlight', active: true }]) {
+    const { use, ...rest } = layer;
+    manifest.layers.push({ use, id: freeId(manifest, use), ...rest });
+  }
+  return manifest;
 }
 
 const SITE_GITIGNORE = `# Generated by mrstudio prepare

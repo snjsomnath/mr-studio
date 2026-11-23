@@ -2,13 +2,14 @@
 //! the hub validates, updates and broadcasts.
 //!
 //! The scene is the ordered list of layer instances, bottom first. It starts as the
-//! `layers` list of `site.json`, and the `scene.*` requests edit both together.
+//! `layers` list of `site.json`, each layer followed by its items, and the `scene.*`
+//! requests edit both together.
 
 use std::hash::{BuildHasher, Hasher};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
 
-use mrs_site::{is_instance_id, LayerButton, LayerRef, Site, SiteInfo};
+use mrs_site::{is_instance_id, LayerButton, LayerItem, LayerRef, Site, SiteInfo, Steps};
 use serde::Serialize;
 use serde_json::{json, Map, Value};
 use tokio::sync::{broadcast, Notify};
@@ -98,6 +99,12 @@ pub struct LayerState {
     /// Ids of the controls the controller and phones leave out.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub hide: Vec<String>,
+    /// For an item: the layer it belongs to. It has no button and comes on with that layer.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parent: Option<String>,
+    /// How Next moves through the layer, and a sequence's steps, as site.json has them.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub steps: Option<Steps>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -149,15 +156,78 @@ pub struct Hold {
     epoch: u64,
 }
 
-/// One layer in the scene.
+/// One layer, or one item of a layer, in the scene.
 #[derive(Debug, Clone)]
 struct Instance {
     id: String,
     /// Index into the catalogue.
     def: usize,
-    /// The entry as site.json holds it. Live changes (`layer.set`) do not touch it.
+    /// The layer that owns this item. `None` for a layer of the scene.
+    parent: Option<String>,
+    /// The entry as site.json holds it, without its items (they follow it in the scene).
+    /// For an item, `active` says whether it comes on with its layer. Live changes
+    /// (`layer.set`, `layer.activate`) do not touch it.
     saved: LayerRef,
     state: LayerState,
+}
+
+impl Instance {
+    fn item(&self) -> LayerItem {
+        let s = &self.saved;
+        LayerItem { r#use: s.r#use.clone(), id: s.id.clone(), active: s.active, params: s.params.clone(), hide: s.hide.clone() }
+    }
+}
+
+fn item_ref(item: &LayerItem) -> LayerRef {
+    LayerRef {
+        r#use: item.r#use.clone(),
+        id: item.id.clone(),
+        active: item.active,
+        params: item.params.clone(),
+        button: LayerButton::default(),
+        hide: item.hide.clone(),
+        items: Vec::new(),
+        steps: None,
+    }
+}
+
+/// The scene as site.json's `layers`: each layer with the items that follow it.
+fn saved_layers(scene: &[Instance]) -> Vec<LayerRef> {
+    let mut out: Vec<LayerRef> = Vec::new();
+    for instance in scene {
+        match (&instance.parent, out.last_mut()) {
+            (Some(_), Some(layer)) => layer.items.push(instance.item()),
+            _ => out.push(LayerRef { items: Vec::new(), ..instance.saved.clone() }),
+        }
+    }
+    out
+}
+
+/// The positions of a layer and its items: the layer at `at`, then everything with it as parent.
+fn block(scene: &[Instance], at: usize) -> std::ops::Range<usize> {
+    let id = &scene[at].id;
+    let end = at + 1 + scene[at + 1..].iter().take_while(|i| i.parent.as_ref() == Some(id)).count();
+    at..end
+}
+
+/// Where the `index`th entry of a list goes: the scene's layers when `parent` is `None`,
+/// otherwise that layer's items. Past the end means at the end of that list.
+fn insert_position(scene: &[Instance], parent: Option<&str>, index: Option<u64>) -> Result<usize, String> {
+    let index = index.map_or(usize::MAX, |i| i as usize);
+    match parent {
+        None => {
+            let tops: Vec<usize> = scene.iter().enumerate().filter(|(_, i)| i.parent.is_none()).map(|(n, _)| n).collect();
+            Ok(tops.get(index).copied().unwrap_or(scene.len()))
+        }
+        Some(parent) => {
+            let at = scene
+                .iter()
+                .position(|i| i.id == parent && i.parent.is_none())
+                .ok_or_else(|| format!("there is no layer '{parent}' to hold it"))?;
+            let range = block(scene, at);
+            Ok(range.start + 1 + index.min(range.len() - 1))
+        }
+    }
 }
 
 struct Inner {
@@ -208,16 +278,27 @@ impl Hub {
     /// `join_base` is the address phones reach the host at, without a path.
     pub fn new(site: &Site, catalog: Vec<LayerDef>, port: u16, join_base: Option<String>, options: SessionOptions) -> anyhow::Result<Self> {
         let mut scene: Vec<Instance> = Vec::new();
-        for reference in &site.manifest.layers {
-            let def = catalog
+        let find = |used: &str| {
+            catalog
                 .iter()
-                .position(|d| d.source == reference.r#use)
-                .ok_or_else(|| anyhow::anyhow!("site.json uses layer '{}', which is not available", reference.r#use))?;
-            let instance = Self::instance(&catalog, def, reference.clone(), true)?;
-            if scene.iter().any(|i| i.id == instance.id) {
-                anyhow::bail!("layer '{}' is listed twice in site.json; give one entry its own \"id\"", instance.id);
+                .position(|d| d.source == used)
+                .ok_or_else(|| anyhow::anyhow!("site.json uses layer '{used}', which is not available"))
+        };
+        for reference in &site.manifest.layers {
+            let layer = LayerRef { items: Vec::new(), ..reference.clone() };
+            let parent = Self::instance(&catalog, find(&reference.r#use)?, layer, None, true)?;
+            let on = parent.state.active;
+            scene.push(parent);
+            for item in &reference.items {
+                let mut item = Self::instance(&catalog, find(&item.r#use)?, item_ref(item), Some(reference.id.clone()), true)?;
+                item.state.active &= on;
+                scene.push(item);
             }
-            scene.push(instance);
+        }
+        for (n, instance) in scene.iter().enumerate() {
+            if scene[..n].iter().any(|i| i.id == instance.id) {
+                anyhow::bail!("'{}' names two entries of the scene in site.json; give each its own \"id\"", instance.id);
+            }
         }
         let code = format!("{:04}", random_u64() % 10_000);
         let join_url = join_base.map(|base| format!("{}/phone?c={code}", base.trim_end_matches('/')));
@@ -236,9 +317,9 @@ impl Hub {
 
     /// Builds an instance from a site.json entry. With `lenient`, params that do not
     /// validate are ignored with a warning (a hand-edited file should still start).
-    fn instance(catalog: &[LayerDef], def: usize, saved: LayerRef, lenient: bool) -> anyhow::Result<Instance> {
+    fn instance(catalog: &[LayerDef], def: usize, saved: LayerRef, parent: Option<String>, lenient: bool) -> anyhow::Result<Instance> {
         let layer = &catalog[def];
-        let id = saved.id.clone().unwrap_or_else(|| layer.id.clone());
+        let id = saved.id.clone();
         let mut params = layer.defaults();
         match layer.validate(&saved.params, false) {
             Ok(overrides) => params.extend(overrides),
@@ -254,8 +335,10 @@ impl Hub {
             button: saved.button.clone(),
             // A control the layer package no longer has is not worth refusing the site over.
             hide: saved.hide.iter().filter(|id| layer.controls.iter().any(|c| &c.id == *id)).cloned().collect(),
+            parent: parent.clone(),
+            steps: saved.steps.clone(),
         };
-        Ok(Instance { id, def, saved, state })
+        Ok(Instance { id, def, parent, saved, state })
     }
 
     pub fn session(&self) -> &SessionInfo {
@@ -415,16 +498,22 @@ impl Hub {
         }
         let layer = p["layer"].as_str().ok_or("missing layer")?;
         let index = inner.position(layer)?;
+        if method == "layer.activate" {
+            if !role.may_activate() {
+                return Err("phones cannot turn layers on or off".into());
+            }
+            let active = p["active"].as_bool().ok_or("missing active")?;
+            if let Some(parent) = inner.scene[index].parent.clone() {
+                if active && !inner.scene[inner.position(&parent)?].state.active {
+                    return Err(format!("'{layer}' comes on with '{parent}'; open that layer first"));
+                }
+            }
+            self.switch(&mut inner.scene, index, active);
+            return Ok(json!({}));
+        }
         let def = &self.catalog[inner.scene[index].def];
         let state = &mut inner.scene[index].state;
         match method {
-            "layer.activate" => {
-                if !role.may_activate() {
-                    return Err("phones cannot turn layers on or off".into());
-                }
-                state.active = p["active"].as_bool().ok_or("missing active")?;
-                self.emit_layer(layer, state);
-            }
             "layer.intensity" => {
                 if !role.may_activate() {
                     return Err("phones cannot change a layer's intensity".into());
@@ -484,7 +573,19 @@ impl Hub {
                     return Err(format!("a scene holds at most {MAX_SCENE_LAYERS} layers"));
                 }
                 let wanted = p["use"].as_str().ok_or("missing use")?;
-                let def = self.catalog.iter().position(|d| d.id == wanted).ok_or_else(|| format!("unknown layer '{wanted}'"))?;
+                let def = self
+                    .catalog
+                    .iter()
+                    .position(|d| d.source == wanted || d.id == wanted)
+                    .ok_or_else(|| format!("unknown layer '{wanted}'"))?;
+                let parent = match &p["parent"] {
+                    Value::Null => None,
+                    Value::String(parent) => Some(parent.clone()),
+                    _ => return Err("parent is the id of a layer in the scene".into()),
+                };
+                if parent.is_some() && !p["button"].is_null() {
+                    return Err("an item has no button: it comes on with its layer".into());
+                }
                 if let Some(name) = self.catalog[def].missing_data(&self.info.read().unwrap().data).map_err(|e| e.to_string())? {
                     return Err(format!("this site has no '{name}' dataset, which the layer needs"));
                 }
@@ -501,7 +602,7 @@ impl Hub {
                 };
                 let saved = LayerRef {
                     r#use: self.catalog[def].source.clone(),
-                    id: (id != *base).then(|| id.clone()),
+                    id: id.clone(),
                     active: p["active"].as_bool().unwrap_or(true),
                     params: match &p["params"] {
                         Value::Null => Map::new(),
@@ -510,24 +611,84 @@ impl Hub {
                     },
                     button: button_patch(LayerButton::default(), &p["button"])?,
                     hide: hide_list(&self.catalog[def], &p["hide"])?.unwrap_or_default(),
+                    items: Vec::new(),
+                    steps: None,
                 };
-                let instance = Self::instance(&self.catalog, def, saved, false).map_err(|e| e.to_string())?;
-                let index = p["index"].as_u64().map_or(scene.len(), |i| (i as usize).min(scene.len()));
+                let index = insert_position(&scene, parent.as_deref(), p["index"].as_u64())?;
+                let mut instance = Self::instance(&self.catalog, def, saved, parent.clone(), false).map_err(|e| e.to_string())?;
+                if let Some(parent) = &parent {
+                    instance.state.active &= scene.iter().any(|i| &i.id == parent && i.state.active);
+                }
                 scene.insert(index, instance);
                 result = json!({ "id": id });
             }
             "scene.remove" => {
                 let index = inner.position(p["layer"].as_str().ok_or("missing layer")?)?;
-                scene.remove(index);
+                let removed: Vec<Instance> = scene.drain(block(&scene, index)).collect();
+                // A sequence step that showed a removed layer goes with it.
+                let mut dropped = 0;
+                for instance in &mut scene {
+                    if let Some(steps) = &mut instance.saved.steps {
+                        let before = steps.sequence.len();
+                        steps.sequence.retain(|step| removed.iter().all(|r| r.id != step.layer));
+                        if steps.sequence.len() != before {
+                            dropped += before - steps.sequence.len();
+                            instance.state.steps = Some(steps.clone());
+                        }
+                    }
+                }
+                if dropped > 0 {
+                    result = json!({ "dropped_steps": dropped });
+                }
             }
             "scene.move" => {
-                let from = inner.position(p["layer"].as_str().ok_or("missing layer")?)?;
-                let to = (p["index"].as_u64().ok_or("missing index")? as usize).min(scene.len() - 1);
-                let instance = scene.remove(from);
-                scene.insert(to, instance);
+                let id = p["layer"].as_str().ok_or("missing layer")?;
+                let index = p["index"].as_u64().ok_or("missing index")?;
+                let from = inner.position(id)?;
+                let mut moving: Vec<Instance> = scene.drain(block(&scene, from)).collect();
+                // `parent` left out keeps the instance where it is; null makes an item a layer of the scene.
+                let parent = match p.get("parent") {
+                    None => moving[0].parent.clone(),
+                    Some(Value::Null) => None,
+                    Some(Value::String(parent)) => Some(parent.clone()),
+                    Some(_) => return Err("parent is the id of a layer in the scene, or null".into()),
+                };
+                if let Some(parent) = &parent {
+                    if parent == id {
+                        return Err("a layer cannot hold itself".into());
+                    }
+                    if moving.len() > 1 || moving[0].saved.steps.is_some() {
+                        return Err(format!("'{id}' has items or steps of its own, so it cannot become an item"));
+                    }
+                    if !moving[0].saved.button.is_empty() {
+                        return Err(format!("'{id}' has a button; clear it first, because an item comes on with its layer"));
+                    }
+                }
+                let first = &mut moving[0];
+                if let Some(parent) = &parent {
+                    let on = scene
+                        .iter()
+                        .find(|i| &i.id == parent)
+                        .ok_or_else(|| format!("there is no layer '{parent}' to hold it"))?
+                        .state
+                        .active;
+                    first.state.active = on && first.saved.active;
+                }
+                first.parent = parent.clone();
+                first.state.parent = parent.clone();
+                let to = insert_position(&scene, parent.as_deref(), Some(index))?;
+                scene.splice(to..to, moving);
             }
             "scene.set" => {
                 let index = inner.position(p["layer"].as_str().ok_or("missing layer")?)?;
+                if scene[index].parent.is_some() && !p["button"].is_null() {
+                    return Err("an item has no button: it comes on with its layer".into());
+                }
+                if let Some(steps) = p.get("steps") {
+                    let steps = self.clean_steps(&scene, index, steps)?;
+                    scene[index].saved.steps = steps.clone();
+                    scene[index].state.steps = steps;
+                }
                 let instance = &mut scene[index];
                 match &p["params"] {
                     Value::Null => {}
@@ -538,8 +699,8 @@ impl Hub {
                     }
                     _ => return Err("params must be an object".into()),
                 }
-                if let Some(active) = p["active"].as_bool() {
-                    instance.state.active = active;
+                let active = p["active"].as_bool();
+                if let Some(active) = active {
                     instance.saved.active = active;
                 }
                 let button = button_patch(instance.saved.button.clone(), &p["button"])?;
@@ -549,18 +710,70 @@ impl Hub {
                     instance.state.hide = hide.clone();
                     instance.saved.hide = hide;
                 }
-                changed_layer = Some(index);
+                changed_layer = Some((index, active));
             }
             other => return Err(format!("unknown method '{other}'")),
         }
-        let saved: Vec<LayerRef> = scene.iter().map(|i| i.saved.clone()).collect();
-        self.site.save_layers(&saved).map_err(|e| format!("could not save site.json: {e}"))?;
+        self.site.save_layers(&saved_layers(&scene)).map_err(|e| format!("could not save site.json: {e}"))?;
         inner.scene = scene;
         match changed_layer {
-            Some(index) => self.emit_layer(&inner.scene[index].id, &inner.scene[index].state),
+            Some((index, Some(active))) => {
+                // An item comes on only while its layer is on.
+                let on = match inner.scene[index].parent.clone() {
+                    Some(parent) => active && inner.scene.iter().any(|i| i.id == parent && i.state.active),
+                    None => active,
+                };
+                self.switch(&mut inner.scene, index, on);
+            }
+            Some((index, None)) => self.emit_layer(&inner.scene[index].id, &inner.scene[index].state),
             None => self.emit("state.scene", json!({ "scene": inner.order(), "layers": inner.layers() })),
         }
         Ok(result)
+    }
+
+    /// Turns an instance on or off and tells every surface. A layer's items follow it:
+    /// on with it when they are set to come on, off with it always.
+    fn switch(&self, scene: &mut [Instance], index: usize, active: bool) {
+        scene[index].state.active = active;
+        self.emit_layer(&scene[index].id, &scene[index].state);
+        if scene[index].parent.is_none() {
+            for n in block(scene, index).skip(1) {
+                let on = active && scene[n].saved.active;
+                if scene[n].state.active != on {
+                    scene[n].state.active = on;
+                    self.emit_layer(&scene[n].id, &scene[n].state);
+                }
+            }
+        }
+    }
+
+    /// Reads the `steps` of a `scene.set`; null clears them. Steps that show other layers are
+    /// only for a sequence layer, and each step's params are checked against the layer it
+    /// shows. Whether each step's layer may be shown is checked with the rest of the site.
+    fn clean_steps(&self, scene: &[Instance], index: usize, value: &Value) -> Result<Option<Steps>, String> {
+        if value.is_null() {
+            return Ok(None);
+        }
+        if scene[index].parent.is_some() {
+            return Err("an item has no steps: it comes on with its layer".into());
+        }
+        let mut steps: Steps = serde_json::from_value(value.clone()).map_err(|e| format!("steps: {e}"))?;
+        let def = &self.catalog[scene[index].def];
+        if !steps.sequence.is_empty() && def.manifest["sequence"] != true {
+            return Err(format!("only a sequence, such as the slideshow, has steps that show other layers; '{}' is not one", def.id));
+        }
+        for step in &mut steps.sequence {
+            if step.params.is_empty() {
+                continue;
+            }
+            let shown = scene
+                .iter()
+                .find(|i| i.id == step.layer)
+                .ok_or_else(|| format!("a step shows '{}', which is not in the scene", step.layer))?;
+            step.params =
+                self.catalog[shown.def].validate(&step.params, false).map_err(|e| format!("a step showing '{}': {e}", step.layer))?;
+        }
+        Ok(Some(steps))
     }
 
     /// Called under the lock, so events are broadcast in the order changes were applied.
@@ -648,12 +861,21 @@ fn button_patch(mut button: LayerButton, patch: &Value) -> Result<LayerButton, S
         _ => return Err("button must be an object".into()),
     };
     for (key, value) in patch {
+        if key == "order" {
+            button.order = match value {
+                Value::Null => None,
+                Value::Number(n) => n.as_f64(),
+                _ => return Err("button.order must be a number or null".into()),
+            };
+            continue;
+        }
         let text = match value {
             Value::Null => None,
             Value::String(text) => Some(text.trim().to_string()).filter(|t| !t.is_empty()),
             _ => return Err(format!("button.{key} must be text or null")),
         };
         match key.as_str() {
+            "group" => button.group = text,
             "name" => button.name = text,
             "description" => button.description = text,
             "icon" => button.icon = text,

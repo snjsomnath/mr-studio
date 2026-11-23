@@ -15,7 +15,7 @@ sites/<id>/
 
 ```jsonc
 {
-  "format": 2,
+  "format": 3,
   "id": "sample",
   "name": "Sample district",
   "origin": { "lon": 11.9778, "lat": 57.6884 },   // centre of the table area, WGS84
@@ -25,7 +25,8 @@ sites/<id>/
     "rotation_deg": 0       // bearing of the table's "up" edge, clockwise from north
   },
   "timezone": "Europe/Stockholm",
-  "table": { "width_cm": 100, "height_cm": 60, "tile_cm": 20 },
+  "table": { "width_cm": 100, "height_cm": 60, "tile_cm": 20,
+             "ribbons": { "bottom": { "cm": 9 }, "top": "auto" } },   // optional, see present.md
   "scene": {
     "cell_m": 2,
     "buildings": { "path": "data/buildings.geojson", "height_property": "height", "default_height_m": 12 },
@@ -43,12 +44,31 @@ sites/<id>/
     "trips": "data/trips.json"
   },
   "layers": [                                      // the scene, bottom first
-    { "use": "basemap", "active": true },
-    { "use": "sunlight", "active": true, "params": { "hour": 15 } },
-    { "use": "cars", "active": true },
+    { "use": "basemap", "id": "basemap", "active": true },
+    { "use": "cars", "id": "cars", "active": true },
+    { "use": "sunlight", "id": "sun-study", "params": { "hour": 15 },
+      "button": { "name": "Sun study", "group": "Simulations", "order": 1 },
+      "items": [ { "use": "transit", "id": "sun-transit" } ] },      // shown only while the sun study is open
     { "use": "cars", "id": "rush-hour", "params": { "density": 30 } },
-    { "use": "./layers/artwork" }
+    { "use": "custom:heat-walk", "id": "heat-walk" },
+    { "use": "slideshow", "id": "tour",
+      "items": [ { "use": "custom:aerial-1960", "id": "aerial-1960" } ],
+      "steps": { "mode": "manual", "loop": true, "sequence": [
+        { "layer": "aerial-1960", "transition": "fade", "title": "Campus in 1960" },
+        { "layer": "sun-study", "params": { "hour": 9 }, "title": "Morning sun" },
+        { "layer": "heat-walk", "next": "then-next" }
+      ] } },
+    { "use": "./layers/artwork", "id": "artwork" }
   ],
+  "custom": {                                      // custom layers saved in this site (optional)
+    "heat-walk": { "name": "Heat walk", "icon": "route",
+      "data": [ { "id": "paths", "dataset": "walkways" } ],
+      "look": [ { "id": "lines", "block": "lines", "data": "paths", "props": { "color": "#ff8800", "width": 3 } } ],
+      "motion": [ { "id": "glow", "block": "glow", "on": "lines" } ] },
+    "aerial-1960": { "name": "Aerial photo 1960", "category": "media",
+      "data": [ { "id": "photo", "wms": { "url": "https://example.org/wms", "layers": "ortho_1960" } } ],
+      "look": [ { "id": "photo", "block": "raster", "data": "photo" } ] }
+  },
   "tv": { "layout": "default" },
   "branding": { "title": "MR Studio", "logo": null }
 }
@@ -58,12 +78,17 @@ Rules:
 
 - `format` is the contract version, a whole number. A site with an older format is upgraded when it is opened: the app and `mrstudio migrate` rewrite `site.json` and keep the original as `site.format-<n>.json`; anything else that reads a site (`Site::load`) upgrades it in memory. A site with a newer format than the app knows is refused with a message that says to update the app. Every format change adds one step to `mrs-site`'s `migrate` module, which is the only place that knows about older formats.
   - Format 2: the base map is a layer. Format 1 drew ground, streets and footprints under every layer by itself; the upgrade puts `{ "use": "basemap", "active": true }` first in `layers` unless the site already lists it.
+  - Format 3: every entry in `layers` has an `id`, and layers can hold `items`, sequences have `steps`, custom layers are saved under `custom`, buttons have `group` and `order`, and the table has `ribbons`. The upgrade writes into each entry the id format 2 gave it implicitly (the layer's id, or the folder name of a site layer), so the session and the editor keep calling every layer what they called it before. Nothing else changes.
 - `extent` is the table area: a `width_m` by `height_m` rectangle centred on `origin`, rotated by `rotation_deg`. Its aspect ratio should match the table's.
 - The scene grid covers exactly the extent with `cell_m` cells, so `width = round(width_m / cell_m)`.
 - Paths are relative to the site folder and may not leave it.
-- `layers[].use` is a core layer id, or a relative path to a site-only layer package. `params` override the layer's defaults and `active` turns it on at start.
-- `layers[].button` is how the layer is offered on the controller: `{ "name", "description", "icon", "side" }`, all optional. `name` (up to 40 characters) and `description` (up to 200) replace the layer package's own words, `icon` is an icon name in lowercase letters, digits and dashes, and `side` is `"left"` or `"right"`. The map never shows these; they are for the controller and phones. Grouping, attract effects, legends, steps and ribbons are proposed in [present.md](present.md).
-- `layers[].id` names an entry: lowercase letters, digits and dashes. It defaults to the layer's id, so it is only needed when the same layer is listed more than once. All of an entry's state in the session is keyed by it.
+- `layers[].use` is a core layer id, a relative path to a site-only layer package, or `custom:<id>` for a custom layer saved under `custom`. `params` override the layer's defaults and `active` turns it on at start.
+- `layers[].id` names an entry: lowercase letters, digits and dashes, up to 40. It is required, and unique across the whole scene, items included. Items, steps, the session's state and the editor all refer to an entry by it. New entries get the layer's id, then `-2`, `-3`… when that is taken.
+- `layers[].button` is how the layer is offered on the controller: `{ "name", "description", "icon", "side", "group", "order" }`, all optional. `name` (up to 40 characters) and `description` (up to 200) replace the layer package's own words, `icon` is an icon name in lowercase letters, digits and dashes, `side` is `"left"` or `"right"`, `group` (up to 40 characters) puts it in a named group of its rail, and `order` (a number, lower first) places it there. The map never shows these; they are for the controller and phones. How the controller uses them is in [present.md](present.md).
+- `layers[].items` and `layers[].steps`: see [Layers, items and sequences](#layers-items-and-sequences).
+- `custom`: see [Custom layers](#custom-layers).
+- `table.front` is the edge of the projected image where visitors stand: `"bottom"` (the default), `"top"`, `"left"` or `"right"`. For a viewer at the front, the model hides what is projected on the far side, so ribbons and other at-a-glance info go to the front first, and a ribbon set to `"auto"` prefers it, then the two sides next to it, and uses the far side last.
+- `table.ribbons` says what the projector's blank space around the model shows, per side (`top`, `bottom`, `left`, `right`): `"off"`, `"auto"` (use the free band when there is one) or `{ "cm": 9 }`. See [present.md](present.md), Ribbon.
 - `data` maps a dataset name to a file in the site. Layers ask for datasets by name (`requires.data` in `layer.json`), never by path. The scene's `buildings`, `trees` and `terrain` are always available under those names. Names the core layers read: `roads` (LineStrings; optional `width` in metres and `kind`), `transit` (see `packages/layers/transit/README.md`), `slideshow` (see `packages/layers/slideshow/README.md`).
 - `terrain` is one of two things, told apart by the file extension:
   - Raw little-endian f32 elevations covering the extent, row-major with row 0 at the top, at any resolution. Needs `width` and `height`.
@@ -76,9 +101,65 @@ Rules:
 - Vector data is GeoJSON in WGS84 (CRS84). Site prep reprojects from national grids.
 - Nothing in `site.json` is a secret. Credentials for services live in the app's own config.
 
+## Layers, items and sequences
+
+A layer is data plus animation plus interaction. In the scene, an entry of `layers` is an **instance**: it points at a **definition** with `use` and gives it an id, params, a button and a start state. Three kinds of definition exist:
+
+| `use` | Definition | Where it lives |
+| --- | --- | --- |
+| `sunlight` | A core layer: a package with code | The app |
+| `./layers/artwork` | A site-only layer package | The site folder |
+| `custom:heat-walk` | A custom layer: a recipe of blocks, no code | `custom` in this site.json |
+
+A template in the New layer gallery (#59) is not a definition. Adding one writes an ordinary instance with the template's params and button, and nothing refers back to the template.
+
+**Items.** A layer can hold `items`: instances that belong to it, such as public transport, traffic or trees inside a sun study, or a data visual on a slide. An item has `use`, `id`, `params`, `hide` and `active`, and nothing else: no button, no items and no steps of its own. It is drawn right on top of its layer, in list order. It shows only while its layer is open: when the layer turns on, each item whose `active` is true (the default) turns on with it, and when the layer turns off, all its items do. The map at rest is the layers with no button (category `base` and `ambient`) at the top level of the scene, so a table can have public transport at rest and another copy inside one layer.
+
+**Steps.** `steps` says how Next moves through a layer: `mode` (`"manual"` or `"timed"`), `loop` (after the last step, back to the first) and `reveal` (once a step's sub-steps are done, Next `"stop"`s or moves on: `"then-next"`). See [present.md](present.md), Steps.
+
+**Sequences.** A layer whose layer.json says `"sequence": true` (the slideshow) may have `steps.sequence`: a list of steps, each showing another instance by id. A step shows either a layer of the scene, which keeps its own button and can still be opened on its own, or one of the sequence's own items, which exists only inside the sequence (a WMS map or a GeoJSON file made into a custom layer for one slide). A step shows one layer: never the sequence itself, another sequence, or another layer's item. Each step may have:
+
+| Key | Meaning |
+| --- | --- |
+| `layer` | The instance id it shows. Required |
+| `params` | Params the layer takes for this step only, checked against its controls, such as another hour of the day |
+| `duration_s` | How long the step stays in timed mode |
+| `transition`, `transition_s` | `"cut"` or `"fade"`, and how long the fade takes |
+| `next` | This step's own `reveal` |
+| `title`, `description`, `source` | For the controller's info strip (up to 80, 300 and 200 characters). The table never shows them |
+
+Removing a layer from the scene also removes the steps that showed it.
+
+## Custom layers
+
+`custom` holds the custom layers this site has saved, by id (lowercase letters, digits and dashes, and not the id of a core layer). The layer editor (#38) writes them and the MCP server can too. A custom layer is a recipe the runtime draws without code of its own, and it is offered in the New layer gallery next to the core layers. They live in the site, so a table folder carries everything it shows; a library of custom layers shared between tables (#73) copies one into a site when it is used.
+
+```jsonc
+"heat-walk": {
+  "name": "Heat walk", "description": "…", "icon": "route", "category": "analysis",
+  "data":        [ { "id": "paths", "dataset": "walkways" } ],
+  "look":        [ { "id": "lines", "block": "lines", "data": "paths", "props": { "color": "#ff8800", "width": 3 } } ],
+  "motion":      [ { "id": "glow", "block": "glow", "on": "lines", "props": { "pulse_s": 2 } } ],
+  "interaction": [ { "id": "tap", "block": "tap-info", "data": "paths" } ],
+  "enter": "fade",
+  "controls": [ { "id": "width", "type": "range", "label": "Width", "min": 1, "max": 8, "step": 1, "default": 3, "bind": "look.lines.width" } ],
+  "legend": [ { "id": "hot", "label": "Hottest stretch", "color": "#ff4400", "shape": "line" } ],
+  "attract": { "effect": "particles" }
+}
+```
+
+- `name` (1 to 40 characters) is required; `description`, `icon` and `category` are as in layer.json.
+- `data` lists what it shows. Each entry has an `id` and exactly one source: `dataset` (a named dataset of the site), `path` (a file in the site folder: GeoJSON, GeoTIFF, CSV points, an image or a video), `wms` (`{ "url", "layers", "styles"?, "format"?, "source"? }`) or `tiles` (an XYZ URL with `{z}`, `{x}` and `{y}`). A service that needs a sign-in names it with `source`, from the app's Sources manager (#41); no secret goes in the site.
+- `look`, `motion` and `interaction` are lists of blocks, in the editor's order: data, then look, motion and interaction. Each block has an `id` (unique in the layer), the `block` name from [docs/blocks.md](../blocks.md), the `data` it reads, for motion and interaction the look block it acts `on`, and its `props`. The table is 2D: there is no extrusion or 3D camera, so height and value are drawn as colour, outline, glow or pulse.
+- `enter` is how it comes onto the table (`"cut"` or `"fade"`).
+- `controls` are written as in layer.json. A control's `bind` names the block prop it drives, `look.<block id>.<prop>`.
+- `legend` and `attract` are the controller's, as in [present.md](present.md).
+
+The host offers each custom layer to surfaces as a layer manifest with the recipe under `custom`. Until the runtime's recipe player lands with the layer editor (#38), a custom layer can be placed, named and stepped through but draws nothing on the table.
+
 ## Composing a scene
 
-A table scene is the ordered `layers` list and nothing else: the first entry is drawn at the bottom, the last on top.
+A table scene is the ordered `layers` list and nothing else: the first entry is drawn at the bottom, the last on top, and a layer's items right on top of it.
 Everything a person sees on the table, from the dark base map to moving cars, building lights, public transport, trees and analysis layers such as sunlight or isovist, is a layer package added to that list with its params.
 This is what the composer at `/compose` edits. It reads each layer's `layer.json` to offer it in a palette and to generate its settings form, and the host writes `site.json` after every change, so a scene made by drag and drop and one written by hand are the same file.
 The host replaces only the `layers` list and leaves every other key as written. The file is reformatted (two-space indent) the first time it is saved.
@@ -91,10 +172,11 @@ What the composer needs, and where it stands:
 | Layers self-describe their controls, tools and data needs | In `layer.json` (`controls`, `tools`, `requires`) |
 | A site says which of its files a layer should use | In format 1: `data` |
 | A blank starting point | `mrstudio new-site`, and `sites/sample` as the dummy scene |
-| The same layer twice with different settings | Done: an optional `id` per entry; state is keyed by that id instead of the layer id |
+| The same layer twice with different settings | Done: every entry has an `id`, and state is keyed by it |
 | Palette grouping | Done: `category` in `layer.json` (`base`, `ambient`, `analysis`, `media`) |
 | Add, remove and reorder while running | Done: `scene.add`, `scene.remove`, `scene.move` and `scene.set` requests (session.md); the host rewrites `site.json` |
 | Draw order follows the list | Done: everything a layer draws sits at its place in the list |
+| Items that come and go with a layer, sequences, custom layers | In format 3: `items`, `steps`, `custom`; the host keeps items with their layer (`scene.add { parent }`, `scene.move { parent }`) |
 | TV dashboards built from widgets | Done: `tv` (theme, pages) and layer `panels`; see [dashboard.md](dashboard.md) |
 
 Ambient layers (`cars`, `building-lights`, `transit`, `trees`) animate on the table surface from site data or generated paths. They need no kernel; the layer rule "no solver code" still holds.

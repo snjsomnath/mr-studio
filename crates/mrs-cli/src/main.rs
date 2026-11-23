@@ -140,7 +140,21 @@ fn validate(dir: &Path) -> anyhow::Result<(Site, mrs_engine::SceneData)> {
     }
     println!("  trees      {}", stats.trees);
     println!("  built area {:.1}% of cells, highest point {:.1} m", stats.solid_fraction * 100.0, stats.max_height_m);
-    println!("  layers     {}", site.manifest.layers.iter().map(|l| l.r#use.as_str()).collect::<Vec<_>>().join(", "));
+    let layer = |l: &mrs_site::LayerRef| {
+        let name = if l.id == mrs_site::LayerRef::default_id(&l.r#use) { l.id.clone() } else { format!("{} ({})", l.id, l.r#use) };
+        let items: Vec<&str> = l.items.iter().map(|i| i.id.as_str()).collect();
+        let steps = l.steps.as_ref().map_or(0, |s| s.sequence.len());
+        match (items.is_empty(), steps) {
+            (true, 0) => name,
+            (true, n) => format!("{name} [{n} steps]"),
+            (false, 0) => format!("{name} [+ {}]", items.join(", ")),
+            (false, n) => format!("{name} [+ {}; {n} steps]", items.join(", ")),
+        }
+    };
+    println!("  layers     {}", site.manifest.layers.iter().map(layer).collect::<Vec<_>>().join(", "));
+    if !site.manifest.custom.is_empty() {
+        println!("  custom     {}", site.manifest.custom.keys().cloned().collect::<Vec<_>>().join(", "));
+    }
     println!("  baked in {:.0} ms", started.elapsed().as_secs_f64() * 1e3);
     if stats.buildings == 0 && site.manifest.scene.buildings.is_some() {
         bail!("no building falls inside the extent; check origin and extent");

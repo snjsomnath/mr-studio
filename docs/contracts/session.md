@@ -245,12 +245,14 @@ Requests:
 | `calibration.get` | none | table, tv, dev | Returns `{ projector }`, the saved projector calibration or null (see model.md) |
 | `calibration.set` | `{ projector }` | table, tv, dev | Saves it to the site's `calibration.json` (null clears it) and broadcasts `calibration` |
 | `calibration.mode` | `{ active }` | table, tv, dev | Asks the table to open or close its calibration tool |
-| `scene.add` | `{ use, id?, index?, active?, params? }` | tv, dev | Adds a layer from the catalogue at `index` (default: on top, active). Returns `{ id }`; without `id` the first copy is named after the layer and later ones `<layer>-2`, `-3`, ... |
-| `scene.remove` | `{ layer }` | tv, dev | Takes a layer out of the scene |
-| `scene.move` | `{ layer, index }` | tv, dev | Moves a layer to `index` in the draw order (0 is the bottom) |
-| `scene.set` | `{ layer, params?, active?, button?, hide? }` | tv, dev | Like `layer.set` and `layer.activate`, and also saved as the layer's starting state. `button` is `{ name?, description?, icon?, side? }`: text sets a field, `null` clears it, a field left out stays. `hide` is the whole list of control ids the controller and phones leave out. `scene.add` takes `button` and `hide` too |
+| `scene.add` | `{ use, id?, parent?, index?, active?, params? }` | tv, dev | Adds a layer from the catalogue (`use` is its id, or `custom:<id>` for a custom layer) at `index` (default: on top, active). With `parent`, it becomes an item of that layer, at `index` among its items. Returns `{ id }`; without `id` the first copy is named after the layer and later ones `<layer>-2`, `-3`, ... |
+| `scene.remove` | `{ layer }` | tv, dev | Takes a layer, with its items, or one item out of the scene. Steps of a sequence that showed it go too; the answer says how many: `{ dropped_steps }` |
+| `scene.move` | `{ layer, index, parent? }` | tv, dev | Moves a layer (with its items) or an item to `index` in its list: the scene's layers (0 is the bottom), or its layer's items. `parent` moves it into another layer as an item; `parent: null` makes an item a layer of the scene. A layer with items, steps or a button cannot become an item |
+| `scene.set` | `{ layer, params?, active?, button?, hide?, steps? }` | tv, dev | Like `layer.set` and `layer.activate`, and also saved as the layer's starting state. For an item, `active` is whether it comes on with its layer. `button` is `{ name?, description?, icon?, side?, group?, order? }`: a value sets a field, `null` clears it, a field left out stays; items have none. `hide` is the whole list of control ids the controller and phones leave out. `steps` replaces the layer's steps whole (`null` clears them); only a sequence layer (`"sequence": true`) may have `steps.sequence`, and each step's params are checked against the layer it shows. `scene.add` takes `button` and `hide` too |
+| `layer.step` | `{ layer, to }` | planned | Moves a layer through its steps (`"next"`, `"previous"`, `"first"`, `"all"` or a number). Proposed in [present.md](present.md); built with the slideshow (#43) |
 
 In every `layer.*` and `tool.input` request, `layer` is the instance id.
+Items are instances like any other: they are in `scene` (right after their layer) and `layers`, with `parent` in their state. Turning a layer on turns on its items that are set to come on with it, and turning it off turns all of them off, each with its own `state.layer` event. `layer.activate` on an item works only while its layer is on.
 The `scene.*` requests rewrite the `layers` list of `site.json` before they take effect, and fail without changing anything if it cannot be saved.
 `layer.set` and `layer.activate` change the running session only, so a slider moved on the TV or a phone is not written to the site.
 
