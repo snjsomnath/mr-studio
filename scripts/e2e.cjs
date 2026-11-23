@@ -775,7 +775,7 @@ async function main() {
       window.shellCalls = [];
       let presenting = false;
       window.__TAURI__ = { core: { invoke: async (command, args) => {
-        window.shellCalls.push(command === 'open_view' ? `open_view ${args.role}` : command);
+        window.shellCalls.push(command === 'open_view' ? `open_view ${args.role}` : command === 'file_action' ? `file_action ${args.action}` : command);
         if (command === 'present') presenting = true;
         if (command === 'stop_presenting') presenting = false;
         return { presenting };
@@ -792,8 +792,10 @@ async function main() {
     for (const name of ['Map', 'Controller', 'Developer']) await shelled.locator('.ed-ribbon').getByRole('button', { name, exact: true }).click();
     await shelled.getByRole('button', { name: 'All tables', exact: true }).click();
     assert.equal(await shelled.evaluate(() => window.mrsShellControls), true);
+    // "All tables" goes through the File menu's action (#130): it keeps a picture of the map first, then asks the app.
+    await shelled.waitForFunction(() => window.shellCalls.includes('file_action home'));
     assert.deepEqual(await shelled.evaluate(() => window.shellCalls.filter((c) => c !== 'presenting_state')), [
-      'present', 'stop_presenting', 'open_view table', 'open_view table', 'open_view tv', 'open_view dev', 'open_home',
+      'present', 'stop_presenting', 'open_view table', 'open_view table', 'open_view tv', 'open_view dev', 'file_action home',
     ]);
     assert.equal(popups, 0, 'no browser window is opened inside the app');
     await shelled.close();
