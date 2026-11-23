@@ -213,6 +213,8 @@ export interface SiteInfo {
     width_cm: number;
     height_cm: number;
     tile_cm?: number;
+    /** The edge of the projected image where visitors stand. Default bottom. */
+    front?: 'top' | 'bottom' | 'left' | 'right';
     /** What the projector's blank space shows per side: off, auto, or a size in cm (docs/contracts/present.md). */
     ribbons?: Partial<Record<'top' | 'bottom' | 'left' | 'right', 'off' | 'auto' | { cm: number }>>;
   } | null;

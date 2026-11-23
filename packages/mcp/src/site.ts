@@ -25,7 +25,7 @@ const FALLBACK_SCHEMA: SiteSchema = {
   '': { fields: ['format', 'id', 'name', 'origin', 'extent', 'timezone', 'table', 'scene', 'data', 'basemap', 'layers', 'custom', 'tv', 'branding'], required: ['format', 'id', 'name', 'origin', 'extent', 'scene'] },
   origin: { fields: ['lon', 'lat'], required: ['lon', 'lat'] },
   extent: { fields: ['width_m', 'height_m', 'rotation_deg'], required: ['width_m', 'height_m'] },
-  table: { fields: ['width_cm', 'height_cm', 'tile_cm', 'ribbons'], required: ['width_cm', 'height_cm'] },
+  table: { fields: ['width_cm', 'height_cm', 'tile_cm', 'front', 'ribbons'], required: ['width_cm', 'height_cm'] },
   'table.ribbons': { fields: ['top', 'bottom', 'left', 'right'], required: [] },
   scene: { fields: ['cell_m', 'buildings', 'terrain', 'trees'], required: ['cell_m'] },
   'scene.buildings': { fields: ['path', 'height_property', 'default_height_m'], required: ['path'] },
@@ -257,6 +257,7 @@ export function validateManifest(manifest: SiteManifest, dir: string | null, cat
   const t = manifest.table;
   if (t !== undefined && t !== null) {
     if (!isNum(t.width_cm) || !isNum(t.height_cm) || t.width_cm <= 0 || t.height_cm <= 0) err('table', 'needs positive width_cm and height_cm');
+    if (t.front !== undefined && !['top', 'bottom', 'left', 'right'].includes(t.front)) err('table.front', "is the edge where visitors stand: 'bottom', 'top', 'left' or 'right'");
     else if (e && isNum(e.width_m) && isNum(e.height_m) && e.height_m > 0) {
       const a = e.width_m / e.height_m;
       const b = t.width_cm / t.height_cm;

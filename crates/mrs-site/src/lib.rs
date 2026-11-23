@@ -589,9 +589,11 @@ mod tests {
         site.manifest.layers[1].button.order = Some(2.0);
         assert!(site.problems().is_empty(), "{:?}", site.problems());
         let table: Table = serde_json::from_value(serde_json::json!({
-            "width_cm": 100, "height_cm": 60, "ribbons": { "bottom": { "cm": 9 }, "top": "auto", "left": "off" }
+            "width_cm": 100, "height_cm": 60, "front": "left", "ribbons": { "bottom": { "cm": 9 }, "top": "auto", "left": "off" }
         }))
         .unwrap();
+        assert_eq!(table.front, Some(TableSide::Left));
+        assert!(serde_json::from_value::<Table>(serde_json::json!({ "width_cm": 1, "height_cm": 1, "front": "near" })).is_err());
         assert_eq!(table.ribbons.bottom, Some(Ribbon::Size(RibbonSize { cm: 9.0 })));
         assert_eq!(table.ribbons.top, Some(Ribbon::Mode(RibbonMode::Auto)));
         assert!(

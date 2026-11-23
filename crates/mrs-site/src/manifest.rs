@@ -27,9 +27,23 @@ pub struct Table {
     pub height_cm: f64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tile_cm: Option<f64>,
+    /// The edge of the projected image where visitors stand. At-a-glance info goes there first,
+    /// because for a viewer at the front the model hides what is projected on the far side.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub front: Option<TableSide>,
     /// What the projector's blank space around the model shows, per side (present.md, Ribbon).
     #[serde(default, skip_serializing_if = "Ribbons::is_empty")]
     pub ribbons: Ribbons,
+}
+
+/// A side of the projected image.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TableSide {
+    Top,
+    Bottom,
+    Left,
+    Right,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
