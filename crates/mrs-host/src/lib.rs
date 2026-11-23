@@ -360,6 +360,7 @@ fn router(state: Arc<AppState>, web_dir: Option<PathBuf>) -> Router {
         .route("/api/data/import", post(import_data))
         .route("/api/data/model", post(model::post))
         .route("/api/site/place", post(place_site))
+        .route("/api/site/thumbnail", post(save_thumbnail))
         .route("/api/wms", get(|query: Query<wms::WmsQuery>| wms::get_map(query.0)))
         .layer(DefaultBodyLimit::max(MAX_IMPORT_BYTES))
         // Imports replace data files at the same path, so a surface reloading after
@@ -433,6 +434,38 @@ async fn import_data(
 
 /// `POST /api/site/place`, `{ name?, origin: { lon, lat }, extent: { width_m, height_m, rotation_deg } }`:
 /// renames, moves, resizes or turns the table. Answers with the site as surfaces see it.
+/// Where Home finds the picture of a table: the map as it was when the table was last left
+/// (#131). Kept with the app's own files in the table folder, out of exports and copies.
+pub const THUMBNAIL: &str = ".mrstudio/thumbnail.jpg";
+
+/// Stores the editor's picture of the map, sent when the table is left.
+async fn save_thumbnail(
+    State(state): State<Arc<AppState>>,
+    ConnectInfo(from): ConnectInfo<SocketAddr>,
+    body: Bytes,
+) -> axum::response::Response {
+    if !from.ip().is_loopback() {
+        return (StatusCode::FORBIDDEN, Json(json!({ "error": "the picture of the table is kept from this computer only" })))
+            .into_response();
+    }
+    if body.len() > 4 * 1024 * 1024 || !body.starts_with(&[0xFF, 0xD8, 0xFF]) {
+        return (StatusCode::BAD_REQUEST, Json(json!({ "error": "expected a JPEG picture under 4 MB" }))).into_response();
+    }
+    let path = state.site.dir.join(THUMBNAIL);
+    let written = tokio::task::spawn_blocking(move || -> std::io::Result<()> {
+        std::fs::create_dir_all(path.parent().expect("in a folder"))?;
+        let partial = path.with_extension("jpg.part");
+        std::fs::write(&partial, &body)?;
+        std::fs::rename(&partial, &path)
+    })
+    .await;
+    match written {
+        Ok(Ok(())) => StatusCode::NO_CONTENT.into_response(),
+        Ok(Err(e)) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e.to_string() }))).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e.to_string() }))).into_response(),
+    }
+}
+
 async fn place_site(
     State(state): State<Arc<AppState>>,
     ConnectInfo(from): ConnectInfo<SocketAddr>,

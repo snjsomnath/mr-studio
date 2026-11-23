@@ -14,6 +14,47 @@ pub struct SiteEntry {
     pub source: &'static str,
     /// Why it cannot run, if it cannot.
     pub problem: Option<String>,
+    /// When its site.json last changed, in milliseconds since 1970: "Edited 10 minutes ago".
+    pub edited: Option<u64>,
+}
+
+/// What Home shows on a table's card besides its name, found in the background (#131).
+#[derive(Debug, Clone, Serialize)]
+pub struct Details {
+    /// The space the folder takes on disk, everything in it included.
+    pub bytes: u64,
+    /// The picture of the map from when the table was last left, as a `data:` URL.
+    pub thumbnail: Option<String>,
+}
+
+/// Where the editor keeps the picture of the map; the host writes it (`mrs_host::THUMBNAIL`).
+pub const THUMBNAIL: &str = ".mrstudio/thumbnail.jpg";
+
+pub fn details(path: &Path) -> Details {
+    use base64::Engine as _;
+    let thumbnail = std::fs::read(path.join(THUMBNAIL))
+        .ok()
+        .filter(|b| b.starts_with(&[0xFF, 0xD8]))
+        .map(|bytes| format!("data:image/jpeg;base64,{}", base64::engine::general_purpose::STANDARD.encode(bytes)));
+    Details { bytes: folder_size(path), thumbnail }
+}
+
+/// The bytes of every file under `path`. Links are not followed, so a link to a large
+/// folder elsewhere is not counted, and cannot loop.
+pub fn folder_size(path: &Path) -> u64 {
+    let Ok(read) = std::fs::read_dir(path) else { return 0 };
+    read.flatten()
+        .map(|entry| match entry.file_type() {
+            Ok(t) if t.is_dir() => folder_size(&entry.path()),
+            Ok(t) if t.is_file() => entry.metadata().map(|m| m.len()).unwrap_or(0),
+            _ => 0,
+        })
+        .sum()
+}
+
+fn edited(path: &Path) -> Option<u64> {
+    let modified = std::fs::metadata(path.join("site.json")).ok()?.modified().ok()?;
+    Some(modified.duration_since(std::time::UNIX_EPOCH).ok()?.as_millis() as u64)
 }
 
 /// Every site the picker offers: the ones added by hand, the ones in each sites folder
@@ -49,9 +90,10 @@ fn packages_in(folder: &Path) -> Vec<PathBuf> {
 
 pub fn describe(path: PathBuf, source: &'static str) -> SiteEntry {
     let fallback = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    let edited = edited(&path);
     match Site::load(&path) {
-        Ok(site) => SiteEntry { id: site.manifest.id.clone(), name: site.manifest.name.clone(), path, source, problem: None },
-        Err(e) => SiteEntry { id: fallback.clone(), name: fallback, path, source, problem: Some(e.to_string()) },
+        Ok(site) => SiteEntry { id: site.manifest.id.clone(), name: site.manifest.name.clone(), path, source, problem: None, edited },
+        Err(e) => SiteEntry { id: fallback.clone(), name: fallback, path, source, problem: Some(e.to_string()), edited },
     }
 }
 
@@ -86,5 +128,23 @@ mod tests {
         assert_eq!((sample.name.as_str(), sample.source, &sample.problem), ("Sample district", "added", &None));
         assert!(found.iter().any(|s| s.problem.is_some()), "the broken site is listed with its problem");
         std::fs::remove_dir_all(&broken).unwrap();
+    }
+
+    #[test]
+    fn a_card_shows_the_folder_size_and_the_picture_from_the_last_visit() {
+        let dir = std::env::temp_dir().join(format!("mrs-details-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("data")).unwrap();
+        std::fs::write(dir.join("site.json"), "{}").unwrap();
+        std::fs::write(dir.join("data/a.geojson"), vec![b' '; 1000]).unwrap();
+        let before = details(&dir);
+        assert_eq!((before.bytes, before.thumbnail), (1002, None));
+        std::fs::create_dir_all(dir.join(".mrstudio")).unwrap();
+        std::fs::write(dir.join(THUMBNAIL), [0xFF, 0xD8, 0xFF, 0xE0]).unwrap();
+        let after = details(&dir);
+        assert_eq!(after.bytes, 1006);
+        assert_eq!(after.thumbnail.as_deref(), Some("data:image/jpeg;base64,/9j/4A=="));
+        assert!(edited(&dir).is_some());
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

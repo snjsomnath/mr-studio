@@ -294,6 +294,46 @@ export class TableView {
   }
 
   /** The zoom at which the extent exactly fits the container. */
+  /**
+   * A picture of the table as it is now, for the table's card on Home (#131): the map and
+   * whatever is drawn over it, `width` pixels wide, as a JPEG. The map draws with WebGL,
+   * whose picture is only readable during a frame, so it is taken as the map renders.
+   * Null when there is nothing to take (the map never rendered).
+   */
+  snapshot(width = 640): Promise<Blob | null> {
+    const { map, container } = this;
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => resolve(null), 1500);
+      map.once('render', () => {
+        clearTimeout(timer);
+        try {
+          const box = container.getBoundingClientRect();
+          if (box.width < 1 || box.height < 1) return resolve(null);
+          const scale = width / box.width;
+          const out = document.createElement('canvas');
+          out.width = width;
+          out.height = Math.round(box.height * scale);
+          const g = out.getContext('2d')!;
+          g.fillStyle = this.site.basemap.background;
+          g.fillRect(0, 0, out.width, out.height);
+          // Every canvas in the table, in the order they stack: the map, the model, overlays.
+          for (const canvas of container.querySelectorAll('canvas')) {
+            const r = canvas.getBoundingClientRect();
+            if (r.width < 1 || r.height < 1 || canvas.width < 1) continue;
+            g.globalAlpha = Number(getComputedStyle(canvas).opacity) || 1;
+            g.drawImage(canvas, (r.left - box.left) * scale, (r.top - box.top) * scale, r.width * scale, r.height * scale);
+          }
+          g.globalAlpha = 1;
+          out.toBlob((blob) => resolve(blob), 'image/jpeg', 0.85);
+        } catch (error) {
+          console.warn('No picture of the table:', error);
+          resolve(null);
+        }
+      });
+      map.triggerRepaint();
+    });
+  }
+
   private fitZoom(): number {
     const { width_m, height_m } = this.site.extent;
     const width = Math.max(1, this.container.clientWidth);

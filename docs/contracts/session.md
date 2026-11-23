@@ -241,6 +241,14 @@ POST /api/site/place   { "name"?: "Harbour", "origin": { "lon": 11.97, "lat": 57
 
 Loopback only, like the data requests. It rewrites `name` (left out: kept), `origin` and `extent` of `site.json`, the table's `width_cm` when `table_width_cm` is given (10 cm to 20 m; it sets the model scale, 1 : `width_m` × 100 / `width_cm`), and the table's `height_cm` so its shape follows, then re-bakes the scene for the ground the table now covers, closes every engine stream and sends `site.changed`; surfaces reload. Data brought in stays where it is in the world. Answers `{ "site": <SiteInfo> }`, or 422 `{ "error" }` with the reason: a name over 60 characters, a place off the map, a side under 10 m or over 50 km, or a table whose ground is a raw height grid (`terrain.f32`), which is made for one extent and cannot move (a GeoTIFF can). The setup guide's "Name and place" step uses it.
 
+## A picture of the table for Home
+
+```
+POST /api/site/thumbnail   <JPEG bytes>
+```
+
+Loopback only. The editor sends a picture of the map (640 px wide) when the table is left or saved (#131); the host keeps it as `.mrstudio/thumbnail.jpg` in the site folder, where the desktop app's Home finds it for the table's card. `.mrstudio/` is the app's own: Save As (#130) does not copy it and an export (#85) leaves it out. Answers 204, or 400 for anything that is not a JPEG under 4 MB.
+
 ## Wire protocol
 
 Text frames are JSON. Binary frames are engine field frames (see engine.md).
