@@ -707,7 +707,7 @@ async function main() {
     // What was read is drawn against the table's outline before anything is written.
     await dialog.locator('.im-map .im-map-table').waitFor();
     assert.equal(await dialog.locator('.im-map-data circle').count(), 6);
-    await dialog.getByRole('button', { name: 'Add to the table' }).click();
+    await dialog.getByRole('button', { name: /^Add (to|and show on) the table$/ }).click();
     await adder.waitForFunction(() => !document.querySelector('dialog.im-dialog'));
     await adder.locator('.ed-tree .ed-row[data-context="home"]').waitFor();
     assert.equal(JSON.parse(fs.readFileSync(path.join(site, 'site.json'), 'utf8')).data.places, 'data/places.geojson');
