@@ -88,6 +88,8 @@ struct Shell {
     surfaces: Mutex<Vec<(String, usize)>>,
     /// The editor window shows a site that has since been replaced.
     editor_stale: std::sync::atomic::AtomicBool,
+    /// The table's window covers its display; the controller's Full screen button toggles it (#198).
+    table_fullscreen: std::sync::atomic::AtomicBool,
     /// The result of the last look for a newer version.
     updates: Mutex<Option<Result<updates::Available, String>>>,
     /// File menu actions that arrive twice (menu shortcut and page) run once.
@@ -211,6 +213,7 @@ fn main() -> anyhow::Result<()> {
                 generation: AtomicU32::new(0),
                 surfaces: Mutex::new(Vec::new()),
                 editor_stale: Default::default(),
+                table_fullscreen: Default::default(),
                 updates: Mutex::new(None),
                 file_debounce: file_menu::Debounce::new(),
                 sources: Arc::new(sources),
@@ -629,7 +632,7 @@ fn open_surfaces(app: &AppHandle, port: u16, displays: &Displays) -> anyhow::Res
             .inner_size(1400.0, 840.0)
             .visible(false)
             .initialization_script(format!(
-                "{SHORTCUTS}\n{}\n{}\n{}",
+                "window.__MRS_SHELL__ = true;\n{SHORTCUTS}\n{}\n{}\n{}",
                 colour::SCRIPT,
                 colour.script(),
                 // The table shows the way back only when it is alone, on the author's own screen.
@@ -644,6 +647,9 @@ fn open_surfaces(app: &AppHandle, port: u16, displays: &Displays) -> anyhow::Res
             })
             .build()?;
         place(&window, target, spec)?;
+        if spec.role == "table" {
+            shell.table_fullscreen.store(spec.fullscreen, Ordering::Relaxed);
+        }
         if let Some(d) = target {
             shell.surfaces.lock().unwrap().push((label, d.index));
         }
@@ -684,6 +690,25 @@ fn place(window: &WebviewWindow, display: Option<&Display>, spec: &WindowSpec) -
     Ok(())
 }
 
+/// Puts the table's window into full screen on its display, or back into a window.
+fn toggle_table_fullscreen(app: &AppHandle) -> anyhow::Result<()> {
+    let Some(window) = table_window(app) else { return Ok(()) };
+    let shell = app.state::<Shell>();
+    let full = !shell.table_fullscreen.load(Ordering::Relaxed);
+    #[cfg(target_os = "macos")]
+    window.set_simple_fullscreen(full)?;
+    #[cfg(not(target_os = "macos"))]
+    {
+        window.set_decorations(!full)?;
+        window.set_fullscreen(full)?;
+    }
+    if !full {
+        window.set_size(tauri::LogicalSize::new(1400.0, 840.0))?;
+    }
+    shell.table_fullscreen.store(full, Ordering::Relaxed);
+    Ok(())
+}
+
 fn shell_action(app: &AppHandle, action: &str) {
     let app = app.clone();
     match action {
@@ -705,6 +730,11 @@ fn shell_action(app: &AppHandle, action: &str) {
         "escape" if app.get_webview_window(EDITOR).is_some() => shell_action(&app, "edit"),
         "escape" => {}
         "quit" => app.exit(0),
+        // The controller's Full screen button (#198): the table's window in or out of full screen.
+        "fullscreen" => {
+            let app = app.clone();
+            drop(tauri::async_runtime::spawn(async move { report(toggle_table_fullscreen(&app)) }));
+        }
         other => tracing::warn!("unknown shell action '{other}'"),
     }
 }

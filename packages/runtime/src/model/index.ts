@@ -25,6 +25,15 @@ export async function installModel(view: TableView, connection: Connection, role
   const tool = new CalibrationTool(view.container, model, connection, view.site, role === 'table');
   // The editor's own map never takes the tool from a remote request: the editor asks for it on the projected table (#153).
   if (options.remoteCalibration !== false) connection.on('calibration.mode', (p: { active: boolean }) => (p.active ? tool.open() : tool.close()));
+  if (options.remoteCalibration !== false) {
+    // Closed on the table itself (Close, Save, Esc): the controllers' Calibrate buttons hear it too (#198).
+    const close = tool.close.bind(tool);
+    tool.close = () => {
+      const open = tool.isOpen;
+      close();
+      if (open) void connection.request('calibration.mode', { active: false }).catch(() => {});
+    };
+  }
   if (query.has('calibrate')) tool.open();
   window.addEventListener('keydown', (event) => {
     const typing = event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLSelectElement;

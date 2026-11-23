@@ -347,10 +347,37 @@ interface Card {
  * words and controls are in the centre. The map's ambient layers have no button.
  * The layer's panels are on the dashboard canvas.
  */
+/**
+ * Full screen from the controller (#198). In the app the table's window goes in or out of
+ * full screen; in a browser, as on the Chalmers demo, the controller's own page does.
+ */
+function fullScreen(): void {
+  if ((window as { __MRS_SHELL__?: boolean }).__MRS_SHELL__) {
+    // The app's shell takes the address and stays on this page.
+    window.location.href = '/__shell/fullscreen';
+    return;
+  }
+  if (document.fullscreenElement) void document.exitFullscreen().catch(() => {});
+  else void document.documentElement.requestFullscreen().catch(() => {});
+}
+
 /** The About page on the controller screen: the site's words and its credits. */
-function aboutPage(about: TvAbout, fallback: string): HTMLElement {
+function aboutPage(about: TvAbout, fallback: string, siteLogo: string | null): HTMLElement {
   const page = el('section', 'layer-card layer-open about-page');
   page.hidden = true;
+  // The logos of the people behind the table, as the Chalmers demo has them (#198).
+  const logos = (about.logos ?? (siteLogo ? [{ path: siteLogo }] : [])).filter((l) => l && typeof l.path === 'string' && l.path);
+  if (logos.length > 0) {
+    const row = el('div', 'about-logos');
+    for (const logo of logos) {
+      const image = el('img', 'about-logo');
+      image.src = `/site/${logo.path.replace(/^\/+/, '')}`;
+      image.alt = logo.name ?? '';
+      image.addEventListener('error', () => image.remove());
+      row.append(image);
+    }
+    page.append(row);
+  }
   page.append(el('h2', 'layer-open-name', about.title ?? fallback));
   if (about.text) page.append(el('p', 'layer-about', about.text));
   const credits = (about.credits ?? []).filter((c) => c && typeof c.name === 'string');
@@ -542,7 +569,7 @@ export class Controller {
     }
     this.connection = connection;
     this.role = role;
-    this.about = centre && site.tv?.about ? aboutPage(site.tv.about, site.branding.title ?? site.name) : undefined;
+    this.about = centre && site.tv?.about ? aboutPage(site.tv.about, site.branding.title ?? site.name, site.branding.logo) : undefined;
     this.arrange();
     if (centre) {
       this.listenForKeys();
@@ -850,11 +877,19 @@ export class Controller {
   }
 
   /**
-   * Closes the open layer and the About page, so the controller goes back to its welcome.
+   * Reset view: closes the About page and puts the table back the way it starts, so the
+   * controller goes back to its welcome.
    * Tools made to run alongside (the phones' sketch) stay on, as they do when a layer opens.
    */
   reset(): void {
     this.showAbout(false);
+    // The host puts every layer back the way the table starts: what was opened goes off, the
+    // map at rest comes back, and changed settings return to the saved ones (#198).
+    void this.connection.request('layers.reset', {}).catch(() => this.closeLayers());
+  }
+
+  /** Closes the open layers, leaving tools kept alongside (the phones' sketch) on. */
+  private closeLayers(): void {
     for (const id of this.openLayers()) {
       if (this.store.manifest(this.store.state.layers[id]!.layer)?.alongside) continue;
       void this.connection.request('layer.activate', { layer: id, active: false }).catch(() => {});
@@ -863,10 +898,13 @@ export class Controller {
 
   /**
    * The core's own buttons at the foot of the controller screen's rail, drawn dashed so they
-   * read as actions, not layers (#75): Reset, and About when the site has `tv.about`.
+   * read as actions, not layers (#75), in the Chalmers demo's groups (#198):
+   * - Map controls: Reset view, Full screen and Calibrate. `tv.map_controls: false` leaves Reset alone.
+   * - About: Credits, when the site has `tv.about`.
    */
   actions(): HTMLElement {
     const box = el('div', 'rail-actions');
+    const operator = this.store.state.site.tv?.map_controls !== false;
     const action = (label: string, iconName: string, run: () => void) => {
       const press = el('button', 'layer-button action-button');
       press.type = 'button';
@@ -878,11 +916,26 @@ export class Controller {
       box.append(press);
       return press;
     };
-    action('Reset', 'reset', () => this.reset());
+    if (operator) box.append(el('div', 'rail-group', 'Map controls'));
+    action(operator ? 'Reset view' : 'Reset', 'reset', () => this.reset());
+    if (operator) {
+      action('Full screen', 'fullscreen', () => fullScreen());
+      // Calibrate opens the projector calibration on the table, and closes it again.
+      let calibrating = false;
+      const calibrate = action('Calibrate', 'overscan', () => {
+        void this.connection.request('calibration.mode', { active: !calibrating }).catch(() => {});
+      });
+      calibrate.setAttribute('aria-pressed', 'false');
+      this.connection.on('calibration.mode', (p: { active: boolean }) => {
+        calibrating = Boolean(p.active);
+        calibrate.setAttribute('aria-pressed', String(calibrating));
+      });
+    }
     if (this.about) {
-      this.aboutButton = action('About', 'info', () => {
+      if (operator) box.append(el('div', 'rail-group', 'About'));
+      this.aboutButton = action('Credits', 'people', () => {
         const show = !this.aboutOpen;
-        if (show) this.reset();
+        if (show) this.closeLayers();
         this.showAbout(show);
       });
       this.aboutButton.setAttribute('aria-pressed', 'false');
