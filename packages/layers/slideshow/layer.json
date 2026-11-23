@@ -4,6 +4,7 @@
   "name": "Slideshow",
   "description": "Images, video and map data shown on the table one after another",
   "icon": "images",
+  "attract": { "effect": "grid" },
   "category": "media",
   "sequence": true,
   "hidesAtRest": true,

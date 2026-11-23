@@ -216,6 +216,10 @@ export interface TvConfig {
   theme_name?: string;
   /** The About page the controller's About button opens. Without it there is no About button. */
   about?: TvAbout;
+  /** Seconds with no touch before the controller goes home, as Reset does. Default 180; 0 never. */
+  idle_reset_s?: number;
+  /** Seconds each layer stays up on the home screen's attract loop. Default 4. */
+  attract_s?: number;
 }
 
 /** The site's About page on the controller: a title, a few lines, and who made it. */

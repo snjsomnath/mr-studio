@@ -62,6 +62,8 @@ async function main() {
       { layer: 'sunlight', params: { hour: 9 }, title: 'Morning shadows', description: 'The square at nine on midsummer morning.', source: 'Sun position: NOAA' },
       { layer: 'trees', title: 'Street trees' },
     ] };
+    // The controller's home loops faster here, and goes home on its own only when a test asks (#74).
+    json.tv = { ...(json.tv ?? {}), attract_s: 2, idle_reset_s: 0 };
     // A map of the buildings by use, revealed a use at a time: the controller's legend follows it (#76).
     json.layers.push({ use: 'mapdata', id: 'uses', active: false, button: { name: 'Building uses' }, params: { dataset: 'buildings', colorBy: 'kind', reveal: true } });
     fs.writeFileSync(path.join(site, 'site.json'), JSON.stringify(json, null, 2));
@@ -119,6 +121,24 @@ async function main() {
       if ((await button.getAttribute('aria-pressed')) !== String(on)) await button.click();
       await tv.locator(`.layer-button[aria-pressed="${on}"]`, { hasText: name }).waitFor();
     };
+    // Home (#74): the site's title over a moving background, looping through the layers on the rails.
+    const home = tv.locator('.layer-welcome.attract');
+    await home.waitFor();
+    const firstStop = await home.getAttribute('data-layer');
+    await tv.waitForFunction((first) => document.querySelector('.layer-welcome.attract')?.getAttribute('data-layer') !== first, firstStop, { timeout: 8000 });
+    await home.locator('.attract-name').filter({ hasText: /\S/ }).waitFor();
+    assert.ok(await home.getAttribute('data-effect'), 'each stop has a background effect');
+    if (shots) await tv.screenshot({ path: path.join(shots, 'tv-home.png') });
+    // A controller left alone goes home, as Reset does: here after two seconds.
+    {
+      const idle = await open('/tv?idle=2', { width: 1920, height: 1080 });
+      await idle.locator('.layer-button', { hasText: 'Building uses' }).click();
+      await idle.locator('.layer-button[aria-pressed="true"]', { hasText: 'Building uses' }).waitFor();
+      await idle.locator('.layer-welcome.attract').waitFor({ state: 'hidden' });
+      await idle.locator('.layer-welcome.attract').waitFor({ timeout: 8000 });
+      await idle.locator('.layer-button[aria-pressed="false"]', { hasText: 'Building uses' }).waitFor();
+      await idle.close();
+    }
     // The map's ambient layers have no button there, and unplaced buttons are shared out over both sides.
     assert.equal(await tv.locator('.layer-button', { hasText: 'Traffic' }).count(), 0);
     const leftButtons = await tv.locator('.controller:not(.controller-right) .layer-button-card').count();
@@ -765,7 +785,8 @@ async function main() {
     await guide.locator('.wz-look [role="radio"]', { hasText: /^Icons$/ }).click();
     await live.locator('body[data-rail-style="icons"]').waitFor();
     await guide.waitForFunction(() => document.querySelector('.wz-theme[aria-checked="true"]')?.textContent?.includes('Midnight'));
-    assert.equal(savedTv(), undefined, 'the default look leaves no tv settings behind');
+    // Only the test's own home settings are left: the default look leaves none of its own behind.
+    assert.deepEqual(savedTv(), { attract_s: 2, idle_reset_s: 0 }, 'the default look leaves no tv settings behind');
     await guide.getByLabel('Name of Wind').fill('Windy corners');
     await guide.getByLabel('Name of Wind').blur();
     await live.locator('.layer-button', { hasText: 'Windy corners' }).waitFor();
