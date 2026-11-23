@@ -10,6 +10,7 @@
       "id": "style", "type": "select", "label": "Style", "default": "dark",
       "options": [
         { "value": "dark", "label": "Dark, from your data" },
+        { "value": "darkmap", "label": "Dark map" },
         { "value": "light", "label": "Light map" },
         { "value": "streets", "label": "Street map" },
         { "value": "aerial", "label": "Aerial photo" },
