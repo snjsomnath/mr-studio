@@ -130,6 +130,15 @@ export function isAmbient(manifest: LayerManifest): boolean {
   return manifest.category === 'base' || manifest.category === 'ambient';
 }
 
+/**
+ * Layer packages the editor offers to add. The building blocks demo shows the SDK to
+ * developers; it is not a layer an author would put on a table (#38). Sites that
+ * already have it keep it.
+ */
+export function isOffered(manifest: LayerManifest): boolean {
+  return manifest.id !== 'blocks-demo';
+}
+
 /** The side a site's layer buttons default to: `tv.rail`, unless that hides them. */
 export function defaultSide(store: Store): 'left' | 'right' {
   return store.state.site.tv?.rail === 'right' ? 'right' : 'left';

@@ -1,7 +1,8 @@
 import type { LayerManifest, LayerState } from '@mrstudio/sdk';
-import { defaultSideOf, el, isAmbient, layerButton } from '../controls.ts';
+import { defaultSideOf, el, isAmbient, isOffered, layerButton } from '../controls.ts';
 import type { Store } from '../store.ts';
 import { icon } from './icons.ts';
+import { parsePlace } from './place.ts';
 
 /** What the wizard needs from the editor around it. */
 export interface WizardHost {
@@ -16,9 +17,15 @@ export interface WizardHost {
   controller(shown: boolean): void;
   present(): void;
   close(): void;
+  /** Called before the table is moved, so the guide comes back at `step` once every surface has reloaded. */
+  resumeAt(step: number): void;
 }
 
-export const WIZARD_STEPS = ['Welcome', 'Your place', 'The map at rest', 'Layers', 'Buttons', 'Ready'] as const;
+/** One name for the table when no layer is open, used everywhere in the editor and the guide. */
+export const AT_REST = 'At rest';
+
+export const WIZARD_STEPS = ['Name and place', 'Your place', AT_REST, 'Layers', 'Buttons', 'Ready'] as const;
+const WHERE = 0;
 const PLACE = 1;
 const REST = 2;
 const LAYERS = 3;
@@ -32,13 +39,20 @@ interface ImportReport {
 }
 
 /** The files a table is made from. Each is brought in on its own. */
-const PLACE_DATA: { target: string; name: string; icon: string; about: string; accept: string }[] = [
-  { target: 'buildings', name: 'Buildings', icon: 'blocks', about: 'Footprints with heights. They cast the shadows and shape the wind. GeoJSON.', accept: '.geojson,.json' },
-  { target: 'terrain', name: 'Ground', icon: 'map', about: 'The height of the land, so hills shade and shelter as they do outside. A GeoTIFF.', accept: '.tif,.tiff' },
-  { target: 'trees', name: 'Trees', icon: 'tree', about: 'Where the trees stand. GeoJSON points, or a CSV with coordinates.', accept: '.geojson,.json,.csv' },
-  { target: 'walkways', name: 'Walking paths', icon: 'footprints', about: 'Lines people can walk along. Cool paths needs them. GeoJSON.', accept: '.geojson,.json' },
-  { target: 'trips', name: 'Trips', icon: 'route', about: 'Journeys through the day. Mobility needs them. A trips.json file.', accept: '.json' },
+const PLACE_DATA: { target: string; dataset: string; name: string; icon: string; about: string; accept: string }[] = [
+  { target: 'buildings', dataset: 'buildings', name: 'Buildings', icon: 'blocks', about: 'Footprints with heights. They cast the shadows and shape the wind. GeoJSON.', accept: '.geojson,.json' },
+  { target: 'terrain', dataset: 'terrain', name: 'Ground', icon: 'map', about: 'The height of the land, so hills shade and shelter as they do outside. A GeoTIFF.', accept: '.tif,.tiff' },
+  { target: 'trees', dataset: 'trees', name: 'Trees', icon: 'tree', about: 'Where the trees stand. GeoJSON points, or a CSV with coordinates.', accept: '.geojson,.json,.csv' },
+  { target: 'data:roads', dataset: 'roads', name: 'Streets', icon: 'car', about: 'The street network, as lines. Traffic drives along it. GeoJSON.', accept: '.geojson,.json' },
+  { target: 'walkways', dataset: 'walkways', name: 'Walking paths', icon: 'footprints', about: 'Lines people can walk along. Cool paths needs them. GeoJSON.', accept: '.geojson,.json' },
+  { target: 'trips', dataset: 'trips', name: 'Trips', icon: 'route', about: 'Journeys through the day. Mobility needs them. A trips.json file.', accept: '.json' },
 ];
+
+/** How a dataset a layer needs is named to an author. */
+function dataName(dataset: string): string {
+  const known = PLACE_DATA.find((item) => item.dataset === dataset);
+  return known ? `${known.name.toLowerCase()} data` : `${dataset} data`;
+}
 
 interface Pending {
   file: File;
@@ -81,26 +95,40 @@ export class Wizard {
   /** Files chosen in "Your place" that are being checked or await a yes. */
   private pending = new Map<string, Pending>();
   private readonly host: WizardHost;
-  /** Whether a "Name and place" step came before this one, in the app's new-table page. */
-  private readonly created: boolean;
+  /** The row of "Your place" that a layer needing data sent the author to. */
+  private wanted: string | null = null;
+  /** The "Name and place" form as the author left it, kept across redraws. */
+  private where: { name: string; centre: string; width: string; height: string; rotation: string } | null = null;
+  private moving = false;
+  private problem = '';
 
   constructor(host: WizardHost, options: { created?: boolean; step?: number } = {}) {
     this.host = host;
-    this.created = options.created ?? false;
-    // Someone who has just named and placed the table has had the welcome.
-    this.step = options.step ?? (this.created ? PLACE : 0);
+    // Someone who has just named and placed the table goes on to what it is made of.
+    this.step = options.step ?? (options.created ? PLACE : WHERE);
     host.store.onScene(() => this.render());
     host.store.onLayer(() => this.step === BUTTONS && this.syncButtons());
     this.render();
   }
 
-  private names(): string[] {
-    return this.created ? ['Name and place', ...WIZARD_STEPS.slice(1)] : [...WIZARD_STEPS];
-  }
-
   private go(step: number): void {
-    this.step = Math.max(0, Math.min(WIZARD_STEPS.length - 1, step));
-    if (this.created && this.step === 0) this.step = 1;
+    const next = Math.max(0, Math.min(WIZARD_STEPS.length - 1, step));
+    // Leaving "Name and place" with a change moves the table first; the guide comes back at the step asked for.
+    if (this.step === WHERE && next !== WHERE && this.placeChanged()) {
+      void this.move(next);
+      return;
+    }
+    this.step = next;
+    this.problem = '';
+    if (next !== PLACE) {
+      this.wanted = null;
+      this.returnTo = null;
+      try {
+        sessionStorage.removeItem('mrs-setup-return');
+      } catch {
+        // As above.
+      }
+    }
     this.render();
   }
 
@@ -128,36 +156,35 @@ export class Wizard {
     this.syncButtons = () => {};
     host.controller(this.step === BUTTONS);
 
-    if (this.step === 0) {
+    if (this.step === WHERE) {
       host.show(null);
-      title(`Set up ${host.store.state.site.name}`, 'A table has three surfaces. You set them up in a few steps and can change everything later.');
-      const surfaces: [string, string, string][] = [
-        ['table', 'The map', 'Projected on the table. Light and movement, almost no words.'],
-        ['tv', 'The controller', 'The screen beside the table. A button for each layer, with its words and controls.'],
-        ['phone', 'Phones', 'Visitors join with a code and get their own controls.'],
-      ];
-      const cards = el('div', 'wz-surfaces');
-      for (const [iconName, name, text] of surfaces) {
-        const card = el('div', 'wz-surface');
-        const badge = el('span', 'wz-badge');
-        badge.append(icon(iconName, 20));
-        const words = el('div');
-        words.append(el('strong', undefined, name), el('p', undefined, text));
-        card.append(badge, words);
-        cards.append(card);
-      }
-      body.append(cards);
+      title('Name and place', 'What the table is called, where it is and how much ground it covers. Moving the table keeps the data you brought in; whatever lies inside the new outline is shown.');
+      body.append(this.whereForm());
     } else if (this.step === PLACE) {
       host.show(null);
       title('Your place', 'Bring in the files your table is made from. They are copied into the table and stay on this computer. Buildings matter most; the rest can come later.');
       for (const item of PLACE_DATA) body.append(this.placeRow(item));
+      if (this.returnTo !== null && this.returnTo !== PLACE) {
+        const to = this.returnTo;
+        const back = el('button', 'ed-button', `Back to ${WIZARD_STEPS[to]}`);
+        back.type = 'button';
+        back.addEventListener('click', () => this.go(to));
+        const line = el('p', 'wz-hint wz-return', 'When the file is in, go back to where you were.');
+        line.append(back);
+        body.append(line);
+      }
+      const wanted = this.wanted && body.querySelector<HTMLElement>(`.wz-place[data-target="${this.wanted}"]`);
+      if (wanted) {
+        wanted.classList.add('is-wanted');
+        requestAnimationFrame(() => wanted.scrollIntoView({ block: 'nearest' }));
+      }
     } else if (this.step === REST) {
       host.show(null);
-      title('The map at rest', 'What the table shows when nobody is using it. Pick a base map and some life to make it feel like a place.');
-      body.append(this.choices(host.store.manifests.filter(isAmbient), instances, false));
+      title(AT_REST, 'What the map shows when no layer is open, and nobody is using the table. Pick a base map and some life to make it feel like a place.');
+      body.append(this.choices(host.store.manifests.filter((m) => isAmbient(m) && isOffered(m)), instances, false));
     } else if (this.step === LAYERS) {
       title('Layers', 'Each layer answers one question, such as where the sun falls. Every layer you pick becomes a button on the controller.');
-      body.append(this.choices(host.store.manifests.filter((m) => !isAmbient(m)), instances, true));
+      body.append(this.choices(host.store.manifests.filter((m) => !isAmbient(m) && (isOffered(m) || instances.some((i) => i.manifest.id === m.id))), instances, true));
       const added = layers.find((i) => i.manifest.id === this.fresh);
       if (added) {
         this.fresh = null;
@@ -213,6 +240,23 @@ export class Wizard {
     } else {
       host.show(null);
       title('Ready', 'The table is set up. Present puts the map on the projector and the controller on its screen.');
+      // The three surfaces, as a visitor meets them.
+      const surfaces: [string, string, string][] = [
+        ['table', 'The map', 'Projected on the table. Light and movement, almost no words.'],
+        ['tv', 'The controller', 'The screen beside the table. A button for each layer, with its words and controls.'],
+        ['phone', 'Phones', 'Visitors join with a code and get their own controls.'],
+      ];
+      const cards = el('div', 'wz-surfaces');
+      for (const [iconName, name, text] of surfaces) {
+        const card = el('div', 'wz-surface');
+        const badge = el('span', 'wz-badge');
+        badge.append(icon(iconName, 20));
+        const words = el('div');
+        words.append(el('strong', undefined, name), el('p', undefined, text));
+        card.append(badge, words);
+        cards.append(card);
+      }
+      body.append(cards);
       const facts = el('ul', 'wz-facts');
       const ambient = instances.length - layers.length;
       facts.append(
@@ -234,21 +278,22 @@ export class Wizard {
     const foot = el('footer', 'wz-foot');
     const back = el('button', 'ed-button', 'Back');
     back.type = 'button';
-    back.disabled = this.step === (this.created ? 1 : 0);
+    back.disabled = this.step === WHERE || this.moving;
     back.addEventListener('click', () => this.go(this.step - 1));
     const skip = el('button', 'wz-skip', 'Skip the guide');
     skip.type = 'button';
     skip.addEventListener('click', () => host.close());
     foot.append(back, skip);
     if (this.step < WIZARD_STEPS.length - 1) {
-      const next = el('button', 'ed-button is-primary', this.step === 0 ? 'Start' : 'Next');
+      const next = el('button', 'ed-button is-primary', this.step === WHERE && this.placeChanged() ? 'Move the table' : 'Next');
       next.type = 'button';
+      next.disabled = this.moving;
       next.addEventListener('click', () => this.go(this.step + 1));
       foot.append(next);
     }
 
     const head = el('header', 'wz-head');
-    head.append(stepList(this.names(), this.step, (index) => this.go(index)));
+    head.append(stepList(WIZARD_STEPS, this.step, (index) => this.go(index)));
     // Typing in a field must survive a redraw caused by someone else's change.
     this.element.replaceChildren(head, body, foot);
   }
@@ -256,7 +301,7 @@ export class Wizard {
   /** One kind of data in "Your place": whether the table has it, a file picker, and what the host says about the chosen file. */
   private placeRow(item: (typeof PLACE_DATA)[number]): HTMLElement {
     const { host } = this;
-    const has = item.target in (host.store.state.site.data ?? {});
+    const has = item.dataset in (host.store.state.site.data ?? {});
     const pending = this.pending.get(item.target);
     const box = el('div', 'wz-place');
     box.dataset.target = item.target;
@@ -339,6 +384,135 @@ export class Wizard {
     return box;
   }
 
+  /** Opens "Your place" at one row. After the file is in, Next returns to `from`. */
+  bringIn(target: string, from = this.step): void {
+    this.returnTo = from === PLACE ? null : from;
+    try {
+      if (this.returnTo === null) sessionStorage.removeItem('mrs-setup-return');
+      else sessionStorage.setItem('mrs-setup-return', String(this.returnTo));
+    } catch {
+      // No session storage: the way back is lost after a reload, and Next still goes on.
+    }
+    this.step = PLACE;
+    this.wanted = target;
+    this.render();
+  }
+
+  /** The step a "Bring in" came from, offered again once the file is in. */
+  private returnTo: number | null = (() => {
+    try {
+      const kept = sessionStorage.getItem('mrs-setup-return');
+      return kept === null ? null : Number(kept);
+    } catch {
+      return null;
+    }
+  })();
+
+  /** The site's name and place as the form would write them. */
+  private placeValues(): { name: string; centre: string; width: string; height: string; rotation: string } {
+    const { site } = this.host.store.state;
+    return (
+      this.where ?? {
+        name: site.name,
+        centre: `${site.origin.lat.toFixed(5)}, ${site.origin.lon.toFixed(5)}`,
+        width: String(Math.round(site.extent.width_m)),
+        height: String(Math.round(site.extent.height_m)),
+        rotation: String(Math.round(site.extent.rotation_deg ?? 0)),
+      }
+    );
+  }
+
+  private placeChanged(): boolean {
+    if (!this.where) return false;
+    const { site } = this.host.store.state;
+    const at = parsePlace(this.where.centre);
+    return (
+      this.where.name.trim() !== site.name ||
+      !at ||
+      Math.abs(at.lat - site.origin.lat) > 1e-6 ||
+      Math.abs(at.lon - site.origin.lon) > 1e-6 ||
+      Number(this.where.width) !== Math.round(site.extent.width_m) ||
+      Number(this.where.height) !== Math.round(site.extent.height_m) ||
+      Number(this.where.rotation) !== Math.round(site.extent.rotation_deg ?? 0)
+    );
+  }
+
+  /** "Name and place" for a table that exists: the same questions as the new-table page, written to the site when the author moves on. */
+  private whereForm(): HTMLElement {
+    const values = this.placeValues();
+    const form = el('div', 'wz-form');
+    const field = (label: string, input: HTMLElement, hint?: string) => {
+      const row = el('label', 'wz-field');
+      row.append(el('span', undefined, label), input);
+      if (hint) row.append(el('small', undefined, hint));
+      return row;
+    };
+    const input = (key: keyof typeof values, attributes: object) => {
+      const node = el('input');
+      Object.assign(node, attributes, { value: values[key] });
+      node.addEventListener('input', () => {
+        this.where = { ...this.placeValues(), [key]: node.value };
+        this.problem = '';
+        // Only the footer's words change while typing, so the field keeps its focus.
+        const next = this.element.querySelector<HTMLButtonElement>('.wz-foot .is-primary');
+        if (next) next.textContent = this.placeChanged() ? 'Move the table' : 'Next';
+      });
+      return node;
+    };
+    const size = el('div', 'wz-pair');
+    size.append(
+      field('Width, metres', input('width', { type: 'number', min: '100', max: '20000', step: '50' })),
+      field('Height, metres', input('height', { type: 'number', min: '100', max: '20000', step: '50' })),
+    );
+    form.append(
+      field('Name', input('name', { type: 'text', maxLength: 60 })),
+      field('Centre of the table', input('centre', { type: 'text', placeholder: '57.6898, 11.9742' }), 'Paste coordinates, or a link copied from Google Maps or OpenStreetMap.'),
+      size,
+      field('Turned', input('rotation', { type: 'number', min: '-180', max: '360', step: '1' }), 'Degrees clockwise from north for the top edge of the table. 0 puts north at the top.'),
+    );
+    if (this.moving) form.append(el('p', 'wz-hint', 'Moving the table and rebuilding what it shows…'));
+    if (this.problem) {
+      const problem = el('p', 'wz-problem', this.problem);
+      problem.setAttribute('role', 'alert');
+      form.append(problem);
+    }
+    return form;
+  }
+
+  /** Writes the new name and place, then carries on at `next` once every surface has reloaded. */
+  private async move(next: number): Promise<void> {
+    const values = this.placeValues();
+    const at = parsePlace(values.centre);
+    const [width_m, height_m, rotation_deg] = [Number(values.width), Number(values.height), Number(values.rotation)];
+    const say = (text: string) => {
+      this.problem = text;
+      this.render();
+    };
+    if (!values.name.trim()) return say('Give the table a name.');
+    if (!at) return say('Paste the coordinates of the centre of the table, for example 57.6898, 11.9742.');
+    if (!(width_m >= 100 && height_m >= 100 && width_m <= 20000 && height_m <= 20000)) return say('The width and the height must each be between 100 and 20 000 metres.');
+    if (!Number.isFinite(rotation_deg)) return say('Turned is a number of degrees, such as 0 or 30.');
+    this.moving = true;
+    say('');
+    this.host.resumeAt(next);
+    try {
+      const response = await fetch('/api/site/place', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: values.name.trim(), origin: { lat: at.lat, lon: at.lon }, extent: { width_m, height_m, rotation_deg } }),
+      });
+      if (!response.ok) {
+        const answer = await response.json().catch(() => null);
+        throw new Error(answer?.error ?? `The table refused the change (${response.status}).`);
+      }
+      // The host tells every surface the site changed; the editor reloads into `next`.
+    } catch (error) {
+      this.host.resumeAt(-1);
+      this.moving = false;
+      say(`The table could not be moved: ${(error as Error).message}`);
+    }
+  }
+
   /** Sends the chosen file to the host: to be checked, or with `write` to be brought into the table. */
   private async check(target: string, write: boolean): Promise<void> {
     const pending = this.pending.get(target);
@@ -376,8 +550,20 @@ export class Wizard {
       badge.append(icon(manifest.icon, 20));
       const words = el('div');
       words.append(el('strong', undefined, manifest.name));
-      const about = missing.length > 0 && mine.length === 0 ? `Needs ${missing.join(' and ')} data, which this table does not have yet.` : (manifest.description ?? '');
+      const lacking = missing.length > 0 && mine.length === 0;
+      const about = lacking ? `Needs ${missing.map(dataName).join(' and ')}, which this table does not have yet.` : (manifest.description ?? '');
       if (about) words.append(el('p', undefined, about));
+      // A layer that needs data offers the way to it, and the guide comes back here afterwards.
+      const source = lacking ? PLACE_DATA.find((item) => item.dataset === missing[0]) : undefined;
+      if (source) {
+        const bring = el('button', 'ed-button wz-bring', `Bring in ${source.name.toLowerCase()}`);
+        bring.type = 'button';
+        bring.addEventListener('click', (event) => {
+          event.preventDefault();
+          this.bringIn(source.target, this.step);
+        });
+        words.append(bring);
+      }
       const power = el('input');
       Object.assign(power, { type: 'checkbox', className: 'switch', checked: mine.length > 0, disabled: missing.length > 0 && mine.length === 0 });
       power.dataset.layer = manifest.id;
