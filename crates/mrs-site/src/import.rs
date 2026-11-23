@@ -250,6 +250,8 @@ pub struct Prepared {
     content: Option<Vec<u8>>,
     /// For terrain: the coordinate system the author named, written beside the path.
     terrain_crs: Option<String>,
+    /// Where it is saved, when not where the target usually goes: a table without positions is a CSV.
+    file: Option<String>,
 }
 
 /// Reads and checks `bytes` (a file called `filename`) as `target` for `site`. Writes nothing.
@@ -273,6 +275,7 @@ pub fn inspect(site: &Site, target: &Target, filename: &str, bytes: &[u8], optio
         },
         content: None,
         terrain_crs: None,
+        file: None,
     };
 
     if *target == Target::Terrain {
@@ -303,6 +306,8 @@ pub fn inspect(site: &Site, target: &Target, filename: &str, bytes: &[u8], optio
     // Features in the file's own coordinates.
     let (mut features, declared) = match read_features(&text, filename, &mut issues) {
         Ok(read) => read,
+        // A named dataset may be a plain table (activity, flows, links for place motions, #160).
+        Err(issue) if issue.code == "pos.none" && matches!(target, Target::Data(_)) => return table(site, target, &text, issues),
         Err(issue) => return refuse(vec![issue], "Not a file MR Studio can read.".into()),
     };
     if features.is_empty() {
@@ -463,6 +468,7 @@ pub fn inspect(site: &Site, target: &Target, filename: &str, bytes: &[u8], optio
         },
         content: Some(content),
         terrain_crs: None,
+        file: None,
     }
 }
 
@@ -495,7 +501,7 @@ pub fn apply(site: &Site, mut prepared: Prepared) -> Result<(Site, Report), Site
         (Some(content), true) => content,
         _ => return Err(SiteError::Invalid(prepared.report.issues.iter().map(|i| i.message.clone()).collect())),
     };
-    let relative = prepared.target.path();
+    let relative = prepared.file.clone().unwrap_or_else(|| prepared.target.path());
     let file = site.dir.join(&relative);
     let io = |path: &Path| {
         let path = path.to_path_buf();
@@ -788,7 +794,7 @@ fn trips(site: &Site, target: &Target, text: &str, mut issues: Vec<Issue>) -> Pr
             ));
             report.summary = "Not a trips file.".into();
             report.issues = issues;
-            return Prepared { target: target.clone(), report, content: None, terrain_crs: None };
+            return Prepared { target: target.clone(), report, content: None, terrain_crs: None, file: None };
         }
     };
     let Some(list) = value["trips"].as_array() else {
@@ -799,7 +805,7 @@ fn trips(site: &Site, target: &Target, text: &str, mut issues: Vec<Issue>) -> Pr
         ));
         report.summary = "Not a trips file.".into();
         report.issues = issues;
-        return Prepared { target: target.clone(), report, content: None, terrain_crs: None };
+        return Prepared { target: target.clone(), report, content: None, terrain_crs: None, file: None };
     };
     let frame = Frame::new(site);
     let mut broken = 0;
@@ -848,7 +854,80 @@ fn trips(site: &Site, target: &Target, text: &str, mut issues: Vec<Issue>) -> Pr
     report.ok = !issues.iter().any(|i| i.severity == Severity::Blocker);
     report.issues = issues;
     let content = report.ok.then(|| json_file(&value));
-    Prepared { target: target.clone(), report, content, terrain_crs: None }
+    Prepared { target: target.clone(), report, content, terrain_crs: None, file: None }
+}
+
+// ---- Tables -------------------------------------------------------------------
+
+/// A CSV without map positions, kept as a table: place motions join it to places by name
+/// or id (activity through the day, flows and links between places). Saved as a comma CSV in
+/// UTF-8, with decimal commas read as points, so every reader sees the same numbers.
+fn table(site: &Site, target: &Target, text: &str, mut issues: Vec<Issue>) -> Prepared {
+    let text = text.trim_start_matches('\u{feff}');
+    let first = text.lines().next().unwrap_or("");
+    let separator = [',', ';', '\t', '|'].into_iter().max_by_key(|s| first.matches(*s).count()).unwrap_or(',');
+    let mut rows = parse_csv(text, separator);
+    rows.retain(|row| row.iter().any(|cell| !cell.trim().is_empty()));
+    let header: Vec<String> = if rows.is_empty() { Vec::new() } else { rows.remove(0).into_iter().map(|h| h.trim().to_string()).collect() };
+    let decimal_comma = separator != ',';
+    let mut comma_used = false;
+    let cell = |raw: &str, comma_used: &mut bool| -> String {
+        let raw = raw.trim();
+        if decimal_comma && raw.contains(',') && !raw.contains('.') {
+            let swapped = raw.replace(',', ".");
+            if swapped.parse::<f64>().is_ok() {
+                *comma_used = true;
+                return swapped;
+            }
+        }
+        raw.to_string()
+    };
+    let quote = |value: &str| {
+        if value.contains([',', '"', '\n', '\r']) {
+            format!("\"{}\"", value.replace('"', "\"\""))
+        } else {
+            value.to_string()
+        }
+    };
+    let mut out = header.iter().map(|h| quote(h)).collect::<Vec<_>>().join(",");
+    out.push('\n');
+    for row in &rows {
+        let line = (0..header.len()).map(|i| quote(&cell(row.get(i).map(String::as_str).unwrap_or(""), &mut comma_used))).collect::<Vec<_>>().join(",");
+        out.push_str(&line);
+        out.push('\n');
+    }
+    let shown = header.iter().take(6).map(|h| h.as_str()).collect::<Vec<_>>().join(", ");
+    let more = if header.len() > 6 { format!(" and {} more", header.len() - 6) } else { String::new() };
+    issues.push(Issue::new(
+        "table.no_positions",
+        Severity::Note,
+        "It has no map positions, so it is kept as a table. Place motions use tables like this for activity through the day, and for flows and links between places, by place name or id.",
+    ));
+    if comma_used {
+        issues.push(Issue::new("read.decimal_comma", Severity::Note, "Numbers use a comma for decimals (12,5), and were read that way."));
+    }
+    if rows.is_empty() {
+        issues.push(Issue::new("read.empty", Severity::Blocker, "The table has column names but no rows."));
+    }
+    if let Some(existing) = site.data().get(target.name()) {
+        issues.push(Issue::new("data.replaces", Severity::Note, format!("This replaces the table's {} ({existing}).", target.name())));
+    }
+    let ok = !issues.iter().any(|i| i.severity == Severity::Blocker);
+    let report = Report {
+        ok,
+        target: target.name().to_string(),
+        summary: format!("A table of {} rows: {shown}{more}", rows.len()),
+        count: rows.len(),
+        inside: 0,
+        outside: 0,
+        crs: None,
+        height_property: None,
+        issues,
+        preview: None,
+        path: None,
+    };
+    let content = ok.then(|| out.into_bytes());
+    Prepared { target: target.clone(), report, content, terrain_crs: None, file: Some(format!("data/{}.csv", target.name())) }
 }
 
 // ---- Terrain -----------------------------------------------------------------
@@ -872,7 +951,7 @@ fn terrain(site: &Site, bytes: &[u8], crs: Option<u32>) -> Prepared {
     let done = |mut report: Report, issues: Vec<Issue>, content: Option<Vec<u8>>, terrain_crs: Option<String>| {
         report.ok = content.is_some() && !issues.iter().any(|i| i.severity == Severity::Blocker);
         report.issues = issues;
-        Prepared { target: Target::Terrain, report, content, terrain_crs }
+        Prepared { target: Target::Terrain, report, content, terrain_crs, file: None }
     };
     if !matches!(bytes, [0x49, 0x49, 0x2a, 0x00, ..] | [0x4d, 0x4d, 0x00, 0x2a, ..]) {
         issues.push(Issue::new("read.unknown", Severity::Blocker, "Terrain is a GeoTIFF of ground heights, and this file is not a TIFF."));
@@ -1381,6 +1460,33 @@ mod tests {
         let (property, known, estimated) = building_heights(&mut features);
         assert_eq!((property.as_str(), known, estimated), ("HÖJD", 1, 1));
         assert_eq!(features[0]["properties"]["HÖJD"], json!(4.0 * METRES_PER_STOREY));
+        std::fs::remove_dir_all(&site.dir).unwrap();
+    }
+
+    #[test]
+    fn tables_without_positions_are_kept_as_csv_for_named_datasets() {
+        let site = scratch("table");
+        let csv = "place;hour;visitors;note\nLibrary;9;12,5;\"quiet, mostly\"\nCafé;12;40;\n".as_bytes();
+        let prepared = inspect(&site, &Target::Data("activity".into()), "activity.csv", csv, Options::default());
+        let r = &prepared.report;
+        assert!(r.ok, "{:?}", r.issues);
+        assert_eq!(r.count, 2);
+        assert!(r.summary.starts_with("A table of 2 rows: place, hour, visitors, note"), "{}", r.summary);
+        assert!(codes(r).contains(&"table.no_positions") && codes(r).contains(&"read.decimal_comma"));
+        assert!(r.preview.is_none());
+        let (site2, report) = apply(&site, prepared).unwrap();
+        assert_eq!(report.path.as_deref(), Some("data/activity.csv"));
+        assert_eq!(site2.data()["activity"], "data/activity.csv");
+        let written = std::fs::read_to_string(site2.dir.join("data/activity.csv")).unwrap();
+        assert_eq!(written, "place,hour,visitors,note\nLibrary,9,12.5,\"quiet, mostly\"\nCafé,12,40,\n");
+
+        // Trees need positions: the same file is refused for them.
+        let trees = inspect(&site2, &Target::Trees, "activity.csv", csv, Options::default()).report;
+        assert!(!trees.ok);
+        assert_eq!(trees.issues[0].code, "pos.none");
+        // Column names alone are not a table.
+        let empty = inspect(&site2, &Target::Data("flows".into()), "flows.csv", b"from,to,weight\n", Options::default()).report;
+        assert!(!empty.ok);
         std::fs::remove_dir_all(&site.dir).unwrap();
     }
 
