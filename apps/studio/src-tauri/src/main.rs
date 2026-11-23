@@ -862,6 +862,9 @@ struct NewSite {
     /// Turns the table clockwise from north. Left out, the table faces north.
     #[serde(default)]
     rotation_deg: f64,
+    /// The physical table's width in centimetres, which sets the model scale. Left out, 100 cm.
+    #[serde(default)]
+    table_width_cm: Option<f64>,
 }
 
 /// Makes an empty site in the sites folder and returns where. The caller opens it.
@@ -875,6 +878,19 @@ fn create_site(shell: State<'_, Shell>, site: NewSite) -> Result<PathBuf, String
     }
     let dir = folder.join(&id);
     mrs_site::create::create(&dir, name, site.lon, site.lat, site.width_m, site.height_m, site.rotation_deg).map_err(text)?;
+    if let Some(width_cm) = site.table_width_cm {
+        let place = mrs_site::Place {
+            name: None,
+            origin: mrs_site::LonLat { lon: site.lon, lat: site.lat },
+            extent: mrs_site::Extent { width_m: site.width_m, height_m: site.height_m, rotation_deg: site.rotation_deg },
+            table_width_cm: Some(width_cm),
+        };
+        let sized = mrs_site::Site::load(&dir).and_then(|made| made.place(&place));
+        if let Err(error) = sized {
+            let _ = std::fs::remove_dir_all(&dir);
+            return Err(text(error));
+        }
+    }
     Ok(dir)
 }
 

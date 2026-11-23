@@ -286,7 +286,15 @@ pub async fn start(config: HostConfig) -> anyhow::Result<RunningHost> {
         None => tracing::info!("listening on this computer only; phones cannot join"),
     }
     let hub = Hub::new(&site, catalog, addr.port(), join_base, config.session.clone())?;
-    let state = Arc::new(AppState { hub, engine, site, twin: RwLock::new(twin), calibration, imports: Default::default(), osm_cache: Default::default() });
+    let state = Arc::new(AppState {
+        hub,
+        engine,
+        site,
+        twin: RwLock::new(twin),
+        calibration,
+        imports: Default::default(),
+        osm_cache: Default::default(),
+    });
     let app = router(state.clone(), config.web_dir.clone());
 
     let (shutdown, stop) = tokio::sync::oneshot::channel::<()>();

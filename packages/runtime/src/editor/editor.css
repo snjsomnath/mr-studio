@@ -900,6 +900,65 @@ body[data-role='edit'] .table-surface {
   gap: 12px;
 }
 
+/* ---- Table size and model scale ---- */
+
+.wz-ratio {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.wz-ratio input {
+  flex: 1;
+  min-width: 0;
+}
+
+.wz-ratio-one {
+  font-weight: 400;
+  color: var(--ed-text-2);
+}
+
+.wz-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: -4px 0 8px;
+}
+
+.wz-chip {
+  padding: 3px 10px;
+  border: 1px solid var(--ed-line, #d5d9e0);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--ed-text);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.wz-chip:hover {
+  border-color: var(--ed-accent, #3557d4);
+}
+
+.wz-chip.is-pressed {
+  border-color: var(--ed-accent, #3557d4);
+  background: var(--ed-accent-soft, #e8edfc);
+  color: var(--ed-accent, #3557d4);
+  font-weight: 600;
+}
+
+.wz-pair + .wz-hint {
+  margin: -6px 0 14px;
+}
+
+.wz-map-slot {
+  margin-bottom: 14px;
+}
+
+.wz-scale-words {
+  margin: 0 0 14px;
+}
+
 .wz-problem {
   margin: 16px 0 0;
   padding: 8px 12px;
@@ -962,9 +1021,9 @@ body[data-role='edit'] .table-surface {
   cursor: nwse-resize;
 }
 
-.pm-handle.is-turn {
-  border-radius: 50%;
-  cursor: grab;
+.pm-turn button {
+  font-size: 15px;
+  line-height: 1;
 }
 
 .pm-note {

@@ -55,6 +55,10 @@ pub struct Place {
     pub name: Option<String>,
     pub origin: LonLat,
     pub extent: Extent,
+    /// The physical table's width in centimetres, or `None` to keep it. Its height follows the
+    /// ground's shape; together with the extent it sets the model scale (1 : extent / table).
+    #[serde(default)]
+    pub table_width_cm: Option<f64>,
 }
 
 /// What surfaces need to know about the site.
@@ -479,6 +483,9 @@ impl Site {
         if !rotation_deg.is_finite() {
             return Err(invalid("the rotation must be a number of degrees"));
         }
+        if place.table_width_cm.is_some_and(|w| !(w.is_finite() && (10.0..=2000.0).contains(&w))) {
+            return Err(invalid("the table must be between 10 cm and 20 m wide"));
+        }
         let rotation_deg = rotation_deg.rem_euclid(360.0);
         let m = &self.manifest;
         let moved = m.origin != place.origin
@@ -506,7 +513,13 @@ impl Site {
         }
         value["origin"] = serde_json::json!({ "lon": lon, "lat": lat });
         value["extent"] = serde_json::json!({ "width_m": width_m, "height_m": height_m, "rotation_deg": rotation_deg });
-        // The physical table keeps its width; its height follows the ground's shape.
+        // The physical table keeps its width unless a new one is given; its height follows the ground's shape.
+        if let Some(width_cm) = place.table_width_cm {
+            if !value["table"].is_object() {
+                value["table"] = serde_json::json!({});
+            }
+            value["table"]["width_cm"] = width_cm.into();
+        }
         if let Some(width_cm) = value["table"]["width_cm"].as_f64() {
             value["table"]["height_cm"] = ((width_cm * height_m / width_m * 100.0).round() / 100.0).into();
         }

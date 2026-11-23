@@ -848,7 +848,7 @@ async fn a_new_table_takes_its_buildings_without_a_restart() {
     assert!(report["error"].as_str().unwrap().contains("not something a table can take"));
 
     // The table is renamed, moved and turned: the site is rewritten, the scene re-baked and every surface told.
-    let place = serde_json::to_vec(&json!({ "name": "Harbour", "origin": { "lon": 11.968, "lat": 57.6996 }, "extent": { "width_m": 400, "height_m": 250, "rotation_deg": 15 } })).unwrap();
+    let place = serde_json::to_vec(&json!({ "name": "Harbour", "origin": { "lon": 11.968, "lat": 57.6996 }, "extent": { "width_m": 400, "height_m": 250, "rotation_deg": 15 }, "table_width_cm": 80 })).unwrap();
     let (status, answer) = http_post(&host, "/api/site/place", "", &place).await;
     assert_eq!(status, 200, "{answer}");
     assert_eq!(answer["site"]["name"], "Harbour");
@@ -858,6 +858,8 @@ async fn a_new_table_takes_its_buildings_without_a_restart() {
     assert_eq!(changed["site"]["data"]["buildings"], "data/buildings.geojson", "the data stays");
     let saved: Value = serde_json::from_str(&std::fs::read_to_string(dir.join("site.json")).unwrap()).unwrap();
     assert_eq!(saved["origin"], json!({ "lon": 11.968, "lat": 57.6996 }));
+    // The table's width sets the model scale (400 m on 80 cm is 1 : 500); its height follows the shape.
+    assert_eq!(saved["table"], json!({ "width_cm": 80.0, "height_cm": 50.0 }));
     // A bad place is refused with the reason and changes nothing.
     let bad =
         serde_json::to_vec(&json!({ "origin": { "lon": 11.968, "lat": 95 }, "extent": { "width_m": 400, "height_m": 250 } })).unwrap();
@@ -904,10 +906,13 @@ async fn buildings_come_from_openstreetmap_when_asked() {
         json!([p(0.0, 0.0), p(0.0, 0.0003), p(0.0002, 0.0003), p(0.0002, 0.0), p(0.0, 0.0)])
     };
     // One building on the table, one in the fetch margin just west of it.
-    let (url, asked) = overpass(json!({ "elements": [
+    let (url, asked) = overpass(
+        json!({ "elements": [
         { "type": "way", "id": 1, "tags": { "building": "yes", "height": "14" }, "geometry": ring(57.700, 11.970) },
         { "type": "way", "id": 2, "tags": { "building": "house", "building:levels": "2" }, "geometry": ring(57.700, 11.9610) },
-    ] }), 1)
+    ] }),
+        1,
+    )
     .await;
     std::env::set_var("MRS_OVERPASS_URL", &url);
     let host = host_for(dir.clone()).await;
