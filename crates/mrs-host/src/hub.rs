@@ -612,6 +612,9 @@ impl Hub {
         if has("display") {
             self.emit("site.display", json!({ "display": info.display }));
         }
+        if has("name") || has("timezone") || has("branding") {
+            self.emit("site.settings", self.settings());
+        }
         inner.scene = scene;
         for at in fresh {
             if inner.scene[at].state.active && inner.scene[at].parent.is_none() && self.is_sequence(&inner.scene[at]) {
@@ -824,6 +827,18 @@ impl Hub {
             }
             return self.set_tv(p, Who::of(role, surface));
         }
+        if method == "site.table" {
+            if !role.may_compose() {
+                return Err("this surface cannot change the table's settings".into());
+            }
+            return self.set_table(p, Who::of(role, surface));
+        }
+        if method == "site.sources" {
+            if role == Role::Phone {
+                return Err("phones cannot see the table's sources".into());
+            }
+            return Ok(self.sources_used(&inner));
+        }
         if method == "site.display" {
             if !role.may_compose() {
                 return Err("this surface cannot change the table's settings".into());
@@ -1012,6 +1027,120 @@ impl Hub {
         self.info.write().unwrap().tv = if tv.is_null() { None } else { Some(tv.clone()) };
         self.emit("site.tv", json!({ "tv": tv }));
         Ok(json!({ "tv": tv }))
+    }
+
+    /// `site.table { name?, timezone?, branding?: { title?, logo?, welcome? } }` (#73): the table
+    /// settings that are not its place (moving and resizing go through `/api/site/place`, which
+    /// re-bakes). A field left out stays; `null` clears an optional one. Saved to site.json and
+    /// sent to every surface as `site.settings { name, timezone, branding }`.
+    fn set_table(&self, p: &Value, who: Who) -> Result<Value, String> {
+        let current = self.info.read().unwrap().clone();
+        let mut name = current.name.clone();
+        let mut timezone = current.timezone.clone();
+        let mut branding = current.branding.clone();
+        let text = |value: &Value, field: &str, most: usize| -> Result<Option<String>, String> {
+            match value {
+                Value::Null => Ok(None),
+                Value::String(s) if s.trim().is_empty() => Ok(None),
+                Value::String(s) if s.trim().chars().count() <= most => Ok(Some(s.trim().to_string())),
+                Value::String(_) => Err(format!("{field} can be at most {most} characters")),
+                _ => Err(format!("{field} must be text")),
+            }
+        };
+        let mut changed = Vec::new();
+        if let Some(value) = p.get("name") {
+            name = text(value, "the name", 60)?.ok_or("the table needs a name")?;
+            changed.push("name");
+        }
+        if let Some(value) = p.get("timezone") {
+            timezone = text(value, "the time zone", 64)?;
+            if let Some(zone) = &timezone {
+                let fits = zone
+                    .split('/')
+                    .all(|part| !part.is_empty() && part.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '+')));
+                if !fits {
+                    return Err(format!("'{zone}' is not a time zone such as Europe/Stockholm"));
+                }
+            }
+            changed.push("time zone");
+        }
+        match &p["branding"] {
+            Value::Null => {}
+            Value::Object(patch) => {
+                for (key, value) in patch {
+                    match key.as_str() {
+                        "title" => branding.title = text(value, "the title", 80)?,
+                        "welcome" => branding.welcome = text(value, "the welcome line", 160)?,
+                        "logo" => {
+                            let logo = text(value, "the logo", 200)?;
+                            if let Some(logo) = &logo {
+                                let path = std::path::Path::new(logo);
+                                let inside = path.is_relative() && path.components().all(|c| matches!(c, std::path::Component::Normal(_)));
+                                if !inside || !self.site.dir.join(path).is_file() {
+                                    return Err(format!("the logo must be a picture inside the table's folder; '{logo}' is not"));
+                                }
+                            }
+                            branding.logo = logo;
+                        }
+                        other => return Err(format!("'{other}' is not a branding setting")),
+                    }
+                    changed.push(match key.as_str() {
+                        "title" => "title",
+                        "welcome" => "welcome line",
+                        _ => "logo",
+                    });
+                }
+            }
+            _ => return Err("branding must be an object".into()),
+        }
+        if changed.is_empty() {
+            return Err("nothing to change".into());
+        }
+        let summary = match changed.as_slice() {
+            ["name"] => format!("Renamed the table to {name}"),
+            [one] => format!("Changed the table's {one}"),
+            _ => "Changed the table settings".to_string(),
+        };
+        self.saving(who, summary, || self.site.save_settings(&name, timezone.as_deref(), &branding))?;
+        {
+            let mut info = self.info.write().unwrap();
+            info.name = name;
+            info.timezone = timezone;
+            info.branding = branding;
+        }
+        let settings = self.settings();
+        self.emit("site.settings", settings.clone());
+        Ok(settings)
+    }
+
+    /// The table settings `site.settings` carries.
+    fn settings(&self) -> Value {
+        let info = self.info.read().unwrap();
+        json!({ "name": info.name, "timezone": info.timezone, "branding": info.branding })
+    }
+
+    /// `site.sources`: which outside sources (#41) this table's layers use, by the controls
+    /// that name one (`"sources": [...]` in layer.json): `{ sources: [{ source, layers: [{ id, name }] }] }`.
+    /// The Sources page shows this as the table's own short list.
+    fn sources_used(&self, inner: &Inner) -> Value {
+        let catalog = self.catalog();
+        let mut used: Vec<(String, Vec<Value>)> = Vec::new();
+        for instance in &inner.scene {
+            let manifest = &catalog[instance.def].manifest;
+            for control in manifest["controls"].as_array().into_iter().flatten() {
+                if !control["sources"].is_array() {
+                    continue;
+                }
+                let Some(id) = control["id"].as_str() else { continue };
+                let Some(source) = instance.state.params.get(id).and_then(Value::as_str).filter(|s| !s.is_empty()) else { continue };
+                let layer = json!({ "id": instance.id, "name": self.label(instance) });
+                match used.iter_mut().find(|(s, _)| s == source) {
+                    Some((_, layers)) => layers.push(layer),
+                    None => used.push((source.to_string(), vec![layer])),
+                }
+            }
+        }
+        json!({ "sources": used.into_iter().map(|(source, layers)| json!({ "source": source, "layers": layers })).collect::<Vec<_>>() })
     }
 
     /// `site.display { display: { quality: "draft" | "good" | "best" | null } }`: how the table's surfaces
@@ -2123,6 +2252,43 @@ mod tests {
         assert!(dev("palette.set", json!({ "palette": { "slots": { "accent": "orange" } } })).is_err());
         dev("palette.set", json!({ "palette": null })).unwrap();
         assert!(Site::load(&hub.site.dir).unwrap().manifest.palette.is_none());
+    }
+
+    #[test]
+    fn table_settings_are_saved_sent_and_checked() {
+        let hub = scratch_hub("table-settings");
+        let dev = |method: &str, p: Value| hub.request(Role::Dev, 0, method, &p);
+        let mut events = hub.subscribe();
+        let done = dev("site.table", json!({ "name": "Harbour 2040", "timezone": "Europe/Stockholm", "branding": { "title": "Harbour", "welcome": "Touch a layer to begin" } })).unwrap();
+        assert_eq!(done["branding"]["welcome"], "Touch a layer to begin");
+        let event: Value = serde_json::from_str(&events.try_recv().unwrap()).unwrap();
+        assert_eq!((event["m"].as_str(), event["p"]["name"].as_str()), (Some("site.settings"), Some("Harbour 2040")));
+        let saved: Value = serde_json::from_str(&std::fs::read_to_string(hub.site.dir.join("site.json")).unwrap()).unwrap();
+        assert_eq!(saved["branding"]["title"], "Harbour");
+        assert_eq!(saved["name"], "Harbour 2040");
+        // A field left out stays; null clears an optional one.
+        dev("site.table", json!({ "branding": { "welcome": null } })).unwrap();
+        assert_eq!(hub.site().branding.title.as_deref(), Some("Harbour"));
+        assert!(hub.site().branding.welcome.is_none());
+        assert!(dev("site.table", json!({ "name": "" })).is_err(), "a table needs a name");
+        assert!(dev("site.table", json!({ "timezone": "Mars time" })).is_err());
+        assert!(dev("site.table", json!({ "branding": { "logo": "../secret.png" } })).is_err());
+        assert!(dev("site.table", json!({ "branding": { "colour": "#fff" } })).is_err());
+        assert!(hub.request(Role::Phone, 0, "site.table", &json!({ "name": "x" })).is_err());
+        // The history says what it was.
+        let list = hub.history_list();
+        assert_eq!(list["revisions"][1]["summary"], "Changed the table settings");
+    }
+
+    #[test]
+    fn the_sources_a_table_uses_are_listed_by_layer() {
+        let hub = scratch_hub("sources-used");
+        let dev = |method: &str, p: Value| hub.request(Role::Dev, 0, method, &p);
+        let find = |used: &Value, source: &str| used["sources"].as_array().unwrap().iter().find(|s| s["source"] == source).cloned();
+        assert!(find(&dev("site.sources", json!({})).unwrap(), "mapbox").is_none());
+        dev("scene.set", json!({ "layer": "basemap", "params": { "style": "source", "source": "mapbox" } })).unwrap();
+        let mapbox = find(&dev("site.sources", json!({})).unwrap(), "mapbox").unwrap();
+        assert_eq!(mapbox["layers"][0]["id"], "basemap");
     }
 
     #[test]

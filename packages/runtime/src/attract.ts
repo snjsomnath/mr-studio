@@ -231,7 +231,7 @@ export class AttractLoop {
   private readonly stops: () => AttractStop[];
   private readonly stepS: number;
 
-  constructor(title: string, stops: () => AttractStop[], options: { stepS?: number; credits?: string } = {}) {
+  constructor(title: string, stops: () => AttractStop[], options: { stepS?: number; credits?: string; welcome?: string } = {}) {
     this.stops = stops;
     this.stepS = options.stepS ?? 4;
     this.element = document.createElement('div');
@@ -244,7 +244,7 @@ export class AttractLoop {
     heading.textContent = title;
     const hint = document.createElement('p');
     hint.className = 'attract-hint';
-    hint.textContent = 'Choose a layer to bring it to the table.';
+    hint.textContent = options.welcome ?? 'Choose a layer to bring it to the table.';
     this.tour.className = 'attract-tour';
     this.tour.setAttribute('aria-live', 'polite');
     this.name.className = 'attract-name';

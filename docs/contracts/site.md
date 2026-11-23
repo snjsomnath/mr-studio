@@ -70,7 +70,7 @@ sites/<id>/
       "look": [ { "id": "photo", "block": "raster", "data": "photo" } ] }
   },
   "tv": { "layout": "default" },
-  "branding": { "title": "MR Studio", "logo": null }
+  "branding": { "title": "MR Studio", "logo": null, "welcome": "Choose a layer to bring it to the table." }
 }
 ```
 
@@ -87,6 +87,7 @@ Rules:
 - `layers[].button` is how the layer is offered on the controller: `{ "name", "description", "icon", "side", "group", "order" }`, all optional. `name` (up to 40 characters) and `description` (up to 200) replace the layer package's own words, `icon` is an icon name in lowercase letters, digits and dashes, `side` is `"left"` or `"right"`, `group` (up to 40 characters) puts it in a named group of its rail, and `order` (a number, lower first) places it there. The map never shows these; they are for the controller and phones. How the controller uses them is in [present.md](present.md).
 - `layers[].items` and `layers[].steps`: see [Layers, items and sequences](#layers-items-and-sequences).
 - `custom`: see [Custom layers](#custom-layers).
+- `branding` is what the controller says about the table: `title` (up to 80 characters; the table's `name` without it), `logo` (a picture inside the site folder) and `welcome`, the line under the title on the controller's home screen (up to 160; a default sentence without it). With `name` and `timezone` these are the table settings the editor changes through `site.table` (session.md, "Settings: this computer or this table"). Nothing in site.json belongs to the computer: screens, colour, keys and outside sources are app settings.
 - `palette` is the table's colours (#93): `{ "set": "night", "slots": { "accent": "#ff8a4c" } }`. `set` is one of the SDK's built-in sets (`night`, the default, `ember`, `harbour`; `PALETTE_SETS` in `packages/sdk/src/palette.ts`), and `slots` changes single slots, each `#rrggbb`. The slots are `accent`, `focus`, `warm`, `cool`, `green`, `warning`, `neutral` and `cat1` to `cat8`, with the meanings in [visualisation.md](../visualisation.md) C4. Custom layers name colours by slot (`"@warm"`), so changing the palette recolours them.
 - `table.front` is the edge of the projected image where visitors stand: `"bottom"` (the default), `"top"`, `"left"` or `"right"`. For a viewer at the front, the model hides what is projected on the far side, so ribbons and other at-a-glance info go to the front first, and a ribbon set to `"auto"` prefers it, then the two sides next to it, and uses the far side last.
 - `table.ribbons` says what the projector's blank space around the model shows, per side (`top`, `bottom`, `left`, `right`): `"off"`, `"auto"` (use the free band when there is one) or `{ "cm": 9 }`. See [present.md](present.md), Ribbon.

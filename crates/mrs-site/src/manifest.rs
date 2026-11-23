@@ -235,6 +235,9 @@ pub struct Branding {
     pub title: Option<String>,
     #[serde(default)]
     pub logo: Option<String>,
+    /// The line under the title on the controller's home screen, for visitors (#73).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub welcome: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
