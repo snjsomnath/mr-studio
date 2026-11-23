@@ -3,6 +3,7 @@ import type { FieldStream, LayerManifest, LightHandle, SunLight, TableContext } 
 
 import manifest from '../layer.json';
 import { skyColormap, skyLight, sunAt, sunDay, sunHoursColormap, thresholdColormap, treeHoursColormap, treeShadeColormap } from './look.ts';
+import { sunlightHero } from './hero.ts';
 import { SunPath } from './sun-path.ts';
 
 interface Params {
@@ -184,74 +185,7 @@ export default defineLayer<Params>({
     };
   },
 
-  // The one custom panel: the day as a curve, the sun's height against the clock, with the sun on it.
-  // The clock, the daylight figure, the timeline and the colour key are plain panels in layer.json.
-  panel(ctx, el) {
-    const W = 320;
-    const H = 100;
-    const HORIZON = 76;
-    const x = (hour: number) => (hour / 24) * W;
-    const y = (altitude: number) => HORIZON - (Math.max(-10, altitude) / 90) * 62;
-    // Colours are the dashboard's tokens, so a site's theme restyles the curve too. Labels are 12 units of a
-    // 320-wide drawing in a panel about 2.1 times that, which keeps them at the dashboard's smallest text size.
-    el.innerHTML = `
-      <style>
-        .sunlight-day { display: block; width: 100%; height: 100%; overflow: visible; color: var(--mrs-text); }
-        .sunlight-day text { font-size: 12px; fill: var(--mrs-muted); font-variant-numeric: tabular-nums; }
-      </style>
-      <svg class="sunlight-day" viewBox="0 0 ${W} ${H}" role="img" aria-label="The sun's height over the day">
-        <defs>
-          <linearGradient id="sunlight-sky" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0" stop-color="var(--mrs-accent)" stop-opacity="0.45"/><stop offset="1" stop-color="var(--mrs-accent)" stop-opacity="0.03"/>
-          </linearGradient>
-          <clipPath id="sunlight-above"><rect x="0" y="0" width="${W}" height="${HORIZON}"/></clipPath>
-        </defs>
-        <path class="sunlight-fill" fill="url(#sunlight-sky)" clip-path="url(#sunlight-above)"/>
-        <path class="sunlight-curve" fill="none" stroke="var(--mrs-accent)" stroke-width="1.5" stroke-linejoin="round"/>
-        <line x1="0" x2="${W}" y1="${HORIZON}" y2="${HORIZON}" stroke="var(--mrs-line)"/>
-        <text class="sunlight-rise" y="${HORIZON + 16}" text-anchor="middle"></text>
-        <text class="sunlight-set" y="${HORIZON + 16}" text-anchor="middle"></text>
-        <text class="sunlight-peak" text-anchor="middle"></text>
-        <g class="sunlight-marker"><line y1="0" y2="${HORIZON}" stroke="var(--mrs-muted)" stroke-dasharray="2 3"/><circle class="sunlight-glow" r="9" fill="var(--mrs-accent)" fill-opacity="0.3"/><circle class="sunlight-core" r="3.5" fill="var(--mrs-accent)"/></g>
-      </svg>`;
-    const find = <T extends Element>(selector: string) => el.querySelector<T>(selector)!;
-    let drawnDate = '';
-
-    function drawDay() {
-      const day = sunDay(ctx.site, ctx.params.date);
-      const line = day.samples.map((s, i) => `${i === 0 ? 'M' : 'L'}${x(s.hour).toFixed(1)} ${y(s.altitude).toFixed(1)}`).join('');
-      find('.sunlight-curve').setAttribute('d', line);
-      find('.sunlight-fill').setAttribute('d', `${line}L${W} ${H}L0 ${H}Z`);
-      const label = (selector: string, hour: number | null) => {
-        const text = find(selector);
-        text.textContent = hour === null ? '' : formatHour(hour);
-        if (hour !== null) text.setAttribute('x', Math.min(W - 18, Math.max(18, x(hour))).toFixed(1));
-      };
-      label('.sunlight-rise', day.sunrise);
-      label('.sunlight-set', day.sunset);
-      const peak = find('.sunlight-peak');
-      peak.textContent = day.peak.altitude > 0 ? `${Math.round(day.peak.altitude)}°` : '';
-      peak.setAttribute('x', x(day.peak.hour).toFixed(1));
-      peak.setAttribute('y', (y(day.peak.altitude) - 5).toFixed(1));
-    }
-
-    function update() {
-      if (drawnDate !== ctx.params.date) {
-        drawnDate = ctx.params.date;
-        drawDay();
-      }
-      // The marker follows the control at once.
-      const now = sunAt(ctx.site, ctx.params.date, ctx.params.hour);
-      const marker = find<SVGGElement>('.sunlight-marker');
-      marker.style.display = ctx.params.mode === 'day' ? 'none' : '';
-      marker.querySelector('line')!.setAttribute('transform', `translate(${x(now.hour).toFixed(1)} 0)`);
-      for (const dot of marker.querySelectorAll('circle')) {
-        dot.setAttribute('cx', x(now.hour).toFixed(1));
-        dot.setAttribute('cy', y(now.altitude).toFixed(1));
-        dot.setAttribute('opacity', now.altitude > 0 ? '1' : '0.35');
-      }
-    }
-    update();
-    return { update };
-  },
+  // The controller's hero: the sky as a timeline, with the time scrubber (#137).
+  // The daylight figure, the tree shade and the colour key are plain panels in layer.json.
+  hero: (ctx, el) => sunlightHero(ctx as never, el),
 });

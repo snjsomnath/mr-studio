@@ -19,9 +19,9 @@ There are four parts: **button**, **stage**, **steps** and **ribbon**. A layer p
 ```
 
 - **Rails** (#75): buttons run down the left and right of the controller, grouped by `group` (a gap and an optional small label between groups) and ordered by `order`. If no side is set, the left fills first, then the right, a group at a time. An empty rail collapses.
-- **Rail style** (a table setting): `icons` (square icon buttons, the demo look and the default) or `labelled` (icon and name).
+- **Rail style** (`tv.rail_style`, built): `icons` (square icon buttons with a short name under them, the default) or `labelled` (icon and name side by side, in a wider rail).
 - **Attract** (#74): with no layer open, the controller loops through the scene's buttons. It shows the big title and the layer's name and description, over the layer's `attract.effect`: one of `wind`, `rain`, `sun`, `sightlines`, `grid`, `waves`, `particles` or `default`. When `attract` is missing, the effect defaults by category.
-- Action buttons (dashed): `reset-view` and `about`. They come from core, not from layers.
+- Action buttons (dashed, built): **Reset** and **About**, at the foot of the rail the buttons start on. They come from core, not from layers. Reset closes the open layer and the About page, so the controller shows its welcome; tools kept `alongside` (the phones' sketch) stay on. About opens a page in the centre from `tv.about` (title, text, credits) and is only there when the site sets it. The demo's "reset view" moved the map back; the table's map does not move, so Reset is the visitor's way home. The idle reset (#74) will do the same after a quiet spell.
 - One layer is open at a time. `alongside` layers (built) may join it, and only then do order badges show.
 
 ## 2. Stage: the controller centre for the open layer

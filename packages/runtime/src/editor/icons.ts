@@ -34,6 +34,8 @@ const PATHS: Record<string, string> = {
   check: 'M5 12.500l4.500 4.500L19 7.500',
   alert: 'M12 4 2.500 20h19L12 4ZM12 10v5M12 17.500h.01',
   code: 'M8 7l-5 5 5 5M16 7l5 5-5 5',
+  reset: 'M4 12a8 8 0 1 0 2.300-5.700M4 4v4h4',
+  info: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18ZM12 11v6M12 7.500h.01',
 };
 
 /** Icons an author can give a layer's button. */

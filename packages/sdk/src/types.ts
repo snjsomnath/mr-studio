@@ -14,6 +14,11 @@ interface ControlBase {
   phone?: boolean;
   /** Show only while other controls have these values. */
   visibleWhen?: Record<string, unknown>;
+  /**
+   * How prominent it is on the controller (docs/contracts/present.md): `primary` controls are large and
+   * come first, `secondary` (the default) sit in a row under them, `more` wait behind "More settings".
+   */
+  tier?: 'primary' | 'secondary' | 'more';
 }
 export interface RangeControl extends ControlBase {
   type: 'range';
@@ -35,6 +40,8 @@ export interface ToggleControl extends ControlBase {
 export interface DateControl extends ControlBase {
   type: 'date';
   default: string;
+  /** Days offered as one-tap choices: `MM-DD` in the year shown, or `today`. */
+  presets?: { label: string; value: string }[];
 }
 export interface ColorControl extends ControlBase {
   type: 'color';
@@ -189,6 +196,19 @@ export interface TvConfig {
   pages?: { id: string; title?: string; panels: PanelSpec[] }[];
   /** Seconds each page stays up when there is more than one. Default 12. */
   rotate_s?: number;
+  /** How the controller's layer buttons look: `icons` (a square icon with a short name under it, the default) or `labelled` (icon and name side by side, in a wider rail). */
+  rail_style?: 'icons' | 'labelled';
+  /** The built-in theme `theme` was taken from, if any (see `THEMES` in @mrstudio/dashboard). */
+  theme_name?: string;
+  /** The About page the controller's About button opens. Without it there is no About button. */
+  about?: TvAbout;
+}
+
+/** The site's About page on the controller: a title, a few lines, and who made it. */
+export interface TvAbout {
+  title?: string;
+  text?: string;
+  credits?: { role?: string; name: string; note?: string }[];
 }
 
 // ---- Site and session -----------------------------------------------------

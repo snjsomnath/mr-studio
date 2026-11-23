@@ -33,6 +33,11 @@ A layer that has a `panel` function but no `panels` gets one `custom` tile.
 ```jsonc
 "tv": {
   "rail": "left",                  // left | right | none. The side a layer's button sits on unless the layer says otherwise; none hides the buttons
+  "rail_style": "icons",           // icons (square icon, short name under it; default) | labelled (icon and name side by side, wider rail)
+  "about": {                       // optional: the controller's About button and page. Without it there is no About button
+    "title": "About this table", "text": "A few lines on what the table is.",
+    "credits": [ { "role": "Development lead", "name": "…", "note": "optional line" } ]
+  },
   "theme": { "color.accent": "#c2410c", "shape.radius": "none" },   // style tokens only
   "rotate_s": 12,                  // seconds per page, 6 to 60
   "pages": [                       // optional: replaces the automatic layout

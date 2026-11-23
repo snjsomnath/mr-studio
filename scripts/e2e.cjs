@@ -114,40 +114,60 @@ async function main() {
     const rightButtons = await tv.locator('.controller-right .layer-button-card').count();
     assert.ok(rightButtons > 0 && leftButtons >= rightButtons && leftButtons - rightButtons <= 1, `buttons ${leftButtons} left, ${rightButtons} right`);
     await press('Sunlight', true);
-    await dev.getByText(/sun [\d.]+° up/).waitFor();
+    // The table is running Sunlight: it publishes the colour key the dashboard shows.
+    await dev.locator('[data-panel="sunlight/key"]', { hasText: 'Shade' }).waitFor();
     await dev.waitForTimeout(500);
     const afternoon = await table.screenshot();
     if (shots) await dev.screenshot({ path: path.join(shots, 'dev-shadows.png') });
 
-    // A change made on the TV reaches the host, the engine and the dev surface.
-    const clock = '[data-panel="sunlight/time"] .mrs-number';
-    await sunlight(tv).getByLabel('Time of day').fill('8.5');
-    await dev.locator(clock, { hasText: '08:30' }).waitFor();
-    await dev.getByText(/bearing 9\d/).waitFor();
+    // A change made on the TV reaches the host, the engine and the dev surface. On the controller the time
+    // is set on Sunlight's hero: the sky is the timeline, and a tap or a drag on it moves the sun (#137).
+    const clock = '.sun-hero-clock b';
+    const scrub = async (hour) => {
+      const box = await tv.locator('.sun-hero').boundingBox();
+      const rem = await tv.evaluate(() => parseFloat(getComputedStyle(document.documentElement).fontSize));
+      const [x0, x1] = [box.x + 8.5 * rem, box.x + box.width - 3.5 * rem];
+      await tv.mouse.click(x0 + ((x1 - x0) * hour) / 24, box.y + box.height - 2 * rem);
+    };
+    await scrub(8.5);
+    await tv.locator(clock, { hasText: '08:30' }).waitFor();
+    await sunlight(dev).locator('.control-value', { hasText: '8.50 h' }).waitFor();
+    // The sun comes from the east at half past eight on midsummer morning.
+    await tv.locator('.sun-hero-fact b', { hasText: /^east$/ }).waitFor();
     await dev.waitForTimeout(500);
     const morning = await table.screenshot();
     assert.notDeepEqual(morning, afternoon, 'shadows should move when the time changes');
-    assert.equal(await tv.locator(clock).textContent(), '08:30');
+    // The open layer is its hero, its main choices and "More settings", closed.
+    assert.equal(await sunlight(tv).locator('.controls-primary [role="radio"]', { hasText: 'Midsummer' }).count(), 1);
+    assert.equal(await sunlight(tv).getByText('Opacity').isVisible(), false, 'the finer settings wait behind More settings');
     // The TV is a rail of controls beside the dashboard canvas, and the layer's panels sit on the grid.
-    // Sunlight's five panels and the sketch layer's one. Ambient layers take no room on the TV.
-    assert.equal(await tv.locator('.mrs-panel').count(), 6);
-    const band = await tv.locator('[data-panel="sunlight/day"]').boundingBox();
+    // The hero shows the time, so Sunlight brings two panels (tree shade and the colour key) and the sketch layer one.
+    assert.equal(await tv.locator('.mrs-panel').count(), 3);
+    const band = await tv.locator('[data-panel="sunlight/key"]').boundingBox();
     const canvas = await tv.locator('.mrs-dash').boundingBox();
-    assert.ok(band.width > canvas.width * 0.9 && band.y + band.height > canvas.y + canvas.height * 0.9, 'the timeline spans the bottom row');
+    assert.ok(band.width > canvas.width * 0.9 && band.y + band.height > canvas.y + canvas.height * 0.9, 'the colour key spans the bottom row');
     assert.equal(await tv.locator('.mrs-issues').isVisible(), false);
     if (shots) await tv.screenshot({ path: path.join(shots, 'tv-shadows.png') });
+    // Reset, the dashed button at the foot of the rail, closes the open layer and shows the welcome.
+    // The sketch tool, kept alongside for the phones, stays on. About is there only when the site has words for it.
+    await tv.locator('.action-button[title="Reset"]').click();
+    await tv.locator('.layer-button[aria-pressed="false"]', { hasText: 'Sunlight' }).waitFor();
+    await tv.locator('.layer-welcome:not([hidden])').waitFor();
+    assert.equal(await tv.locator('.layer-button[aria-pressed="true"]', { hasText: 'Sketch' }).count(), 1);
+    assert.equal(await tv.locator('.action-button[title="About"]').count(), 0);
+    await press('Sunlight', true);
 
     // Sun hours accumulate progressively and finish.
     await tv.getByRole('radio', { name: 'Sun hours' }).click();
     await dev.getByText('whole day added up').waitFor({ timeout: 120_000 });
-    // Panels follow the mode: the clock and the timeline leave, the sun-hours key arrives.
-    assert.equal(await tv.locator(clock).count(), 0);
+    // The hero follows the mode: it counts the day's daylight and has no time to set; the daylight panel arrives.
+    await tv.locator(clock, { hasText: / h$/ }).waitFor();
+    assert.equal(await tv.locator('.sun-hero-play').isVisible(), false);
     await tv.locator('[data-panel="sunlight/daylight"]').waitFor();
     if (shots) await tv.screenshot({ path: path.join(shots, 'tv-sun-hours.png') });
     await dev.waitForTimeout(500);
     const day = await table.screenshot();
     assert.notDeepEqual(day, morning, 'sun hours should look different from shadows');
-    assert.equal(await sunlight(tv).getByLabel('Time of day').isVisible(), false, 'the time control hides in sun hours mode');
     if (shots) await dev.screenshot({ path: path.join(shots, 'dev-sun-hours.png') });
 
     // Turning the layer off clears the table.
@@ -186,8 +206,8 @@ async function main() {
     await tv.getByText('1 phone', { exact: true }).waitFor();
     await sunlight(phone).getByLabel('Time of day').fill('18');
     await tv.locator(clock, { hasText: '18:00' }).waitFor();
-    // The table recomputed for the phone's time and published the new sun position to the TV.
-    await tv.getByText(/sun 2\d\.\d° up, bearing 2[5-8]\d/).waitFor();
+    // The controller's sky follows the phone: at six in the evening the sun is in the west.
+    await tv.locator('.sun-hero-fact b', { hasText: /^west$/ }).waitFor();
 
     // Phone tools: a point, a line and an area drawn on the small map arrive on the table.
     const pad = phone.locator('.tool-map');
@@ -240,7 +260,8 @@ async function main() {
     assert.equal(await tv.locator('.join-person').count(), 2);
     if (shots) await tv.screenshot({ path: path.join(shots, 'tv.png') });
 
-    // The TV clears the sketch.
+    // The TV clears the sketch, from the sketch's More settings.
+    await tv.locator('.layer-open', { hasText: 'Mark places' }).locator('summary', { hasText: 'More settings' }).click();
     await tv.getByRole('button', { name: 'Clear the sketch' }).click();
     await tv.getByText('Nothing marked yet').waitFor();
 
@@ -250,11 +271,13 @@ async function main() {
     // The sample site lights the twin, so the flat map is laid over it rather than shown on its own.
     await dev.locator('.table-surface.is-draped canvas.table-model').waitFor();
     // With the lighting off the table is the flat map again, and looks different.
-    await sunlight(tv).getByLabel('Time of day').fill('15');
+    await scrub(15);
     await tv.locator(clock, { hasText: '15:00' }).waitFor();
     await dev.waitForTimeout(800);
     const relit = await table.screenshot();
     if (shots) await dev.screenshot({ path: path.join(shots, 'dev-relit.png') });
+    // The lighting switch is one of Sunlight's finer settings.
+    await sunlight(tv).locator('summary', { hasText: 'More settings' }).click();
     await tv.getByLabel('Light the 3D model').uncheck();
     await dev.locator('.table-surface:not(.is-draped)').waitFor();
     await dev.waitForTimeout(800);
@@ -597,6 +620,20 @@ async function main() {
     // Buttons are named beside the live controller.
     const live = guide.frameLocator('.ed-preview iframe');
     await live.locator('.layer-button', { hasText: 'Wind' }).waitFor();
+    // A theme picked here restyles the live controller at once and is saved (#126). Midnight, the default, clears it.
+    const savedTv = () => JSON.parse(fs.readFileSync(path.join(site, 'site.json'), 'utf8')).tv;
+    await guide.locator('.wz-theme', { hasText: 'Ocean' }).click();
+    await guide.locator('.wz-theme[aria-checked="true"]', { hasText: 'Ocean' }).waitFor();
+    await live.locator('html[style*="--bg: #06121f"]').waitFor();
+    assert.equal(savedTv().theme_name, 'ocean');
+    await guide.locator('.wz-look [role="radio"]', { hasText: 'Icons and names' }).click();
+    await live.locator('body[data-rail-style="labelled"]').waitFor();
+    assert.equal(savedTv().rail_style, 'labelled');
+    await guide.locator('.wz-theme', { hasText: 'Midnight' }).click();
+    await guide.locator('.wz-look [role="radio"]', { hasText: /^Icons$/ }).click();
+    await live.locator('body[data-rail-style="icons"]').waitFor();
+    await guide.waitForFunction(() => document.querySelector('.wz-theme[aria-checked="true"]')?.textContent?.includes('Midnight'));
+    assert.equal(savedTv(), undefined, 'the default look leaves no tv settings behind');
     await guide.getByLabel('Name of Wind').fill('Windy corners');
     await guide.getByLabel('Name of Wind').blur();
     await live.locator('.layer-button', { hasText: 'Windy corners' }).waitFor();

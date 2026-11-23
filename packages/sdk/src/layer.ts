@@ -187,6 +187,12 @@ export interface LayerModule<P = Params> {
    * in the manifest's `panels`. The element has a fixed size and clips what does not fit.
    */
   panel?(ctx: PanelContext<P>, el: HTMLElement): PanelHandlers | void;
+  /**
+   * Draws the layer's hero on the controller: the one large, direct way to work the layer, at the
+   * top of the open layer (Sunlight's sky and time scrubber). It may change params with
+   * `ctx.setParams`. `ctx.panel` is `"hero"`. The element is as wide as the centre; the hero sets its height.
+   */
+  hero?(ctx: PanelContext<P>, el: HTMLElement): PanelHandlers | void;
 }
 
 /** Declares a layer. The default export of every layer package. */

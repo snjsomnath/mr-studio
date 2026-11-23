@@ -496,6 +496,12 @@ impl Hub {
             }
             return self.compose(&mut inner, method, p);
         }
+        if method == "site.tv" {
+            if !role.may_compose() {
+                return Err("this surface cannot change the table's settings".into());
+            }
+            return self.set_tv(p);
+        }
         let layer = p["layer"].as_str().ok_or("missing layer")?;
         let index = inner.position(layer)?;
         if method == "layer.activate" {
@@ -558,6 +564,38 @@ impl Hub {
             other => return Err(format!("unknown method '{other}'")),
         }
         Ok(json!({}))
+    }
+
+    /// `site.tv { tv: { key: value | null } }`: changes the controller's table settings (theme,
+    /// theme_name, rail_style, about), saves them to site.json and sends the new `tv` to every
+    /// surface as `site.tv`, so a theme shows at once without a reload. `null` removes a key.
+    fn set_tv(&self, p: &Value) -> Result<Value, String> {
+        let patch = p["tv"].as_object().ok_or("missing tv")?;
+        let mut tv = match self.info.read().unwrap().tv.clone() {
+            Some(Value::Object(tv)) => tv,
+            _ => Map::new(),
+        };
+        for (key, value) in patch {
+            let fits = match key.as_str() {
+                "theme" => value.as_object().is_some_and(|t| t.len() <= 64 && t.values().all(|v| v.as_str().is_some_and(|s| s.len() <= 160))),
+                "theme_name" => value.as_str().is_some_and(|s| !s.is_empty() && s.len() <= 40),
+                "rail_style" => matches!(value.as_str(), Some("icons" | "labelled")),
+                "about" => value.is_object() && value.to_string().len() <= 8_000,
+                _ => return Err(format!("'{key}' is not a controller setting that can be changed here")),
+            };
+            if value.is_null() {
+                tv.remove(key);
+            } else if fits {
+                tv.insert(key.clone(), value.clone());
+            } else {
+                return Err(format!("'{key}' is not a valid value"));
+            }
+        }
+        let tv = if tv.is_empty() { Value::Null } else { Value::Object(tv) };
+        self.site.save_tv(tv.clone()).map_err(|e| format!("could not save site.json: {e}"))?;
+        self.info.write().unwrap().tv = if tv.is_null() { None } else { Some(tv.clone()) };
+        self.emit("site.tv", json!({ "tv": tv }));
+        Ok(json!({ "tv": tv }))
     }
 
     /// The `scene.*` requests. Each one edits a copy of the scene, saves it to

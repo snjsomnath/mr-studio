@@ -439,12 +439,30 @@ impl Site {
     /// Rewrites the `layers` list of `site.json` and leaves every other key as it was written.
     /// The file is replaced in one step, so a crash cannot leave half a manifest behind.
     pub fn save_layers(&self, layers: &[LayerRef]) -> Result<(), SiteError> {
+        let layers = serde_json::to_value(layers).map_err(|e| SiteError::Parse { path: self.dir.join("site.json"), message: e.to_string() })?;
+        self.save_key("layers", layers)
+    }
+
+    /// Rewrites the `tv` settings of `site.json` (theme, rail style, About page…) and leaves every
+    /// other key as it was written. `null` removes them. The TV checks what is inside.
+    pub fn save_tv(&self, tv: serde_json::Value) -> Result<(), SiteError> {
+        self.save_key("tv", tv)
+    }
+
+    /// Rewrites one top-level key of `site.json`, checking that the result still loads, and
+    /// replaces the file in one step.
+    fn save_key(&self, key: &str, new: serde_json::Value) -> Result<(), SiteError> {
         let path = self.dir.join("site.json");
         let io = |source| SiteError::Io { path: path.clone(), source };
         let parse = |e: serde_json::Error| SiteError::Parse { path: path.clone(), message: e.to_string() };
         let text = std::fs::read_to_string(&path).map_err(io)?;
         let mut value: serde_json::Value = serde_json::from_str(&text).map_err(parse)?;
-        value["layers"] = serde_json::to_value(layers).map_err(parse)?;
+        match (new, value.as_object_mut()) {
+            (serde_json::Value::Null, Some(object)) => {
+                object.remove(key);
+            }
+            (new, _) => value[key] = new,
+        }
         // What is written must load again.
         let manifest: SiteManifest = serde_json::from_value(value.clone()).map_err(parse)?;
         let problems = Site { dir: self.dir.clone(), manifest, calibration: self.calibration }.problems();
