@@ -2,9 +2,12 @@ import { defineLayer, tableSpace } from '@mrstudio/sdk';
 import type { LayerManifest } from '@mrstudio/sdk';
 
 import manifest from '../layer.json';
+import { resolve } from './presets.ts';
 import { request } from './request.ts';
 
 interface Params {
+  /** A map that comes with MR Studio (`presets.ts`), or `custom` for the address and layers below. */
+  map: string;
   url: string;
   layers: string;
   styles: string;
@@ -26,12 +29,13 @@ export default defineLayer<Params>({
       const mine = ++asked;
       canvas.clear();
       canvas.commit();
-      if ((!ctx.params.url.trim() && !ctx.params.signin?.trim()) || !ctx.params.layers.trim()) {
-        ctx.publish({ note: 'Give the service address (or a sign-in from Sources) and its layers' });
+      const wanted = resolve(ctx.params);
+      if ((!wanted.url.trim() && !wanted.signin?.trim()) || !wanted.layers.trim()) {
+        ctx.publish({ note: 'Choose a map, or give the service address (or a sign-in from Sources) and its layers' });
         return;
       }
-      const { href, bbox, width, height } = request(ctx.site, ctx.params);
-      ctx.publish({ note: 'Loading the map…', source: ctx.params.source });
+      const { href, bbox, width, height } = request(ctx.site, wanted);
+      ctx.publish({ note: 'Loading the map…', source: wanted.source });
       try {
         const response = await fetch(href);
         if (!response.ok) throw new Error(await response.text());
@@ -49,7 +53,7 @@ export default defineLayer<Params>({
         g.drawImage(image, 0, 0);
         g.restore();
         canvas.commit();
-        ctx.publish({ note: '', source: ctx.params.source });
+        ctx.publish({ note: '', source: wanted.source });
       } catch (error) {
         if (mine === asked) ctx.publish({ note: `The map could not be loaded: ${(error as Error).message.slice(0, 200)}` });
       }
@@ -61,7 +65,7 @@ export default defineLayer<Params>({
     return {
       update(changed) {
         if (changed.includes('opacity')) canvas.setOpacity(ctx.params.opacity);
-        if (changed.some((key) => key === 'url' || key === 'layers' || key === 'styles' || key === 'signin')) void load();
+        if (changed.some((key) => key === 'map' || key === 'url' || key === 'layers' || key === 'styles' || key === 'signin')) void load();
       },
     };
   },

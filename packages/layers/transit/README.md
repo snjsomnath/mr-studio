@@ -32,3 +32,7 @@ Set **Vehicles** to *Live feed* and **Feed address** to a URL that returns:
 `id`, `lon` and `lat` are required. The layer polls the address every three seconds, glides each vehicle to its newest position and drops vehicles that stop being reported.
 
 For Västtrafik, set it up once in **Sources** (its key stays in the computer's keychain) and choose it as **Live data from**: the host asks Västtrafik for the vehicles around the table (`/api/transit/<source>/vehicles`) and turns them into this shape. Other providers get an adapter in `crates/mrs-host/src/transit.rs`. Any other city's API can still be turned into this shape by a small adapter service. The address can be relative, so a site can point at an adapter behind the host (`/services/...`) or at a file in the site package (`/site/data/...`) for testing.
+
+## The look
+
+Vehicles look as they did on the interactive_map Chalmers table: a disc in the line's own colour with a soft glow, the line number in the line's text colour, and a trail that tapers and fades behind it. Ferries leave a spreading wake instead of a trail. Colours come from the data or the feed (Västtrafik's own line colours); only a vehicle without one gets its mode's colour. **Vehicle size** 2 matches the old table; **Routes** and **Stops** draw the network underneath and are off by default, as on the old table.

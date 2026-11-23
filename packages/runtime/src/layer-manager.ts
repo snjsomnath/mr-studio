@@ -91,12 +91,33 @@ export class LayerManager {
     requestAnimationFrame(this.frame);
   }
 
+  /** A top-level `base` or `ambient` layer: part of the map at rest. */
+  private atRest(id: string): boolean {
+    const state = this.store.state.layers[id];
+    const category = state ? this.store.manifest(state.layer)?.category : undefined;
+    return Boolean(state && !state.parent && (category === 'base' || category === 'ambient'));
+  }
+
+  /** An open layer that turns the map at rest off, such as the slideshow (#205). */
+  private hidingAtRest(): boolean {
+    return this.store.state.scene.some((id) => {
+      const state = this.store.state.layers[id];
+      return Boolean(state?.active && !state.parent && this.store.manifest(state.layer)?.hidesAtRest);
+    });
+  }
+
   private sync(id: string, state: LayerState, previous: LayerState | undefined): void {
     this.view.setIntensity(id, state.intensity ?? 1);
+    const hides = Boolean(this.store.manifest(state.layer)?.hidesAtRest);
+    if (hides && Boolean(state.active) !== Boolean(previous?.active)) {
+      // The map at rest stops while this layer is open and comes back when it closes.
+      for (const other of this.store.state.scene) if (other !== id && this.atRest(other)) this.sync(other, this.store.layer(other), this.store.layer(other));
+    }
     const running = this.running.get(id);
-    if (state.active && !running) {
+    const active = state.active && !(this.atRest(id) && this.hidingAtRest());
+    if (active && !running) {
       void this.start(id);
-    } else if (!state.active && running) {
+    } else if (!active && running) {
       this.stop(id);
     } else if (running?.ready) {
       const changed = changedKeys(previous?.params, state.params);

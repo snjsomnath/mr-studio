@@ -1,4 +1,4 @@
-import { defineLayer, geojsonLines, geojsonPolygons, readSiteData, tableSpace, traceLine, tracePolygon, withAlpha } from '@mrstudio/sdk';
+import { defineLayer, geojsonLines, geojsonPolygons, readSiteData, STRAY_REACH, tableReach, tableSpace, traceLine, tracePolygon, withAlpha } from '@mrstudio/sdk';
 import type { LayerManifest } from '@mrstudio/sdk';
 
 import manifest from '../layer.json';
@@ -108,11 +108,15 @@ export default defineLayer<Params>({
       drawOwn(...shapes);
       // Without streets of its own, the table would show buildings floating on bare ground: a dark map from
       // OpenStreetMap goes under them (#146), and the table's own buildings are drawn on top.
-      if (style === 'dark' && loaded && shapes[1].length === 0) {
+      // Streets that lie mostly beside the table, such as ones left from another place, count as none (#180).
+      const stray = shapes[1].length > 0 && tableReach(shapes[1].map((l) => l.geometry), space) < STRAY_REACH;
+      if (style === 'dark' && loaded && (shapes[1].length === 0 || stray)) {
         canvas.commit();
-        const why = shapes[0].length
-          ? 'This table has no streets of its own yet, so a dark map from OpenStreetMap shows them under your buildings.'
-          : 'This table has no streets or buildings of its own yet, so a dark map from OpenStreetMap stands in for them.';
+        const why = stray
+          ? "This table's streets reach only a corner of it, so a dark map from OpenStreetMap shows the streets here. Bring in streets for this place in Your place."
+          : shapes[0].length
+            ? 'This table has no streets of its own yet, so a dark map from OpenStreetMap shows them under your buildings.'
+            : 'This table has no streets or buildings of its own yet, so a dark map from OpenStreetMap stands in for them.';
         void drawTiles('darkmap', why, () => drawOwn(shapes[0], [], false));
         return;
       }

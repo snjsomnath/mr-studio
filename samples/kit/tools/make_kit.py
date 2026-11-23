@@ -283,6 +283,49 @@ write("slideshow/slideshow.json", {"slides": [
     {"type": "wms", "enabled": False, "duration": 8000, "url": "https://minkarta.lantmateriet.se/map/ortofoto/", "layers": "Ortofoto_0.5", "metadata": {"title": "Aerial photo (needs a Lantmäteriet key)", "source": "Lantmäteriet"}},
 ]})
 
+# ---- Bird song for sound on points (#150) -------------------------------------------
+# Four made-up birds, synthesised here so the kit carries no recordings: each is a few
+# seconds of calls (pitch sweeps with an envelope), different enough to see and hear.
+
+def wav(path, samples, rate=16000):
+    data = b"".join(struct.pack("<h", max(-32767, min(32767, int(v * 32767)))) for v in samples)
+    with open(path, "wb") as out:
+        out.write(b"RIFF" + struct.pack("<I", 36 + len(data)) + b"WAVEfmt " + struct.pack("<IHHIIHH", 16, 1, 1, rate, rate * 2, 2, 16) + b"data" + struct.pack("<I", len(data)) + data)
+
+def song(calls, length=5.0, rate=16000, seed=0):
+    rng = random.Random(seed)
+    out = [0.0] * int(length * rate)
+    for start, dur, f0, f1, level in calls:
+        phase = 0.0
+        n = int(dur * rate)
+        for i in range(n):
+            k = int(start * rate) + i
+            if k >= len(out):
+                break
+            u = i / n
+            f = f0 + (f1 - f0) * u
+            phase += 2 * math.pi * f / rate
+            env = math.sin(math.pi * u) ** 1.5
+            out[k] += level * env * (math.sin(phase) + 0.25 * math.sin(2 * phase)) + 0.01 * level * (rng.random() - 0.5)
+    return out
+
+BIRDS = {
+    # A fluting song: low, slow phrases.
+    "blackbird": [(0.3, 0.35, 1800, 2400, 0.8), (0.75, 0.25, 2600, 2000, 0.7), (1.1, 0.4, 2000, 2900, 0.9), (2.6, 0.35, 1900, 2500, 0.8), (3.05, 0.5, 2400, 1700, 0.75)],
+    # Teacher-teacher: two notes, repeated.
+    "great-tit": [(0.2 + 0.45 * i, 0.12, 5200 if i % 2 == 0 else 3600, 5000 if i % 2 == 0 else 3500, 0.7) for i in range(8)],
+    # A thin, high trickle.
+    "robin": [(0.2 + 0.11 * i, 0.08, 6500 - 300 * (i % 5), 5800 - 200 * (i % 3), 0.5 + 0.05 * (i % 4)) for i in range(14)] + [(3.0 + 0.12 * i, 0.09, 7000 - 250 * i, 6200, 0.55) for i in range(8)],
+    # A run that speeds up and ends in a flourish.
+    "chaffinch": [(0.3 + 0.16 * i * (1 - i / 30), 0.09, 4200 + 80 * i, 3800 + 60 * i, 0.6) for i in range(12)] + [(2.0, 0.45, 5500, 2600, 0.9)],
+}
+(KIT / "sounds").mkdir(exist_ok=True)
+for n, (name, calls) in enumerate(BIRDS.items()):
+    wav(KIT / "sounds" / f"{name}.wav", song(calls, seed=n))
+BIRD_SPOTS = [("Blackbird", "blackbird", -220, 90), ("Great tit", "great-tit", 40, -120), ("Robin", "robin", 190, 110), ("Chaffinch", "chaffinch", -60, 200), ("Blackbird", "blackbird", 300, -40)]
+write("birds.geojson", {"type": "FeatureCollection", "features": [
+    {"type": "Feature", "properties": {"name": n, "species": sp, "sound": f"{sp}.wav"}, "geometry": {"type": "Point", "coordinates": lonlat(e, nn)}} for n, sp, e, nn in BIRD_SPOTS]})
+
 # ---- Broken on purpose -------------------------------------------------------------
 
 # 3.1 km north-west of the table, as in the 2026-11-15 feedback.

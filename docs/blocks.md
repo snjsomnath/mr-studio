@@ -174,7 +174,7 @@ composition. Old line counts are from `main`.
 | Bottom ribbon: demand, solar, battery, grid, share bar | `stat`, `bars`, `shares` published; drawn by dashboard widgets |
 | Click a building for its numbers | `Probe` + `ctx.publish` |
 | Vehicles arriving and leaving at chargers | `Agent`-like motion along a `Path` by schedule: `pointAlong` and a timed leg. Street routes come from `StreetNetwork` |
-| Sound | Not a visual block; an audio cue block is on the backlog |
+| Sound | `audio` group (#150): `analyseSound` (loudness and brightness envelopes), `PeakFinder` (calls), `SoundSchedule` (chorus or loop), `SoundStage` (plays a layer's sounds on the table, silent elsewhere); the `sound` motion draws rings from it |
 
 What remains ECOM-specific is small: the palette, the wording, the mapping from the dispatch
 result to series, and the roof panel geometry. The `energy` scene in `blocks-demo` is about
@@ -231,7 +231,6 @@ the thread named.
 | Visuals | Contours | built (`contours`) |
 | Visuals | Pictogram icons with fill gauges, extruded bars, vector-field arrows, trails and ghosting, non-overlapping labels | block |
 | Visuals | Split and swipe compare, bloom night style | Runtime (needs a compositor) |
-| Visuals | Audio cues | block, new `audio` group |
 | Interaction | Gesture recogniser (pinch, rotate, flick) over the sample stream | block |
 | Interaction | `Draw` behaviour for lines and polygons | block |
 | Interaction | Shared selection set, undo and history | Sessions (host state) |

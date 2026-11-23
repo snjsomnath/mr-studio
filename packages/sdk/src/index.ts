@@ -19,3 +19,4 @@ export * from './recipe.ts';
 export * from './marks.ts';
 export * from './places.ts';
 export * from './place-motions.ts';
+export * from './audio.ts';

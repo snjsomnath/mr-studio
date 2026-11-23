@@ -22,6 +22,8 @@ import type { ResolvedPalette } from './palette.ts';
 import { TIMELINE_DEFAULTS, arrowMarks, fillArrow, fillIcon, timeReveal, traceShape } from './marks.ts';
 import type { Arrows, PointShape, TimeReveal, TimelineProps } from './marks.ts';
 import { placeData } from './places.ts';
+import { SOUND_DEFAULTS, SoundStage, soundPath } from './audio.ts';
+import type { SoundProps } from './audio.ts';
 import type { PlaceExtras, PlaceTables } from './places.ts';
 import { placeMotion, placeUnit } from './place-motions.ts';
 import type { CustomLayer, LegendItem, RecipeBlock, SiteInfo } from './types.ts';
@@ -179,10 +181,11 @@ export const MOTION_DEFAULTS = {
   gravity: { network: 'roads', count: 240, speed_mm: 10, weight: null, size_mm: 2, trail: true } satisfies GravityProps,
   timeline: TIMELINE_DEFAULTS,
   place: PLACE_DEFAULTS,
+  sound: SOUND_DEFAULTS,
 };
 /** Which motions fit which look (L1: verbs fit the form). */
 export const MOTIONS_FOR: Record<GeometryKind, (keyof typeof MOTION_DEFAULTS)[]> = {
-  points: ['pulse', 'attract', 'gravity', 'timeline', 'place'],
+  points: ['pulse', 'attract', 'gravity', 'timeline', 'place', 'sound'],
   lines: ['draw-in', 'flow', 'particles', 'timeline'],
   fill: ['pulse', 'timeline'],
 };
@@ -434,6 +437,8 @@ export interface LookMotion {
   timeline?: Partial<TimelineProps>;
   /** A place motion (#161-163): `extras` and `tables` are its other files, loaded by whoever draws the recipe. */
   place?: Partial<PlaceProps> & { extras?: PlaceExtras; tables?: PlaceTables; frame?: { width: number; height: number } };
+  /** Sound on points (#150). `stage` plays the sounds; whoever draws the recipe owns it and stops it. */
+  sound?: Partial<SoundProps> & { stage?: SoundStage };
 }
 
 function trace(view: View, points: readonly Point[], close: boolean): void {
@@ -469,6 +474,7 @@ export function compileLook(block: RecipeBlock, shapes: Shapes, palette: Resolve
     const walkers = motion.gravity ? streetCrowd(shapes.spots, paint, { ...MOTION_DEFAULTS.gravity, ...motion.gravity }, motion.gravity.streets, mm) : null;
     const reveal = motion.timeline ? timeReveal(rows, motion.timeline) : null;
     const place = motion.place ? placeLook(shapes, motion.place, palette, mm) : null;
+    const sound = motion.sound ? soundLook(shapes, motion.sound, paint, radius, mm) : null;
     return {
       id: block.id,
       kind,
@@ -476,6 +482,7 @@ export function compileLook(block: RecipeBlock, shapes: Shapes, palette: Resolve
       draw(view, time, alpha) {
         // Crowds and place motions go under the points they belong to.
         place?.draw(view, time, alpha);
+        sound?.draw(view, time, alpha);
         attract?.draw(view, time, alpha);
         walkers?.draw(view, time, alpha);
         drawPoints(view, shapes.spots, { paint, radius, props, stroke, pulse, px: (m) => px(view, m), time, alpha, timeline: reveal });
@@ -1021,6 +1028,71 @@ function placeLook(shapes: Shapes, motion: NonNullable<LookMotion['place']>, pal
   return def.create({ data, props: knobs, u: placeUnit(mm), palette });
 }
 
+// ---- Sound on points (#150) ---------------------------------------------------------
+
+/**
+ * Rings that follow each point's sound: every call (a rise in loudness) sends one out, louder
+ * calls are wider and brighter, and brighter (higher) sounds travel faster. A point that is
+ * not playing stays as its look draws it, a calm dot (M2).
+ */
+function soundLook(shapes: Shapes, motion: NonNullable<LookMotion['sound']>, paint: PaintScale, radius: (properties: Props) => number, mm: number) {
+  const o = { ...SOUND_DEFAULTS, ...motion } as SoundProps;
+  const paths = shapes.spots.map((s) => soundPath(s.properties, o));
+  if (!paths.some(Boolean)) return null;
+  const stage = motion.stage ?? new SoundStage({ audible: false });
+  stage.prepare(paths.filter((p): p is string => p !== null));
+  const rings = shapes.spots.map(() => [] as { born: number; strength: number; life: number }[]);
+  const glow = shapes.spots.map(() => 0);
+  let last: number | null = null;
+  return {
+    draw(view: View, time: number, alpha: number) {
+      let dt = last === null ? 0 : time - last;
+      last = time;
+      if (dt < 0 || dt > 0.5) dt = 0.016;
+      const now = stage.update(paths, o, time, dt);
+      const pen = view.pen;
+      pen.save();
+      pen.globalCompositeOperation = 'lighter';
+      for (let i = 0; i < shapes.spots.length; i++) {
+        const spot = shapes.spots[i]!;
+        const state = now[i]!;
+        const list = rings[i]!;
+        if (state.call) list.push({ born: time, strength: 0.6 + 0.4 * state.loudness, life: 2.2 - 1.2 * state.brightness });
+        glow[i] = glow[i]! + ((state.playing ? state.loudness : 0) - glow[i]!) * Math.min(1, dt * 12);
+        while (list.length && time - list[0]!.born > list[0]!.life) list.shift();
+        if (list.length === 0 && glow[i]! < 0.01) continue;
+        const colour = paint.colour(spot.properties);
+        const [x, y] = view.toPx(spot.point);
+        const r = Math.max(1, radius(spot.properties) * mm * view.scale);
+        if (glow[i]! > 0.01) {
+          const g = pen.createRadialGradient(x, y, 0, x, y, r * (2 + 3 * glow[i]!));
+          g.addColorStop(0, css(colour, alpha * 0.8 * glow[i]!));
+          g.addColorStop(1, css(colour, 0));
+          pen.fillStyle = g;
+          pen.beginPath();
+          pen.arc(x, y, r * (2 + 3 * glow[i]!), 0, Math.PI * 2);
+          pen.fill();
+        }
+        for (const ring of list) {
+          const f = (time - ring.born) / ring.life;
+          const fade = alpha * ring.strength * Math.pow(1 - f, 1.3);
+          const width = Math.max(1, o.width_mm * mm * view.scale * ring.strength * (1 - 0.5 * f));
+          const at = r + o.reach_mm * mm * view.scale * ease(f);
+          // A soft halo under a crisp line, so a call reads from across the room (C7).
+          for (const [w, a] of [[width * 3.5, 0.22], [width, 1]] as const) {
+            pen.strokeStyle = css(colour, fade * a);
+            pen.lineWidth = w;
+            pen.beginPath();
+            pen.arc(x, y, at, 0, Math.PI * 2);
+            pen.stroke();
+          }
+        }
+      }
+      pen.restore();
+    },
+  };
+}
+
 // ---- Whole recipes ---------------------------------------------------------------------
 
 /** The motion blocks acting on a look block, as compileLook takes them. */
@@ -1037,6 +1109,7 @@ export function motionFor(recipe: Pick<CustomLayer, 'motion'>, look: string, ove
     if (block.block === 'gravity') motion.gravity = props as Partial<GravityProps>;
     if (block.block === 'timeline') motion.timeline = props as Partial<TimelineProps>;
     if (block.block === 'place') motion.place = props as Partial<PlaceProps>;
+    if (block.block === 'sound') motion.sound = props as Partial<SoundProps>;
   }
   return motion;
 }

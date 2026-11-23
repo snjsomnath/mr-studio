@@ -1423,6 +1423,15 @@ body[data-role='edit'] .ed-surface .table-frame {
   color: #1d7a46;
 }
 
+.wz-state.is-off {
+  color: #8a5a00;
+}
+
+.im-off {
+  margin: 6px 0 0;
+  font-size: 13px;
+}
+
 .wz-report {
   margin: -1px 0 0;
   padding: 10px 12px;
@@ -2116,4 +2125,25 @@ body[data-role='edit'] .ed-surface .table-frame {
 
 .dt-popover .dt-slider {
   grid-template-columns: 128px 1fr 32px;
+}
+
+/* The ribbon stays put (#182): a group's name never widens it, so changing the selection moves nothing. */
+.ed-group-name {
+  width: 0;
+  min-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* A question before adding a second layer of the same kind (#183). */
+.im-dialog.ed-ask {
+  width: min(440px, calc(100vw - 32px));
+}
+
+.ed-ask-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
 }

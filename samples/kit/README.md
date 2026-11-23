@@ -29,6 +29,7 @@ Every file below then lands on the table (the sample site `sites/sample` uses th
 | `transit.geojson` | Tram and bus lines with `line`, `mode`, `colour` | Add data as dataset `transit` | Public transport (simulated) |
 | `trips.json` | Journeys to the square, walk and walk+tram | Your place → Trips | Mobility |
 | `zones.geojson` | 8 polygons with `population`, `green_share`, `noise_db` | Add data | Choropleth / "based on" colours, slideshow slide |
+| `birds.geojson` + `sounds/*.wav` | 5 birds with `name`, `species`, `sound` (a file in `sounds/`), four made-up songs | Add data, then Add sounds in the Sound motion | Sound on points (#150): rings that follow each song |
 | `places.geojson` | 6 places with `name`, `kind`, `category`, `weight` (the place data standard, #160) | Add data | Points, icons, every place motion |
 | `sensors.geojson` | 5 sensor points with `sensor_id` | Add data | Points joined to the time series |
 | `tables/sensors-timeseries.csv` | 48 half-hours per sensor: temperature, PM2.5, noise, people | Add data, joined to `sensors` by `sensor_id` | Time slider, a point driven by a time series (data PR D4) |

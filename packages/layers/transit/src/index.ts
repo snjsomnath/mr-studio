@@ -40,6 +40,15 @@ interface Vehicle {
   colour: string;
   textColour: string;
   trail: XY[];
+  /** Ferries leave a spreading wake instead of a trail. */
+  wake: WakePoint[];
+}
+
+interface WakePoint {
+  x: number;
+  y: number;
+  /** Seconds on the layer's clock. */
+  t: number;
 }
 
 interface Simulated extends Vehicle {
@@ -58,16 +67,33 @@ interface Live extends Vehicle {
   seen: number;
 }
 
-/** Colours per mode when the data gives none, and the length of a vehicle in metres. */
-const MODES: Record<Mode, { colour: string; length: number }> = {
-  tram: { colour: '#ffd700', length: 22 },
-  bus: { colour: '#00a5e0', length: 11 },
-  train: { colour: '#e31837', length: 40 },
-  ferry: { colour: '#00b4a0', length: 18 },
+/** Colours per mode when the data gives none: Västtrafik blue for buses, gold trams, red trains, teal ferries. */
+const MODES: Record<Mode, { colour: string }> = {
+  tram: { colour: '#ffd700' },
+  bus: { colour: '#00a5e0' },
+  train: { colour: '#e31837' },
+  ferry: { colour: '#00b4a0' },
 };
 const STOP_REACH_M = 15;
 const DWELL_S = 4;
-const TRAIL_POINTS = 60;
+
+// The look of the Västtrafik layer on the interactive_map Chalmers table, which drew in projector pixels.
+// One of those pixels covered about 0.65 m of the table, so sizes here are those pixels in metres.
+// At the default Vehicle size (2) a vehicle is exactly as large as it was there.
+const PX = 0.65;
+const MARKER_PX = 16;
+const GLOW_PX = 28;
+const SHADOW_PX = 15;
+const TRAIL_PX = 5;
+const TRAIL_POINTS = 100;
+/** Trail opacity right behind the vehicle; it falls to nothing at the tail. */
+const TRAIL_ALPHA = 0.8;
+/** The trail is stroked in this many bands of width and opacity, not segment by segment. */
+const TRAIL_BANDS = 12;
+/** A ferry's wake lasts this long, sampled this often, and spreads to this half-width in metres. */
+const WAKE_S = 20;
+const WAKE_SAMPLE_S = 0.1;
+const WAKE_SPREAD_M = 11;
 const POLL_S = 3;
 /** A live vehicle that has not been reported for this long is gone. */
 const FORGET_S = 30;
@@ -128,7 +154,7 @@ export default defineLayer<Params>({
           const direction = lap < 1 ? 1 : -1;
           const at = (lap < 1 ? lap : 2 - lap) * route.track.length;
           const p = along(route.track, at);
-          return { ...p, route, at, direction, dwell: 0, nextStop: -1, mode: route.mode, line: route.line, colour: route.colour, textColour: route.textColour, trail: [] };
+          return { ...p, route, at, direction, dwell: 0, nextStop: -1, mode: route.mode, line: route.line, colour: route.colour, textColour: route.textColour, trail: [], wake: [] };
         }),
       );
     }
@@ -153,7 +179,6 @@ export default defineLayer<Params>({
           v.at = Math.min(v.route.track.length, Math.max(0, v.at));
           v.direction = v.direction === 1 ? -1 : 1;
           v.dwell = DWELL_S;
-          v.trail = [];
         }
         const p = along(v.route.track, v.at);
         v.x = p.x;
@@ -204,14 +229,14 @@ export default defineLayer<Params>({
           const [x, y] = space.toTable(item.lon, item.lat);
           const m = mode(item.mode);
           const colour = colourOf(item.colour ?? item.color, MODES[m].colour);
+          const textColour = colourOf(item.textColour, inkFor(colour));
           const known = live.get(String(item.id));
-          if (known) {
-            Object.assign(known, { targetX: x, targetY: y, seen: clock, mode: m, line: String(item.line ?? ''), colour });
+          // A ferry that jumps further than it could have sailed starts afresh, rather than gliding across land.
+          const jumped = known && m === 'ferry' && Math.hypot(x - known.targetX, y - known.targetY) > Math.max(300, (clock - known.seen) * 22);
+          if (known && !jumped) {
+            Object.assign(known, { targetX: x, targetY: y, seen: clock, mode: m, line: String(item.line ?? ''), colour, textColour });
           } else {
-            live.set(String(item.id), {
-              x, y, targetX: x, targetY: y, angle: 0, seen: clock, mode: m,
-              line: String(item.line ?? ''), colour, textColour: colourOf(item.textColour, inkFor(colour)), trail: [],
-            });
+            live.set(String(item.id), { x, y, targetX: x, targetY: y, angle: 0, seen: clock, mode: m, line: String(item.line ?? ''), colour, textColour, trail: [], wake: [] });
           }
         }
         feedState = '';
@@ -227,8 +252,10 @@ export default defineLayer<Params>({
         nextPoll = clock + POLL_S;
         void poll();
       }
-      // The same glide the Gothenburg transit layer used: most of the way there within a second.
+      // The same glide the Gothenburg transit layer used: 8% of the way per frame, most of the way within a second.
+      // Ferries drift more slowly, as boats do.
       const ease = 1 - Math.pow(0.92, dt * 60);
+      const drift = 1 - Math.exp(-dt / 2);
       for (const [id, v] of live) {
         if (clock - v.seen > FORGET_S) {
           live.delete(id);
@@ -237,14 +264,157 @@ export default defineLayer<Params>({
         const dx = v.targetX - v.x;
         const dy = v.targetY - v.y;
         if (Math.hypot(dx, dy) > 0.5) v.angle = Math.atan2(dy, dx);
-        v.x += dx * ease;
-        v.y += dy * ease;
+        const k = v.mode === 'ferry' ? drift : ease;
+        v.x += dx * k;
+        v.y += dy * k;
       }
     }
 
-    function draw(vehicles: Iterable<Vehicle>) {
+    /** Circle, glow and line number, painted once per look at the canvas's own resolution and reused. */
+    const sprites = new Map<string, { image: HTMLCanvasElement; half: number }>();
+    function sprite(v: Vehicle, k: number, label: boolean) {
+      const text = label ? v.line : '';
+      const key = [v.colour, v.textColour, text, k].join('|');
+      let found = sprites.get(key);
+      if (found) return found;
+      if (sprites.size >= 128) sprites.delete(sprites.keys().next().value!);
+      const px = PX * k * canvas.scale; // canvas pixels per old projector pixel
+      const radius = MARKER_PX * px;
+      const glow = GLOW_PX * px;
+      const half = Math.ceil(Math.max(glow, radius + SHADOW_PX * px)) + 2;
+      const image = document.createElement('canvas');
+      image.width = image.height = half * 2;
+      const g = image.getContext('2d')!;
+      // A soft glow, added to what is beneath.
+      g.globalCompositeOperation = 'lighter';
+      const halo = g.createRadialGradient(half, half, 0, half, half, glow);
+      halo.addColorStop(0, withAlpha(v.colour, 0x88 / 255));
+      halo.addColorStop(0.5, withAlpha(v.colour, 0x44 / 255));
+      halo.addColorStop(1, withAlpha(v.colour, 0));
+      g.fillStyle = halo;
+      g.beginPath();
+      g.arc(half, half, glow, 0, Math.PI * 2);
+      g.fill();
+      // The body: a disc in the line's colour with a shadow of the same colour.
+      g.globalCompositeOperation = 'source-over';
+      g.fillStyle = v.colour;
+      g.shadowColor = v.colour;
+      g.shadowBlur = SHADOW_PX * px;
+      g.beginPath();
+      g.arc(half, half, radius, 0, Math.PI * 2);
+      g.fill();
+      g.shadowBlur = 0;
+      if (text) {
+        g.font = `bold ${Math.round(radius * 0.85)}px Inter, system-ui, sans-serif`;
+        g.textAlign = 'center';
+        g.textBaseline = 'middle';
+        g.fillStyle = v.textColour;
+        g.fillText(text, half, half + px);
+      }
+      found = { image, half: half / canvas.scale };
+      sprites.set(key, found);
+      return found;
+    }
+
+    function record(v: Vehicle) {
+      if (v.mode === 'ferry') {
+        // Fixed-time samples, so the wake does not depend on how often the feed reports.
+        const last = v.wake[v.wake.length - 1];
+        if (!last || Math.hypot(last.x - v.x, last.y - v.y) > 300) v.wake = [];
+        if (!last || clock - last.t >= WAKE_SAMPLE_S) {
+          if (!last || Math.hypot(last.x - v.x, last.y - v.y) > 0.15) v.wake.push({ x: v.x, y: v.y, t: clock });
+        }
+        while (v.wake.length > 0 && clock - v.wake[0]!.t > WAKE_S) v.wake.shift();
+        return;
+      }
+      const last = v.trail[v.trail.length - 1];
+      if (!last || Math.hypot(last[0] - v.x, last[1] - v.y) > 0.05) {
+        v.trail.push([v.x, v.y]);
+        if (v.trail.length > TRAIL_POINTS) v.trail.shift();
+      }
+    }
+
+    /** A trail that tapers and fades towards its tail, then a solid stroke into the vehicle. */
+    function drawTrail(g: CanvasRenderingContext2D, v: Vehicle, k: number) {
+      const n = v.trail.length;
+      if (n < 2) return;
+      const full = TRAIL_PX * PX * k;
+      for (let band = 0; band < TRAIL_BANDS; band++) {
+        const from = Math.max(1, Math.floor((band * n) / TRAIL_BANDS));
+        const to = Math.floor(((band + 1) * n) / TRAIL_BANDS);
+        if (to <= from - 1 || from >= n) continue;
+        const progress = (from + to) / 2 / n;
+        g.strokeStyle = withAlpha(v.colour, TRAIL_ALPHA * progress);
+        g.lineWidth = full * (0.3 + 0.7 * progress);
+        g.beginPath();
+        g.moveTo(...v.trail[from - 1]!);
+        for (let i = from; i <= Math.min(to, n - 1); i++) g.lineTo(...v.trail[i]!);
+        g.stroke();
+      }
+      const tail = v.trail[n - 1]!;
+      g.strokeStyle = withAlpha(v.colour, 0xcc / 255);
+      g.lineWidth = full;
+      g.beginPath();
+      g.moveTo(...tail);
+      g.lineTo(v.x, v.y);
+      g.stroke();
+    }
+
+    /** A ferry's wake: two spreading arms, a faint ribbon between them and a cross-ripple now and then. */
+    function drawWake(g: CanvasRenderingContext2D, v: Vehicle) {
+      const samples = v.wake;
+      const points = samples.map((p, i) => {
+        const a = samples[Math.max(0, i - 1)]!;
+        const b = samples[Math.min(samples.length - 1, i + 1)]!;
+        const length = Math.hypot(b.x - a.x, b.y - a.y);
+        if (length < 0.01) return null;
+        const age = Math.max(0, clock - p.t);
+        const spread = Math.min(WAKE_SPREAD_M, 0.5 + age * 0.65);
+        const nx = -(b.y - a.y) / length;
+        const ny = (b.x - a.x) / length;
+        return {
+          t: p.t,
+          alpha: (1 - age / WAKE_S) ** 2,
+          center: [p.x, p.y] as XY,
+          left: [p.x + nx * spread, p.y + ny * spread] as XY,
+          right: [p.x - nx * spread, p.y - ny * spread] as XY,
+        };
+      }).filter((p) => p !== null);
+      for (let i = 1; i < points.length; i++) {
+        const a = points[i - 1]!;
+        const b = points[i]!;
+        const alpha = Math.min(a.alpha, b.alpha);
+        g.fillStyle = `rgba(168,220,234,${alpha * 0.055})`;
+        g.beginPath();
+        g.moveTo(...a.left);
+        g.lineTo(...b.left);
+        g.lineTo(...b.right);
+        g.lineTo(...a.right);
+        g.closePath();
+        g.fill();
+        for (const side of ['left', 'right', 'center'] as const) {
+          g.strokeStyle = `rgba(213,242,250,${alpha * (side === 'center' ? 0.1 : 0.36)})`;
+          g.lineWidth = (side === 'center' ? 0.8 : 1.15) * PX;
+          g.beginPath();
+          g.moveTo(...a[side]);
+          g.lineTo(...b[side]);
+          g.stroke();
+        }
+        if (Math.floor(a.t / 1.4) !== Math.floor(b.t / 1.4)) {
+          g.strokeStyle = `rgba(224,245,250,${alpha * 0.18})`;
+          g.lineWidth = 0.7 * PX;
+          g.beginPath();
+          g.moveTo(...b.left);
+          g.quadraticCurveTo(b.center[0], b.center[1], b.right[0], b.right[1]);
+          g.stroke();
+        }
+      }
+    }
+
+    function draw(vehicles: Vehicle[]) {
       const g = canvas.ctx;
       const { size, labels, trails } = ctx.params;
+      const k = size / 2;
       canvas.clear();
       g.lineCap = 'round';
       g.lineJoin = 'round';
@@ -271,47 +441,16 @@ export default defineLayer<Params>({
           }
         }
       }
+      // Every trail and wake first, then every vehicle, so no trail crosses a vehicle.
       for (const v of vehicles) {
-        const last = v.trail[v.trail.length - 1];
-        if (!last || Math.hypot(last[0] - v.x, last[1] - v.y) > 2) {
-          v.trail.push([v.x, v.y]);
-          if (v.trail.length > TRAIL_POINTS) v.trail.shift();
-        }
-        if (trails) {
-          // The trail fades towards its tail.
-          g.lineWidth = 2.2 * size;
-          for (let i = 1; i < v.trail.length; i++) {
-            g.strokeStyle = withAlpha(v.colour, 0.5 * (i / v.trail.length) ** 2);
-            g.beginPath();
-            g.moveTo(...v.trail[i - 1]!);
-            g.lineTo(...v.trail[i]!);
-            g.stroke();
-          }
-        }
-        const length = MODES[v.mode].length * size * 0.6;
-        const width = 3.2 * size;
-        g.globalCompositeOperation = 'lighter';
-        const glow = g.createRadialGradient(v.x, v.y, 0, v.x, v.y, length);
-        glow.addColorStop(0, withAlpha(v.colour, 0.45));
-        glow.addColorStop(1, withAlpha(v.colour, 0));
-        g.fillStyle = glow;
-        g.fillRect(v.x - length, v.y - length, length * 2, length * 2);
-        g.globalCompositeOperation = 'source-over';
-        g.save();
-        g.translate(v.x, v.y);
-        g.rotate(v.angle);
-        g.fillStyle = v.colour;
-        g.beginPath();
-        g.roundRect(-length / 2, -width / 2, length, width, width / 2.5);
-        g.fill();
-        g.restore();
-        if (labels && v.line) {
-          g.fillStyle = v.textColour;
-          g.font = `600 ${width * 0.85}px Inter, system-ui, sans-serif`;
-          g.textAlign = 'center';
-          g.textBaseline = 'middle';
-          g.fillText(v.line, v.x, v.y + width * 0.05);
-        }
+        record(v);
+        if (!trails) continue;
+        if (v.mode === 'ferry') drawWake(g, v);
+        else drawTrail(g, v, k);
+      }
+      for (const v of vehicles) {
+        const { image, half } = sprite(v, k, labels);
+        g.drawImage(image, v.x - half, v.y - half, half * 2, half * 2);
       }
       canvas.commit();
     }
