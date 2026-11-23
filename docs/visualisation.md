@@ -141,7 +141,7 @@ How common profiles turn into a design, with the 2.0 layer that shows it.
 | Surface | For | What goes there | What never goes there |
 |---|---|---|---|
 | **Table map** | Seeing the place change | Fields, routes, flows, particles, rings, highlights; very short place labels pinned to the place | Paragraphs, legends, step counters, controls, numbers with units |
-| **Ribbon** (blank projector margin) | A glance without leaving the table | One stat, one small chart, a time bar, the join QR (present.md §4) | Paragraphs, more than about 3 reads |
+| **Ribbon** (blank projector margin, on the flat table top) | A glance without leaving the table | One stat, one small chart, a time bar, the join QR (present.md §4), on the front edge (S5) | Paragraphs, more than about 3 reads, anything important on the far edge |
 | **Controller** | Choosing and explaining | Layer rails, the stage (hero, controls, legend, info strip), ◀ ▶, the attract loop | Anything that only makes sense without looking at the table |
 | **TV** | The room's shared summary | Panels on the 12 × 6 grid under the density budget (DASHBOARD.md) | Tables, pie charts, documents, anything over budget |
 | **Phone** | Personal depth and input | Controls, votes, longer text, a visitor's own place or route | Things everyone needs to see at once |
@@ -154,6 +154,11 @@ How common profiles turn into a design, with the 2.0 layer that shows it.
   table, not a chart on the TV. The TV summarises once a scenario is set.
 - **S4** The home screen (no layer open) is ambient: slow, dim, wordless. Opening a layer dims ambient layers
   so the open one owns the light.
+- **S5** **At-a-glance information goes on the front edge.** Ribbons are projected onto the flat table top
+  around the model, by design, not onto the model. A viewer standing at one end of a table-height model cannot
+  see a ribbon at the far end: the model hides it. Headline numbers (for example ECOM KPIs) go in the ribbon
+  nearest the viewers' usual side, the front, usually the controller side. Side and far ribbons only repeat
+  or add to it. (Learned 2026-11-23.)
 
 ## 5. Drawing on a projected model
 
@@ -299,6 +304,15 @@ Change the rule in the same PR.
 - Seen: …
 - Rule: E5 changed from … to … (or: confirms C2)
 ```
+
+### 2026-11-23 · Ribbon placement on a table-height model
+
+- Seen: with the table at table height and a viewer standing at one end, panels and bars in the far margin are
+  projected onto the flat table top (as designed), but the model stands between them and the viewer, so they
+  are hidden.
+- Rule: new S5. At-a-glance information, such as ECOM KPIs, goes in the front ribbon, nearest the viewer.
+  Follow-up for present.md §4 (#78): a table setting for which edge is the front, so a layer's ribbon lands
+  there by default.
 
 ### 2026-11-23 · Document started
 
