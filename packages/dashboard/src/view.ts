@@ -35,7 +35,8 @@ export interface PanelInput {
 /** The grid's margin, gap and smallest row, in units (see dashboard.css). */
 const MARGIN_U = 3;
 const GAP_U = 1.5;
-const MIN_ROW_U = 6;
+// A row is at least this tall, so a tile (two rows) holds a title, a headline number and its caption (#137).
+const MIN_ROW_U = 8;
 
 export interface DashboardOptions {
   registry?: WidgetRegistry;

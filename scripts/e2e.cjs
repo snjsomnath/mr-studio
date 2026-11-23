@@ -449,10 +449,22 @@ async function main() {
     assert.notDeepEqual(windy, calm, 'wind should draw on the table');
     await dev.waitForTimeout(300);
     assert.notDeepEqual(await table.screenshot(), windy, 'tracers should keep moving');
-    await tv.getByLabel('Wind speed').fill('10');
+    // On the controller the wind is set on its hero (#76): the band at its foot is the speed, the dial the direction.
+    const windHero = tv.locator('.wind-hero');
+    await windHero.getByRole('slider', { name: 'Speed of the wind' }).focus();
+    await tv.keyboard.press('PageUp');
     await dev.getByText('10 m/s', { exact: true }).waitFor();
-    await tv.getByLabel('Wind from').fill('180');
+    await windHero.locator('.wind-hero-readout', { hasText: 'Fresh breeze, from the west' }).waitFor();
+    await windHero.getByRole('slider', { name: 'Direction the wind comes from' }).focus();
+    await tv.keyboard.press('PageDown');
+    await tv.keyboard.press('PageDown');
     await dev.getByText('from the south').waitFor();
+    // A tap on the dial turns it there: tapped at the dial's top, the wind comes from the table's top.
+    const dial = await windHero.locator('.wind-hero-ring').boundingBox();
+    await tv.mouse.click(dial.x + dial.width / 2, dial.y + 2);
+    await windHero.locator('.wind-hero-dial[aria-valuenow="0"]').waitFor();
+    await dev.getByText('from the north').waitFor();
+    if (shots) await tv.screenshot({ path: path.join(shots, 'tv-wind.png') });
     await tv.getByRole('radio', { name: 'Speed map' }).click();
     await dev.waitForTimeout(500);
     const still = await table.screenshot();
