@@ -349,8 +349,9 @@ pub struct Hub {
     info: RwLock<SiteInfo>,
     session: SessionInfo,
     options: SessionOptions,
-    /// Every layer that can be added to a scene.
-    catalog: Vec<LayerDef>,
+    /// Every layer that can be added to a scene. Replaced whole when a custom layer is
+    /// saved or removed; instances keep their index into it, which removal recomputes.
+    catalog: RwLock<Arc<Vec<LayerDef>>>,
     inner: Mutex<Inner>,
     events: broadcast::Sender<String>,
 }
@@ -397,7 +398,7 @@ impl Hub {
             info: RwLock::new(site.info()),
             session,
             options,
-            catalog,
+            catalog: RwLock::new(Arc::new(catalog)),
             inner: Mutex::new(Inner { scene, seats: Vec::new(), next_surface: 1 }),
             events,
         };
@@ -439,6 +440,11 @@ impl Hub {
             shown_by: None,
         };
         Ok(Instance { id, def, parent, saved, state })
+    }
+
+    /// The layer catalogue as it is now.
+    fn catalog(&self) -> Arc<Vec<LayerDef>> {
+        self.catalog.read().unwrap().clone()
     }
 
     pub fn session(&self) -> &SessionInfo {
@@ -578,7 +584,7 @@ impl Hub {
                 "layers": inner.layers(),
                 "participants": inner.participants(),
             },
-            "manifests": self.catalog.iter().map(|d| &d.manifest).collect::<Vec<_>>(),
+            "manifests": self.catalog().iter().map(|d| &d.manifest).collect::<Vec<_>>(),
         });
         if let Some(seat) = inner.seats.iter().find(|s| s.participant.surface == surface) {
             welcome["resume"] = json!(seat.token);
@@ -595,6 +601,12 @@ impl Hub {
                 return Err("this surface cannot edit the scene".into());
             }
             return self.compose(&mut inner, method, p);
+        }
+        if method.starts_with("custom.") || method == "palette.set" {
+            if !role.may_compose() {
+                return Err("this surface cannot edit the table".into());
+            }
+            return self.author(&mut inner, method, p);
         }
         let layer = p["layer"].as_str().ok_or("missing layer")?;
         let index = inner.position(layer)?;
@@ -676,7 +688,7 @@ impl Hub {
             }
             _ => {}
         }
-        let def = &self.catalog[inner.scene[index].def];
+        let def = &self.catalog()[inner.scene[index].def];
         let state = &mut inner.scene[index].state;
         match method {
             "layer.intensity" => {
@@ -738,11 +750,9 @@ impl Hub {
                     return Err(format!("a scene holds at most {MAX_SCENE_LAYERS} layers"));
                 }
                 let wanted = p["use"].as_str().ok_or("missing use")?;
-                let def = self
-                    .catalog
-                    .iter()
-                    .position(|d| d.source == wanted || d.id == wanted)
-                    .ok_or_else(|| format!("unknown layer '{wanted}'"))?;
+                let catalog = self.catalog();
+                let def =
+                    catalog.iter().position(|d| d.source == wanted || d.id == wanted).ok_or_else(|| format!("unknown layer '{wanted}'"))?;
                 let parent = match &p["parent"] {
                     Value::Null => None,
                     Value::String(parent) => Some(parent.clone()),
@@ -751,10 +761,10 @@ impl Hub {
                 if parent.is_some() && !p["button"].is_null() {
                     return Err("an item has no button: it comes on with its layer".into());
                 }
-                if let Some(name) = self.catalog[def].missing_data(&self.info.read().unwrap().data).map_err(|e| e.to_string())? {
+                if let Some(name) = self.catalog()[def].missing_data(&self.info.read().unwrap().data).map_err(|e| e.to_string())? {
                     return Err(format!("this site has no '{name}' dataset, which the layer needs"));
                 }
-                let base = &self.catalog[def].id;
+                let base = &self.catalog()[def].id;
                 let id = match p["id"].as_str() {
                     Some(id) if !is_instance_id(id) => return Err("id must be lowercase letters, digits and dashes".into()),
                     Some(id) if scene.iter().any(|i| i.id == id) => return Err(format!("the scene already has a layer '{id}'")),
@@ -766,21 +776,21 @@ impl Hub {
                         .expect("an unused id exists"),
                 };
                 let saved = LayerRef {
-                    r#use: self.catalog[def].source.clone(),
+                    r#use: self.catalog()[def].source.clone(),
                     id: id.clone(),
                     active: p["active"].as_bool().unwrap_or(true),
                     params: match &p["params"] {
                         Value::Null => Map::new(),
-                        Value::Object(params) => self.catalog[def].validate(params, false)?,
+                        Value::Object(params) => self.catalog()[def].validate(params, false)?,
                         _ => return Err("params must be an object".into()),
                     },
                     button: button_patch(LayerButton::default(), &p["button"])?,
-                    hide: hide_list(&self.catalog[def], &p["hide"])?.unwrap_or_default(),
+                    hide: hide_list(&self.catalog()[def], &p["hide"])?.unwrap_or_default(),
                     items: Vec::new(),
                     steps: None,
                 };
                 let index = insert_position(&scene, parent.as_deref(), p["index"].as_u64())?;
-                let mut instance = Self::instance(&self.catalog, def, saved, parent.clone(), false).map_err(|e| e.to_string())?;
+                let mut instance = Self::instance(&self.catalog(), def, saved, parent.clone(), false).map_err(|e| e.to_string())?;
                 if let Some(parent) = &parent {
                     instance.state.active &= scene.iter().any(|i| &i.id == parent && i.state.active);
                 }
@@ -858,7 +868,7 @@ impl Hub {
                 match &p["params"] {
                     Value::Null => {}
                     Value::Object(patch) => {
-                        let clean = self.catalog[instance.def].validate(patch, false)?;
+                        let clean = self.catalog()[instance.def].validate(patch, false)?;
                         instance.state.params.extend(clean.clone());
                         instance.saved.params.extend(clean);
                     }
@@ -871,7 +881,7 @@ impl Hub {
                 let button = button_patch(instance.saved.button.clone(), &p["button"])?;
                 instance.state.button = button.clone();
                 instance.saved.button = button;
-                if let Some(hide) = hide_list(&self.catalog[instance.def], &p["hide"])? {
+                if let Some(hide) = hide_list(&self.catalog()[instance.def], &p["hide"])? {
                     instance.state.hide = hide.clone();
                     instance.saved.hide = hide;
                 }
@@ -910,6 +920,95 @@ impl Hub {
         Ok(result)
     }
 
+    /// The requests that change what the table can show rather than its scene: custom
+    /// layers (`custom.save`, `custom.remove`) and the palette (`palette.set`). Each is
+    /// written to site.json first and only then takes effect.
+    fn author(&self, inner: &mut Inner, method: &str, p: &Value) -> Result<Value, String> {
+        match method {
+            "custom.save" => {
+                let id = p["id"].as_str().ok_or("missing id")?.to_string();
+                if !is_instance_id(&id) {
+                    return Err("id must be lowercase letters, digits and dashes".into());
+                }
+                let recipe: mrs_site::CustomLayer = serde_json::from_value(p["recipe"].clone()).map_err(|e| format!("recipe: {e}"))?;
+                let catalog = self.catalog();
+                let source = format!("{}{id}", mrs_site::CUSTOM_PREFIX);
+                if catalog.iter().any(|d| d.id == id && d.source != source) {
+                    return Err(format!("'{id}' is the id of a core layer; give the custom layer another id"));
+                }
+                let def = crate::layers::custom_def(&id, &recipe).map_err(|e| format!("{e:#}"))?;
+                let mut saved = self.site.saved_custom().map_err(|e| e.to_string())?;
+                saved.insert(id.clone(), recipe);
+                self.site.save_custom(&saved).map_err(|e| format!("could not save site.json: {e}"))?;
+                let manifest = def.manifest.clone();
+                let mut next = (*catalog).clone();
+                let at = match next.iter().position(|d| d.source == source) {
+                    Some(at) => {
+                        next[at] = def;
+                        at
+                    }
+                    None => {
+                        next.push(def);
+                        next.len() - 1
+                    }
+                };
+                let next = Arc::new(next);
+                *self.catalog.write().unwrap() = next.clone();
+                self.emit("catalog.changed", json!({ "manifest": manifest }));
+                // Instances of it keep the params its controls still accept.
+                for instance in inner.scene.iter_mut().filter(|i| i.def == at) {
+                    let mut params = next[at].defaults();
+                    let kept: Map<String, Value> = instance
+                        .state
+                        .params
+                        .iter()
+                        .filter(|(k, _)| next[at].control(k).is_some())
+                        .map(|(k, v)| (k.clone(), v.clone()))
+                        .collect();
+                    if let Ok(clean) = next[at].validate(&kept, false) {
+                        params.extend(clean);
+                    }
+                    instance.state.params = params;
+                    self.emit_layer(&instance.id, &instance.state);
+                }
+                Ok(json!({ "id": id, "use": source }))
+            }
+            "custom.remove" => {
+                let id = p["id"].as_str().ok_or("missing id")?;
+                let source = format!("{}{id}", mrs_site::CUSTOM_PREFIX);
+                let catalog = self.catalog();
+                let at = catalog.iter().position(|d| d.source == source).ok_or_else(|| format!("no custom layer '{id}'"))?;
+                if let Some(used) = inner.scene.iter().find(|i| i.def == at) {
+                    return Err(format!("'{}' on the table uses it; remove that first", used.id));
+                }
+                let mut saved = self.site.saved_custom().map_err(|e| e.to_string())?;
+                saved.remove(id);
+                self.site.save_custom(&saved).map_err(|e| format!("could not save site.json: {e}"))?;
+                let mut next = (*catalog).clone();
+                next.remove(at);
+                for instance in &mut inner.scene {
+                    if instance.def > at {
+                        instance.def -= 1;
+                    }
+                }
+                *self.catalog.write().unwrap() = Arc::new(next);
+                self.emit("catalog.removed", json!({ "id": id }));
+                Ok(json!({}))
+            }
+            "palette.set" => {
+                let palette: Option<mrs_site::Palette> = match &p["palette"] {
+                    Value::Null => None,
+                    value => Some(serde_json::from_value(value.clone()).map_err(|e| format!("palette: {e}"))?),
+                };
+                self.site.save_palette(palette.as_ref()).map_err(|e| format!("could not save site.json: {e}"))?;
+                self.info.write().unwrap().palette = palette.clone();
+                self.emit("palette.changed", json!({ "palette": palette }));
+                Ok(json!({}))
+            }
+            other => Err(format!("unknown method '{other}'")),
+        }
+    }
+
     /// Turns an instance on or off and tells every surface. A layer's items follow it:
     /// on with it when they are set to come on, off with it always.
     fn switch(&self, scene: &mut [Instance], index: usize, active: bool) {
@@ -943,7 +1042,7 @@ impl Hub {
 
     /// A layer whose package is a sequence (the slideshow) and that has steps to show.
     fn is_sequence(&self, instance: &Instance) -> bool {
-        self.catalog[instance.def].manifest["sequence"] == true && instance.saved.steps.as_ref().is_some_and(|s| !s.sequence.is_empty())
+        self.catalog()[instance.def].manifest["sequence"] == true && instance.saved.steps.as_ref().is_some_and(|s| !s.sequence.is_empty())
     }
 
     /// Shows step `to` of the sequence at `at`: the step's layer comes on with the step's
@@ -973,7 +1072,7 @@ impl Hub {
         self.plan(scene, at, now);
         self.emit_layer(&id, &scene[at].state);
         if let Some(n) = scene.iter().position(|i| i.id == step.layer) {
-            let mut params = self.catalog[scene[n].def].defaults();
+            let mut params = self.catalog()[scene[n].def].defaults();
             params.extend(scene[n].saved.params.clone());
             params.extend(step.params.clone());
             scene[n].state.params = params;
@@ -986,7 +1085,7 @@ impl Hub {
     /// Takes a layer back from the sequence that showed it: its own params again, and off
     /// with `off`.
     fn release(&self, scene: &mut [Instance], n: usize, off: bool) {
-        let mut params = self.catalog[scene[n].def].defaults();
+        let mut params = self.catalog()[scene[n].def].defaults();
         params.extend(scene[n].saved.params.clone());
         scene[n].state.params = params;
         scene[n].state.shown_by = None;
@@ -1152,7 +1251,7 @@ impl Hub {
             return Err("an item has no steps: it comes on with its layer".into());
         }
         let mut steps: Steps = serde_json::from_value(value.clone()).map_err(|e| format!("steps: {e}"))?;
-        let def = &self.catalog[scene[index].def];
+        let def = &self.catalog()[scene[index].def];
         if !steps.sequence.is_empty() && def.manifest["sequence"] != true {
             return Err(format!("only a sequence, such as the slideshow, has steps that show other layers; '{}' is not one", def.id));
         }
@@ -1165,7 +1264,7 @@ impl Hub {
                 .find(|i| i.id == step.layer)
                 .ok_or_else(|| format!("a step shows '{}', which is not in the scene", step.layer))?;
             step.params =
-                self.catalog[shown.def].validate(&step.params, false).map_err(|e| format!("a step showing '{}': {e}", step.layer))?;
+                self.catalog()[shown.def].validate(&step.params, false).map_err(|e| format!("a step showing '{}': {e}", step.layer))?;
         }
         Ok(Some(steps))
     }
@@ -1568,5 +1667,52 @@ mod tests {
         let open = json!({ "type": "Polygon", "coordinates": [[[0, 0], [1, 0], [1, 1], [0, 1]]] });
         assert!(clean_geometry(ToolKind::Polygon, &open).is_err());
         assert!(clean_geometry(ToolKind::Polygon, &json!({ "type": "Polygon", "coordinates": [] })).is_err());
+    }
+    #[test]
+    fn a_custom_layer_is_saved_offered_added_and_restyled_live() {
+        let hub = scratch_hub("custom");
+        let dev = |method: &str, p: Value| hub.request(Role::Dev, 0, method, &p);
+        let mut events = hub.subscribe();
+        let recipe = |colour: &str| {
+            json!({ "name": "Heat walk", "icon": "route",
+            "data": [ { "id": "paths", "dataset": "buildings" } ],
+            "look": [ { "id": "lines", "block": "lines", "data": "paths", "props": { "color": colour, "width_mm": 2 } } ],
+            "controls": [ { "id": "width", "type": "range", "label": "Width", "min": 1, "max": 8, "step": 1, "default": 3, "bind": "look.lines.width_mm" } ] })
+        };
+        assert_eq!(dev("custom.save", json!({ "id": "heat-walk", "recipe": recipe("@warm") })).unwrap()["use"], "custom:heat-walk");
+        let event: Value = serde_json::from_str(&events.try_recv().unwrap()).unwrap();
+        assert_eq!(event["m"], "catalog.changed");
+        assert_eq!(event["p"]["manifest"]["custom"]["look"][0]["props"]["color"], "@warm");
+        assert!(hub.welcome(0)["manifests"].as_array().unwrap().iter().any(|m| m["id"] == "heat-walk"), "offered to new surfaces");
+
+        let added = dev("scene.add", json!({ "use": "custom:heat-walk" })).unwrap();
+        assert_eq!(added["id"], "heat-walk");
+        dev("scene.set", json!({ "layer": "heat-walk", "params": { "width": 6 } })).unwrap();
+        // Restyling keeps the instance and the params its controls still take.
+        dev("custom.save", json!({ "id": "heat-walk", "recipe": recipe("#ff8800") })).unwrap();
+        assert_eq!(layer(&hub, "heat-walk")["params"]["width"], 6.0);
+        let saved = Site::load(&hub.site.dir).unwrap();
+        assert_eq!(saved.manifest.custom["heat-walk"].look[0].props["color"], "#ff8800");
+
+        assert!(dev("custom.remove", json!({ "id": "heat-walk" })).unwrap_err().contains("uses it"));
+        dev("scene.remove", json!({ "layer": "heat-walk" })).unwrap();
+        dev("custom.remove", json!({ "id": "heat-walk" })).unwrap();
+        assert!(Site::load(&hub.site.dir).unwrap().manifest.custom.is_empty());
+        assert!(dev("custom.save", json!({ "id": "sunlight", "recipe": recipe("#ffffff") })).unwrap_err().contains("core layer"));
+        assert!(dev("custom.save", json!({ "id": "bad", "recipe": { "name": "Bad", "data": [ { "id": "x", "dataset": "nothing" } ] } }))
+            .is_err());
+        assert!(hub.request(Role::Phone, 0, "custom.save", &json!({ "id": "x", "recipe": recipe("#fff000") })).is_err());
+    }
+
+    #[test]
+    fn the_palette_is_saved_and_sent() {
+        let hub = scratch_hub("palette");
+        let dev = |method: &str, p: Value| hub.request(Role::Dev, 0, method, &p);
+        dev("palette.set", json!({ "palette": { "set": "night", "slots": { "accent": "#ff8800" } } })).unwrap();
+        assert_eq!(hub.site().palette.unwrap().slots["accent"], "#ff8800");
+        assert_eq!(Site::load(&hub.site.dir).unwrap().manifest.palette.unwrap().set.as_deref(), Some("night"));
+        assert!(dev("palette.set", json!({ "palette": { "slots": { "accent": "orange" } } })).is_err());
+        dev("palette.set", json!({ "palette": null })).unwrap();
+        assert!(Site::load(&hub.site.dir).unwrap().manifest.palette.is_none());
     }
 }

@@ -5,6 +5,8 @@ import { defaultSideOf, el, isAmbient, isOffered, layerButton, widget } from '..
 import type { Widget } from '../controls.ts';
 import { paramSender } from '../layer-manager.ts';
 import type { Store } from '../store.ts';
+import { builderSection, newCustomLayer, paletteDialog } from './builder.ts';
+import type { BuilderHost } from './builder.ts';
 import { LAYER_ICONS, icon } from './icons.ts';
 import { Importer, targetFor } from './importer.ts';
 import { confirmLeave, actionFor, fileButton } from './file-menu.ts';
@@ -133,6 +135,10 @@ export class Editor {
     this.drawGuideButton();
     this.render();
     store.onScene(() => this.render());
+    // A custom layer was saved or removed: it is offered on the ribbon (the builder in the inspector keeps its own copy).
+    store.onCatalog(() => {
+      if (!this.wizard) this.renderRibbon(this.instances());
+    });
     store.onLayer((id, state) => {
       this.sync.get(id)?.(state);
       this.follow(id, state);
@@ -428,6 +434,22 @@ export class Editor {
     this.render();
   }
 
+  /** What the layer builder and the palette need from the editor. */
+  private builderHost(): BuilderHost {
+    return {
+      store: this.store,
+      send: (method, params) => this.send(method, params),
+      addData: () => this.addData(),
+      addLayer: async (use) => {
+        const id = use.replace(/^custom:/, '');
+        // The new layer reaches this surface with the host's catalogue event; wait for it briefly.
+        for (let i = 0; i < 40 && !this.store.manifest(id); i++) await new Promise((r) => setTimeout(r, 50));
+        const manifest = this.store.manifest(id);
+        if (manifest) await this.add(manifest);
+      },
+    };
+  }
+
   // ---- What is in the scene -------------------------------------------------
 
   /** Scene instances with their manifests, top of the scene first. */
@@ -685,6 +707,16 @@ export class Editor {
       groups.push(this.group('Add to this layer', ...this.column(ambient.map((m) => this.insertTool(m, false, layer)))));
     }
     if (kind !== 'phone' && layers.length > 0) groups.push(this.group('Add a layer', ...layers.map((m) => this.insertTool(m, true))));
+    // Make a layer of your own from the table's data, and the colours every layer shares (#38, #93).
+    if (kind !== 'phone') {
+      const custom = button('ed-tool is-large', 'Custom layer', 'brush', 20);
+      custom.title = 'Make a layer from your own data: choose the data, then style it, move it and save it as a button';
+      custom.addEventListener('click', () => newCustomLayer(this.builderHost(), this.shell));
+      const palette = button('ed-tool is-large', 'Palette', 'palette', 20);
+      palette.title = 'The colours every custom layer uses. Change one and the whole table follows.';
+      palette.addEventListener('click', () => paletteDialog(this.builderHost(), this.shell));
+      groups.push(this.group('Make your own', custom, palette));
+    }
 
     if (selected && (kind === 'home' || kind === 'layer')) {
       const parent = selected.state.parent ?? null;
@@ -1066,10 +1098,12 @@ export class Editor {
     } else if (context.kind === 'layer') {
       const layer = instances.find((i) => i.id === context.id)!;
       const as = layerButton(layer.id, layer.manifest, layer.state);
-      nodes.push(head(as.icon, as.name, 'Layer'));
-      nodes.push(this.buttonSection(layer.id, layer.manifest));
+      nodes.push(head(as.icon, as.name, layer.manifest.custom ? 'Custom layer' : 'Layer'));
+      // A custom layer is styled here: data, look, motion and interaction, with its button as the last tab.
+      if (layer.manifest.custom) nodes.push(builderSection(this.builderHost(), layer.manifest, this.buttonSection(layer.id, layer.manifest)));
+      else nodes.push(this.buttonSection(layer.id, layer.manifest));
       // A slideshow's slides come before its settings: they are what the author works on.
-      if (!layer.manifest.sequence) nodes.push(this.settings(layer.id, layer.manifest));
+      if (!layer.manifest.sequence && (layer.manifest.controls?.length ?? 0) + (layer.manifest.custom ? 0 : 1) > 0) nodes.push(this.settings(layer.id, layer.manifest));
       if (layer.manifest.sequence) {
         nodes.push(
           slidesSection(

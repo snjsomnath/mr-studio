@@ -284,6 +284,9 @@ Requests:
 | `scene.remove` | `{ layer }` | tv, dev | Takes a layer, with its items, or one item out of the scene. Steps of a sequence that showed it go too; the answer says how many: `{ dropped_steps }` |
 | `scene.move` | `{ layer, index, parent? }` | tv, dev | Moves a layer (with its items) or an item to `index` in its list: the scene's layers (0 is the bottom), or its layer's items. `parent` moves it into another layer as an item; `parent: null` makes an item a layer of the scene. A layer with items, steps or a button cannot become an item |
 | `scene.set` | `{ layer, params?, active?, button?, hide?, steps? }` | tv, dev | Like `layer.set` and `layer.activate`, and also saved as the layer's starting state. For an item, `active` is whether it comes on with its layer. `button` is `{ name?, description?, icon?, side?, group?, order? }`: a value sets a field, `null` clears it, a field left out stays; items have none. `hide` is the whole list of control ids the controller and phones leave out. `steps` replaces the layer's steps whole (`null` clears them); only a sequence layer (`"sequence": true`) may have `steps.sequence`, and each step's params are checked against the layer it shows. `scene.add` takes `button` and `hide` too |
+| `custom.save` | `{ id, recipe }` | tv, dev | Saves a custom layer (site.md, Custom layers) under `custom` in site.json, new or replacing the one with that id, and offers it at once: every surface gets `catalog.changed { manifest }`. Instances of it on the table restyle in place and keep the params its controls still take. Refused for the id of a core layer. Returns `{ id, use }` (`use` is `custom:<id>`) |
+| `custom.remove` | `{ id }` | tv, dev | Removes a custom layer from site.json, refused while the table uses it. Surfaces get `catalog.removed { id }` |
+| `palette.set` | `{ palette }` | tv, dev | Saves the table's palette (`{ set?, slots? }`, site.md; `null` removes it). Surfaces get `palette.changed { palette }`, and the site's `palette` follows it; custom layers recolour at once |
 | `layer.step` | `{ layer, to }` | all | Moves a layer that is on through its steps: `"next"`, `"previous"`, `"first"`, `"skip"` (the next step, whatever sub-steps are left), `"all"` (every sub-step revealed) or a step number. See Steps above |
 | `layer.play` | `{ layer, playing }` | all | Plays or pauses a layer's steps; the host moves them on |
 | `layer.substeps` | `{ layer, count, titles? }` | table, dev | A layer that is on says how many sub-steps it has (at most 64), with a name for each. 0 removes them |
@@ -301,6 +304,9 @@ Events:
 | `state.scene` | `{ scene, layers }` after a layer was added, removed or moved: the new order and every layer's state |
 | `state.participants` | `{ participants }` |
 | `layer.action` | `{ layer, action, from }` |
+| `catalog.changed` | `{ manifest }` after `custom.save`: a custom layer was added or changed |
+| `catalog.removed` | `{ id }` after `custom.remove` |
+| `palette.changed` | `{ palette }` after `palette.set` |
 | `tool.input` | `{ layer, tool, geometry, from, participant? }` |
 | `calibration` | `{ projector }` after a calibration was saved or cleared |
 | `calibration.mode` | `{ active }` |
