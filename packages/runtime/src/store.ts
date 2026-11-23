@@ -1,4 +1,4 @@
-import type { Connection, LayerManifest, LayerState, Participant, SessionState, TvConfig, Welcome } from '@mrstudio/sdk';
+import type { Connection, LayerManifest, LayerState, Participant, SessionState, TvConfig, Welcome, DisplayQuality } from '@mrstudio/sdk';
 
 type LayerListener = (layer: string, state: LayerState, previous: LayerState | undefined) => void;
 
@@ -12,6 +12,7 @@ export class Store {
   private sceneListeners = new Set<(scene: string[]) => void>();
   private removedListeners = new Set<(layer: string) => void>();
   private tvListeners = new Set<(tv: TvConfig | null) => void>();
+  private displayListeners = new Set<(quality: DisplayQuality) => void>();
   private catalogListeners = new Set<(layer: string) => void>();
 
   constructor(connection: Connection, welcome: Welcome) {
@@ -28,6 +29,11 @@ export class Store {
     connection.on('site.tv', (p: { tv: TvConfig | null }) => {
       this.state.site.tv = p.tv;
       for (const listener of this.tvListeners) listener(p.tv);
+    });
+    // How the table renders changed (the quality on the editor's Display tab, #134).
+    connection.on('site.display', (p: { display: SessionState['site']['display'] }) => {
+      this.state.site = { ...this.state.site, display: p.display };
+      for (const listener of this.displayListeners) listener(p.display?.quality ?? 'good');
     });
     // A custom layer was saved or removed (the layer builder), or the table's palette changed.
     connection.on('catalog.changed', (p: { manifest: LayerManifest }) => {
@@ -98,6 +104,12 @@ export class Store {
   }
 
   /** Runs when the site's `tv` settings change. */
+  /** Called with the table's quality whenever it changes. */
+  onDisplay(listener: (quality: DisplayQuality) => void): () => void {
+    this.displayListeners.add(listener);
+    return () => this.displayListeners.delete(listener);
+  }
+
   onTv(listener: (tv: TvConfig | null) => void): () => void {
     this.tvListeners.add(listener);
     return () => this.tvListeners.delete(listener);

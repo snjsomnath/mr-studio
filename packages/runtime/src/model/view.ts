@@ -1,6 +1,7 @@
 import { SURFACE_KINDS, decomposeProjector, parseTwin, projectorMatrices } from '@mrstudio/sdk';
 import type {
   Colormap,
+  DisplayQuality,
   FieldFrame,
   FieldOverlay,
   LightHandle,
@@ -24,6 +25,7 @@ import * as THREE from 'three';
 import { cssColor } from './colour.ts';
 import { ModelFieldOverlay, premultipliedOver } from './field.ts';
 import { SunMask, type Footprint } from './sun-shadows.ts';
+import { pixelRatio, shadowDetail } from '../quality.ts';
 
 const DRAPE_VERTEX = /* glsl */ `
 attribute float kind;
@@ -146,6 +148,9 @@ export class ModelView {
   private focuses: FocusEntry[] = [];
   private buildings: BuildingInfo[] | null = null;
   private sunMask: SunMask | null = null;
+  private quality: DisplayQuality = 'good';
+  /** Each layer's callback for when its sun mask would come out differently. */
+  private sunMaskChanged = new Map<string, () => void>();
   private buildingsLoaded: Promise<void> = Promise.resolve();
   private saved: ProjectorCalibration | null = null;
   /** `undefined` follows the saved calibration; anything else replaces it, as the calibration tool does while it works. */
@@ -353,7 +358,7 @@ export class ModelView {
   private resize(): void {
     const width = Math.max(1, this.container.clientWidth);
     const height = Math.max(1, this.container.clientHeight);
-    this.renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+    this.renderer.setPixelRatio(pixelRatio(this.quality));
     this.renderer.setSize(width, height, false);
     this.updateCamera();
   }
@@ -380,6 +385,17 @@ export class ModelView {
     for (const light of this.lights) for (const object of light.objects) object.visible = shown(light.layer);
     this.focusMesh.visible = this.focuses.length > 0 && this.solo === null;
     this.container.classList.toggle('is-projector', this.calibrated);
+    this.invalidate();
+  }
+
+  /** How finely the table is drawn (#134): the model's pixel density and the sun shadows' detail. */
+  setQuality(quality: DisplayQuality): void {
+    if (quality === this.quality) return;
+    this.quality = quality;
+    this.resize();
+    this.sunMask?.dispose();
+    this.sunMask = null;
+    for (const changed of this.sunMaskChanged.values()) changed();
     this.invalidate();
   }
 
@@ -692,11 +708,16 @@ export class ModelView {
           remove,
         };
       },
-      sunShadowMask: async (sun: { azimuth: number; altitude: number }): Promise<FieldFrame | null> => {
+      sunShadowMask: async (sun: { azimuth: number; altitude: number }, onChange?: () => void): Promise<FieldFrame | null> => {
+        if (onChange) {
+          if (!view.sunMaskChanged.has(layer)) track(() => view.sunMaskChanged.delete(layer));
+          view.sunMaskChanged.set(layer, onChange);
+        }
         await view.buildingsLoaded;
         if (!view.sunMask) {
           const plane = tangentPlane(view.site.origin);
-          view.sunMask = new SunMask(view.renderer, view.geometry, view.twin, view.site.corners.map(([lon, lat]) => plane.toLocal(lon, lat)));
+          const corners = view.site.corners.map(([lon, lat]) => plane.toLocal(lon, lat));
+          view.sunMask = new SunMask(view.renderer, view.geometry, view.twin, corners, shadowDetail(view.quality));
           if (view.buildings) view.sunMask.setFootprints(view.footprints());
         }
         return view.sunMask.render(sun.azimuth, sun.altitude);

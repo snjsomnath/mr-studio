@@ -88,6 +88,9 @@ pub struct SiteInfo {
     pub data: BTreeMap<String, String>,
     /// The site's TV dashboard settings (theme, pages), as written. Validated on the TV by `@mrstudio/dashboard`.
     pub tv: Option<serde_json::Value>,
+    /// How the table's surfaces render (#134), as written: `quality` is `draft`, `good` or `best`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub display: Option<serde_json::Value>,
     /// The table's palette (#93), as written. Surfaces resolve it against the SDK's sets.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub palette: Option<Palette>,
@@ -452,6 +455,7 @@ impl Site {
             calibration: self.calibration.and_then(|c| c.table),
             data: self.data(),
             tv: m.tv.clone(),
+            display: m.display.clone(),
             palette: m.palette.clone(),
             mesh: m.scene.mesh.clone().map(|mesh| MeshInfo { mesh, extrude: m.scene.buildings.as_ref().is_none_or(|b| b.extrude) }),
         }
@@ -485,6 +489,12 @@ impl Site {
     /// other key as it was written. `null` removes them. The TV checks what is inside.
     pub fn save_tv(&self, tv: serde_json::Value) -> Result<(), SiteError> {
         self.save_key("tv", (!tv.is_null()).then_some(tv))
+    }
+
+    /// Rewrites the `display` settings of `site.json` (#134) and leaves every other key as it was written.
+    /// `null` removes them.
+    pub fn save_display(&self, display: serde_json::Value) -> Result<(), SiteError> {
+        self.save_key("display", (!display.is_null()).then_some(display))
     }
 
     /// Saves the custom layers under `custom` (none removes the key), leaving everything else as written.
