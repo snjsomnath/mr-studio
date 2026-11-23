@@ -503,6 +503,11 @@ button.ed-brand:focus-visible {
   color: var(--ed-text-2);
 }
 
+/* Straight in the inspector (Controller, Phones) a note keeps the panel's 12px padding (#178). */
+.ed-inspector > .ed-empty {
+  margin: 12px;
+}
+
 /* ---- Canvas ---- */
 
 .ed-centre {
@@ -616,6 +621,10 @@ body[data-role='edit'] .table-surface {
   gap: 2px;
 }
 
+.ed-section > * {
+  min-width: 0;
+}
+
 .ed-section h3 {
   margin: 0 0 8px;
   font-size: 12px;
@@ -661,12 +670,44 @@ body[data-role='edit'] .table-surface {
   gap: 2px;
   border-radius: 6px;
   border-color: transparent;
+  /* Choices share the panel's width evenly, so a long label wraps inside its own
+     button instead of pushing the panel past its right edge (#178). */
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+}
+
+/* Four or more choices go in rows (controls.ts sets data-columns): 2 × 2 for four,
+   three across for more, like the base map's six styles. */
+.ed .segmented[data-columns] {
+  grid-auto-flow: row;
+}
+
+.ed .segmented[data-columns='2'] {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.ed .segmented[data-columns='3'] {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+/* Named days take the full width, the date for any other day goes under them. */
+.ed .control-presets {
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.ed .control-presets > .segmented {
+  flex: 1 1 100%;
 }
 
 .ed .segmented button {
+  min-width: 0;
   min-height: 22px;
+  padding: 3px 6px;
   border-radius: 4px;
   font-size: 12px;
+  line-height: 1.25;
 }
 
 .ed .segmented button[aria-checked='true'] {
@@ -1256,6 +1297,8 @@ body[data-role='edit'] .table-surface {
   display: flex;
   align-items: flex-start;
   gap: 4px;
+  /* A setting never widens its section, so the section's right padding always shows (#178). */
+  min-width: 0;
 }
 
 .ed-setting[hidden] {
