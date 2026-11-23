@@ -698,6 +698,8 @@ async function main() {
     // What was read is drawn against the table's outline before anything is written.
     await dialog.locator('.im-map .im-map-table').waitFor();
     assert.equal(await dialog.locator('.im-map-data circle').count(), 6);
+    // Only the data here: showing it as a layer of its own is the layer builder's test (#94).
+    await dialog.getByLabel('Colour').selectOption({ label: 'Not yet: only add the data' });
     await dialog.getByRole('button', { name: 'Add to the table' }).click();
     await adder.waitForFunction(() => !document.querySelector('dialog.im-dialog'));
     await adder.locator('.ed-tree .ed-row[data-context="home"]').waitFor();

@@ -8,7 +8,7 @@ import { parseFrame, sample } from '../src/frame.ts';
 import type { FieldFrame } from '../src/types.ts';
 import { lonLatToTable, siteProjection, tableToLonLat } from '../src/geo.ts';
 import { sunPosition } from '../src/solar.ts';
-import { along, geojsonPolygons, insidePolygon, nearestAlong, seededRandom, tableSpace, track } from '../src/table-space.ts';
+import { along, geojsonPolygons, insidePolygon, nearestAlong, seededRandom, STRAY_REACH, tableReach, tableSpace, track } from '../src/table-space.ts';
 import { formatHour, zonedTimeToUtc } from '../src/time.ts';
 import type { SiteInfo } from '../src/types.ts';
 
@@ -425,4 +425,17 @@ test('the renderer matrices agree with the projection', () => {
     assert.ok(Math.abs(clip[3]! - depth) < 1e-6);
     assert.ok(Math.abs(clip[2]! / clip[3]!) < 1, 'inside the depth range');
   }
+});
+
+test('streets that cross the table reach all of it; streets from another place reach a corner (#180)', () => {
+  const space = { width: 1000, height: 600 };
+  // A grid of streets running past every edge.
+  const grid: [number, number][][] = [];
+  for (let x = -500; x <= 1500; x += 100) grid.push([[x, -300], [x, 900]]);
+  for (let y = -300; y <= 900; y += 100) grid.push([[-500, y], [1500, y]]);
+  assert.equal(tableReach(grid, space), 1);
+  // The same grid moved a kilometre north-west clips one corner.
+  const away = grid.map((line) => line.map(([x, y]): [number, number] => [x - 1400, y - 800]));
+  assert.ok(tableReach(away, space) > 0 && tableReach(away, space) < STRAY_REACH);
+  assert.equal(tableReach([[[2000, 2000]]], space), 0);
 });

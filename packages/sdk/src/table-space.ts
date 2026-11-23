@@ -33,6 +33,36 @@ export function tableSpace(site: SiteInfo): TableSpace {
   };
 }
 
+/** Below this share of the table reached, a dataset most likely belongs to another place (#180). */
+export const STRAY_REACH = 0.25;
+
+/**
+ * How much of the table a dataset reaches: the share of an 8 × 5 grid of cells over the table that
+ * its lines (or points, as lines of one) pass through. Data that runs past the table still reaches
+ * all of it; data from another place that only clips one edge reaches a few cells.
+ */
+export function tableReach(lines: Iterable<XY[]>, space: Pick<TableSpace, 'width' | 'height'>): number {
+  const [columns, rows] = [8, 5];
+  const { width, height } = space;
+  if (!(width > 0 && height > 0)) return 0;
+  const hit = new Set<number>();
+  const step = Math.min(width / columns, height / rows) / 2;
+  const mark = (x: number, y: number) => {
+    if (x < 0 || x > width || y < 0 || y > height) return;
+    hit.add(Math.min(rows - 1, Math.floor((y / height) * rows)) * columns + Math.min(columns - 1, Math.floor((x / width) * columns)));
+  };
+  for (const line of lines) {
+    if (line.length === 1) mark(line[0]![0], line[0]![1]);
+    for (let i = 1; i < line.length; i++) {
+      const [[x0, y0], [x1, y1]] = [line[i - 1]!, line[i]!];
+      const n = Math.min(10_000, Math.ceil(Math.hypot(x1 - x0, y1 - y0) / step));
+      for (let k = 0; k <= n; k++) mark(x0 + ((x1 - x0) * k) / Math.max(n, 1), y0 + ((y1 - y0) * k) / Math.max(n, 1));
+    }
+    if (hit.size === columns * rows) break;
+  }
+  return hit.size / (columns * rows);
+}
+
 /** The URL of a named site dataset, or null when the site does not have it. */
 export function siteDataUrl(site: SiteInfo, name: string): string | null {
   const path = site.data?.[name];
