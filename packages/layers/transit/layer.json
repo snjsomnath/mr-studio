@@ -13,7 +13,8 @@
         { "value": "live", "label": "Live feed" }
       ]
     },
-    { "id": "feed", "type": "text", "label": "Feed address", "default": "", "visibleWhen": { "source": "live" } },
+    { "id": "provider", "type": "text", "label": "Live data from", "default": "", "sources": ["vasttrafik"], "visibleWhen": { "source": "live" } },
+    { "id": "feed", "type": "text", "label": "Feed address", "default": "", "visibleWhen": { "source": "live" }, "tier": "more" },
     { "id": "vehicles", "type": "range", "label": "Vehicles per line", "min": 1, "max": 8, "step": 1, "default": 2, "visibleWhen": { "source": "simulated" } },
     { "id": "speed", "type": "range", "label": "Speed", "min": 10, "max": 80, "step": 5, "unit": "km/h", "default": 35, "visibleWhen": { "source": "simulated" } },
     { "id": "routes", "type": "toggle", "label": "Routes", "default": true },

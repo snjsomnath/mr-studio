@@ -134,6 +134,7 @@ function show(view) {
 for (const id of ['nav-new', 'card-new']) $(id).addEventListener('click', newTable);
 for (const id of ['nav-open', 'card-open']) $(id).addEventListener('click', openFolder);
 $('nav-settings').addEventListener('click', () => invoke('open_settings').catch(showError));
+$('nav-sources').addEventListener('click', () => invoke('open_sources').catch(showError));
 $('nav-quit').addEventListener('click', () => invoke('quit'));
 $('new-back').addEventListener('click', () => show('home'));
 window.addEventListener('focus', () => !busy && $('view-new').hidden && load().catch(showError));
