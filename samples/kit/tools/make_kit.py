@@ -238,9 +238,33 @@ for zi, (e0, n0) in enumerate([(x, y) for y in (-300, 0) for x in (-500, -250, 0
     zones.append({"type": "Feature", "properties": {"zone": f"Z{zi + 1}", "population": random.randint(300, 2400), "green_share": round(random.uniform(0.05, 0.45), 2),
                   "noise_db": random.randint(48, 68)}, "geometry": {"type": "Polygon", "coordinates": [ring]}})
 write("zones.geojson", {"type": "FeatureCollection", "features": zones})
-POI = [("School", "school", -300, 160), ("Library", "library", 60, 40), ("Café", "cafe", 10, 20), ("Clinic", "clinic", 250, -60), ("Playground", "playground", -160, -170), ("Tram stop", "stop", 120, 10)]
+# Places follow the place data standard (#160): name, weight and a category, plus optional
+# activity, flows and links tables that every place motion reads.
+POI = [("School", "school", "learning", 0.7, -300, 160), ("Library", "library", "learning", 0.85, 60, 40), ("Café", "cafe", "everyday", 0.4, 10, 20),
+       ("Clinic", "clinic", "care", 0.55, 250, -60), ("Playground", "playground", "everyday", 0.35, -160, -170), ("Tram stop", "stop", "transport", 1.0, 120, 10)]
 write("places.geojson", {"type": "FeatureCollection", "features": [
-    {"type": "Feature", "properties": {"name": n, "kind": k}, "geometry": {"type": "Point", "coordinates": lonlat(e, nn)}} for n, k, e, nn in POI]})
+    {"type": "Feature", "properties": {"name": n, "kind": k, "category": c, "weight": w}, "geometry": {"type": "Point", "coordinates": lonlat(e, nn)}} for n, k, c, w, e, nn in POI]})
+# A weekday from 06:00 to 22:00, every half hour: school mornings, café lunches, tram rush hours.
+PEAKS = {"School": [(8, 1.0), (15, 0.6)], "Library": [(11, 0.6), (17, 0.9)], "Café": [(8, 0.5), (12.5, 1.0), (16, 0.6)], "Clinic": [(10, 0.8), (14, 0.7)],
+         "Playground": [(15.5, 1.0), (17, 0.7)], "Tram stop": [(7.5, 1.0), (16.5, 1.0), (12, 0.4)]}
+with open(KIT / "tables/activity.csv", "w", newline="") as out:
+    rows = csv.writer(out)
+    rows.writerow(["place", "time", "activity"])
+    for n, *_ in POI:
+        for step in range(33):
+            h = 6 + step / 2
+            v = 0.05 + sum(a * math.exp(-((h - at) / 1.1) ** 2) for at, a in PEAKS[n])
+            rows.writerow([n, f"2026-11-23T{int(h):02d}:{int(h % 1 * 60):02d}", round(min(1, v), 2)])
+with open(KIT / "tables/flows.csv", "w", newline="") as out:
+    rows = csv.writer(out)
+    rows.writerow(["from", "to", "volume"])
+    for f in [("Tram stop", "School", 420), ("Tram stop", "Library", 260), ("Tram stop", "Clinic", 150), ("School", "Playground", 180), ("Library", "Café", 140), ("Café", "Tram stop", 90), ("Clinic", "Tram stop", 120)]:
+        rows.writerow(f)
+with open(KIT / "tables/links.csv", "w", newline="") as out:
+    rows = csv.writer(out)
+    rows.writerow(["from", "to"])
+    for l in [("School", "Library"), ("School", "Playground"), ("Library", "Café"), ("Café", "Tram stop"), ("Clinic", "Tram stop"), ("Library", "Tram stop")]:
+        rows.writerow(l)
 
 # ---- An image with bounds (raster overlay) and a slideshow -----------------------
 

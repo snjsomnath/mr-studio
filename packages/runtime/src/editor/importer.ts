@@ -1,4 +1,5 @@
-import type { SiteInfo } from '@mrstudio/sdk';
+import { classBreaks, columnNumbers, paintScale, profileColumns, rampColour, tablePalette } from '@mrstudio/sdk';
+import type { GeometryKind, PaintBy, Paint, SiteInfo } from '@mrstudio/sdk';
 
 import { el } from '../controls.ts';
 import { icon } from './icons.ts';
@@ -20,7 +21,7 @@ export interface ImportReport {
   outside?: number;
   crs?: { code: string; guessed: boolean };
   issues: { code: string; severity: 'blocker' | 'warning' | 'note'; message: string; fix?: 'crop' | 'swap' }[];
-  preview?: { type: 'FeatureCollection'; features: { geometry: { type: string; coordinates: unknown } | null }[] };
+  preview?: { type: 'FeatureCollection'; features: { geometry: { type: string; coordinates: unknown } | null; properties?: Record<string, unknown> | null }[] };
   path?: string;
 }
 
@@ -118,7 +119,15 @@ export interface ImporterHost {
   hold(on: boolean): void;
   /** Called when the author closes the importer without bringing anything in. */
   cancel?(): void;
+  /**
+   * Makes a layer of a dataset just brought in, coloured as the author chose in the import (#94).
+   * Without it the importer offers no colouring.
+   */
+  showAs?(layer: { dataset: string; kind: GeometryKind; paint: Paint }): Promise<void>;
 }
+
+/** How the author wants an imported dataset shown: no layer, one colour, or coloured by a column. */
+type ShowAs = { column: null | ''; classes?: undefined } | { column: string; classes: NonNullable<PaintBy['classes']> };
 
 type Source = { kind: 'file'; file: File } | { kind: 'osm' } | { kind: 'elevation' };
 
@@ -150,14 +159,14 @@ function svg<K extends keyof SVGElementTagNameMap>(tag: K, attributes: Record<st
 }
 
 /** The file drawn against the table's outline, so an author sees where it lies. */
-export function previewMap(site: SiteInfo, report: ImportReport): SVGSVGElement | null {
+export function previewMap(site: SiteInfo, report: ImportReport, colourOf?: (properties: Record<string, unknown>) => string): SVGSVGElement | null {
   const features = report.preview?.features ?? [];
   if (features.length === 0) return null;
   const metres = tableMetres(site);
   const w = site.extent.width_m / 2;
   const h = site.extent.height_m / 2;
   let [minX, minY, maxX, maxY] = [-w, -h, w, h];
-  const shapes: { type: string; rings: [number, number][][] }[] = [];
+  const shapes: { type: string; rings: [number, number][][]; colour?: string }[] = [];
   for (const feature of features) {
     const geometry = feature.geometry;
     if (!geometry) continue;
@@ -177,7 +186,7 @@ export function previewMap(site: SiteInfo, report: ImportReport): SVGSVGElement 
         minY = Math.min(minY, y);
         maxY = Math.max(maxY, y);
       }
-    shapes.push({ type: geometry.type, rings });
+    shapes.push({ type: geometry.type, rings, colour: colourOf?.(feature.properties ?? {}) });
   }
   const pad = Math.max(maxX - minX, maxY - minY) * 0.04;
   const [vx, vy, vw, vh] = [minX - pad, -(maxY + pad), maxX - minX + 2 * pad, maxY - minY + 2 * pad];
@@ -185,13 +194,15 @@ export function previewMap(site: SiteInfo, report: ImportReport): SVGSVGElement 
   const unit = Math.max(vw, vh) / 400;
   map.append(svg('rect', { x: vx, y: vy, width: vw, height: vh, class: 'im-map-ground' }));
   const data = svg('g', { class: 'im-map-data', 'stroke-width': unit });
-  for (const { type, rings } of shapes) {
+  for (const { type, rings, colour } of shapes) {
+    // A chosen colour (#94) shows in the preview as it will on the table.
+    const paint = colour ? (type.endsWith('Polygon') ? `fill:${colour};fill-opacity:0.75;stroke:${colour}` : type.endsWith('Point') ? `fill:${colour};stroke:none` : `stroke:${colour}`) : null;
     if (type.endsWith('Point')) {
-      for (const ring of rings) for (const [x, y] of ring) data.append(svg('circle', { cx: x, cy: -y, r: unit * 1.6 }));
+      for (const ring of rings) for (const [x, y] of ring) data.append(svg('circle', { cx: x, cy: -y, r: unit * (colour ? 2.4 : 1.6), ...(paint ? { style: paint } : {}) }));
       continue;
     }
     const d = rings.map((ring) => ring.map(([x, y], i) => `${i ? 'L' : 'M'}${x.toFixed(1)} ${(-y).toFixed(1)}`).join('') + (type.endsWith('Polygon') ? 'Z' : '')).join('');
-    data.append(svg('path', { d, class: type.endsWith('Polygon') ? 'is-area' : 'is-line' }));
+    data.append(svg('path', { d, class: type.endsWith('Polygon') ? 'is-area' : 'is-line', ...(paint ? { style: paint } : {}) }));
   }
   map.append(data, svg('rect', { x: -w, y: -h, width: 2 * w, height: 2 * h, class: 'im-map-table', 'stroke-width': unit * 2 }));
   const label = svg('text', { x: -w + unit * 6, y: -h + unit * 14, class: 'im-map-label', 'font-size': unit * 11 });
@@ -250,6 +261,8 @@ export class Importer {
   /** In Add data: what the file is, and the name of a dataset of the author's own. */
   private chosen: string;
   private ownName = '';
+  /** The colouring chosen for an own dataset, offered once its report is in (#94). One colour by default. */
+  private showAs: ShowAs = { column: '' };
   private readonly fixed: boolean;
   private readonly host: ImporterHost;
 
@@ -467,7 +480,8 @@ export class Importer {
         }
         report.append(line);
       }
-      const map = previewMap(this.host.site(), answer);
+      const colouring = this.colouring(answer);
+      const map = previewMap(this.host.site(), answer, colouring?.colourOf);
       if (map) {
         const box = el('div', 'im-preview');
         box.append(map);
@@ -495,11 +509,13 @@ export class Importer {
         report.append(line);
       }
     }
+    const colouring = this.report && !this.busy && !this.failed ? this.colouring(this.report) : null;
+    if (colouring) report.append(colouring.element);
     const actions = el('div', 'wz-report-actions');
-    const add = el('button', 'ed-button is-primary', 'Add to the table');
+    const add = el('button', 'ed-button is-primary', colouring && this.showAs.column !== null ? 'Add and show on the table' : 'Add to the table');
     add.type = 'button';
     add.disabled = this.busy || !this.report?.ok;
-    add.addEventListener('click', () => void this.check(true));
+    add.addEventListener('click', () => void (colouring && this.showAs.column !== null ? this.addAndShow(colouring.kind, colouring.paint) : this.check(true)));
     const cancel = el('button', 'ed-button', 'Cancel');
     cancel.type = 'button';
     cancel.addEventListener('click', () => {
@@ -557,6 +573,90 @@ export class Importer {
     return done;
   }
 
+  /**
+   * "Colour it" (#94): for a dataset of the author's own, pick a column and see the file
+   * coloured by it in the preview, with its legend and, for numbers, a histogram with the
+   * class edges. Null when there is nothing to colour or nowhere to show it.
+   */
+  private colouring(report: ImportReport): { element: HTMLElement; kind: GeometryKind; paint: Paint; colourOf?: (p: Record<string, unknown>) => string } | null {
+    if (!this.host.showAs || this.chosen !== 'own' || !report.ok) return null;
+    const features = (report.preview?.features ?? []).filter((f) => f.geometry);
+    if (features.length === 0) return null;
+    const counts = { fill: 0, lines: 0, points: 0 };
+    for (const f of features) {
+      const type = f.geometry!.type;
+      counts[type.endsWith('Polygon') ? 'fill' : type.endsWith('LineString') ? 'lines' : 'points']++;
+    }
+    const kind = (Object.entries(counts).sort((a, b) => b[1] - a[1])[0]![0]) as GeometryKind;
+    const rows = features.map((f) => f.properties ?? {});
+    const columns = profileColumns(rows).filter((c) => c.kind === 'number' || c.distinct <= 40);
+    const palette = tablePalette(this.host.site());
+    if (this.showAs.column && !columns.some((c) => c.name === this.showAs.column)) this.showAs = { column: '' };
+    const chosen = this.showAs.column ? columns.find((c) => c.name === this.showAs.column)! : null;
+    const paint: Paint = chosen ? (chosen.kind === 'number' ? { by: chosen.name, kind: 'number', ramp: 'sun', classes: this.showAs.classes ?? 'natural', count: 5 } : { by: chosen.name, kind: 'category' }) : '@accent';
+    const scale = paintScale(paint, rows, palette);
+    const hex = ([r, g, b, a]: readonly number[]) => `rgb(${Math.round(r!)} ${Math.round(g!)} ${Math.round(b!)}${a !== undefined && a < 1 ? ` / ${a}` : ''})`;
+    const colourOf = this.showAs.column === null ? undefined : (p: Record<string, unknown>) => hex(scale.colour(p));
+
+    const box = el('div', 'im-colour');
+    box.append(el('h3', undefined, 'Show it on the table'));
+    const select = el('select');
+    select.ariaLabel = 'Colour by';
+    select.append(new Option('In one colour', '', false, this.showAs.column === ''));
+    for (const c of columns) select.append(new Option(`By ${c.name} (${c.kind === 'number' ? 'a value' : `${c.distinct} kinds`})`, c.name, false, c.name === this.showAs.column));
+    select.append(new Option('Not yet: only add the data', '\u0000', false, this.showAs.column === null));
+    select.addEventListener('change', () => {
+      const value = select.value;
+      this.showAs = value === '\u0000' ? { column: null } : value === '' ? { column: '' } : { column: value, classes: this.showAs.classes ?? 'natural' };
+      this.render();
+    });
+    const field = el('label', 'wz-field');
+    field.append(el('span', undefined, 'Colour'), select);
+    box.append(field);
+    if (chosen?.kind === 'number') {
+      const classes = el('div', 'im-classes');
+      classes.setAttribute('role', 'radiogroup');
+      classes.ariaLabel = 'Classes';
+      for (const [value, label] of [['natural', 'Natural breaks'], ['quantile', 'Quantile'], ['equal', 'Equal'], ['continuous', 'Smooth']] as const) {
+        const b = el('button', 'ed-button', label);
+        b.type = 'button';
+        b.setAttribute('aria-pressed', String((this.showAs.classes ?? 'natural') === value));
+        b.addEventListener('click', () => {
+          this.showAs = { column: chosen.name, classes: value };
+          this.render();
+        });
+        classes.append(b);
+      }
+      box.append(classes, histogram(columnNumbers(rows, chosen.name), this.showAs.classes ?? 'natural', palette.ramps.sun ?? []));
+    }
+    if (scale.legend.length) {
+      const legend = el('ul', 'im-legend');
+      legend.ariaLabel = 'Legend on the controller';
+      for (const row of scale.legend) {
+        const item = el('li');
+        const swatch = el('i');
+        swatch.style.background = row.color;
+        item.append(swatch, el('span', undefined, row.label));
+        legend.append(item);
+      }
+      box.append(legend);
+    }
+    if (this.showAs.column !== null) box.append(el('p', 'im-note', 'It becomes a layer of its own. Change its look any time in the layer builder.'));
+    return { element: box, kind, paint, colourOf };
+  }
+
+  /** Brings the file in, then makes its layer, as one change: the page reloads once, after both. */
+  private async addAndShow(kind: GeometryKind, paint: Paint): Promise<void> {
+    const dataset = this.target()?.replace(/^data:/, '');
+    if (!dataset || !this.host.showAs) return void this.check(true);
+    this.host.hold(true);
+    try {
+      if (await this.check(true)) await this.host.showAs({ dataset, kind, paint });
+    } finally {
+      this.host.hold(false);
+    }
+  }
+
   /** Centres the table on the data, then brings the file in, as one change: the page reloads once both are done. */
   private async moveHere(centre: { lon: number; lat: number }, size?: { width_m: number; height_m: number }): Promise<void> {
     const site = this.host.site();
@@ -585,4 +685,43 @@ export class Importer {
       this.host.hold(false);
     }
   }
+}
+
+/**
+ * A histogram of a column's values with its class edges marked (#94, as in kepler.gl), so an
+ * author sees where natural breaks or quantiles cut the data.
+ */
+function histogram(values: number[], classes: NonNullable<PaintBy['classes']>, ramp: readonly string[]): SVGSVGElement {
+  const W = 300;
+  const H = 64;
+  const chart = svg('svg', { viewBox: `0 0 ${W} ${H + 14}`, class: 'im-histogram', role: 'img', 'aria-label': 'How the values spread, with the class edges' });
+  if (values.length === 0) return chart;
+  const lo = Math.min(...values);
+  const hi = Math.max(...values);
+  const bins = 30;
+  const counts = new Array<number>(bins).fill(0);
+  const binOf = (v: number) => (hi > lo ? Math.min(bins - 1, Math.floor(((v - lo) / (hi - lo)) * bins)) : 0);
+  for (const v of values) counts[binOf(v)]!++;
+  const most = Math.max(...counts);
+  const breaks = classes === 'continuous' ? [] : classBreaks(values, classes, 5);
+  const share = (v: number) => (hi > lo ? (v - lo) / (hi - lo) : 0);
+  const classOf = (v: number) => breaks.filter((b) => v >= b).length;
+  counts.forEach((count, i) => {
+    const mid = lo + ((i + 0.5) / bins) * (hi - lo);
+    const t = classes === 'continuous' ? share(mid) : breaks.length ? classOf(mid) / breaks.length : 0;
+    const [r, g, b] = rampColour(ramp, t);
+    const h = most ? (count / most) * H : 0;
+    chart.append(svg('rect', { x: (i * W) / bins + 0.5, y: H - h, width: W / bins - 1, height: h, fill: `rgb(${Math.round(r)} ${Math.round(g)} ${Math.round(b)})` }));
+  });
+  for (const edge of breaks) {
+    const x = share(edge) * W;
+    chart.append(svg('line', { x1: x, x2: x, y1: 0, y2: H, class: 'im-histogram-edge' }));
+  }
+  const format = (v: number) => (Math.abs(v) >= 100 ? Math.round(v).toLocaleString() : Number(v.toPrecision(3)).toString());
+  const left = svg('text', { x: 0, y: H + 12, class: 'im-histogram-label' });
+  left.textContent = format(lo);
+  const right = svg('text', { x: W, y: H + 12, class: 'im-histogram-label', 'text-anchor': 'end' });
+  right.textContent = format(hi);
+  chart.append(left, right);
+  return chart;
 }

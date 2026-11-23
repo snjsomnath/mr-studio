@@ -7,6 +7,7 @@
   "category": "media",
   "controls": [
     { "id": "url", "type": "text", "label": "Service address", "default": "" },
+    { "id": "signin", "type": "text", "label": "Sign-in", "default": "", "sources": ["wms", "lantmateriet", "arcgis"] },
     { "id": "layers", "type": "text", "label": "Layers", "default": "" },
     { "id": "styles", "type": "text", "label": "Styles", "default": "" },
     { "id": "source", "type": "text", "label": "Source", "default": "" },

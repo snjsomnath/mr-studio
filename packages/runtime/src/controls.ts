@@ -1,5 +1,5 @@
 import { isVisible } from '@mrstudio/sdk';
-import type { Connection, Control, LayerManifest, LayerState, PanelContext, PanelHandlers, Role, TvAbout } from '@mrstudio/sdk';
+import type { Connection, Control, LayerManifest, TextControl, LayerState, PanelContext, PanelHandlers, Role, TvAbout } from '@mrstudio/sdk';
 
 import { icon } from './editor/icons.ts';
 import { baseContext, paramSender } from './layer-manager.ts';
@@ -24,6 +24,73 @@ export interface Widget {
 function formatNumber(value: number, control: Extract<Control, { type: 'range' }>): string {
   const decimals = control.step && control.step < 1 ? Math.min(3, String(control.step).split('.')[1]?.length ?? 0) : 0;
   return `${value.toFixed(decimals)}${control.unit ? ` ${control.unit}` : ''}`;
+}
+
+/** A source as `/api/sources` lists it: never its key. */
+interface SourceSummary {
+  id: string;
+  kind: string;
+  name: string;
+  ready: boolean;
+}
+
+type Invoke = (command: string, args?: Record<string, unknown>) => Promise<unknown>;
+const shellInvoke = (): Invoke | undefined => (window as { __TAURI__?: { core?: { invoke?: Invoke } } }).__TAURI__?.core?.invoke;
+
+/** The sources set up on this computer. Asked again when the window comes back into focus, as after the Sources page. */
+let sourceList: Promise<SourceSummary[]> | null = null;
+function sources(): Promise<SourceSummary[]> {
+  sourceList ??= fetch('/api/sources', { cache: 'no-store' })
+    .then((r) => (r.ok ? r.json() : { sources: [] }))
+    .then((page: { sources?: SourceSummary[] }) => page.sources ?? [])
+    .catch(() => []);
+  return sourceList;
+}
+
+/**
+ * A text control that names a source from the Sources manager (#41): a list of the sources
+ * of the kinds it takes, and a way to set one up. Pages that cannot read the list (a phone)
+ * still show the chosen id.
+ */
+function sourcePicker(row: HTMLElement, label: HTMLLabelElement, id: string, control: TextControl, send: (value: unknown) => void): (value: unknown) => void {
+  const select = el('select', 'control-source');
+  select.id = id;
+  const manage = shellInvoke();
+  let current = '';
+  let known: SourceSummary[] = [];
+  const render = () => {
+    const options = [new Option('None', '')];
+    for (const s of known) options.push(new Option(s.ready ? s.name : `${s.name} (needs a key)`, s.id));
+    if (current && !known.some((s) => s.id === current)) options.push(new Option(`${current} (not set up on this computer)`, current));
+    if (manage) options.push(new Option('Set up sources…', '__manage__'));
+    select.replaceChildren(...options);
+    select.value = current;
+  };
+  const refresh = () =>
+    void sources().then((list) => {
+      known = list.filter((s) => control.sources!.includes(s.kind));
+      render();
+    });
+  select.addEventListener('change', () => {
+    if (select.value === '__manage__') {
+      select.value = current;
+      void manage?.('open_sources');
+      return;
+    }
+    send(select.value);
+  });
+  window.addEventListener('focus', () => {
+    sourceList = null;
+    if (select.isConnected) refresh();
+  });
+  render();
+  refresh();
+  row.append(label, select);
+  return (value) => {
+    if (typeof value !== 'string' || value === current) return;
+    current = value;
+    render();
+  };
 }
 
 export function widget(control: Control, send: (value: unknown) => void, act: () => void): Widget {
@@ -122,6 +189,10 @@ export function widget(control: Control, send: (value: unknown) => void, act: ()
     // falls through
     case 'color':
     case 'text': {
+      if (control.type === 'text' && control.sources?.length) {
+        sync = sourcePicker(row, label, id, control, send);
+        break;
+      }
       const input = el('input');
       Object.assign(input, { id, type: control.type });
       input.addEventListener(control.type === 'text' ? 'change' : 'input', () => input.value && send(input.value));

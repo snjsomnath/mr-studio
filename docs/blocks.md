@@ -69,6 +69,7 @@ constant or a function of the shape, which is how data drives the picture. Block
 | Spots | `drawSpots`, `drawLabel`, `clusterPoints` | Markers with halo, core and label; clustering for dense data |
 | Rings | `drawRings`, `drawGlow` | Rings travelling outward or inward, or rippling in place; a soft catchment disc |
 | Travelling lights | `pathHeads`, `drawDots` | Lights along lines as a pure function of time, by period or by speed, any number per line |
+| Place motions | `PLACE_MOTIONS`, `placeData` | 22 motions for places (place-motions.ts) on the place data standard (places.ts): weight, activity over time, flows, links. Each has knobs, a ? help setup and draws in design units of 1.25 table mm |
 | Street network | `StreetNetwork` | Lines snapped into a graph; shortest routes (`route`), a tree of routes to one place (`treeTo`, `follow`) and the nodes that reach it. Crowds walk the streets, not across buildings (M8) |
 | Particles | `Swarm`, `pullTowards`, `gravity`, `followField`, `pickWeighted`, `aroundRing`, `particleAlpha` | A crowd that is spawned, steered and retired. Steering is pluggable: to a target, by the pull of all attractors, or along any field |
 | Data fields | `heatField`, `gravityField`, `siteRaster` | Rasters made from data, returned as a `FieldFrame` and drawn with `ctx.map.addField` like a kernel's |
@@ -166,7 +167,7 @@ composition. Old line counts are from `main`.
 | Flow lines, width by share, colour by source kind | `drawPaths` with `width` and `categoryScale` |
 | One travelling light per line, flaring where it lands (`paintHeads`) | `pathHeads` + `drawDots`, sized by `head.landing` |
 | Grid and battery rings, outward when giving, inward when taking, each against its own busiest hour | `nodePulse` + `drawRings` |
-| Node icons with gauge fill steps | `drawSpots`; pictogram icons are the one thing missing (see backlog) |
+| Node icons with gauge fill steps | `drawSpots`; pictograms from `ICONS`/`fillIcon` (marks.ts) |
 | The table's clock, an hour every few seconds, scrubbed from the controller | `Clock`, ticked in `ctx.onFrame`, seeked from the `hour` control |
 | Introduction: lines arrive one at a time, captions, held hours | `Sequence` + `stagger` feeding `reveal` on `drawPaths` |
 | Timeline strip with day and night | `timeline(clock)` published; drawn by the dashboard's timeline widget |

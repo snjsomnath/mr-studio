@@ -1,0 +1,8 @@
+from,to,volume
+Tram stop,School,420
+Tram stop,Library,260
+Tram stop,Clinic,150
+School,Playground,180
+Library,Café,140
+Café,Tram stop,90
+Clinic,Tram stop,120

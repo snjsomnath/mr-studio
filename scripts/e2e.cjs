@@ -801,6 +801,7 @@ async function main() {
         window.shellCalls.push(command === 'open_view' ? `open_view ${args.role}` : command === 'file_action' ? `file_action ${args.action}` : command);
         if (command === 'present') presenting = true;
         if (command === 'stop_presenting') presenting = false;
+        if (command === 'colour_state') return { displays: [{ display: 0, name: 'Projector', role: null, colour: { saturation: 1.4, contrast: 1, brightness: 1, gamma: 1, temperature: 0, tint: 0 } }], presets: [], layers: [] };
         return { presenting };
       } } };
     });
@@ -813,12 +814,18 @@ async function main() {
     shelled.on('popup', () => popups++);
     await shelled.getByRole('button', { name: 'Preview', exact: true }).click();
     for (const name of ['Map', 'Controller', 'Developer']) await shelled.locator('.ed-ribbon').getByRole('button', { name, exact: true }).click();
+    // The Display tab (#151): the colour pass of each display, previewed on the editor's map while it is open.
+    await shelled.getByRole('tab', { name: 'Display' }).click();
+    await shelled.locator('.dt-slider').first().waitFor();
+    await shelled.waitForFunction(() => document.querySelector('.ed-canvas').style.filter.includes('saturate(1.4'));
+    await shelled.getByRole('tab', { name: 'Edit' }).click();
+    assert.equal(await shelled.$eval('.ed-canvas', (n) => n.style.filter), '', 'the preview goes with the tab');
     await shelled.getByRole('button', { name: 'All tables', exact: true }).click();
     assert.equal(await shelled.evaluate(() => window.mrsShellControls), true);
     // "All tables" goes through the File menu's action (#130): it keeps a picture of the map first, then asks the app.
     await shelled.waitForFunction(() => window.shellCalls.includes('file_action home'));
     assert.deepEqual(await shelled.evaluate(() => window.shellCalls.filter((c) => c !== 'presenting_state')), [
-      'present', 'stop_presenting', 'open_view table', 'open_view table', 'open_view tv', 'open_view dev', 'file_action home',
+      'present', 'stop_presenting', 'open_view table', 'open_view table', 'open_view tv', 'open_view dev', 'colour_state', 'file_action home',
     ]);
     assert.equal(popups, 0, 'no browser window is opened inside the app');
     await shelled.close();

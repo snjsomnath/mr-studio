@@ -14,9 +14,6 @@ const ROOF_CLEARANCE_M = 0.15;
 const FOOT_M = 1;
 /** Caps sit this far over the roofs, so they cover the twin's steps. */
 const CAP_M = 0.05;
-/** Metres per pixel of the mask, and its largest side. */
-const MASK_M = 0.3;
-const MASK_MAX = 4096;
 
 /**
  * Sharp sun shadows for the table (#133), as a mask the sunlight layer draws in its own map field, so the table's
@@ -50,7 +47,8 @@ export class SunMask {
   private revision = 0;
 
   /** `corners` are the table's corners in local metres: top left, top right, bottom right, bottom left. */
-  constructor(renderer: THREE.WebGLRenderer, geometry: THREE.BufferGeometry, twin: TwinMesh, corners: [number, number][]) {
+  /** `detail` is the mask's metres per pixel and the largest texture it, and its shadow map, may use. */
+  constructor(renderer: THREE.WebGLRenderer, geometry: THREE.BufferGeometry, twin: TwinMesh, corners: [number, number][], detail: { metres: number; maxSize: number }) {
     this.renderer = renderer;
     this.geometry = geometry;
     this.twin = twin;
@@ -60,8 +58,8 @@ export class SunMask {
     const widthM = across.length();
     const heightM = up.length();
     const centre = tr!.clone().add(bl!).multiplyScalar(0.5);
-    const max = Math.min(MASK_MAX, renderer.capabilities.maxTextureSize);
-    const scale = Math.min(1 / MASK_M, max / widthM, max / heightM);
+    const max = Math.min(detail.maxSize, renderer.capabilities.maxTextureSize);
+    const scale = Math.min(1 / detail.metres, max / widthM, max / heightM);
     this.width = Math.max(1, Math.round(widthM * scale));
     this.height = Math.max(1, Math.round(heightM * scale));
     this.pixels = new Uint8Array(this.width * this.height * 4);
@@ -78,7 +76,7 @@ export class SunMask {
 
     const light = this.light;
     light.castShadow = true;
-    const size = renderer.capabilities.maxTextureSize >= 4096 ? 4096 : 2048;
+    const size = Math.max(2048, Math.min(detail.maxSize, renderer.capabilities.maxTextureSize, 8192));
     light.shadow.mapSize.set(size, size);
     const shadowCamera = light.shadow.camera;
     shadowCamera.left = shadowCamera.bottom = -radius;

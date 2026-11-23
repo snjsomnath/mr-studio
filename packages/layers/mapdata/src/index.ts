@@ -1,8 +1,8 @@
-import { defineLayer, geojsonLines, geojsonPoints, geojsonPolygons, readSiteData, tableSpace, traceLine, tracePolygon, withAlpha } from '@mrstudio/sdk';
+import { categorySlots, defineLayer, geojsonLines, geojsonPoints, geojsonPolygons, readSiteData, tablePalette, tableSpace, traceLine, tracePolygon, withAlpha } from '@mrstudio/sdk';
 import type { LayerManifest, Placed, XY } from '@mrstudio/sdk';
 
 import manifest from '../layer.json';
-import { PALETTE, PULSE_S, categories, strength } from './categories.ts';
+import { PALETTE, PULSE_S, categories, categoryColours, strength } from './categories.ts';
 
 interface Params {
   dataset: string;
@@ -27,7 +27,8 @@ export default defineLayer<Params>({
     let dirty = true;
 
     const category = (properties: Record<string, unknown>) => (names.length ? names.indexOf(String(properties?.[ctx.params.colorBy])) : -1);
-    const colour = (n: number) => (n >= 0 ? PALETTE[n % PALETTE.length]! : ctx.params.color);
+    // Categories take the table palette's eight category colours first (#93), then the layer's own extras.
+    const colour = (n: number) => (n >= 0 ? categoryColours(categorySlots(tablePalette(ctx.site)))[n % PALETTE.length]! : ctx.params.color);
 
     async function load() {
       const geojson = ctx.params.dataset ? await readSiteData(ctx.site, ctx.params.dataset) : null;
@@ -48,7 +49,13 @@ export default defineLayer<Params>({
       dirty = true;
     }
 
+    let palette = tablePalette(ctx.site);
     ctx.onFrame((dt) => {
+      // The table's palette changed: recolour, and send the legend again.
+      if (tablePalette(ctx.site) !== palette) {
+        palette = tablePalette(ctx.site);
+        describe();
+      }
       if (pulse > 0) {
         pulse = Math.max(0, pulse - dt);
         dirty = true;

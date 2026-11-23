@@ -162,8 +162,8 @@ What the player draws today (`packages/sdk/src/recipe.ts`; WMS and tiles data ar
 
 | Stage | Block | Props |
 | --- | --- | --- |
-| look | `points` | `color`, `radius_mm`, `opacity`, `glow` (0–1), `core`, `stroke`, `stroke_mm`, `label` (a column; place names only), `legend` |
-| look | `lines` | `color`, `width_mm`, `opacity`, `glow`, `casing`, `dash` (`solid`, `dashed`, `dotted`), `dash_mm`, `gap_mm`, `legend` |
+| look | `points` | `color`, `radius_mm`, `opacity`, `glow` (0–1), `core`, `stroke`, `stroke_mm`, `label` (a column; place names only), `shape` (`circle`, `square`, `diamond`, `triangle`, `ring`, `icon`), `icon` (a pictogram: `star`, `pin`, `flag`, `tree`, `person`, `house`, `bus`, `bolt`, `drop`, `heart`, `plus`, `sun`), `legend` |
+| look | `lines` | `color`, `width_mm`, `opacity`, `glow`, `casing`, `dash` (`solid`, `dashed`, `dotted`), `dash_mm`, `gap_mm`, `arrows` (`none`, `end`, `along`), `arrow_mm`, `arrow_gap_mm`, `legend` |
 | look | `fill` | `color`, `opacity`, `stroke`, `stroke_mm`, `edge_glow`, `shadow_mm` (a soft shadow instead of height), `hatch`, `legend` |
 | motion | `pulse` (on points or fill) | `period_s`, `size_mm`, `rings`, `direction` (1 out, -1 in) |
 | motion | `draw-in` (on lines) | `duration_s`, `stagger` |
@@ -171,6 +171,19 @@ What the player draws today (`packages/sdk/src/recipe.ts`; WMS and tiles data ar
 | motion | `particles` (on lines) | `per_line`, `speed_mm`, `size_mm`: lights travelling along each line |
 | motion | `attract` (on points) | `count`, `speed_mm`, `reach_mm`, `weight` (a numeric column that pulls harder), `size_mm`: a crowd drawn in across open ground |
 | motion | `gravity` (on points) | `network` (a site dataset of lines, default `roads`), `count`, `speed_mm`, `weight`, `size_mm`, `trail`: people walking to each point along the street network by the shortest route |
+| motion | `timeline` (on any look) | `column` (a year or date column), `duration_s`, `hold_s`, `keep` (stay, or come and go), `window` (share of the span a feature stays): features appear as a sweep passes their time, with a brief flare on points; features with no time always show |
+| motion | `place` (on points) | `motion` (one of 22 place motions, `PLACE_MOTIONS` in place-motions.ts: ripples, catchment, territories, constellations, comets, metaballs, orbiters, spokes, fireflies, contours; dot-pulse, counter-rings, sound-ring, spectrum, bulge, galaxy; gravity-well, pilgrims, lit-blocks, field-lines, street-pulses, threads), its other files (`streets`, `buildings`, `targets`: site datasets; `activity`, `flows`, `links`: CSV datasets, see the place data standard below), `cycle_s` (seconds the activity table takes to play through), `colours` (`each`, `category` or a slot), `speed`, `glow` and the motion's own knobs. Places come from the look's points: `name`, `weight` and `category` are found by name |
+
+**Place data standard (#160).** Every place motion reads the same few files, so data is prepared once and any motion can be tried on it:
+
+| File | Columns | Without it |
+|---|---|---|
+| places (points) | `name`, `weight` (any range, rescaled), `category` | weight 0.6 for all; one colour each |
+| `activity.csv` | `place,time,activity`, one row per place per time step | each place swells slowly on its own |
+| `flows.csv` | `from,to,volume` | comets fly between places picked by weight |
+| `links.csv` | `from,to` | places sharing a category are linked |
+
+Names in the tables match the places' `name`, case-insensitive; names that match nothing are reported. Streets and buildings come from the site, never per motion. The builder's ? button shows each motion's setup with an example. The sample kit has all four (`samples/kit`).
 
 - Sizes are millimetres on the physical table (visualisation.md E5), turned into metres by `table.width_cm`.
 - A colour is a palette slot (`"@accent"`), `"#rrggbb"`, or driven by a column: `{ "by": "kind", "kind": "category", "colors"?: { "<value>": "@cat2" } }` (six values shown, the rest grouped as Others) or `{ "by": "population", "kind": "number", "ramp": "sun", "classes": "continuous" | "equal" | "quantile", "count": 5 }`. A size may be `{ "by": "<column>", "range": [2, 8] }`.

@@ -594,6 +594,9 @@ pub struct SiteManifest {
     pub palette: Option<Palette>,
     #[serde(default)]
     pub tv: Option<Value>,
+    /// How the table's surfaces render (#134): `{ "quality": "draft" | "good" | "best" }`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub display: Option<Value>,
     #[serde(default)]
     pub branding: Branding,
 }

@@ -29,7 +29,8 @@ test('a trips dataset is checked and prepared', () => {
   assert.equal(trips.duration, 300);
   assert.deepEqual(trips.groups.map((g) => g.id), ['tram', 'walk']);
   assert.equal(trips.groups[0]!.color, '#00ffff');
-  assert.match(trips.groups[1]!.color, /^#/);
+  // Groups without their own colour take the table palette's categories (#93), resolved when drawn.
+  assert.equal(trips.groups[1]!.color, '@cat2');
   assert.equal(trips.trips.length, 2, 'a trip with no usable leg is dropped');
   assert.deepEqual(trips.trips[0]!.legs.map((l) => l.start), [10, 200]);
   assert.deepEqual(trips.trips[0]!.legs[0]!.stations, [0, 60 / 220, 160 / 220, 1]);

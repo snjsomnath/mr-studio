@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "editor",
-  "description": "The editor window shows the host's pages from this computer. It may present, stop, open a view of the table in a window, see the displays, create and open a site, use the File menu (save as, show in folder, close), open the shell's own pages and quit, and nothing else. Table, TV and phone surfaces get no commands at all.",
+  "description": "The editor window shows the host's pages from this computer. It may present, stop, open a view of the table in a window, see the displays, create and open a site, use the File menu (save as, show in folder, close), set the colour pass and layer strength of each display and open the projector calibration (the Display ribbon tab), open the shell's own pages (the Sources page too, but not change a source) and quit, and nothing else. Table, TV and phone surfaces get no commands at all.",
   "windows": [
     "editor"
   ],
@@ -21,6 +21,16 @@
     "allow-open-view",
     "allow-create-site",
     "allow-open-site",
-    "allow-file-action"
+    "allow-file-action",
+    "allow-colour-state",
+    "allow-set-colour",
+    "allow-save-preset",
+    "allow-delete-preset",
+    "allow-test-card",
+    "allow-set-layer-intensity",
+    "allow-calibration-state",
+    "allow-calibration-mode",
+    "allow-calibration-clear",
+    "allow-open-sources"
   ]
 }

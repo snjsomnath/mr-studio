@@ -102,9 +102,11 @@ export interface ModelHandle {
    * Sharp sun shadows over the table's extent, as a field frame to draw with a map field: 1 where the sun reaches the
    * ground or a roof, 0 in shade, about 0.3 m per pixel. It comes from a GPU shadow map of the buildings' real
    * footprints raised to their roofs, the ground and any imported model, so edges stay crisp at any table size, unlike
-   * a kernel field's cells. Resolves to null where there is no twin; use the kernel's field instead.
+   * a kernel field's cells. Resolves to null where there is no twin; use the kernel's field instead. `onChange` is
+   * called when the mask for the same sun would come out differently (the table's quality changed), so the layer
+   * can ask again; the latest call's callback is the one kept.
    */
-  sunShadowMask(sun: { azimuth: number; altitude: number }): Promise<FieldFrame | null>;
+  sunShadowMask(sun: { azimuth: number; altitude: number }, onChange?: () => void): Promise<FieldFrame | null>;
   /** Changes how the picked surfaces look. A later call wins where two overlap. */
   setMaterial(target: SurfaceQuery, material: SurfaceMaterial): void;
   /** Dims everything except the picked surfaces. `null` ends the focus. */

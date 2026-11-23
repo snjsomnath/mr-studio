@@ -7,6 +7,8 @@ mod engine_bridge;
 mod hub;
 mod layers;
 mod model;
+pub mod sources;
+mod transit;
 mod wms;
 mod ws;
 
@@ -34,6 +36,7 @@ pub use calibration::Calibration;
 pub use engine_bridge::EngineHandle;
 pub use hub::{Hub, Role, SessionOptions};
 pub use layers::{Control, ControlKind, LayerDef, Tool, ToolKind};
+pub use sources::Sources;
 
 #[derive(Debug, Clone)]
 pub struct HostConfig {
@@ -47,6 +50,8 @@ pub struct HostConfig {
     pub backend: Backend,
     /// Phone limits and the address phones join at.
     pub session: SessionOptions,
+    /// The app's outside services and their keys (#41). The app shares one with its Sources page.
+    pub sources: Arc<Sources>,
 }
 
 pub struct AppState {
@@ -57,6 +62,9 @@ pub struct AppState {
     /// when imported data changes the scene.
     pub twin: RwLock<Bytes>,
     pub calibration: Calibration,
+    /// Outside services and their keys. Surfaces reach them through the host only.
+    pub sources: Arc<Sources>,
+    transit: transit::Cache,
     /// One import at a time.
     imports: tokio::sync::Mutex<()>,
     /// The last OpenStreetMap answer, so Import brings in what the preview showed without asking again.
@@ -361,6 +369,8 @@ pub async fn start(config: HostConfig) -> anyhow::Result<RunningHost> {
         site,
         twin: RwLock::new(twin),
         calibration,
+        sources: config.sources.clone(),
+        transit: Default::default(),
         imports: Default::default(),
         osm_cache: Default::default(),
     });
@@ -427,7 +437,13 @@ fn router(state: Arc<AppState>, web_dir: Option<PathBuf>) -> Router {
         .route("/api/data/model", post(model::post))
         .route("/api/site/place", post(place_site))
         .route("/api/site/thumbnail", post(save_thumbnail))
-        .route("/api/wms", get(|query: Query<wms::WmsQuery>| wms::get_map(query.0)))
+        .route("/api/wms", get(wms_map))
+        .route("/api/sources", get(sources_page).post(save_source))
+        .route("/api/sources/{id}", axum::routing::delete(remove_source))
+        .route("/api/sources/{id}/test", post(test_source))
+        .route("/api/sources/{id}/tile/{z}/{x}/{y}", get(source_tile))
+        .route("/api/sources/{id}/proxy", get(source_proxy))
+        .route("/api/transit/{id}/vehicles", get(transit_vehicles))
         .layer(DefaultBodyLimit::max(MAX_IMPORT_BYTES))
         // Imports replace data files at the same path, so a surface reloading after
         // site.changed must revalidate rather than reuse a cached copy (#125).
@@ -445,6 +461,192 @@ fn router(state: Arc<AppState>, web_dir: Option<PathBuf>) -> Router {
         None => app.fallback(|| async { "MR Studio host is running. Surfaces are not built; run the web dev server or pass --web." }),
     };
     app.with_state(state)
+}
+
+/// Only this computer may use a source, and a page from another site in the same browser
+/// may not change one: a request that says where it comes from must come from the host's own pages.
+fn local(from: &SocketAddr, headers: &HeaderMap) -> Result<(), Box<axum::response::Response>> {
+    if !from.ip().is_loopback() {
+        return Err(Box::new(
+            (StatusCode::FORBIDDEN, Json(json!({ "error": "sources are used from this computer only" }))).into_response(),
+        ));
+    }
+    let origin = headers.get(header::ORIGIN).and_then(|v| v.to_str().ok());
+    let host = headers.get(header::HOST).and_then(|v| v.to_str().ok()).unwrap_or("");
+    match origin {
+        None => Ok(()),
+        Some(origin) if origin == format!("http://{host}") => Ok(()),
+        Some(_) => Err(Box::new(
+            (StatusCode::FORBIDDEN, Json(json!({ "error": "sources are used from MR Studio's own pages only" }))).into_response(),
+        )),
+    }
+}
+
+fn refused(refusal: sources::Refusal) -> axum::response::Response {
+    (StatusCode::from_u16(refusal.status).unwrap_or(StatusCode::BAD_GATEWAY), Json(json!({ "error": refusal.message }))).into_response()
+}
+
+async fn wms_map(
+    State(state): State<Arc<AppState>>,
+    ConnectInfo(from): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    Query(query): Query<wms::WmsQuery>,
+) -> axum::response::Response {
+    if query.source.as_deref().is_some_and(|s| !s.is_empty()) {
+        if let Err(no) = local(&from, &headers) {
+            return *no;
+        }
+    }
+    wms::get_map(&state.sources, query).await
+}
+
+/// `GET /api/sources`: the connections (never their keys) and the kinds that can be added.
+async fn sources_page(
+    State(state): State<Arc<AppState>>,
+    ConnectInfo(from): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+) -> axum::response::Response {
+    if let Err(no) = local(&from, &headers) {
+        return *no;
+    }
+    Json(state.sources.page()).into_response()
+}
+
+/// `POST /api/sources`, a change (`sources::Change`): adds or edits one, and stores its key in the keychain.
+async fn save_source(
+    State(state): State<Arc<AppState>>,
+    ConnectInfo(from): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> axum::response::Response {
+    if let Err(no) = local(&from, &headers) {
+        return *no;
+    }
+    let change: sources::Change = match serde_json::from_slice(&body) {
+        Ok(change) => change,
+        Err(e) => return (StatusCode::BAD_REQUEST, Json(json!({ "error": e.to_string() }))).into_response(),
+    };
+    let sources = state.sources.clone();
+    match tokio::task::spawn_blocking(move || sources.save(change)).await {
+        Ok(Ok(view)) => Json(json!(view)).into_response(),
+        Ok(Err(error)) => (StatusCode::UNPROCESSABLE_ENTITY, Json(json!({ "error": error }))).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e.to_string() }))).into_response(),
+    }
+}
+
+async fn remove_source(
+    State(state): State<Arc<AppState>>,
+    ConnectInfo(from): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    axum::extract::Path(id): axum::extract::Path<String>,
+) -> axum::response::Response {
+    if let Err(no) = local(&from, &headers) {
+        return *no;
+    }
+    let sources = state.sources.clone();
+    match tokio::task::spawn_blocking(move || sources.remove(&id)).await {
+        Ok(Ok(())) => StatusCode::NO_CONTENT.into_response(),
+        Ok(Err(error)) => (StatusCode::NOT_FOUND, Json(json!({ "error": error }))).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e.to_string() }))).into_response(),
+    }
+}
+
+async fn test_source(
+    State(state): State<Arc<AppState>>,
+    ConnectInfo(from): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    axum::extract::Path(id): axum::extract::Path<String>,
+) -> axum::response::Response {
+    if let Err(no) = local(&from, &headers) {
+        return *no;
+    }
+    match state.sources.test(&id).await {
+        Ok(status) => Json(json!(status)).into_response(),
+        Err(error) => (StatusCode::NOT_FOUND, Json(json!({ "error": error }))).into_response(),
+    }
+}
+
+/// Passes a signed answer on: its type and body, and nothing that names the address.
+async fn pass_on(state: &AppState, id: &str, url: reqwest::Url) -> axum::response::Response {
+    match state.sources.fetch(id, url).await {
+        Ok(answer) => {
+            let kind = answer
+                .headers()
+                .get(reqwest::header::CONTENT_TYPE)
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or("application/octet-stream")
+                .to_string();
+            match answer.bytes().await {
+                Ok(body) => ([(header::CONTENT_TYPE, kind), (header::CACHE_CONTROL, "max-age=300".to_string())], body).into_response(),
+                Err(e) => (StatusCode::BAD_GATEWAY, Json(json!({ "error": e.without_url().to_string() }))).into_response(),
+            }
+        }
+        Err(refusal) => refused(refusal),
+    }
+}
+
+/// `GET /api/sources/<id>/tile/<z>/<x>/<y>`: one map tile from a tile source, signed.
+async fn source_tile(
+    State(state): State<Arc<AppState>>,
+    ConnectInfo(from): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    axum::extract::Path((id, z, x, y)): axum::extract::Path<(String, u32, u32, String)>,
+) -> axum::response::Response {
+    if let Err(no) = local(&from, &headers) {
+        return *no;
+    }
+    // Map libraries ask for `…/{y}.png` or `…/{y}@2x`; the source's own address decides.
+    let Ok(y) = y.split(['.', '@']).next().unwrap_or("").parse::<u32>() else {
+        return (StatusCode::BAD_REQUEST, Json(json!({ "error": "no such tile" }))).into_response();
+    };
+    match state.sources.tile_url(&id, z, x, y) {
+        Ok(url) => pass_on(&state, &id, url).await,
+        Err(refusal) => refused(refusal),
+    }
+}
+
+#[derive(serde::Deserialize)]
+struct ProxyQuery {
+    url: String,
+}
+
+/// `GET /api/sources/<id>/proxy?url=…`: any address on the source's own server, signed.
+async fn source_proxy(
+    State(state): State<Arc<AppState>>,
+    ConnectInfo(from): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    axum::extract::Path(id): axum::extract::Path<String>,
+    Query(query): Query<ProxyQuery>,
+) -> axum::response::Response {
+    if let Err(no) = local(&from, &headers) {
+        return *no;
+    }
+    match reqwest::Url::parse(&query.url) {
+        Ok(url) => pass_on(&state, &id, url).await,
+        Err(_) => (StatusCode::BAD_REQUEST, Json(json!({ "error": "url must be a web address" }))).into_response(),
+    }
+}
+
+#[derive(serde::Deserialize)]
+struct TransitQuery {
+    bbox: String,
+}
+
+/// `GET /api/transit/<id>/vehicles?bbox=w,s,e,n`: live vehicles from a transit source.
+async fn transit_vehicles(
+    State(state): State<Arc<AppState>>,
+    ConnectInfo(from): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    axum::extract::Path(id): axum::extract::Path<String>,
+    Query(query): Query<TransitQuery>,
+) -> axum::response::Response {
+    if let Err(no) = local(&from, &headers) {
+        return *no;
+    }
+    match transit::vehicles(&state.sources, &state.transit, &id, &query.bbox).await {
+        Ok(value) => ([(header::CACHE_CONTROL, "no-store")], Json(value)).into_response(),
+        Err(refusal) => refused(refusal),
+    }
 }
 
 async fn info(State(state): State<Arc<AppState>>) -> Json<Value> {

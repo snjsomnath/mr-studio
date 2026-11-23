@@ -20,6 +20,13 @@ import {
   recipeLegend,
   resolvePalette,
   tableFrame,
+  ICONS,
+  POINT_SHAPES,
+  timeColumns,
+  PLACE_DATA_HELP,
+  PLACE_MOTIONS,
+  SHARED_KNOBS,
+  placeMotion,
 } from '@mrstudio/sdk';
 import type { CustomLayer, GeometryKind, LayerManifest, Paint, RecipeBlock, ResolvedPalette, Shapes, SitePalette, Size } from '@mrstudio/sdk';
 
@@ -87,6 +94,37 @@ function slider(value: number, min: number, max: number, step: number, unit: str
   });
   wrap.append(input, shown);
   return wrap;
+}
+
+const SHAPE_SVG: Record<string, string> = {
+  circle: '<circle cx="12" cy="12" r="8"/>',
+  square: '<rect x="5" y="5" width="14" height="14"/>',
+  diamond: '<path d="M12 2l10 10-10 10L2 12z"/>',
+  triangle: '<path d="M12 3l10 17H2z"/>',
+  ring: '<circle cx="12" cy="12" r="7" fill="none" stroke="currentColor" stroke-width="3.5"/>',
+  icon: '<path d="M12 2l2.9 6.6 7.1.6-5.4 4.7 1.6 7L12 17.2 5.8 20.9l1.6-7L2 9.2l7.1-.6z"/>',
+};
+const SHAPE_LABEL: Record<string, string> = { circle: 'Circle', square: 'Square', diamond: 'Diamond', triangle: 'Triangle', ring: 'Ring', icon: 'Pictogram' };
+
+/** A row of small picture buttons, one of them pressed. */
+function swatches(options: { value: string; title: string; svg: string }[], value: string, onPick: (value: string) => void, label: string): HTMLElement {
+  const row = el('div', 'lb-swatches');
+  row.setAttribute('role', 'radiogroup');
+  row.setAttribute('aria-label', label);
+  for (const option of options) {
+    const b = el('button', 'lb-swatch');
+    b.type = 'button';
+    b.title = option.title;
+    b.setAttribute('aria-label', option.title);
+    b.setAttribute('aria-pressed', String(option.value === value));
+    b.innerHTML = `<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true">${option.svg}</svg>`;
+    b.addEventListener('click', () => {
+      for (const other of row.querySelectorAll('button')) other.setAttribute('aria-pressed', String(other === b));
+      onPick(option.value);
+    });
+    row.append(b);
+  }
+  return row;
 }
 
 function toggle(checked: boolean, onChange: (checked: boolean) => void, label: string): HTMLElement {
@@ -268,7 +306,7 @@ const PRESETS: Record<GeometryKind, { name: string; props: Record<string, unknow
 };
 
 /** An id for a new custom layer from its name, free in the catalogue. */
-function freeId(store: Store, name: string): string {
+export function freeId(store: Store, name: string): string {
   const base = (name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'custom').slice(0, 32);
   const taken = (id: string) => store.manifests.some((m) => m.id === id) || id in store.state.layers;
   for (let n = 1; ; n++) {
@@ -288,6 +326,18 @@ export function startingRecipe(name: string, dataset: string, kind: GeometryKind
     data: [{ id: 'data', dataset }],
     look: [{ id: 'look', block: kind, data: 'data', props: { ...LOOK_DEFAULTS[kind], ...preset.props } }],
   };
+}
+
+/**
+ * A layer for a dataset just brought in, coloured as the author chose in the import (#94):
+ * the starting recipe for its geometry with that paint, saved and put on the table.
+ */
+export async function layerFromImport(host: BuilderHost, layer: { dataset: string; kind: GeometryKind; paint: Paint }): Promise<void> {
+  const title = layer.dataset.replace(/[-_]+/g, ' ').replace(/^./, (c) => c.toUpperCase());
+  const id = freeId(host.store, title);
+  const recipe = startingRecipe(title, layer.dataset, layer.kind);
+  recipe.look![0]!.props = { ...recipe.look![0]!.props, color: layer.paint };
+  if (await host.send('custom.save', { id, recipe })) await host.addLayer(`custom:${id}`);
 }
 
 /**
@@ -557,6 +607,17 @@ export function builderSection(host: BuilderHost, manifest: LayerManifest, butto
     nodes.push(presets);
     nodes.push(paintField('Colour', props.color as Paint, (paint) => set('color', paint), columns));
     if (kind === 'points') {
+      // The mark (#95): a plain shape, or a pictogram on a dark disc.
+      const iconRow = el('div', 'lb-sub');
+      const drawIcons = () => {
+        iconRow.hidden = props.shape !== 'icon';
+        iconRow.replaceChildren(field('Pictogram', swatches(Object.entries(ICONS).map(([name, i]) => ({ value: name, title: i.label, svg: `<path d="${i.path}" fill-rule="evenodd"/>` })), props.icon ?? 'star', (v) => set('icon', v), 'Pictogram')));
+      };
+      drawIcons();
+      nodes.push(field('Mark', swatches(POINT_SHAPES.map((name) => ({ value: name, title: SHAPE_LABEL[name]!, svg: SHAPE_SVG[name]! })), props.shape ?? 'circle', (v) => {
+        set('shape', v);
+        drawIcons();
+      }, 'Mark')), iconRow);
       nodes.push(sizeField('Radius', props.radius_mm as Size, 1, 12, 0.5, (v) => set('radius_mm', v), columns));
       nodes.push(field('Glow', slider(props.glow ?? 0, 0, 1, 0.05, '', (v) => set('glow', v))));
       nodes.push(field('White centre', toggle(Boolean(props.core), (v) => set('core', v), 'White centre')));
@@ -580,6 +641,19 @@ export function builderSection(host: BuilderHost, manifest: LayerManifest, butto
         set('dash', v);
         drawDash();
       }, 'Line')), dashDetail);
+      // Arrows (#95): which way a route or a flow goes, without a word on the map.
+      const arrowDetail = el('div', 'lb-sub');
+      const drawArrows = () => {
+        arrowDetail.hidden = (props.arrows ?? 'none') === 'none';
+        const rows = [field('Arrow size', slider(props.arrow_mm ?? 4, 2, 12, 0.5, ' mm', (v) => set('arrow_mm', v)))];
+        if (props.arrows === 'along') rows.push(field('Every', slider(props.arrow_gap_mm ?? 40, 10, 200, 5, ' mm', (v) => set('arrow_gap_mm', v))));
+        arrowDetail.replaceChildren(...rows);
+      };
+      drawArrows();
+      nodes.push(field('Arrows', segmented([['none', 'None'], ['end', 'At the end'], ['along', 'Along']] as const, props.arrows ?? 'none', (v) => {
+        set('arrows', v);
+        drawArrows();
+      }, 'Arrows')), arrowDetail);
     } else {
       nodes.push(field('Fill', segmented([['flat', 'Flat'], ['hatch', 'Hatched']] as const, props.hatch ? 'hatch' : 'flat', (v) => set('hatch', v === 'hatch'), 'Fill')));
       nodes.push(field('Outline', colourPicker(props.stroke ?? null, palette, (v) => set('stroke', v), { allowNone: true, label: 'Outline colour' })));
@@ -636,7 +710,7 @@ export function builderSection(host: BuilderHost, manifest: LayerManifest, butto
           ramps.append(b);
         }
         rows.push(field('Ramp', ramps));
-        rows.push(field('Classes', segmented([['continuous', 'Smooth'], ['equal', 'Equal'], ['quantile', 'Quantile']] as const, by.classes ?? 'continuous', (v) => {
+        rows.push(field('Classes', segmented([['continuous', 'Smooth'], ['equal', 'Equal'], ['quantile', 'Quantile'], ['natural', 'Natural']] as const, by.classes ?? 'continuous', (v) => {
           by.classes = v;
           onChange(by);
           draw();
@@ -716,7 +790,70 @@ export function builderSection(host: BuilderHost, manifest: LayerManifest, butto
     particles: ['Particles', 'Lights travel along every line: traffic, flows, energy on its way.'],
     attract: ['Attract a crowd', 'Particles gather from all around and are pulled into each point. For pull and attention, not for people.'],
     gravity: ['Crowd on the streets', 'People walk to each point along the street network, more to the places that pull harder.'],
+    timeline: ['Through time', 'Plays the layer through a date or year column: each feature appears when its time comes, with a brief flare.'],
+    place: ['Place motion', 'Twenty-two ways to bring places alive, from ripples and orbiters to gravity wells that bend the streets. Pick one, then tune it.'],
   };
+  /** The rows of a place motion (#160-163): which motion, its files, ? help and its knobs. */
+  const placeRows = (p: Record<string, any>, set: (key: string, value: unknown) => void, redraw: () => void): HTMLElement[] => {
+    const rows: HTMLElement[] = [];
+    const def = placeMotion(p.motion) ?? PLACE_MOTIONS[0]!;
+    const pick = el('select');
+    pick.setAttribute('aria-label', 'Place motion');
+    for (const group of [...new Set(PLACE_MOTIONS.map((m) => m.group))]) {
+      const og = Object.assign(el('optgroup'), { label: group });
+      for (const m of PLACE_MOTIONS.filter((m) => m.group === group)) og.append(Object.assign(el('option'), { value: m.id, textContent: m.label, selected: m.id === def.id }));
+      pick.append(og);
+    }
+    pick.addEventListener('change', () => {
+      // A new motion starts from its own defaults; the shared speed and glow carry over.
+      for (const knob of def.knobs) delete p[knob.key];
+      set('motion', pick.value);
+      redraw();
+    });
+    const help = button('lb-help-btn', '', 'info');
+    help.title = 'How to set up the data for this motion';
+    help.setAttribute('aria-label', help.title);
+    const panel = el('div', 'lb-place-help');
+    panel.hidden = true;
+    help.addEventListener('click', () => {
+      panel.hidden = !panel.hidden;
+      help.classList.toggle('on', !panel.hidden);
+    });
+    const kind = PLACE_DATA_HELP[def.data];
+    panel.append(
+      el('strong', undefined, kind.file),
+      el('p', undefined, kind.what),
+      el('pre', undefined, kind.example),
+      el('p', undefined, `Columns it reads: ${def.columns.join(', ')}.`),
+      ...(def.extra ? [el('p', undefined, def.extra)] : []),
+    );
+    rows.push(field('Motion', pick, help), el('p', 'lb-hint', def.about), panel);
+
+    // Its other files.
+    const datasets = vectorDatasets(host.store);
+    const choose = (label: string, key: string, list: { name: string }[], none: string | null, preferred: string[]) => {
+      const select = el('select');
+      if (none) select.append(Object.assign(el('option'), { value: '', textContent: none }));
+      if (p[key] === undefined || (p[key] && !list.some((d) => d.name === p[key]))) p[key] = preferred.find((n) => list.some((d) => d.name === n)) ?? (none ? null : list[0]?.name ?? null);
+      for (const d of list) select.append(Object.assign(el('option'), { value: d.name, textContent: d.name, selected: d.name === p[key] }));
+      select.addEventListener('change', () => set(key, select.value || null));
+      rows.push(field(label, select));
+    };
+    const csvs = datasets.filter((d) => /\.csv$/i.test(d.path));
+    if (def.uses?.includes('streets')) choose('Streets', 'streets', datasets, null, ['roads', 'walkways', 'streets']);
+    if (def.uses?.includes('buildings')) choose('Buildings', 'buildings', datasets, null, ['buildings', 'buildings_2d']);
+    if (def.data === 'targets' || def.data === 'raster' || def.data === 'links') choose(def.data === 'links' ? 'Stars' : 'Targets', 'targets', datasets, 'None', []);
+    if (def.data === 'activity' || def.data === 'audio') choose('Activity', 'activity', csvs, 'Ambient (no file)', ['activity']);
+    if (def.data === 'activity' && p.activity) rows.push(field('Plays through in', slider(p.cycle_s ?? 24, 6, 120, 1, ' s', (v) => set('cycle_s', v))));
+    if (def.data === 'flows') choose('Flows', 'flows', csvs, 'Made up from weights', ['flows']);
+    if (def.data === 'links') choose('Links', 'links', csvs, 'By category', ['links']);
+    rows.push(field('Colours', segmented([['each', 'One each'], ['category', 'By category']] as const, p.colours === 'category' ? 'category' : 'each', (v) => set('colours', v), 'Colours')));
+
+    // Knobs: the shared speed and glow, then the motion's own.
+    for (const knob of [...SHARED_KNOBS, ...def.knobs]) rows.push(field(knob.label, slider(p[knob.key] ?? knob.value, knob.min, knob.max, knob.step, knob.unit ?? '', (v) => set(knob.key, v))));
+    return rows;
+  };
+
   const motionTab = (): HTMLElement[] => {
     const nodes: HTMLElement[] = [el('p', 'lb-lead', 'Motion is the strongest thing on the table: keep one kind in focus, and make any second one quieter.')];
     for (const look of recipe.look!) {
@@ -777,12 +914,38 @@ export function builderSection(host: BuilderHost, manifest: LayerManifest, butto
             });
             weight.addEventListener('change', () => set('weight', weight.value || null));
             rows.push(field('Pull by', weight));
+          } else if (name === 'timeline') {
+            const column = el('select');
+            void shapes(look).then((s) => {
+              const features = look.block === 'points' ? s?.spots : look.block === 'lines' ? s?.paths : s?.areas;
+              const found = timeColumns((features ?? []).map((f) => f.properties ?? {}));
+              if (found.length === 0) column.append(Object.assign(el('option'), { value: '', textContent: 'No date or year column' }));
+              if (!p.column && found[0]) set('column', found[0]);
+              for (const c of found) column.append(Object.assign(el('option'), { value: c, textContent: c, selected: c === p.column }));
+            });
+            column.addEventListener('change', () => set('column', column.value || null));
+            rows.push(field('Time from', column));
+            rows.push(field('Takes', slider(p.duration_s ?? 12, 4, 60, 1, ' s', (v) => set('duration_s', v))));
+            rows.push(field('Hold at the end', slider(p.hold_s ?? 3, 0, 15, 0.5, ' s', (v) => set('hold_s', v))));
+            const windowRow = el('div', 'lb-sub');
+            const drawWindow = () => {
+              windowRow.hidden = p.keep ?? true;
+              windowRow.replaceChildren(field('Stays for', slider(Math.round((p.window ?? 0.15) * 100), 2, 50, 1, ' %', (v) => set('window', v / 100))));
+            };
+            drawWindow();
+            rows.push(field('Features', segmented([['keep', 'Stay'], ['window', 'Come and go']] as const, (p.keep ?? true) ? 'keep' : 'window', (v) => {
+              set('keep', v === 'keep');
+              drawWindow();
+            }, 'Features')), windowRow);
+            rows.push(el('p', 'lb-hint', 'No date is written on the map. Showing the current date on the controller comes with the controller legend (#76).'));
+          } else if (name === 'place') {
+            rows.push(...placeRows(p, set, () => draw()));
           }
           sub.replaceChildren(...rows);
         };
         const on = toggle(Boolean(existing), (checked) => {
           recipe.motion = recipe.motion!.filter((m) => !(m.on === look.id && m.block === name));
-          if (checked) recipe.motion!.push({ id: `${look.id}-${name}`, block: name, on: look.id, props: { ...(MOTION_DEFAULTS as Record<string, object>)[name] } });
+          if (checked) recipe.motion!.push({ id: `${look.id}-${name}`, block: name, on: look.id, props: name === 'place' ? { motion: 'ripples' } : { ...(MOTION_DEFAULTS as Record<string, object>)[name] } });
           save();
           draw();
         }, title);

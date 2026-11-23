@@ -64,7 +64,7 @@ export default defineLayer<Params>({
     async function reshadow() {
       if (!sharpWanted() || sharp === false) return;
       const mine = ++maskRequest;
-      const frame = await ctx.model.sunShadowMask(sunNow());
+      const frame = await ctx.model.sunShadowMask(sunNow(), () => void reshadow());
       if (mine !== maskRequest || !sharpWanted()) return;
       const first = sharp === undefined;
       sharp = frame !== null;

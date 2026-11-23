@@ -87,6 +87,7 @@ async fn main() -> anyhow::Result<()> {
                 bind: SocketAddr::from((ip, port)),
                 backend,
                 session: mrs_host::SessionOptions { public_url, ..Default::default() },
+                sources: std::sync::Arc::new(open_sources()),
             })
             .await?;
             let code = &host.state.hub.session().code;
@@ -104,6 +105,24 @@ async fn main() -> anyhow::Result<()> {
             new_site(&dir, name, lon, lat, width_m, height_m, rotation_deg)
         }
         Command::Bench { site } => bench(&site),
+    }
+}
+
+/// The desktop app's sources, so keys added in its Sources page work here too. Keys stay
+/// in the operating system's keychain. `MRS_SOURCES` names another sources.json.
+fn open_sources() -> mrs_host::Sources {
+    use mrs_host::sources::{app_config_dir, Keychain, Sources};
+    let path = std::env::var_os("MRS_SOURCES").map(PathBuf::from).or_else(|| app_config_dir().map(|d| d.join("sources.json")));
+    match path.map(|p| (Sources::open(p.clone(), Box::new(Keychain)), p)) {
+        Some((Ok(sources), path)) => {
+            tracing::info!("sources from {}", path.display());
+            sources
+        }
+        Some((Err(e), path)) => {
+            tracing::warn!("{} could not be read ({e}); no sources", path.display());
+            Sources::in_memory()
+        }
+        None => Sources::in_memory(),
     }
 }
 
