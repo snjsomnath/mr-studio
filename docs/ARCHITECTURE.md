@@ -88,6 +88,7 @@ docs/contracts/   the interface contracts below
 | App, display and session model, wire protocol | [contracts/session.md](contracts/session.md) | `mrs-host` |
 | Mobile controller | [contracts/mobile.md](contracts/mobile.md) | `@mrstudio/runtime` |
 | TV dashboard: panels, widgets, density budget, themes | [contracts/dashboard.md](contracts/dashboard.md), design in [DASHBOARD.md](DASHBOARD.md) | `@mrstudio/dashboard` |
+| Visualisation philosophy: what goes on which surface, encodings, colour, motion, learnings from the table | design in [visualisation.md](visualisation.md) (living document) | all layers |
 
 ## Key decisions
 

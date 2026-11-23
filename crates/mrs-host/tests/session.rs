@@ -846,6 +846,24 @@ async fn a_new_table_takes_its_buildings_without_a_restart() {
     let (status, report) = http_post(&host, "/api/data/import?target=slideshow", "s.json", b"{}").await;
     assert_eq!(status, 400);
     assert!(report["error"].as_str().unwrap().contains("not something a table can take"));
+
+    // The table is renamed, moved and turned: the site is rewritten, the scene re-baked and every surface told.
+    let place = serde_json::to_vec(&json!({ "name": "Harbour", "origin": { "lon": 11.968, "lat": 57.6996 }, "extent": { "width_m": 400, "height_m": 250, "rotation_deg": 15 } })).unwrap();
+    let (status, answer) = http_post(&host, "/api/site/place", "", &place).await;
+    assert_eq!(status, 200, "{answer}");
+    assert_eq!(answer["site"]["name"], "Harbour");
+    let changed = table.event("site.changed").await;
+    assert_eq!(changed["site"]["extent"], json!({ "width_m": 400.0, "height_m": 250.0, "rotation_deg": 15.0 }));
+    assert_eq!(changed["site"]["grid"]["width"], 400);
+    assert_eq!(changed["site"]["data"]["buildings"], "data/buildings.geojson", "the data stays");
+    let saved: Value = serde_json::from_str(&std::fs::read_to_string(dir.join("site.json")).unwrap()).unwrap();
+    assert_eq!(saved["origin"], json!({ "lon": 11.968, "lat": 57.6996 }));
+    // A bad place is refused with the reason and changes nothing.
+    let bad =
+        serde_json::to_vec(&json!({ "origin": { "lon": 11.968, "lat": 95 }, "extent": { "width_m": 400, "height_m": 250 } })).unwrap();
+    let (status, answer) = http_post(&host, "/api/site/place", "", &bad).await;
+    assert_eq!(status, 422);
+    assert!(answer["error"].as_str().unwrap().contains("latitude"), "{answer}");
     host.shutdown().await;
     let _ = std::fs::remove_dir_all(&base);
 }

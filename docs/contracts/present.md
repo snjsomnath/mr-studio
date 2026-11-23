@@ -83,6 +83,7 @@ Most projectors light more than the model. The table surface works out the free 
 - A side is used only if it has at least about 4 cm free. Sizes are in cm and turned into px through the calibration.
 - What a ribbon shows comes from the layer: `panels` entries marked `"ribbon": true`, drawn with the dashboard widgets in a strip layout. With no layer open, the core **join QR** ribbon shows if phones can join.
 - One ribbon is shown at a time: the open layer's, otherwise the home ribbon. If more than one is available, the operator can pick on the controller.
+- **The front edge comes first** (learned on the table, 2026-11-23, [visualisation.md](../visualisation.md) S5). A viewer at one end of a table-height model cannot see a ribbon on the far edge, because the model hides it. A table setting names the front edge (proposed: `table.front`, default `bottom`), and a layer's at-a-glance ribbon goes there.
 - Ribbons are outside the model, so they don't break the "clean map" rule. Keep them glanceable (numbers, small charts, a QR), never paragraphs.
 
 ## Settings (per #73)

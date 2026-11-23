@@ -47,6 +47,16 @@ pub struct Site {
     pub calibration: Option<Calibration>,
 }
 
+/// Where a table is and how much ground it covers: what `Site::place` writes.
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct Place {
+    /// A new name, or `None` to keep it.
+    #[serde(default)]
+    pub name: Option<String>,
+    pub origin: LonLat,
+    pub extent: Extent,
+}
+
 /// What surfaces need to know about the site.
 #[derive(Debug, Clone, Serialize)]
 pub struct SiteInfo {
@@ -445,6 +455,71 @@ impl Site {
         let temporary = self.dir.join("site.json.tmp");
         std::fs::write(&temporary, text).map_err(io)?;
         std::fs::rename(&temporary, &path).map_err(io)
+    }
+
+    /// Renames the table, moves it, resizes or turns it: rewrites `name`, `origin` and `extent`
+    /// of `site.json` (and the table's height, so its shape follows) and returns the site as
+    /// it now loads. Data in WGS84 or on a national grid stays where it is in the world, so the
+    /// next bake shows whatever the new extent covers. A raw height grid is tied to the old
+    /// extent, so a table with one cannot move or change size.
+    pub fn place(&self, place: &Place) -> Result<Site, SiteError> {
+        let invalid = |message: &str| SiteError::Invalid(vec![message.to_string()]);
+        let name = place.name.as_deref().map(str::trim);
+        if name.is_some_and(|n| n.is_empty() || n.chars().count() > 60) {
+            return Err(invalid("the name needs between 1 and 60 characters"));
+        }
+        let LonLat { lon, lat } = place.origin;
+        if !(lon.is_finite() && lat.is_finite() && (-180.0..=180.0).contains(&lon) && (-85.0..=85.0).contains(&lat)) {
+            return Err(invalid("the place needs a latitude between -85 and 85 and a longitude between -180 and 180"));
+        }
+        let Extent { width_m, height_m, rotation_deg } = place.extent;
+        if !(width_m.is_finite() && height_m.is_finite() && (10.0..=50_000.0).contains(&width_m) && (10.0..=50_000.0).contains(&height_m)) {
+            return Err(invalid("the width and the height must each be between 10 m and 50 km"));
+        }
+        if !rotation_deg.is_finite() {
+            return Err(invalid("the rotation must be a number of degrees"));
+        }
+        let rotation_deg = rotation_deg.rem_euclid(360.0);
+        let m = &self.manifest;
+        let moved = m.origin != place.origin
+            || m.extent.width_m != width_m
+            || m.extent.height_m != height_m
+            || m.extent.rotation_deg != rotation_deg;
+        let raw_terrain = m.scene.terrain.as_ref().is_some_and(|t| {
+            let path = t.path.to_ascii_lowercase();
+            !(path.ends_with(".tif") || path.ends_with(".tiff"))
+        });
+        if moved && raw_terrain {
+            return Err(invalid(
+                "the ground of this table is a height grid made for its current place and size, so the table cannot move; bring in the ground as a GeoTIFF first",
+            ));
+        }
+
+        let path = self.dir.join("site.json");
+        let io = |source| SiteError::Io { path: path.clone(), source };
+        let parse = |message: String| SiteError::Parse { path: path.clone(), message };
+        let text = std::fs::read_to_string(&path).map_err(io)?;
+        let mut value: serde_json::Value = serde_json::from_str(&text).map_err(|e| parse(e.to_string()))?;
+        migrate::upgrade(&mut value).map_err(parse)?;
+        if let Some(name) = name {
+            value["name"] = name.into();
+        }
+        value["origin"] = serde_json::json!({ "lon": lon, "lat": lat });
+        value["extent"] = serde_json::json!({ "width_m": width_m, "height_m": height_m, "rotation_deg": rotation_deg });
+        // The physical table keeps its width; its height follows the ground's shape.
+        if let Some(width_cm) = value["table"]["width_cm"].as_f64() {
+            value["table"]["height_cm"] = ((width_cm * height_m / width_m * 100.0).round() / 100.0).into();
+        }
+        let manifest: SiteManifest = serde_json::from_value(value.clone()).map_err(|e| parse(e.to_string()))?;
+        let problems = Site { dir: self.dir.clone(), manifest, calibration: self.calibration }.problems();
+        if !problems.is_empty() {
+            return Err(SiteError::Invalid(problems));
+        }
+        let text = serde_json::to_string_pretty(&value).map_err(|e| parse(e.to_string()))? + "\n";
+        let temporary = self.dir.join("site.json.tmp");
+        std::fs::write(&temporary, text).map_err(io)?;
+        std::fs::rename(&temporary, &path).map_err(io)?;
+        Site::load(&self.dir)
     }
 
     /// Builds the engine scene from the site's sources.

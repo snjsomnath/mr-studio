@@ -1120,3 +1120,44 @@ body[data-role='edit'] .ed-surface .table-frame {
   color: var(--ed-text);
   background-color: var(--ed-panel);
 }
+
+/* ---- First-run fixes: the guide's state, ways to missing data, operator notes ---- */
+.ed-button.is-pressed {
+  background: var(--ed-accent-soft);
+  border-color: var(--ed-accent);
+  color: var(--ed-accent);
+}
+
+.ed-tool.is-needs {
+  opacity: 0.6;
+}
+
+.ed-tool.is-needs:hover {
+  opacity: 1;
+}
+
+.ed-phones.is-off,
+.ed-engine {
+  color: inherit;
+}
+
+.ed-phones.is-off {
+  color: #9a5b00;
+}
+
+.wz-bring {
+  margin-top: 6px;
+}
+
+.wz-place.is-wanted > .wz-choice {
+  outline: 2px solid var(--ed-accent);
+  outline-offset: -2px;
+  border-radius: 8px;
+}
+
+.wz-return {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+}

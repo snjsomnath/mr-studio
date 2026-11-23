@@ -88,4 +88,41 @@ mod tests {
         assert!(!bad.exists());
         std::fs::remove_dir_all(&base).unwrap();
     }
+
+    #[test]
+    fn a_table_can_be_renamed_moved_resized_and_turned() {
+        let base = std::env::temp_dir().join(format!("mrs-place-{}", std::process::id()));
+        let dir = base.join("harbour");
+        create(&dir, "Harbour", 11.97, 57.69, 1000.0, 600.0, 0.0).unwrap();
+        let site = Site::load(&dir).unwrap();
+        let place = |name: Option<&str>, lon, lat, w, h, r| crate::Place {
+            name: name.map(String::from),
+            origin: crate::LonLat { lon, lat },
+            extent: crate::Extent { width_m: w, height_m: h, rotation_deg: r },
+        };
+        let moved = site.place(&place(Some(" Old harbour "), 11.95, 57.70, 1600.0, 1000.0, -30.0)).unwrap();
+        assert_eq!(moved.manifest.name, "Old harbour");
+        assert_eq!(moved.manifest.origin, crate::LonLat { lon: 11.95, lat: 57.70 });
+        assert_eq!(moved.manifest.extent, crate::Extent { width_m: 1600.0, height_m: 1000.0, rotation_deg: 330.0 });
+        assert_eq!(moved.manifest.table.unwrap().height_cm, 62.5, "the table keeps its width and takes the new shape");
+        assert_eq!(moved.manifest.layers.len(), 2, "everything else is kept");
+        let kept = moved.place(&place(None, 11.95, 57.70, 1600.0, 1000.0, 330.0)).unwrap();
+        assert_eq!(kept.manifest.name, "Old harbour", "no name keeps the name");
+
+        assert!(site.place(&place(Some(""), 11.95, 57.70, 1000.0, 600.0, 0.0)).is_err());
+        assert!(site.place(&place(None, 11.95, 97.0, 1000.0, 600.0, 0.0)).is_err());
+        assert!(site.place(&place(None, 11.95, 57.70, 0.0, 600.0, 0.0)).is_err());
+        assert_eq!(Site::load(&dir).unwrap().manifest.name, "Old harbour", "a refused change writes nothing");
+
+        // A raw height grid is made for one extent, so the table stays where it is.
+        let mut text: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(dir.join("site.json")).unwrap()).unwrap();
+        text["scene"]["terrain"] = serde_json::json!({ "path": "data/terrain.f32", "width": 2, "height": 2 });
+        std::fs::write(dir.join("data/terrain.f32"), [0u8; 16]).unwrap();
+        std::fs::write(dir.join("site.json"), text.to_string()).unwrap();
+        let grid = Site::load(&dir).unwrap();
+        let refused = grid.place(&place(None, 11.0, 57.0, 1600.0, 1000.0, 330.0)).unwrap_err().to_string();
+        assert!(refused.contains("GeoTIFF"), "{refused}");
+        assert!(grid.place(&place(Some("Renamed"), 11.95, 57.70, 1600.0, 1000.0, 330.0)).is_ok(), "renaming alone is fine");
+        std::fs::remove_dir_all(&base).unwrap();
+    }
 }

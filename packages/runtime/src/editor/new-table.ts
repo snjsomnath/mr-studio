@@ -1,21 +1,12 @@
 import { el } from '../controls.ts';
 import { icon } from './icons.ts';
+import { parsePlace } from './place.ts';
 import { WIZARD_STEPS, stepList } from './wizard.ts';
 import './editor.css';
 
 type Invoke = (command: string, args?: object) => Promise<unknown>;
 
-/**
- * Reads a place from what someone pasted: plain coordinates ("57.6898, 11.9742") or a
- * link from a map site, which carries them as `@57.6898,11.9742` or `#map=15/57.6898/11.9742`.
- */
-export function parsePlace(text: string): { lat: number; lon: number } | null {
-  const match = /(-?\d{1,2}\.\d+)\s*[,/\s]\s*(-?\d{1,3}\.\d+)/.exec(text);
-  if (!match) return null;
-  const lat = Number(match[1]);
-  const lon = Number(match[2]);
-  return Math.abs(lat) <= 90 && Math.abs(lon) <= 180 ? { lat, lon } : null;
-}
+export { parsePlace } from './place.ts';
 
 /**
  * The first step of the setup wizard, for a table that does not exist yet: its name,
@@ -34,7 +25,7 @@ export function newTable(root: HTMLElement): void {
 
   const panel = el('aside', 'wz');
   const head = el('header', 'wz-head');
-  head.append(stepList(['Name and place', ...WIZARD_STEPS.slice(1)], 0));
+  head.append(stepList(WIZARD_STEPS, 0));
   const body = el('form', 'wz-body wz-form');
   body.noValidate = true;
   body.append(el('h2', undefined, 'Name and place'), el('p', 'wz-lead', 'A table shows one piece of the world. Say what it is called, where it is and how much ground it covers.'));

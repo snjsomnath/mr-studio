@@ -494,11 +494,10 @@ async function main() {
     await tv.locator('.layer-button[aria-pressed="false"]', { hasText: 'Sunlight' }).waitFor();
     await tv.locator('.layer-button[aria-pressed="true"]', { hasText: 'Sketch' }).waitFor();
     if (shots) await tv.screenshot({ path: path.join(shots, 'tv-buttons.png') });
-    // Home closes every layer and leaves the map at rest.
-    await tv.getByRole('button', { name: 'Home', exact: true }).click();
+    // There is no Home button: pressing the open layer again closes it, and the editor goes back to the map at rest.
+    assert.equal(await tv.getByRole('button', { name: 'Home', exact: true }).count(), 0);
+    await tv.locator('.layer-button', { hasText: 'Getting here' }).click();
     await tv.locator('.layer-button[aria-pressed="false"]', { hasText: 'Getting here' }).waitFor();
-    await tv.locator('.layer-button[aria-pressed="false"]', { hasText: 'Sketch' }).waitFor();
-    await tv.getByText('Choose a layer on either side').waitFor();
     await editor.locator('.ed-row[data-context="home"][aria-current="true"]').waitFor();
     await editor.locator('.ed-tree .ed-row[data-layer="mobility"]').click();
     if (shots) await editor.screenshot({ path: path.join(shots, 'editor.png') });
@@ -518,6 +517,27 @@ async function main() {
     const guide = await open('/edit?welcome=1', { width: 1440, height: 900 });
     // It starts with the place itself: the files the table is made from. The host checks a file, then brings it in.
     await guide.locator('.wz h2', { hasText: 'Your place' }).waitFor();
+    await guide.getByRole('button', { name: 'Close guide' }).waitFor();
+    // Back reaches the table's name and place, which can be changed: the table moves and every surface starts again.
+    await guide.getByRole('button', { name: 'Back' }).click();
+    await guide.locator('.wz h2', { hasText: 'Name and place' }).waitFor();
+    assert.equal(await guide.getByRole('button', { name: 'Back' }).isDisabled(), true);
+    assert.equal(await guide.getByLabel('Name').inputValue(), 'Sample district');
+    await guide.getByRole('button', { name: 'Next' }).click();
+    await guide.locator('.wz h2', { hasText: 'Your place' }).waitFor();
+    await guide.locator('.wz-step button', { hasText: 'Name and place' }).click();
+    await guide.getByLabel('Name').fill('Sample square');
+    // The sample's ground is a raw height grid made for its extent, so it cannot move; the guide says why and stays.
+    await guide.getByLabel('Width, metres').fill('800');
+    await guide.getByRole('button', { name: 'Move the table' }).click();
+    await guide.getByRole('alert').getByText(/GeoTIFF/).waitFor();
+    assert.equal(JSON.parse(fs.readFileSync(path.join(site, 'site.json'), 'utf8')).name, 'Sample district', 'a refused move writes nothing');
+    // A new name alone is fine.
+    await guide.getByLabel('Width, metres').fill('1000');
+    await guide.getByRole('button', { name: 'Move the table' }).click();
+    await guide.waitForFunction(() => document.querySelector('.wz h2')?.textContent === 'Your place' && document.querySelector('.ed-name strong')?.textContent === 'Sample square');
+    assert.equal(JSON.parse(fs.readFileSync(path.join(site, 'site.json'), 'utf8')).name, 'Sample square');
+    await tv.locator('.controller-header p', { hasText: 'Sample square' }).waitFor();
     assert.equal(await guide.locator('.wz-place[data-target="buildings"] .wz-state').textContent(), 'On the table');
     await guide.getByLabel('File for Trees').setInputFiles(path.join(site, 'data', 'trees.geojson'));
     await guide.locator('.wz-place[data-target="trees"] .wz-summary', { hasText: /trees/ }).waitFor();
@@ -545,16 +565,19 @@ async function main() {
     assert.equal(await ground.getByRole('button', { name: 'Add to the table' }).isDisabled(), true);
     await ground.getByRole('button', { name: 'Cancel' }).click();
     await guide.getByRole('button', { name: 'Next' }).click();
-    await guide.locator('.wz h2', { hasText: 'The map at rest' }).waitFor();
+    await guide.locator('.wz h2', { hasText: 'At rest' }).waitFor();
     assert.equal(await guide.locator('.wz input[data-layer="trees"]').isChecked(), true);
     await guide.getByRole('button', { name: 'Next' }).click();
-    // A layer switched on joins the scene and is saved; switched off it is gone again.
-    await guide.locator('.wz-choice', { hasText: 'Building blocks' }).click();
-    await guide.waitForFunction(() => document.querySelector('.wz input[data-layer="blocks-demo"]')?.checked === true);
-    assert.equal(savedLayers().at(-1).use, 'blocks-demo');
-    await guide.locator('.wz-choice', { hasText: 'Building blocks' }).click();
-    await guide.waitForFunction(() => document.querySelector('.wz input[data-layer="blocks-demo"]')?.checked === false);
-    assert.equal(savedLayers().some((l) => l.use === 'blocks-demo'), false);
+    // The building blocks demo is for developers, not offered to authors.
+    assert.equal(await guide.locator('.wz input[data-layer="blocks-demo"]').count(), 0);
+    // A layer switched off leaves the scene and is saved; switched on it is back, its button on the emptier side.
+    await guide.locator('.wz-choice', { hasText: 'Sketch' }).click();
+    await guide.waitForFunction(() => document.querySelector('.wz input[data-layer="sketch"]')?.checked === false);
+    assert.equal(savedLayers().some((l) => l.use === 'sketch'), false);
+    await guide.locator('.wz-choice', { hasText: 'Sketch' }).click();
+    await guide.waitForFunction(() => document.querySelector('.wz input[data-layer="sketch"]')?.checked === true);
+    assert.equal(savedLayers().at(-1).use, 'sketch');
+    assert.ok(['left', 'right'].includes(savedLayers().at(-1).button.side));
     await guide.getByRole('button', { name: 'Next' }).click();
     // Buttons are named beside the live controller.
     const live = guide.frameLocator('.ed-preview iframe');
@@ -573,10 +596,13 @@ async function main() {
     await guide.getByRole('button', { name: 'Fine-tune in the editor' }).click();
     await guide.locator('.ed-tree .ed-row[data-context="home"]').waitFor();
     assert.equal(await guide.locator('.wz').count(), 0);
+    // A reload stays in the editor, and the guide's button says it is closed.
+    assert.equal(await guide.evaluate(() => location.search.includes('welcome')), false);
+    await guide.getByRole('button', { name: 'Setup guide' }).waitFor();
     // A table with its place, its map at rest and its layers has nothing left to ask for.
     assert.equal(await guide.locator('.ed-next').isVisible(), false);
     await guide.getByRole('button', { name: 'Setup guide' }).click();
-    await guide.locator('.wz h2', { hasText: 'Set up Sample district' }).waitFor();
+    await guide.locator('.wz h2', { hasText: 'Name and place' }).waitFor();
     await guide.close();
 
     // The wizard's first step is a page of its own, for a table that does not exist yet. The app creates the table.
@@ -615,7 +641,7 @@ async function main() {
     await shelled.getByRole('button', { name: 'Present', exact: true }).click();
     await shelled.getByRole('button', { name: 'Stop presenting' }).click();
     await shelled.getByRole('button', { name: 'Present', exact: true }).waitFor();
-    await shelled.getByRole('button', { name: 'Home', exact: true }).click();
+    await shelled.getByRole('button', { name: 'All tables', exact: true }).click();
     assert.equal(await shelled.evaluate(() => window.mrsShellControls), true);
     assert.deepEqual(await shelled.evaluate(() => window.shellCalls.filter((c) => c !== 'presenting_state')), ['present', 'stop_presenting', 'open_home']);
     await shelled.close();
