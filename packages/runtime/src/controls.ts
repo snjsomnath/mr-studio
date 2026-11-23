@@ -154,7 +154,8 @@ export function buttonSides(store: Store): Map<string, 'left' | 'right'> {
   const { state } = store;
   const ids = [...state.scene].reverse().filter((id) => {
     const manifest = store.manifest(state.layers[id]?.layer ?? '');
-    return manifest !== undefined && !isAmbient(manifest);
+    // A layer's items have no button: they come on with their layer.
+    return manifest !== undefined && !isAmbient(manifest) && !state.layers[id]?.parent;
   });
   const sides = new Map<string, 'left' | 'right'>();
   const rail = state.site.tv?.rail;
