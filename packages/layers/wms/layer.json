@@ -6,12 +6,12 @@
   "icon": "map",
   "category": "media",
   "controls": [
-    { "id": "url", "type": "text", "label": "Service address", "default": "" },
-    { "id": "signin", "type": "text", "label": "Sign-in", "default": "", "sources": ["wms", "lantmateriet", "arcgis"] },
-    { "id": "layers", "type": "text", "label": "Layers", "default": "" },
-    { "id": "styles", "type": "text", "label": "Styles", "default": "" },
-    { "id": "source", "type": "text", "label": "Source", "default": "" },
-    { "id": "opacity", "type": "range", "label": "Opacity", "min": 0.1, "max": 1, "step": 0.05, "default": 0.9 }
+    { "id": "url", "type": "text", "label": "Service address", "default": "", "tier": "more" },
+    { "id": "signin", "type": "text", "label": "Sign-in", "default": "", "sources": ["wms", "lantmateriet", "arcgis"], "tier": "more" },
+    { "id": "layers", "type": "text", "label": "Layers", "default": "", "tier": "more" },
+    { "id": "styles", "type": "text", "label": "Styles", "default": "", "tier": "more" },
+    { "id": "source", "type": "text", "label": "Source", "default": "", "tier": "more" },
+    { "id": "opacity", "type": "range", "label": "Opacity", "min": 0.1, "max": 1, "step": 0.05, "default": 0.9, "tier": "more" }
   ],
   "tools": []
 }

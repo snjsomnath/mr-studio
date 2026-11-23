@@ -9,9 +9,9 @@
   "controls": [
     { "id": "density", "type": "range", "label": "Cars per kilometre of street", "min": 0, "max": 40, "step": 1, "default": 10, "phone": true },
     { "id": "speed", "type": "range", "label": "Speed", "min": 0, "max": 80, "step": 5, "unit": "km/h", "default": 40 },
-    { "id": "size", "type": "range", "label": "Car size", "min": 1, "max": 4, "step": 0.25, "default": 2 },
+    { "id": "size", "type": "range", "label": "Car size", "min": 1, "max": 4, "step": 0.25, "default": 2, "tier": "more" },
     { "id": "headlights", "type": "toggle", "label": "Headlights", "default": true },
-    { "id": "opacity", "type": "range", "label": "Opacity", "min": 0.1, "max": 1, "step": 0.05, "default": 1 }
+    { "id": "opacity", "type": "range", "label": "Opacity", "min": 0.1, "max": 1, "step": 0.05, "default": 1, "tier": "more" }
   ],
   "tools": []
 }

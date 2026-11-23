@@ -17,9 +17,9 @@
       ]
     },
     { "id": "trips", "type": "toggle", "label": "Show trips", "default": true },
-    { "id": "routes", "type": "toggle", "label": "Show their routes", "default": true, "visibleWhen": { "trips": true } },
-    { "id": "cells", "type": "toggle", "label": "Show the map of values", "default": true },
-    { "id": "opacity", "type": "range", "label": "Opacity", "min": 0.1, "max": 1, "step": 0.05, "default": 1 }
+    { "id": "routes", "type": "toggle", "label": "Show their routes", "default": true, "visibleWhen": { "trips": true }, "tier": "more" },
+    { "id": "cells", "type": "toggle", "label": "Show the map of values", "default": true, "tier": "more" },
+    { "id": "opacity", "type": "range", "label": "Opacity", "min": 0.1, "max": 1, "step": 0.05, "default": 1, "tier": "more" }
   ],
   "tools": []
 }
