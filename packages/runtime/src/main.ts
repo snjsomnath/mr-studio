@@ -1,7 +1,7 @@
 import { Connection } from '@mrstudio/sdk';
 import type { Role } from '@mrstudio/sdk';
 
-import { themeVariables } from '@mrstudio/dashboard';
+import { luminance, themeVariables } from '@mrstudio/dashboard';
 import '@mrstudio/dashboard/src/dashboard.css';
 
 import { Composer } from './compose.ts';
@@ -94,6 +94,12 @@ async function main() {
       if (tv?.theme && !editing) document.documentElement.style.setProperty(own, theme[token]!);
       else document.documentElement.style.removeProperty(own);
     }
+    // The look beyond colour (#126): the surface, the layer buttons and how much chrome there is.
+    const themed = Boolean(tv?.theme) && !editing;
+    document.body.dataset.surface = themed ? theme['--mrs-panel-style']! : 'filled';
+    document.body.dataset.railLook = themed ? theme['--mrs-rail-look']! : 'tiles';
+    document.body.dataset.density = themed ? theme['--mrs-density']! : 'comfortable';
+    document.documentElement.style.colorScheme = themed && luminance(theme['--mrs-bg']!) > 0.4 ? 'light' : '';
     document.body.dataset.rail = tv?.rail ?? 'left';
     document.body.dataset.railStyle = tv?.rail_style === 'labelled' ? 'labelled' : 'icons';
   };

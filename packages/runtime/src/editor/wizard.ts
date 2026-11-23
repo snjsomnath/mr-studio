@@ -155,8 +155,12 @@ export class Wizard {
       const swatch = el('span', 'wz-theme-swatch');
       swatch.style.background = t['color.background']!;
       const panel = el('span', 'wz-theme-panel');
-      panel.style.background = t['color.panel']!;
-      panel.style.borderColor = t['color.line']!;
+      // The card shows the look too (#126): a filled, outlined, frosted or bare panel.
+      const surface = t['density'] === 'minimal' ? 'none' : (t['panel.style'] ?? 'filled');
+      panel.dataset.surface = surface;
+      panel.style.background = surface === 'filled' ? t['color.panel']! : surface === 'glass' ? `color-mix(in srgb, ${t['color.panel']} 55%, transparent)` : 'transparent';
+      panel.style.borderColor = surface === 'none' ? 'transparent' : surface === 'glass' ? `color-mix(in srgb, ${t['color.text']} 18%, transparent)` : t['color.line']!;
+      if (surface === 'glass') swatch.style.background = `radial-gradient(90% 120% at 15% 0%, color-mix(in srgb, ${t['color.accent']} 35%, transparent), transparent 70%), ${t['color.background']}`;
       const accent = el('span', 'wz-theme-accent');
       accent.style.background = t['color.accent']!;
       const data = el('span', 'wz-theme-data');
