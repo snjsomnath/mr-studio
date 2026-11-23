@@ -10,8 +10,12 @@
  */
 
 .mrs-dash {
-  /* Rule tokens. The unit is 1% of the canvas height, less on a canvas narrower than 4:3. */
-  --mrs-u: min(1cqh, 0.75cqw);
+  /*
+   * Rule tokens. The unit is 1% of the canvas height, less on a canvas narrower than 4:3.
+   * A host can set --mrs-u-floor so text never shrinks below it on a short canvas, such as
+   * the controller with a layer's hero open; that canvas then gets fewer rows (view.ts).
+   */
+  --mrs-u: max(min(1cqh, 0.75cqw), var(--mrs-u-floor, 0px));
   --mrs-margin: calc(3 * var(--mrs-u));
   --mrs-gap: calc(1.5 * var(--mrs-u));
   --mrs-pad: calc(1.8 * var(--mrs-u));
@@ -46,9 +50,18 @@
 .mrs-page {
   display: grid;
   grid-template-columns: repeat(12, minmax(0, 1fr));
-  grid-template-rows: repeat(6, minmax(0, 1fr));
+  grid-template-rows: repeat(var(--mrs-rows, 6), minmax(0, 1fr));
   gap: var(--mrs-gap);
   padding: var(--mrs-margin);
+}
+
+/* Measures the unit for view.ts. */
+.mrs-probe {
+  position: absolute;
+  visibility: hidden;
+  pointer-events: none;
+  width: 0;
+  height: var(--mrs-u);
 }
 
 /* ---- Panel ---- */
@@ -97,6 +110,12 @@
   display: flex;
   flex-direction: column;
   justify-content: flex-end;
+}
+
+/* A layer's own drawing starts under the title, so what does not fit is cut at the bottom, never drawn over the title. */
+.mrs-panel[data-widget='custom'] .mrs-panel-body {
+  justify-content: flex-start;
+  overflow: hidden;
 }
 
 /* A band is one row high, so its title sits beside its content. */

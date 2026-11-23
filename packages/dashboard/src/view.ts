@@ -8,7 +8,7 @@ import type { BindSource } from './bind.ts';
 import { pack } from './pack.ts';
 import type { Page } from './pack.ts';
 import type { WidgetDefinition, WidgetHandle, WidgetRegistry } from './registry.ts';
-import { ROTATE_S } from './rules.ts';
+import { GRID, ROTATE_S } from './rules.ts';
 import { themeVariables } from './theme.ts';
 import { panelReads, validatePanel } from './validate.ts';
 import type { Issue } from './validate.ts';
@@ -31,6 +31,11 @@ export interface PanelInput {
   /** For a site's hand-made pages: the page it is on. Requires `spec.at`. */
   page?: number;
 }
+
+/** The grid's margin, gap and smallest row, in units (see dashboard.css). */
+const MARGIN_U = 3;
+const GAP_U = 1.5;
+const MIN_ROW_U = 6;
 
 export interface DashboardOptions {
   registry?: WidgetRegistry;
@@ -76,6 +81,10 @@ export class DashboardView {
   private current = 0;
   private timer: ReturnType<typeof setInterval> | undefined;
   private rotateS: number;
+  /** How many grid rows the canvas has room for. Six, unless the canvas is short. */
+  private rows: number = GRID.rows;
+  private readonly probe: HTMLElement;
+  private readonly resize: ResizeObserver | undefined;
 
   constructor(root: HTMLElement, options: DashboardOptions = {}) {
     this.root = root;
@@ -88,8 +97,31 @@ export class DashboardView {
     this.empty = h('p', 'mrs-empty', options.empty ?? '');
     this.problems = h('ul', 'mrs-issues');
     this.problems.hidden = true;
-    root.append(this.pagesEl, this.empty, this.pager, this.problems);
+    // An invisible ruler for the unit, which CSS works out from the canvas and the screen.
+    this.probe = h('div', 'mrs-probe');
+    root.append(this.pagesEl, this.empty, this.pager, this.problems, this.probe);
     this.setTheme(null);
+    if (typeof ResizeObserver !== 'undefined') {
+      this.resize = new ResizeObserver(() => this.measure());
+      this.resize.observe(root);
+    }
+  }
+
+  /**
+   * A canvas too short for six rows of the smallest readable height (the controller
+   * with a layer's hero open) gets fewer rows. Panels keep their size; what does not
+   * fit goes to the next page.
+   */
+  private measure(): void {
+    const unit = this.probe.getBoundingClientRect().height;
+    const height = this.root.clientHeight;
+    if (!unit || !height) return;
+    const [margin, gap] = [MARGIN_U * unit, GAP_U * unit];
+    const rows = Math.max(1, Math.min(GRID.rows, Math.floor((height - 2 * margin + gap) / (MIN_ROW_U * unit + gap))));
+    if (rows === this.rows) return;
+    this.rows = rows;
+    this.root.style.setProperty('--mrs-rows', String(rows));
+    this.sync();
   }
 
   /** Applies a site's theme. Tokens that break a rule are refused and reported. */
@@ -132,6 +164,7 @@ export class DashboardView {
         at: input.spec.at,
         page: input.page,
       })),
+      this.rows,
     );
 
     while (this.pagesEl.children.length < this.pages.length) this.pagesEl.append(h('div', 'mrs-page'));
@@ -170,6 +203,7 @@ export class DashboardView {
 
   destroy(): void {
     clearInterval(this.timer);
+    this.resize?.disconnect();
     for (const key of [...this.mounted.keys()]) this.unmount(key);
     this.root.replaceChildren();
   }

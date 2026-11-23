@@ -65,6 +65,9 @@ The host passes `tv` to surfaces unchanged in `SiteInfo.tv`; the TV validates it
 | `screen` | Site pages: at most 24 reads and 8 panels |
 
 A panel that fails is not mounted. The automatic layout never fails on `screen`: it adds pages.
+
+**Short canvases.** The unit is 1% of the canvas height, but a host may set `--mrs-u-floor` on the canvas so text never gets smaller than that (the controller sets 0.8% of the screen height). A canvas too short for six rows of at least 6 units then gets fewer rows, never shorter ones: the automatic layout packs into the rows there are, turns pages for the rest, and leaves out a panel taller than the canvas. A site's hand-made pages always get all six rows.
+A `custom` panel's drawing starts under its title and is cut at the bottom when it does not fit.
 Live values are cut to the same limits at run time.
 
 ## API

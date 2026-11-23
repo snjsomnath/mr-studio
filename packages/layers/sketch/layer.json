@@ -9,6 +9,9 @@
     { "id": "opacity", "type": "range", "label": "Opacity", "min": 0.2, "max": 1, "step": 0.05, "default": 1, "tier": "more" },
     { "id": "clear", "type": "action", "label": "Clear the sketch", "tier": "more" }
   ],
+  "panels": [
+    { "id": "marks", "widget": "stat", "size": "tile", "title": "Marks on the table", "props": { "value": { "bind": "shared.count" }, "caption": "From the phones" } }
+  ],
   "tools": [
     { "id": "place", "type": "point", "label": "Place" },
     { "id": "route", "type": "line", "label": "Route" },
