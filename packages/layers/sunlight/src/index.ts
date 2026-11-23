@@ -1,10 +1,11 @@
 import { defineLayer, formatHour, zonedTimeToUtc } from '@mrstudio/sdk';
-import type { Colormap, FieldStream, LayerManifest, LightHandle, SunLight, TableContext } from '@mrstudio/sdk';
+import type { Colormap, FieldFrame, FieldStream, LayerManifest, LightHandle, SunLight, TableContext } from '@mrstudio/sdk';
 
 import manifest from '../layer.json';
 import { skyColormap, skyLight, sunAt, sunDay, sunHoursColormap, thresholdColormap, treeHoursColormap, treeShadeColormap } from './look.ts';
 import { sunlightHero } from './hero.ts';
 import { SunPath } from './sun-path.ts';
+import { hasShade, isFlat } from './flat.ts';
 
 interface Params {
   mode: 'instant' | 'day';
@@ -59,6 +60,16 @@ export default defineLayer<Params>({
     // layer's own field so the table's layer order holds. The engine's shadow field, drawn from its cells, is the
     // fallback when there is no twin, and still gives trees their soft shade.
     let sharp: boolean | undefined;
+    // Whether the light field is one colour everywhere, and whether trees shade anything (#55).
+    let flat = false;
+    let treesShade = false;
+    const dark = () => flat && !(ctx.params.trees && treesShade);
+    const show = (frame: FieldFrame) => {
+      overlay.set(frame);
+      const was = dark();
+      flat = isFlat(frame);
+      if (dark() !== was) dress();
+    };
     let maskRequest = 0;
     const sharpWanted = () => ctx.params.mode === 'instant' && !ctx.params.relight;
     async function reshadow() {
@@ -68,7 +79,7 @@ export default defineLayer<Params>({
       if (mine !== maskRequest || !sharpWanted()) return;
       const first = sharp === undefined;
       sharp = frame !== null;
-      if (frame) overlay.set(frame);
+      if (frame) show(frame);
       // The first answer changes how the field and tree shade are styled.
       if (first) dress();
     }
@@ -121,7 +132,8 @@ export default defineLayer<Params>({
       overlay.setStyle({
         colormap: day ? hoursColormap(ctx.params.threshold, daylightHours) : skyColormap(sun.altitude),
         soften: day ? 1 : SOFTEN_CELLS,
-        opacity: relit() ? 0 : ctx.params.opacity,
+        // With nothing to cast shade the whole table would be lit in one colour; stay dark instead (#55).
+        opacity: relit() || dark() ? 0 : ctx.params.opacity,
         // A shadow-map mask has fine pixels; soften by a few of them, like a real penumbra.
         ...(sharp && sharpWanted() ? { soften: SHARP_SOFTEN } : {}),
       });
@@ -165,9 +177,14 @@ export default defineLayer<Params>({
       dress();
       // With a shadow map, the engine's cells only fill in until the first mask is ready.
       opened.on(field, (frame) => {
-        if (!(sharp && sharpWanted())) overlay.set(frame);
+        if (!(sharp && sharpWanted())) show(frame);
       });
-      opened.on(treeField, (frame) => treeOverlay.set(frame));
+      opened.on(treeField, (frame) => {
+        treeOverlay.set(frame);
+        const was = dark();
+        treesShade = hasShade(frame);
+        if (dark() !== was) dress();
+      });
       opened.onStatus((status) => {
         if (daylightHours !== status.info.daylight_hours) {
           daylightHours = status.info.daylight_hours;
