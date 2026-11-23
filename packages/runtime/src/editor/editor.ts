@@ -1,12 +1,12 @@
 import { isVisible } from '@mrstudio/sdk';
 import type { Connection, LayerManifest, LayerState } from '@mrstudio/sdk';
 
-import { defaultSide, el, isAmbient, layerButton, widget } from '../controls.ts';
+import { defaultSide, el, isAmbient, isOffered, layerButton, widget } from '../controls.ts';
 import type { Widget } from '../controls.ts';
 import { paramSender } from '../layer-manager.ts';
 import type { Store } from '../store.ts';
 import { LAYER_ICONS, icon } from './icons.ts';
-import { Wizard } from './wizard.ts';
+import { AT_REST, Wizard } from './wizard.ts';
 import './editor.css';
 
 /**
@@ -24,6 +24,9 @@ type Invoke = (command: string, args?: object) => Promise<unknown>;
 function shell(): Invoke | undefined {
   return (window as { __TAURI__?: { core?: { invoke?: Invoke } } }).__TAURI__?.core?.invoke;
 }
+
+/** Where in "Your place" each dataset a layer may need is brought in. */
+const PLACE_TARGETS: Record<string, string> = { buildings: 'buildings', terrain: 'terrain', trees: 'trees', roads: 'data:roads', walkways: 'walkways', trips: 'trips' };
 
 function button(className: string, label: string, iconName?: string, size = 16): HTMLButtonElement {
   const node = el('button', className);
@@ -65,7 +68,10 @@ export class Editor {
   /** The live controller, shown in the middle in place of the map. */
   private readonly preview = el('div', 'ed-preview');
   private presentButton!: HTMLButtonElement;
+  private guideButton!: HTMLButtonElement;
   private wizard: Wizard | null = null;
+  /** The guide step to come back at after the next reload, when it is not the one on show. */
+  private resumeStep: number | null = null;
 
   constructor(root: HTMLElement, store: Store, connection: Connection) {
     this.store = store;
@@ -95,6 +101,7 @@ export class Editor {
     root.append(shell);
 
     this.setSaved();
+    this.drawGuideButton();
     this.render();
     store.onScene(() => this.render());
     store.onLayer((id, state) => {
@@ -117,7 +124,8 @@ export class Editor {
     if (resume !== undefined || created || this.instances().every((i) => isAmbient(i.manifest))) this.openWizard(created, resume);
     connection.on('site.changed', () => {
       try {
-        if (this.wizard) sessionStorage.setItem('mrs-setup-step', String(this.wizard.step));
+        const step = this.resumeStep ?? this.wizard?.step;
+        if (step !== undefined) sessionStorage.setItem('mrs-setup-step', String(step));
       } catch {
         // As above.
       }
@@ -138,18 +146,44 @@ export class Editor {
         controller: (shown) => this.showController(shown),
         present: () => this.presentButton.click(),
         close: () => this.closeWizard(),
+        resumeAt: (step) => (this.resumeStep = step < 0 ? null : step),
       },
       { created, step },
     );
     this.shell.classList.add('is-setup');
     this.body.prepend(this.wizard.element);
+    this.drawGuideButton();
     this.render();
   }
 
+  /** The guide's button says which way it goes: into the guide, or out of it into the editor. */
+  private drawGuideButton(): void {
+    const open = this.wizard !== null;
+    const guide = this.guideButton;
+    guide.replaceChildren(icon(open ? 'check' : 'route', 16), el('span', undefined, open ? 'Close guide' : 'Setup guide'));
+    guide.setAttribute('aria-pressed', String(open));
+    guide.classList.toggle('is-pressed', open);
+    guide.title = open ? 'Leave the guide and work in the full editor. The guide stays one click away.' : 'Walk through setting up this table, step by step';
+  }
+
+  /** Opens the guide at "Your place", at the row for `target`. */
+  private bringIn(target: string): void {
+    this.openWizard(false, 1);
+    this.wizard?.bringIn(target);
+  }
+
   private closeWizard(): void {
+    // A reload must not open the guide again once the author has left it.
+    const url = new URL(location.href);
+    if (url.searchParams.has('welcome') || url.searchParams.has('setup')) {
+      url.searchParams.delete('welcome');
+      url.searchParams.delete('setup');
+      history.replaceState(history.state, '', url);
+    }
     this.wizard?.element.remove();
     this.wizard = null;
     this.shell.classList.remove('is-setup');
+    this.drawGuideButton();
     this.context = { kind: 'home' };
     this.show(null);
     this.render();
@@ -228,7 +262,14 @@ export class Editor {
       });
       if (last >= 0) index = last + 1;
     }
-    const result = await this.send('scene.add', { use: manifest.id, index });
+    // A new button goes on the side of the controller with fewer, so neither side stands empty.
+    let button: { side: 'left' | 'right' } | undefined;
+    if (!isAmbient(manifest)) {
+      const count = { left: 0, right: 0 };
+      for (const { id, manifest: other, state } of this.instances()) if (!isAmbient(other)) count[layerButton(id, other, state, defaultSide(this.store)).side]++;
+      button = { side: count.right < count.left ? 'right' : 'left' };
+    }
+    const result = await this.send('scene.add', { use: manifest.id, index, button });
     // The reply can arrive before the scene event that brings the new layer; it is selected when it does.
     if (result?.id) this.added = result.id;
     this.render();
@@ -277,7 +318,7 @@ export class Editor {
     preview.title = 'Open the table in a window on this screen';
     preview.addEventListener('click', () => window.open('/table', 'mrstudio-preview'));
     const guide = button('ed-button', 'Setup guide', 'route');
-    guide.title = 'Walk through setting up this table, step by step';
+    this.guideButton = guide;
     guide.addEventListener('click', () => (this.wizard ? this.closeWizard() : this.openWizard()));
     actions.append(guide);
     const present = button('ed-button is-primary', 'Present', 'tv');
@@ -324,8 +365,9 @@ export class Editor {
     draw();
     if (invoke) {
       // Inside the desktop app: the way back to the list of sites and the displays.
-      const sites = button('ed-button', 'Home', 'home');
-      sites.title = 'Back to your tables: open another one or start a new one';
+      // "Home" is the button visitors press on the controller; this one leaves the table.
+      const sites = button('ed-button', 'All tables', 'grid');
+      sites.title = 'Back to your tables: open another one or start a new one. Everything here is already saved.';
       sites.addEventListener('click', () => void invoke('open_home').catch(() => {}));
       actions.append(sites);
       window.addEventListener('focus', () => void refresh());
@@ -348,7 +390,26 @@ export class Editor {
       connected.classList.remove('is-off');
     });
     const { width_m, height_m } = this.store.state.site.extent;
-    bar.append(el('span', undefined, 'Changes are saved as you make them'), el('span', 'ed-grow'), connected, el('span', undefined, `${Math.round(width_m)} × ${Math.round(height_m)} m`));
+    // What only the operator needs to know lives here, never on the visitors' controller.
+    const phones = el('span', 'ed-phones');
+    const showPhones = (): void => {
+      const { join_url: url, code } = this.store.state.session;
+      phones.textContent = url ? `Phones join with ${code}` : 'Phones cannot join';
+      phones.title = url
+        ? `Visitors join at ${url}`
+        : 'Phones on this network cannot join yet. Turn on "Let phones on this network join" in Displays and settings, or start with --lan from the command line.';
+      phones.classList.toggle('is-off', !url);
+    };
+    showPhones();
+    this.store.onParticipants(showPhones);
+    const engine = el('span', 'ed-engine');
+    void this.connection
+      .request<{ backend: string; adapter: string | null }>('engine.info')
+      .then((info) => {
+        engine.textContent = info.adapter ? `Engine: ${info.adapter}` : `Engine: ${info.backend}, no graphics card`;
+      })
+      .catch(() => {});
+    bar.append(el('span', undefined, 'Changes are saved as you make them'), el('span', 'ed-grow'), phones, engine, connected, el('span', undefined, `${Math.round(width_m)} × ${Math.round(height_m)} m`));
     return bar;
   }
 
@@ -361,6 +422,8 @@ export class Editor {
       this.added = null;
       this.context = isAmbient(added.manifest) ? { kind: 'home' } : { kind: 'layer', id: added.id };
       if (isAmbient(added.manifest)) this.homeItem = added.id;
+      // A new layer opens on the map too, as if its button had been pressed.
+      else this.show(added.id);
     }
     // The edited layer may have been removed, here or by someone else.
     if (this.context.kind === 'layer' && !instances.some((i) => i.id === (this.context as { id: string }).id)) this.context = { kind: 'home' };
@@ -379,7 +442,7 @@ export class Editor {
     const data = this.store.state.site.data ?? {};
     let lack: { text: string; action: string; step: number } | null = null;
     if (!('buildings' in data)) lack = { text: 'This table has no buildings yet, so the map is empty.', action: 'Bring in your place', step: 1 };
-    else if (!instances.some((i) => isAmbient(i.manifest))) lack = { text: 'Nothing is shown on the map at rest yet.', action: 'Choose the map at rest', step: 2 };
+    else if (!instances.some((i) => isAmbient(i.manifest))) lack = { text: 'The map shows nothing when no layer is open.', action: `Choose what shows ${AT_REST.toLowerCase()}`, step: 2 };
     else if (instances.every((i) => isAmbient(i.manifest))) lack = { text: 'There are no layers yet. Each layer becomes a button on the controller.', action: 'Choose layers', step: 3 };
     this.next.hidden = lack === null || this.wizard !== null;
     if (!lack) return;
@@ -413,9 +476,15 @@ export class Editor {
     tool.dataset.layer = manifest.id;
     const data = this.store.state.site.data ?? {};
     const missing = (manifest.requires?.data ?? []).filter((name) => !(name in data));
-    tool.title = missing.length > 0 ? `${manifest.description ?? manifest.name}. This table has no ${missing.join(' or ')} data yet. Bring it in with Add data.` : (manifest.description ?? manifest.name);
-    tool.disabled = missing.length > 0;
-    tool.addEventListener('click', () => void this.add(manifest));
+    const source = missing[0] ? PLACE_TARGETS[missing[0]] : undefined;
+    tool.title = missing.length > 0 ? `${manifest.description ?? manifest.name}. This table has no ${missing.join(' or ')} data yet.${source ? ' Click to bring it in.' : ''}` : (manifest.description ?? manifest.name);
+    tool.classList.toggle('is-needs', missing.length > 0);
+    // A layer that needs data takes the author to the place to bring it in, rather than doing nothing.
+    tool.disabled = missing.length > 0 && !source;
+    tool.addEventListener('click', () => {
+      if (missing.length === 0) void this.add(manifest);
+      else if (source) this.bringIn(source);
+    });
     return tool;
   }
 
@@ -426,9 +495,9 @@ export class Editor {
 
     // One ribbon whose tools follow what is being edited: what can be added here, then what can be done to the selection.
     const { kind } = this.context;
-    const ambient = this.store.manifests.filter(isAmbient);
-    const layers = this.store.manifests.filter((m) => !isAmbient(m));
-    if (kind === 'home' && ambient.length > 0) groups.push(this.group('Add to the map at rest', ...this.column(ambient.map((m) => this.insertTool(m, false)))));
+    const ambient = this.store.manifests.filter((m) => isAmbient(m) && isOffered(m));
+    const layers = this.store.manifests.filter((m) => !isAmbient(m) && isOffered(m));
+    if (kind === 'home' && ambient.length > 0) groups.push(this.group(AT_REST, ...this.column(ambient.map((m) => this.insertTool(m, false)))));
     if (kind !== 'phone' && layers.length > 0) groups.push(this.group('Add a layer', ...layers.map((m) => this.insertTool(m, true))));
 
     if (selected && (kind === 'home' || kind === 'layer')) {
@@ -436,7 +505,7 @@ export class Editor {
       const tools: HTMLElement[] = [];
       if (onMap) {
         const show = button('ed-tool', selected.state.active ? 'Hide' : 'Show', selected.state.active ? 'eye-off' : 'eye');
-        show.title = 'Show or hide this on the map at rest';
+        show.title = 'Show or hide this when no layer is open';
         show.addEventListener('click', () => void this.send('scene.set', { layer: selected.id, active: !selected.state.active }));
         tools.push(show);
       }
@@ -469,7 +538,7 @@ export class Editor {
       return tool;
     };
     const data = button('ed-tool is-large', 'Add data', 'map', 20);
-    data.title = 'Bring in buildings, trees, walking paths or trips from a file';
+    data.title = 'Bring in buildings, ground, trees, streets, walking paths or trips from a file';
     data.addEventListener('click', () => this.openWizard(false, 1));
     groups.push(this.group('Your place', data));
 
@@ -503,7 +572,7 @@ export class Editor {
     const nodes: HTMLElement[] = [];
 
     nodes.push(el('h2', 'ed-tree-title', 'Map'));
-    const home = this.treeRow('Home screen', ambient.length > 0 ? ambient.map((i) => i.manifest.name).join(', ') : 'Nothing yet', 'home', context.kind === 'home', () => this.go({ kind: 'home' }));
+    const home = this.treeRow(AT_REST, ambient.length > 0 ? ambient.map((i) => i.manifest.name).join(', ') : 'Nothing yet', 'moon', context.kind === 'home', () => this.go({ kind: 'home' }));
     home.dataset.context = 'home';
     nodes.push(home);
 
@@ -542,9 +611,9 @@ export class Editor {
 
   private renderCanvas(instances: { id: string; manifest: LayerManifest; state: LayerState }[]): void {
     const { context } = this;
-    let iconName: string | undefined = 'home';
-    let title = 'Home screen';
-    let detail = 'Shown when no layer is open';
+    let iconName: string | undefined = 'moon';
+    let title = AT_REST;
+    let detail = 'What the map shows when no layer is open';
     let notice: string | null = null;
     if (context.kind === 'layer') {
       const layer = instances.find((i) => i.id === context.id)!;
@@ -714,10 +783,10 @@ export class Editor {
     };
 
     if (context.kind === 'home') {
-      nodes.push(head('home', 'Home screen', 'The table at rest'));
+      nodes.push(head('moon', AT_REST, 'When no layer is open'));
       const ambient = instances.filter((i) => isAmbient(i.manifest));
       const section = el('section', 'ed-section');
-      section.append(el('h3', undefined, 'On the home screen'));
+      section.append(el('h3', undefined, 'On the map'));
       if (ambient.length === 0) section.append(el('p', 'ed-empty', 'Nothing yet. Add a base map and some ambient life from the toolbar above.'));
       for (const { id, manifest, state } of ambient) {
         const row = this.treeRow(layerButton(id, manifest).name, '', manifest.icon, this.homeItem === id, () => {

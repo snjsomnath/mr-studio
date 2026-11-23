@@ -206,6 +206,14 @@ Every OSM tag is kept as a property, with `osm_id` (`way/123`). The saved file c
 
 `message` is written for the author and can be shown as it is. `fix` names the option that applies the recommended fix, so an editor can offer it as a button and send the same file again with that option.
 
+## Moving or renaming a table
+
+```
+POST /api/site/place   { "name"?: "Harbour", "origin": { "lon": 11.97, "lat": 57.70 }, "extent": { "width_m": 1000, "height_m": 600, "rotation_deg": 0 } }
+```
+
+Loopback only, like the data requests. It rewrites `name` (left out: kept), `origin` and `extent` of `site.json`, and the table's `height_cm` so its shape follows, then re-bakes the scene for the ground the table now covers, closes every engine stream and sends `site.changed`; surfaces reload. Data brought in stays where it is in the world. Answers `{ "site": <SiteInfo> }`, or 422 `{ "error" }` with the reason: a name over 60 characters, a place off the map, a side under 10 m or over 50 km, or a table whose ground is a raw height grid (`terrain.f32`), which is made for one extent and cannot move (a GeoTIFF can). The setup guide's "Name and place" step uses it.
+
 ## Wire protocol
 
 Text frames are JSON. Binary frames are engine field frames (see engine.md).
