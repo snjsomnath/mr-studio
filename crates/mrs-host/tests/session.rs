@@ -737,8 +737,9 @@ async fn a_new_table_takes_its_buildings_without_a_restart() {
     let _ = std::fs::remove_dir_all(&base);
 }
 
-/// A stand-in for Overpass that answers every query with `answer`, and the queries it got.
-async fn overpass(answer: Value) -> (String, std::sync::Arc<std::sync::Mutex<Vec<String>>>) {
+/// A stand-in for Overpass that is busy (502) for the first `busy` queries, then answers
+/// each with `answer`; and the queries it got.
+async fn overpass(answer: Value, busy: usize) -> (String, std::sync::Arc<std::sync::Mutex<Vec<String>>>) {
     let asked = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
     let log = asked.clone();
     let app = axum::Router::new().route(
@@ -746,8 +747,12 @@ async fn overpass(answer: Value) -> (String, std::sync::Arc<std::sync::Mutex<Vec
         axum::routing::post(move |body: String| {
             let (log, answer) = (log.clone(), answer.clone());
             async move {
-                log.lock().unwrap().push(body);
-                axum::Json(answer)
+                let mut log = log.lock().unwrap();
+                log.push(body);
+                if log.len() <= busy {
+                    return axum::response::IntoResponse::into_response(axum::http::StatusCode::BAD_GATEWAY);
+                }
+                axum::response::IntoResponse::into_response(axum::Json(answer))
             }
         }),
     );
@@ -771,7 +776,7 @@ async fn buildings_come_from_openstreetmap_when_asked() {
     let (url, asked) = overpass(json!({ "elements": [
         { "type": "way", "id": 1, "tags": { "building": "yes", "height": "14" }, "geometry": ring(57.700, 11.970) },
         { "type": "way", "id": 2, "tags": { "building": "house", "building:levels": "2" }, "geometry": ring(57.700, 11.9610) },
-    ] }))
+    ] }), 1)
     .await;
     std::env::set_var("MRS_OVERPASS_URL", &url);
     let host = host_for(dir.clone()).await;
@@ -782,7 +787,9 @@ async fn buildings_come_from_openstreetmap_when_asked() {
     assert_eq!((report["count"].as_u64(), report["inside"].as_u64()), (Some(2), Some(1)));
     assert_eq!(report["preview"]["features"].as_array().unwrap().len(), 2, "the preview shows what lies off the table too");
     assert!(report["issues"].as_array().unwrap().iter().any(|i| i["code"] == "source.osm"), "{report}");
-    let query = asked.lock().unwrap()[0].clone();
+    // The first try found the server busy; the second got the answer.
+    assert_eq!(asked.lock().unwrap().len(), 2, "a busy server is asked again");
+    let query = asked.lock().unwrap()[1].clone();
     assert!(query.starts_with("data=") && query.contains("building"), "{query}");
 
     let (status, report) = http_post(&host, "/api/data/import?target=buildings&source=osm&crop=1", "", b"").await;
@@ -791,6 +798,7 @@ async fn buildings_come_from_openstreetmap_when_asked() {
     table.event("site.changed").await;
     let saved: Value = serde_json::from_slice(&std::fs::read(dir.join("data/buildings.geojson")).unwrap()).unwrap();
     assert_eq!(saved["source"]["attribution"], "© OpenStreetMap contributors");
+    assert_eq!(asked.lock().unwrap().len(), 2, "the import brings in what the preview fetched, without asking again");
 
     // OpenStreetMap has no trips or ground heights.
     let (status, report) = http_post(&host, "/api/data/inspect?target=trips&source=osm", "", b"").await;
