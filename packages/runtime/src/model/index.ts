@@ -8,7 +8,7 @@ import { CalibrationTool } from './calibrate.ts';
  * calibration, and makes the calibration tool reachable. The tool opens with `?calibrate` in
  * the address, with Shift+C on the surface, or when a controller sends `calibration.mode`.
  */
-export async function installModel(view: TableView, connection: Connection, role: Role): Promise<void> {
+export async function installModel(view: TableView, connection: Connection, role: Role, options: { remoteCalibration?: boolean } = {}): Promise<void> {
   const model = await view.attachModel();
   if (!model) return;
   // The projected table uses the calibration. The dev surface is a flat preview unless asked otherwise.
@@ -23,7 +23,8 @@ export async function installModel(view: TableView, connection: Connection, role
   connection.on('welcome', () => void load());
 
   const tool = new CalibrationTool(view.container, model, connection, view.site, role === 'table');
-  connection.on('calibration.mode', (p: { active: boolean }) => (p.active ? tool.open() : tool.close()));
+  // The editor's own map never takes the tool from a remote request: the editor asks for it on the projected table (#153).
+  if (options.remoteCalibration !== false) connection.on('calibration.mode', (p: { active: boolean }) => (p.active ? tool.open() : tool.close()));
   if (query.has('calibrate')) tool.open();
   window.addEventListener('keydown', (event) => {
     const typing = event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLSelectElement;
