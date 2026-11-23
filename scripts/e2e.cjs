@@ -104,9 +104,11 @@ async function main() {
       if ((await button.getAttribute('aria-pressed')) !== String(on)) await button.click();
       await tv.locator(`.layer-button[aria-pressed="${on}"]`, { hasText: name }).waitFor();
     };
-    // The map's ambient layers have no button there, and the buttons default to the left side.
+    // The map's ambient layers have no button there, and unplaced buttons are shared out over both sides.
     assert.equal(await tv.locator('.layer-button', { hasText: 'Traffic' }).count(), 0);
-    assert.equal(await tv.locator('.controller-right .layer-button-card').count(), 0);
+    const leftButtons = await tv.locator('.controller:not(.controller-right) .layer-button-card').count();
+    const rightButtons = await tv.locator('.controller-right .layer-button-card').count();
+    assert.ok(rightButtons > 0 && leftButtons >= rightButtons && leftButtons - rightButtons <= 1, `buttons ${leftButtons} left, ${rightButtons} right`);
     await press('Sunlight', true);
     await dev.getByText(/sun [\d.]+° up/).waitFor();
     await dev.waitForTimeout(500);
@@ -498,7 +500,7 @@ async function main() {
     await tv.getByRole('button', { name: 'Home', exact: true }).click();
     await tv.locator('.layer-button[aria-pressed="false"]', { hasText: 'Getting here' }).waitFor();
     await tv.locator('.layer-button[aria-pressed="false"]', { hasText: 'Sketch' }).waitFor();
-    await tv.getByText('Choose a layer on either side').waitFor();
+    await tv.getByText('Choose a layer to bring it to the table').waitFor();
     await editor.locator('.ed-row[data-context="home"][aria-current="true"]').waitFor();
     await editor.locator('.ed-tree .ed-row[data-layer="mobility"]').click();
     if (shots) await editor.screenshot({ path: path.join(shots, 'editor.png') });
