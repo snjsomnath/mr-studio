@@ -63,14 +63,14 @@ pub fn bake(site: &Site) -> Result<(SceneData, BakeStats), SiteError> {
 
     if let Some(spec) = &spec.mesh {
         let path = site.resolve(&spec.path).expect("validated");
-        let triangles = mesh::read_stl(&path).map_err(|message| SiteError::Parse { path: path.clone(), message })?;
+        let triangles = mesh::read(&path).map_err(|message| SiteError::Parse { path: path.clone(), message })?;
         // Mesh units to local metres: +Y points along `bearing_deg`, +X a quarter turn clockwise from it.
         let (anchor_east, anchor_north) = projection.to_local(spec.anchor.lon, spec.anchor.lat);
         let (sin, cos) = spec.bearing_deg.to_radians().sin_cos();
         let to_cell = |v: [f32; 3]| {
-            let (x, y) = (v[0] as f64 * spec.unit_m, v[1] as f64 * spec.unit_m);
+            let [x, y, z] = spec.orient(v).map(|c| c * spec.unit_m);
             let (col, row) = grid.local_to_cell(anchor_east + x * cos + y * sin, anchor_north - x * sin + y * cos);
-            (col, row, v[2] as f64 * spec.unit_m + spec.base_m)
+            (col, row, z + spec.base_m)
         };
         let mut top = vec![f32::NEG_INFINITY; grid.len()];
         mesh::rasterise(&triangles, to_cell, grid.width as usize, grid.height as usize, &mut top);

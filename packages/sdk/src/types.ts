@@ -230,6 +230,23 @@ export interface SiteInfo {
   /** Datasets layers may read, by name: site-relative paths served under `/site/`. */
   data: Record<string, string>;
   tv?: TvConfig | null;
+  /** The 3D model of the site (`scene.mesh`, docs/contracts/site.md), and whether footprints are raised beside it. */
+  mesh?: SiteMesh;
+}
+
+/** A placed 3D model: a file in the site folder and the numbers that put it on the ground. */
+export interface SiteMesh {
+  path: string;
+  anchor: { lon: number; lat: number };
+  unit_m: number;
+  bearing_deg: number;
+  base_m: number;
+  /** Which axis of the file points up. Default z. */
+  up?: 'z' | 'y';
+  mirror?: boolean;
+  ground_tolerance_m: number;
+  /** False when the model, not the footprints, gives the buildings their shape. */
+  extrude: boolean;
 }
 
 export type Params = Record<string, unknown>;

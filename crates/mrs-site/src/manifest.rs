@@ -139,13 +139,19 @@ impl Terrain {
     }
 }
 
-/// A 3D model of the site's top surface (ground and buildings), Z up, rasterised into the dsm.
+/// A 3D model of the site's top surface (ground and buildings), rasterised into the dsm.
 /// A mesh has no georeference of its own, so the manifest places it.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Mesh {
-    /// An STL file, binary or ASCII.
+    /// An STL (binary or ASCII), OBJ or GLB file.
     pub path: String,
+    /// Which of the file's axes points up. CAD and 3D printing use Z, glTF and many modelling tools Y.
+    #[serde(default, skip_serializing_if = "Up::is_z")]
+    pub up: Up,
+    /// Whether the model is a mirror image (its X axis is flipped), as some exports are.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub mirror: bool,
     /// Where the mesh's own origin (0, 0) is.
     pub anchor: LonLat,
     /// Metres per mesh unit.
@@ -161,6 +167,35 @@ pub struct Mesh {
     /// than this above the terrain stay ground instead of becoming low obstacles.
     #[serde(default = "one")]
     pub ground_tolerance_m: f64,
+}
+
+/// The up axis of a mesh file.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Up {
+    #[default]
+    Z,
+    /// Y up, Z towards the viewer: read as (x, -z, y).
+    Y,
+}
+
+impl Up {
+    fn is_z(&self) -> bool {
+        *self == Up::Z
+    }
+}
+
+impl Mesh {
+    /// A vertex of the file in the mesh's own Z-up frame, before scale, turn and anchor:
+    /// the up axis made Z, then mirrored if asked.
+    pub fn orient(&self, v: [f32; 3]) -> [f64; 3] {
+        let [x, y, z] = v.map(f64::from);
+        let [x, y, z] = match self.up {
+            Up::Z => [x, y, z],
+            Up::Y => [x, -z, y],
+        };
+        [if self.mirror { -x } else { x }, y, z]
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -6,6 +6,7 @@ mod calibration;
 mod engine_bridge;
 mod hub;
 mod layers;
+mod model;
 mod wms;
 mod ws;
 
@@ -357,6 +358,7 @@ fn router(state: Arc<AppState>, web_dir: Option<PathBuf>) -> Router {
         .route("/api/model", get(model))
         .route("/api/data/inspect", post(inspect_data))
         .route("/api/data/import", post(import_data))
+        .route("/api/data/model", post(model::post))
         .route("/api/site/place", post(place_site))
         .route("/api/wms", get(|query: Query<wms::WmsQuery>| wms::get_map(query.0)))
         .layer(DefaultBodyLimit::max(MAX_IMPORT_BYTES))

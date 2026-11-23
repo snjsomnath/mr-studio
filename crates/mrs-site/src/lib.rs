@@ -9,6 +9,7 @@ pub mod import;
 mod manifest;
 mod mesh;
 pub mod migrate;
+pub mod model;
 pub mod osm;
 mod projection;
 mod twin;
@@ -82,6 +83,17 @@ pub struct SiteInfo {
     pub data: BTreeMap<String, String>,
     /// The site's TV dashboard settings (theme, pages), as written. Validated on the TV by `@mrstudio/dashboard`.
     pub tv: Option<serde_json::Value>,
+    /// The 3D model of the site (`scene.mesh`), for the editor to place it again.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mesh: Option<MeshInfo>,
+}
+
+/// `scene.mesh` as written, and whether the footprints are still raised beside it.
+#[derive(Debug, Clone, Serialize)]
+pub struct MeshInfo {
+    #[serde(flatten)]
+    pub mesh: Mesh,
+    pub extrude: bool,
 }
 
 impl Site {
@@ -179,8 +191,8 @@ impl Site {
         }
         if let Some(mesh) = &m.scene.mesh {
             check(&mut out, "scene.mesh.path", &mesh.path);
-            if !mesh.path.to_ascii_lowercase().ends_with(".stl") {
-                out.push("scene.mesh.path: only STL meshes are read so far".into());
+            if mesh::Format::of(&mesh.path).is_none() {
+                out.push("scene.mesh.path: a mesh is an STL, OBJ or GLB file".into());
             }
             if !(mesh.unit_m > 0.0) || !mesh.unit_m.is_finite() {
                 out.push("scene.mesh.unit_m must be positive".into());
@@ -420,6 +432,7 @@ impl Site {
             calibration: self.calibration.and_then(|c| c.table),
             data: self.data(),
             tv: m.tv.clone(),
+            mesh: m.scene.mesh.clone().map(|mesh| MeshInfo { mesh, extrude: m.scene.buildings.as_ref().is_none_or(|b| b.extrude) }),
         }
     }
 

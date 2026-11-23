@@ -31,7 +31,7 @@ sites/<id>/
     "cell_m": 2,
     "buildings": { "path": "data/buildings.geojson", "height_property": "height", "default_height_m": 12 },
     "terrain":   { "path": "data/terrain.f32", "width": 100, "height": 60 },   // optional, flat if absent; or a GeoTIFF
-    "mesh":      { "path": "data/mesh.stl", "anchor": { "lon": 11.972, "lat": 57.6826 }, "unit_m": 1 },   // optional
+    "mesh":      { "path": "data/model.stl", "anchor": { "lon": 11.972, "lat": 57.6826 }, "unit_m": 1 },   // optional
     "trees":     { "path": "data/trees.geojson", "height_property": "height", "crown_radius_m": 3 }  // optional, points
   },
   "data": {                                        // optional, named datasets for layers
@@ -193,7 +193,7 @@ The host turns the sources into the rasters the engine loads, in memory at start
 
 Baking a 1000 × 600 grid takes well under a second, and the Chalmers campus (1250 × 750 cells from a GeoTIFF and a 79 000 triangle mesh) about a second. `mrstudio validate <site>` checks the manifest and reports what the bake produced; `mrstudio prepare <site>` also writes the rasters to `scene/` so they can be inspected.
 
-Planned: GLB meshes. When a bake becomes slow, `scene/` becomes a cache.
+When a bake becomes slow, `scene/` becomes a cache.
 
 ### Terrain from a GeoTIFF
 
@@ -203,14 +203,20 @@ The first band is read as elevation in metres. The file must be north-up (`Model
 
 ```jsonc
 "mesh": {
-  "path": "data/mesh.stl",                        // STL, binary or ASCII, Z up
+  "path": "data/model.stl",                       // STL (binary or ASCII), OBJ, or a single-file GLB
   "anchor": { "lon": 11.971958, "lat": 57.682628 }, // where the mesh's own origin (0, 0) is
   "unit_m": 1250,                                 // metres per mesh unit, default 1
   "bearing_deg": -2.555,                          // compass bearing of the mesh's +Y axis, default 0 (Y north, X east)
   "base_m": 0,                                    // elevation of the mesh's z = 0, default 0
-  "ground_tolerance_m": 1                         // default 1
+  "ground_tolerance_m": 1,                        // default 1
+  "up": "z",                                      // which axis of the file points up: "z" (default) or "y"
+  "mirror": false                                 // the file is a mirror image: flip its X axis, default false
 }
 ```
+
+The file is read in its own coordinates. `up: "y"` turns a Y-up export (glTF, Blender, many modelling tools) upright, reading each vertex (x, y, z) as (x, -z, y); `mirror` then flips x. A GLB's node transforms are applied, and every triangle primitive of its default scene is used; compressed (Draco, quantised) GLBs and `.gltf` files with separate buffers are not read. OBJ faces with more than three corners are fanned into triangles.
+
+The editor's Your place step brings a model in and places it: units guessed from its size and the table scale, Y up guessed from its shape, then turned, scaled, moved and mirrored against the table outline and the footprints, or fitted to the footprints with "Snap to buildings" (POST `/api/data/model`, session.md).
 
 A mesh has no georeference of its own, so these five numbers place it: a point, a scale, a turn and a height. `bearing_deg` is what makes a model drawn on a national grid line up, because grid north is not true north (2.6 degrees off at Chalmers).
 
