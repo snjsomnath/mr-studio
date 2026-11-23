@@ -166,7 +166,7 @@ composition. Old line counts are from `main`.
 | Flow lines, width by share, colour by source kind | `drawPaths` with `width` and `categoryScale` |
 | One travelling light per line, flaring where it lands (`paintHeads`) | `pathHeads` + `drawDots`, sized by `head.landing` |
 | Grid and battery rings, outward when giving, inward when taking, each against its own busiest hour | `nodePulse` + `drawRings` |
-| Node icons with gauge fill steps | `drawSpots`; pictogram icons are the one thing missing (see backlog) |
+| Node icons with gauge fill steps | `drawSpots`; pictograms from `ICONS`/`fillIcon` (marks.ts) |
 | The table's clock, an hour every few seconds, scrubbed from the controller | `Clock`, ticked in `ctx.onFrame`, seeked from the `hour` control |
 | Introduction: lines arrive one at a time, captions, held hours | `Sequence` + `stagger` feeding `reveal` on `drawPaths` |
 | Timeline strip with day and night | `timeline(clock)` published; drawn by the dashboard's timeline widget |

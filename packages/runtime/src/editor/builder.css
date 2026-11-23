@@ -557,3 +557,12 @@
 .lb-slot .lb-small[hidden] {
   display: none;
 }
+
+/* Picture buttons: point marks and pictograms (#95). */
+.lb-swatches { display: flex; flex-wrap: wrap; gap: 4px; }
+.lb-swatch {
+  width: 30px; height: 30px; display: grid; place-items: center;
+  border: 1px solid var(--ed-line); border-radius: 6px; background: var(--ed-panel); color: var(--ed-text); cursor: pointer;
+}
+.lb-swatch:hover { border-color: #9aa3b2; }
+.lb-swatch[aria-pressed="true"] { border-color: var(--ed-accent); color: var(--ed-accent); background: var(--ed-accent-soft, #eef2fe); }
