@@ -239,6 +239,13 @@ fn custom_manifest(id: &str, recipe: &mrs_site::CustomLayer) -> Value {
     manifest
 }
 
+/// The catalogue entry for a custom layer saved in the site.
+pub fn custom_def(id: &str, recipe: &mrs_site::CustomLayer) -> anyhow::Result<LayerDef> {
+    let mut def = LayerDef::parse(custom_manifest(id, recipe)).map_err(|e| anyhow!("custom layer '{id}': {e:#}"))?;
+    def.source = format!("{}{id}", mrs_site::CUSTOM_PREFIX);
+    Ok(def)
+}
+
 pub fn load_catalog(site: &Site, core_layers: &Path) -> anyhow::Result<Vec<LayerDef>> {
     let mut defs: Vec<LayerDef> = Vec::new();
     let mut folders: Vec<_> = match std::fs::read_dir(core_layers) {
@@ -266,9 +273,7 @@ pub fn load_catalog(site: &Site, core_layers: &Path) -> anyhow::Result<Vec<Layer
         if defs.iter().any(|d| &d.id == id) {
             bail!("the custom layer '{id}' has the id of a core layer; give it another id");
         }
-        let mut def = LayerDef::parse(custom_manifest(id, recipe)).map_err(|e| anyhow!("custom layer '{id}': {e:#}"))?;
-        def.source = format!("{}{id}", mrs_site::CUSTOM_PREFIX);
-        defs.push(def);
+        defs.push(custom_def(id, recipe)?);
     }
     for (used, _, _) in site.instances() {
         if used.starts_with('.') {

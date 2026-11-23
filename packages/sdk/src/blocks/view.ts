@@ -11,7 +11,7 @@ export type Pen = Pick<
   | 'beginPath' | 'moveTo' | 'lineTo' | 'closePath' | 'arc' | 'rect' | 'fill' | 'stroke' | 'clip' | 'save' | 'restore'
   | 'fillText' | 'setLineDash' | 'createRadialGradient' | 'clearRect'
   | 'fillStyle' | 'strokeStyle' | 'lineWidth' | 'lineCap' | 'lineJoin' | 'globalAlpha' | 'globalCompositeOperation'
-  | 'font' | 'textAlign' | 'textBaseline' | 'shadowColor' | 'shadowBlur'
+  | 'font' | 'textAlign' | 'textBaseline' | 'shadowColor' | 'shadowBlur' | 'shadowOffsetX' | 'shadowOffsetY' | 'lineDashOffset'
 >;
 
 export interface View {
