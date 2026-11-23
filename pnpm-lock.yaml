@@ -87,6 +87,19 @@ importers:
         specifier: ^5.9.0
         version: 5.9.3
 
+  packages/layers/isovist:
+    dependencies:
+      '@mrstudio/sdk':
+        specifier: workspace:*
+        version: link:../../sdk
+    devDependencies:
+      '@types/node':
+        specifier: ^22.0.0
+        version: 22.20.5
+      typescript:
+        specifier: ^5.9.0
+        version: 5.9.3
+
   packages/layers/mapdata:
     dependencies:
       '@mrstudio/sdk':
@@ -124,6 +137,16 @@ importers:
         version: 5.9.3
 
   packages/layers/slideshow:
+    dependencies:
+      '@mrstudio/sdk':
+        specifier: workspace:*
+        version: link:../../sdk
+    devDependencies:
+      typescript:
+        specifier: ^5.9.0
+        version: 5.9.3
+
+  packages/layers/stormwater:
     dependencies:
       '@mrstudio/sdk':
         specifier: workspace:*
@@ -246,6 +269,9 @@ importers:
         specifier: 0.180.0
         version: 0.180.0
     devDependencies:
+      '@types/node':
+        specifier: ^22.0.0
+        version: 22.20.5
       '@types/three':
         specifier: 0.180.0
         version: 0.180.0

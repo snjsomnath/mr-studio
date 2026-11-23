@@ -5,7 +5,7 @@
 import type { Binding, PanelSpec } from '@mrstudio/sdk';
 
 import type { PropSpec, WidgetDefinition, WidgetRegistry } from './registry.ts';
-import { DATA_SLOTS, GRID, PANEL_SIZES, SCREEN, SIZES, TEXT } from './rules.ts';
+import { DATA_SLOTS, GRID, PANEL_SIZES, RIBBON, SCREEN, SIZES, TEXT } from './rules.ts';
 
 export interface Issue {
   /** Where: `panels.time.props.caption`. */
@@ -127,7 +127,7 @@ export function validatePanel(spec: PanelSpec, registry: WidgetRegistry, path = 
   else if ([...spec.title].length > TEXT.title) issues.push({ path: `${path}.title`, rule: 'text', message: `is ${[...spec.title].length} characters, the limit is ${TEXT.title}` });
 
   for (const key of Object.keys(spec)) {
-    if (!['id', 'widget', 'size', 'title', 'props', 'visibleWhen', 'priority', 'at', 'layer'].includes(key)) issues.push({ path: `${path}.${key}`, rule: 'schema', message: 'is not a panel field' });
+    if (!['id', 'widget', 'size', 'title', 'props', 'visibleWhen', 'priority', 'at', 'layer', 'ribbon'].includes(key)) issues.push({ path: `${path}.${key}`, rule: 'schema', message: 'is not a panel field' });
   }
   const before = issues.length;
   checkProps(`${path}.props`, widget.props, spec.props ?? {}, issues, (prop) => {
@@ -155,6 +155,22 @@ export function validateLayerPanels(panels: PanelSpec[], registry: WidgetRegistr
     if (spec.at) issues.push({ path: `${path}.at`, rule: 'grid', message: 'a layer cannot place its panels; only a site page can' });
     if (spec.layer) issues.push({ path: `${path}.layer`, rule: 'schema', message: 'a layer\'s panels always read the layer itself' });
   }
+  issues.push(...validateRibbon(panels.filter((spec) => spec?.ribbon), registry));
+  return issues;
+}
+
+/** Checks a layer's ribbon panels (#78): small sizes only, and few enough to read in passing. */
+export function validateRibbon(panels: PanelSpec[], registry: WidgetRegistry): Issue[] {
+  const issues: Issue[] = [];
+  let reads = 0;
+  for (const spec of panels) {
+    const widget = registry.get(spec.widget);
+    if (widget) reads += panelReads(spec, widget);
+    if (spec.ribbon !== undefined && typeof spec.ribbon !== 'boolean') issues.push({ path: `panels.${spec.id}.ribbon`, rule: 'schema', message: 'must be true or false' });
+    if (!RIBBON.sizes.includes(spec.size)) issues.push({ path: `panels.${spec.id}.size`, rule: 'size', message: `a ribbon panel is ${RIBBON.sizes.join(', ')}, never ${spec.size}` });
+  }
+  if (panels.length > RIBBON.panels) issues.push({ path: 'panels', rule: 'budget', message: `a ribbon holds ${RIBBON.panels} panels, this layer has ${panels.length}` });
+  if (reads > RIBBON.reads) issues.push({ path: 'panels', rule: 'budget', message: `the ribbon panels ask for ${reads} reads, a ribbon holds ${RIBBON.reads}` });
   return issues;
 }
 

@@ -1,4 +1,4 @@
-import { colormaps, defineLayer, formatHour, loadSiteData, paletteHex, sample, siteProjection, tableFrame, tablePalette, zonedTimeToUtc } from '@mrstudio/sdk';
+import { clipToTable, colormaps, defineLayer, formatHour, loadSiteData, paletteHex, sample, siteProjection, tableFrame, tablePalette, zonedTimeToUtc } from '@mrstudio/sdk';
 import type { CanvasOverlay, FieldFrame, LayerManifest, PointerSample, TableContext, ToolInput } from '@mrstudio/sdk';
 
 import manifest from '../layer.json';
@@ -103,7 +103,13 @@ export default defineLayer<Params>({
     function pickExample(): void {
       const { width_m, height_m } = ctx.site.extent;
       const span = Math.hypot(width_m, height_m);
-      const picked = exampleWalk(network, seed++, span * 0.35, span * 0.8, ctx.params.detour / 100);
+      // The example's ends are on the table, where visitors can see them.
+      const table2d = tableFrame(ctx.site);
+      const onTable = (node: number) => {
+        const [x, y] = table2d.toTable(network.nodes[node] as [number, number]);
+        return x >= 0 && y >= 0 && x <= width_m && y <= height_m;
+      };
+      const picked = exampleWalk(network, seed++, span * 0.35, span * 0.8, ctx.params.detour / 100, onTable);
       if (picked) [from, to] = picked;
       clock = 0;
       reroute();
@@ -126,6 +132,9 @@ export default defineLayer<Params>({
       const g = paths.context;
       const scale = paths.pixelsPerMetre;
       paths.clear();
+      // The walkways can reach past the table; the drawing stops at its edge, as the other layers do (#203).
+      g.save();
+      clipToTable(paths, ctx.site);
       g.lineCap = 'round';
       g.lineJoin = 'round';
       if (ctx.params.network) {
@@ -144,6 +153,7 @@ export default defineLayer<Params>({
       }
       if (pair) drawRoutes(scale);
       drawEnds();
+      g.restore();
     }
 
     function drawRoutes(scale: number): void {
@@ -207,6 +217,8 @@ export default defineLayer<Params>({
       const g = walk.context;
       walk.clear();
       if (!pair) return;
+      g.save();
+      clipToTable(walk, ctx.site);
       const longest = pair.coolest.length;
       const metres = Math.min(clock, longest / WALKER_M_PER_S) * WALKER_M_PER_S;
       const radius = Math.max(5, 5 * walk.pixelsPerMetre);
@@ -222,6 +234,7 @@ export default defineLayer<Params>({
         g.strokeStyle = '#0b0e14';
         g.stroke();
       }
+      g.restore();
     }
 
     let drawnPalette: ReturnType<typeof tablePalette> | null = null;

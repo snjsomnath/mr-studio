@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "node --test --experimental-strip-types test/*.test.ts"
   },
   "dependencies": {
     "@mrstudio/dashboard": "workspace:*",
@@ -16,6 +17,7 @@
     "three": "0.180.0"
   },
   "devDependencies": {
+    "@types/node": "^22.0.0",
     "@types/three": "0.180.0",
     "typescript": "^5.9.0",
     "vite": "^7.0.0"

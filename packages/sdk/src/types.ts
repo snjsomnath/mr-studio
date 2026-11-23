@@ -191,6 +191,11 @@ export interface PanelSpec {
   at?: { col: number; row: number };
   /** In a site's pages: the layer whose params and shared values the bindings read. */
   layer?: string;
+  /**
+   * Drawn on the table's ribbon, the projector's blank space beside the model (#78), instead of the TV.
+   * Only small sizes (`chip`, `tile`, `wide`); rules in docs/contracts/present.md, Ribbon.
+   */
+  ribbon?: boolean;
 }
 
 /** `tv` in site.json. */
@@ -220,6 +225,11 @@ export interface TvConfig {
   idle_reset_s?: number;
   /** Seconds each layer stays up on the home screen's attract loop. Default 4. */
   attract_s?: number;
+  /**
+   * The controller's Map controls group (#198): Reset view, Full screen and Calibrate, for
+   * whoever runs the table. Default true; false leaves only Reset, for a table visitors run alone.
+   */
+  map_controls?: boolean;
 }
 
 /** The site's About page on the controller: a title, a few lines, and who made it. */
@@ -227,6 +237,8 @@ export interface TvAbout {
   title?: string;
   text?: string;
   credits?: { role?: string; name: string; note?: string }[];
+  /** Logos along the top of the Credits page: images in the site folder, with the name each stands for. Without them, `branding.logo`. */
+  logos?: { path: string; name?: string }[];
 }
 
 // ---- Site and session -----------------------------------------------------
@@ -313,6 +325,12 @@ export interface LayerState {
   step?: StepState;
   /** For the layer a sequence is showing as its current step: that sequence. */
   shown_by?: string;
+  /**
+   * Part of the map at rest although its package is not a base or ambient layer: a layer of
+   * the scene that site.json starts on and gives no button (#204). It has no button on the
+   * controller and stays on while button layers open and close.
+   */
+  rest?: boolean;
 }
 
 /**
