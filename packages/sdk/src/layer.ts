@@ -161,6 +161,8 @@ export interface TableContext<P = Params> extends ContextBase<P> {
   publish(values: Record<string, unknown>): void;
   /** Sub-steps: parts of the layer that Next reveals one at a time, such as the categories of a map. */
   readonly steps: LayerSteps;
+  /** The legend on the controller's stage, when it changes as the layer runs. */
+  readonly legend: LayerLegend;
   /** Runs every animation frame while the layer is active. `dt` is seconds since the last call. */
   onFrame(callback: (dt: number) => void): void;
   /** Registers cleanup to run when the layer is turned off. */
@@ -197,6 +199,27 @@ export interface LayerSteps {
   readonly revealed: number;
   /** The layer's steps as the host has them: a sequence's current step, or the sub-steps it defined. */
   readonly state: StepState | undefined;
+}
+
+/**
+ * The controller's legend (docs/contracts/present.md, Stage). Without it the controller
+ * shows `legend` from layer.json. Rows are matched by `id`, or by label when they have none,
+ * and rows named in `steps.define` titles follow the reveal by themselves.
+ */
+export interface LayerLegend {
+  /** Replaces the rows. An empty list goes back to layer.json's legend. */
+  set(items: LegendRow[]): void;
+  /** Marks the row just revealed on the table, or none. */
+  highlight(id: string | null): void;
+  /** Shows only these rows at full strength, for cumulative reveals; `'all'` shows every row. */
+  show(ids: string[] | 'all'): void;
+}
+
+export interface LegendRow {
+  id?: string;
+  label: string;
+  color?: string;
+  shape?: 'line' | 'fill' | 'point' | string;
 }
 
 export interface PanelHandlers {

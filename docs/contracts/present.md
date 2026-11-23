@@ -44,6 +44,8 @@ ctx.legend.show(ids: string[] | 'all');    // cumulative reveals show only what 
 
 The remaining `panels` (built) are laid out under the zones, as today.
 
+**Built (legend and controls, 2026-11-23):** the legend zone shows `ctx.legend` rows (sent with the layer's published values as `shared.legend`, with `legend_highlight` and `legend_shown`), else `legend` from layer.json. A slideshow shows the legend of the layer on show. Rows named like the layer's sub-step titles follow the reveal on their own: rows still to come are faint, the one just revealed is marked, and the strip's row of names steps aside. An `action` control with `"tier": "primary"` (this is the contract's `"primary": true`) is one large accent button at the top of the stage. Every core layer's controls are tiered: the one thing a visitor does is primary, a few direct settings stay in the row, and the author's settings (datasets, service addresses, colours, opacity) wait behind More settings.
+
 ## 3. Steps: one model for "Next"
 
 **Built (#43, 2026-11-23):** `layer.step`, `layer.play` and `layer.substeps` on the host, `state.step` and `state.shown_by`, `ctx.steps` in the SDK, and the editor's Slides list. The live position is `state.step`, because `state.steps` holds the site.json settings. Details are in [session.md](session.md), Steps. The controller's ◀ ▶ and counter come with the stage (#76).

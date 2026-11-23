@@ -182,6 +182,12 @@ export class LayerManager {
           return store.state.layers[id]?.step;
         },
       },
+      // The legend travels with the published values, so every controller reads it from `shared`.
+      legend: {
+        set: (items) => extras.publish({ legend: items }),
+        highlight: (item) => extras.publish({ legend_highlight: item }),
+        show: (ids) => extras.publish({ legend_shown: ids === 'all' ? null : ids }),
+      },
       onFrame: (callback) => running.frames.push(callback),
       onCleanup: track,
     };

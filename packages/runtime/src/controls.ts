@@ -1,5 +1,5 @@
 import { isVisible } from '@mrstudio/sdk';
-import type { Connection, Control, LayerManifest, TextControl, LayerState, PanelContext, PanelHandlers, Role, TvAbout } from '@mrstudio/sdk';
+import type { Connection, Control, LayerManifest, LegendRow, TextControl, LayerState, PanelContext, PanelHandlers, Role, TvAbout } from '@mrstudio/sdk';
 
 import { icon } from './editor/icons.ts';
 import { baseContext, paramSender } from './layer-manager.ts';
@@ -407,7 +407,7 @@ function stepStrip(id: string, store: Store, connection: Connection): { element:
       if (!at || at.count === 0) return;
       const sequence = Boolean(store.manifest(state.layer)?.sequence);
       // The layer the slideshow shows now, for its name and its sub-steps' names.
-      const shown = sequence ? store.state.scene.find((other) => store.state.layers[other]?.shown_by === id) : undefined;
+      const shown = sequence ? shownBy(store, id) : undefined;
       const shownState = shown ? store.state.layers[shown] : undefined;
       const shownName = shownState ? (shownState.button?.name ?? store.manifest(shownState.layer)?.name ?? '') : '';
       count.textContent = sequence ? `${Math.min(at.index + 1, at.count)} of ${at.count}` : `${at.index} of ${at.count} shown`;
@@ -439,6 +439,65 @@ function stepStrip(id: string, store: Store, connection: Connection): { element:
         play.setAttribute('aria-label', play.title);
         play.setAttribute('aria-pressed', String(at.playing));
       }
+    },
+  };
+}
+
+/** The layer a slideshow shows now, or undefined. */
+function shownBy(store: Store, sequence: string): string | undefined {
+  return store.state.scene.find((other) => store.state.layers[other]?.shown_by === sequence);
+}
+
+/**
+ * The legend zone of the stage (#76): big swatches for what is on the table. The rows come
+ * from what the layer published (`ctx.legend`, or a `legend` list in `shared`), otherwise from
+ * layer.json. A slideshow shows the legend of the layer on show. Rows named by the sub-steps
+ * follow the reveal: those still to come are faint, and the one just revealed is marked.
+ */
+function legendZone(id: string, store: Store): { element: HTMLElement; sync(state: LayerState): boolean } {
+  const zone = el('ul', 'stage-legend');
+  zone.setAttribute('aria-label', 'Legend');
+  zone.hidden = true;
+  let drawn = '';
+  return {
+    element: zone,
+    sync(state) {
+      const source = (store.manifest(state.layer)?.sequence ? shownBy(store, id) : undefined) ?? id;
+      const from = source ? store.state.layers[source] : undefined;
+      const shared = (from?.shared ?? {}) as { legend?: unknown; legend_highlight?: unknown; legend_shown?: unknown };
+      const published = Array.isArray(shared.legend) ? (shared.legend as LegendRow[]) : [];
+      const rows = (published.length > 0 ? published : (from ? store.manifest(from.layer)?.legend : undefined) ?? []).filter((row) => row && typeof row.label === 'string');
+      const key = (row: LegendRow) => row.id ?? row.label;
+      // The reveal: sub-steps named like the rows say which rows are on the table yet.
+      const titles = from?.step?.titles ?? [];
+      const revealed = from?.step && titles.length > 0 ? Math.min(from.step.index, titles.length) : 0;
+      const partial = revealed > 0 && revealed < titles.length;
+      const listed = Array.isArray(shared.legend_shown) ? new Set((shared.legend_shown as string[]).map(String)) : undefined;
+      const current = typeof shared.legend_highlight === 'string' ? shared.legend_highlight : revealed > 0 ? titles[revealed - 1] : undefined;
+      const look = rows.map((row) => {
+        const index = titles.indexOf(row.label);
+        const waiting = listed ? !listed.has(key(row)) : partial && index >= revealed;
+        return { row, waiting, current: current !== undefined && (key(row) === current || row.label === current) };
+      });
+      zone.hidden = rows.length === 0;
+      // When the rows name the sub-steps, the legend shows the reveal and the strip's row of names steps aside.
+      const follows = rows.some((row) => titles.includes(row.label));
+      const next = JSON.stringify(look);
+      if (next === drawn) return follows;
+      drawn = next;
+      zone.replaceChildren(
+        ...look.map(({ row, waiting, current: now }) => {
+          const item = el('li', 'legend-row');
+          item.classList.toggle('is-waiting', waiting);
+          item.classList.toggle('is-current', now);
+          const swatch = el('i', 'legend-swatch');
+          swatch.dataset.shape = row.shape ?? 'fill';
+          if (row.color) swatch.style.setProperty('--swatch', row.color);
+          item.append(swatch, el('span', 'legend-label', row.label));
+          return item;
+        }),
+      );
+      return follows;
     },
   };
 }
@@ -476,6 +535,8 @@ export class Controller {
       const manifest = store.manifest(state.layer);
       if (state.active && !state.parent && this.aboutOpen && manifest && !isAmbient(manifest)) this.showAbout(false);
       this.cards.get(id)?.sync(state);
+      // The slideshow's stage speaks for the layer it shows: its legend and step names follow that layer.
+      if (state.shown_by && store.state.layers[state.shown_by]) this.cards.get(state.shown_by)?.sync(store.state.layers[state.shown_by]!);
       // A button moves when its author changes its side, and the buttons shared out around it may move too.
       if (this.right && this.sides.has(id) && this.layoutKey() !== this.shown) this.arrange();
     });
@@ -632,9 +693,11 @@ export class Controller {
     moreRows.append(...widgets.filter((w) => tierOf(w) === 'more').map((w) => w.row));
     // A layer with steps (a slideshow, or a map revealed part by part) gets ◀ ▶, play and the info strip (#43, #76).
     const strip = stepStrip(id, store, connection);
+    const legend = legendZone(id, store);
     body.append(words, strip.element);
     if (!hero.hidden) body.append(hero);
     for (const group of [primary, controls]) if (group.childElementCount > 0) body.append(group);
+    body.append(legend.element);
     // "More settings" closes the primary row when there is one, so it costs no height of its own.
     if (moreRows.childElementCount > 0) (primary.childElementCount > 0 ? primary : body).append(more);
 
@@ -665,6 +728,7 @@ export class Controller {
         card.classList.toggle('is-active', open);
         body.hidden = !open;
         strip.sync(state);
+        strip.element.classList.toggle('legend-follows', legend.sync(state));
         // A slideshow made of layers is driven by its steps: its own slide controls step aside.
         const stepped = Boolean(manifest.sequence && state.step);
         for (const w of widgets) {

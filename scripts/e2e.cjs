@@ -62,6 +62,8 @@ async function main() {
       { layer: 'sunlight', params: { hour: 9 }, title: 'Morning shadows', description: 'The square at nine on midsummer morning.', source: 'Sun position: NOAA' },
       { layer: 'trees', title: 'Street trees' },
     ] };
+    // A map of the buildings by use, revealed a use at a time: the controller's legend follows it (#76).
+    json.layers.push({ use: 'mapdata', id: 'uses', active: false, button: { name: 'Building uses' }, params: { dataset: 'buildings', colorBy: 'kind', reveal: true } });
     fs.writeFileSync(path.join(site, 'site.json'), JSON.stringify(json, null, 2));
   }
   const host = spawn(
@@ -355,6 +357,9 @@ async function main() {
     assert.notDeepEqual(walk, off, 'the network and routes should be drawn');
     assert.match(await coolPanel.locator('[data-route="shortest"] .coolpaths-length').textContent(), /^\d+ m$/);
     if (shots) await dev.screenshot({ path: path.join(shots, 'dev-coolpaths.png') });
+    // Its main action is one large button at the top of its stage (#76).
+    assert.equal(await cool.locator('.controls-primary button.action', { hasText: 'Try another walk' }).count(), 1);
+    if (shots) await tv.screenshot({ path: path.join(shots, 'tv-coolpaths.png') });
     // A phone may ask for another walk, and the table answers with a different one.
     await phone.getByRole('button', { name: 'Try another walk' }).click();
     await dev.waitForTimeout(800);
@@ -410,6 +415,28 @@ async function main() {
     await tv.locator('.layer-button[aria-pressed="true"]', { hasText: 'Sunlight' }).waitFor();
     await tv.locator('.layer-button[aria-pressed="false"]', { hasText: 'Slideshow' }).waitFor();
 
+    // The legend zone (#76): big swatches for the uses on the table. Next reveals one use at a time;
+    // the uses still to come are faint, and the one just revealed is marked.
+    await press('Building uses', true);
+    const uses = tv.locator('.layer-open[data-layer="uses"]');
+    const legendRows = uses.locator('.stage-legend .legend-row');
+    await legendRows.nth(3).waitFor();
+    assert.equal(await legendRows.count(), 4);
+    assert.equal(await uses.locator('.legend-row.is-waiting, .legend-row.is-current').count(), 0, 'the overview shows every use');
+    await uses.locator('.step-count', { hasText: '0 of 4 shown' }).waitFor();
+    await uses.getByRole('button', { name: 'Next step' }).click();
+    await uses.locator('.legend-row.is-current').waitFor();
+    assert.equal(await uses.locator('.legend-row.is-waiting').count(), 3);
+    // The legend names the reveal, so the strip's row of names steps aside.
+    assert.equal(await uses.locator('.step-subs').isVisible(), false);
+    // The map's settings are the author's, behind More settings: the stage is the legend and the steps.
+    assert.equal(await uses.getByLabel('Colour by').isVisible(), false);
+    await uses.getByRole('button', { name: 'Next step' }).click();
+    await uses.locator('.step-count', { hasText: '2 of 4 shown' }).waitFor();
+    assert.equal(await uses.locator('.legend-row.is-waiting').count(), 2);
+    if (shots) await tv.screenshot({ path: path.join(shots, 'tv-legend.png') });
+    await press('Building uses', false);
+
 
     // Wind: the simulation streams while it settles, tracers move, and a faster wind only rescales.
     await press('Sunlight', false);
@@ -446,7 +473,7 @@ async function main() {
     const stage = compose.locator('.table-surface');
     const rows = () => compose.locator('.stack-row strong').allTextContents();
     await compose.locator('.palette-group', { hasText: 'Analysis' }).getByText('Sunlight').waitFor();
-    assert.deepEqual(await rows(), ['Wind', 'Mobility', 'Cool paths', 'Sketch', 'Slideshow', 'Trees', 'Public transport', 'Traffic', 'Building lights', 'Sunlight', 'Base map']);
+    assert.deepEqual(await rows(), ['Map data (uses)', 'Wind', 'Mobility', 'Cool paths', 'Sketch', 'Slideshow', 'Trees', 'Public transport', 'Traffic', 'Building lights', 'Sunlight', 'Base map']);
     const drag = async (from, to, where = 0.5) => {
       const a = await from.boundingBox();
       const b = await to.boundingBox();
@@ -507,14 +534,14 @@ async function main() {
     await compose.getByLabel('Remove Traffic (cars-2)').click();
     await compose.getByLabel('Remove Trees (trees-2)').click();
     await row('Trees (trees-2)').waitFor({ state: 'detached' });
-    assert.deepEqual(savedLayers().map((l) => l.id ?? l.use), ['basemap', 'sunlight', 'building-lights', 'cars', 'transit', 'trees', 'slideshow', 'sketch', 'coolpaths', 'mobility', 'wind']);
+    assert.deepEqual(savedLayers().map((l) => l.id ?? l.use), ['basemap', 'sunlight', 'building-lights', 'cars', 'transit', 'trees', 'slideshow', 'sketch', 'coolpaths', 'mobility', 'wind', 'uses']);
 
     // ---- The editor ----
     await compose.close();
     const editor = await open('/edit', { width: 1440, height: 900 });
     const treeLayers = () => editor.locator('.ed-tree .ed-row[data-layer] .ed-row-label').allTextContents();
     await editor.locator('.ed-row[data-context="home"]').waitFor();
-    assert.deepEqual(await treeLayers(), ['Wind', 'Mobility', 'Cool paths', 'Sketch', 'Slideshow', 'Sunlight']);
+    assert.deepEqual(await treeLayers(), ['Building uses', 'Wind', 'Mobility', 'Cool paths', 'Sketch', 'Slideshow', 'Sunlight']);
     // The home screen holds the base map and the ambient life, and offers more of it.
     assert.deepEqual(await editor.locator('.ed-inspector .ed-row .ed-row-label').allTextContents(), ['Trees', 'Public transport', 'Traffic', 'Building lights', 'Base map']);
     await editor.locator('.ed-ribbon .ed-tool[data-layer="trees"]').click();
@@ -606,7 +633,7 @@ async function main() {
     await tv.locator('.rail-group').first().waitFor({ state: 'detached' });
     await editor.locator('.ed-tree .ed-row[data-layer="mobility"] .ed-row-label', { hasText: 'Mobility' }).waitFor();
     await tv.locator('.controller-right .layer-button', { hasText: 'Mobility' }).waitFor();
-    assert.deepEqual(savedLayers().map((l) => l.id ?? l.use), ['basemap', 'sunlight', 'building-lights', 'cars', 'transit', 'trees', 'slideshow', 'sketch', 'coolpaths', 'mobility', 'wind']);
+    assert.deepEqual(savedLayers().map((l) => l.id ?? l.use), ['basemap', 'sunlight', 'building-lights', 'cars', 'transit', 'trees', 'slideshow', 'sketch', 'coolpaths', 'mobility', 'wind', 'uses']);
 
     // A refused file answers 422, which the browser logs on its own.
     const real = errors.filter((e) => !/wrong session code|WebSocket|status of 422/.test(e));
@@ -720,7 +747,7 @@ async function main() {
     await guide.getByLabel('Name of Wind').blur();
     await live.locator('.layer-button', { hasText: 'Wind' }).waitFor();
     await guide.getByRole('button', { name: 'Next' }).click();
-    await guide.getByText('6 layers, each a button on the controller').waitFor();
+    await guide.getByText('7 layers, each a button on the controller').waitFor();
     if (shots) await guide.screenshot({ path: path.join(shots, 'wizard.png') });
     // Leaving the guide lands in the editor, and the guide stays one click away.
     await guide.getByRole('button', { name: 'Fine-tune in the editor' }).click();

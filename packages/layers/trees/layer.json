@@ -7,10 +7,10 @@
   "category": "ambient",
   "requires": { "data": ["trees"] },
   "controls": [
-    { "id": "color", "type": "color", "label": "Colour", "default": "#3fa66b" },
+    { "id": "color", "type": "color", "label": "Colour", "default": "#3fa66b", "tier": "more" },
     { "id": "size", "type": "range", "label": "Crown size", "min": 0.5, "max": 3, "step": 0.1, "default": 1.4 },
     { "id": "sway", "type": "range", "label": "Wind", "min": 0, "max": 3, "step": 0.1, "default": 1 },
-    { "id": "opacity", "type": "range", "label": "Opacity", "min": 0.1, "max": 1, "step": 0.05, "default": 0.85 }
+    { "id": "opacity", "type": "range", "label": "Opacity", "min": 0.1, "max": 1, "step": 0.05, "default": 0.85, "tier": "more" }
   ],
   "tools": []
 }
