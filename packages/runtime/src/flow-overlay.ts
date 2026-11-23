@@ -1,4 +1,4 @@
-import { clearSegment, FlowField, lut, ribbonLight, smoothstep01 as smooth, Streamlines, Tracers } from '@mrstudio/sdk';
+import { clearSegment, FacadeGlow, facadeEdges, FlowField, lut, ribbonLight, smoothstep01 as smooth, Streamlines, Tracers } from '@mrstudio/sdk';
 import type { Colormap, FieldFrame, FlowOverlay, FlowOverlayStyle, SiteInfo } from '@mrstudio/sdk';
 import type { CustomLayerInterface, CustomRenderMethodInput, Map as MapLibreMap } from 'maplibre-gl';
 
@@ -18,10 +18,10 @@ uniform vec2 u_origin;    // top left corner, relative to the extent's centre
 uniform vec2 u_right;     // top left to top right
 uniform vec2 u_down;      // top left to bottom left
 in vec2 a_position;
-in vec2 a_edge;           // signed distance from the centre line, and the half width, in pixels
+in vec3 a_edge;           // signed distance from the centre line, half width and soft edge, in pixels
 in vec4 a_color;
 out vec4 v_color;
-out vec2 v_edge;
+out vec3 v_edge;
 void main() {
   v_color = a_color;
   v_edge = a_edge;
@@ -32,16 +32,18 @@ void main() {
 const FRAGMENT = `#version 300 es
 precision mediump float;
 in vec4 v_color;
-in vec2 v_edge;
+in vec3 v_edge;
 out vec4 color;
 void main() {
-  float cover = clamp(v_edge.y + 0.5 - abs(v_edge.x), 0.0, 1.0);
+  // A crisp line has a one-pixel antialiased edge; a soft one fades out over its soft width.
+  float d = abs(v_edge.x);
+  float cover = v_edge.z > 0.0 ? clamp((v_edge.y + v_edge.z - d) / v_edge.z, 0.0, 1.0) : clamp(v_edge.y + 0.5 - d, 0.0, 1.0);
   float a = v_color.a * cover;
   color = vec4(v_color.rgb * a, a);   // premultiplied, as MapLibre blends
 }`;
 
-/** Bytes per vertex: two float32 for the position, two for the edge, four uint8 for the colour. */
-const STRIDE = 20;
+/** Bytes per vertex: two float32 for the position, three for the edge, four uint8 for the colour. */
+const STRIDE = 24;
 /** Seconds the drawn field keeps easing towards a new frame. */
 const SETTLE_SECONDS = 1.5;
 /** Pixels of soft edge outside each line. */
@@ -53,6 +55,14 @@ const LOOK = {
   ribbonLight: { width: 0.8, grow: 1.25, opacity: 0.88 },
   particle: { width: 0.85, opacity: 0.9 },
   particleTip: { width: 0.75, grow: 0.8, length: 2 },
+  /** The facade glow's three nested strokes: full width in pixels, opacity, colour. */
+  facade: [
+    [16, 0.28, [255, 159, 67]],
+    [7, 0.6, [255, 194, 105]],
+    [2, 1, [255, 245, 219]],
+  ] as [number, number, [number, number, number]][],
+  /** The two halo strokes fade out over most of their width instead of ending in a hard edge. */
+  facadeSoft: [5, 2, 0],
   /** Seconds of path a particle's tail can show. */
   tailSeconds: 0.24,
 } as const;
@@ -71,6 +81,7 @@ class Strips {
   private py: number[] = [];
   private pc: number[] = [];
   private pw: number[] = [];
+  private ps: number[] = [];
 
   reset(): void {
     this.vertex = 0;
@@ -78,16 +89,26 @@ class Strips {
   }
 
   /** Adds a point to the current line: position in cells, colour as 0xRRGGBBAA, half width in pixels. */
-  point(x: number, y: number, rgba: number, half: number): void {
+  point(x: number, y: number, rgba: number, half: number, soft = 0): void {
     this.px.push(x);
     this.py.push(y);
     this.pc.push(rgba);
     this.pw.push(half);
+    this.ps.push(soft);
+  }
+
+  /** Makes the current line's two end points transparent, so it fades in and out, when it is long enough to. */
+  fadeEnds(minimum: number): void {
+    const n = this.pc.length;
+    if (n < minimum) return;
+    const clear = LITTLE ? 0x00ffffff : 0xffffff00;
+    this.pc[0] = (this.pc[0]! & clear) >>> 0;
+    this.pc[n - 1] = (this.pc[n - 1]! & clear) >>> 0;
   }
 
   /** Ends the current line and writes it as a strip. `cellsPerPixel` turns widths into cells. */
   end(cellsPerPixel: number): void {
-    const { px, py, pc, pw } = this;
+    const { px, py, pc, pw, ps } = this;
     const n = px.length;
     if (n >= 2) {
       this.reserve(n * 2, (n - 1) * 6);
@@ -101,7 +122,7 @@ class Strips {
         const len = Math.hypot(tx, ty) || 1;
         tx /= len;
         ty /= len;
-        const outer = pw[j]! + FEATHER;
+        const outer = pw[j]! + (ps[j]! > 0 ? ps[j]! : FEATHER);
         const reach = outer * cellsPerPixel;
         for (const side of [-1, 1]) {
           const f = this.vertex * (STRIDE / 4);
@@ -109,7 +130,8 @@ class Strips {
           floats[f + 1] = py[j]! + tx * reach * side;
           floats[f + 2] = outer * side;
           floats[f + 3] = pw[j]!;
-          words[f + 4] = pc[j]!;
+          floats[f + 4] = ps[j]!;
+          words[f + 5] = pc[j]!;
           this.vertex++;
         }
         if (j > 0) {
@@ -127,6 +149,7 @@ class Strips {
     py.length = 0;
     pc.length = 0;
     pw.length = 0;
+    ps.length = 0;
   }
 
   private reserve(vertices: number, indices: number): void {
@@ -181,6 +204,10 @@ export class MapFlowOverlay implements FlowOverlay, CustomLayerInterface {
   private field: FlowField | null = null;
   private tracers: Tracers | null = null;
   private lines: Streamlines | null = null;
+  /** Building outlines in table metres, and the glow built from them once the field's size is known. */
+  private facades: [number, number][][][] = [];
+  private glow: FacadeGlow | null = null;
+  private tableSize: [number, number];
   private settle = 0;
   private last = 0;
   /** Animation time in seconds, for the light travelling along the ribbons. */
@@ -191,7 +218,8 @@ export class MapFlowOverlay implements FlowOverlay, CustomLayerInterface {
   constructor(map: MapLibreMap, id: string, site: SiteInfo, style: FlowOverlayStyle & { colormap: Colormap }) {
     this.map = map;
     this.id = id;
-    this.style = { mode: 'ribbons', count: 500, rate: 0.04, opacity: 1, max: undefined, ...style };
+    this.style = { mode: 'ribbons', count: 500, rate: 0.04, opacity: 1, max: undefined, facadeGlow: false, ...style };
+    this.tableSize = [site.extent.width_m, site.extent.height_m];
     this.table = lut(this.style.colormap);
     const extent = mercatorExtent(site);
     this.centre = extent.centre;
@@ -206,6 +234,7 @@ export class MapFlowOverlay implements FlowOverlay, CustomLayerInterface {
       this.field = FlowField.fromFrames(u, v);
       this.tracers = null;
       this.lines = null;
+      this.glow = null;
     }
     this.settle = SETTLE_SECONDS;
     this.map.triggerRepaint();
@@ -219,6 +248,12 @@ export class MapFlowOverlay implements FlowOverlay, CustomLayerInterface {
       this.tracers = null;
       this.lines = null;
     }
+    this.map.triggerRepaint();
+  }
+
+  setFacades(polygons: [number, number][][][]): void {
+    this.facades = polygons;
+    this.glow = null;
     this.map.triggerRepaint();
   }
 
@@ -243,9 +278,9 @@ export class MapFlowOverlay implements FlowOverlay, CustomLayerInterface {
     gl.enableVertexAttribArray(position);
     gl.vertexAttribPointer(position, 2, gl.FLOAT, false, STRIDE, 0);
     gl.enableVertexAttribArray(edge);
-    gl.vertexAttribPointer(edge, 2, gl.FLOAT, false, STRIDE, 8);
+    gl.vertexAttribPointer(edge, 3, gl.FLOAT, false, STRIDE, 8);
     gl.enableVertexAttribArray(color);
-    gl.vertexAttribPointer(color, 4, gl.UNSIGNED_BYTE, true, STRIDE, 16);
+    gl.vertexAttribPointer(color, 4, gl.UNSIGNED_BYTE, true, STRIDE, 20);
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.indexBuffer);
     gl.bindVertexArray(null);
     this.last = 0;
@@ -273,6 +308,7 @@ export class MapFlowOverlay implements FlowOverlay, CustomLayerInterface {
     if (this.settle > 0) {
       field.blendTowards(this.target, dt);
       this.settle -= dt;
+      this.glow?.place();
     }
     const matrix = matrixAt(options, this.centre);
     const cellsPerPixel = 1 / Math.max(1e-6, this.pixelsPerCell(matrix, field));
@@ -280,6 +316,18 @@ export class MapFlowOverlay implements FlowOverlay, CustomLayerInterface {
     const rate = this.style.rate * Math.max(field.width, field.height);
     const strips = this.strips;
     strips.reset();
+    if (this.style.facadeGlow && this.facades.length > 0) {
+      if (!this.glow) {
+        // Table metres to field cells; the field covers the table, rows down as in table metres.
+        const [w, h] = this.tableSize;
+        const sx = field.width / w;
+        const sy = field.height / h;
+        const cells = this.facades.map((rings) => rings.map((ring) => ring.map(([x, y]) => [x * sx, y * sy] as [number, number])));
+        this.glow = new FacadeGlow(field, facadeEdges(cells, field.width, field.height));
+      }
+      this.glow.update(dt);
+      this.facadeGlow(this.glow, cellsPerPixel);
+    }
     if (this.style.mode === 'particles') {
       if (!this.tracers) this.tracers = new Tracers(field, { count: Math.max(0, Math.round(this.style.count)), trailSeconds: LOOK.tailSeconds + 0.06 });
       this.tracers.update(dt, rate);
@@ -339,6 +387,40 @@ export class MapFlowOverlay implements FlowOverlay, CustomLayerInterface {
     const k = Math.min(255, Math.max(0, Math.round((speed / (this.style.max ?? this.frameMax)) * 255))) * 4;
     const t = this.table;
     return rgba(t[k]!, t[k + 1]!, t[k + 2]!, alpha * (t[k + 3]! / 255) * this.style.opacity);
+  }
+
+  /** Building faces in the wind glow warm, as three nested strokes for a soft halo. */
+  private facadeGlow(glow: FacadeGlow, cellsPerPixel: number): void {
+    const strips = this.strips;
+    const { edges, intensity } = glow;
+    const opacity = this.style.opacity;
+    LOOK.facade.forEach(([width, strength, [r, g, b]], pass) => {
+      const soft = LOOK.facadeSoft[pass]!;
+      const half = Math.max(0.5, width / 2 - soft);
+      let open = false;
+      const close = () => {
+        // Runs fade in and out at their ends rather than stopping square.
+        strips.fadeEnds(4);
+        strips.end(cellsPerPixel);
+        open = false;
+      };
+      for (let e = 0; e < edges.length; e++) {
+        const edge = edges[e]!;
+        const level = intensity[e]!;
+        if (level < 0.01) {
+          if (open) close();
+          continue;
+        }
+        const joined = open && edges[e - 1]!.bx === edge.ax && edges[e - 1]!.by === edge.ay;
+        if (open && !joined) close();
+        // Weaker exposure is lifted so faint faces still read, without lighting faces out of the wind.
+        const colour = rgba(r, g, b, strength * Math.sqrt(level) * opacity);
+        if (!open) strips.point(edge.ax, edge.ay, colour, half, soft);
+        strips.point(edge.bx, edge.by, colour, half, soft);
+        open = true;
+      }
+      if (open) close();
+    });
   }
 
   /** Streamlines coloured by speed, with a soft white light travelling along each. */
