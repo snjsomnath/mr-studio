@@ -14,6 +14,7 @@ export class Store {
   private tvListeners = new Set<(tv: TvConfig | null) => void>();
   private displayListeners = new Set<(quality: DisplayQuality) => void>();
   private catalogListeners = new Set<(layer: string) => void>();
+  private settingsListeners = new Set<() => void>();
 
   constructor(connection: Connection, welcome: Welcome) {
     this.state = welcome.state;
@@ -45,6 +46,11 @@ export class Store {
     connection.on('catalog.removed', (p: { id: string }) => {
       this.manifests = this.manifests.filter((m) => m.id !== p.id);
       for (const listener of this.catalogListeners) listener(p.id);
+    });
+    // The table's name, time zone or branding changed (Table settings, #73).
+    connection.on('site.settings', (p: Pick<SessionState['site'], 'name' | 'timezone' | 'branding'>) => {
+      this.state.site = { ...this.state.site, name: p.name, timezone: p.timezone, branding: p.branding };
+      for (const listener of this.settingsListeners) listener();
     });
     connection.on('palette.changed', (p: { palette: SessionState['site']['palette'] }) => {
       this.state.site = { ...this.state.site, palette: p.palette };
@@ -87,6 +93,12 @@ export class Store {
    * Runs when a layer of the catalogue was saved, added or removed (by its id), or with
    * an empty id when the table's palette changed. Returns a function that stops it.
    */
+  /** The table's name, time zone or branding changed. Returns a function that stops listening. */
+  onSettings(listener: () => void): () => void {
+    this.settingsListeners.add(listener);
+    return () => this.settingsListeners.delete(listener);
+  }
+
   onCatalog(listener: (layer: string) => void): () => void {
     this.catalogListeners.add(listener);
     return () => this.catalogListeners.delete(listener);

@@ -38,13 +38,16 @@ fn file_submenu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Submenu<R>> {
         .item(&export)
         .item(&item("reveal", reveal, None)?)
         .separator()
+        // This table's own settings, in the editor (#73); app settings are MR Studio > Settings.
+        .item(&item("table-settings", "Table settings…", None)?)
+        .separator()
         .item(&item("close", "Close table", Some("CmdOrCtrl+W"))?)
         .item(&item("home", "All tables", Some("CmdOrCtrl+Shift+H"))?);
     if !cfg!(target_os = "macos") {
         // On macOS these live in the app menu, where people look for them.
         file = file
             .separator()
-            .item(&item("settings", "Displays and settings…", Some("Ctrl+,"))?)
+            .item(&item("settings", "Settings…", Some("Ctrl+,"))?)
             .item(&PredefinedMenuItem::quit(app, Some("Exit"))?);
     }
     file.build()
@@ -54,7 +57,8 @@ fn file_submenu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Submenu<R>> {
 /// work in a webview there), View and Window.
 pub fn app_menu(app: &AppHandle<Wry>) -> tauri::Result<Menu<Wry>> {
     let name = app.package_info().name.clone();
-    let settings = MenuItemBuilder::with_id("settings", "Displays and settings…").accelerator("CmdOrCtrl+,").build(app)?;
+    // App settings: this computer, every table (#73). Table settings are in the File menu.
+    let settings = MenuItemBuilder::with_id("settings", "Settings…").accelerator("CmdOrCtrl+,").build(app)?;
     let app_menu = SubmenuBuilder::new(app, &name)
         .item(&PredefinedMenuItem::about(app, None, None)?)
         .separator()
@@ -94,7 +98,8 @@ pub fn editor_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
 }
 
 /// The Edit menu's own items (#57).
-pub const EDIT_ACTIONS: [&str; 2] = ["undo", "redo"];
+/// Also "Table settings…" from the File menu, which the editor page opens.
+pub const EDIT_ACTIONS: [&str; 3] = ["undo", "redo", "table-settings"];
 
 /// Undo and Redo go to the editor page, which undoes the text being typed, or else the last
 /// change to the table through the host's revision history (#72). The system's own items

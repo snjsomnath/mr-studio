@@ -14,6 +14,7 @@ import { Importer, targetFor } from './importer.ts';
 import { confirmLeave, actionFor, fileButton } from './file-menu.ts';
 import type { FileAction } from './file-menu.ts';
 import { slidesSection } from './slides.ts';
+import { tableSettings } from './table-settings.ts';
 import { AT_REST, Wizard } from './wizard.ts';
 import './editor.css';
 
@@ -23,7 +24,7 @@ import './editor.css';
  * the table, which is visual and carries almost no text; the controller, the screen
  * beside it with the layer buttons, controls, legend and dashboard; and phones.
  */
-type Context = { kind: 'home' } | { kind: 'layer'; id: string } | { kind: 'controller' } | { kind: 'phone' };
+type Context = { kind: 'home' } | { kind: 'layer'; id: string } | { kind: 'controller' } | { kind: 'phone' } | { kind: 'table' };
 
 
 type Invoke = (command: string, args?: object) => Promise<unknown>;
@@ -103,6 +104,7 @@ export class Editor {
   private readonly saved = el('button', 'ed-saved');
   /** Undo, redo and the History panel, on the host's revision history (#57, #72). */
   private history!: HistoryControls;
+  private readonly titleName = el('strong');
   private readonly shell = el('div', 'ed');
   private readonly body = el('div', 'ed-body');
   /** The live controller, shown in the middle in place of the map. */
@@ -126,7 +128,25 @@ export class Editor {
     const { shell, body } = this;
     const left = el('aside', 'ed-left');
     const name = el('header', 'ed-left-head');
-    name.append(el('strong', undefined, store.state.site.name));
+    // The table's name opens its settings (#62, #73).
+    const tableName = el('button', 'ed-table-name');
+    tableName.type = 'button';
+    tableName.title = 'Table settings: name, time zone, place, and what the controller says';
+    const drawName = (): void => tableName.replaceChildren(el('strong', undefined, store.state.site.name), icon('settings', 14));
+    drawName();
+    tableName.addEventListener('click', () => this.go({ kind: 'table' }));
+    store.onSettings(() => {
+      drawName();
+      this.titleName.textContent = store.state.site.name;
+      if (this.context.kind === 'table') this.render();
+    });
+    window.addEventListener('mrs-edit', (event) => {
+      if ((event as CustomEvent<{ action: string }>).detail.action === 'table-settings') {
+        if (this.wizard) this.closeWizard();
+        this.go({ kind: 'table' });
+      }
+    });
+    name.append(tableName);
     left.append(name, this.tree);
 
     const centre = el('main', 'ed-centre');
@@ -630,7 +650,8 @@ export class Editor {
     // Windows), so the button would repeat it (#148). A browser has no menu: it gets the button.
     const file = invoke ? null : fileButton(false, (action) => void this.file(action));
     const name = el('div', 'ed-name');
-    name.append(el('strong', undefined, this.store.state.site.name), this.saved);
+    this.titleName.textContent = this.store.state.site.name;
+    name.append(this.titleName, this.saved);
     const steps = el('div', 'ed-steps');
     steps.append(this.history.undoButton, this.history.redoButton);
 
@@ -1019,6 +1040,10 @@ export class Editor {
       title = 'Phones';
       detail = 'Personal controllers for visitors';
       notice = `Visitors join with the code ${this.store.state.session.code}. Choosing which layers a phone may control comes with a later step of the editor.`;
+    } else if (context.kind === 'table') {
+      iconName = 'settings';
+      title = 'Table settings';
+      detail = 'This table only. The controller shows its title and welcome line.';
     } else if (context.kind === 'controller') {
       iconName = 'tv';
       title = 'Controller';
@@ -1026,8 +1051,9 @@ export class Editor {
       notice = 'The map stays visual. Words, buttons and numbers live on the controller. Arranging it here comes with a later step of the editor. ';
     }
     if (this.wizard) return;
-    this.showController(context.kind === 'controller');
-    if (context.kind === 'controller') notice = null;
+    const showsController = context.kind === 'controller' || context.kind === 'table';
+    this.showController(showsController);
+    if (showsController) notice = null;
     const badge = el('span', 'ed-row-icon');
     badge.append(icon(iconName));
     this.canvasHead.replaceChildren(badge, el('strong', undefined, title), el('span', undefined, detail));
@@ -1248,6 +1274,17 @@ export class Editor {
       nodes.push(section);
       const open = ambient.find((i) => i.id === this.homeItem);
       if (open) nodes.push(this.settings(open.id, open.manifest));
+    } else if (context.kind === 'table') {
+      nodes.push(head('settings', 'Table settings', this.store.state.site.name));
+      const invoke = desktop();
+      nodes.push(
+        ...tableSettings({
+          store: this.store,
+          send: (method, params) => this.send(method, params),
+          place: () => this.openWizard(false, 0),
+          appSettings: invoke ? () => void invoke('open_settings') : null,
+        }),
+      );
     } else if (context.kind === 'layer') {
       const layer = instances.find((i) => i.id === context.id)!;
       const as = layerButton(layer.id, layer.manifest, layer.state);

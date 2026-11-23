@@ -81,6 +81,9 @@ async function main() {
   status.hidden = true;
   // New data was brought into the site: layers read their data once, so every surface starts again. The editor does this itself.
   if (!editing) connection.on('site.changed', () => location.reload());
+  // The controller's title, logo and welcome line changed (Table settings, #73): it draws them once, so it starts again.
+  if (role === 'tv' && !editing) connection.on('site.settings', () => location.reload());
+  store.onSettings(() => (document.title = `${store.state.site.branding.title ?? 'MR Studio'} · ${store.state.site.name}`));
   // A reconnect that lands on a restarted host (another table opened, the app relaunched) starts the page again:
   // layers read their data once, and reads made while the host was down came back empty (#222).
   if (!phone) {

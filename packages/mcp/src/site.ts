@@ -32,7 +32,7 @@ const FALLBACK_SCHEMA: SiteSchema = {
   'scene.terrain': { fields: ['path', 'width', 'height'], required: ['path', 'width', 'height'] },
   'scene.trees': { fields: ['path', 'height_property', 'default_height_m', 'crown_radius_m'], required: ['path'] },
   basemap: { fields: ['background', 'style'], required: [] },
-  branding: { fields: ['title', 'logo'], required: [] },
+  branding: { fields: ['title', 'logo', 'welcome'], required: [] },
   'layers[]': { fields: ['use', 'id', 'active', 'params', 'button', 'hide', 'items', 'steps'], required: ['use', 'id'] },
   'layers[].button': { fields: ['name', 'description', 'icon', 'side', 'group', 'order'], required: [] },
   'layers[].items[]': { fields: ['use', 'id', 'active', 'params', 'hide'], required: ['use', 'id'] },

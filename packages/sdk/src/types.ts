@@ -269,7 +269,8 @@ export interface SiteInfo {
     ribbons?: Partial<Record<'top' | 'bottom' | 'left' | 'right', 'off' | 'auto' | { cm: number }>>;
   } | null;
   basemap: { background: string; style: string | null };
-  branding: { title: string | null; logo: string | null };
+  /** Table settings (#73): the controller's title, logo and the welcome line under the title. */
+  branding: { title: string | null; logo: string | null; welcome?: string | null };
   /** The calibrated table view, when the site has a calibration.json. */
   calibration: {
     center: { lon: number; lat: number };

@@ -2506,3 +2506,107 @@ body[data-role='edit'] .ed-surface .table-frame {
 .dt-picker .dt-select {
   width: 100%;
 }
+
+/* ---- Table settings (#73, #62) ---- */
+
+.ed-table-name {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  margin: -4px;
+  padding: 4px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--ed-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ed-table-name svg {
+  flex: none;
+  color: var(--ed-text-2);
+}
+
+.ed-table-name:hover {
+  background: var(--ed-chrome);
+}
+
+.ed-field-wrap {
+  margin-bottom: 8px;
+}
+
+.ed-field-wrap .ed-field {
+  margin-bottom: 0;
+}
+
+.ed-field-wrap .ed-hint {
+  margin-left: 96px;
+  font-size: 11px;
+}
+
+.ed-field select {
+  height: 24px;
+  padding: 0 6px;
+  border: 1px solid var(--ed-line);
+  border-radius: 4px;
+  background: var(--ed-panel);
+  color: var(--ed-text);
+  font: inherit;
+  font-size: 12px;
+}
+
+.ed-place {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  color: var(--ed-text);
+}
+
+.ed-number {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ed-number input {
+  width: 72px;
+}
+
+.ed-sources-used {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.ed-source-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.ed-source-row div {
+  display: flex;
+  flex-direction: column;
+}
+
+.ed-source-row span {
+  color: var(--ed-text-2);
+}
+
+.ed-number input {
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--ed-line);
+  border-radius: 4px;
+  background: var(--ed-panel);
+  color: var(--ed-text);
+  font: inherit;
+  font-size: 12px;
+}

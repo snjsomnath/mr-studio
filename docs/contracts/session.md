@@ -299,6 +299,8 @@ Requests:
 | `custom.save` | `{ id, recipe }` | tv, dev | Saves a custom layer (site.md, Custom layers) under `custom` in site.json, new or replacing the one with that id, and offers it at once: every surface gets `catalog.changed { manifest }`. Instances of it on the table restyle in place and keep the params its controls still take. Refused for the id of a core layer. Returns `{ id, use }` (`use` is `custom:<id>`) |
 | `custom.remove` | `{ id }` | tv, dev | Removes a custom layer from site.json, refused while the table uses it. Surfaces get `catalog.removed { id }` |
 | `palette.set` | `{ palette }` | tv, dev | Saves the table's palette (`{ set?, slots? }`, site.md; `null` removes it). Surfaces get `palette.changed { palette }`, and the site's `palette` follows it; custom layers recolour at once |
+| `site.table` | `{ name?, timezone?, branding?: { title?, logo?, welcome? } }` | tv, dev | Changes the table settings that are not its place (see "Settings" below). A field left out stays, `null` clears an optional one. `name` 1 to 60 characters, `timezone` an IANA zone such as `Europe/Stockholm`, `title` up to 80, `welcome` up to 160, `logo` a picture inside the site folder. Every surface gets `site.settings`. Moving or resizing goes through `POST /api/site/place` |
+| `site.sources` | `{}` | table, tv, dev | Which outside sources (Sources manager, #41) this table's layers use: `{ sources: [{ source, layers: [{ id, name }] }] }`, read from the layer controls that name a source (`"sources"` in layer.json) |
 | `history.list` | `{}` | table, tv, dev | The table's revision history (see "Revision history" below): `{ revisions, head, can_undo, can_redo }`, newest first |
 | `history.undo` | `{}` | tv, dev | Puts back the version of site.json before the current one, whoever made the change. Answers like `history.list` |
 | `history.redo` | `{}` | tv, dev | Puts back the version undo last took away. A new change drops what could be redone |
@@ -330,6 +332,20 @@ Events:
 | `history.changed` | `{ revision, head, stepped, can_undo, can_redo }` after every change to site.json, from any writer. `stepped` is true for undo and redo. `revision.surface` is the surface that made it, so an editor can say "changed by someone else" |
 | `site.problem` | `{ message, revision }`: site.json was changed outside MR Studio and does not load. The table keeps what it shows; undo puts the last good version back |
 | `site.tv`, `site.display` | `{ tv }`, `{ display }` after those settings changed |
+| `site.settings` | `{ name, timezone, branding }` after `site.table`, or an undo or outside edit of those keys. The controller starts again to show the new title and welcome line |
+
+### Settings: this computer or this table
+
+Every setting has one home (#73):
+
+| | App settings | Table settings |
+| --- | --- | --- |
+| Belongs to | This computer, every table on it | This table only |
+| Stored in | The app's config folder (`displays.json`, colour, `sources.json` plus the OS keychain) | `site.json` and `calibration.json` in the table's folder |
+| Holds | Screens (which display is the table, which the controller), colour correction, the projector calibration tools, updates, keys and outside sources (Sources manager), phones on the network, present on open | Name, place and size, time zone, the controller's title, logo and welcome line (`branding`), welcome loop and idle reset (`tv.attract_s`, `tv.idle_reset_s`), the controller's theme and About page (`tv`), display quality (`display`), palette, and which sources its layers use (`site.sources`, a read-only view of the app's Sources) |
+| Opened from | *MR Studio > Settings…* on macOS, *File > Settings…* on Windows, Home's "Displays and settings" | The table's name at the top of the editor's layer list, or *File > Table settings…* |
+
+A table copied to another computer brings its table settings and none of the app settings: that computer's screens and keys apply. A source a table uses but the computer lacks shows as missing in the Sources manager, never as a key in site.json. The controller page in the editor (#54) previews the title and welcome line; it edits the same `branding` fields, so there is one copy of them.
 
 ### Revision history
 

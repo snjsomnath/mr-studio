@@ -322,7 +322,7 @@ impl AppState {
 }
 
 /// The keys of site.json a running table takes without re-baking its ground or reloading its surfaces.
-const LIVE_KEYS: [&str; 5] = ["layers", "custom", "palette", "tv", "display"];
+const LIVE_KEYS: [&str; 8] = ["layers", "custom", "palette", "tv", "display", "name", "timezone", "branding"];
 
 impl AppState {
     /// `history.list`, `history.undo`, `history.redo` and `history.restore { revision }` (#72).

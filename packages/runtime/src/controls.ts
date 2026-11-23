@@ -614,11 +614,11 @@ export class Controller {
     this.store = store;
     if (centre) {
       const credits = (site.tv?.about?.credits ?? []).map((c) => (c.role ? `${c.role}: ${c.name}` : c.name)).join('  ·  ');
-      this.attract = new AttractLoop(site.branding.title ?? site.name, () => this.attractStops(), { stepS: site.tv?.attract_s, credits: credits || undefined });
+      this.attract = new AttractLoop(site.branding.title ?? site.name, () => this.attractStops(), { stepS: site.tv?.attract_s, credits: credits || undefined, welcome: site.branding.welcome ?? undefined });
       this.welcome = this.attract.element;
     } else {
       this.welcome = el('div', 'layer-welcome');
-      this.welcome.append(el('h2', undefined, site.branding.title ?? site.name), el('p', undefined, 'Choose a layer to bring it to the table.'));
+      this.welcome.append(el('h2', undefined, site.branding.title ?? site.name), el('p', undefined, site.branding.welcome ?? 'Choose a layer to bring it to the table.'));
     }
     this.connection = connection;
     this.role = role;
