@@ -181,22 +181,12 @@ export function nearestAlong(t: Track, x: number, y: number): number {
 }
 
 /**
- * The site's streets as lines in table metres: the `roads` dataset when the site has
- * one, otherwise a generated grid so ambient layers still have somewhere to run.
+ * The site's streets as lines in table metres, from its `roads` dataset. A site without
+ * one has no streets: nothing is made up, because a made-up grid on a real place would
+ * put traffic through its buildings. Layers that need streets say so in `requires.data`.
  */
-export async function streetLines(site: SiteInfo): Promise<{ lines: Placed<XY[]>[]; generated: boolean }> {
-  const space = tableSpace(site);
-  const lines = geojsonLines(await readSiteData(site, 'roads'), space);
-  if (lines.length > 0) return { lines, generated: false };
-  // Lines share a vertex at every crossing, which is what lets traffic turn there.
-  const pitch = 90;
-  const stops = (size: number) => Array.from({ length: Math.ceil(size / pitch) + 2 }, (_, i) => (i - 0.5) * pitch);
-  const xs = stops(space.width);
-  const ys = stops(space.height);
-  const out: Placed<XY[]>[] = [];
-  for (const x of xs) out.push({ geometry: ys.map((y): XY => [x, y]), properties: { kind: 'street' } });
-  for (const y of ys) out.push({ geometry: xs.map((x): XY => [x, y]), properties: { kind: 'street' } });
-  return { lines: out, generated: true };
+export async function streetLines(site: SiteInfo): Promise<Placed<XY[]>[]> {
+  return geojsonLines(await readSiteData(site, 'roads'), tableSpace(site));
 }
 
 // ---- Random ---------------------------------------------------------------

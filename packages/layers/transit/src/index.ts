@@ -96,8 +96,8 @@ export default defineLayer<Params>({
     let stopPoints = geojsonPoints(data, space).map((stop) => stop.geometry);
     const generated = routes.length === 0;
     if (generated) {
-      // No network in the site: run a few lines along its longest streets.
-      const { lines } = await streetLines(ctx.site);
+      // No network in the site: run a few lines along its longest real streets, if it has any.
+      const lines = await streetLines(ctx.site);
       const longest = lines.map((line) => track(line.geometry)).sort((a, b) => b.length - a.length);
       routes = longest.slice(0, 3).map((t, i) => {
         const m: Mode = i === 0 ? 'tram' : 'bus';
@@ -306,7 +306,7 @@ export default defineLayer<Params>({
       draw(vehicles);
       ctx.publish({
         vehicles: vehicles.length,
-        status: isLive ? feedState : generated ? 'This site has no transit data, so the lines are made up' : '',
+        status: isLive ? feedState : generated ? (routes.length > 0 ? 'This site has no transit data, so the lines are made up along its streets' : 'This site has no transit data or streets, so there is nothing to show') : '',
         lines: routes.map((route) => ({ line: route.line, mode: route.mode, colour: route.colour })),
       });
     });
