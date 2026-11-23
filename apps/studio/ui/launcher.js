@@ -1,5 +1,5 @@
-// The launcher: pick or make a site, open it in the editor, say which display shows
-// which surface, present.
+// Displays and settings (#40): which display shows the table and which the controller,
+// phones and startup. Colour, Calibration and Updates have scripts of their own.
 // It talks to the shell through the commands in src-tauri/src/main.rs.
 const { invoke } = window.__TAURI__.core;
 const $ = (id) => document.getElementById(id);
@@ -11,15 +11,15 @@ const el = (tag, props = {}, ...children) => {
 
 const ROLES = [
   ['', 'Not used'],
-  ['table', 'Table (projector)'],
-  ['tv', 'TV (controls)'],
-  ['dev', 'Dev (table and controls)'],
+  ['table', 'Table'],
+  ['tv', 'Controller'],
+  ['dev', 'Table and controls in one window'],
 ];
+const KINDS = { projector: 'Projector', tv: 'TV' };
 
-let state;
-let site; // path of the chosen site
+let screens; // presenting_state: displays (with model and kind), windows, configured
 let roles = []; // role per display index, '' when unused
-let busy = false; // a start or an open is under way
+let saving = false;
 
 function showError(message) {
   $('error').textContent = message ?? '';
@@ -27,92 +27,74 @@ function showError(message) {
 }
 
 async function load() {
-  state = await invoke('launcher_state');
-  site = state.site;
-  roles = state.displays.map(() => '');
-  for (const w of state.windows) roles[w.display] = w.role;
-  $('version').textContent = `v${state.version}`;
-  $('fullscreen').checked = state.windows.some((w) => w.fullscreen);
+  const [state, presenting] = await Promise.all([invoke('launcher_state'), invoke('presenting_state')]);
+  screens = presenting;
+  roles = screens.displays.map(() => '');
+  for (const w of screens.windows) roles[w.display] = w.role;
+  $('version').textContent = `Version ${state.version}`;
+  $('fullscreen').checked = screens.windows.length === 0 || screens.windows.some((w) => w.fullscreen);
   $('autostart').checked = state.autostart;
   $('lan').checked = state.lan;
   $('running').hidden = !state.running;
   if (state.running) {
     const what = state.presenting ? 'Presenting' : 'Open';
-    $('running').textContent = `${what}: ${state.running.name} · port ${state.running.port} · code ${state.running.code}`;
+    $('running').replaceChildren(el('b', {}, `${what}: ${state.running.name}`), el('span', {}, state.running.lan ? `Phones join with ${state.running.code}` : 'Phones cannot join'));
   }
-  $('sites-hint').textContent = state.sites_folder ? `Sites in ${state.sites_folder} appear here by themselves.` : '';
   showError(state.error);
-  renderSites();
   renderDisplays();
 }
 
-function renderSites() {
-  $('sites').replaceChildren(
-    ...state.sites.map((s) => {
-      const radio = el('input', { type: 'radio', name: 'site', checked: s.path === site, disabled: !!s.problem });
-      radio.addEventListener('change', () => {
-        site = s.path;
-        update();
-      });
-      const label = el('label', { className: s.problem ? 'broken' : '' }, radio, el('span', { className: 'name' }, s.name));
-      if (s.source === 'added') {
-        const remove = el('button', { type: 'button', className: 'remove', title: 'Remove from this list' }, 'Remove');
-        remove.addEventListener('click', async (event) => {
-          event.preventDefault();
-          await invoke('remove_site', { path: s.path });
-          await load();
-        });
-        label.append(remove);
-      } else {
-        label.append(el('span', { className: 'source' }, s.source));
-      }
-      label.append(el('span', { className: s.problem ? 'problem' : 'path' }, s.problem ?? s.path));
-      return el('li', {}, label);
-    }),
-  );
-  update();
-}
-
 function renderDisplays() {
+  const several = screens.displays.length > 1;
+  $('screens-status').textContent = !several ? 'One display: the table goes on it' : screens.configured ? 'Chosen by hand' : 'Chosen automatically, by the makers';
+  $('screens-status').classList.toggle('is-auto', !screens.configured);
+  $('automatic').hidden = !screens.configured;
   $('displays').replaceChildren(
-    ...state.displays.map((d) => {
+    ...screens.displays.map((d) => {
       const select = el('select', { ariaLabel: `Display ${d.index + 1} shows` }, ...ROLES.map(([value, text]) => el('option', { value }, text)));
       select.value = roles[d.index];
       select.addEventListener('change', () => {
         roles[d.index] = select.value;
-        // A table or a TV exists once; taking it for this display frees it elsewhere.
+        // A table or a controller exists once; taking it for this display frees it elsewhere.
         if (select.value) roles = roles.map((role, i) => (i !== d.index && role === select.value ? '' : role));
-        renderDisplays();
+        save();
       });
+      const kind = KINDS[d.kind];
       const details = [`${d.width} × ${d.height}`, d.scale !== 1 ? `${Math.round(d.scale * 100)}%` : '', d.primary ? 'main display' : ''];
       return el(
         'li',
-        {},
+        { className: roles[d.index] ? `is-${roles[d.index]}` : '' },
         el('span', { className: 'number' }, String(d.index + 1)),
-        el('span', { className: 'what' }, d.name || `Display ${d.index + 1}`, el('small', {}, details.filter(Boolean).join(' · '))),
+        el(
+          'span',
+          { className: 'what' },
+          el('b', {}, d.model || d.name || `Display ${d.index + 1}`, kind ? el('span', { className: 'kind' }, kind) : ''),
+          el('small', {}, details.filter(Boolean).join(' · ')),
+        ),
         select,
       );
     }),
   );
   renderMap();
-  update();
 }
 
 // A small picture of how the displays sit next to each other.
 function renderMap() {
   const map = $('map');
+  if (!screens.displays.length) return map.replaceChildren();
   const pad = 14;
-  const left = Math.min(...state.displays.map((d) => d.x));
-  const top = Math.min(...state.displays.map((d) => d.y));
-  const right = Math.max(...state.displays.map((d) => d.x + d.width));
-  const bottom = Math.max(...state.displays.map((d) => d.y + d.height));
+  const left = Math.min(...screens.displays.map((d) => d.x));
+  const top = Math.min(...screens.displays.map((d) => d.y));
+  const right = Math.max(...screens.displays.map((d) => d.x + d.width));
+  const bottom = Math.max(...screens.displays.map((d) => d.y + d.height));
   const scale = Math.min((map.clientWidth - 2 * pad) / (right - left), (map.clientHeight - 2 * pad) / (bottom - top));
   const offsetX = (map.clientWidth - (right - left) * scale) / 2;
   const offsetY = (map.clientHeight - (bottom - top) * scale) / 2;
   map.replaceChildren(
-    ...state.displays.map((d) => {
+    ...screens.displays.map((d) => {
       const role = roles[d.index];
-      const screen = el('div', { className: 'screen' }, el('b', {}, String(d.index + 1)), el('span', {}, role ? ROLES.find(([value]) => value === role)[1] : ''));
+      const name = role ? ROLES.find(([value]) => value === role)[1].replace(' in one window', '') : '';
+      const screen = el('div', { className: 'screen' }, el('b', {}, String(d.index + 1)), el('span', {}, name));
       screen.dataset.role = role;
       Object.assign(screen.style, {
         left: `${offsetX + (d.x - left) * scale}px`,
@@ -125,22 +107,30 @@ function renderMap() {
   );
 }
 
-function update() {
-  $('start').disabled = !site;
-  $('edit').disabled = !site;
-}
-
-$('add-site').addEventListener('click', async () => {
+// Saves the choice; while presenting the windows move at once.
+async function save(windows) {
+  const fullscreen = $('fullscreen').checked;
+  windows ??= roles.flatMap((role, display) => (role ? [{ display, role, fullscreen }] : []));
+  saving = true;
+  showError();
   try {
-    const added = await invoke('add_site');
-    if (!added) return;
-    await load();
-    site = added.path;
-    renderSites();
+    await invoke('save_displays', { windows });
   } catch (e) {
     showError(String(e));
   }
-});
+  saving = false;
+  await load();
+}
+
+async function saveSettings() {
+  showError();
+  try {
+    await invoke('save_settings', { lan: $('lan').checked, autostart: $('autostart').checked });
+  } catch (e) {
+    showError(String(e));
+  }
+  await load();
+}
 
 $('identify').addEventListener('click', async () => {
   $('identify').disabled = true;
@@ -151,69 +141,15 @@ $('identify').addEventListener('click', async () => {
   }
   $('identify').disabled = false;
 });
+$('automatic').addEventListener('click', () => save([]));
+$('fullscreen').addEventListener('change', () => save());
+$('lan').addEventListener('change', saveSettings);
+$('autostart').addEventListener('change', saveSettings);
+$('open-sources').addEventListener('click', () => invoke('open_sources').catch((e) => showError(String(e))));
 
-$('start').addEventListener('click', async () => {
-  const fullscreen = $('fullscreen').checked;
-  const windows = roles.flatMap((role, display) => (role ? [{ display, role, fullscreen }] : []));
-  const label = $('start').textContent;
-  busy = true;
-  $('start').disabled = true;
-  $('start').textContent = 'Starting…';
-  showError();
-  try {
-    // On success the shell closes this window.
-    await invoke('start', { request: { site, windows, lan: $('lan').checked, autostart: $('autostart').checked } });
-  } catch (e) {
-    showError(String(e));
-    $('start').textContent = label;
-    $('start').disabled = false;
-  }
-  busy = false;
-});
-
-// Opens `path` in the editor. On success the shell closes this window.
-async function openInEditor(path) {
-  busy = true;
-  $('edit').disabled = true;
-  showError();
-  try {
-    await invoke('open_site', { path });
-  } catch (e) {
-    showError(String(e));
-  }
-  busy = false;
-  update();
-}
-
-$('edit').addEventListener('click', () => openInEditor(site));
-
-$('new-site').addEventListener('click', () => {
-  $('new-error').hidden = true;
-  $('new-site-dialog').showModal();
-});
-$('new-cancel').addEventListener('click', () => $('new-site-dialog').close());
-$('new-site-form').addEventListener('submit', async (event) => {
-  event.preventDefault();
-  const number = (id) => Number($(id).value);
-  $('new-create').disabled = true;
-  try {
-    const path = await invoke('create_site', {
-      site: { name: $('new-name').value, lat: number('new-lat'), lon: number('new-lon'), width_m: number('new-width'), height_m: number('new-height') },
-    });
-    $('new-site-dialog').close();
-    await openInEditor(path);
-    await load();
-  } catch (e) {
-    $('new-error').textContent = String(e);
-    $('new-error').hidden = false;
-  }
-  $('new-create').disabled = false;
-});
-
-$('quit').addEventListener('click', () => invoke('quit'));
-window.addEventListener('resize', () => state && renderMap());
-// Plugging in a projector while the launcher is open should not need a restart.
-window.addEventListener('focus', () => state && !busy && !$('new-site-dialog').open && load());
+window.addEventListener('resize', () => screens && renderMap());
+// Plugging in a projector while this window is open should not need a restart.
+window.addEventListener('focus', () => screens && !saving && load().catch((e) => showError(String(e))));
 
 load().catch((e) => showError(String(e)));
 
@@ -221,5 +157,6 @@ load().catch((e) => showError(String(e)));
 const mac = /Mac/i.test(navigator.platform);
 if (mac) document.querySelectorAll('.keys kbd').forEach((key) => key.textContent === 'Ctrl' && (key.textContent = 'Cmd'));
 document.querySelectorAll('[data-only="windows"]').forEach((node) => (node.hidden = !/Win/i.test(navigator.platform)));
-// Keys and outside services have their own window (#41).
-$('open-sources').addEventListener('click', () => invoke('open_sources').catch((e) => showError(String(e))));
+// A tab named in the address opens first, e.g. index.html#colour.
+const first = document.querySelector(`[role=tab][data-tab="${location.hash.slice(1)}"]`);
+if (first) queueMicrotask(() => first.click());

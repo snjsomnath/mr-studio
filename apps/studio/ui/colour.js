@@ -38,7 +38,7 @@
           display = d.display;
           render();
         });
-        const role = d.role ? `showing the ${d.role}` : 'nothing showing';
+        const role = { table: 'the table', tv: 'the controller', dev: 'table and controls' }[d.role] ?? 'not used';
         return el('li', {}, el('label', {}, radio, el('span', { className: 'name' }, `${d.display + 1} · ${d.name}`), el('span', { className: 'role' }, role)));
       }),
     );

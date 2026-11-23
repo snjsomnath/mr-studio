@@ -19,6 +19,8 @@
     "allow-present",
     "allow-stop-presenting",
     "allow-presenting-state",
+    "allow-save-displays",
+    "allow-save-settings",
     "allow-open-home",
     "allow-quit",
     "allow-colour-state",
