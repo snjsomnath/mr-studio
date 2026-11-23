@@ -236,6 +236,20 @@ fn custom_manifest(id: &str, recipe: &mrs_site::CustomLayer) -> Value {
     if let Some(attract) = &recipe.attract {
         manifest["attract"] = serde_json::to_value(attract).unwrap_or_default();
     }
+    // Points with sounds (#150) can be played on demand: a tap on the table or a phone's map
+    // (the `sound` tool), a card on the controller (the same tool, at the point), or a step of
+    // a presentation that names the sound (the `play` param).
+    if recipe.motion.iter().any(|m| m.block == "sound") {
+        manifest["tools"] = serde_json::json!([{ "id": "sound", "type": "point", "label": "Play a sound" }]);
+        let taken = recipe.controls.iter().any(|c| c.get("id").and_then(Value::as_str) == Some("play"));
+        if !taken {
+            if let Some(controls) = manifest["controls"].as_array_mut() {
+                controls.push(serde_json::json!({
+                    "id": "play", "type": "text", "label": "Play a sound (its name)", "default": "", "tier": "more"
+                }));
+            }
+        }
+    }
     manifest
 }
 
@@ -379,5 +393,23 @@ mod tests {
             json!({ "api": 1, "id": "t", "controls": [{ "id": "x", "type": "select", "options": [{ "value": "a" }], "default": "b" }] })
         )
         .is_err());
+    }
+
+    #[test]
+    fn custom_layers_with_sounds_can_be_played_on_demand() {
+        let recipe: mrs_site::CustomLayer = serde_json::from_value(json!({
+            "name": "Birds",
+            "data": [{ "id": "birds", "dataset": "birds" }],
+            "look": [{ "id": "dots", "block": "points", "data": "birds" }],
+            "motion": [{ "id": "dots-sound", "block": "sound", "on": "dots", "props": { "column": "sound" } }]
+        }))
+        .unwrap();
+        let def = custom_def("birds", &recipe).unwrap();
+        assert_eq!(def.tool("sound").unwrap().kind, ToolKind::Point);
+        assert_eq!(def.validate(&patch(json!({ "play": "Blackbird" })), false).unwrap()["play"], json!("Blackbird"));
+        let silent: mrs_site::CustomLayer = serde_json::from_value(json!({ "name": "Dots" })).unwrap();
+        let def = custom_def("dots", &silent).unwrap();
+        assert!(def.tool("sound").is_none());
+        assert!(def.validate(&patch(json!({ "play": "x" })), false).is_err());
     }
 }

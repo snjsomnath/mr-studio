@@ -506,6 +506,57 @@ function legendZone(id: string, store: Store): { element: HTMLElement; sync(stat
   };
 }
 
+/** A sound a layer published for the controller (#150). */
+interface SoundRow {
+  id: string;
+  label: string;
+  colour: string;
+  at: [number, number];
+  playing: boolean;
+}
+
+/**
+ * Sound cards (#150): one card per sound a layer published (`shared.sounds`), in the point's
+ * colour, lit while it plays. Tapping a card plays that sound on the table, through the layer's
+ * `sound` tool at the point. A slideshow shows the cards of the layer on show.
+ */
+function soundZone(id: string, store: Store, connection: Connection): { element: HTMLElement; sync(state: LayerState): void } {
+  const zone = el('div', 'stage-sounds');
+  zone.setAttribute('aria-label', 'Sounds');
+  zone.hidden = true;
+  let drawn = '';
+  return {
+    element: zone,
+    sync(state) {
+      const source = (store.manifest(state.layer)?.sequence ? shownBy(store, id) : undefined) ?? id;
+      const from = store.state.layers[source];
+      const list = (from?.shared as { sounds?: unknown } | undefined)?.sounds;
+      const rows = Array.isArray(list) ? (list as SoundRow[]).filter((row) => row && typeof row.label === 'string' && Array.isArray(row.at)) : [];
+      zone.hidden = rows.length === 0;
+      const next = JSON.stringify([source, rows]);
+      if (next === drawn) return;
+      drawn = next;
+      zone.replaceChildren(
+        ...rows.slice(0, 12).map((row) => {
+          const card = el('button', 'sound-card') as HTMLButtonElement;
+          card.type = 'button';
+          card.classList.toggle('is-playing', Boolean(row.playing));
+          card.style.setProperty('--sound', row.colour || 'var(--accent)');
+          card.setAttribute('aria-pressed', String(Boolean(row.playing)));
+          const dot = el('i', 'sound-dot');
+          const words = el('span', 'sound-words');
+          words.append(el('b', undefined, row.label), el('small', undefined, row.playing ? 'Playing' : 'Tap to play'));
+          card.append(dot, words);
+          card.addEventListener('click', () => {
+            void connection.request('tool.input', { layer: source, tool: 'sound', geometry: { type: 'Point', coordinates: row.at } }).catch(() => {});
+          });
+          return card;
+        }),
+      );
+    },
+  };
+}
+
 export class Controller {
   private cards = new Map<string, Card>();
   /** The side each button was last placed on. */
@@ -712,10 +763,11 @@ export class Controller {
     // A layer with steps (a slideshow, or a map revealed part by part) gets ◀ ▶, play and the info strip (#43, #76).
     const strip = stepStrip(id, store, connection);
     const legend = legendZone(id, store);
+    const sounds = soundZone(id, store, connection);
     body.append(words, strip.element);
     if (!hero.hidden) body.append(hero);
     for (const group of [primary, controls]) if (group.childElementCount > 0) body.append(group);
-    body.append(legend.element);
+    body.append(legend.element, sounds.element);
     // "More settings" closes the primary row when there is one, so it costs no height of its own.
     if (moreRows.childElementCount > 0) (primary.childElementCount > 0 ? primary : body).append(more);
 
@@ -747,6 +799,7 @@ export class Controller {
         body.hidden = !open;
         strip.sync(state);
         strip.element.classList.toggle('legend-follows', legend.sync(state));
+        sounds.sync(state);
         // A slideshow made of layers is driven by its steps: its own slide controls step aside.
         const stepped = Boolean(manifest.sequence && state.step);
         for (const w of widgets) {

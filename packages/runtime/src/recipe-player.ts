@@ -245,6 +245,55 @@ export function recipeModule(current: () => LayerManifest | undefined, watch: (c
       await loading;
       refresh();
 
+      // ---- Sounds on points (#150): cards on the controller, taps, and steps that play one ----
+      type Card = { id: string; label: string; colour: string; at: [number, number]; playing: boolean };
+      const cards = (): (Card & { look: CompiledLook; point: number; xy: readonly [number, number] })[] =>
+        looks.flatMap((look) =>
+          (look.sounds?.list() ?? []).map((c) => ({
+            id: `${look.id}/${c.point}`,
+            label: c.label,
+            colour: c.colour,
+            at: frame.toLonLat(c.at).map((v) => Math.round(v * 1e6) / 1e6) as [number, number],
+            playing: c.playing,
+            look,
+            point: c.point,
+            xy: c.at,
+          })),
+        );
+      /** A step or the controller asked for a sound by name or id; it plays once the sounds are loaded. */
+      let wanted = String(ctx.params.play ?? '').trim();
+      const playWanted = () => {
+        if (!wanted) return;
+        const key = wanted.toLowerCase();
+        const hit = cards().find((c) => c.id === wanted || c.label.toLowerCase() === key);
+        if (!hit) return;
+        hit.look.sounds!.cue(hit.point);
+        wanted = '';
+      };
+      /** The sound nearest a place on the table, within `reach` metres. */
+      const nearest = (xy: readonly number[], reach: number) => {
+        let best: ReturnType<typeof cards>[number] | null = null;
+        let bestDistance = reach;
+        for (const c of cards()) {
+          const d = Math.hypot(c.xy[0] - xy[0]!, c.xy[1] - xy[1]!);
+          if (d <= bestDistance) {
+            best = c;
+            bestDistance = d;
+          }
+        }
+        return best;
+      };
+      // A tap on a sound point on the table plays it; it goes through the host so every view hears of it.
+      const hasSoundTool = () => (current()?.tools ?? []).some((t) => t.id === 'sound');
+      ctx.pointer.on((sample) => {
+        if (sample.phase !== 'down' || !hasSoundTool()) return;
+        const reach = Math.max(8, metresPerTableMm(ctx.site) * 8);
+        const hit = nearest(sample.point, reach);
+        if (hit) ctx.sendTool('sound', { type: 'Point', coordinates: hit.at }).catch(() => {});
+      });
+      let published = '';
+      let sincePublish = Infinity;
+
       ctx.onFrame((dt) => {
         time += dt;
         refresh();
@@ -252,9 +301,31 @@ export function recipeModule(current: () => LayerManifest | undefined, watch: (c
         const view = surface.begin(time);
         const alpha = recipe.enter === 'fade' ? ease(time / FADE_S) : 1;
         for (const look of looks) look.draw(view, time, alpha);
+        playWanted();
+        sincePublish += dt;
+        if (sincePublish >= 0.25) {
+          sincePublish = 0;
+          const list = cards().map(({ id, label, colour, at, playing }) => ({ id, label, colour, at, playing }));
+          const text = JSON.stringify(list);
+          if (text !== published) {
+            published = text;
+            ctx.publish({ sounds: list.length ? list : null });
+          }
+        }
       });
       return {
-        update: () => refresh(),
+        update: (changed) => {
+          if (changed.includes('play')) wanted = String(ctx.params.play ?? '').trim();
+          refresh();
+        },
+        tool: (input) => {
+          if (input.tool !== 'sound') return;
+          const geometry = input.geometry as { type?: string; coordinates?: number[] } | null;
+          if (geometry?.type !== 'Point' || !Array.isArray(geometry.coordinates)) return;
+          // A card sends its own point; a phone's tap may land a little off, so take the nearest within 40 m.
+          const hit = nearest(frame.toTable([geometry.coordinates[0]!, geometry.coordinates[1]!]), 40);
+          hit?.look.sounds!.cue(hit.point);
+        },
       };
     },
   };

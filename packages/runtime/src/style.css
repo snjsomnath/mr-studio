@@ -1951,3 +1951,84 @@ body[data-role='edit'] .table-frame.has-ribbons .table-surface {
 .table-ribbon.is-preview[data-side='top'].is-front { box-shadow: inset 0 0 0 1px rgba(148, 160, 184, 0.35), inset 0 3px 0 #f3ad3d; }
 .table-ribbon.is-preview[data-side='left'].is-front { box-shadow: inset 0 0 0 1px rgba(148, 160, 184, 0.35), inset 3px 0 0 #f3ad3d; }
 .table-ribbon.is-preview[data-side='right'].is-front { box-shadow: inset 0 0 0 1px rgba(148, 160, 184, 0.35), inset -3px 0 0 #f3ad3d; }
+
+/* Sound cards (#150): what a layer's points sound like, lit while playing; a tap plays one on the table. */
+.stage-sounds {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr));
+  gap: 0.75rem;
+  margin: 0 0 1.25rem;
+}
+
+.stage-sounds[hidden] {
+  display: none;
+}
+
+.sound-card {
+  --sound: var(--accent);
+  display: flex;
+  align-items: center;
+  gap: 0.875rem;
+  min-height: 4rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid color-mix(in srgb, var(--sound) 35%, transparent);
+  border-radius: 1rem;
+  background: color-mix(in srgb, var(--sound) 8%, transparent);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 300ms ease, border-color 300ms ease;
+}
+
+.sound-card.is-playing {
+  border-color: var(--sound);
+  background: color-mix(in srgb, var(--sound) 22%, transparent);
+}
+
+.sound-dot {
+  position: relative;
+  flex: none;
+  width: 1.25rem;
+  height: 1.25rem;
+  border-radius: 50%;
+  background: var(--sound);
+}
+
+.sound-card.is-playing .sound-dot::after {
+  content: '';
+  position: absolute;
+  inset: -0.375rem;
+  border: 2px solid var(--sound);
+  border-radius: 50%;
+  animation: sound-ring 1.4s ease-out infinite;
+}
+
+@keyframes sound-ring {
+  from { transform: scale(0.6); opacity: 1; }
+  to { transform: scale(1.9); opacity: 0; }
+}
+
+.sound-words {
+  display: grid;
+  min-width: 0;
+}
+
+.sound-words b {
+  font-size: 1.125rem;
+  font-weight: 650;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sound-words small {
+  font-size: 0.875rem;
+  opacity: 0.7;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sound-card.is-playing .sound-dot::after {
+    animation: none;
+  }
+}
