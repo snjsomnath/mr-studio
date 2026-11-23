@@ -48,9 +48,9 @@ export interface FlowOverlayStyle {
   colormap?: Colormap;
   /** The magnitude at the top of the colormap. Default: the frames' `max`. */
   max?: number;
-  /** `ribbons` are long tapering trails, `particles` short streaks. Default `ribbons`. */
+  /** `ribbons` are steady streamlines with a light travelling along them, `particles` fine specks with short tails. Default `ribbons`. */
   mode?: 'ribbons' | 'particles';
-  /** Number of tracers. Default 500. */
+  /** Number of particles; ribbons use an eighth as many streamlines. Default 500. */
   count?: number;
   /** Share of the extent's longer side a tracer travels per second, per field unit. Default 0.04. */
   rate?: number;
