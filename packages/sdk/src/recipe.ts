@@ -19,6 +19,8 @@ import type { View } from './blocks/view.ts';
 import type { Point } from './blocks/geo.ts';
 import { categorySlots, paletteColour, paletteHex, rampColour } from './palette.ts';
 import type { ResolvedPalette } from './palette.ts';
+import { TIMELINE_DEFAULTS, arrowMarks, fillArrow, fillIcon, timeReveal, traceShape } from './marks.ts';
+import type { Arrows, PointShape, TimeReveal, TimelineProps } from './marks.ts';
 import type { CustomLayer, LegendItem, RecipeBlock, SiteInfo } from './types.ts';
 
 // ---- Style values ------------------------------------------------------------
@@ -33,8 +35,8 @@ export interface PaintBy {
   colors?: Record<string, string>;
   /** For numbers: the ramp's name in the palette. Default `sun`. */
   ramp?: string;
-  /** For numbers: a smooth ramp, or classes of equal width or equal count. Default `continuous`. */
-  classes?: 'continuous' | 'equal' | 'quantile';
+  /** For numbers: a smooth ramp, or classes of equal width, equal count, or natural breaks (Jenks). Default `continuous`. */
+  classes?: 'continuous' | 'equal' | 'quantile' | 'natural';
   /** How many classes, 2 to 7. Default 5. */
   count?: number;
 }
@@ -57,6 +59,9 @@ export interface PointsProps {
   stroke_mm: number;
   /** A column whose value is written beside the point. Use for place names only (S1). */
   label: string | null;
+  /** The mark: a circle, square, diamond, triangle, ring, or the pictogram named by `icon`. */
+  shape: PointShape;
+  icon: string;
 }
 export interface LinesProps {
   color: Paint;
@@ -68,6 +73,10 @@ export interface LinesProps {
   dash: 'solid' | 'dashed' | 'dotted';
   dash_mm: number;
   gap_mm: number;
+  /** Chevrons showing which way a line goes: at its end, or along it every `arrow_gap_mm`. */
+  arrows: Arrows;
+  arrow_mm: number;
+  arrow_gap_mm: number;
 }
 export interface FillProps {
   color: Paint;
@@ -83,8 +92,8 @@ export interface FillProps {
 }
 
 export const LOOK_DEFAULTS = {
-  points: { color: '@accent', radius_mm: 4, opacity: 1, glow: 0.5, core: true, stroke: null, stroke_mm: 0.6, label: null } satisfies PointsProps,
-  lines: { color: '@accent', width_mm: 2, opacity: 1, glow: 0.3, casing: true, dash: 'solid', dash_mm: 6, gap_mm: 4 } satisfies LinesProps,
+  points: { color: '@accent', radius_mm: 4, opacity: 1, glow: 0.5, core: true, stroke: null, stroke_mm: 0.6, label: null, shape: 'circle', icon: 'star' } satisfies PointsProps,
+  lines: { color: '@accent', width_mm: 2, opacity: 1, glow: 0.3, casing: true, dash: 'solid', dash_mm: 6, gap_mm: 4, arrows: 'none', arrow_mm: 4, arrow_gap_mm: 40 } satisfies LinesProps,
   fill: { color: '@accent', opacity: 0.55, stroke: '@accent', stroke_mm: 0.6, edge_glow: 0, shadow_mm: 0, hatch: false } satisfies FillProps,
 };
 
@@ -144,12 +153,13 @@ export const MOTION_DEFAULTS = {
   particles: { per_line: 2, speed_mm: 20, size_mm: 2.5 } satisfies ParticlesProps,
   attract: { count: 300, speed_mm: 12, reach_mm: 60, weight: null, size_mm: 1.5 } satisfies AttractProps,
   gravity: { network: 'roads', count: 240, speed_mm: 10, weight: null, size_mm: 2, trail: true } satisfies GravityProps,
+  timeline: TIMELINE_DEFAULTS,
 };
 /** Which motions fit which look (L1: verbs fit the form). */
 export const MOTIONS_FOR: Record<GeometryKind, (keyof typeof MOTION_DEFAULTS)[]> = {
-  points: ['pulse', 'attract', 'gravity'],
-  lines: ['draw-in', 'flow', 'particles'],
-  fill: ['pulse'],
+  points: ['pulse', 'attract', 'gravity', 'timeline'],
+  lines: ['draw-in', 'flow', 'particles', 'timeline'],
+  fill: ['pulse', 'timeline'],
 };
 
 /** The look a geometry gets by default (D2: a single file can be a layer). */
@@ -205,16 +215,76 @@ export function profileColumns(rows: readonly Props[]): { name: string; kind: 'n
 }
 
 /** Class breaks for numbers: the upper bound of each class but the last. */
-export function classBreaks(values: readonly number[], classes: 'equal' | 'quantile', count: number): number[] {
+export function classBreaks(values: readonly number[], classes: 'equal' | 'quantile' | 'natural', count: number): number[] {
   const n = Math.max(2, Math.min(7, Math.round(count)));
   if (values.length === 0) return [];
   const sorted = [...values].sort((a, b) => a - b);
+  if (classes === 'natural') return naturalBreaks(sorted, n);
   const lo = sorted[0]!;
   const hi = sorted[sorted.length - 1]!;
   const breaks: number[] = [];
   for (let i = 1; i < n; i++) {
     if (classes === 'equal') breaks.push(lo + ((hi - lo) * i) / n);
     else breaks.push(sorted[Math.min(sorted.length - 1, Math.floor((sorted.length * i) / n))]!);
+  }
+  return breaks;
+}
+
+/** Values at most this many go into natural breaks; more are sampled evenly, so it stays fast. */
+const NATURAL_SAMPLE = 1000;
+
+/**
+ * Natural breaks (Fisher-Jenks): the class boundaries that keep each class as tight as it can
+ * be, so gaps in the data become edges between colours. `sorted` is ascending. Returns
+ * `n - 1` breaks, each the lowest value of the class above it.
+ */
+export function naturalBreaks(sorted: readonly number[], n: number): number[] {
+  let data = sorted;
+  if (data.length > NATURAL_SAMPLE) {
+    const step = (data.length - 1) / (NATURAL_SAMPLE - 1);
+    data = Array.from({ length: NATURAL_SAMPLE }, (_, i) => sorted[Math.round(i * step)]!);
+  }
+  const m = data.length;
+  const k = Math.min(n, new Set(data).size);
+  if (k < 2) return [];
+  // Prefix sums give any run's squared deviation in constant time.
+  const sum = new Float64Array(m + 1);
+  const sq = new Float64Array(m + 1);
+  for (let i = 0; i < m; i++) {
+    sum[i + 1] = sum[i]! + data[i]!;
+    sq[i + 1] = sq[i]! + data[i]! * data[i]!;
+  }
+  const cost = (from: number, to: number) => {
+    // Values from..to-1.
+    const count = to - from;
+    const s = sum[to]! - sum[from]!;
+    return sq[to]! - sq[from]! - (s * s) / count;
+  };
+  // best[c][i]: least cost of the first i values in c classes; start[c][i]: where the last class begins.
+  let best = new Float64Array(m + 1).fill(Infinity);
+  for (let i = 1; i <= m; i++) best[i] = cost(0, i);
+  const starts: Int32Array[] = [];
+  for (let c = 2; c <= k; c++) {
+    const next = new Float64Array(m + 1).fill(Infinity);
+    const start = new Int32Array(m + 1);
+    for (let i = c; i <= m; i++) {
+      for (let j = c - 1; j < i; j++) {
+        const total = best[j]! + cost(j, i);
+        if (total < next[i]!) {
+          next[i] = total;
+          start[i] = j;
+        }
+      }
+    }
+    starts.push(start);
+    best = next;
+  }
+  const breaks: number[] = [];
+  let end = m;
+  for (let c = k; c >= 2; c--) {
+    const j = starts[c - 2]![end]!;
+    breaks.unshift(data[j]!);
+    end = j;
   }
   return breaks;
 }
@@ -278,7 +348,8 @@ export function paintScale(paint: Paint | undefined, rows: readonly Props[], pal
       while (i < breaks.length && n > breaks[i]!) i++;
       return colours[i]!;
     },
-    legend: colours.map((c, i) => ({ label: `${format(bounds[i]!)} – ${format(bounds[i + 1]!)}`, color: hexOf(c) })),
+    // A class of one value (natural breaks can isolate an outlier) is labelled by that value alone.
+    legend: colours.map((c, i) => ({ label: format(bounds[i]!) === format(bounds[i + 1]!) ? format(bounds[i]!) : `${format(bounds[i]!)} – ${format(bounds[i + 1]!)}`, color: hexOf(c) })),
   };
 }
 
@@ -335,6 +406,7 @@ export interface LookMotion {
   attract?: Partial<AttractProps>;
   /** `streets` is the network dataset in table metres, loaded by whoever draws the recipe. */
   gravity?: Partial<GravityProps> & { streets?: Shapes };
+  timeline?: Partial<TimelineProps>;
 }
 
 function trace(view: View, points: readonly Point[], close: boolean): void {
@@ -368,6 +440,7 @@ export function compileLook(block: RecipeBlock, shapes: Shapes, palette: Resolve
     const pulse = motion.pulse ? { ...MOTION_DEFAULTS.pulse, ...motion.pulse } : null;
     const attract = motion.attract ? attractCrowd(shapes.spots, paint, { ...MOTION_DEFAULTS.attract, ...motion.attract }, mm) : null;
     const walkers = motion.gravity ? streetCrowd(shapes.spots, paint, { ...MOTION_DEFAULTS.gravity, ...motion.gravity }, motion.gravity.streets, mm) : null;
+    const reveal = motion.timeline ? timeReveal(rows, motion.timeline) : null;
     return {
       id: block.id,
       kind,
@@ -376,7 +449,7 @@ export function compileLook(block: RecipeBlock, shapes: Shapes, palette: Resolve
         // Crowds go under the points they are drawn to.
         attract?.draw(view, time, alpha);
         walkers?.draw(view, time, alpha);
-        drawPoints(view, shapes.spots, { paint, radius, props, stroke, pulse, px: (m) => px(view, m), time, alpha });
+        drawPoints(view, shapes.spots, { paint, radius, props, stroke, pulse, px: (m) => px(view, m), time, alpha, timeline: reveal });
       },
     };
   }
@@ -388,12 +461,13 @@ export function compileLook(block: RecipeBlock, shapes: Shapes, palette: Resolve
     const drawIn = motion.drawIn ? { ...MOTION_DEFAULTS['draw-in'], ...motion.drawIn } : null;
     const flow = motion.flow ? { ...MOTION_DEFAULTS.flow, ...motion.flow } : null;
     const particles = motion.particles ? { ...MOTION_DEFAULTS.particles, ...motion.particles } : null;
+    const reveal = motion.timeline ? timeReveal(rows, motion.timeline) : null;
     return {
       id: block.id,
       kind,
       legend: legendRows(block, paint, 'line', palette, props.color),
       draw(view, time, alpha) {
-        drawLines(view, shapes.paths, { paint, width, props, drawIn, flow, px: (m) => px(view, m), time, alpha });
+        drawLines(view, shapes.paths, { paint, width, props, drawIn, flow, px: (m) => px(view, m), time, alpha, timeline: reveal });
         if (particles) {
           const heads = pathHeads(shapes.paths, time, { speed: Math.max(0.1, particles.speed_mm * mm), count: Math.max(1, Math.round(particles.per_line)) });
           drawDots(view, heads.map((h) => ({ point: h.point, colour: paint.colour(shapes.paths[h.path]!.properties), alpha: h.alpha * alpha, size: Math.max(1, px(view, particles.size_mm)) / view.detail })));
@@ -406,12 +480,13 @@ export function compileLook(block: RecipeBlock, shapes: Shapes, palette: Resolve
   const paint = paintScale(props.color, rows, palette);
   const stroke = props.stroke ? paletteColour(props.stroke, palette) : null;
   const pulse = motion.pulse ? { ...MOTION_DEFAULTS.pulse, ...motion.pulse } : null;
+  const reveal = motion.timeline ? timeReveal(rows, motion.timeline) : null;
   return {
     id: block.id,
     kind,
     legend: legendRows(block, paint, 'fill', palette, props.color),
     draw(view, time, alpha) {
-      drawFills(view, shapes.areas, { paint, props, stroke, pulse, px: (m) => px(view, m), time, alpha });
+      drawFills(view, shapes.areas, { paint, props, stroke, pulse, px: (m) => px(view, m), time, alpha, timeline: reveal });
     },
   };
 }
@@ -433,16 +508,29 @@ interface PointsDraw {
   px: (mm: number) => number;
   time: number;
   alpha: number;
+  timeline: TimeReveal | null;
 }
 
 function drawPoints(view: View, spots: readonly Spot[], o: PointsDraw): void {
   const pen = view.pen;
-  const alpha = o.alpha * clamp01(o.props.opacity);
+  const base = o.alpha * clamp01(o.props.opacity);
+  const shape = o.props.shape ?? 'circle';
   for (let i = 0; i < spots.length; i++) {
     const spot = spots[i]!;
+    const seen = o.timeline ? o.timeline.at(spot.properties, o.time) : null;
+    if (seen && seen.alpha <= 0) continue;
+    const alpha = base * (seen ? seen.alpha : 1);
     const colour = o.paint.colour(spot.properties);
     const r = Math.max(0.5, o.px(o.radius(spot.properties)));
     const [x, y] = view.toPx(spot.point);
+    if (seen && seen.fresh > 0) {
+      // Just arrived: one ring opens out and fades (C3: the new thing is the brightest for a moment).
+      pen.strokeStyle = css(colour, alpha * seen.fresh);
+      pen.lineWidth = Math.max(1, r * 0.3);
+      pen.beginPath();
+      pen.arc(x, y, r * (1 + 3 * (1 - seen.fresh)), 0, Math.PI * 2);
+      pen.stroke();
+    }
     if (o.pulse) {
       // Neighbours do not pulse together (M2: one calm motion, not a strobe).
       drawRings({ ...view, time: o.time }, spot.point, {
@@ -466,15 +554,35 @@ function drawPoints(view: View, spots: readonly Spot[], o: PointsDraw): void {
       pen.fill();
     }
     pen.fillStyle = css(colour, alpha);
-    pen.beginPath();
-    pen.arc(x, y, r, 0, Math.PI * 2);
-    pen.fill();
-    if (o.stroke && o.props.stroke_mm > 0) {
-      pen.strokeStyle = css(o.stroke, alpha);
-      pen.lineWidth = Math.max(0.5, o.px(o.props.stroke_mm));
+    if (shape === 'icon') {
+      // A pictogram sits on a dark disc so it reads over any ground (C7).
+      pen.fillStyle = css([11, 14, 20, 0.8], alpha);
+      pen.beginPath();
+      pen.arc(x, y, r * 1.25, 0, Math.PI * 2);
+      pen.fill();
+      if (o.stroke && o.props.stroke_mm > 0) {
+        pen.strokeStyle = css(o.stroke, alpha);
+        pen.lineWidth = Math.max(0.5, o.px(o.props.stroke_mm));
+        pen.stroke();
+      }
+      pen.fillStyle = css(colour, alpha);
+      fillIcon(pen, o.props.icon, x, y, r * 0.95);
+    } else if (shape === 'ring') {
+      pen.strokeStyle = css(colour, alpha);
+      pen.lineWidth = Math.max(1, r * 0.35);
+      pen.beginPath();
+      pen.arc(x, y, r * 0.85, 0, Math.PI * 2);
       pen.stroke();
+    } else {
+      traceShape(pen, shape, x, y, r);
+      pen.fill();
+      if (o.stroke && o.props.stroke_mm > 0) {
+        pen.strokeStyle = css(o.stroke, alpha);
+        pen.lineWidth = Math.max(0.5, o.px(o.props.stroke_mm));
+        pen.stroke();
+      }
     }
-    if (o.props.core) {
+    if (o.props.core && shape !== 'icon' && shape !== 'ring') {
       pen.fillStyle = css([255, 255, 255, 0.92], alpha);
       pen.beginPath();
       pen.arc(x, y, r * 0.4, 0, Math.PI * 2);
@@ -504,6 +612,7 @@ interface LinesDraw {
   px: (mm: number) => number;
   time: number;
   alpha: number;
+  timeline: TimeReveal | null;
 }
 
 /** The share of each line drawn so far, for a draw-in reveal. */
@@ -539,7 +648,8 @@ function partial(view: View, path: Path, share: number): void {
 
 function drawLines(view: View, paths: readonly Path[], o: LinesDraw): void {
   const pen = view.pen;
-  const alpha = o.alpha * clamp01(o.props.opacity);
+  const base = o.alpha * clamp01(o.props.opacity);
+  const seen = paths.map((path) => (o.timeline ? o.timeline.at(path.properties, o.time) : { alpha: 1, fresh: 0 }));
   pen.lineCap = o.props.dash === 'dotted' ? 'round' : 'round';
   pen.lineJoin = 'round';
   const dash = o.props.dash === 'solid' ? null : o.props.dash === 'dotted' ? [0.01, Math.max(1, o.px(o.props.gap_mm))] : [Math.max(1, o.px(o.props.dash_mm)), Math.max(1, o.px(o.props.gap_mm))];
@@ -556,7 +666,8 @@ function drawLines(view: View, paths: readonly Path[], o: LinesDraw): void {
       const path = paths[i]!;
       if (path.points.length < 2) continue;
       const share = drawnShare(i, paths.length, o.time, o.drawIn);
-      if (share <= 0) continue;
+      if (share <= 0 || seen[i]!.alpha <= 0) continue;
+      const alpha = base * seen[i]!.alpha;
       const colour = o.paint.colour(path.properties);
       const width = Math.max(0.75, o.px(o.width(path.properties)));
       pen.beginPath();
@@ -599,6 +710,27 @@ function drawLines(view: View, paths: readonly Path[], o: LinesDraw): void {
   }
   pen.setLineDash([]);
   pen.lineDashOffset = 0;
+  const arrows = o.props.arrows ?? 'none';
+  if (arrows !== 'none') {
+    for (let i = 0; i < paths.length; i++) {
+      const path = paths[i]!;
+      if (path.points.length < 2 || seen[i]!.alpha <= 0) continue;
+      const share = drawnShare(i, paths.length, o.time, o.drawIn);
+      if (share < 1) continue;
+      const colour = o.paint.colour(path.properties);
+      const width = Math.max(0.75, o.px(o.width(path.properties)));
+      const size = Math.max(width * 2, o.px(o.props.arrow_mm));
+      // Positions in screen pixels, so the chevrons point the way the line runs on the table.
+      const marks = arrowMarks(path.points.map((p) => view.toPx(p)), arrows, Math.max(size * 3, o.px(o.props.arrow_gap_mm)));
+      const alpha = base * seen[i]!.alpha;
+      for (const mark of marks) {
+        pen.fillStyle = css([11, 14, 20, 0.85], alpha);
+        fillArrow(pen, mark.at[0], mark.at[1], mark.angle, size * 1.35);
+        pen.fillStyle = css(colour, alpha);
+        fillArrow(pen, mark.at[0], mark.at[1], mark.angle, size);
+      }
+    }
+  }
 }
 
 function pointAt(path: Path, share: number): Point {
@@ -623,11 +755,13 @@ interface FillsDraw {
   px: (mm: number) => number;
   time: number;
   alpha: number;
+  timeline: TimeReveal | null;
 }
 
 function drawFills(view: View, areas: readonly Area[], o: FillsDraw): void {
   const pen = view.pen;
-  const alpha = o.alpha;
+  const seen = areas.map((area) => (o.timeline ? o.timeline.at(area.properties, o.time) : { alpha: 1, fresh: 0 }));
+  let alpha = o.alpha;
   const outline = (area: Area) => {
     pen.beginPath();
     for (const polygon of area.polygons) for (const ring of polygon) trace(view, ring, true);
@@ -640,15 +774,18 @@ function drawFills(view: View, areas: readonly Area[], o: FillsDraw): void {
     pen.shadowBlur = d * 1.6;
     pen.shadowOffsetX = d * 0.7;
     pen.shadowOffsetY = d * 0.7;
-    pen.fillStyle = css([0, 0, 0, 0.6], alpha);
-    for (const area of areas) {
-      outline(area);
+    for (let i = 0; i < areas.length; i++) {
+      if (seen[i]!.alpha <= 0) continue;
+      pen.fillStyle = css([0, 0, 0, 0.6], o.alpha * seen[i]!.alpha);
+      outline(areas[i]!);
       pen.fill('evenodd');
     }
     pen.restore();
   }
   for (let i = 0; i < areas.length; i++) {
     const area = areas[i]!;
+    if (seen[i]!.alpha <= 0) continue;
+    alpha = o.alpha * seen[i]!.alpha;
     const colour = o.paint.colour(area.properties);
     outline(area);
     if (o.props.hatch) {
@@ -842,6 +979,7 @@ export function motionFor(recipe: Pick<CustomLayer, 'motion'>, look: string, ove
     if (block.block === 'particles') motion.particles = props as Partial<ParticlesProps>;
     if (block.block === 'attract') motion.attract = props as Partial<AttractProps>;
     if (block.block === 'gravity') motion.gravity = props as Partial<GravityProps>;
+    if (block.block === 'timeline') motion.timeline = props as Partial<TimelineProps>;
   }
   return motion;
 }

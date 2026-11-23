@@ -33,8 +33,8 @@ export interface Trips {
   trips: Trip[];
 }
 
-/** Colours for groups that do not bring their own. */
-const GROUP_COLOURS = ['#2dd4bf', '#fb923c', '#a78bfa', '#facc15', '#f472b6', '#60a5fa'];
+/** Colours for groups that do not bring their own: the table palette's categories (#93), resolved when drawn. */
+const GROUP_COLOURS = ['@cat1', '@cat2', '@cat3', '@cat4', '@cat5', '@cat6', '@cat7', '@cat8'];
 
 const isPoint = (p: unknown): p is number[] => Array.isArray(p) && Number.isFinite(p[0]) && Number.isFinite(p[1]);
 

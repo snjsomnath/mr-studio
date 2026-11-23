@@ -106,6 +106,23 @@ export function resolvePalette(palette?: SitePalette | null): ResolvedPalette {
   return { set, slots, ramps: set.ramps };
 }
 
+let lastKey: string | null = null;
+let lastPalette: ResolvedPalette | null = null;
+
+/**
+ * The palette a core layer draws with, from its site (`ctx.site`, which follows the table's
+ * palette as it changes). Cheap to call every frame: it resolves again only when the palette
+ * changed. Compare `.set` or the result itself to notice a change and redraw.
+ */
+export function tablePalette(site: { palette?: SitePalette | null }): ResolvedPalette {
+  const key = JSON.stringify(site.palette ?? null);
+  if (key !== lastKey || !lastPalette) {
+    lastKey = key;
+    lastPalette = resolvePalette(site.palette);
+  }
+  return lastPalette;
+}
+
 /** The categorical slots, in order. */
 export function categorySlots(palette: ResolvedPalette): string[] {
   return [1, 2, 3, 4, 5, 6, 7, 8].map((n) => palette.slots[`cat${n}` as PaletteSlot]);

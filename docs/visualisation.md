@@ -77,8 +77,8 @@ with it and how much it must be explained. Two more dimensions (§3.3) are new f
 
 | Form | Examples | Visualisation types on the table | Blocks / layers today |
 |---|---|---|---|
-| **Point** | Stops, sensors, places, events | Spot with halo, glow, pulse or ripple rings, radiate lines to other points, attractor that draws a crowd, icon, appear on a step | `drawSpots`, `drawRings`, `drawGlow`, `pullTowards`; Cultural Gravity |
-| **Line / route** | A walk, a transit line, a planned path | Bright line with dark casing, width or colour by value, dashes, draw-in reveal, travelling lights, particles flowing along it | `drawPaths`, `pathHeads`; CoolPaths routes |
+| **Point** | Stops, sensors, places, events | Spot with halo, glow, pulse or ripple rings, radiate lines to other points, attractor that draws a crowd, shape or pictogram on a dark disc, appear through time or on a step | `drawSpots`, `drawRings`, `drawGlow`, `pullTowards`; recipe `shape`/`icon` and `timeline` (#95); Cultural Gravity |
+| **Line / route** | A walk, a transit line, a planned path | Bright line with dark casing, width or colour by value, dashes, draw-in reveal, direction arrows, travelling lights, particles flowing along it | `drawPaths`, `pathHeads`; CoolPaths routes |
 | **Network** | Streets, footpaths, cycle lanes | Hierarchy by width and brightness, glow, flow particles that stay on the network, routing between places | `drawPaths`, `StreetNetwork` router (#96); CoolPaths sun exposure per edge |
 | **Area** | Zones, plots, parks, catchments | Flat fill by category or value, outline, edge glow, hatch, fill like a vessel, pulse the outline | `drawAreas`; #94, #95 |
 | **Field / raster** | Sun hours, wind speed, heat, noise, delay | Colour wash on the ground with a ramp, soft edges, threshold flag, contours, time scrub, lens | `ctx.map.addField`, `heatField`, `contours`, `Lens`; Sunlight, Wind, Mobility cells |
@@ -202,7 +202,9 @@ How common profiles turn into a design, with the 2.0 layer that shows it.
   `tv.theme`, so changing it recolours everything. The picker warns when a colour is too dark to project.
 - **C9** **Colour by data on import** (#94): categorical (a slot per value, "others" grouped) or numeric
   (sequential or diverging; equal, quantile, natural breaks or custom classes). It becomes the dataset's
-  default style and legend.
+  default style and legend. Built: Add data's "Show it on the table" step colours an own dataset by a
+  column with a live preview, legend and histogram (natural breaks by default, `naturalBreaks` in
+  recipe.ts), and makes it a custom layer. Custom stops and diverging ramps on import are still to come.
 
 ## 7. Motion
 
@@ -265,7 +267,7 @@ Where each idea above lives in the core today, and what is missing. Gaps marked 
 | **Agency** | Controls (`range`, `select`, `toggle`, `date`, `color`, `text`, `action`) with a `phone` flag; spatial `tools`; `TablePointer` from mouse, touch, pen, phone or token; `Agent`, `Lens`, `Probe`, `Dwell` | Phone edits go straight to shared params, so "personal focus, then apply" from the theory is only partly there. No table touch hardware yet. |
 | **Abstraction** | `description` on the manifest and button; legend and info strip (with `source`) proposed in present.md | No place for method and limits. **Proposal:** an `explain: { method, source, limits }` block in the manifest, shown on the info strip, TV `text` panel or phone, with the amount required by the abstraction level. |
 | **Layer roles** | `category`: `base`, `ambient`, `analysis`, `media`; `alongside`; per-layer `intensity` 0–2 (`layer.intensity`) | S4 (ambient dims when a layer opens) is manual: intensity exists, but nothing lowers ambient layers automatically. |
-| **Colour** (§6) | Named ramps in `colormaps` (`daylight`, `sun`, `speed`); Sunlight's own ramps in `look.ts`; `color` control. Site `palette` with slots and ramps (`palette.ts`), used by custom layers and the builder's picker, which warns below lightness 45 | Core layers still hard-code hex (CoolPaths `#34d399`, Mobility groups) and do not follow the palette yet (#93). `daylight`, `sun` and `sunHoursColormap` overlap and should become one palette's named ramps. |
+| **Colour** (§6) | Named ramps in `colormaps` (`daylight`, `sun`, `speed`); Sunlight's own ramps in `look.ts`; `color` control. Site `palette` with slots and ramps (`palette.ts`), used by custom layers and the builder's picker, which warns below lightness 45 | CoolPaths (coolest walk `@green`, shortest `@focus`), Mobility (groups without their own colour take `@cat1`…) and Map data (categories take `@cat1`…`@cat8` first) follow the palette through `tablePalette(ctx.site)` and recolour live (#93). Transit modes and car paints keep their real-world colours on purpose (iconic, D3). The controller and TV theme do not follow the palette yet. `daylight`, `sun` and `sunHoursColormap` overlap and should become one palette's named ramps. |
 | **Sizes** (E5) | `CanvasOverlay.pixelsPerMetre`, `DrawingOverlay.scale`, table `width_cm` in `SiteInfo`; `metresPerTableMm(site)`, which custom layers use for every size | Core layers still size in px or metres. |
 | **Density on the TV** | `@mrstudio/dashboard` validators: grid, sizes, read budget | None; this is the one part where the rules are already code. The table has no equivalent check yet (S1 text, C5 category count). |
 
