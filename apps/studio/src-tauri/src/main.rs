@@ -96,6 +96,9 @@ struct Shell {
     file_debounce: file_menu::Debounce,
     /// Outside services and their keys, shared with every host this app runs.
     sources: Arc<Sources>,
+    /// A table file the app was asked to open (a double click, or `mr-studio file.mrstable`)
+    /// that Home has not picked up yet.
+    opened_file: Mutex<Option<PathBuf>>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -129,9 +132,16 @@ impl Shell {
 fn main() -> anyhow::Result<()> {
     tauri::Builder::default()
         // A second start (a double click too many) brings up the Home page of the first.
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
             let app = app.clone();
-            tauri::async_runtime::spawn(async move { report(open_home_window(&app)) });
+            // Windows and Linux hand a double-clicked table file to a second start.
+            let file = args.iter().skip(1).map(PathBuf::from).find(|p| is_table_file(p));
+            tauri::async_runtime::spawn(async move {
+                match file {
+                    Some(file) => opened_table_file(&app, file),
+                    None => report(open_home_window(&app)),
+                }
+            });
         }))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
@@ -175,7 +185,9 @@ fn main() -> anyhow::Result<()> {
             sources_page,
             sources_save,
             sources_remove,
-            sources_test
+            sources_test,
+            import_table,
+            take_opened_file
         ])
         .on_menu_event(|app, event| {
             let id = event.id().as_ref();
@@ -220,6 +232,7 @@ fn main() -> anyhow::Result<()> {
                 updates: Mutex::new(None),
                 file_debounce: file_menu::Debounce::new(),
                 sources: Arc::new(sources),
+                opened_file: Mutex::new(None),
             });
             // macOS has one menu bar for the app. Elsewhere the File menu sits on the editor window only.
             if cfg!(target_os = "macos") {
@@ -237,8 +250,94 @@ fn main() -> anyhow::Result<()> {
             }
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .context("running the app")
+        .build(tauri::generate_context!())
+        .context("building the app")?
+        .run(|app, event| {
+            // macOS hands a double-clicked table file to the running app as an event.
+            #[cfg(any(target_os = "macos", target_os = "ios"))]
+            if let tauri::RunEvent::Opened { urls } = event {
+                for url in urls {
+                    if let Ok(path) = url.to_file_path() {
+                        if is_table_file(&path) {
+                            opened_table_file(app, path);
+                        }
+                    }
+                }
+            }
+            #[cfg(not(any(target_os = "macos", target_os = "ios")))]
+            let _ = (app, event);
+        });
+    Ok(())
+}
+
+/// Whether a path is a table file (`.mrstable`, #85).
+fn is_table_file(path: &Path) -> bool {
+    path.extension().is_some_and(|e| e.eq_ignore_ascii_case(mrs_site::package::EXTENSION)) && path.is_file()
+}
+
+/// A table file to open: Home unpacks it and says what it needs. Home picks it up when it
+/// loads, or at once when it is already open.
+fn opened_table_file(app: &AppHandle, path: PathBuf) {
+    tracing::info!("asked to open {}", path.display());
+    *app.state::<Shell>().opened_file.lock().unwrap() = Some(path);
+    match app.get_webview_window(HOME) {
+        Some(home) => {
+            let _ = home.eval("window.dispatchEvent(new CustomEvent('mrs-opened-file'))");
+            report(open_home_window(app));
+        }
+        None => report(open_home_window(app)),
+    }
+}
+
+/// The table file waiting for Home, once.
+#[tauri::command]
+fn take_opened_file(shell: State<'_, Shell>) -> Option<PathBuf> {
+    shell.opened_file.lock().unwrap().take()
+}
+
+/// What opening a table file did, for Home to show.
+#[derive(Serialize)]
+struct ImportedTable {
+    path: PathBuf,
+    name: String,
+    upgraded: Option<String>,
+    /// Sources its layers use that are not set up on this computer, or have no key yet.
+    missing: Vec<mrs_site::package::SourceNeed>,
+    problems: Vec<String>,
+}
+
+/// Opens a `.mrstable` file (#85): asks for one when `file` is not given, unpacks it as a new
+/// table in the sites folder and says what this computer still needs for it. `None` when the
+/// dialog was cancelled.
+#[tauri::command]
+async fn import_table(app: AppHandle, shell: State<'_, Shell>, file: Option<PathBuf>) -> Result<Option<ImportedTable>, String> {
+    let file = match file {
+        Some(file) => file,
+        None => {
+            let picked = app
+                .dialog()
+                .file()
+                .set_title("Open a table file")
+                .add_filter("MR Studio table", &[mrs_site::package::EXTENSION])
+                .blocking_pick_file();
+            let Some(picked) = picked else { return Ok(None) };
+            picked.into_path().map_err(text)?
+        }
+    };
+    let into = shell.sites_folders.first().cloned().ok_or("This computer has no folder for tables.")?;
+    let imported = tokio::task::spawn_blocking(move || mrs_site::package::import(&file, &into))
+        .await
+        .map_err(text)?
+        .map_err(|e| format!("That table file could not be opened: {e}"))?;
+    tracing::info!("opened table file as {}", imported.dir.display());
+    let missing = mrs_host::missing_sources(&shell.sources, &imported.sources);
+    Ok(Some(ImportedTable {
+        path: sites::canonical(imported.dir),
+        name: imported.name,
+        upgraded: imported.upgraded,
+        missing,
+        problems: imported.problems,
+    }))
 }
 
 /// In a release build there is no console (on Windows not even a hidden one), so log to a file.
@@ -269,6 +368,14 @@ async fn startup(app: AppHandle) {
         None
     });
 
+    // `mr-studio Lindholmen.mrstable` (a double click on Windows): Home opens the file.
+    let (explicit, file) = match explicit {
+        Some(path) if path.extension().is_some_and(|e| e.eq_ignore_ascii_case(mrs_site::package::EXTENSION)) => (None, Some(path)),
+        other => (other, None),
+    };
+    if let Some(file) = file {
+        *shell.opened_file.lock().unwrap() = Some(file);
+    }
     let site = match (setup, explicit, &saved) {
         (true, _, _) => None,
         (false, Some(site), _) => Some(site),
@@ -1245,7 +1352,7 @@ fn run_file_action(app: &AppHandle, action: &str) {
     // calls `file_action` with `checked`. Close only when the editor is the window in front.
     if let Some(editor) = app.get_webview_window(EDITOR) {
         let ask = match action {
-            "save" | "save_as" | "home" | "open" | "new" => true,
+            "save" | "save_as" | "export" | "home" | "open" | "new" => true,
             "close" => editor.is_focused().unwrap_or(false),
             _ => false,
         };
@@ -1278,6 +1385,7 @@ fn perform_file_action(app: &AppHandle, action: &str) {
             // (#72) it will also mark a save point here.
             "save" => Ok(()),
             "save_as" => save_as(&app).await,
+            "export" => export_table(&app).await,
             "reveal" => {
                 let site = app.state::<Shell>().running.lock().unwrap().as_ref().map(|r| r.site.join("site.json"));
                 match site {
@@ -1343,6 +1451,52 @@ async fn save_as(app: &AppHandle) -> anyhow::Result<()> {
     }
     // The editor reloads on the copy, whose name is in its title.
     open_site(app.clone(), app.state::<Shell>(), target, None).await.map_err(|e| anyhow::anyhow!(e))
+}
+
+/// Export table… (#85): one `.mrstable` file of the open table, to take to another computer.
+/// The editor says where it went and which sources the other computer has to set up.
+async fn export_table(app: &AppHandle) -> anyhow::Result<()> {
+    let shell = app.state::<Shell>();
+    let Some(running) = shell.running.lock().unwrap().clone() else { return Ok(()) };
+    let state = shell.host.lock().await.as_ref().map(|h| h.state.clone()).context("the table is not running")?;
+    let (send, receive) = tokio::sync::oneshot::channel();
+    let mut dialog = app
+        .dialog()
+        .file()
+        .set_title("Export table")
+        .set_file_name(format!("{}.{}", mrs_site::package::folder_name(&running.name), mrs_site::package::EXTENSION))
+        .add_filter("MR Studio table", &[mrs_site::package::EXTENSION]);
+    if let Ok(documents) = app.path().document_dir() {
+        dialog = dialog.set_directory(documents);
+    }
+    if let Some(window) = app.get_webview_window(EDITOR) {
+        dialog = dialog.set_parent(&window);
+    }
+    dialog.save_file(move |path| {
+        let _ = send.send(path);
+    });
+    let Some(target) = receive.await.ok().flatten() else { return Ok(()) };
+    let mut target = target.into_path().context("the chosen place is not a folder on this computer")?;
+    if !target.extension().is_some_and(|e| e.eq_ignore_ascii_case(mrs_site::package::EXTENSION)) {
+        target.set_extension(mrs_site::package::EXTENSION);
+    }
+    let version = app.package_info().version.to_string();
+    let out = target.clone();
+    let exported = tokio::task::spawn_blocking(move || state.export_table(&out, &version)).await?.map_err(anyhow::Error::msg)?;
+    tracing::info!("exported '{}' to {} ({} files, {} bytes)", running.name, target.display(), exported.files, exported.bytes);
+    let file = target.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+    let detail = if exported.sources.is_empty() {
+        "It needs nothing else on the other computer.".to_string()
+    } else {
+        let names: Vec<String> = exported.sources.iter().map(|s| if s.name.is_empty() { s.id.clone() } else { s.name.clone() }).collect();
+        format!("On the other computer, set up {} in Sources and keys. The keys did not go in the file.", names.join(", "))
+    };
+    file_menu::tell_editor(
+        app,
+        EDITOR,
+        json!({ "action": "exported", "message": format!("Exported to {file}"), "detail": detail, "path": target }),
+    );
+    Ok(())
 }
 
 #[tauri::command]

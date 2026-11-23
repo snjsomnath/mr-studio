@@ -30,6 +30,17 @@
       "staged/layers": "layers",
       "staged/sites": "sites"
     },
+    "fileAssociations": [
+      {
+        "ext": [
+          "mrstable"
+        ],
+        "name": "MR Studio table",
+        "description": "An MR Studio table, to open on another computer",
+        "role": "Editor",
+        "mimeType": "application/x-mrstable"
+      }
+    ],
     "macOS": {
       "signingIdentity": "-",
       "minimumSystemVersion": "11.0"
