@@ -264,6 +264,24 @@ body[data-role='tv'] .layer-button:focus-visible {
   outline-offset: 2px;
 }
 
+/* Groups down a rail: a gap, then the group's name in small capitals. */
+body[data-role='tv'] .rail-gap {
+  height: 0.5rem;
+}
+
+body[data-role='tv'] .rail-group {
+  max-width: 6.5rem;
+  margin-bottom: -0.25rem;
+  color: var(--muted);
+  font-size: 0.625rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  line-height: 1.2;
+  text-align: center;
+  text-transform: uppercase;
+  overflow-wrap: anywhere;
+}
+
 /* A rail with nothing on it gives its width to the centre. */
 body[data-role='tv'] .controller-right:not(:has(.layer-button-card, .join-qr, .home-button)) {
   display: none;
