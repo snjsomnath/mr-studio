@@ -237,17 +237,19 @@ export default defineLayer<Params>({
   panel(ctx, el) {
     el.innerHTML = `
       <style>
-        .coolpaths-panel { display: grid; gap: 12px; font-variant-numeric: tabular-nums; }
-        .coolpaths-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
-        .coolpaths-clock { font-size: 2rem; font-weight: 600; }
-        .coolpaths-verdict { opacity: 0.8; text-align: right; }
-        .coolpaths-route { display: grid; grid-template-columns: auto 1fr auto; gap: 4px 10px; align-items: center; }
-        .coolpaths-swatch { width: 22px; height: 6px; border-radius: 3px; }
-        .coolpaths-bar { grid-column: 1 / -1; height: 10px; border-radius: 5px; background: #38bdf8; overflow: hidden; }
+        .coolpaths-panel { display: grid; grid-template-columns: 1fr 1fr; gap: 0.4em 1.2em; font-size: 0.9em; line-height: 1.2; font-variant-numeric: tabular-nums; }
+        .coolpaths-head { grid-column: 1 / -1; display: flex; justify-content: space-between; align-items: baseline; gap: 0.6em; min-width: 0; }
+        .coolpaths-clock { font-size: 1.3em; font-weight: 600; line-height: 1.1; }
+        .coolpaths-verdict { opacity: 0.8; text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .coolpaths-route { display: grid; grid-template-columns: auto 1fr auto; gap: 0.2em 0.5em; align-items: center; min-width: 0; }
+        .coolpaths-route[hidden] { display: none; }
+        .coolpaths-swatch { width: 1.2em; height: 0.35em; border-radius: 0.2em; }
+        .coolpaths-bar { grid-column: 1 / -1; height: 0.5em; border-radius: 0.25em; background: #38bdf8; overflow: hidden; }
         .coolpaths-bar i { display: block; height: 100%; background: #fb923c; }
-        .coolpaths-note { font-size: 0.8rem; opacity: 0.7; }
-        .coolpaths-ramp { height: 8px; border-radius: 4px; background: linear-gradient(to right, ${RAMP.join(', ')}); }
-        .coolpaths-ticks { display: flex; justify-content: space-between; font-size: 0.8rem; opacity: 0.7; margin-top: 4px; }
+        .coolpaths-note { font-size: 0.8em; opacity: 0.7; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .coolpaths-key { grid-column: 1 / -1; }
+        .coolpaths-ramp { height: 0.4em; border-radius: 0.2em; background: linear-gradient(to right, ${RAMP.join(', ')}); }
+        .coolpaths-ticks { display: flex; justify-content: space-between; font-size: 0.8em; opacity: 0.7; margin-top: 0.2em; }
       </style>
       <div class="coolpaths-panel">
         <div class="coolpaths-head"><span class="coolpaths-clock"></span><span class="coolpaths-verdict"></span></div>
@@ -259,7 +261,7 @@ export default defineLayer<Params>({
           <span class="coolpaths-swatch" style="background:${COOL}"></span><span>Coolest walk</span><span class="coolpaths-length"></span>
           <div class="coolpaths-bar"><i></i></div><span class="coolpaths-note" style="grid-column:1/-1"></span>
         </div>
-        <div><div class="coolpaths-ramp"></div><div class="coolpaths-ticks"><span>path in shade</span><span>in sun</span></div></div>
+        <div class="coolpaths-key"><div class="coolpaths-ramp"></div><div class="coolpaths-ticks"><span>path in shade</span><span>in sun</span></div></div>
       </div>`;
     const clock = el.querySelector<HTMLElement>('.coolpaths-clock')!;
     const verdict = el.querySelector<HTMLElement>('.coolpaths-verdict')!;
@@ -274,7 +276,7 @@ export default defineLayer<Params>({
       const bar = row.querySelector<HTMLElement>('.coolpaths-bar')!;
       bar.style.width = `${(value.length / longest) * 100}%`;
       bar.querySelector<HTMLElement>('i')!.style.width = `${value.length > 0 ? (value.sun / value.length) * 100 : 0}%`;
-      row.querySelector<HTMLElement>('.coolpaths-note')!.textContent = `${value.sun} m in the sun, ${value.length - value.sun} m in shade`;
+      row.querySelector<HTMLElement>('.coolpaths-note')!.textContent = `${value.sun} m sun, ${value.length - value.sun} m shade`;
     }
 
     function update() {

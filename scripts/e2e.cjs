@@ -143,6 +143,15 @@ async function main() {
     // The TV is a rail of controls beside the dashboard canvas, and the layer's panels sit on the grid.
     // The hero shows the time, so Sunlight brings two panels (tree shade and the colour key) and the sketch layer one.
     assert.equal(await tv.locator('.mrs-panel').count(), 3);
+    // Under the hero the canvas is short, so it has fewer rows, not tiny text (#137): the titles stay
+    // readable, all three panels share the one page, and nothing spills out of its panel.
+    const fit = await tv.evaluate(() => ({
+      title: Math.min(...[...document.querySelectorAll('.mrs-panel-title')].map((t) => parseFloat(getComputedStyle(t).fontSize))),
+      shown: [...document.querySelectorAll('.mrs-panel')].filter((p) => p.closest('.mrs-page:not([hidden])')).length,
+      spills: [...document.querySelectorAll('.mrs-panel-body')].filter((b) => b.scrollHeight > b.clientHeight + 1).length,
+    }));
+    assert.ok(fit.title >= 16, `panel titles are ${fit.title}px`);
+    assert.deepEqual([fit.shown, fit.spills], [3, 0]);
     const band = await tv.locator('[data-panel="sunlight/key"]').boundingBox();
     const canvas = await tv.locator('.mrs-dash').boundingBox();
     assert.ok(band.width > canvas.width * 0.9 && band.y + band.height > canvas.y + canvas.height * 0.9, 'the colour key spans the bottom row');
@@ -219,7 +228,9 @@ async function main() {
     };
     const before = await table.screenshot();
     await tap(0.5, 0.5);
-    await tv.getByText('1 mark on the table').waitFor();
+    // The sketch's panel counts the marks (#137: a stat tile, which fits its tile at any canvas height).
+    const marks = (n) => tv.locator('[data-panel$="/marks"] .mrs-number', { hasText: new RegExp(`^${n}$`) }).waitFor();
+    await marks(1);
     await dev.waitForTimeout(500);
     const marked = await table.screenshot();
     assert.notDeepEqual(marked, before, 'the point should be drawn on the table');
@@ -233,7 +244,7 @@ async function main() {
     await tap(0.7, 0.4);
     await phone.getByRole('button', { name: 'Send line' }).click();
     await phone.getByText('Sent to the table.').waitFor();
-    await tv.getByText('2 marks on the table').waitFor();
+    await marks(2);
 
     await phone.getByRole('radio', { name: 'Area' }).click();
     await tap(0.75, 0.6);
@@ -241,7 +252,7 @@ async function main() {
     await tap(0.85, 0.9);
     if (shots) await phone.screenshot({ path: path.join(shots, 'phone.png') });
     await phone.getByRole('button', { name: 'Send area' }).click();
-    await tv.getByText('3 marks on the table').waitFor();
+    await marks(3);
     await dev.waitForTimeout(500);
     assert.notDeepEqual(await table.screenshot(), marked, 'the line and the area should be drawn too');
     if (shots) await dev.screenshot({ path: path.join(shots, 'dev-sketch.png') });
@@ -263,7 +274,7 @@ async function main() {
     // The TV clears the sketch, from the sketch's More settings.
     await tv.locator('.layer-open', { hasText: 'Mark places' }).locator('summary', { hasText: 'More settings' }).click();
     await tv.getByRole('button', { name: 'Clear the sketch' }).click();
-    await tv.getByText('Nothing marked yet').waitFor();
+    await marks(0);
 
 
     // ---- The model surface ----
@@ -325,8 +336,11 @@ async function main() {
     await press('Cool paths', true);
     const cool = card('Cool paths');
     // A layer's own panel sits on the dashboard canvas; its controls stay in its card.
-    const coolPanel = tv.locator('[data-panel="coolpaths/panel"]');
+    const coolPanel = tv.locator('[data-panel="coolpaths/walks"]');
     await coolPanel.getByText(/less sun|already the coolest/).waitFor();
+    // Its drawing starts under its title, never over it (#137).
+    const [coolTitle, coolBody] = await Promise.all([coolPanel.locator('.mrs-panel-title').boundingBox(), coolPanel.locator('.coolpaths-head').boundingBox()]);
+    assert.ok(coolBody.y >= coolTitle.y + coolTitle.height, 'the walks sit under the panel title');
     await dev.waitForTimeout(500);
     const walk = await table.screenshot();
     assert.notDeepEqual(walk, off, 'the network and routes should be drawn');
@@ -342,7 +356,7 @@ async function main() {
     // At night there is no sun to avoid.
     await cool.getByLabel('Time of day').fill('1');
     await coolPanel.getByText(/the sun is down/).waitFor();
-    await coolPanel.getByText('0 m in the sun').first().waitFor();
+    await coolPanel.getByText(/^0 m sun,/).first().waitFor();
     await press('Cool paths', false);
 
     // Mobility: the site's trips played over time.

@@ -508,6 +508,15 @@ body[data-role='tv'] .controller .join-address .join-code {
   flex-basis: 100%;
 }
 
+/*
+ * On the controller the dashboard's text never gets smaller than the controls beside it
+ * (the unit is at least 0.8% of the screen's height, the demo's scale for a 46-inch TV),
+ * so a layer's hero leaves the panels fewer rows, not tiny ones.
+ */
+body[data-role='tv'] .dash {
+  --mrs-u-floor: min(0.8vh, 0.5vw);
+}
+
 /* A layer with a hero takes most of the height; its panels share what is left. */
 .open-layers:has(.layer-open:not([hidden]) .layer-hero:not([hidden])) {
   max-height: 72%;

@@ -46,13 +46,4 @@ export default defineLayer<Params>({
       },
     };
   },
-
-  panel(ctx, el) {
-    const update = () => {
-      const count = Number(ctx.shared.count ?? 0);
-      el.textContent = count === 0 ? 'Nothing marked yet. Phones can place points, routes and areas.' : count === 1 ? '1 mark on the table' : `${count} marks on the table`;
-    };
-    update();
-    return { update };
-  },
 });
