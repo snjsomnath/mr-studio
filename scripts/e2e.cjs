@@ -655,6 +655,15 @@ async function main() {
     await guide.locator('.wz-theme[aria-checked="true"]', { hasText: 'Ocean' }).waitFor();
     await live.locator('html[style*="--bg: #06121f"]').waitFor();
     assert.equal(savedTv().theme_name, 'ocean');
+    // A look is more than colours (#126): Minimal dark takes the tiles and panels away on the controller.
+    await guide.locator('.wz-theme', { hasText: 'Minimal dark' }).click();
+    await live.locator('body[data-density="minimal"][data-rail-look="bare"][data-surface="plain"]').waitFor();
+    assert.equal(savedTv().theme_name, 'minimal-dark');
+    if (shots) await guide.screenshot({ path: path.join(shots, 'guide-minimal-dark.png') });
+    await guide.locator('.wz-theme', { hasText: 'Glass' }).click();
+    await live.locator('body[data-surface="glass"][data-density="comfortable"]').waitFor();
+    await guide.locator('.wz-theme', { hasText: 'Ocean' }).click();
+    await live.locator('html[style*="--bg: #06121f"]').waitFor();
     await guide.locator('.wz-look [role="radio"]', { hasText: 'Icons and names' }).click();
     await live.locator('body[data-rail-style="labelled"]').waitFor();
     assert.equal(savedTv().rail_style, 'labelled');
@@ -698,9 +707,7 @@ async function main() {
     // What was read is drawn against the table's outline before anything is written.
     await dialog.locator('.im-map .im-map-table').waitFor();
     assert.equal(await dialog.locator('.im-map-data circle').count(), 6);
-    // Only the data here: showing it as a layer of its own is the layer builder's test (#94).
-    await dialog.getByLabel('Colour').selectOption({ label: 'Not yet: only add the data' });
-    await dialog.getByRole('button', { name: 'Add to the table' }).click();
+    await dialog.getByRole('button', { name: /^Add (to|and show on) the table$/ }).click();
     await adder.waitForFunction(() => !document.querySelector('dialog.im-dialog'));
     await adder.locator('.ed-tree .ed-row[data-context="home"]').waitFor();
     assert.equal(JSON.parse(fs.readFileSync(path.join(site, 'site.json'), 'utf8')).data.places, 'data/places.geojson');

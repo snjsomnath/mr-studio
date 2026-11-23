@@ -43,6 +43,37 @@ function size(bytes) {
   return `${value < 10 && unit > 0 ? value.toFixed(1) : Math.round(value)} ${units[unit]}`;
 }
 
+/** Where deleted tables go: the Recycle Bin on Windows, the Trash elsewhere. */
+const TRASH = /Win/.test(navigator.platform || navigator.userAgent) ? 'Recycle Bin' : 'Trash';
+
+/** Asks before deleting a table, naming it and saying where its files go. Cancel is the default. */
+function confirmDelete(site, bytes) {
+  const dialog = $('delete-dialog');
+  $('delete-title').textContent = `Delete “${site.name}”?`;
+  $('delete-folder').textContent = site.path;
+  $('delete-size').textContent = bytes ? ` (${bytes})` : '';
+  for (const node of document.querySelectorAll('.trash-name')) node.textContent = TRASH;
+  $('delete-confirm').textContent = `Move to ${TRASH}`;
+  showError(undefined, 'delete-error');
+  dialog.returnValue = '';
+  const confirm = $('delete-confirm');
+  const done = async () => {
+    confirm.disabled = true;
+    try {
+      await invoke('delete_table', { path: site.path });
+      dialog.close();
+      await load();
+    } catch (e) {
+      showError(e, 'delete-error');
+    }
+    confirm.disabled = false;
+  };
+  confirm.onclick = done;
+  $('delete-cancel').onclick = () => dialog.close();
+  dialog.showModal();
+  $('delete-cancel').focus();
+}
+
 async function load() {
   const state = await invoke('launcher_state');
   $('version').textContent = `Version ${state.version}`;
@@ -61,19 +92,28 @@ async function load() {
       );
       open.addEventListener('click', () => openTable(site.path));
       const row = el('li', { className: site.problem ? 'broken' : '' }, open);
+      const tools = el('span', { className: 'card-tools' });
       if (site.source === 'added') {
-        const remove = el('button', { type: 'button', className: 'remove', title: 'Take it off this list. The folder is not deleted.' }, 'Remove');
+        const remove = el('button', { type: 'button', className: 'remove', title: 'Take it off this list. The folder is not deleted.' }, 'Remove from list');
         remove.addEventListener('click', async () => {
           await invoke('remove_site', { path: site.path });
           await load();
         });
-        row.append(remove);
+        tools.append(remove);
       }
+      // Your own tables can be deleted, after a confirmation; the examples come with the app (#184).
+      if (!example) {
+        const del = el('button', { type: 'button', className: 'remove danger', title: `Move this table's folder to the ${TRASH}` }, 'Delete…');
+        del.addEventListener('click', () => confirmDelete(site, facts.dataset.size));
+        tools.append(del);
+      }
+      if (tools.childElementCount) row.append(tools);
       // The picture from the last time it was closed, and the space it takes, come after (#131).
       invoke('table_details', { path: site.path })
         .then((details) => {
           if (details.thumbnail) picture.style.backgroundImage = `url("${details.thumbnail}")`;
           picture.classList.toggle('has-picture', !!details.thumbnail);
+          facts.dataset.size = size(details.bytes);
           if (!site.problem && !example) facts.textContent = `${edited(site.edited)} · ${size(details.bytes)}`;
           if (example) facts.textContent = `Comes with MR Studio · ${size(details.bytes)}`;
         })

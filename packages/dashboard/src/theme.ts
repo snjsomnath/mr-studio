@@ -33,8 +33,14 @@ export const STYLE_TOKENS: Record<string, TokenSpec> = {
   'font.text': { kind: 'font', css: '--mrs-font', default: FONT, label: 'Typeface' },
   'font.number': { kind: 'font', css: '--mrs-font-number', default: FONT, label: 'Typeface for headline numbers' },
   'shape.radius': { kind: 'enum', css: '--mrs-radius', default: 'medium', label: 'Panel corners', options: { none: '0', small: 'calc(0.6 * var(--mrs-u))', medium: 'calc(1.2 * var(--mrs-u))', large: 'calc(2.2 * var(--mrs-u))' } },
-  'panel.style': { kind: 'enum', css: '--mrs-panel-style', default: 'filled', label: 'Panel treatment', options: { filled: 'filled', outlined: 'outlined', plain: 'plain' } },
+  'panel.style': { kind: 'enum', css: '--mrs-panel-style', default: 'filled', label: 'Panel treatment', options: { filled: 'filled', outlined: 'outlined', glass: 'glass', plain: 'plain' } },
+  // The look beyond colour (#126): how the controller's layer buttons are drawn, and how much chrome there is.
+  'rail.look': { kind: 'enum', css: '--mrs-rail-look', default: 'tiles', label: 'Layer buttons', options: { tiles: 'tiles', bare: 'bare' } },
+  density: { kind: 'enum', css: '--mrs-density', default: 'comfortable', label: 'Chrome', options: { comfortable: 'comfortable', minimal: 'minimal' } },
 };
+
+/** Enum tokens that are not lengths: the canvas and the controller show them as data attributes. */
+export const LOOK_ATTRIBUTES: Record<string, string> = { '--mrs-panel-style': 'panelStyle', '--mrs-rail-look': 'railLook', '--mrs-density': 'density' };
 
 const HEX = /^#[0-9a-fA-F]{6}$/;
 /** Family names only. A font is a look, not a way to load something. */

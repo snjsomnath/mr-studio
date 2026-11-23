@@ -93,6 +93,11 @@ function sourcePicker(row: HTMLElement, label: HTMLLabelElement, id: string, con
   };
 }
 
+/** Four or more choices are laid out in rows where space is tight (the editor's inspector): 2 × 2 for four, three across for more. */
+function columns(group: HTMLElement, count: number) {
+  if (count >= 4) group.dataset.columns = count === 4 ? '2' : '3';
+}
+
 export function widget(control: Control, send: (value: unknown) => void, act: () => void): Widget {
   const row = el('div', `control control-${control.type}`);
   const id = `c-${Math.random().toString(36).slice(2)}`;
@@ -135,6 +140,7 @@ export function widget(control: Control, send: (value: unknown) => void, act: ()
         group.append(button);
         return [option.value, button] as const;
       });
+      columns(group, buttons.length);
       sync = (value) => {
         for (const [option, button] of buttons) button.setAttribute('aria-checked', String(option === value));
       };
@@ -173,6 +179,7 @@ export function widget(control: Control, send: (value: unknown) => void, act: ()
           group.append(button);
           return [preset.value, button] as const;
         });
+        columns(group, buttons.length);
         sync = (value) => {
           if (typeof value !== 'string') return;
           shown = value;

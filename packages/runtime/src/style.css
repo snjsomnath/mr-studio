@@ -1437,3 +1437,95 @@ button.action:disabled {
 .is-calibrating .table-decoration {
   visibility: hidden;
 }
+
+/*
+ * ---- Looks (#126) ----
+ * A theme sets more than colours: the surface (filled, outlined, glass or plain), the layer
+ * buttons (tiles or bare icons) and the chrome (comfortable or minimal). main.ts copies them
+ * from the site's theme to data attributes on the body.
+ */
+
+/* Glass: frosted rails and controls over a soft glow of the accent. */
+body[data-role='tv'][data-surface='glass'] {
+  background:
+    radial-gradient(70% 60% at 20% 0%, color-mix(in srgb, var(--accent) 20%, transparent), transparent 70%),
+    radial-gradient(60% 70% at 100% 100%, color-mix(in srgb, var(--accent) 12%, transparent), transparent 70%),
+    var(--bg);
+}
+
+body[data-role='tv'][data-surface='glass'] .controller,
+body[data-role='tv'][data-surface='glass'] .segmented,
+body[data-role='tv'][data-surface='glass'] .controls-more > summary,
+body[data-role='tv'][data-surface='glass'] input[type='date'],
+body[data-role='tv'][data-surface='glass'] .layer-button .layer-button-icon {
+  background: color-mix(in srgb, var(--panel) 45%, transparent);
+  border-color: color-mix(in srgb, var(--text) 14%, transparent);
+  backdrop-filter: blur(1.25rem);
+  -webkit-backdrop-filter: blur(1.25rem);
+}
+
+body[data-role='tv'][data-surface='glass'] .layer-button[aria-pressed='true'] .layer-button-icon {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+body[data-role='tv'][data-surface='glass'] .dash.mrs-dash {
+  background: transparent;
+}
+
+/* Outlined: lines, no filled surfaces. */
+body[data-role='tv'][data-surface='outlined'] .segmented,
+body[data-role='tv'][data-surface='outlined'] .layer-button:not([aria-pressed='true']) .layer-button-icon {
+  background: transparent;
+}
+
+/* Bare layer buttons: just the icon and its name; the open layer's icon takes the accent, with a bar under it. */
+body[data-role='tv'][data-rail-look='bare'] .layer-button .layer-button-icon {
+  border-color: transparent;
+  background: transparent;
+  backdrop-filter: none;
+}
+
+body[data-role='tv'][data-rail-look='bare'] .layer-button[aria-pressed='true'] .layer-button-icon {
+  border-color: transparent;
+  background: transparent;
+  color: var(--accent);
+  box-shadow: inset 0 -0.1875rem 0 var(--accent);
+  border-radius: 0;
+}
+
+body[data-role='tv'][data-rail-look='bare'] .action-button .layer-button-icon {
+  border-color: var(--line);
+}
+
+/* Minimal: no rail surfaces or dividers, no group labels, quieter choices. */
+body[data-role='tv'][data-density='minimal'] .controller {
+  background: transparent;
+  border-color: transparent;
+}
+
+body[data-role='tv'][data-density='minimal'] .rail-group {
+  display: none;
+}
+
+body[data-role='tv'][data-density='minimal'] .segmented {
+  background: transparent;
+  border-color: transparent;
+  padding: 0;
+  gap: 0.5rem;
+}
+
+body[data-role='tv'][data-density='minimal'] .segmented button:not([aria-checked='true']) {
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+
+body[data-role='tv'][data-density='minimal'] .controls-more > summary {
+  border-color: transparent;
+  padding-inline: 0;
+}
+
+body[data-role='tv'][data-density='minimal'] .layer-open-head .layer-button-icon {
+  background: transparent;
+  color: var(--accent);
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
