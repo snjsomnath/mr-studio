@@ -786,7 +786,10 @@ export function builderSection(host: BuilderHost, manifest: LayerManifest, butto
     particles: ['Particles', 'Lights travel along every line: traffic, flows, energy on its way.'],
     attract: ['Attract a crowd', 'Particles gather from all around and are pulled into each point. For pull and attention, not for people.'],
     gravity: ['Crowd on the streets', 'People walk to each point along the street network, more to the places that pull harder.'],
+<<<<<<< HEAD
     timeline: ['Through time', 'Plays the layer through a date or year column: each feature appears when its time comes, with a brief flare.'],
+=======
+>>>>>>> origin/main
   };
   const motionTab = (): HTMLElement[] => {
     const nodes: HTMLElement[] = [el('p', 'lb-lead', 'Motion is the strongest thing on the table: keep one kind in focus, and make any second one quieter.')];
@@ -848,6 +851,7 @@ export function builderSection(host: BuilderHost, manifest: LayerManifest, butto
             });
             weight.addEventListener('change', () => set('weight', weight.value || null));
             rows.push(field('Pull by', weight));
+<<<<<<< HEAD
           } else if (name === 'timeline') {
             const column = el('select');
             void shapes(look).then((s) => {
@@ -872,6 +876,8 @@ export function builderSection(host: BuilderHost, manifest: LayerManifest, butto
               drawWindow();
             }, 'Features')), windowRow);
             rows.push(el('p', 'lb-hint', 'No date is written on the map. Showing the current date on the controller comes with the controller legend (#76).'));
+=======
+>>>>>>> origin/main
           }
           sub.replaceChildren(...rows);
         };

@@ -77,8 +77,13 @@ with it and how much it must be explained. Two more dimensions (§3.3) are new f
 
 | Form | Examples | Visualisation types on the table | Blocks / layers today |
 |---|---|---|---|
+<<<<<<< HEAD
 | **Point** | Stops, sensors, places, events | Spot with halo, glow, pulse or ripple rings, radiate lines to other points, attractor that draws a crowd, shape or pictogram on a dark disc, appear through time or on a step | `drawSpots`, `drawRings`, `drawGlow`, `pullTowards`; recipe `shape`/`icon` and `timeline` (#95); Cultural Gravity |
 | **Line / route** | A walk, a transit line, a planned path | Bright line with dark casing, width or colour by value, dashes, draw-in reveal, direction arrows, travelling lights, particles flowing along it | `drawPaths`, `pathHeads`; CoolPaths routes |
+=======
+| **Point** | Stops, sensors, places, events | Spot with halo, glow, pulse or ripple rings, radiate lines to other points, attractor that draws a crowd, icon, appear on a step | `drawSpots`, `drawRings`, `drawGlow`, `pullTowards`; Cultural Gravity |
+| **Line / route** | A walk, a transit line, a planned path | Bright line with dark casing, width or colour by value, dashes, draw-in reveal, travelling lights, particles flowing along it | `drawPaths`, `pathHeads`; CoolPaths routes |
+>>>>>>> origin/main
 | **Network** | Streets, footpaths, cycle lanes | Hierarchy by width and brightness, glow, flow particles that stay on the network, routing between places | `drawPaths`, `StreetNetwork` router (#96); CoolPaths sun exposure per edge |
 | **Area** | Zones, plots, parks, catchments | Flat fill by category or value, outline, edge glow, hatch, fill like a vessel, pulse the outline | `drawAreas`; #94, #95 |
 | **Field / raster** | Sun hours, wind speed, heat, noise, delay | Colour wash on the ground with a ramp, soft edges, threshold flag, contours, time scrub, lens | `ctx.map.addField`, `heatField`, `contours`, `Lens`; Sunlight, Wind, Mobility cells |

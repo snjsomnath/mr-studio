@@ -1,8 +1,9 @@
 import { isVisible } from '@mrstudio/sdk';
-import type { Connection, Control, LayerManifest, LayerState, Role } from '@mrstudio/sdk';
+import type { Connection, Control, LayerManifest, LayerState, PanelContext, PanelHandlers, Role, TvAbout } from '@mrstudio/sdk';
 
 import { icon } from './editor/icons.ts';
-import { paramSender } from './layer-manager.ts';
+import { baseContext, paramSender } from './layer-manager.ts';
+import { layerModule } from './registry.ts';
 import { PHONE_SEND_INTERVAL, toolSection } from './phone-tools.ts';
 import type { Store } from './store.ts';
 
@@ -82,6 +83,43 @@ export function widget(control: Control, send: (value: unknown) => void, act: ()
       break;
     }
     case 'date':
+      if (control.presets?.length) {
+        // Days as one tap each, and the full date beside them for any other day.
+        const group = el('div', 'segmented');
+        group.setAttribute('role', 'radiogroup');
+        group.setAttribute('aria-label', control.label);
+        const input = el('input');
+        Object.assign(input, { id, type: 'date', className: 'control-date-more' });
+        input.setAttribute('aria-label', `Another ${control.label.toLowerCase()}`);
+        input.addEventListener('input', () => input.value && send(input.value));
+        let shown = '';
+        const dateOf = (preset: string) => {
+          if (preset === 'today') return new Date().toISOString().slice(0, 10);
+          const year = /^\d{4}/.exec(shown)?.[0] ?? String(new Date().getFullYear());
+          return `${year}-${preset}`;
+        };
+        const buttons = control.presets.map((preset) => {
+          const button = el('button', undefined, preset.label);
+          button.type = 'button';
+          button.setAttribute('role', 'radio');
+          button.addEventListener('click', () => send(dateOf(preset.value)));
+          group.append(button);
+          return [preset.value, button] as const;
+        });
+        sync = (value) => {
+          if (typeof value !== 'string') return;
+          shown = value;
+          if (document.activeElement !== input) input.value = value;
+          // Today wins only when no named day is the same date.
+          const named = buttons.find(([preset]) => preset !== 'today' && dateOf(preset) === value);
+          for (const [preset, button] of buttons) button.setAttribute('aria-checked', String(named ? preset === named[0] : dateOf(preset) === value));
+        };
+        const line = el('div', 'control-presets');
+        line.append(group, input);
+        row.append(el('div', 'control-label', control.label), line);
+        break;
+      }
+    // falls through
     case 'color':
     case 'text': {
       const input = el('input');
@@ -227,6 +265,26 @@ interface Card {
  * words and controls are in the centre. The map's ambient layers have no button.
  * The layer's panels are on the dashboard canvas.
  */
+/** The About page on the controller screen: the site's words and its credits. */
+function aboutPage(about: TvAbout, fallback: string): HTMLElement {
+  const page = el('section', 'layer-card layer-open about-page');
+  page.hidden = true;
+  page.append(el('h2', 'layer-open-name', about.title ?? fallback));
+  if (about.text) page.append(el('p', 'layer-about', about.text));
+  const credits = (about.credits ?? []).filter((c) => c && typeof c.name === 'string');
+  if (credits.length > 0) {
+    const list = el('dl', 'about-credits');
+    for (const credit of credits) {
+      const item = el('div', 'about-credit');
+      item.append(el('dt', undefined, credit.role ?? ''), el('dd', undefined, credit.name));
+      if (credit.note) item.append(el('dd', 'about-note', credit.note));
+      list.append(item);
+    }
+    page.append(list);
+  }
+  return page;
+}
+
 export class Controller {
   private cards = new Map<string, Card>();
   /** The side each button was last placed on. */
@@ -235,6 +293,9 @@ export class Controller {
   /** Where the open layer's words and controls go on the controller screen. */
   private readonly centre: HTMLElement | undefined;
   private readonly welcome = el('div', 'layer-welcome');
+  /** The site's About page in the centre, when `tv.about` gives it words. */
+  private readonly about: HTMLElement | undefined;
+  private aboutButton: HTMLButtonElement | undefined;
   private readonly root: HTMLElement;
   private readonly store: Store;
   private readonly connection: Connection;
@@ -249,8 +310,12 @@ export class Controller {
     this.store = store;
     this.connection = connection;
     this.role = role;
+    this.about = centre && site.tv?.about ? aboutPage(site.tv.about, site.branding.title ?? site.name) : undefined;
     this.arrange();
     store.onLayer((id, state) => {
+      // Opening a layer closes the About page.
+      const manifest = store.manifest(state.layer);
+      if (state.active && !state.parent && this.aboutOpen && manifest && !isAmbient(manifest)) this.showAbout(false);
       this.cards.get(id)?.sync(state);
       // A button moves when its author changes its side, and the buttons shared out around it may move too.
       if (this.right && this.sides.has(id) && this.layoutKey() !== this.shown) this.arrange();
@@ -316,7 +381,7 @@ export class Controller {
       const ids = [...store.state.scene].reverse();
       const kept = (id: string) => Boolean(store.manifest(store.state.layers[id]?.layer ?? '')?.alongside);
       const bodies = [...ids.filter((id) => !kept(id)), ...ids.filter(kept)].flatMap((id) => this.cards.get(id)?.body ?? []);
-      this.centre.replaceChildren(this.welcome, ...bodies);
+      this.centre.replaceChildren(this.welcome, ...(this.about ? [this.about] : []), ...bodies);
       this.rest();
     }
   }
@@ -354,6 +419,8 @@ export class Controller {
 
     const body = el('section', 'layer-card layer-open');
     body.dataset.layer = id;
+    // A tool kept alongside the open layer (the phones' sketch) takes one line under it.
+    body.classList.toggle('is-alongside', Boolean(manifest.alongside));
     const heading = el('h2', 'layer-open-name');
     const about = el('p', 'layer-about');
     const words = el('header', 'layer-open-head');
@@ -369,16 +436,48 @@ export class Controller {
         () => void connection.request('layer.action', { layer: id, action: control.id }).catch(() => {}),
       ),
     );
+    // The layer's hero, its one large way in, sits under its name (#137).
+    const hero = el('div', 'layer-hero');
+    hero.hidden = true;
+    const heroCleanups: (() => void)[] = [];
+    let heroHandlers: PanelHandlers | void = undefined;
+    const module = layerModule(manifest.id);
+    if (module?.hero) {
+      const ctx: PanelContext = Object.assign(Object.create(baseContext(store, connection, id)), {
+        panel: 'hero',
+        onCleanup: (cleanup: () => void) => heroCleanups.push(cleanup),
+      });
+      try {
+        heroHandlers = module.hero(ctx, hero);
+        hero.hidden = false;
+      } catch (error) {
+        console.error(`[${id}] hero`, error);
+      }
+    }
+    // Controls by tier: primary ones large and first, then the rest in a row, then "More settings", closed.
+    const tierOf = (w: Widget) => w.control.tier ?? 'secondary';
+    const primary = el('div', 'controls controls-primary');
     const controls = el('div', 'controls');
-    controls.append(...widgets.map((w) => w.row));
+    const more = el('details', 'controls-more');
+    const moreRows = el('div', 'controls');
+    more.append(el('summary', undefined, 'More settings'), moreRows);
+    primary.append(...widgets.filter((w) => tierOf(w) === 'primary').map((w) => w.row));
+    controls.append(...widgets.filter((w) => tierOf(w) === 'secondary').map((w) => w.row));
+    moreRows.append(...widgets.filter((w) => tierOf(w) === 'more').map((w) => w.row));
     body.append(words);
-    if (widgets.length > 0) body.append(controls);
+    if (!hero.hidden) body.append(hero);
+    for (const group of [primary, controls]) if (group.childElementCount > 0) body.append(group);
+    // "More settings" closes the primary row when there is one, so it costs no height of its own.
+    if (moreRows.childElementCount > 0) (primary.childElementCount > 0 ? primary : body).append(more);
 
     let shown: string | undefined;
     return {
       element: card,
       body,
-      dispose: () => body.remove(),
+      dispose: () => {
+        for (const cleanup of heroCleanups) cleanup();
+        body.remove();
+      },
       sync: (state) => {
         const button = layerButton(id, manifest, state, defaultSideOf(store, id));
         name.textContent = button.name;
@@ -397,21 +496,87 @@ export class Controller {
           w.row.hidden = !isVisible(w.control, state.params) || Boolean(state.hide?.includes(w.control.id));
           w.sync(state.params[w.control.id]);
         }
+        more.hidden = ![...moreRows.children].some((row) => !(row as HTMLElement).hidden);
+        if (state.active && heroHandlers) {
+          try {
+            heroHandlers.update?.();
+          } catch (error) {
+            console.error(`[${id}] hero`, error);
+          }
+        }
         this.rest();
       },
     };
   }
 
+  /** The layers open on the controller: on, with a button, not part of another layer. */
+  private openLayers(): string[] {
+    const { store } = this;
+    return store.state.scene.filter((id) => {
+      const state = store.state.layers[id];
+      const manifest = state && store.manifest(state.layer);
+      return Boolean(state?.active && !state.parent && manifest && !isAmbient(manifest));
+    });
+  }
+
   /** The centre says what to do while no layer is open. */
   private rest(): void {
     if (!this.centre) return;
-    const { store } = this;
-    const open = store.state.scene.some((id) => {
-      const state = store.state.layers[id];
-      const manifest = state && store.manifest(state.layer);
-      return Boolean(state?.active && manifest && !isAmbient(manifest));
-    });
-    this.welcome.hidden = open;
+    // A tool kept alongside (the phones' sketch) is not a layer the visitor chose.
+    const chosen = this.openLayers().filter((id) => !this.store.manifest(this.store.state.layers[id]!.layer)?.alongside);
+    this.welcome.hidden = this.aboutOpen || chosen.length > 0;
+  }
+
+  private get aboutOpen(): boolean {
+    return this.about !== undefined && !this.about.hidden;
+  }
+
+  private showAbout(show: boolean): void {
+    if (!this.about) return;
+    this.about.hidden = !show;
+    this.aboutButton?.setAttribute('aria-pressed', String(show));
+    this.rest();
+  }
+
+  /**
+   * Closes the open layer and the About page, so the controller goes back to its welcome.
+   * Tools made to run alongside (the phones' sketch) stay on, as they do when a layer opens.
+   */
+  reset(): void {
+    this.showAbout(false);
+    for (const id of this.openLayers()) {
+      if (this.store.manifest(this.store.state.layers[id]!.layer)?.alongside) continue;
+      void this.connection.request('layer.activate', { layer: id, active: false }).catch(() => {});
+    }
+  }
+
+  /**
+   * The core's own buttons at the foot of the controller screen's rail, drawn dashed so they
+   * read as actions, not layers (#75): Reset, and About when the site has `tv.about`.
+   */
+  actions(): HTMLElement {
+    const box = el('div', 'rail-actions');
+    const action = (label: string, iconName: string, run: () => void) => {
+      const press = el('button', 'layer-button action-button');
+      press.type = 'button';
+      press.title = label;
+      const badge = el('span', 'layer-button-icon');
+      badge.append(icon(iconName, 20));
+      press.append(badge, el('span', 'layer-button-name', label));
+      press.addEventListener('click', run);
+      box.append(press);
+      return press;
+    };
+    action('Reset', 'reset', () => this.reset());
+    if (this.about) {
+      this.aboutButton = action('About', 'info', () => {
+        const show = !this.aboutOpen;
+        if (show) this.reset();
+        this.showAbout(show);
+      });
+      this.aboutButton.setAttribute('aria-pressed', 'false');
+    }
+    return box;
   }
 
   private card(id: string, manifest: LayerManifest): Card {

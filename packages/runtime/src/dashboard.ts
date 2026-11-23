@@ -16,6 +16,7 @@ export function mountDashboard(root: HTMLElement, store: Store, connection: Conn
   const tv = store.state.site.tv ?? {};
   const view = new DashboardView(root, { registry, dev, rotateS: tv.rotate_s, empty: 'Turn a layer on to see it here' });
   view.setTheme(tv.theme);
+  store.onTv((next) => view.setTheme(next?.theme));
 
   const report = (owner: string, issues: { path: string; message: string }[]) => {
     for (const issue of issues) console.warn(`[${owner}] ${issue.path} ${issue.message}`);
