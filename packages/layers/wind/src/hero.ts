@@ -117,6 +117,8 @@ export function windHero(ctx: PanelContext<Params>, el: HTMLElement): PanelHandl
         return `<text x="${p.x.toFixed(1)}" y="${p.y.toFixed(1)}" dy="0.35em" text-anchor="middle" font-size="${1.05 * g.r}" font-weight="${letter === 'N' ? 700 : 500}" fill="rgb(255 255 255 / ${letter === 'N' ? 0.95 : 0.7})">${letter}</text>`;
       })
       .join('');
+    // The dial is drawn anew each time: one that had the focus keeps it.
+    const focused = document.activeElement instanceof SVGElement && document.activeElement.classList.contains('wind-hero-dial');
     art.setAttribute('viewBox', `0 0 ${g.w} ${g.h}`);
     art.innerHTML = `
       <defs>
@@ -135,6 +137,7 @@ export function windHero(ctx: PanelContext<Params>, el: HTMLElement): PanelHandl
         <path d="M0 0 L${-1.1 * g.r} ${1.6 * g.r} L${1.1 * g.r} ${1.6 * g.r} Z" fill="#e6f6ff" transform="translate(${tip.x} ${tip.y}) rotate(${from + 180})"/>
         <circle cx="${knob.x}" cy="${knob.y}" r="${1.15 * g.r}" fill="#fff" stroke="rgb(120 200 255 / .6)" stroke-width="${0.5 * g.r}"/>
       </g>`;
+    if (focused) art.querySelector<SVGGElement>('.wind-hero-dial')?.focus();
 
     // The speed band, on a line from MIN to MAX.
     const x = (v: number) => g.x0 + ((v - MIN) / (MAX - MIN)) * (g.x1 - g.x0);
@@ -251,7 +254,6 @@ export function windHero(ctx: PanelContext<Params>, el: HTMLElement): PanelHandl
     else keyed.direction = (((direction + (small ?? 0) * 5 + (large ?? 0) * 45) % 360) + 360) % 360;
     ctx.setParams({ ...keyed });
     draw();
-    if (onDial) art.querySelector<SVGGElement>('.wind-hero-dial')?.focus();
   });
 
   const resize = new ResizeObserver(() => draw());
@@ -261,12 +263,5 @@ export function windHero(ctx: PanelContext<Params>, el: HTMLElement): PanelHandl
     cancelAnimationFrame(frame);
   });
   draw();
-  return {
-    update() {
-      // Focus lives on the dial's group, which each draw makes anew: keep it there.
-      const focused = document.activeElement?.classList.contains('wind-hero-dial');
-      draw();
-      if (focused) art.querySelector<SVGGElement>('.wind-hero-dial')?.focus();
-    },
-  };
+  return { update: draw };
 }
