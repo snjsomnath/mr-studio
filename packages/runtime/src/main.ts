@@ -119,7 +119,7 @@ async function main() {
     // The editor keeps a picture of the table for Home when it is left (#131).
     if (editor) editor.snapshot = () => view.snapshot();
     const { installModel } = await import('./model/index.ts');
-    await installModel(view, connection, role);
+    await installModel(view, connection, role, { remoteCalibration: !editing });
     new LayerManager(store, connection, view);
     if (editing) return;
     if (composing) {

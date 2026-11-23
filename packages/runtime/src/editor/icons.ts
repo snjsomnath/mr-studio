@@ -43,6 +43,12 @@ const PATHS: Record<string, string> = {
   pointer: 'M6 3l12 9-5 1 3 6-2 1-3-6-4 3z',
   eyedropper: 'M15 4l5 5-2 2-5-5zM13 6l-8 8v3h3l8-8M4 20l1-3',
   palette: 'M12 3a9 9 0 0 0 0 18c1.100 0 1.500-.8 1.500-1.500 0-.8-.5-1.200-.5-2 0-.8.7-1.500 1.500-1.500H17a4 4 0 0 0 4-4c0-5-4-9-9-9ZM7.500 11h.01M10 7.500h.01M14.500 7.500h.01M17 11h.01',
+  contrast: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18ZM12 3v18M12 7h5M12 11h7M12 15h6',
+  crosshair: 'M12 5a7 7 0 1 0 0 14 7 7 0 0 0 0-14ZM12 2v5M12 17v5M2 12h5M17 12h5',
+  bars: 'M4 5h16v14H4zM8 5v14M12 5v14M16 5v14',
+  settings: 'M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6ZM12 2v3M12 19v3M2 12h3M19 12h3M4.900 4.900l2.100 2.100M17 17l2.100 2.100M4.900 19.100 7 17M17 7l2.100-2.100',
+  reset: 'M4 12a8 8 0 1 0 2.300-5.700M4 4v4h4',
+  save: 'M5 4h11l3 3v13H5zM8 4v5h7V4M8 20v-6h8v6',
 };
 
 /** Icons an author can give a layer's button. */

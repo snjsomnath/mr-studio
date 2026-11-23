@@ -6,6 +6,7 @@ import type { Widget } from '../controls.ts';
 import { paramSender } from '../layer-manager.ts';
 import type { Store } from '../store.ts';
 import { builderSection, newCustomLayer, paletteDialog } from './builder.ts';
+import { DisplayTab } from './display-tab.ts';
 import type { BuilderHost } from './builder.ts';
 import { LAYER_ICONS, icon } from './icons.ts';
 import { Importer, targetFor } from './importer.ts';
@@ -30,6 +31,8 @@ type Invoke = (command: string, args?: object) => Promise<unknown>;
 function shell(): Invoke | undefined {
   return (window as { __TAURI__?: { core?: { invoke?: Invoke } } }).__TAURI__?.core?.invoke;
 }
+/** The same, for where `shell` names the editor's element. */
+const desktop = (): Invoke | undefined => shell();
 
 /**
  * Opens one view of the table in a window of its own. The desktop app is asked directly,
@@ -82,6 +85,13 @@ export class Editor {
   private readonly store: Store;
   private readonly connection: Connection;
   private readonly ribbon = el('div', 'ed-ribbon');
+  /**
+   * The ribbon's two tabs (#151): Edit, the one ribbon that follows the selection (#21),
+   * and Display, the colour pass and projector of this computer's displays (app settings, #73).
+   */
+  private readonly tabs = el('div', 'ed-tabs');
+  private ribbonTab: 'edit' | 'display' = 'edit';
+  private readonly displayTab: DisplayTab;
   private readonly tree = el('nav', 'ed-tree');
   private readonly canvasHead = el('header', 'ed-canvas-head');
   private readonly surfaces = el('div', 'ed-surfaces');
@@ -127,7 +137,13 @@ export class Editor {
     centre.append(this.canvasHead, this.next, this.surfaces, this.notice);
 
     body.append(left, centre, this.inspector);
-    shell.append(this.titleBar(), this.ribbon, body, this.statusBar());
+    const invoke = desktop();
+    this.displayTab = new DisplayTab(invoke, connection, this.canvas, () => void invoke?.('open_settings'));
+    this.tabs.setAttribute('role', 'tablist');
+    this.tabs.ariaLabel = 'Ribbon';
+    this.ribbon.setAttribute('role', 'tabpanel');
+    shell.append(this.titleBar(), this.tabs, this.ribbon, body, this.statusBar());
+    this.drawTabs();
     root.append(shell);
     this.listenForFile();
 
@@ -201,6 +217,7 @@ export class Editor {
       },
       { created, step },
     );
+    this.setRibbonTab('edit');
     this.shell.classList.add('is-setup');
     this.body.prepend(this.wizard.element);
     this.drawGuideButton();
@@ -215,6 +232,33 @@ export class Editor {
     guide.setAttribute('aria-pressed', String(open));
     guide.classList.toggle('is-pressed', open);
     guide.title = open ? 'Leave the guide and work in the full editor. The guide stays one click away.' : 'Walk through setting up this table, step by step';
+  }
+
+  /** The ribbon's tabs. Display is the colour and post-processing of each display, and the projector. */
+  private drawTabs(): void {
+    const tab = (id: 'edit' | 'display', label: string, tip: string) => {
+      const node = el('button', 'ed-tab', label);
+      node.type = 'button';
+      node.setAttribute('role', 'tab');
+      node.setAttribute('aria-selected', String(this.ribbonTab === id));
+      node.dataset.tab = id;
+      node.title = tip;
+      node.addEventListener('click', () => this.setRibbonTab(id));
+      return node;
+    };
+    this.tabs.replaceChildren(
+      tab('edit', 'Edit', 'Add layers and data, and work on what is selected'),
+      tab('display', 'Display', 'Colour and post-processing for each display, layer strength and projector calibration'),
+    );
+  }
+
+  private setRibbonTab(id: 'edit' | 'display'): void {
+    if (id === this.ribbonTab) return;
+    this.ribbonTab = id;
+    if (id === 'display') void this.displayTab.show();
+    else this.displayTab.hide();
+    this.drawTabs();
+    this.renderRibbon(this.instances());
   }
 
   /** The Add data dialog: the same importer as "Your place", with the kind of data left to the author. */
@@ -689,6 +733,12 @@ export class Editor {
   }
 
   private renderRibbon(instances: { id: string; manifest: LayerManifest; state: LayerState }[]): void {
+    if (this.ribbonTab === 'display') {
+      // The Display tab keeps its own controls, so a slider being dragged is not rebuilt when the scene changes.
+      if (this.ribbon.firstElementChild !== this.displayTab.groups[0]) this.ribbon.replaceChildren(...this.displayTab.groups);
+      this.displayTab.refresh();
+      return;
+    }
     const groups: HTMLElement[] = [];
     const target = this.target();
     const selected = instances.find((i) => i.id === target);
@@ -807,6 +857,7 @@ export class Editor {
     plus.title = 'New layer';
     plus.append(icon('plus', 14));
     plus.addEventListener('click', () => {
+      this.setRibbonTab('edit');
       this.ribbon.querySelector<HTMLElement>('.ed-tool.is-large')?.focus();
     });
     title.append(plus);
