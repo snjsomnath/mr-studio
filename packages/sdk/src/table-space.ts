@@ -69,15 +69,29 @@ export function siteDataUrl(site: SiteInfo, name: string): string | null {
   return path ? `/site/${path}` : null;
 }
 
-/** Fetches a named site dataset as JSON. Null when the site does not have it or it fails to load. */
+/**
+ * Fetches a named site dataset as JSON. Null when the site does not have it or it cannot be loaded.
+ * A failed connection or a server error is tried again a few times, since a host that is starting
+ * (the desktop app switching tables) briefly answers nothing (#222). A missing file is not retried.
+ */
 export async function readSiteData<T = any>(site: SiteInfo, name: string): Promise<T | null> {
   const url = siteDataUrl(site, name);
   if (!url) return null;
-  try {
-    const response = await fetch(url);
-    return response.ok ? ((await response.json()) as T) : null;
-  } catch {
-    return null;
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const response = await fetch(url);
+      if (response.ok) return (await response.json()) as T;
+      if (response.status < 500 || attempt >= 4) {
+        console.warn(`site data '${name}' could not be loaded: HTTP ${response.status}`);
+        return null;
+      }
+    } catch (error) {
+      if (attempt >= 4) {
+        console.warn(`site data '${name}' could not be loaded: ${(error as Error).message}`);
+        return null;
+      }
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250 * 2 ** attempt));
   }
 }
 
