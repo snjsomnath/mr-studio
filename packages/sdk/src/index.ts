@@ -20,3 +20,4 @@ export * from './marks.ts';
 export * from './places.ts';
 export * from './place-motions.ts';
 export * from './audio.ts';
+export * from './schemes.ts';

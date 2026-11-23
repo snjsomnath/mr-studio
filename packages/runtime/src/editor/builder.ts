@@ -29,6 +29,10 @@ import {
   placeMotion,
   soundColumns,
   soundPath,
+  columnCategories,
+  schemeFor,
+  CATEGORY_SCHEMES,
+  paintScale,
 } from '@mrstudio/sdk';
 import type { CustomLayer, GeometryKind, LayerManifest, Paint, RecipeBlock, ResolvedPalette, Shapes, SitePalette, Size } from '@mrstudio/sdk';
 
@@ -581,13 +585,13 @@ export function builderSection(host: BuilderHost, manifest: LayerManifest, butto
           }, 'Draw as'),
         );
       }
-      const columns = s ? profileColumns((block.block === 'points' ? s.spots : block.block === 'lines' ? s.paths : s.areas).map((x) => x.properties)) : [];
-      content.replaceChildren(...lookFields(block, props, columns));
+      const rows = s ? (block.block === 'points' ? s.spots : block.block === 'lines' ? s.paths : s.areas).map((x) => x.properties) : [];
+      content.replaceChildren(...lookFields(block, props, profileColumns(rows), rows));
     });
     return card;
   };
 
-  const lookFields = (block: RecipeBlock, props: Record<string, any>, columns: { name: string; kind: 'number' | 'category' }[]): HTMLElement[] => {
+  const lookFields = (block: RecipeBlock, props: Record<string, any>, columns: { name: string; kind: 'number' | 'category' }[], rows: readonly Record<string, unknown>[] = []): HTMLElement[] => {
     const kind = block.block as GeometryKind;
     const set = (key: string, value: unknown) => {
       props[key] = value;
@@ -607,7 +611,7 @@ export function builderSection(host: BuilderHost, manifest: LayerManifest, butto
       presets.append(b);
     }
     nodes.push(presets);
-    nodes.push(paintField('Colour', props.color as Paint, (paint) => set('color', paint), columns));
+    nodes.push(paintField('Colour', props.color as Paint, (paint) => set('color', paint), columns, rows));
     if (kind === 'points') {
       // The mark (#95): a plain shape, or a pictogram on a dark disc.
       const iconRow = el('div', 'lb-sub');
@@ -673,7 +677,7 @@ export function builderSection(host: BuilderHost, manifest: LayerManifest, butto
   };
 
   /** Colour: fixed, or by a column (#94: a category per value, or a ramp in classes). */
-  const paintField = (label: string, paint: Paint, onChange: (paint: Paint) => void, columns: { name: string; kind: 'number' | 'category' }[]): HTMLElement => {
+  const paintField = (label: string, paint: Paint, onChange: (paint: Paint) => void, columns: { name: string; kind: 'number' | 'category' }[], data: readonly Record<string, unknown>[] = []): HTMLElement => {
     const wrap = el('div', 'lb-group');
     const detail = el('div', 'lb-sub');
     let current: Paint = paint ?? '@accent';
@@ -694,7 +698,7 @@ export function builderSection(host: BuilderHost, manifest: LayerManifest, butto
         onChange(current);
         draw();
       });
-      const rows: HTMLElement[] = [field('Based on', column)];
+      const fields: HTMLElement[] = [field('Based on', column)];
       if (by.kind === 'number') {
         const ramps = el('div', 'lb-ramps');
         for (const [name, colours] of Object.entries(palette().ramps)) {
@@ -711,18 +715,59 @@ export function builderSection(host: BuilderHost, manifest: LayerManifest, butto
           });
           ramps.append(b);
         }
-        rows.push(field('Ramp', ramps));
-        rows.push(field('Classes', segmented([['continuous', 'Smooth'], ['equal', 'Equal'], ['quantile', 'Quantile'], ['natural', 'Natural']] as const, by.classes ?? 'continuous', (v) => {
+        fields.push(field('Ramp', ramps));
+        fields.push(field('Classes', segmented([['continuous', 'Smooth'], ['equal', 'Equal'], ['quantile', 'Quantile'], ['natural', 'Natural']] as const, by.classes ?? 'continuous', (v) => {
           by.classes = v;
           onChange(by);
           draw();
         }, 'Classes')));
-        if (by.classes && by.classes !== 'continuous') rows.push(field('How many', slider(by.count ?? 5, 2, 7, 1, '', (v) => {
+        if (by.classes && by.classes !== 'continuous') fields.push(field('How many', slider(by.count ?? 5, 2, 7, 1, '', (v) => {
           by.count = v;
           onChange(by);
         })));
-      } else rows.push(el('p', 'lb-hint', 'Each value takes the next category colour of the palette. More than six are grouped as Others.'));
-      detail.replaceChildren(...rows);
+      } else {
+        // Category colours (#207): a scheme of the data's own (energy classes A to G), the table
+        // palette, or a colour picked per value. Picked colours beat both.
+        const found = columnCategories(data, by.by);
+        const own = schemeFor(found);
+        const scheme = el('select');
+        scheme.ariaLabel = 'Category colours';
+        const options: [string, string][] = [['auto', own ? `Their own: ${own.label.replace(/ \(.*\)$/, '').toLowerCase()}` : 'Their own, when they have them'], ['palette', 'The table palette'], ...CATEGORY_SCHEMES.map((c) => [c.id, c.label] as [string, string])];
+        for (const [value, text] of options) scheme.append(Object.assign(el('option'), { value, textContent: text, selected: (by.scheme ?? 'auto') === value }));
+        scheme.addEventListener('change', () => {
+          by.scheme = scheme.value === 'auto' ? undefined : scheme.value;
+          if (by.scheme === undefined) delete by.scheme;
+          onChange(by);
+          draw();
+        });
+        fields.push(field('Colours', scheme));
+        const legend = paintScale(by, data, palette()).legend;
+        const list = el('div', 'lb-cats');
+        for (const entry of legend) {
+          const row = el('div', 'lb-cat');
+          row.append(el('span', 'lb-cat-name', entry.label), colourPicker(by.colors?.[entry.label] ?? entry.color, palette, (v) => {
+            by.colors = { ...(by.colors ?? {}) };
+            if (v) by.colors[entry.label] = v;
+            else delete by.colors[entry.label];
+            if (Object.keys(by.colors).length === 0) delete by.colors;
+            onChange(by);
+            draw();
+          }, { label: `Colour for ${entry.label}` }));
+          list.append(row);
+        }
+        if (legend.length) fields.push(list);
+        if (by.colors && Object.keys(by.colors).length) {
+          const reset = button('lb-link', 'Use the scheme colours again');
+          reset.addEventListener('click', () => {
+            delete by.colors;
+            onChange(by);
+            draw();
+          });
+          fields.push(reset);
+        }
+        fields.push(el('p', 'lb-hint', own ? `These values are ${own.label.replace(/ \(.*\)$/, '').toLowerCase()}, so they keep their standard colours and order. Click a colour to change it.` : 'Each value takes the next category colour of the palette. More than six are grouped as Others. Click a colour to change it.'));
+      }
+      detail.replaceChildren(...fields);
     };
     const mode = segmented([['fixed', 'One colour'], ['data', 'By data']] as const, typeof current === 'string' ? 'fixed' : 'data', (v) => {
       if (v === 'fixed') current = '@accent';
