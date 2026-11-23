@@ -12,8 +12,11 @@ import {
   availableLayers,
   checkParams,
   createSite,
+  CUSTOM_PREFIX,
   findCli,
   findLayer,
+  freeId,
+  instanceIds,
   readSite,
   runCli,
   SITE_FORMAT,
@@ -219,17 +222,24 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
       const dir = at(site);
       const { manifest, issues } = validateSiteDir(dir, catalog);
       if (!manifest) return fail(issues[0]!.message);
-      const scene = (manifest.layers ?? []).map((ref: any, index: number) => {
-        const layer = findLayer(catalog, dir, ref.use);
+      const describe = (ref: any) => {
+        const layer = findLayer(catalog, dir, ref.use, manifest);
         const defaults = Object.fromEntries((layer?.manifest.controls ?? []).filter((c: any) => c.type !== 'action').map((c: any) => [c.id, c.default]));
-        return { index, use: ref.use, name: layer?.manifest.name ?? '(unknown layer)', active: Boolean(ref.active), params: { ...defaults, ...(ref.params ?? {}) }, overrides: ref.params ?? {} };
-      });
+        return { id: ref.id, use: ref.use, name: layer?.manifest.name ?? '(unknown layer)', active: ref.active !== false && (ref.active === true || ref.items === undefined), params: { ...defaults, ...(ref.params ?? {}) }, overrides: ref.params ?? {} };
+      };
+      const scene = (manifest.layers ?? []).map((ref: any, index: number) => ({
+        index,
+        ...describe(ref),
+        active: Boolean(ref.active),
+        ...(ref.items?.length ? { items: ref.items.map((item: any) => ({ ...describe(item), active: item.active !== false })) } : {}),
+        ...(ref.steps ? { steps: ref.steps } : {}),
+      }));
       return reply(`${manifest.name}: ${scene.length} layer${scene.length === 1 ? '' : 's'}, ${counts(issues)}.`, { scene, issues, manifest });
     },
   );
 
   const editable = (catalog.siteSchema?.['']?.fields ?? ['name', 'origin', 'extent', 'timezone', 'table', 'scene', 'basemap', 'branding', 'tv']).filter(
-    (k) => !['format', 'id', 'layers'].includes(k),
+    (k) => !['format', 'id', 'layers', 'custom'].includes(k),
   );
 
   server.registerTool(
@@ -253,7 +263,8 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
       }
       const next: SiteManifest = structuredClone(manifest);
       for (const [key, value] of Object.entries(set)) {
-        if (key === 'layers') return fail('Use add_layer, set_layer, move_layer and remove_layer to change the scene.');
+        if (key === 'layers') return fail('Use add_layer, set_layer, move_layer, remove_layer and set_steps to change the scene.');
+        if (key === 'custom') return fail('Use save_custom_layer to save or remove a custom layer.');
         if (key === 'format' || key === 'id') return fail(`'${key}' cannot be changed here.`);
         if (!editable.includes(key)) {
           return fail(`'${key}' is not a site.json setting in format ${SITE_FORMAT}. Settable: ${editable.join(', ')}. If the site needs it, draft a module request (kind "contract").`);
@@ -277,16 +288,27 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
   );
 
   const target = {
+    id: z.string().optional().describe('Instance id of a layer or item (from get_site); the surest way to name one'),
     index: z.number().int().optional().describe('Position in the scene (0 is the bottom)'),
     use: z.string().optional().describe('Layer id, if it appears once in the scene'),
   };
-  function locate(manifest: SiteManifest, index?: number, use?: string): number | string {
+  /** Where an entry is: the list that holds it (the scene, or a layer's items), its index there, and its layer for an item. */
+  type Place = { list: any[]; i: number; parent?: any };
+  function locate(manifest: SiteManifest, id?: string, index?: number, use?: string): Place | string {
     const layers: any[] = manifest.layers ?? [];
-    if (index !== undefined) return index >= 0 && index < layers.length ? index : `No layer at index ${index}; the scene has ${layers.length}.`;
-    if (!use) return 'Give index or use.';
+    if (id !== undefined) {
+      for (const [i, layer] of layers.entries()) {
+        if (layer?.id === id) return { list: layers, i };
+        const j = Array.isArray(layer?.items) ? layer.items.findIndex((item: any) => item?.id === id) : -1;
+        if (j >= 0) return { list: layer.items, i: j, parent: layer };
+      }
+      return `No layer or item '${id}'. Ids: ${instanceIds(manifest).join(', ') || 'none'}.`;
+    }
+    if (index !== undefined) return index >= 0 && index < layers.length ? { list: layers, i: index } : `No layer at index ${index}; the scene has ${layers.length}.`;
+    if (!use) return 'Give id, index or use.';
     const hits = layers.map((l, i) => (l.use === use ? i : -1)).filter((i) => i >= 0);
-    if (hits.length === 1) return hits[0]!;
-    return hits.length ? `'${use}' appears ${hits.length} times; give index (${hits.join(', ')}).` : `'${use}' is not in the scene (${layers.map((l) => l.use).join(', ') || 'empty'}).`;
+    if (hits.length === 1) return { list: layers, i: hits[0]! };
+    return hits.length ? `'${use}' appears ${hits.length} times; give its id (${hits.map((i) => layers[i].id).join(', ')}).` : `'${use}' is not in the scene (${layers.map((l) => l.use).join(', ') || 'empty'}).`;
   }
 
   function editScene(site: string, edit: (manifest: SiteManifest) => string | { message: string; issues?: Issue[] }): Content {
@@ -297,13 +319,20 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
     } catch (error) {
       return fail((error as Error).message);
     }
+    if (typeof manifest.format === 'number' && manifest.format < SITE_FORMAT) {
+      return fail(`This site is in the older site format ${manifest.format}. Run \`mrstudio migrate <site folder>\` (or open it once in the MR Studio app) to bring it to format ${SITE_FORMAT}, then try again.`);
+    }
     manifest.layers = Array.isArray(manifest.layers) ? manifest.layers : [];
     const result = edit(manifest);
     if (typeof result === 'string') return fail(result);
     if (result.issues?.some((i) => i.level === 'error')) return fail(`Not saved: ${result.message}`, result.issues);
-    writeSite(dir, manifest);
     const issues = validateManifest(manifest, dir, catalog);
-    const scene = manifest.layers.map((l: any, i: number) => `${i}: ${l.use}${l.active ? ' (active)' : ''}`);
+    const errors = issues.filter((i) => i.level === 'error' && /^(layers|custom)/.test(i.path));
+    if (errors.length) return fail(`Not saved: ${result.message} It would leave the scene invalid:`, errors);
+    writeSite(dir, manifest);
+    const scene = manifest.layers.map(
+      (l: any, i: number) => `${i}: ${l.id} (${l.use})${l.active ? ' active' : ''}${l.items?.length ? `, items ${l.items.map((item: any) => item.id).join(', ')}` : ''}${l.steps?.sequence?.length ? `, ${l.steps.sequence.length} steps` : ''}`,
+    );
     return reply(`${result.message} Site is ${counts(issues)}.`, { scene_bottom_to_top: scene, issues: [...(result.issues ?? []), ...issues.filter((i) => i.level !== 'note')] });
   }
 
@@ -311,26 +340,38 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
     'add_layer',
     {
       title: 'Add a layer to the scene',
-      description: 'Add a core layer (or ./layers/<name>) to the scene with optional params and start state. Params are checked against the layer\'s controls. Layers are drawn bottom to top; position defaults to the top.',
+      description:
+        "Add a core layer, a site layer (./layers/<name>) or a custom layer (custom:<id>) to the scene with optional params and start state. Params are checked against the layer's controls. Layers are drawn bottom to top; position defaults to the top. With parent, the layer becomes an item of that layer instead: it shows only while that layer is open (for example public transport inside a sun study) and has no button of its own.",
       inputSchema: {
         site: z.string(),
-        use: z.string().describe('Core layer id'),
-        active: z.boolean().optional().describe('Turn on at start'),
+        use: z.string().describe('Core layer id, ./layers/<name> or custom:<id>'),
+        id: z.string().optional().describe('Instance id; default the layer id, then -2, -3…'),
+        parent: z.string().optional().describe('Id of the layer this becomes an item of'),
+        active: z.boolean().optional().describe('Turn on at start; for an item, whether it comes on with its layer (default true)'),
         params: z.record(z.string(), z.unknown()).optional().describe('Control id to value, overriding defaults'),
-        position: z.number().int().optional().describe('Index to insert at (0 is the bottom); default top'),
+        position: z.number().int().optional().describe('Index to insert at in the scene, or in the parent\'s items (0 is the bottom); default top'),
       },
     },
-    async ({ site, use, active, params, position }) =>
+    async ({ site, use, id, parent, active, params, position }) =>
       editScene(site, (m) => {
-        const layer = findLayer(catalog, at(site), use);
+        const layer = findLayer(catalog, at(site), use, m);
         if (!layer) return `No layer '${use}'. Core layers: ${catalog.layers.map((l) => l.id).join(', ')}. For something new, use check_layer_idea.`;
         const checked = params ? checkParams(layer, params, 'params') : { issues: [], cleaned: undefined };
-        const entry: Record<string, unknown> = { use };
-        if (active !== undefined) entry.active = active;
+        const name = id ?? freeId(m, use);
+        if (instanceIds(m).includes(name)) return `'${name}' is already the id of a layer or item; give another id.`;
+        const entry: Record<string, unknown> = { use, id: name };
+        if (active !== undefined && !(parent && active)) entry.active = active;
         if (checked.cleaned && Object.keys(checked.cleaned).length) entry.params = checked.cleaned;
-        const pos = position === undefined ? m.layers.length : Math.max(0, Math.min(m.layers.length, position));
-        m.layers.splice(pos, 0, entry);
-        return { message: `Added ${layer.manifest.name} at index ${pos}.`, issues: checked.issues };
+        let list: any[] = m.layers;
+        if (parent) {
+          const owner = m.layers.find((l: any) => l.id === parent);
+          if (!owner) return `No layer '${parent}' in the scene to hold it (items cannot hold items).`;
+          owner.items = Array.isArray(owner.items) ? owner.items : [];
+          list = owner.items;
+        }
+        const pos = position === undefined ? list.length : Math.max(0, Math.min(list.length, position));
+        list.splice(pos, 0, entry);
+        return { message: `Added ${layer.manifest.name} as '${name}'${parent ? ` inside '${parent}'` : ''} at index ${pos}.`, issues: checked.issues };
       }),
   );
 
@@ -338,35 +379,51 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
     'set_layer',
     {
       title: 'Change a layer in the scene',
-      description: 'Set params and/or the start state of a layer already in the scene. Params merge into the existing overrides (null removes one) unless replace_params is true.',
+      description:
+        "Set params, the start state and the controller button of a layer or item already in the scene. Params merge into the existing overrides (null removes one) unless replace_params is true. The button's fields (name, description, icon, side, group, order) merge the same way; items have no button.",
       inputSchema: {
         site: z.string(),
         ...target,
         active: z.boolean().optional(),
         params: z.record(z.string(), z.unknown()).optional(),
         replace_params: z.boolean().optional(),
+        button: z.record(z.string(), z.unknown()).optional().describe('e.g. { "name": "Sun study", "group": "Simulations", "order": 1, "side": "left" }'),
       },
     },
-    async ({ site, index, use, active, params, replace_params }) =>
+    async ({ site, id, index, use, active, params, replace_params, button }) =>
       editScene(site, (m) => {
-        const i = locate(m, index, use);
-        if (typeof i === 'string') return i;
-        const entry = m.layers[i];
-        const layer = findLayer(catalog, at(site), entry.use);
-        if (!layer) return `Layer '${entry.use}' at index ${i} is unknown; remove it or fix its use.`;
+        const place = locate(m, id, index, use);
+        if (typeof place === 'string') return place;
+        const entry = place.list[place.i];
+        const layer = findLayer(catalog, at(site), entry.use, m);
+        if (!layer) return `Layer '${entry.use}' ('${entry.id}') is unknown; remove it or fix its use.`;
         let issues: Issue[] = [];
         if (params) {
           const merged: Record<string, unknown> = replace_params ? {} : { ...(entry.params ?? {}) };
           for (const [k, v] of Object.entries(params)) if (v === null) delete merged[k];
           const toCheck = Object.fromEntries(Object.entries(params).filter(([, v]) => v !== null));
-          const checked = checkParams(layer, toCheck, `layers[${i}].params`);
+          const checked = checkParams(layer, toCheck, `${entry.id}.params`);
           issues = checked.issues;
           Object.assign(merged, checked.cleaned);
           if (Object.keys(merged).length) entry.params = merged;
           else delete entry.params;
         }
-        if (active !== undefined) entry.active = active;
-        return { message: `Updated ${layer.manifest.name} (index ${i}).`, issues };
+        if (active !== undefined) {
+          if (place.parent && active) delete entry.active;
+          else entry.active = active;
+        }
+        if (button) {
+          if (place.parent) return `'${entry.id}' is an item of '${place.parent.id}': it has no button and comes on with its layer.`;
+          const next: Record<string, unknown> = { ...(entry.button ?? {}) };
+          for (const [k, v] of Object.entries(button)) {
+            if (!['name', 'description', 'icon', 'side', 'group', 'order'].includes(k)) return `A button has no '${k}' (name, description, icon, side, group, order).`;
+            if (v === null) delete next[k];
+            else next[k] = v;
+          }
+          if (Object.keys(next).length) entry.button = next;
+          else delete entry.button;
+        }
+        return { message: `Updated ${layer.manifest.name} ('${entry.id}').`, issues };
       }),
   );
 
@@ -374,17 +431,34 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
     'move_layer',
     {
       title: 'Reorder the scene',
-      description: 'Move a layer to another position. Index 0 is drawn at the bottom, the last on top.',
-      inputSchema: { site: z.string(), ...target, to: z.number().int().describe('New index') },
+      description:
+        "Move a layer or item to another position. Index 0 is drawn at the bottom, the last on top; a layer's items move with it. With parent, the entry becomes an item of that layer; with parent null, an item becomes a layer of the scene.",
+      inputSchema: {
+        site: z.string(),
+        ...target,
+        to: z.number().int().describe('New index in the target list'),
+        parent: z.string().nullable().optional().describe('Layer to move it into; null for the scene itself; left out keeps it where it is'),
+      },
     },
-    async ({ site, index, use, to }) =>
+    async ({ site, id, index, use, to, parent }) =>
       editScene(site, (m) => {
-        const i = locate(m, index, use);
-        if (typeof i === 'string') return i;
-        const [entry] = m.layers.splice(i, 1);
-        const dest = Math.max(0, Math.min(m.layers.length, to));
-        m.layers.splice(dest, 0, entry);
-        return { message: `Moved ${entry.use} from ${i} to ${dest}.` };
+        const place = locate(m, id, index, use);
+        if (typeof place === 'string') return place;
+        const entry = place.list[place.i];
+        let list: any[] = place.list;
+        if (parent === null) list = m.layers;
+        else if (parent !== undefined) {
+          const owner = m.layers.find((l: any) => l.id === parent);
+          if (!owner || owner === entry) return `No other layer '${parent}' in the scene to hold it.`;
+          if (entry.items?.length || entry.steps || entry.button) return `'${entry.id}' has items, steps or a button, so it cannot become an item.`;
+          owner.items = Array.isArray(owner.items) ? owner.items : [];
+          list = owner.items;
+        }
+        place.list.splice(place.i, 1);
+        if (place.parent && !place.parent.items.length) delete place.parent.items;
+        const dest = Math.max(0, Math.min(list.length, to));
+        list.splice(dest, 0, entry);
+        return { message: `Moved '${entry.id}' to ${dest}${parent ? ` inside '${parent}'` : parent === null ? ' in the scene' : ''}.` };
       }),
   );
 
@@ -392,16 +466,77 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
     'remove_layer',
     {
       title: 'Remove a layer from the scene',
-      description: 'Remove one layer entry from the scene.',
+      description: "Remove one layer (with its items) or one item. Sequence steps that showed it are removed too.",
       inputSchema: { site: z.string(), ...target },
       annotations: { destructiveHint: true },
     },
-    async ({ site, index, use }) =>
+    async ({ site, id, index, use }) =>
       editScene(site, (m) => {
-        const i = locate(m, index, use);
-        if (typeof i === 'string') return i;
-        const [entry] = m.layers.splice(i, 1);
-        return { message: `Removed ${entry.use} (was index ${i}).` };
+        const place = locate(m, id, index, use);
+        if (typeof place === 'string') return place;
+        const [entry] = place.list.splice(place.i, 1);
+        if (place.parent && !place.parent.items.length) delete place.parent.items;
+        const gone = new Set([entry.id, ...(entry.items ?? []).map((item: any) => item.id)]);
+        let dropped = 0;
+        for (const layer of m.layers) {
+          const sequence = layer.steps?.sequence;
+          if (!Array.isArray(sequence)) continue;
+          layer.steps.sequence = sequence.filter((step: any) => !gone.has(step?.layer));
+          dropped += sequence.length - layer.steps.sequence.length;
+        }
+        return { message: `Removed '${entry.id}' (${entry.use})${dropped ? ` and ${dropped} step${dropped === 1 ? '' : 's'} that showed it` : ''}.` };
+      }),
+  );
+
+  server.registerTool(
+    'set_steps',
+    {
+      title: 'Set how Next moves through a layer',
+      description:
+        'Set or clear a layer\'s steps: mode (manual or timed), loop, reveal (what Next does after a step\'s sub-steps: stop or then-next) and, for a sequence such as the slideshow, the sequence of steps. Each step shows another layer of the scene or one of the sequence\'s own items, by id, with optional params for that step only, duration_s, transition (cut or fade), next, title, description and source. Replaces the whole steps object; null clears it.',
+      inputSchema: {
+        site: z.string(),
+        ...target,
+        steps: z.record(z.string(), z.unknown()).nullable().describe('e.g. { "mode": "manual", "loop": true, "sequence": [{ "layer": "sunlight", "params": { "hour": 9 }, "title": "Morning" }] }'),
+      },
+    },
+    async ({ site, id, index, use, steps }) =>
+      editScene(site, (m) => {
+        const place = locate(m, id, index, use);
+        if (typeof place === 'string') return place;
+        if (place.parent) return `'${place.list[place.i].id}' is an item; items have no steps.`;
+        const entry = place.list[place.i];
+        if (steps === null) delete entry.steps;
+        else entry.steps = steps;
+        return { message: steps === null ? `Cleared the steps of '${entry.id}'.` : `Set the steps of '${entry.id}'.` };
+      }),
+  );
+
+  server.registerTool(
+    'save_custom_layer',
+    {
+      title: 'Save a custom layer',
+      description:
+        'Save (or with recipe null, remove) a custom layer in the site: a recipe of blocks the runtime draws without code. A recipe has name, description, icon, category, data (each { id, and one of dataset | path | wms { url, layers, styles, format, source } | tiles }), look, motion and interaction (each a list of { id, block, data?, on?, props }), enter (cut or fade), controls (as in layer.json, with bind: "look.<block id>.<prop>"), legend and attract. The table is 2D only. Then add it to the scene with add_layer use "custom:<id>". The block names are in docs/blocks.md.',
+      inputSchema: {
+        site: z.string(),
+        id: z.string().describe('Custom layer id: lowercase letters, digits and dashes'),
+        recipe: z.record(z.string(), z.unknown()).nullable(),
+      },
+    },
+    async ({ site, id, recipe }) =>
+      editScene(site, (m) => {
+        const use = `${CUSTOM_PREFIX}${id}`;
+        if (recipe === null) {
+          const users = m.layers.flatMap((l: any) => [l, ...(l.items ?? [])]).filter((e: any) => e?.use === use).map((e: any) => e.id);
+          if (users.length) return `The custom layer '${id}' is used by ${users.join(', ')}; remove those first.`;
+          if (!m.custom?.[id]) return `There is no custom layer '${id}'.`;
+          delete m.custom[id];
+          if (!Object.keys(m.custom).length) delete m.custom;
+          return { message: `Removed the custom layer '${id}'.` };
+        }
+        m.custom = { ...(m.custom ?? {}), [id]: recipe };
+        return { message: `Saved the custom layer '${id}'. Add it with add_layer use "${use}".` };
       }),
   );
 

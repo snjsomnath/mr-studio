@@ -1,6 +1,6 @@
 # Presentation contract
 
-Status: **proposed** (2026-11-23). It goes into site format 3 (#70); nothing here is built yet except where marked.
+Status: **proposed** (2026-11-23). The site.json fields are in site format 3 (#70): `button.group`, `button.order`, `steps` (with `sequence`) and `table.ribbons` are stored, validated and sent to surfaces. Nothing else here is built yet except where marked.
 
 MR Studio has three surfaces for visitors: the **controller** beside the table, the **table** (the projected map) and the **phones**. The map is clean and mostly visual. Words and controls live on the controller and the phones. This contract is the one vocabulary they all read, so that each new feature is something every layer fills in, not a screen built by hand for one site. It comes from the Chalmers campus demo controller (`Nodal-Works/interactive_map`), reviewed in #74–#78 and #43.
 

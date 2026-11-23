@@ -201,7 +201,8 @@ export class Controller {
       const state = store.state.layers[id];
       const manifest = state && store.manifest(state.layer);
       if (!manifest) continue;
-      if (this.right && isAmbient(manifest)) continue;
+      // The map at rest and a layer's items have no button: items come on with their layer.
+      if (this.right && (isAmbient(manifest) || state.parent)) continue;
       let card = this.cards.get(id);
       if (!card) {
         card = this.right ? this.button(id, manifest) : this.card(id, manifest);
@@ -231,7 +232,7 @@ export class Controller {
     for (const other of mine?.alongside ? [] : store.state.scene) {
       const state = store.state.layers[other];
       const manifest = state && store.manifest(state.layer);
-      if (other === id || !state?.active || !manifest || isAmbient(manifest) || manifest.alongside) continue;
+      if (other === id || !state?.active || state.parent || !manifest || isAmbient(manifest) || manifest.alongside) continue;
       void connection.request('layer.activate', { layer: other, active: false }).catch(() => {});
     }
     void connection.request('layer.activate', { layer: id, active: true }).catch(() => {});

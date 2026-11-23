@@ -73,6 +73,78 @@ export interface LayerManifest {
   tools?: ToolSpec[];
   /** TV panels the layer contributes while it is on. Rules in docs/contracts/dashboard.md. */
   panels?: PanelSpec[];
+  /** The layer is a sequence: its instances may have `steps.sequence` that show other layers (the slideshow). */
+  sequence?: boolean;
+  /** For a custom layer saved in the site: the recipe the runtime draws. Absent for a code layer. */
+  custom?: CustomLayer;
+  /** Rows of the layer's legend on the controller (docs/contracts/present.md). */
+  legend?: LegendItem[];
+  /** The effect behind the layer on the controller's attract loop (docs/contracts/present.md). */
+  attract?: { effect: string };
+}
+
+// ---- Site format 3 (docs/contracts/site.md) --------------------------------
+
+export interface LegendItem {
+  id: string;
+  label: string;
+  color?: string;
+  shape?: 'line' | 'fill' | 'point' | string;
+}
+
+/** How Next moves through a layer, and a sequence's steps. */
+export interface Steps {
+  mode?: 'manual' | 'timed';
+  loop?: boolean;
+  /** What Next does once a step's sub-steps are done. */
+  reveal?: 'stop' | 'then-next';
+  sequence?: SequenceStep[];
+}
+
+/** One step of a sequence: another instance, a layer of the scene or one of the sequence's items. */
+export interface SequenceStep {
+  layer: string;
+  params?: Params;
+  duration_s?: number;
+  transition?: 'cut' | 'fade';
+  transition_s?: number;
+  next?: 'stop' | 'then-next';
+  title?: string;
+  description?: string;
+  source?: string;
+}
+
+/** A custom layer: a recipe of blocks, saved under `custom` in site.json and used as `custom:<id>`. */
+export interface CustomLayer {
+  name: string;
+  description?: string;
+  icon?: string;
+  category?: LayerCategory;
+  data?: RecipeData[];
+  look?: RecipeBlock[];
+  motion?: RecipeBlock[];
+  interaction?: RecipeBlock[];
+  enter?: 'cut' | 'fade';
+  controls?: (Control & { bind?: string })[];
+  legend?: LegendItem[];
+  attract?: { effect: string };
+}
+
+/** One source of a custom layer: exactly one of dataset, path, wms and tiles. */
+export interface RecipeData {
+  id: string;
+  dataset?: string;
+  path?: string;
+  wms?: { url: string; layers: string; styles?: string; format?: string; source?: string };
+  tiles?: string;
+}
+
+export interface RecipeBlock {
+  id: string;
+  block: string;
+  data?: string;
+  on?: string;
+  props?: Record<string, unknown>;
 }
 
 // ---- TV panels ------------------------------------------------------------
@@ -137,7 +209,13 @@ export interface SiteInfo {
   /** Extent corners as [lon, lat]: top left, top right, bottom right, bottom left. */
   corners: [[number, number], [number, number], [number, number], [number, number]];
   timezone: string | null;
-  table: { width_cm: number; height_cm: number; tile_cm?: number } | null;
+  table: {
+    width_cm: number;
+    height_cm: number;
+    tile_cm?: number;
+    /** What the projector's blank space shows per side: off, auto, or a size in cm (docs/contracts/present.md). */
+    ribbons?: Partial<Record<'top' | 'bottom' | 'left' | 'right', 'off' | 'auto' | { cm: number }>>;
+  } | null;
   basemap: { background: string; style: string | null };
   branding: { title: string | null; logo: string | null };
   /** The calibrated table view, when the site has a calibration.json. */
@@ -166,6 +244,10 @@ export interface LayerState {
   button: LayerButton;
   /** Ids of the controls the controller and phones leave out. The editor still shows them. */
   hide?: string[];
+  /** For an item: the layer it belongs to. It has no button and comes on with that layer. */
+  parent?: string;
+  /** How Next moves through the layer, and a sequence's steps, as site.json has them. */
+  steps?: Steps;
 }
 
 /** The button that opens a layer on the controller, as the site's author set it. */
@@ -175,6 +257,10 @@ export interface LayerButton {
   /** An icon name, such as `sun` or `route`. */
   icon?: string;
   side?: 'left' | 'right';
+  /** The group of buttons it sits in on its rail, such as "Simulations". */
+  group?: string;
+  /** Its place in the rail; lower first. */
+  order?: number;
 }
 
 export interface Participant {

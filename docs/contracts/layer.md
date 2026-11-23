@@ -34,6 +34,8 @@ packages/layers/sunlight/        (or sites/<id>/layers/<name>/)
 `category` puts the layer in a group of the composer's palette: `base`, `ambient`, `analysis` (the default) or `media`.
 On the controller screen a layer of category `analysis` or `media` is a button, and pressing it opens that layer and closes the others. `base` and `ambient` layers are the map at rest and have no button there.
 `alongside: true` keeps the layer open when another layer's button is pressed, and lets it open without closing the others. Use it for a tool people keep while they look at something else, such as the sketch layer. Default false.
+`sequence: true` makes the layer a sequence: an instance of it may have `steps.sequence`, steps that show other layers one after another (see site.md). The slideshow is one.
+`legend` and `attract` are proposed in [present.md](present.md); site format 3 already carries them for custom layers.
 `requires.data` lists the site datasets the layer reads, by name (see `data` in site.md). A layer must still start when one is missing.
 
 Control types: `range`, `select`, `toggle`, `date`, `color`, `text`, `action` (a button, no stored value).
