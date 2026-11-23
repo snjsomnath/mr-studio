@@ -3,7 +3,9 @@ import type { Connection, Control, LayerManifest, LegendRow, TextControl, LayerS
 
 import { AttractLoop, effectOf } from './attract.ts';
 import { icon } from './editor/icons.ts';
-import { baseContext, paramSender } from './layer-manager.ts';
+import { baseContext, isAtRest, paramSender } from './layer-manager.ts';
+
+export { isAtRest };
 import { layerModule } from './registry.ts';
 import { PHONE_SEND_INTERVAL, toolSection } from './phone-tools.ts';
 import type { Store } from './store.ts';
@@ -247,6 +249,7 @@ export function isAmbient(manifest: LayerManifest): boolean {
   return manifest.category === 'base' || manifest.category === 'ambient';
 }
 
+
 /**
  * Layer packages the editor offers to add. The building blocks demo shows the SDK to
  * developers; it is not a layer an author would put on a table (#38). Sites that
@@ -285,7 +288,7 @@ export function railButtons(store: Store): RailButton[] {
   const ids = scene.filter((id) => {
     const manifest = store.manifest(state.layers[id]?.layer ?? '');
     // A layer's items have no button: they come on with their layer.
-    return manifest !== undefined && !isAmbient(manifest) && !state.layers[id]?.parent;
+    return manifest !== undefined && !isAtRest(manifest, state.layers[id]) && !state.layers[id]?.parent;
   });
   const order = (id: string) => state.layers[id]?.button?.order ?? Number.POSITIVE_INFINITY;
   const sorted = [...ids].sort((a, b) => order(a) - order(b) || scene.indexOf(a) - scene.indexOf(b));
@@ -548,7 +551,7 @@ export class Controller {
     store.onLayer((id, state) => {
       // Opening a layer closes the About page.
       const manifest = store.manifest(state.layer);
-      if (state.active && !state.parent && this.aboutOpen && manifest && !isAmbient(manifest)) this.showAbout(false);
+      if (state.active && !state.parent && this.aboutOpen && manifest && !isAtRest(manifest, state)) this.showAbout(false);
       this.cards.get(id)?.sync(state);
       // The slideshow's stage speaks for the layer it shows: its legend and step names follow that layer.
       if (state.shown_by && store.state.layers[state.shown_by]) this.cards.get(state.shown_by)?.sync(store.state.layers[state.shown_by]!);
@@ -634,7 +637,7 @@ export class Controller {
       const state = store.state.layers[other];
       const manifest = state && store.manifest(state.layer);
       // Layers a slideshow shows go off with it; the host does that.
-      if (other === id || !state?.active || state.parent || state.shown_by || !manifest || isAmbient(manifest) || manifest.alongside) continue;
+      if (other === id || !state?.active || state.parent || state.shown_by || !manifest || isAtRest(manifest, state) || manifest.alongside) continue;
       void connection.request('layer.activate', { layer: other, active: false }).catch(() => {});
     }
   }
@@ -769,7 +772,7 @@ export class Controller {
     return store.state.scene.filter((id) => {
       const state = store.state.layers[id];
       const manifest = state && store.manifest(state.layer);
-      return Boolean(state?.active && !state.parent && !state.shown_by && manifest && !isAmbient(manifest));
+      return Boolean(state?.active && !state.parent && !state.shown_by && manifest && !isAtRest(manifest, state));
     });
   }
 

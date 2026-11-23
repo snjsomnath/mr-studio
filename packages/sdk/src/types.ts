@@ -318,6 +318,12 @@ export interface LayerState {
   step?: StepState;
   /** For the layer a sequence is showing as its current step: that sequence. */
   shown_by?: string;
+  /**
+   * Part of the map at rest although its package is not a base or ambient layer: a layer of
+   * the scene that site.json starts on and gives no button (#204). It has no button on the
+   * controller and stays on while button layers open and close.
+   */
+  rest?: boolean;
 }
 
 /**

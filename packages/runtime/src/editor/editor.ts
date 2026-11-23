@@ -1,7 +1,7 @@
 import { isVisible } from '@mrstudio/sdk';
 import type { Connection, LayerManifest, LayerState } from '@mrstudio/sdk';
 
-import { defaultSideOf, el, isAmbient, isOffered, layerButton, widget } from '../controls.ts';
+import { defaultSideOf, el, isAmbient, isAtRest, isOffered, layerButton, widget } from '../controls.ts';
 import type { Widget } from '../controls.ts';
 import { paramSender } from '../layer-manager.ts';
 import type { Store } from '../store.ts';
@@ -320,7 +320,7 @@ export class Editor {
       const state = store.state.layers[other];
       const manifest = state && store.manifest(state.layer);
       // Items come and go with their layer; the host switches them.
-      if (!state || !manifest || isAmbient(manifest) || state.parent) continue;
+      if (!state || !manifest || isAtRest(manifest, state) || state.parent) continue;
       // A layer a slideshow is showing belongs to the slideshow while it stays open.
       if (state.shown_by && state.shown_by === id) continue;
       const wanted = other === id || (state.active && id !== null && Boolean(alongside || manifest.alongside));
@@ -351,7 +351,7 @@ export class Editor {
     if (this.wizard || (this.context.kind !== 'home' && this.context.kind !== 'layer')) return;
     const manifest = this.store.manifest(state.layer);
     // A slideshow showing a layer is not someone opening that layer.
-    if (!manifest || isAmbient(manifest) || state.parent || state.shown_by) return;
+    if (!manifest || isAtRest(manifest, state) || state.parent || state.shown_by) return;
     const mine = this.context.kind === 'layer' && this.context.id === id;
     if (state.active && !mine && !manifest.alongside) this.context = { kind: 'layer', id };
     else if (!state.active && mine) this.context = { kind: 'home' };
@@ -935,8 +935,8 @@ export class Editor {
 
   private renderTree(instances: { id: string; manifest: LayerManifest; state: LayerState }[]): void {
     const { context } = this;
-    const ambient = instances.filter((i) => isAmbient(i.manifest) && !i.state.parent);
-    const layers = instances.filter((i) => !isAmbient(i.manifest) && !i.state.parent);
+    const ambient = instances.filter((i) => isAtRest(i.manifest, i.state) && !i.state.parent);
+    const layers = instances.filter((i) => !isAtRest(i.manifest, i.state) && !i.state.parent);
     const nodes: HTMLElement[] = [];
 
     nodes.push(el('h2', 'ed-tree-title', 'Map'));
@@ -1223,7 +1223,7 @@ export class Editor {
 
     if (context.kind === 'home') {
       nodes.push(head('moon', AT_REST, 'When no layer is open'));
-      const ambient = instances.filter((i) => isAmbient(i.manifest) && !i.state.parent);
+      const ambient = instances.filter((i) => isAtRest(i.manifest, i.state) && !i.state.parent);
       const section = el('section', 'ed-section');
       section.append(el('h3', undefined, 'On the map'));
       if (ambient.length === 0) section.append(el('p', 'ed-empty', 'Nothing yet. Add a base map and some ambient life from the toolbar above.'));
