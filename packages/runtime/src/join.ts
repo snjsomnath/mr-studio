@@ -60,6 +60,8 @@ export function joinPanel(store: Store): HTMLElement {
     panel.querySelector('.join-qr')?.remove();
     // Visitors only see an invitation they can use. Why phones cannot join is for the operator, in the editor.
     panel.hidden = !url;
+    // The stylesheet lays the panel out as flex, which would show it anyway.
+    panel.style.display = url ? '' : 'none';
     if (!url) {
       text.replaceChildren();
       return;
