@@ -725,14 +725,27 @@ body[data-role='edit'] .table-surface {
   cursor: default;
 }
 
-.wz-dot {
-  display: grid;
-  place-items: center;
+.wz-dot,
+.im-help {
+  /* A glyph centred in a circle, the same in WebKit (the Mac app) and Chromium: a square
+     flex box with no padding, line height 1, and the line trimmed to the cap height where
+     the browser can, so the figure is centred, not its line box (#123). */
+  box-sizing: border-box;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
   width: 18px;
   height: 18px;
+  padding: 0;
   border-radius: 50%;
   border: 1px solid var(--ed-line);
   font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  text-box: trim-both cap alphabetic;
 }
 
 .wz-step button[aria-current='step'] {
@@ -1285,16 +1298,42 @@ body[data-role='edit'] .ed-surface .table-frame {
 /* ---- The importer (#71): Your place rows and the Add data dialog ---- */
 .im-help {
   margin-left: 6px;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  border: 1px solid var(--ed-line, #d5d9e0);
   background: transparent;
   color: inherit;
-  font-size: 11px;
-  line-height: 1;
+  font-family: inherit;
   cursor: pointer;
-  vertical-align: 1px;
+  vertical-align: 2px;
+  appearance: none;
+}
+
+.im-busy {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--ed-text-2);
+}
+
+.im-spinner {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--ed-accent-soft);
+  border-top-color: var(--ed-accent);
+  border-radius: 50%;
+  animation: im-spin 0.8s linear infinite;
+}
+
+@keyframes im-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .im-spinner {
+    animation-duration: 2.4s;
+  }
 }
 
 .im-help[aria-expanded='true'] {
