@@ -153,7 +153,6 @@ export const MOTION_DEFAULTS = {
   particles: { per_line: 2, speed_mm: 20, size_mm: 2.5 } satisfies ParticlesProps,
   attract: { count: 300, speed_mm: 12, reach_mm: 60, weight: null, size_mm: 1.5 } satisfies AttractProps,
   gravity: { network: 'roads', count: 240, speed_mm: 10, weight: null, size_mm: 2, trail: true } satisfies GravityProps,
-<<<<<<< HEAD
   timeline: TIMELINE_DEFAULTS,
 };
 /** Which motions fit which look (L1: verbs fit the form). */
@@ -161,14 +160,6 @@ export const MOTIONS_FOR: Record<GeometryKind, (keyof typeof MOTION_DEFAULTS)[]>
   points: ['pulse', 'attract', 'gravity', 'timeline'],
   lines: ['draw-in', 'flow', 'particles', 'timeline'],
   fill: ['pulse', 'timeline'],
-=======
-};
-/** Which motions fit which look (L1: verbs fit the form). */
-export const MOTIONS_FOR: Record<GeometryKind, (keyof typeof MOTION_DEFAULTS)[]> = {
-  points: ['pulse', 'attract', 'gravity'],
-  lines: ['draw-in', 'flow', 'particles'],
-  fill: ['pulse'],
->>>>>>> origin/main
 };
 
 /** The look a geometry gets by default (D2: a single file can be a layer). */
@@ -415,10 +406,7 @@ export interface LookMotion {
   attract?: Partial<AttractProps>;
   /** `streets` is the network dataset in table metres, loaded by whoever draws the recipe. */
   gravity?: Partial<GravityProps> & { streets?: Shapes };
-<<<<<<< HEAD
   timeline?: Partial<TimelineProps>;
-=======
->>>>>>> origin/main
 }
 
 function trace(view: View, points: readonly Point[], close: boolean): void {
@@ -452,10 +440,7 @@ export function compileLook(block: RecipeBlock, shapes: Shapes, palette: Resolve
     const pulse = motion.pulse ? { ...MOTION_DEFAULTS.pulse, ...motion.pulse } : null;
     const attract = motion.attract ? attractCrowd(shapes.spots, paint, { ...MOTION_DEFAULTS.attract, ...motion.attract }, mm) : null;
     const walkers = motion.gravity ? streetCrowd(shapes.spots, paint, { ...MOTION_DEFAULTS.gravity, ...motion.gravity }, motion.gravity.streets, mm) : null;
-<<<<<<< HEAD
     const reveal = motion.timeline ? timeReveal(rows, motion.timeline) : null;
-=======
->>>>>>> origin/main
     return {
       id: block.id,
       kind,
@@ -464,11 +449,7 @@ export function compileLook(block: RecipeBlock, shapes: Shapes, palette: Resolve
         // Crowds go under the points they are drawn to.
         attract?.draw(view, time, alpha);
         walkers?.draw(view, time, alpha);
-<<<<<<< HEAD
         drawPoints(view, shapes.spots, { paint, radius, props, stroke, pulse, px: (m) => px(view, m), time, alpha, timeline: reveal });
-=======
-        drawPoints(view, shapes.spots, { paint, radius, props, stroke, pulse, px: (m) => px(view, m), time, alpha });
->>>>>>> origin/main
       },
     };
   }
@@ -480,20 +461,13 @@ export function compileLook(block: RecipeBlock, shapes: Shapes, palette: Resolve
     const drawIn = motion.drawIn ? { ...MOTION_DEFAULTS['draw-in'], ...motion.drawIn } : null;
     const flow = motion.flow ? { ...MOTION_DEFAULTS.flow, ...motion.flow } : null;
     const particles = motion.particles ? { ...MOTION_DEFAULTS.particles, ...motion.particles } : null;
-<<<<<<< HEAD
     const reveal = motion.timeline ? timeReveal(rows, motion.timeline) : null;
-=======
->>>>>>> origin/main
     return {
       id: block.id,
       kind,
       legend: legendRows(block, paint, 'line', palette, props.color),
       draw(view, time, alpha) {
-<<<<<<< HEAD
         drawLines(view, shapes.paths, { paint, width, props, drawIn, flow, px: (m) => px(view, m), time, alpha, timeline: reveal });
-=======
-        drawLines(view, shapes.paths, { paint, width, props, drawIn, flow, px: (m) => px(view, m), time, alpha });
->>>>>>> origin/main
         if (particles) {
           const heads = pathHeads(shapes.paths, time, { speed: Math.max(0.1, particles.speed_mm * mm), count: Math.max(1, Math.round(particles.per_line)) });
           drawDots(view, heads.map((h) => ({ point: h.point, colour: paint.colour(shapes.paths[h.path]!.properties), alpha: h.alpha * alpha, size: Math.max(1, px(view, particles.size_mm)) / view.detail })));
@@ -1005,10 +979,7 @@ export function motionFor(recipe: Pick<CustomLayer, 'motion'>, look: string, ove
     if (block.block === 'particles') motion.particles = props as Partial<ParticlesProps>;
     if (block.block === 'attract') motion.attract = props as Partial<AttractProps>;
     if (block.block === 'gravity') motion.gravity = props as Partial<GravityProps>;
-<<<<<<< HEAD
     if (block.block === 'timeline') motion.timeline = props as Partial<TimelineProps>;
-=======
->>>>>>> origin/main
   }
   return motion;
 }

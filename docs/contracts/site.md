@@ -171,10 +171,7 @@ What the player draws today (`packages/sdk/src/recipe.ts`; WMS and tiles data ar
 | motion | `particles` (on lines) | `per_line`, `speed_mm`, `size_mm`: lights travelling along each line |
 | motion | `attract` (on points) | `count`, `speed_mm`, `reach_mm`, `weight` (a numeric column that pulls harder), `size_mm`: a crowd drawn in across open ground |
 | motion | `gravity` (on points) | `network` (a site dataset of lines, default `roads`), `count`, `speed_mm`, `weight`, `size_mm`, `trail`: people walking to each point along the street network by the shortest route |
-<<<<<<< HEAD
 | motion | `timeline` (on any look) | `column` (a year or date column), `duration_s`, `hold_s`, `keep` (stay, or come and go), `window` (share of the span a feature stays): features appear as a sweep passes their time, with a brief flare on points; features with no time always show |
-=======
->>>>>>> origin/main
 
 - Sizes are millimetres on the physical table (visualisation.md E5), turned into metres by `table.width_cm`.
 - A colour is a palette slot (`"@accent"`), `"#rrggbb"`, or driven by a column: `{ "by": "kind", "kind": "category", "colors"?: { "<value>": "@cat2" } }` (six values shown, the rest grouped as Others) or `{ "by": "population", "kind": "number", "ramp": "sun", "classes": "continuous" | "equal" | "quantile", "count": 5 }`. A size may be `{ "by": "<column>", "range": [2, 8] }`.
