@@ -243,7 +243,7 @@ interface FlowOverlayStyle {
 Fields, flows, shapes and drawings (`addDrawing`) are drawn at the layer's place in the scene: above the layers before it in `site.json` and below those after it.
 A layer can be in a scene more than once. Each copy runs `table` on its own, with its own params, so state must live in the closure.
 
-Helpers in `@mrstudio/sdk` for drawing layers: `tableSpace(site)` turns WGS84 into table metres, `readSiteData(site, name)` and `siteDataUrl(site, name)` read a named dataset, `geojsonLines`, `geojsonPolygons` and `geojsonPoints` convert GeoJSON, `streetLines(site)` gives the `roads` dataset or a generated grid, `track`, `along` and `nearestAlong` move things along a polyline, and `seededRandom` keeps "random" scenes the same on every table.
+Helpers in `@mrstudio/sdk` for drawing layers: `tableSpace(site)` turns WGS84 into table metres, `readSiteData(site, name)` and `siteDataUrl(site, name)` read a named dataset, `geojsonLines`, `geojsonPolygons` and `geojsonPoints` convert GeoJSON, `streetLines(site)` gives the `roads` dataset (none when the site has none: nothing is made up), `track`, `along` and `nearestAlong` move things along a polyline, and `seededRandom` keeps "random" scenes the same on every table.
 `packages/layers/trees` is the smallest animated example and `packages/layers/basemap` the smallest static one.
 
 Elements (`addElement`) and canvases (`addCanvas`) sit above the whole scene, in the order they were added. They do not follow the scene's draw order yet.

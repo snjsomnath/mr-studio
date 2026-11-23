@@ -286,12 +286,14 @@ pub fn load_catalog(site: &Site, core_layers: &Path) -> anyhow::Result<Vec<Layer
             bail!("site.json uses layer '{used}', which is not in {}", core_layers.display());
         }
     }
-    // A layer the site uses must find the datasets it requires. Layers only in the palette need not.
+    // A layer the site uses should find the datasets it requires. A table that lacks one still
+    // opens: the layer shows nothing, and the editor offers to bring the data in. (Adding such a
+    // layer is refused in the scene instead.)
     let data = site.data();
     for (used, _, _) in site.instances() {
         let Some(def) = defs.iter().find(|d| d.source == used) else { continue };
         if let Some(name) = def.missing_data(&data)? {
-            bail!("layer '{}' needs the dataset '{name}'; add it under \"data\" in site.json", def.id);
+            tracing::warn!("layer '{}' needs the dataset '{name}', which this site does not have yet", def.id);
         }
     }
     Ok(defs)
@@ -342,14 +344,17 @@ mod tests {
     }
 
     #[test]
-    fn a_layer_needs_its_datasets() {
+    fn a_table_missing_a_layers_data_still_opens() {
         let repo = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
         let mut site = Site::load(repo.join("sites/sample")).unwrap();
-        assert!(site.manifest.layers.iter().any(|l| l.r#use == "coolpaths"));
+        assert!(site.manifest.layers.iter().any(|l| l.r#use == "cars"));
+        let catalog = load_catalog(&site, &repo.join("packages/layers")).unwrap();
+        // Traffic needs streets; without them the table opens, and Traffic says what it lacks.
+        site.manifest.data.remove("roads");
+        let data = site.data();
         assert!(load_catalog(&site, &repo.join("packages/layers")).is_ok());
-        site.manifest.data.remove("walkways");
-        let error = load_catalog(&site, &repo.join("packages/layers")).unwrap_err().to_string();
-        assert!(error.contains("coolpaths") && error.contains("walkways"), "{error}");
+        let cars = catalog.iter().find(|d| d.id == "cars").unwrap();
+        assert_eq!(cars.missing_data(&data).unwrap().as_deref(), Some("roads"));
     }
 
     #[test]

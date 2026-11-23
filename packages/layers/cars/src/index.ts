@@ -34,7 +34,8 @@ export default defineLayer<Params>({
 
   async table(ctx) {
     const canvas = ctx.map.addDrawing('cars', { opacity: ctx.params.opacity });
-    const { lines } = await streetLines(ctx.site);
+    // No streets, no cars: the editor offers to bring streets in (requires.data).
+    const lines = await streetLines(ctx.site);
     const network = new Network(lines.map((line) => line.geometry));
     const random = seededRandom(5);
     const cars: Car[] = [];

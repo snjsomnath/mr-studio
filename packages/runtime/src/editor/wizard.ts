@@ -498,8 +498,10 @@ export class Wizard {
       badge.append(icon(manifest.icon, 20));
       const words = el('div');
       words.append(el('strong', undefined, manifest.name));
-      const lacking = missing.length > 0 && mine.length === 0;
-      const about = lacking ? `Needs ${missing.map(dataName).join(' and ')}, which this table does not have yet.` : (manifest.description ?? '');
+      // Switched on without its data, a layer shows nothing; it says so, and offers the data, either way.
+      const lacking = missing.length > 0;
+      const needs = missing.map(dataName).join(' and ');
+      const about = !lacking ? (manifest.description ?? '') : mine.length > 0 ? `Shows nothing until this table has ${needs}.` : `Needs ${needs}, which this table does not have yet.`;
       if (about) words.append(el('p', undefined, about));
       // A layer that needs data offers the way to it, and the guide comes back here afterwards.
       const source = lacking ? targetFor(missing[0]!) : undefined;

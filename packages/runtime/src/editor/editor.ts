@@ -507,7 +507,7 @@ export class Editor {
     if (!('buildings' in data)) lack = { text: 'This table has no buildings yet, so the map is empty.', action: 'Bring in your place', step: 1 };
     else if (!instances.some((i) => isAmbient(i.manifest))) lack = { text: 'The map shows nothing when no layer is open.', action: `Choose what shows ${AT_REST.toLowerCase()}`, step: 2 };
     else if (instances.every((i) => isAmbient(i.manifest))) lack = { text: 'There are no layers yet. Each layer becomes a button on the controller.', action: 'Choose layers', step: 3 };
-    else if (instances.some((i) => i.manifest.id === 'cars') && !('roads' in data)) lack = { text: 'Traffic has no streets to drive on, so it makes up a grid.', action: 'Bring in streets', step: 1, target: 'data:roads' };
+    else if (instances.some((i) => i.manifest.id === 'cars') && !('roads' in data)) lack = { text: 'Traffic has no streets to drive on, so no cars are shown.', action: 'Bring in streets', step: 1, target: 'data:roads' };
     this.next.hidden = lack === null || this.wizard !== null;
     if (!lack) return;
     const go = button('ed-button is-primary', lack.action, 'route');
