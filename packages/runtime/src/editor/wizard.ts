@@ -1,3 +1,4 @@
+import { THEMES } from '@mrstudio/dashboard';
 import type { LayerManifest, LayerState, SelectControl } from '@mrstudio/sdk';
 import { defaultSideOf, el, isAmbient, isOffered, layerButton } from '../controls.ts';
 import type { Store } from '../store.ts';
@@ -97,6 +98,7 @@ export class Wizard {
     this.step = options.step ?? (options.created ? PLACE : WHERE);
     host.store.onScene(() => this.render());
     host.store.onLayer(() => (this.step === BUTTONS || this.step === REST) && this.syncButtons());
+    host.store.onTv(() => this.step === BUTTONS && this.syncLook());
     this.render();
   }
 
@@ -132,6 +134,74 @@ export class Wizard {
     }
     return list;
   }
+
+  /**
+   * The controller's look (#126): a built-in theme, shown as swatch cards, and the rail style.
+   * A pick is saved to site.json and every screen, the live preview too, restyles at once.
+   */
+  private lookPicker(): HTMLElement {
+    const { host } = this;
+    const box = el('section', 'wz-look');
+    box.append(el('h3', undefined, 'Look'));
+    const themes = el('div', 'wz-themes');
+    themes.setAttribute('role', 'radiogroup');
+    themes.setAttribute('aria-label', 'Controller theme');
+    const cards = THEMES.map((theme, index) => {
+      const card = el('button', 'wz-theme');
+      card.type = 'button';
+      card.setAttribute('role', 'radio');
+      card.title = theme.description;
+      const t = theme.tokens;
+      const swatch = el('span', 'wz-theme-swatch');
+      swatch.style.background = t['color.background']!;
+      const panel = el('span', 'wz-theme-panel');
+      panel.style.background = t['color.panel']!;
+      panel.style.borderColor = t['color.line']!;
+      const accent = el('span', 'wz-theme-accent');
+      accent.style.background = t['color.accent']!;
+      const data = el('span', 'wz-theme-data');
+      for (const n of [1, 2, 3, 4]) {
+        const dot = el('i');
+        dot.style.background = t[`data.${n}`]!;
+        data.append(dot);
+      }
+      const line = el('span', 'wz-theme-line');
+      line.style.background = t['color.text']!;
+      panel.append(line, accent, data);
+      swatch.append(panel);
+      card.append(swatch, el('span', 'wz-theme-name', theme.name));
+      // The first theme is the core default, so choosing it clears the site's theme.
+      card.addEventListener('click', () => void host.send('site.tv', { tv: index === 0 ? { theme: null, theme_name: null } : { theme: theme.tokens, theme_name: theme.id } }));
+      themes.append(card);
+      return [theme.id, card] as const;
+    });
+    const style = el('div', 'segmented');
+    style.setAttribute('role', 'radiogroup');
+    style.setAttribute('aria-label', 'Button style');
+    const styles = (['icons', 'labelled'] as const).map((value) => {
+      const option = el('button', undefined, value === 'icons' ? 'Icons' : 'Icons and names');
+      option.type = 'button';
+      option.setAttribute('role', 'radio');
+      option.addEventListener('click', () => void host.send('site.tv', { tv: { rail_style: value === 'icons' ? null : value } }));
+      style.append(option);
+      return [value, option] as const;
+    });
+    const row = el('div', 'wz-look-row');
+    row.append(el('span', 'wz-hint', 'Buttons'), style);
+    box.append(themes, row);
+    const sync = () => {
+      const tv = host.store.state.site.tv;
+      // A theme written by hand, not one of these, leaves every card unticked.
+      const chosen = tv?.theme_name ?? (tv?.theme ? null : THEMES[0]!.id);
+      for (const [id, card] of cards) card.setAttribute('aria-checked', String(id === chosen));
+      for (const [value, option] of styles) option.setAttribute('aria-checked', String(value === (tv?.rail_style ?? 'icons')));
+    };
+    sync();
+    this.syncLook = sync;
+    return box;
+  }
+
+  private syncLook: () => void = () => {};
 
   private syncButtons: () => void = () => {};
   /** The layer package just switched on, shown on the map as soon as the scene has it. */
@@ -188,7 +258,8 @@ export class Wizard {
       if (layers.length === 0) body.append(el('p', 'wz-hint', 'Pick at least one layer to give the table something to show.'));
     } else if (this.step === BUTTONS) {
       host.show(layers[0]?.id ?? null);
-      title('Buttons', 'Give each button words a visitor understands, and choose its side of the controller. The controller on the right is live.');
+      title('Buttons', 'Pick how the controller looks, give each button words a visitor understands, and choose its side. The controller on the right is live.');
+      body.append(this.lookPicker());
       if (layers.length === 0) body.append(el('p', 'wz-hint', 'There are no layers yet. Go back a step and pick one.'));
       const syncs: (() => void)[] = [];
       for (const { id, manifest } of layers) {

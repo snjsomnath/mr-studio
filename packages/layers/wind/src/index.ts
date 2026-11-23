@@ -12,14 +12,13 @@ interface Params {
   detail: string;
   playback: number;
   opacity: number;
+  backdrop: number;
 }
 
 /** The field arrives a few times a second; the tracers animate on the table in between. */
 const FIELD_HZ = 8;
 /** Share of the table's longer side a tracer crosses per second, per m/s of wind. */
 const TRACER_RATE = 0.04;
-/** Under ribbons the speed map is a quiet backdrop. */
-const BACKDROP_OPACITY = 0.3;
 const WHITE: Colormap = { stops: [[0, 255, 255, 255, 150], [1, 255, 255, 255, 255]] };
 const COMPASS = ['north', 'north-east', 'east', 'south-east', 'south', 'south-west', 'west', 'north-west'];
 
@@ -35,7 +34,8 @@ export default defineLayer<Params>({
     // Frames are quantised over 0..fieldMax; the legend ends at the chosen colour range.
     let fieldMax = 2.5 * ctx.params.speed;
     const ramp = () => stretch(colormaps.speed, Number(ctx.params.scale) / fieldMax);
-    const mapOpacity = () => ctx.params.opacity * (ctx.params.style === 'ribbons' ? BACKDROP_OPACITY : 1);
+    // Under ribbons and particles the speed map is a quiet backdrop (#143), as strong as the author sets; 0 hides it.
+    const mapOpacity = () => ctx.params.opacity * (ctx.params.style === 'map' ? 1 : ctx.params.backdrop ?? 0.25);
     const flowStyle = () => ({
       mode: ctx.params.style === 'particles' ? ('particles' as const) : ('ribbons' as const),
       colormap: ctx.params.style === 'particles' ? WHITE : colormaps.speed,
@@ -87,7 +87,7 @@ export default defineLayer<Params>({
 
     return {
       update(changed) {
-        if (changed.some((key) => key === 'style' || key === 'scale' || key === 'opacity' || key === 'playback')) restyle();
+        if (changed.some((key) => key === 'style' || key === 'scale' || key === 'opacity' || key === 'backdrop' || key === 'playback')) restyle();
         if (changed.some((key) => key === 'speed' || key === 'direction' || key === 'trees' || key === 'detail')) stream.set(kernelParams(ctx));
       },
     };

@@ -1,4 +1,4 @@
-import type { Connection, LayerManifest, LayerState, Participant, SessionState, Welcome } from '@mrstudio/sdk';
+import type { Connection, LayerManifest, LayerState, Participant, SessionState, TvConfig, Welcome } from '@mrstudio/sdk';
 
 type LayerListener = (layer: string, state: LayerState, previous: LayerState | undefined) => void;
 
@@ -11,6 +11,7 @@ export class Store {
   private participantListeners = new Set<(participants: Participant[]) => void>();
   private sceneListeners = new Set<(scene: string[]) => void>();
   private removedListeners = new Set<(layer: string) => void>();
+  private tvListeners = new Set<(tv: TvConfig | null) => void>();
   private catalogListeners = new Set<(layer: string) => void>();
 
   constructor(connection: Connection, welcome: Welcome) {
@@ -22,6 +23,11 @@ export class Store {
     connection.on('state.participants', (p: { participants: Participant[] }) => {
       this.state.participants = p.participants;
       for (const listener of this.participantListeners) listener(p.participants);
+    });
+    // The controller's table settings changed (a theme picked in the setup guide).
+    connection.on('site.tv', (p: { tv: TvConfig | null }) => {
+      this.state.site.tv = p.tv;
+      for (const listener of this.tvListeners) listener(p.tv);
     });
     // A custom layer was saved or removed (the layer builder), or the table's palette changed.
     connection.on('catalog.changed', (p: { manifest: LayerManifest }) => {
@@ -89,6 +95,12 @@ export class Store {
   /** Runs when a layer left the scene, before `onScene`. */
   onRemoved(listener: (layer: string) => void): void {
     this.removedListeners.add(listener);
+  }
+
+  /** Runs when the site's `tv` settings change. */
+  onTv(listener: (tv: TvConfig | null) => void): () => void {
+    this.tvListeners.add(listener);
+    return () => this.tvListeners.delete(listener);
   }
 
   onParticipants(listener: (participants: Participant[]) => void): void {
