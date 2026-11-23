@@ -1845,3 +1845,109 @@ body[data-role='tv'][data-density='minimal'] .layer-welcome.attract {
 .attract-words {
   text-shadow: 0 0.125rem 1.25rem color-mix(in srgb, var(--bg) 80%, transparent);
 }
+
+/* ---- Ribbons: the projector's blank space around the model (#78) ---- */
+
+/* In dev and the editor the map keeps room for its ribbons, so they are previewed beside it at their size. */
+.table-frame.has-ribbons {
+  position: relative;
+}
+
+body[data-role='dev'] .table-frame.has-ribbons .table-surface,
+body[data-role='edit'] .table-frame.has-ribbons .table-surface {
+  --ribbons-across: calc(1 + var(--ribbon-left, 0) + var(--ribbon-right, 0));
+  --ribbons-down: calc(1 / var(--aspect, 1.6667) + var(--ribbon-top, 0) + var(--ribbon-bottom, 0));
+  --model-width: min(100cqw / var(--ribbons-across), 100cqh / var(--ribbons-down));
+  width: var(--model-width);
+  margin: calc(var(--model-width) * var(--ribbon-top, 0)) calc(var(--model-width) * var(--ribbon-right, 0)) calc(var(--model-width) * var(--ribbon-bottom, 0)) calc(var(--model-width) * var(--ribbon-left, 0));
+}
+
+.table-ribbon {
+  position: absolute;
+  z-index: 5;
+  pointer-events: none;
+}
+
+.table-ribbon[hidden] {
+  display: none;
+}
+
+/* Laid out along its edge, then turned to read from it (ribbon.ts sets the size and the turn). */
+.table-ribbon-inner.mrs-dash {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  gap: var(--mrs-gap);
+  padding: calc(0.8 * var(--mrs-u)) 0;
+  box-sizing: border-box;
+  container-type: normal;
+  /* Projected light: where the ribbon draws nothing the projector stays dark. */
+  background: transparent;
+}
+
+.table-ribbon-inner .mrs-panel {
+  flex: 0 1 calc(34 * var(--mrs-u));
+  min-width: 0;
+}
+
+.table-ribbon-inner .mrs-size-chip {
+  flex-basis: calc(22 * var(--mrs-u));
+}
+
+.table-ribbon-inner .mrs-size-wide {
+  flex-basis: calc(56 * var(--mrs-u));
+}
+
+.table-ribbon-inner .mrs-panel[hidden] {
+  display: none;
+}
+
+.table-ribbon-qr {
+  flex: none;
+  height: 100%;
+  aspect-ratio: 1;
+}
+
+.table-ribbon-qr svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.table-ribbon-join {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: calc(0.6 * var(--mrs-u));
+}
+
+.table-ribbon-join p {
+  margin: 0;
+}
+
+.table-ribbon-code {
+  font-family: var(--mrs-font-number);
+  font-size: var(--mrs-type-number);
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  line-height: 1;
+}
+
+/* The editor's preview: the dark of the projector's blank space, and the front edge marked. */
+.table-ribbon.is-preview {
+  background: #05070a;
+  border-radius: 6px;
+  box-shadow: inset 0 0 0 1px rgba(148, 160, 184, 0.35);
+  overflow: hidden;
+}
+
+.table-ribbon.is-preview.is-front {
+  box-shadow: inset 0 0 0 1px rgba(148, 160, 184, 0.35), inset 0 -3px 0 #f3ad3d;
+}
+
+.table-ribbon.is-preview[data-side='top'].is-front { box-shadow: inset 0 0 0 1px rgba(148, 160, 184, 0.35), inset 0 3px 0 #f3ad3d; }
+.table-ribbon.is-preview[data-side='left'].is-front { box-shadow: inset 0 0 0 1px rgba(148, 160, 184, 0.35), inset 3px 0 0 #f3ad3d; }
+.table-ribbon.is-preview[data-side='right'].is-front { box-shadow: inset 0 0 0 1px rgba(148, 160, 184, 0.35), inset -3px 0 0 #f3ad3d; }

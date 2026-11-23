@@ -14,6 +14,7 @@ interface PanelSpec {
   props?: Record<string, unknown>; // per the widget's schema; literals or bindings
   visibleWhen?: Record<string, unknown>;   // as for controls, against the layer's params
   priority?: number;               // automatic layout: higher is placed first
+  ribbon?: boolean;                // on the table's ribbon instead of the TV (#78): chip, tile or wide only, at most 4 panels and 10 reads; see present.md, Ribbon
   at?: { col: number; row: number };       // site pages only, 1-based
   layer?: string;                  // site pages only: whose params and shared values the bindings read
 }

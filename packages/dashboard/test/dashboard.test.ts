@@ -8,7 +8,7 @@ import { clip, formatValue, resolveProps } from '../src/bind.ts';
 import { pack } from '../src/pack.ts';
 import { GRID, SCREEN, SIZES } from '../src/rules.ts';
 import { contrast, STYLE_TOKENS, themeVariables, validateTheme } from '../src/theme.ts';
-import { panelReads, validateLayerPanels, validatePage, validatePanel } from '../src/validate.ts';
+import { panelReads, validateLayerPanels, validatePage, validatePanel, validateRibbon } from '../src/validate.ts';
 import { coreWidgets } from '../src/widgets/index.ts';
 
 const json = (path: string) => JSON.parse(readFileSync(new URL(path, import.meta.url), 'utf8'));
@@ -176,4 +176,15 @@ test('the registry is plain data an editor can read', () => {
   assert.deepEqual(described.map((w) => w.type), ['stat', 'bars', 'series', 'ramp', 'timeline', 'text', 'custom']);
   assert.deepEqual(JSON.parse(JSON.stringify(described)), described);
   for (const widget of described) for (const prop of Object.values(widget.props)) assert.ok(prop.label, `${widget.type} props need labels`);
+});
+
+test('a ribbon holds a few small panels (#78)', () => {
+  const ribbon = (id: string, size: PanelSpec['size'] = 'tile') => stat({ id, size, ribbon: true });
+  assert.deepEqual(validateRibbon([ribbon('a'), ribbon('b', 'chip'), ribbon('c', 'wide')], registry), []);
+  assert.deepEqual(validatePanel(ribbon('a'), registry), [], 'ribbon is a panel field');
+  assert.deepEqual(validateRibbon([{ ...ribbon('a'), widget: 'series', size: 'strip', props: { values: [] } }], registry).map((i) => i.rule), ['size']);
+  assert.deepEqual(validateRibbon(['a', 'b', 'c', 'd', 'e'].map((id) => ribbon(id, 'chip')), registry).map((i) => i.rule), ['budget']);
+  const busy = (id: string) => stat({ id, ribbon: true }, { caption: 'Now', delta: 1 });
+  assert.deepEqual(validateRibbon(['a', 'b', 'c', 'd'].map(busy), registry).map((i) => i.rule), ['budget'], '12 reads is more than a ribbon holds');
+  assert.ok(validateLayerPanels([ribbon('a', 'block')], registry).some((i) => i.path === 'panels.a.size'));
 });

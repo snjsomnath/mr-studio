@@ -191,6 +191,11 @@ export interface PanelSpec {
   at?: { col: number; row: number };
   /** In a site's pages: the layer whose params and shared values the bindings read. */
   layer?: string;
+  /**
+   * Drawn on the table's ribbon, the projector's blank space beside the model (#78), instead of the TV.
+   * Only small sizes (`chip`, `tile`, `wide`); rules in docs/contracts/present.md, Ribbon.
+   */
+  ribbon?: boolean;
 }
 
 /** `tv` in site.json. */
