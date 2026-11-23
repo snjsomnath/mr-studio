@@ -11,6 +11,7 @@
     "allow-launcher-state",
     "allow-add-site",
     "allow-remove-site",
+    "allow-delete-table",
     "allow-identify",
     "allow-start",
     "allow-open-site",

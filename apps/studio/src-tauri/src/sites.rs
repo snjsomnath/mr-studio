@@ -57,6 +57,21 @@ fn edited(path: &Path) -> Option<u64> {
     Some(modified.duration_since(std::time::UNIX_EPOCH).ok()?.as_millis() as u64)
 }
 
+/// Moves a folder to the Trash or Recycle Bin. On macOS through the file manager API, which
+/// asks for no permission (the default goes through Finder and would ask to control it).
+pub fn move_to_trash(path: &Path) -> anyhow::Result<()> {
+    #[cfg(target_os = "macos")]
+    {
+        use trash::macos::{DeleteMethod, TrashContextExtMacos};
+        let mut context = trash::TrashContext::new();
+        context.set_delete_method(DeleteMethod::NsFileManager);
+        context.delete(path)?;
+    }
+    #[cfg(not(target_os = "macos"))]
+    trash::delete(path)?;
+    Ok(())
+}
+
 /// Every site the picker offers: the ones added by hand, the ones in each sites folder
 /// (a folder of site packages), then the ones shipped inside the app. A folder is listed once.
 pub fn discover(added: &[PathBuf], folders: &[PathBuf], built_in: &Path) -> Vec<SiteEntry> {
