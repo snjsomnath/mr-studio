@@ -27,6 +27,7 @@ use mrs_site::osm::{self, OsmLayer};
 use mrs_site::Site;
 use serde_json::{json, Value};
 use tower_http::services::{ServeDir, ServeFile};
+use tower_http::set_header::SetResponseHeader;
 
 pub use calibration::Calibration;
 pub use engine_bridge::EngineHandle;
@@ -361,7 +362,16 @@ fn router(state: Arc<AppState>, web_dir: Option<PathBuf>) -> Router {
         .route("/api/site/place", post(place_site))
         .route("/api/wms", get(|query: Query<wms::WmsQuery>| wms::get_map(query.0)))
         .layer(DefaultBodyLimit::max(MAX_IMPORT_BYTES))
-        .nest_service("/site", ServeDir::new(&state.site.dir));
+        // Imports replace data files at the same path, so a surface reloading after
+        // site.changed must revalidate rather than reuse a cached copy (#125).
+        .nest_service(
+            "/site",
+            SetResponseHeader::overriding(
+                ServeDir::new(&state.site.dir),
+                header::CACHE_CONTROL,
+                header::HeaderValue::from_static("no-cache"),
+            ),
+        );
     app = match web_dir {
         // Every surface path (/table, /tv, /phone, /dev) is the same single-page app.
         Some(dir) => app.fallback_service(ServeDir::new(&dir).fallback(ServeFile::new(dir.join("index.html")))),
