@@ -33,11 +33,12 @@ import {
   schemeFor,
   CATEGORY_SCHEMES,
   paintScale,
+  LISTEN_KEY,
 } from '@mrstudio/sdk';
 import type { CustomLayer, GeometryKind, LayerManifest, Paint, RecipeBlock, ResolvedPalette, Shapes, SitePalette, Size } from '@mrstudio/sdk';
 
 import { el } from '../controls.ts';
-import { LISTEN_KEY, dataUrl, loadData } from '../recipe-player.ts';
+import { dataUrl, loadData } from '../recipe-player.ts';
 import type { Store } from '../store.ts';
 import { icon } from './icons.ts';
 import './builder.css';

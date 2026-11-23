@@ -14,6 +14,7 @@ import {
   motionFor,
   parseCsv,
   SoundStage,
+  hearsSound,
   placeFiles,
   readShapes,
   resolvePalette,
@@ -99,18 +100,6 @@ export function forgetData(url?: string): void {
   } else {
     files.clear();
     tables.clear();
-  }
-}
-
-/** Where sounds are heard: the table, or the editor when its author turned listening on. */
-export const LISTEN_KEY = 'mrstudio.listen';
-function hearsSound(): boolean {
-  if (typeof document === 'undefined') return false;
-  if (document.body.dataset.role === 'table') return true;
-  try {
-    return localStorage.getItem(LISTEN_KEY) === '1';
-  } catch {
-    return false;
   }
 }
 

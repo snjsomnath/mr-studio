@@ -29,8 +29,8 @@ Status: only sunlight is built. Wind is next, and the kernels after it start onc
 
 | Layer | Kernel | Blocks |
 | --- | --- | --- |
-| Isovist and view sheds | **`isovist`** (ray cast over the scene) | field overlay, table pointer (person marker), phone tools |
-| Street-level walk-through | none; a street view service | table pointer (person marker), TV panel media |
+| Isovist and view sheds | **`isovist`** (ray cast over the scene; built as an SDK block in #190, CPU is fast enough for one viewer) | field overlay, table pointer (person marker), phone tools |
+| Street-level walk-through | none; a street view service (built in #82: Google Street View through Sources, on the Isovist hero) | table pointer (person marker), TV panel media |
 | Traffic noise | **`noise`** (propagation with building screening) | field overlay, site datasets (roads), legend |
 | Acoustic listener | `noise` sampled at a point | table pointer, audio output |
 

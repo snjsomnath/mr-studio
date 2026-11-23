@@ -156,7 +156,7 @@ async fn welcome_carries_site_state_and_manifests() {
     let scene: Vec<&str> = state["scene"].as_array().unwrap().iter().map(|id| id.as_str().unwrap()).collect();
     assert_eq!(
         scene,
-        ["basemap", "sunlight", "building-lights", "cars", "transit", "trees", "slideshow", "sketch", "coolpaths", "mobility", "wind"]
+        ["basemap", "sunlight", "building-lights", "cars", "transit", "trees", "slideshow", "sketch", "coolpaths", "isovist", "mobility", "wind"]
     );
     assert_eq!(state["layers"]["basemap"]["active"], true);
     assert_eq!(state["site"]["data"]["roads"], "data/roads.geojson");
