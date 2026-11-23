@@ -133,6 +133,7 @@ How common profiles turn into a design, with the 2.0 layer that shows it.
 | Invisible · parametric · explore · processed | Two routes compared, walkers set off together | Pick ends of the walk, detour limit | Medium: what "cool" means | CoolPaths |
 | Visible · dynamic · observe · concrete | Dots along routes by group, waits as rings | Play, scrub | Low: groups in the legend | Mobility |
 | Invisible · parametric · explore · derived | Crowd drawn to places along streets | Weights, places on the phone | High: what pulls, and why | Cultural Gravity (#96) |
+| Invisible · categorical · present · raw | Places that pull, swell and reach out | Weight, activity over time, flows | High: importance, reach, liveliness | Place motions (#160-163): 22 motions in three families, all on one place data standard |
 | Visible · static · observe · concrete | Quiet base: buildings, trees, streets, ambient traffic | None | None | Home screen, basemap |
 | Any · stepped story | One reveal per step, legend highlights it | ◀ ▶ on any surface | Info strip per step | Slideshow (#43) |
 
@@ -243,7 +244,7 @@ piece.
 |---|---|---|
 | Data | One file or dataset, of a form in §3.1 | Import (#71), colour by data (#94) |
 | Look | Fill, stroke, width, glow, dashes, halo, radius, ramp | GIS styler (#95) |
-| Motion | Reveal and transition; pulse, flow, particles, attractors, gravity | Motion panel (#96) |
+| Motion | Reveal and transition; pulse, flow, particles, attractors, gravity; 22 place motions | Motion panel (#96, #161-163) |
 | Interaction | Table pick, controller or phone controls, steps | Controls, steps (present.md) |
 | Presentation | Button, legend, hero, ribbon | Controller page (#54) |
 

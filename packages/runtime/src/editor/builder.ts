@@ -23,6 +23,10 @@ import {
   ICONS,
   POINT_SHAPES,
   timeColumns,
+  PLACE_DATA_HELP,
+  PLACE_MOTIONS,
+  SHARED_KNOBS,
+  placeMotion,
 } from '@mrstudio/sdk';
 import type { CustomLayer, GeometryKind, LayerManifest, Paint, RecipeBlock, ResolvedPalette, Shapes, SitePalette, Size } from '@mrstudio/sdk';
 
@@ -787,7 +791,69 @@ export function builderSection(host: BuilderHost, manifest: LayerManifest, butto
     attract: ['Attract a crowd', 'Particles gather from all around and are pulled into each point. For pull and attention, not for people.'],
     gravity: ['Crowd on the streets', 'People walk to each point along the street network, more to the places that pull harder.'],
     timeline: ['Through time', 'Plays the layer through a date or year column: each feature appears when its time comes, with a brief flare.'],
+    place: ['Place motion', 'Twenty-two ways to bring places alive, from ripples and orbiters to gravity wells that bend the streets. Pick one, then tune it.'],
   };
+  /** The rows of a place motion (#160-163): which motion, its files, ? help and its knobs. */
+  const placeRows = (p: Record<string, any>, set: (key: string, value: unknown) => void, redraw: () => void): HTMLElement[] => {
+    const rows: HTMLElement[] = [];
+    const def = placeMotion(p.motion) ?? PLACE_MOTIONS[0]!;
+    const pick = el('select');
+    pick.setAttribute('aria-label', 'Place motion');
+    for (const group of [...new Set(PLACE_MOTIONS.map((m) => m.group))]) {
+      const og = Object.assign(el('optgroup'), { label: group });
+      for (const m of PLACE_MOTIONS.filter((m) => m.group === group)) og.append(Object.assign(el('option'), { value: m.id, textContent: m.label, selected: m.id === def.id }));
+      pick.append(og);
+    }
+    pick.addEventListener('change', () => {
+      // A new motion starts from its own defaults; the shared speed and glow carry over.
+      for (const knob of def.knobs) delete p[knob.key];
+      set('motion', pick.value);
+      redraw();
+    });
+    const help = button('lb-help-btn', '', 'info');
+    help.title = 'How to set up the data for this motion';
+    help.setAttribute('aria-label', help.title);
+    const panel = el('div', 'lb-place-help');
+    panel.hidden = true;
+    help.addEventListener('click', () => {
+      panel.hidden = !panel.hidden;
+      help.classList.toggle('on', !panel.hidden);
+    });
+    const kind = PLACE_DATA_HELP[def.data];
+    panel.append(
+      el('strong', undefined, kind.file),
+      el('p', undefined, kind.what),
+      el('pre', undefined, kind.example),
+      el('p', undefined, `Columns it reads: ${def.columns.join(', ')}.`),
+      ...(def.extra ? [el('p', undefined, def.extra)] : []),
+    );
+    rows.push(field('Motion', pick, help), el('p', 'lb-hint', def.about), panel);
+
+    // Its other files.
+    const datasets = vectorDatasets(host.store);
+    const choose = (label: string, key: string, list: { name: string }[], none: string | null, preferred: string[]) => {
+      const select = el('select');
+      if (none) select.append(Object.assign(el('option'), { value: '', textContent: none }));
+      if (p[key] === undefined || (p[key] && !list.some((d) => d.name === p[key]))) p[key] = preferred.find((n) => list.some((d) => d.name === n)) ?? (none ? null : list[0]?.name ?? null);
+      for (const d of list) select.append(Object.assign(el('option'), { value: d.name, textContent: d.name, selected: d.name === p[key] }));
+      select.addEventListener('change', () => set(key, select.value || null));
+      rows.push(field(label, select));
+    };
+    const csvs = datasets.filter((d) => /\.csv$/i.test(d.path));
+    if (def.uses?.includes('streets')) choose('Streets', 'streets', datasets, null, ['roads', 'walkways', 'streets']);
+    if (def.uses?.includes('buildings')) choose('Buildings', 'buildings', datasets, null, ['buildings', 'buildings_2d']);
+    if (def.data === 'targets' || def.data === 'raster' || def.data === 'links') choose(def.data === 'links' ? 'Stars' : 'Targets', 'targets', datasets, 'None', []);
+    if (def.data === 'activity' || def.data === 'audio') choose('Activity', 'activity', csvs, 'Ambient (no file)', ['activity']);
+    if (def.data === 'activity' && p.activity) rows.push(field('Plays through in', slider(p.cycle_s ?? 24, 6, 120, 1, ' s', (v) => set('cycle_s', v))));
+    if (def.data === 'flows') choose('Flows', 'flows', csvs, 'Made up from weights', ['flows']);
+    if (def.data === 'links') choose('Links', 'links', csvs, 'By category', ['links']);
+    rows.push(field('Colours', segmented([['each', 'One each'], ['category', 'By category']] as const, p.colours === 'category' ? 'category' : 'each', (v) => set('colours', v), 'Colours')));
+
+    // Knobs: the shared speed and glow, then the motion's own.
+    for (const knob of [...SHARED_KNOBS, ...def.knobs]) rows.push(field(knob.label, slider(p[knob.key] ?? knob.value, knob.min, knob.max, knob.step, knob.unit ?? '', (v) => set(knob.key, v))));
+    return rows;
+  };
+
   const motionTab = (): HTMLElement[] => {
     const nodes: HTMLElement[] = [el('p', 'lb-lead', 'Motion is the strongest thing on the table: keep one kind in focus, and make any second one quieter.')];
     for (const look of recipe.look!) {
@@ -872,12 +938,14 @@ export function builderSection(host: BuilderHost, manifest: LayerManifest, butto
               drawWindow();
             }, 'Features')), windowRow);
             rows.push(el('p', 'lb-hint', 'No date is written on the map. Showing the current date on the controller comes with the controller legend (#76).'));
+          } else if (name === 'place') {
+            rows.push(...placeRows(p, set, () => draw()));
           }
           sub.replaceChildren(...rows);
         };
         const on = toggle(Boolean(existing), (checked) => {
           recipe.motion = recipe.motion!.filter((m) => !(m.on === look.id && m.block === name));
-          if (checked) recipe.motion!.push({ id: `${look.id}-${name}`, block: name, on: look.id, props: { ...(MOTION_DEFAULTS as Record<string, object>)[name] } });
+          if (checked) recipe.motion!.push({ id: `${look.id}-${name}`, block: name, on: look.id, props: name === 'place' ? { motion: 'ripples' } : { ...(MOTION_DEFAULTS as Record<string, object>)[name] } });
           save();
           draw();
         }, title);

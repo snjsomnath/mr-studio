@@ -9,9 +9,9 @@ import type { Point, TableFrame } from './geo.ts';
 export type Pen = Pick<
   CanvasRenderingContext2D,
   | 'beginPath' | 'moveTo' | 'lineTo' | 'closePath' | 'arc' | 'rect' | 'fill' | 'stroke' | 'clip' | 'save' | 'restore'
-  | 'fillText' | 'setLineDash' | 'createRadialGradient' | 'clearRect'
+  | 'fillText' | 'setLineDash' | 'createRadialGradient' | 'clearRect' | 'drawImage' | 'quadraticCurveTo' | 'fillRect'
   | 'fillStyle' | 'strokeStyle' | 'lineWidth' | 'lineCap' | 'lineJoin' | 'globalAlpha' | 'globalCompositeOperation'
-  | 'font' | 'textAlign' | 'textBaseline' | 'shadowColor' | 'shadowBlur' | 'shadowOffsetX' | 'shadowOffsetY' | 'lineDashOffset'
+  | 'font' | 'textAlign' | 'textBaseline' | 'shadowColor' | 'shadowBlur' | 'shadowOffsetX' | 'shadowOffsetY' | 'lineDashOffset' | 'imageSmoothingEnabled'
 >;
 
 export interface View {
