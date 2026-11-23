@@ -489,6 +489,72 @@ export class Editor {
     this.render();
   }
 
+  /**
+   * Adds from the ribbon, but asks first when the same kind is already in the place it would go (#183):
+   * the table's layers, the map at rest, or the open layer's items.
+   */
+  private async addChecked(manifest: LayerManifest, parent?: string): Promise<void> {
+    const ambient = isAmbient(manifest);
+    const same = this.instances().find(
+      (i) => i.manifest.id === manifest.id && (i.state.parent ?? undefined) === parent && (parent !== undefined || isAmbient(i.manifest) === ambient),
+    );
+    if (!same) return this.add(manifest, parent);
+    const name = layerButton(same.id, same.manifest, same.state, defaultSideOf(this.store, same.id));
+    const parentState = parent ? this.store.state.layers[parent] : undefined;
+    const parentManifest = parentState && this.store.manifest(parentState.layer);
+    const where = parent && parentState && parentManifest ? `in ${layerButton(parent, parentManifest, parentState).name}` : ambient ? `on the map at rest` : `on this table`;
+    const detail = parent
+      ? `It already comes on with that layer. A second one draws on top of the first.`
+      : ambient
+        ? `A second one draws on top of the first.`
+        : `It already has a button on the ${name.side} of the controller${name.name !== manifest.name ? `, named ${name.name}` : ''}. A second one gets a button of its own.`;
+    const choice = await this.ask(`${manifest.name} is already ${where}`, detail, [
+      { id: 'show', label: 'Show the one I have' },
+      { id: 'add', label: 'Add another', primary: true },
+    ]);
+    if (choice === 'add') return this.add(manifest, parent);
+    if (choice === 'show') {
+      if (parent) this.go({ kind: 'layer', id: parent }, same.id);
+      else if (ambient) {
+        this.homeItem = same.id;
+        this.go({ kind: 'home' });
+      } else this.go({ kind: 'layer', id: same.id });
+    }
+  }
+
+  /** A small question in a dialog. Resolves to the chosen id, or null when it is closed with Escape or ×. */
+  private ask(title: string, text: string, choices: { id: string; label: string; primary?: boolean }[]): Promise<string | null> {
+    return new Promise((resolve) => {
+      const dialog = el('dialog', 'im-dialog ed-ask');
+      dialog.ariaLabel = title;
+      const head = el('header', 'im-dialog-head');
+      const close = el('button', 'ed-icon-button', '\u00d7');
+      close.type = 'button';
+      close.ariaLabel = 'Cancel';
+      close.addEventListener('click', () => dialog.close());
+      head.append(el('h2', undefined, title), close);
+      const actions = el('div', 'ed-ask-actions');
+      let chosen: string | null = null;
+      for (const choice of choices) {
+        const node = button(choice.primary ? 'ed-button is-primary' : 'ed-button', choice.label);
+        node.dataset.choice = choice.id;
+        node.addEventListener('click', () => {
+          chosen = choice.id;
+          dialog.close();
+        });
+        actions.append(node);
+      }
+      dialog.append(head, el('p', 'wz-lead', text), actions);
+      dialog.addEventListener('close', () => {
+        dialog.remove();
+        resolve(chosen);
+      });
+      this.shell.append(dialog);
+      dialog.showModal();
+      actions.querySelector<HTMLElement>('.is-primary')?.focus();
+    });
+  }
+
   /** What the layer builder and the palette need from the editor. */
   private builderHost(): BuilderHost {
     return {
@@ -728,7 +794,7 @@ export class Editor {
     return columns;
   }
 
-  private insertTool(manifest: LayerManifest, large: boolean, parent?: string): HTMLElement {
+  private insertTool(manifest: LayerManifest, large: boolean, parent?: string): HTMLButtonElement {
     const tool = button(large ? 'ed-tool is-large' : 'ed-tool', manifest.name, manifest.icon, large ? 20 : 16);
     tool.dataset.layer = manifest.id;
     const data = this.store.state.site.data ?? {};
@@ -739,7 +805,7 @@ export class Editor {
     // A layer that needs data takes the author to the place to bring it in, rather than doing nothing.
     tool.disabled = missing.length > 0 && !source;
     tool.addEventListener('click', () => {
-      if (missing.length === 0) void this.add(manifest, parent);
+      if (missing.length === 0) void this.addChecked(manifest, parent);
       else if (source) this.bringIn(source);
     });
     return tool;
@@ -756,66 +822,81 @@ export class Editor {
     const target = this.target();
     const selected = instances.find((i) => i.id === target);
 
-    // One ribbon whose tools follow what is being edited: what can be added here, then what can be done to the selection.
+    // The ribbon is the same whatever is selected (#182): the same groups in the same places, and a
+    // tool that does not apply right now is greyed out with the reason, never taken away.
     const { kind } = this.context;
     const ambient = this.store.manifests.filter((m) => isAmbient(m) && isOffered(m));
     const layers = this.store.manifests.filter((m) => !isAmbient(m) && isOffered(m));
-    if (kind === 'home' && ambient.length > 0) groups.push(this.group(AT_REST, ...this.column(ambient.map((m) => this.insertTool(m, false)))));
-    // With a layer open, the map's ambient life goes into that layer: it shows while the layer is open.
-    const opened = kind === 'layer' ? this.store.state.layers[(this.context as { id: string }).id] : undefined;
+    // Map life goes into the layer that is open, or onto the map at rest; the group says which.
+    const openId = kind === 'layer' ? (this.context as { id: string }).id : undefined;
+    const opened = openId ? this.store.state.layers[openId] : undefined;
+    const openedManifest = opened && this.store.manifest(opened.layer);
     // A slideshow's items are its slides, added from its Slides list.
-    const sequence = Boolean(opened && this.store.manifest(opened.layer)?.sequence);
-    if (kind === 'layer' && ambient.length > 0 && !sequence) {
-      const layer = (this.context as { id: string }).id;
-      groups.push(this.group('Add to this layer', ...this.column(ambient.map((m) => this.insertTool(m, false, layer)))));
+    const sequence = Boolean(openedManifest?.sequence);
+    const openName = openId && openedManifest && opened ? layerButton(openId, openedManifest, opened).name : undefined;
+    if (ambient.length > 0) {
+      const into = openId && !sequence ? openId : undefined;
+      const tools = ambient.map((m) => {
+        const tool = this.insertTool(m, false, into);
+        if (sequence) {
+          tool.disabled = true;
+          tool.title = 'A slideshow shows its slides, not map life. Pick At rest or another layer to add this.';
+        }
+        return tool;
+      });
+      const name = sequence ? 'Map life' : `Map life: adds to ${openName ?? AT_REST}`;
+      const group = this.group(name, ...this.column(tools));
+      group.title = openName && !sequence ? `These go into ${openName} and show while it is open` : `These go onto the map at rest, under every layer`;
+      groups.push(group);
     }
-    if (kind !== 'phone' && layers.length > 0) groups.push(this.group('Add a layer', ...layers.map((m) => this.insertTool(m, true))));
+    if (layers.length > 0) groups.push(this.group('Add a layer', ...layers.map((m) => this.insertTool(m, true))));
     // Make a layer of your own from the table's data, and the colours every layer shares (#38, #93).
-    if (kind !== 'phone') {
-      const custom = button('ed-tool is-large', 'Custom layer', 'brush', 20);
-      custom.title = 'Make a layer from your own data: choose the data, then style it, move it and save it as a button';
-      custom.addEventListener('click', () => newCustomLayer(this.builderHost(), this.shell));
-      const palette = button('ed-tool is-large', 'Palette', 'palette', 20);
-      palette.title = 'The colours every custom layer uses. Change one and the whole table follows.';
-      palette.addEventListener('click', () => paletteDialog(this.builderHost(), this.shell));
-      groups.push(this.group('Make your own', custom, palette));
-    }
+    const custom = button('ed-tool is-large', 'Custom layer', 'brush', 20);
+    custom.title = 'Make a layer from your own data: choose the data, then style it, move it and save it as a button';
+    custom.addEventListener('click', () => newCustomLayer(this.builderHost(), this.shell));
+    const palette = button('ed-tool is-large', 'Palette', 'palette', 20);
+    palette.title = 'The colours every custom layer uses. Change one and the whole table follows.';
+    palette.addEventListener('click', () => paletteDialog(this.builderHost(), this.shell));
+    groups.push(this.group('Make your own', custom, palette));
 
-    if (selected && (kind === 'home' || kind === 'layer')) {
-      const parent = selected.state.parent ?? null;
-      const onMap = isAmbient(selected.manifest) || parent !== null;
-      const tools: HTMLElement[] = [];
-      if (onMap && !(parent && sequence)) {
-        const on = parent ? this.comesOn(selected.id) : selected.state.active;
-        const show = button('ed-tool', on ? 'Hide' : 'Show', on ? 'eye-off' : 'eye');
-        show.title = parent ? 'Whether this comes on when its layer opens' : 'Show or hide this when no layer is open';
-        show.addEventListener('click', () => {
-          if (parent) this.itemOn.set(selected.id, !on);
-          void this.send('scene.set', { layer: selected.id, active: !on });
-        });
-        tools.push(show);
-      }
-      // Forward and back step over the neighbours in the same list: home screen items among themselves,
+    // The selection: always the same four tools, greyed out when nothing is selected or a tool does not apply.
+    {
+      const live = selected && (kind === 'home' || kind === 'layer') ? selected : undefined;
+      const parent = live?.state.parent ?? null;
+      const onMap = live ? isAmbient(live.manifest) || parent !== null : false;
+      const none = 'Select something in the list on the left first';
+      const canShow = Boolean(live && onMap && !(parent && sequence));
+      const on = live && canShow ? (parent ? this.comesOn(live.id) : live.state.active) : false;
+      const show = button('ed-tool', on ? 'Hide' : 'Show', on ? 'eye-off' : 'eye');
+      show.disabled = !canShow;
+      show.title = !live ? none : !canShow ? 'A layer shows when its button is pressed on the controller' : parent ? 'Whether this comes on when its layer opens' : 'Show or hide this when no layer is open';
+      show.addEventListener('click', () => {
+        if (!live) return;
+        if (parent) this.itemOn.set(live.id, !on);
+        void this.send('scene.set', { layer: live.id, active: !on });
+      });
+      // Up and down step over the neighbours in the same list: map life among itself,
       // layers among themselves, and a layer's items among themselves.
       const list = this.siblings(parent);
-      const peers = instances.filter((i) => (i.state.parent ?? null) === parent && (parent !== null || isAmbient(i.manifest) === onMap)).map((i) => i.id);
-      const place = peers.indexOf(selected.id);
+      const peers = live ? instances.filter((i) => (i.state.parent ?? null) === parent && (parent !== null || isAmbient(i.manifest) === onMap)).map((i) => i.id) : [];
+      const place = live ? peers.indexOf(live.id) : -1;
       // `peers` runs top first, so the one in front is the one before.
       const front = place > 0 ? peers[place - 1] : undefined;
-      const behind = peers[place + 1];
-      const up = button('ed-tool', onMap ? 'Bring forward' : 'Move up', 'up');
-      up.title = onMap ? 'Draw this above the next one' : 'Move this button up on the controller';
+      const behind = place >= 0 ? peers[place + 1] : undefined;
+      const up = button('ed-tool', 'Move up', 'up');
+      up.title = !live ? none : onMap ? 'Draw this above the next one on the map' : 'Move this button up on the controller';
       up.disabled = !front;
-      up.addEventListener('click', () => front && void this.send('scene.move', { layer: selected.id, index: list.indexOf(front) }));
-      const down = button('ed-tool', onMap ? 'Send back' : 'Move down', 'down');
-      down.title = onMap ? 'Draw this below the previous one' : 'Move this button down on the controller';
+      up.addEventListener('click', () => live && front && void this.send('scene.move', { layer: live.id, index: list.indexOf(front) }));
+      const down = button('ed-tool', 'Move down', 'down');
+      down.title = !live ? none : onMap ? 'Draw this below the previous one on the map' : 'Move this button down on the controller';
       down.disabled = !behind;
-      down.addEventListener('click', () => behind && void this.send('scene.move', { layer: selected.id, index: list.indexOf(behind) }));
+      down.addEventListener('click', () => live && behind && void this.send('scene.move', { layer: live.id, index: list.indexOf(behind) }));
       const remove = button('ed-tool', 'Remove', 'trash');
-      remove.title = 'Take this out of the table';
-      remove.addEventListener('click', () => void this.send('scene.remove', { layer: selected.id }));
-      tools.push(up, down, remove);
-      groups.push(this.group(layerButton(selected.id, selected.manifest, selected.state).name, ...this.column(tools)));
+      remove.title = live ? 'Take this out of the table' : none;
+      remove.disabled = !live;
+      remove.addEventListener('click', () => live && void this.send('scene.remove', { layer: live.id }));
+      const name = live ? `Selected: ${layerButton(live.id, live.manifest, live.state).name}` : 'Nothing selected';
+      groups.push(this.group(name, ...this.column([show, up, down]), ...this.column([remove])));
     }
 
     const open = (label: string, iconName: string, role: 'table' | 'tv' | 'dev', tip: string) => {
