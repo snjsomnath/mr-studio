@@ -22,6 +22,7 @@ import type { ResolvedPalette } from './palette.ts';
 import { TIMELINE_DEFAULTS, arrowMarks, fillArrow, fillIcon, timeReveal, traceShape } from './marks.ts';
 import type { Arrows, PointShape, TimeReveal, TimelineProps } from './marks.ts';
 import { placeData } from './places.ts';
+import { pickScheme, schemeColour, schemeOrder } from './schemes.ts';
 import { SOUND_DEFAULTS, SoundStage, soundPath } from './audio.ts';
 import type { SoundProps } from './audio.ts';
 import type { PlaceExtras, PlaceTables } from './places.ts';
@@ -38,6 +39,8 @@ export interface PaintBy {
   kind: 'category' | 'number';
   /** For categories: the colour of each value, when the author picked one. */
   colors?: Record<string, string>;
+  /** For categories: a scheme of their own (`epc`), `palette` for the table's category colours, or `auto` (the default): a scheme when every value belongs to one (#207). */
+  scheme?: string;
   /** For numbers: the ramp's name in the palette. Default `sun`. */
   ramp?: string;
   /** For numbers: a smooth ramp, or classes of equal width, equal count, or natural breaks (Jenks). Default `continuous`. */
@@ -332,13 +335,17 @@ export function paintScale(paint: Paint | undefined, rows: readonly Props[], pal
     return { colour: () => fixed, legend: [] };
   }
   if (paint.kind === 'category') {
-    const values = columnCategories(rows, paint.by);
+    const found = columnCategories(rows, paint.by);
+    // A scheme of the category's own (energy classes) beats the palette, and sets the order (#207).
+    const scheme = pickScheme(paint.scheme, found);
+    const values = scheme ? schemeOrder(scheme, found) : found;
     const shown = values.length > MAX_CATEGORIES + 1 ? values.slice(0, MAX_CATEGORIES) : values;
     const slots = categorySlots(palette);
+    const chosen = (value: string, i: number) => paint.colors?.[value] ?? (scheme ? schemeColour(scheme, value) : null) ?? slots[i % slots.length]!;
     const map = new Map<string, Rgba>();
-    shown.forEach((value, i) => map.set(value, paletteColour(paint.colors?.[value] ?? slots[i % slots.length], palette)));
+    shown.forEach((value, i) => map.set(value, paletteColour(chosen(value, i), palette)));
     const others = paletteColour(paint.colors?.[OTHERS] ?? '@neutral', palette);
-    const legend = shown.map((value) => ({ label: value, color: paletteHex(paint.colors?.[value] ?? slots[shown.indexOf(value) % slots.length], palette) }));
+    const legend = shown.map((value, i) => ({ label: value, color: paletteHex(chosen(value, i), palette) }));
     if (shown.length < values.length) legend.push({ label: OTHERS, color: paletteHex(paint.colors?.[OTHERS] ?? '@neutral', palette) });
     return { colour: (p) => map.get(String(p?.[paint.by])) ?? others, legend };
   }

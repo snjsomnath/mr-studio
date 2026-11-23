@@ -203,6 +203,9 @@ How common profiles turn into a design, with the 2.0 layer that shows it.
 - **C8** **One palette** (#93). Layers and the styler refer to palette slots (accent, warm, cool, neutral,
   categorical 1–8, named ramps), not raw hex. The same palette drives the table, the controller legend and
   `tv.theme`, so changing it recolours everything. The picker warns when a colour is too dark to project.
+  Exception: a category that already has colours everyone knows keeps them (#207). Energy classes are green A
+  to red G, in that order, whatever the palette; a layer can turn that off ("The table palette") or pick a
+  colour per value, and picked colours win. Schemes live in `@mrstudio/sdk` `schemes.ts`.
 - **C9** **Colour by data on import** (#94): categorical (a slot per value, "others" grouped) or numeric
   (sequential or diverging; equal, quantile, natural breaks or custom classes). It becomes the dataset's
   default style and legend. Built: Add data's "Show it on the table" step colours an own dataset by a
