@@ -207,6 +207,17 @@ interface ImportReport {
 }
 ```
 
+### A 3D model
+
+```
+POST /api/data/model?lon=&lat=&unit_m=[&bearing_deg=][&base_m=][&up=y][&mirror=1][&extrude=0]   saves or places the model, re-bakes, sends `site.changed`
+POST /api/data/model?remove=1                                                                takes it out of the scene
+```
+
+The body is an STL, OBJ or GLB file (its name in `X-Filename`, which gives the format), saved as `data/model.<ext>`; with an empty body the model the site already has is placed again. The query is `scene.mesh` without its path (see site.md, "Buildings from a mesh"): `lon`/`lat` is the anchor. `extrude=0` sets `scene.buildings.extrude: false` (the model gives the buildings their shape), `extrude=1` raises the footprints again; without it the setting stays. Removing the model raises the footprints again. The answer is `{ site, triangles, coverage }` (coverage: the share of the table the model covers), or 422 with `{ error }` when the file can't be read; nothing is written then. The site's `mesh` in `site.changed` carries the placement and `extrude`, so the editor can open it again.
+
+The editor reads the file itself to show it from above while the author sets units, axes, turn, scale and place (`packages/runtime/src/editor/model-import.ts`); the host only checks and saves.
+
 ### From OpenStreetMap
 
 Add `source=osm` and send an empty body: the host asks OpenStreetMap (Overpass) for the table's extent plus a tenth on each side and reads the answer as a GeoJSON file, so the report, options and saving are the same as for a file. It is never done unless the author asks.

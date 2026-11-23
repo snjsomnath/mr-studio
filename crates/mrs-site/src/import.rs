@@ -524,7 +524,7 @@ pub fn apply(site: &Site, mut prepared: Prepared) -> Result<(Site, Report), Site
     }
 }
 
-fn write_atomically(path: &PathBuf, text: &str) -> Result<(), SiteError> {
+pub(crate) fn write_atomically(path: &PathBuf, text: &str) -> Result<(), SiteError> {
     let temporary = path.with_extension("json.tmp");
     let io = |source| SiteError::Io { path: path.clone(), source };
     std::fs::write(&temporary, text).map_err(io)?;
