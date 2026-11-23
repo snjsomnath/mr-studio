@@ -300,6 +300,24 @@ body[data-role='edit'] {
   color: #22388f;
 }
 
+/* A layer's item sits indented under its layer in the tree. */
+.ed-row.is-item {
+  position: relative;
+  padding-left: 28px;
+  min-height: 24px;
+}
+
+.ed-row.is-item::before {
+  content: '';
+  position: absolute;
+  left: 14px;
+  top: 0;
+  bottom: 50%;
+  width: 8px;
+  border-left: 1px solid var(--ed-line, #d5d9e0);
+  border-bottom: 1px solid var(--ed-line, #d5d9e0);
+}
+
 .ed-row.is-off .ed-row-label,
 .ed-row.is-off .ed-row-icon {
   color: #8a909c;

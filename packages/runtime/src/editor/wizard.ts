@@ -123,7 +123,8 @@ export class Wizard {
     for (const id of [...store.state.scene].reverse()) {
       const state = store.state.layers[id];
       const manifest = state && store.manifest(state.layer);
-      if (manifest) list.push({ id, manifest, state });
+      // The guide works with the table's own layers; a layer's items are edited in the editor.
+      if (manifest && !state.parent) list.push({ id, manifest, state });
     }
     return list;
   }

@@ -459,9 +459,17 @@ async function main() {
     assert.equal(savedLayers()[5].id, 'trees-2');
     await editor.locator('.ed-ribbon').getByText('Remove').click();
     await editor.locator('.ed-inspector .ed-row[data-layer="trees-2"]').waitFor({ state: 'detached' });
-    // Inside a layer the ambient tools are not offered.
+    // Inside a layer the ambient tools add into that layer: an item that shows only while it is open (#69).
     await editor.locator('.ed-tree .ed-row[data-layer="mobility"]').click();
-    assert.equal(await editor.locator('.ed-ribbon .ed-tool[data-layer="trees"]').count(), 0);
+    await editor.locator('.ed-ribbon .ed-tool[data-layer="trees"]').click();
+    await editor.locator('.ed-tree .ed-row.is-item[data-layer="trees-2"][aria-current="true"]').waitFor();
+    await editor.locator('.ed-inspector [data-items="mobility"] .ed-row[data-layer="trees-2"]').waitFor();
+    assert.deepEqual(savedLayers().find((l) => l.id === 'mobility').items, [{ use: 'trees', id: 'trees-2' }]);
+    assert.ok(!savedLayers().some((l) => l.id === 'trees-2'), 'an item is not a layer of the scene');
+    await editor.getByLabel('Comes on with the layer').waitFor();
+    await editor.locator('.ed-ribbon').getByText('Remove').click();
+    await editor.locator('.ed-tree .ed-row[data-layer="trees-2"]').waitFor({ state: 'detached' });
+    assert.equal(savedLayers().find((l) => l.id === 'mobility').items, undefined);
     await editor.locator('.ed-ribbon .ed-tool[data-layer="sunlight"]').waitFor();
     await editor.locator('.ed-inspector').getByText('Show trips').waitFor();
     // The eye beside a setting takes that control off the controller, and it is saved. The editor keeps it.
@@ -489,6 +497,11 @@ async function main() {
     assert.deepEqual(savedLayers().find((l) => l.use === 'mobility').button, named);
     // The controller goes by the same words.
     await tv.locator('.controller-right .layer-button', { hasText: 'Getting here' }).waitFor();
+    // A group puts the button under the group's name on its rail.
+    await editor.getByLabel('Group').fill('Movement');
+    await editor.getByLabel('Group').blur();
+    await tv.locator('.controller-right .rail-group', { hasText: 'Movement' }).waitFor();
+    assert.equal(savedLayers().find((l) => l.use === 'mobility').button.group, 'Movement');
     // Opening a layer closes the one that was open, except a layer made to run alongside.
     await press('Sunlight', true);
     // The editor shows the live controller beside the map, and follows a press on it.
@@ -511,6 +524,9 @@ async function main() {
     await editor.getByLabel('Name').blur();
     await editor.getByLabel('Description').fill('');
     await editor.getByLabel('Description').blur();
+    await editor.getByLabel('Group').fill('');
+    await editor.getByLabel('Group').blur();
+    await tv.locator('.rail-group').first().waitFor({ state: 'detached' });
     await editor.locator('.ed-tree .ed-row[data-layer="mobility"] .ed-row-label', { hasText: 'Mobility' }).waitFor();
     await tv.locator('.controller-right .layer-button', { hasText: 'Mobility' }).waitFor();
     assert.deepEqual(savedLayers().map((l) => l.id ?? l.use), ['basemap', 'sunlight', 'building-lights', 'cars', 'transit', 'trees', 'slideshow', 'sketch', 'coolpaths', 'mobility', 'wind']);

@@ -46,6 +46,10 @@ export class Editor {
   private context: Context = { kind: 'home' };
   /** The home screen item whose settings are open. */
   private homeItem: string | null = null;
+  /** The item of the open layer whose settings are open. */
+  private layerItem: string | null = null;
+  /** Whether each item comes on with its layer, as last seen while its layer was open or as set here. */
+  private itemOn = new Map<string, boolean>();
   /** A layer this editor just added, to select once it is in the scene. */
   private added: string | null = null;
   private sync = new Map<string, (state: LayerState) => void>();
@@ -230,7 +234,8 @@ export class Editor {
     for (const other of store.state.scene) {
       const state = store.state.layers[other];
       const manifest = state && store.manifest(state.layer);
-      if (!state || !manifest || isAmbient(manifest)) continue;
+      // Items come and go with their layer; the host switches them.
+      if (!state || !manifest || isAmbient(manifest) || state.parent) continue;
       const wanted = other === id || (state.active && id !== null && Boolean(alongside || manifest.alongside));
       if (state.active !== wanted) void connection.request('layer.activate', { layer: other, active: wanted }).catch(() => {});
     }
@@ -258,7 +263,7 @@ export class Editor {
   private follow(id: string, state: LayerState): void {
     if (this.wizard || (this.context.kind !== 'home' && this.context.kind !== 'layer')) return;
     const manifest = this.store.manifest(state.layer);
-    if (!manifest || isAmbient(manifest)) return;
+    if (!manifest || isAmbient(manifest) || state.parent) return;
     const mine = this.context.kind === 'layer' && this.context.id === id;
     if (state.active && !mine && !manifest.alongside) this.context = { kind: 'layer', id };
     else if (!state.active && mine) this.context = { kind: 'home' };
@@ -284,13 +289,20 @@ export class Editor {
     this.saved.classList.toggle('is-error', Boolean(problem));
   }
 
-  private async add(manifest: LayerManifest): Promise<void> {
+  /** Adds a layer to the table, or with `parent` into that layer as an item that comes and goes with it. */
+  private async add(manifest: LayerManifest, parent?: string): Promise<void> {
+    if (parent) {
+      const result = await this.send('scene.add', { use: manifest.id, parent });
+      if (result?.id) this.added = result.id;
+      this.render();
+      return;
+    }
     // Ambient life belongs to the home screen, which lies under the layers: it goes above the last ambient layer, not on top.
     let index: number | undefined;
     if (isAmbient(manifest)) {
-      const scene = this.store.state.scene;
+      const tops = this.siblings(null);
       let last = -1;
-      scene.forEach((id, at) => {
+      tops.forEach((id, at) => {
         const other = this.store.manifest(this.store.state.layers[id]?.layer ?? '');
         if (other && isAmbient(other)) last = at;
       });
@@ -300,7 +312,7 @@ export class Editor {
     let button: { side: 'left' | 'right' } | undefined;
     if (!isAmbient(manifest)) {
       const count = { left: 0, right: 0 };
-      for (const { id, manifest: other, state } of this.instances()) if (!isAmbient(other)) count[layerButton(id, other, state, defaultSideOf(this.store, id)).side]++;
+      for (const { id, manifest: other, state } of this.instances()) if (!isAmbient(other) && !state.parent) count[layerButton(id, other, state, defaultSideOf(this.store, id)).side]++;
       button = { side: count.right < count.left ? 'right' : 'left' };
     }
     const result = await this.send('scene.add', { use: manifest.id, index, button });
@@ -323,14 +335,21 @@ export class Editor {
     return list;
   }
 
+  /** The ids in one list of the scene, bottom first: the table's own layers (`null`), or one layer's items. */
+  private siblings(parent: string | null): string[] {
+    const { scene, layers } = this.store.state;
+    return scene.filter((id) => (layers[id]?.parent ?? null) === parent);
+  }
+
   /** The instance the ribbon's tools act on. */
   private target(): string | null {
-    if (this.context.kind === 'layer') return this.context.id;
+    if (this.context.kind === 'layer') return this.layerItem ?? this.context.id;
     if (this.context.kind === 'home') return this.homeItem;
     return null;
   }
 
-  private go(context: Context): void {
+  private go(context: Context, item: string | null = null): void {
+    if (context.kind !== 'layer' || this.context.kind !== 'layer' || this.context.id !== context.id || item !== null) this.layerItem = item;
     this.context = context;
     // Choosing a layer shows it on the map, the way pressing its button does; the home screen is the map at rest.
     if (context.kind === 'layer') this.show(context.id);
@@ -454,14 +473,23 @@ export class Editor {
     const added = instances.find((i) => i.id === this.added);
     if (added) {
       this.added = null;
-      this.context = isAmbient(added.manifest) ? { kind: 'home' } : { kind: 'layer', id: added.id };
-      if (isAmbient(added.manifest)) this.homeItem = added.id;
-      // A new layer opens on the map too, as if its button had been pressed.
-      else this.show(added.id);
+      if (added.state.parent) {
+        // A new item opens with its layer, selected.
+        this.context = { kind: 'layer', id: added.state.parent };
+        this.layerItem = added.id;
+        this.show(added.state.parent);
+      } else {
+        this.context = isAmbient(added.manifest) ? { kind: 'home' } : { kind: 'layer', id: added.id };
+        if (isAmbient(added.manifest)) this.homeItem = added.id;
+        // A new layer opens on the map too, as if its button had been pressed.
+        else this.show(added.id);
+      }
     }
     // The edited layer may have been removed, here or by someone else.
     if (this.context.kind === 'layer' && !instances.some((i) => i.id === (this.context as { id: string }).id)) this.context = { kind: 'home' };
     if (this.homeItem && !instances.some((i) => i.id === this.homeItem)) this.homeItem = null;
+    const open = this.context.kind === 'layer' ? this.context.id : null;
+    if (this.layerItem && !instances.some((i) => i.id === this.layerItem && i.state.parent === open)) this.layerItem = null;
     this.sync.clear();
     this.renderRibbon(instances);
     this.renderTree(instances);
@@ -472,7 +500,8 @@ export class Editor {
   }
 
   /** A table that is not ready yet says what it still lacks, one thing at a time, and offers the step of the guide that gives it. */
-  private renderNext(instances: { id: string; manifest: LayerManifest; state: LayerState }[]): void {
+  private renderNext(all: { id: string; manifest: LayerManifest; state: LayerState }[]): void {
+    const instances = all.filter((i) => !i.state.parent);
     const data = this.store.state.site.data ?? {};
     let lack: { text: string; action: string; step: number; target?: string } | null = null;
     if (!('buildings' in data)) lack = { text: 'This table has no buildings yet, so the map is empty.', action: 'Bring in your place', step: 1 };
@@ -506,7 +535,7 @@ export class Editor {
     return columns;
   }
 
-  private insertTool(manifest: LayerManifest, large: boolean): HTMLElement {
+  private insertTool(manifest: LayerManifest, large: boolean, parent?: string): HTMLElement {
     const tool = button(large ? 'ed-tool is-large' : 'ed-tool', manifest.name, manifest.icon, large ? 20 : 16);
     tool.dataset.layer = manifest.id;
     const data = this.store.state.site.data ?? {};
@@ -517,7 +546,7 @@ export class Editor {
     // A layer that needs data takes the author to the place to bring it in, rather than doing nothing.
     tool.disabled = missing.length > 0 && !source;
     tool.addEventListener('click', () => {
-      if (missing.length === 0) void this.add(manifest);
+      if (missing.length === 0) void this.add(manifest, parent);
       else if (source) this.bringIn(source);
     });
     return tool;
@@ -533,20 +562,31 @@ export class Editor {
     const ambient = this.store.manifests.filter((m) => isAmbient(m) && isOffered(m));
     const layers = this.store.manifests.filter((m) => !isAmbient(m) && isOffered(m));
     if (kind === 'home' && ambient.length > 0) groups.push(this.group(AT_REST, ...this.column(ambient.map((m) => this.insertTool(m, false)))));
+    // With a layer open, the map's ambient life goes into that layer: it shows while the layer is open.
+    if (kind === 'layer' && ambient.length > 0) {
+      const layer = (this.context as { id: string }).id;
+      groups.push(this.group('Add to this layer', ...this.column(ambient.map((m) => this.insertTool(m, false, layer)))));
+    }
     if (kind !== 'phone' && layers.length > 0) groups.push(this.group('Add a layer', ...layers.map((m) => this.insertTool(m, true))));
 
     if (selected && (kind === 'home' || kind === 'layer')) {
-      const onMap = isAmbient(selected.manifest);
+      const parent = selected.state.parent ?? null;
+      const onMap = isAmbient(selected.manifest) || parent !== null;
       const tools: HTMLElement[] = [];
       if (onMap) {
-        const show = button('ed-tool', selected.state.active ? 'Hide' : 'Show', selected.state.active ? 'eye-off' : 'eye');
-        show.title = 'Show or hide this when no layer is open';
-        show.addEventListener('click', () => void this.send('scene.set', { layer: selected.id, active: !selected.state.active }));
+        const on = parent ? this.comesOn(selected.id) : selected.state.active;
+        const show = button('ed-tool', on ? 'Hide' : 'Show', on ? 'eye-off' : 'eye');
+        show.title = parent ? 'Whether this comes on when its layer opens' : 'Show or hide this when no layer is open';
+        show.addEventListener('click', () => {
+          if (parent) this.itemOn.set(selected.id, !on);
+          void this.send('scene.set', { layer: selected.id, active: !on });
+        });
         tools.push(show);
       }
-      // Forward and back step over the neighbours of the same kind: home screen items among themselves, layers among themselves.
-      const scene = this.store.state.scene;
-      const peers = instances.filter((i) => isAmbient(i.manifest) === onMap).map((i) => i.id);
+      // Forward and back step over the neighbours in the same list: home screen items among themselves,
+      // layers among themselves, and a layer's items among themselves.
+      const list = this.siblings(parent);
+      const peers = instances.filter((i) => (i.state.parent ?? null) === parent && (parent !== null || isAmbient(i.manifest) === onMap)).map((i) => i.id);
       const place = peers.indexOf(selected.id);
       // `peers` runs top first, so the one in front is the one before.
       const front = place > 0 ? peers[place - 1] : undefined;
@@ -554,11 +594,11 @@ export class Editor {
       const up = button('ed-tool', onMap ? 'Bring forward' : 'Move up', 'up');
       up.title = onMap ? 'Draw this above the next one' : 'Move this button up on the controller';
       up.disabled = !front;
-      up.addEventListener('click', () => front && void this.send('scene.move', { layer: selected.id, index: scene.indexOf(front) }));
+      up.addEventListener('click', () => front && void this.send('scene.move', { layer: selected.id, index: list.indexOf(front) }));
       const down = button('ed-tool', onMap ? 'Send back' : 'Move down', 'down');
       down.title = onMap ? 'Draw this below the previous one' : 'Move this button down on the controller';
       down.disabled = !behind;
-      down.addEventListener('click', () => behind && void this.send('scene.move', { layer: selected.id, index: scene.indexOf(behind) }));
+      down.addEventListener('click', () => behind && void this.send('scene.move', { layer: selected.id, index: list.indexOf(behind) }));
       const remove = button('ed-tool', 'Remove', 'trash');
       remove.title = 'Take this out of the table';
       remove.addEventListener('click', () => void this.send('scene.remove', { layer: selected.id }));
@@ -602,8 +642,8 @@ export class Editor {
 
   private renderTree(instances: { id: string; manifest: LayerManifest; state: LayerState }[]): void {
     const { context } = this;
-    const ambient = instances.filter((i) => isAmbient(i.manifest));
-    const layers = instances.filter((i) => !isAmbient(i.manifest));
+    const ambient = instances.filter((i) => isAmbient(i.manifest) && !i.state.parent);
+    const layers = instances.filter((i) => !isAmbient(i.manifest) && !i.state.parent);
     const nodes: HTMLElement[] = [];
 
     nodes.push(el('h2', 'ed-tree-title', 'Map'));
@@ -636,6 +676,22 @@ export class Editor {
         side.textContent = button.side === 'right' ? 'Right' : 'Left';
       });
       nodes.push(row);
+      // Its items, indented under it: they show only while it is open.
+      for (const item of instances.filter((i) => i.state.parent === id)) {
+        const child = this.treeRow(item.manifest.name, '', item.manifest.icon, context.kind === 'layer' && context.id === id && this.layerItem === item.id, () =>
+          this.go({ kind: 'layer', id }, item.id),
+        );
+        child.classList.add('is-item');
+        child.dataset.layer = item.id;
+        child.title = `${item.manifest.name}: shows while ${as.name} is open`;
+        child.classList.toggle('is-off', !this.comesOn(item.id));
+        const previous = this.sync.get(item.id);
+        this.sync.set(item.id, (next) => {
+          previous?.(next);
+          child.classList.toggle('is-off', !this.comesOn(item.id));
+        });
+        nodes.push(child);
+      }
     }
 
     nodes.push(el('h2', 'ed-tree-title', 'Around the table'));
@@ -697,6 +753,18 @@ export class Editor {
     Object.assign(description, { rows: 2, maxLength: 200, placeholder: manifest.description ?? 'One line about what this layer shows' });
     description.addEventListener('change', () => set({ description: description.value.trim() || null }));
 
+    // The group of buttons it sits in on its rail. The groups already in use are offered.
+    const group = el('input');
+    const known = el('datalist');
+    known.id = `ed-groups-${id}`;
+    Object.assign(group, { type: 'text', maxLength: 40, placeholder: 'None, for example Simulations' });
+    group.setAttribute('list', known.id);
+    group.addEventListener('focus', () => {
+      const names = new Set(Object.values(this.store.state.layers).flatMap((l) => (l.button?.group ? [l.button.group] : [])));
+      known.replaceChildren(...[...names].sort().map((n) => Object.assign(el('option'), { value: n })));
+    });
+    group.addEventListener('change', () => set({ group: group.value.trim() || null }));
+
     const side = el('div', 'segmented');
     side.setAttribute('role', 'radiogroup');
     side.setAttribute('aria-label', 'Side of the controller');
@@ -729,7 +797,7 @@ export class Editor {
     row.append(el('span', undefined, 'Side'), side);
     const iconRow = el('div', 'ed-field is-tall');
     iconRow.append(el('span', undefined, 'Icon'), icons);
-    section.append(el('h3', undefined, 'Button on the controller'), field('Name', name), field('Description', description), row, iconRow);
+    section.append(el('h3', undefined, 'Button on the controller'), field('Name', name), field('Description', description), field('Group', group), known, row, iconRow);
 
     const previous = this.sync.get(id);
     this.sync.set(id, (state) => {
@@ -737,6 +805,7 @@ export class Editor {
       const button = layerButton(id, manifest, state, defaultSideOf(this.store, id));
       if (document.activeElement !== name) name.value = state.button?.name ?? '';
       if (document.activeElement !== description) description.value = state.button?.description ?? '';
+      if (document.activeElement !== group) group.value = state.button?.group ?? '';
       for (const [value, option] of sides) option.setAttribute('aria-checked', String(value === button.side));
       for (const [value, option] of choices) option.setAttribute('aria-checked', String(value === button.icon));
       // The headings that show the layer's name follow it.
@@ -748,16 +817,20 @@ export class Editor {
   }
 
   /** The settings form of one scene instance, generated from its manifest. */
-  private settings(id: string, manifest: LayerManifest): HTMLElement {
+  private settings(id: string, manifest: LayerManifest, title = 'Settings'): HTMLElement {
     const section = el('section', 'ed-section');
+    const item = Boolean(this.store.state.layers[id]?.parent);
     const shown = el('div', 'control control-toggle');
-    const label = el('label', 'control-label', 'Shown on the map');
-    // A layer is opened by its button, so only the map's own things have this switch.
-    shown.hidden = !isAmbient(manifest);
+    const label = el('label', 'control-label', item ? 'Comes on with the layer' : 'Shown on the map');
+    // A layer is opened by its button, so only the map's own things and a layer's items have this switch.
+    shown.hidden = !isAmbient(manifest) && !item;
     const power = el('input');
     Object.assign(power, { type: 'checkbox', className: 'switch', id: `shown-${id}` });
     label.htmlFor = power.id;
-    power.addEventListener('change', () => void this.send('scene.set', { layer: id, active: power.checked }));
+    power.addEventListener('change', () => {
+      if (item) this.itemOn.set(id, power.checked);
+      void this.send('scene.set', { layer: id, active: power.checked });
+    });
     shown.append(label, power);
 
     const send = paramSender(this.connection, id, { method: 'scene.set' });
@@ -769,7 +842,7 @@ export class Editor {
       ),
     );
     // Each control has an eye: closed, the controller and phones leave the control out. It stays here.
-    const offered = !isAmbient(manifest);
+    const offered = !isAmbient(manifest) && !item;
     const rows = widgets.map((w) => {
       const row = el('div', 'ed-setting');
       const eye = el('button', 'ed-eye');
@@ -788,13 +861,13 @@ export class Editor {
     });
     const controls = el('div', 'controls');
     controls.append(shown, ...rows.map((r) => r.row));
-    section.append(el('h3', undefined, 'Settings'), controls);
+    section.append(el('h3', undefined, title), controls);
     if (offered && rows.length > 0) section.append(el('p', 'ed-empty', 'The eye beside a setting decides whether visitors get it on the controller and their phones.'));
 
     const previous = this.sync.get(id);
     this.sync.set(id, (state) => {
       previous?.(state);
-      power.checked = state.active;
+      power.checked = item ? this.comesOn(id) : state.active;
       for (const { row, eye, w } of rows) {
         row.hidden = !isVisible(w.control, state.params);
         w.sync(state.params[w.control.id]);
@@ -805,6 +878,40 @@ export class Editor {
         row.classList.toggle('is-hidden', hidden);
       }
     });
+    return section;
+  }
+
+  /** Whether an item is set to come on when its layer opens, as saved in the table. */
+  private comesOn(id: string): boolean {
+    const state = this.store.state.layers[id];
+    if (!state?.parent) return Boolean(state?.active);
+    // While the layer is open the item's state says it; while it is closed, the saved choice is not sent, so ask the layer.
+    const layer = this.store.state.layers[state.parent];
+    if (layer?.active) this.itemOn.set(id, state.active);
+    return this.itemOn.get(id) ?? true;
+  }
+
+  /** What a layer holds: the items that show while it is open, with a way to add more. */
+  private itemsSection(layer: string, name: string, instances: { id: string; manifest: LayerManifest; state: LayerState }[]): HTMLElement {
+    const section = el('section', 'ed-section');
+    section.dataset.items = layer;
+    section.append(el('h3', undefined, 'In this layer'));
+    const items = instances.filter((i) => i.state.parent === layer);
+    if (items.length === 0) section.append(el('p', 'ed-empty', `Nothing yet. Public transport, traffic, trees or lights added from "Add to this layer" above show only while ${name} is open.`));
+    for (const { id, manifest } of items) {
+      const row = this.treeRow(manifest.name, '', manifest.icon, this.layerItem === id, () => {
+        this.layerItem = this.layerItem === id ? null : id;
+        this.render();
+      });
+      row.dataset.layer = id;
+      row.classList.toggle('is-off', !this.comesOn(id));
+      const previous = this.sync.get(id);
+      this.sync.set(id, (next) => {
+        previous?.(next);
+        row.classList.toggle('is-off', !this.comesOn(id));
+      });
+      section.append(row);
+    }
     return section;
   }
 
@@ -819,7 +926,7 @@ export class Editor {
 
     if (context.kind === 'home') {
       nodes.push(head('moon', AT_REST, 'When no layer is open'));
-      const ambient = instances.filter((i) => isAmbient(i.manifest));
+      const ambient = instances.filter((i) => isAmbient(i.manifest) && !i.state.parent);
       const section = el('section', 'ed-section');
       section.append(el('h3', undefined, 'On the map'));
       if (ambient.length === 0) section.append(el('p', 'ed-empty', 'Nothing yet. Add a base map and some ambient life from the toolbar above.'));
@@ -842,6 +949,9 @@ export class Editor {
       nodes.push(head(as.icon, as.name, 'Layer'));
       nodes.push(this.buttonSection(layer.id, layer.manifest));
       nodes.push(this.settings(layer.id, layer.manifest));
+      nodes.push(this.itemsSection(layer.id, as.name, instances));
+      const open = instances.find((i) => i.id === this.layerItem && i.state.parent === layer.id);
+      if (open) nodes.push(this.settings(open.id, open.manifest, open.manifest.name));
     } else {
       nodes.push(head(context.kind === 'controller' ? 'tv' : 'phone', context.kind === 'controller' ? 'Controller' : 'Phones', ''));
       nodes.push(
