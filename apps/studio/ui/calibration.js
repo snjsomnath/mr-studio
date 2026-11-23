@@ -6,7 +6,7 @@
       const state = await invoke('calibration_state');
       const saved = state.projector;
       let status;
-      if (!state.site) status = 'Nothing is running. Start a site on the Setup tab first.';
+      if (!state.site) status = 'Nothing is running. Open a table from Home first.';
       else if (!saved) status = `${state.site} is not calibrated. The table is shown flat.`;
       else {
         const when = saved.saved_at ? ` on ${new Date(saved.saved_at).toLocaleString()}` : '';
@@ -17,7 +17,7 @@
       $('calibration-start').textContent = saved ? 'Calibrate again on the table' : 'Start calibrating on the table';
       $('calibration-start').disabled = $('calibration-stop').disabled = !state.table;
       $('calibration-clear').disabled = !saved;
-      $('calibration-hint').textContent = state.site && !state.table ? 'No window is showing the table. Give a display the table on the Setup tab and start.' : '';
+      $('calibration-hint').textContent = state.site && !state.table ? 'No window is showing the table. Give a display the table under Screens, then Present from the editor.' : '';
     } catch (e) {
       showError(String(e));
     }

@@ -31,6 +31,7 @@ fn main() {
         "stop_presenting",
         "presenting_state",
         "save_displays",
+        "save_settings",
         "open_home",
         "open_settings",
         "open_view",
