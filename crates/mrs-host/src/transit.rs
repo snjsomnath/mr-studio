@@ -74,7 +74,9 @@ pub fn vasttrafik(body: &Value) -> Value {
                 "ferry" | "boat" => "ferry",
                 _ => "bus",
             };
-            let mut vehicle = json!({ "id": id, "lon": lon, "lat": lat, "mode": mode, "line": line["name"].as_str().or(line["shortName"].as_str()).unwrap_or("") });
+            // The short name is what Västtrafik prints on the vehicle ("6", "X4"); the name can be long ("Rosa Express").
+            let label = ["shortName", "designation", "name"].iter().find_map(|k| line[*k].as_str().filter(|s| !s.is_empty())).unwrap_or("");
+            let mut vehicle = json!({ "id": id, "lon": lon, "lat": lat, "mode": mode, "line": label });
             if let Some(colour) = line["backgroundColor"].as_str().filter(|c| c.len() == 7 && c.starts_with('#')) {
                 vehicle["colour"] = colour.into();
             }
@@ -96,7 +98,7 @@ mod tests {
         let body = json!([
             { "detailsReference": "abc", "latitude": 57.70, "longitude": 11.97,
               "line": { "name": "6", "backgroundColor": "#ffd700", "foregroundColor": "#000000", "transportMode": "tram" } },
-            { "latitude": 57.71, "longitude": 11.95, "line": { "name": "Älvsnabben", "transportMode": "ferry" } },
+            { "latitude": 57.71, "longitude": 11.95, "line": { "name": "Älvsnabben", "shortName": "286", "transportMode": "ferry" } },
             { "detailsReference": "no position" }
         ]);
         let vehicles = vasttrafik(&body)["vehicles"].as_array().unwrap().clone();
@@ -106,5 +108,6 @@ mod tests {
             json!({ "id": "abc", "lon": 11.97, "lat": 57.70, "mode": "tram", "line": "6", "colour": "#ffd700", "textColour": "#000000" })
         );
         assert_eq!(vehicles[1]["mode"], "ferry");
+        assert_eq!(vehicles[1]["line"], "286");
     }
 }
