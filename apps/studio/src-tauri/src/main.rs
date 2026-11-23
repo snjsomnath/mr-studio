@@ -136,6 +136,7 @@ fn main() -> anyhow::Result<()> {
             launcher_state,
             add_site,
             remove_site,
+            delete_table,
             identify,
             start,
             open_site,
@@ -804,6 +805,42 @@ async fn add_site(app: AppHandle, shell: State<'_, Shell>) -> Result<Option<Site
 fn remove_site(shell: State<'_, Shell>, path: PathBuf) -> Result<(), String> {
     let mut settings = shell.settings();
     settings.sites.retain(|p| p != &path && p.canonicalize().ok().as_ref() != Some(&path));
+    settings.write(&shell.settings_path()).map_err(text)
+}
+
+/// Deletes a table from Home (#184): its folder goes to the Trash (Mac, Linux) or the Recycle
+/// Bin (Windows), where it can be got back. Home asks first. Refused for an example that comes
+/// with the app, for a folder without site.json, and for the table that is open in the editor
+/// or on the displays. A table that was left but still runs in the background is stopped first.
+#[tauri::command]
+async fn delete_table(app: AppHandle, shell: State<'_, Shell>, path: PathBuf) -> Result<(), String> {
+    let path = sites::canonical(path);
+    if !path.join("site.json").is_file() {
+        return Err(format!("{} is not a table folder (it has no site.json), so it was not deleted.", path.display()));
+    }
+    if path.starts_with(sites::canonical(shell.resources.clone())) {
+        return Err("The examples come with MR Studio and cannot be deleted.".into());
+    }
+    let running = shell.running.lock().unwrap().as_ref().is_some_and(|r| r.site == path);
+    if running {
+        if app.get_webview_window(EDITOR).is_some() || is_presenting(&app) {
+            return Err("This table is open. Close it first (File > Close table), then delete it.".into());
+        }
+        // Left, but its host still holds the folder: stop it, so the files are free to move.
+        let mut host = shell.host.lock().await;
+        *shell.running.lock().unwrap() = None;
+        if let Some(old) = host.take() {
+            old.stop(Duration::from_secs(2)).await;
+        }
+    }
+    sites::move_to_trash(&path).map_err(text)?;
+    tracing::info!("moved {} to the trash", path.display());
+    let mut settings = shell.settings();
+    settings.sites.retain(|p| sites::canonical(p.clone()) != path);
+    settings.recent.retain(|p| sites::canonical(p.clone()) != path);
+    if settings.site.as_ref().is_some_and(|p| sites::canonical(p.clone()) == path) {
+        settings.site = None;
+    }
     settings.write(&shell.settings_path()).map_err(text)
 }
 
