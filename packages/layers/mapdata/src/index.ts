@@ -1,4 +1,4 @@
-import { categorySlots, defineLayer, geojsonLines, geojsonPoints, geojsonPolygons, readSiteData, tablePalette, tableSpace, traceLine, tracePolygon, withAlpha } from '@mrstudio/sdk';
+import { categorySlots, defineLayer, pickScheme, schemeColour, schemeOrder, geojsonLines, geojsonPoints, geojsonPolygons, readSiteData, tablePalette, tableSpace, traceLine, tracePolygon, withAlpha } from '@mrstudio/sdk';
 import type { LayerManifest, Placed, XY } from '@mrstudio/sdk';
 
 import manifest from '../layer.json';
@@ -8,6 +8,10 @@ interface Params {
   dataset: string;
   colorBy: string;
   color: string;
+  /** `auto` (a scheme when every value belongs to one, such as energy classes), `palette`, or a scheme's id (#207). */
+  scheme?: string;
+  /** The colour of each category, set by the author; beats the scheme and the palette. */
+  colors?: Record<string, string>;
   reveal: boolean;
   width: number;
   opacity: number;
@@ -26,9 +30,16 @@ export default defineLayer<Params>({
     let pulse = 0;
     let dirty = true;
 
+    let scheme: ReturnType<typeof pickScheme> = null;
     const category = (properties: Record<string, unknown>) => (names.length ? names.indexOf(String(properties?.[ctx.params.colorBy])) : -1);
-    // Categories take the table palette's eight category colours first (#93), then the layer's own extras.
-    const colour = (n: number) => (n >= 0 ? categoryColours(categorySlots(tablePalette(ctx.site)))[n % PALETTE.length]! : ctx.params.color);
+    // A category's own colours come first: the author's, then a scheme such as energy classes
+    // (#207). Otherwise categories take the table palette's eight category colours (#93), then the layer's own extras.
+    const colour = (n: number) => {
+      if (n < 0) return ctx.params.color;
+      const name = names[n]!;
+      const own = ctx.params.colors && typeof ctx.params.colors === 'object' ? ctx.params.colors[name] : undefined;
+      return own ?? (scheme ? schemeColour(scheme, name) : null) ?? categoryColours(categorySlots(tablePalette(ctx.site)))[n % PALETTE.length]!;
+    };
 
     async function load() {
       const geojson = ctx.params.dataset ? await readSiteData(ctx.site, ctx.params.dataset) : null;
@@ -40,6 +51,9 @@ export default defineLayer<Params>({
 
     function describe() {
       names = categories([...shapes.polygons, ...shapes.lines, ...shapes.points], ctx.params.colorBy);
+      scheme = pickScheme(ctx.params.scheme, names);
+      // Classes in their own order (A to G), so Next reveals the scale, not the file's order.
+      if (scheme) names = schemeOrder(scheme, names);
       // The controller's Next walks the categories, and a slideshow moves on after the last.
       ctx.steps.define(ctx.params.reveal ? names.length : 0, names);
       ctx.publish({
@@ -109,7 +123,7 @@ export default defineLayer<Params>({
       update(changed) {
         if (changed.includes('opacity')) canvas.setOpacity(ctx.params.opacity);
         if (changed.includes('dataset')) void load();
-        else if (changed.some((key) => key === 'colorBy' || key === 'reveal' || key === 'color')) describe();
+        else if (changed.some((key) => key === 'colorBy' || key === 'reveal' || key === 'color' || key === 'scheme' || key === 'colors')) describe();
         dirty = true;
       },
       step() {
