@@ -42,7 +42,7 @@ On the controller screen a layer of category `analysis` or `media` is a button, 
 
 Control types: `range`, `select`, `toggle`, `date`, `color`, `text`, `action` (a button, no stored value).
 Every control has `id`, `type`, `label` and `default`. `phone: true` lets phone participants change it.
-`visibleWhen: { "mode": "day" }` hides a control unless another control has that value.
+`visibleWhen: { "mode": "day" }` hides a control unless another control has that value; a list, `{ "style": ["light", "dark"] }`, means any of them.
 
 The controls are the single source of truth for a layer's params:
 

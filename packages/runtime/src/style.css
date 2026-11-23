@@ -320,6 +320,12 @@ body[data-role='tv'] .action-button[aria-pressed='true'] .layer-button-icon {
   margin-bottom: 1.5rem;
 }
 
+.about-map {
+  margin-top: 1.75rem;
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
 .about-logo {
   height: 4.5rem;
   max-width: 16rem;
