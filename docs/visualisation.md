@@ -111,9 +111,11 @@ Updates for 2.0:
   phone are personal until applied. Hand tracking is out of 2.0; table touch and tangibles are future inputs.
 - **Explanation has a home.** The presentation contract gives each layer a legend and an info strip
   (present.md §2), so the abstraction level maps directly to how much goes there.
-- **Sound is a channel we do not use yet.** The UDCDM finding stands: sound is most valuable for invisible,
-  dynamic phenomena (wind, water), and ecological sounds (wind sounds like wind) need no learning. 2.0 has no
-  audio; it is a candidate for later, not a default.
+- **Sound is a channel, used where the data is sound.** The UDCDM finding stands: sound is most valuable for invisible,
+  dynamic phenomena (wind, water, birds), and ecological sounds (wind sounds like wind) need no learning. Since #150
+  points can carry a sound file: the table plays it and rings follow its calls, so what is heard is also seen. The
+  rings follow an analysis of the file, never the speakers, so a muted table and the editor show the same thing.
+  Sound stays opt-in per layer, never a default.
 
 ### 3.3 Two dimensions the table adds
 

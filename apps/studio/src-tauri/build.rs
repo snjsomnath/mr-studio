@@ -22,6 +22,7 @@ fn main() {
         "launcher_state",
         "add_site",
         "remove_site",
+        "delete_table",
         "identify",
         "start",
         "open_site",

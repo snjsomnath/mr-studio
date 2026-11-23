@@ -196,7 +196,7 @@ A site sets style tokens in `site.json`:
 | Every colour token, including the six data colours | The grid, margins and gaps |
 | Typefaces: `font.text`, `font.number` | The type scale and the minimum text size |
 | Corners: `shape.radius` (none, small, medium, large) | Panel sizes and their budgets |
-| Panel treatment: `panel.style` (filled, outlined, plain) | Text limits and the screen budget |
+| Panel treatment: `panel.style` (filled, outlined, glass, plain); layer buttons: `rail.look` (tiles, bare); chrome: `density` (comfortable, minimal) | Text limits and the screen budget |
 | Where the rail sits, and its own hand-made pages | What a widget costs |
 
 The style tokens have rules of their own, because a theme can make a screen unreadable as surely as a crowded layout can:

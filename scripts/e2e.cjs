@@ -55,6 +55,15 @@ async function main() {
   const site = fs.mkdtempSync(path.join(os.tmpdir(), 'mrs-e2e-'));
   fs.cpSync(path.join(root, 'sites/sample'), site, { recursive: true });
   const savedLayers = () => JSON.parse(fs.readFileSync(path.join(site, 'site.json'), 'utf8')).layers;
+  // The slideshow shows two layers of the scene, one after the other (#43).
+  {
+    const json = JSON.parse(fs.readFileSync(path.join(site, 'site.json'), 'utf8'));
+    json.layers.find((l) => (l.id ?? l.use) === 'slideshow').steps = { mode: 'manual', loop: true, sequence: [
+      { layer: 'sunlight', params: { hour: 9 }, title: 'Morning shadows', description: 'The square at nine on midsummer morning.', source: 'Sun position: NOAA' },
+      { layer: 'trees', title: 'Street trees' },
+    ] };
+    fs.writeFileSync(path.join(site, 'site.json'), JSON.stringify(json, null, 2));
+  }
   const host = spawn(
     path.join(root, 'target/debug/mrstudio'),
     ['dev', '--site', site, '--web', 'packages/runtime/dist', '--port', String(port), '--backend', 'cpu', '--public-url', base],
@@ -376,6 +385,31 @@ async function main() {
     assert.notDeepEqual(await table.screenshot(), start, 'travellers should move with the time');
     await press('Mobility', false);
 
+    // A slideshow of layers (#43, #76): ◀ ▶, play and the info strip on the controller, and the arrow keys.
+    await press('Slideshow', true);
+    const strip = tv.locator('.layer-open[data-layer="slideshow"] .step-strip');
+    await strip.locator('.step-count', { hasText: '1 of 2' }).waitFor();
+    await strip.locator('.step-title', { hasText: 'Morning shadows' }).waitFor();
+    await strip.locator('.step-source', { hasText: 'NOAA' }).waitFor();
+    // The layer on show is part of the slideshow: its button is marked, and it is not a second open layer.
+    await tv.locator('.layer-button.is-shown', { hasText: 'Sunlight' }).waitFor();
+    assert.equal(await tv.locator('.layer-open:not([hidden])', { hasText: 'Shadows at any moment' }).count(), 0);
+    if (shots) await tv.screenshot({ path: path.join(shots, 'tv-slideshow.png') });
+    await strip.getByRole('button', { name: 'Next step' }).click();
+    await strip.locator('.step-count', { hasText: '2 of 2' }).waitFor();
+    await strip.locator('.step-title', { hasText: 'Street trees' }).waitFor();
+    await tv.keyboard.press('ArrowLeft');
+    await strip.locator('.step-count', { hasText: '1 of 2' }).waitFor();
+    await tv.keyboard.press('ArrowRight');
+    await strip.locator('.step-count', { hasText: '2 of 2' }).waitFor();
+    // It loops: Next on the last step is the first again.
+    await tv.keyboard.press('ArrowRight');
+    await strip.locator('.step-count', { hasText: '1 of 2' }).waitFor();
+    // Opening the layer on show from its own button takes it out of the slideshow, which closes.
+    await tv.locator('.layer-button.is-shown', { hasText: 'Sunlight' }).click();
+    await tv.locator('.layer-button[aria-pressed="true"]', { hasText: 'Sunlight' }).waitFor();
+    await tv.locator('.layer-button[aria-pressed="false"]', { hasText: 'Slideshow' }).waitFor();
+
 
     // Wind: the simulation streams while it settles, tracers move, and a faster wind only rescales.
     await press('Sunlight', false);
@@ -466,7 +500,8 @@ async function main() {
 
     // The eye switch and the remove button.
     await compose.getByLabel('Show Slideshow').check();
-    await tv.getByText('What the buildings are used for').waitFor();
+    // The slideshow here is made of layers (its steps), so the controller shows its first step.
+    await tv.locator('.step-title', { hasText: 'Morning shadows' }).waitFor();
     if (shots) await compose.screenshot({ path: path.join(shots, 'compose.png') });
     await compose.getByLabel('Show Slideshow').uncheck();
     await compose.getByLabel('Remove Traffic (cars-2)').click();
@@ -483,6 +518,9 @@ async function main() {
     // The home screen holds the base map and the ambient life, and offers more of it.
     assert.deepEqual(await editor.locator('.ed-inspector .ed-row .ed-row-label').allTextContents(), ['Trees', 'Public transport', 'Traffic', 'Building lights', 'Base map']);
     await editor.locator('.ed-ribbon .ed-tool[data-layer="trees"]').click();
+    // Trees are already at rest, so the editor asks before adding a second one (#183).
+    await editor.locator('.ed-ask h2', { hasText: 'Trees is already on the map at rest' }).waitFor();
+    await editor.locator('.ed-ask [data-choice="add"]').click();
     await editor.locator('.ed-inspector .ed-row[data-layer="trees-2"][aria-current="true"]').waitFor();
     // Ambient life joins the home screen, under the layers.
     assert.equal(savedLayers()[6].id, 'trees-2');
@@ -491,11 +529,13 @@ async function main() {
     await editor.waitForFunction(() => document.querySelector('.ed-inspector .ed-row[data-layer="trees-2"]')?.classList.contains('is-off'));
     assert.equal(savedLayers()[6].active, false);
     // The ribbon's tools act on what is selected.
-    await editor.locator('.ed-ribbon').getByText('Send back').click();
+    await editor.locator('.ed-ribbon').getByText('Move down').click();
     await editor.waitForFunction(() => document.querySelectorAll('.ed-inspector .ed-row[data-layer]')[1]?.getAttribute('data-layer') === 'trees-2');
     assert.equal(savedLayers()[5].id, 'trees-2');
     await editor.locator('.ed-ribbon').getByText('Remove').click();
     await editor.locator('.ed-inspector .ed-row[data-layer="trees-2"]').waitFor({ state: 'detached' });
+    // The ribbon stays the same whatever is selected (#182): nothing selected greys the selection tools out.
+    assert.equal(await editor.locator('.ed-ribbon').getByRole('button', { name: 'Remove', exact: true }).isDisabled(), true);
     // Inside a layer the ambient tools add into that layer: an item that shows only while it is open (#69).
     await editor.locator('.ed-tree .ed-row[data-layer="mobility"]').click();
     await editor.locator('.ed-ribbon .ed-tool[data-layer="trees"]').click();
@@ -655,6 +695,15 @@ async function main() {
     await guide.locator('.wz-theme[aria-checked="true"]', { hasText: 'Ocean' }).waitFor();
     await live.locator('html[style*="--bg: #06121f"]').waitFor();
     assert.equal(savedTv().theme_name, 'ocean');
+    // A look is more than colours (#126): Minimal dark takes the tiles and panels away on the controller.
+    await guide.locator('.wz-theme', { hasText: 'Minimal dark' }).click();
+    await live.locator('body[data-density="minimal"][data-rail-look="bare"][data-surface="plain"]').waitFor();
+    assert.equal(savedTv().theme_name, 'minimal-dark');
+    if (shots) await guide.screenshot({ path: path.join(shots, 'guide-minimal-dark.png') });
+    await guide.locator('.wz-theme', { hasText: 'Glass' }).click();
+    await live.locator('body[data-surface="glass"][data-density="comfortable"]').waitFor();
+    await guide.locator('.wz-theme', { hasText: 'Ocean' }).click();
+    await live.locator('html[style*="--bg: #06121f"]').waitFor();
     await guide.locator('.wz-look [role="radio"]', { hasText: 'Icons and names' }).click();
     await live.locator('body[data-rail-style="labelled"]').waitFor();
     assert.equal(savedTv().rail_style, 'labelled');
@@ -698,7 +747,7 @@ async function main() {
     // What was read is drawn against the table's outline before anything is written.
     await dialog.locator('.im-map .im-map-table').waitFor();
     assert.equal(await dialog.locator('.im-map-data circle').count(), 6);
-    await dialog.getByRole('button', { name: 'Add to the table' }).click();
+    await dialog.getByRole('button', { name: /^Add (to|and show on) the table$/ }).click();
     await adder.waitForFunction(() => !document.querySelector('dialog.im-dialog'));
     await adder.locator('.ed-tree .ed-row[data-context="home"]').waitFor();
     assert.equal(JSON.parse(fs.readFileSync(path.join(site, 'site.json'), 'utf8')).data.places, 'data/places.geojson');

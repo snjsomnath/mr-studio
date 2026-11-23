@@ -107,6 +107,8 @@ Every prop needs a `label`, because an editor will draw a form from the schema.
 
 ## Style tokens
 
-`color.background`, `color.panel`, `color.line`, `color.text`, `color.muted`, `color.accent`, `color.accent-ink`, `color.good`, `color.warn`, `color.bad`, `data.1` to `data.6`, `font.text`, `font.number`, `shape.radius` (`none`, `small`, `medium`, `large`), `panel.style` (`filled`, `outlined`, `plain`).
+`color.background`, `color.panel`, `color.line`, `color.text`, `color.muted`, `color.accent`, `color.accent-ink`, `color.good`, `color.warn`, `color.bad`, `data.1` to `data.6`, `font.text`, `font.number`, `shape.radius` (`none`, `small`, `medium`, `large`), `panel.style` (`filled`, `outlined`, `glass`, `plain`), `rail.look` (`tiles`, `bare`: how the controller draws layer buttons) and `density` (`comfortable`, `minimal`: minimal drops surfaces, dividers and group labels).
+
+The built-in themes in `THEMES` are looks, not only colours: Midnight (default), Light, Minimal dark, Minimal light and Glass, then the colour variants Ocean, Forest, Warm sand, High contrast and Paper. The controller copies `panel.style`, `rail.look` and `density` to `data-surface`, `data-rail-look` and `data-density` on its body.
 
 Colours are `#rrggbb`. Fonts are family names. Anything else is refused. Contrast floors: text 7:1, secondary text 4.5:1, accent, status and data colours 3:1, against both the background and the panel; `color.accent-ink` 4.5:1 against the accent.

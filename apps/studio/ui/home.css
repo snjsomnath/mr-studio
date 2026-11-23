@@ -64,9 +64,20 @@ h2 { margin: 26px 0 10px; font-size: 14px; }
 .tables .tag { position: absolute; top: 8px; left: 8px; padding: 1px 7px; border-radius: 10px; background: rgba(255, 255, 255, 0.9); color: var(--text); font-size: 11px; font-weight: 600; }
 .tables li.broken button.open { opacity: 0.6; }
 .tables li.broken small { color: var(--danger); white-space: normal; }
-.tables button.remove { all: unset; position: absolute; top: 8px; right: 8px; padding: 1px 8px; border-radius: 10px; background: rgba(255, 255, 255, 0.9); color: var(--muted); font-size: 11px; opacity: 0; }
-.tables li:hover button.remove, .tables button.remove:focus-visible { opacity: 1; }
+.tables .card-tools { position: absolute; top: 8px; right: 8px; display: flex; gap: 6px; opacity: 0; }
+.tables li:hover .card-tools, .tables .card-tools:focus-within { opacity: 1; }
+.tables button.remove { all: unset; padding: 2px 9px; border-radius: 10px; background: rgba(255, 255, 255, 0.92); color: var(--text); font-size: 11px; font-weight: 500; }
 .tables button.remove:hover { color: var(--danger); }
+.tables button.remove:focus-visible { outline: 2px solid var(--accent); }
+
+/* Asking before a table is deleted (#184). */
+dialog.confirm { width: 440px; max-width: calc(100vw - 32px); padding: 20px 22px 18px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); color: var(--text); box-shadow: 0 18px 48px rgba(16, 24, 40, 0.22); }
+dialog.confirm::backdrop { background: rgba(16, 24, 40, 0.3); }
+dialog.confirm h2 { margin: 0 0 8px; font-size: 16px; }
+dialog.confirm p { margin: 0 0 10px; color: var(--muted); }
+dialog.confirm .folder-path { padding: 6px 8px; border-radius: 6px; background: #f1f3f7; color: var(--text); font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; word-break: break-all; user-select: text; -webkit-user-select: text; }
+dialog.confirm .actions { margin-top: 16px; }
+.actions button.danger { background: var(--danger); border-color: var(--danger); color: #fff; font-weight: 600; }
 
 .back { all: unset; color: var(--accent); margin-bottom: 10px; display: inline-block; padding: 2px 4px; border-radius: 4px; }
 .stepper { display: flex; gap: 6px; list-style: none; padding: 0; margin: 14px 0 6px; counter-reset: step; color: var(--muted); }

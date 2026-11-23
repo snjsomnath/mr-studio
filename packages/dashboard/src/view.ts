@@ -9,7 +9,7 @@ import { pack } from './pack.ts';
 import type { Page } from './pack.ts';
 import type { WidgetDefinition, WidgetHandle, WidgetRegistry } from './registry.ts';
 import { GRID, ROTATE_S } from './rules.ts';
-import { themeVariables } from './theme.ts';
+import { LOOK_ATTRIBUTES, themeVariables } from './theme.ts';
 import { panelReads, validatePanel } from './validate.ts';
 import type { Issue } from './validate.ts';
 import { h, setText } from './widgets/dom.ts';
@@ -128,7 +128,7 @@ export class DashboardView {
   setTheme(theme: Record<string, unknown> | null | undefined): void {
     const { variables, issues } = themeVariables(theme);
     for (const [name, value] of Object.entries(variables)) {
-      if (name === '--mrs-panel-style') this.root.dataset.panelStyle = value;
+      if (LOOK_ATTRIBUTES[name]) this.root.dataset[LOOK_ATTRIBUTES[name]!] = value;
       else this.root.style.setProperty(name, value);
     }
     this.themeIssues = issues;

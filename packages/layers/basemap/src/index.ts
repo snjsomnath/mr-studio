@@ -1,4 +1,4 @@
-import { defineLayer, geojsonLines, geojsonPolygons, readSiteData, tableSpace, traceLine, tracePolygon, withAlpha } from '@mrstudio/sdk';
+import { defineLayer, geojsonLines, geojsonPolygons, readSiteData, STRAY_REACH, tableReach, tableSpace, traceLine, tracePolygon, withAlpha } from '@mrstudio/sdk';
 import type { LayerManifest } from '@mrstudio/sdk';
 
 import manifest from '../layer.json';
@@ -15,8 +15,27 @@ interface Params {
   opacity: number;
 }
 
-/** Street width in metres when the data does not give one. */
+/** Street width in metres when the data gives neither a width nor an OpenStreetMap class. */
 const STREET_WIDTH_M = 10;
+
+/**
+ * Widths in metres by OpenStreetMap `highway` class, roughly as on the ground, so footways and
+ * paths read as thin lines beside the roads rather than as broad bands (#215).
+ */
+const CLASS_WIDTH_M: Record<string, number> = {
+  motorway: 22, trunk: 18, primary: 14, secondary: 12, tertiary: 10,
+  motorway_link: 8, trunk_link: 8, primary_link: 8, secondary_link: 7, tertiary_link: 7,
+  unclassified: 7, residential: 7, living_street: 6, service: 4.5, busway: 6,
+  pedestrian: 5, track: 3, cycleway: 2.5, footway: 2, path: 1.8, steps: 2, bridleway: 2,
+};
+
+/** A street's drawn width: its own, else its class's, else the default. */
+function streetWidth(properties: Record<string, unknown>): number {
+  const own = Number(properties.width);
+  if (own > 0) return own;
+  const byClass = typeof properties.highway === 'string' ? CLASS_WIDTH_M[properties.highway] : undefined;
+  return byClass ?? STREET_WIDTH_M;
+}
 
 export default defineLayer<Params>({
   manifest: manifest as LayerManifest,
@@ -40,8 +59,9 @@ export default defineLayer<Params>({
         g.strokeStyle = p.streetColor;
         g.lineCap = 'round';
         g.lineJoin = 'round';
-        for (const road of roads) {
-          g.lineWidth = Number(road.properties.width) || STREET_WIDTH_M;
+        // Narrowest first, so the main roads lie over the paths that meet them.
+        for (const road of [...roads].sort((a, b) => streetWidth(a.properties) - streetWidth(b.properties))) {
+          g.lineWidth = streetWidth(road.properties);
           g.beginPath();
           traceLine(g, road.geometry);
           g.stroke();
@@ -108,11 +128,15 @@ export default defineLayer<Params>({
       drawOwn(...shapes);
       // Without streets of its own, the table would show buildings floating on bare ground: a dark map from
       // OpenStreetMap goes under them (#146), and the table's own buildings are drawn on top.
-      if (style === 'dark' && loaded && shapes[1].length === 0) {
+      // Streets that lie mostly beside the table, such as ones left from another place, count as none (#180).
+      const stray = shapes[1].length > 0 && tableReach(shapes[1].map((l) => l.geometry), space) < STRAY_REACH;
+      if (style === 'dark' && loaded && (shapes[1].length === 0 || stray)) {
         canvas.commit();
-        const why = shapes[0].length
-          ? 'This table has no streets of its own yet, so a dark map from OpenStreetMap shows them under your buildings.'
-          : 'This table has no streets or buildings of its own yet, so a dark map from OpenStreetMap stands in for them.';
+        const why = stray
+          ? "This table's streets reach only a corner of it, so a dark map from OpenStreetMap shows the streets here. Bring in streets for this place in Your place."
+          : shapes[0].length
+            ? 'This table has no streets of its own yet, so a dark map from OpenStreetMap shows them under your buildings.'
+            : 'This table has no streets or buildings of its own yet, so a dark map from OpenStreetMap stands in for them.';
         void drawTiles('darkmap', why, () => drawOwn(shapes[0], [], false));
         return;
       }

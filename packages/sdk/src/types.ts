@@ -81,6 +81,8 @@ export interface LayerManifest {
   category?: LayerCategory;
   /** The layer stays open when another layer's button is pressed on the controller. Default false. */
   alongside?: boolean;
+  /** While the layer is open, the map at rest (its `base` and `ambient` layers) is turned off on the table, and comes back when it closes. The slideshow does this (#205). Default false. */
+  hidesAtRest?: boolean;
   requires?: { kernels?: string[]; data?: string[]; services?: string[] };
   controls?: Control[];
   tools?: ToolSpec[];

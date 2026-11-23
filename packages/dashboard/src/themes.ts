@@ -15,8 +15,7 @@ export interface BuiltInTheme {
 
 const defaults = (): Record<string, string> => Object.fromEntries(Object.entries(STYLE_TOKENS).map(([name, spec]) => [name, spec.default]));
 
-/** The built-in themes, the default first. */
-export const THEMES: BuiltInTheme[] = [
+const ALL: BuiltInTheme[] = [
   {
     id: 'midnight',
     name: 'Midnight',
@@ -136,7 +135,105 @@ export const THEMES: BuiltInTheme[] = [
       'panel.style': 'outlined',
     },
   },
+  {
+    id: 'light',
+    name: 'Light',
+    description: 'Clean white and grey with a blue accent.',
+    tokens: {
+      ...defaults(),
+      'color.background': '#eef1f5',
+      'color.panel': '#ffffff',
+      'color.line': '#d3d9e2',
+      'color.text': '#111827',
+      'color.muted': '#4b5563',
+      'color.accent': '#2563eb',
+      'color.accent-ink': '#ffffff',
+      'color.good': '#15803d',
+      'color.warn': '#a16207',
+      'color.bad': '#dc2626',
+      'data.1': '#2563eb',
+      'data.2': '#ea580c',
+      'data.3': '#059669',
+      'data.4': '#a16207',
+      'data.5': '#db2777',
+      'data.6': '#7c3aed',
+      'shape.radius': 'large',
+    },
+  },
+  {
+    id: 'minimal-dark',
+    name: 'Minimal dark',
+    description: 'Black, no panels or tiles, white as the only accent.',
+    tokens: {
+      ...defaults(),
+      'color.background': '#050506',
+      'color.panel': '#050506',
+      'color.line': '#2b2b30',
+      'color.text': '#f4f4f5',
+      'color.muted': '#a1a1aa',
+      'color.accent': '#f4f4f5',
+      'color.accent-ink': '#050506',
+      'panel.style': 'plain',
+      'rail.look': 'bare',
+      density: 'minimal',
+    },
+  },
+  {
+    id: 'minimal-light',
+    name: 'Minimal light',
+    description: 'White, no panels or tiles, black as the only accent.',
+    tokens: {
+      ...defaults(),
+      'color.background': '#fafafa',
+      'color.panel': '#fafafa',
+      'color.line': '#e4e4e7',
+      'color.text': '#09090b',
+      'color.muted': '#52525b',
+      'color.accent': '#09090b',
+      'color.accent-ink': '#fafafa',
+      'color.good': '#15803d',
+      'color.warn': '#a16207',
+      'color.bad': '#dc2626',
+      'data.1': '#2563eb',
+      'data.2': '#ea580c',
+      'data.3': '#059669',
+      'data.4': '#a16207',
+      'data.5': '#db2777',
+      'data.6': '#7c3aed',
+      'panel.style': 'plain',
+      'rail.look': 'bare',
+      density: 'minimal',
+    },
+  },
+  {
+    id: 'glass',
+    name: 'Glass',
+    description: 'Frosted panels over a deep blue glow.',
+    tokens: {
+      ...defaults(),
+      'color.background': '#070b1a',
+      'color.panel': '#1b2444',
+      'color.line': '#34406a',
+      'color.text': '#f1f4ff',
+      'color.muted': '#aab4d6',
+      'color.accent': '#8ab4ff',
+      'color.accent-ink': '#071029',
+      'data.1': '#8ab4ff',
+      'data.2': '#ffb36b',
+      'data.3': '#5ee0b0',
+      'data.4': '#f5d76e',
+      'data.5': '#f28ab8',
+      'data.6': '#b9a3ff',
+      'shape.radius': 'large',
+      'panel.style': 'glass',
+    },
+  },
 ];
+
+/** The built-in themes, the default first, then the looks, then the colour variants. */
+export const THEMES: BuiltInTheme[] = ['midnight', 'light', 'minimal-dark', 'minimal-light', 'glass', 'ocean', 'forest', 'sand', 'contrast', 'paper'].map(
+  (id) => ALL.find((theme) => theme.id === id)!,
+);
 
 /** The built-in theme with this id, if there is one. */
 export function builtInTheme(id: string | null | undefined): BuiltInTheme | undefined {
