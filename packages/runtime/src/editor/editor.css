@@ -2268,6 +2268,8 @@ body[data-role='edit'] .ed-surface .table-frame {
   inset: 0;
   z-index: 1000;
   pointer-events: none;
+}
+
 /* The ribbon stays put (#182): a group's name never widens it, so changing the selection moves nothing. */
 .ed-group-name {
   width: 0;
@@ -2287,4 +2289,13 @@ body[data-role='edit'] .ed-surface .table-frame {
   justify-content: flex-end;
   gap: 8px;
   margin-top: 16px;
+}
+
+/* Screens group (#188): Table and Controller pickers. */
+.dt-picker {
+  grid-template-columns: 64px 184px;
+}
+
+.dt-picker .dt-select {
+  width: 100%;
 }
