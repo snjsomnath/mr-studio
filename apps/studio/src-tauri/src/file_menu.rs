@@ -16,9 +16,9 @@ use tauri::menu::{Menu, MenuBuilder, MenuItem, MenuItemBuilder, PredefinedMenuIt
 use tauri::{AppHandle, Manager, Runtime, Wry};
 
 /// The actions, as menu item ids and as the editor page names them.
-pub const ACTIONS: [&str; 8] = ["new", "open", "save", "save_as", "reveal", "close", "home", "settings"];
+pub const ACTIONS: [&str; 9] = ["new", "open", "save", "save_as", "export", "reveal", "close", "home", "settings"];
 
-/// The File submenu. `export` waits for #85 and shows greyed out so people know it is coming.
+/// The File submenu.
 fn file_submenu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Submenu<R>> {
     let item = |id: &str, text: &str, keys: Option<&str>| -> tauri::Result<MenuItem<R>> {
         let builder = MenuItemBuilder::with_id(id, text);
@@ -28,14 +28,14 @@ fn file_submenu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Submenu<R>> {
         }
     };
     let reveal = if cfg!(target_os = "macos") { "Show in Finder" } else { "Show in Explorer" };
-    let export = MenuItemBuilder::with_id("export", "Export table…").enabled(false).build(app)?;
     let mut file = SubmenuBuilder::new(app, "File")
         .item(&item("new", "New table…", Some("CmdOrCtrl+N"))?)
         .item(&item("open", "Open…", Some("CmdOrCtrl+O"))?)
         .separator()
         .item(&item("save", "Save", Some("CmdOrCtrl+S"))?)
         .item(&item("save_as", "Save As…", Some("CmdOrCtrl+Shift+S"))?)
-        .item(&export)
+        // One .mrstable file to take to another computer (#85).
+        .item(&item("export", "Export table…", None)?)
         .item(&item("reveal", reveal, None)?)
         .separator()
         // This table's own settings, in the editor (#73); app settings are MR Studio > Settings.
@@ -45,10 +45,7 @@ fn file_submenu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Submenu<R>> {
         .item(&item("home", "All tables", Some("CmdOrCtrl+Shift+H"))?);
     if !cfg!(target_os = "macos") {
         // On macOS these live in the app menu, where people look for them.
-        file = file
-            .separator()
-            .item(&item("settings", "Settings…", Some("Ctrl+,"))?)
-            .item(&PredefinedMenuItem::quit(app, Some("Exit"))?);
+        file = file.separator().item(&item("settings", "Settings…", Some("Ctrl+,"))?).item(&PredefinedMenuItem::quit(app, Some("Exit"))?);
     }
     file.build()
 }

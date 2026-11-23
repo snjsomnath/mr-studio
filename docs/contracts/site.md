@@ -273,3 +273,28 @@ The mesh is rasterised from above and the highest surface in each cell wins, so 
 ```
 
 The table surface (`/table`) shows exactly this view, which may be larger than `extent` when the projector overshoots the table. With `window`, the zoom is rescaled when the window has another width, so the same ground stays in view. Without a calibration, and always in dev mode, the surface fits `extent` to the window.
+
+## One file: `.mrstable` (#85)
+
+A table goes to another computer as one file, `<name>.mrstable`: a zip of the table folder
+with `mrstable.json` at the top. `crates/mrs-site/src/package.rs` writes and reads it.
+
+- **In it:** site.json, data, media, calibration.json, custom layers. Everything in the folder
+  except what is listed below.
+- **Never in it:** hidden files and folders (`.mrstudio` revision history, `.git`, `.env`,
+  `.DS_Store`), names that usually hold keys (`credentials*`, `secrets*`, `sources.json`,
+  `*.pem`, `*.key`, `*.p12`, `*.pfx`), links, and older `.mrstable` files. Keys live in the
+  computer's keychain (#41) and never travel.
+- **`mrstable.json`:** `{ format: 1, name, id, exported, app, sources: [{ id, kind, name, layers }] }`.
+  `sources` are the outside sources the layers use (as `site.sources` answers), named as the
+  exporting computer knew them, so the receiving computer knows what to set up.
+- **Opening:** unpacks into a new folder in the sites folder (into a hidden `.<name>.unpacking`
+  folder first, renamed when complete). An existing table is never overwritten. A second copy
+  becomes "Name 2" with its own id. site.json is upgraded to this build's format. Opening
+  reports the sources not set up here and any problems with the table. Paths that leave the
+  folder are refused, and so is a package that unpacks to more than 16 GB or comes from a
+  newer package format.
+
+The app has File › Export table… and, on Home, "Open a table file". Double-clicking a
+`.mrstable` file opens it as well. From the command line:
+`mrstudio export <site> --out X.mrstable` and `mrstudio import X.mrstable --into <sites>`.

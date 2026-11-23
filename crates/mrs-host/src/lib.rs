@@ -100,6 +100,40 @@ const ELEVATION_TRIES: u32 = 3;
 pub const MAX_IMPORT_BYTES: usize = 256 * 1024 * 1024;
 
 impl AppState {
+    /// Packs the running table into one `.mrstable` file at `out` (#85). The package lists the
+    /// outside sources its layers use, named as this computer knows them, and never their keys.
+    pub fn export_table(&self, out: &std::path::Path, app: &str) -> Result<mrs_site::package::Exported, String> {
+        let known = self.sources.list();
+        let used = self.hub.sources_in_use();
+        let needs = used["sources"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .map(|u| {
+                let id = u["source"].as_str().unwrap_or_default().to_string();
+                let connection = known.iter().find(|v| v.connection.id == id).map(|v| &v.connection);
+                mrs_site::package::SourceNeed {
+                    kind: connection
+                        .and_then(|c| serde_json::to_value(c.kind).ok())
+                        .and_then(|k| k.as_str().map(str::to_string))
+                        .unwrap_or_default(),
+                    name: connection.map(|c| c.name.clone()).unwrap_or_default(),
+                    layers: u["layers"].as_array().into_iter().flatten().filter_map(|l| l["name"].as_str().map(str::to_string)).collect(),
+                    id,
+                }
+            })
+            .collect();
+        mrs_site::package::export(&self.site.dir, out, needs, app).map_err(|e| e.to_string())
+    }
+}
+
+/// The sources a table needs that are not set up on this computer, or have no key yet.
+pub fn missing_sources(sources: &Sources, needs: &[mrs_site::package::SourceNeed]) -> Vec<mrs_site::package::SourceNeed> {
+    let known = sources.list();
+    needs.iter().filter(|n| !known.iter().any(|v| v.connection.id == n.id && v.ready)).cloned().collect()
+}
+
+impl AppState {
     /// Handles a `calibration.*` request and tells every surface what changed. The desktop
     /// shell's calibration tab uses this directly; surfaces reach it over the WebSocket.
     pub fn calibration_request(&self, method: &str, p: &Value) -> Result<Value, String> {

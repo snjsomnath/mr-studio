@@ -16,6 +16,7 @@
       <nav>
         <button type="button" id="nav-new"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>New table</button>
         <button type="button" id="nav-open"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z" /></svg>Open a folder…</button>
+        <button type="button" id="nav-file"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h7l5 5v13H7z" /><path d="M14 3v5h5M10 13h6M10 17h4" /></svg>Open a table file…</button>
       </nav>
       <nav class="bottom">
         <button type="button" id="nav-sources"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="15" r="4" /><path d="m10.8 12.2 8.7-8.7M16 7l3 3M14 9l2 2" /></svg>Sources and keys</button>
@@ -40,6 +41,11 @@
           <b>Open a folder</b>
           <span>A table someone gave you: choose the folder that holds its site.json.</span>
         </button>
+        <button type="button" class="card" id="card-file">
+          <span class="art"><svg viewBox="0 0 120 64" aria-hidden="true"><path class="folder" d="M46 10h20l10 10v34a2 2 0 0 1-2 2H46a2 2 0 0 1-2-2V12a2 2 0 0 1 2-2Z" /><path class="fold" d="M66 10v10h10M51 32h18M51 39h18M51 46h11" /></svg></span>
+          <b>Open a table file</b>
+          <span>A .mrstable file exported from another computer. It becomes a new table here.</span>
+        </button>
       </div>
 
       <h2>Your tables</h2>
@@ -54,6 +60,23 @@
         <div class="actions">
           <button type="button" id="delete-cancel">Cancel</button>
           <button type="button" id="delete-confirm" class="danger">Move to Trash</button>
+        </div>
+      </dialog>
+      <dialog id="import-dialog" class="confirm" aria-labelledby="import-title">
+        <h2 id="import-title">The table is here</h2>
+        <p id="import-where"></p>
+        <div id="import-missing" hidden>
+          <p>Its layers use these sources, which are not set up on this computer yet. Add them in Sources and keys; the keys never travel in the file.</p>
+          <ul id="import-sources" class="needs"></ul>
+        </div>
+        <div id="import-problems" hidden>
+          <p>Check these when it opens:</p>
+          <ul id="import-problem-list" class="needs"></ul>
+        </div>
+        <p id="import-upgraded" class="hint" hidden></p>
+        <div class="actions">
+          <button type="button" id="import-sources-button">Sources and keys…</button>
+          <button type="button" id="import-open" class="primary">Open the table</button>
         </div>
       </dialog>
     </main>

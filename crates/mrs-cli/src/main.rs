@@ -45,6 +45,23 @@ enum Command {
     },
     /// Rewrite a site's site.json for this version's site format. The original is kept beside it.
     Migrate { site: PathBuf },
+    /// Pack a table into one .mrstable file to open on another computer. No keys go with it.
+    Export {
+        site: PathBuf,
+        /// The file to write, for example Lindholmen.mrstable.
+        #[arg(long)]
+        out: PathBuf,
+        /// Folder with the core layer packages.
+        #[arg(long, default_value = "packages/layers")]
+        layers: PathBuf,
+    },
+    /// Open a .mrstable file as a new table folder in a sites folder.
+    Import {
+        file: PathBuf,
+        /// The sites folder to unpack into.
+        #[arg(long, default_value = "sites")]
+        into: PathBuf,
+    },
     /// Check a site package and report what the scene bake produces.
     Validate { site: PathBuf },
     /// Bake the scene and write the rasters to `<site>/scene/` for inspection.
@@ -99,6 +116,8 @@ async fn main() -> anyhow::Result<()> {
             Ok(())
         }
         Command::Migrate { site } => migrate(&site),
+        Command::Export { site, out, layers } => export(site, &out, layers).await,
+        Command::Import { file, into } => import(&file, &into),
         Command::Validate { site } => validate(&site).map(|_| ()),
         Command::Prepare { site } => prepare(&site),
         Command::NewSite { dir, name, lon, lat, width_m, height_m, rotation_deg } => {
@@ -123,6 +142,54 @@ fn open_sources() -> mrs_host::Sources {
             Sources::in_memory()
         }
         None => Sources::in_memory(),
+    }
+}
+
+/// Starts the table's host for a moment, so the package lists the sources its layers use.
+async fn export(site: PathBuf, out: &Path, layers: PathBuf) -> anyhow::Result<()> {
+    let host = mrs_host::start(HostConfig {
+        site_dir: site,
+        layers_dir: layers,
+        web_dir: None,
+        bind: SocketAddr::from(([127, 0, 0, 1], 0)),
+        backend: Backend::Cpu,
+        session: mrs_host::SessionOptions::default(),
+        sources: std::sync::Arc::new(open_sources()),
+    })
+    .await?;
+    let exported = host.state.export_table(out, env!("CARGO_PKG_VERSION"));
+    host.stop(std::time::Duration::from_secs(2)).await;
+    let exported = exported.map_err(anyhow::Error::msg)?;
+    println!("Wrote {} ({} files, {} bytes).", exported.path.display(), exported.files, exported.bytes);
+    for left in &exported.left_out {
+        println!("  left out {left} (it looks like a key or a link outside the table)");
+    }
+    print_sources(&exported.sources, "The other computer needs these sources, set up in Sources and keys:");
+    Ok(())
+}
+
+fn import(file: &Path, into: &Path) -> anyhow::Result<()> {
+    let imported = mrs_site::package::import(file, into)?;
+    println!("Opened '{}' as {} ({} files).", imported.name, imported.dir.display(), imported.files);
+    if let Some(upgraded) = &imported.upgraded {
+        println!("  {upgraded}");
+    }
+    let missing = mrs_host::missing_sources(&open_sources(), &imported.sources);
+    print_sources(&missing, "Not set up on this computer yet (add them in Sources and keys):");
+    for problem in &imported.problems {
+        println!("  problem: {problem}");
+    }
+    Ok(())
+}
+
+fn print_sources(sources: &[mrs_site::package::SourceNeed], heading: &str) {
+    if sources.is_empty() {
+        return;
+    }
+    println!("{heading}");
+    for s in sources {
+        let name = if s.name.is_empty() { s.id.clone() } else { format!("{} ({})", s.name, s.id) };
+        println!("  {name}: used by {}", s.layers.join(", "));
     }
 }
 

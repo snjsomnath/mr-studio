@@ -475,9 +475,10 @@ export class Editor {
     });
     // The app's native menu (src-tauri/src/file_menu.rs) asks the page to check first.
     window.addEventListener('mrs-file', (event) => {
-      const detail = (event as CustomEvent<{ action: string; then?: FileAction; message?: string }>).detail;
+      const detail = (event as CustomEvent<{ action: string; then?: FileAction; message?: string; detail?: string }>).detail;
       if (detail.action === 'ask' && detail.then) void this.file(detail.then);
       if (detail.action === 'problem' && detail.message) this.setSaved(detail.message);
+      if (detail.action === 'exported' && detail.message) this.history.notify(detail.message, detail.detail);
     });
     // The window's own close button: the app waits a moment for this before it closes.
     (window as { mrsBeforeLeave?: () => void }).mrsBeforeLeave = () => void this.keepPicture();

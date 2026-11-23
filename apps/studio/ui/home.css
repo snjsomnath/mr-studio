@@ -35,7 +35,7 @@ h2 { margin: 26px 0 10px; font-size: 14px; }
 .hint { margin: 4px 0 10px; color: var(--muted); max-width: 560px; }
 .error { margin: 0 0 14px; padding: 8px 10px; border-radius: 6px; background: #fef3f2; color: var(--danger); border: 1px solid #fecdca; user-select: text; -webkit-user-select: text; }
 
-.cards { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 12px; max-width: 760px; }
+.cards { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr) minmax(0, 1fr); gap: 12px; max-width: 980px; }
 .card { all: unset; box-sizing: border-box; display: grid; gap: 4px; padding: 12px 14px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
 .card:hover { border-color: #b9c2d3; box-shadow: 0 2px 8px rgba(16, 24, 40, 0.08); }
 .card.primary { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
@@ -77,6 +77,10 @@ dialog.confirm h2 { margin: 0 0 8px; font-size: 16px; }
 dialog.confirm p { margin: 0 0 10px; color: var(--muted); }
 dialog.confirm .folder-path { padding: 6px 8px; border-radius: 6px; background: #f1f3f7; color: var(--text); font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; word-break: break-all; user-select: text; -webkit-user-select: text; }
 dialog.confirm .actions { margin-top: 16px; }
+dialog.confirm .needs { margin: 0 0 12px; padding: 0; list-style: none; display: grid; gap: 6px; }
+dialog.confirm .needs li { padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px; background: #f7f8fb; }
+dialog.confirm .needs b { display: block; }
+dialog.confirm .needs span { color: var(--muted); font-size: 12px; }
 .actions button.danger { background: var(--danger); border-color: var(--danger); color: #fff; font-weight: 600; }
 
 .back { all: unset; color: var(--accent); margin-bottom: 10px; display: inline-block; padding: 2px 4px; border-radius: 4px; }

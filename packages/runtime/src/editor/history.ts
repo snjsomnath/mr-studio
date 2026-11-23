@@ -284,8 +284,13 @@ export class HistoryControls {
     }
   }
 
+  /** A notice at the bottom of the editor, without Undo: for something done outside the table, such as an export. */
+  notify(message: string, detail?: string): void {
+    this.announce(message, detail, false, false);
+  }
+
   /** A notice at the bottom of the editor, with Undo, that goes away by itself. */
-  private announce(message: string, detail?: string, problem = false): void {
+  private announce(message: string, detail?: string, problem = false, offerUndo = true): void {
     this.notice?.remove();
     window.clearTimeout(this.noticeTimer);
     const notice = el('div', `ed-toast${problem ? ' is-problem' : ''}`);
@@ -307,9 +312,11 @@ export class HistoryControls {
     close.ariaLabel = 'Close';
     close.textContent = '×';
     close.addEventListener('click', () => notice.remove());
-    notice.append(icon(problem ? 'alert' : 'info', 16), words, undo, close);
+    notice.append(icon(problem ? 'alert' : offerUndo ? 'info' : 'check', 16), words);
+    if (offerUndo) notice.append(undo);
+    notice.append(close);
     this.host().append(notice);
     this.notice = notice;
-    if (!problem) this.noticeTimer = window.setTimeout(() => notice.remove(), 9000);
+    if (!problem) this.noticeTimer = window.setTimeout(() => notice.remove(), offerUndo ? 9000 : 14000);
   }
 }

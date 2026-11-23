@@ -1122,6 +1122,12 @@ impl Hub {
     /// `site.sources`: which outside sources (#41) this table's layers use, by the controls
     /// that name one (`"sources": [...]` in layer.json): `{ sources: [{ source, layers: [{ id, name }] }] }`.
     /// The Sources page shows this as the table's own short list.
+    /// The outside sources the table's layers use, as `site.sources` answers: for an export (#85).
+    pub fn sources_in_use(&self) -> Value {
+        let inner = self.inner.lock().unwrap();
+        self.sources_used(&inner)
+    }
+
     fn sources_used(&self, inner: &Inner) -> Value {
         let catalog = self.catalog();
         let mut used: Vec<(String, Vec<Value>)> = Vec::new();
