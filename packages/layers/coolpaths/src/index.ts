@@ -1,5 +1,5 @@
-import { colormaps, defineLayer, formatHour, loadSiteData, sample, siteProjection, zonedTimeToUtc } from '@mrstudio/sdk';
-import type { CanvasOverlay, FieldFrame, LayerManifest, TableContext, ToolInput } from '@mrstudio/sdk';
+import { colormaps, defineLayer, formatHour, loadSiteData, sample, siteProjection, tableFrame, zonedTimeToUtc } from '@mrstudio/sdk';
+import type { CanvasOverlay, FieldFrame, LayerManifest, PointerSample, TableContext, ToolInput } from '@mrstudio/sdk';
 
 import manifest from '../layer.json';
 import { buildNetwork, exampleWalk, pointAlongRoute, route, setExposure, snap } from './network.ts';
@@ -22,6 +22,13 @@ const SNAP_M = 120;
 /** The walkers cover this many metres of route per second, so a walk takes seconds, not minutes. */
 const WALKER_M_PER_S = 45;
 const PAUSE_S = 2;
+/** While A or B is dragged, the routes are worked out again at most this often, and the pick is sent on at most this often. */
+const REROUTE_S = 0.08;
+const SEND_MS = 60;
+/** A press this close to A or B, in marker radii, picks the marker up instead of placing a new end. */
+const GRAB_RADII = 1.8;
+
+type End = 'from' | 'to';
 
 const COOL = '#34d399';
 const SHORT = '#f8fafc';
@@ -65,6 +72,9 @@ export default defineLayer<Params>({
     let pathsDrawn = -1;
     let pathsDirty = true;
     let clock = 0;
+    /** The routes wait for the next frame, so a stream of picks costs one search per frame at most. */
+    let routeDirty = false;
+    let sinceRoute = Infinity;
 
     /** 1 where the ground at a point is in direct sun. Points off the grid count as the nearest cell. */
     function lit(point: LonLat): number {
@@ -130,7 +140,13 @@ export default defineLayer<Params>({
         });
         g.globalAlpha = 1;
       }
+      if (pair) drawRoutes(scale);
+      drawEnds();
+    }
+
+    function drawRoutes(scale: number): void {
       if (!pair) return;
+      const g = paths.context;
       const width = Math.max(4, 5 * scale);
       const stroke = (r: Route, colour: string, lineWidth: number, dash: number[]) => {
         g.beginPath();
@@ -148,13 +164,30 @@ export default defineLayer<Params>({
         stroke(pair.coolest, COOL, width, []);
       }
       stroke(pair.shortest, SHORT, width * 0.6, pair.coolest === pair.shortest ? [] : [width * 1.2, width * 1.6]);
+    }
 
-      const radius = Math.max(9, 9 * scale);
+    /** The marker radius in CSS pixels, the same for drawing and for picking a marker up. */
+    const markerRadius = () => Math.max(9, 9 * paths.pixelsPerMetre);
+
+    /** A and B. The one under the mouse, or being dragged, wears a ring. */
+    function drawEnds(): void {
+      const g = paths.context;
+      const radius = markerRadius();
       g.font = `700 ${Math.round(radius * 1.2)}px system-ui, sans-serif`;
       g.textAlign = 'center';
       g.textBaseline = 'middle';
-      for (const [node, letter] of [[from, 'A'], [to, 'B']] as const) {
+      for (const [node, letter, end] of [[from, 'A', 'from'], [to, 'B', 'to']] as const) {
+        if (node < 0) continue;
         const [x, y] = paths.project(network.nodes[node]!);
+        if (drag?.end === end || hover === end) {
+          g.beginPath();
+          g.arc(x, y, radius * 1.65, 0, Math.PI * 2);
+          g.fillStyle = 'rgba(255, 255, 255, 0.18)';
+          g.fill();
+          g.lineWidth = Math.max(1.5, radius * 0.14);
+          g.strokeStyle = '#ffffff';
+          g.stroke();
+        }
         g.beginPath();
         g.arc(x, y, radius, 0, Math.PI * 2);
         g.fillStyle = '#0b0e14';
@@ -188,8 +221,111 @@ export default defineLayer<Params>({
       }
     }
 
+    // ---- Picking A and B with a mouse, a finger or a pen on the table ----
+    // A press sets the next end (A, then B, then A again) or, on A or B, picks that one up.
+    // The pick goes through the host, so every view of the table (projector, editor) follows.
+    const frame2d = tableFrame(ctx.site);
+    let nextEnd: End = 'from';
+    let drag: { pointer: string; end: End } | null = null;
+    let hover: End | null = null;
+    let lastSent = -Infinity;
+    let trailing: ReturnType<typeof setTimeout> | undefined;
+    let unsent: { end: End; lonLat: [number, number] } | null = null;
+
+    function flush(): void {
+      clearTimeout(trailing);
+      trailing = undefined;
+      if (!unsent) return;
+      const { end, lonLat } = unsent;
+      unsent = null;
+      lastSent = performance.now();
+      const coordinates = lonLat.map((value) => Math.round(value * 1e7) / 1e7);
+      ctx.sendTool(end, { type: 'Point', coordinates: coordinates as [number, number] }).catch((error) => console.warn('[coolpaths] pick not sent', error));
+    }
+
+    function send(end: End, lonLat: [number, number]): void {
+      unsent = { end, lonLat };
+      const wait = lastSent + SEND_MS - performance.now();
+      if (wait <= 0) flush();
+      else trailing ??= setTimeout(flush, wait);
+    }
+    ctx.onCleanup(() => clearTimeout(trailing));
+
+    /** Moves an end to the path nearest `lonLat`. Returns false when no path is near enough. */
+    function place(end: End, lonLat: readonly number[]): boolean {
+      const node = snap(network, lonLat, distance, SNAP_M);
+      if (node < 0) return false;
+      if ((end === 'from' ? from : to) !== node) {
+        if (end === 'from') from = node;
+        else to = node;
+        clock = 0;
+        routeDirty = true;
+        pathsDirty = true;
+      }
+      return true;
+    }
+
+    /** The end whose marker is under a point in table metres, if any. */
+    function endAt(point: [number, number]): End | null {
+      const reach = (markerRadius() * GRAB_RADII) / paths.pixelsPerMetre;
+      let best: End | null = null;
+      let bestDistance = reach;
+      for (const [node, end] of [[from, 'from'], [to, 'to']] as const) {
+        if (node < 0) continue;
+        const [x, y] = frame2d.toTable(network.nodes[node] as [number, number]);
+        const d = Math.hypot(x - point[0], y - point[1]);
+        if (d <= bestDistance) {
+          best = end;
+          bestDistance = d;
+        }
+      }
+      return best;
+    }
+
+    ctx.pointer.on((sample: PointerSample) => {
+      if (drag && drag.pointer === sample.id) {
+        if (sample.phase === 'move' && sample.pressed) {
+          if (place(drag.end, sample.lonLat)) send(drag.end, sample.lonLat);
+          return;
+        }
+        if (sample.phase === 'up' || sample.phase === 'leave' || !sample.pressed) {
+          flush();
+          drag = null;
+          pathsDirty = true;
+        }
+        return;
+      }
+      if (sample.phase === 'down') {
+        const grabbed = endAt(sample.point);
+        const end = grabbed ?? nextEnd;
+        if (!grabbed && !place(end, sample.lonLat)) return;
+        if (!grabbed) {
+          nextEnd = end === 'from' ? 'to' : 'from';
+          send(end, sample.lonLat);
+        }
+        drag = { pointer: sample.id, end };
+        hover = end;
+        pathsDirty = true;
+        return;
+      }
+      // A mouse hovering over A or B shows that it can be picked up.
+      if (sample.source === 'mouse' && (sample.phase === 'move' || sample.phase === 'leave')) {
+        const over = sample.phase === 'move' ? endAt(sample.point) : null;
+        if (over !== hover) {
+          hover = over;
+          pathsDirty = true;
+        }
+      }
+    });
+
     let carried = 0;
     ctx.onFrame((dt) => {
+      sinceRoute += dt;
+      if (routeDirty && sinceRoute >= REROUTE_S) {
+        routeDirty = false;
+        sinceRoute = 0;
+        reroute();
+      }
       if (ctx.params.play) {
         carried += dt * PLAY_HOURS_PER_SECOND;
         const steps = Math.floor(carried / HOUR_STEP);
@@ -223,13 +359,10 @@ export default defineLayer<Params>({
       tool(input: ToolInput) {
         const geometry = input.geometry as { type?: string; coordinates?: number[] } | null;
         if (geometry?.type !== 'Point' || !Array.isArray(geometry.coordinates)) return;
-        const node = snap(network, geometry.coordinates, distance, SNAP_M);
-        if (node < 0) return;
-        if (input.tool === 'from') from = node;
-        else if (input.tool === 'to') to = node;
-        else return;
-        clock = 0;
-        reroute();
+        if (input.tool !== 'from' && input.tool !== 'to') return;
+        // The end being dragged here follows the pointer; the host's echo of it is older than that.
+        if (drag?.end === input.tool) return;
+        place(input.tool, geometry.coordinates);
       },
     };
   },

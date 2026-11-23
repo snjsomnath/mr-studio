@@ -2,7 +2,7 @@
   "api": 1,
   "id": "building-lights",
   "name": "Building lights",
-  "description": "Windows that come on and go off across the buildings",
+  "description": "Lit windows along the facades that come on and go off",
   "icon": "lightbulb",
   "category": "ambient",
   "requires": { "data": ["buildings"] },

@@ -1,7 +1,7 @@
 import type { SiteInfo } from '@mrstudio/sdk';
 
 /** How the base map looks: drawn from the table's own data, a tile service, or plain ground. */
-export type Style = 'dark' | 'light' | 'streets' | 'aerial' | 'plain';
+export type Style = 'dark' | 'darkmap' | 'light' | 'streets' | 'aerial' | 'plain';
 
 export interface TileService {
   url: string;
@@ -12,7 +12,17 @@ export interface TileService {
 }
 
 /** Key-free tile services, each with the credit it asks for. */
-export const TILE_STYLES: Record<'light' | 'streets' | 'aerial', TileService> = {
+export const TILE_STYLES: Record<'darkmap' | 'light' | 'streets' | 'aerial', TileService> = {
+  darkmap: {
+    url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+    credit: '© OpenStreetMap contributors',
+    maxzoom: 19,
+    // A night map: lightness turned over and kept low and blue-grey, so streets and blocks read faintly on dark ground.
+    tone: (r, g, b) => {
+      const night = 255 - (0.299 * r + 0.587 * g + 0.114 * b);
+      return [12 + night * 0.32, 15 + night * 0.36, 22 + night * 0.46];
+    },
+  },
   light: {
     url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
     credit: '© OpenStreetMap contributors',

@@ -142,6 +142,7 @@ export class LayerManager {
       map: this.view.handle(id, track),
       model: this.view.modelHandle(id, track),
       pointer: this.view.pointer(track),
+      sendTool: (tool, geometry) => this.connection.request<void>('tool.input', { layer: id, tool, geometry }),
       publish: (values) => {
         const patch: Record<string, unknown> = {};
         for (const [key, value] of Object.entries(values)) {
