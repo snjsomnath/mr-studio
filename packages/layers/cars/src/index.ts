@@ -21,7 +21,14 @@ interface Car {
   /** Drawn heading, eased towards the edge's so turns are not instant. */
   angle: number;
   paint: string;
+  /** Seconds since the car came onto the street, for fading in. */
+  age: number;
+  /** Seconds left before the car is gone, once it has reached a dead end. */
+  leaving: number | null;
 }
+
+/** Seconds a car takes to fade in, or out at a dead end. */
+const FADE_S = 0.8;
 
 const MAX_CARS = 600;
 /** Cars keep right of the centre line by this many metres. */
@@ -36,18 +43,20 @@ export default defineLayer<Params>({
     const canvas = ctx.map.addDrawing('cars', { opacity: ctx.params.opacity });
     // No streets, no cars: the editor offers to bring streets in (requires.data).
     const lines = await streetLines(ctx.site);
-    const network = new Network(lines.map((line) => line.geometry));
+    const network = new Network(lines);
     const random = seededRandom(5);
     const cars: Car[] = [];
 
     function spawn(): Car {
-      const edge = Math.floor(random() * network.edges.length);
+      const edge = network.start(random);
       return {
         edge,
         s: random() * network.edges[edge]!.length,
         pace: 0.7 + random() * 0.6,
         angle: network.edges[edge]!.angle,
         paint: PAINTS[Math.floor(random() * PAINTS.length)]!,
+        age: 0,
+        leaving: null,
       };
     }
 
@@ -63,15 +72,30 @@ export default defineLayer<Params>({
       const g = canvas.ctx;
       const metresPerSecond = speed / 3.6;
       canvas.clear();
-      for (const car of cars) {
+      for (let i = 0; i < cars.length; i++) {
+        let car = cars[i]!;
+        car.age += dt;
+        if (car.leaving !== null) {
+          car.leaving -= dt;
+          // Gone: the car starts again somewhere else, as in the interactive map's traffic.
+          if (car.leaving <= 0) car = cars[i] = spawn();
+        }
         car.s += metresPerSecond * car.pace * dt;
         let edge = network.edges[car.edge]!;
         // A fast car on short segments may pass more than one junction in a frame.
         for (let hops = 0; car.s >= edge.length && hops < 8; hops++) {
+          const next = network.next(car.edge, random);
+          if (next === null) {
+            // A dead end: the car stops at the end and fades, rather than turning round on the spot (#201).
+            car.s = edge.length;
+            car.leaving ??= FADE_S;
+            break;
+          }
           car.s -= edge.length;
-          car.edge = network.next(car.edge, random);
+          car.edge = next;
           edge = network.edges[car.edge]!;
         }
+        const alpha = Math.min(1, car.age / FADE_S, car.leaving === null ? 1 : Math.max(0, car.leaving / FADE_S));
         const turn = Math.atan2(Math.sin(edge.angle - car.angle), Math.cos(edge.angle - car.angle));
         car.angle += turn * Math.min(1, dt * 6);
         const [x0, y0] = network.nodes[edge.from]!;
@@ -80,6 +104,7 @@ export default defineLayer<Params>({
         if (x < -30 || y < -30 || x > canvas.width + 30 || y > canvas.height + 30) continue;
 
         g.save();
+        g.globalAlpha = alpha;
         g.translate(x, y);
         g.rotate(car.angle);
         g.scale(size, size);
