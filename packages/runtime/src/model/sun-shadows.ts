@@ -26,7 +26,8 @@ const MASK_MAX = 4096;
  * shadow, and with no lid nothing over a roof speckles it at a low sun. The rest of the twin (the ground, an
  * imported model) casts from its back faces, so it shades the far side of a hill but never speckles itself.
  *
- * The mask is rendered straight down over the table's extent with a GPU shadow map: 1 in the sun, 0 in the shade.
+ * The mask is rendered straight down over the table's extent with a GPU shadow map: 1 in the sun, 0 in the shade,
+ * and in between on slopes turned away from the sun, so hills shade their own far side (#145).
  */
 export class SunMask {
   private readonly scene = new THREE.Scene();
@@ -40,7 +41,7 @@ export class SunMask {
   private readonly geometries = new Set<THREE.BufferGeometry>();
   private readonly prisms: THREE.Mesh;
   private readonly rest: THREE.Mesh;
-  private readonly caps: THREE.Mesh[];
+  private readonly cap: THREE.Mesh;
   private readonly lightCentre: THREE.Vector3;
   private readonly lightDistance: number;
   private readonly renderer: THREE.WebGLRenderer;
@@ -93,13 +94,10 @@ export class SunMask {
 
     const casterMaterial = new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false, side: THREE.DoubleSide, shadowSide: THREE.DoubleSide });
     const groundCasterMaterial = new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false, shadowSide: THREE.BackSide });
-    // Receivers: white, with black laid over where the sun cannot reach.
-    const sunMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
-    const shadeMaterial = new THREE.ShadowMaterial({ color: 0x000000, opacity: 1, transparent: true, depthWrite: false });
-    shadeMaterial.polygonOffset = true;
-    shadeMaterial.polygonOffsetFactor = -1;
-    shadeMaterial.polygonOffsetUnits = -1;
-    this.materials = [casterMaterial, groundCasterMaterial, sunMaterial, shadeMaterial];
+    // Receivers are lit by the sun alone, scaled so flat ground in the sun is white: a slope turned towards the sun
+    // stays white, one turned away dims (a hillshade), and shadow is black.
+    const sunMaterial = new THREE.MeshLambertMaterial({ color: 0xffffff });
+    this.materials = [casterMaterial, groundCasterMaterial, sunMaterial];
 
     // Seen from straight above, walls have no area; only ground and roofs receive.
     const surfaces = new THREE.BufferGeometry();
@@ -116,9 +114,7 @@ export class SunMask {
     this.geometries.add(surfaces);
 
     const sun = new THREE.Mesh(surfaces, sunMaterial);
-    const shade = new THREE.Mesh(surfaces, shadeMaterial);
-    shade.receiveShadow = true;
-    shade.renderOrder = 1;
+    sun.receiveShadow = true;
     // Until footprints arrive, the whole twin casts as it is.
     this.rest = new THREE.Mesh(geometry, groundCasterMaterial);
     this.rest.castShadow = true;
@@ -126,15 +122,13 @@ export class SunMask {
     this.prisms.castShadow = true;
     // Caps over the roofs show each building's real outline, not the twin's steps. They draw after the twin.
     const capGeometry = new THREE.BufferGeometry();
-    const capSun = new THREE.Mesh(capGeometry, sunMaterial);
-    capSun.renderOrder = 2;
-    const capShade = new THREE.Mesh(capGeometry, shadeMaterial);
-    capShade.receiveShadow = true;
-    capShade.renderOrder = 3;
-    this.caps = [capSun, capShade];
+    const cap = new THREE.Mesh(capGeometry, sunMaterial);
+    cap.receiveShadow = true;
+    cap.renderOrder = 1;
+    this.cap = cap;
     this.geometries.add(this.prisms.geometry).add(capGeometry);
-    for (const object of [sun, shade, this.rest, this.prisms, capSun, capShade]) object.frustumCulled = false;
-    this.scene.add(light, light.target, sun, shade, this.rest, this.prisms, capSun, capShade);
+    for (const object of [sun, this.rest, this.prisms, cap]) object.frustumCulled = false;
+    this.scene.add(light, light.target, sun, this.rest, this.prisms, cap);
   }
 
   /** Builds the buildings' casters and caps from their footprints and the roof heights in the twin. */
@@ -182,8 +176,7 @@ export class SunMask {
     const capGeometry = new THREE.BufferGeometry();
     capGeometry.setAttribute('position', new THREE.Float32BufferAttribute(caps, 3));
     capGeometry.setAttribute('normal', new THREE.Float32BufferAttribute(Float32Array.from({ length: caps.length }, (_, i) => (i % 3 === 2 ? 1 : 0)), 3));
-    this.replace(this.caps[0]!, capGeometry);
-    this.caps[1]!.geometry = capGeometry;
+    this.replace(this.cap, capGeometry);
 
     // The rest of the twin casts as it is: the ground, and anything without a raised footprint.
     const kept: number[] = [];
@@ -206,6 +199,8 @@ export class SunMask {
       const h = (altitude * Math.PI) / 180;
       const direction = new THREE.Vector3(Math.sin(a) * Math.cos(h), Math.cos(a) * Math.cos(h), Math.sin(h));
       this.light.position.copy(this.lightCentre).addScaledVector(direction, this.lightDistance);
+      // Lambert gives flat ground sin(altitude) / π of the light; this makes it exactly white.
+      this.light.intensity = Math.PI / Math.sin(h);
 
       const renderer = this.renderer;
       const previous = renderer.getRenderTarget();
