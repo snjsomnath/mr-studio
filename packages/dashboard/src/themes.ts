@@ -1,0 +1,144 @@
+// Built-in controller and dashboard themes (#126). Each is a full set of style
+// tokens from theme.ts and passes validateTheme, so the screen stays readable from
+// across the room. A site stores the chosen name in `tv.theme_name` and the tokens
+// in `tv.theme`, so it still looks the same if a theme here changes later.
+
+import { STYLE_TOKENS } from './theme.ts';
+
+export interface BuiltInTheme {
+  id: string;
+  name: string;
+  /** One line for the setup guide. */
+  description: string;
+  tokens: Record<string, string>;
+}
+
+const defaults = (): Record<string, string> => Object.fromEntries(Object.entries(STYLE_TOKENS).map(([name, spec]) => [name, spec.default]));
+
+/** The built-in themes, the default first. */
+export const THEMES: BuiltInTheme[] = [
+  {
+    id: 'midnight',
+    name: 'Midnight',
+    description: 'Deep blue-black with a warm yellow accent. The default.',
+    tokens: defaults(),
+  },
+  {
+    id: 'ocean',
+    name: 'Ocean',
+    description: 'Navy panels and a bright cyan accent.',
+    tokens: {
+      ...defaults(),
+      'color.background': '#06121f',
+      'color.panel': '#0e2236',
+      'color.line': '#1f3a55',
+      'color.text': '#eaf4fb',
+      'color.muted': '#9db6cc',
+      'color.accent': '#38bdf8',
+      'color.accent-ink': '#04202f',
+      'data.1': '#38bdf8',
+      'data.2': '#f59e0b',
+      'data.3': '#34d399',
+      'data.4': '#a78bfa',
+      'data.5': '#f472b6',
+      'data.6': '#facc15',
+      'shape.radius': 'large',
+    },
+  },
+  {
+    id: 'forest',
+    name: 'Forest',
+    description: 'Dark green-grey with a fresh green accent.',
+    tokens: {
+      ...defaults(),
+      'color.background': '#0a120d',
+      'color.panel': '#142219',
+      'color.line': '#26392c',
+      'color.text': '#edf5ee',
+      'color.muted': '#a5b8a9',
+      'color.accent': '#6ee7a0',
+      'color.accent-ink': '#06200f',
+      'data.1': '#6ee7a0',
+      'data.2': '#f0a04b',
+      'data.3': '#5fb3e6',
+      'data.4': '#e8d65a',
+      'data.5': '#e57a9c',
+      'data.6': '#b39ddb',
+    },
+  },
+  {
+    id: 'sand',
+    name: 'Warm sand',
+    description: 'Warm charcoal with a terracotta accent.',
+    tokens: {
+      ...defaults(),
+      'color.background': '#14100c',
+      'color.panel': '#221b15',
+      'color.line': '#3a2f25',
+      'color.text': '#f6efe6',
+      'color.muted': '#bfae9b',
+      'color.accent': '#f08a5d',
+      'color.accent-ink': '#2a1206',
+      'data.1': '#f08a5d',
+      'data.2': '#5fb3c9',
+      'data.3': '#9ccc65',
+      'data.4': '#e8c15a',
+      'data.5': '#d98ab8',
+      'data.6': '#a1a8f0',
+      'shape.radius': 'small',
+    },
+  },
+  {
+    id: 'contrast',
+    name: 'High contrast',
+    description: 'Black and white with a strong yellow, for bright rooms and far viewers.',
+    tokens: {
+      ...defaults(),
+      'color.background': '#000000',
+      'color.panel': '#0d0d0d',
+      'color.line': '#5c5c5c',
+      'color.text': '#ffffff',
+      'color.muted': '#d6d6d6',
+      'color.accent': '#ffe600',
+      'color.accent-ink': '#000000',
+      'data.1': '#4da3ff',
+      'data.2': '#ff8a3d',
+      'data.3': '#3ddc84',
+      'data.4': '#ffe600',
+      'data.5': '#ff6fb1',
+      'data.6': '#c9a6ff',
+      'shape.radius': 'none',
+      'panel.style': 'outlined',
+    },
+  },
+  {
+    id: 'paper',
+    name: 'Paper',
+    description: 'Light, for a controller in a sunny room.',
+    tokens: {
+      ...defaults(),
+      'color.background': '#f3efe6',
+      'color.panel': '#ffffff',
+      'color.line': '#d8d2c4',
+      'color.text': '#15181d',
+      'color.muted': '#545b66',
+      'color.accent': '#c2410c',
+      'color.accent-ink': '#ffffff',
+      'color.good': '#008300',
+      'color.warn': '#a86f00',
+      'color.bad': '#d03b3b',
+      'data.1': '#2a78d6',
+      'data.2': '#d95926',
+      'data.3': '#0f8a5f',
+      'data.4': '#a87400',
+      'data.5': '#c2477a',
+      'data.6': '#008300',
+      'panel.style': 'outlined',
+    },
+  },
+];
+
+/** The built-in theme with this id, if there is one. */
+export function builtInTheme(id: string | null | undefined): BuiltInTheme | undefined {
+  return THEMES.find((theme) => theme.id === id);
+}

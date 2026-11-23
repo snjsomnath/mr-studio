@@ -282,8 +282,98 @@ body[data-role='tv'] .rail-group {
   overflow-wrap: anywhere;
 }
 
+/* The core's own buttons at the foot of a rail, dashed so they read as actions, not layers (#75). */
+body[data-role='tv'] .rail-actions {
+  display: grid;
+  gap: 0.75rem;
+  justify-items: center;
+  padding: 0.75rem 0.5rem 1.25rem;
+}
+
+body[data-role='tv'] .action-button .layer-button-icon {
+  border-style: dashed;
+  background: transparent;
+  color: var(--muted);
+}
+
+body[data-role='tv'] .action-button:hover .layer-button-icon {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+/* The About page in the centre: the site's words, then who made it. */
+.about-page .layer-about {
+  max-width: 50rem;
+  font-size: 1.125rem;
+  line-height: 1.5;
+}
+
+.about-credits {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+  gap: 1.25rem 2rem;
+  margin: 1.5rem 0 0;
+}
+
+.about-credit dt {
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.about-credit dd {
+  margin: 0.25rem 0 0;
+  font-size: 1.125rem;
+  font-weight: 600;
+}
+
+.about-credit .about-note {
+  color: var(--muted);
+  font-size: 0.875rem;
+  font-weight: 400;
+}
+
+/*
+ * The labelled rail style (`tv.rail_style: "labelled"`): a wider rail, each button's icon
+ * with its name beside it, for tables where names matter more than width.
+ */
+body[data-role='tv'][data-rail-style='labelled'] .controller {
+  width: 14rem;
+}
+
+body[data-role='tv'][data-rail-style='labelled'] .controller .cards,
+body[data-role='tv'][data-rail-style='labelled'] .rail-actions {
+  justify-items: stretch;
+  gap: 0.5rem;
+}
+
+body[data-role='tv'][data-rail-style='labelled'] .layer-button {
+  flex-direction: row;
+  gap: 0.75rem;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.9375rem;
+  text-align: left;
+}
+
+body[data-role='tv'][data-rail-style='labelled'] .layer-button .layer-button-icon {
+  width: 2.75rem;
+  height: 2.75rem;
+}
+
+body[data-role='tv'][data-rail-style='labelled'] .layer-button-name {
+  max-width: none;
+}
+
+body[data-role='tv'][data-rail-style='labelled'] .rail-group {
+  max-width: none;
+  padding-left: 0.5rem;
+  text-align: left;
+}
+
 /* A rail with nothing on it gives its width to the centre. */
-body[data-role='tv'] .controller-right:not(:has(.layer-button-card, .join-qr, .home-button)) {
+body[data-role='tv'] .controller-right:not(:has(.layer-button-card, .join-qr, .home-button, .rail-actions)) {
   display: none;
 }
 
@@ -378,6 +468,154 @@ body[data-role='tv'] .controller .join-address .join-code {
   grid-template-columns: repeat(auto-fill, minmax(16.25rem, 1fr));
   gap: 0.875rem 2rem;
   align-items: start;
+}
+
+/*
+ * Tiers (#137): the hero, then the primary choices in one row of large segmented buttons,
+ * then the rest, then "More settings", closed. Sized for a 46-inch screen at 2 m.
+ */
+/* A tool kept alongside: a small name and its settings on one line. */
+.layer-open.is-alongside {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1.5rem;
+}
+
+.layer-open.is-alongside .layer-open-head {
+  margin: 0;
+  gap: 0.625rem;
+}
+
+.layer-open.is-alongside .layer-open-head .layer-button-icon {
+  width: 2rem;
+  height: 2rem;
+}
+
+.layer-open.is-alongside .layer-open-name {
+  font-size: 1.125rem;
+}
+
+.layer-open.is-alongside .layer-about {
+  font-size: 0.875rem;
+}
+
+.layer-open.is-alongside .controls-more {
+  margin: 0;
+}
+
+.layer-open.is-alongside .controls-more[open] {
+  flex-basis: 100%;
+}
+
+/* A layer with a hero takes most of the height; its panels share what is left. */
+.open-layers:has(.layer-open:not([hidden]) .layer-hero:not([hidden])) {
+  max-height: 72%;
+}
+
+.layer-hero {
+  margin-bottom: 1.375rem;
+}
+
+.layer-hero[hidden] {
+  display: none;
+}
+
+.layer-open .controls-primary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem 2.5rem;
+  margin-bottom: 1.25rem;
+}
+
+.controls-primary .control {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.controls-primary .controls-more {
+  align-self: flex-end;
+  margin: 0 0 0 auto;
+}
+
+.controls-primary .controls-more[open] {
+  flex-basis: 100%;
+  margin-left: 0;
+}
+
+.controls-primary .control-label {
+  margin-bottom: 0.5rem;
+  color: var(--muted);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.controls-primary .segmented {
+  border-radius: 0.75rem;
+  padding: 0.25rem;
+}
+
+.controls-primary .segmented button {
+  flex: none;
+  min-height: 3rem;
+  padding: 0 1.375rem;
+  border-radius: 0.5625rem;
+  font-size: 1.125rem;
+  font-weight: 600;
+}
+
+.control-presets {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.controls-primary .control-date-more {
+  height: 3.5rem;
+  font-size: 1rem;
+}
+
+.controls-more {
+  margin-top: 0.5rem;
+}
+
+.controls-more[hidden] {
+  display: none;
+}
+
+.controls-more > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1.125rem;
+  border: 1px solid var(--line);
+  border-radius: 0.625rem;
+  color: var(--muted);
+  font-size: 1rem;
+  cursor: pointer;
+  list-style: none;
+}
+
+.controls-more > summary::-webkit-details-marker {
+  display: none;
+}
+
+.controls-more > summary::after {
+  content: '▾';
+  font-size: 0.8em;
+}
+
+.controls-more[open] > summary {
+  margin-bottom: 1rem;
+  color: var(--text);
+}
+
+.controls-more[open] > summary::after {
+  content: '▴';
 }
 
 .home-button {
