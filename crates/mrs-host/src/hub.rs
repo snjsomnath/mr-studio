@@ -9,7 +9,8 @@ use std::hash::{BuildHasher, Hasher};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
 
-use mrs_site::{is_instance_id, LayerButton, LayerItem, LayerRef, Reveal, Site, SiteInfo, StepMode, Steps};
+use mrs_site::history::{By, Change, History, Revision};
+use mrs_site::{is_instance_id, LayerButton, LayerItem, LayerRef, Reveal, Site, SiteError, SiteInfo, StepMode, Steps};
 use serde::Serialize;
 use serde_json::{json, Map, Value};
 use tokio::sync::{broadcast, Notify};
@@ -78,7 +79,7 @@ impl Role {
     }
 
     /// Editing the scene rewrites site.json, so it is kept to the operator's surfaces.
-    fn may_compose(self) -> bool {
+    pub(crate) fn may_compose(self) -> bool {
         matches!(self, Self::Tv | Self::Dev)
     }
 
@@ -354,9 +355,39 @@ pub struct Hub {
     catalog: RwLock<Arc<Vec<LayerDef>>>,
     inner: Mutex<Inner>,
     events: broadcast::Sender<String>,
+    /// Every version of site.json (#72). Held around each write so a change and its revision land as one.
+    history: Arc<Mutex<History>>,
+    /// The revision the request being handled wrote, announced when it is done.
+    recorded: Mutex<Vec<Revision>>,
+}
+
+/// Who sent a request that changes site.json, for the history.
+#[derive(Debug, Clone, Copy)]
+struct Who {
+    by: By,
+    surface: Option<u64>,
+}
+
+impl Who {
+    fn of(role: Role, surface: u64) -> Self {
+        let by = if role == Role::Tv { By::Controller } else { By::Editor };
+        Self { by, surface: Some(surface) }
+    }
 }
 
 /// 64 unpredictable bits from the operating system, by way of the standard library's hash seeds.
+/// A controller setting in the words the editor uses.
+fn tv_words(key: &str) -> &str {
+    match key {
+        "theme" | "theme_name" => "theme",
+        "rail_style" => "button style",
+        "about" => "About page",
+        "idle_reset_s" => "idle reset",
+        "attract_s" => "welcome loop",
+        other => other,
+    }
+}
+
 fn random_u64() -> u64 {
     std::collections::hash_map::RandomState::new().build_hasher().finish()
 }
@@ -364,31 +395,7 @@ fn random_u64() -> u64 {
 impl Hub {
     /// `join_base` is the address phones reach the host at, without a path.
     pub fn new(site: &Site, catalog: Vec<LayerDef>, port: u16, join_base: Option<String>, options: SessionOptions) -> anyhow::Result<Self> {
-        let mut scene: Vec<Instance> = Vec::new();
-        let find = |used: &str| {
-            catalog
-                .iter()
-                .position(|d| d.source == used)
-                .ok_or_else(|| anyhow::anyhow!("site.json uses layer '{used}', which is not available"))
-        };
-        for reference in &site.manifest.layers {
-            let layer = LayerRef { items: Vec::new(), ..reference.clone() };
-            let parent = Self::instance(&catalog, find(&reference.r#use)?, layer, None, true)?;
-            let on = parent.state.active;
-            scene.push(parent);
-            // A sequence's items come on one at a time, as its steps show them.
-            let sequence = catalog[parent_def(&scene)].manifest["sequence"] == true;
-            for item in &reference.items {
-                let mut item = Self::instance(&catalog, find(&item.r#use)?, item_ref(item), Some(reference.id.clone()), true)?;
-                item.state.active &= on && !sequence;
-                scene.push(item);
-            }
-        }
-        for (n, instance) in scene.iter().enumerate() {
-            if scene[..n].iter().any(|i| i.id == instance.id) {
-                anyhow::bail!("'{}' names two entries of the scene in site.json; give each its own \"id\"", instance.id);
-            }
-        }
+        let scene = Self::build_scene(&catalog, &site.manifest.layers)?;
         let code = format!("{:04}", random_u64() % 10_000);
         let join_url = join_base.map(|base| format!("{}/phone?c={code}", base.trim_end_matches('/')));
         let session = SessionInfo { id: format!("{:016x}", random_u64()), code, port, join_url };
@@ -401,6 +408,8 @@ impl Hub {
             catalog: RwLock::new(Arc::new(catalog)),
             inner: Mutex::new(Inner { scene, seats: Vec::new(), next_surface: 1 }),
             events,
+            history: Arc::new(Mutex::new(History::open(&site.dir))),
+            recorded: Mutex::new(Vec::new()),
         };
         // A sequence that starts on shows its first step.
         {
@@ -412,6 +421,36 @@ impl Hub {
             }
         }
         Ok(hub)
+    }
+
+    /// The scene a site.json `layers` list stands for, each layer followed by its items.
+    fn build_scene(catalog: &[LayerDef], layers: &[LayerRef]) -> anyhow::Result<Vec<Instance>> {
+        let mut scene: Vec<Instance> = Vec::new();
+        let find = |used: &str| {
+            catalog
+                .iter()
+                .position(|d| d.source == used)
+                .ok_or_else(|| anyhow::anyhow!("site.json uses layer '{used}', which is not available"))
+        };
+        for reference in layers {
+            let layer = LayerRef { items: Vec::new(), ..reference.clone() };
+            let parent = Self::instance(catalog, find(&reference.r#use)?, layer, None, true)?;
+            let on = parent.state.active;
+            scene.push(parent);
+            // A sequence's items come on one at a time, as its steps show them.
+            let sequence = catalog[parent_def(&scene)].manifest["sequence"] == true;
+            for item in &reference.items {
+                let mut item = Self::instance(catalog, find(&item.r#use)?, item_ref(item), Some(reference.id.clone()), true)?;
+                item.state.active &= on && !sequence;
+                scene.push(item);
+            }
+        }
+        for (n, instance) in scene.iter().enumerate() {
+            if scene[..n].iter().any(|i| i.id == instance.id) {
+                anyhow::bail!("'{}' names two entries of the scene in site.json; give each its own \"id\"", instance.id);
+            }
+        }
+        Ok(scene)
     }
 
     /// Builds an instance from a site.json entry. With `lenient`, params that do not
@@ -440,6 +479,159 @@ impl Hub {
             shown_by: None,
         };
         Ok(Instance { id, def, parent, saved, state })
+    }
+
+    // ---- History (#72) ----------------------------------------------------------
+
+    /// The site's revision history. Writers outside the hub (imports, moving the table, undo)
+    /// hold it around their write, as `saving` does.
+    pub fn history(&self) -> Arc<Mutex<History>> {
+        self.history.clone()
+    }
+
+    /// Runs a write to site.json and records it in the history, as one step.
+    fn saving(&self, who: Who, summary: impl Into<String>, write: impl FnOnce() -> Result<(), SiteError>) -> Result<(), String> {
+        let change = {
+            let mut history = self.history.lock().unwrap();
+            let ((), change) = history.write(who.by, summary, who.surface, write).map_err(|e| format!("could not save site.json: {e}"))?;
+            change
+        };
+        if let Some(change) = change {
+            self.recorded.lock().unwrap().push(change.revision);
+        }
+        Ok(())
+    }
+
+    /// Tells every surface the history moved on: a new revision, or an undo, redo or restore.
+    /// An editor shows a notice when the change came from somewhere else.
+    pub fn history_changed(&self, revision: &Revision, stepped: bool) {
+        let (can_undo, can_redo, head) = {
+            let history = self.history.lock().unwrap();
+            (history.can_undo(), history.can_redo(), history.head().clone())
+        };
+        self.emit(
+            "history.changed",
+            json!({ "revision": revision, "head": head.rev, "stepped": stepped, "can_undo": can_undo, "can_redo": can_redo }),
+        );
+    }
+
+    /// `history.list`: the kept revisions, newest first, and where undo and redo go.
+    pub fn history_list(&self) -> Value {
+        let history = self.history.lock().unwrap();
+        let mut revisions = history.list();
+        revisions.reverse();
+        json!({
+            "revisions": revisions,
+            "head": history.head().rev,
+            "can_undo": history.can_undo(),
+            "can_redo": history.can_redo(),
+        })
+    }
+
+    /// Takes site.json as it now is after a change the hub did not make itself (an undo, an
+    /// outside edit): the layers, custom layers, palette and controller settings change live,
+    /// and each surface hears only what changed. The caller re-bakes the ground and sends
+    /// `site.changed` when keys beyond these changed.
+    pub fn reload(&self, site: &Site, change: &Change) -> anyhow::Result<()> {
+        let keys = &change.keys;
+        let has = |k: &str| keys.iter().any(|x| x == k || x == "*");
+        let mut inner = self.inner.lock().unwrap();
+        let old_catalog = self.catalog();
+        let catalog = if has("custom") {
+            let mut next: Vec<LayerDef> = old_catalog.iter().filter(|d| !d.source.starts_with(mrs_site::CUSTOM_PREFIX)).cloned().collect();
+            for (id, recipe) in &site.manifest.custom {
+                next.push(crate::layers::custom_def(id, recipe)?);
+            }
+            Arc::new(next)
+        } else {
+            old_catalog.clone()
+        };
+        let mut scene = Self::build_scene(&catalog, &site.manifest.layers)?;
+        // A layer whose entry did not change keeps what it is doing now.
+        let mut fresh = Vec::new();
+        for (n, instance) in scene.iter_mut().enumerate() {
+            let same = inner.scene.iter().find(|old| {
+                old.id == instance.id
+                    && old_catalog[old.def].source == catalog[instance.def].source
+                    && old_catalog[old.def].manifest == catalog[instance.def].manifest
+                    && json!(old.saved) == json!(instance.saved)
+                    && old.parent == instance.parent
+            });
+            match same {
+                Some(old) => {
+                    let def = instance.def;
+                    *instance = old.clone();
+                    instance.def = def;
+                }
+                None => fresh.push(n),
+            }
+        }
+        let ids: Vec<String> = scene.iter().map(|i| i.id.clone()).collect();
+        for instance in &mut scene {
+            if instance.state.shown_by.as_ref().is_some_and(|by| !ids.contains(by)) {
+                instance.state.shown_by = None;
+                instance.state.active = false;
+            }
+        }
+        // The catalogue first, so a surface knows a layer before the scene uses it.
+        if !Arc::ptr_eq(&catalog, &old_catalog) {
+            *self.catalog.write().unwrap() = catalog.clone();
+            for old in old_catalog.iter().filter(|d| d.source.starts_with(mrs_site::CUSTOM_PREFIX)) {
+                if !catalog.iter().any(|d| d.source == old.source) {
+                    self.emit("catalog.removed", json!({ "id": old.id }));
+                }
+            }
+            for def in catalog.iter().filter(|d| d.source.starts_with(mrs_site::CUSTOM_PREFIX)) {
+                if !old_catalog.iter().any(|d| d.source == def.source && d.manifest == def.manifest) {
+                    self.emit("catalog.changed", json!({ "manifest": def.manifest }));
+                }
+            }
+        }
+        let info = site.info();
+        *self.info.write().unwrap() = info.clone();
+        if has("palette") {
+            self.emit("palette.changed", json!({ "palette": info.palette }));
+        }
+        if has("tv") {
+            self.emit("site.tv", json!({ "tv": info.tv }));
+        }
+        if has("display") {
+            self.emit("site.display", json!({ "display": info.display }));
+        }
+        inner.scene = scene;
+        for at in fresh {
+            if inner.scene[at].state.active && inner.scene[at].parent.is_none() && self.is_sequence(&inner.scene[at]) {
+                self.switch(&mut inner.scene, at, true);
+            }
+        }
+        if has("layers") || has("custom") {
+            self.emit("state.scene", json!({ "scene": inner.order(), "layers": inner.layers() }));
+        }
+        Ok(())
+    }
+
+    /// What the editor calls a layer: its button name, or its package's name.
+    fn label(&self, instance: &Instance) -> String {
+        instance
+            .saved
+            .button
+            .name
+            .clone()
+            .unwrap_or_else(|| self.catalog()[instance.def].manifest["name"].as_str().map_or_else(|| instance.id.clone(), str::to_string))
+    }
+
+    fn label_of(&self, scene: &[Instance], id: &str) -> String {
+        scene.iter().find(|i| i.id == id).map_or_else(|| id.to_string(), |i| self.label(i))
+    }
+
+    /// A control's label from layer.json, or its id.
+    fn control_label(&self, instance: &Instance, control: &str) -> String {
+        let manifest = &self.catalog()[instance.def].manifest;
+        manifest["controls"]
+            .as_array()
+            .and_then(|c| c.iter().find(|c| c["id"] == control))
+            .and_then(|c| c["label"].as_str())
+            .map_or_else(|| control.to_string(), |l| l.to_lowercase())
     }
 
     /// The layer catalogue as it is now.
@@ -594,31 +786,41 @@ impl Hub {
 
     /// Handles a session request. Engine requests are handled by the connection.
     pub fn request(&self, role: Role, surface: u64, method: &str, p: &Value) -> Result<Value, String> {
+        let result = self.handle(role, surface, method, p);
+        // A change to site.json is announced after what it did, so a surface already shows it.
+        let recorded = std::mem::take(&mut *self.recorded.lock().unwrap());
+        for revision in recorded {
+            self.history_changed(&revision, false);
+        }
+        result
+    }
+
+    fn handle(&self, role: Role, surface: u64, method: &str, p: &Value) -> Result<Value, String> {
         // One lock for the whole request, so changes and their events keep one order.
         let mut inner = self.inner.lock().unwrap();
         if method.starts_with("scene.") {
             if !role.may_compose() {
                 return Err("this surface cannot edit the scene".into());
             }
-            return self.compose(&mut inner, method, p);
+            return self.compose(&mut inner, method, p, Who::of(role, surface));
         }
         if method == "site.tv" {
             if !role.may_compose() {
                 return Err("this surface cannot change the table's settings".into());
             }
-            return self.set_tv(p);
+            return self.set_tv(p, Who::of(role, surface));
         }
         if method == "site.display" {
             if !role.may_compose() {
                 return Err("this surface cannot change the table's settings".into());
             }
-            return self.set_display(p);
+            return self.set_display(p, Who::of(role, surface));
         }
         if method.starts_with("custom.") || method == "palette.set" {
             if !role.may_compose() {
                 return Err("this surface cannot edit the table".into());
             }
-            return self.author(&mut inner, method, p);
+            return self.author(&mut inner, method, p, Who::of(role, surface));
         }
         let layer = p["layer"].as_str().ok_or("missing layer")?;
         let index = inner.position(layer)?;
@@ -757,7 +959,7 @@ impl Hub {
     /// `site.tv { tv: { key: value | null } }`: changes the controller's table settings (theme,
     /// theme_name, rail_style, about), saves them to site.json and sends the new `tv` to every
     /// surface as `site.tv`, so a theme shows at once without a reload. `null` removes a key.
-    fn set_tv(&self, p: &Value) -> Result<Value, String> {
+    fn set_tv(&self, p: &Value, who: Who) -> Result<Value, String> {
         let patch = p["tv"].as_object().ok_or("missing tv")?;
         let mut tv = match self.info.read().unwrap().tv.clone() {
             Some(Value::Object(tv)) => tv,
@@ -765,7 +967,9 @@ impl Hub {
         };
         for (key, value) in patch {
             let fits = match key.as_str() {
-                "theme" => value.as_object().is_some_and(|t| t.len() <= 64 && t.values().all(|v| v.as_str().is_some_and(|s| s.len() <= 160))),
+                "theme" => {
+                    value.as_object().is_some_and(|t| t.len() <= 64 && t.values().all(|v| v.as_str().is_some_and(|s| s.len() <= 160)))
+                }
                 "theme_name" => value.as_str().is_some_and(|s| !s.is_empty() && s.len() <= 40),
                 "rail_style" => matches!(value.as_str(), Some("icons" | "labelled")),
                 "about" => value.is_object() && value.to_string().len() <= 8_000,
@@ -782,7 +986,8 @@ impl Hub {
             }
         }
         let tv = if tv.is_empty() { Value::Null } else { Value::Object(tv) };
-        self.site.save_tv(tv.clone()).map_err(|e| format!("could not save site.json: {e}"))?;
+        let what = patch.keys().map(|k| tv_words(k)).collect::<Vec<_>>().join(", ");
+        self.saving(who, format!("Changed the controller's {what}"), || self.site.save_tv(tv.clone()))?;
         self.info.write().unwrap().tv = if tv.is_null() { None } else { Some(tv.clone()) };
         self.emit("site.tv", json!({ "tv": tv }));
         Ok(json!({ "tv": tv }))
@@ -790,7 +995,7 @@ impl Hub {
 
     /// `site.display { display: { quality: "draft" | "good" | "best" | null } }`: how the table's surfaces
     /// render (#134). Saved to site.json and sent to every surface as `site.display`, which apply it at once.
-    fn set_display(&self, p: &Value) -> Result<Value, String> {
+    fn set_display(&self, p: &Value, who: Who) -> Result<Value, String> {
         let patch = p["display"].as_object().ok_or("missing display")?;
         let mut display = match self.info.read().unwrap().display.clone() {
             Some(Value::Object(display)) => display,
@@ -810,7 +1015,7 @@ impl Hub {
             }
         }
         let display = if display.is_empty() { Value::Null } else { Value::Object(display) };
-        self.site.save_display(display.clone()).map_err(|e| format!("could not save site.json: {e}"))?;
+        self.saving(who, "Changed the display quality", || self.site.save_display(display.clone()))?;
         self.info.write().unwrap().display = if display.is_null() { None } else { Some(display.clone()) };
         self.emit("site.display", json!({ "display": display }));
         Ok(json!({ "display": display }))
@@ -818,9 +1023,10 @@ impl Hub {
 
     /// The `scene.*` requests. Each one edits a copy of the scene, saves it to
     /// site.json and only then makes it the session's scene.
-    fn compose(&self, inner: &mut Inner, method: &str, p: &Value) -> Result<Value, String> {
+    fn compose(&self, inner: &mut Inner, method: &str, p: &Value, who: Who) -> Result<Value, String> {
         let mut scene = inner.scene.clone();
         let mut result = json!({});
+        let summary;
         // `scene.set` changes one layer; the others change the list.
         let mut changed_layer = None;
         match method {
@@ -873,12 +1079,17 @@ impl Hub {
                 if let Some(parent) = &parent {
                     instance.state.active &= scene.iter().any(|i| &i.id == parent && i.state.active);
                 }
+                summary = match &parent {
+                    Some(parent) => format!("Added {} to {}", self.label(&instance), self.label_of(&scene, parent)),
+                    None => format!("Added {}", self.label(&instance)),
+                };
                 scene.insert(index, instance);
                 result = json!({ "id": id });
             }
             "scene.remove" => {
                 let index = inner.position(p["layer"].as_str().ok_or("missing layer")?)?;
                 let removed: Vec<Instance> = scene.drain(block(&scene, index)).collect();
+                summary = format!("Removed {}", self.label(&removed[0]));
                 // A sequence step that showed a removed layer goes with it.
                 let mut dropped = 0;
                 for instance in &mut scene {
@@ -918,6 +1129,7 @@ impl Hub {
                         return Err(format!("'{id}' has a button; clear it first, because an item comes on with its layer"));
                     }
                 }
+                summary = format!("Moved {}", self.label(&moving[0]));
                 let first = &mut moving[0];
                 if let Some(parent) = &parent {
                     let on = scene
@@ -935,6 +1147,24 @@ impl Hub {
             }
             "scene.set" => {
                 let index = inner.position(p["layer"].as_str().ok_or("missing layer")?)?;
+                let name = self.label(&scene[index]);
+                summary = if p.get("steps").is_some() {
+                    format!("Changed the steps of {name}")
+                } else if !p["params"].is_null() {
+                    let keys: Vec<&str> = p["params"].as_object().map(|o| o.keys().map(String::as_str).collect()).unwrap_or_default();
+                    match keys.as_slice() {
+                        [one] => format!("Changed {name}: {}", self.control_label(&scene[index], one)),
+                        _ => format!("Changed the settings of {name}"),
+                    }
+                } else if let Some(active) = p["active"].as_bool() {
+                    format!("Set {name} to start {}", if active { "on" } else { "off" })
+                } else if !p["button"].is_null() {
+                    format!("Changed the button of {name}")
+                } else if !p["hide"].is_null() {
+                    format!("Changed which controls of {name} show")
+                } else {
+                    format!("Changed {name}")
+                };
                 if scene[index].parent.is_some() && !p["button"].is_null() {
                     return Err("an item has no button: it comes on with its layer".into());
                 }
@@ -968,7 +1198,7 @@ impl Hub {
             }
             other => return Err(format!("unknown method '{other}'")),
         }
-        self.site.save_layers(&saved_layers(&scene)).map_err(|e| format!("could not save site.json: {e}"))?;
+        self.saving(who, summary, || self.site.save_layers(&saved_layers(&scene)))?;
         inner.scene = scene;
         match changed_layer {
             Some((index, Some(active))) => {
@@ -1002,7 +1232,7 @@ impl Hub {
     /// The requests that change what the table can show rather than its scene: custom
     /// layers (`custom.save`, `custom.remove`) and the palette (`palette.set`). Each is
     /// written to site.json first and only then takes effect.
-    fn author(&self, inner: &mut Inner, method: &str, p: &Value) -> Result<Value, String> {
+    fn author(&self, inner: &mut Inner, method: &str, p: &Value, who: Who) -> Result<Value, String> {
         match method {
             "custom.save" => {
                 let id = p["id"].as_str().ok_or("missing id")?.to_string();
@@ -1017,8 +1247,9 @@ impl Hub {
                 }
                 let def = crate::layers::custom_def(&id, &recipe).map_err(|e| format!("{e:#}"))?;
                 let mut saved = self.site.saved_custom().map_err(|e| e.to_string())?;
+                let name = recipe.name.clone();
                 saved.insert(id.clone(), recipe);
-                self.site.save_custom(&saved).map_err(|e| format!("could not save site.json: {e}"))?;
+                self.saving(who, format!("Saved the custom layer {name}"), || self.site.save_custom(&saved))?;
                 let manifest = def.manifest.clone();
                 let mut next = (*catalog).clone();
                 let at = match next.iter().position(|d| d.source == source) {
@@ -1061,8 +1292,8 @@ impl Hub {
                     return Err(format!("'{}' on the table uses it; remove that first", used.id));
                 }
                 let mut saved = self.site.saved_custom().map_err(|e| e.to_string())?;
-                saved.remove(id);
-                self.site.save_custom(&saved).map_err(|e| format!("could not save site.json: {e}"))?;
+                let name = saved.remove(id).map_or_else(|| id.to_string(), |r| r.name);
+                self.saving(who, format!("Deleted the custom layer {name}"), || self.site.save_custom(&saved))?;
                 let mut next = (*catalog).clone();
                 next.remove(at);
                 for instance in &mut inner.scene {
@@ -1079,7 +1310,7 @@ impl Hub {
                     Value::Null => None,
                     value => Some(serde_json::from_value(value.clone()).map_err(|e| format!("palette: {e}"))?),
                 };
-                self.site.save_palette(palette.as_ref()).map_err(|e| format!("could not save site.json: {e}"))?;
+                self.saving(who, "Changed the palette", || self.site.save_palette(palette.as_ref()))?;
                 self.info.write().unwrap().palette = palette.clone();
                 self.emit("palette.changed", json!({ "palette": palette }));
                 Ok(json!({}))
@@ -1485,6 +1716,9 @@ mod tests {
             std::fs::create_dir_all(to).unwrap();
             for entry in std::fs::read_dir(from).unwrap() {
                 let entry = entry.unwrap();
+                if entry.file_name() == ".mrstudio" {
+                    continue;
+                }
                 let target = to.join(entry.file_name());
                 if entry.file_type().unwrap().is_dir() {
                     copy(&entry.path(), &target);

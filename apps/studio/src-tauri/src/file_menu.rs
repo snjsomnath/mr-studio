@@ -68,7 +68,15 @@ pub fn app_menu(app: &AppHandle<Wry>) -> tauri::Result<Menu<Wry>> {
         .separator()
         .item(&PredefinedMenuItem::quit(app, None)?)
         .build()?;
-    let edit = SubmenuBuilder::new(app, "Edit").undo().redo().separator().cut().copy().paste().select_all().build()?;
+    let edit = SubmenuBuilder::new(app, "Edit")
+        .item(&edit_item(app, "undo")?)
+        .item(&edit_item(app, "redo")?)
+        .separator()
+        .cut()
+        .copy()
+        .paste()
+        .select_all()
+        .build()?;
     let view = SubmenuBuilder::new(app, "View").item(&PredefinedMenuItem::fullscreen(app, None)?).build()?;
     let window = SubmenuBuilder::new(app, "Window")
         .minimize()
@@ -81,7 +89,31 @@ pub fn app_menu(app: &AppHandle<Wry>) -> tauri::Result<Menu<Wry>> {
 
 /// The menu bar of the editor window on Windows and Linux.
 pub fn editor_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
-    MenuBuilder::new(app).item(&file_submenu(app)?).build()
+    let edit = SubmenuBuilder::new(app, "Edit").item(&edit_item(app, "undo")?).item(&edit_item(app, "redo")?).build()?;
+    MenuBuilder::new(app).item(&file_submenu(app)?).item(&edit).build()
+}
+
+/// The Edit menu's own items (#57).
+pub const EDIT_ACTIONS: [&str; 2] = ["undo", "redo"];
+
+/// Undo and Redo go to the editor page, which undoes the text being typed, or else the last
+/// change to the table through the host's revision history (#72). The system's own items
+/// would only reach the text.
+fn edit_item<R: Runtime>(app: &AppHandle<R>, id: &str) -> tauri::Result<MenuItem<R>> {
+    let (text, keys) = match id {
+        "undo" => ("Undo", "CmdOrCtrl+Z"),
+        _ if cfg!(target_os = "macos") => ("Redo", "CmdOrCtrl+Shift+Z"),
+        _ => ("Redo", "Ctrl+Y"),
+    };
+    MenuItemBuilder::with_id(id, text).accelerator(keys).build(app)
+}
+
+/// Sends Undo or Redo from the Edit menu to the editor page.
+pub fn tell_editor_edit<R: Runtime>(app: &AppHandle<R>, label: &str, action: &str) {
+    if let Some(window) = app.get_webview_window(label) {
+        let detail = serde_json::json!({ "action": action });
+        let _ = window.eval(format!("window.dispatchEvent(new CustomEvent('mrs-edit', {{ detail: {detail} }}))"));
+    }
 }
 
 /// The same action can arrive twice: from the menu's shortcut and from the page, which

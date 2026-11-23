@@ -282,7 +282,7 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
       const before = new Set(validateManifest(manifest, dir, catalog).filter((i) => i.level === 'error').map((i) => `${i.path}|${i.message}`));
       const added = issues.filter((i) => i.level === 'error' && !before.has(`${i.path}|${i.message}`));
       if (added.length) return fail('Not saved; the change would make the site invalid:', added);
-      writeSite(dir, next);
+      writeSite(dir, next, `Changed ${Object.keys(set).join(', ')}`);
       return reply(`Saved (${counts(issues)}).`, { issues, changed: Object.keys(set) });
     },
   );
@@ -329,7 +329,7 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
     const issues = validateManifest(manifest, dir, catalog);
     const errors = issues.filter((i) => i.level === 'error' && /^(layers|custom)/.test(i.path));
     if (errors.length) return fail(`Not saved: ${result.message} It would leave the scene invalid:`, errors);
-    writeSite(dir, manifest);
+    writeSite(dir, manifest, result.message.replace(/\.$/, ''));
     const scene = manifest.layers.map(
       (l: any, i: number) => `${i}: ${l.id} (${l.use})${l.active ? ' active' : ''}${l.items?.length ? `, items ${l.items.map((item: any) => item.id).join(', ')}` : ''}${l.steps?.sequence?.length ? `, ${l.steps.sequence.length} steps` : ''}`,
     );

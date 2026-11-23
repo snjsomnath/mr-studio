@@ -25,6 +25,7 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use mrs_engine::Backend;
 use mrs_site::elevation;
+use mrs_site::history::{By, Change};
 use mrs_site::import::{self, Options, Report, Target};
 use mrs_site::osm::{self, OsmLayer};
 use mrs_site::Site;
@@ -246,19 +247,29 @@ impl AppState {
         let _one = self.imports.lock().await;
         let dir = self.site.dir.clone();
         let filename = filename.to_string();
+        let history = self.hub.history();
         // The site as it is on disk now: earlier imports and scene edits included.
-        let (updated, report) = tokio::task::spawn_blocking(move || -> Result<(Option<Site>, Report), String> {
+        let (updated, report) = tokio::task::spawn_blocking(move || -> Result<(Option<(Site, Option<Change>)>, Report), String> {
             let site = Site::load(&dir).map_err(|e| e.to_string())?;
             let prepared = import::inspect(&site, &target, &filename, &bytes, options);
             if !write || !prepared.report.ok {
                 return Ok((None, prepared.report));
             }
-            let (site, report) = import::apply(&site, prepared).map_err(|e| e.to_string())?;
-            Ok((Some(site), report))
+            let what = import_words(&target);
+            let history = history.clone();
+            let mut history = history.lock().unwrap();
+            let ((site, report), change) = history
+                .write(By::Import, format!("Brought in {what}"), None, || import::apply(&site, prepared))
+                .map_err(|e| e.to_string())?;
+            drop(history);
+            Ok((Some((site, change)), report))
         })
         .await
         .map_err(|e| e.to_string())??;
-        let Some(site) = updated else { return Ok(report) };
+        let Some((site, change)) = updated else { return Ok(report) };
+        if let Some(change) = &change {
+            self.hub.history_changed(&change.revision, false);
+        }
 
         let rebuilt = tokio::task::spawn_blocking(move || -> anyhow::Result<_> {
             let (scene, stats) = site.bake()?;
@@ -282,21 +293,164 @@ impl AppState {
     pub async fn place_site(&self, place: mrs_site::Place) -> Result<mrs_site::SiteInfo, String> {
         let _one = self.imports.lock().await;
         let dir = self.site.dir.clone();
+        let history = self.hub.history();
         let rebuilt = tokio::task::spawn_blocking(move || -> Result<_, String> {
-            let site = Site::load(&dir).map_err(|e| e.to_string())?.place(&place).map_err(|e| e.to_string())?;
+            let before = Site::load(&dir).map_err(|e| e.to_string())?;
+            let summary = place_words(&before, &place);
+            let (site, change) =
+                history.lock().unwrap().write(By::Editor, summary, None, || before.place(&place)).map_err(|e| e.to_string())?;
+            if let Some(change) = &change {
+                tracing::info!("history: {}", change.revision.summary);
+            }
             let (scene, stats) = site.bake().map_err(|e| format!("the table was moved, but its scene could not be rebuilt: {e}"))?;
             tracing::info!("re-baked after a move: {} buildings, {} trees", stats.buildings, stats.trees);
             let twin = Bytes::from(site.twin(&scene).map_err(|e| e.to_string())?.encode());
-            Ok((scene, twin, site.info(), site.manifest.origin))
+            Ok((scene, twin, site.info(), site.manifest.origin, change))
         })
         .await
         .map_err(|e| e.to_string())?;
-        let (scene, twin, info, origin) = rebuilt?;
+        let (scene, twin, info, origin, change) = rebuilt?;
+        if let Some(change) = &change {
+            self.hub.history_changed(&change.revision, false);
+        }
         self.engine.relocate(scene, origin).await?;
         *self.twin.write().unwrap() = twin;
         self.hub.site_changed(info.clone());
         Ok(info)
     }
+}
+
+/// The keys of site.json a running table takes without re-baking its ground or reloading its surfaces.
+const LIVE_KEYS: [&str; 5] = ["layers", "custom", "palette", "tv", "display"];
+
+impl AppState {
+    /// `history.list`, `history.undo`, `history.redo` and `history.restore { revision }` (#72).
+    /// Undo and redo walk the history; restore brings back any kept revision as a new one.
+    pub async fn history_request(&self, role: Role, surface: u64, method: &str, p: &Value) -> Result<Value, String> {
+        if role == Role::Phone {
+            return Err("phones cannot see the table's history".into());
+        }
+        if method == "history.list" {
+            return Ok(self.hub.history_list());
+        }
+        if !role.may_compose() {
+            return Err("this surface cannot change the table".into());
+        }
+        let rev = p["revision"].as_u64();
+        if method == "history.restore" && rev.is_none() {
+            return Err("missing revision".into());
+        }
+        let _one = self.imports.lock().await;
+        let history = self.hub.history();
+        let method_owned = method.to_string();
+        let (change, from) = tokio::task::spawn_blocking(move || -> Result<(Change, u64), String> {
+            let mut history = history.lock().unwrap();
+            let from = history.head().rev;
+            let change = match method_owned.as_str() {
+                "history.undo" => history.undo(),
+                "history.redo" => history.redo(),
+                "history.restore" => history.restore(rev.unwrap_or_default(), Some(surface)),
+                other => Err(format!("unknown method '{other}'")),
+            }?;
+            Ok((change, from))
+        })
+        .await
+        .map_err(|e| e.to_string())??;
+        if let Err(e) = self.apply_change(&change).await {
+            // That version does not load as the table now is: leave site.json as it was.
+            let history = self.hub.history();
+            let _ = tokio::task::spawn_blocking(move || history.lock().unwrap().step_back(from)).await;
+            return Err(format!("that version of the table could not be opened: {e}"));
+        }
+        self.hub.history_changed(&change.revision, method != "history.restore");
+        Ok(self.hub.history_list())
+    }
+
+    /// Looks for a change to site.json made outside the host (the MCP server, a text editor,
+    /// `git pull`), records it in the history and shows it on every surface. A file that does
+    /// not load is recorded too, so it can be undone, and the table keeps what it shows.
+    pub async fn check_outside(&self) {
+        let Ok(_one) = self.imports.try_lock() else { return };
+        let history = self.hub.history();
+        let Ok(Some(change)) = tokio::task::spawn_blocking(move || history.lock().unwrap().check_outside()).await else { return };
+        tracing::info!("history: {}", change.revision.summary);
+        self.hub.history_changed(&change.revision, false);
+        if let Err(e) = self.apply_change(&change).await {
+            tracing::warn!("site.json changed outside MR Studio and does not load: {e}");
+            self.hub.emit("site.problem", json!({ "message": e, "revision": change.revision.rev }));
+        }
+    }
+
+    /// Makes the running table match site.json after a change the hub did not make itself.
+    async fn apply_change(&self, change: &Change) -> Result<(), String> {
+        let dir = self.site.dir.clone();
+        let deep = change.keys.iter().any(|k| !LIVE_KEYS.contains(&k.as_str()));
+        let loaded = tokio::task::spawn_blocking(move || -> Result<_, String> {
+            let site = Site::load(&dir).map_err(|e| e.to_string())?;
+            let rebuilt = if deep {
+                let (scene, _) = site.bake().map_err(|e| format!("the ground could not be rebuilt: {e}"))?;
+                let twin = Bytes::from(site.twin(&scene).map_err(|e| e.to_string())?.encode());
+                Some((scene, twin))
+            } else {
+                None
+            };
+            Ok((site, rebuilt))
+        })
+        .await
+        .map_err(|e| e.to_string())??;
+        let (site, rebuilt) = loaded;
+        self.hub.reload(&site, change).map_err(|e| format!("{e:#}"))?;
+        if let Some((scene, twin)) = rebuilt {
+            self.engine.relocate(scene, site.manifest.origin).await?;
+            *self.twin.write().unwrap() = twin;
+            self.hub.site_changed(site.info());
+        }
+        Ok(())
+    }
+}
+
+/// "the buildings", for the history's "Brought in the buildings".
+fn import_words(target: &Target) -> String {
+    match target {
+        Target::Buildings => "the buildings".into(),
+        Target::Trees => "the trees".into(),
+        Target::Walkways => "the walking paths".into(),
+        Target::Trips => "the trips".into(),
+        Target::Terrain => "the ground".into(),
+        Target::Data(name) => format!("the {name} data"),
+    }
+}
+
+/// What moving the table changed, in a few words.
+fn place_words(site: &Site, place: &mrs_site::Place) -> String {
+    let m = &site.manifest;
+    let renamed = place.name.as_deref().is_some_and(|n| n.trim() != m.name);
+    let moved = m.origin != place.origin;
+    let resized = m.extent.width_m != place.extent.width_m || m.extent.height_m != place.extent.height_m || place.table_width_cm.is_some();
+    let turned = m.extent.rotation_deg != place.extent.rotation_deg.rem_euclid(360.0);
+    let mut parts = Vec::new();
+    if renamed {
+        parts.push("renamed");
+    }
+    if moved {
+        parts.push("moved");
+    }
+    if resized {
+        parts.push("resized");
+    }
+    if turned {
+        parts.push("turned");
+    }
+    match parts.as_slice() {
+        [] => "Changed the table's place".into(),
+        [one] => format!("{} the table", capitalise(one)),
+        [rest @ .., last] => format!("{} and {last} the table", capitalise(&rest.join(", "))),
+    }
+}
+
+fn capitalise(s: &str) -> String {
+    let mut c = s.chars();
+    c.next().map_or_else(String::new, |f| f.to_uppercase().collect::<String>() + c.as_str())
 }
 
 /// A running host. Dropping it does not stop the server; call `shutdown`.
@@ -375,6 +529,20 @@ pub async fn start(config: HostConfig) -> anyhow::Result<RunningHost> {
         osm_cache: Default::default(),
     });
     let app = router(state.clone(), config.web_dir.clone());
+    // Watches site.json for changes made outside the host (#72). It stops when the host is gone.
+    {
+        let state = Arc::downgrade(&state);
+        tokio::spawn(async move {
+            let mut every = tokio::time::interval(std::time::Duration::from_millis(700));
+            loop {
+                every.tick().await;
+                match state.upgrade() {
+                    Some(state) => state.check_outside().await,
+                    None => break,
+                }
+            }
+        });
+    }
     // Moves playing slideshows and sub-steps on. It stops when the host is gone.
     {
         let state = Arc::downgrade(&state);

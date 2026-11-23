@@ -6,14 +6,15 @@ pub mod create;
 mod crs;
 pub mod elevation;
 mod geotiff;
+pub mod history;
 pub mod import;
 mod manifest;
 mod mesh;
 pub mod migrate;
 pub mod model;
 pub mod osm;
-pub mod sound;
 mod projection;
+pub mod sound;
 mod twin;
 
 use std::collections::{BTreeMap, BTreeSet};

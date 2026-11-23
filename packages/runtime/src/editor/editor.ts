@@ -9,6 +9,7 @@ import { builderSection, layerFromImport, newCustomLayer, paletteDialog } from '
 import { DisplayTab } from './display-tab.ts';
 import type { BuilderHost } from './builder.ts';
 import { LAYER_ICONS, icon } from './icons.ts';
+import { HistoryControls } from './history.ts';
 import { Importer, targetFor } from './importer.ts';
 import { confirmLeave, actionFor, fileButton } from './file-menu.ts';
 import type { FileAction } from './file-menu.ts';
@@ -99,7 +100,9 @@ export class Editor {
   /** The one thing this table still lacks, with the way to it. */
   private readonly next = el('div', 'ed-next');
   private readonly inspector = el('aside', 'ed-inspector');
-  private readonly saved = el('span', 'ed-saved');
+  private readonly saved = el('button', 'ed-saved');
+  /** Undo, redo and the History panel, on the host's revision history (#57, #72). */
+  private history!: HistoryControls;
   private readonly shell = el('div', 'ed');
   private readonly body = el('div', 'ed-body');
   /** The live controller, shown in the middle in place of the map. */
@@ -116,6 +119,9 @@ export class Editor {
   constructor(root: HTMLElement, store: Store, connection: Connection) {
     this.store = store;
     this.connection = connection;
+    this.history = new HistoryControls(connection, () => store.surface, (problem) => this.setSaved(problem));
+    this.saved.type = 'button';
+    this.saved.addEventListener('click', () => this.history.toggle(this.saved));
 
     const { shell, body } = this;
     const left = el('aside', 'ed-left');
@@ -379,7 +385,7 @@ export class Editor {
     this.problem = problem ?? null;
     const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     this.saved.replaceChildren(icon(problem ? 'alert' : 'check', 14), el('span', undefined, problem ?? `Saved ${time}`));
-    this.saved.title = problem ? 'This change could not be saved' : `Every change is saved as you make it. Last saved at ${time}.`;
+    this.saved.title = problem ? 'This change could not be saved. Click for the history.' : `Every change is saved as you make it. Last saved at ${time}. Click for the history.`;
     this.saved.classList.toggle('is-error', Boolean(problem));
   }
 
@@ -625,6 +631,8 @@ export class Editor {
     const file = invoke ? null : fileButton(false, (action) => void this.file(action));
     const name = el('div', 'ed-name');
     name.append(el('strong', undefined, this.store.state.site.name), this.saved);
+    const steps = el('div', 'ed-steps');
+    steps.append(this.history.undoButton, this.history.redoButton);
 
     const actions = el('div', 'ed-actions');
     const preview = button('ed-button', 'Preview', 'play');
@@ -686,7 +694,7 @@ export class Editor {
       void refresh();
     }
     actions.append(preview, present);
-    bar.append(brand, ...(file ? [file] : []), name, actions);
+    bar.append(brand, ...(file ? [file] : []), steps, name, actions);
     return bar;
   }
 
