@@ -909,32 +909,75 @@ body[data-role='edit'] .table-surface {
 }
 
 .wz-ground {
-  padding: 48px;
-  container-type: size;
-  align-items: center;
-  justify-content: center;
+  flex-direction: column;
+  gap: 8px;
+  padding: 24px;
 }
 
-.wz-ground-shape {
-  width: min(100cqw, 100cqh * var(--aspect, 1.6667));
-  display: grid;
-  place-items: center;
-  border: 1px dashed #9aa3b2;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.7);
+.wz-ground .pm {
+  flex: 1;
 }
 
-.wz-ground-caption {
+.wz-ground .pm-map {
+  height: 100%;
+}
+
+/* ---- Placing a table on a map ---- */
+
+.pm {
+  position: relative;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  color: var(--ed-text-2);
+  min-height: 0;
+  border: 1px solid var(--ed-line, #d5d9e0);
+  border-radius: 8px;
+  overflow: hidden;
+  background: #eef0f3;
 }
 
-.wz-ground-caption strong {
-  color: var(--ed-text);
-  font-size: 18px;
+.pm-map {
+  width: 100%;
+  height: 280px;
+}
+
+.pm-handle {
+  width: 16px;
+  height: 16px;
+  border: 2px solid #c77d00;
+  border-radius: 4px;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+}
+
+.pm-handle.is-centre {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #c77d00;
+  border-color: #fff;
+  cursor: move;
+}
+
+.pm-handle.is-corner {
+  cursor: nwse-resize;
+}
+
+.pm-handle.is-turn {
+  border-radius: 50%;
+  cursor: grab;
+}
+
+.pm-note {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  right: 52px;
+  margin: 0;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--ed-text-2);
+  font-size: 12px;
 }
 
 /* ---- A setting and its eye ---- */
