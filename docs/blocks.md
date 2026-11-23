@@ -69,6 +69,7 @@ constant or a function of the shape, which is how data drives the picture. Block
 | Spots | `drawSpots`, `drawLabel`, `clusterPoints` | Markers with halo, core and label; clustering for dense data |
 | Rings | `drawRings`, `drawGlow` | Rings travelling outward or inward, or rippling in place; a soft catchment disc |
 | Travelling lights | `pathHeads`, `drawDots` | Lights along lines as a pure function of time, by period or by speed, any number per line |
+| Place motions | `PLACE_MOTIONS`, `placeData` | 22 motions for places (place-motions.ts) on the place data standard (places.ts): weight, activity over time, flows, links. Each has knobs, a ? help setup and draws in design units of 1.25 table mm |
 | Street network | `StreetNetwork` | Lines snapped into a graph; shortest routes (`route`), a tree of routes to one place (`treeTo`, `follow`) and the nodes that reach it. Crowds walk the streets, not across buildings (M8) |
 | Particles | `Swarm`, `pullTowards`, `gravity`, `followField`, `pickWeighted`, `aroundRing`, `particleAlpha` | A crowd that is spawned, steered and retired. Steering is pluggable: to a target, by the pull of all attractors, or along any field |
 | Data fields | `heatField`, `gravityField`, `siteRaster` | Rasters made from data, returned as a `FieldFrame` and drawn with `ctx.map.addField` like a kernel's |

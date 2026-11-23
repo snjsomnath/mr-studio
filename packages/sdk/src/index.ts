@@ -17,3 +17,5 @@ export * from './blocks/index.ts';
 export * from './palette.ts';
 export * from './recipe.ts';
 export * from './marks.ts';
+export * from './places.ts';
+export * from './place-motions.ts';

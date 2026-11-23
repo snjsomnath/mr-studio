@@ -13,6 +13,7 @@ import {
   metresPerTableMm,
   motionFor,
   parseCsv,
+  placeFiles,
   readShapes,
   resolvePalette,
   tableFrame,
@@ -69,10 +70,35 @@ export function loadData(url: string): Promise<GeoJsonCollection> {
   return file;
 }
 
+const tables = new Map<string, Promise<Record<string, unknown>[]>>();
+/** Loads a CSV table (activity, flows, links for place motions), cached. */
+export function loadTable(url: string): Promise<Record<string, unknown>[]> {
+  let table = tables.get(url);
+  if (!table) {
+    table = fetch(url).then(async (response) => {
+      if (!response.ok) throw new Error(`${url}: ${response.status}`);
+      return parseCsv(await response.text()) as Record<string, unknown>[];
+    });
+    table.catch(() => tables.delete(url));
+    tables.set(url, table);
+  }
+  return table;
+}
+
+/** A site dataset by name, or a file in the site folder by path. */
+function siteFile(name: string, site: Pick<SiteInfo, 'data'>): string | null {
+  return dataUrl({ id: name, dataset: name }, site) ?? (/\.[a-z0-9]+$/i.test(name) ? `/site/${name}` : null);
+}
+
 /** Forgets a loaded file, after the author brought in a new version of it. */
 export function forgetData(url?: string): void {
-  if (url) files.delete(url);
-  else files.clear();
+  if (url) {
+    files.delete(url);
+    tables.delete(url);
+  } else {
+    files.clear();
+    tables.clear();
+  }
 }
 
 /**
@@ -89,6 +115,20 @@ export function recipeModule(current: () => LayerManifest | undefined, watch: (c
       let shapes = new Map<string, Shapes>();
       /** Street networks that crowds walk on, by dataset name. */
       let streets = new Map<string, Shapes>();
+      /** Place motions' other files (streets, buildings, targets, CSV tables), by name. */
+      let extraShapes = new Map<string, Shapes>();
+      let extraTables = new Map<string, Record<string, unknown>[]>();
+      const placeNeeds = () => {
+        const datasets = new Set<string>();
+        const csvs = new Set<string>();
+        for (const m of recipe.motion ?? []) {
+          if (m.block !== 'place') continue;
+          const { datasets: d, tables: t } = placeFiles(m.props ?? {});
+          Object.values(d).forEach((name) => datasets.add(name!));
+          Object.values(t).forEach((name) => csvs.add(name!));
+        }
+        return { datasets: [...datasets], csvs: [...csvs] };
+      };
       const networks = () => [...new Set((recipe.motion ?? []).filter((m) => m.block === 'gravity').map((m) => String(m.props?.network ?? 'roads')))];
       let looks: CompiledLook[] = [];
       let dataKey = '';
@@ -121,14 +161,39 @@ export function recipeModule(current: () => LayerManifest | undefined, watch: (c
             }
           }),
         );
+        const needs = placeNeeds();
+        const nextExtra = new Map<string, Shapes>();
+        const nextTables = new Map<string, Record<string, unknown>[]>();
+        await Promise.all([
+          ...needs.datasets.map(async (name) => {
+            const url = siteFile(name, ctx.site);
+            if (!url) return console.warn(`[custom ${recipe.name}] the site has no '${name}' dataset`);
+            try {
+              nextExtra.set(name, readShapes(await loadData(url), frame));
+            } catch (error) {
+              console.warn(`[custom ${recipe.name}] ${name}: ${(error as Error).message}`);
+            }
+          }),
+          ...needs.csvs.map(async (name) => {
+            const url = siteFile(name, ctx.site);
+            if (!url) return;
+            try {
+              nextTables.set(name, await loadTable(url));
+            } catch (error) {
+              console.warn(`[custom ${recipe.name}] ${name}: ${(error as Error).message}`);
+            }
+          }),
+        ]);
         shapes = next;
         streets = nextStreets;
+        extraShapes = nextExtra;
+        extraTables = nextTables;
         styleKey = '';
       };
 
       // Restyles when the recipe, the control values or the palette changed; reloads only when the data did.
       const refresh = () => {
-        const nextData = JSON.stringify([recipe.data ?? [], networks()]);
+        const nextData = JSON.stringify([recipe.data ?? [], networks(), placeNeeds()]);
         if (nextData !== dataKey) {
           dataKey = nextData;
           loading = loadAll().then(() => {
@@ -147,6 +212,17 @@ export function recipeModule(current: () => LayerManifest | undefined, watch: (c
           .map((block) => {
             const motion = motionFor(recipe, block.id, overrides.motion);
             if (motion.gravity) motion.gravity = { ...motion.gravity, streets: streets.get(String(motion.gravity.network ?? 'roads')) };
+            if (motion.place) {
+              const { datasets, tables: csvs } = placeFiles(motion.place);
+              const shapesOf = (name?: string) => (name ? extraShapes.get(name) : undefined);
+              const tableOf = (name?: string) => (name ? extraTables.get(name) : undefined);
+              motion.place = {
+                ...motion.place,
+                frame,
+                extras: { streets: shapesOf(datasets.streets), buildings: shapesOf(datasets.buildings), targets: shapesOf(datasets.targets) },
+                tables: { activity: tableOf(csvs.activity), flows: tableOf(csvs.flows), links: tableOf(csvs.links) },
+              };
+            }
             return compileLook(block, (block.data && shapes.get(block.data)) || EMPTY, palette, mm, motion, overrides.look[block.id]);
           })
           .filter((look): look is CompiledLook => look !== null);

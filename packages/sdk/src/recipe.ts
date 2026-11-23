@@ -21,6 +21,9 @@ import { categorySlots, paletteColour, paletteHex, rampColour } from './palette.
 import type { ResolvedPalette } from './palette.ts';
 import { TIMELINE_DEFAULTS, arrowMarks, fillArrow, fillIcon, timeReveal, traceShape } from './marks.ts';
 import type { Arrows, PointShape, TimeReveal, TimelineProps } from './marks.ts';
+import { placeData } from './places.ts';
+import type { PlaceExtras, PlaceTables } from './places.ts';
+import { placeMotion, placeUnit } from './place-motions.ts';
 import type { CustomLayer, LegendItem, RecipeBlock, SiteInfo } from './types.ts';
 
 // ---- Style values ------------------------------------------------------------
@@ -146,6 +149,27 @@ export interface GravityProps {
   /** A short fading trail behind each walker. */
   trail: boolean;
 }
+/**
+ * A place motion on a points look. `motion` names one of PLACE_MOTIONS; the other files are
+ * site datasets (streets, buildings, targets) or CSV tables (activity, flows, links), each
+ * optional. Every other prop is a knob of the motion (speed, glow and its own).
+ */
+export interface PlaceProps {
+  motion: string;
+  streets: string | null;
+  buildings: string | null;
+  targets: string | null;
+  activity: string | null;
+  flows: string | null;
+  links: string | null;
+  /** Seconds activity.csv takes to play through. */
+  cycle_s: number;
+  /** One palette colour each, by category, or one slot for all. */
+  colours: string;
+  [knob: string]: unknown;
+}
+export const PLACE_DEFAULTS: PlaceProps = { motion: 'ripples', streets: 'roads', buildings: 'buildings', targets: null, activity: null, flows: null, links: null, cycle_s: 24, colours: 'each' };
+
 export const MOTION_DEFAULTS = {
   pulse: { period_s: 2, size_mm: 14, rings: 2, direction: 1 } satisfies PulseProps,
   'draw-in': { duration_s: 1.2, stagger: true } satisfies DrawInProps,
@@ -154,10 +178,11 @@ export const MOTION_DEFAULTS = {
   attract: { count: 300, speed_mm: 12, reach_mm: 60, weight: null, size_mm: 1.5 } satisfies AttractProps,
   gravity: { network: 'roads', count: 240, speed_mm: 10, weight: null, size_mm: 2, trail: true } satisfies GravityProps,
   timeline: TIMELINE_DEFAULTS,
+  place: PLACE_DEFAULTS,
 };
 /** Which motions fit which look (L1: verbs fit the form). */
 export const MOTIONS_FOR: Record<GeometryKind, (keyof typeof MOTION_DEFAULTS)[]> = {
-  points: ['pulse', 'attract', 'gravity', 'timeline'],
+  points: ['pulse', 'attract', 'gravity', 'timeline', 'place'],
   lines: ['draw-in', 'flow', 'particles', 'timeline'],
   fill: ['pulse', 'timeline'],
 };
@@ -407,6 +432,8 @@ export interface LookMotion {
   /** `streets` is the network dataset in table metres, loaded by whoever draws the recipe. */
   gravity?: Partial<GravityProps> & { streets?: Shapes };
   timeline?: Partial<TimelineProps>;
+  /** A place motion (#161-163): `extras` and `tables` are its other files, loaded by whoever draws the recipe. */
+  place?: Partial<PlaceProps> & { extras?: PlaceExtras; tables?: PlaceTables; frame?: { width: number; height: number } };
 }
 
 function trace(view: View, points: readonly Point[], close: boolean): void {
@@ -441,12 +468,14 @@ export function compileLook(block: RecipeBlock, shapes: Shapes, palette: Resolve
     const attract = motion.attract ? attractCrowd(shapes.spots, paint, { ...MOTION_DEFAULTS.attract, ...motion.attract }, mm) : null;
     const walkers = motion.gravity ? streetCrowd(shapes.spots, paint, { ...MOTION_DEFAULTS.gravity, ...motion.gravity }, motion.gravity.streets, mm) : null;
     const reveal = motion.timeline ? timeReveal(rows, motion.timeline) : null;
+    const place = motion.place ? placeLook(shapes, motion.place, palette, mm) : null;
     return {
       id: block.id,
       kind,
       legend: legendRows(block, paint, 'point', palette, props.color),
       draw(view, time, alpha) {
-        // Crowds go under the points they are drawn to.
+        // Crowds and place motions go under the points they belong to.
+        place?.draw(view, time, alpha);
         attract?.draw(view, time, alpha);
         walkers?.draw(view, time, alpha);
         drawPoints(view, shapes.spots, { paint, radius, props, stroke, pulse, px: (m) => px(view, m), time, alpha, timeline: reveal });
@@ -965,6 +994,33 @@ function streetCrowd(spots: readonly Spot[], paint: PaintScale, o: GravityProps,
   };
 }
 
+// ---- Place motions (#160-163) --------------------------------------------------------
+
+/** The files a place motion block reads, by role, for whoever loads them. */
+export function placeFiles(props: Partial<PlaceProps>): { datasets: Partial<Record<'streets' | 'buildings' | 'targets', string>>; tables: Partial<Record<'activity' | 'flows' | 'links', string>> } {
+  const o = { ...PLACE_DEFAULTS, ...props };
+  const uses = placeMotion(o.motion)?.uses ?? [];
+  const datasets: Partial<Record<'streets' | 'buildings' | 'targets', string>> = {};
+  if (o.streets && uses.includes('streets')) datasets.streets = o.streets;
+  if (o.buildings && uses.includes('buildings')) datasets.buildings = o.buildings;
+  if (o.targets) datasets.targets = o.targets;
+  const tables: Partial<Record<'activity' | 'flows' | 'links', string>> = {};
+  for (const k of ['activity', 'flows', 'links'] as const) if (o[k]) tables[k] = o[k]!;
+  return { datasets, tables };
+}
+
+function placeLook(shapes: Shapes, motion: NonNullable<LookMotion['place']>, palette: ResolvedPalette, mm: number) {
+  const o = { ...PLACE_DEFAULTS, ...motion };
+  const def = placeMotion(o.motion);
+  if (!def || shapes.spots.length === 0) return null;
+  // The table in metres; without it, the places' own extent.
+  const frame = motion.frame ?? { width: Math.max(1, ...shapes.spots.map((s) => s.point[0])), height: Math.max(1, ...shapes.spots.map((s) => s.point[1])) };
+  const data = placeData(shapes.spots, { colours: o.colours }, motion.tables ?? {}, motion.extras ?? {}, palette, frame, Number(o.cycle_s) || 24);
+  const knobs: Record<string, number> = {};
+  for (const [k, v] of Object.entries(o)) if (typeof v === 'number') knobs[k] = v;
+  return def.create({ data, props: knobs, u: placeUnit(mm), palette });
+}
+
 // ---- Whole recipes ---------------------------------------------------------------------
 
 /** The motion blocks acting on a look block, as compileLook takes them. */
@@ -980,6 +1036,7 @@ export function motionFor(recipe: Pick<CustomLayer, 'motion'>, look: string, ove
     if (block.block === 'attract') motion.attract = props as Partial<AttractProps>;
     if (block.block === 'gravity') motion.gravity = props as Partial<GravityProps>;
     if (block.block === 'timeline') motion.timeline = props as Partial<TimelineProps>;
+    if (block.block === 'place') motion.place = props as Partial<PlaceProps>;
   }
   return motion;
 }

@@ -75,6 +75,20 @@ export class StreetNetwork {
     this.edges[b]!.push({ to: a, length });
   }
 
+  /** The streets that leave node `n`, with their lengths. */
+  neighbours(n: number): readonly { to: number; length: number }[] {
+    return this.edges[n] ?? [];
+  }
+
+  /** Every street once, as node pairs with their lengths. */
+  links(): [number, number, number][] {
+    const out: [number, number, number][] = [];
+    this.edges.forEach((list, a) => {
+      for (const edge of list) if (a < edge.to) out.push([a, edge.to, edge.length]);
+    });
+    return out;
+  }
+
   /** The node nearest a point, or -1 for an empty network. */
   nearest(point: Point): number {
     let best = -1;
