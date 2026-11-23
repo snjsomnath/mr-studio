@@ -391,6 +391,8 @@ function aboutPage(about: TvAbout, fallback: string, siteLogo: string | null): H
     }
     page.append(list);
   }
+  // The maps and data on the table now, in the words their services ask for (#37).
+  page.append(el('p', 'about-map'));
   return page;
 }
 
@@ -622,6 +624,7 @@ export class Controller {
     this.role = role;
     this.about = centre && site.tv?.about ? aboutPage(site.tv.about, site.branding.title ?? site.name, site.branding.logo) : undefined;
     this.arrange();
+    this.creditMaps();
     if (centre) {
       this.listenForKeys();
       this.idleReset();
@@ -631,6 +634,7 @@ export class Controller {
       const manifest = store.manifest(state.layer);
       if (state.active && !state.parent && this.aboutOpen && manifest && !isAtRest(manifest, state)) this.showAbout(false);
       this.cards.get(id)?.sync(state);
+      this.creditMaps();
       // The slideshow's stage speaks for the layer it shows: its legend and step names follow that layer.
       if (state.shown_by && store.state.layers[state.shown_by]) this.cards.get(state.shown_by)?.sync(store.state.layers[state.shown_by]!);
       // A button moves when its author changes its side, and the buttons shared out around it may move too.
@@ -916,6 +920,21 @@ export class Controller {
       if (this.welcome.hidden) this.reset();
       touched();
     }, 1000);
+  }
+
+  /** The Credits page names the base map's service, and any other credit a layer on the table published as `source`. */
+  private creditMaps(): void {
+    const line = this.about?.querySelector<HTMLElement>('.about-map');
+    if (!line) return;
+    const { state } = this.store;
+    const credits = new Set<string>();
+    for (const id of state.scene) {
+      const layer = state.layers[id];
+      const source = layer?.active ? layer.shared?.source : undefined;
+      if (typeof source === 'string' && source.trim()) credits.add(source.trim());
+    }
+    line.textContent = credits.size > 0 ? `Maps and data: ${[...credits].join(' · ')}` : '';
+    line.hidden = credits.size === 0;
   }
 
   private get aboutOpen(): boolean {

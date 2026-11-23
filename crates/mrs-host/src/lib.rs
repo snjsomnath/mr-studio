@@ -2,6 +2,7 @@
 //! hub and fronts the compute engine. The desktop shell embeds it; `mrstudio dev`
 //! runs it on its own. Contract in `docs/contracts/session.md`.
 
+mod basemap;
 mod calibration;
 mod engine_bridge;
 mod hub;
@@ -439,6 +440,7 @@ fn router(state: Arc<AppState>, web_dir: Option<PathBuf>) -> Router {
         .route("/api/site/place", post(place_site))
         .route("/api/site/thumbnail", post(save_thumbnail))
         .route("/api/wms", get(wms_map))
+        .route("/api/basemap/{service}/{z}/{x}/{y}", get(basemap_tile))
         .route("/api/sources", get(sources_page).post(save_source))
         .route("/api/sources/{id}", axum::routing::delete(remove_source))
         .route("/api/sources/{id}/test", post(test_source))
@@ -480,6 +482,28 @@ fn local(from: &SocketAddr, headers: &HeaderMap) -> Result<(), Box<axum::respons
         Some(_) => Err(Box::new(
             (StatusCode::FORBIDDEN, Json(json!({ "error": "sources are used from MR Studio's own pages only" }))).into_response(),
         )),
+    }
+}
+
+/// `GET /api/basemap/<service>/<z>/<x>/<y>`: a base map tile, kept in the site folder so the
+/// table shows its map again without a connection (#37). From this computer only, since it writes to disk.
+async fn basemap_tile(
+    State(state): State<Arc<AppState>>,
+    ConnectInfo(from): ConnectInfo<SocketAddr>,
+    axum::extract::Path((service, z, x, y)): axum::extract::Path<(String, u32, u32, String)>,
+) -> axum::response::Response {
+    if !from.ip().is_loopback() {
+        return (StatusCode::FORBIDDEN, Json(json!({ "error": "the base map is drawn on this computer only" }))).into_response();
+    }
+    let Ok(y) = y.split('.').next().unwrap_or("").parse::<u32>() else {
+        return (StatusCode::BAD_REQUEST, Json(json!({ "error": "no such tile" }))).into_response();
+    };
+    match basemap::tile(&state.site.dir, &service, z, x, y).await {
+        Ok(bytes) => {
+            let kind = basemap::content_type(&bytes);
+            ([(header::CONTENT_TYPE, kind), (header::CACHE_CONTROL, "max-age=86400")], bytes).into_response()
+        }
+        Err(why) => (StatusCode::BAD_GATEWAY, Json(json!({ "error": why }))).into_response(),
     }
 }
 
