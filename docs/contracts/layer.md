@@ -134,6 +134,7 @@ interface TableContext<P> {
   readonly map: MapHandle;              // field overlays
   readonly model: ModelHandle;          // the 3D model: fields, lights, materials, focus, pick (see model.md)
   readonly pointer: TablePointer;       // mouse, touch and pen on the table surface
+  sendTool(tool: string, geometry: ToolGeometry): Promise<void>;  // send a tool input through the host, as a phone does; every view of the table gets it
   readonly steps: LayerSteps;           // sub-steps that the controller's Next reveals one at a time
   onFrame(cb: (dt: number) => void): void;   // every animation frame while the layer is on
   onCleanup(cb: () => void): void;      // extra teardown
@@ -280,6 +281,10 @@ scales, visual blocks, staging and interaction behaviours. The catalogue is [../
 Table pointers are local to the table surface and do not pass through the host. Phone tools arrive
 through `tool(input)`; `fromToolInput(input, frame)` turns a point input into the same `PointerSample`,
 so a layer routes both to the same behaviours. What other surfaces need goes out with `setParams` or `publish`.
+When a pick made with the pointer has to reach every view of the table (the projector window and the
+editor's live table run the layer separately), the layer sends it on with `ctx.sendTool(tool, geometry)` and
+handles it where it arrives, in `tool(input)`. `packages/layers/coolpaths` is the reference: a click sets the
+walk's start or end and dragging A or B moves it.
 
 ## Dev mode
 

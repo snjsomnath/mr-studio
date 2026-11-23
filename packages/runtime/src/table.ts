@@ -287,6 +287,7 @@ export class TableView {
       calibrated: false,
       addField: (id, style) => map.addField(`model:${id}`, style),
       addLight: () => ({ set: () => {}, remove: () => {} }),
+      sunShadowMask: async () => null,
       setMaterial: () => {},
       focus: () => {},
       pick: () => null,

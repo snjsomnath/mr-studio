@@ -28,7 +28,10 @@ drawn, so an OSM extract of walkable ways works as it is. Properties are ignored
 ## Inputs
 
 - Controls: date, time of day, animate the day, longest detour, another example walk, and what to draw.
-- Tools: `from` and `to` points set the ends of the walk. A point snaps to the nearest path within 120 m.
+- On the table (or the editor's live table): click or tap to set the start (A), click again to set the end (B),
+  and so on in turn. Press on A or B and drag to move it; the routes follow. The pick goes through the host
+  with `ctx.sendTool`, so every view of the table (projector window, editor) shows the same walk.
+- Tools: `from` and `to` points set the ends of the walk from a phone. A point snaps to the nearest path within 120 m.
   Until an input sets them, the layer picks an example walk that shows a clear difference.
 
 ## Next step: thermal comfort

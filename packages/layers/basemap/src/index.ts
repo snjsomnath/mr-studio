@@ -27,13 +27,15 @@ export default defineLayer<Params>({
     let asked = 0;
 
     /** Your own streets and buildings, drawn dark; or plain ground under them. */
-    function drawOwn(buildings: ReturnType<typeof geojsonPolygons>, roads: ReturnType<typeof geojsonLines>) {
+    function drawOwn(buildings: ReturnType<typeof geojsonPolygons>, roads: ReturnType<typeof geojsonLines>, ground = true) {
       const g = canvas.ctx;
       const p = ctx.params;
-      canvas.clear();
-      g.fillStyle = p.ground;
-      g.fillRect(0, 0, canvas.width, canvas.height);
-      if (p.style !== 'dark') return;
+      if (ground) {
+        canvas.clear();
+        g.fillStyle = p.ground;
+        g.fillRect(0, 0, canvas.width, canvas.height);
+      }
+      if ((p.style ?? 'dark') !== 'dark') return;
       if (p.streets) {
         g.strokeStyle = p.streetColor;
         g.lineCap = 'round';
@@ -57,7 +59,8 @@ export default defineLayer<Params>({
     }
 
     /** A map from a key-free tile service, laid on the table tile by tile. */
-    async function drawTiles(style: Exclude<Style, 'dark' | 'plain'>) {
+    /** `over` draws on top once the tiles are in, such as the table's own buildings. */
+    async function drawTiles(style: keyof typeof TILE_STYLES, why = '', over?: () => void) {
       const mine = ++asked;
       const service = TILE_STYLES[style];
       ctx.publish({ source: service.credit, note: 'Loading the map…' });
@@ -93,14 +96,26 @@ export default defineLayer<Params>({
         for (let i = 0; i < d.length; i += 4) [d[i], d[i + 1], d[i + 2]] = service.tone(d[i]!, d[i + 1]!, d[i + 2]!);
         g.putImageData(pixels, 0, 0);
       }
+      over?.();
       canvas.commit();
-      ctx.publish({ source: service.credit, note: failed === tiles.length && tiles.length ? 'The map could not be loaded: no connection to the tile service.' : '' });
+      ctx.publish({ source: service.credit, note: failed === tiles.length && tiles.length ? 'The map could not be loaded: no connection to the tile service.' : why });
     }
 
     let shapes: [ReturnType<typeof geojsonPolygons>, ReturnType<typeof geojsonLines>] = [[], []];
+    let loaded = false;
     function draw() {
       const style = ctx.params.style ?? 'dark';
       drawOwn(...shapes);
+      // Without streets of its own, the table would show buildings floating on bare ground: a dark map from
+      // OpenStreetMap goes under them (#146), and the table's own buildings are drawn on top.
+      if (style === 'dark' && loaded && shapes[1].length === 0) {
+        canvas.commit();
+        const why = shapes[0].length
+          ? 'This table has no streets of its own yet, so a dark map from OpenStreetMap shows them under your buildings.'
+          : 'This table has no streets or buildings of its own yet, so a dark map from OpenStreetMap stands in for them.';
+        void drawTiles('darkmap', why, () => drawOwn(shapes[0], [], false));
+        return;
+      }
       if (style === 'dark' || style === 'plain') {
         asked++;
         canvas.commit();
@@ -115,6 +130,7 @@ export default defineLayer<Params>({
     draw();
     const [buildings, roads] = await Promise.all([readSiteData(ctx.site, 'buildings'), readSiteData(ctx.site, 'roads')]);
     shapes = [geojsonPolygons(buildings, space), geojsonLines(roads, space)];
+    loaded = true;
     // The base map is static: it is drawn once, and again only when a setting changes.
     if ((ctx.params.style ?? 'dark') === 'dark') draw();
 
