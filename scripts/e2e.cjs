@@ -104,9 +104,11 @@ async function main() {
       if ((await button.getAttribute('aria-pressed')) !== String(on)) await button.click();
       await tv.locator(`.layer-button[aria-pressed="${on}"]`, { hasText: name }).waitFor();
     };
-    // The map's ambient layers have no button there, and the buttons default to the left side.
+    // The map's ambient layers have no button there, and unplaced buttons are shared out over both sides.
     assert.equal(await tv.locator('.layer-button', { hasText: 'Traffic' }).count(), 0);
-    assert.equal(await tv.locator('.controller-right .layer-button-card').count(), 0);
+    const leftButtons = await tv.locator('.controller:not(.controller-right) .layer-button-card').count();
+    const rightButtons = await tv.locator('.controller-right .layer-button-card').count();
+    assert.ok(rightButtons > 0 && leftButtons >= rightButtons && leftButtons - rightButtons <= 1, `buttons ${leftButtons} left, ${rightButtons} right`);
     await press('Sunlight', true);
     await dev.getByText(/sun [\d.]+° up/).waitFor();
     await dev.waitForTimeout(500);
@@ -537,7 +539,8 @@ async function main() {
     await guide.getByRole('button', { name: 'Move the table' }).click();
     await guide.waitForFunction(() => document.querySelector('.wz h2')?.textContent === 'Your place' && document.querySelector('.ed-name strong')?.textContent === 'Sample square');
     assert.equal(JSON.parse(fs.readFileSync(path.join(site, 'site.json'), 'utf8')).name, 'Sample square');
-    await tv.locator('.controller-header p', { hasText: 'Sample square' }).waitFor();
+    // The controller screen has no header in its rails any more; it carries the site's name in its title.
+    await tv.waitForFunction(() => document.title.endsWith('· Sample square'));
     assert.equal(await guide.locator('.wz-place[data-target="buildings"] .wz-state').textContent(), 'On the table');
     await guide.getByLabel('File for Trees').setInputFiles(path.join(site, 'data', 'trees.geojson'));
     await guide.locator('.wz-place[data-target="trees"] .wz-summary', { hasText: /trees/ }).waitFor();

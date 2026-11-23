@@ -1,5 +1,5 @@
 import type { LayerManifest, LayerState } from '@mrstudio/sdk';
-import { defaultSide, el, isAmbient, isOffered, layerButton } from '../controls.ts';
+import { defaultSideOf, el, isAmbient, isOffered, layerButton } from '../controls.ts';
 import type { Store } from '../store.ts';
 import { icon } from './icons.ts';
 import { Importer, TARGETS, targetFor } from './importer.ts';
@@ -203,7 +203,7 @@ export class Wizard {
         syncs.push(() => {
           const state = host.store.state.layers[id];
           if (!state) return;
-          const button = layerButton(id, manifest, state, defaultSide(host.store));
+          const button = layerButton(id, manifest, state, defaultSideOf(host.store, id));
           if (shown !== button.icon) badge.replaceChildren(icon(button.icon, 20));
           shown = button.icon;
           if (document.activeElement !== name) name.value = state.button?.name ?? '';

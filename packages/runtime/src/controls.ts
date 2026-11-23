@@ -144,6 +144,39 @@ export function defaultSide(store: Store): 'left' | 'right' {
   return store.state.site.tv?.rail === 'right' ? 'right' : 'left';
 }
 
+/**
+ * The side each layer button sits on, keyed by instance id. A button the author placed stays
+ * there. When the site names a rail (`tv.rail`), the others go to it. Otherwise they are shared
+ * out so both sides of the controller are used: from the top of the scene, the left side fills
+ * to half of all the buttons, then the right.
+ */
+export function buttonSides(store: Store): Map<string, 'left' | 'right'> {
+  const { state } = store;
+  const ids = [...state.scene].reverse().filter((id) => {
+    const manifest = store.manifest(state.layers[id]?.layer ?? '');
+    return manifest !== undefined && !isAmbient(manifest);
+  });
+  const sides = new Map<string, 'left' | 'right'>();
+  const rail = state.site.tv?.rail;
+  const half = Math.ceil(ids.length / 2);
+  let left = ids.filter((id) => state.layers[id]?.button?.side === 'left').length;
+  for (const id of ids) {
+    const placed = state.layers[id]?.button?.side;
+    if (placed) sides.set(id, placed);
+    else if (rail === 'left' || rail === 'right') sides.set(id, rail);
+    else if (left < half) {
+      sides.set(id, 'left');
+      left++;
+    } else sides.set(id, 'right');
+  }
+  return sides;
+}
+
+/** The side a layer's button defaults to when its author has not placed it. */
+export function defaultSideOf(store: Store, id: string): 'left' | 'right' {
+  return buttonSides(store).get(id) ?? defaultSide(store);
+}
+
 interface Card {
   /** On the controller screen: the open layer's part of the centre. */
   body?: HTMLElement;
@@ -178,15 +211,15 @@ export class Controller {
     this.right = right;
     this.centre = centre;
     const { site } = store.state;
-    this.welcome.append(el('h2', undefined, site.branding.title ?? site.name), el('p', undefined, 'Choose a layer on either side to bring it to the table.'));
+    this.welcome.append(el('h2', undefined, site.branding.title ?? site.name), el('p', undefined, 'Choose a layer to bring it to the table.'));
     this.store = store;
     this.connection = connection;
     this.role = role;
     this.arrange();
     store.onLayer((id, state) => {
       this.cards.get(id)?.sync(state);
-      // A button moves when its author changes its side.
-      if (this.right && this.sides.has(id) && this.sides.get(id) !== this.sideOf(id)) this.arrange();
+      // A button moves when its author changes its side, and the buttons shared out around it may move too.
+      if (this.right && this.sides.has(id) && [...this.sides].some(([other, side]) => side !== this.sideOf(other))) this.arrange();
     });
     store.onRemoved((id) => {
       this.cards.get(id)?.dispose();
@@ -198,7 +231,7 @@ export class Controller {
   private sideOf(id: string): 'left' | 'right' {
     const state = this.store.state.layers[id];
     const manifest = state && this.store.manifest(state.layer);
-    return manifest ? layerButton(id, manifest, state, defaultSide(this.store)).side : 'left';
+    return manifest ? layerButton(id, manifest, state, defaultSideOf(this.store, id)).side : 'left';
   }
 
   /** Lays the cards out with the top of the scene first, making cards for layers that are new. */
@@ -292,7 +325,7 @@ export class Controller {
       body,
       dispose: () => body.remove(),
       sync: (state) => {
-        const button = layerButton(id, manifest, state, defaultSide(store));
+        const button = layerButton(id, manifest, state, defaultSideOf(store, id));
         name.textContent = button.name;
         heading.textContent = button.name;
         if (shown !== button.icon) {

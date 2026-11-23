@@ -1,7 +1,7 @@
 import { isVisible } from '@mrstudio/sdk';
 import type { Connection, LayerManifest, LayerState } from '@mrstudio/sdk';
 
-import { defaultSide, el, isAmbient, isOffered, layerButton, widget } from '../controls.ts';
+import { defaultSideOf, el, isAmbient, isOffered, layerButton, widget } from '../controls.ts';
 import type { Widget } from '../controls.ts';
 import { paramSender } from '../layer-manager.ts';
 import type { Store } from '../store.ts';
@@ -300,7 +300,7 @@ export class Editor {
     let button: { side: 'left' | 'right' } | undefined;
     if (!isAmbient(manifest)) {
       const count = { left: 0, right: 0 };
-      for (const { id, manifest: other, state } of this.instances()) if (!isAmbient(other)) count[layerButton(id, other, state, defaultSide(this.store)).side]++;
+      for (const { id, manifest: other, state } of this.instances()) if (!isAmbient(other)) count[layerButton(id, other, state, defaultSideOf(this.store, id)).side]++;
       button = { side: count.right < count.left ? 'right' : 'left' };
     }
     const result = await this.send('scene.add', { use: manifest.id, index, button });
@@ -630,7 +630,7 @@ export class Editor {
       const side = el('span', 'ed-row-side');
       row.append(side);
       this.sync.set(id, (next) => {
-        const button = layerButton(id, manifest, next, defaultSide(this.store));
+        const button = layerButton(id, manifest, next, defaultSideOf(this.store, id));
         row.querySelector('.ed-row-label')!.textContent = button.name;
         row.querySelector('.ed-row-icon')!.replaceChildren(icon(button.icon));
         side.textContent = button.side === 'right' ? 'Right' : 'Left';
@@ -734,7 +734,7 @@ export class Editor {
     const previous = this.sync.get(id);
     this.sync.set(id, (state) => {
       previous?.(state);
-      const button = layerButton(id, manifest, state, defaultSide(this.store));
+      const button = layerButton(id, manifest, state, defaultSideOf(this.store, id));
       if (document.activeElement !== name) name.value = state.button?.name ?? '';
       if (document.activeElement !== description) description.value = state.button?.description ?? '';
       for (const [value, option] of sides) option.setAttribute('aria-checked', String(value === button.side));
