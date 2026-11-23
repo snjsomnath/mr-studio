@@ -6,8 +6,8 @@
   "icon": "route",
   "requires": { "data": ["trips"] },
   "controls": [
-    { "id": "play", "type": "toggle", "label": "Play", "default": true, "phone": true },
-    { "id": "progress", "type": "range", "label": "Time", "min": 0, "max": 100, "step": 0.5, "unit": "%", "default": 0, "phone": true },
+    { "id": "play", "type": "toggle", "label": "Play", "default": true, "phone": true, "tier": "more" },
+    { "id": "progress", "type": "range", "label": "Time", "min": 0, "max": 100, "step": 0.5, "unit": "%", "default": 0, "phone": true, "tier": "more" },
     {
       "id": "speed", "type": "select", "label": "Speed", "default": "60",
       "options": [

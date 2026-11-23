@@ -2,6 +2,7 @@ import { colormaps, cssGradient, defineLayer, hasSiteData, loadSiteData, lut, pa
 import type { CanvasOverlay, LayerManifest } from '@mrstudio/sdk';
 
 import manifest from '../layer.json';
+import { mobilityHero } from './hero.ts';
 import { arrivals, positionAt, prepareCells, prepareTrips, stepAt } from './trips.ts';
 import type { Cells, LonLat } from './trips.ts';
 
@@ -223,6 +224,9 @@ export default defineLayer<Params>({
       },
     };
   },
+
+  // The controller's hero: the trips' clock, with ▶ and a band to scrub through them (#76).
+  hero: (ctx, el) => mobilityHero(ctx as never, el),
 
   panel(ctx, el) {
     el.innerHTML = `

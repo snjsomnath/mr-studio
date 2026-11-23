@@ -46,7 +46,7 @@ The remaining `panels` (built) are laid out under the zones, as today.
 
 **Built (legend and controls, 2026-11-23):** the legend zone shows `ctx.legend` rows (sent with the layer's published values as `shared.legend`, with `legend_highlight` and `legend_shown`), else `legend` from layer.json. A slideshow shows the legend of the layer on show. Rows named like the layer's sub-step titles follow the reveal on their own: rows still to come are faint, the one just revealed is marked, and the strip's row of names steps aside. An `action` control with `"tier": "primary"` (this is the contract's `"primary": true`) is one large accent button at the top of the stage. Every core layer's controls are tiered: the one thing a visitor does is primary, a few direct settings stay in the row, and the author's settings (datasets, service addresses, colours, opacity) wait behind More settings.
 
-**Built (heroes):** Sunlight's sky (#137) and Wind's compass (#76): a dial turned as the table is, its knob on the side the wind comes from, over streaks that blow the way the wind does; the band at its foot is the speed. Both are dragged, tapped or worked with the keys (← → and Page Up/Down).
+**Built (heroes):** Sunlight's sky (#137), Wind's compass (#76), and Cool paths' and Mobility's timelines (#76, the SDK's `timelineHero`: a backdrop, a big readout, up to three facts and a band with ▶; Home and End jump to the ends): a dial turned as the table is, its knob on the side the wind comes from, over streaks that blow the way the wind does; the band at its foot is the speed. Both are dragged, tapped or worked with the keys (← → and Page Up/Down).
 
 ## 3. Steps: one model for "Next"
 
