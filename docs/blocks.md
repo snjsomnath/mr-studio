@@ -175,6 +175,7 @@ composition. Old line counts are from `main`.
 | Click a building for its numbers | `Probe` + `ctx.publish` |
 | Vehicles arriving and leaving at chargers | `Agent`-like motion along a `Path` by schedule: `pointAlong` and a timed leg. Street routes come from `StreetNetwork` |
 | Sound | `audio` group (#150): `analyseSound` (loudness and brightness envelopes), `PeakFinder` (calls), `SoundSchedule` (chorus or loop), `SoundStage` (plays a layer's sounds on the table, silent elsewhere); the `sound` motion draws rings from it |
+| Isovist, green view and soundscape (#190) | `isovist` block (isovist.ts): `viewScene` indexes footprints and tree crowns, `isovist` casts the demo's 180 rays (cone or all round) and counts open sky, trees and buildings by type, `outsideBuildings`, `follow`, `compassBearing`, `viewMoved`. Audio: `Soundscape` mixes a nature and a city bed by green view (`soundscapeMix`, `easeVolume`), with built-in beds from `synthBed` until a site adds recordings |
 
 What remains ECOM-specific is small: the palette, the wording, the mapping from the dispatch
 result to series, and the roof panel geometry. The `energy` scene in `blocks-demo` is about

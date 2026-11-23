@@ -99,6 +99,11 @@
       "active": false
     },
     {
+      "use": "isovist",
+      "id": "isovist",
+      "active": false
+    },
+    {
       "use": "mobility",
       "id": "mobility",
       "active": false

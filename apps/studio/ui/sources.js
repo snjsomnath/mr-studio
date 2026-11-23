@@ -49,11 +49,12 @@
   /** Words a named service uses for its own key. */
   const WORDS = {
     mapbox: { secret: 'Access token', placeholder: 'pk.…' },
+    streetview: { secret: 'Google Maps API key', placeholder: 'AI…' },
     vasttrafik: { user: 'Client ID (optional)', secret: 'Client secret or authentication key', placeholder: 'From developer.vasttrafik.se' },
     lantmateriet: { user: 'Geotorget user name', secret: 'Password' },
     carto: { secret: 'API key' },
   };
-  const INITIALS = { vasttrafik: 'VT', lantmateriet: 'LM', mapbox: 'Mb', carto: 'CA', wms: 'WMS', wmts: 'WT', arcgis: 'AG', tiles: 'XYZ' };
+  const INITIALS = { vasttrafik: 'VT', lantmateriet: 'LM', mapbox: 'Mb', carto: 'CA', wms: 'WMS', wmts: 'WT', arcgis: 'AG', tiles: 'XYZ', streetview: 'SV' };
 
   let templates = [];
   /** Test results this page has seen; a fresh one is shown under the card. */
