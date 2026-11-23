@@ -18,7 +18,7 @@ Status: only sunlight is built. Wind is next, and the kernels after it start onc
 | --- | --- | --- |
 | Sun and shadow | `sunlight` (built) | field overlay, time control, table decoration (sun path), chart |
 | Wind comfort | **`wind`** (lattice Boltzmann) | field overlay, **particles**, legend, phone tools (draw obstacles) |
-| Rain and stormwater | **`stormwater`** (flow routing, ponding) | field overlay, particles, time control |
+| Rain and stormwater | `stormwater` (built: live shallow water, roofs, ponding) | field overlay, droplets (flow overlay), storm controls |
 | Urban heat and thermal comfort | **`thermal`**, reading `sunlight` and `wind` | field overlay, time control, legend |
 | Facade daylight | `sunlight` extended to vertical surfaces | lit buildings, legend |
 | Air quality plumes | **`plume`** (advection on the `wind` field) | field overlay, particles, phone tools (place a source) |

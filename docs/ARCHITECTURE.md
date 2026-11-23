@@ -145,7 +145,7 @@ These are independent once the contracts are fixed.
 | --- | --- | --- |
 | Engine core and sunlight | Scene, job scheduler, sunlight kernel, parity harness | engine.md |
 | Wind kernel | D2Q9 TRT lattice Boltzmann in WGSL, ported from `cfd-core.js`, which becomes the CPU reference | engine.md |
-| Stormwater and isovist kernels | D8 flow and accumulation, ray-cast visibility | engine.md |
+| Stormwater and isovist kernels | Live shallow water (local inertial) with rain, roofs and infiltration; ray-cast visibility | engine.md |
 | Desktop shell | Tauri app, display placement, kiosk, auto-update, Windows and macOS builds | session.md |
 | Session hub and phone controller | Rooms, slots, roles, join by QR, tools, reconnect | session.md, mobile.md |
 | Layer SDK and runtime | Layer manager, generated controls, TV layout, dev mode | layer.md |

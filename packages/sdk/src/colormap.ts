@@ -12,6 +12,12 @@ export const colormaps = {
   },
   /** Blue to red through green, for speeds. */
   speed: { stops: [[0, 59, 130, 246, 220], [0.25, 45, 212, 191, 220], [0.5, 163, 230, 53, 220], [0.75, 251, 191, 36, 220], [1, 239, 68, 68, 220]] },
+  /** Standing water by depth: clear on dry ground, a deepening blue in puddles, bright where it pools deep. */
+  water: {
+    stops: [[0, 20, 70, 160, 0], [0.01, 25, 80, 175, 0], [0.04, 30, 100, 200, 110], [0.15, 35, 135, 230, 175], [0.4, 70, 190, 250, 215], [1, 200, 245, 255, 235]],
+  },
+  /** Running water by speed: teal where it barely moves (pooling, as in the Chalmers demo), blue as it runs, white when fast. */
+  runoff: { stops: [[0, 50, 215, 175, 230], [0.15, 50, 160, 255, 240], [0.5, 90, 200, 255, 250], [1, 235, 255, 255, 255]] },
 } satisfies Record<string, Colormap>;
 
 /** Renders a colormap to a 256-entry RGBA lookup table. */
