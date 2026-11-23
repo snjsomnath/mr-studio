@@ -356,6 +356,86 @@ function aboutPage(about: TvAbout, fallback: string): HTMLElement {
   return page;
 }
 
+/**
+ * ◀ ▶, play and the info strip for a layer with steps (docs/contracts/present.md, Steps):
+ * a slideshow's current step (counter, title, one line, source) and the sub-steps of the
+ * layer on show, which Next reveals one at a time. Hidden for a layer without steps.
+ */
+function stepStrip(id: string, store: Store, connection: Connection): { element: HTMLElement; sync(state: LayerState): void } {
+  const strip = el('div', 'step-strip');
+  strip.hidden = true;
+  const nav = el('div', 'step-nav');
+  const button = (label: string, name: string, run: () => void) => {
+    const press = el('button', 'step-button');
+    press.type = 'button';
+    press.title = label;
+    press.setAttribute('aria-label', label);
+    press.append(icon(name, 26));
+    press.addEventListener('click', run);
+    nav.append(press);
+    return press;
+  };
+  const step = (to: string) => void connection.request('layer.step', { layer: id, to }).catch(() => {});
+  const previous = button('Previous step', 'previous', () => step('previous'));
+  const play = button('Play the steps', 'play', () => {
+    const playing = store.state.layers[id]?.step?.playing ?? false;
+    void connection.request('layer.play', { layer: id, playing: !playing }).catch(() => {});
+  });
+  const next = button('Next step', 'next', () => step('next'));
+  play.classList.add('is-play');
+  const words = el('div', 'step-words');
+  const count = el('div', 'step-count');
+  const title = el('h3', 'step-title');
+  const line = el('p', 'step-line');
+  const source = el('p', 'step-source');
+  words.append(count, title, line, source);
+  const subs = el('ol', 'step-subs');
+  strip.append(nav, words, subs);
+  let playing: boolean | undefined;
+  return {
+    element: strip,
+    sync(state) {
+      const at = state.step;
+      strip.hidden = !at || at.count === 0;
+      if (!at || at.count === 0) return;
+      const sequence = Boolean(store.manifest(state.layer)?.sequence);
+      // The layer the slideshow shows now, for its name and its sub-steps' names.
+      const shown = sequence ? store.state.scene.find((other) => store.state.layers[other]?.shown_by === id) : undefined;
+      const shownState = shown ? store.state.layers[shown] : undefined;
+      const shownName = shownState ? (shownState.button?.name ?? store.manifest(shownState.layer)?.name ?? '') : '';
+      count.textContent = sequence ? `${Math.min(at.index + 1, at.count)} of ${at.count}` : `${at.index} of ${at.count} shown`;
+      title.textContent = at.title ?? shownName;
+      title.hidden = !title.textContent;
+      line.textContent = at.description ?? '';
+      line.hidden = !line.textContent;
+      source.textContent = at.source ? `Source: ${at.source}` : '';
+      source.hidden = !at.source;
+      // Sub-steps: the slideshow mirrors the shown layer's; any other layer has its own.
+      const sub = sequence ? at.sub : { index: at.index, count: at.count };
+      const names = (sequence ? shownState?.step?.titles : at.titles) ?? [];
+      subs.hidden = !sub || sub.count === 0 || (sequence === false && names.length === 0);
+      if (sub && sub.count > 0) {
+        const items = Array.from({ length: sub.count }, (_, i) => {
+          const item = el('li', 'step-sub', names[i] ?? String(i + 1));
+          item.classList.toggle('is-shown', i < sub.index);
+          item.classList.toggle('is-current', i === sub.index - 1);
+          return item;
+        });
+        subs.replaceChildren(...items);
+      }
+      previous.disabled = sequence ? at.index === 0 && (at.sub?.index ?? 0) === 0 && state.steps?.loop === false : at.index === 0;
+      next.disabled = !sequence && at.index >= at.count;
+      if (playing !== at.playing) {
+        playing = at.playing;
+        play.replaceChildren(icon(at.playing ? 'pause' : 'play', 26));
+        play.title = at.playing ? 'Pause the steps' : 'Play the steps';
+        play.setAttribute('aria-label', play.title);
+        play.setAttribute('aria-pressed', String(at.playing));
+      }
+    },
+  };
+}
+
 export class Controller {
   private cards = new Map<string, Card>();
   /** The side each button was last placed on. */
@@ -383,6 +463,7 @@ export class Controller {
     this.role = role;
     this.about = centre && site.tv?.about ? aboutPage(site.tv.about, site.branding.title ?? site.name) : undefined;
     this.arrange();
+    if (centre) this.listenForKeys();
     store.onLayer((id, state) => {
       // Opening a layer closes the About page.
       const manifest = store.manifest(state.layer);
@@ -458,16 +539,21 @@ export class Controller {
   }
 
   /** Opens a layer on the controller screen. The others close, except the ones made to run alongside. */
-  private open(id: string): void {
+  private async open(id: string): Promise<void> {
     const { store, connection } = this;
     const mine = store.manifest(store.state.layers[id]?.layer ?? '');
+    // A layer a slideshow shows leaves the slideshow when it is opened, so it is opened first:
+    // closing the slideshow after that no longer takes it off.
+    const fromShow = Boolean(store.state.layers[id]?.shown_by);
+    const activate = connection.request('layer.activate', { layer: id, active: true }).catch(() => {});
+    if (fromShow) await activate;
     for (const other of mine?.alongside ? [] : store.state.scene) {
       const state = store.state.layers[other];
       const manifest = state && store.manifest(state.layer);
-      if (other === id || !state?.active || state.parent || !manifest || isAmbient(manifest) || manifest.alongside) continue;
+      // Layers a slideshow shows go off with it; the host does that.
+      if (other === id || !state?.active || state.parent || state.shown_by || !manifest || isAmbient(manifest) || manifest.alongside) continue;
       void connection.request('layer.activate', { layer: other, active: false }).catch(() => {});
     }
-    void connection.request('layer.activate', { layer: id, active: true }).catch(() => {});
   }
 
   /**
@@ -483,8 +569,10 @@ export class Controller {
     const name = el('span', 'layer-button-name');
     press.append(badge, name);
     press.addEventListener('click', () => {
-      if (store.state.layers[id]?.active) void connection.request('layer.activate', { layer: id, active: false }).catch(() => {});
-      else this.open(id);
+      const state = store.state.layers[id];
+      // A layer a slideshow is showing is opened from its own button: it leaves the slideshow and stays.
+      if (state?.active && !state.shown_by) void connection.request('layer.activate', { layer: id, active: false }).catch(() => {});
+      else void this.open(id);
     });
     card.append(press);
 
@@ -535,7 +623,9 @@ export class Controller {
     primary.append(...widgets.filter((w) => tierOf(w) === 'primary').map((w) => w.row));
     controls.append(...widgets.filter((w) => tierOf(w) === 'secondary').map((w) => w.row));
     moreRows.append(...widgets.filter((w) => tierOf(w) === 'more').map((w) => w.row));
-    body.append(words);
+    // A layer with steps (a slideshow, or a map revealed part by part) gets ◀ ▶, play and the info strip (#43, #76).
+    const strip = stepStrip(id, store, connection);
+    body.append(words, strip.element);
     if (!hero.hidden) body.append(hero);
     for (const group of [primary, controls]) if (group.childElementCount > 0) body.append(group);
     // "More settings" closes the primary row when there is one, so it costs no height of its own.
@@ -560,11 +650,18 @@ export class Controller {
         shown = button.icon;
         about.textContent = button.description;
         about.hidden = !button.description;
-        press.setAttribute('aria-pressed', String(state.active));
-        card.classList.toggle('is-active', state.active);
-        body.hidden = !state.active;
+        // A layer the slideshow is showing is part of the slideshow: its button is marked, not pressed,
+        // and the slideshow's strip speaks for it in the centre.
+        const open = state.active && !state.shown_by;
+        press.setAttribute('aria-pressed', String(open));
+        press.classList.toggle('is-shown', Boolean(state.active && state.shown_by));
+        card.classList.toggle('is-active', open);
+        body.hidden = !open;
+        strip.sync(state);
+        // A slideshow made of layers is driven by its steps: its own slide controls step aside.
+        const stepped = Boolean(manifest.sequence && state.step);
         for (const w of widgets) {
-          w.row.hidden = !isVisible(w.control, state.params) || Boolean(state.hide?.includes(w.control.id));
+          w.row.hidden = stepped || !isVisible(w.control, state.params) || Boolean(state.hide?.includes(w.control.id));
           w.sync(state.params[w.control.id]);
         }
         more.hidden = ![...moreRows.children].some((row) => !(row as HTMLElement).hidden);
@@ -586,7 +683,32 @@ export class Controller {
     return store.state.scene.filter((id) => {
       const state = store.state.layers[id];
       const manifest = state && store.manifest(state.layer);
-      return Boolean(state?.active && !state.parent && manifest && !isAmbient(manifest));
+      return Boolean(state?.active && !state.parent && !state.shown_by && manifest && !isAmbient(manifest));
+    });
+  }
+
+  /** The open layer that Next and Previous move: the one with steps, not a tool kept alongside. */
+  private stepping(): string | undefined {
+    const { store } = this;
+    return this.openLayers().find((id) => store.state.layers[id]?.step && !store.manifest(store.state.layers[id]!.layer)?.alongside);
+  }
+
+  /**
+   * Arrow keys and a presentation clicker (Page Up and Page Down) move the open layer's steps;
+   * Shift with → skips the rest of a step's sub-steps, as on the Chalmers demo.
+   */
+  private listenForKeys(): void {
+    window.addEventListener('keydown', (event) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.closest('input, select, textarea, [contenteditable="true"]') || event.altKey || event.ctrlKey || event.metaKey) return;
+      const forward = event.key === 'ArrowRight' || event.key === 'PageDown';
+      const back = event.key === 'ArrowLeft' || event.key === 'PageUp';
+      if (!forward && !back) return;
+      const id = this.stepping();
+      if (!id) return;
+      event.preventDefault();
+      const to = back ? 'previous' : event.shiftKey ? 'skip' : 'next';
+      void this.connection.request('layer.step', { layer: id, to }).catch(() => {});
     });
   }
 

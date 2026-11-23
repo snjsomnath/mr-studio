@@ -55,6 +55,15 @@ async function main() {
   const site = fs.mkdtempSync(path.join(os.tmpdir(), 'mrs-e2e-'));
   fs.cpSync(path.join(root, 'sites/sample'), site, { recursive: true });
   const savedLayers = () => JSON.parse(fs.readFileSync(path.join(site, 'site.json'), 'utf8')).layers;
+  // The slideshow shows two layers of the scene, one after the other (#43).
+  {
+    const json = JSON.parse(fs.readFileSync(path.join(site, 'site.json'), 'utf8'));
+    json.layers.find((l) => (l.id ?? l.use) === 'slideshow').steps = { mode: 'manual', loop: true, sequence: [
+      { layer: 'sunlight', params: { hour: 9 }, title: 'Morning shadows', description: 'The square at nine on midsummer morning.', source: 'Sun position: NOAA' },
+      { layer: 'trees', title: 'Street trees' },
+    ] };
+    fs.writeFileSync(path.join(site, 'site.json'), JSON.stringify(json, null, 2));
+  }
   const host = spawn(
     path.join(root, 'target/debug/mrstudio'),
     ['dev', '--site', site, '--web', 'packages/runtime/dist', '--port', String(port), '--backend', 'cpu', '--public-url', base],
@@ -376,6 +385,31 @@ async function main() {
     assert.notDeepEqual(await table.screenshot(), start, 'travellers should move with the time');
     await press('Mobility', false);
 
+    // A slideshow of layers (#43, #76): ◀ ▶, play and the info strip on the controller, and the arrow keys.
+    await press('Slideshow', true);
+    const strip = tv.locator('.layer-open[data-layer="slideshow"] .step-strip');
+    await strip.locator('.step-count', { hasText: '1 of 2' }).waitFor();
+    await strip.locator('.step-title', { hasText: 'Morning shadows' }).waitFor();
+    await strip.locator('.step-source', { hasText: 'NOAA' }).waitFor();
+    // The layer on show is part of the slideshow: its button is marked, and it is not a second open layer.
+    await tv.locator('.layer-button.is-shown', { hasText: 'Sunlight' }).waitFor();
+    assert.equal(await tv.locator('.layer-open:not([hidden])', { hasText: 'Shadows at any moment' }).count(), 0);
+    if (shots) await tv.screenshot({ path: path.join(shots, 'tv-slideshow.png') });
+    await strip.getByRole('button', { name: 'Next step' }).click();
+    await strip.locator('.step-count', { hasText: '2 of 2' }).waitFor();
+    await strip.locator('.step-title', { hasText: 'Street trees' }).waitFor();
+    await tv.keyboard.press('ArrowLeft');
+    await strip.locator('.step-count', { hasText: '1 of 2' }).waitFor();
+    await tv.keyboard.press('ArrowRight');
+    await strip.locator('.step-count', { hasText: '2 of 2' }).waitFor();
+    // It loops: Next on the last step is the first again.
+    await tv.keyboard.press('ArrowRight');
+    await strip.locator('.step-count', { hasText: '1 of 2' }).waitFor();
+    // Opening the layer on show from its own button takes it out of the slideshow, which closes.
+    await tv.locator('.layer-button.is-shown', { hasText: 'Sunlight' }).click();
+    await tv.locator('.layer-button[aria-pressed="true"]', { hasText: 'Sunlight' }).waitFor();
+    await tv.locator('.layer-button[aria-pressed="false"]', { hasText: 'Slideshow' }).waitFor();
+
 
     // Wind: the simulation streams while it settles, tracers move, and a faster wind only rescales.
     await press('Sunlight', false);
@@ -466,7 +500,8 @@ async function main() {
 
     // The eye switch and the remove button.
     await compose.getByLabel('Show Slideshow').check();
-    await tv.getByText('What the buildings are used for').waitFor();
+    // The slideshow here is made of layers (its steps), so the controller shows its first step.
+    await tv.locator('.step-title', { hasText: 'Morning shadows' }).waitFor();
     if (shots) await compose.screenshot({ path: path.join(shots, 'compose.png') });
     await compose.getByLabel('Show Slideshow').uncheck();
     await compose.getByLabel('Remove Traffic (cars-2)').click();
