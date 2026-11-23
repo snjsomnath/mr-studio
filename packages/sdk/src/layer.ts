@@ -146,6 +146,13 @@ export interface TableContext<P = Params> extends ContextBase<P> {
   /** The digital twin of the physical model: fields, lights and materials on its real surfaces. */
   readonly model: ModelHandle;
   readonly pointer: TablePointer;
+  /**
+   * Sends a tool input through the host, as a phone does, for one of the layer's own tools.
+   * Every view of the table running the layer (the projector, the editor) gets it in
+   * `tool(input)`, so a pick made with the mouse on one view shows on all of them.
+   * Resolves once the host has accepted it.
+   */
+  sendTool(tool: string, geometry: ToolGeometry): Promise<void>;
   /** Publishes derived values for panels. Only changed keys are sent. */
   publish(values: Record<string, unknown>): void;
   /** Sub-steps: parts of the layer that Next reveals one at a time, such as the categories of a map. */
