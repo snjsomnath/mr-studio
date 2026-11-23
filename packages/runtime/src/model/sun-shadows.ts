@@ -1,7 +1,5 @@
-import type { SunShadows, TwinMesh } from '@mrstudio/sdk';
+import type { FieldFrame, TwinMesh } from '@mrstudio/sdk';
 import * as THREE from 'three';
-
-import { cssColor } from './colour.ts';
 
 /** A building's footprint in the site's local frame (x east, y north, metres): outer ring first, then holes. */
 export interface Footprint {
@@ -14,56 +12,96 @@ export interface Footprint {
 const ROOF_CLEARANCE_M = 0.15;
 /** And reach this far into the ground, so no light leaks under a wall on a slope. */
 const FOOT_M = 1;
-/** Caps sit this far over the roofs, so they draw over the twin's steps. */
+/** Caps sit this far over the roofs, so they cover the twin's steps. */
 const CAP_M = 0.05;
+/** Metres per pixel of the mask, and its largest side. */
+const MASK_M = 0.3;
+const MASK_MAX = 4096;
 
 /**
- * Sun shadows on the twin, seen from above (#133). The twin is built from the scene's cells, so its walls are
- * staircases and the shadows they cast are too. Here the buildings cast from their real footprints, raised to the
- * roof heights the twin has, and everything else the twin holds (the ground, an imported model) casts as it is.
- * Until the footprints have loaded, the whole twin casts.
- * A GPU shadow map makes the edges as sharp as the map's texels: about 0.35 m over a 1.2 km table at 4096.
+ * Sharp sun shadows for the table (#133), as a mask the sunlight layer draws in its own map field, so the table's
+ * layer order holds. The twin is built from the scene's cells, so its walls are staircases and the shadows they cast
+ * are too. Here buildings cast from their real footprints, as open walls up to the roof heights the twin has: every
+ * ray from the ground outside a building to the sun that passes through it crosses a wall, so walls cast the whole
+ * shadow, and with no lid nothing over a roof speckles it at a low sun. The rest of the twin (the ground, an
+ * imported model) casts from its back faces, so it shades the far side of a hill but never speckles itself.
  *
- * Ground and roofs are painted in the light's colour, and a shadow material lays the shade over what the sun
- * cannot reach, so the result keeps the flat, two-tone look of the 2D table.
+ * The mask is rendered straight down over the table's extent with a GPU shadow map: 1 in the sun, 0 in the shade.
  */
-export class SunShadowPass {
-  readonly objects: THREE.Object3D[];
+export class SunMask {
+  private readonly scene = new THREE.Scene();
   private readonly light = new THREE.DirectionalLight(0xffffff, 1);
-  private readonly lit: THREE.Mesh;
-  private readonly shadow: THREE.Mesh;
-  private readonly litMaterial = new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false });
-  private readonly shadowMaterial = new THREE.ShadowMaterial({ transparent: true, depthWrite: false });
-  private readonly casterMaterial = new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false, side: THREE.DoubleSide });
-  // The ground casts from its back faces only, so it shades the far side of a hill but never speckles itself.
-  private readonly groundCasterMaterial = new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false, shadowSide: THREE.BackSide });
-  private readonly prisms = new THREE.Mesh(new THREE.BufferGeometry(), this.casterMaterial);
+  private readonly camera: THREE.OrthographicCamera;
+  private readonly target: THREE.WebGLRenderTarget;
+  private readonly width: number;
+  private readonly height: number;
+  private readonly pixels: Uint8Array;
+  private readonly materials: THREE.Material[];
+  private readonly geometries = new Set<THREE.BufferGeometry>();
+  private readonly prisms: THREE.Mesh;
   private readonly rest: THREE.Mesh;
-  private readonly capLit = new THREE.Mesh(new THREE.BufferGeometry(), this.litMaterial);
-  private readonly capShadow = new THREE.Mesh(this.capLit.geometry, this.shadowMaterial);
-  private spec: SunShadows;
+  private readonly caps: THREE.Mesh[];
+  private readonly lightCentre: THREE.Vector3;
+  private readonly lightDistance: number;
+  private readonly renderer: THREE.WebGLRenderer;
   private readonly geometry: THREE.BufferGeometry;
   private readonly twin: TwinMesh;
-  private readonly centre: THREE.Vector3;
-  private readonly radius: number;
-  private readonly surfaces: THREE.BufferGeometry;
+  private revision = 0;
 
-  constructor(geometry: THREE.BufferGeometry, twin: TwinMesh, centre: THREE.Vector3, radius: number, maxTextureSize: number, spec: SunShadows) {
+  /** `corners` are the table's corners in local metres: top left, top right, bottom right, bottom left. */
+  constructor(renderer: THREE.WebGLRenderer, geometry: THREE.BufferGeometry, twin: TwinMesh, corners: [number, number][]) {
+    this.renderer = renderer;
     this.geometry = geometry;
     this.twin = twin;
-    this.centre = centre;
-    this.radius = radius;
-    this.spec = { ...spec };
-    for (const material of [this.litMaterial, this.shadowMaterial]) {
-      // Drawn on the twin's own triangles, over the map draped on it and under any field.
-      material.polygonOffset = true;
-      material.polygonOffsetFactor = -1;
-      material.polygonOffsetUnits = -1;
-    }
-    this.casterMaterial.shadowSide = THREE.DoubleSide;
+    const [tl, tr, , bl] = corners.map(([x, y]) => new THREE.Vector2(x, y));
+    const across = tr!.clone().sub(tl!);
+    const up = tl!.clone().sub(bl!);
+    const widthM = across.length();
+    const heightM = up.length();
+    const centre = tr!.clone().add(bl!).multiplyScalar(0.5);
+    const max = Math.min(MASK_MAX, renderer.capabilities.maxTextureSize);
+    const scale = Math.min(1 / MASK_M, max / widthM, max / heightM);
+    this.width = Math.max(1, Math.round(widthM * scale));
+    this.height = Math.max(1, Math.round(heightM * scale));
+    this.pixels = new Uint8Array(this.width * this.height * 4);
+    this.target = new THREE.WebGLRenderTarget(this.width, this.height, { depthBuffer: true });
 
-    // Seen from above, walls are slivers at the edges of the picture. They take the light's colour, like the roofs
-    // they belong to, but no shade: a wall's shadow acne would hatch the table.
+    if (!geometry.boundingSphere) geometry.computeBoundingSphere();
+    const sphere = geometry.boundingSphere!;
+    const radius = Math.max(1, sphere.radius);
+    this.camera = new THREE.OrthographicCamera(-widthM / 2, widthM / 2, heightM / 2, -heightM / 2, 1, radius * 4 + 1000);
+    this.camera.up.set(up.x, up.y, 0).normalize();
+    this.camera.position.set(centre.x, centre.y, sphere.center.z + radius * 2 + 500);
+    this.camera.lookAt(centre.x, centre.y, sphere.center.z);
+    this.camera.updateMatrixWorld();
+
+    const light = this.light;
+    light.castShadow = true;
+    const size = renderer.capabilities.maxTextureSize >= 4096 ? 4096 : 2048;
+    light.shadow.mapSize.set(size, size);
+    const shadowCamera = light.shadow.camera;
+    shadowCamera.left = shadowCamera.bottom = -radius;
+    shadowCamera.right = shadowCamera.top = radius;
+    shadowCamera.near = radius * 0.5;
+    shadowCamera.far = radius * 3.5;
+    shadowCamera.updateProjectionMatrix();
+    light.shadow.bias = -0.0002;
+    light.shadow.normalBias = 0;
+    light.target.position.copy(sphere.center);
+    this.lightCentre = sphere.center.clone();
+    this.lightDistance = radius * 2;
+
+    const casterMaterial = new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false, side: THREE.DoubleSide, shadowSide: THREE.DoubleSide });
+    const groundCasterMaterial = new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false, shadowSide: THREE.BackSide });
+    // Receivers: white, with black laid over where the sun cannot reach.
+    const sunMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
+    const shadeMaterial = new THREE.ShadowMaterial({ color: 0x000000, opacity: 1, transparent: true, depthWrite: false });
+    shadeMaterial.polygonOffset = true;
+    shadeMaterial.polygonOffsetFactor = -1;
+    shadeMaterial.polygonOffsetUnits = -1;
+    this.materials = [casterMaterial, groundCasterMaterial, sunMaterial, shadeMaterial];
+
+    // Seen from straight above, walls have no area; only ground and roofs receive.
     const surfaces = new THREE.BufferGeometry();
     surfaces.setAttribute('position', geometry.getAttribute('position'));
     surfaces.setAttribute('normal', geometry.getAttribute('normal'));
@@ -75,66 +113,31 @@ export class SunShadowPass {
       if (twin.kinds[a] !== 2 || twin.kinds[b] !== 2 || twin.kinds[c] !== 2) flat.push(a, b, c);
     }
     surfaces.setIndex(flat);
-    this.surfaces = surfaces;
+    this.geometries.add(surfaces);
 
-    this.lit = new THREE.Mesh(geometry, this.litMaterial);
-    this.lit.renderOrder = 2;
-    this.lit.frustumCulled = false;
-    this.shadow = new THREE.Mesh(surfaces, this.shadowMaterial);
-    this.shadow.renderOrder = 3;
-    this.shadow.frustumCulled = false;
-    this.shadow.receiveShadow = true;
-
-    // Until footprints arrive, the whole twin casts; afterwards, everything but the buildings that have prisms.
-    this.rest = new THREE.Mesh(geometry, this.groundCasterMaterial);
+    const sun = new THREE.Mesh(surfaces, sunMaterial);
+    const shade = new THREE.Mesh(surfaces, shadeMaterial);
+    shade.receiveShadow = true;
+    shade.renderOrder = 1;
+    // Until footprints arrive, the whole twin casts as it is.
+    this.rest = new THREE.Mesh(geometry, groundCasterMaterial);
     this.rest.castShadow = true;
-    this.rest.frustumCulled = false;
+    this.prisms = new THREE.Mesh(new THREE.BufferGeometry(), casterMaterial);
     this.prisms.castShadow = true;
-    this.capLit.renderOrder = 4;
-    this.capShadow.renderOrder = 5;
-    this.capShadow.receiveShadow = true;
-    for (const cap of [this.capLit, this.capShadow]) cap.frustumCulled = false;
-    this.prisms.frustumCulled = false;
-
-    const light = this.light;
-    light.castShadow = true;
-    const size = maxTextureSize >= 4096 ? 4096 : 2048;
-    light.shadow.mapSize.set(size, size);
-    const camera = light.shadow.camera;
-    camera.left = camera.bottom = -radius;
-    camera.right = camera.top = radius;
-    camera.near = radius * 0.5;
-    camera.far = radius * 3.5;
-    camera.updateProjectionMatrix();
-    light.shadow.bias = -0.0002;
-    light.shadow.normalBias = 0;
-    // Real penumbras are a few decimetres for buildings; PCF's soft edge is about that.
-    light.shadow.radius = 1.5;
-    light.target.position.copy(centre);
-
-    this.objects = [this.light, this.light.target, this.lit, this.shadow, this.rest, this.prisms, this.capLit, this.capShadow];
-    this.apply();
+    // Caps over the roofs show each building's real outline, not the twin's steps. They draw after the twin.
+    const capGeometry = new THREE.BufferGeometry();
+    const capSun = new THREE.Mesh(capGeometry, sunMaterial);
+    capSun.renderOrder = 2;
+    const capShade = new THREE.Mesh(capGeometry, shadeMaterial);
+    capShade.receiveShadow = true;
+    capShade.renderOrder = 3;
+    this.caps = [capSun, capShade];
+    this.geometries.add(this.prisms.geometry).add(capGeometry);
+    for (const object of [sun, shade, this.rest, this.prisms, capSun, capShade]) object.frustumCulled = false;
+    this.scene.add(light, light.target, sun, shade, this.rest, this.prisms, capSun, capShade);
   }
 
-  private shown = true;
-
-  /** Hides the pass while another layer has the surface to itself. */
-  setShown(shown: boolean): void {
-    this.shown = shown;
-    this.apply();
-  }
-
-  set(patch: Partial<SunShadows>): void {
-    Object.assign(this.spec, patch);
-    this.apply();
-  }
-
-  /**
-   * Builds the buildings' casters: open walls on their footprints, up to the roofs the twin has. Every ray from
-   * the ground outside a building to the sun that passes through it crosses a wall, so walls alone cast the whole
-   * shadow, and with no lid there is nothing over a roof to speckle it at a low sun. The twin's roofs are stepped at
-   * its cells, so each footprint also gets a cap at roof height, which the table shows with the real outline.
-   */
+  /** Builds the buildings' casters and caps from their footprints and the roof heights in the twin. */
   setFootprints(footprints: Footprint[]): void {
     const { positions, kinds, buildings, indices } = this.twin;
     const roof = new Map<number, number>();
@@ -147,7 +150,7 @@ export class SunShadowPass {
       foot.set(n, Math.min(foot.get(n) ?? Infinity, z));
     }
 
-    const vertices: number[] = [];
+    const walls: number[] = [];
     const caps: number[] = [];
     const raised = new Set<number>();
     for (const { number, rings } of footprints) {
@@ -168,19 +171,19 @@ export class SunShadowPass {
           const [ax, ay] = ring[i]!;
           const [bx, by] = ring[(i + 1) % ring.length]!;
           if (ax === bx && ay === by) continue;
-          vertices.push(ax, ay, z0, bx, by, z0, bx, by, z1, ax, ay, z0, bx, by, z1, ax, ay, z1);
+          walls.push(ax, ay, z0, bx, by, z0, bx, by, z1, ax, ay, z0, bx, by, z1, ax, ay, z1);
         }
       }
     }
+    const prisms = new THREE.BufferGeometry();
+    prisms.setAttribute('position', new THREE.Float32BufferAttribute(walls, 3));
+    this.replace(this.prisms, prisms);
+
     const capGeometry = new THREE.BufferGeometry();
     capGeometry.setAttribute('position', new THREE.Float32BufferAttribute(caps, 3));
-    capGeometry.setAttribute('normal', new THREE.Float32BufferAttribute(new Float32Array(caps.length).map((_, i) => (i % 3 === 2 ? 1 : 0)), 3));
-    this.capLit.geometry.dispose();
-    this.capLit.geometry = this.capShadow.geometry = capGeometry;
-    const prisms = new THREE.BufferGeometry();
-    prisms.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
-    this.prisms.geometry.dispose();
-    this.prisms.geometry = prisms;
+    capGeometry.setAttribute('normal', new THREE.Float32BufferAttribute(Float32Array.from({ length: caps.length }, (_, i) => (i % 3 === 2 ? 1 : 0)), 3));
+    this.replace(this.caps[0]!, capGeometry);
+    this.caps[1]!.geometry = capGeometry;
 
     // The rest of the twin casts as it is: the ground, and anything without a raised footprint.
     const kept: number[] = [];
@@ -192,33 +195,51 @@ export class SunShadowPass {
     const rest = new THREE.BufferGeometry();
     rest.setAttribute('position', this.geometry.getAttribute('position'));
     rest.setIndex(kept);
-    if (this.rest.geometry !== this.geometry) this.rest.geometry.dispose();
-    this.rest.geometry = rest;
+    this.replace(this.rest, rest);
+  }
+
+  /** The mask for a sun position, over the table's extent: row 0 at the top, 255 in the sun, 0 in the shade. */
+  render(azimuth: number, altitude: number): FieldFrame {
+    const data = new Uint8Array(this.width * this.height);
+    if (altitude > 0) {
+      const a = (azimuth * Math.PI) / 180;
+      const h = (altitude * Math.PI) / 180;
+      const direction = new THREE.Vector3(Math.sin(a) * Math.cos(h), Math.cos(a) * Math.cos(h), Math.sin(h));
+      this.light.position.copy(this.lightCentre).addScaledVector(direction, this.lightDistance);
+
+      const renderer = this.renderer;
+      const previous = renderer.getRenderTarget();
+      const clear = renderer.getClearColor(new THREE.Color());
+      const clearAlpha = renderer.getClearAlpha();
+      renderer.setRenderTarget(this.target);
+      renderer.setClearColor(0xffffff, 1);
+      renderer.clear();
+      renderer.render(this.scene, this.camera);
+      renderer.readRenderTargetPixels(this.target, 0, 0, this.width, this.height, this.pixels);
+      renderer.setRenderTarget(previous);
+      renderer.setClearColor(clear, clearAlpha);
+
+      // The target's rows run bottom up.
+      for (let y = 0; y < this.height; y++) {
+        const from = (this.height - 1 - y) * this.width * 4;
+        const to = y * this.width;
+        for (let x = 0; x < this.width; x++) data[to + x] = this.pixels[from + x * 4]!;
+      }
+    }
+    return { stream: -1, field: 0, width: this.width, height: this.height, revision: ++this.revision, min: 0, max: 1, progress: 1, data };
   }
 
   dispose(): void {
-    this.surfaces.dispose();
-    this.prisms.geometry.dispose();
-    this.capLit.geometry.dispose();
-    if (this.rest.geometry !== this.geometry) this.rest.geometry.dispose();
-    for (const material of [this.litMaterial, this.shadowMaterial, this.casterMaterial, this.groundCasterMaterial]) material.dispose();
+    for (const geometry of this.geometries) geometry.dispose();
+    for (const material of this.materials) material.dispose();
+    this.target.dispose();
     this.light.shadow.map?.dispose();
     this.light.dispose();
   }
 
-  private apply(): void {
-    const { azimuth, altitude, light, shade, opacity = 1 } = this.spec;
-    const up = altitude > 0.5;
-    const a = (azimuth * Math.PI) / 180;
-    const h = (Math.max(altitude, 0.5) * Math.PI) / 180;
-    const direction = new THREE.Vector3(Math.sin(a) * Math.cos(h), Math.cos(a) * Math.cos(h), Math.sin(h));
-    this.light.position.copy(this.centre).addScaledVector(direction, this.radius * 2);
-    this.light.castShadow = up && this.shown;
-    this.light.visible = this.lit.visible = this.capLit.visible = this.shown;
-    cssColor(up ? light : shade, this.litMaterial.color);
-    this.litMaterial.opacity = opacity;
-    cssColor(shade, this.shadowMaterial.color);
-    this.shadowMaterial.opacity = opacity;
-    this.shadow.visible = this.capShadow.visible = up && this.shown;
+  private replace(mesh: THREE.Mesh, geometry: THREE.BufferGeometry): void {
+    if (this.geometries.delete(mesh.geometry)) mesh.geometry.dispose();
+    mesh.geometry = geometry;
+    this.geometries.add(geometry);
   }
 }

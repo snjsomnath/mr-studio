@@ -2,6 +2,7 @@
 // Contract in docs/contracts/model.md; change them together.
 import type { Colormap } from './colormap.ts';
 import type { FieldOverlay, FieldOverlayStyle } from './layer.ts';
+import type { FieldFrame } from './types.ts';
 
 export type SurfaceKind = 'ground' | 'roof' | 'wall';
 
@@ -48,20 +49,6 @@ export interface SunLight extends LightBase {
   altitude: number;
   /** Light from the whole sky, so shade is not black. */
   sky?: { color?: string; intensity?: number };
-}
-
-/** Shadows of the sun on the twin; see `ModelHandle.addSunShadows`. */
-export interface SunShadows {
-  /** Compass bearing of the sun, clockwise from north, degrees. */
-  azimuth: number;
-  /** Angle above the horizon, degrees. At or below 0 everything is in shade. */
-  altitude: number;
-  /** CSS colour of sunlit ground and roofs. */
-  light: string;
-  /** CSS colour of shade. */
-  shade: string;
-  /** 0 hides the shadows, 1 is solid. Default 1. */
-  opacity?: number;
 }
 
 export interface PointLight extends LightBase {
@@ -112,12 +99,12 @@ export interface ModelHandle {
   /** Lights the twin. With any light on, unlit surfaces are dark, as on the physical model. */
   addLight<L extends ModelLight>(light: L): LightHandle<L>;
   /**
-   * Sun shadows painted on the twin's ground and roofs, seen from above: what the sun reaches takes `light`, the rest
-   * `shade`. They come from a GPU shadow map of sharp casters (building footprints raised to their roofs, the ground,
-   * an imported model), so edges stay crisp at any table size, unlike a kernel field's cells. The twin is not lit, and
-   * the rest of the table keeps its own look. Null where there is no twin; draw a kernel field instead.
+   * Sharp sun shadows over the table's extent, as a field frame to draw with a map field: 1 where the sun reaches the
+   * ground or a roof, 0 in shade, about 0.3 m per pixel. It comes from a GPU shadow map of the buildings' real
+   * footprints raised to their roofs, the ground and any imported model, so edges stay crisp at any table size, unlike
+   * a kernel field's cells. Resolves to null where there is no twin; use the kernel's field instead.
    */
-  addSunShadows(shadows: SunShadows): { set(patch: Partial<SunShadows>): void; remove(): void } | null;
+  sunShadowMask(sun: { azimuth: number; altitude: number }): Promise<FieldFrame | null>;
   /** Changes how the picked surfaces look. A later call wins where two overlap. */
   setMaterial(target: SurfaceQuery, material: SurfaceMaterial): void;
   /** Dims everything except the picked surfaces. `null` ends the focus. */

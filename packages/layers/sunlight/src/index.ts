@@ -1,5 +1,5 @@
 import { defineLayer, formatHour, zonedTimeToUtc } from '@mrstudio/sdk';
-import type { Colormap, FieldStream, LayerManifest, LightHandle, SunLight, SunShadows, TableContext } from '@mrstudio/sdk';
+import type { Colormap, FieldStream, LayerManifest, LightHandle, SunLight, TableContext } from '@mrstudio/sdk';
 
 import manifest from '../layer.json';
 import { skyColormap, skyLight, sunAt, sunDay, sunHoursColormap, thresholdColormap, treeHoursColormap, treeShadeColormap } from './look.ts';
@@ -38,6 +38,8 @@ function hoursColormap(threshold: number, daylightHours: number | undefined) {
 const SOFTEN_CELLS = 1.6;
 /** Seconds a new result takes to ease in, so stepped times read as continuous motion. */
 const GLIDE_SECONDS = 0.14;
+/** Softening of the shadow-map mask, in its pixels of about 0.3 m. */
+const SHARP_SOFTEN = 1.2;
 
 export default defineLayer<Params>({
   manifest: manifest as LayerManifest,
@@ -52,30 +54,30 @@ export default defineLayer<Params>({
     });
     // Tree shade is drawn over the light in its own colour, on the twin's ground and roofs.
     const treeOverlay = ctx.model.addField('tree-shade', { colormap: treeShadeColormap, opacity: 0, soften: SOFTEN_CELLS, glide: GLIDE_SECONDS });
-    // Buildings and the ground cast sharp shadows on the twin from a shadow map (#133). The engine's shadow field,
-    // drawn from its cells, is the fallback when there is no twin, and still gives trees their soft shade.
-    let shadows: ReturnType<typeof ctx.model.addSunShadows> | undefined;
-    const sharp = () => ctx.params.mode === 'instant' && !ctx.params.relight;
-    function sunShadows(): SunShadows {
-      const sun = sunNow();
-      const [shade, , light] = skyColormap(sun.altitude).stops;
-      const css = (stop: Colormap['stops'][number]) => `rgb(${stop[1]} ${stop[2]} ${stop[3]})`;
-      return { azimuth: sun.azimuth, altitude: sun.altitude, light: css(light!), shade: css(shade!), opacity: (ctx.params.opacity * light![4]) / 255 };
-    }
-    function reshadow() {
-      if (!sharp()) {
-        shadows?.remove();
-        shadows = undefined;
-      } else if (shadows) shadows.set(sunShadows());
-      else if (shadows === undefined) shadows = ctx.model.addSunShadows(sunShadows());
+    // Buildings and the ground cast sharp shadows from a GPU shadow map of their real outlines (#133), drawn in this
+    // layer's own field so the table's layer order holds. The engine's shadow field, drawn from its cells, is the
+    // fallback when there is no twin, and still gives trees their soft shade.
+    let sharp: boolean | undefined;
+    let maskRequest = 0;
+    const sharpWanted = () => ctx.params.mode === 'instant' && !ctx.params.relight;
+    async function reshadow() {
+      if (!sharpWanted() || sharp === false) return;
+      const mine = ++maskRequest;
+      const frame = await ctx.model.sunShadowMask(sunNow());
+      if (mine !== maskRequest || !sharpWanted()) return;
+      const first = sharp === undefined;
+      sharp = frame !== null;
+      if (frame) overlay.set(frame);
+      // The first answer changes how the field and tree shade are styled.
+      if (first) dress();
     }
     // Without their own colour, trees shade in the same colour as buildings.
     const treeColormap = (): Colormap => {
-      if (ctx.params.treeColor || !shadows) return treeShadeColormap;
+      if (ctx.params.treeColor || !sharp) return treeShadeColormap;
       const [shade] = skyColormap(sunNow().altitude).stops;
       return { stops: [[0, shade![1], shade![2], shade![3], 0], [1, shade![1], shade![2], shade![3], shade![4]]] };
     };
-    const treeOpacity = () => (ctx.params.trees && (ctx.params.treeColor || shadows) ? ctx.params.opacity : 0);
+    const treeOpacity = () => (ctx.params.trees && (ctx.params.treeColor || (sharp && sharpWanted())) ? ctx.params.opacity : 0);
     const path = new SunPath(ctx.map.addElement(), ctx.site.extent.rotation_deg);
     let stream: FieldStream | null = null;
     let generation = 0;
@@ -114,11 +116,13 @@ export default defineLayer<Params>({
       const day = ctx.params.mode === 'day';
       const sun = sunNow();
       relight();
-      reshadow();
+      void reshadow();
       overlay.setStyle({
         colormap: day ? hoursColormap(ctx.params.threshold, daylightHours) : skyColormap(sun.altitude),
         soften: day ? 1 : SOFTEN_CELLS,
-        opacity: relit() || shadows ? 0 : ctx.params.opacity,
+        opacity: relit() ? 0 : ctx.params.opacity,
+        // A shadow-map mask has fine pixels; soften by a few of them, like a real penumbra.
+        ...(sharp && sharpWanted() ? { soften: SHARP_SOFTEN } : {}),
       });
       treeOverlay.setStyle({ colormap: day ? treeHoursColormap : treeColormap(), soften: day ? 1 : SOFTEN_CELLS, opacity: treeOpacity() });
       path.setVisible(ctx.params.path);
@@ -158,7 +162,10 @@ export default defineLayer<Params>({
       }
       stream = opened;
       dress();
-      opened.on(field, (frame) => overlay.set(frame));
+      // With a shadow map, the engine's cells only fill in until the first mask is ready.
+      opened.on(field, (frame) => {
+        if (!(sharp && sharpWanted())) overlay.set(frame);
+      });
       opened.on(treeField, (frame) => treeOverlay.set(frame));
       opened.onStatus((status) => {
         if (daylightHours !== status.info.daylight_hours) {

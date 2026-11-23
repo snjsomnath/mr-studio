@@ -1,6 +1,7 @@
 import { SURFACE_KINDS, decomposeProjector, parseTwin, projectorMatrices } from '@mrstudio/sdk';
 import type {
   Colormap,
+  FieldFrame,
   FieldOverlay,
   LightHandle,
   ModelFieldStyle,
@@ -13,7 +14,6 @@ import type {
   SiteInfo,
   SpotLight,
   SunLight,
-  SunShadows,
   SurfaceMaterial,
   SurfaceQuery,
   TwinMesh,
@@ -23,7 +23,7 @@ import * as THREE from 'three';
 
 import { cssColor } from './colour.ts';
 import { ModelFieldOverlay, premultipliedOver } from './field.ts';
-import { SunShadowPass, type Footprint } from './sun-shadows.ts';
+import { SunMask, type Footprint } from './sun-shadows.ts';
 
 const DRAPE_VERTEX = /* glsl */ `
 attribute float kind;
@@ -145,7 +145,8 @@ export class ModelView {
   private materials: MaterialEntry[] = [];
   private focuses: FocusEntry[] = [];
   private buildings: BuildingInfo[] | null = null;
-  private readonly sunPasses = new Map<SunShadowPass, string>();
+  private sunMask: SunMask | null = null;
+  private buildingsLoaded: Promise<void> = Promise.resolve();
   private saved: ProjectorCalibration | null = null;
   /** `undefined` follows the saved calibration; anything else replaces it, as the calibration tool does while it works. */
   private override: ProjectorCalibration | null | undefined = undefined;
@@ -165,7 +166,7 @@ export class ModelView {
     const response = await fetch('/api/model');
     if (!response.ok) throw new Error(`the host has no twin (${response.status})`);
     const view = new ModelView(container, site, map, parseTwin(await response.arrayBuffer()));
-    void view.loadBuildings();
+    view.buildingsLoaded = view.loadBuildings();
     return view;
   }
 
@@ -377,7 +378,6 @@ export class ModelView {
     this.drape.visible = this.draped && this.solo === null;
     for (const field of this.fields) field.setHidden(!shown(field.layer));
     for (const light of this.lights) for (const object of light.objects) object.visible = shown(light.layer);
-    for (const [pass, layer] of this.sunPasses) pass.setShown(shown(layer));
     this.focusMesh.visible = this.focuses.length > 0 && this.solo === null;
     this.container.classList.toggle('is-projector', this.calibrated);
     this.invalidate();
@@ -435,7 +435,7 @@ export class ModelView {
       }));
       this.applyMaterials();
       this.applyFocus();
-      for (const pass of this.sunPasses.keys()) pass.setFootprints(this.footprints());
+      this.sunMask?.setFootprints(this.footprints());
     } catch (error) {
       console.warn('building footprints could not be read; buildings are known by number only', error);
     }
@@ -692,33 +692,14 @@ export class ModelView {
           remove,
         };
       },
-      addSunShadows: (shadows: SunShadows) => {
-        const pass = new SunShadowPass(view.geometry, view.twin, view.centre, view.radius, view.renderer.capabilities.maxTextureSize, shadows);
-        if (view.buildings) pass.setFootprints(view.footprints());
-        view.sunPasses.set(pass, layer);
-        pass.setShown(view.solo === null || view.solo === layer);
-        // The passes cast for the twin, from the buildings' real outlines rather than its cells.
-        view.base.castShadow = false;
-        view.scene.add(...pass.objects);
-        view.invalidate();
-        let removed = false;
-        const remove = () => {
-          if (removed) return;
-          removed = true;
-          view.sunPasses.delete(pass);
-          view.scene.remove(...pass.objects);
-          pass.dispose();
-          view.base.castShadow = view.sunPasses.size === 0;
-          view.invalidate();
-        };
-        track(remove);
-        return {
-          set: (patch: Partial<SunShadows>) => {
-            pass.set(patch);
-            view.invalidate();
-          },
-          remove,
-        };
+      sunShadowMask: async (sun: { azimuth: number; altitude: number }): Promise<FieldFrame | null> => {
+        await view.buildingsLoaded;
+        if (!view.sunMask) {
+          const plane = tangentPlane(view.site.origin);
+          view.sunMask = new SunMask(view.renderer, view.geometry, view.twin, view.site.corners.map(([lon, lat]) => plane.toLocal(lon, lat)));
+          if (view.buildings) view.sunMask.setFootprints(view.footprints());
+        }
+        return view.sunMask.render(sun.azimuth, sun.altitude);
       },
       setMaterial: (target: SurfaceQuery, material: SurfaceMaterial): void => {
         own();
