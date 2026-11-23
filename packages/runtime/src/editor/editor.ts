@@ -139,6 +139,8 @@ export class Editor {
     body.append(left, centre, this.inspector);
     const invoke = desktop();
     this.displayTab = new DisplayTab(invoke, connection, this.canvas, () => void invoke?.('open_settings'));
+    this.displayTab.setQuality(this.store.state.site.display?.quality ?? 'good');
+    this.store.onDisplay((quality) => this.displayTab.setQuality(quality));
     this.tabs.setAttribute('role', 'tablist');
     this.tabs.ariaLabel = 'Ribbon';
     this.ribbon.setAttribute('role', 'tabpanel');
