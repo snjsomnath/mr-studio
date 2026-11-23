@@ -497,6 +497,11 @@ async function main() {
     assert.deepEqual(savedLayers().find((l) => l.use === 'mobility').button, named);
     // The controller goes by the same words.
     await tv.locator('.controller-right .layer-button', { hasText: 'Getting here' }).waitFor();
+    // A group puts the button under the group's name on its rail.
+    await editor.getByLabel('Group').fill('Movement');
+    await editor.getByLabel('Group').blur();
+    await tv.locator('.controller-right .rail-group', { hasText: 'Movement' }).waitFor();
+    assert.equal(savedLayers().find((l) => l.use === 'mobility').button.group, 'Movement');
     // Opening a layer closes the one that was open, except a layer made to run alongside.
     await press('Sunlight', true);
     // The editor shows the live controller beside the map, and follows a press on it.
@@ -519,6 +524,9 @@ async function main() {
     await editor.getByLabel('Name').blur();
     await editor.getByLabel('Description').fill('');
     await editor.getByLabel('Description').blur();
+    await editor.getByLabel('Group').fill('');
+    await editor.getByLabel('Group').blur();
+    await tv.locator('.rail-group').first().waitFor({ state: 'detached' });
     await editor.locator('.ed-tree .ed-row[data-layer="mobility"] .ed-row-label', { hasText: 'Mobility' }).waitFor();
     await tv.locator('.controller-right .layer-button', { hasText: 'Mobility' }).waitFor();
     assert.deepEqual(savedLayers().map((l) => l.id ?? l.use), ['basemap', 'sunlight', 'building-lights', 'cars', 'transit', 'trees', 'slideshow', 'sketch', 'coolpaths', 'mobility', 'wind']);
