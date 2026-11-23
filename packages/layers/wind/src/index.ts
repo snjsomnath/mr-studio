@@ -1,6 +1,7 @@
 import { colormaps, cssGradient, defineLayer, geojsonPolygons, readSiteData, stretch, tableSpace } from '@mrstudio/sdk';
 import type { FieldFrame, FlowOverlay, LayerManifest, TableContext } from '@mrstudio/sdk';
 
+import { windHero } from './hero.ts';
 import manifest from '../layer.json';
 
 interface Params {
@@ -98,6 +99,9 @@ export default defineLayer<Params>({
       },
     };
   },
+
+  // The controller's hero: a compass dial and a speed band over moving air (#76).
+  hero: (ctx, el) => windHero(ctx as never, el),
 
   panel(ctx, el) {
     el.innerHTML = `
