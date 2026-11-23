@@ -99,6 +99,7 @@ mod tests {
             name: name.map(String::from),
             origin: crate::LonLat { lon, lat },
             extent: crate::Extent { width_m: w, height_m: h, rotation_deg: r },
+            table_width_cm: None,
         };
         let moved = site.place(&place(Some(" Old harbour "), 11.95, 57.70, 1600.0, 1000.0, -30.0)).unwrap();
         assert_eq!(moved.manifest.name, "Old harbour");
@@ -108,6 +109,12 @@ mod tests {
         assert_eq!(moved.manifest.layers.len(), 2, "everything else is kept");
         let kept = moved.place(&place(None, 11.95, 57.70, 1600.0, 1000.0, 330.0)).unwrap();
         assert_eq!(kept.manifest.name, "Old harbour", "no name keeps the name");
+        // A new table width sets the model scale: 1600 m on a 160 cm table is 1 : 1000.
+        let wider = kept.place(&crate::Place { table_width_cm: Some(160.0), ..place(None, 11.95, 57.70, 1600.0, 1000.0, 330.0) }).unwrap();
+        let table = wider.manifest.table.unwrap();
+        assert_eq!((table.width_cm, table.height_cm), (160.0, 100.0));
+        assert!(kept.place(&crate::Place { table_width_cm: Some(1.0), ..place(None, 11.95, 57.70, 1600.0, 1000.0, 330.0) }).is_err());
+        wider.place(&crate::Place { table_width_cm: Some(100.0), ..place(None, 11.95, 57.70, 1600.0, 1000.0, 330.0) }).unwrap();
 
         assert!(site.place(&place(Some(""), 11.95, 57.70, 1000.0, 600.0, 0.0)).is_err());
         assert!(site.place(&place(None, 11.95, 97.0, 1000.0, 600.0, 0.0)).is_err());

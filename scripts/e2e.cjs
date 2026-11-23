@@ -666,27 +666,34 @@ async function main() {
     await fresh.getByRole('button', { name: 'Create the table' }).click();
     await fresh.getByRole('alert').getByText(/Paste the coordinates/).waitFor();
     await fresh.getByLabel('Centre of the table').fill('https://www.openstreetmap.org/#map=16/57.7069/11.9386');
-    // The table shows on the map; dragging its round handle turns it, and the fields follow.
-    await fresh.locator('.pm-handle.is-turn').waitFor();
-    const turnHandle = await fresh.locator('.pm-handle.is-turn').boundingBox();
-    const middle = await fresh.locator('.pm-handle.is-centre').boundingBox();
-    const cx = middle.x + middle.width / 2;
-    const cy = middle.y + middle.height / 2;
-    const reach = cy - (turnHandle.y + turnHandle.height / 2);
-    await fresh.mouse.move(turnHandle.x + turnHandle.width / 2, turnHandle.y + turnHandle.height / 2);
-    await fresh.mouse.down();
-    await fresh.mouse.move(cx + reach, cy, { steps: 8 });
-    await fresh.mouse.up();
-    // A quarter turn: the drag ended close to a right angle, which the handle snaps to.
-    assert.equal(await fresh.getByLabel('Turned').inputValue(), '90');
-    // Dragging the corner in covers less ground, keeping the table's shape. The map has reframed the turned table.
+    // The table shows on the map, upright as it stands in the room. Turning turns the map under it.
+    await fresh.locator('.pm-handle.is-corner').waitFor();
+    const centreOf = async (selector) => {
+      const box = await fresh.locator(selector).boundingBox();
+      return [box.x + box.width / 2, box.y + box.height / 2];
+    };
+    for (let i = 0; i < 2; i++) await fresh.getByRole('button', { name: 'Turn the map right' }).click();
+    assert.equal(await fresh.getByLabel('Turned').inputValue(), '10');
+    const [mx, my] = await centreOf('.pm-handle.is-centre');
+    const [kx, ky] = await centreOf('.pm-handle.is-corner');
+    // The corner is still up and to the right of the middle, at the table's own shape: the outline did not tilt.
+    assert.ok(kx > mx && ky < my && Math.abs((kx - mx) / (my - ky) - 1000 / 600) < 0.05, `the table stays upright: ${[mx, my, kx, ky]}`);
+    // A model scale sets the ground's size and keeps its shape; the table's own width changes the scale.
+    await fresh.getByRole('button', { name: '1 : 2 000' }).click();
+    assert.deepEqual([await fresh.getByLabel('Width, metres').inputValue(), await fresh.getByLabel('Height, metres').inputValue()], ['2000', '1200']);
+    await fresh.getByLabel('Table width, cm').fill('160');
+    assert.equal(await fresh.locator('input[name="scale"]').inputValue(), '1250');
+    await fresh.locator('.wz-scale-words', { hasText: 'A 160 × 96 cm table shows 2 000 × 1 200 m at 1 : 1 250' }).waitFor();
+    await fresh.getByLabel('Width, metres').fill('1000');
+    await fresh.getByLabel('Height, metres').fill('600');
+    assert.equal(await fresh.locator('input[name="scale"]').inputValue(), '625');
+    // Dragging the corner in covers less ground, keeping the table's shape.
     await fresh.waitForTimeout(200);
-    const after = await fresh.locator('.pm-handle.is-centre').boundingBox();
-    const [mx, my] = [after.x + after.width / 2, after.y + after.height / 2];
-    const cornerHandle = await fresh.locator('.pm-handle.is-corner').boundingBox();
-    await fresh.mouse.move(cornerHandle.x + cornerHandle.width / 2, cornerHandle.y + cornerHandle.height / 2);
+    const [nx, ny] = await centreOf('.pm-handle.is-centre');
+    const [cx2, cy2] = await centreOf('.pm-handle.is-corner');
+    await fresh.mouse.move(cx2, cy2);
     await fresh.mouse.down();
-    await fresh.mouse.move(mx + (cornerHandle.x + cornerHandle.width / 2 - mx) * 0.7, my + (cornerHandle.y + cornerHandle.height / 2 - my) * 0.7, { steps: 8 });
+    await fresh.mouse.move(nx + (cx2 - nx) * 0.7, ny + (cy2 - ny) * 0.7, { steps: 8 });
     await fresh.mouse.up();
     const [grownWidth, grownHeight] = [Number(await fresh.getByLabel('Width, metres').inputValue()), Number(await fresh.getByLabel('Height, metres').inputValue())];
     assert.ok(grownWidth > 600 && grownWidth < 800, `the corner takes the table to 70% of its width, got ${grownWidth}`);
@@ -697,7 +704,7 @@ async function main() {
     await fresh.getByRole('button', { name: 'Create the table' }).click();
     await fresh.waitForFunction(() => window.shellCalls.length === 2);
     assert.deepEqual(await fresh.evaluate(() => window.shellCalls), [
-      ['create_site', { site: { name: 'Harbour', lat: 57.7069, lon: 11.9386, width_m: 1000, height_m: 600, rotation_deg: 90 } }],
+      ['create_site', { site: { name: 'Harbour', lat: 57.7069, lon: 11.9386, width_m: 1000, height_m: 600, rotation_deg: 10, table_width_cm: 160 } }],
       ['open_site', { path: '/sites/harbour', welcome: true }],
     ]);
     await fresh.close();

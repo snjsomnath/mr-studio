@@ -3,6 +3,7 @@ import { defaultSideOf, el, isAmbient, isOffered, layerButton } from '../control
 import type { Store } from '../store.ts';
 import { icon } from './icons.ts';
 import { Importer, TARGETS, targetFor } from './importer.ts';
+import { ScaleFields } from './place-scale.ts';
 import { PlaceMap } from './place-map.ts';
 import type { Placement } from './place-map.ts';
 import { parsePlace } from './place.ts';
@@ -79,7 +80,8 @@ export class Wizard {
   /** The row of "Your place" that a layer needing data sent the author to. */
   private wanted: string | null = null;
   /** The "Name and place" form as the author left it, kept across redraws. */
-  private where: { name: string; centre: string; width: string; height: string; rotation: string } | null = null;
+  private where: { name: string; centre: string; width: string; height: string; rotation: string; table: string } | null = null;
+  private scaleFields: ScaleFields | null = null;
   /** The map in "Name and place", made once: it keeps its view across redraws. */
   private placeMap: PlaceMap | null = null;
   private moving = false;
@@ -318,7 +320,7 @@ export class Wizard {
   })();
 
   /** The site's name and place as the form would write them. */
-  private placeValues(): { name: string; centre: string; width: string; height: string; rotation: string } {
+  private placeValues(): { name: string; centre: string; width: string; height: string; rotation: string; table: string } {
     const { site } = this.host.store.state;
     return (
       this.where ?? {
@@ -327,6 +329,7 @@ export class Wizard {
         width: String(Math.round(site.extent.width_m)),
         height: String(Math.round(site.extent.height_m)),
         rotation: String(Math.round(site.extent.rotation_deg ?? 0)),
+        table: String(site.table?.width_cm ?? 100),
       }
     );
   }
@@ -342,7 +345,8 @@ export class Wizard {
       Math.abs(at.lon - site.origin.lon) > 1e-6 ||
       Number(this.where.width) !== Math.round(site.extent.width_m) ||
       Number(this.where.height) !== Math.round(site.extent.height_m) ||
-      turn(Number(this.where.rotation)) !== turn(Math.round(site.extent.rotation_deg ?? 0))
+      turn(Number(this.where.rotation)) !== turn(Math.round(site.extent.rotation_deg ?? 0)) ||
+      Number(this.where.table) !== (site.table?.width_cm ?? 100)
     );
   }
 
@@ -364,10 +368,30 @@ export class Wizard {
         this.where = { ...this.placeValues(), [key]: node.value };
         this.problem = '';
         this.placeMap?.set(this.placement());
+        this.scaleFields?.refresh();
         this.nextWords();
       });
       return node;
     };
+    // The physical table and the model scale: a scale sets the ground's size, keeping its shape.
+    this.scaleFields = new ScaleFields(
+      () => {
+        const v = this.placeValues();
+        return { width_m: Number(v.width), height_m: Number(v.height), table_cm: Number(v.table) };
+      },
+      (ground) => {
+        this.where = { ...this.placeValues(), width: String(ground.width_m), height: String(ground.height_m), table: String(ground.table_cm) };
+        for (const key of ['width', 'height'] as const) {
+          const field = this.element.querySelector<HTMLInputElement>(`.wz-form input[name="${key}"]`);
+          if (field) field.value = this.where[key];
+        }
+        this.problem = '';
+        this.placeMap?.set(this.placement());
+        this.nextWords();
+      },
+    );
+    // The map comes right after the centre, so the place is seen before it is fine-tuned.
+    const mapSlot = el('div', 'wz-map-slot');
     const size = el('div', 'wz-pair');
     size.append(
       field('Width, metres', input('width', { type: 'number', min: '100', max: '20000', step: '50' })),
@@ -376,8 +400,10 @@ export class Wizard {
     form.append(
       field('Name', input('name', { type: 'text', maxLength: 60 })),
       field('Centre of the table', input('centre', { type: 'text', placeholder: '57.6898, 11.9742' }), 'Paste coordinates, or a link copied from Google Maps or OpenStreetMap.'),
+      mapSlot,
+      this.scaleFields.element,
       size,
-      field('Turned', input('rotation', { type: 'number', min: '-180', max: '360', step: '1' }), 'Degrees clockwise from north for the top edge of the table. 0 puts north at the top.'),
+      field('Turned', input('rotation', { type: 'number', min: '-180', max: '360', step: '1' }), 'Turns the map under the table, in degrees clockwise from north. 0 puts north at the top. The table itself stays as it stands.'),
     );
     // The table on a map: click or drag to move it, drag the corner to scale it, the top handle to turn it.
     if (!this.placeMap) {
@@ -391,6 +417,7 @@ export class Wizard {
           height: String(place.height_m),
           rotation: String(place.rotation_deg),
         };
+        this.scaleFields?.refresh();
         for (const key of ['centre', 'width', 'height', 'rotation'] as const) {
           const field = this.element.querySelector<HTMLInputElement>(`.wz-form input[name="${key}"]`);
           if (field) field.value = this.where[key];
@@ -399,7 +426,7 @@ export class Wizard {
         this.nextWords();
       }, { data: buildings ? `/site/${buildings}` : undefined });
     }
-    form.append(this.placeMap.element, el('p', 'wz-hint', 'Click the map or drag the middle to move the table, drag its corner to cover more or less ground, and the round handle to turn it.'));
+    mapSlot.append(this.placeMap.element, el('p', 'wz-hint', 'Click the map or drag the middle to move the table, and drag its corner to cover more or less ground. Turn the map with the right mouse button, Ctrl and drag, or the arrows; the table stays upright, as it stands in the room.'));
     if (this.moving) form.append(el('p', 'wz-hint', 'Moving the table and rebuilding what it shows…'));
     if (this.problem) {
       const problem = el('p', 'wz-problem', this.problem);
@@ -444,7 +471,7 @@ export class Wizard {
       const response = await fetch('/api/site/place', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: values.name.trim(), origin: { lat: at.lat, lon: at.lon }, extent: { width_m, height_m, rotation_deg } }),
+        body: JSON.stringify({ name: values.name.trim(), origin: { lat: at.lat, lon: at.lon }, extent: { width_m, height_m, rotation_deg }, table_width_cm: Number(values.table) }),
       });
       if (!response.ok) {
         const answer = await response.json().catch(() => null);

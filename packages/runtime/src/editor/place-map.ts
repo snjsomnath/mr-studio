@@ -5,23 +5,36 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import { el } from '../controls.ts';
 
 /**
- * Free raster base maps an author can see a place on. The first is the default for
- * picking where a table goes; the base map picker (#37) offers the same list.
+ * Raster base maps an author can see a place on. The first is the default for picking
+ * where a table goes: OpenStreetMap needs no key, and is drawn light so the table's
+ * outline stands out. CARTO's light map watermarks its tiles in the desktop app unless
+ * it is given a key, which belongs in the Sources manager (#111), never in the repo.
  */
 export const BASEMAPS = [
   {
-    id: 'positron',
+    id: 'osm-light',
     name: 'Light',
-    tiles: ['a', 'b', 'c'].map((s) => `https://${s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}@2x.png`),
-    attribution: '© OpenStreetMap contributors © CARTO',
-  },
-  {
-    id: 'osm',
-    name: 'OpenStreetMap',
     tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
     attribution: '© OpenStreetMap contributors',
+    needsKey: false,
+  },
+  {
+    id: 'carto-positron',
+    name: 'CARTO light',
+    tiles: ['a', 'b', 'c'].map((s) => `https://${s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}@2x.png`),
+    attribution: '© OpenStreetMap contributors © CARTO',
+    needsKey: true,
   },
 ] as const;
+
+/** Where the map opens before a place is given: Gothenburg, at city zoom. */
+export const START = { lat: 57.7089, lon: 11.9746, zoom: 11 };
+
+/** Model scales a table is often built at, offered as one click. */
+export const COMMON_SCALES = [500, 1000, 2000, 5000];
+
+/** The model scale, 1 : N, of a table `table_cm` wide showing `width_m` of ground. */
+export const scaleOf = (width_m: number, table_cm: number) => (width_m * 100) / table_cm;
 
 /** Where a table is and how much ground it covers. */
 export interface Placement {
@@ -60,16 +73,37 @@ export function outline(place: Placement): [number, number][] {
   return [...ring, ring[0]!];
 }
 
-/** Where the handle that turns the table sits: just beyond the middle of its top edge. */
-const turnHandle = (place: Placement) => offset(place, 0, place.height_m / 2 + Math.max(place.width_m, place.height_m) * 0.12);
+/** Degrees as a whole bearing from 0 up to 360. */
+const bearingOf = (degrees: number) => ((Math.round(degrees) % 360) + 360) % 360;
+
+/** Two buttons that turn the map 5° at a time, under the zoom buttons. */
+class TurnControl implements maplibregl.IControl {
+  private readonly node = el('div', 'maplibregl-ctrl maplibregl-ctrl-group pm-turn');
+  constructor(turn: (degrees: number) => void) {
+    for (const [label, degrees, glyph] of [['Turn the map left', -5, '↺'], ['Turn the map right', 5, '↻']] as const) {
+      const button = el('button', undefined, glyph);
+      button.type = 'button';
+      button.title = label;
+      button.setAttribute('aria-label', label);
+      button.addEventListener('click', () => turn(degrees));
+      this.node.append(button);
+    }
+  }
+  onAdd(): HTMLElement {
+    return this.node;
+  }
+  onRemove(): void {
+    this.node.remove();
+  }
+}
 
 /** Rounds a size to 10 m, within what a table can be. */
 const size = (metres: number) => Math.min(20_000, Math.max(100, Math.round(metres / 10) * 10));
 
 /**
- * A small map for placing a table: the outline at its real size, which can be moved by
- * clicking or dragging its centre, scaled by dragging its corner and turned by dragging
- * the handle above its top edge. Fields elsewhere follow through `onChange`, and call
+ * A small map for placing a table: the outline at its real size, always upright as the
+ * real table stands, moved by clicking or dragging its centre and scaled by dragging its
+ * corner. Turning turns the map under it. Fields elsewhere follow through `onChange`, and call
  * `set` when they are typed in. Without tiles (offline) the outline still works on a
  * plain ground, and a note says so.
  */
@@ -79,7 +113,6 @@ export class PlaceMap {
   private place: Placement | null;
   private readonly centre: maplibregl.Marker;
   private readonly corner: maplibregl.Marker;
-  private readonly turn: maplibregl.Marker;
   private readonly note = el('p', 'pm-note');
   private framed = false;
   private shown = false;
@@ -95,7 +128,8 @@ export class PlaceMap {
       sources: { base: { type: 'raster', tiles: [...basemap.tiles], tileSize: 256, attribution: basemap.attribution, maxzoom: 19 } },
       layers: [
         { id: 'ground', type: 'background', paint: { 'background-color': '#eef0f3' } },
-        { id: 'base', type: 'raster', source: 'base' },
+        // Desaturated and lifted, so the map reads as quiet ground under the table.
+        { id: 'base', type: 'raster', source: 'base', paint: { 'raster-saturation': -0.85, 'raster-brightness-min': 0.3, 'raster-contrast': -0.2 } },
       ],
     };
     const box = el('div', 'pm-map');
@@ -104,14 +138,30 @@ export class PlaceMap {
     this.map = new maplibregl.Map({
       container: box,
       style,
-      center: start ? [start.lon, start.lat] : [11.97, 57.7],
-      zoom: start ? 13 : 3,
-      attributionControl: { compact: true },
-      dragRotate: false,
+      center: start ? [start.lon, start.lat] : [START.lon, START.lat],
+      zoom: start ? 13 : START.zoom,
+      bearing: start?.rotation_deg ?? 0,
+      attributionControl: { compact: false },
       pitchWithRotate: false,
       touchPitch: false,
+      maxPitch: 0,
     });
-    this.map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
+    // The table never turns: turning the map chooses which way the world faces on it. Right-drag,
+    // Ctrl-drag or two fingers turn it, as do the buttons; the compass brings north back up.
+    this.map.addControl(new maplibregl.NavigationControl({ showCompass: true, visualizePitch: false }), 'top-right');
+    this.map.addControl(new TurnControl((by) => this.turnBy(by)), 'top-right');
+    this.map.on('rotate', (event) => {
+      if (!(event as { originalEvent?: Event }).originalEvent) return;
+      this.change({ rotation_deg: bearingOf(this.map.getBearing()) }, false);
+    });
+    this.map.on('rotateend', (event) => {
+      if (!(event as { originalEvent?: Event }).originalEvent) return;
+      // Close to a right angle snaps to it.
+      const bearing = bearingOf(this.map.getBearing());
+      const nearest = Math.round(bearing / 90) * 90;
+      if (bearing !== nearest && Math.abs(bearing - nearest) <= 3) this.change({ rotation_deg: nearest % 360 });
+      else this.change({ rotation_deg: bearing });
+    });
     let failed = 0;
     this.map.on('error', (event) => {
       if ((event as { sourceId?: string }).sourceId !== 'base' || ++failed < 3) return;
@@ -126,7 +176,6 @@ export class PlaceMap {
     };
     this.centre = handle('is-centre', 'Drag to move the table');
     this.corner = handle('is-corner', 'Drag to make the table cover more or less ground');
-    this.turn = handle('is-turn', 'Drag to turn the table');
     this.centre.on('drag', () => {
       const { lng, lat } = this.centre.getLngLat();
       this.change({ lon: lng, lat });
@@ -143,20 +192,8 @@ export class PlaceMap {
       const scale = Math.max(0.01, (x * w + y * h) / (w * w + h * h));
       this.change({ width_m: size(place.width_m * scale), height_m: size(place.height_m * scale) });
     });
-    this.turn.on('drag', () => {
-      const place = this.place!;
-      const { lng, lat } = this.turn.getLngLat();
-      const east = (lng - place.lon) * metresPerDegreeLon(place.lat);
-      const north = (lat - place.lat) * METRES_PER_DEGREE_LAT;
-      let bearing = Math.round((Math.atan2(east, north) * 180) / Math.PI);
-      // Close to a right angle snaps to it.
-      const nearest = Math.round(bearing / 90) * 90;
-      if (Math.abs(bearing - nearest) <= 3) bearing = nearest;
-      this.change({ rotation_deg: ((bearing % 360) + 360) % 360 });
-    });
-    // A table scaled or turned past the edge of the view comes back into it.
+    // A table scaled past the edge of the view comes back into it.
     this.corner.on('dragend', () => this.frame());
-    this.turn.on('dragend', () => this.frame());
     this.map.on('click', (event) => this.change({ lon: event.lngLat.lng, lat: event.lngLat.lat }));
 
     // Once the style is read, not on load: load waits for tiles, which may never come offline.
@@ -187,19 +224,28 @@ export class PlaceMap {
 
   /** Takes a placement typed elsewhere. */
   set(place: Placement | null, frame = false): void {
-    const moved = !this.place || !place || Math.abs(place.lat - this.place.lat) > 1e-9 || Math.abs(place.lon - this.place.lon) > 1e-9;
+    const was = this.place;
+    const moved = !was || !place || Math.abs(place.lat - was.lat) > 1e-9 || Math.abs(place.lon - was.lon) > 1e-9;
+    const resized = !!was && !!place && (place.width_m !== was.width_m || place.height_m !== was.height_m || place.rotation_deg !== was.rotation_deg);
     this.place = place;
     this.draw();
-    if (frame || (moved && place)) this.frame();
+    if (frame || (place && (moved || resized))) this.frame();
   }
 
-  private change(patch: Partial<Placement>): void {
+  private turnBy(degrees: number): void {
+    if (!this.place) return;
+    this.change({ rotation_deg: bearingOf(this.place.rotation_deg + degrees) });
+    this.frame();
+  }
+
+  private change(patch: Partial<Placement>, redraw = true): void {
     if (!this.place) {
       if (patch.lat === undefined || patch.lon === undefined) return;
-      this.place = { lat: patch.lat, lon: patch.lon, width_m: 1000, height_m: 600, rotation_deg: 0 };
+      this.place = { lat: patch.lat, lon: patch.lon, width_m: 1000, height_m: 600, rotation_deg: bearingOf(this.map.getBearing()) };
       this.frame();
     } else this.place = { ...this.place, ...patch };
-    this.draw();
+    if (redraw) this.draw();
+    else (this.map.getSource('table') as GeoJSONSource | undefined)?.setData(this.geojson());
     this.onChange(this.place);
   }
 
@@ -213,7 +259,7 @@ export class PlaceMap {
   private draw(): void {
     (this.map.getSource('table') as GeoJSONSource | undefined)?.setData(this.geojson());
     const place = this.place;
-    const markers = [this.centre, this.corner, this.turn];
+    const markers = [this.centre, this.corner];
     if (!place) {
       for (const marker of markers) marker.remove();
       this.shown = false;
@@ -222,24 +268,20 @@ export class PlaceMap {
     // Moving a marker that is being dragged is harmless; adding it again would end the drag.
     this.centre.setLngLat([place.lon, place.lat]);
     this.corner.setLngLat(offset(place, place.width_m / 2, place.height_m / 2));
-    this.turn.setLngLat(turnHandle(place));
     if (!this.shown) for (const marker of markers) marker.addTo(this.map);
     this.shown = true;
   }
 
-  /** Zooms so the whole table is in view with some ground around it. */
+  /** Turns the map so the table stands upright, and zooms so all of it is in view with some ground around it. */
   private frame(): void {
-    if (!this.place || this.element.clientWidth === 0) return;
-    const ring = [...outline(this.place), turnHandle(this.place)];
-    const lons = ring.map((p) => p[0]);
-    const lats = ring.map((p) => p[1]);
-    this.map.fitBounds(
-      [
-        [Math.min(...lons), Math.min(...lats)],
-        [Math.max(...lons), Math.max(...lats)],
-      ],
-      { padding: 40, duration: 0, maxZoom: 17 },
-    );
+    const box = this.map.getContainer();
+    if (!this.place || box.clientWidth === 0) return;
+    const { lat, lon, width_m, height_m, rotation_deg } = this.place;
+    const padding = 48;
+    const metresPerPixel = Math.max(width_m / Math.max(1, box.clientWidth - 2 * padding), height_m / Math.max(1, box.clientHeight - 2 * padding));
+    // Web Mercator at MapLibre's 512-pixel world: metres per pixel = C cos(lat) / (512 · 2^zoom).
+    const zoom = Math.log2((40_075_016.686 * Math.cos((lat * Math.PI) / 180)) / (512 * metresPerPixel));
+    this.map.jumpTo({ center: [lon, lat], zoom: Math.min(18, zoom), bearing: rotation_deg });
     this.framed = true;
   }
 }
