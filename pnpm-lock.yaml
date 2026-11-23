@@ -133,6 +133,26 @@ importers:
         specifier: ^5.9.0
         version: 5.9.3
 
+  packages/layers/street-glow:
+    dependencies:
+      '@mrstudio/sdk':
+        specifier: workspace:*
+        version: link:../../sdk
+    devDependencies:
+      typescript:
+        specifier: ^5.9.0
+        version: 5.9.3
+
+  packages/layers/street-life:
+    dependencies:
+      '@mrstudio/sdk':
+        specifier: workspace:*
+        version: link:../../sdk
+    devDependencies:
+      typescript:
+        specifier: ^5.9.0
+        version: 5.9.3
+
   packages/layers/sunlight:
     dependencies:
       '@mrstudio/sdk':
