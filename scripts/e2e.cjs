@@ -539,7 +539,8 @@ async function main() {
     await guide.getByRole('button', { name: 'Move the table' }).click();
     await guide.waitForFunction(() => document.querySelector('.wz h2')?.textContent === 'Your place' && document.querySelector('.ed-name strong')?.textContent === 'Sample square');
     assert.equal(JSON.parse(fs.readFileSync(path.join(site, 'site.json'), 'utf8')).name, 'Sample square');
-    await tv.locator('.controller-header p', { hasText: 'Sample square' }).waitFor();
+    // The controller screen has no header in its rails any more; it carries the site's name in its title.
+    await tv.waitForFunction(() => document.title.endsWith('· Sample square'));
     assert.equal(await guide.locator('.wz-place[data-target="buildings"] .wz-state').textContent(), 'On the table');
     await guide.getByLabel('File for Trees').setInputFiles(path.join(site, 'data', 'trees.geojson'));
     await guide.locator('.wz-place[data-target="trees"] .wz-summary', { hasText: /trees/ }).waitFor();
