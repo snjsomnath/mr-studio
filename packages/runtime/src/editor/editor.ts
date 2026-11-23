@@ -7,6 +7,8 @@ import { paramSender } from '../layer-manager.ts';
 import type { Store } from '../store.ts';
 import { LAYER_ICONS, icon } from './icons.ts';
 import { Importer, targetFor } from './importer.ts';
+import { confirmLeave, actionFor, fileButton } from './file-menu.ts';
+import type { FileAction } from './file-menu.ts';
 import { slidesSection } from './slides.ts';
 import { AT_REST, Wizard } from './wizard.ts';
 import './editor.css';
@@ -50,11 +52,19 @@ function button(className: string, label: string, iconName?: string, size = 16):
 /**
  * The editor: the authoring window around the live table. Every change goes to the
  * host as a `scene.*` request, which also writes it to site.json, so there is no
- * separate save.
+ * separate save: File > Save makes sure nothing is still on its way and says so (#130).
  */
 export class Editor {
   /** Where the live table goes. */
   readonly canvas = el('div', 'ed-canvas');
+  /** Takes a picture of the table, once the table is up; kept for Home when the table is left (#131). */
+  snapshot: (() => Promise<Blob | null>) | null = null;
+  /** Changes sent to the host and not yet answered. */
+  private pending = 0;
+  /** Why the last change could not be saved, until one is. */
+  private problem: string | null = null;
+  /** The last File action and when, so one asked for twice at once (menu and keys) runs once. */
+  private lastFile: { action: string; at: number } | null = null;
 
   private context: Context = { kind: 'home' };
   /** The home screen item whose settings are open. */
@@ -117,6 +127,7 @@ export class Editor {
     body.append(left, centre, this.inspector);
     shell.append(this.titleBar(), this.ribbon, body, this.statusBar());
     root.append(shell);
+    this.listenForFile();
 
     this.setSaved();
     this.drawGuideButton();
@@ -290,6 +301,7 @@ export class Editor {
   // ---- Requests -------------------------------------------------------------
 
   private async send(method: string, params: object): Promise<any> {
+    this.pending++;
     try {
       const result = await this.connection.request(method, params);
       this.setSaved();
@@ -297,12 +309,91 @@ export class Editor {
     } catch (error) {
       this.setSaved((error as Error).message);
       return null;
+    } finally {
+      this.pending--;
     }
   }
 
   private setSaved(problem?: string): void {
-    this.saved.replaceChildren(icon(problem ? 'alert' : 'check', 14), el('span', undefined, problem ?? 'Saved'));
+    this.problem = problem ?? null;
+    const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    this.saved.replaceChildren(icon(problem ? 'alert' : 'check', 14), el('span', undefined, problem ?? `Saved ${time}`));
+    this.saved.title = problem ? 'This change could not be saved' : `Every change is saved as you make it. Last saved at ${time}.`;
     this.saved.classList.toggle('is-error', Boolean(problem));
+  }
+
+  // ---- File (#130) ----------------------------------------------------------
+
+  /** Waits until every change sent to the host has been answered, for up to five seconds. */
+  private async settled(): Promise<void> {
+    for (let waited = 0; this.pending > 0 && waited < 5000; waited += 50) await new Promise((r) => setTimeout(r, 50));
+  }
+
+  /** Stores a picture of the table for its card on Home. Never in the way of leaving. */
+  private async keepPicture(): Promise<void> {
+    try {
+      const blob = await this.snapshot?.();
+      if (blob) await fetch('/api/site/thumbnail', { method: 'POST', body: blob });
+    } catch (error) {
+      // Home shows a plain card instead.
+      console.warn('The picture of the table was not kept:', error);
+    }
+  }
+
+  /**
+   * One File action, from the File button, the keys or the app's native menu. Save checks
+   * that every change has reached the host. Anything that leaves the table also asks
+   * before leaving a change that failed, and keeps a picture of the table for Home.
+   */
+  private async file(action: FileAction): Promise<void> {
+    const now = performance.now();
+    if (this.lastFile && this.lastFile.action === action && now - this.lastFile.at < 600) return;
+    this.lastFile = { action, at: now };
+    const invoke = shell();
+    await this.settled();
+    if (action === 'save') {
+      if (this.pending > 0) this.setSaved('Still saving. Is the table connected?');
+      else if (this.problem) this.setSaved(this.problem);
+      else this.setSaved();
+      this.saved.classList.remove('is-flash');
+      void this.saved.offsetWidth;
+      this.saved.classList.add('is-flash');
+      void this.keepPicture();
+      if (invoke) void invoke('file_action', { action, checked: true }).catch(() => {});
+      return;
+    }
+    if (!invoke) return;
+    const leaving = action === 'close' || action === 'home' || action === 'open' || action === 'new' || action === 'save_as';
+    if (leaving) {
+      const problem = this.pending > 0 ? 'it is still on its way to the table' : this.problem;
+      if (problem && !(await confirmLeave(problem))) return;
+      await this.keepPicture();
+    }
+    try {
+      await invoke('file_action', { action, checked: true });
+    } catch (error) {
+      // An older app without the File menu: Home is the way out it has.
+      if (action === 'home' || action === 'close' || action === 'open') await invoke('open_home').catch(() => {});
+      else this.setSaved(String(error));
+    }
+  }
+
+  private listenForFile(): void {
+    const invoke = shell();
+    window.addEventListener('keydown', (event) => {
+      const action = actionFor(event, Boolean(invoke));
+      if (!action) return;
+      event.preventDefault();
+      void this.file(action);
+    });
+    // The app's native menu (src-tauri/src/file_menu.rs) asks the page to check first.
+    window.addEventListener('mrs-file', (event) => {
+      const detail = (event as CustomEvent<{ action: string; then?: FileAction; message?: string }>).detail;
+      if (detail.action === 'ask' && detail.then) void this.file(detail.then);
+      if (detail.action === 'problem' && detail.message) this.setSaved(detail.message);
+    });
+    // The window's own close button: the app waits a moment for this before it closes.
+    (window as { mrsBeforeLeave?: () => void }).mrsBeforeLeave = () => void this.keepPicture();
   }
 
   /** Adds a layer to the table, or with `parent` into that layer as an item that comes and goes with it. */
@@ -377,8 +468,16 @@ export class Editor {
 
   private titleBar(): HTMLElement {
     const bar = el('header', 'ed-title');
-    const brand = el('div', 'ed-brand');
+    const invoke = shell();
+    // The brand is the way home, as a logo is (#130). It checks that everything is saved first.
+    const brand = el(invoke ? 'button' : 'div', 'ed-brand');
     brand.append(icon('layers', 18), el('span', undefined, 'MR Studio'));
+    if (brand instanceof HTMLButtonElement) {
+      brand.type = 'button';
+      brand.title = 'All tables. Everything here is already saved.';
+      brand.addEventListener('click', () => void this.file('home'));
+    }
+    const file = fileButton(Boolean(invoke), (action) => void this.file(action));
     const name = el('div', 'ed-name');
     name.append(el('strong', undefined, this.store.state.site.name), this.saved);
 
@@ -394,7 +493,6 @@ export class Editor {
     this.presentButton = present;
     // Tells the desktop shell that this page has its own Present control.
     present.dataset.shellPresent = '';
-    const invoke = shell();
     let presenting = false;
     const draw = (): void => {
       present.replaceChildren(icon(presenting ? 'stop' : 'tv', 16), el('span', undefined, presenting ? 'Stop presenting' : 'Present'));
@@ -437,13 +535,13 @@ export class Editor {
       // "Home" is the button visitors press on the controller; this one leaves the table.
       const sites = button('ed-button', 'All tables', 'grid');
       sites.title = 'Back to your tables: open another one or start a new one. Everything here is already saved.';
-      sites.addEventListener('click', () => void invoke('open_home').catch(() => {}));
+      sites.addEventListener('click', () => void this.file('home'));
       actions.append(sites);
       window.addEventListener('focus', () => void refresh());
       void refresh();
     }
     actions.append(preview, present);
-    bar.append(brand, name, actions);
+    bar.append(brand, file, name, actions);
     return bar;
   }
 
@@ -478,7 +576,7 @@ export class Editor {
         engine.textContent = info.adapter ? `Engine: ${info.adapter}` : `Engine: ${info.backend}, no graphics card`;
       })
       .catch(() => {});
-    bar.append(el('span', undefined, 'Changes are saved as you make them'), el('span', 'ed-grow'), phones, engine, connected, el('span', undefined, `${Math.round(width_m)} × ${Math.round(height_m)} m`));
+    bar.append(el('span', undefined, shell() ? 'Changes are saved as you make them. File > Save As makes a copy.' : 'Changes are saved as you make them'), el('span', 'ed-grow'), phones, engine, connected, el('span', undefined, `${Math.round(width_m)} × ${Math.round(height_m)} m`));
     return bar;
   }
 

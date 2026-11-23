@@ -1015,3 +1015,20 @@ async fn the_ground_comes_from_free_elevation_when_asked() {
     host.shutdown().await;
     let _ = std::fs::remove_dir_all(&base);
 }
+
+#[tokio::test]
+async fn the_editor_keeps_a_picture_of_the_table_for_home() {
+    let site = scratch_site("thumbnail");
+    let host = host_for(site.clone()).await;
+    let url = format!("http://{}/api/site/thumbnail", host.addr);
+    let client = reqwest::Client::new();
+    let jpeg = vec![0xFF, 0xD8, 0xFF, 0xE0, 1, 2, 3];
+    let sent = client.post(&url).body(jpeg.clone()).send().await.unwrap();
+    assert_eq!(sent.status(), 204);
+    assert_eq!(std::fs::read(site.join(mrs_host::THUMBNAIL)).unwrap(), jpeg);
+    // Anything but a JPEG is refused.
+    let refused = client.post(&url).body("<svg/>").send().await.unwrap();
+    assert_eq!(refused.status(), 400);
+    host.shutdown().await;
+    let _ = std::fs::remove_dir_all(&site);
+}

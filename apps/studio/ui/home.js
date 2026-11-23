@@ -17,18 +17,47 @@ function showError(message, where = 'error') {
 
 // ---- Home ------------------------------------------------------------------
 
+/** "Edited 10 minutes ago", "Edited yesterday", "Edited 21 Nov". */
+function edited(ms) {
+  if (!ms) return 'Not edited yet';
+  const minutes = Math.round((Date.now() - ms) / 60000);
+  if (minutes < 1) return 'Edited just now';
+  if (minutes < 60) return `Edited ${minutes} minute${minutes === 1 ? '' : 's'} ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `Edited ${hours} hour${hours === 1 ? '' : 's'} ago`;
+  if (hours < 48) return 'Edited yesterday';
+  const date = new Date(ms);
+  const sameYear = date.getFullYear() === new Date().getFullYear();
+  return `Edited ${date.toLocaleDateString([], { day: 'numeric', month: 'short', ...(sameYear ? {} : { year: 'numeric' }) })}`;
+}
+
+/** "740 KB", "48 MB", "1.2 GB". */
+function size(bytes) {
+  const units = ['bytes', 'KB', 'MB', 'GB', 'TB'];
+  let value = bytes;
+  let unit = 0;
+  while (value >= 1000 && unit < units.length - 1) {
+    value /= 1000;
+    unit++;
+  }
+  return `${value < 10 && unit > 0 ? value.toFixed(1) : Math.round(value)} ${units[unit]}`;
+}
+
 async function load() {
   const state = await invoke('launcher_state');
   $('version').textContent = `Version ${state.version}`;
   showError(state.error);
   $('tables').replaceChildren(
     ...state.sites.map((site) => {
+      const example = site.source === 'built in';
+      const picture = el('span', { className: 'thumb' });
+      const facts = el('small', { className: 'facts' }, site.problem ?? (example ? 'Comes with MR Studio, for trying things out' : edited(site.edited)));
       const open = el(
         'button',
-        { type: 'button', className: 'open', disabled: !!site.problem, title: site.problem ? '' : 'Open in the editor' },
-        el('span', { className: 'swatch' }),
-        el('span', {}, el('b', {}, site.name), el('small', {}, site.problem ?? (site.source === 'built in' ? 'Comes with MR Studio, for trying things out' : site.path))),
-        el('span', { className: 'tag' }, site.source === 'built in' ? 'Example' : ''),
+        { type: 'button', className: 'open', disabled: !!site.problem, title: site.problem ? '' : `Open in the editor\n${site.path}` },
+        picture,
+        el('span', { className: 'text' }, el('b', {}, site.name), facts, el('small', { className: 'path' }, site.path)),
+        el('span', { className: 'tag' }, example ? 'Example' : ''),
       );
       open.addEventListener('click', () => openTable(site.path));
       const row = el('li', { className: site.problem ? 'broken' : '' }, open);
@@ -40,6 +69,15 @@ async function load() {
         });
         row.append(remove);
       }
+      // The picture from the last time it was closed, and the space it takes, come after (#131).
+      invoke('table_details', { path: site.path })
+        .then((details) => {
+          if (details.thumbnail) picture.style.backgroundImage = `url("${details.thumbnail}")`;
+          picture.classList.toggle('has-picture', !!details.thumbnail);
+          if (!site.problem && !example) facts.textContent = `${edited(site.edited)} · ${size(details.bytes)}`;
+          if (example) facts.textContent = `Comes with MR Studio · ${size(details.bytes)}`;
+        })
+        .catch(() => {});
       return row;
     }),
   );

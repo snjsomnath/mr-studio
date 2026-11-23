@@ -7,10 +7,10 @@
   if (window.top !== window) return;
   const invoke = (command, args) => window.__TAURI__.core.invoke(command, args);
 
-  // Back from a presentation on the same display, as on the surfaces.
+  // Ctrl+Shift+Q quits, as on the surfaces. Ctrl+Shift+S is Save As here (the File menu,
+  // #130); on the surfaces it still opens the displays and settings.
   window.addEventListener('keydown', (event) => {
     if (!(event.ctrlKey || event.metaKey) || !event.shiftKey) return;
-    if (event.code === 'KeyS') { event.preventDefault(); invoke('open_home'); }
     if (event.code === 'KeyQ') { event.preventDefault(); invoke('quit'); }
   }, true);
 
