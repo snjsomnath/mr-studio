@@ -35,3 +35,9 @@ export const DATA_SLOTS = 6;
 
 /** Seconds a page stays up when the panels need more than one. */
 export const ROTATE_S = { default: 12, min: 6, max: 60 } as const;
+
+/**
+ * The table's ribbon (#78): a strip of a few small panels in the projector's blank space
+ * beside the model. It is read in passing, standing at the table, so it holds less than a screen.
+ */
+export const RIBBON = { sizes: ['chip', 'tile', 'wide'] as PanelSize[], panels: 4, reads: 10 } as const;

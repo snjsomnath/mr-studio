@@ -80,20 +80,23 @@ A layer that has steps declares how it moves through them:
 
 ## 4. Ribbon: the projector's blank space
 
-Most projectors light more than the model. The table surface works out the free band on each side from the calibration and `table.width_cm/height_cm` (#78).
+**Built (#78).** Most projectors light more than the model. The table surface works out the free band on each side from where the model lands (through the projector calibration when there is one, otherwise where the flat map draws the extent) and `table.width_cm/height_cm`, which turn cm into pixels.
 
 ```jsonc
 // site.json, table settings (#73)
-"table": { "width_cm": 100, "height_cm": 60,
+"table": { "width_cm": 100, "height_cm": 60, "front": "bottom",
   "ribbons": { "bottom": { "cm": 9 }, "top": "auto", "left": "off", "right": "off" } }
 ```
 
-- `table.front` (site format 3; default `"bottom"`) is the edge where visitors stand. `"auto"` prefers the front, then the two sides next to it, and uses the far side last, because the model hides the far side from a viewer at the front.
-- A side is used only if it has at least about 4 cm free. Sizes are in cm and turned into px through the calibration.
-- What a ribbon shows comes from the layer: `panels` entries marked `"ribbon": true`, drawn with the dashboard widgets in a strip layout. With no layer open, the core **join QR** ribbon shows if phones can join.
-- One ribbon is shown at a time: the open layer's, otherwise the home ribbon. If more than one is available, the operator can pick on the controller.
-- **The front edge comes first** (learned on the table, 2026-11-23, [visualisation.md](../visualisation.md) S5). A viewer at one end of a table-height model cannot see a ribbon on the far edge, because the model hides it. A table setting names the front edge (proposed: `table.front`, default `bottom`), and a layer's at-a-glance ribbon goes there.
+- `table.front` (default `"bottom"`) is the edge where visitors stand. Without `table.ribbons`, the front edge is on `"auto"` and the other sides are off.
+- `"auto"` takes 9 cm (the Chalmers demo's default) or less, and only if at least 4 cm is free. `{ "cm": n }` takes n cm, cut to the free space. 0.5 cm is kept clear between the model's edge and the ribbon. Sides are filled in the order front, the two beside it, the far side.
+- A ribbon runs along the model's edge and is turned to read from its own edge, so the front one faces the front viewer and a side one faces whoever stands at that side. Every ribbon shows the same content.
+- What a ribbon shows comes from the layer: `panels` entries marked `"ribbon": true` (`chip`, `tile` or `wide`; at most 4 panels and 10 reads), drawn with the dashboard widgets and the site's theme in a strip. A ribbon panel is on the table only, never on the TV. Sunlight's are the example: time, sun height or daylight, and the colour key.
+- One ribbon is shown at a time: that of the layer turned on last that has ribbon panels. While the controller is at home (no layer open but the map at rest and tools kept alongside, as for the home screen, #74), the core **join QR** ribbon shows if phones can join: the QR and the session code.
+- The editor and `/dev` keep room beside the map for the ribbons and preview them there at their size, with the front edge marked in amber.
+- **The front edge comes first** (learned on the table, 2026-11-23, [visualisation.md](../visualisation.md) S5). A viewer at one end of a table-height model cannot see a ribbon on the far edge, because the model hides it.
 - Ribbons are outside the model, so they don't break the "clean map" rule. Keep them glanceable (numbers, small charts, a QR), never paragraphs.
+- Not built yet: choosing between ribbons on the controller when more than one layer has one, and editing `front` and `ribbons` in Table settings (#73).
 
 ## Settings (per #73)
 
@@ -107,5 +110,5 @@ Most projectors light more than the model. The table surface works out the free 
 3. Rails with groups (#75).
 4. `layer.step`, `ctx.legend` and the stage template (#76), then the slideshow and its Next behaviour on top (#43).
 5. The attract loop on the home screen (#74).
-6. Ribbons (#78).
+6. Ribbons (#78, built).
 7. The editor's Controller page previews and edits all of it (#54).

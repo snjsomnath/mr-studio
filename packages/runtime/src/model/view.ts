@@ -292,6 +292,20 @@ export class ModelView {
     return () => this.calibrationListeners.delete(listener);
   }
 
+  /**
+   * Where the corners of the site's extent land on the surface through the projector, at the
+   * model's lowest ground, in CSS pixels (top left, top right, bottom right, bottom left).
+   * Null without a calibration: then the flat map's corners are where the model is.
+   */
+  footprint(): [number, number][] | null {
+    if (!this.calibrated) return null;
+    this.geometry.computeBoundingBox();
+    const ground = this.geometry.boundingBox?.min.z ?? 0;
+    const plane = tangentPlane(this.site.origin);
+    const corners = this.site.corners.map(([lon, lat]) => this.project([...plane.toLocal(lon, lat), ground]));
+    return corners.every((corner) => corner !== null) ? (corners as [number, number][]) : null;
+  }
+
   /** Where a model point lands on the surface, in CSS pixels from its top left corner. Null when it is behind the camera. */
   project(point: ModelPoint): [number, number] | null {
     const clip = new THREE.Vector4(point[0], point[1], point[2], 1).applyMatrix4(this.camera.matrixWorldInverse).applyMatrix4(this.camera.projectionMatrix);
