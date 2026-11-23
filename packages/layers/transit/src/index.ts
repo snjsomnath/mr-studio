@@ -5,6 +5,9 @@ import manifest from '../layer.json';
 
 interface Params {
   source: 'simulated' | 'live';
+  /** A transit provider from the Sources manager, such as Västtrafik. The host adds its key. */
+  provider: string;
+  /** Or any address that answers in the feed shape (README). */
   feed: string;
   vehicles: number;
   speed: number;
@@ -168,18 +171,34 @@ export default defineLayer<Params>({
     let stopped = false;
     ctx.onCleanup(() => (stopped = true));
 
+    /** Where vehicles come from: a provider in Sources, asked through the host, or a feed address. */
+    function feedAddress(): string {
+      const provider = ctx.params.provider?.trim();
+      if (provider) {
+        const lons = ctx.site.corners.map((c) => c[0]);
+        const lats = ctx.site.corners.map((c) => c[1]);
+        const bbox = [Math.min(...lons), Math.min(...lats), Math.max(...lons), Math.max(...lats)].map((v) => v.toFixed(5)).join(',');
+        return `/api/transit/${encodeURIComponent(provider)}/vehicles?bbox=${bbox}`;
+      }
+      return ctx.params.feed.trim();
+    }
+
     async function poll() {
-      const feed = ctx.params.feed.trim();
+      const feed = feedAddress();
       if (!feed) {
-        feedState = 'Enter a feed address';
+        feedState = 'Choose where live data comes from, or enter a feed address';
         return;
       }
       polling = true;
       try {
         const response = await fetch(feed, { cache: 'no-store' });
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        if (!response.ok) {
+          // The host says why in words (no key yet, the key was refused, the provider is busy).
+          const said = await response.json().then((b) => b?.error as string | undefined, () => undefined);
+          throw new Error(said ?? `HTTP ${response.status}`);
+        }
         const body = await response.json();
-        if (stopped || ctx.params.feed.trim() !== feed) return;
+        if (stopped || feedAddress() !== feed) return;
         for (const item of Array.isArray(body?.vehicles) ? body.vehicles : []) {
           if (typeof item?.lon !== 'number' || typeof item?.lat !== 'number' || item.id === undefined) continue;
           const [x, y] = space.toTable(item.lon, item.lat);
@@ -197,7 +216,7 @@ export default defineLayer<Params>({
         }
         feedState = '';
       } catch (error) {
-        feedState = `Feed unavailable (${(error as Error).message})`;
+        feedState = `Live data unavailable: ${(error as Error).message}`;
       } finally {
         polling = false;
       }
@@ -315,7 +334,7 @@ export default defineLayer<Params>({
       update(changed) {
         if (changed.includes('opacity')) canvas.setOpacity(ctx.params.opacity);
         if (changed.includes('vehicles')) seed();
-        if (changed.includes('feed') || changed.includes('source')) {
+        if (changed.includes('feed') || changed.includes('provider') || changed.includes('source')) {
           live.clear();
           nextPoll = 0;
         }

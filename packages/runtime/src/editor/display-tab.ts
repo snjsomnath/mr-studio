@@ -3,8 +3,9 @@
 // These are app settings (#73), kept per display by the desktop app in `colour.json`; this
 // tab is the editor's way to them, the same commands as the Colour tab of Displays and
 // settings (apps/studio/ui/colour.js). In a browser only the calibration is offered.
+// Quality (#134) is the exception: it belongs to the table, saved in site.json, so it shows everywhere.
 
-import type { Connection, ProjectorCalibration } from '@mrstudio/sdk';
+import type { Connection, DisplayQuality, ProjectorCalibration } from '@mrstudio/sdk';
 
 import { el } from '../controls.ts';
 import { icon } from './icons.ts';
@@ -198,6 +199,7 @@ export class DisplayTab {
   private readonly calibrateButton = tool('Calibrate', 'crosshair', true);
   private readonly clearButton = tool('Clear', 'trash');
   private readonly calibrationStatus = el('span', 'dt-status');
+  private readonly qualityButtons = new Map<DisplayQuality, HTMLButtonElement>();
   private readonly problem = el('span', 'dt-status is-error');
   private readonly sliders = new Map<keyof Colour, ReturnType<typeof slider>>();
   private popover: HTMLElement | null = null;
@@ -221,7 +223,7 @@ export class DisplayTab {
       const note = el('p', 'dt-note', 'The colour of each display is set in the MR Studio desktop app, where the table is projected.');
       groups.push(group('Colour', note));
     }
-    groups.push(this.projectorGroup());
+    groups.push(this.qualityGroup(), this.projectorGroup());
     if (invoke) {
       const more = tool('Displays and settings', 'settings', true);
       more.title = 'Which display shows the table and the controller, updates, and every display setting';
@@ -317,6 +319,33 @@ export class DisplayTab {
     this.layersButton.addEventListener('click', () => this.toggleLayers());
     const layers = group('Layers', this.layersButton);
     return [display, presets, colour, layers];
+  }
+
+  /** Draft, Good or Best for this table (#134): pixel density on the table and the sun shadows' detail. */
+  private qualityGroup(): HTMLElement {
+    const choices: [DisplayQuality, string, string, string][] = [
+      ['draft', 'Draft', 'pencil', 'Lightest: one pixel per screen point and coarser sun shadows (0.6 m). For a slow computer.'],
+      ['good', 'Good', 'check', 'Sharp on most screens, sun shadows at 0.3 m. The default.'],
+      ['best', 'Best', 'sparkle', 'The screen’s full pixel density and the finest sun shadows (0.15 m). Needs a strong graphics card.'],
+    ];
+    for (const [quality, label, iconName, tip] of choices) {
+      const button = tool(label, iconName);
+      button.title = tip;
+      button.addEventListener('click', () => {
+        this.setQuality(quality);
+        this.connection.request('site.display', { display: { quality } }).catch((error) => this.say(text(error)));
+      });
+      this.qualityButtons.set(quality, button);
+    }
+    return group('Quality', column(...this.qualityButtons.values()));
+  }
+
+  /** Shows which quality the table uses. */
+  setQuality(quality: DisplayQuality): void {
+    for (const [value, button] of this.qualityButtons) {
+      button.classList.toggle('is-on', value === quality);
+      button.setAttribute('aria-pressed', String(value === quality));
+    }
   }
 
   private projectorGroup(): HTMLElement {

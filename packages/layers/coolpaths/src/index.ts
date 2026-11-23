@@ -1,4 +1,4 @@
-import { colormaps, defineLayer, formatHour, loadSiteData, sample, siteProjection, tableFrame, zonedTimeToUtc } from '@mrstudio/sdk';
+import { colormaps, defineLayer, formatHour, loadSiteData, paletteHex, sample, siteProjection, tableFrame, tablePalette, zonedTimeToUtc } from '@mrstudio/sdk';
 import type { CanvasOverlay, FieldFrame, LayerManifest, PointerSample, TableContext, ToolInput } from '@mrstudio/sdk';
 
 import manifest from '../layer.json';
@@ -30,8 +30,9 @@ const GRAB_RADII = 1.8;
 
 type End = 'from' | 'to';
 
-const COOL = '#34d399';
-const SHORT = '#f8fafc';
+/** The coolest walk is green (vegetation, shade) and the shortest is the focus colour, both from the table's palette (#93). */
+const coolColour = (site: TableContext['site']) => paletteHex('@green', tablePalette(site));
+const shortColour = (site: TableContext['site']) => paletteHex('@focus', tablePalette(site));
 /** Path colours from shade to full sun. */
 const RAMP = ['#38bdf8', '#7dd3fc', '#fde68a', '#fbbf24', '#fb923c', '#ef4444'];
 
@@ -161,9 +162,9 @@ export default defineLayer<Params>({
       stroke(pair.shortest, '#0b0e14', width + 4, []);
       if (pair.coolest !== pair.shortest) {
         stroke(pair.coolest, '#0b0e14', width + 4, []);
-        stroke(pair.coolest, COOL, width, []);
+        stroke(pair.coolest, coolColour(ctx.site), width, []);
       }
-      stroke(pair.shortest, SHORT, width * 0.6, pair.coolest === pair.shortest ? [] : [width * 1.2, width * 1.6]);
+      stroke(pair.shortest, shortColour(ctx.site), width * 0.6, pair.coolest === pair.shortest ? [] : [width * 1.2, width * 1.6]);
     }
 
     /** The marker radius in CSS pixels, the same for drawing and for picking a marker up. */
@@ -208,7 +209,8 @@ export default defineLayer<Params>({
       const longest = pair.coolest.length;
       const metres = Math.min(clock, longest / WALKER_M_PER_S) * WALKER_M_PER_S;
       const radius = Math.max(5, 5 * walk.pixelsPerMetre);
-      const routes: [Route, string][] = pair.coolest === pair.shortest ? [[pair.shortest, SHORT]] : [[pair.shortest, SHORT], [pair.coolest, COOL]];
+      const [cool, short] = [coolColour(ctx.site), shortColour(ctx.site)];
+      const routes: [Route, string][] = pair.coolest === pair.shortest ? [[pair.shortest, short]] : [[pair.shortest, short], [pair.coolest, cool]];
       for (const [r, colour] of routes) {
         const [x, y] = walk.project(pointAlongRoute(r.coordinates, metres, distance));
         g.beginPath();
@@ -220,6 +222,8 @@ export default defineLayer<Params>({
         g.stroke();
       }
     }
+
+    let drawnPalette: ReturnType<typeof tablePalette> | null = null;
 
     // ---- Picking A and B with a mouse, a finger or a pen on the table ----
     // A press sets the next end (A, then B, then A again) or, on A or B, picks that one up.
@@ -334,6 +338,12 @@ export default defineLayer<Params>({
           ctx.setParams({ hour: (ctx.params.hour + steps * HOUR_STEP) % 24 });
         }
       }
+      // The table's palette changed: draw the routes again in its colours.
+      const palette = tablePalette(ctx.site);
+      if (palette !== drawnPalette) {
+        drawnPalette = palette;
+        pathsDirty = true;
+      }
       if (pathsDirty || pathsDrawn !== paths.revision) {
         drawPaths();
         pathsDirty = false;
@@ -370,29 +380,31 @@ export default defineLayer<Params>({
   panel(ctx, el) {
     el.innerHTML = `
       <style>
-        .coolpaths-panel { display: grid; gap: 12px; font-variant-numeric: tabular-nums; }
-        .coolpaths-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
-        .coolpaths-clock { font-size: 2rem; font-weight: 600; }
-        .coolpaths-verdict { opacity: 0.8; text-align: right; }
-        .coolpaths-route { display: grid; grid-template-columns: auto 1fr auto; gap: 4px 10px; align-items: center; }
-        .coolpaths-swatch { width: 22px; height: 6px; border-radius: 3px; }
-        .coolpaths-bar { grid-column: 1 / -1; height: 10px; border-radius: 5px; background: #38bdf8; overflow: hidden; }
+        .coolpaths-panel { display: grid; grid-template-columns: 1fr 1fr; gap: 0.4em 1.2em; font-size: 0.9em; line-height: 1.2; font-variant-numeric: tabular-nums; }
+        .coolpaths-head { grid-column: 1 / -1; display: flex; justify-content: space-between; align-items: baseline; gap: 0.6em; min-width: 0; }
+        .coolpaths-clock { font-size: 1.3em; font-weight: 600; line-height: 1.1; }
+        .coolpaths-verdict { opacity: 0.8; text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .coolpaths-route { display: grid; grid-template-columns: auto 1fr auto; gap: 0.2em 0.5em; align-items: center; min-width: 0; }
+        .coolpaths-route[hidden] { display: none; }
+        .coolpaths-swatch { width: 1.2em; height: 0.35em; border-radius: 0.2em; }
+        .coolpaths-bar { grid-column: 1 / -1; height: 0.5em; border-radius: 0.25em; background: #38bdf8; overflow: hidden; }
         .coolpaths-bar i { display: block; height: 100%; background: #fb923c; }
-        .coolpaths-note { font-size: 0.8rem; opacity: 0.7; }
-        .coolpaths-ramp { height: 8px; border-radius: 4px; background: linear-gradient(to right, ${RAMP.join(', ')}); }
-        .coolpaths-ticks { display: flex; justify-content: space-between; font-size: 0.8rem; opacity: 0.7; margin-top: 4px; }
+        .coolpaths-note { font-size: 0.8em; opacity: 0.7; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .coolpaths-key { grid-column: 1 / -1; }
+        .coolpaths-ramp { height: 0.4em; border-radius: 0.2em; background: linear-gradient(to right, ${RAMP.join(', ')}); }
+        .coolpaths-ticks { display: flex; justify-content: space-between; font-size: 0.8em; opacity: 0.7; margin-top: 0.2em; }
       </style>
       <div class="coolpaths-panel">
         <div class="coolpaths-head"><span class="coolpaths-clock"></span><span class="coolpaths-verdict"></span></div>
         <div class="coolpaths-route" data-route="shortest">
-          <span class="coolpaths-swatch" style="background:${SHORT}"></span><span>Shortest walk</span><span class="coolpaths-length"></span>
+          <span class="coolpaths-swatch" style="background:${shortColour(ctx.site)}"></span><span>Shortest walk</span><span class="coolpaths-length"></span>
           <div class="coolpaths-bar"><i></i></div><span class="coolpaths-note" style="grid-column:1/-1"></span>
         </div>
         <div class="coolpaths-route" data-route="coolest">
-          <span class="coolpaths-swatch" style="background:${COOL}"></span><span>Coolest walk</span><span class="coolpaths-length"></span>
+          <span class="coolpaths-swatch" style="background:${coolColour(ctx.site)}"></span><span>Coolest walk</span><span class="coolpaths-length"></span>
           <div class="coolpaths-bar"><i></i></div><span class="coolpaths-note" style="grid-column:1/-1"></span>
         </div>
-        <div><div class="coolpaths-ramp"></div><div class="coolpaths-ticks"><span>path in shade</span><span>in sun</span></div></div>
+        <div class="coolpaths-key"><div class="coolpaths-ramp"></div><div class="coolpaths-ticks"><span>path in shade</span><span>in sun</span></div></div>
       </div>`;
     const clock = el.querySelector<HTMLElement>('.coolpaths-clock')!;
     const verdict = el.querySelector<HTMLElement>('.coolpaths-verdict')!;
@@ -407,7 +419,7 @@ export default defineLayer<Params>({
       const bar = row.querySelector<HTMLElement>('.coolpaths-bar')!;
       bar.style.width = `${(value.length / longest) * 100}%`;
       bar.querySelector<HTMLElement>('i')!.style.width = `${value.length > 0 ? (value.sun / value.length) * 100 : 0}%`;
-      row.querySelector<HTMLElement>('.coolpaths-note')!.textContent = `${value.sun} m in the sun, ${value.length - value.sun} m in shade`;
+      row.querySelector<HTMLElement>('.coolpaths-note')!.textContent = `${value.sun} m sun, ${value.length - value.sun} m shade`;
     }
 
     function update() {

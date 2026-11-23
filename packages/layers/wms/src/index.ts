@@ -9,6 +9,8 @@ interface Params {
   layers: string;
   styles: string;
   source: string;
+  /** A source from the Sources manager whose key or login signs the request (#42). */
+  signin: string;
   opacity: number;
 }
 
@@ -24,8 +26,8 @@ export default defineLayer<Params>({
       const mine = ++asked;
       canvas.clear();
       canvas.commit();
-      if (!ctx.params.url.trim() || !ctx.params.layers.trim()) {
-        ctx.publish({ note: 'Give the service address and its layers' });
+      if ((!ctx.params.url.trim() && !ctx.params.signin?.trim()) || !ctx.params.layers.trim()) {
+        ctx.publish({ note: 'Give the service address (or a sign-in from Sources) and its layers' });
         return;
       }
       const { href, bbox, width, height } = request(ctx.site, ctx.params);
@@ -59,7 +61,7 @@ export default defineLayer<Params>({
     return {
       update(changed) {
         if (changed.includes('opacity')) canvas.setOpacity(ctx.params.opacity);
-        if (changed.some((key) => key === 'url' || key === 'layers' || key === 'styles')) void load();
+        if (changed.some((key) => key === 'url' || key === 'layers' || key === 'styles' || key === 'signin')) void load();
       },
     };
   },

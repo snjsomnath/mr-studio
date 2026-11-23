@@ -14,6 +14,9 @@
     { "id": "network", "type": "toggle", "label": "Colour every path by sun", "default": true },
     { "id": "shade", "type": "toggle", "label": "Show shade", "default": true }
   ],
+  "panels": [
+    { "id": "walks", "widget": "custom", "size": "wide", "title": "Shortest and coolest walk", "props": { "reads": 5 } }
+  ],
   "tools": [
     { "id": "from", "type": "point", "label": "Start of the walk" },
     { "id": "to", "type": "point", "label": "End of the walk" }

@@ -29,10 +29,13 @@ Every file below then lands on the table (the sample site `sites/sample` uses th
 | `transit.geojson` | Tram and bus lines with `line`, `mode`, `colour` | Add data as dataset `transit` | Public transport (simulated) |
 | `trips.json` | Journeys to the square, walk and walk+tram | Your place → Trips | Mobility |
 | `zones.geojson` | 8 polygons with `population`, `green_share`, `noise_db` | Add data | Choropleth / "based on" colours, slideshow slide |
-| `places.geojson` | Points of interest with `name`, `kind` | Add data | Points, icons, labels on the controller |
+| `places.geojson` | 6 places with `name`, `kind`, `category`, `weight` (the place data standard, #160) | Add data | Points, icons, every place motion |
 | `sensors.geojson` | 5 sensor points with `sensor_id` | Add data | Points joined to the time series |
 | `tables/sensors-timeseries.csv` | 48 half-hours per sensor: temperature, PM2.5, noise, people | Add data, joined to `sensors` by `sensor_id` | Time slider, a point driven by a time series (data PR D4) |
 | `tables/bike-track.csv` | A moving point: `timestamp,lat,lon,speed_kmh` | Add data | A moving point over time (D4) |
+| `tables/activity.csv` | A weekday per place, half-hourly: `place,time,activity` | Add data as dataset `activity` | Place motions that swell with events (orbiters, fireflies, cultural gravity) |
+| `tables/flows.csv` | Trips between places: `from,to,volume` | Add data as dataset `flows` | Comet arcs |
+| `tables/links.csv` | Relations between places: `from,to` | Add data as dataset `links` | Constellations |
 | `tables/building-energy.csv` | Energy per building, keyed by `building_id` = `id` in buildings | Add data, joined to buildings | Colour buildings by a column |
 | `overlay.png` + `overlay.json` | An image with west/south/east/north bounds | Add data (raster) | Image overlay on the table |
 | `slideshow/` | Image, two GeoJSON slides and a WMS slide (disabled; needs a key, #42) | Site data `slideshow` | Slideshow layer, manual and timed (#43) |

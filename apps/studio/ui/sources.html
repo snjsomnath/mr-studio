@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light" />
+    <title>MR Studio · Sources</title>
+    <link rel="stylesheet" href="sources.css" />
+  </head>
+  <body>
+    <main>
+      <header>
+        <div>
+          <h1>Sources</h1>
+          <p class="lead">The outside services your tables read from, and the keys they need. Set a service up once on this computer, and every table can use it.</p>
+        </div>
+        <p class="vault">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="10" width="16" height="11" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></svg>
+          <span>Keys and passwords are kept in <b id="vault-name">this computer's keychain</b>. They are never saved in a table's folder or an export, and the table, the TV and phones never see them.</span>
+        </p>
+      </header>
+
+      <p id="error" class="error" role="alert" hidden></p>
+
+      <section aria-labelledby="yours-title">
+        <h2 id="yours-title">On this computer</h2>
+        <p id="empty" class="hint" hidden>No sources yet. Add one below: a service only needs to be set up once per computer.</p>
+        <div id="cards" class="cards"></div>
+      </section>
+
+      <section aria-labelledby="add-title">
+        <h2 id="add-title">Add a source</h2>
+        <div id="add" class="add"></div>
+      </section>
+    </main>
+    <script src="sources.js"></script>
+  </body>
+</html>

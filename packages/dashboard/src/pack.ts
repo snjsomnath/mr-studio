@@ -1,6 +1,10 @@
 // The automatic layout. Panels are placed on the grid first-fit, in priority
 // order. When a page is full, by cells or by budget, the rest go to another
 // page. A panel is never resized or squeezed to make room.
+//
+// A short canvas (the controller with a layer's hero open) has fewer rows than
+// the full grid, never shorter ones: a panel taller than the rows there are is
+// left out, the lowest priority first in line for the next page.
 
 import type { PanelSize } from '@mrstudio/sdk';
 
@@ -36,10 +40,16 @@ export interface Page<T> {
 const DOCKED: PanelSize[] = ['band', 'strip'];
 
 class Cells {
-  private taken = new Uint8Array(GRID.columns * GRID.rows);
+  readonly rows: number;
+  private taken: Uint8Array;
+
+  constructor(rows: number) {
+    this.rows = rows;
+    this.taken = new Uint8Array(GRID.columns * rows);
+  }
 
   fits(col: number, row: number, cols: number, rows: number): boolean {
-    if (col < 1 || row < 1 || col + cols - 1 > GRID.columns || row + rows - 1 > GRID.rows) return false;
+    if (col < 1 || row < 1 || col + cols - 1 > GRID.columns || row + rows - 1 > this.rows) return false;
     for (let r = row; r < row + rows; r++) for (let c = col; c < col + cols; c++) if (this.taken[(r - 1) * GRID.columns + c - 1]) return false;
     return true;
   }
@@ -50,7 +60,7 @@ class Cells {
 
   /** The first free place for a panel: reading order, or from the bottom for docked sizes. */
   find(cols: number, rows: number, fromBottom: boolean): { col: number; row: number } | null {
-    const last = GRID.rows - rows + 1;
+    const last = this.rows - rows + 1;
     for (let i = 0; i < last; i++) {
       const row = fromBottom ? last - i : i + 1;
       for (let col = 1; col <= GRID.columns - cols + 1; col++) if (this.fits(col, row, cols, rows)) return { col, row };
@@ -59,11 +69,15 @@ class Cells {
   }
 }
 
-/** Lays panels out on as many pages as the rules require. */
-export function pack<T>(items: PackItem<T>[]): Page<T>[] {
+/**
+ * Lays panels out on as many pages as the rules require. `rows` is how many grid rows
+ * the canvas has room for (1 to 6); fixed panels from a site's pages always get all six.
+ */
+export function pack<T>(items: PackItem<T>[], rows: number = GRID.rows): Page<T>[] {
+  const gridRows = items.some((entry) => entry.at) ? GRID.rows : Math.max(1, Math.min(GRID.rows, Math.floor(rows)));
   const pages: (Page<T> & { cells: Cells })[] = [];
   const page = (index: number) => {
-    while (pages.length <= index) pages.push({ panels: [], reads: 0, cells: new Cells() });
+    while (pages.length <= index) pages.push({ panels: [], reads: 0, cells: new Cells(gridRows) });
     return pages[index]!;
   };
   const put = (target: Page<T> & { cells: Cells }, entry: PackItem<T>, col: number, row: number) => {
@@ -87,6 +101,8 @@ export function pack<T>(items: PackItem<T>[]): Page<T>[] {
     .sort((a, b) => (b.entry.priority ?? 0) - (a.entry.priority ?? 0) || a.order - b.order);
   for (const { entry } of free) {
     const { cols, rows } = SIZES[entry.size];
+    // A panel that no page could hold (taller than the canvas, or over the screen's budget alone) is left out.
+    if (rows > gridRows || entry.reads > SCREEN.reads) continue;
     for (let index = 0; ; index++) {
       const target = page(index);
       if (target.panels.length >= SCREEN.panels || target.reads + entry.reads > SCREEN.reads) continue;

@@ -1,0 +1,17 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "sources",
+  "description": "The Sources page lists, adds, changes, tests and removes outside services and their keys (#41). Keys go in and are never read back out. Only this window may do that.",
+  "windows": [
+    "sources"
+  ],
+  "permissions": [
+    "allow-sources-page",
+    "allow-sources-save",
+    "allow-sources-remove",
+    "allow-sources-test",
+    "allow-open-link",
+    "allow-open-settings",
+    "allow-open-home"
+  ]
+}

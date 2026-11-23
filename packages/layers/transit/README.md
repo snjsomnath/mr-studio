@@ -31,4 +31,4 @@ Set **Vehicles** to *Live feed* and **Feed address** to a URL that returns:
 
 `id`, `lon` and `lat` are required. The layer polls the address every three seconds, glides each vehicle to its newest position and drops vehicles that stop being reported.
 
-A city's own API (Västtrafik in Gothenburg, for example) is turned into this shape by a small adapter service, which also keeps the API credentials out of the browser. The address can be relative, so a site can point at an adapter behind the host (`/services/...`) or at a file in the site package (`/site/data/...`) for testing.
+For Västtrafik, set it up once in **Sources** (its key stays in the computer's keychain) and choose it as **Live data from**: the host asks Västtrafik for the vehicles around the table (`/api/transit/<source>/vehicles`) and turns them into this shape. Other providers get an adapter in `crates/mrs-host/src/transit.rs`. Any other city's API can still be turned into this shape by a small adapter service. The address can be relative, so a site can point at an adapter behind the host (`/services/...`) or at a file in the site package (`/site/data/...`) for testing.

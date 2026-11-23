@@ -108,6 +108,19 @@ test('the automatic layout pages instead of squeezing', () => {
   assert.deepEqual(fixed.map((p) => p.panels.map((x) => [x.item, x.col, x.row])), [[['a', 1, 1]], [['f', 10, 5]]]);
 });
 
+test('a short canvas gets fewer rows, not shorter ones', () => {
+  const item = (id: string, size: PanelSpec['size'], reads = 2, priority = 0) => ({ item: id, size, reads, priority });
+  // Three rows: two tiles and the colour key still share one page, the key at the bottom.
+  const three = pack([item('a', 'tile'), item('b', 'tile'), item('key', 'band')], 3);
+  assert.deepEqual(three.map((p) => p.panels.map((x) => [x.item, x.row])), [[['a', 1], ['b', 1], ['key', 3]]]);
+  // Two rows: the band waits for the next page.
+  assert.deepEqual(pack([item('a', 'tile'), item('key', 'band')], 2).map((p) => p.panels.map((x) => x.item)), [['a'], ['key']]);
+  // A panel taller than the canvas is left out rather than squeezed.
+  assert.deepEqual(pack([item('chart', 'block'), item('a', 'tile')], 3).map((p) => p.panels.map((x) => x.item)), [['a']]);
+  // A site's hand-made pages keep the full grid.
+  assert.equal(pack([{ item: 'f', size: 'tile' as const, reads: 1, at: { col: 1, row: 5 }, page: 0 }], 2)[0]!.panels[0]!.row, 5);
+});
+
 test('live values are held to the same limits as literals', () => {
   const source = {
     params: { hour: 8.5 },

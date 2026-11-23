@@ -50,6 +50,11 @@ fn main() {
         "open_link",
         "file_action",
         "table_details",
+        "open_sources",
+        "sources_page",
+        "sources_save",
+        "sources_remove",
+        "sources_test",
     ]);
     tauri_build::try_build(tauri_build::Attributes::new().app_manifest(commands)).expect("the Tauri build step");
 }

@@ -18,13 +18,14 @@ use std::collections::BTreeMap;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use anyhow::Context;
 use colour::{Colour, ColourConfig};
 use config::{Display, Displays, Settings, WindowSpec, WINDOW_ROLES};
 use mrs_engine::Backend;
+use mrs_host::sources::{Change, Keychain, Sources};
 use mrs_host::{HostConfig, Role, RunningHost};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -38,6 +39,8 @@ use tauri_plugin_updater::UpdaterExt;
 const HOME: &str = "home";
 /// Displays, colour, calibration and updates.
 const LAUNCHER: &str = "launcher";
+/// The Sources page: outside services and their keys (#41). It alone may change them.
+const SOURCES: &str = "sources";
 /// The window where a site is authored: the host's `/edit` page. It may call the few
 /// commands listed in `capabilities/editor.json`.
 const EDITOR: &str = "editor";
@@ -87,6 +90,8 @@ struct Shell {
     updates: Mutex<Option<Result<updates::Available, String>>>,
     /// File menu actions that arrive twice (menu shortcut and page) run once.
     file_debounce: file_menu::Debounce,
+    /// Outside services and their keys, shared with every host this app runs.
+    sources: Arc<Sources>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -158,7 +163,12 @@ fn main() -> anyhow::Result<()> {
             install_update,
             open_link,
             file_action,
-            table_details
+            table_details,
+            open_sources,
+            sources_page,
+            sources_save,
+            sources_remove,
+            sources_test
         ])
         .on_menu_event(|app, event| {
             let id = event.id().as_ref();
@@ -180,6 +190,11 @@ fn main() -> anyhow::Result<()> {
                 sites_folders.push(folder.join("sites"));
             }
             tracing::info!("MR Studio {}; config in {}", app.package_info().version, config_dir.display());
+            // The list is a file beside the other settings; the keys are in the system keychain.
+            let sources = Sources::open(config_dir.join("sources.json"), Box::new(Keychain)).unwrap_or_else(|e| {
+                tracing::error!("sources.json could not be read ({e}); starting with no sources");
+                Sources::in_memory()
+            });
 
             app.manage(Shell {
                 config_dir,
@@ -193,6 +208,7 @@ fn main() -> anyhow::Result<()> {
                 editor_stale: Default::default(),
                 updates: Mutex::new(None),
                 file_debounce: file_menu::Debounce::new(),
+                sources: Arc::new(sources),
             });
             // macOS has one menu bar for the app. Elsewhere the File menu sits on the editor window only.
             if cfg!(target_os = "macos") {
@@ -309,6 +325,23 @@ fn open_launcher(app: &AppHandle) -> anyhow::Result<()> {
     Ok(())
 }
 
+fn open_sources_window(app: &AppHandle) -> anyhow::Result<()> {
+    let window = match app.get_webview_window(SOURCES) {
+        Some(window) => window,
+        None => WebviewWindowBuilder::new(app, SOURCES, WebviewUrl::App("sources.html".into()))
+            .title("MR Studio · Sources")
+            .inner_size(1000.0, 720.0)
+            .min_inner_size(720.0, 520.0)
+            .center()
+            .build()?,
+    };
+    window.set_always_on_top(is_presenting(app))?;
+    window.unminimize()?;
+    window.show()?;
+    window.set_focus()?;
+    Ok(())
+}
+
 fn list_displays(app: &AppHandle) -> anyhow::Result<Vec<Display>> {
     let primary = app.primary_monitor()?;
     let is_primary = |m: &tauri::Monitor| primary.as_ref().is_some_and(|p| p.position() == m.position() && p.name() == m.name());
@@ -362,6 +395,7 @@ async fn launch(app: &AppHandle, site: PathBuf, lan: bool) -> anyhow::Result<()>
         bind: SocketAddr::from((ip, port)),
         backend: Backend::Auto,
         session: Default::default(),
+        sources: shell.sources.clone(),
     })
     .await?;
     let running = Running {
@@ -1005,6 +1039,37 @@ async fn open_view(app: AppHandle, role: String) -> Result<(), String> {
 #[tauri::command]
 async fn open_settings(app: AppHandle) -> Result<(), String> {
     open_launcher(&app).map_err(text)
+}
+
+/// Shows the Sources page: the services tables read from, their keys and a Test for each.
+#[tauri::command]
+async fn open_sources(app: AppHandle) -> Result<(), String> {
+    open_sources_window(&app).map_err(text)
+}
+
+/// The connections (never their keys) and the kinds that can be added.
+#[tauri::command]
+fn sources_page(shell: State<'_, Shell>) -> serde_json::Value {
+    shell.sources.page()
+}
+
+/// Adds or changes a connection. A key in it goes to the system keychain and nowhere else.
+#[tauri::command]
+async fn sources_save(shell: State<'_, Shell>, change: Change) -> Result<mrs_host::sources::View, String> {
+    let sources = shell.sources.clone();
+    tauri::async_runtime::spawn_blocking(move || sources.save(change)).await.map_err(text)?
+}
+
+#[tauri::command]
+async fn sources_remove(shell: State<'_, Shell>, id: String) -> Result<(), String> {
+    let sources = shell.sources.clone();
+    tauri::async_runtime::spawn_blocking(move || sources.remove(&id)).await.map_err(text)?
+}
+
+#[tauri::command]
+async fn sources_test(shell: State<'_, Shell>, id: String) -> Result<mrs_host::sources::Status, String> {
+    let sources = shell.sources.clone();
+    sources.test(&id).await
 }
 
 /// The File menu, from the editor page's own File button and its keys (#130).

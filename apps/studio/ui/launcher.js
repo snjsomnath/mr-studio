@@ -221,3 +221,5 @@ load().catch((e) => showError(String(e)));
 const mac = /Mac/i.test(navigator.platform);
 if (mac) document.querySelectorAll('.keys kbd').forEach((key) => key.textContent === 'Ctrl' && (key.textContent = 'Cmd'));
 document.querySelectorAll('[data-only="windows"]').forEach((node) => (node.hidden = !/Win/i.test(navigator.platform)));
+// Keys and outside services have their own window (#41).
+$('open-sources').addEventListener('click', () => invoke('open_sources').catch((e) => showError(String(e))));

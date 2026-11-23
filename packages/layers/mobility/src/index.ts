@@ -1,4 +1,4 @@
-import { colormaps, cssGradient, defineLayer, hasSiteData, loadSiteData, lut, siteProjection } from '@mrstudio/sdk';
+import { colormaps, cssGradient, defineLayer, hasSiteData, loadSiteData, lut, paletteHex, siteProjection, tablePalette } from '@mrstudio/sdk';
 import type { CanvasOverlay, LayerManifest } from '@mrstudio/sdk';
 
 import manifest from '../layer.json';
@@ -40,6 +40,8 @@ export default defineLayer<Params>({
   manifest: manifest as LayerManifest,
 
   async table(ctx) {
+    /** A group colour as written (`#hex` or a palette slot such as `@cat1`), in the table palette (#93). */
+    const groupColour = (colour: string) => paletteHex(colour, tablePalette(ctx.site));
     const distance = siteProjection(ctx.site).distance;
     // Bottom to top: values, routes, travellers.
     const cellCanvas = ctx.map.addCanvas('cells', { opacity: ctx.params.opacity });
@@ -72,7 +74,7 @@ export default defineLayer<Params>({
         title: trips.title,
         seconds: Math.round(time),
         duration,
-        groups: trips.groups.map((g, i) => ({ label: g.label, color: g.color, arrived: counts[i], total: trips.trips.filter((t) => t.group === i).length })),
+        groups: trips.groups.map((g, i) => ({ label: g.label, color: groupColour(g.color), arrived: counts[i], total: trips.trips.filter((t) => t.group === i).length })),
         cells: cells ? { label: cells.label, unit: cells.unit, min: cells.min, max: cells.max, step: cells.steps[step()] } : null,
       });
       const progress = Math.round(((time / duration) * 100) / PROGRESS_STEP) * PROGRESS_STEP;
@@ -113,7 +115,7 @@ export default defineLayer<Params>({
       trips.groups.forEach((group, index) => {
         g.beginPath();
         for (const trip of trips.trips) if (trip.group === index) for (const leg of trip.legs) trace(routeCanvas, leg.coordinates);
-        g.strokeStyle = group.color;
+        g.strokeStyle = groupColour(group.color);
         g.stroke();
       });
       g.globalAlpha = 1;
@@ -130,7 +132,7 @@ export default defineLayer<Params>({
           if (state === 'arrived') continue;
           const [x, y] = tripCanvas.project(point);
           if (x < -radius || y < -radius || x > tripCanvas.width + radius || y > tripCanvas.height + radius) continue;
-          const colour = trips.groups[trip.group]!.color;
+          const colour = groupColour(trips.groups[trip.group]!.color);
           g.globalAlpha = state === 'home' ? 0.35 : 1;
           g.beginPath();
           g.arc(x, y, state === 'home' ? radius * 0.6 : radius, 0, Math.PI * 2);
@@ -195,7 +197,7 @@ export default defineLayer<Params>({
         drawCells();
         cellsDrawn = cellsKey;
       }
-      const routesKey = `${routeCanvas.revision}:${ctx.params.trips}:${ctx.params.routes}`;
+      const routesKey = `${routeCanvas.revision}:${ctx.params.trips}:${ctx.params.routes}:${tablePalette(ctx.site).slots.cat1}${JSON.stringify(ctx.site.palette ?? null)}`;
       if (routesKey !== routesDrawn) {
         drawRoutes();
         routesDrawn = routesKey;
