@@ -207,6 +207,11 @@ pub struct Report {
 }
 
 impl Report {
+    /// Adds a note, such as the credit for data fetched on the author's behalf.
+    pub fn note(&mut self, code: &'static str, message: impl Into<String>) {
+        self.issues.push(Issue::new(code, Severity::Note, message));
+    }
+
     /// A report that stops before reading anything: one blocker, nothing counted.
     pub fn refused(target: &Target, code: &'static str, message: impl Into<String>, summary: impl Into<String>) -> Self {
         Self {

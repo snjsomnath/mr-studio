@@ -73,7 +73,7 @@ async function main() {
     const errors = [];
     // Base map tiles come from the internet, which a test does not reach: every tile is a plain light square.
     const tile = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAQAAAAEACAIAAADTED8xAAAB/0lEQVR42u3TsQkAAAgEsd9/XMXe2hkMZIKDS/XAW5EAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwAAYQAUMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA2AAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAOogAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAADAAGAAOAAcAAYAAwABgADAAGAAOAAcAAYAAwABgADAAGAAOAAcAAYAAwABgADAAGAAOAAcAAYAAwABgADAAGAAOAAcAAYAAwABgADAAGAAOAAcAAYAAwABgArgUn3irHh0b72wAAAABJRU5ErkJggg==', 'base64');
-    const mockTiles = (page) => page.route(/basemaps\.cartocdn\.com|tile\.openstreetmap\.org/, (route) => route.fulfill({ contentType: 'image/png', body: tile }));
+    const mockTiles = (page) => page.route(/basemaps\.cartocdn\.com|tile\.openstreetmap\.org/, (route) => route.fulfill({ contentType: 'image/png', headers: { 'access-control-allow-origin': '*' }, body: tile }));
     const open = async (url, viewport) => {
       const page = await browser.newPage({ viewport });
       await mockTiles(page);
@@ -375,7 +375,7 @@ async function main() {
     const stage = compose.locator('.table-surface');
     const rows = () => compose.locator('.stack-row strong').allTextContents();
     await compose.locator('.palette-group', { hasText: 'Analysis' }).getByText('Sunlight').waitFor();
-    assert.deepEqual(await rows(), ['Wind', 'Mobility', 'Cool paths', 'Sketch', 'Slideshow', 'Trees', 'Public transport', 'Traffic', 'Building lights', 'Sunlight', 'Dark base map']);
+    assert.deepEqual(await rows(), ['Wind', 'Mobility', 'Cool paths', 'Sketch', 'Slideshow', 'Trees', 'Public transport', 'Traffic', 'Building lights', 'Sunlight', 'Base map']);
     const drag = async (from, to, where = 0.5) => {
       const a = await from.boundingBox();
       const b = await to.boundingBox();
@@ -403,14 +403,14 @@ async function main() {
     });
 
     // Dragging from the palette into the stack adds a layer at that place.
-    await drag(compose.locator('.palette-item[data-layer="trees"]'), row('Dark base map'), 0.9);
+    await drag(compose.locator('.palette-item[data-layer="trees"]'), row('Base map'), 0.9);
     await row('Trees (trees-2)').waitFor();
     assert.equal(savedLayers()[0].id, 'trees-2', 'dropped below the base map, so first in site.json');
 
     // Draw order follows the list: with the opaque base map on top, nothing below shows through.
     await compose.getByLabel('Show Slideshow').waitFor();
-    await drag(row('Dark base map').locator('.stack-head'), row('Traffic (cars-2)'), 0.05);
-    await compose.waitForFunction(() => document.querySelector('.stack-row strong')?.textContent === 'Dark base map');
+    await drag(row('Base map').locator('.stack-head'), row('Traffic (cars-2)'), 0.05);
+    await compose.waitForFunction(() => document.querySelector('.stack-row strong')?.textContent === 'Base map');
     assert.equal(savedLayers().at(-1).use, 'basemap');
     await compose.waitForTimeout(600);
     // The outermost pixels are left out: a quad's edge is blended with what is under it.
@@ -421,8 +421,8 @@ async function main() {
     const covered = await inner();
     await compose.waitForTimeout(400);
     assert.ok(covered.equals(await inner()), 'the base map on top should hide the moving layers');
-    await drag(row('Dark base map').locator('.stack-head'), row('Trees (trees-2)'), 0.9);
-    await compose.waitForFunction(() => [...document.querySelectorAll('.stack-row strong')].at(-1)?.textContent === 'Dark base map');
+    await drag(row('Base map').locator('.stack-head'), row('Trees (trees-2)'), 0.9);
+    await compose.waitForFunction(() => [...document.querySelectorAll('.stack-row strong')].at(-1)?.textContent === 'Base map');
     assert.equal(savedLayers()[0].use, 'basemap');
     await compose.waitForTimeout(600);
     assert.ok(!covered.equals(await inner()), 'with the base map at the bottom the scene shows again');
@@ -444,7 +444,7 @@ async function main() {
     await editor.locator('.ed-row[data-context="home"]').waitFor();
     assert.deepEqual(await treeLayers(), ['Wind', 'Mobility', 'Cool paths', 'Sketch', 'Slideshow', 'Sunlight']);
     // The home screen holds the base map and the ambient life, and offers more of it.
-    assert.deepEqual(await editor.locator('.ed-inspector .ed-row .ed-row-label').allTextContents(), ['Trees', 'Public transport', 'Traffic', 'Building lights', 'Dark base map']);
+    assert.deepEqual(await editor.locator('.ed-inspector .ed-row .ed-row-label').allTextContents(), ['Trees', 'Public transport', 'Traffic', 'Building lights', 'Base map']);
     await editor.locator('.ed-ribbon .ed-tool[data-layer="trees"]').click();
     await editor.locator('.ed-inspector .ed-row[data-layer="trees-2"][aria-current="true"]').waitFor();
     // Ambient life joins the home screen, under the layers.
@@ -590,6 +590,13 @@ async function main() {
     await guide.getByRole('button', { name: 'Next' }).click();
     await guide.locator('.wz h2', { hasText: 'At rest' }).waitFor();
     assert.equal(await guide.locator('.wz input[data-layer="trees"]').isChecked(), true);
+    // The base map's style is picked right under its row, with its map's credit, and saved (#127).
+    await guide.getByLabel('Style').selectOption('light');
+    await guide.locator('.wz-style .wz-credit', { hasText: 'Map: © OpenStreetMap contributors' }).waitFor();
+    assert.equal(savedLayers().find((l) => l.use === 'basemap').params.style, 'light');
+    if (shots) await guide.screenshot({ path: path.join(shots, 'at-rest-light.png') });
+    await guide.getByLabel('Style').selectOption('dark');
+    await guide.waitForFunction(() => document.querySelector('.wz-style .wz-credit')?.textContent === '');
     await guide.getByRole('button', { name: 'Next' }).click();
     // The building blocks demo is for developers, not offered to authors.
     assert.equal(await guide.locator('.wz input[data-layer="blocks-demo"]').count(), 0);
@@ -678,15 +685,30 @@ async function main() {
     const [kx, ky] = await centreOf('.pm-handle.is-corner');
     // The corner is still up and to the right of the middle, at the table's own shape: the outline did not tilt.
     assert.ok(kx > mx && ky < my && Math.abs((kx - mx) / (my - ky) - 1000 / 600) < 0.05, `the table stays upright: ${[mx, my, kx, ky]}`);
-    // A model scale sets the ground's size and keeps its shape; the table's own width changes the scale.
+    // The scale holds still: a new scale keeps the ground and resizes the table, and the table's
+    // width and height each set the ground's at that scale, so the table can have any shape (#128).
+    const value = (label) => fresh.getByLabel(label).inputValue();
     await fresh.getByRole('button', { name: '1 : 2 000' }).click();
-    assert.deepEqual([await fresh.getByLabel('Width, metres').inputValue(), await fresh.getByLabel('Height, metres').inputValue()], ['2000', '1200']);
-    await fresh.getByLabel('Table width, cm').fill('160');
-    assert.equal(await fresh.locator('input[name="scale"]').inputValue(), '1250');
-    await fresh.locator('.wz-scale-words', { hasText: 'A 160 × 96 cm table shows 2 000 × 1 200 m at 1 : 1 250' }).waitFor();
+    assert.deepEqual([await value('Width, metres'), await value('Height, metres'), await value('Table width, cm'), await value('Table height, cm')], ['1000', '600', '50', '30']);
+    await fresh.locator('input[name="scale"]').fill('1250');
+    await fresh.locator('.wz-scale-words', { hasText: 'The table, 80 × 48 cm, shows 1 000 × 600 m at 1 : 1 250' }).waitFor();
+    await fresh.getByLabel('Table height, cm').fill('60');
+    assert.deepEqual([await value('Width, metres'), await value('Height, metres'), await fresh.locator('input[name="scale"]').inputValue()], ['1000', '750', '1250']);
+    await fresh.getByLabel('Width, metres').fill('1600');
+    assert.deepEqual([await value('Table width, cm'), await fresh.locator('input[name="scale"]').inputValue()], ['128', '1250']);
     await fresh.getByLabel('Width, metres').fill('1000');
     await fresh.getByLabel('Height, metres').fill('600');
-    assert.equal(await fresh.locator('input[name="scale"]').inputValue(), '625');
+    assert.deepEqual([await value('Table width, cm'), await value('Table height, cm')], ['80', '48']);
+    // 3D-printing tiles: a grid on the map, and a clear problem when they do not fit (#129).
+    await fresh.getByLabel('Show 3D-printing tiles').check();
+    await fresh.getByLabel('Tile size, cm').fill('16');
+    await fresh.locator('.wz-tiles', { hasText: '5 × 3 tiles, 15 to print.' }).waitFor();
+    await fresh.getByLabel('Tile size, cm').fill('15');
+    await fresh.locator('.wz-tiles .wz-problem', { hasText: 'not a whole number' }).waitFor();
+    await fresh.getByRole('button', { name: 'Create the table' }).click();
+    await fresh.locator('.wz-form > .wz-problem', { hasText: 'not a whole number' }).waitFor();
+    await fresh.getByLabel('Tile size, cm').fill('16');
+    if (shots) await fresh.screenshot({ path: path.join(shots, 'new-table-tiles.png') });
     // Dragging the corner in covers less ground, keeping the table's shape.
     await fresh.waitForTimeout(200);
     const [nx, ny] = await centreOf('.pm-handle.is-centre');
@@ -704,7 +726,7 @@ async function main() {
     await fresh.getByRole('button', { name: 'Create the table' }).click();
     await fresh.waitForFunction(() => window.shellCalls.length === 2);
     assert.deepEqual(await fresh.evaluate(() => window.shellCalls), [
-      ['create_site', { site: { name: 'Harbour', lat: 57.7069, lon: 11.9386, width_m: 1000, height_m: 600, rotation_deg: 10, table_width_cm: 160 } }],
+      ['create_site', { site: { name: 'Harbour', lat: 57.7069, lon: 11.9386, width_m: 1000, height_m: 600, rotation_deg: 10, table_width_cm: 80, tile_cm: 16 } }],
       ['open_site', { path: '/sites/harbour', welcome: true }],
     ]);
     await fresh.close();

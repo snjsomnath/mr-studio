@@ -4,6 +4,7 @@
 mod bake;
 pub mod create;
 mod crs;
+pub mod elevation;
 mod geotiff;
 pub mod import;
 mod manifest;
@@ -60,6 +61,10 @@ pub struct Place {
     /// ground's shape; together with the extent it sets the model scale (1 : extent / table).
     #[serde(default)]
     pub table_width_cm: Option<f64>,
+    /// The side of one square 3D-printed tile in centimetres: `None` keeps it, 0 means the
+    /// table is not printed in tiles.
+    #[serde(default)]
+    pub tile_cm: Option<f64>,
 }
 
 /// What surfaces need to know about the site.
@@ -499,6 +504,9 @@ impl Site {
         if place.table_width_cm.is_some_and(|w| !(w.is_finite() && (10.0..=2000.0).contains(&w))) {
             return Err(invalid("the table must be between 10 cm and 20 m wide"));
         }
+        if place.tile_cm.is_some_and(|t| !(t.is_finite() && (0.0..=2000.0).contains(&t))) {
+            return Err(invalid("a tile must be between 0 and 20 m on a side"));
+        }
         let rotation_deg = rotation_deg.rem_euclid(360.0);
         let m = &self.manifest;
         let moved = m.origin != place.origin
@@ -535,6 +543,13 @@ impl Site {
         }
         if let Some(width_cm) = value["table"]["width_cm"].as_f64() {
             value["table"]["height_cm"] = ((width_cm * height_m / width_m * 100.0).round() / 100.0).into();
+        }
+        if let (Some(tile_cm), Some(table)) = (place.tile_cm, value["table"].as_object_mut()) {
+            if tile_cm > 0.0 {
+                table.insert("tile_cm".into(), tile_cm.into());
+            } else {
+                table.remove("tile_cm");
+            }
         }
         let manifest: SiteManifest = serde_json::from_value(value.clone()).map_err(|e| parse(e.to_string()))?;
         let problems = Site { dir: self.dir.clone(), manifest, calibration: self.calibration }.problems();

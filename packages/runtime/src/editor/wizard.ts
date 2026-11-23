@@ -1,4 +1,4 @@
-import type { LayerManifest, LayerState } from '@mrstudio/sdk';
+import type { LayerManifest, LayerState, SelectControl } from '@mrstudio/sdk';
 import { defaultSideOf, el, isAmbient, isOffered, layerButton } from '../controls.ts';
 import type { Store } from '../store.ts';
 import { icon } from './icons.ts';
@@ -82,10 +82,12 @@ export class Wizard {
   /** The row of "Your place" that a layer needing data sent the author to. */
   private wanted: string | null = null;
   /** The "Name and place" form as the author left it, kept across redraws. */
-  private where: { name: string; centre: string; width: string; height: string; rotation: string; table: string } | null = null;
+  private where: { name: string; centre: string; width: string; height: string; rotation: string; table: string; tile: string } | null = null;
   private scaleFields: ScaleFields | null = null;
   /** The map in "Name and place", made once: it keeps its view across redraws. */
   private placeMap: PlaceMap | null = null;
+  /** The tile grid's step in metres of ground, for the place map; null for none. */
+  private tileM: number | null = null;
   private moving = false;
   private problem = '';
 
@@ -94,7 +96,7 @@ export class Wizard {
     // Someone who has just named and placed the table goes on to what it is made of.
     this.step = options.step ?? (options.created ? PLACE : WHERE);
     host.store.onScene(() => this.render());
-    host.store.onLayer(() => this.step === BUTTONS && this.syncButtons());
+    host.store.onLayer(() => (this.step === BUTTONS || this.step === REST) && this.syncButtons());
     this.render();
   }
 
@@ -174,6 +176,7 @@ export class Wizard {
       host.show(null);
       title(AT_REST, 'What the map shows when no layer is open, and nobody is using the table. Pick a base map and some life to make it feel like a place.');
       body.append(this.choices(host.store.manifests.filter((m) => isAmbient(m) && isOffered(m)), instances, false));
+      this.syncButtons();
     } else if (this.step === LAYERS) {
       title('Layers', 'Each layer answers one question, such as where the sun falls. Every layer you pick becomes a button on the controller.');
       body.append(this.choices(host.store.manifests.filter((m) => !isAmbient(m) && (isOffered(m) || instances.some((i) => i.manifest.id === m.id))), instances, true));
@@ -333,7 +336,7 @@ export class Wizard {
   })();
 
   /** The site's name and place as the form would write them. */
-  private placeValues(): { name: string; centre: string; width: string; height: string; rotation: string; table: string } {
+  private placeValues(): { name: string; centre: string; width: string; height: string; rotation: string; table: string; tile: string } {
     const { site } = this.host.store.state;
     return (
       this.where ?? {
@@ -343,6 +346,7 @@ export class Wizard {
         height: String(Math.round(site.extent.height_m)),
         rotation: String(Math.round(site.extent.rotation_deg ?? 0)),
         table: String(site.table?.width_cm ?? 100),
+        tile: String(site.table?.tile_cm ?? ''),
       }
     );
   }
@@ -359,7 +363,8 @@ export class Wizard {
       Number(this.where.width) !== Math.round(site.extent.width_m) ||
       Number(this.where.height) !== Math.round(site.extent.height_m) ||
       turn(Number(this.where.rotation)) !== turn(Math.round(site.extent.rotation_deg ?? 0)) ||
-      Number(this.where.table) !== (site.table?.width_cm ?? 100)
+      Number(this.where.table) !== (site.table?.width_cm ?? 100) ||
+      Number(this.where.tile || 0) !== (site.table?.tile_cm ?? 0)
     );
   }
 
@@ -386,14 +391,14 @@ export class Wizard {
       });
       return node;
     };
-    // The physical table and the model scale: a scale sets the ground's size, keeping its shape.
+    // The physical table and the model scale: the ground and the table follow each other at the scale.
     this.scaleFields = new ScaleFields(
       () => {
         const v = this.placeValues();
-        return { width_m: Number(v.width), height_m: Number(v.height), table_cm: Number(v.table) };
+        return { width_m: Number(v.width), height_m: Number(v.height), table_cm: Number(v.table), tile_cm: v.tile ? Number(v.tile) : null };
       },
       (ground) => {
-        this.where = { ...this.placeValues(), width: String(ground.width_m), height: String(ground.height_m), table: String(ground.table_cm) };
+        this.where = { ...this.placeValues(), width: String(ground.width_m), height: String(ground.height_m), table: String(ground.table_cm), tile: ground.tile_cm ? String(ground.tile_cm) : '' };
         for (const key of ['width', 'height'] as const) {
           const field = this.element.querySelector<HTMLInputElement>(`.wz-form input[name="${key}"]`);
           if (field) field.value = this.where[key];
@@ -401,6 +406,10 @@ export class Wizard {
         this.problem = '';
         this.placeMap?.set(this.placement());
         this.nextWords();
+      },
+      (tile_m) => {
+        this.tileM = tile_m;
+        this.placeMap?.tiles(tile_m);
       },
     );
     // The map comes right after the centre, so the place is seen before it is fine-tuned.
@@ -439,6 +448,7 @@ export class Wizard {
         this.nextWords();
       }, { data: buildings ? `/site/${buildings}` : undefined });
     }
+    this.placeMap.tiles(this.tileM);
     mapSlot.append(this.placeMap.element, el('p', 'wz-hint', 'Click the map or drag the middle to move the table, and drag its corner to cover more or less ground. Turn the map with the right mouse button, Ctrl and drag, or the arrows; the table stays upright, as it stands in the room.'));
     if (this.moving) form.append(el('p', 'wz-hint', 'Moving the table and rebuilding what it shows…'));
     if (this.problem) {
@@ -477,6 +487,8 @@ export class Wizard {
     if (!at) return say('Paste the coordinates of the centre of the table, for example 57.6898, 11.9742.');
     if (!(width_m >= 100 && height_m >= 100 && width_m <= 20000 && height_m <= 20000)) return say('The width and the height must each be between 100 and 20 000 metres.');
     if (!Number.isFinite(rotation_deg)) return say('Turned is a number of degrees, such as 0 or 30.');
+    const tiles = this.scaleFields?.problem();
+    if (tiles) return say(tiles);
     this.moving = true;
     say('');
     this.host.resumeAt(next);
@@ -484,7 +496,7 @@ export class Wizard {
       const response = await fetch('/api/site/place', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: values.name.trim(), origin: { lat: at.lat, lon: at.lon }, extent: { width_m, height_m, rotation_deg }, table_width_cm: Number(values.table) }),
+        body: JSON.stringify({ name: values.name.trim(), origin: { lat: at.lat, lon: at.lon }, extent: { width_m, height_m, rotation_deg }, table_width_cm: Number(values.table), tile_cm: values.tile ? Number(values.tile) : 0 }),
       });
       if (!response.ok) {
         const answer = await response.json().catch(() => null);
@@ -496,6 +508,36 @@ export class Wizard {
       this.moving = false;
       say(`The table could not be moved: ${(error as Error).message}`);
     }
+  }
+
+  /** A layer's style as a dropdown, with the credit its map asks for; the map beside shows it live. */
+  private stylePicker(id: string, control: SelectControl): HTMLElement {
+    const { host } = this;
+    const box = el('div', 'wz-style');
+    const select = el('select');
+    select.name = `${id}-style`;
+    for (const option of control.options) select.append(new Option(option.label, option.value));
+    const credit = el('p', 'wz-hint wz-credit');
+    const note = el('p', 'wz-hint');
+    const field = el('label', 'wz-field');
+    field.append(el('span', undefined, control.label), select);
+    box.append(field, credit, note);
+    select.addEventListener('change', () => void host.send('scene.set', { layer: id, params: { [control.id]: select.value } }));
+    const sync = (): void => {
+      const state = host.store.state.layers[id];
+      if (!state) return;
+      const value = String(state.params[control.id] ?? control.default);
+      if (document.activeElement !== select) select.value = value;
+      const source = typeof state.shared.source === 'string' ? state.shared.source : '';
+      credit.textContent = source ? `Map: ${source}` : '';
+      note.textContent = typeof state.shared.note === 'string' ? state.shared.note : '';
+    };
+    const before = this.syncButtons;
+    this.syncButtons = () => {
+      before();
+      sync();
+    };
+    return box;
   }
 
   /** One row per layer package with a switch: on means the table has it. */
@@ -542,6 +584,9 @@ export class Wizard {
       if (preview && mine[0]) row.addEventListener('pointerenter', () => host.show(mine[0]!.id));
       row.append(badge, words, power);
       list.append(row);
+      // A layer with a style to pick (the base map) offers it right under its row, at rest.
+      const style = manifest.controls?.find((c): c is SelectControl => c.id === 'style' && c.type === 'select');
+      if (!preview && style && mine[0]) list.append(this.stylePicker(mine[0].id, style));
     }
     return list;
   }

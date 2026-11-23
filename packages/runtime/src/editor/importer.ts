@@ -36,6 +36,8 @@ export interface ImportTarget {
   accept: string;
   /** Whether OpenStreetMap can provide it. */
   osm: boolean;
+  /** Whether the free elevation service can provide it (the ground). */
+  elevation?: boolean;
   /** What a good file looks like, for the "?" beside the row. */
   example: string;
 }
@@ -60,6 +62,7 @@ export const TARGETS: ImportTarget[] = [
     about: 'The height of the land, so hills shade and shelter as they do outside. A GeoTIFF.',
     accept: '.tif,.tiff',
     osm: false,
+    elevation: true,
     example: 'A GeoTIFF of ground heights in metres, such as a Lantmäteriet elevation model. It may be larger than the table and on a national grid; if it does not say which, you will be asked for its EPSG code (3006 for SWEREF99 TM).',
   },
   {
@@ -117,7 +120,7 @@ export interface ImporterHost {
   cancel?(): void;
 }
 
-type Source = { kind: 'file'; file: File } | { kind: 'osm' };
+type Source = { kind: 'file'; file: File } | { kind: 'osm' } | { kind: 'elevation' };
 
 /** Turns lon/lat into metres on the table: x to the right, y up, from its centre. */
 export function tableMetres(site: SiteInfo): (lon: number, lat: number) => [number, number] {
@@ -362,6 +365,14 @@ export class Importer {
       fetchOsm.addEventListener('click', () => this.start({ kind: 'osm' }));
       buttons.push(fetchOsm);
     }
+    if (item?.elevation) {
+      const fetchHeights = el('button', 'ed-button', 'Download free elevation');
+      fetchHeights.type = 'button';
+      fetchHeights.disabled = this.busy;
+      fetchHeights.title = 'Fetch ground heights around the table from free, worldwide elevation data (about 30 m detail). Needs the internet.';
+      fetchHeights.addEventListener('click', () => this.start({ kind: 'elevation' }));
+      buttons.push(fetchHeights);
+    }
     return buttons;
   }
 
@@ -398,10 +409,12 @@ export class Importer {
     const words = el('span');
     line.append(spinner, words);
     const osm = this.source?.kind === 'osm';
+    const heights = this.source?.kind === 'elevation';
     const say = () => {
       const seconds = Math.floor((Date.now() - this.busySince) / 1000);
       const time = seconds >= 2 ? ` ${seconds} s` : '';
       if (this.writing) words.textContent = `Bringing it into the table and rebuilding what it shows…${time}`;
+      else if (heights) words.textContent = seconds < 15 ? `Downloading free elevation…${time}` : `The elevation service is slow, so this can take a minute. It tries each piece again if it has to…${time}`;
       else if (!osm) words.textContent = `Reading ${what}…${time}`;
       else if (seconds < 15) words.textContent = `Asking OpenStreetMap…${time}`;
       else words.textContent = `OpenStreetMap is busy, so this can take a minute. It tries again, on other servers if it has to…${time}`;
@@ -416,7 +429,7 @@ export class Importer {
 
   private reportBox(): HTMLElement {
     const report = el('div', 'wz-report');
-    const what = this.source?.kind === 'file' ? this.source.file.name : 'OpenStreetMap';
+    const what = this.source?.kind === 'file' ? this.source.file.name : this.source?.kind === 'elevation' ? 'free elevation' : 'OpenStreetMap';
     if (this.busy) report.append(this.progress(what));
     else if (this.failed) report.append(el('p', 'wz-issue is-blocker', this.failed));
     else if (this.report) {
@@ -506,6 +519,7 @@ export class Importer {
     for (const option of this.options) query.set(option, '1');
     if (this.crs) query.set('crs', this.crs);
     if (this.source?.kind === 'osm') query.set('source', 'osm');
+    if (this.source?.kind === 'elevation') query.set('source', 'elevation');
     return query;
   }
 

@@ -22,6 +22,7 @@ use axum::response::IntoResponse;
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use mrs_engine::Backend;
+use mrs_site::elevation;
 use mrs_site::import::{self, Options, Report, Target};
 use mrs_site::osm::{self, OsmLayer};
 use mrs_site::Site;
@@ -82,6 +83,8 @@ const OVERPASS_URLS: [&str; 3] = [
 
 /// Tries in all before a fetch gives up, waiting 1, 2, then 4 seconds between them.
 const OVERPASS_TRIES: u32 = 4;
+/// Each elevation tile is asked for this many times before the fetch gives up.
+const ELEVATION_TRIES: u32 = 3;
 
 /// The largest file `/api/data/*` accepts.
 pub const MAX_IMPORT_BYTES: usize = 256 * 1024 * 1024;
@@ -165,6 +168,69 @@ impl AppState {
         let bytes = serde_json::to_vec(&collection).expect("json");
         *self.osm_cache.lock().unwrap() = Some(OsmFetch { key, at: std::time::Instant::now(), bytes: bytes.clone() });
         Ok(bytes)
+    }
+
+    /// Fetches free elevation around the table (Terrarium tiles on AWS, no key) as a GeoTIFF
+    /// `import_data` takes for the ground. The refusal is a report, as for OpenStreetMap.
+    pub async fn fetch_elevation(&self, target: &Target) -> Result<Vec<u8>, Report> {
+        if *target != Target::Terrain {
+            let why = "Free elevation is only for the ground.".to_string();
+            return Err(Report::refused(target, "elevation.unavailable", why.clone(), why));
+        }
+        let dir = self.site.dir.clone();
+        let bounds = tokio::task::spawn_blocking(move || Site::load(&dir).map(|site| osm::bounds(&site)))
+            .await
+            .map_err(|e| e.to_string())
+            .and_then(|r| r.map_err(|e| e.to_string()))
+            .map_err(|e| Report::refused(target, "site.unreadable", e.clone(), e))?;
+        let offline = |detail: String| {
+            tracing::warn!("elevation fetch failed: {detail}");
+            Report::refused(
+                target,
+                "elevation.offline",
+                "We can't reach the free elevation service right now. Check the internet connection and try again in a minute.",
+                "The elevation service did not answer.",
+            )
+        };
+        let client = reqwest::Client::builder()
+            .user_agent("MR Studio")
+            .timeout(std::time::Duration::from_secs(60))
+            .build()
+            .map_err(|e| offline(e.to_string()))?;
+        let base = std::env::var("MRS_ELEVATION_URL").ok();
+        let mut tasks = tokio::task::JoinSet::new();
+        for id in elevation::tiles(bounds) {
+            let client = client.clone();
+            let url = match &base {
+                Some(base) => format!("{base}/{}/{}/{}.png", id.z, id.x, id.y),
+                None => id.url(),
+            };
+            tasks.spawn(async move {
+                let mut last = String::new();
+                for attempt in 0..ELEVATION_TRIES {
+                    if attempt > 0 {
+                        tokio::time::sleep(std::time::Duration::from_secs(1 << (attempt - 1))).await;
+                    }
+                    match client.get(&url).send().await {
+                        Ok(response) if response.status().is_success() => match response.bytes().await {
+                            Ok(bytes) => return elevation::decode(&bytes).map(|heights| (id, heights)).map_err(|e| format!("{url}: {e}")),
+                            Err(e) => last = format!("{url}: {e}"),
+                        },
+                        Ok(response) => last = format!("{url} answered {}", response.status()),
+                        Err(e) => last = format!("{url}: {e}"),
+                    }
+                }
+                Err(last)
+            });
+        }
+        let mut tiles = Vec::new();
+        while let Some(done) = tasks.join_next().await {
+            tiles.push(done.map_err(|e| offline(e.to_string()))?.map_err(offline)?);
+        }
+        tokio::task::spawn_blocking(move || elevation::geotiff(bounds, &tiles))
+            .await
+            .map_err(|e| offline(e.to_string()))?
+            .map_err(|e| Report::refused(target, "elevation.unreadable", format!("The elevation could not be read: {e}"), e))
     }
 
     pub async fn import_data(&self, target: &str, filename: &str, bytes: Vec<u8>, options: Options, write: bool) -> Result<Report, String> {
@@ -401,7 +467,8 @@ struct ImportQuery {
     /// `EPSG:3006`, for a terrain GeoTIFF that does not say.
     #[serde(default)]
     crs: Option<String>,
-    /// `osm`: fetch the data from OpenStreetMap instead of reading the body.
+    /// `osm`: fetch the data from OpenStreetMap instead of reading the body; `elevation`: free
+    /// elevation for the ground.
     #[serde(default)]
     source: Option<String>,
 }
@@ -510,8 +577,19 @@ async fn data_request(
                 Err(report) => return (StatusCode::UNPROCESSABLE_ENTITY, Json(json!(report))).into_response(),
             }
         }
+        Some("elevation") => {
+            let target = match Target::parse(&query.target) {
+                Ok(target) => target,
+                Err(error) => return (StatusCode::BAD_REQUEST, Json(json!({ "error": error }))).into_response(),
+            };
+            match state.fetch_elevation(&target).await {
+                Ok(bytes) => (body, filename) = (bytes, "free-elevation.tif".into()),
+                Err(report) => return (StatusCode::UNPROCESSABLE_ENTITY, Json(json!(report))).into_response(),
+            }
+        }
         Some(other) => {
-            return (StatusCode::BAD_REQUEST, Json(json!({ "error": format!("source must be osm, not '{other}'") }))).into_response()
+            return (StatusCode::BAD_REQUEST, Json(json!({ "error": format!("source must be osm or elevation, not '{other}'") })))
+                .into_response()
         }
     }
     let crs = match query.crs.as_deref().map(|c| c.trim().trim_start_matches("EPSG:").trim_start_matches("epsg:").parse::<u32>()) {
@@ -520,7 +598,19 @@ async fn data_request(
         Some(Err(_)) => return (StatusCode::BAD_REQUEST, Json(json!({ "error": "crs must look like EPSG:3006" }))).into_response(),
     };
     let options = Options { crop: flag(&query.crop), swap: flag(&query.swap), crs };
-    match state.import_data(&query.target, &filename, body, options, write).await {
+    let free_elevation = query.source.as_deref() == Some("elevation");
+    match state.import_data(&query.target, &filename, body, options, write).await.map(|mut report| {
+        if free_elevation {
+            report.note(
+                "source.elevation",
+                format!(
+                    "From {}. About 30 m detail in most places: fine for hills, too coarse for kerbs and steps on a campus-sized table.",
+                    elevation::ATTRIBUTION
+                ),
+            );
+        }
+        report
+    }) {
         Ok(report) if report.ok => (StatusCode::OK, Json(json!(report))).into_response(),
         Ok(report) => (StatusCode::UNPROCESSABLE_ENTITY, Json(json!(report))).into_response(),
         Err(error) => (StatusCode::BAD_REQUEST, Json(json!({ "error": error }))).into_response(),
