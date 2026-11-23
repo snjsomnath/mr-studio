@@ -224,6 +224,12 @@ abuse. It is how Dynamism (§3.2) is drawn.
   legend item (present.md §3).
 - **M8** **Motion follows the place.** People and vehicles move on the network, not across buildings (#96
   routed gravity). Free particles are for air, water, attention and abstract forces.
+- **M9** **Cue a remote change at its place.** When an action on the controller, TV or a phone changes what is
+  on the table (add a building, add an EV charger), people are looking at the screen and do not know where to
+  look next. Mark the change on the table with one bright, very visible burst at the spot (a flare and rings
+  travelling out, about 1–1.5 s, *start*) that settles into the item's normal style. For its duration it is the
+  brightest thing on the table (C3). It is one burst, not a blink (M5). Changes made by a pointer on the table
+  need no cue, because people are already looking there. The block is #105. (Learned from ECOM, 2026-11-23.)
 
 ## 8. The layer model and its building blocks
 
@@ -304,6 +310,13 @@ Change the rule in the same PR.
 - Seen: …
 - Rule: E5 changed from … to … (or: confirms C2)
 ```
+
+### 2026-11-23 · Attention cue for remote changes (from the ECOM layer)
+
+- Seen: when an action on the dashboard or controller places something on the table (add a building, add an
+  EV), attention is split between the screen and the table, and people do not know what will change or where.
+  ECOM's bright, very visible animation at the change brings their attention back to the table.
+- Rule: new M9. Follow-up: a reusable attention-cue block, played automatically on remote actions (#105).
 
 ### 2026-11-23 · Ribbon placement on a table-height model
 
