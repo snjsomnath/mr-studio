@@ -14,8 +14,8 @@ export interface SoundProps {
   column: string | null;
   /** One sound for every point, when there is no column. */
   file: string | null;
-  /** `chorus`: a few at a time, at random, as in the bird demo. `loop`: every point, always. */
-  trigger: 'chorus' | 'loop';
+  /** `chorus`: a few at a time, at random, as in the bird demo. `loop`: every point, always. `tap`: only when asked (a tap, a card, a step). */
+  trigger: 'chorus' | 'loop' | 'tap';
   /** For a chorus: how many play at once, and the quiet between one ending and the next starting. */
   voices: number;
   gap_s: number;
@@ -44,6 +44,17 @@ export function soundPath(row: Record<string, unknown> | undefined, props: Pick<
   if (/^https?:|^\/|\.\./.test(name)) return null;
   // A bare file name is one of the site's sounds; anything with a folder is a path in the site.
   return name.includes('/') ? name : `data/sounds/${name}`;
+}
+
+/** What to call a point's sound on the controller: its name, species or label, else its file name. */
+export function soundLabel(row: Record<string, unknown> | undefined, path: string | null): string {
+  for (const key of ['name', 'label', 'title', 'species', 'Name', 'Species']) {
+    const value = row?.[key];
+    if (typeof value === 'string' && value.trim()) return value.trim();
+  }
+  if (!path) return 'Sound';
+  const base = (path.split('/').pop() ?? path).replace(/\.[a-z0-9]+$/i, '').replace(/[-_]+/g, ' ').trim();
+  return base ? base[0]!.toUpperCase() + base.slice(1) : 'Sound';
 }
 
 // ---- Analysis --------------------------------------------------------------------
@@ -134,6 +145,7 @@ export class SoundSchedule {
   }
   starts(props: Pick<SoundProps, 'trigger' | 'voices' | 'gap_s'>, candidates: readonly number[], playing: ReadonlySet<number>, time: number, justEnded: boolean): number[] {
     if (props.trigger === 'loop') return candidates.filter((i) => !playing.has(i));
+    if (props.trigger === 'tap') return [];
     if (justEnded) this.next = Math.max(this.next, time + Math.max(0, props.gap_s) * (0.5 + this.random()));
     if (time < this.next || playing.size >= Math.max(1, Math.round(props.voices))) return [];
     const free = candidates.filter((i) => !playing.has(i) && (i !== this.lastPicked || candidates.length === 1));
@@ -222,6 +234,8 @@ export class SoundStage {
   private readonly profiles = new Map<string, SoundProfile>();
   private readonly buffers = new Map<string, AudioBuffer>();
   private readonly schedule = new SoundSchedule();
+  /** Points asked to play (a tap, a card, a step), started as soon as their sound is ready. */
+  private readonly cues = new Set<number>();
   private readonly url: (path: string) => string;
   audible: boolean;
   volume = 0.8;
@@ -274,6 +288,14 @@ export class SoundStage {
       if (path && this.profiles.has(path)) ready.push(i);
     });
     for (const point of this.schedule.starts(props, ready, new Set(this.voices.keys()), time, ended)) this.startVoice(point, paths[point]!, props, time);
+    for (const point of this.cues) {
+      if (!paths[point]) this.cues.delete(point);
+      else if (this.voices.has(point)) this.cues.delete(point);
+      else if (this.profiles.has(paths[point]!)) {
+        this.cues.delete(point);
+        this.startVoice(point, paths[point]!, { ...props, trigger: 'chorus' }, time);
+      }
+    }
     for (const voice of this.voices.values()) if (voice.gain) voice.gain.gain.value = this.audible ? this.volume : 0;
 
     return paths.map((_, i) => {
@@ -287,6 +309,11 @@ export class SoundStage {
     });
   }
 
+  /** Plays a point's sound now, once, whatever the trigger (a tap on it, its card, a step). */
+  cue(point: number): void {
+    this.cues.add(point);
+  }
+
   /** Points playing now. */
   playing(): number[] {
     return [...this.voices.keys()];
@@ -296,6 +323,7 @@ export class SoundStage {
   stop(): void {
     for (const voice of this.voices.values()) this.stopVoice(voice);
     this.voices.clear();
+    this.cues.clear();
   }
 
   private startVoice(point: number, path: string, props: SoundProps, time: number): void {

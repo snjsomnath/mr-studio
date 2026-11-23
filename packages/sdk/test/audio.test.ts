@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { PeakFinder, SoundSchedule, SoundStage, SOUND_DEFAULTS, analyseSound, compileLook, profileAt, resolvePalette, soundColumns, soundPath } from '../src/index.ts';
+import { PeakFinder, SoundSchedule, SoundStage, SOUND_DEFAULTS, analyseSound, compileLook, profileAt, resolvePalette, soundColumns, soundLabel, soundPath } from '../src/index.ts';
 import type { Pen, Shapes, View } from '../src/index.ts';
 
 /** Two chirps (high) and a hum (low) with silence between, at 8 kHz. */
@@ -69,4 +69,35 @@ test('points with sounds send out rings while they play', () => {
   for (let t = 0; t < 2; t += 1 / 60) look.draw(view, t, 1);
   assert.deepEqual(stage.playing(), [0], 'only the point with a sound plays');
   assert.ok(arcs > 300, 'rings and glow were drawn');
+});
+
+test('a sound set to play when tapped waits for its cue, and lists itself for the controller', () => {
+  const pen = new Proxy({}, { get: (_, key) => (key === 'createRadialGradient' ? () => ({ addColorStop() {} }) : () => {}), set: () => true }) as unknown as Pen;
+  const view: View = { pen, scale: 2, time: 0, detail: 1, toPx: ([x, y]) => [x * 2, y * 2] };
+  const shapes: Shapes = { areas: [], paths: [], spots: [{ id: 1, point: [10, 10], properties: { sound: 'bird.wav', name: 'Blackbird' } }, { id: 2, point: [50, 10], properties: {} }] };
+  const stage = new SoundStage({ audible: false });
+  stage.setProfile('data/sounds/bird.wav', analyseSound(birdish(), 8000));
+  const look = compileLook({ id: 'p', block: 'points' }, shapes, resolvePalette(), 0.5, { sound: { ...SOUND_DEFAULTS, column: 'sound', trigger: 'tap', stage } })!;
+  let t = 0;
+  for (; t < 1; t += 1 / 60) look.draw(view, t, 1);
+  assert.deepEqual(stage.playing(), [], 'nothing plays until asked');
+  const cards = look.sounds!.list();
+  assert.equal(cards.length, 1);
+  assert.equal(cards[0]!.label, 'Blackbird');
+  assert.deepEqual(cards[0]!.at, [10, 10]);
+  assert.equal(cards[0]!.playing, false);
+  look.sounds!.cue(0);
+  look.sounds!.cue(1); // no sound there: ignored
+  for (const end = t + 0.5; t < end; t += 1 / 60) look.draw(view, t, 1);
+  assert.deepEqual(stage.playing(), [0]);
+  assert.equal(look.sounds!.list()[0]!.playing, true);
+  // It plays once, then stops.
+  for (const end = t + 3; t < end; t += 1 / 60) look.draw(view, t, 1);
+  assert.deepEqual(stage.playing(), []);
+});
+
+test('a sound is named by its point, else by its file', () => {
+  assert.equal(soundLabel({ species: 'Turdus merula' }, 'data/sounds/x.mp3'), 'Turdus merula');
+  assert.equal(soundLabel({}, 'data/sounds/great-tit.wav'), 'Great tit');
+  assert.equal(soundLabel(undefined, null), 'Sound');
 });
