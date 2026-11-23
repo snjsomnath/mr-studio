@@ -3,149 +3,145 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="color-scheme" content="dark" />
-    <title>MR Studio</title>
+    <meta name="color-scheme" content="light" />
+    <title>MR Studio · Displays and settings</title>
     <link rel="stylesheet" href="launcher.css" />
   </head>
-  <body>
-    <header>
-      <h1>MR Studio</h1>
-      <span id="version"></span>
-      <nav role="tablist">
-        <button type="button" role="tab" data-tab="setup" aria-selected="true">Setup</button>
-        <button type="button" role="tab" data-tab="colour" aria-selected="false">Colour</button>
-        <button type="button" role="tab" data-tab="calibration" aria-selected="false">Calibration</button>
-        <button type="button" role="tab" data-tab="updates" aria-selected="false">Updates<span id="updates-badge" class="badge" hidden></span></button>
-        <button type="button" id="open-sources" title="Keys and outside services, in their own window">Sources…</button>
+  <body class="settings">
+    <aside>
+      <div class="brand">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 3 7.5l9 4.5 9-4.5L12 3Z" /><path d="m3 12 9 4.5 9-4.5" /><path d="m3 16.5 9 4.5 9-4.5" /></svg>
+        <div><b>Displays and settings</b><span id="version"></span></div>
+      </div>
+      <nav role="tablist" aria-orientation="vertical">
+        <button type="button" role="tab" data-tab="setup" aria-selected="true">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2" /><path d="M8 20h8M12 16v4" /></svg>Screens
+        </button>
+        <button type="button" role="tab" data-tab="calibration" aria-selected="false">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="7" /><path d="M12 2v4M12 18v4M2 12h4M18 12h4" /></svg>Calibration
+        </button>
+        <button type="button" role="tab" data-tab="colour" aria-selected="false">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 3v18a9 9 0 0 0 0-18Z" fill="currentColor" /></svg>Colour
+        </button>
+        <button type="button" role="tab" data-tab="startup" aria-selected="false">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="2" width="10" height="20" rx="2" /><path d="M11 18h2" /></svg>Phones and startup
+        </button>
+        <button type="button" role="tab" data-tab="updates" aria-selected="false">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M5 21h14" /></svg>Updates<span id="updates-badge" class="badge" hidden></span>
+        </button>
       </nav>
-      <span id="running" hidden></span>
-    </header>
+      <nav class="bottom">
+        <button type="button" id="open-sources">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="15" r="4" /><path d="m10.8 12.2 8.7-8.7M16 7l3 3M14 9l2 2" /></svg>Sources and keys
+        </button>
+      </nav>
+      <p id="running" class="running" hidden></p>
+    </aside>
 
-    <p id="error" role="alert" hidden></p>
+    <div class="pages">
+      <p id="error" class="error" role="alert" hidden></p>
 
-    <main id="tab-setup">
-      <section aria-labelledby="sites-title">
-        <div class="section-head">
-          <h2 id="sites-title">Site</h2>
-          <span>
-            <button id="new-site" type="button" class="quiet">New site…</button>
-            <button id="add-site" type="button" class="quiet">Add a site folder…</button>
-          </span>
-        </div>
-        <ul id="sites" class="sites"></ul>
-        <p id="sites-hint" class="hint"></p>
-      </section>
-
-      <section aria-labelledby="displays-title">
-        <div class="section-head">
-          <h2 id="displays-title">Displays</h2>
-          <button id="identify" type="button" class="quiet">Show numbers on screens</button>
+      <main id="tab-setup">
+        <h1>Screens</h1>
+        <p class="lead">Which display projects the table and which shows the controller. Changes are saved as you choose them, and the windows move straight away while the table is presented.</p>
+        <div class="toolbar">
+          <span id="screens-status" class="status-pill"></span>
+          <span class="grow"></span>
+          <button id="identify" type="button">Show numbers on the screens</button>
+          <button id="automatic" type="button" title="Let MR Studio choose again: the table on a projector and the controller on a TV, by their makers">Choose automatically</button>
         </div>
         <div id="map" class="map" aria-hidden="true"></div>
         <ul id="displays" class="displays"></ul>
         <label class="check"><input id="fullscreen" type="checkbox" /> Fullscreen <span class="hint">Turn off to try things in normal windows.</span></label>
-      </section>
-    </main>
+      </main>
 
-    <main id="tab-colour" hidden>
-      <section aria-labelledby="colour-displays-title">
-        <div class="section-head"><h2 id="colour-displays-title">Display</h2></div>
-        <ul id="colour-displays" class="sites"></ul>
-        <p class="hint">Each display keeps its own colour. Changes show at once on a running session and are saved as you make them.</p>
-        <label class="check"><input id="test-card" type="checkbox" /> Show the test card on this display</label>
-      </section>
+      <main id="tab-calibration" hidden>
+        <h1>Calibration</h1>
+        <p class="lead">Line the projected map up with the physical model, so buildings land on buildings. The tool runs on the table itself, where you can see the light on the model.</p>
+        <section class="panel">
+          <p id="calibration-status" class="status"></p>
+          <ol class="steps">
+            <li>Start the tool. It appears on the table and names ten corners of the model, one at a time.</li>
+            <li>Move each projected marker with the mouse or the arrow keys until its light sits on that corner of the physical model. Skip a corner you cannot find.</li>
+            <li>From six corners on, the model is drawn through the solved camera, so you can see whether it lands.</li>
+            <li>Save on the table. The calibration is kept in the table's folder.</li>
+          </ol>
+          <div class="row">
+            <button id="calibration-start" type="button" class="primary">Start calibrating on the table</button>
+            <button id="calibration-stop" type="button">Close the tool</button>
+            <button id="calibration-clear" type="button" class="quiet">Forget the saved calibration</button>
+          </div>
+          <p id="calibration-hint" class="hint"></p>
+        </section>
+      </main>
 
-      <section aria-labelledby="colour-title">
-        <div class="section-head">
-          <h2 id="colour-title">Colour</h2>
-          <button id="colour-reset" type="button" class="quiet">Reset</button>
+      <main id="tab-colour" hidden>
+        <h1>Colour</h1>
+        <p class="lead">The final colour pass for each display. A projector washes colours out, so a little more saturation and contrast usually helps. The same settings are in the editor's Display tab.</p>
+        <div class="split">
+          <section class="panel">
+            <h2>Display</h2>
+            <ul id="colour-displays" class="choices"></ul>
+            <label class="check"><input id="test-card" type="checkbox" /> Show the test card on this display</label>
+            <p class="hint">Each display keeps its own colour, saved as you change it.</p>
+          </section>
+          <section class="panel">
+            <div class="section-head">
+              <h2>Colour and post-processing</h2>
+              <button id="colour-reset" type="button" class="quiet">Neutral</button>
+            </div>
+            <div class="row">
+              <select id="preset" aria-label="Preset"></select>
+              <button id="preset-delete" type="button" class="quiet">Delete</button>
+            </div>
+            <div class="row">
+              <input id="preset-name" type="text" placeholder="Name for a new preset" maxlength="40" />
+              <button id="preset-save" type="button">Save as preset</button>
+            </div>
+            <div id="sliders" class="sliders"></div>
+            <p class="hint">Double-click a slider to put it back.</p>
+            <div id="layers-block" hidden>
+              <h2>Layer strength</h2>
+              <div id="layer-sliders" class="sliders"></div>
+              <p class="hint">How strongly each layer is drawn on the table. Remembered for this table.</p>
+            </div>
+          </section>
         </div>
-        <div class="presets">
-          <select id="preset" aria-label="Preset"></select>
-          <button id="preset-delete" type="button" class="quiet">Delete</button>
-          <input id="preset-name" type="text" placeholder="Name for a new preset" maxlength="40" />
-          <button id="preset-save" type="button" class="quiet">Save as preset</button>
-        </div>
-        <div id="sliders" class="sliders"></div>
-        <p class="hint">Double-click a slider to put it back. Saturation and contrast are what usually help on a projector.</p>
-        <div id="layers-block" hidden>
-          <div class="section-head"><h2>Layer intensity</h2></div>
-          <div id="layer-sliders" class="sliders"></div>
-          <p class="hint">How strongly each layer is drawn on the table. Remembered for this site.</p>
-        </div>
-      </section>
-    </main>
+      </main>
 
-    <main id="tab-calibration" class="single" hidden>
-      <section aria-labelledby="calibration-title">
-        <div class="section-head"><h2 id="calibration-title">Projector calibration</h2></div>
-        <p id="calibration-status" class="status"></p>
-        <ol class="steps">
-          <li>Start the tool. It appears on the table and names ten corners of the model, one at a time.</li>
-          <li>Move each projected marker with the mouse or the arrow keys until its light sits on that corner of the physical model. Skip a corner you cannot find.</li>
-          <li>From six corners on, the model is drawn through the solved camera, so you can see whether it lands.</li>
-          <li>Save on the table. The calibration is kept in the site folder for this site.</li>
-        </ol>
-        <div class="presets">
-          <button id="calibration-start" type="button" class="primary">Start calibrating on the table</button>
-          <button id="calibration-stop" type="button">Close the tool</button>
-          <button id="calibration-clear" type="button" class="quiet">Forget the saved calibration</button>
-        </div>
-        <p id="calibration-hint" class="hint"></p>
-      </section>
-    </main>
+      <main id="tab-startup" hidden>
+        <h1>Phones and startup</h1>
+        <p class="lead">How this computer runs a table.</p>
+        <section class="panel">
+          <label class="check"><input id="lan" type="checkbox" /> Let phones on this network join <span class="hint" data-only="windows">Windows may ask once to allow network access.</span></label>
+          <p class="hint indent">Phones scan the code on the controller. Off keeps everything on this computer.</p>
+          <label class="check"><input id="autostart" type="checkbox" /> Present the last table by itself every time the app opens</label>
+          <p class="hint indent">For a finished installation: the app starts straight on the screens chosen under Screens.</p>
+        </section>
+        <section class="panel">
+          <h2>Keys while presenting</h2>
+          <p class="keys"><kbd>Ctrl</kbd> <kbd>Shift</kbd> <kbd>E</kbd> editor · <kbd>Ctrl</kbd> <kbd>Shift</kbd> <kbd>S</kbd> this window · <kbd>Ctrl</kbd> <kbd>Shift</kbd> <kbd>Q</kbd> quit · <kbd>Esc</kbd> on a screen stops presenting</p>
+        </section>
+      </main>
 
-    <main id="tab-updates" class="single" hidden>
-      <section aria-labelledby="updates-title">
-        <div class="section-head">
-          <h2 id="updates-title">Updates</h2>
-          <button id="updates-check" type="button" class="quiet">Check now</button>
-        </div>
-        <p id="updates-status" class="status"></p>
-        <div id="updates-breaking" class="breaking" role="alert" hidden></div>
-        <div class="presets">
-          <button id="updates-install" type="button" class="primary" hidden></button>
-          <progress id="updates-progress" max="1" value="0" hidden></progress>
-          <span id="updates-note" class="hint"></span>
-        </div>
+      <main id="tab-updates" hidden>
+        <h1>Updates</h1>
+        <section class="panel">
+          <div class="section-head">
+            <p id="updates-status" class="status"></p>
+            <button id="updates-check" type="button">Check now</button>
+          </div>
+          <div id="updates-breaking" class="breaking" role="alert" hidden></div>
+          <div class="row">
+            <button id="updates-install" type="button" class="primary" hidden></button>
+            <progress id="updates-progress" max="1" value="0" hidden></progress>
+            <span id="updates-note" class="hint"></span>
+          </div>
+          <label class="check"><input id="updates-automatic" type="checkbox" /> Look for a new version when the app starts</label>
+        </section>
         <div id="updates-notes" class="notes"></div>
-        <label class="check"><input id="updates-automatic" type="checkbox" /> Look for a new version when the app starts</label>
-      </section>
-    </main>
-
-    <footer>
-      <div class="options">
-        <label class="check"><input id="autostart" type="checkbox" /> Present this table by itself every time the app opens</label>
-        <label class="check"><input id="lan" type="checkbox" /> Let phones on this network join <span class="hint" data-only="windows">Windows may ask once to allow network access.</span></label>
-      </div>
-      <div class="actions">
-        <span class="hint keys">While presenting, <kbd>Ctrl</kbd> <kbd>Shift</kbd> + <kbd>E</kbd> editor, <kbd>S</kbd> this window, <kbd>Q</kbd> quit.</span>
-        <button id="quit" type="button">Quit</button>
-        <button id="start" type="button">Present</button>
-        <button id="edit" type="button" class="primary">Open in editor</button>
-      </div>
-    </footer>
-
-    <dialog id="new-site-dialog">
-      <form id="new-site-form" method="dialog">
-        <h2>New site</h2>
-        <label>Name <input id="new-name" type="text" required maxlength="60" placeholder="Lindholmen" /></label>
-        <div class="pair">
-          <label>Latitude of the centre <input id="new-lat" type="number" required step="any" min="-90" max="90" placeholder="57.7066" /></label>
-          <label>Longitude <input id="new-lon" type="number" required step="any" min="-180" max="180" placeholder="11.9384" /></label>
-        </div>
-        <div class="pair">
-          <label>Width on the ground, metres <input id="new-width" type="number" required min="50" max="20000" value="1000" /></label>
-          <label>Height, metres <input id="new-height" type="number" required min="50" max="20000" value="600" /></label>
-        </div>
-        <p class="hint">The site starts with a base map and sunlight. Everything else is added in the editor, and these values can be changed later in site.json.</p>
-        <p id="new-error" class="problem" role="alert" hidden></p>
-        <div class="actions">
-          <button id="new-cancel" type="button">Cancel</button>
-          <button id="new-create" type="submit" class="primary">Create and open</button>
-        </div>
-      </form>
-    </dialog>
+      </main>
+    </div>
 
     <script src="launcher.js"></script>
     <script src="colour.js"></script>

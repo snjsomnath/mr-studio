@@ -147,6 +147,7 @@ fn main() -> anyhow::Result<()> {
             stop_presenting,
             presenting_state,
             save_displays,
+            save_settings,
             open_home,
             open_settings,
             open_view,
@@ -1056,6 +1057,33 @@ fn presenting_state(app: AppHandle, shell: State<'_, Shell>) -> Result<Presentin
         displays,
         configured,
     })
+}
+
+/// Saves "Let phones on this network join" and "Present the last table when the app
+/// opens" from Displays and settings (#40). A table that is running is restarted on the
+/// new network setting, and the editor and the screens follow it.
+#[tauri::command]
+async fn save_settings(app: AppHandle, shell: State<'_, Shell>, lan: bool, autostart: bool) -> Result<(), String> {
+    let mut settings = shell.settings();
+    settings.lan = lan;
+    settings.autostart = autostart;
+    settings.write(&shell.settings_path()).map_err(text)?;
+    let running = shell.running.lock().unwrap().clone();
+    if let Some(running) = running.filter(|r| r.lan != lan) {
+        let presenting = is_presenting(&app);
+        ensure_running(&app, &running.site, lan).await.map_err(text)?;
+        if app.get_webview_window(EDITOR).is_some() {
+            open_editor(&app, "edit").map_err(text)?;
+        }
+        if presenting {
+            show(&app, &usual_displays(&app).map_err(text)?).map_err(text)?;
+        }
+        // The editor came forward on reloading; the person is still in this window.
+        if let Some(settings) = app.get_webview_window(LAUNCHER) {
+            settings.set_focus().map_err(text)?;
+        }
+    }
+    Ok(())
 }
 
 /// Saves which display shows the table and which the controller, from the editor's

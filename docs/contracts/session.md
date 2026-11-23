@@ -28,7 +28,7 @@ A display is matched by name first (exactly, then as part of the name), then by 
 `role` is `table`, `tv` or `dev`. A window whose display is not connected opens on the primary display.
 The shell never uses browser popups, so there are no permission prompts.
 
-The shell has two windows of its own. **Home** is the first one: the tables on this computer, **New table** and **Open a folder**. **Displays and settings** (called the launcher below) has the display picker, colour, calibration and updates. It writes `displays.json`, and keeps its other choices in `studio.json` beside it:
+The shell has two windows of its own. **Home** is the first one: the tables on this computer, **New table** and **Open a folder**. **Displays and settings** (called the launcher below; restyled to the editor's light identity in #40) has Screens (which display shows the table and which the controller, saved with `save_displays` as it is chosen), Calibration, Colour, Phones and startup (saved with `save_settings { lan, autostart }`; a running table restarts on the new network setting) and Updates. Opening tables is Home's job. It writes `displays.json`, and keeps its other choices in `studio.json` beside it:
 
 ```jsonc
 // studio.json
@@ -48,7 +48,7 @@ A site that is open is in one of two states: open in the editor, or also present
 
 - Opening a table from Home runs the site and opens the editor window: the host's `/edit` page in a normal window. Nothing goes on the displays. Closing the editor window leads back to Home.
 - **New table** is a wizard. With `features.json` in the web bundle saying `{ "new_table_wizard": true }`, the editor window opens at `/new` (over the sample site, because a host needs a site) and that page asks the first questions and calls `create_site` then `open_site`. Without it, Home asks for the name, the place (coordinates or a pasted map link) and the size itself. Either way the new table opens at `/edit?welcome=1`, where the editor continues the wizard.
-- **Present** opens the surface windows on the displays; **Stop presenting** (or Esc on a surface while the editor is open) closes them. Without a saved choice that still fits the connected displays, Present guesses from each display's make and model (#188): the table goes fullscreen on a projector (Epson, Optoma, BenQ, ViewSonic, XGIMI and the like, or a name with "projector" or "PJ"), else on a display other than the primary one, and the controller (`tv`) fullscreen on a TV ("TV", Bravia, Samsung, Philips, TCL, Hisense and the like), else on the primary one. On Windows the make and model come from the display's EDID, since the system name is `\\.\DISPLAYn`. With a single display, the table alone goes fullscreen on it. A saved choice fits when every window finds its display and no two windows share one; a saved `dev` window alone, which older versions wrote before anything was chosen, does not count. The editor stays open and the session keeps its state. The launcher's Present button does the same for a site without opening the editor.
+- **Present** opens the surface windows on the displays; **Stop presenting** (or Esc on a surface while the editor is open) closes them. Without a saved choice that still fits the connected displays, Present guesses from each display's make and model (#188): the table goes fullscreen on a projector (Epson, Optoma, BenQ, ViewSonic, XGIMI and the like, or a name with "projector" or "PJ"), else on a display other than the primary one, and the controller (`tv`) fullscreen on a TV ("TV", Bravia, Samsung, Philips, TCL, Hisense and the like), else on the primary one. On Windows the make and model come from the display's EDID, since the system name is `\\.\DISPLAYn`. With a single display, the table alone goes fullscreen on it. A saved choice fits when every window finds its display and no two windows share one; a saved `dev` window alone, which older versions wrote before anything was chosen, does not count. The editor stays open and the session keeps its state.
 - A new site is created in the sites folder with a base map and sunlight; the same code backs `mrstudio new-site`.
 
 The editor window is the only remote page with access to the shell, and only to these commands, through `window.__TAURI__.core.invoke` (see `capabilities/editor.json`):
@@ -77,7 +77,7 @@ What the shell does when it starts:
 | --- | --- |
 | `displays.json` exists, `autostart` is on and `site` is set | Presents the site on the saved displays, with no editor. If that fails, Home opens and says why |
 | Anything else | Home opens |
-| `mr-studio --setup` | Displays and settings opens. With no `displays.json` it suggests the table on the second display and the TV on the primary one, or the table alone if there is a single display |
+| `mr-studio --setup` | Displays and settings opens. With no `displays.json` it suggests the table on a projector and the controller on a TV, by their makers, else as Present does |
 | `mr-studio <site folder>` or `MRS_SITE` | Presents that site on the saved displays, or on the automatic choice when none fit |
 
 The site picker lists site folders added by hand, the packages in the sites folder (`Documents/MR Studio/sites`, or `sites` in the app's data folder on a computer without Documents), and the sample site shipped inside the app.
