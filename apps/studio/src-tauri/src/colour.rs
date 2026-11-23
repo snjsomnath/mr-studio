@@ -111,7 +111,18 @@ mod tests {
     use super::*;
 
     fn display(index: usize, name: Option<&str>) -> Display {
-        Display { index, name: name.map(Into::into), x: 0, y: 0, width: 1920, height: 1080, scale: 1.0, primary: index == 0 }
+        Display {
+            index,
+            name: name.map(Into::into),
+            x: 0,
+            y: 0,
+            width: 1920,
+            height: 1080,
+            scale: 1.0,
+            primary: index == 0,
+            model: None,
+            kind: None,
+        }
     }
 
     #[test]

@@ -11,6 +11,8 @@
 mod colour;
 mod config;
 mod file_menu;
+#[cfg(windows)]
+mod models;
 mod sites;
 mod updates;
 
@@ -23,7 +25,7 @@ use std::time::Duration;
 
 use anyhow::Context;
 use colour::{Colour, ColourConfig};
-use config::{Display, Displays, Settings, WindowSpec, WINDOW_ROLES};
+use config::{Display, Displays, Kind, Settings, WindowSpec, WINDOW_ROLES};
 use mrs_engine::Backend;
 use mrs_host::sources::{Change, Keychain, Sources};
 use mrs_host::{HostConfig, Role, RunningHost};
@@ -144,6 +146,7 @@ fn main() -> anyhow::Result<()> {
             present,
             stop_presenting,
             presenting_state,
+            save_displays,
             open_home,
             open_settings,
             open_view,
@@ -347,15 +350,29 @@ fn list_displays(app: &AppHandle) -> anyhow::Result<Vec<Display>> {
     let primary = app.primary_monitor()?;
     let is_primary = |m: &tauri::Monitor| primary.as_ref().is_some_and(|p| p.position() == m.position() && p.name() == m.name());
     let monitors = app.available_monitors()?;
-    let displays = monitors.iter().enumerate().map(|(index, m)| Display {
-        index,
-        name: m.name().cloned(),
-        x: m.position().x,
-        y: m.position().y,
-        width: m.size().width,
-        height: m.size().height,
-        scale: m.scale_factor(),
-        primary: is_primary(m),
+    #[cfg(windows)]
+    let models = models::models();
+    let model = |name: Option<&String>| -> Option<String> {
+        #[cfg(windows)]
+        if let Some((_, model)) = models.iter().find(|(system, _)| Some(system) == name) {
+            return Some(model.clone());
+        }
+        name.filter(|n| !n.is_empty() && !n.starts_with(r"\\.\")).cloned()
+    };
+    let displays = monitors.iter().enumerate().map(|(index, m)| {
+        let model = model(m.name());
+        Display {
+            index,
+            name: m.name().cloned(),
+            x: m.position().x,
+            y: m.position().y,
+            width: m.size().width,
+            height: m.size().height,
+            scale: m.scale_factor(),
+            primary: is_primary(m),
+            kind: model.as_deref().and_then(Kind::guess),
+            model,
+        }
     });
     Ok(displays.collect())
 }
@@ -1016,13 +1033,17 @@ struct PresentingState {
     displays: Vec<Display>,
     /// What Present uses when it is not told otherwise.
     windows: Vec<Assigned>,
+    /// `windows` was chosen by hand and still fits; otherwise it is the automatic choice.
+    configured: bool,
 }
 
 /// What the editor needs to know to offer Present.
 #[tauri::command]
 fn presenting_state(app: AppHandle, shell: State<'_, Shell>) -> Result<PresentingState, String> {
     let displays = list_displays(&app).map_err(text)?;
-    let usual = usual_displays(&app).map_err(text)?;
+    let saved = Displays::read(&shell.displays_path()).unwrap_or(None);
+    let configured = saved.as_ref().is_some_and(|s| s.fits(&displays));
+    let usual = Displays::usual(saved, &displays);
     let windows = usual.windows.iter().filter_map(|w| {
         let display = w.display.resolve(&displays)?;
         Some(Assigned { display: display.index, role: w.role.clone(), fullscreen: w.fullscreen })
@@ -1033,7 +1054,30 @@ fn presenting_state(app: AppHandle, shell: State<'_, Shell>) -> Result<Presentin
         presenting: is_presenting(&app),
         windows: windows.collect(),
         displays,
+        configured,
     })
+}
+
+/// Saves which display shows the table and which the controller, from the editor's
+/// Display tab (#188). While the table is presented it moves at once; otherwise the
+/// choice waits for Present. An empty list forgets the choice, so the automatic one is used.
+#[tauri::command]
+async fn save_displays(app: AppHandle, shell: State<'_, Shell>, windows: Vec<Assigned>) -> Result<(), String> {
+    let displays = if windows.is_empty() {
+        match std::fs::remove_file(shell.displays_path()) {
+            Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(text(e)),
+            _ => {}
+        }
+        usual_displays(&app).map_err(text)?
+    } else {
+        let displays = chosen_displays(&app, &windows)?;
+        displays.write(&shell.displays_path()).map_err(text)?;
+        displays
+    };
+    if is_presenting(&app) {
+        show(&app, &displays).map_err(text)?;
+    }
+    Ok(())
 }
 
 /// Puts the open site on the displays. With `windows` the choice is saved first; without,
