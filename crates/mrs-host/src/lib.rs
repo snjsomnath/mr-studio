@@ -6,6 +6,7 @@ mod calibration;
 mod engine_bridge;
 mod hub;
 mod layers;
+mod wms;
 mod ws;
 
 use std::net::{IpAddr, SocketAddr, UdpSocket};
@@ -296,6 +297,20 @@ pub async fn start(config: HostConfig) -> anyhow::Result<RunningHost> {
         osm_cache: Default::default(),
     });
     let app = router(state.clone(), config.web_dir.clone());
+    // Moves playing slideshows and sub-steps on. It stops when the host is gone.
+    {
+        let state = Arc::downgrade(&state);
+        tokio::spawn(async move {
+            let mut every = tokio::time::interval(std::time::Duration::from_millis(200));
+            loop {
+                every.tick().await;
+                match state.upgrade() {
+                    Some(state) => state.hub.tick(),
+                    None => break,
+                }
+            }
+        });
+    }
 
     let (shutdown, stop) = tokio::sync::oneshot::channel::<()>();
     let task = tokio::spawn(async move {
@@ -342,6 +357,7 @@ fn router(state: Arc<AppState>, web_dir: Option<PathBuf>) -> Router {
         .route("/api/data/inspect", post(inspect_data))
         .route("/api/data/import", post(import_data))
         .route("/api/site/place", post(place_site))
+        .route("/api/wms", get(|query: Query<wms::WmsQuery>| wms::get_map(query.0)))
         .layer(DefaultBodyLimit::max(MAX_IMPORT_BYTES))
         .nest_service("/site", ServeDir::new(&state.site.dir));
     app = match web_dir {

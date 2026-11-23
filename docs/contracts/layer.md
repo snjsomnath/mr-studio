@@ -134,9 +134,17 @@ interface TableContext<P> {
   readonly map: MapHandle;              // field overlays
   readonly model: ModelHandle;          // the 3D model: fields, lights, materials, focus, pick (see model.md)
   readonly pointer: TablePointer;       // mouse, touch and pen on the table surface
+  readonly steps: LayerSteps;           // sub-steps that the controller's Next reveals one at a time
   onFrame(cb: (dt: number) => void): void;   // every animation frame while the layer is on
   onCleanup(cb: () => void): void;      // extra teardown
 }
+interface LayerSteps {
+  define(count: number, titles?: string[]): void;  // say how many parts Next reveals; call it when the layer starts
+  readonly revealed: number;            // how many are revealed now, 0 (the overview) to count
+  readonly state: StepState | undefined;  // the layer's steps as the host has them
+}
+// TableHandlers also has step?(revealed: number), called when Next or Previous changes `revealed`.
+
 
 // PanelContext has site, params, setParams, shared, onCleanup and `panel`, the id of the custom panel being drawn.
 
