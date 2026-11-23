@@ -107,6 +107,17 @@ export function slidesSection(host: SlidesHost, id: string): HTMLElement {
       await setSequence(sequence);
       return;
     }
+    if (value.startsWith('map:')) {
+      // A map that comes with MR Studio (#200): a Web map slide with that map chosen, titled by it.
+      const map = value.slice(4);
+      const result = await host.send('scene.add', { use: 'wms', parent: id });
+      if (!result?.id) return;
+      await host.send('scene.set', { layer: result.id, params: { map } });
+      sequence.push({ layer: result.id, title: builtInMaps().find((o) => o.value === map)?.label });
+      await setSequence(sequence);
+      host.select(result.id);
+      return;
+    }
     if (value.startsWith('new:')) {
       const result = await host.send('scene.add', { use: value.slice(4), parent: id });
       if (!result?.id) return;
@@ -144,6 +155,12 @@ export function slidesSection(host: SlidesHost, id: string): HTMLElement {
     field('After the last category', reveal.element),
     help,
   );
+
+  /** The maps the Web map layer comes with: its `map` choices other than a service of one's own. */
+  const builtInMaps = (): { value: string; label: string }[] => {
+    const control = store.manifest('wms')?.controls?.find((c) => c.id === 'map');
+    return control?.type === 'select' ? control.options.filter((o) => o.value !== 'custom') : [];
+  };
 
   const nameOf = (layer: string): { name: string; icon?: string; item: boolean } => {
     const state = store.state.layers[layer];
@@ -264,7 +281,14 @@ export function slidesSection(host: SlidesHost, id: string): HTMLElement {
       option.value = `new:${use}`;
       made.append(option);
     }
-    add.replaceChildren(placeholder, ...(own.children.length ? [own] : []), ...(made.children.length ? [made] : []));
+    const maps = el('optgroup');
+    maps.label = 'Open maps of Sweden (via SLU)';
+    for (const { value, label } of builtInMaps()) {
+      const option = el('option', undefined, label);
+      option.value = `map:${value}`;
+      maps.append(option);
+    }
+    add.replaceChildren(placeholder, ...(own.children.length ? [own] : []), ...(made.children.length ? [made] : []), ...(maps.children.length ? [maps] : []));
     add.value = '';
   }
 
