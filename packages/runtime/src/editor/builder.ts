@@ -33,11 +33,12 @@ import {
   schemeFor,
   CATEGORY_SCHEMES,
   paintScale,
+  LISTEN_KEY,
 } from '@mrstudio/sdk';
 import type { CustomLayer, GeometryKind, LayerManifest, Paint, RecipeBlock, ResolvedPalette, Shapes, SitePalette, Size } from '@mrstudio/sdk';
 
 import { el } from '../controls.ts';
-import { LISTEN_KEY, dataUrl, loadData } from '../recipe-player.ts';
+import { dataUrl, loadData } from '../recipe-player.ts';
 import type { Store } from '../store.ts';
 import { icon } from './icons.ts';
 import './builder.css';
@@ -898,11 +899,11 @@ export function builderSection(host: BuilderHost, manifest: LayerManifest, butto
       set('column', p.column ?? null);
     });
     rows.push(field('Sound from', source), fileRow, field('', add, picker), status);
-    rows.push(field('Plays', segmented([['chorus', 'A few at a time'], ['loop', 'All, looping']] as const, p.trigger === 'loop' ? 'loop' : 'chorus', (v) => {
+    rows.push(field('Plays', segmented([['chorus', 'A few at a time'], ['loop', 'All, looping'], ['tap', 'When tapped']] as const, p.trigger === 'loop' || p.trigger === 'tap' ? p.trigger : 'chorus', (v) => {
       set('trigger', v);
       redraw();
     }, 'Plays')));
-    if (p.trigger !== 'loop') {
+    if (p.trigger !== 'loop' && p.trigger !== 'tap') {
       rows.push(field('At once', slider(p.voices ?? 3, 1, 8, 1, '', (v) => set('voices', v))));
       rows.push(field('Quiet between', slider(p.gap_s ?? 1.5, 0, 10, 0.5, ' s', (v) => set('gap_s', v))));
     }

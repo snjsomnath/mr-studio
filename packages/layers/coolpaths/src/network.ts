@@ -349,9 +349,19 @@ function mulberry(seed: number): () => number {
  * Picks a pair of nodes that makes a good demonstration: between `minLength` and
  * `maxLength` metres apart on foot, preferring the pair whose cool route saves the most heat.
  */
-export function exampleWalk(network: Network, seed: number, minLength: number, maxLength: number, detour: number): [from: number, to: number] | null {
+export function exampleWalk(
+  network: Network,
+  seed: number,
+  minLength: number,
+  maxLength: number,
+  detour: number,
+  /** Ends the example may use, such as the nodes on the table. All of them when left out or when fewer than two pass. */
+  allowed?: (node: number) => boolean,
+): [from: number, to: number] | null {
   const random = mulberry(seed * 7919 + 17);
-  const walkable = network.nodes.map((_, i) => i).filter((i) => network.adjacency[i]!.length > 0);
+  const linked = network.nodes.map((_, i) => i).filter((i) => network.adjacency[i]!.length > 0);
+  const inside = allowed ? linked.filter(allowed) : linked;
+  const walkable = inside.length >= 2 ? inside : linked;
   if (walkable.length < 2) return null;
   let best: [number, number] | null = null;
   let bestSaving = -1;

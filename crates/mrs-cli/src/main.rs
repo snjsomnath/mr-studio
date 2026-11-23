@@ -240,6 +240,21 @@ fn bench(dir: &Path) -> anyhow::Result<()> {
         let domain = &status.info["lattice"]["domain"];
         println!("  wind     {rate:>8.0} steps/s on a {} x {} lattice  [{adapter}]", domain[0], domain[1]);
         engine.drop_job(job);
+        let job = engine.create_job("stormwater", &json!({ "pace": "fast" }))?;
+        let started = Instant::now();
+        let mut status = engine.step(job, Duration::from_millis(50))?;
+        while started.elapsed() < Duration::from_secs(3) && status.state != JobState::Done {
+            status = engine.step(job, Duration::from_millis(50))?;
+        }
+        let elapsed = started.elapsed().as_secs_f64();
+        let rate = status.info["steps"].as_u64().unwrap_or(0) as f64 / elapsed;
+        let storm = status.info["seconds"].as_f64().unwrap_or(0.0) / elapsed;
+        let lattice = &status.info["lattice"];
+        println!(
+            "  storm    {rate:>8.0} steps/s, {storm:.0}x real time on a {} x {} lattice  [{adapter}]",
+            lattice["width"], lattice["height"]
+        );
+        engine.drop_job(job);
     }
     Ok(())
 }

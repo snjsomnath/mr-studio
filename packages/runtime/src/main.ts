@@ -144,6 +144,29 @@ async function main() {
     const { installModel } = await import('./model/index.ts');
     await installModel(view, connection, role, { remoteCalibration: !editing });
     new LayerManager(store, connection, view);
+    // The ribbons in the projector's blank space around the model (#78). The projected table draws
+    // them where the free space is; the editor and dev keep room beside the map and preview them there.
+    const { Ribbons } = await import('./ribbon.ts');
+    const { previewReserve } = await import('./ribbon-bands.ts');
+    if (role === 'table') {
+      const ribbons = new Ribbons(surface, store, connection, () => ({ footprint: view.footprint(), surface: { width: surface.clientWidth, height: surface.clientHeight } }));
+      view.onViewChange(() => ribbons.layout());
+    } else if (!composing && site.table) {
+      for (const [side, fraction] of Object.entries(previewReserve(site.table))) surface.style.setProperty(`--ribbon-${side}`, String(fraction));
+      frame.classList.add('has-ribbons');
+      const ribbons = new Ribbons(frame, store, connection, () => {
+        const f = frame.getBoundingClientRect();
+        const r = surface.getBoundingClientRect();
+        const footprint: [number, number][] = [
+          [r.left - f.left, r.top - f.top],
+          [r.right - f.left, r.top - f.top],
+          [r.right - f.left, r.bottom - f.top],
+          [r.left - f.left, r.bottom - f.top],
+        ];
+        return r.width > 0 ? { footprint, surface: { width: f.width, height: f.height } } : null;
+      }, true);
+      new ResizeObserver(() => ribbons.layout()).observe(frame);
+    }
     if (editing) return;
     if (composing) {
       const stack = el('aside', 'controller stack');

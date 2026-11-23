@@ -21,5 +21,6 @@ export * from './marks.ts';
 export * from './places.ts';
 export * from './place-motions.ts';
 export * from './audio.ts';
+export * from './isovist.ts';
 export * from './schemes.ts';
 export * from './hero.ts';

@@ -3,7 +3,9 @@ import type { Connection, Control, LayerManifest, LegendRow, TextControl, LayerS
 
 import { AttractLoop, effectOf } from './attract.ts';
 import { icon } from './editor/icons.ts';
-import { baseContext, paramSender } from './layer-manager.ts';
+import { baseContext, isAtRest, paramSender } from './layer-manager.ts';
+
+export { isAtRest };
 import { layerModule } from './registry.ts';
 import { PHONE_SEND_INTERVAL, toolSection } from './phone-tools.ts';
 import type { Store } from './store.ts';
@@ -247,6 +249,7 @@ export function isAmbient(manifest: LayerManifest): boolean {
   return manifest.category === 'base' || manifest.category === 'ambient';
 }
 
+
 /**
  * Layer packages the editor offers to add. The building blocks demo shows the SDK to
  * developers; it is not a layer an author would put on a table (#38). Sites that
@@ -285,7 +288,7 @@ export function railButtons(store: Store): RailButton[] {
   const ids = scene.filter((id) => {
     const manifest = store.manifest(state.layers[id]?.layer ?? '');
     // A layer's items have no button: they come on with their layer.
-    return manifest !== undefined && !isAmbient(manifest) && !state.layers[id]?.parent;
+    return manifest !== undefined && !isAtRest(manifest, state.layers[id]) && !state.layers[id]?.parent;
   });
   const order = (id: string) => state.layers[id]?.button?.order ?? Number.POSITIVE_INFINITY;
   const sorted = [...ids].sort((a, b) => order(a) - order(b) || scene.indexOf(a) - scene.indexOf(b));
@@ -344,10 +347,37 @@ interface Card {
  * words and controls are in the centre. The map's ambient layers have no button.
  * The layer's panels are on the dashboard canvas.
  */
+/**
+ * Full screen from the controller (#198). In the app the table's window goes in or out of
+ * full screen; in a browser, as on the Chalmers demo, the controller's own page does.
+ */
+function fullScreen(): void {
+  if ((window as { __MRS_SHELL__?: boolean }).__MRS_SHELL__) {
+    // The app's shell takes the address and stays on this page.
+    window.location.href = '/__shell/fullscreen';
+    return;
+  }
+  if (document.fullscreenElement) void document.exitFullscreen().catch(() => {});
+  else void document.documentElement.requestFullscreen().catch(() => {});
+}
+
 /** The About page on the controller screen: the site's words and its credits. */
-function aboutPage(about: TvAbout, fallback: string): HTMLElement {
+function aboutPage(about: TvAbout, fallback: string, siteLogo: string | null): HTMLElement {
   const page = el('section', 'layer-card layer-open about-page');
   page.hidden = true;
+  // The logos of the people behind the table, as the Chalmers demo has them (#198).
+  const logos = (about.logos ?? (siteLogo ? [{ path: siteLogo }] : [])).filter((l) => l && typeof l.path === 'string' && l.path);
+  if (logos.length > 0) {
+    const row = el('div', 'about-logos');
+    for (const logo of logos) {
+      const image = el('img', 'about-logo');
+      image.src = `/site/${logo.path.replace(/^\/+/, '')}`;
+      image.alt = logo.name ?? '';
+      image.addEventListener('error', () => image.remove());
+      row.append(image);
+    }
+    page.append(row);
+  }
   page.append(el('h2', 'layer-open-name', about.title ?? fallback));
   if (about.text) page.append(el('p', 'layer-about', about.text));
   const credits = (about.credits ?? []).filter((c) => c && typeof c.name === 'string');
@@ -503,6 +533,57 @@ function legendZone(id: string, store: Store): { element: HTMLElement; sync(stat
   };
 }
 
+/** A sound a layer published for the controller (#150). */
+interface SoundRow {
+  id: string;
+  label: string;
+  colour: string;
+  at: [number, number];
+  playing: boolean;
+}
+
+/**
+ * Sound cards (#150): one card per sound a layer published (`shared.sounds`), in the point's
+ * colour, lit while it plays. Tapping a card plays that sound on the table, through the layer's
+ * `sound` tool at the point. A slideshow shows the cards of the layer on show.
+ */
+function soundZone(id: string, store: Store, connection: Connection): { element: HTMLElement; sync(state: LayerState): void } {
+  const zone = el('div', 'stage-sounds');
+  zone.setAttribute('aria-label', 'Sounds');
+  zone.hidden = true;
+  let drawn = '';
+  return {
+    element: zone,
+    sync(state) {
+      const source = (store.manifest(state.layer)?.sequence ? shownBy(store, id) : undefined) ?? id;
+      const from = store.state.layers[source];
+      const list = (from?.shared as { sounds?: unknown } | undefined)?.sounds;
+      const rows = Array.isArray(list) ? (list as SoundRow[]).filter((row) => row && typeof row.label === 'string' && Array.isArray(row.at)) : [];
+      zone.hidden = rows.length === 0;
+      const next = JSON.stringify([source, rows]);
+      if (next === drawn) return;
+      drawn = next;
+      zone.replaceChildren(
+        ...rows.slice(0, 12).map((row) => {
+          const card = el('button', 'sound-card') as HTMLButtonElement;
+          card.type = 'button';
+          card.classList.toggle('is-playing', Boolean(row.playing));
+          card.style.setProperty('--sound', row.colour || 'var(--accent)');
+          card.setAttribute('aria-pressed', String(Boolean(row.playing)));
+          const dot = el('i', 'sound-dot');
+          const words = el('span', 'sound-words');
+          words.append(el('b', undefined, row.label), el('small', undefined, row.playing ? 'Playing' : 'Tap to play'));
+          card.append(dot, words);
+          card.addEventListener('click', () => {
+            void connection.request('tool.input', { layer: source, tool: 'sound', geometry: { type: 'Point', coordinates: row.at } }).catch(() => {});
+          });
+          return card;
+        }),
+      );
+    },
+  };
+}
+
 export class Controller {
   private cards = new Map<string, Card>();
   /** The side each button was last placed on. */
@@ -539,7 +620,7 @@ export class Controller {
     }
     this.connection = connection;
     this.role = role;
-    this.about = centre && site.tv?.about ? aboutPage(site.tv.about, site.branding.title ?? site.name) : undefined;
+    this.about = centre && site.tv?.about ? aboutPage(site.tv.about, site.branding.title ?? site.name, site.branding.logo) : undefined;
     this.arrange();
     if (centre) {
       this.listenForKeys();
@@ -548,7 +629,7 @@ export class Controller {
     store.onLayer((id, state) => {
       // Opening a layer closes the About page.
       const manifest = store.manifest(state.layer);
-      if (state.active && !state.parent && this.aboutOpen && manifest && !isAmbient(manifest)) this.showAbout(false);
+      if (state.active && !state.parent && this.aboutOpen && manifest && !isAtRest(manifest, state)) this.showAbout(false);
       this.cards.get(id)?.sync(state);
       // The slideshow's stage speaks for the layer it shows: its legend and step names follow that layer.
       if (state.shown_by && store.state.layers[state.shown_by]) this.cards.get(state.shown_by)?.sync(store.state.layers[state.shown_by]!);
@@ -634,7 +715,7 @@ export class Controller {
       const state = store.state.layers[other];
       const manifest = state && store.manifest(state.layer);
       // Layers a slideshow shows go off with it; the host does that.
-      if (other === id || !state?.active || state.parent || state.shown_by || !manifest || isAmbient(manifest) || manifest.alongside) continue;
+      if (other === id || !state?.active || state.parent || state.shown_by || !manifest || isAtRest(manifest, state) || manifest.alongside) continue;
       void connection.request('layer.activate', { layer: other, active: false }).catch(() => {});
     }
   }
@@ -709,10 +790,11 @@ export class Controller {
     // A layer with steps (a slideshow, or a map revealed part by part) gets ◀ ▶, play and the info strip (#43, #76).
     const strip = stepStrip(id, store, connection);
     const legend = legendZone(id, store);
+    const sounds = soundZone(id, store, connection);
     body.append(words, strip.element);
     if (!hero.hidden) body.append(hero);
     for (const group of [primary, controls]) if (group.childElementCount > 0) body.append(group);
-    body.append(legend.element);
+    body.append(legend.element, sounds.element);
     // "More settings" closes the primary row when there is one, so it costs no height of its own.
     if (moreRows.childElementCount > 0) (primary.childElementCount > 0 ? primary : body).append(more);
 
@@ -744,6 +826,7 @@ export class Controller {
         body.hidden = !open;
         strip.sync(state);
         strip.element.classList.toggle('legend-follows', legend.sync(state));
+        sounds.sync(state);
         // A slideshow made of layers is driven by its steps: its own slide controls step aside.
         const stepped = Boolean(manifest.sequence && state.step);
         for (const w of widgets) {
@@ -769,7 +852,7 @@ export class Controller {
     return store.state.scene.filter((id) => {
       const state = store.state.layers[id];
       const manifest = state && store.manifest(state.layer);
-      return Boolean(state?.active && !state.parent && !state.shown_by && manifest && !isAmbient(manifest));
+      return Boolean(state?.active && !state.parent && !state.shown_by && manifest && !isAtRest(manifest, state));
     });
   }
 
@@ -847,11 +930,19 @@ export class Controller {
   }
 
   /**
-   * Closes the open layer and the About page, so the controller goes back to its welcome.
+   * Reset view: closes the About page and puts the table back the way it starts, so the
+   * controller goes back to its welcome.
    * Tools made to run alongside (the phones' sketch) stay on, as they do when a layer opens.
    */
   reset(): void {
     this.showAbout(false);
+    // The host puts every layer back the way the table starts: what was opened goes off, the
+    // map at rest comes back, and changed settings return to the saved ones (#198).
+    void this.connection.request('layers.reset', {}).catch(() => this.closeLayers());
+  }
+
+  /** Closes the open layers, leaving tools kept alongside (the phones' sketch) on. */
+  private closeLayers(): void {
     for (const id of this.openLayers()) {
       if (this.store.manifest(this.store.state.layers[id]!.layer)?.alongside) continue;
       void this.connection.request('layer.activate', { layer: id, active: false }).catch(() => {});
@@ -860,10 +951,13 @@ export class Controller {
 
   /**
    * The core's own buttons at the foot of the controller screen's rail, drawn dashed so they
-   * read as actions, not layers (#75): Reset, and About when the site has `tv.about`.
+   * read as actions, not layers (#75), in the Chalmers demo's groups (#198):
+   * - Map controls: Reset view, Full screen and Calibrate. `tv.map_controls: false` leaves Reset alone.
+   * - About: Credits, when the site has `tv.about`.
    */
   actions(): HTMLElement {
     const box = el('div', 'rail-actions');
+    const operator = this.store.state.site.tv?.map_controls !== false;
     const action = (label: string, iconName: string, run: () => void) => {
       const press = el('button', 'layer-button action-button');
       press.type = 'button';
@@ -875,11 +969,26 @@ export class Controller {
       box.append(press);
       return press;
     };
-    action('Reset', 'reset', () => this.reset());
+    if (operator) box.append(el('div', 'rail-group', 'Map controls'));
+    action(operator ? 'Reset view' : 'Reset', 'reset', () => this.reset());
+    if (operator) {
+      action('Full screen', 'fullscreen', () => fullScreen());
+      // Calibrate opens the projector calibration on the table, and closes it again.
+      let calibrating = false;
+      const calibrate = action('Calibrate', 'overscan', () => {
+        void this.connection.request('calibration.mode', { active: !calibrating }).catch(() => {});
+      });
+      calibrate.setAttribute('aria-pressed', 'false');
+      this.connection.on('calibration.mode', (p: { active: boolean }) => {
+        calibrating = Boolean(p.active);
+        calibrate.setAttribute('aria-pressed', String(calibrating));
+      });
+    }
     if (this.about) {
-      this.aboutButton = action('About', 'info', () => {
+      if (operator) box.append(el('div', 'rail-group', 'About'));
+      this.aboutButton = action('Credits', 'people', () => {
         const show = !this.aboutOpen;
-        if (show) this.reset();
+        if (show) this.closeLayers();
         this.showAbout(show);
       });
       this.aboutButton.setAttribute('aria-pressed', 'false');

@@ -33,6 +33,7 @@ pub enum Kind {
     Wmts,
     Arcgis,
     Tiles,
+    Streetview,
 }
 
 /// How a request to the service is signed.
@@ -72,7 +73,7 @@ pub struct Template {
     pub single: bool,
 }
 
-pub const TEMPLATES: [Template; 8] = [
+pub const TEMPLATES: [Template; 9] = [
     Template {
         kind: Kind::Vasttrafik,
         name: "Västtrafik",
@@ -152,6 +153,16 @@ pub const TEMPLATES: [Template; 8] = [
         param: "",
         get_key: "",
         single: false,
+    },
+    Template {
+        kind: Kind::Streetview,
+        name: "Google Street View",
+        purpose: "Street-level pictures on the controller for Isovist, with a Google Maps key",
+        url: "https://maps.googleapis.com/maps/api/streetview",
+        auth: Auth::Query,
+        param: "key",
+        get_key: "https://developers.google.com/maps/documentation/streetview/get-api-key",
+        single: true,
     },
 ];
 
@@ -693,6 +704,25 @@ impl Sources {
                 }
                 let layers = text.matches("<Layer").count().max(text.matches("<Layer>").count());
                 Ok(if layers > 0 { format!("The service answers, with {layers} layers.") } else { "The service answers.".into() })
+            }
+            Kind::Streetview => {
+                // The metadata service is free and says whether the key works without using up a picture.
+                let mut url = parse(&format!("{host}/maps/api/streetview/metadata"))?;
+                url.query_pairs_mut().append_pair("location", "57.68838,11.97776");
+                let answer = send(self.sign(c, url, false).await?).await?;
+                if !answer.status().is_success() {
+                    return Err(Refusal::new(502, refused_words(c, answer.status().as_u16())));
+                }
+                let body: Value = answer.json().await.unwrap_or(Value::Null);
+                match body["status"].as_str() {
+                    Some("OK") | Some("ZERO_RESULTS") => Ok("The key works.".into()),
+                    Some("REQUEST_DENIED") => Err(Refusal::new(
+                        502,
+                        "Google refused the key. Turn on the Street View Static API for it in the Google Cloud console.",
+                    )),
+                    Some(status) => Err(Refusal::new(502, format!("Google answered {status}."))),
+                    None => Err(Refusal::new(502, "Google did not answer as expected.")),
+                }
             }
             Kind::Arcgis => {
                 let mut url = parse(&c.url)?;
