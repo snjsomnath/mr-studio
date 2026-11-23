@@ -154,3 +154,16 @@ test('crowds draw for points with streets, and particles for lines', () => {
   lines.draw(view, 1, 1);
   assert.deepEqual(motionFor({ motion: [{ id: 'g', block: 'gravity', on: 'p', props: { network: 'roads' } }] }, 'p'), { gravity: { network: 'roads' } });
 });
+
+test('core layers read the table palette cheaply and see it change', async () => {
+  const { tablePalette } = await import('../src/index.ts');
+  const site: { palette?: { set?: string; slots?: Record<string, string> } } = {};
+  const first = tablePalette(site);
+  assert.equal(tablePalette(site), first, 'the same palette object while nothing changed');
+  site.palette = { set: 'ember' };
+  const ember = tablePalette(site);
+  assert.notEqual(ember, first);
+  assert.equal(ember.set.id, 'ember');
+  site.palette = { set: 'ember', slots: { green: '#00ff88' } };
+  assert.equal(tablePalette(site).slots.green, '#00ff88');
+});

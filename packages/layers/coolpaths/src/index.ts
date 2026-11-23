@@ -1,4 +1,4 @@
-import { colormaps, defineLayer, formatHour, loadSiteData, sample, siteProjection, zonedTimeToUtc } from '@mrstudio/sdk';
+import { colormaps, defineLayer, formatHour, loadSiteData, paletteHex, sample, siteProjection, tablePalette, zonedTimeToUtc } from '@mrstudio/sdk';
 import type { CanvasOverlay, FieldFrame, LayerManifest, TableContext, ToolInput } from '@mrstudio/sdk';
 
 import manifest from '../layer.json';
@@ -23,8 +23,9 @@ const SNAP_M = 120;
 const WALKER_M_PER_S = 45;
 const PAUSE_S = 2;
 
-const COOL = '#34d399';
-const SHORT = '#f8fafc';
+/** The coolest walk is green (vegetation, shade) and the shortest is the focus colour, both from the table's palette (#93). */
+const coolColour = (site: TableContext['site']) => paletteHex('@green', tablePalette(site));
+const shortColour = (site: TableContext['site']) => paletteHex('@focus', tablePalette(site));
 /** Path colours from shade to full sun. */
 const RAMP = ['#38bdf8', '#7dd3fc', '#fde68a', '#fbbf24', '#fb923c', '#ef4444'];
 
@@ -145,9 +146,9 @@ export default defineLayer<Params>({
       stroke(pair.shortest, '#0b0e14', width + 4, []);
       if (pair.coolest !== pair.shortest) {
         stroke(pair.coolest, '#0b0e14', width + 4, []);
-        stroke(pair.coolest, COOL, width, []);
+        stroke(pair.coolest, coolColour(ctx.site), width, []);
       }
-      stroke(pair.shortest, SHORT, width * 0.6, pair.coolest === pair.shortest ? [] : [width * 1.2, width * 1.6]);
+      stroke(pair.shortest, shortColour(ctx.site), width * 0.6, pair.coolest === pair.shortest ? [] : [width * 1.2, width * 1.6]);
 
       const radius = Math.max(9, 9 * scale);
       g.font = `700 ${Math.round(radius * 1.2)}px system-ui, sans-serif`;
@@ -175,7 +176,8 @@ export default defineLayer<Params>({
       const longest = pair.coolest.length;
       const metres = Math.min(clock, longest / WALKER_M_PER_S) * WALKER_M_PER_S;
       const radius = Math.max(5, 5 * walk.pixelsPerMetre);
-      const routes: [Route, string][] = pair.coolest === pair.shortest ? [[pair.shortest, SHORT]] : [[pair.shortest, SHORT], [pair.coolest, COOL]];
+      const [cool, short] = [coolColour(ctx.site), shortColour(ctx.site)];
+      const routes: [Route, string][] = pair.coolest === pair.shortest ? [[pair.shortest, short]] : [[pair.shortest, short], [pair.coolest, cool]];
       for (const [r, colour] of routes) {
         const [x, y] = walk.project(pointAlongRoute(r.coordinates, metres, distance));
         g.beginPath();
@@ -188,6 +190,7 @@ export default defineLayer<Params>({
       }
     }
 
+    let drawnPalette: ReturnType<typeof tablePalette> | null = null;
     let carried = 0;
     ctx.onFrame((dt) => {
       if (ctx.params.play) {
@@ -197,6 +200,12 @@ export default defineLayer<Params>({
           carried -= steps * HOUR_STEP;
           ctx.setParams({ hour: (ctx.params.hour + steps * HOUR_STEP) % 24 });
         }
+      }
+      // The table's palette changed: draw the routes again in its colours.
+      const palette = tablePalette(ctx.site);
+      if (palette !== drawnPalette) {
+        drawnPalette = palette;
+        pathsDirty = true;
       }
       if (pathsDirty || pathsDrawn !== paths.revision) {
         drawPaths();
@@ -252,11 +261,11 @@ export default defineLayer<Params>({
       <div class="coolpaths-panel">
         <div class="coolpaths-head"><span class="coolpaths-clock"></span><span class="coolpaths-verdict"></span></div>
         <div class="coolpaths-route" data-route="shortest">
-          <span class="coolpaths-swatch" style="background:${SHORT}"></span><span>Shortest walk</span><span class="coolpaths-length"></span>
+          <span class="coolpaths-swatch" style="background:${shortColour(ctx.site)}"></span><span>Shortest walk</span><span class="coolpaths-length"></span>
           <div class="coolpaths-bar"><i></i></div><span class="coolpaths-note" style="grid-column:1/-1"></span>
         </div>
         <div class="coolpaths-route" data-route="coolest">
-          <span class="coolpaths-swatch" style="background:${COOL}"></span><span>Coolest walk</span><span class="coolpaths-length"></span>
+          <span class="coolpaths-swatch" style="background:${coolColour(ctx.site)}"></span><span>Coolest walk</span><span class="coolpaths-length"></span>
           <div class="coolpaths-bar"><i></i></div><span class="coolpaths-note" style="grid-column:1/-1"></span>
         </div>
         <div><div class="coolpaths-ramp"></div><div class="coolpaths-ticks"><span>path in shade</span><span>in sun</span></div></div>
