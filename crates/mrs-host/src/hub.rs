@@ -608,6 +608,12 @@ impl Hub {
             }
             return self.set_tv(p);
         }
+        if method == "site.display" {
+            if !role.may_compose() {
+                return Err("this surface cannot change the table's settings".into());
+            }
+            return self.set_display(p);
+        }
         if method.starts_with("custom.") || method == "palette.set" {
             if !role.may_compose() {
                 return Err("this surface cannot edit the table".into());
@@ -773,6 +779,34 @@ impl Hub {
         self.info.write().unwrap().tv = if tv.is_null() { None } else { Some(tv.clone()) };
         self.emit("site.tv", json!({ "tv": tv }));
         Ok(json!({ "tv": tv }))
+    }
+
+    /// `site.display { display: { quality: "draft" | "good" | "best" | null } }`: how the table's surfaces
+    /// render (#134). Saved to site.json and sent to every surface as `site.display`, which apply it at once.
+    fn set_display(&self, p: &Value) -> Result<Value, String> {
+        let patch = p["display"].as_object().ok_or("missing display")?;
+        let mut display = match self.info.read().unwrap().display.clone() {
+            Some(Value::Object(display)) => display,
+            _ => Map::new(),
+        };
+        for (key, value) in patch {
+            let fits = match key.as_str() {
+                "quality" => matches!(value.as_str(), Some("draft" | "good" | "best")),
+                _ => return Err(format!("'{key}' is not a display setting")),
+            };
+            if value.is_null() {
+                display.remove(key);
+            } else if fits {
+                display.insert(key.clone(), value.clone());
+            } else {
+                return Err(format!("'{key}' is not a valid value"));
+            }
+        }
+        let display = if display.is_empty() { Value::Null } else { Value::Object(display) };
+        self.site.save_display(display.clone()).map_err(|e| format!("could not save site.json: {e}"))?;
+        self.info.write().unwrap().display = if display.is_null() { None } else { Some(display.clone()) };
+        self.emit("site.display", json!({ "display": display }));
+        Ok(json!({ "display": display }))
     }
 
     /// The `scene.*` requests. Each one edits a copy of the scene, saves it to
@@ -1752,5 +1786,19 @@ mod tests {
         assert!(dev("palette.set", json!({ "palette": { "slots": { "accent": "orange" } } })).is_err());
         dev("palette.set", json!({ "palette": null })).unwrap();
         assert!(Site::load(&hub.site.dir).unwrap().manifest.palette.is_none());
+    }
+
+    #[test]
+    fn display_quality_is_saved_and_checked() {
+        let hub = scratch_hub("display");
+        let dev = |method: &str, p: Value| hub.request(Role::Dev, 0, method, &p);
+        dev("site.display", json!({ "display": { "quality": "best" } })).unwrap();
+        assert_eq!(hub.site().display.unwrap()["quality"], "best");
+        assert_eq!(Site::load(&hub.site.dir).unwrap().manifest.display.unwrap()["quality"], "best");
+        assert!(dev("site.display", json!({ "display": { "quality": "ultra" } })).is_err());
+        assert!(dev("site.display", json!({ "display": { "fps": 60 } })).is_err());
+        assert!(hub.request(Role::Phone, 0, "site.display", &json!({ "display": { "quality": "draft" } })).is_err());
+        dev("site.display", json!({ "display": { "quality": null } })).unwrap();
+        assert!(Site::load(&hub.site.dir).unwrap().manifest.display.is_none());
     }
 }

@@ -1,4 +1,4 @@
-import type { CanvasOverlay, DrawingOverlay, Colormap, FieldOverlay, FieldOverlayStyle, FlowOverlay, FlowOverlayStyle, MapHandle, ModelHandle, Shape, ShapeOverlay, SiteInfo, TablePointer } from '@mrstudio/sdk';
+import type { CanvasOverlay, DrawingOverlay, Colormap, FieldOverlay, FieldOverlayStyle, FlowOverlay, FlowOverlayStyle, MapHandle, ModelHandle, Shape, ShapeOverlay, SiteInfo, TablePointer, DisplayQuality } from '@mrstudio/sdk';
 import maplibregl from 'maplibre-gl';
 import type { StyleSpecification } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
@@ -7,6 +7,7 @@ import { MapCanvasOverlay } from './canvas-overlay.ts';
 import { MapFieldOverlay } from './field-overlay.ts';
 import { MapFlowOverlay } from './flow-overlay.ts';
 import { ModelView } from './model/view.ts';
+import { pixelRatio } from './quality.ts';
 import { tablePointer } from './table-pointer.ts';
 
 const EARTH_CIRCUMFERENCE_M = 40_075_016.686;
@@ -268,10 +269,20 @@ export class TableView {
     this.map.addLayer({ id: slot(instance), type: 'background', layout: { visibility: 'none' } });
   }
 
+  private quality: DisplayQuality = 'good';
+
+  /** How finely the table is drawn (#134): the map's and the model's pixel density, and the sun shadows' detail. */
+  setQuality(quality: DisplayQuality): void {
+    this.quality = quality;
+    this.map.setPixelRatio(pixelRatio(quality));
+    this.model?.setQuality(quality);
+  }
+
   /** Loads the site's twin and lays the model surface over the map. Resolves to null when that is not possible. */
   async attachModel(): Promise<ModelView | null> {
     try {
       this.model = await ModelView.create(this.container, this.site, this.map);
+      this.model.setQuality(this.quality);
       for (const [layer, drawn] of this.drawn) this.model.setIntensity(layer, drawn.intensity);
     } catch (error) {
       console.warn('model surface is off; the table stays flat:', (error as Error).message);

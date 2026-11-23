@@ -186,6 +186,12 @@ export interface PanelSpec {
 }
 
 /** `tv` in site.json. */
+/**
+ * How finely the table is drawn (#134): `draft` is light on a slow machine, `good` suits most, and `best` uses the
+ * screen's full pixel density and the finest sun shadows.
+ */
+export type DisplayQuality = 'draft' | 'good' | 'best';
+
 export interface TvConfig {
   layout?: string;
   /** Where the controls sit. Default `left`. */
@@ -250,6 +256,8 @@ export interface SiteInfo {
   /** Datasets layers may read, by name: site-relative paths served under `/site/`. */
   data: Record<string, string>;
   tv?: TvConfig | null;
+  /** How the table's surfaces render (#134). Without it, `good`. */
+  display?: { quality?: DisplayQuality } | null;
   /** The table's palette (#93): a built-in set and the slots it changes. Resolve with `resolvePalette`. */
   palette?: { set?: string; slots?: Record<string, string> } | null;
   /** The 3D model of the site (`scene.mesh`, docs/contracts/site.md), and whether footprints are raised beside it. */
