@@ -79,7 +79,7 @@ Most projectors light more than the model. The table surface works out the free 
   "ribbons": { "bottom": { "cm": 9 }, "top": "auto", "left": "off", "right": "off" } }
 ```
 
-- `table.front` (site format 3; default `"bottom"`) is the edge where visitors stand. `"auto"` prefers the front, then the far side; the model hides the far side from a viewer at the front.
+- `table.front` (site format 3; default `"bottom"`) is the edge where visitors stand. `"auto"` prefers the front, then the two sides next to it, and uses the far side last, because the model hides the far side from a viewer at the front.
 - A side is used only if it has at least about 4 cm free. Sizes are in cm and turned into px through the calibration.
 - What a ribbon shows comes from the layer: `panels` entries marked `"ribbon": true`, drawn with the dashboard widgets in a strip layout. With no layer open, the core **join QR** ribbon shows if phones can join.
 - One ribbon is shown at a time: the open layer's, otherwise the home ribbon. If more than one is available, the operator can pick on the controller.
