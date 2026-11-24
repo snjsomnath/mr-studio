@@ -500,6 +500,12 @@ body[data-role='tv'] .controller .join-address .join-code {
   align-items: start;
 }
 
+/* Five or more choices in a row need the room of a whole row, or their words wrap. */
+.layer-open .controls > .control:has(.segmented[data-columns='3']) {
+  grid-column: 1 / -1;
+  max-width: 44rem;
+}
+
 /*
  * Tiers (#137): the hero, then the primary choices in one row of large segmented buttons,
  * then the rest, then "More settings", closed. Sized for a 46-inch screen at 2 m.

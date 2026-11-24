@@ -2,7 +2,7 @@ import { defineLayer, formatHour, zonedTimeToUtc } from '@mrstudio/sdk';
 import type { Colormap, FieldFrame, FieldStream, LayerManifest, LightHandle, SunLight, TableContext } from '@mrstudio/sdk';
 
 import manifest from '../layer.json';
-import { skyColormap, skyLight, sunAt, sunDay, sunHoursColormap, thresholdColormap, treeHoursColormap, treeShadeColormap } from './look.ts';
+import { windowParams, WINDOWS, skyColormap, skyLight, sunAt, sunDay, sunHoursColormap, thresholdColormap, treeHoursColormap, treeShadeColormap } from './look.ts';
 import { sunlightHero } from './hero.ts';
 import { SunPath } from './sun-path.ts';
 import { hasShade, isFlat } from './flat.ts';
@@ -23,6 +23,7 @@ interface Params {
   opacity: number;
   season: string;
   trails: boolean;
+  window: string;
 }
 
 /** Hours of the day that pass per second while animating. */
@@ -33,7 +34,9 @@ const HOUR_STEP = 0.05;
 /** Kernel params for the layer's params. The site's time zone turns wall-clock time into UTC. */
 function kernelParams(ctx: TableContext<Params>) {
   const { mode, date, hour, trees } = ctx.params;
-  return { mode, time: zonedTimeToUtc(date, mode === 'day' ? 12 : hour, ctx.site.timezone), trees };
+  const time = zonedTimeToUtc(date, mode === 'day' ? 12 : hour, ctx.site.timezone);
+  // In Sun hours, only the sun in the chosen window counts; an instant has none.
+  return { mode, time, trees, ...(mode === 'day' ? windowParams(ctx.site, date, ctx.params.window) : { from: null, until: null }) };
 }
 
 /** The sun hours ramp, with areas under the layer's threshold flagged when one is set. */
@@ -121,7 +124,9 @@ export default defineLayer<Params>({
     const dayStatus = () => {
       if (ctx.params.mode !== 'day') return '';
       if (percent < 100) return ctx.say('adding up the day, {percent}%', { percent });
-      return ctx.params.threshold > 0 ? ctx.say('under {hours} h of sun is flagged', { hours: ctx.params.threshold }) : ctx.say('whole day added up');
+      if (ctx.params.threshold > 0) return ctx.say('under {hours} h of sun is flagged', { hours: ctx.params.threshold });
+      const window = WINDOWS[ctx.params.window];
+      return window ? ctx.say('sun from {from} to {to} added up', { from: window[0], to: window[1] }) : ctx.say('whole day added up');
     };
     ctx.onCleanup(() => {
       generation++;
@@ -285,7 +290,7 @@ export default defineLayer<Params>({
           seasons.update(changed);
         } else {
           dress();
-          if (changed.some((key) => key === 'date' || key === 'hour' || key === 'trees')) stream?.set(kernelParams(ctx));
+          if (changed.some((key) => key === 'date' || key === 'hour' || key === 'trees' || key === 'window')) stream?.set(kernelParams(ctx));
         }
       },
     };
