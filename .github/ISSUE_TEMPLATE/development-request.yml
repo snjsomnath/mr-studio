@@ -1,0 +1,57 @@
+name: Development request
+description: Something an MR Studio experience needs that the core cannot do yet. The MR Studio MCP server drafts these; people can file them by hand too.
+labels: ["development-request", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Teams build experiences from the core's layers and building blocks; they do not fork MR Studio or copy core code.
+        Before filing, search the issues (open and closed): if one already asks for this, comment there instead.
+        Requests are triaged into the build order in #49.
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Kind
+      options:
+        - layer-enhancement (a control, tool, panel or option on an existing layer)
+        - new-layer (a new core layer, from existing building blocks where possible)
+        - block (a shared visual, data source or interaction in the SDK or runtime)
+        - kernel (a new engine computation)
+        - data-integration (a data source, format, live feed or service)
+        - interaction (controller, phones, the table pointer)
+        - site-setting (a key or option in site.json)
+        - sdk-runtime (the SDK or runtime that layers build on)
+        - architecture (hosting, protocol, packaging)
+        - other
+    validations: { required: true }
+  - type: textarea
+    id: context
+    attributes: { label: Context, description: The site, the people at the table, and what they are trying to do }
+    validations: { required: true }
+  - type: textarea
+    id: user_story
+    attributes: { label: User story, placeholder: "As a <who>, I want <what>, so that <why>." }
+    validations: { required: true }
+  - type: textarea
+    id: proposal
+    attributes: { label: Proposed functionality }
+    validations: { required: true }
+  - type: textarea
+    id: experience
+    attributes: { label: Experience across the table, controller and phones, description: "The table is 2D and almost wordless; words and controls live on the controller and phones." }
+  - type: textarea
+    id: technical
+    attributes: { label: Technical considerations, description: Blocks or kernels it could reuse, data, risks }
+  - type: textarea
+    id: acceptance
+    attributes: { label: Acceptance criteria, placeholder: "- [ ] ..." }
+    validations: { required: true }
+  - type: textarea
+    id: dependencies
+    attributes: { label: Dependencies }
+  - type: textarea
+    id: limitations
+    attributes: { label: Current limitations, description: What MR Studio does today and why it falls short }
+  - type: textarea
+    id: related
+    attributes: { label: Related, description: Issues, capabilities, links }
