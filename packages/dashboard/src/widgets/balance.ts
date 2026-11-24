@@ -29,6 +29,7 @@ export const balance = defineWidget({
   name: 'Balance',
   description: 'Where something came from and went to, as two bands split by share, with one headline number such as self-sufficiency.',
   sizes: ['chip', 'wide', 'block'],
+  example: { sources: [{ label: 'Roofs', value: 180 }, { label: 'Grid', value: 40 }], uses: [{ label: 'Homes', value: 150 }, { label: 'Battery', value: 70 }], unit: 'kW' },
   props: {
     sources: { kind: 'list', label: 'In', required: true, bindable: true, max: 4, item },
     uses: { kind: 'list', label: 'Out', bindable: true, max: 4, item },

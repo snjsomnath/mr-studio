@@ -8,7 +8,7 @@ The reasoning and the full tables of rules are in [../DASHBOARD.md](../DASHBOARD
 ```ts
 interface PanelSpec {
   id: string;                      // lower-case letters, digits, dashes; unique in its layer or page
-  widget: string;                  // stat | bars | compare | balance | series | ramp | timeline | text | custom
+  widget: string;                  // stat | gauge | bars | list | donut | compare | balance | control | map | media | legend | series | ramp | timeline | text | custom, or a team's <layer>/<type>
   size: PanelSize;                 // chip | tile | wide | tall | block | hero | band | strip
   title: string;                   // required, at most 28 characters
   props?: Record<string, unknown>; // per the widget's schema; literals or bindings
@@ -95,6 +95,42 @@ view.sync();                   // after any state change
 
 `validate*`, `panelReads`, `pack` and `themeVariables` use no DOM, so they run in Node.
 
+### Controls on panels (#354)
+
+A `control` panel puts one of its layer's controls (or a named action) on the dashboard, a TV page or a
+custom controller view, so a view can be built from panels alone. It reads the control's label,
+range, unit and choices from layer.json, so they are written once:
+
+```jsonc
+{ "id": "share", "widget": "control", "size": "wide", "title": "Try a share", "layer": "model-runs",
+  "props": { "control": "share" } }          // a range: a slider; a toggle; a select: choices; an action: a button
+```
+
+It changes the layer exactly as the controller's own control does (`layer.set`, `layer.action`), and the
+host checks it the same way. On the table's ribbon it only shows the value. A panel that names a
+control the layer doesn't have draws the name and is reported in the window's console. Widgets get
+the layer's controls in `env.controls` (`find`, `value`, `set`, `press`, and `touch`, false where the
+panel can't be touched), so a team widget (below) can be an input too.
+
+### A map on a panel (#355)
+
+A `map` panel is the site's map with no code: the same map a layer's own stage gets from
+`controllerMap` (layer.md, The controller stage).
+
+```jsonc
+{ "id": "pick", "widget": "map", "size": "block", "title": "Pick a building", "layer": "model-runs",
+  "props": {
+    "data": [ { "name": "roads", "slot": 2 } ],   // up to 4 site datasets, in the data colours
+    "entities": "buildings",                      // a tap picks one of the layer's entities (#279), drawn picked
+    "tool": "start",                              // or: a tap sends a point to one of the layer's tools
+    "shapes": { "bind": "shared.route" },         // GeoJSON the layer publishes, drawn on top in the accent
+    "hint": "Tap a building to change it" } }
+```
+
+The table's outline is always drawn. A tap reaches the table the way the controller's own does
+(`layer.select`, `tool.input`), so the table marks a picked entity and the controller shows its
+controls. On the table's ribbon it is not offered (no ribbon size).
+
 ### Adding a widget
 
 ```ts
@@ -118,6 +154,8 @@ table's ribbon share, after checking it (`checkWidget`: a lower-case type, a nam
 known sizes, `reads`, `mount`, and a label on every prop). The layer's own panels may name it by
 `type` alone; core widgets win a clash. It is styled with the `--mrs-*` tokens, so it follows the theme.
 When two teams have each written the same widget, it moves into core.
+
+A widget may carry `example`: made-up props, plain values with no bindings, that the Developer window's widget gallery shows it with at every size (#358). Every core widget has one.
 
 ## Style tokens
 

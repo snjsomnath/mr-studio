@@ -237,7 +237,7 @@ export const BLOCKS: BlockDef[] = [
   {
     id: 'controller-stage', group: 'interaction', name: 'Controller stage and map',
     description: "A layer's own app in the controller's centre (#283): a map of the site in the table's orientation with its buildings and streets, where taps become points, routes or areas sent to the table as tool inputs, and buttons press named actions that start animations on the table. Routes can follow the streets (StreetGraph.route).",
-    usage: "layer.json stage: 'custom' and 'actions'; the module's stage(ctx, el) with controllerMap(el, ctx, { mode, points, onPick, onDraw, draw }); ctx.sendTool and ctx.action reach the table's tool() and action() handlers (samples/controller-map-example)",
+    usage: "layer.json stage: { panels: [...], controls? } for a no-code stage of dashboard panels (map, control, gauge, team widgets; #357), or stage: 'custom' and 'actions'; the module's stage(ctx, el) with controllerMap(el, ctx, { mode, points, onPick, onDraw, draw }); ctx.sendTool and ctx.action reach the table's tool() and action() handlers (samples/controller-map-example)",
     detect: 'export function controllerMap',
     unlocks: ['Custom map apps on the controller', 'Route and journey planners'],
   },
@@ -307,7 +307,7 @@ export const BLOCKS: BlockDef[] = [
   // TV
   {
     id: 'tv-panels', group: 'tv', name: 'TV panels',
-    description: 'Declarative dashboard panels (stat, bars, compare for scenarios side by side, balance for where a quantity comes from and goes to, series, ramp, timeline, text) on a 12 by 6 grid with a density budget; chip and wide panels also go in the table ribbon.',
+    description: 'Declarative dashboard panels (stat, gauge, bars, list for a short ranking, donut for shares of a whole, media for a picture or video, legend, compare for scenarios side by side, balance for where a quantity comes from and goes to, control for one of the layer sliders, toggles, choices or buttons on a panel, map for the site map where a tap picks an entity or sends a point, series, ramp, timeline, text) on a 12 by 6 grid with a density budget; chip and wide panels also go in the table ribbon.',
     usage: "layer.json 'panels' or site.json 'tv.pages' (docs/contracts/dashboard.md)",
     detect: 'interface PanelSpec',
   },

@@ -11,6 +11,7 @@ export const series = defineWidget({
   name: 'Trend',
   description: 'Up to three lines over time on one shared scale, with an optional marker for now.',
   sizes: ['wide', 'block', 'hero', 'strip'],
+  example: { series: [{ label: 'Solar', values: [0, 0, 5, 40, 110, 165, 180, 160, 105, 40, 6, 0] }, { label: 'Demand', values: [70, 75, 110, 95, 80, 78, 82, 90, 130, 140, 100, 80] }], unit: 'kW', start: '00', end: '24', now: 0.6 },
   props: {
     series: {
       kind: 'list',
