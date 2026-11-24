@@ -63,6 +63,9 @@ pub struct Available {
     pub releases: Vec<Release>,
     /// Any of them is breaking.
     pub breaking: bool,
+    /// The release of the version that is running, for "New in this version" on Home
+    /// after an update. None when this build is not a published release.
+    pub installed: Option<Release>,
 }
 
 /// `v1.2.3` and `1.2.3` are both versions; anything else is not a release of the app.
@@ -99,29 +102,48 @@ fn without_comments(notes: &str) -> String {
 /// What is newer than `current` among the published releases. Drafts, pre-releases and
 /// tags that are not versions are left out.
 pub fn available(current: &Version, published: Vec<Published>) -> Available {
-    let mut newer: Vec<(Version, Published)> = published
+    let mut releases: Vec<(Version, Published)> = published
         .into_iter()
         .filter(|p| !p.draft && !p.prerelease)
-        .filter_map(|p| version_of(&p.tag_name).filter(|v| v > current && v.pre.is_empty()).map(|v| (v, p)))
+        .filter_map(|p| version_of(&p.tag_name).filter(|v| v.pre.is_empty()).map(|v| (v, p)))
         .collect();
-    newer.sort_by(|a, b| b.0.cmp(&a.0));
-    let releases: Vec<Release> = newer
-        .into_iter()
-        .map(|(version, p)| {
-            let notes = p.body.unwrap_or_default();
-            let breaking_notes = breaking_section(&notes);
-            Release {
-                breaking: version.major > current.major || breaking_notes.is_some(),
-                title: p.name.filter(|n| !n.trim().is_empty()).unwrap_or_else(|| format!("MR Studio {version}")),
-                version: version.to_string(),
-                notes,
-                published_at: p.published_at,
-                url: p.html_url,
-                breaking_notes,
-            }
-        })
-        .collect();
-    Available { latest: releases.first().map(|r| r.version.clone()), breaking: releases.iter().any(|r| r.breaking), releases }
+    releases.sort_by(|a, b| b.0.cmp(&a.0));
+    let release = |(version, p): (Version, Published)| {
+        let notes = p.body.unwrap_or_default();
+        let breaking_notes = breaking_section(&notes);
+        Release {
+            breaking: version.major > current.major || breaking_notes.is_some(),
+            title: p.name.filter(|n| !n.trim().is_empty()).unwrap_or_else(|| format!("MR Studio {version}")),
+            version: version.to_string(),
+            notes,
+            published_at: p.published_at,
+            url: p.html_url,
+            breaking_notes,
+        }
+    };
+    let installed = releases.iter().position(|(v, _)| v == current).map(|i| release(releases.remove(i)));
+    let newer: Vec<Release> = releases.into_iter().filter(|(v, _)| v > current).map(release).collect();
+    Available { latest: newer.first().map(|r| r.version.clone()), breaking: newer.iter().any(|r| r.breaking), releases: newer, installed }
+}
+
+/// The installer for this kind of computer, from a release's files (named by the Desktop
+/// app workflow). Opened in the browser, so the download starts without a signing key.
+pub fn download_url(version: &str) -> String {
+    let file = if cfg!(target_os = "macos") {
+        format!("MR-Studio_{version}_macos-universal.dmg")
+    } else if cfg!(target_os = "windows") {
+        format!("MR-Studio_{version}_windows-x64-setup.exe")
+    } else {
+        return format!("https://github.com/snjsomnath/mr-studio/releases/tag/v{version}");
+    };
+    format!("https://github.com/snjsomnath/mr-studio/releases/download/v{version}/{file}")
+}
+
+/// The commit and time this copy was built from, when the build was given them
+/// (the Desktop app workflow does). A copy built by hand has none.
+pub fn build_stamp() -> (Option<&'static str>, Option<&'static str>) {
+    let some = |v: Option<&'static str>| v.map(str::trim).filter(|v| !v.is_empty());
+    (some(option_env!("MRS_BUILD_COMMIT")), some(option_env!("MRS_BUILD_DATE")))
 }
 
 /// Asks GitHub for the published releases and keeps the ones newer than `current`.
@@ -176,8 +198,11 @@ mod tests {
         assert!(!found.breaking);
         assert_eq!(found.releases[1].title, "MR Studio 0.3.0");
 
+        assert_eq!(found.installed.as_ref().map(|r| r.notes.as_str()), Some("this one"), "the running version's own notes are kept for Home");
+
         let none = available(&Version::new(1, 0, 0), vec![published("v1.0.0", ""), published("v0.9.0", "")]);
         assert_eq!((none.latest, none.releases.len(), none.breaking), (None, 0, false));
+        assert_eq!(available(&Version::new(1, 0, 1), vec![published("v1.0.0", "")]).installed, None);
     }
 
     #[test]

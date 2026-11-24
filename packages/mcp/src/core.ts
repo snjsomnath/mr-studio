@@ -46,6 +46,21 @@ export interface Catalog {
   roadmap: RoadmapRow[];
   docs: Record<string, string>;
   siteSchema: SiteSchema | null;
+  /** CHANGELOG.md: one section per released version, newest first. */
+  changelog?: string;
+  /** Release notes merged since the last version, waiting in changes/ (live checkouts only). */
+  pending?: string[];
+}
+
+/** The released versions in CHANGELOG.md, newest first, each with its text. */
+export function changelogVersions(changelog: string): { version: string; date: string; text: string }[] {
+  const out: { version: string; date: string; text: string }[] = [];
+  const parts = changelog.split(/^## /m).slice(1);
+  for (const part of parts) {
+    const head = /^(\d+\.\d+\.\d+\S*)(?:\s*\(([^)]*)\))?/.exec(part);
+    if (head) out.push({ version: head[1]!, date: head[2] ?? '', text: `## ${part}`.trim() });
+  }
+  return out;
 }
 
 /**
@@ -206,6 +221,13 @@ export function loadLive(root: string): Catalog {
   const layerNames = new Set(layers.map((l) => String(l.manifest.name ?? '').toLowerCase()));
   for (const row of roadmap) if (layerNames.has(row.layer.toLowerCase())) row.built = true;
 
+  const changelogPath = join(root, 'CHANGELOG.md');
+  const changelog = existsSync(changelogPath) ? readFileSync(changelogPath, 'utf8') : '';
+  if (changelog) docs['changelog'] = changelog;
+  const pending = walkFiles(join(root, 'changes'), /\.md$/)
+    .filter((p) => !/readme\.md$/i.test(p))
+    .map((p) => readFileSync(p, 'utf8').replace(/^---[\s\S]*?---\s*/, '').trim());
+
   const manifestRs = join(root, 'crates', 'mrs-site', 'src', 'manifest.rs');
   const siteSchema = existsSync(manifestRs) ? parseSiteSchema(readFileSync(manifestRs, 'utf8')) : null;
 
@@ -220,6 +242,8 @@ export function loadLive(root: string): Catalog {
     roadmap,
     docs,
     siteSchema,
+    changelog,
+    pending,
   };
 }
 

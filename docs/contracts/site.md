@@ -98,6 +98,7 @@ Rules:
 - `mesh` is a 3D model of the top surface, for sites whose footprints have no heights. See [Buildings from a mesh](#buildings-from-a-mesh).
 - `buildings.extrude` (default `true`) says whether the footprints are raised into the scene. Set it to `false` when a mesh gives the buildings their shape; the footprints are then only drawn on the table.
 - `layers[].hide` lists ids of the layer's controls that the controller and phones leave out, for example `["opacity", "detail"]`. The control keeps its value, and the editor and the developer page still show it.
+- `display` says how the table's surfaces render (#134): `{ "quality": "draft" | "good" | "best" }`. `good` is the default; `draft` keeps a slow computer smooth, and `best` gives a strong one finer fields and softer edges. The editor sets it on the Display tab.
 - `tv` holds the TV's settings: which side the layer buttons default to, the site's theme, and optional hand-made dashboard pages. Its shape and rules are in [dashboard.md](dashboard.md). The host passes it to surfaces as written.
 - Unknown keys are an error, so a typo is caught by `mrstudio validate` rather than silently ignored.
 - Vector data is GeoJSON in WGS84 (CRS84). Site prep reprojects from national grids.

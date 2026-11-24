@@ -50,6 +50,7 @@ fn main() {
         "check_updates",
         "set_update_check",
         "install_update",
+        "dismiss_whats_new",
         "open_link",
         "file_action",
         "table_details",

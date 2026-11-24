@@ -109,7 +109,7 @@ describe('server over stdio', () => {
 
   test('offers tools, prompts and docs', async () => {
     const tools = (await client.listTools()).tools.map((t) => t.name).sort();
-    for (const name of ['overview', 'read_doc', 'list_layers', 'describe_layer', 'list_building_blocks', 'create_site', 'get_site', 'update_site', 'add_layer', 'set_layer', 'move_layer', 'remove_layer', 'validate_site', 'preview_site', 'check_layer_idea', 'draft_module_request', 'submit_module_request']) {
+    for (const name of ['overview', 'read_doc', 'list_layers', 'describe_layer', 'list_building_blocks', 'create_site', 'get_site', 'update_site', 'add_layer', 'set_layer', 'move_layer', 'remove_layer', 'validate_site', 'preview_site', 'check_layer_idea', 'draft_module_request', 'submit_module_request', 'whats_new']) {
       assert.ok(tools.includes(name), `missing tool ${name}`);
     }
     const prompts = (await client.listPrompts()).prompts.map((p) => p.name).sort();
@@ -134,6 +134,16 @@ describe('server over stdio', () => {
     assert.match(doc.text, /A site is a folder/);
     const missing = await call(client, 'describe_layer', { layer: 'teleporter' });
     assert.equal(missing.isError, true);
+  });
+
+  test("says what's new and knows the recent building blocks", async () => {
+    const news = await call(client, 'whats_new');
+    assert.ok(!news.isError, news.text);
+    const blocks = await call(client, 'list_building_blocks');
+    const built = new Set(blocks.data.blocks.filter((b: any) => b.status === 'built').map((b: any) => b.id));
+    for (const id of ['marks', 'place-motions', 'palette', 'ribbons', 'engine-probe', 'street-network', 'thermal-comfort', 'view-analysis', 'sound', 'languages', 'guided-tour', 'attract-loop']) {
+      assert.ok(built.has(id), `block ${id} should be found in the core source`);
+    }
   });
 
   test('assembles a site through the tools', async () => {

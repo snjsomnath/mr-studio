@@ -36,6 +36,7 @@
     "allow-check-updates",
     "allow-set-update-check",
     "allow-install-update",
+    "allow-dismiss-whats-new",
     "allow-open-link",
     "allow-open-settings",
     "allow-new-table",

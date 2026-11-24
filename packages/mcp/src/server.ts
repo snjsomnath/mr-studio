@@ -4,7 +4,7 @@ import { McpServer, ResourceTemplate } from '@modelcontextprotocol/sdk/server/mc
 import { isAbsolute, resolve } from 'node:path';
 import { z } from 'zod';
 
-import { loadCatalog, type Catalog, type CoreOptions } from './core.ts';
+import { changelogVersions, loadCatalog, type Catalog, type CoreOptions } from './core.ts';
 import { checkIdea } from './ideas.ts';
 import { brainstormPrompt, dashboardPrompt, newProjectPrompt, requestPrompt, serverInstructions } from './prompts.ts';
 import { REQUEST_KINDS, submitDraft, writeDraft, type RequestKind } from './requests.ts';
@@ -113,6 +113,35 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
       const key = name.toLowerCase().replace(/\.md$/, '').replace(/^docs\//, '');
       const text = catalog.docs[key] ?? catalog.docs[`contracts/${key}`];
       return text ? reply(text) : fail(`No doc '${name}'. Docs: ${Object.keys(catalog.docs).join(', ')}`);
+    },
+  );
+
+  server.registerTool(
+    'whats_new',
+    {
+      title: "What's new in MR Studio",
+      description: 'What changed in the core, newest first, from CHANGELOG.md: new layers, settings and fixes per version, and the notes merged since the last version. Use it when someone asks for something that may have been built recently, or to tell a team what an update brings.',
+      inputSchema: {
+        since: z.string().optional().describe('Only versions newer than this one, e.g. "0.3.0"'),
+        limit: z.number().int().positive().optional().describe('How many versions (default 5)'),
+      },
+      annotations: { readOnlyHint: true },
+    },
+    async ({ since, limit }) => {
+      const newer = (v: string) => {
+        if (!since) return true;
+        const a = v.split(/[.-]/).map(Number);
+        const b = since.replace(/^v/, '').split(/[.-]/).map(Number);
+        for (let i = 0; i < 3; i++) if ((a[i] ?? 0) !== (b[i] ?? 0)) return (a[i] ?? 0) > (b[i] ?? 0);
+        return false;
+      };
+      const versions = changelogVersions(catalog.changelog ?? '').filter((v) => newer(v.version)).slice(0, limit ?? 5);
+      const pending = catalog.pending ?? [];
+      if (!versions.length && !pending.length) return reply(`Nothing newer${since ? ` than ${since}` : ''} is recorded in this core (${catalog.version}).`);
+      return reply(
+        `Core ${catalog.version}. ${versions.length} version${versions.length === 1 ? '' : 's'}${pending.length ? `, and ${pending.length} change${pending.length === 1 ? '' : 's'} merged but not yet released` : ''}.`,
+        { versions, unreleased: pending },
+      );
     },
   );
 
@@ -247,7 +276,7 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
     {
       title: 'Update site settings',
       description:
-        'Change site settings other than the scene: name, origin, extent, timezone, table, scene sources (buildings, terrain, trees, cell_m), basemap, branding (title, logo) and tv. Objects are merged one level deep; null removes a key. The change is refused if it makes the site invalid. Use the layer tools for the scene.',
+        `Change site settings other than the scene. Settable in this core: ${editable.join(', ')}. Among them: table (size, tile_cm, front, ribbons), scene sources (buildings, terrain, trees, cell_m), basemap (style, black and white, brightness), branding (title, logo, welcome line, languages, translations), palette, display (quality) and tv. Objects are merged one level deep; null removes a key. The change is refused if it makes the site invalid. Use the layer tools for the scene.`,
       inputSchema: {
         site: z.string().describe('Site folder'),
         set: z.record(z.string(), z.unknown()).describe('e.g. { "branding": { "title": "Harbour 2040" }, "basemap": { "background": "#101418" } }'),
