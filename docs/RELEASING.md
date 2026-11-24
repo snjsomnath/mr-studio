@@ -4,7 +4,7 @@ Every merge to `main` that carries a release note is a release. Nobody tags or w
 
 1. A pull request adds a release note to `changes/` (below). CI fails without one.
 2. When it merges, the "Desktop app" workflow turns the notes waiting in `changes/` into the next version: it raises `version` under `[workspace.package]` in `Cargo.toml` (with `Cargo.lock` and the `package.json` files), adds the version's section to [CHANGELOG.md](../CHANGELOG.md), removes the notes, commits "Release vX.Y.Z" to `main` and tags it.
-3. The same run builds the Windows installer and the macOS dmg from that tag and publishes the GitHub release, with the notes and their screenshots, and the MCP server of the same version (`mrstudio-mcp.mjs`).
+3. The same run builds the Windows installer and the macOS dmg from that tag and publishes the GitHub release, with the notes and their screenshots, and the MCP server of the same version (`mrstudio-mcp.mjs`, and `mr-studio.mcpb` for Claude Desktop). Once switched on, it also publishes the server to npm and the MCP Registry (below).
 4. Installed apps see it the next time they start: Home shows **What's new**.
 
 `node scripts/release.mjs pending` prints the version the waiting notes would make. `node scripts/release.mjs apply` does step 2 on your computer, if you ever need to.
@@ -41,6 +41,16 @@ The app asks GitHub for the published releases a few seconds after it starts (th
 - Drafts and pre-releases are never offered.
 
 Installing stays by hand: run the downloaded installer. The installers are not code-signed, so Windows SmartScreen asks once ("More info", "Run anyway"), and on macOS the first open is right click, Open.
+
+## Publishing the MCP server
+
+After each release, the `publish-mcp` job puts the same server on npm as `@mrstudio/mcp` (what `npx -y @mrstudio/mcp` runs, with provenance) and lists it in the [MCP Registry](https://registry.modelcontextprotocol.io) as `io.github.snjsomnath/mr-studio`, with the npm package and the release's Claude Desktop extension. A version already on npm is skipped, so re-running is safe. It is off until these are set:
+
+1. On [npmjs.com](https://www.npmjs.com), create the free organisation `mrstudio` (the `@mrstudio` scope) and a granular access token that can publish to it.
+2. In the repository's settings, under Secrets and variables, Actions, add the secret `NPM_TOKEN` (the token) and the variable `MCP_PUBLISH` set to `true`.
+3. The registry needs no key: it signs in with the workflow's GitHub identity, which owns the `io.github.snjsomnath/` names.
+
+To publish the version already released, run the "Desktop app" workflow by hand on its tag. To stop, set `MCP_PUBLISH` to anything else; versions already on npm stay there (npm only lets a version be withdrawn in its first 72 hours).
 
 ## Installing in place (optional, not set up)
 

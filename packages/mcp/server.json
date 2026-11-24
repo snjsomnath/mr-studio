@@ -1,0 +1,26 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.snjsomnath/mr-studio",
+  "title": "MR Studio",
+  "description": "Build MR Studio tables (interactive city models) by describing them: layers, tours, dashboards.",
+  "repository": { "url": "https://github.com/snjsomnath/mr-studio", "source": "github", "subfolder": "packages/mcp" },
+  "websiteUrl": "https://github.com/snjsomnath/mr-studio/blob/main/docs/MCP.md",
+  "version": "0.0.0",
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "@mrstudio/mcp",
+      "version": "0.0.0",
+      "transport": { "type": "stdio" },
+      "packageArguments": [
+        {
+          "type": "named",
+          "name": "--project",
+          "description": "Folder your tables are in. Default: the current folder, or Documents/MR Studio/sites when started from the home folder.",
+          "isRequired": false,
+          "format": "filepath"
+        }
+      ]
+    }
+  ]
+}

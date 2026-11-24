@@ -27,7 +27,9 @@ import {
   type SiteManifest,
 } from './site.ts';
 
-export const SERVER_VERSION = '0.1.0';
+// The package version (the core release it was built with), stamped in by scripts/build.mjs.
+declare const __MRSTUDIO_SERVER_VERSION__: string | undefined;
+export const SERVER_VERSION = typeof __MRSTUDIO_SERVER_VERSION__ === 'string' ? __MRSTUDIO_SERVER_VERSION__ : '0.0.0-dev';
 
 export interface ServerOptions extends CoreOptions {
   /** Folder that relative site paths are resolved against. */

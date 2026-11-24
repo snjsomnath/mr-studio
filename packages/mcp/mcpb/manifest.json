@@ -1,0 +1,62 @@
+{
+  "$schema": "https://raw.githubusercontent.com/modelcontextprotocol/mcpb/main/dist/mcpb-manifest-v0.3.schema.json",
+  "manifest_version": "0.3",
+  "name": "mr-studio",
+  "display_name": "MR Studio",
+  "version": "0.0.0",
+  "description": "Build MR Studio tables (interactive city models) by describing them: layers, buttons, tours and dashboards.",
+  "long_description": "Connects Claude to MR Studio, the app for projection-mapped city tables. Claude reads the layers and building blocks your MR Studio version has, makes and edits tables in your tables folder with every change checked, and drafts a request to the MR Studio team when an idea needs something new. Open the table in MR Studio to watch it change while you talk.",
+  "author": {
+    "name": "MR Studio",
+    "url": "https://github.com/snjsomnath/mr-studio"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/snjsomnath/mr-studio"
+  },
+  "homepage": "https://github.com/snjsomnath/mr-studio",
+  "documentation": "https://github.com/snjsomnath/mr-studio/blob/main/docs/MCP.md",
+  "support": "https://github.com/snjsomnath/mr-studio/issues",
+  "icon": "icon.png",
+  "server": {
+    "type": "node",
+    "entry_point": "server/mrstudio-mcp.mjs",
+    "mcp_config": {
+      "command": "node",
+      "args": [
+        "${__dirname}/server/mrstudio-mcp.mjs",
+        "--project",
+        "${user_config.project}"
+      ]
+    }
+  },
+  "tools_generated": true,
+  "prompts_generated": true,
+  "user_config": {
+    "project": {
+      "type": "directory",
+      "title": "Tables folder",
+      "description": "Where your tables are. MR Studio keeps them in Documents/MR Studio/sites.",
+      "required": false,
+      "default": "${DOCUMENTS}/MR Studio/sites"
+    }
+  },
+  "compatibility": {
+    "platforms": [
+      "darwin",
+      "win32",
+      "linux"
+    ],
+    "runtimes": {
+      "node": ">=20.0.0"
+    }
+  },
+  "keywords": [
+    "mr-studio",
+    "urban-planning",
+    "city-model",
+    "projection-mapping",
+    "gis",
+    "participation"
+  ]
+}
