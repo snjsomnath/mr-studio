@@ -4,7 +4,7 @@ import type { Colormap } from './colormap.ts';
 import type { EngineClient } from './engine.ts';
 import type { ModelHandle } from './model.ts';
 import type { LayerReveal } from './reveal.ts';
-import type { FieldFrame, LayerManifest, Params, SiteInfo, StepState, ToolGeometry, ToolInput } from './types.ts';
+import type { EntityChange, EntitySelection, FieldFrame, LayerManifest, Params, SiteInfo, StepState, ToolGeometry, ToolInput } from './types.ts';
 
 export interface FieldOverlayStyle {
   colormap?: Colormap;
@@ -192,6 +192,21 @@ interface ContextBase<P> {
    * `busy: { label, progress }` and the controller shows it under the layer's name.
    */
   service(id: string): ServiceClient;
+  /**
+   * The entity picked on the table or the controller (#279), the same on every surface, or null.
+   * Entities are declared in layer.json `entities`; the runtime picks them on the table and
+   * shows the picked one's controls on the controller without layer code.
+   */
+  readonly selection: EntitySelection | null;
+  /** Picks an entity, or none with null, for every surface: the controller shows its controls. */
+  select(set: string, id: string | null): void;
+  /** One entity's values: its controls' defaults with what was set for it on top. */
+  entity(set: string, id: string): Record<string, unknown>;
+  /**
+   * Changes the values of one or more entities through the host, which checks them against the
+   * set's controls. `null` puts them back to the defaults.
+   */
+  setEntity(set: string, ids: string | string[], values: Record<string, unknown> | null): void;
 }
 
 export interface TableContext<P = Params> extends ContextBase<P> {
@@ -247,6 +262,14 @@ export interface TableHandlers {
   tool?(input: ToolInput): void;
   /** Next or Previous changed how many sub-steps are revealed (`ctx.steps.revealed`). */
   step?(revealed: number): void;
+  /**
+   * Entities' values changed (#279), from the controller, a phone or the editor: which ones, by
+   * set. Read them with `ctx.entity(set, id)`. Waits for the set's `debounce_ms` of quiet, so a
+   * layer that asks a model on every change asks once per gesture.
+   */
+  entities?(changed: EntityChange[]): void;
+  /** Another entity was picked, or none (`ctx.selection`). The runtime marks it on the table itself. */
+  select?(selection: EntitySelection | null): void;
 }
 
 /**

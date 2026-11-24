@@ -1,4 +1,4 @@
-# A layer with a model behind it (#278)
+# A layer with a model behind it (#278, #279)
 
 The pieces a site needs to put an outside model (Python, or anything that speaks HTTP) behind a
 layer, the way ECOM's backend sits behind its layer:
@@ -6,7 +6,9 @@ layer, the way ECOM's backend sits behind its layer:
 - `services/model/server.py`: a stand-in model with a quick call (`POST /run`) and a long job
   (`POST /optimise`, polled at `/optimise/<id>`).
 - `layers/model-runs/`: a site layer that calls it with `ctx.service('model')`, shows the
-  answer on the table and the controller, and publishes `busy` while it waits.
+  answer on the table and the controller, and publishes `busy` while it waits. Its buildings
+  are `entities` (#279): tap one on the table and change it on the controller (in the energy
+  community, solar on the roof), and the model is asked again once the slider settles.
 - `site-services.json`: the `services` entry to put in a site's `site.json`.
 
 To try it on the sample site: copy `services/` and `layers/` into a copy of `sites/sample`, add the
