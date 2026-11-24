@@ -77,9 +77,13 @@ fn parse_obj(bytes: &[u8]) -> Result<Vec<Triangle>, String> {
                 let corners = words
                     .map(|word| {
                         // `v`, `v/vt`, `v//vn` or `v/vt/vn`; negative indices count back from the last vertex.
-                        let index: i64 = word.split('/').next().unwrap_or("").parse().map_err(|_| format!("line {}: bad face", number + 1))?;
+                        let index: i64 =
+                            word.split('/').next().unwrap_or("").parse().map_err(|_| format!("line {}: bad face", number + 1))?;
                         let at = if index < 0 { vertices.len() as i64 + index } else { index - 1 };
-                        vertices.get(usize::try_from(at).map_err(|_| format!("line {}: bad face", number + 1))?).copied().ok_or_else(|| format!("line {}: a face names a vertex that is not there", number + 1))
+                        vertices
+                            .get(usize::try_from(at).map_err(|_| format!("line {}: bad face", number + 1))?)
+                            .copied()
+                            .ok_or_else(|| format!("line {}: a face names a vertex that is not there", number + 1))
                     })
                     .collect::<Result<Vec<_>, String>>()?;
                 for i in 1..corners.len().saturating_sub(1) {
@@ -186,7 +190,13 @@ fn parse_glb(bytes: &[u8]) -> Result<Vec<Triangle>, String> {
             _ => return Err("positions are not three numbers".into()),
         };
         let stride = view["byteStride"].as_u64().map_or(size * width, |s| s as usize);
-        Ok((data, accessor["byteOffset"].as_u64().unwrap_or(0) as usize, stride, component, accessor["count"].as_u64().unwrap_or(0) as usize))
+        Ok((
+            data,
+            accessor["byteOffset"].as_u64().unwrap_or(0) as usize,
+            stride,
+            component,
+            accessor["count"].as_u64().unwrap_or(0) as usize,
+        ))
     };
     let read_u32 = |data: &[u8], at: usize, component: u64| -> Option<u32> {
         Some(match component {
@@ -203,7 +213,8 @@ fn parse_glb(bytes: &[u8]) -> Result<Vec<Triangle>, String> {
             if primitive["mode"].as_u64().unwrap_or(4) != 4 {
                 continue; // points and lines have no surface
             }
-            let accessor = &gltf["accessors"][primitive["attributes"]["POSITION"].as_u64().ok_or("a primitive without positions")? as usize];
+            let accessor =
+                &gltf["accessors"][primitive["attributes"]["POSITION"].as_u64().ok_or("a primitive without positions")? as usize];
             let (data, offset, stride, component, count) = view_of(accessor)?;
             if component != 5126 {
                 return Err("positions are not floats (quantised GLBs are not read)".into());
@@ -211,7 +222,8 @@ fn parse_glb(bytes: &[u8]) -> Result<Vec<Triangle>, String> {
             let mut points = Vec::with_capacity(count);
             for i in 0..count {
                 let at = offset + i * stride;
-                let float = |k: usize| -> Option<f64> { Some(f32::from_le_bytes(data.get(at + k * 4..at + k * 4 + 4)?.try_into().ok()?) as f64) };
+                let float =
+                    |k: usize| -> Option<f64> { Some(f32::from_le_bytes(data.get(at + k * 4..at + k * 4 + 4)?.try_into().ok()?) as f64) };
                 let (x, y, z) = (float(0).ok_or("positions are cut short")?, float(1).unwrap_or(0.0), float(2).unwrap_or(0.0));
                 let m = matrix;
                 points.push([
@@ -224,7 +236,9 @@ fn parse_glb(bytes: &[u8]) -> Result<Vec<Triangle>, String> {
                 None => (0..count).collect(),
                 Some(index) => {
                     let (data, offset, stride, component, count) = view_of(&gltf["accessors"][index as usize])?;
-                    (0..count).map(|i| read_u32(data, offset + i * stride, component).map(|v| v as usize).ok_or("indices are cut short")).collect::<Result<_, _>>()?
+                    (0..count)
+                        .map(|i| read_u32(data, offset + i * stride, component).map(|v| v as usize).ok_or("indices are cut short"))
+                        .collect::<Result<_, _>>()?
                 }
             };
             for t in indices.chunks_exact(3) {
