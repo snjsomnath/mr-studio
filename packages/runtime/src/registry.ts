@@ -1,5 +1,6 @@
+import { coreWidgets } from '@mrstudio/dashboard';
 import * as sdk from '@mrstudio/sdk';
-import { LAYER_API, type LayerManifest, type LayerModule } from '@mrstudio/sdk';
+import { LAYER_API, type LayerManifest, type LayerModule, type PanelSpec } from '@mrstudio/sdk';
 
 // Core layers are bundled with the runtime. Each package's default export is a LayerModule.
 const found = import.meta.glob<{ default: LayerModule }>('../../layers/*/src/index.ts', { eager: true });
@@ -14,6 +15,24 @@ for (const [path, module] of Object.entries(found)) {
   modules.set(layer.manifest.id, layer);
 }
 const core = new Set(modules.keys());
+
+/**
+ * Every widget the site can draw: the core ones and each layer package's own (#353), as
+ * `<layer>/<type>`. One registry for the controller, the TV pages and the table's ribbon.
+ */
+export const widgets = coreWidgets();
+const reportWidgets = (layer: string, mod: LayerModule) => {
+  for (const problem of widgets.registerTeam(layer, mod.widgets)) console.error(problem);
+};
+for (const [id, mod] of modules) reportWidgets(id, mod);
+
+/** A layer's panels with its own widgets named in full (`flow-meter` becomes `energy/flow-meter`). */
+export function withTeamWidgets(layer: string, specs: readonly PanelSpec[]): PanelSpec[] {
+  return specs.map((spec) => {
+    const found = widgets.find(spec.widget, layer);
+    return found && found.type !== spec.widget ? { ...spec, widget: found.type } : spec;
+  });
+}
 
 /**
  * The SDK a site layer's module uses (#277). `mrstudio layer build` turns every
@@ -50,6 +69,7 @@ export async function loadSiteModules(manifests: readonly LayerManifest[]): Prom
         if (layer.manifest.id !== manifest.id) throw new Error(`its code is for '${layer.manifest.id}'`);
         if (layer.manifest.api !== LAYER_API) throw new Error(`it was built for layer api ${layer.manifest.api}, this app runs ${LAYER_API}`);
         modules.set(manifest.id, layer);
+        reportWidgets(manifest.id, layer);
         loaded.set(manifest.id, manifest.module!);
       } catch (error) {
         console.error(`site layer '${manifest.id}' could not be loaded from ${manifest.module}:`, error);

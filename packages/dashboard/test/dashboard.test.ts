@@ -9,6 +9,7 @@ import { pack } from '../src/pack.ts';
 import { GRID, SCREEN, SIZES } from '../src/rules.ts';
 import { contrast, STYLE_TOKENS, themeVariables, validateTheme } from '../src/theme.ts';
 import { panelReads, validateLayerPanels, validatePage, validatePanel, validateRibbon } from '../src/validate.ts';
+import { defineWidget } from '../src/registry.ts';
 import { coreWidgets } from '../src/widgets/index.ts';
 
 const json = (path: string) => JSON.parse(readFileSync(new URL(path, import.meta.url), 'utf8'));
@@ -223,4 +224,31 @@ test('compare and balance panels fit their sizes, in a ribbon too, and are count
   assert.equal(scenarioChange(undefined, 90), null);
   assert.equal(selfSufficiency([{ label: 'Solar', value: 60 }, { label: 'Grid', value: 40 }], 'Grid'), 0.6);
   assert.equal(selfSufficiency([], 'Grid'), null);
+});
+
+test('a layer package brings its own widgets, held to the core contract (#353)', () => {
+  const registry = coreWidgets();
+  const meter = defineWidget({
+    type: 'meter', name: 'Meter', description: 'A level.', sizes: ['chip', 'tile'],
+    props: { value: { kind: 'value', label: 'Value', required: true, bindable: true } },
+    reads: () => 1,
+    mount: () => ({ update() {} }),
+  });
+  const broken = { type: 'Bad Name', name: '', sizes: ['huge'], props: { x: { kind: 'number' } }, mount: () => ({ update() {} }) };
+  const problems = registry.registerTeam('energy', [meter, broken]);
+  for (const words of [/lower-case/, /needs a name/, /sizes is a list/, /needs reads/, /prop 'x' needs a label/]) assert.match(problems.join(' | '), words);
+  assert.equal(registry.get('energy/meter')?.owner, 'energy');
+  assert.equal(registry.get('meter'), undefined);
+  // The layer's own panels may name it short; core widgets keep their names.
+  assert.equal(registry.find('meter', 'energy')?.type, 'energy/meter');
+  assert.equal(registry.find('stat', 'energy')?.type, 'stat');
+  assert.equal(registry.find('meter', 'other'), undefined);
+  // It counts in the density budget and validates like a core widget.
+  assert.deepEqual(validateLayerPanels([{ id: 'm', widget: 'energy/meter', size: 'tile', title: 'Level', props: { value: 3 } }], registry), []);
+  assert.ok(validateLayerPanels([{ id: 'm', widget: 'energy/meter', size: 'block', title: 'Level', props: { value: 3 } }], registry).length > 0);
+  // A rebuilt layer replaces its widget, and the editor sees who owns it.
+  registry.registerTeam('energy', [{ ...meter, name: 'Meter 2' }]);
+  assert.equal(registry.get('energy/meter')?.name, 'Meter 2');
+  assert.equal(registry.describe().find((w) => w.type === 'energy/meter')?.owner, 'energy');
+  assert.deepEqual(registry.registerTeam('energy', undefined), []);
 });

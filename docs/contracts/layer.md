@@ -203,8 +203,19 @@ export default defineLayer({
 
   // Optional: fetch what the layer will show before it is shown (see below).
   async prefetch(site, params) {},
+
+  // Optional: the layer's own widgets (#353), named `<layer>/<type>` on the site.
+  widgets: [gridLink],
 });
 ```
+
+`widgets` brings the layer's own kinds of panel (#353), made with `defineWidget` from `@mrstudio/sdk`.
+They are known on the site as `<layer id>/<type>` (TV pages, other layers), and the layer's own
+`panels` may name them by `type` alone. They keep the core widgets' contract (contracts/dashboard.md,
+Adding a widget): the sizes they take, a label on every prop, bindings, the theme's tokens only, and
+an honest cost in reads. A widget with problems is skipped and reported in the window's console; one
+that throws breaks only its own panel. The model-runs sample (`samples/service-example`) has one,
+`grid-link`.
 
 The module is loaded on every surface. `table` runs only on the table surface and `panel` only on the TV, once for each `custom` panel in the manifest. Phones need no code.
 State lives in the closure, so a layer has no module-level variables and no explicit teardown:

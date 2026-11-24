@@ -3,6 +3,7 @@
 
 import type { CanvasOverlay } from './layer.ts';
 import type { SiteInfo } from './types.ts';
+import { dataProblem, fetchFromHost } from './data.ts';
 
 export type XY = [x: number, y: number];
 
@@ -73,26 +74,32 @@ export function siteDataUrl(site: SiteInfo, name: string): string | null {
 /**
  * Fetches a named site dataset as JSON. Null when the site does not have it or it cannot be loaded.
  * A failed connection or a server error is tried again a few times, since a host that is starting
- * (the desktop app switching tables) briefly answers nothing (#222). A missing file is not retried.
+ * (the desktop app switching tables) briefly answers nothing (#222). A dataset the site names but
+ * that cannot be read is reported (#259): the runtime shows the layers that need it as in trouble
+ * and starts them again until it can be read.
  */
 export async function readSiteData<T = any>(site: SiteInfo, name: string): Promise<T | null> {
   const url = siteDataUrl(site, name);
   if (!url) return null;
-  for (let attempt = 0; ; attempt++) {
-    try {
-      const response = await fetch(url);
-      if (response.ok) return (await response.json()) as T;
-      if (response.status < 500 || attempt >= 4) {
-        console.warn(`site data '${name}' could not be loaded: HTTP ${response.status}`);
-        return null;
-      }
-    } catch (error) {
-      if (attempt >= 4) {
-        console.warn(`site data '${name}' could not be loaded: ${(error as Error).message}`);
-        return null;
-      }
-    }
-    await new Promise((resolve) => setTimeout(resolve, 250 * 2 ** attempt));
+  const file = url.split('/').pop() || url;
+  let response: Response;
+  try {
+    response = await fetchFromHost(url);
+  } catch (error) {
+    console.warn(`site data '${name}' could not be loaded: ${(error as Error).message}`);
+    dataProblem({ name, reason: `couldn't reach the table's server for ${file}` });
+    return null;
+  }
+  if (!response.ok) {
+    console.warn(`site data '${name}' could not be loaded: HTTP ${response.status}`);
+    dataProblem({ name, reason: `couldn't read ${file} (HTTP ${response.status})` });
+    return null;
+  }
+  try {
+    return (await response.json()) as T;
+  } catch {
+    dataProblem({ name, reason: `${file} is not valid JSON` });
+    return null;
   }
 }
 

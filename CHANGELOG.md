@@ -4,6 +4,37 @@ Every merge to main that carries a release note becomes a version. The newest is
 The app shows these notes, with their pictures, on Home when a newer version is out.
 How notes are written: docs/RELEASING.md.
 
+## 0.22.0 (2026-11-24)
+
+### New
+
+#### A team's own widgets, held to the same rules as the built-in ones (#353)
+A layer package can now bring its own kinds of panel. Its code makes them with `defineWidget` and lists them in `widgets`; MR Studio checks each one (sizes, a label on every setting, a cost in reads) and adds it to the one set of widgets the controller, the TV pages and the table's ribbon share, as `<layer>/<type>`. The layer's own panels name it by its short name. It counts against the density budget, binds to what layers publish and follows the theme like any built-in widget, and one that breaks only breaks its own panel. The model-runs sample shows the grid draw as a line into the community that thickens with it, on the controller and in the ribbon. Built-in widgets stay for what most tables need; a widget two teams have each written moves into the built-in set. Also: sound beds no longer fill the window's console with warnings before the first tap.
+
+![The model-runs sample's own Grid link widget on the controller](docs/screenshots/353-controller.png)
+
+![The same widget on the developer page and as a chip in the table's ribbon](docs/screenshots/353-dev.png)
+
+### Fixes
+
+#### The MCP server knows the latest table features (#349, #231, #156)
+
+An LLM designing with the MCP server now finds the Reveal line's then-and-now mode (two layers, one on each side of the line), the controller's Ribbon button and the Stormwater ribbon, and the logo on the controller and phones, and it describes the Magnifier as it now works (the controller shows the glass). A layer's data needs now point to `import_data`.
+
+![find_capabilities finding the Reveal line, the Ribbon button and the logo](docs/screenshots/mcp-current-0-20.png)
+
+## 0.21.0 (2026-11-24)
+
+### New
+
+#### Every phone is an animal with a fun name (#339)
+
+A phone that joins becomes "Sunny Fox" or "Brave Owl": an animal nobody else at the table has, on that phone's colour. Tapping it lets the visitor type a name of their own or pick another animal. The controller shows each phone's animal under the QR code, faded while it reconnects, and says "Ada turned on Wind" when a phone switches a layer. Names are in Swedish too.
+
+![Naming a phone and picking its animal](docs/screenshots/339-phone-profile.png)
+![Phones' animals under the controller's QR code](docs/screenshots/339-controller-phones.png)
+![The controller saying which phone opened Wind](docs/screenshots/339-controller-cue.png)
+
 ## 0.20.0 (2026-11-24)
 
 ### New

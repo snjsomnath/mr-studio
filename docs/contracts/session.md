@@ -144,6 +144,9 @@ interface Participant {
   slot: number;         // 0-based; stable for as long as the person stays
   colour: string;
   connected: boolean;   // false while the slot is held for a phone that dropped
+  avatar: string;       // the phone's animal (#339): fox, octopus, owl, frog, turtle, penguin, butterfly, unicorn, otter, hedgehog, whale, bee; no two phones get the same one on joining
+  mood: string;         // curious, cosmic, sunny, merry, brave, gentle, lucky, swift: with the animal, the fun name ("Sunny Fox"), said in the visitor's language
+  name: string | null;  // the visitor's own name, at most 32 characters; null shows the fun name
 }
 interface LayerState {
   layer: string;                           // the layer package this instance runs
@@ -297,6 +300,7 @@ Text frames are JSON. Binary frames are engine field frames (see engine.md).
 { t: 'hello', protocol: 1, role: 'table' | 'tv' | 'phone' | 'guide' | 'dev', code?: string, resume?: string }
 { t: 'req', id: number, m: string, p?: object }
 { t: 'alive', window: string, fps: number }  // table and tv windows of the desktop app, every 2 s (see Running unattended)
+{ t: 'error', message: string, stack?: string, layer?: string, window?: string }  // an error in the window, for the app's log (see Layers in trouble)
 
 // host to surface
 { t: 'welcome', surface: number, state: SessionState, manifests: LayerManifest[], resume?: string }   // manifests: every layer that can be in a scene
@@ -310,11 +314,14 @@ Requests:
 
 | Method | Params | Roles | Effect |
 | --- | --- | --- | --- |
+| `participant.profile` | `{ avatar?, name? }` | phone | Changes this phone's animal (one of the list above) or name (trimmed, at most 32 characters; `""` or `null` goes back to the fun name). Broadcasts `state.participants` and returns `{ participant }` (#339) |
 | `layer.activate` | `{ layer, active }` | table, tv, dev, phone | Turns a layer on or off. Phones only when `tv.phone_switch` is not false, the layer's `phone_switch` is not false, and no slideshow is showing; the host then broadcasts `phone.switched` (#335), unless `cue: false` (a layer closed to make way) |
 | `layer.intensity` | `{ layer, intensity }` | table, tv, dev | Sets how strongly the layer is drawn, clamped to 0..2. The runtime applies it to the layer's overlays and decorations; layers need no code |
 | `layer.set` | `{ layer, params }` | all (phones only for `phone: true` controls) | Validates, merges, broadcasts |
 | `layer.action` | `{ layer, action }` | all (phones only for `phone: true`) | Broadcast to the table |
 | `layer.publish` | `{ layer, values }` | table, dev | Merges into `shared`, broadcasts |
+| `layer.health` | `{ layer, status, reason?, retry_in? }` | table, dev | How a layer that is on is doing (#259). `status` is `retrying` or `failed` (with `reason` in words, and for `retrying` the seconds to the next try) or `running`. Kept as the layer's `health` (absent while it runs) and broadcast; ignored while it is off. Returns `{ incident }` when trouble starts or ends, which goes to the operator log |
+| `layer.retry` | `{ layer }` | tv, dev | Retry for a layer in trouble: the table starts it again now (event `layer.retry { layer }`) |
 | `tool.input` | `{ layer, tool, geometry }` | all | Checked, then forwarded to the table |
 | `engine.*` | see engine.md | table, tv, dev | Kernel streams |
 | `calibration.get` | none | table, tv, dev | Returns `{ projector }`, the saved projector calibration or null (see model.md) |
@@ -354,7 +361,7 @@ Events:
 | `catalog.removed` | `{ id }` after `custom.remove` |
 | `palette.changed` | `{ palette }` after `palette.set` |
 | `tool.input` | `{ layer, tool, geometry, from, participant? }` |
-| `phone.switched` | `{ layer, active, participant? }` after a phone turned a layer on or off; `participant` is `{ slot, colour }` |
+| `phone.switched` | `{ layer, active, participant? }` after a phone turned a layer on or off; `participant` is `{ slot, colour, avatar, mood, name }` |
 | `calibration` | `{ projector }` after a calibration was saved or cleared |
 | `calibration.mode` | `{ active }` |
 | `site.changed` | `{ site: SiteInfo }` after data was imported, or an undo or outside edit changed more than the live keys: the scene is re-baked and the engine and twin already use it. Replace `state.site`; layers that read site data at start need a reload |
@@ -409,6 +416,36 @@ A table in an exhibition runs all day with nobody at the computer.
   itself" adds a login item: a LaunchAgent on macOS, a Run entry on Windows. The app starts
   with `--at-login` and presents the last table on the saved screens.
 
+### Layers in trouble, and diagnostics (#259, #260)
+
+A layer must never be silently missing from the table.
+
+- **Health.** When a layer's `table()` throws, or a site dataset it uses cannot be read (the
+  SDK's `readSiteData`, `loadSiteData` and `loadSiteField` report it through `onDataProblem`,
+  after their own retries for a host that is restarting), the table's runtime sends
+  `layer.health { status: 'retrying', reason, retry_in }` and starts the layer again after
+  1 s, 2 s, 5 s, 15 s, then every minute while it is on. A dataset is pinned on the layers that
+  name it in `requires.data` or in a setting; otherwise on the one layer starting just then.
+  Once a start reads everything, it sends `running` and the trouble ends. A layer whose code is
+  not in the app is `failed` and waits.
+- **Where it shows.** The editor puts a red dot on the layer's row, with why in its tooltip,
+  and a box with the reason and **Retry** at the top of its settings. The controller dims the
+  layer's button and writes "Not available right now" under its name; it comes back by itself.
+  The start and end of trouble go to the operator log.
+- **Window errors.** Every surface sends uncaught errors, rejected promises and errors thrown
+  by a layer's handlers as `{ t: 'error', message, stack, layer, window }`: the same error at
+  most once a minute, 20 a minute in all. The host counts repeats, allows 30 a minute per
+  window, keeps the last 200, and writes new ones to the app's log and (except phones') to the
+  operator log.
+- **Diagnostics.** `GET /api/diagnostics` is the host's report as JSON (`?format=text` for
+  text): version, table and site format, the engine's backend and GPU, every layer with its
+  state and trouble, the windows' last beats and frame rates, window errors and incidents. In
+  the app, Help › Copy diagnostics (also in the editor's Help tab) adds the app's build stamp,
+  the computer, the displays and which window is on each, and the last 500 lines of the app's
+  log, shows it and copies it. Save diagnostics… writes it to a file; Open log folder shows the
+  logs. Keys never pass through it, and anything in a log line that looks like a key or token
+  is blanked.
+
 ### Settings: this computer or this table
 
 Every setting has one home (#73):
@@ -441,7 +478,7 @@ Rules:
 - The host clamps numbers to `min` and `max`, snaps to `step`, and rejects unknown controls and options.
 - Events for one layer are delivered in order. A slow surface receives the latest state, not a backlog: field frames are dropped rather than queued, and a surface that falls behind on events gets one `resync`.
 - Only `table` and `dev` surfaces may publish.
-- `tool.input` geometry is GeoJSON in WGS84 and must match the tool's type: `Point` for `point`, `LineString` (2 or more positions) for `line`, `Polygon` (closed rings) for `polygon`, at most 256 positions in all. The host forwards only `type` and `coordinates`, with positions cut to `[lon, lat]`. Input for a layer that is off is refused. `from` is the sending surface; `participant` is `{ slot, colour }` when it is a phone, so a layer can draw in the sender's colour without tracking participants.
+- `tool.input` geometry is GeoJSON in WGS84 and must match the tool's type: `Point` for `point`, `LineString` (2 or more positions) for `line`, `Polygon` (closed rings) for `polygon`, at most 256 positions in all. The host forwards only `type` and `coordinates`, with positions cut to `[lon, lat]`. Input for a layer that is off is refused. `from` is the sending surface; `participant` is `{ slot, colour, avatar, mood, name }` when it is a phone, so a layer can draw in the sender's colour without tracking participants.
 - `resume` in `welcome` is given to phones only. Sent back in a later `hello` (with the code) it returns the phone to its slot; an unknown or expired token is an ordinary new join.
 - `refused` can also arrive after `welcome`, when the same phone joins again with its token (a reload that beat the old connection's close, or a second tab). The older connection gets `refused` and is closed, and must not reconnect.
 - The host accepts 20 requests per second from each phone, with bursts up to 20. Further requests are answered `ok: false` with `e: 'rate limited'` and have no effect. Other roles are not limited.

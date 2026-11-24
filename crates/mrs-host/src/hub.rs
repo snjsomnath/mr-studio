@@ -22,6 +22,12 @@ pub const MAX_PHONES: usize = 8;
 /// More layers than this in one scene is a mistake, not a design.
 pub const MAX_SCENE_LAYERS: usize = 64;
 const SLOT_COLOURS: [&str; 8] = ["#ff6b6b", "#4dabf7", "#51cf66", "#fcc419", "#cc5de8", "#ff922b", "#20c997", "#f06595"];
+/// The animals a phone can be (#339). Each phone gets one nobody else has, and may pick another.
+pub const AVATARS: [&str; 12] = ["fox", "octopus", "owl", "frog", "turtle", "penguin", "butterfly", "unicorn", "otter", "hedgehog", "whale", "bee"];
+/// The first half of a phone's fun name, "Sunny Fox" (#339). The pages say it in the visitor's language.
+pub const MOODS: [&str; 8] = ["curious", "cosmic", "sunny", "merry", "brave", "gentle", "lucky", "swift"];
+/// The longest name a visitor may give their phone, in characters.
+const NAME_CHARS: usize = 32;
 /// The most positions one tool input may carry.
 const MAX_VERTICES: usize = 256;
 /// How long a sequence step stays in timed mode when it gives no `duration_s`.
@@ -169,6 +175,17 @@ impl Role {
         }
     }
 
+    /// The role's name, as a surface says it in its hello.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Table => "table",
+            Self::Tv => "tv",
+            Self::Phone => "phone",
+            Self::Dev => "dev",
+            Self::Guide => "guide",
+        }
+    }
+
     fn may_activate(self) -> bool {
         self != Self::Phone
     }
@@ -232,7 +249,26 @@ pub struct LayerState {
     /// The entity picked on the table or the controller (#279): `{ set, id }`. Cleared when the layer goes off.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub selection: Option<Value>,
+    /// Trouble the table reported while the layer is on (#259): it could not start or lost its
+    /// data, and is trying again. Absent while it runs as it should. Cleared when it goes off.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub health: Option<LayerHealth>,
 }
+
+/// A layer that is on but not running as it should (#259), as the table reported it.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct LayerHealth {
+    /// `retrying`: it failed and starts again by itself in `retry_in` seconds. `failed`: it
+    /// failed and waits for Retry.
+    pub status: String,
+    /// What went wrong, in words.
+    pub reason: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub retry_in: Option<f64>,
+}
+
+/// The longest reason a layer's trouble keeps.
+const MAX_HEALTH_REASON: usize = 300;
 
 /// Where Next is in a layer (`docs/contracts/present.md`, Steps). For a sequence, `index`
 /// and `count` count its steps and `sub` is the shown layer's sub-steps. For any other
@@ -305,6 +341,12 @@ pub struct Participant {
     pub colour: &'static str,
     /// False while the slot is held for a phone that dropped.
     pub connected: bool,
+    /// One of `AVATARS` (#339).
+    pub avatar: &'static str,
+    /// One of `MOODS`: with the avatar, the fun name the pages show ("Sunny Fox").
+    pub mood: &'static str,
+    /// The name the visitor gave themselves, instead of the fun name.
+    pub name: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -530,6 +572,16 @@ fn tv_words(key: &str) -> &str {
     }
 }
 
+/// A visitor's name for their phone: trimmed, without control characters, at most
+/// `NAME_CHARS` long. An empty name means the fun name again.
+fn clean_name(name: &str) -> Result<Option<String>, String> {
+    let name: String = name.chars().filter(|c| !c.is_control()).collect::<String>().split_whitespace().collect::<Vec<_>>().join(" ");
+    if name.chars().count() > NAME_CHARS {
+        return Err(format!("a name is at most {NAME_CHARS} characters"));
+    }
+    Ok((!name.is_empty()).then_some(name))
+}
+
 fn random_u64() -> u64 {
     std::collections::hash_map::RandomState::new().build_hasher().finish()
 }
@@ -643,6 +695,7 @@ impl Hub {
             shown_by: None,
             rest: false,
             selection: None,
+            health: None,
         };
         let mut instance = Instance { id, def, parent, saved, state };
         instance.sync_rest();
@@ -869,6 +922,16 @@ impl Hub {
         self.info.read().unwrap().clone()
     }
 
+    /// Every layer instance with whether it is on and how it is doing (#259), for diagnostics.
+    pub fn layer_health(&self) -> Vec<Value> {
+        let inner = self.inner.lock().unwrap();
+        inner
+            .scene
+            .iter()
+            .map(|i| json!({ "id": i.id, "layer": i.state.layer, "active": i.state.active, "health": i.state.health }))
+            .collect()
+    }
+
     /// Takes the site as it is after its data changed, and tells every surface.
     pub fn site_changed(&self, info: SiteInfo) {
         *self.info.write().unwrap() = info.clone();
@@ -927,8 +990,12 @@ impl Hub {
         } else {
             let limit = self.options.max_phones;
             let slot = (0..limit).find(|slot| inner.seats.iter().all(|s| s.participant.slot != *slot)).ok_or("session full")?;
+            // An animal nobody here has, and a mood, picked at random.
+            let free: Vec<&'static str> = AVATARS.iter().copied().filter(|a| inner.seats.iter().all(|s| s.participant.avatar != *a)).collect();
+            let avatar = free[random_u64() as usize % free.len().max(1)];
+            let mood = MOODS[random_u64() as usize % MOODS.len()];
             inner.seats.push(Seat {
-                participant: Participant { surface, slot, colour: SLOT_COLOURS[slot % SLOT_COLOURS.len()], connected: true },
+                participant: Participant { surface, slot, colour: SLOT_COLOURS[slot % SLOT_COLOURS.len()], connected: true, avatar, mood, name: None },
                 token: format!("{:016x}{:016x}", random_u64(), random_u64()),
                 epoch: 0,
                 held_since: None,
@@ -1087,6 +1154,26 @@ impl Hub {
             self.emit("session.changed", json!({ "session": self.session() }));
             return Ok(json!({ "sound": on }));
         }
+        if method == "participant.profile" {
+            if role != Role::Phone {
+                return Err("only a phone has a name and an animal".into());
+            }
+            let seat = inner.seats.iter_mut().find(|s| s.participant.surface == surface).ok_or("this phone has no seat")?;
+            if let Some(avatar) = p.get("avatar").filter(|v| !v.is_null()) {
+                let avatar = avatar.as_str().and_then(|a| AVATARS.iter().find(|x| **x == a)).ok_or("pick one of the animals offered")?;
+                seat.participant.avatar = avatar;
+            }
+            if let Some(name) = p.get("name") {
+                seat.participant.name = match name {
+                    Value::Null => None,
+                    Value::String(name) => clean_name(name)?,
+                    _ => return Err("a name is text".into()),
+                };
+            }
+            let me = seat.participant.clone();
+            self.emit("state.participants", json!({ "participants": inner.participants() }));
+            return Ok(json!({ "participant": me }));
+        }
         if method == "session.ribbon" {
             if !matches!(role, Role::Tv | Role::Dev | Role::Guide) {
                 return Err("only the controller chooses the table's ribbon".into());
@@ -1142,7 +1229,7 @@ impl Hub {
             if role == Role::Phone && p["cue"].as_bool() != Some(false) {
                 let mut event = json!({ "layer": layer, "active": active });
                 if let Some(seat) = inner.seats.iter().find(|s| s.participant.surface == surface) {
-                    event["participant"] = json!({ "slot": seat.participant.slot, "colour": seat.participant.colour });
+                    event["participant"] = json!({ "slot": seat.participant.slot, "colour": seat.participant.colour, "avatar": seat.participant.avatar, "mood": seat.participant.mood, "name": seat.participant.name });
                 }
                 self.emit("phone.switched", event);
             }
@@ -1299,6 +1386,50 @@ impl Hub {
                 state.shared.extend(p["values"].as_object().ok_or("missing values")?.clone());
                 self.emit_layer(layer, state);
             }
+            "layer.health" => {
+                // The table says how the layer is doing (#259): trouble, or running again.
+                if !role.may_publish() {
+                    return Err("only the table reports how a layer is doing".into());
+                }
+                let health = match p["status"].as_str().ok_or("missing status")? {
+                    "running" | "starting" => None,
+                    status @ ("retrying" | "failed") => Some(LayerHealth {
+                        status: status.to_string(),
+                        reason: p["reason"].as_str().unwrap_or("it could not start").chars().take(MAX_HEALTH_REASON).collect(),
+                        retry_in: p["retry_in"].as_f64().filter(|s| s.is_finite() && *s >= 0.0).map(|s| s.min(3600.0)),
+                    }),
+                    other => return Err(format!("'{other}' is not a layer status")),
+                };
+                // A layer that went off meanwhile has nothing to report.
+                if !state.active || state.health == health {
+                    return Ok(json!({}));
+                }
+                let name = state
+                    .button
+                    .name
+                    .clone()
+                    .filter(|n| !n.is_empty())
+                    .or_else(|| def.manifest["name"].as_str().map(String::from))
+                    .unwrap_or_else(|| layer.to_string());
+                // The operator log hears when trouble starts and when it ends, not every retry.
+                let incident = match (&state.health, &health) {
+                    (None, Some(h)) => Some(format!("The layer '{name}' is not running: {}. Trying again.", h.reason)),
+                    (Some(_), None) => Some(format!("The layer '{name}' is running again.")),
+                    _ => None,
+                };
+                state.health = health;
+                self.emit_layer(layer, state);
+                return Ok(json!({ "incident": incident }));
+            }
+            "layer.retry" => {
+                // Retry from the editor or the controller (#259): the table starts the layer again now.
+                if !matches!(role, Role::Tv | Role::Dev) {
+                    return Err("only the operator's screens retry a layer".into());
+                }
+                if state.health.is_some() {
+                    self.emit("layer.retry", json!({ "layer": layer }));
+                }
+            }
             "layer.action" => {
                 let action = p["action"].as_str().ok_or("missing action")?;
                 let control = def.control(action).filter(|c| matches!(c.kind, crate::ControlKind::Action));
@@ -1321,7 +1452,7 @@ impl Hub {
                 }
                 let mut event = json!({ "layer": layer, "tool": id, "geometry": geometry, "from": surface });
                 if let Some(seat) = inner.seats.iter().find(|s| s.participant.surface == surface) {
-                    event["participant"] = json!({ "slot": seat.participant.slot, "colour": seat.participant.colour });
+                    event["participant"] = json!({ "slot": seat.participant.slot, "colour": seat.participant.colour, "avatar": seat.participant.avatar, "mood": seat.participant.mood, "name": seat.participant.name });
                 }
                 self.emit("tool.input", event);
             }
@@ -1839,6 +1970,7 @@ impl Hub {
         if !active {
             scene[index].state.step = None;
             scene[index].state.selection = None;
+            scene[index].state.health = None;
         }
         scene[index].state.active = active;
         if sequence && !active {
@@ -2451,6 +2583,40 @@ mod tests {
     }
 
     #[test]
+    fn the_table_reports_a_layers_trouble_until_it_runs_again() {
+        let hub = scratch_hub("layer-health");
+        let table = |method: &str, p: Value| hub.request(Role::Table, 1, method, &p);
+        let dev = |method: &str, p: Value| hub.request(Role::Dev, 0, method, &p);
+        let mut events = hub.subscribe();
+        // Off: nothing to report.
+        table("layer.health", json!({ "layer": "wind", "status": "retrying", "reason": "x" })).unwrap();
+        assert!(layer(&hub, "wind").get("health").is_none());
+        dev("layer.activate", json!({ "layer": "wind", "active": true })).unwrap();
+        let r = table("layer.health", json!({ "layer": "wind", "status": "retrying", "reason": "couldn't read buildings.geojson (HTTP 404)", "retry_in": 5 })).unwrap();
+        assert!(r["incident"].as_str().unwrap().contains("is not running: couldn't read buildings.geojson"), "{r}");
+        assert_eq!(layer(&hub, "wind")["health"]["status"], "retrying");
+        assert_eq!(layer(&hub, "wind")["health"]["retry_in"], 5.0);
+        // A retry later with the same trouble is not a new incident.
+        let r = table("layer.health", json!({ "layer": "wind", "status": "retrying", "reason": "couldn't read buildings.geojson (HTTP 404)", "retry_in": 15 })).unwrap();
+        assert!(r["incident"].is_null());
+        // Phones can neither report nor retry; the controller and editor retry.
+        assert!(hub.request(Role::Phone, 3, "layer.health", &json!({ "layer": "wind", "status": "running" })).is_err());
+        assert!(hub.request(Role::Phone, 3, "layer.retry", &json!({ "layer": "wind" })).is_err());
+        while events.try_recv().is_ok() {}
+        dev("layer.retry", json!({ "layer": "wind" })).unwrap();
+        let retry: Value = serde_json::from_str(&events.try_recv().unwrap()).unwrap();
+        assert_eq!((retry["m"].as_str(), retry["p"]["layer"].as_str()), (Some("layer.retry"), Some("wind")), "{retry}");
+        let r = table("layer.health", json!({ "layer": "wind", "status": "running" })).unwrap();
+        assert!(r["incident"].as_str().unwrap().contains("running again"));
+        assert!(layer(&hub, "wind").get("health").is_none());
+        // Going off forgets any trouble.
+        table("layer.health", json!({ "layer": "wind", "status": "failed", "reason": "boom" })).unwrap();
+        dev("layer.activate", json!({ "layer": "wind", "active": false })).unwrap();
+        assert!(layer(&hub, "wind").get("health").is_none());
+        assert!(table("layer.health", json!({ "layer": "wind", "status": "sleeping" })).is_err());
+    }
+
+    #[test]
     fn phones_switch_layers_unless_the_table_a_layer_or_a_tour_holds_them_back() {
         let hub = scratch_hub("phone-switch");
         let phone = |method: &str, p: Value| hub.request(Role::Phone, 3, method, &p);
@@ -2631,6 +2797,27 @@ mod tests {
         let code = hub.session().code.clone();
         assert_eq!(code.len(), 4);
         assert_eq!(hub.session().join_url.as_deref(), Some(format!("http://10.0.0.5:4170/phone?c={code}").as_str()));
+    }
+
+    #[test]
+    fn every_phone_is_a_different_animal_and_may_rename_itself() {
+        let hub = hub(SessionOptions::default());
+        let code = hub.session().code.clone();
+        let phones: Vec<u64> = (0..8).map(|_| hub.join(Role::Phone, Some(&code), None).unwrap().surface).collect();
+        let people = hub.inner.lock().unwrap().participants();
+        let animals: std::collections::HashSet<_> = people.iter().map(|p| p.avatar).collect();
+        assert_eq!(animals.len(), 8, "no two phones share an animal");
+        assert!(people.iter().all(|p| MOODS.contains(&p.mood) && p.name.is_none()));
+
+        let me = phones[0];
+        let set = |p: Value| hub.request(Role::Phone, me, "participant.profile", &p);
+        let back = set(json!({ "avatar": "whale", "name": "  Ada\n  Lovelace " })).unwrap();
+        assert_eq!((back["participant"]["avatar"].clone(), back["participant"]["name"].clone()), (json!("whale"), json!("Ada Lovelace")));
+        assert!(set(json!({ "avatar": "dragon" })).is_err(), "only the animals offered");
+        assert!(set(json!({ "name": "x".repeat(33) })).is_err(), "names are short");
+        set(json!({ "name": "" })).unwrap();
+        assert_eq!(hub.inner.lock().unwrap().participants()[0].name, None, "an empty name brings the fun name back");
+        assert!(hub.request(Role::Tv, 0, "participant.profile", &json!({ "name": "TV" })).is_err());
     }
 
     #[test]

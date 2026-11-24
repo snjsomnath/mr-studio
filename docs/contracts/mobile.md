@@ -16,6 +16,8 @@ One token is one phone: a second tab with the same token takes the slot over and
 
 ## What a phone can do
 
+- Be someone (#339): every phone that joins gets an animal nobody else here has and a fun name, "Sunny Fox", on its colour. Tapping it at the top of the page opens a sheet to type a name of its own (at most 32 characters) or pick another animal. The controller shows each phone's animal on its colour under the QR code, faded while it reconnects, with its name on hover, and says "Sunny Fox turned on Wind" when a phone switches a layer.
+
 - See every layer of the table, turn one on or off with its switch (#335), and change its controls marked `phone: true`. A layer's `primary` controls are for phones too unless they say `phone: false`.
   Turning a layer on from a phone closes the open layer, as its button on the controller does. The controller shows a short line, "Wind turned on from a phone", with a dot in that phone's colour.
   Phones cannot switch layers while a slideshow or tour is showing, on a table with `tv.phone_switch: false` (Table settings, "Phones can switch layers"), or for a layer whose layer.json says `"phone_switch": false` (the slideshow does).
