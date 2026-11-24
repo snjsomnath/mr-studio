@@ -235,7 +235,7 @@ impl Geometry {
             for i in 0..vw {
                 // A lattice cell is a building when at least half of its scene cells are.
                 // Its bed is the mean ground of the open scene cells inside it.
-                let (mut total, mut built, mut treed) = (0u32, 0u32, 0u32);
+                let (mut total, mut built, mut treed, mut wet) = (0u32, 0u32, 0u32, 0u32);
                 let (mut ground, mut open, mut all) = (0.0f64, 0u32, 0.0f64);
                 for row in (j * factor)..((j + 1) * factor).min(gh) {
                     for col in (i * factor)..((i + 1) * factor).min(gw) {
@@ -248,6 +248,7 @@ impl Geometry {
                             open += 1;
                             ground += scene.dtm[index] as f64;
                             treed += (scene.canopy[index] > 0.0) as u32;
+                            wet += (scene.water[index] != 0) as u32;
                         }
                     }
                 }
@@ -258,6 +259,9 @@ impl Geometry {
                 bed[n] = if open > 0 { (ground / open as f64) as f32 } else { (all / total as f64) as f32 };
                 if built * 2 >= total {
                     cells[n] = SOLID;
+                } else if wet * 2 >= total {
+                    // A river, a lake or the sea takes what runs into it, like the edge of the table (#343).
+                    cells[n] = OUTFALL;
                 } else {
                     coverage[n] = treed as f32 / total as f32;
                 }

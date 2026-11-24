@@ -163,7 +163,7 @@ async function main() {
     };
     await scrub(8.5);
     await tv.locator(clock, { hasText: '08:30' }).waitFor();
-    await sunlight(dev).locator('.control-value', { hasText: '8.50 h' }).waitFor();
+    await sunlight(dev).locator('.control-value', { hasText: '08:30' }).waitFor();
     // The sun comes from the east at half past eight on midsummer morning.
     await tv.locator('.sun-hero-fact b', { hasText: /^east$/ }).waitFor();
     await dev.waitForTimeout(500);
@@ -685,7 +685,7 @@ async function main() {
     await editor.getByLabel('Description').blur();
     await editor.getByRole('radiogroup', { name: 'Side of the controller' }).getByText('Right').click();
     await editor.getByRole('radiogroup', { name: 'Icon' }).getByLabel('tram').click();
-    await editor.locator('.ed-tree .ed-row[data-layer="mobility"] .ed-row-side', { hasText: 'Right' }).waitFor();
+    await editor.locator('.ed-tree .ed-rail[data-side="right"] .ed-row[data-layer="mobility"]').waitFor();
     await editor.locator('.ed-canvas-head strong', { hasText: 'Getting here' }).waitFor();
     const named = { name: 'Getting here', description: 'How people reach the square', side: 'right', icon: 'tram' };
     await editor.waitForFunction(() => document.querySelector('.ed-icon-choice[aria-label="tram"]')?.getAttribute('aria-checked') === 'true');
@@ -967,6 +967,8 @@ async function main() {
     });
     await shelled.goto(base + '/edit');
     await shelled.getByRole('button', { name: 'Present', exact: true }).click();
+    // The sample's projector is not calibrated on this computer: Present asks first (#63).
+    await shelled.locator('.ed-ask', { hasText: 'before presenting' }).getByRole('button', { name: 'Present anyway' }).click();
     await shelled.getByRole('button', { name: 'Stop presenting' }).click();
     await shelled.getByRole('button', { name: 'Present', exact: true }).waitFor();
     // Preview and "Open in a window" ask the app for a window, rather than window.open, which macOS drops (#51).

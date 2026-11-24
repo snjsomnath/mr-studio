@@ -22,6 +22,10 @@ pub struct BakeStats {
     pub mesh_coverage: f32,
     pub solid_fraction: f32,
     pub max_height_m: f32,
+    /// Terrain cells under footprints set back to the ground beside them (#344).
+    pub terrain_flattened_cells: usize,
+    /// Share of cells that are water (#343).
+    pub water_fraction: f32,
 }
 
 pub fn bake(site: &Site) -> Result<(SceneData, BakeStats), SiteError> {
@@ -59,7 +63,50 @@ pub fn bake(site: &Site) -> Result<(SceneData, BakeStats), SiteError> {
             resample(&source, width, height, grid, &mut scene.dtm);
         }
     }
+    // A surface model used as terrain has the buildings in it: take them out (#344).
+    if let (Some(terrain), Some(buildings)) = (&spec.terrain, &spec.buildings) {
+        if terrain.flatten_buildings {
+            let path = site.resolve(&buildings.path).expect("validated");
+            let mut mask = vec![false; grid.len()];
+            for feature in features(&path)? {
+                for polygon in polygons(&feature["geometry"]) {
+                    let rings: Vec<Vec<(f64, f64)>> = polygon.iter().map(|ring| to_cells(ring, &projection, grid)).collect();
+                    for i in polygon_cells(&rings, grid.width as usize, grid.height as usize) {
+                        mask[i] = true;
+                    }
+                }
+            }
+            // A surface model's buildings bleed a metre or two past their footprints (pixel size, resampling).
+            let reach = (2.0 / grid.cell_m).ceil().max(1.0) as usize;
+            stats.terrain_flattened_cells =
+                flatten(&mut scene.dtm, &dilate(&mask, grid.width as usize, grid.height as usize, reach), grid.width as usize);
+        }
+    }
     scene.dsm.copy_from_slice(&scene.dtm);
+
+    if let Some(water) = &spec.water {
+        let path = site.resolve(&water.path).expect("validated");
+        if water.is_geotiff() {
+            let crs = water.crs.as_deref().and_then(Crs::parse);
+            let raster = GeoRaster::read(&path, crs).map_err(|message| SiteError::Parse { path: path.clone(), message })?;
+            let width = grid.width as usize;
+            for (i, out) in scene.water.iter_mut().enumerate() {
+                let (east, north) = grid.cell_to_local((i % width) as f64 + 0.5, (i / width) as f64 + 0.5);
+                let p = projection.to_lonlat(east, north);
+                *out = raster.sample(p.lon, p.lat).is_some_and(|v| v > 0.5) as u8;
+            }
+        } else {
+            for feature in features(&path)? {
+                for polygon in polygons(&feature["geometry"]) {
+                    let rings: Vec<Vec<(f64, f64)>> = polygon.iter().map(|ring| to_cells(ring, &projection, grid)).collect();
+                    for i in polygon_cells(&rings, grid.width as usize, grid.height as usize) {
+                        scene.water[i] = 1;
+                    }
+                }
+            }
+        }
+        stats.water_fraction = scene.water.iter().filter(|w| **w != 0).count() as f32 / grid.len() as f32;
+    }
 
     if let Some(spec) = &spec.mesh {
         let path = site.resolve(&spec.path).expect("validated");
@@ -182,14 +229,23 @@ pub(crate) fn to_cells(ring: &Value, projection: &Projection, grid: Grid) -> Vec
 /// Uses the even-odd rule over all rings, so holes (courtyards) stay open.
 /// Returns whether any cell was covered.
 fn fill_building(rings: &[Vec<(f64, f64)>], height: f32, scene: &mut SceneData) -> bool {
-    let (width, rows) = (scene.grid.width as usize, scene.grid.height as usize);
+    let cells = polygon_cells(rings, scene.grid.width as usize, scene.grid.height as usize);
+    let Some(base) = cells.iter().map(|&i| scene.dtm[i]).reduce(f32::min) else { return false };
+    for i in cells {
+        scene.dsm[i] = scene.dsm[i].max(base + height);
+    }
+    true
+}
+
+/// The cells whose centres a polygon (rings in cell coordinates, even-odd) covers.
+fn polygon_cells(rings: &[Vec<(f64, f64)>], width: usize, rows: usize) -> Vec<usize> {
     let (mut min_row, mut max_row) = (f64::MAX, f64::MIN);
     for &(_, y) in rings.iter().flatten() {
         min_row = min_row.min(y);
         max_row = max_row.max(y);
     }
     if min_row > max_row {
-        return false;
+        return Vec::new();
     }
     let first = (min_row - 0.5).ceil().max(0.0) as usize;
     let last = ((max_row - 0.5).floor() as i64).min(rows as i64 - 1);
@@ -215,11 +271,59 @@ fn fill_building(rings: &[Vec<(f64, f64)>], height: f32, scene: &mut SceneData) 
             }
         }
     }
-    let Some(base) = cells.iter().map(|&i| scene.dtm[i]).reduce(f32::min) else { return false };
-    for i in cells {
-        scene.dsm[i] = scene.dsm[i].max(base + height);
+    cells
+}
+
+/// The mask grown by `reach` cells in every direction (a square around each cell).
+fn dilate(mask: &[bool], width: usize, rows: usize, reach: usize) -> Vec<bool> {
+    let mut out = mask.to_vec();
+    for row in 0..rows {
+        for col in 0..width {
+            if !mask[row * width + col] {
+                continue;
+            }
+            for y in row.saturating_sub(reach)..=(row + reach).min(rows - 1) {
+                for x in col.saturating_sub(reach)..=(col + reach).min(width - 1) {
+                    out[y * width + x] = true;
+                }
+            }
+        }
     }
-    true
+    out
+}
+
+/// Sets every masked cell to the nearest unmasked ground (spreading out from the edges of the
+/// masked areas, four neighbours at a time). Answers how many cells it changed.
+fn flatten(dtm: &mut [f32], mask: &[bool], width: usize) -> usize {
+    let n = dtm.len();
+    let rows = n / width.max(1);
+    let mut done: Vec<bool> = mask.iter().map(|m| !m).collect();
+    let mut queue: std::collections::VecDeque<usize> = (0..n).filter(|&i| done[i]).collect();
+    let mut changed = 0;
+    while let Some(i) = queue.pop_front() {
+        let (col, row) = (i % width, i / width);
+        let mut visit = |j: usize| {
+            if !done[j] {
+                done[j] = true;
+                dtm[j] = dtm[i];
+                changed += 1;
+                queue.push_back(j);
+            }
+        };
+        if col > 0 {
+            visit(i - 1);
+        }
+        if col + 1 < width {
+            visit(i + 1);
+        }
+        if row > 0 {
+            visit(i - width);
+        }
+        if row + 1 < rows {
+            visit(i + width);
+        }
+    }
+    changed
 }
 
 fn fill_disc(col: f64, row: f64, radius: f64, height: f32, scene: &mut SceneData) -> bool {
@@ -291,6 +395,27 @@ mod tests {
         fill_building(&[vec![(2.0, 2.0), (6.0, 2.0), (6.0, 6.0), (2.0, 6.0)]], 5.0, &mut s);
         assert_eq!(s.dsm[3 * 10 + 2], 7.0);
         assert_eq!(s.dsm[3 * 10 + 5], 7.0);
+    }
+
+    #[test]
+    fn flatten_sets_raised_footprints_to_the_ground_beside_them() {
+        // A 10 x 10 terrain at 2 m with a 30 m "building" in it.
+        let mut dtm = vec![2.0f32; 100];
+        for row in 4..6 {
+            for col in 4..6 {
+                dtm[row * 10 + col] = 30.0;
+            }
+        }
+        let mut mask = vec![false; 100];
+        mask[44] = true;
+        let grown = dilate(&mask, 10, 10, 1);
+        assert_eq!(grown.iter().filter(|m| **m).count(), 9);
+        let mut footprint = vec![false; 100];
+        for i in [44, 45, 54, 55] {
+            footprint[i] = true;
+        }
+        assert_eq!(flatten(&mut dtm, &dilate(&footprint, 10, 10, 1), 10), 16);
+        assert!(dtm.iter().all(|h| *h == 2.0));
     }
 
     #[test]

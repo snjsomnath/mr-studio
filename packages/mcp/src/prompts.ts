@@ -133,9 +133,10 @@ export function buildCodeLayerPrompt(idea?: string): string {
 1. Make sure code is needed. find_capabilities and assess_experience with the idea; if an existing layer, a custom layer recipe (save_custom_layer) or a slideshow does it, build that and stop. Code is for behaviour: a model behind the table, an interaction no layer has, a controller panel of its own.
 2. Plan the three surfaces before any code (read mrstudio://concepts): what the table shows (visual, almost no text), what the controller does (layer buttons, the layer's controls, panels within the TV's density budget) and what phones do. Read docs/contracts/layer.md, "Site layers".
 3. If a model computes the answer (Python, an optimiser), put it behind a service: add_service with its folder and command (or url), then requires.services in layer.json and ctx.service(id).job(...) in the code, publishing 'busy' while it runs. The host caches the last answers for when it is down.
-4. create_layer, then look up every API with sdk_reference before using it (defineLayer, TableContext, PanelContext, ctx.publish, ctx.pointer, ctx.sendTool, ctx.service, the drawing blocks). Write against what it returns; something the SDK lacks is a development request of kind sdk-runtime (draft_development_request), never a copy of core code.
-5. Put every place and number that belongs to this table in the site's data or the layer's params, never in code. Give every word people see a Swedish line in locales/sv.json.
-6. check_layer until it passes, build_layer, add_layer with use "./layers/<id>", validate_site, then preview_layer and look at /dev with the person.
+4. Before code, try a stage made of panels in layer.json (stage: { panels: [...] }): control panels put the layer's own controls on screen, a map panel picks entities or sends points to a tool, and the core widgets show values the layer publishes. A widget the core lacks can be the layer's own (defineWidget, listed in the module's widgets).
+5. create_layer, then look up every API with sdk_reference before using it (defineLayer, TableContext, PanelContext, ctx.publish, ctx.pointer, ctx.sendTool, ctx.service, the drawing blocks). Write against what it returns; something the SDK lacks is a development request of kind sdk-runtime (draft_development_request), never a copy of core code.
+6. Put every place and number that belongs to this table in the site's data or the layer's params, never in code. Give every word people see a Swedish line in locales/sv.json.
+7. check_layer until it passes, build_layer, add_layer with use "./layers/<id>", validate_site, then preview_layer and look at /dev with the person: its Developer workbench shows the widgets, live values, the controller at its real size and any problems.
 
 ${DESIGN_RULES}`;
 }
@@ -146,7 +147,7 @@ export function buildControllerAppPrompt(idea?: string): string {
 
 1. Check what exists first: find_capabilities with "controller map", "stage", "tools", "picker". The controller already has the layer's controls, tools that place points, lines and areas on the table, and a stage per layer (docs/contracts/layer.md, "The controller stage" and "Tools"). Use them when they fit.
 2. Design it as the controller's centre: big touch targets, words on the controller and not on the table, one task at a time. The table answers visually.
-3. If it needs code: create_layer, then sdk_reference for controllerMap, stage(), PanelContext and ctx.sendTool. Inputs go through the host (ctx.sendTool, ctx.publish), so the table, TV and phones agree; never message a surface directly.
+3. Most controller apps need no code: a stage made of panels in layer.json (stage: { panels: [...] }) with a map panel (pick an entity, or send a point to a tool), control panels for the layer's controls, and widgets showing what the layer publishes (docs/contracts/layer.md, A stage made of panels). If it needs code: create_layer, then sdk_reference for controllerMap, stage(), defineWidget, PanelContext and ctx.sendTool. Inputs go through the host (ctx.sendTool, ctx.publish), so the table, TV and phones agree; never message a surface directly.
 4. check_layer (density budget, Swedish words, no site coordinates), build_layer, add_layer, preview_layer and try it in /dev.
 5. A missing SDK piece is a development request of kind sdk-runtime or interaction, after find_related_issues.
 

@@ -29,7 +29,7 @@ GeoJSON polygons, one per building, with a height in metres (height, höjd) or a
 
 ### Ground (GeoTIFF)
 
-A GeoTIFF of ground heights in metres, such as a Lantmäteriet elevation model. It may be larger than the table and on a national grid; if it does not say which, you will be asked for its EPSG code (3006 for SWEREF99 TM).
+A GeoTIFF of ground heights in metres, such as a Lantmäteriet elevation model. It may be larger than the table and on a national grid; if it does not say which, you will be asked for its EPSG code (3006 for SWEREF99 TM). If the file is a surface model with the buildings in it, Add data notices the raised footprints and offers **Take the buildings out of the ground**, which keeps only the ground under them.
 
 ### Trees (GeoJSON or CSV)
 
@@ -39,6 +39,22 @@ GeoJSON points, or a CSV with a row per tree: lat and lon (or x and y, or latitu
 lat;lon;höjd
 57,7001;11,9701;9,5
 ```
+
+### Water (GeoJSON or GeoTIFF)
+
+GeoJSON areas where there is water: a river, a lake, a harbour, the sea. Thermal comfort counts it as cool, stormwater lets the rain run into it, and the base map draws it. A GeoTIFF mask works too (water cells 1, land 0) in site.json under scene.water.
+
+```
+{ "type": "Feature",
+  "properties": { "natural": "water" },
+  "geometry": { "type": "Polygon", "coordinates": [[[11.970, 57.690], [11.975, 57.690], [11.975, 57.688], [11.970, 57.690]]] } }
+```
+
+OpenStreetMap can fill it too: Add data, Water, From OpenStreetMap takes the rivers, lakes and basins mapped as areas.
+
+### 3D model (STL, OBJ or GLB)
+
+A model of the ground and buildings, so shadows and wind follow its real heights. Media, 3D model, Choose a file shows it from above against the table and the footprints to scale, turn and move it, or **Snap to buildings**. A model exported in map coordinates (SWEREF 99 TM, a SWEREF 99 local zone or UTM metres) needs none of that: it is placed where it belongs as it comes in.
 
 ### Streets (GeoJSON)
 

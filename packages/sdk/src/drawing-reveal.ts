@@ -159,6 +159,33 @@ export function placement(table: { width: number; height: number }, corners?: re
   return [tr[0] - tl[0], tr[1] - tl[1], bl[0] - tl[0], bl[1] - tl[1], tl[0], tl[1]];
 }
 
+type Corners = [[number, number], [number, number], [number, number]];
+
+/**
+ * A drawing drawn turned (#301): `corners` are where the top left, top right and bottom left of
+ * the drawing *as shown* land, `quarters` the quarter turns clockwise it is shown at. Answers
+ * where the corners of the drawing as drawn land, for `placement`.
+ */
+export function turnCorners(corners: readonly (readonly [number, number])[], quarters: number): Corners {
+  const [tl, tr, bl] = corners as [[number, number], [number, number], [number, number]];
+  const br: [number, number] = [tr[0] + bl[0] - tl[0], tr[1] + bl[1] - tl[1]];
+  switch (((Math.round(quarters) % 4) + 4) % 4) {
+    case 1:
+      return [[...tr], br, [...tl]];
+    case 2:
+      return [br, [...bl], [...tr]];
+    case 3:
+      return [[...bl], [...tl], br];
+    default:
+      return [[...tl], [...tr], [...bl]];
+  }
+}
+
+/** Corners as the `corners` param writes them: "lon,lat; lon,lat; lon,lat", to about a centimetre. */
+export function formatCorners(corners: readonly (readonly [number, number])[]): string {
+  return corners.map(([lon, lat]) => `${lon.toFixed(7)},${lat.toFixed(7)}`).join('; ');
+}
+
 /**
  * Reads "lon,lat; lon,lat; lon,lat" (top left, top right, bottom left of the drawing) from a
  * text param. Null when it is empty or not three points.

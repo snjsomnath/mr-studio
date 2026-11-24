@@ -233,7 +233,7 @@ Ask the model: "Use the MR Studio overview tool and tell me which core version y
 | --- | --- | --- |
 | `--project <folder>` | `MRSTUDIO_PROJECT` | Folder that relative site paths resolve against. Default: the working folder, or `Documents/MR Studio/sites` when started from the home folder or the root of the disk |
 | `--core <folder>` | `MRSTUDIO_CORE` | Read the core live from a checkout instead of the snapshot |
-| | `MRSTUDIO_CLI` | Path to the `mrstudio` binary. Without it the server looks on `PATH`, in a core checkout's `target/`, and inside the installed app, which ships it |
+| | `MRSTUDIO_CLI` | Path to the `mrstudio` binary. Without it the server looks on `PATH`, in a core checkout's `target/`, and inside the installed app, which ships it. In the app, Displays and settings, Command line, Install command line tool puts it on `PATH` |
 | | `MRSTUDIO_REPO` | Repository requests go to. Default `snjsomnath/mr-studio` |
 | | `GITHUB_TOKEN`, `GH_TOKEN` | Lets `submit_development_request` open issues directly (otherwise the gh CLI sign-in is used) |
 

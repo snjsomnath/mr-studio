@@ -711,6 +711,20 @@ async fn layers_hold_items_and_sequences_show_layers() {
     editor.request("scene.set", json!({ "layer": "trees", "button": { "group": "Nature", "order": 2 } })).await.unwrap();
     assert_eq!(table.event("state.layer").await["state"]["button"], json!({ "group": "Nature", "order": 2.0 }));
     assert!(editor.request("scene.set", json!({ "layer": "trees", "button": { "order": "first" } })).await.is_err());
+    // A button kept off the controller (#58), and back.
+    editor.request("scene.set", json!({ "layer": "trees", "button": { "hidden": true } })).await.unwrap();
+    assert_eq!(table.event("state.layer").await["state"]["button"]["hidden"], true);
+    assert_eq!(saved("trees")["button"]["hidden"], true);
+    editor.request("scene.set", json!({ "layer": "trees", "button": { "hidden": null } })).await.unwrap();
+    assert!(table.event("state.layer").await["state"]["button"].get("hidden").is_none());
+    assert!(editor.request("scene.set", json!({ "layer": "trees", "button": { "hidden": "yes" } })).await.is_err());
+    // Dragging buttons between the rails is one change.
+    editor.request("scene.arrange", json!({ "rails": { "right": ["trees"] } })).await.unwrap();
+    let event = table.event("state.scene").await;
+    assert_eq!(event["layers"]["trees"]["button"]["side"], "right");
+    assert_eq!(event["layers"]["trees"]["button"]["order"], 1.0);
+    assert_eq!(saved("trees")["button"]["side"], "right");
+    assert!(editor.request("scene.arrange", json!({ "rails": { "middle": ["trees"] } })).await.is_err());
     host.shutdown().await;
 
     // What was saved starts the next session the same way.

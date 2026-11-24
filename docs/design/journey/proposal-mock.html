@@ -1,0 +1,75 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>mock</title>
+<style>
+:root{--ink:#1d2330;--mute:#677086;--line:#e2e5ec;--panel:#fff;--bg:#f4f5f8;--acc:#3557D4;--acc-soft:#e8edfc;--ok:#1f8a4c;--warn:#b26a00;font-family:Inter,"Segoe UI",system-ui,sans-serif;font-size:13px;color:var(--ink)}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);width:1440px}
+.title{height:44px;display:flex;align-items:center;gap:14px;padding:0 12px;background:#f0f1f5;border-bottom:1px solid var(--line)}
+.brand{font-weight:600;display:flex;gap:6px;align-items:center}.grow{flex:1}.name{font-weight:600}.saved{color:var(--mute);font-weight:400;margin-left:10px}
+.btn{border:1px solid var(--line);background:#fff;border-radius:6px;padding:5px 12px;display:inline-flex;gap:6px;align-items:center}
+.btn.p{background:var(--acc);color:#fff;border-color:var(--acc)}.btn.q{padding:5px 9px}
+.tabs{display:flex;gap:2px;padding:4px 12px 0;background:#f0f1f5;align-items:flex-end}
+.tab{padding:7px 14px;border-radius:6px 6px 0 0;color:#333;display:flex;gap:7px;align-items:center;border:1px solid transparent;border-bottom:none}
+.tab.on{background:#fff;border-color:var(--line);font-weight:600;margin-bottom:-1px}
+.tab .n{width:17px;height:17px;border-radius:50%;border:1px solid #c5cad6;font-size:10px;display:grid;place-items:center;color:var(--mute)}
+.tab .n.d{background:var(--ok);border-color:var(--ok);color:#fff}.tab .n.c{background:var(--acc);border-color:var(--acc);color:#fff}
+.tab.sep{margin-left:14px;padding-left:16px;border-left:1px solid #d5d9e2;border-radius:0}
+.ribbon{display:flex;background:#fff;border-top:1px solid var(--line);border-bottom:1px solid var(--line);padding:8px 12px 4px;min-height:96px}
+.g{display:flex;flex-direction:column;padding:0 12px;border-right:1px solid var(--line)}.g:last-child{border-right:none}.g.end{margin-left:auto;border-right:none}
+.gt{display:flex;gap:4px;flex:1;align-items:flex-start}.gl{font-size:11px;color:var(--mute);text-align:center;padding-top:4px}
+.big{display:flex;flex-direction:column;align-items:center;gap:4px;padding:4px 8px;border-radius:6px;min-width:64px;text-align:center;line-height:1.15}
+.big .i{width:22px;height:22px;border-radius:5px;background:var(--acc-soft);border:1px solid #c9d3f6}
+.big.dd::after{content:"▾";font-size:10px;color:var(--mute)}
+.col{display:flex;flex-direction:column;gap:3px}.sm{padding:2px 6px;border-radius:5px;display:flex;gap:6px;align-items:center}
+.sm .i{width:13px;height:13px;border-radius:3px;background:var(--acc-soft);border:1px solid #c9d3f6}
+.off{color:#9aa1b2}.pressed{background:var(--acc-soft);color:var(--acc)}
+.chk{display:flex;flex-direction:column;gap:3px;font-size:12px}.chk b{font-weight:600}
+.ok{color:var(--ok)}.wn{color:var(--warn)}
+.body{display:flex;height:330px}.left{width:248px;background:#fff;border-right:1px solid var(--line);padding:12px}
+.canvas{flex:1;background:radial-gradient(#d9dce4 1px,transparent 1px) 0 0/14px 14px;display:grid;place-items:center;position:relative}
+.map{width:420px;height:250px;background:#1a2133;border-radius:6px;box-shadow:0 6px 20px rgba(0,0,0,.2)}
+.insp{width:296px;background:#fff;border-left:1px solid var(--line);padding:14px}
+.h{font-size:11px;letter-spacing:.06em;color:var(--mute);text-transform:uppercase;margin:6px 0}
+.row{padding:5px 8px;border-radius:5px;display:flex;justify-content:space-between}.row.sel{background:var(--acc-soft);color:var(--acc)}
+.coach{position:absolute;left:16px;top:16px;width:300px;background:#fff;border:1px solid var(--line);border-radius:10px;padding:14px;box-shadow:0 8px 24px rgba(20,30,60,.12)}
+.coach h3{margin:0 0 4px;font-size:15px}.coach p{margin:0 0 10px;color:var(--mute);line-height:1.4}
+.note{position:absolute;background:#fff7d6;border:1px solid #e6c64d;padding:6px 9px;border-radius:6px;font-size:12px;max-width:260px;line-height:1.35}
+.pop{position:absolute;left:300px;top:150px;width:520px;background:#fff;border:1px solid var(--line);border-radius:10px;box-shadow:0 12px 32px rgba(20,30,60,.18);padding:12px;display:grid;grid-template-columns:repeat(4,1fr);gap:8px;z-index:5}
+.card{border:1px solid var(--line);border-radius:8px;padding:8px}.card .th{height:46px;border-radius:5px;background:#1a2133;margin-bottom:6px}.card small{color:var(--mute);display:block}
+.pophead{grid-column:1/-1;display:flex;gap:8px;align-items:center}.pophead input{flex:1;border:1px solid var(--line);border-radius:6px;padding:5px 8px}
+.chip{border:1px solid var(--line);border-radius:999px;padding:2px 9px;font-size:12px}.chip.on{background:var(--acc-soft);border-color:#c9d3f6;color:var(--acc)}
+</style></head><body>
+<div id="root"></div>
+<script>
+const mode = location.hash.slice(1) || 'layers';
+const steps = [['place','Place'],['data','Data'],['rest','At rest'],['layers','Layers'],['controller','Controller'],['present','Present']];
+const cur = {layers:'layers',guide:'rest',present:'present',gallery:'layers'}[mode];
+const ci = steps.findIndex(s=>s[0]===cur);
+const guide = mode==='guide';
+let tabs = steps.map(([id,l],i)=>`<div class="tab ${id===cur?'on':''}"><span class="n ${guide? (i<ci?'d':i===ci?'c':''):''}">${guide&&i<ci?'✓':i+1}</span>${l}</div>`).join('');
+tabs += `<div class="tab sep">Display</div>`;
+const L = (t,i=1)=>`<div class="big ${i==='dd'?'dd':''}"><span class="i"></span>${t}</div>`;
+const S = (t,c='')=>`<div class="sm ${c}"><span class="i"></span>${t}</div>`;
+const G = (label,inner,cls='')=>`<div class="g ${cls}"><div class="gt">${inner}</div><div class="gl">${label}</div></div>`;
+let ribbon='';
+if(cur==='layers') ribbon = G('Add', L('Add a layer','dd')+L('Custom layer')+L('From a file'))
+ + G('Look', L('Palette'))
+ + G('Selected: Wind', `<div class="col">${S('Hide')}${S('Move up','off')}${S('Move down')}</div><div class="col">${S('Duplicate')}${S('Move to right side')}${S('Remove')}</div>`)
+ + G('Try it', L('Rehearse')+`<div class="col">${S('Map window')}${S('Controller window')}</div>`, 'end');
+if(cur==='rest') ribbon = G('Base map', L('Dark, from your data','dd'))
+ + G('Map life', `<div class="col">${S('Building lights','pressed')}${S('Traffic','pressed')}${S('Trees','pressed')}</div><div class="col">${S('Public transport','pressed')}${S('Street glow')}${S('Street life')}</div>`)
+ + G('Try it', L('Rehearse'), 'end');
+if(cur==='present') ribbon = G('1. Check', `<div class="chk"><b>Ready to present (#63)</b><span class="ok">✓ 7 layers, all with data</span><span class="wn">! Sunlight has no Swedish words</span><span class="wn">! Phones cannot join yet</span></div>`)
+ + G('2. Try it', L('Rehearse')+`<div class="col">${S('Map window')}${S('Controller window')}${S('Phone window')}</div>`)
+ + G('3. Show it', L('Present')+`<div class="col">${S('Screens: table + 46" TV')}${S('Calibrate projector')}</div>`)
+ + G('4. Send it', L('Share by email')+`<div class="col">${S('Export .mrstable')}${S('Save As…')}</div>`);
+const left = `<div class="h">Map</div><div class="row ${cur==='rest'?'sel':''}">At rest</div><div class="h">Layers</div>${['Wind','Mobility','Isovist','Cool paths','Sketch','Slideshow','Sunlight'].map((n,i)=>`<div class="row ${cur==='layers'&&i===0?'sel':''}">${n}<span style="color:#9aa1b2">${i<4?'Left':'Right'}</span></div>`).join('')}`;
+const insp = cur==='rest' ? `<b>At rest</b><p style="color:#677086">Map life and base map settings live here, one place only.</p>` : cur==='present'? `<b>Present</b><p style="color:#677086">Fix-it links for each warning in the check.</p>` : `<b>Wind</b><div class="h">Button</div>Name, words, side, icon<div class="h">Settings</div>Speed, direction, show…`;
+let extra='';
+if(guide) extra = `<div class="coach"><div style="font-size:11px;color:#677086">Setup guide · step 3 of 6</div><h3>At rest</h3><p>What the map shows when nobody is using the table. Pick a base map and some life above; the map beside you is live.</p><div style="display:flex;gap:8px"><span class="btn">Back</span><span class="btn p">Next: Layers</span><span style="margin-left:auto;color:#677086;align-self:center">Close guide</span></div></div>`;
+if(mode==='gallery') extra = `<div class="pop"><div class="pophead"><input placeholder="Find a layer: wind, sun, traffic…"><span class="chip on">All</span><span class="chip">Climate</span><span class="chip">Movement</span><span class="chip">Story</span><span class="chip">Tools</span></div>${['Sunlight','Wind','Cool paths','Stormwater','Mobility','Isovist','Slideshow','Video walk'].map((n,i)=>`<div class="card"><div class="th"></div>${n}<small>${['Needs buildings','Needs buildings','Needs streets ✓','Needs ground ✓','Needs trips','Ready','Ready','Needs a video'][i]}</small></div>`).join('')}<div style="grid-column:1/-1;color:#677086;font-size:12px">17 layers · Custom layer… · From a file…</div></div>`;
+document.getElementById('root').innerHTML = `
+<div class="title"><span class="brand">◆ MR Studio</span><span>File</span><span style="color:#aaa">↶ ↷</span><span class="grow"></span><span class="name">Sample district<span class="saved">✓ Saved</span></span><span class="grow"></span>
+<span class="btn ${guide?'pressed':''}">${guide?'Close guide':'Setup guide'}</span><span class="btn q">?</span><span class="btn">Share</span><span class="btn p">Present</span></div>
+<div class="tabs">${tabs}</div><div class="ribbon">${ribbon}</div>
+<div class="body"><div class="left">${left}</div><div class="canvas"><div class="map"></div>${extra}</div><div class="insp">${insp}</div></div>`;
+</script></body></html>

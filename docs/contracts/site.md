@@ -32,7 +32,8 @@ sites/<id>/
     "buildings": { "path": "data/buildings.geojson", "height_property": "height", "default_height_m": 12 },
     "terrain":   { "path": "data/terrain.f32", "width": 100, "height": 60 },   // optional, flat if absent; or a GeoTIFF
     "mesh":      { "path": "data/model.stl", "anchor": { "lon": 11.972, "lat": 57.6826 }, "unit_m": 1 },   // optional
-    "trees":     { "path": "data/trees.geojson", "height_property": "height", "crown_radius_m": 3 }  // optional, points
+    "trees":     { "path": "data/trees.geojson", "height_property": "height", "crown_radius_m": 3 },  // optional, points
+    "water":     { "path": "data/water.geojson" }   // optional: areas, or a GeoTIFF mask ("crs" if it names none)
   },
   "data": {                                        // optional, named datasets for layers
     "roads": "data/roads.geojson",
@@ -84,7 +85,7 @@ Rules:
 - Paths are relative to the site folder and may not leave it.
 - `layers[].use` is a core layer id, a relative path to a site-only layer package, or `custom:<id>` for a custom layer saved under `custom`. `params` override the layer's defaults and `active` turns it on at start.
 - `layers[].id` names an entry: lowercase letters, digits and dashes, up to 40. It is required, and unique across the whole scene, items included. Items, steps, the session's state and the editor all refer to an entry by it. New entries get the layer's id, then `-2`, `-3`… when that is taken.
-- `layers[].button` is how the layer is offered on the controller: `{ "name", "description", "icon", "side", "group", "order" }`, all optional. `name` (up to 40 characters) and `description` (up to 200) replace the layer package's own words, `icon` is an icon name in lowercase letters, digits and dashes, `side` is `"left"` or `"right"`, `group` (up to 40 characters) puts it in a named group of its rail, and `order` (a number, lower first) places it there. The map never shows these; they are for the controller and phones. How the controller uses them is in [present.md](present.md).
+- `layers[].button` is how the layer is offered on the controller: `{ "name", "description", "icon", "side", "group", "order", "hidden" }`, all optional. `name` (up to 40 characters) and `description` (up to 200) replace the layer package's own words, `icon` is an icon name in lowercase letters, digits and dashes, `side` is `"left"` or `"right"`, `group` (up to 40 characters) puts it in a named group of its rail, `order` (a number, lower first) places it there, and `hidden: true` keeps the button off the controller and phones while the layer stays in the table (the editor's eye on a layer row). The map never shows these; they are for the controller and phones. How the controller uses them is in [present.md](present.md).
 - `layers[].items` and `layers[].steps`: see [Layers, items and sequences](#layers-items-and-sequences).
 - `custom`: see [Custom layers](#custom-layers).
 - `branding` is what the controller says about the table: `title` (up to 80 characters; the table's `name` without it), `logo` (a picture inside the site folder, shown above the title on the controller's welcome screen and beside it on phones; Table settings picks it from the table's media) and `welcome`, the line under the title on the controller's home screen (up to 160; a default sentence without it). With `name` and `timezone` these are the table settings the editor changes through `site.table` (session.md, "Settings: this computer or this table"). Nothing in site.json belongs to the computer: screens, colour, keys and outside sources are app settings. `branding.languages` lists the languages visitors can switch between (#80), the first the table starts in: `["en", "sv"]`, or `["sv", "en"]` to start in Swedish; with one or none there is no switch. `branding.translations` holds the table's own words in other languages, by language and then by the English text: `{ "sv": { "Sample district": "Exempelstadsdelen" } }`. The editor lists them under Table settings, Languages for visitors.
@@ -95,6 +96,8 @@ Rules:
 - `terrain` is one of two things, told apart by the file extension:
   - Raw little-endian f32 elevations covering the extent, row-major with row 0 at the top, at any resolution. Needs `width` and `height`.
   - A GeoTIFF (`.tif`, `.tiff`): `{ "path": "data/terrain.tif" }`. It is placed by its own georeference, so it may be larger than the extent and on a national grid. Add `"crs": "EPSG:3006"` when the file does not name its coordinate system. See [Terrain from a GeoTIFF](#terrain-from-a-geotiff).
+- `water` (#343) says where there is water: GeoJSON areas, or a GeoTIFF mask whose cells above 0.5 are water (`"crs": "EPSG:3006"` when the file names no coordinate system). It is available to layers as the `water` dataset. Thermal comfort (CoolPaths) counts water as cool ground, stormwater lets runoff drain into it as it does at the table's edge, and the dark base map draws it.
+- `terrain.flatten_buildings` (#344, default `false`) is for a terrain that has the buildings raised in it (a surface model). The bake sets the ground under each footprint, and about 2 m around it, to the nearest ground beside it, so buildings stand on the ground instead of being part of it. Add data offers it when it sees raised footprints.
 - `mesh` is a 3D model of the top surface, for sites whose footprints have no heights. See [Buildings from a mesh](#buildings-from-a-mesh).
 - `buildings.extrude` (default `true`) says whether the footprints are raised into the scene. Set it to `false` when a mesh gives the buildings their shape; the footprints are then only drawn on the table.
 - `layers[].hide` lists ids of the layer's controls that the controller and phones leave out, for example `["opacity", "detail"]`. The control keeps its value, and the editor and the developer page still show it.
@@ -285,6 +288,9 @@ The host turns the sources into the rasters the engine loads, in memory at start
 1. `dtm`: the terrain raster resampled to the grid, or 0 everywhere.
 2. `dsm`: `dtm`, raised by the mesh where it stands clear of the ground, then by each extruded building polygon, filled with a flat roof at its height above the lowest ground it covers. Courtyards (polygon holes) stay open.
 3. `canopy`: each tree as a disc of `crown_radius_m` with the tree's height.
+4. `water`: 1 in the cells whose centres lie in a water area (or where the mask is above 0.5), else 0.
+
+With `terrain.flatten_buildings`, step 1 also sets the footprint cells (grown by about 2 m, at least one cell) to the nearest ground outside them.
 
 Baking a 1000 × 600 grid takes well under a second, and the Chalmers campus (1250 × 750 cells from a GeoTIFF and a 79 000 triangle mesh) about a second. `mrstudio validate <site>` checks the manifest and reports what the bake produced; `mrstudio prepare <site>` also writes the rasters to `scene/` so they can be inspected.
 
@@ -305,13 +311,14 @@ The first band is read as elevation in metres. The file must be north-up (`Model
   "base_m": 0,                                    // elevation of the mesh's z = 0, default 0
   "ground_tolerance_m": 1,                        // default 1
   "up": "z",                                      // which axis of the file points up: "z" (default) or "y"
-  "mirror": false                                 // the file is a mirror image: flip its X axis, default false
+  "mirror": false,                                // the file is a mirror image: flip its X axis, default false
+  "offset": [317751, 6400316]                     // optional: the point of the file taken as its origin (a model in map coordinates)
 }
 ```
 
-The file is read in its own coordinates. `up: "y"` turns a Y-up export (glTF, Blender, many modelling tools) upright, reading each vertex (x, y, z) as (x, -z, y); `mirror` then flips x. A GLB's node transforms are applied, and every triangle primitive of its default scene is used; compressed (Draco, quantised) GLBs and `.gltf` files with separate buffers are not read. OBJ faces with more than three corners are fanned into triangles.
+The file is read in its own coordinates. `up: "y"` turns a Y-up export (glTF, Blender, many modelling tools) upright, reading each vertex (x, y, z) as (x, -z, y); `offset` is then subtracted from (x, y), and `mirror` flips x. A GLB's node transforms are applied, and every triangle primitive of its default scene is used; compressed (Draco, quantised) GLBs and `.gltf` files with separate buffers are not read. OBJ faces with more than three corners are fanned into triangles.
 
-The editor's Your place step brings a model in and places it: units guessed from its size and the table scale, Y up guessed from its shape, then turned, scaled, moved and mirrored against the table outline and the footprints, or fitted to the footprints with "Snap to buildings" (POST `/api/data/model`, session.md).
+The editor's Your place step brings a model in and places it: units guessed from its size and the table scale, Y up guessed from its shape, then turned, scaled, moved and mirrored against the table outline and the footprints, or fitted to the footprints with "Snap to buildings" (POST `/api/data/model`, session.md). A model in map coordinates (numbers in the hundreds of thousands, such as SWEREF 99 TM metres) is placed by itself (#344): the host finds the grid that puts the model's middle on the table (SWEREF 99 TM, the SWEREF 99 local zones, then the table's UTM zone; GET `/api/data/model/locate`), and the middle becomes `offset`, the anchor its lon/lat, `bearing_deg` the grid convergence there and `unit_m` the grid's scale.
 
 A mesh has no georeference of its own, so these five numbers place it: a point, a scale, a turn and a height. `bearing_deg` is what makes a model drawn on a national grid line up, because grid north is not true north (2.6 degrees off at Chalmers).
 

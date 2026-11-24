@@ -11,6 +11,13 @@ export type Role = 'table' | 'tv' | 'phone' | 'dev' | 'guide';
 interface ControlBase {
   id: string;
   label: string;
+  /** One or two sentences on what it does, shown as the control's tooltip in the editor (#64, #88). */
+  help?: string;
+  /**
+   * The editor's time bar (#61) drives this control: `hour` a time of day in hours, `date` the day,
+   * `progress` a share of a run (0 to 100), `play` the layer's own play switch.
+   */
+  clock?: 'hour' | 'date' | 'progress' | 'play';
   /** Phone participants may change it. Default: true for a `primary` control, false otherwise (#335). */
   phone?: boolean;
   /** Show only while other controls have these values. */
@@ -431,6 +438,8 @@ export interface SiteMesh {
   /** Which axis of the file points up. Default z. */
   up?: 'z' | 'y';
   mirror?: boolean;
+  /** For a model in map coordinates: the point of the file (Z up) taken as its origin (#344). */
+  offset?: [number, number];
   ground_tolerance_m: number;
   /** False when the model, not the footprints, gives the buildings their shape. */
   extrude: boolean;
@@ -515,6 +524,8 @@ export interface LayerButton {
   group?: string;
   /** Its place in the rail; lower first. */
   order?: number;
+  /** Kept off the controller and phones, without taking the layer out of the table (#58). */
+  hidden?: boolean;
 }
 
 export interface Participant {

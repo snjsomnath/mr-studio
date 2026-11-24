@@ -8,9 +8,9 @@
   "attract": { "effect": "sun" },
   "requires": { "kernels": ["sunlight"], "data": ["walkways"] },
   "controls": [
-    { "id": "date", "type": "date", "label": "Date", "default": "2026-07-15", "phone": true },
-    { "id": "hour", "type": "range", "label": "Time of day", "min": 0, "max": 24, "step": 0.25, "unit": "h", "default": 14, "phone": true, "tier": "more" },
-    { "id": "play", "type": "toggle", "label": "Animate the day", "default": false, "tier": "more" },
+    { "id": "date", "type": "date", "clock": "date", "label": "Date", "default": "2026-07-15", "phone": true },
+    { "id": "hour", "type": "range", "clock": "hour", "label": "Time of day", "min": 0, "max": 24, "step": 0.25, "unit": "h", "default": 14, "phone": true, "tier": "more" },
+    { "id": "play", "type": "toggle", "clock": "play", "label": "Animate the day", "default": false, "tier": "more" },
     { "id": "detour", "type": "range", "label": "Longest detour", "min": 0, "max": 100, "step": 5, "unit": "%", "default": 50, "phone": true },
     { "id": "example", "type": "action", "label": "Try another walk", "phone": true, "tier": "primary" },
     { "id": "network", "type": "toggle", "label": "Colour every path by PET", "default": true, "tier": "more" },

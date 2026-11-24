@@ -31,6 +31,8 @@ pub enum Target {
     Buildings,
     /// Tree points: `scene.trees`.
     Trees,
+    /// Water areas (a river, a lake, the sea): `scene.water` (#343).
+    Water,
     /// Paths people walk: the `walkways` dataset (cool paths).
     Walkways,
     /// The mobility layer's `trips.json`: the `trips` dataset.
@@ -47,12 +49,15 @@ impl Target {
         Ok(match text {
             "buildings" => Self::Buildings,
             "trees" => Self::Trees,
+            "water" => Self::Water,
             "walkways" => Self::Walkways,
             "trips" => Self::Trips,
             "terrain" => Self::Terrain,
             other => {
                 let name = other.strip_prefix("data:").ok_or_else(|| {
-                    format!("'{other}' is not something a table can take; use buildings, trees, walkways, trips, terrain or data:<name>")
+                    format!(
+                        "'{other}' is not something a table can take; use buildings, trees, water, walkways, trips, terrain or data:<name>"
+                    )
                 })?;
                 if name.is_empty() || !name.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '-') {
                     return Err("a dataset name is lowercase letters, digits, dashes and underscores".into());
@@ -60,6 +65,7 @@ impl Target {
                 match name {
                     "buildings" => Self::Buildings,
                     "trees" => Self::Trees,
+                    "water" => Self::Water,
                     "walkways" => Self::Walkways,
                     "trips" => Self::Trips,
                     "terrain" => Self::Terrain,
@@ -74,6 +80,7 @@ impl Target {
         match self {
             Self::Buildings => "buildings",
             Self::Trees => "trees",
+            Self::Water => "water",
             Self::Walkways => "walkways",
             Self::Trips => "trips",
             Self::Terrain => "terrain",
@@ -95,6 +102,7 @@ impl Target {
         match self {
             Self::Buildings => ("building", "buildings"),
             Self::Trees => ("tree", "trees"),
+            Self::Water => ("water area", "water areas"),
             Self::Walkways => ("path", "paths"),
             Self::Trips => ("trip", "trips"),
             Self::Terrain => ("terrain", "terrain"),
@@ -105,7 +113,7 @@ impl Target {
     /// The geometry kind it needs, if any.
     fn shape(&self) -> Option<Shape> {
         match self {
-            Self::Buildings => Some(Shape::Area),
+            Self::Buildings | Self::Water => Some(Shape::Area),
             Self::Trees => Some(Shape::Point),
             Self::Walkways => Some(Shape::Line),
             Self::Trips | Self::Terrain | Self::Data(_) => None,
@@ -239,6 +247,8 @@ pub struct Options {
     pub swap: bool,
     /// The EPSG code of a terrain GeoTIFF that does not name its coordinate system.
     pub crs: Option<u32>,
+    /// A terrain with the buildings raised in it: set the ground under the footprints back (#344).
+    pub flatten: bool,
 }
 
 /// A file read and checked, ready for `apply`.
@@ -250,6 +260,8 @@ pub struct Prepared {
     content: Option<Vec<u8>>,
     /// For terrain: the coordinate system the author named, written beside the path.
     terrain_crs: Option<String>,
+    /// For terrain: take the buildings out of it when baking (#344).
+    flatten: bool,
     /// Where it is saved, when not where the target usually goes: a table without positions is a CSV.
     file: Option<String>,
 }
@@ -275,11 +287,12 @@ pub fn inspect(site: &Site, target: &Target, filename: &str, bytes: &[u8], optio
         },
         content: None,
         terrain_crs: None,
+        flatten: false,
         file: None,
     };
 
     if *target == Target::Terrain {
-        return terrain(site, bytes, options.crs);
+        return terrain(site, bytes, options.crs, options.flatten);
     }
 
     if let Some(found) = crate::video::sniff(bytes) {
@@ -476,6 +489,7 @@ pub fn inspect(site: &Site, target: &Target, filename: &str, bytes: &[u8], optio
         },
         content: Some(content),
         terrain_crs: None,
+        flatten: false,
         file: None,
     }
 }
@@ -525,6 +539,9 @@ pub fn apply(site: &Site, mut prepared: Prepared) -> Result<(Site, Report), Site
     let parse = |e: serde_json::Error| SiteError::Parse { path: manifest_path.clone(), message: e.to_string() };
     let mut document: Value = serde_json::from_str(&before).map_err(parse)?;
     point_at(&mut document, &prepared.target, &relative, prepared.report.height_property.as_deref(), prepared.terrain_crs.as_deref());
+    if prepared.target == Target::Terrain && prepared.flatten {
+        document["scene"]["terrain"]["flatten_buildings"] = json!(true);
+    }
     write_atomically(&manifest_path, &(serde_json::to_string_pretty(&document).map_err(parse)? + "\n"))?;
     match Site::load(&site.dir) {
         Ok(updated) => {
@@ -561,6 +578,10 @@ fn point_at(document: &mut Value, target: &Target, path: &str, height_property: 
     match target {
         Target::Buildings => scene_entry(document, "buildings"),
         Target::Trees => scene_entry(document, "trees"),
+        Target::Water => {
+            // A mask's `crs` belonged to the old file.
+            document["scene"]["water"] = json!({ "path": path });
+        }
         Target::Terrain => {
             // A GeoTIFF carries its own size and place, so the raw format's keys and the old
             // file's `crs` go; `crs` is written only when the author had to name it.
@@ -589,6 +610,7 @@ fn video(target: &Target, bytes: &[u8], found: crate::video::Video) -> Prepared 
             report: Report::refused(target, "video.target", message, "A video, not data."),
             content: None,
             terrain_crs: None,
+            flatten: false,
             file: None,
         };
     };
@@ -643,6 +665,7 @@ fn video(target: &Target, bytes: &[u8], found: crate::video::Video) -> Prepared 
         },
         content: Some(bytes.to_vec()),
         terrain_crs: None,
+        flatten: false,
         file: Some(format!("data/{name}.{}", found.format)),
     }
 }
@@ -664,6 +687,7 @@ fn drawing(site: &Site, target: &Target, text: &str, mut issues: Vec<Issue>) -> 
         report: Report { issues, ..Report::refused(target, "", "", summary) },
         content: None,
         terrain_crs: None,
+        flatten: false,
         file: None,
     };
     let Target::Data(name) = target else {
@@ -720,6 +744,7 @@ fn drawing(site: &Site, target: &Target, text: &str, mut issues: Vec<Issue>) -> 
         },
         content: Some(plan.svg.into_bytes()),
         terrain_crs: None,
+        flatten: false,
         file: Some(format!("data/{name}.svg")),
     }
 }
@@ -948,7 +973,7 @@ fn trips(site: &Site, target: &Target, text: &str, mut issues: Vec<Issue>) -> Pr
             ));
             report.summary = "Not a trips file.".into();
             report.issues = issues;
-            return Prepared { target: target.clone(), report, content: None, terrain_crs: None, file: None };
+            return Prepared { target: target.clone(), report, content: None, terrain_crs: None, flatten: false, file: None };
         }
     };
     let Some(list) = value["trips"].as_array() else {
@@ -959,7 +984,7 @@ fn trips(site: &Site, target: &Target, text: &str, mut issues: Vec<Issue>) -> Pr
         ));
         report.summary = "Not a trips file.".into();
         report.issues = issues;
-        return Prepared { target: target.clone(), report, content: None, terrain_crs: None, file: None };
+        return Prepared { target: target.clone(), report, content: None, terrain_crs: None, flatten: false, file: None };
     };
     let frame = Frame::new(site);
     let mut broken = 0;
@@ -1008,7 +1033,7 @@ fn trips(site: &Site, target: &Target, text: &str, mut issues: Vec<Issue>) -> Pr
     report.ok = !issues.iter().any(|i| i.severity == Severity::Blocker);
     report.issues = issues;
     let content = report.ok.then(|| json_file(&value));
-    Prepared { target: target.clone(), report, content, terrain_crs: None, file: None }
+    Prepared { target: target.clone(), report, content, terrain_crs: None, flatten: false, file: None }
 }
 
 // ---- Tables -------------------------------------------------------------------
@@ -1084,13 +1109,20 @@ fn table(site: &Site, target: &Target, text: &str, mut issues: Vec<Issue>) -> Pr
         path: None,
     };
     let content = ok.then(|| out.into_bytes());
-    Prepared { target: target.clone(), report, content, terrain_crs: None, file: Some(format!("data/{}.csv", target.name())) }
+    Prepared {
+        target: target.clone(),
+        report,
+        content,
+        terrain_crs: None,
+        flatten: false,
+        file: Some(format!("data/{}.csv", target.name())),
+    }
 }
 
 // ---- Terrain -----------------------------------------------------------------
 
 /// A GeoTIFF of ground heights: read it as the bake would, and say how much of the table it covers.
-fn terrain(site: &Site, bytes: &[u8], crs: Option<u32>) -> Prepared {
+fn terrain(site: &Site, bytes: &[u8], crs: Option<u32>, flatten: bool) -> Prepared {
     let mut issues = Vec::new();
     let mut report = Report {
         ok: false,
@@ -1108,7 +1140,7 @@ fn terrain(site: &Site, bytes: &[u8], crs: Option<u32>) -> Prepared {
     let done = |mut report: Report, issues: Vec<Issue>, content: Option<Vec<u8>>, terrain_crs: Option<String>| {
         report.ok = content.is_some() && !issues.iter().any(|i| i.severity == Severity::Blocker);
         report.issues = issues;
-        Prepared { target: Target::Terrain, report, content, terrain_crs, file: None }
+        Prepared { target: Target::Terrain, report, content, terrain_crs, flatten, file: None }
     };
     if !matches!(bytes, [0x49, 0x49, 0x2a, 0x00, ..] | [0x4d, 0x4d, 0x00, 0x2a, ..]) {
         issues.push(Issue::new("read.unknown", Severity::Blocker, "Terrain is a GeoTIFF of ground heights, and this file is not a TIFF."));
@@ -1191,8 +1223,68 @@ fn terrain(site: &Site, bytes: &[u8], crs: Option<u32>) -> Prepared {
         issues.push(Issue::new("data.replaces", Severity::Note, format!("This replaces the table's terrain ({}).", existing.path)));
     }
     report.summary = format!("Ground from {low:.0} to {high:.0} m, covering {:.0}% of the table", (share * 100.0).min(100.0));
+    // A surface model has the buildings in it: they would read as ground (#344).
+    if let Some((raised, checked, median)) = raised_footprints(site, &raster) {
+        if raised * 5 >= checked * 2 {
+            let issue = if flatten {
+                Issue::new(
+                    "terrain.buildings",
+                    Severity::Note,
+                    format!("The buildings are raised in this terrain ({raised} of {checked} stand about {median:.0} m above the ground beside them). They will be set back to the ground when the table is built."),
+                )
+            } else {
+                Issue::new(
+                    "terrain.buildings",
+                    Severity::Warning,
+                    format!("This terrain has the buildings raised in it: {raised} of {checked} footprints stand about {median:.0} m above the ground beside them, so they would count as hills. Take them out to keep only the ground."),
+                )
+                .fix("flatten")
+            };
+            issues.push(issue);
+        }
+    }
     let terrain_crs = crs.map(|c| format!("EPSG:{c}"));
     done(report, issues, Some(bytes.to_vec()), terrain_crs)
+}
+
+/// How many of the table's footprints (up to 400) stand at least 3 m above the ground around
+/// them in `raster`, of how many could be checked, and the median rise among those raised.
+fn raised_footprints(site: &Site, raster: &GeoRaster) -> Option<(usize, usize, f32)> {
+    let buildings = site.manifest.scene.buildings.as_ref()?;
+    let features = crate::bake::features(&site.resolve(&buildings.path)?).ok()?;
+    let (mut raised, mut checked, mut rises) = (0, 0, Vec::new());
+    for feature in features.iter().take(400) {
+        for polygon in crate::bake::polygons(&feature["geometry"]) {
+            let outer: Vec<(f64, f64)> = polygon
+                .first()
+                .and_then(Value::as_array)
+                .map(|ring| ring.iter().filter_map(|p| Some((p.get(0)?.as_f64()?, p.get(1)?.as_f64()?))).collect())
+                .unwrap_or_default();
+            if outer.len() < 4 {
+                continue;
+            }
+            let n = outer.len() as f64;
+            let (lon, lat) = (outer.iter().map(|p| p.0).sum::<f64>() / n, outer.iter().map(|p| p.1).sum::<f64>() / n);
+            let (w, s, e, north) = outer
+                .iter()
+                .fold((f64::MAX, f64::MAX, f64::MIN, f64::MIN), |(w, s, e, n), p| (w.min(p.0), s.min(p.1), e.max(p.0), n.max(p.1)));
+            // 6 m beyond each side of the footprint's box.
+            let (dx, dy) = (6.0 / (111_320.0 * lat.to_radians().cos()), 6.0 / 110_540.0);
+            let around = [(w - dx, lat), (e + dx, lat), (lon, s - dy), (lon, north + dy)];
+            let Some(inside) = raster.sample(lon, lat) else { continue };
+            let Some(ground) = around.iter().filter_map(|(x, y)| raster.sample(*x, *y)).reduce(f32::min) else { continue };
+            checked += 1;
+            if inside - ground > 3.0 {
+                raised += 1;
+                rises.push(inside - ground);
+            }
+        }
+    }
+    if checked == 0 {
+        return None;
+    }
+    rises.sort_by(f32::total_cmp);
+    Some((raised, checked, rises.get(rises.len() / 2).copied().unwrap_or(0.0)))
 }
 
 /// Samples the table on a coarse grid, as the bake will at full resolution: how many
@@ -1704,6 +1796,28 @@ mod tests {
     }
 
     #[test]
+    fn water_areas_go_into_the_scene_and_bake_as_water() {
+        let site = scratch("water");
+        let river = collection(vec![json!({
+            "type": "Feature", "properties": { "natural": "water" },
+            "geometry": { "type": "Polygon", "coordinates": [[[11.968, 57.6995], [11.972, 57.6995], [11.972, 57.7005], [11.968, 57.7005], [11.968, 57.6995]]] }
+        })]);
+        let prepared = inspect(&site, &Target::Water, "river.geojson", &river, Options::default());
+        assert!(prepared.report.ok, "{:?}", prepared.report.issues);
+        let lines = collection(vec![
+            json!({ "type": "Feature", "properties": {}, "geometry": { "type": "LineString", "coordinates": [[11.969, 57.70], [11.971, 57.70]] } }),
+        ]);
+        assert!(!inspect(&site, &Target::Water, "l.geojson", &lines, Options::default()).report.ok, "water needs areas");
+        let (site2, _) = apply(&site, prepared).unwrap();
+        assert_eq!(site2.manifest.scene.water.as_ref().unwrap().path, "data/water.geojson");
+        assert_eq!(site2.data()["water"], "data/water.geojson");
+        let (scene, stats) = site2.bake().unwrap();
+        assert!(stats.water_fraction > 0.01, "{stats:?}");
+        assert_eq!(scene.water.iter().filter(|w| **w != 0).count() as f32 / scene.water.len() as f32, stats.water_fraction);
+        std::fs::remove_dir_all(&site.dir).unwrap();
+    }
+
+    #[test]
     fn walkways_trips_and_named_datasets_land_under_data() {
         let site = scratch("data");
         let walk = collection(vec![
@@ -1734,6 +1848,91 @@ mod tests {
         let (site4, _) = apply(&site3, cropped).unwrap();
         let written: Value = serde_json::from_slice(&std::fs::read(site4.dir.join("data/counters.geojson")).unwrap()).unwrap();
         assert_eq!(written["features"].as_array().unwrap().len(), 1);
+        std::fs::remove_dir_all(&site.dir).unwrap();
+    }
+
+    /// A WGS84 GeoTIFF over `bounds` (s, w, n, e) with `height(lon, lat)` in each pixel.
+    fn wgs84_tif(bounds: [f64; 4], pixel: f64, height: impl Fn(f64, f64) -> f32) -> Vec<u8> {
+        use tiff::encoder::{colortype::Gray32Float, TiffEncoder};
+        use tiff::tags::Tag;
+        let [s, w, n, e] = bounds;
+        let (width, rows) = (((e - w) / pixel).ceil() as usize, ((n - s) / pixel).ceil() as usize);
+        let mut data = Vec::with_capacity(width * rows);
+        for row in 0..rows {
+            for col in 0..width {
+                data.push(height(w + (col as f64 + 0.5) * pixel, n - (row as f64 + 0.5) * pixel));
+            }
+        }
+        let mut bytes = std::io::Cursor::new(Vec::new());
+        let mut encoder = TiffEncoder::new(&mut bytes).unwrap();
+        let mut image = encoder.new_image::<Gray32Float>(width as u32, rows as u32).unwrap();
+        image.encoder().write_tag(Tag::ModelPixelScaleTag, &[pixel, pixel, 0.0][..]).unwrap();
+        image.encoder().write_tag(Tag::ModelTiepointTag, &[0.0, 0.0, 0.0, w, n, 0.0][..]).unwrap();
+        let keys: [u16; 16] = [1, 1, 0, 3, 1024, 0, 1, 2, 1025, 0, 1, 1, 2048, 0, 1, 4326];
+        image.encoder().write_tag(Tag::GeoKeyDirectoryTag, &keys[..]).unwrap();
+        image.write_data(&data).unwrap();
+        bytes.into_inner()
+    }
+
+    #[test]
+    fn a_surface_model_with_the_buildings_in_it_is_offered_flattening() {
+        let site = scratch("terrain-dsm");
+        // The sample's footprints (courtyards left as ground), raised 15 m above flat ground at 10 m: a surface model.
+        let path = site.resolve(&site.manifest.scene.buildings.as_ref().unwrap().path).unwrap();
+        let rings: Vec<Vec<(f64, f64)>> = crate::bake::features(&path)
+            .unwrap()
+            .iter()
+            .flat_map(|f| {
+                crate::bake::polygons(&f["geometry"])
+                    .into_iter()
+                    .flat_map(|p| {
+                        p.iter()
+                            .map(|ring| ring.as_array().unwrap().iter().map(|q| (q[0].as_f64().unwrap(), q[1].as_f64().unwrap())).collect())
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .collect();
+        let inside = |x: f64, y: f64, ring: &[(f64, f64)]| {
+            let mut hit = false;
+            for (i, a) in ring.iter().enumerate() {
+                let b = ring[(i + 1) % ring.len()];
+                if (a.1 > y) != (b.1 > y) && x < a.0 + (y - a.1) * (b.0 - a.0) / (b.1 - a.1) {
+                    hit = !hit;
+                }
+            }
+            hit
+        };
+        let boxes: Vec<[f64; 4]> = rings
+            .iter()
+            .map(|r| {
+                r.iter().fold([f64::MAX, f64::MAX, f64::MIN, f64::MIN], |b, p| [b[0].min(p.0), b[1].min(p.1), b[2].max(p.0), b[3].max(p.1)])
+            })
+            .collect();
+        // Even-odd over every ring, so courtyards stay ground.
+        let raised = |x: f64, y: f64| {
+            rings.iter().zip(&boxes).filter(|(r, b)| x >= b[0] && x <= b[2] && y >= b[1] && y <= b[3] && inside(x, y, r)).count() % 2 == 1
+        };
+        // About a metre a pixel, as a national surface model.
+        let dsm = wgs84_tif([57.6955, 11.9590, 57.7040, 11.9810], 0.000012, |x, y| if raised(x, y) { 25.0 } else { 10.0 });
+        let plain = inspect(&site, &Target::Terrain, "dsm.tif", &dsm, Options::default());
+        let issue = plain.report.issues.iter().find(|i| i.code == "terrain.buildings").expect("raised footprints are noticed");
+        assert_eq!((issue.severity, issue.fix), (Severity::Warning, Some("flatten")));
+        assert!(issue.message.contains("15 m"), "{}", issue.message);
+
+        let taken = inspect(&site, &Target::Terrain, "dsm.tif", &dsm, Options { flatten: true, ..Default::default() });
+        assert_eq!(taken.report.issues.iter().find(|i| i.code == "terrain.buildings").unwrap().severity, Severity::Note);
+        let (site, _) = apply(&site, taken).unwrap();
+        assert!(site.manifest.scene.terrain.as_ref().unwrap().flatten_buildings);
+        let (scene, stats) = site.bake().unwrap();
+        assert!(stats.terrain_flattened_cells > 100, "{stats:?}");
+        // Only the ground is left (narrow courtyards keep a little of the roofs around them).
+        let ground = scene.dtm.iter().filter(|&&z| (z - 10.0).abs() < 0.5).count();
+        assert!(ground * 1000 >= scene.dtm.len() * 998, "{ground} of {}", scene.dtm.len());
+        assert!(scene.dtm.iter().all(|&z| z < 15.0));
+
+        // Ground with no buildings in it is left alone.
+        let ground = wgs84_tif([57.6955, 11.9590, 57.7040, 11.9810], 0.0002, |_, _| 10.0);
+        assert!(!codes(&inspect(&site, &Target::Terrain, "dtm.tif", &ground, Options::default()).report).contains(&"terrain.buildings"));
         std::fs::remove_dir_all(&site.dir).unwrap();
     }
 

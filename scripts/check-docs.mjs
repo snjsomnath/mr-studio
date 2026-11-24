@@ -82,8 +82,8 @@ for (const [, tool] of server.matchAll(/registerTool\(\s*'([a-z_]+)'/g)) {
 // SDK modules are building blocks the MCP server can offer.
 const blocks = read('packages', 'mcp', 'src', 'blocks.ts') + read('docs', 'blocks.md');
 const sdk = join(root, 'packages', 'sdk', 'src');
-// Plumbing every layer uses, not blocks to offer: the layer API, controls, site data helpers, the projector solve, the phones' link (#275).
-const internal = new Set(['index', 'types', 'layer', 'connection', 'frame', 'controls', 'data', 'projector', 'link']);
+// Plumbing, not blocks to offer: the layer API, controls, site data helpers, the projector solve, the phones' link (#275), the Ready to present rules (#63).
+const internal = new Set(['index', 'types', 'layer', 'connection', 'frame', 'controls', 'data', 'projector', 'link', 'readiness']);
 for (const file of readdirSync(sdk).filter((f) => f.endsWith('.ts'))) {
   const name = file.replace(/\.ts$/, '');
   if (internal.has(name)) continue;

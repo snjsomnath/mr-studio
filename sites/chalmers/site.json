@@ -42,6 +42,19 @@
       "crown_radius_m": 3
     }
   },
+  "data": {
+    "ecom_buildings": "data/ecom/buildings.geojson",
+    "ecom_nodes": "data/ecom/nodes.geojson",
+    "ecom_flows": "data/ecom/flows.geojson"
+  },
+  "services": [
+    {
+      "id": "ecom",
+      "name": "ECOM energy model",
+      "health": "/api/health",
+      "url": "http://127.0.0.1:8000"
+    }
+  ],
   "basemap": {
     "background": "#0b0e14",
     "style": null
@@ -65,10 +78,18 @@
       "use": "stormwater",
       "id": "stormwater",
       "active": false
+    },
+    {
+      "use": "./layers/ecom",
+      "id": "ecom",
+      "active": false
     }
   ],
   "branding": {
     "title": "ACE MR Studio",
-    "languages": ["en", "sv"]
+    "languages": [
+      "en",
+      "sv"
+    ]
   }
 }

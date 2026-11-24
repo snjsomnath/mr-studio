@@ -181,6 +181,12 @@ impl Site {
         if let Some(t) = &m.scene.trees {
             check(&mut out, "scene.trees.path", &t.path);
         }
+        if let Some(w) = &m.scene.water {
+            check(&mut out, "scene.water.path", &w.path);
+            if let Some(crs) = w.crs.as_deref().filter(|crs| Crs::parse(crs).is_none()) {
+                out.push(format!("scene.water.crs: '{crs}' is not supported; use one of {}", Crs::SUPPORTED));
+            }
+        }
         if let Some(t) = &m.scene.terrain {
             check(&mut out, "scene.terrain.path", &t.path);
             if t.is_geotiff() {
@@ -531,6 +537,9 @@ impl Site {
         if let Some(t) = &m.scene.terrain {
             data.insert("terrain".to_string(), t.path.clone());
         }
+        if let Some(w) = &m.scene.water {
+            data.insert("water".to_string(), w.path.clone());
+        }
         data.extend(m.data.clone());
         data
     }
@@ -575,6 +584,12 @@ impl Site {
             ("timezone", timezone.map(|t| serde_json::json!(t))),
             ("branding", Some(branding)),
         ])
+    }
+
+    /// Saves the physical table (`table` in site.json): its size, tiles, front edge and ribbons.
+    pub fn save_table(&self, table: &Table) -> Result<(), SiteError> {
+        let value = serde_json::to_value(table).map_err(|e| self.parse_error(e))?;
+        self.save_key("table", Some(value))
     }
 
     /// Takes a dataset out of site.json's `data` (#52). The file stays in the site folder, so an

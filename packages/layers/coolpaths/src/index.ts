@@ -73,6 +73,8 @@ type End = 'from' | 'to';
 /** The coolest walk is green (vegetation, shade) and the shortest is the focus colour, both from the table's palette (#93). */
 const coolColour = (site: TableContext['site']) => paletteHex('@green', tablePalette(site));
 const shortColour = (site: TableContext['site']) => paletteHex('@focus', tablePalette(site));
+/** How much cooler than the shade water feels, °C: it evaporates and stays near the air's temperature (#343). */
+const WATER_COOLING_C = 2;
 /** Path colours: PET in steps of 2 °C over the demo's range, drawn as one stroke per step. */
 const PET_BINS = Array.from({ length: 13 }, (_, i) => 20 + i * 2);
 
@@ -143,6 +145,8 @@ export default defineLayer<Params>({
     let heatCells: Uint8Array | null = null;
     /** Cells under a building, on the site grid: the heat map leaves roofs clear, as the demo does. */
     let roofs: Uint8Array | null = null;
+    /** Cells that are water, on the site grid (#343). */
+    let water: Uint8Array | null = null;
     let pathsDrawn = -1;
     let pathsDirty = true;
     let clock = 0;
@@ -185,6 +189,16 @@ export default defineLayer<Params>({
         const values = new Float32Array(cells);
         for (let i = 0; i < cells; i++) values[i] = estimate(sample(frame, i % frame.width, Math.floor(i / frame.width)));
         quantisePet(values, heatCells);
+      }
+      if (water) {
+        // Water is cool and evaporating (#343): never the hot ground the shade model makes of it.
+        const cool = quantisePet([Math.min(comfort.shade.pet, comfort.airC) - WATER_COOLING_C])[0]!;
+        const { width, height } = ctx.site.grid;
+        for (let i = 0; i < cells; i++) {
+          const col = Math.floor(((i % source.width) * width) / source.width);
+          const row = Math.floor((Math.floor(i / source.width) * height) / source.height);
+          if (water[row * width + col]) heatCells[i] = cool;
+        }
       }
       if (roofs) {
         const { width, height } = ctx.site.grid;
@@ -230,6 +244,32 @@ export default defineLayer<Params>({
           assess();
         })
         .catch((error) => console.warn('[coolpaths] footprints not read', error));
+    }
+
+    // The scene's water: polygons, or a mask on the site grid.
+    if (hasSiteData(ctx.site, 'water')) {
+      const path = String(ctx.site.data?.water ?? '');
+      const read = /\.tiff?$/i.test(path)
+        ? loadSiteField(ctx.site, 'water').then((field) => {
+            if (!field) return null;
+            const { width, height } = ctx.site.grid;
+            const mask = new Uint8Array(width * height);
+            for (let i = 0; i < mask.length; i++) {
+              const c = Math.floor(((i % width) * field.width) / width);
+              const r = Math.floor((Math.floor(i / width) * field.height) / height);
+              mask[i] = sample(field, c, r) > 0.5 ? 1 : 0;
+            }
+            return mask;
+          })
+        : typeof OffscreenCanvas !== 'undefined'
+          ? loadSiteData<Parameters<typeof rasterise>[0]>(ctx.site, 'water').then(rasterise)
+          : Promise.resolve(null);
+      read
+        .then((mask) => {
+          water = mask;
+          assess();
+        })
+        .catch((error) => console.warn('[coolpaths] water not read', error));
     }
 
     /** Fetches the prepared PET for the hour on show (once per hour), then assesses again. */
