@@ -4,6 +4,22 @@ Every merge to main that carries a release note becomes a version. The newest is
 The app shows these notes, with their pictures, on Home when a newer version is out.
 How notes are written: docs/RELEASING.md.
 
+## 0.5.0 (2026-11-24)
+
+### New
+
+#### Opening a layer quiets the map at rest (#303)
+
+When a layer is opened from the controller, the life on the map at rest steps aside: traffic, street life, public transport, building lights and trees pause, and the base map stays underneath for context. Close the layer and everything at rest comes back, as Street Life did in the Chalmers demo. The slideshow and picture layers still hide the base map too. Sketch and other tools kept alongside don't count as an open layer.
+
+![Wind open over the base map, with traffic, transit and trees paused](docs/screenshots/303-wind-open.png)
+
+#### Your own layers, with code, in the installed app (#277)
+A table can now carry layers its team wrote, with their own drawing on the table and their own panels on the controller, without changing MR Studio. `mrstudio layer new` makes a working layer in the site's `layers/` folder, `mrstudio layer build` gets it ready, and the app loads it next to the built-in layers. Developers write against the same SDK as the core layers. The table's computer runs the built layer and needs no extra tools.
+
+![A site layer drawing rings on the table where it was clicked](docs/screenshots/277-site-layer-table.png)
+![The same layer on the controller: its button, primary action, counter and its own panel](docs/screenshots/277-site-layer-controller.png)
+
 ## 0.4.2 (2026-11-24)
 
 ### Fixes

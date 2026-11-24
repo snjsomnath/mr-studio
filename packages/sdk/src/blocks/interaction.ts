@@ -15,8 +15,12 @@ import type { Area, Path, Shapes, Spot } from './sources.ts';
 import { zoomedView } from './view.ts';
 import type { View } from './view.ts';
 
-/** Where a sample came from. New sources are added here, behaviours do not change. */
-export type InputSource = 'mouse' | 'touch' | 'pen' | 'phone' | 'token' | 'script';
+/**
+ * Where a sample came from. New sources are added here, behaviours do not change.
+ * `hand` is a hand seen by a camera over the table (#289): it hovers like a mouse that never
+ * presses, so hover behaviours work with it as they are.
+ */
+export type InputSource = 'mouse' | 'touch' | 'pen' | 'phone' | 'token' | 'hand' | 'script';
 
 export interface PointerSample {
   /**
@@ -426,5 +430,153 @@ export class Dwell implements Behaviour {
         this.options.onDwell(rest.anchor);
       }
     }
+  }
+}
+
+// ---- Hover regions: being over a large region plays something (#289) ------------
+
+/** A region a pointer can be over, in table metres. */
+export interface HoverRegion<D = unknown> {
+  id: string;
+  contains(point: Point): boolean;
+  /** Anything the layer wants back with the region: a name, a colour, a phase. */
+  data?: D;
+}
+
+/** A region made of polygons (rings of table metres, outer ring first), such as a district. */
+export function areaRegion<D>(id: string, polygons: Point[][][], data?: D): HoverRegion<D> {
+  return { id, data, contains: (point) => polygons.some((polygon) => pointInPolygon(point, polygon)) };
+}
+
+/** A round region around a point, such as an artwork's place. */
+export function circleRegion<D>(id: string, centre: Point, radius_m: number, data?: D): HoverRegion<D> {
+  return { id, data, contains: (point) => distance(point, centre) <= radius_m };
+}
+
+/**
+ * A region drawn as a picture over the whole table: wherever the picture is painted (alpha
+ * above `threshold`, 0 to 255) is inside. `pixels` is RGBA, `width` by `height`, as
+ * `getImageData` gives it; `table` is the table's size in metres.
+ */
+export function maskRegion<D>(
+  id: string,
+  pixels: { width: number; height: number; data: ArrayLike<number> },
+  table: { width: number; height: number },
+  options: { threshold?: number; data?: D } = {},
+): HoverRegion<D> {
+  const threshold = options.threshold ?? 24;
+  return {
+    id,
+    data: options.data,
+    contains: ([x, y]) => {
+      const px = Math.floor((x / table.width) * pixels.width);
+      const py = Math.floor((y / table.height) * pixels.height);
+      if (px < 0 || py < 0 || px >= pixels.width || py >= pixels.height) return false;
+      return (pixels.data[(py * pixels.width + px) * 4 + 3] ?? 0) > threshold;
+    },
+  };
+}
+
+export interface HoverRegionsOptions<D> {
+  /** The regions, asked for on every sample, so they may change. The first that contains a point wins. */
+  regions: () => readonly HoverRegion<D>[];
+  /** How long a pointer must stay over a region before it counts, so passing over does nothing. Default 0.25 s. */
+  settle_s?: number;
+  /** Seconds a region's `level` takes to rise to 1 and to fall back. Default 0.6. */
+  fade_s?: number;
+  /** Only pointers from these sources hover. Default: all but `phone` and `script`, which have no hover. */
+  sources?: readonly InputSource[];
+  /** A region began to be held: the first pointer settled over it. */
+  onEnter?: (region: HoverRegion<D>, sample: PointerSample) => void;
+  /** The last pointer over a region left it. */
+  onLeave?: (region: HoverRegion<D>, sample: PointerSample) => void;
+}
+
+/**
+ * Hovering over large regions of the table plays something there (#289): a mouse now, a hand
+ * seen by a camera later. Each region has an eased `level` (0 to 1) that rises while a pointer is
+ * over it and falls when it leaves, for the layer to draw with; `onEnter` and `onLeave` are for
+ * what goes to other surfaces (`ctx.publish`, the controller's legend). It never uses a sample,
+ * so a click still reaches the behaviours behind it. Call `tick(dt, time)` every frame.
+ */
+export class HoverRegions<D = unknown> implements Behaviour {
+  private options: HoverRegionsOptions<D>;
+  /** By pointer: the region it is over, since when, and whether it settled. */
+  private pointers = new Map<string, { region: HoverRegion<D> | null; since: number; settled: boolean; sample: PointerSample }>();
+  private levels = new Map<string, number>();
+  private held = new Map<string, HoverRegion<D>>();
+
+  constructor(options: HoverRegionsOptions<D>) {
+    this.options = options;
+  }
+
+  handle(sample: PointerSample): boolean {
+    const sources = this.options.sources;
+    if (sources ? !sources.includes(sample.source) : sample.source === 'phone' || sample.source === 'script') return false;
+    if (sample.phase === 'leave') {
+      this.pointers.delete(sample.id);
+      this.refresh(sample);
+      return false;
+    }
+    const region = this.options.regions().find((r) => r.contains(sample.point)) ?? null;
+    const was = this.pointers.get(sample.id);
+    if (!was || was.region?.id !== region?.id) {
+      this.pointers.set(sample.id, { region, since: sample.time, settled: false, sample });
+      // Leaving a region ends it at once; only coming in waits to settle.
+      if (was?.settled) this.refresh(sample);
+    } else was.sample = sample;
+    this.settle(sample.time);
+    return false;
+  }
+
+  /** Moves the levels on by `dt` seconds and settles pointers that stayed put until `time` (the samples' clock). */
+  tick(dt: number, time?: number): void {
+    if (time !== undefined) this.settle(time);
+    const step = dt / Math.max(0.01, this.options.fade_s ?? 0.6);
+    const ids = new Set([...this.levels.keys(), ...this.held.keys()]);
+    for (const id of ids) {
+      const target = this.held.has(id) ? 1 : 0;
+      const now = this.levels.get(id) ?? 0;
+      const next = target > now ? Math.min(1, now + step) : Math.max(0, now - step);
+      if (next === 0 && target === 0) this.levels.delete(id);
+      else this.levels.set(id, next);
+    }
+  }
+
+  /** How strongly a region plays now, eased from 0 to 1. */
+  level(id: string): number {
+    const t = this.levels.get(id) ?? 0;
+    return t * t * (3 - 2 * t);
+  }
+
+  /** The regions pointers are over now. */
+  active(): HoverRegion<D>[] {
+    return [...this.held.values()];
+  }
+
+  /** Whether anything still eases, so a layer that draws only on change knows to keep drawing. */
+  get moving(): boolean {
+    return [...this.levels.entries()].some(([id, v]) => v !== (this.held.has(id) ? 1 : 0));
+  }
+
+  private settle(time: number): void {
+    const wait = this.options.settle_s ?? 0.25;
+    let changed: PointerSample | null = null;
+    for (const p of this.pointers.values()) {
+      if (!p.settled && p.region && time - p.since >= wait) {
+        p.settled = true;
+        changed = p.sample;
+      }
+    }
+    if (changed) this.refresh(changed);
+  }
+
+  /** Works out which regions are held, and says which began and ended. */
+  private refresh(sample: PointerSample): void {
+    const now = new Map<string, HoverRegion<D>>();
+    for (const p of this.pointers.values()) if (p.settled && p.region) now.set(p.region.id, p.region);
+    for (const [id, region] of this.held) if (!now.has(id)) this.options.onLeave?.(region, sample);
+    for (const [id, region] of now) if (!this.held.has(id)) this.options.onEnter?.(region, sample);
+    this.held = now;
   }
 }

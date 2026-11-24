@@ -95,6 +95,8 @@ export interface LayerManifest {
   panels?: PanelSpec[];
   /** The layer is a sequence: its instances may have `steps.sequence` that show other layers (the slideshow). */
   sequence?: boolean;
+  /** The layer reveals its items through a shape it sets with `ctx.reveal` (the Magnifier, the Reveal line, #287). Default false. */
+  reveals?: boolean;
   /**
    * For a site's own code layer (#277): the address its built module is imported from, set by the
    * host when `layers/<name>/dist/index.js` exists. Absent for core layers, which are bundled.
