@@ -120,13 +120,29 @@ Or in VS Code: Command Palette, **MCP: Add Server**, **Command (stdio)**, type `
 { "mcpServers": { "mrstudio": { "command": "npx", "args": ["-y", "@mrstudio/mcp"] } } }
 ```
 
-### OpenAI Codex (CLI and IDE extension)
+### ChatGPT Codex (app, CLI and IDE extension)
 
-```sh
-codex mcp add mrstudio -- npx -y @mrstudio/mcp
-```
+Codex is OpenAI's agent, part of a ChatGPT plan. Unlike the ChatGPT chat app, it can start a server on your computer. The Codex app, the `codex` CLI and the Codex extension for VS Code and Cursor share one setup, so adding MR Studio once makes it available in all three.
 
-This writes `[mcp_servers.mrstudio]` with `command = "npx"` and `args = ["-y", "@mrstudio/mcp"]` to `~/.codex/config.toml`.
+1. Install [Node.js](https://nodejs.org) 20 or newer.
+2. Add the server. Either:
+   - In the **Codex app**: **Settings**, **MCP servers**, **Add server**. Name `mrstudio`, command `npx`, arguments `-y @mrstudio/mcp`.
+   - In a terminal: `codex mcp add mrstudio -- npx -y @mrstudio/mcp`
+   - Or by hand, in `~/.codex/config.toml` (`%USERPROFILE%\.codex\config.toml` on Windows):
+
+     ```toml
+     [mcp_servers.mrstudio]
+     command = "npx"
+     args = ["-y", "@mrstudio/mcp", "--project", "/Users/me/Documents/MR Studio/sites"]
+     startup_timeout_sec = 60
+     ```
+
+3. Check it: `codex mcp list` lists `mrstudio`. In a Codex session, `/mcp` shows its tools.
+4. Start a new task and describe the table you want.
+
+**Pick the folder.** Codex starts the server in the folder the session is working in. If that is not your tables folder, add `--project` as in the example above, so new tables show up in MR Studio. Codex runs tasks in a sandbox; if it asks for permission to write to the tables folder, allow it.
+
+The first start downloads the package and can take longer than Codex's default 10 seconds, so `startup_timeout_sec = 60` avoids a "server did not start" message. On Windows, if Codex cannot find `npx`, use `command = "cmd"` and `args = ["/c", "npx", "-y", "@mrstudio/mcp"]`.
 
 ### Gemini CLI
 
@@ -156,7 +172,7 @@ Pick a model that is good at tool use; small models often call the tools with th
 
 ### ChatGPT
 
-ChatGPT connects only to remote servers on the internet (Settings, Apps & Connectors, developer mode), not to a server on your computer. This server edits tables on your disk, so it does not work in the ChatGPT app today. Codex, OpenAI's coding agent, does (above).
+ChatGPT connects only to remote servers on the internet (Settings, Apps & Connectors, developer mode), not to a server on your computer. This server edits tables on your disk, so it does not work in the ChatGPT chat app today. ChatGPT Codex does ([above](#chatgpt-codex-app-cli-and-ide-extension)).
 
 ### Any other client
 

@@ -12,7 +12,7 @@ npx -y @mrstudio/mcp          # stdio; needs Node.js 20+
 | Claude Code | `claude mcp add mrstudio -- npx -y @mrstudio/mcp` |
 | Cursor | [Add to Cursor](https://cursor.com/en/install-mcp?name=mrstudio&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsIkBtcnN0dWRpby9tY3AiXX0=) |
 | VS Code | `code --add-mcp '{"name":"mrstudio","type":"stdio","command":"npx","args":["-y","@mrstudio/mcp"]}'` |
-| Codex | `codex mcp add mrstudio -- npx -y @mrstudio/mcp` |
+| ChatGPT Codex (app, CLI, IDE) | `codex mcp add mrstudio -- npx -y @mrstudio/mcp` |
 | Gemini CLI | `gemini mcp add mrstudio npx -y @mrstudio/mcp` |
 | Others | command `npx`, arguments `["-y", "@mrstudio/mcp"]` |
 

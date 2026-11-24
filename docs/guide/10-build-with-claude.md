@@ -21,9 +21,18 @@ The easiest way. Nothing else to install.
 
 ![Adding MR Studio to Claude Code, and the check that it is connected](docs/screenshots/324-claude-code.png)
 
+## Connect ChatGPT Codex
+
+Codex, in the Codex app, the `codex` command or the Codex extension for VS Code, can use MR Studio. Add it once and all three have it.
+
+1. Install **Node.js** 20 or newer from nodejs.org.
+2. In the Codex app, open **Settings**, **MCP servers**, **Add server**. Name it `mrstudio`, with command `npx` and arguments `-y @mrstudio/mcp --project` followed by your tables folder (Documents, MR Studio, sites). Or in a terminal: `codex mcp add mrstudio -- npx -y @mrstudio/mcp`
+3. Start a new task. Typing `/mcp` lists the MR Studio tools.
+4. If Codex asks to write to your tables folder, allow it.
+
 ## Other AI apps
 
-Cursor, VS Code with GitHub Copilot, Windsurf, Codex, Gemini CLI, Zed and LM Studio work too. Each needs **Node.js** 20 or newer and the same command, `npx -y @mrstudio/mcp`; the page **docs/MCP.md** in the repository has the steps for each, including one-click links. ChatGPT cannot use it yet, because it only connects to servers on the internet, not on your computer.
+Cursor, VS Code with GitHub Copilot, Windsurf, Gemini CLI, Zed and LM Studio work too. Each needs **Node.js** 20 or newer and the same command, `npx -y @mrstudio/mcp`; the page **docs/MCP.md** in the repository has the steps for each, including one-click links. The ChatGPT chat app cannot use it yet, because it only connects to servers on the internet, not on your computer; use Codex instead.
 
 ## Make a table
 
