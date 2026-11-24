@@ -130,6 +130,7 @@ A template in the New layer gallery (#59) is not a definition. Adding one writes
 | `transition`, `transition_s` | How the step comes in: `"cut"`, `"fade"` (a cross-fade) or `"dip"` (the old step fades out to the empty map, then this one fades in), and how many seconds that takes (0 to 10). Unset, the sequence's own `steps.transition` and `steps.transition_s` apply, and without those a 0.7 s fade |
 | `next` | This step's own `reveal` |
 | `title`, `description`, `source` | For the controller's info strip (up to 80, 300 and 200 characters). The table never shows them |
+| `notes` | The presenter's notes for the step (#98): shown on the guide's phone (`/guide`) and in the editor, never on the table or the controller |
 
 Removing a layer from the scene also removes the steps that showed it.
 

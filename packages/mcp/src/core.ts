@@ -26,6 +26,8 @@ export interface RoadmapRow {
   kernel: string;
   blocks: string;
   built: boolean;
+  /** The layer package, for rows of the Built table. */
+  package?: string;
 }
 
 export interface Block extends BlockDef {
@@ -163,7 +165,11 @@ export function readLayerDir(dir: string, origin: 'core' | 'site'): LayerEntry[]
   return out;
 }
 
-/** Splits the markdown tables in ROADMAP.md into rows. */
+/**
+ * Splits the markdown tables in ROADMAP.md into rows. Columns are found by their header
+ * names, not their position: the planned tables are `Layer | Kernel | Blocks`, the Built
+ * table is `Layer | Package | Kernel | Notes` (#319).
+ */
 export function parseRoadmap(text: string): RoadmapRow[] {
   const rows: RoadmapRow[] = [];
   let section = '';
@@ -186,16 +192,27 @@ export function parseRoadmap(text: string): RoadmapRow[] {
       continue;
     }
     if (header[0] !== 'layer') continue;
-    const kernel = cells[1] ?? '';
-    rows.push({ section, layer: cells[0] ?? '', kernel, blocks: cells[2] ?? '', built: /\(built\)/.test(kernel) });
+    const col = (name: string) => {
+      const i = header!.indexOf(name);
+      return i >= 0 ? (cells[i] ?? '') : '';
+    };
+    const kernel = col('kernel');
+    const pkg = col('package').replace(/`/g, '');
+    const built = /^built$/i.test(section) || /\(built\)/.test(kernel);
+    rows.push({ section, layer: cells[0] ?? '', kernel, blocks: col('blocks') || col('notes'), built, ...(pkg ? { package: pkg } : {}) });
   }
   return rows;
 }
 
-function plannedKernelsFrom(roadmap: RoadmapRow[], built: string[]): string[] {
+/**
+ * Kernels the roadmap names that the engine does not have yet. Only the kernel column counts,
+ * and a name that is a core layer's id or a built row's package is never a kernel.
+ */
+export function plannedKernelsFrom(roadmap: RoadmapRow[], built: string[], layerIds: string[] = []): string[] {
   const names = new Set<string>();
+  const not = new Set([...built, ...layerIds, ...roadmap.map((r) => r.package ?? '').filter(Boolean)]);
   for (const row of roadmap) for (const m of row.kernel.matchAll(/`([a-z0-9_-]+)`/g)) names.add(m[1]!);
-  return [...names].filter((k) => !built.includes(k)).sort();
+  return [...names].filter((k) => !not.has(k)).sort();
 }
 
 /** Builds the catalog from a core checkout. */
@@ -237,7 +254,7 @@ export function loadLive(root: string): Catalog {
     root,
     layers,
     kernels,
-    plannedKernels: plannedKernelsFrom(roadmap, kernels),
+    plannedKernels: plannedKernelsFrom(roadmap, kernels, layers.map((l) => l.id)),
     blocks,
     roadmap,
     docs,

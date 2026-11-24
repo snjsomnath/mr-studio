@@ -20,10 +20,10 @@ The server writes `site.json`, never layer code. When a project needs a new laye
 | `create_site` | A new site package: `site.json`, `data/`, `requests/`, README, `.gitignore` |
 | `get_site`, `update_site` | Read a site with effective params; change settings (place, table, scene sources, basemap, branding, tv) |
 | `add_layer`, `set_layer`, `move_layer`, `remove_layer` | Compose the scene by instance id: layers, items inside a layer (`parent`), and buttons with groups; params are checked against the layer's controls with the host's rules |
-| `set_steps` | How Next moves through a layer, and a slideshow's sequence of layers |
-| `save_custom_layer` | Save or remove a custom layer: a recipe of data, look, motion and interaction blocks, used as `custom:<id>` |
+| `set_steps` | How Next moves through a layer, and a slideshow's sequence of layers, with presenter `notes` per step for the guide's phone |
+| `save_custom_layer` | Save or remove a custom layer: a recipe of data, look, motion and interaction blocks, used as `custom:<id>`. Blocks, props, colours, ramps, pictograms and icons are checked against the recipe player in `packages/sdk` |
 | `validate_site` | The site and layer contracts, plus `mrstudio validate` when the CLI is installed |
-| `preview_site` | The command and URLs to preview the site on this machine |
+| `preview_site` | How to see the site on this computer: open it in the installed app, or a `mrstudio dev` command on a free port (never the app's 4170) with the app's own surfaces; URLs of the editor, table, controller, guide's phone, phone and dev view |
 | `check_layer_idea` | Says whether an idea is an existing layer to configure, a new core layer from existing blocks, or needs new blocks or kernels |
 | `draft_module_request` | Writes `requests/<date>-<title>.md` and a prefilled GitHub issue link. Sends nothing |
 | `submit_module_request` | Opens a draft as an issue, with `GITHUB_TOKEN`/`GH_TOKEN` or a signed-in `gh`; otherwise returns the link |
@@ -31,6 +31,8 @@ The server writes `site.json`, never layer code. When a project needs a new laye
 **Prompts**: `new_project` (story, place, scene, data, branding and welcome, TV, validation), `brainstorm_layer`, `design_dashboard`, `request_module`.
 
 **Resources**: `mrstudio://docs/<name>` and `mrstudio://layers/<id>`.
+
+**Results.** Every tool declares an output schema and returns `structuredContent` (with a text copy for older clients): `ok`, a one-line `summary`, and the tool's own fields. A refusal has `ok: false` and `error: { code, message, recoverable, next }`, for example `would_invalidate`, `unknown_layer`, `unknown_setting`, `site_invalid` or `not_submitted`; nothing is written when a tool refuses. Every tool carries MCP annotations (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`); only `submit_module_request` reaches outside the computer.
 
 The server also sends short instructions on connect: build from what exists, configure rather than code, edit only through the tools, and submit requests only after the person agrees.
 
