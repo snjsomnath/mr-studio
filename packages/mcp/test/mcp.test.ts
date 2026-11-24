@@ -5,6 +5,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import assert from 'node:assert/strict';
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createServer, type Server } from 'node:http';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { after, before, describe, test } from 'node:test';
@@ -19,11 +20,12 @@ const pkg = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const bundle = join(pkg, 'dist', 'mrstudio-mcp.mjs');
 
 // No GitHub credentials and no gh on PATH, so nothing can be posted by a test.
-const safeEnv = { PATH: dirname(process.execPath), MRSTUDIO_REPO: 'example/not-a-repo', MRSTUDIO_CLI: join(tmpdir(), 'no-cli-here') };
+// GitHub is a dead local address unless a test stands one in, so a test can never reach the real one.
+const safeEnv = { PATH: dirname(process.execPath), MRSTUDIO_REPO: 'example/not-a-repo', MRSTUDIO_CLI: join(tmpdir(), 'no-cli-here'), MRSTUDIO_GITHUB_API: 'http://127.0.0.1:9', MRSTUDIO_NO_GH: '1' };
 
-async function connect(script: string, cwd: string, args: string[] = []): Promise<Client> {
+async function connect(script: string, cwd: string, args: string[] = [], env: Record<string, string> = {}): Promise<Client> {
   const client = new Client({ name: 'test', version: '0.0.0' });
-  await client.connect(new StdioClientTransport({ command: process.execPath, args: [script, ...args], cwd, env: safeEnv, stderr: 'ignore' }));
+  await client.connect(new StdioClientTransport({ command: process.execPath, args: [script, ...args], cwd, env: { ...safeEnv, ...env }, stderr: 'ignore' }));
   return client;
 }
 
@@ -299,7 +301,7 @@ describe('server over stdio', () => {
     assert.equal(a.structured.steps[4].status, 'unsupported');
     assert.equal(a.structured.steps[4].constraint.id, 'constraint:table-3d');
     const vote = a.structured.needs[0];
-    assert.equal(vote.gap.kind, 'layer-change');
+    assert.equal(vote.gap.kind, 'layer-enhancement');
     assert.deepEqual(vote.gap.related, ['layer:sketch']);
     assert.equal(a.structured.needs[1].status, 'needs_development', 'Sketch does not export reports');
 
@@ -447,7 +449,7 @@ describe('server over stdio', () => {
     assert.equal((await call(client, 'update_site', { site: 'harbour', set: { basemap: { background: '#101418' } } })).isError, false);
     const welcome = await call(client, 'update_site', { site: 'harbour', set: { welcome: { title: 'Hi' } } });
     assert.equal(welcome.isError, true);
-    assert.match(welcome.text, /draft_module_request/);
+    assert.match(welcome.text, /draft_development_request/);
     assert.equal(welcome.structured.error.code, "unknown_setting");
     const badLogo = await call(client, 'update_site', { site: 'harbour', set: { branding: { logo: '../logo.png' } } });
     assert.equal(badLogo.isError, true);
@@ -532,6 +534,127 @@ describe('server over stdio', () => {
       assert.ok(overview.data.layers.some((l: string) => l.startsWith('sunlight')));
     } finally {
       await standalone.close();
+    }
+  });
+});
+
+describe('development requests against a stand-in GitHub (#328)', () => {
+  let work: string;
+  let api: Server;
+  let base: string;
+  const created: any[] = [];
+  const existing = [
+    { number: 401, title: 'Voting on sketch marks from phones', state: 'open', html_url: 'https://github.com/example/not-a-repo/issues/401', body: 'People want to vote on each other\'s sketch marks.', labels: [{ name: 'phones' }] },
+    { number: 402, title: 'Sketch layer polish', state: 'closed', html_url: 'https://github.com/example/not-a-repo/issues/402', body: 'Colours of marks.', labels: [] },
+    { number: 403, title: 'Voting PR', state: 'open', html_url: 'https://github.com/example/not-a-repo/pull/403', body: '', labels: [], pull_request: {} },
+  ];
+
+  before(async () => {
+    work = mkdtempSync(join(tmpdir(), 'mrstudio-dev-'));
+    api = createServer((req, res) => {
+      let raw = '';
+      req.on('data', (c) => (raw += c));
+      req.on('end', () => {
+        const json = (status: number, body: unknown) => {
+          res.writeHead(status, { 'content-type': 'application/json' });
+          res.end(JSON.stringify(body));
+        };
+        if (req.method === 'GET' && req.url?.startsWith('/search/issues')) {
+          assert.match(decodeURIComponent(req.url), /repo:example\/not-a-repo is:issue/);
+          return json(200, { items: existing });
+        }
+        if (req.method === 'POST' && req.url === '/repos/example/not-a-repo/issues') {
+          if (req.headers.authorization === 'Bearer forbidden') return json(403, { message: 'Resource not accessible by integration' });
+          const body = JSON.parse(raw);
+          created.push(body);
+          return json(201, { number: 500 + created.length, html_url: `https://github.com/example/not-a-repo/issues/${500 + created.length}`, title: body.title });
+        }
+        json(404, { message: 'Not Found' });
+      });
+    });
+    await new Promise<void>((done) => api.listen(0, '127.0.0.1', () => done()));
+    base = `http://127.0.0.1:${(api.address() as { port: number }).port}`;
+  });
+  after(() => {
+    api.close();
+    rmSync(work, { recursive: true, force: true });
+  });
+
+  const request = (title: string) => ({
+    kind: 'layer-change',
+    title,
+    context: 'Residents at an open evening sketch ideas for the harbour.',
+    user_story: 'As a resident, I want to support other people\'s ideas, so that the group sees what matters most.',
+    proposal: 'A vote on each sketch mark from the phone; the table grows the mark with its votes.',
+    experience: { table: 'Marks grow with votes', controller: 'The most supported ideas', phone: 'A heart on each mark' },
+    acceptance: ['A phone can vote once per mark', 'The controller lists the top five marks'],
+    related_capabilities: ['layer:sketch'],
+    site: 'harbour',
+  });
+
+  test('finds an existing issue, refuses a duplicate, sends a batch, and reports only what GitHub returned', async () => {
+    const client = await connect(bundle, work, ['--project', work], { MRSTUDIO_GITHUB_API: base, GITHUB_TOKEN: 'test-token' });
+    try {
+      assert.equal((await call(client, 'create_site', { dir: 'harbour', name: 'Harbour', lon: 11.94, lat: 57.7, width_m: 800, height_m: 500, timezone: 'Europe/Stockholm' })).isError, false);
+
+      const found = await call(client, 'find_related_issues', { title: 'Voting on sketch marks from phones' });
+      assert.equal(found.isError, false, found.text);
+      assert.deepEqual(found.structured.likely_duplicates, [401]);
+      assert.ok(!found.structured.issues.some((i: any) => i.number === 403), 'pull requests are not issues');
+      assert.ok(found.structured.capabilities.some((c: any) => c.id === 'layer:sketch'));
+
+      const dup = await call(client, 'draft_development_request', request('Vote on sketch marks from phones'));
+      assert.equal(dup.isError, false, dup.text);
+      assert.match(dup.text, /#401/);
+      assert.deepEqual(dup.structured.labels, ['development-request', 'layer-enhancement', 'needs-triage']);
+      for (const heading of ['Context', 'User story', 'Proposed functionality', 'Experience across the table, controller and phones', 'Acceptance criteria', 'Current limitations']) assert.match(dup.structured.body, new RegExp(`### ${heading}`));
+
+      const other = await call(client, 'draft_development_request', { ...request('Export the group\'s ideas as a PDF report'), kind: 'data-integration', context: 'After the evening the planners want the ideas.' });
+      assert.deepEqual(other.structured.likely_duplicates, []);
+
+      // One yes for both: the duplicate is held back, the other is sent.
+      const batch = await call(client, 'submit_development_request', { paths: [dup.structured.path, other.structured.path] });
+      assert.equal(batch.isError, false, batch.text);
+      assert.deepEqual(batch.structured.submitted.map((s: any) => s.number), [501]);
+      assert.equal(batch.structured.results[0].error.code, 'possible_duplicate');
+      assert.equal(batch.structured.results[0].duplicates[0].number, 401);
+      assert.equal(created.length, 1);
+      assert.deepEqual(created[0].labels, ['development-request', 'data-integration', 'needs-triage']);
+      assert.match(readFileSync(other.structured.path, 'utf8'), /status: submitted\nissue: https:\/\/github.com\/example\/not-a-repo\/issues\/501/);
+
+      // The person says it differs from #401: it is sent, and a second send is refused.
+      const confirmed = await call(client, 'submit_development_request', { paths: [dup.structured.path], not_duplicate_of: [401] });
+      assert.deepEqual(confirmed.structured.submitted, [{ number: 502, url: 'https://github.com/example/not-a-repo/issues/502', title: 'Vote on sketch marks from phones' }]);
+      const again = await call(client, 'submit_development_request', { paths: [dup.structured.path], not_duplicate_of: [401] });
+      assert.equal(again.isError, true);
+      assert.equal(again.structured.error.code, 'already_submitted');
+    } finally {
+      await client.close();
+    }
+  });
+
+  test('a refused or missing sign-in sends nothing and hands back the link', async () => {
+    const forbidden = await connect(bundle, work, ['--project', work], { MRSTUDIO_GITHUB_API: base, GITHUB_TOKEN: 'forbidden' });
+    try {
+      const draft = await call(forbidden, 'draft_development_request', { ...request('Sound of the harbour at dawn'), kind: 'new-layer' });
+      const sent = await call(forbidden, 'submit_development_request', { paths: [draft.structured.path] });
+      assert.equal(sent.isError, true);
+      assert.equal(sent.structured.error.code, 'github_forbidden');
+      assert.match(sent.structured.results[0].issue_link, /^https:\/\/github\.com\/example\/not-a-repo\/issues\/new\?/);
+      assert.doesNotMatch(sent.text, /#5\d\d/);
+      assert.match(readFileSync(draft.structured.path, 'utf8'), /status: draft/);
+    } finally {
+      await forbidden.close();
+    }
+    const signedOut = await connect(bundle, work, ['--project', work], { MRSTUDIO_GITHUB_API: base });
+    try {
+      const draft = await call(signedOut, 'draft_development_request', { ...request('Night lighting walk'), kind: 'new-layer' });
+      const sent = await call(signedOut, 'submit_development_request', { paths: [draft.structured.path] });
+      assert.equal(sent.structured.error.code, 'github_not_signed_in');
+      const bad = await call(signedOut, 'draft_development_request', { ...request('x'), kind: 'wish' });
+      assert.equal(bad.structured.error.code, 'invalid_params');
+    } finally {
+      await signedOut.close();
     }
   });
 });
