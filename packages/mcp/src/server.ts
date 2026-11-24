@@ -522,7 +522,7 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
     {
       title: 'Set how Next moves through a layer',
       description:
-        'Set or clear a layer\'s steps: mode (manual or timed), loop, reveal (what Next does after a step\'s sub-steps: stop or then-next) and, for a sequence such as the slideshow, the sequence of steps. Each step shows another layer of the scene or one of the sequence\'s own items, by id, with optional params for that step only, duration_s, transition (cut or fade), next, title, description and source. Replaces the whole steps object; null clears it.',
+        'Set or clear a layer\'s steps: mode (manual or timed), loop, reveal (what Next does after a step\'s sub-steps: stop or then-next), the sequence\'s default transition and transition_s and, for a sequence such as the slideshow, the sequence of steps. Each step shows another layer of the scene or one of the sequence\'s own items, by id, with optional params for that step only, duration_s, transition (cut, fade or dip: through the empty map) and transition_s, next, title, description and source. Replaces the whole steps object; null clears it.',
       inputSchema: {
         site: z.string(),
         ...target,

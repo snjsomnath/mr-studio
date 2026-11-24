@@ -18,6 +18,8 @@ export class MapCanvasOverlay implements CanvasOverlay {
   private site: SiteInfo;
   private observer: ResizeObserver;
   private onMove = () => this.measure(false);
+  private opacity = 1;
+  private gain = 1;
 
   constructor(map: MapLibreMap, container: HTMLElement, id: string, site: SiteInfo, style?: { opacity?: number }) {
     this.map = map;
@@ -46,7 +48,14 @@ export class MapCanvasOverlay implements CanvasOverlay {
   }
 
   setOpacity(opacity: number): void {
-    this.canvas.style.opacity = String(opacity);
+    this.opacity = opacity;
+    this.canvas.style.opacity = String(opacity * this.gain);
+  }
+
+  /** The layer's intensity, set by the runtime from host state: below 1 fades. Not part of the layer API. */
+  setGain(gain: number): void {
+    this.gain = Math.min(1, Math.max(0, gain));
+    this.setOpacity(this.opacity);
   }
 
   remove(): void {
