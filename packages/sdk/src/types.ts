@@ -11,7 +11,7 @@ export type Role = 'table' | 'tv' | 'phone' | 'dev' | 'guide';
 interface ControlBase {
   id: string;
   label: string;
-  /** Phone participants may change it. */
+  /** Phone participants may change it. Default: true for a `primary` control, false otherwise (#335). */
   phone?: boolean;
   /** Show only while other controls have these values. */
   visibleWhen?: Record<string, unknown>;
@@ -146,6 +146,8 @@ export interface LayerManifest {
   alongside?: boolean;
   /** While the layer is open, the map at rest (its `base` and `ambient` layers) is turned off on the table, and comes back when it closes. The slideshow does this (#205). Default false. */
   hidesAtRest?: boolean;
+  /** Phones may turn the layer on and off (#335). Default true; false for a layer only the controller should open. */
+  phone_switch?: boolean;
   requires?: { kernels?: string[]; data?: string[]; services?: string[] };
   controls?: Control[];
   tools?: ToolSpec[];
@@ -161,6 +163,8 @@ export interface LayerManifest {
   actions?: { id: string; label?: string }[];
   /** Things a visitor picks on the table and changes one by one on the controller (#279). */
   entities?: EntitySet[];
+  /** A sound bed of up to four voices that follow the layer's values (#282, voices.ts). Plays on the table only. */
+  sound?: import('./voices.ts').VoiceSpec[];
   /** TV panels the layer contributes while it is on. Rules in docs/contracts/dashboard.md. */
   panels?: PanelSpec[];
   /** The layer is a sequence: its instances may have `steps.sequence` that show other layers (the slideshow). */
@@ -323,6 +327,11 @@ export interface TvConfig {
    * whoever runs the table. Default true; false leaves only Reset, for a table visitors run alone.
    */
   map_controls?: boolean;
+  /**
+   * Phones may turn layers on and off (#335). Default true. Phones never switch layers while a
+   * slideshow or tour is showing, whatever this says.
+   */
+  phone_switch?: boolean;
 }
 
 /** The site's About page on the controller: a title, a few lines, and who made it. */
@@ -484,7 +493,7 @@ export interface Participant {
 export interface SessionState {
   protocol: number;
   /** `join_url` is what the TV's QR code points at; null when phones cannot reach the host. */
-  session: { id: string; code: string; port: number; join_url: string | null; /** The visitors' language now (#80). */ language?: string };
+  session: { id: string; code: string; port: number; join_url: string | null; /** The visitors' language now (#80). */ language?: string; /** False while the controller's sound switch mutes the table (#282). */ sound?: boolean };
   site: SiteInfo;
   /** Layer instance ids in draw order, bottom first. */
   scene: string[];

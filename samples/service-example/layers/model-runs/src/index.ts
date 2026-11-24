@@ -73,6 +73,8 @@ export default defineLayer<Params>({
           { label: ctx.say('Outside it'), value: Math.round(use - sum(inside, 'use_kw')), slot: 5 },
         ],
         self_sufficiency: use > 0 ? 1 - sum(list, 'import_kw') / use : null,
+        // The sound bed in layer.json follows this (#282): a hiss and a hum that load up with the grid.
+        import_kw: Math.round(sum(list, 'import_kw')),
       };
     };
 

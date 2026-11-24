@@ -918,6 +918,7 @@ export class Controller {
     if (centre) {
       this.listenForKeys();
       this.idleReset();
+      this.phoneCue(centre);
     }
     store.onLayer((id, state) => {
       // Opening a layer closes the About page.
@@ -935,6 +936,36 @@ export class Controller {
       this.cards.delete(id);
     });
     store.onScene(() => this.arrange());
+  }
+
+  /**
+   * When a visitor's phone turns a layer on or off (#335), a short line at the top of the
+   * centre says so, with a dot in that phone's colour, so whoever is at the controller knows
+   * where the change came from.
+   */
+  private cue: HTMLElement | undefined;
+
+  private phoneCue(centre: HTMLElement): void {
+    const cue = el('div', 'phone-cue');
+    this.cue = cue;
+    cue.setAttribute('role', 'status');
+    cue.hidden = true;
+    const dot = el('span', 'phone-cue-dot');
+    const words = el('span');
+    cue.append(dot, words);
+    centre.prepend(cue);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    this.connection.on('phone.switched', (p: { layer: string; active: boolean; participant?: { colour: string } }) => {
+      const state = this.store.state.layers[p.layer];
+      const manifest = state && this.store.manifest(state.layer);
+      if (!state || !manifest) return;
+      const name = layerButton(p.layer, manifest, state).name;
+      words.textContent = p.active ? t('{name} turned on from a phone', { name }) : t('{name} turned off from a phone', { name });
+      dot.style.background = p.participant?.colour ?? 'currentColor';
+      cue.hidden = false;
+      clearTimeout(timer);
+      timer = setTimeout(() => (cue.hidden = true), 4000);
+    });
   }
 
   /** The rails as last laid out, to tell when a change of side, group or order moves a button. */
@@ -991,7 +1022,7 @@ export class Controller {
       const ids = [...store.state.scene].reverse();
       const kept = (id: string) => Boolean(store.manifest(store.state.layers[id]?.layer ?? '')?.alongside);
       const bodies = [...ids.filter((id) => !kept(id)), ...ids.filter(kept)].flatMap((id) => this.cards.get(id)?.body ?? []);
-      this.centre.replaceChildren(this.welcome, ...(this.about ? [this.about] : []), ...bodies);
+      this.centre.replaceChildren(...(this.cue ? [this.cue] : []), this.welcome, ...(this.about ? [this.about] : []), ...bodies);
       this.rest();
     }
   }
@@ -1005,13 +1036,7 @@ export class Controller {
     const fromShow = Boolean(store.state.layers[id]?.shown_by);
     const activate = connection.request('layer.activate', { layer: id, active: true }).catch(() => {});
     if (fromShow) await activate;
-    for (const other of mine?.alongside ? [] : store.state.scene) {
-      const state = store.state.layers[other];
-      const manifest = state && store.manifest(state.layer);
-      // Layers a slideshow shows go off with it; the host does that.
-      if (other === id || !state?.active || state.parent || state.shown_by || !manifest || isAtRest(manifest, state) || manifest.alongside) continue;
-      void connection.request('layer.activate', { layer: other, active: false }).catch(() => {});
-    }
+    if (!mine?.alongside) closeOthers(store, connection, id);
   }
 
   /**
@@ -1259,6 +1284,10 @@ export class Controller {
     line.hidden = credits.size === 0;
   }
 
+  private soundOn(): boolean {
+    return this.store.state.session?.sound !== false;
+  }
+
   private get aboutOpen(): boolean {
     return this.about !== undefined && !this.about.hidden;
   }
@@ -1324,6 +1353,20 @@ export class Controller {
         calibrating = Boolean(p.active);
         calibrate.setAttribute('aria-pressed', String(calibrating));
       });
+      // Sound (#282): mutes the table's speakers for the session, every sound and voice bed.
+      // The rings and colours that follow the sound carry on.
+      const sound = action(t('Sound'), 'sound', () => {
+        void this.connection.request('session.sound', { on: !this.soundOn() }).catch(() => {});
+      });
+      const showSound = () => {
+        const on = this.soundOn();
+        sound.setAttribute('aria-pressed', String(on));
+        sound.title = on ? t('Sound') : t('Muted');
+        sound.querySelector('.layer-button-name')!.textContent = on ? t('Sound') : t('Muted');
+        sound.querySelector('.layer-button-icon')!.replaceChildren(icon(on ? 'sound' : 'muted', 20));
+      };
+      showSound();
+      this.store.onParticipants(() => showSound());
     }
     if (this.about) {
       if (operator) box.append(el('div', 'rail-group', t('About')));
@@ -1356,16 +1399,21 @@ export class Controller {
     const power = el('input');
     Object.assign(power, { type: 'checkbox', className: 'switch', ariaLabel: t('Turn {name} on or off', { name }) });
     power.addEventListener('change', () => {
-      connection.request('layer.activate', { layer: id, active: power.checked }).catch(() => (power.checked = !power.checked));
+      const on = power.checked;
+      connection
+        .request('layer.activate', { layer: id, active: on })
+        // A phone opens a layer the way the controller's button does: the open layer makes way (#335).
+        .then(() => phone && on && !manifest.alongside && closeOthers(store, connection, id))
+        .catch(() => (power.checked = !on));
     });
-    // Phones cannot turn layers on or off, so they are not offered the switch.
-    if (!phone) header.append(power);
+    // Phones turn layers on and off too (#335), unless the table, the layer or a tour holds them back.
+    header.append(power);
     card.append(header);
 
     const body = el('div', 'layer-body');
     const send = paramSender(connection, id, { minInterval: phone ? PHONE_SEND_INTERVAL : 0 });
     const widgets = visibleControls(manifest.controls)
-      .filter((control) => !phone || control.phone)
+      .filter((control) => !phone || phoneControl(control))
       .map((control) =>
         widget(
           control,
@@ -1381,12 +1429,24 @@ export class Controller {
     if (tools) body.append(tools.element);
     if (widgets.length > 0) body.append(controls);
     card.append(body);
-    // A layer with nothing a phone can use is left off the phone.
-    if (phone && !tools && widgets.length === 0) card.hidden = true;
+    // A layer with nothing a phone can use, not even its switch, is left off the phone.
+    const nothingElse = phone && !tools && widgets.length === 0;
+    const allowSwitch = () => {
+      const may = !phone || phoneMaySwitch(store, manifest);
+      power.hidden = !may;
+      if (nothingElse) card.hidden = !may;
+    };
+    allowSwitch();
+    const stopTv = phone ? store.onTv(allowSwitch) : () => {};
+    const stopLayers = phone ? store.onLayer(allowSwitch) : () => {};
 
     return {
       element: card,
-      dispose: () => tools?.sync(false),
+      dispose: () => {
+        tools?.sync(false);
+        stopTv();
+        stopLayers();
+      },
       sync: (state) => {
         // The site's author may have renamed the layer's button.
         const button = layerButton(id, manifest, state);
@@ -1403,5 +1463,30 @@ export class Controller {
         tools?.sync(state.active);
       },
     };
+  }
+}
+
+/** Phones get a control the layer says they may use, and by default its primary controls (#335). */
+export function phoneControl(control: { phone?: boolean; tier?: string }): boolean {
+  return control.phone ?? control.tier === 'primary';
+}
+
+/**
+ * Whether a phone may turn this layer on or off now (#335): the table allows it
+ * (`tv.phone_switch`), the layer does (`phone_switch` in layer.json), and no slideshow or tour
+ * is showing. The host checks the same.
+ */
+export function phoneMaySwitch(store: Store, manifest: LayerManifest): boolean {
+  if (store.state.site?.tv?.phone_switch === false || manifest.phone_switch === false) return false;
+  return !Object.values(store.state.layers).some((layer) => layer.shown_by);
+}
+
+/** Closes the open layers other than `id`, as opening a layer from its button does. Tools kept alongside, the map at rest and a slideshow's layers (the host takes those off with it) stay. */
+function closeOthers(store: Store, connection: Connection, id: string): void {
+  for (const other of store.state.scene) {
+    const state = store.state.layers[other];
+    const manifest = state && store.manifest(state.layer);
+    if (other === id || !state?.active || state.parent || state.shown_by || !manifest || isAtRest(manifest, state) || manifest.alongside) continue;
+    void connection.request('layer.activate', { layer: other, active: false, cue: false }).catch(() => {});
   }
 }

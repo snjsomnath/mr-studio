@@ -325,7 +325,9 @@ fn tag_text(xml: &str, tag: &str) -> Option<String> {
             let close = body.find("</")?;
             let text = body[..close].trim();
             let text = text.strip_prefix("<![CDATA[").and_then(|t| t.strip_suffix("]]>")).unwrap_or(text);
-            return Some(text.replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", "\"").replace("&apos;", "'"));
+            return Some(
+                text.replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", "\"").replace("&apos;", "'"),
+            );
         }
     }
     None
@@ -347,7 +349,10 @@ pub fn capabilities_layers(xml: &str) -> Vec<ServiceLayer> {
         let after = &xml[start..];
         let end = starts.get(n + 1).map(|&next| next - start).unwrap_or(after.len());
         let own = &after[..end];
-        let close = own.match_indices("</").map(|(i, _)| i).find(|&i| own[i + 2..].split('>').next().and_then(|h| h.rsplit(':').next()) == Some("Layer"));
+        let close = own
+            .match_indices("</")
+            .map(|(i, _)| i)
+            .find(|&i| own[i + 2..].split('>').next().and_then(|h| h.rsplit(':').next()) == Some("Layer"));
         let own = close.map(|i| &own[..i]).unwrap_or(own);
         let Some(name) = tag_text(own, "Name").filter(|n| !n.is_empty()) else { continue };
         if out.iter().any(|l| l.name == name) {
@@ -385,7 +390,8 @@ pub async fn layers(sources: &Sources, mut q: LayersQuery) -> Result<Vec<Service
     }
     let arcgis = q.service.as_deref().map(str::trim) == Some("arcgis");
     let what = if arcgis { "ArcGIS" } else { "WMS" };
-    let mut url = reqwest::Url::parse(q.url.trim()).map_err(|e| (StatusCode::BAD_REQUEST, format!("the {what} address is not a web address: {e}")))?;
+    let mut url = reqwest::Url::parse(q.url.trim())
+        .map_err(|e| (StatusCode::BAD_REQUEST, format!("the {what} address is not a web address: {e}")))?;
     if !matches!(url.scheme(), "http" | "https") {
         return Err((StatusCode::BAD_REQUEST, format!("the {what} address must start with http:// or https://")));
     }
@@ -423,7 +429,8 @@ pub async fn layers(sources: &Sources, mut q: LayersQuery) -> Result<Vec<Service
     if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
         return Err((StatusCode::BAD_GATEWAY, format!("the {what} service wants a sign-in ({status})")));
     }
-    let body = answer.text().await.map_err(|e| (StatusCode::BAD_GATEWAY, format!("the {what} service stopped answering: {}", e.without_url())))?;
+    let body =
+        answer.text().await.map_err(|e| (StatusCode::BAD_GATEWAY, format!("the {what} service stopped answering: {}", e.without_url())))?;
     if !status.is_success() {
         return Err((StatusCode::BAD_GATEWAY, format!("the {what} service answered {status}")));
     }
@@ -464,7 +471,10 @@ mod layer_tests {
     #[test]
     fn arcgis() {
         let json = serde_json::json!({ "layers": [{ "id": 0, "name": "Roads" }, { "id": 3, "name": "" }] });
-        assert_eq!(arcgis_layers(&json), vec![ServiceLayer { name: "0".into(), title: "Roads".into() }, ServiceLayer { name: "3".into(), title: "3".into() }]);
+        assert_eq!(
+            arcgis_layers(&json),
+            vec![ServiceLayer { name: "0".into(), title: "Roads".into() }, ServiceLayer { name: "3".into(), title: "3".into() }]
+        );
     }
 }
 

@@ -42,7 +42,9 @@ Any open button layer pauses the map at rest's life on the table, keeping only t
 `requires.data` lists the site datasets the layer reads, by name (see `data` in site.md). A layer must still start when one is missing.
 
 Control types: `range`, `select`, `toggle`, `date`, `color`, `text`, `action` (a button, no stored value).
-Every control has `id`, `type`, `label` and `default`. `phone: true` lets phone participants change it.
+Every control has `id`, `type`, `label` and `default`. `phone: true` lets phone participants change it; a `primary` control is on phones unless it says `phone: false` (#335).
+
+`"phone_switch": false` at the top of layer.json keeps phones from turning the layer on or off, for a layer only the controller should open (the slideshow). Default true.
 `visibleWhen: { "mode": "day" }` hides a control unless another control has that value; a list, `{ "style": ["light", "dark"] }`, means any of them.
 
 A `text` control that names something is never a box to type in (#306); the editor offers a list to pick from, with type-ahead, and refuses a name that is not in it:
@@ -387,6 +389,35 @@ Visitors read the controller, the phones and the table's ribbons in English or S
 - **Words the layer makes as it runs** (a status, a caption, a hero's labels) go through `ctx.say(text, vars?)`: `ctx.say('Sunrise {time}', { time })` looks up `Sunrise {time}` and fills `{time}`. `ctx.language` is `en` or `sv`, for dates and numbers. A published text that matches an entry exactly (`'Shade'`) is said in the visitor's language on the TV's panels and the controller's legend without `ctx.say`.
 - Every core layer has `locales/sv.json`; a host test checks that every core layer's name, control labels and choices have Swedish.
 - The site's own words (title, welcome line, button names, slide titles) are in site.json, `branding.translations` (site.md).
+
+## Sound voices
+
+A layer can carry a sound bed in layer.json, `sound`, with no audio code (#282). It is up to four
+slow, continuous voices whose level and colour follow what the layer publishes or a control's value:
+
+```json
+"sound": [
+  { "id": "grid", "kind": "noise", "width": 1.2, "glide_s": 3,
+    "level":  { "bind": "shared.import_kw", "from": [0, 400], "to": [0, 0.6], "curve": "sqrt" },
+    "centre": { "bind": "shared.import_kw", "from": [0, 400], "to": [260, 900] } },
+  { "id": "hum", "kind": "hum", "frequency": 100, "harmonics": 4,
+    "level":  { "bind": "shared.import_kw", "from": [50, 400], "to": [0, 0.35] } }
+]
+```
+
+- `kind`: `noise` (white noise through a band, `centre` Hz and `width` octaves), `hum` (a pitch with
+  up to 6 `harmonics`) or `tone` (a plain sine at `frequency`).
+- Each of `level` (0 to 1), `centre`, `width` and `frequency` is a number, or a binding
+  `{ "bind": "shared.<key>" | "params.<control id>", "from": [a, b], "to": [c, d], "curve" }` that maps
+  the value's range to the voice's, holding at the ends. `curve` is `linear` (default), `sqrt` or
+  `square`. A value that is missing gives the low end, so a bed is silent until there is data.
+- The rules from the ECOM learnings (docs/visualisation.md): the voices share one level ceiling, so
+  more voices are never louder; every change glides over `glide_s` seconds (2 by default, at least
+  0.5); there are no repeating events.
+- Voices play on the table only, start and stop with their layer, and fade out while the controller's
+  **Sound** switch (under Map controls) mutes the table for the session (`session.sound {on}`, which
+  also silences sound on points). The host refuses a layer.json whose `sound` breaks these rules.
+- From code, `VoiceBed`, `voiceTargets` and `checkVoices` are in `@mrstudio/sdk` (voices.ts).
 
 ## Reveals: X-rays, magnifiers and reveal lines
 

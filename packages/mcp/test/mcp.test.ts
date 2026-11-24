@@ -213,7 +213,7 @@ describe('server over stdio', () => {
 
   test('offers tools, prompts and docs', async () => {
     const tools = (await client.listTools()).tools.map((t) => t.name).sort();
-    for (const name of ['overview', 'read_doc', 'list_layers', 'describe_layer', 'list_building_blocks', 'find_capabilities', 'describe_capability', 'assess_experience', 'build_experience', 'create_site', 'get_site', 'update_site', 'add_layer', 'set_layer', 'move_layer', 'remove_layer', 'validate_site', 'preview_site', 'check_layer_idea', 'draft_module_request', 'submit_module_request', 'whats_new']) {
+    for (const name of ['overview', 'read_doc', 'list_layers', 'describe_layer', 'list_building_blocks', 'find_capabilities', 'describe_capability', 'assess_experience', 'build_experience', 'list_site_files', 'import_data', 'add_media', 'add_sound', 'find_related_issues', 'draft_development_request', 'submit_development_request', 'create_site', 'get_site', 'update_site', 'add_layer', 'set_layer', 'move_layer', 'remove_layer', 'validate_site', 'preview_site', 'check_layer_idea', 'draft_module_request', 'submit_module_request', 'whats_new']) {
       assert.ok(tools.includes(name), `missing tool ${name}`);
     }
     const prompts = (await client.listPrompts()).prompts.map((p) => p.name).sort();
@@ -429,6 +429,20 @@ describe('server over stdio', () => {
     const legend = JSON.parse(readFileSync(join(dir, 'site.json'), 'utf8')).custom.zones.legend;
     assert.deepEqual(legend.map((r: any) => r.label).sort(), ['homes', 'park', 'shops']);
     assert.match(zones.structured.summary, /legend has 3 rows/);
+    // The files tool sees the dataset, its category column and who uses it (#320).
+    writeFileSync(join(dir, 'data', 'zones', 'spots.csv'), 'name,lon,lat,visitors\nPier,11.90,57.70,120\n"Old, dock",11.91,57.701,40\n');
+    const files = await call(client, 'list_site_files', { site: 'harbour' });
+    assert.equal(files.isError, false, files.text);
+    const use = files.structured.files.find((f: any) => f.path === 'data/zones/use.geojson');
+    assert.equal(use.features, 3);
+    assert.deepEqual(use.geometry, ['Polygon']);
+    assert.deepEqual(use.columns.find((c: any) => c.name === 'use').values, ['homes', 'park', 'shops']);
+    assert.deepEqual(use.used_by, ['custom.zones.data.z']);
+    const spots = files.structured.files.find((f: any) => f.path === 'data/zones/spots.csv');
+    assert.equal(spots.points, true);
+    assert.equal(spots.features, 2);
+    assert.deepEqual(spots.columns.find((c: any) => c.name === 'visitors').range, [40, 120]);
+    assert.deepEqual(spots.used_by, []);
     assert.equal((await call(client, 'save_custom_layer', { site: 'harbour', id: 'broken', recipe: { name: 'x', look: [{ id: 'a', block: 'lines', data: 'nope' }] } })).isError, true);
     const junk = await call(client, 'save_custom_layer', { site: 'harbour', id: 'junk', recipe: { name: 'Junk', data: [{ id: 'd', wms: { url: 'https://example.org/wms', layers: 'x' } }], look: [{ id: 'a', block: 'extrude', data: 'd', props: { wobble: 3 } }] } });
     assert.equal(junk.isError, true, 'unknown blocks are refused (#321)');
@@ -655,6 +669,49 @@ describe('development requests against a stand-in GitHub (#328)', () => {
       assert.equal(bad.structured.error.code, 'invalid_params');
     } finally {
       await signedOut.close();
+    }
+  });
+});
+
+describe('bringing data in through the mrstudio command line (#320)', () => {
+  const root = resolve(pkg, '..', '..');
+  const exe = join(root, 'target', process.env.MRSTUDIO_CLI_PROFILE ?? 'debug', process.platform === 'win32' ? 'mrstudio.exe' : 'mrstudio');
+  const kit = join(root, 'samples', 'kit');
+
+  test('checks, then writes, buildings, a picture and a sound; refuses a broken file', { skip: existsSync(exe) ? false : 'build mrs-cli first (cargo build -p mrs-cli)' }, async () => {
+    const work = mkdtempSync(join(tmpdir(), 'mrstudio-data-'));
+    const client = await connect(bundle, work, ['--project', work], { MRSTUDIO_CLI: exe, MRS_OVERPASS_URL: 'http://127.0.0.1:9' });
+    try {
+      assert.equal((await call(client, 'create_site', { dir: 'kit', name: 'Kit', lon: 11.97, lat: 57.7, width_m: 1000, height_m: 600, timezone: 'Europe/Stockholm' })).isError, false);
+      const dry = await call(client, 'import_data', { site: 'kit', target: 'buildings', file: join(kit, 'buildings.geojson') });
+      assert.equal(dry.isError, false, dry.text);
+      assert.equal(dry.structured.written, false);
+      assert.ok(dry.structured.report.count > 0);
+      assert.equal(dry.structured.report.preview, undefined, 'the preview is left out');
+      assert.equal(existsSync(join(work, 'kit', 'data', 'buildings.geojson')), false);
+      const wrote = await call(client, 'import_data', { site: 'kit', target: 'buildings', file: join(kit, 'buildings.geojson'), write: true });
+      assert.equal(wrote.isError, false, wrote.text);
+      assert.match(wrote.text, /site.json now points at it/);
+      const site = JSON.parse(readFileSync(join(work, 'kit', 'site.json'), 'utf8'));
+      assert.ok(site.scene.buildings, 'scene.buildings is set');
+      assert.ok(existsSync(join(work, 'kit', site.scene.buildings.path)));
+      const files = await call(client, 'list_site_files', { site: 'kit' });
+      assert.ok(files.structured.files.some((f: any) => f.path === site.scene.buildings.path));
+      const picture = await call(client, 'add_media', { site: 'kit', file: join(kit, 'overlay.png') });
+      assert.equal(picture.isError, false, picture.text);
+      assert.ok(existsSync(join(work, 'kit', picture.structured.path)));
+      const notSound = await call(client, 'add_sound', { site: 'kit', file: join(kit, 'overlay.png') });
+      assert.equal(notSound.isError, true);
+      const swapped = await call(client, 'import_data', { site: 'kit', target: 'buildings', file: join(kit, 'broken', 'buildings-lat-lon-swapped.geojson') });
+      assert.equal(swapped.structured.error.code, 'import_refused');
+      assert.ok(swapped.structured.error.next.some((n: string) => /swap: true/.test(n)), swapped.text);
+      const missing = await call(client, 'import_data', { site: 'kit', target: 'buildings' });
+      assert.equal(missing.structured.error.code, 'invalid_params');
+      const offline = await call(client, 'import_data', { site: 'kit', target: 'trees', source: 'osm' });
+      assert.equal(offline.isError, true, offline.text);
+    } finally {
+      await client.close();
+      rmSync(work, { recursive: true, force: true });
     }
   });
 });

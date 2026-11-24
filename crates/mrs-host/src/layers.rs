@@ -59,6 +59,36 @@ pub struct LayerDef {
     pub entity_sets: Vec<EntitySet>,
     /// Named actions without a button (#283), pressed from a layer's stage, hero or panels.
     pub actions: Vec<String>,
+    /// Visitors' phones may turn the layer on and off (#335). `phone_switch: false` in
+    /// layer.json holds a heavy or private layer back. Default true.
+    pub phone_switch: bool,
+}
+
+/// The most voices a layer's sound bed has (#282): a bed is a few slow layers, never a band.
+pub const MOST_VOICES: usize = 4;
+
+/// A layer's `sound` (#282): up to four voices, each `noise`, `hum` or `tone` with its own id.
+/// What each voice's values mean is checked where it plays (`@mrstudio/sdk` voices.ts).
+fn check_voices(sound: &Value) -> anyhow::Result<()> {
+    let list = match sound {
+        Value::Null => return Ok(()),
+        Value::Array(list) => list,
+        _ => bail!("sound is a list of voices"),
+    };
+    if list.len() > MOST_VOICES {
+        bail!("sound has at most {MOST_VOICES} voices");
+    }
+    let mut ids = std::collections::HashSet::new();
+    for voice in list {
+        let id = voice["id"].as_str().filter(|id| is_entity_id(id) && !id.is_empty()).ok_or_else(|| anyhow!("every voice needs an id"))?;
+        if !ids.insert(id) {
+            bail!("two voices are called '{id}'");
+        }
+        if !matches!(voice["kind"].as_str(), Some("noise" | "hum" | "tone")) {
+            bail!("voice '{id}' has kind noise, hum or tone");
+        }
+    }
+    Ok(())
 }
 
 /// The param that holds every entity's changed values: `entities[set][entity][control]`.
@@ -153,6 +183,7 @@ impl LayerDef {
             }
             actions.push(aid.to_string());
         }
+        check_voices(&manifest["sound"])?;
         match &manifest["stage"] {
             Value::Null => {}
             Value::String(s) if s == "custom" => {}
@@ -172,7 +203,8 @@ impl LayerDef {
             };
             tools.push(Tool { id: tid, kind });
         }
-        Ok(Self { source: id.clone(), id, manifest, controls, tools, entity_sets, actions })
+        let phone_switch = manifest["phone_switch"].as_bool().unwrap_or(true);
+        Ok(Self { source: id.clone(), id, manifest, controls, tools, entity_sets, actions, phone_switch })
     }
 
     pub fn tool(&self, id: &str) -> Option<&Tool> {
@@ -287,7 +319,9 @@ impl Control {
             Some("action") => ControlKind::Action,
             other => bail!("control '{cid}' has unknown type {other:?}"),
         };
-        let mut control = Control { id: cid.clone(), kind, phone: c["phone"].as_bool().unwrap_or(false), default: Value::Null };
+        // Phones get a layer's primary controls unless the layer says otherwise (#335).
+        let phone = c["phone"].as_bool().unwrap_or(c["tier"] == "primary");
+        let mut control = Control { id: cid.clone(), kind, phone, default: Value::Null };
         if !matches!(control.kind, ControlKind::Action) {
             control.default = control.validate(&c["default"]).map_err(|e| anyhow!("control '{cid}' default: {e}"))?;
         }
@@ -568,6 +602,24 @@ mod tests {
         .unwrap()
     }
 
+    #[test]
+    fn phones_get_primary_controls_unless_told_otherwise() {
+        let def = LayerDef::parse(json!({
+            "api": 1, "id": "t", "name": "T", "phone_switch": false,
+            "controls": [
+                { "id": "a", "type": "toggle", "label": "A", "default": false, "tier": "primary" },
+                { "id": "b", "type": "toggle", "label": "B", "default": false, "tier": "primary", "phone": false },
+                { "id": "c", "type": "toggle", "label": "C", "default": false, "tier": "more", "phone": true },
+                { "id": "d", "type": "toggle", "label": "D", "default": false }
+            ]
+        }))
+        .unwrap();
+        let phone: Vec<bool> = def.controls.iter().map(|c| c.phone).collect();
+        assert_eq!(phone, [true, false, true, false]);
+        assert!(!def.phone_switch);
+        assert!(super::LayerDef::parse(json!({ "api": 1, "id": "u", "name": "U" })).unwrap().phone_switch, "phones may switch it by default");
+    }
+
     fn patch(v: Value) -> Map<String, Value> {
         v.as_object().unwrap().clone()
     }
@@ -718,6 +770,21 @@ mod tests {
         assert!(layer(json!({ "stage": "big" })).is_err());
         assert!(layer(json!({ "actions": [{ "id": "go" }] })).is_err(), "already an action control");
         assert!(layer(json!({ "actions": [{ "label": "No id" }] })).is_err());
+    }
+
+    #[test]
+    fn sound_voices_are_checked() {
+        let layer = |extra: Value| {
+            let mut m = json!({ "api": 1, "id": "t" });
+            m.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
+            LayerDef::parse(m)
+        };
+        assert!(layer(json!({ "sound": [{ "id": "grid", "kind": "noise" }, { "id": "hum", "kind": "hum" }] })).is_ok());
+        assert!(layer(json!({ "sound": { "id": "grid" } })).is_err());
+        assert!(layer(json!({ "sound": [{ "id": "a", "kind": "drum" }] })).is_err());
+        assert!(layer(json!({ "sound": [{ "id": "a", "kind": "tone" }, { "id": "a", "kind": "hum" }] })).is_err());
+        let five: Vec<Value> = (0..5).map(|i| json!({ "id": format!("v{i}"), "kind": "tone" })).collect();
+        assert!(layer(json!({ "sound": five })).is_err());
     }
 
     #[test]

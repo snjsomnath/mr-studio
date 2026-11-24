@@ -238,12 +238,24 @@ async function main() {
     const stranger = await open(`/phone?c=${code === '0000' ? '1111' : '0000'}`, { width: 390, height: 800 });
     await stranger.getByText('That code did not work').waitFor();
 
-    // A phone that scanned the code sees only phone controls and cannot switch layers.
+    // A phone that scanned the code sees phone controls, and switches layers (#335).
     const phone = await open(scanned.slice(base.length), { width: 390, height: 800 });
     await sunlight(phone).getByLabel('Time of day').waitFor();
     await phone.getByText('You are 1').waitFor();
-    assert.equal(await phone.getByLabel('Turn Sunlight on or off').count(), 0);
     assert.equal(await phone.getByText('Opacity').count(), 0);
+    const windCard = phone.locator('.layer-card', { hasText: 'Wind' });
+    await windCard.getByLabel('Turn Wind on or off').check();
+    // The controller follows, and says a phone did it; the open Sunlight makes way.
+    await tv.getByText('Wind turned on from a phone').waitFor();
+    await sunlight(phone).getByLabel('Turn Sunlight on or off').waitFor();
+    await sunlight(phone).locator('input.switch:not(:checked)').waitFor();
+    // The rail's buttons fade between pressed and not.
+    if (shots) await tv.waitForTimeout(800);
+    if (shots) await tv.screenshot({ path: path.join(shots, 'tv-phone-cue.png') });
+    if (shots) await phone.screenshot({ path: path.join(shots, 'phone-switch.png') });
+    await sunlight(phone).getByLabel('Turn Sunlight on or off').check();
+    await tv.getByText('Sunlight turned on from a phone').waitFor();
+    await windCard.locator('input.switch:not(:checked)').waitFor();
     await tv.getByText('1 phone', { exact: true }).waitFor();
     await sunlight(phone).getByLabel('Time of day').fill('18');
     await tv.locator(clock, { hasText: '18:00' }).waitFor();

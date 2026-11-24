@@ -1,3 +1,4 @@
+import { setSessionSound } from '@mrstudio/sdk';
 import type { Connection, LayerManifest, LayerState, Participant, SessionState, TvConfig, Welcome, DisplayQuality } from '@mrstudio/sdk';
 
 type LayerListener = (layer: string, state: LayerState, previous: LayerState | undefined) => void;
@@ -31,8 +32,10 @@ export class Store {
     });
     // The controller's table settings changed (a theme picked in the setup guide).
     // Phones join somewhere else now: through the relay, or back on the local network (#89).
+    setSessionSound(this.state.session?.sound !== false);
     connection.on('session.changed', (p: { session: SessionState['session'] }) => {
       this.state.session = p.session;
+      setSessionSound(p.session?.sound !== false);
       for (const listener of this.participantListeners) listener(this.state.participants);
     });
     connection.on('site.tv', (p: { tv: TvConfig | null }) => {

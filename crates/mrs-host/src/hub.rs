@@ -71,7 +71,14 @@ impl SessionOptions {
 impl Default for SessionOptions {
     fn default() -> Self {
         let (join_page, peer_options) = Self::join_page_from_env();
-        Self { max_phones: MAX_PHONES, resume_hold: Duration::from_secs(60), phone_requests_per_second: 20, public_url: None, join_page, peer_options }
+        Self {
+            max_phones: MAX_PHONES,
+            resume_hold: Duration::from_secs(60),
+            phone_requests_per_second: 20,
+            public_url: None,
+            join_page,
+            peer_options,
+        }
     }
 }
 
@@ -310,6 +317,9 @@ pub struct SessionInfo {
     /// The language the visitors' screens speak now (#80): `en` or `sv`. The controller
     /// switches it; a phone may keep its own.
     pub language: String,
+    /// Whether the table's layers may be heard (#282). The controller's sound switch turns it
+    /// off for the session; a new session starts with sound on.
+    pub sound: bool,
 }
 
 /// A phone's place in the session. It outlives the connection by `resume_hold`.
@@ -471,6 +481,8 @@ pub struct Hub {
     bridge_join: RwLock<Option<String>>,
     /// The visitors' language now (#80), one of the site's `branding.languages`.
     language: RwLock<String>,
+    /// The controller's sound switch (#282): false mutes every layer for the session.
+    sound: RwLock<bool>,
     /// The code the guide's phone joins with (#98). Only the operator's screens are told it.
     guide_code: String,
     options: SessionOptions,
@@ -508,6 +520,7 @@ fn tv_words(key: &str) -> &str {
         "about" => "About page",
         "idle_reset_s" => "idle reset",
         "attract_s" => "welcome loop",
+        "phone_switch" => "phones switching layers",
         other => other,
     }
 }
@@ -523,7 +536,7 @@ impl Hub {
         let code = format!("{:04}", random_u64() % 10_000);
         let join_url = join_base.map(|base| format!("{}/phone?c={code}", base.trim_end_matches('/')));
         let language = offered(&site.manifest.branding)[0].clone();
-        let session = SessionInfo { id: format!("{:016x}", random_u64()), code, port, join_url, language: language.clone() };
+        let session = SessionInfo { id: format!("{:016x}", random_u64()), code, port, join_url, language: language.clone(), sound: true };
         // Six digits, never the phones' code.
         let guide_code = loop {
             let guide = format!("{:06}", random_u64() % 1_000_000);
@@ -539,6 +552,7 @@ impl Hub {
             relay_join: RwLock::new(None),
             bridge_join: RwLock::new(None),
             language: RwLock::new(language),
+            sound: RwLock::new(true),
             guide_code,
             options,
             catalog: RwLock::new(Arc::new(catalog)),
@@ -777,6 +791,23 @@ impl Hub {
             .map_or_else(|| control.to_string(), |l| l.to_lowercase())
     }
 
+    /// Whether a visitor's phone may turn this layer on or off now (#335): the table allows it
+    /// (`tv.phone_switch`, default true), the layer does (`phone_switch` in layer.json), and no
+    /// slideshow or guided tour is running.
+    fn phone_may_switch(&self, scene: &[Instance], index: usize) -> Result<(), String> {
+        let tv_allows = self.info.read().unwrap().tv.as_ref().is_none_or(|tv| tv["phone_switch"].as_bool() != Some(false));
+        if !tv_allows {
+            return Err("this table does not let phones turn layers on or off".into());
+        }
+        if !self.catalog()[scene[index].def].phone_switch {
+            return Err(format!("'{}' is turned on and off from the controller only", scene[index].id));
+        }
+        if scene.iter().any(|i| i.state.shown_by.is_some()) {
+            return Err("a slideshow is running; phones can switch layers again when it ends".into());
+        }
+        Ok(())
+    }
+
     /// The layer catalogue as it is now.
     fn catalog(&self) -> Arc<Vec<LayerDef>> {
         self.catalog.read().unwrap().clone()
@@ -792,6 +823,7 @@ impl Hub {
     pub fn session(&self) -> SessionInfo {
         let mut session = self.session.clone();
         session.language = self.language.read().unwrap().clone();
+        session.sound = *self.sound.read().unwrap();
         let relay = self.relay_join.read().unwrap().clone();
         if let Some(base) = relay.or_else(|| self.bridge_join.read().unwrap().clone()) {
             session.join_url = Some(format!("{}/phone?c={}", base.trim_end_matches('/'), session.code));
@@ -1031,6 +1063,15 @@ impl Hub {
             self.emit("session.changed", json!({ "session": self.session() }));
             return Ok(json!({ "language": language }));
         }
+        if method == "session.sound" {
+            if !matches!(role, Role::Tv | Role::Dev | Role::Guide) {
+                return Err("only the controller turns the table's sound on or off".into());
+            }
+            let on = p["on"].as_bool().ok_or("say on: true or false")?;
+            *self.sound.write().unwrap() = on;
+            self.emit("session.changed", json!({ "session": self.session() }));
+            return Ok(json!({ "sound": on }));
+        }
         if method == "session.guide" {
             if !matches!(role, Role::Tv | Role::Dev) {
                 return Err("only the operator's screens see the guide's code".into());
@@ -1047,7 +1088,9 @@ impl Hub {
         let layer = p["layer"].as_str().ok_or("missing layer")?;
         let index = inner.position(layer)?;
         if method == "layer.activate" {
-            if !role.may_activate() {
+            if role == Role::Phone {
+                self.phone_may_switch(&inner.scene, index)?;
+            } else if !role.may_activate() {
                 return Err("phones cannot turn layers on or off".into());
             }
             let active = p["active"].as_bool().ok_or("missing active")?;
@@ -1061,6 +1104,15 @@ impl Hub {
                 self.release(&mut inner.scene, index, false);
             }
             self.switch(&mut inner.scene, index, active);
+            // The controller says which phone did it, in that phone's colour (#335). The layers a
+            // phone closes to make way (`cue: false`) are not worth a word.
+            if role == Role::Phone && p["cue"].as_bool() != Some(false) {
+                let mut event = json!({ "layer": layer, "active": active });
+                if let Some(seat) = inner.seats.iter().find(|s| s.participant.surface == surface) {
+                    event["participant"] = json!({ "slot": seat.participant.slot, "colour": seat.participant.colour });
+                }
+                self.emit("phone.switched", event);
+            }
             return Ok(json!({}));
         }
         match method {
@@ -1264,6 +1316,7 @@ impl Hub {
                 "about" => value.is_object() && value.to_string().len() <= 8_000,
                 "idle_reset_s" => value.as_f64().is_some_and(|s| (0.0..=3600.0).contains(&s)),
                 "attract_s" => value.as_f64().is_some_and(|s| (2.0..=30.0).contains(&s)),
+                "phone_switch" => value.is_boolean(),
                 _ => return Err(format!("'{key}' is not a controller setting that can be changed here")),
             };
             if value.is_null() {
@@ -2354,6 +2407,29 @@ mod tests {
     }
 
     #[test]
+    fn phones_switch_layers_unless_the_table_a_layer_or_a_tour_holds_them_back() {
+        let hub = scratch_hub("phone-switch");
+        let phone = |method: &str, p: Value| hub.request(Role::Phone, 3, method, &p);
+        let dev = |method: &str, p: Value| hub.request(Role::Dev, 0, method, &p);
+        // A visitor turns Wind on and uses its primary control, which phones get by default (#335).
+        phone("layer.activate", json!({ "layer": "wind", "active": true })).unwrap();
+        assert_eq!(layer(&hub, "wind")["active"], true);
+        phone("layer.set", json!({ "layer": "wind", "params": { "style": "particles" } })).unwrap();
+        // The rest of the map stays out of reach, and so does Reset.
+        assert!(phone("layers.reset", json!({})).is_err());
+        // The table can turn phone switching off.
+        dev("site.tv", json!({ "tv": { "phone_switch": false } })).unwrap();
+        assert!(phone("layer.activate", json!({ "layer": "wind", "active": false })).is_err());
+        dev("site.tv", json!({ "tv": { "phone_switch": null } })).unwrap();
+        phone("layer.activate", json!({ "layer": "wind", "active": false })).unwrap();
+        // While a slideshow shows its steps, phones leave the layers alone.
+        dev("scene.set", json!({ "layer": "slideshow", "steps": { "mode": "manual", "sequence": [{ "layer": "sunlight", "title": "Sun" }] } })).unwrap();
+        dev("layer.activate", json!({ "layer": "slideshow", "active": true })).unwrap();
+        let refused = phone("layer.activate", json!({ "layer": "wind", "active": true })).unwrap_err();
+        assert!(refused.contains("slideshow"), "{refused}");
+    }
+
+    #[test]
     fn a_layer_on_at_start_without_a_button_is_part_of_the_map_at_rest() {
         let hub = scratch_hub("rest");
         let dev = |method: &str, p: Value| hub.request(Role::Dev, 0, method, &p);
@@ -2671,6 +2747,20 @@ mod tests {
         assert!(dev("palette.set", json!({ "palette": { "slots": { "accent": "orange" } } })).is_err());
         dev("palette.set", json!({ "palette": null })).unwrap();
         assert!(Site::load(&hub.site.dir).unwrap().manifest.palette.is_none());
+    }
+
+    #[test]
+    fn the_controller_mutes_the_table_for_the_session() {
+        let hub = scratch_hub("sound");
+        assert!(hub.session().sound, "a session starts with sound");
+        assert!(hub.request(Role::Phone, 0, "session.sound", &json!({ "on": false })).is_err());
+        assert!(hub.request(Role::Table, 0, "session.sound", &json!({ "on": false })).is_err());
+        assert!(hub.request(Role::Tv, 0, "session.sound", &json!({})).is_err());
+        hub.request(Role::Tv, 0, "session.sound", &json!({ "on": false })).unwrap();
+        assert!(!hub.session().sound);
+        assert_eq!(hub.welcome(0)["state"]["session"]["sound"], false);
+        hub.request(Role::Guide, 0, "session.sound", &json!({ "on": true })).unwrap();
+        assert!(hub.session().sound);
     }
 
     #[test]
