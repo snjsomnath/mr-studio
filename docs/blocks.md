@@ -70,6 +70,7 @@ constant or a function of the shape, which is how data drives the picture. Block
 | Rings | `drawRings`, `drawGlow` | Rings travelling outward or inward, or rippling in place; a soft catchment disc |
 | Travelling lights | `pathHeads`, `drawDots` | Lights along lines as a pure function of time, by period or by speed, any number per line |
 | Place motions | `PLACE_MOTIONS`, `placeData` | 22 motions for places (place-motions.ts) on the place data standard (places.ts): weight, activity over time, flows, links. Each has knobs, a ? help setup and draws in design units of 1.25 table mm |
+| Test data | `TEST_DATA`, `makeTestData` | Random points, places (with activity, flows and links tables), lines or areas inside a table's extent, with columns to style by (test-data.ts). The New custom layer dialog offers them (#308) |
 | Street network | `StreetNetwork` | Lines snapped into a graph; shortest routes (`route`), a tree of routes to one place (`treeTo`, `follow`) and the nodes that reach it. Crowds walk the streets, not across buildings (M8) |
 | Particles | `Swarm`, `pullTowards`, `gravity`, `followField`, `pickWeighted`, `aroundRing`, `particleAlpha` | A crowd that is spawned, steered and retired. Steering is pluggable: to a target, by the pull of all attractors, or along any field |
 | Data fields | `heatField`, `gravityField`, `siteRaster` | Rasters made from data, returned as a `FieldFrame` and drawn with `ctx.map.addField` like a kernel's |
@@ -130,6 +131,30 @@ Behaviours hold state the layer reads when it draws, and call back for what must
 | `Lens` + `drawLens` | A circle that follows, pins on a press, and shows whatever `inside(view)` draws: the same scene at `zoom` 3 is a magnifier, another scene at `zoom` 1 is an X-ray | Artwork magnifier |
 | `Probe` + `hitTest` | Hover and select the spot, path or area under the pointer | EPC and ECOM building selection, CoolPaths hover |
 | `Dwell` | Fires when a pointer rests in place | new |
+| `HoverRegions` + `areaRegion`, `circleRegion`, `maskRegion` | Large regions of the map that start something when a pointer settles over them (`settle_s`) and fade out when it leaves; `level(id)` eases 0 to 1 for the drawing. Any number of pointers at once; `sources` limits which kinds count. `maskRegion` makes a region from a picture's painted pixels, such as a phase of a drawing (#289) | Artwork phases lit by pointing |
+
+Hover regions take samples with `source: 'hand'` already, so the camera's hand tracking can feed
+them later without the layers changing: placing a hand over a region will trigger it as the mouse
+does now.
+
+### Reveals, table pads and drawings (#286-#289)
+
+- **`reveal.ts`**: the shapes a revealing layer shows its items through (`RevealShape`: a circle, one
+  side of a line, nowhere) and `revealPath`, `revealPolygon`, `revealContains`, `revealUniform` to draw,
+  clip and test with them. The runtime does the clipping (docs/contracts/layer.md, Reveals).
+- **`table-pad.ts`**: `tablePad(ctx, el, { draw, onDrag })` puts the table's shape with its buildings
+  on the controller, for a hero that moves something on the table (the glass, the line) by dragging.
+- **`drawing-reveal.ts`**: what the Lindholmen artwork's opening is made of, for any drawing.
+  `traceDrawing` and `drawTrace` trace an SVG's lines in from the middle with a glint at the pen;
+  `openingAt` times the trace and the turn to colour; `placement` and `parseCorners` put a drawing on
+  the map by three corners; `stagedWeight` says how strongly each phase shows (earlier ones dimmed,
+  later ones faint, a finale with all). The Masterplan layer (`packages/layers/plan`) uses all of them.
+- **`drawing-roles.ts`** (#300): drawings that animate by role. `roleOfName` reads what a part is from
+  its name (boundary, axis, route, arrow, point, node, area, label; English and Swedish, numbers and
+  punctuation ignored), `rolePieces` turns a phase group into vector pieces with their roles, `roleFrame`
+  says how a piece looks at a moment of its motion (traced, grown from its middle, popped in, breathing,
+  marching dashes) and `drawRolePiece` draws it. `phaseNumber` and `phaseTitle` read numbered phase names
+  ("01_PROJECT BOUNDARY"). The motions are the Chalmers demo's Campus Vision ones, for any drawing.
 
 ### What this unlocks
 

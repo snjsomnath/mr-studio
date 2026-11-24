@@ -1,5 +1,5 @@
-import { lut } from '@mrstudio/sdk';
-import type { Colormap, FieldFrame, FieldOverlay, FieldOverlayStyle, SiteInfo } from '@mrstudio/sdk';
+import { lut, revealUniform } from '@mrstudio/sdk';
+import type { Colormap, FieldFrame, FieldOverlay, FieldOverlayStyle, RevealShape, SiteInfo } from '@mrstudio/sdk';
 import maplibregl from 'maplibre-gl';
 import type { CustomLayerInterface, CustomRenderMethodInput, Map as MapLibreMap } from 'maplibre-gl';
 
@@ -21,9 +21,21 @@ uniform vec2 u_range;   // offset and scale that take a texel to 0..1
 uniform float u_opacity;
 uniform float u_gain;    // the layer's intensity: below 1 fades, above 1 brightens
 uniform vec2 u_soften;  // blur radius in texture coordinates, 0 for none
+uniform float u_clipKind; // where the field shows (#287): 0 everywhere, 1 a circle, 2 one side of a line, 3 nowhere
+uniform vec3 u_clip;      // in table metres, see revealUniform in the SDK
+uniform vec2 u_extent;    // the table's width and height in metres
 in vec2 v_uv;
 out vec4 color;
+bool clipped() {
+  if (u_clipKind < 0.5) return false;
+  if (u_clipKind > 2.5) return true;
+  vec2 m = v_uv * u_extent;
+  if (u_clipKind < 1.5) return distance(m, u_clip.xy) > u_clip.z;
+  float c = u_clip.x < 0.5 ? m.x : m.y;
+  return (c - u_clip.y) * u_clip.z < 0.0;
+}
 void main() {
+  if (clipped()) discard;
   float v = texture(u_field, v_uv).r;
   if (u_soften.x > 0.0) {
     // A 3 x 3 Gaussian over bilinear taps: nine fetches give a wide, smooth edge.
@@ -136,9 +148,11 @@ export class MapFieldOverlay implements FieldOverlay, CustomLayerInterface {
   /** Mercator position of the extent's centre. Vertices are relative to it to keep float precision. */
   private centre: [number, number];
   private corners: [number, number][];
+  private site: SiteInfo;
 
   constructor(map: MapLibreMap, id: string, site: SiteInfo, style: FieldOverlayStyle & { colormap: Colormap }) {
     this.map = map;
+    this.site = site;
     this.id = id;
     this.colormap = style.colormap;
     this.opacity = style.opacity ?? 1;
@@ -167,6 +181,14 @@ export class MapFieldOverlay implements FieldOverlay, CustomLayerInterface {
     this.map.triggerRepaint();
   }
 
+  private clip: RevealShape | null = null;
+
+  /** Where the field shows, set by the runtime for the items of a revealing layer (#287). Not part of the layer API. */
+  setClip(shape: RevealShape | null): void {
+    this.clip = shape;
+    this.map.triggerRepaint();
+  }
+
   /** The layer's intensity, set by the runtime from host state. Not part of the layer API. */
   setGain(gain: number): void {
     this.gain = gain;
@@ -182,7 +204,7 @@ export class MapFieldOverlay implements FieldOverlay, CustomLayerInterface {
     this.gl = gl;
     const program = link(gl, VERTEX, FRAGMENT);
     this.program = program;
-    for (const name of ['u_matrix', 'u_field', 'u_lut', 'u_range', 'u_opacity', 'u_gain', 'u_soften']) this.uniforms[name] = gl.getUniformLocation(program, name);
+    for (const name of ['u_matrix', 'u_field', 'u_lut', 'u_range', 'u_opacity', 'u_gain', 'u_soften', 'u_clipKind', 'u_clip', 'u_extent']) this.uniforms[name] = gl.getUniformLocation(program, name);
     this.glideProgram = link(gl, GLIDE_VERTEX, GLIDE_FRAGMENT);
     for (const name of ['u_shown', 'u_target', 'u_k']) this.glideUniforms[name] = gl.getUniformLocation(this.glideProgram, name);
     this.shown = [gl.createTexture(), gl.createTexture()];
@@ -313,6 +335,10 @@ export class MapFieldOverlay implements FieldOverlay, CustomLayerInterface {
     gl.uniform2f(this.uniforms.u_range!, this.range[0], this.range[1]);
     gl.uniform1f(this.uniforms.u_opacity!, this.opacity);
     gl.uniform1f(this.uniforms.u_gain!, this.gain);
+    const clip = revealUniform(this.clip);
+    gl.uniform1f(this.uniforms.u_clipKind!, clip.kind);
+    gl.uniform3f(this.uniforms.u_clip!, ...clip.values);
+    gl.uniform2f(this.uniforms.u_extent!, this.site.extent.width_m, this.site.extent.height_m);
     gl.activeTexture(gl.TEXTURE0);
     const gliding = this.gliding() && this.shownValid;
     gl.bindTexture(gl.TEXTURE_2D, gliding ? this.shown[0] : this.fieldTexture);

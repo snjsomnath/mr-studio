@@ -4,6 +4,70 @@ Every merge to main that carries a release note becomes a version. The newest is
 The app shows these notes, with their pictures, on Home when a newer version is out.
 How notes are written: docs/RELEASING.md.
 
+## 0.6.0 (2026-11-24)
+
+### New
+
+#### Artworks that draw themselves, a magnifier and X-ray, and a reveal line (#286, #287, #288, #289)
+
+The Lindholmen artwork is now made of parts any table can use. A plan drawing can trace its lines in, turn to colour and grow viewpoints one at a time, placed on the map by its corners, and shows on the controller too. Pointing at a part of it lights it.
+
+![A drawing tracing in from the middle](docs/screenshots/286-trace.png)
+
+![The drawing in colour with a viewpoint growing in](docs/screenshots/286-viewpoint-growing.png)
+
+![The drawing on the controller](docs/screenshots/286-controller.png)
+
+The new Magnifier is a glass people move with the mouse, the controller or a phone. It shows the table larger, or, as an X-ray, the layers placed inside it, such as pipes and tunnels under the street.
+
+![The Magnifier as an X-ray](docs/screenshots/287-xray.png)
+
+![Moving the glass from the controller](docs/screenshots/287-controller.png)
+
+The new Reveal line is a line people drag across the table, with the layers inside it showing on one side.
+
+![The Reveal line over what is under the ground](docs/screenshots/288-reveal-line.png)
+
+Large parts of the map can now start an animation when a pointer rests over them, ready for the camera's hands later.
+
+![Pointing at a viewpoint lights it](docs/screenshots/289-finale-hover.png)
+
+#### Plans that come to life part by part (#300)
+
+A masterplan drawn with its parts named by what they are now animates each part the way the Chalmers demo's Campus Vision did. The boundary traces and its dashes march, the main axis grows from its middle, routes are drawn one after another, points pop in, nodes grow their rays and green spaces breathe. Phases numbered in their names are revealed in that order. There is a template drawing in the sample kit.
+
+![The boundary tracing in](docs/screenshots/300-boundary.png)
+
+![The main axis growing from its middle](docs/screenshots/300-axis.png)
+
+![Routes, points and nodes coming in](docs/screenshots/300-routes.png)
+
+![The whole plan, with the green spaces breathing](docs/screenshots/300-all.png)
+
+### Fixes
+
+#### The + beside Layers opens a list of layers to add (#305)
+
+In the editor, the **+** next to **Layers** on the left looked like it did nothing. It now opens a short list under it with every layer the table can add, then **Custom layer…** and **Add data…**. Picking one does the same as the ribbon's tool: a layer that needs data first takes you to bring it in, and adding a layer the table already has still asks first. Esc or a click elsewhere closes the list.
+
+![The list under the + beside Layers](https://raw.githubusercontent.com/snjsomnath/mr-studio/claude/project-thread-dfn6dv/docs/screenshots/305-new-layer-menu.png)
+
+## 0.5.0 (2026-11-24)
+
+### New
+
+#### Opening a layer quiets the map at rest (#303)
+
+When a layer is opened from the controller, the life on the map at rest steps aside: traffic, street life, public transport, building lights and trees pause, and the base map stays underneath for context. Close the layer and everything at rest comes back, as Street Life did in the Chalmers demo. The slideshow and picture layers still hide the base map too. Sketch and other tools kept alongside don't count as an open layer.
+
+![Wind open over the base map, with traffic, transit and trees paused](docs/screenshots/303-wind-open.png)
+
+#### Your own layers, with code, in the installed app (#277)
+A table can now carry layers its team wrote, with their own drawing on the table and their own panels on the controller, without changing MR Studio. `mrstudio layer new` makes a working layer in the site's `layers/` folder, `mrstudio layer build` gets it ready, and the app loads it next to the built-in layers. Developers write against the same SDK as the core layers. The table's computer runs the built layer and needs no extra tools.
+
+![A site layer drawing rings on the table where it was clicked](docs/screenshots/277-site-layer-table.png)
+![The same layer on the controller: its button, primary action, counter and its own panel](docs/screenshots/277-site-layer-controller.png)
+
 ## 0.4.2 (2026-11-24)
 
 ### Fixes

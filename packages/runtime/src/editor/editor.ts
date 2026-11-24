@@ -1,5 +1,5 @@
 import { isVisible } from '@mrstudio/sdk';
-import type { Connection, LayerManifest, LayerState } from '@mrstudio/sdk';
+import type { Connection, LayerManifest, LayerState, MediaKind } from '@mrstudio/sdk';
 
 import { defaultSideOf, el, isAmbient, isAtRest, isOffered, layerButton, visibleControls, widget } from '../controls.ts';
 import type { Widget } from '../controls.ts';
@@ -7,6 +7,10 @@ import { paramSender } from '../layer-manager.ts';
 import type { Store } from '../store.ts';
 import { builderSection, deleteCustomDialog, layerFromImport, newCustomLayer, paletteDialog } from './builder.ts';
 import { DisplayTab } from './display-tab.ts';
+import { MediaTab } from './media-tab.ts';
+import { MODEL_ROW } from './model-import.ts';
+import { ACCEPT, kindOf, mediaChanged, mediaItems, routeOf } from '../media.ts';
+import type { MediaItem } from '../media.ts';
 import type { BuilderHost } from './builder.ts';
 import { LAYER_ICONS, icon } from './icons.ts';
 import { HistoryControls } from './history.ts';
@@ -108,10 +112,12 @@ export class Editor {
    * and Display, the colour pass and projector of this computer's displays (app settings, #73).
    */
   private readonly tabs = el('div', 'ed-tabs');
-  private ribbonTab: 'edit' | 'display' | 'help' = 'edit';
+  private ribbonTab: 'edit' | 'display' | 'media' | 'help' = 'edit';
   /** The Help tab's list of guides, from help.json (#271); fetched the first time the tab opens. */
   private helpPages: { id: string; kind: string; title: string; summary: string }[] | null = null;
   private readonly displayTab: DisplayTab;
+  /** The Media tab (#306): everything the table has, and Add media. */
+  private readonly mediaTab: MediaTab;
   private readonly tree = el('nav', 'ed-tree');
   private readonly canvasHead = el('header', 'ed-canvas-head');
   private readonly surfaces = el('div', 'ed-surfaces');
@@ -179,6 +185,24 @@ export class Editor {
     };
     this.surfaces.append(surface('map', 'Map', 'Projected on the table. Visual only.', this.canvas), surface('controller', 'Controller', 'The screen beside the table. Buttons, words and controls.', this.preview));
     centre.append(this.canvasHead, this.next, this.surfaces, this.notice);
+    this.mediaTab = new MediaTab({
+      store,
+      addMedia: (kinds) => this.addMedia(kinds),
+      addLayer: (use, params) => this.addWith(use, params),
+      openLayer: (id) => {
+        this.setRibbonTab('edit');
+        const state = store.state.layers[id];
+        if (state?.parent) this.go({ kind: 'layer', id: state.parent }, id);
+        else if (state && isAtRest(store.manifest(state.layer)!, state)) this.go({ kind: 'home' });
+        else this.go({ kind: 'layer', id });
+      },
+      openSources: desktop() ? () => void desktop()?.('open_sources') : undefined,
+      hold: (on) => this.hold(on),
+      changed: () => {
+        if (this.ribbonTab === 'media') this.render();
+      },
+    });
+    centre.append(this.mediaTab.view);
 
     body.append(left, centre, this.inspector);
     const invoke = desktop();
@@ -192,6 +216,13 @@ export class Editor {
     this.drawTabs();
     root.append(shell);
     this.listenForFile();
+    // A list of media in a layer's settings asks for Add media (#306).
+    (window as { mrsAddsMedia?: boolean }).mrsAddsMedia = true;
+    window.addEventListener('mrs-media-add', (event) => {
+      const { kinds, done } = (event as CustomEvent<{ kinds: MediaKind[]; done: (item: MediaItem | null) => void }>).detail;
+      event.preventDefault();
+      void this.addMedia(kinds).then(done);
+    });
 
     this.setSaved();
     this.drawGuideButton();
@@ -219,6 +250,13 @@ export class Editor {
       // No session storage: the guide starts over.
     }
     if (resume !== undefined || created || this.instances().every((i) => isAmbient(i.manifest))) this.openWizard(created, resume);
+    else {
+      try {
+        if (sessionStorage.getItem('mrs-ribbon-tab') === 'media') this.setRibbonTab('media');
+      } catch {
+        // As above.
+      }
+    }
     connection.on('site.changed', () => {
       if (this.held) {
         this.reloadWaiting = true;
@@ -282,7 +320,7 @@ export class Editor {
 
   /** The ribbon's tabs. Display is the colour and post-processing of each display, and the projector. */
   private drawTabs(): void {
-    const tab = (id: 'edit' | 'display' | 'help', label: string, tip: string) => {
+    const tab = (id: 'edit' | 'display' | 'media' | 'help', label: string, tip: string) => {
       const node = el('button', 'ed-tab', label);
       node.type = 'button';
       node.setAttribute('role', 'tab');
@@ -295,21 +333,95 @@ export class Editor {
     this.tabs.replaceChildren(
       tab('edit', 'Edit', 'Add layers and data, and work on what is selected'),
       tab('display', 'Display', 'Colour and post-processing for each display, layer strength and projector calibration'),
+      tab('media', 'Media', 'Every file and online source of this table, in one place, and Add media'),
       tab('help', 'Help', 'Every feature and step-by-step guides, in a window of their own'),
     );
   }
 
-  private setRibbonTab(id: 'edit' | 'display' | 'help'): void {
+  private setRibbonTab(id: 'edit' | 'display' | 'media' | 'help'): void {
     if (id === this.ribbonTab) return;
     this.ribbonTab = id;
     if (id === 'display') void this.displayTab.show();
     else this.displayTab.hide();
+    this.shell.classList.toggle('is-media', id === 'media');
+    // The tab comes back after the reload that bringing data in causes.
+    try {
+      if (id === 'media') sessionStorage.setItem('mrs-ribbon-tab', id);
+      else sessionStorage.removeItem('mrs-ribbon-tab');
+    } catch {
+      // No session storage: the editor opens at Edit.
+    }
     this.drawTabs();
-    this.renderRibbon(this.instances());
+    if (id === 'media') void this.mediaTab.load();
+    this.render();
+  }
+
+  /** Adds the layer `use`, set to these params, and opens it (Media's Show on the table). */
+  private async addWith(use: string, params: Record<string, unknown>): Promise<void> {
+    const manifest = this.store.manifests.find((m) => m.id === use);
+    if (!manifest) return;
+    this.setRibbonTab('edit');
+    await this.add(manifest);
+    if (this.added) await this.send('layer.set', { layer: this.added, params });
+  }
+
+  /**
+   * Add media (#306): any file, sent where it belongs. Map data, tables, rasters and drawings go
+   * through the importer of Add data (#71), which names them as datasets; pictures, video and
+   * sounds are kept as they came; a 3D model is placed in the guide's Your place. Answers what
+   * was added, once it is listed, or null. A dataset brought in reloads the editor, which comes
+   * back on the Media tab.
+   */
+  private addMedia(kinds?: readonly MediaKind[]): Promise<MediaItem | null> {
+    return new Promise((resolve) => {
+      const routes = new Set((kinds?.length ? kinds : (['map', 'table', 'raster', 'drawing', 'picture', 'video', 'sound', 'model'] as MediaKind[])).map((k) => (k === 'picture' || k === 'video' ? 'media' : k === 'sound' ? 'sound' : k === 'model' ? 'model' : 'dataset')));
+      // A video for a Video walk may also come in as a dataset.
+      if (kinds?.includes('video')) routes.add('media');
+      const accept = [...routes].flatMap((r) => ACCEPT[r as keyof typeof ACCEPT]);
+      const input = el('input');
+      Object.assign(input, { type: 'file', accept: accept.join(','), multiple: !routes.has('dataset') && !routes.has('model') });
+      input.addEventListener('cancel', () => resolve(null));
+      input.addEventListener('change', () => {
+        const files = [...(input.files ?? [])];
+        if (files.length === 0) return resolve(null);
+        void this.takeMedia(files).then(resolve, (error: Error) => {
+          this.setSaved(error.message);
+          resolve(null);
+        });
+      });
+      input.click();
+    });
+  }
+
+  /** Brings files in, one after another; answers the last one added. */
+  private async takeMedia(files: File[]): Promise<MediaItem | null> {
+    let last: MediaItem | null = null;
+    for (const file of files) {
+      const route = routeOf(file.name);
+      if (route === 'dataset') {
+        this.addData(file);
+        return null;
+      }
+      if (route === 'model') {
+        // A model is set on the ground and fitted to the buildings: Your place's 3D model row, here in Media.
+        if (this.ribbonTab !== 'media') this.setRibbonTab('media');
+        this.mediaTab.bringIn(MODEL_ROW);
+        this.history.notify('Place the 3D model', 'Choose its file in the 3D model panel on the right: it is set on the ground and fitted to the buildings.');
+        return null;
+      }
+      if (!route) throw new Error(`${file.name} is not a kind of file MR Studio takes.`);
+      const answer = await fetch(`/api/data/${route === 'sound' ? 'sounds' : 'media'}?name=${encodeURIComponent(file.name)}`, { method: 'POST', body: file });
+      const page = (await answer.json().catch(() => ({}))) as { path?: string; error?: string };
+      if (!answer.ok || !page.path) throw new Error(page.error ?? `${file.name} could not be added.`);
+      mediaChanged();
+      last = (await mediaItems()).find((i) => i.path === page.path) ?? { kind: kindOf(page.path), path: page.path };
+      this.history.notify(`Added ${file.name}`, 'It is in the Media tab, and every list of the editor offers it.');
+    }
+    return last;
   }
 
   /** The Add data dialog: the same importer as "Your place", with the kind of data left to the author. */
-  private addData(): void {
+  private addData(file?: File): void {
     const dialog = el('dialog', 'im-dialog');
     dialog.ariaLabel = 'Add data';
     const head = el('header', 'im-dialog-head');
@@ -342,6 +454,8 @@ export class Editor {
       showVideo: (dataset) => showWith('walkthrough', { video: dataset }),
     });
     dialog.append(head, el('p', 'wz-lead', 'Bring a file into the table, or fetch it from OpenStreetMap. It is copied into the table and stays on this computer.'), importer.element);
+    // From Add media: the file is already chosen, and its kind guessed from its name.
+    if (file) importer.takeFile(file);
     dialog.addEventListener('close', () => dialog.remove());
     this.shell.append(dialog);
     dialog.showModal();
@@ -620,6 +734,7 @@ export class Editor {
       store: this.store,
       send: (method, params) => this.send(method, params),
       addData: () => this.addData(),
+      hold: (on) => this.hold(on),
       addLayer: async (use) => {
         const id = use.replace(/^custom:/, '');
         // The new layer reaches this surface with the host's catalogue event; wait for it briefly.
@@ -658,6 +773,8 @@ export class Editor {
   }
 
   private go(context: Context, item: string | null = null): void {
+    // Choosing something in the list on the left is working on the table again.
+    if (this.ribbonTab === 'media') this.setRibbonTab('edit');
     if (context.kind !== 'layer' || this.context.kind !== 'layer' || this.context.id !== context.id || item !== null) this.layerItem = item;
     this.context = context;
     // Choosing a layer shows it on the map, the way pressing its button does; the home screen is the map at rest.
@@ -878,6 +995,11 @@ export class Editor {
       this.renderHelpRibbon();
       return;
     }
+    if (this.ribbonTab === 'media') {
+      const tool = (label: string, iconName: string, large = false) => button(large ? 'ed-tool is-large' : 'ed-tool', label, iconName, large ? 20 : 16);
+      this.ribbon.replaceChildren(...this.mediaTab.ribbon(tool, (name, ...children) => this.group(name, ...children), (tools) => this.column(tools)));
+      return;
+    }
     if (this.ribbonTab === 'display') {
       // The Display tab keeps its own controls, so a slider being dragged is not rebuilt when the scene changes.
       if (this.ribbon.firstElementChild !== this.displayTab.groups[0]) this.ribbon.replaceChildren(...this.displayTab.groups);
@@ -1040,6 +1162,66 @@ export class Editor {
     return row;
   }
 
+  /**
+   * The + beside Layers (#305): a menu of the layers this table can add, the same tools and
+   * data checks as the ribbon's Add a layer group, then a custom layer or new data.
+   */
+  private newLayerMenu(anchor: HTMLButtonElement): void {
+    document.querySelector('.ed-add-menu')?.remove();
+    if (anchor.getAttribute('aria-expanded') === 'true') {
+      anchor.setAttribute('aria-expanded', 'false');
+      return;
+    }
+    const menu = el('div', 'ed-file-menu ed-add-menu');
+    menu.setAttribute('role', 'menu');
+    menu.ariaLabel = 'New layer';
+    const close = (): void => {
+      menu.remove();
+      anchor.setAttribute('aria-expanded', 'false');
+      document.removeEventListener('pointerdown', outside, true);
+    };
+    const outside = (event: PointerEvent): void => {
+      if (!menu.contains(event.target as Node) && !anchor.contains(event.target as Node)) close();
+    };
+    const item = (node: HTMLButtonElement): HTMLButtonElement => {
+      node.className = `ed-file-item ed-add-item${node.classList.contains('is-needs') ? ' is-needs' : ''}`;
+      node.setAttribute('role', 'menuitem');
+      node.addEventListener('click', close);
+      return node;
+    };
+    const offered = this.store.manifests.filter((m) => !isAmbient(m) && isOffered(m));
+    for (const manifest of offered) menu.append(item(this.insertTool(manifest, false)));
+    if (offered.length > 0) menu.append(el('hr'));
+    const custom = item(button('ed-tool', 'Custom layer…', 'brush'));
+    custom.title = 'Make a layer from your own data: choose the data, then style it, move it and save it as a button';
+    custom.addEventListener('click', () => newCustomLayer(this.builderHost(), this.shell));
+    const data = item(button('ed-tool', 'Add data…', 'map'));
+    data.title = 'Bring in a file or OpenStreetMap data';
+    data.addEventListener('click', () => this.addData());
+    menu.append(custom, data);
+    menu.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        close();
+        anchor.focus();
+      } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+        event.preventDefault();
+        const rows = [...menu.querySelectorAll<HTMLButtonElement>('.ed-add-item:not(:disabled)')];
+        const at = rows.indexOf(document.activeElement as HTMLButtonElement);
+        rows[(at + (event.key === 'ArrowDown' ? 1 : rows.length - 1)) % rows.length]?.focus();
+      }
+    });
+    const box = anchor.getBoundingClientRect();
+    menu.style.position = 'fixed';
+    menu.style.top = `${box.bottom + 4}px`;
+    menu.style.left = `${Math.max(8, box.left)}px`;
+    menu.style.maxHeight = `${Math.max(160, window.innerHeight - box.bottom - 16)}px`;
+    this.shell.append(menu);
+    anchor.setAttribute('aria-expanded', 'true');
+    document.addEventListener('pointerdown', outside, true);
+    menu.querySelector<HTMLButtonElement>('.ed-add-item:not(:disabled)')?.focus();
+  }
+
   private renderTree(instances: { id: string; manifest: LayerManifest; state: LayerState }[]): void {
     const { context } = this;
     const ambient = instances.filter((i) => isAtRest(i.manifest, i.state) && !i.state.parent);
@@ -1057,13 +1239,12 @@ export class Editor {
     plus.ariaLabel = 'New layer';
     plus.title = 'New layer';
     plus.append(icon('plus', 14));
-    plus.addEventListener('click', () => {
-      this.setRibbonTab('edit');
-      this.ribbon.querySelector<HTMLElement>('.ed-tool.is-large')?.focus();
-    });
+    plus.setAttribute('aria-haspopup', 'menu');
+    plus.setAttribute('aria-expanded', 'false');
+    plus.addEventListener('click', () => this.newLayerMenu(plus));
     title.append(plus);
     nodes.push(title);
-    if (layers.length === 0) nodes.push(el('p', 'ed-empty', 'No layers yet. Each layer becomes a button on the controller. Pick one under Add a layer, above.'));
+    if (layers.length === 0) nodes.push(el('p', 'ed-empty', 'No layers yet. Each layer becomes a button on the controller. Add one with the + above, or under Add a layer in the ribbon.'));
     for (const { id, manifest, state } of layers) {
       const as = layerButton(id, manifest, state);
       const row = this.treeRow(as.name, '', as.icon, context.kind === 'layer' && context.id === id, () => this.go({ kind: 'layer', id }));
@@ -1129,6 +1310,14 @@ export class Editor {
       notice = 'The map stays visual. Words, buttons and numbers live on the controller. Arranging it here comes with a later step of the editor. ';
     }
     if (this.wizard) return;
+    if (this.ribbonTab === 'media') {
+      const badge = el('span', 'ed-row-icon');
+      badge.append(icon('folder'));
+      this.canvasHead.replaceChildren(badge, el('strong', undefined, 'Media'), el('span', undefined, 'Every file and online source this table can show'));
+      this.notice.hidden = true;
+      this.mediaTab.drawView();
+      return;
+    }
     const showsController = context.kind === 'controller' || context.kind === 'table';
     this.showController(showsController);
     if (showsController) notice = null;
@@ -1288,7 +1477,7 @@ export class Editor {
       power.checked = item ? this.comesOn(id) : state.active;
       for (const { row, eye, w } of rows) {
         row.hidden = !isVisible(w.control, state.params);
-        w.sync(state.params[w.control.id]);
+        w.sync(state.params[w.control.id], state.params);
         const hidden = Boolean(state.hide?.includes(w.control.id));
         eye.setAttribute('aria-checked', String(!hidden));
         eye.title = hidden ? 'Hidden from the controller and phones. Click to show it.' : 'Shown on the controller. Click to hide it from visitors.';
@@ -1334,6 +1523,10 @@ export class Editor {
   }
 
   private renderInspector(instances: { id: string; manifest: LayerManifest; state: LayerState }[]): void {
+    if (this.ribbonTab === 'media' && !this.wizard) {
+      this.inspector.replaceChildren(...this.mediaTab.inspector());
+      return;
+    }
     const { context } = this;
     const nodes: HTMLElement[] = [];
     const head = (iconName: string | undefined, title: string, detail: string) => {

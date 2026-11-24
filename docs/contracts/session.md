@@ -182,6 +182,17 @@ GET /api/data/field?name=<dataset>[&hour=<0-23>]
 
 Reads a raster dataset of the site (`data` in site.json: a GeoTIFF, or a folder of one GeoTIFF per hour whose file names end in the two-digit hour) and samples it at the centre of every grid cell. Answers a version 1 field frame (engine.md) with f32 values, NaN where the raster has no data; 404 when the folder has no raster for that hour, 422 when the dataset is missing or unreadable. Cool paths reads the Chalmers demo's prepared PET this way (#196).
 
+## A table's media
+
+```
+GET /api/media
+GET /api/wms/layers?url=<address>[&service=wms|arcgis][&source=<id>]
+```
+
+`/api/media` lists everything the table has to show (#306), as `{ items: [{ kind, name?, path, bytes?, missing? }] }`: the scene's `buildings`, `terrain` and `trees`, every dataset of `data` (by `name`), then the pictures and video under `data/media/`, the sounds under `data/sounds/` and the 3D model (by `path` only). `kind` is `map` (GeoJSON), `table` (CSV), `raster` (GeoTIFF or a folder of them), `drawing` (SVG), `picture`, `video`, `sound`, `model` or `data` (anything else, such as trips). `missing` is true for a file `site.json` names that is not in the folder. The editor's Media tab shows the list, and every setting with `media` in its control (layer.md) picks from it. Online sources are `GET /api/sources`.
+
+`/api/wms/layers` asks a WMS service for its GetCapabilities, or an ArcGIS map service for its `?f=json`, and answers `{ layers: [{ name, title }] }` (an ArcGIS layer's `name` is its id). `source` signs the request with a source of the Sources manager, and stands in for `url` when that is empty. From this computer only. A WMS layer's Layers setting picks from it.
+
 ## Bringing data into a site
 
 Two HTTP endpoints take a file as the request body (any content type), with its name in an `X-Filename` header. Only this computer may call them: the host listens on the network while presenting, and a request from another address gets 403.

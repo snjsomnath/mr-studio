@@ -321,6 +321,25 @@ export class Importer {
     this.render();
   }
 
+  /**
+   * Starts with a file already chosen (Add media, #306). What it holds is guessed from its name,
+   * buildings.geojson as Buildings and anything else as a dataset named after the file, and the
+   * author can still change it before it is brought in.
+   */
+  takeFile(file: File): void {
+    if (!this.fixed) {
+      const stem = file.name.replace(/\.[^.]+$/, '').toLowerCase();
+      const known = TARGETS.find((t) => t.dataset === stem || t.name.toLowerCase() === stem);
+      const accepts = known?.accept.split(',').some((a) => file.name.toLowerCase().endsWith(a));
+      if (known && accepts) this.chosen = known.target;
+      else {
+        this.chosen = 'own';
+        this.ownName = stem.replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '') || 'data';
+      }
+    }
+    this.start({ kind: 'file', file });
+  }
+
   /** Whether the author has a file or fetch under way, which a redraw of the page around must keep. */
   get pending(): boolean {
     return this.source !== null;

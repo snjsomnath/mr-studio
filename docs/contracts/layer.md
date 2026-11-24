@@ -44,6 +44,14 @@ Control types: `range`, `select`, `toggle`, `date`, `color`, `text`, `action` (a
 Every control has `id`, `type`, `label` and `default`. `phone: true` lets phone participants change it.
 `visibleWhen: { "mode": "day" }` hides a control unless another control has that value; a list, `{ "style": ["light", "dark"] }`, means any of them.
 
+A `text` control that names something is never a box to type in (#306); the editor offers a list to pick from, with type-ahead, and refuses a name that is not in it:
+
+- `"sources": ["wms", "arcgis"]`: the id of a source of the Sources manager of one of these kinds.
+- `"media": ["map", "table"]`: a dataset or file of the table, of these kinds (as `GET /api/media` names them: `map`, `table`, `raster`, `drawing`, `picture`, `video`, `sound`, `model`, `data`). The value is the dataset's name, or the file's path for a file no dataset names; `"mediaBy": "path"` always stores the path. The list ends with Add media.
+- `"columnsOf": "dataset"`: a column of the dataset that the layer's control `dataset` names.
+- `"serviceLayers": { "url": "url", "service": "service", "source": "signin" }`: one or more layers (comma-separated) of the map service the layer's controls `url`, `service` (`wms` or `arcgis`) and `signin` name, as the service lists them (`GET /api/wms/layers`).
+- `"none": "Built-in birdsong"` names what an empty value means; it is the list's first choice. Default "None".
+
 The controls are the single source of truth for a layer's params:
 
 - The host builds the initial params from the defaults and the site's overrides.
@@ -143,6 +151,7 @@ interface TableContext<P> {
   sendTool(tool: string, geometry: ToolGeometry): Promise<void>;  // send a tool input through the host, as a phone does; every view of the table gets it
   cue(at: ToolGeometry, options?: { colour?: string }): void;     // play the attention cue at a change (#105); tool inputs from other surfaces get one automatically
   readonly steps: LayerSteps;           // sub-steps that the controller's Next reveals one at a time
+  readonly reveal: LayerReveal;         // where the layers inside this one show, for a layer with "reveals": true (see Reveals)
   onFrame(cb: (dt: number) => void): void;   // every animation frame while the layer is on
   onCleanup(cb: () => void): void;      // extra teardown
 }
@@ -191,6 +200,18 @@ interface MapHandle {
   addCanvas(id: string, style?: { opacity?: number }): CanvasOverlay;      // a canvas above the scene, in CSS pixels, with a projection
   addShapes(id: string, style?: { opacity?: number }): ShapeOverlay;   // points, lines and areas
   addDrawing(id: string, options?: { opacity?: number; resolution?: number }): DrawingOverlay;
+  addPicture(): TablePicture;       // a copy of what the table shows now, for a magnifier (#287)
+}
+
+// What the table shows, copied each frame after the map has drawn: the base map and every
+// layer's canvases except this layer's own. `want(rect)` names the part (CSS pixels of the
+// table view) to copy at the next frame; `canvas` holds it once `taken` is true.
+interface TablePicture {
+  want(rect: PixelRect | null): void;
+  readonly canvas: HTMLCanvasElement;
+  readonly taken: boolean;
+  readonly revision: number;          // goes up with every copy
+  remove(): void;
 }
 
 // A 2D drawing inside the scene's draw order, for layers that draw shapes themselves:
@@ -288,6 +309,27 @@ Visitors read the controller, the phones and the table's ribbons in English or S
 - **Words the layer makes as it runs** (a status, a caption, a hero's labels) go through `ctx.say(text, vars?)`: `ctx.say('Sunrise {time}', { time })` looks up `Sunrise {time}` and fills `{time}`. `ctx.language` is `en` or `sv`, for dates and numbers. A published text that matches an entry exactly (`'Shade'`) is said in the visitor's language on the TV's panels and the controller's legend without `ctx.say`.
 - Every core layer has `locales/sv.json`; a host test checks that every core layer's name, control labels and choices have Swedish.
 - The site's own words (title, welcome line, button names, slide titles) are in site.json, `branding.translations` (site.md).
+
+## Reveals: X-rays, magnifiers and reveal lines
+
+A layer with `"reveals": true` in layer.json shows the layers placed inside it (its items in
+`site.json`, added in the editor) only where it says, with `ctx.reveal.set(shape)` (#287, #288):
+
+```ts
+type RevealShape =
+  | { kind: 'circle'; centre: [number, number]; radius_m: number }               // a glass
+  | { kind: 'side'; axis: 'x' | 'y'; at_m: number; keep: 'before' | 'after' }  // one side of a line
+  | { kind: 'none' };                                                          // nowhere
+ctx.reveal.set(shape | null);   // null: everywhere, as without a revealer
+```
+
+Places are table metres. Until the layer sets a shape its items show nowhere. The runtime does the
+clipping, so the items need no code of their own: drawings (`addDrawing`) are composed through the
+shape, canvases and elements (`addCanvas`, `addElement`) get a CSS clip that follows the map, and
+fields (`addField`) are cut in their shader. Shapes (`addShapes`), flows (`addFlow`) and fields on the
+model are not clipped yet. `revealPath(g, shape, w, h)` traces the same shape on a canvas, for a cover
+under the items or a rim. The Magnifier (`packages/layers/lens`) and the Reveal line
+(`packages/layers/swipe`) are the reference layers.
 
 ## Building blocks and interactions
 

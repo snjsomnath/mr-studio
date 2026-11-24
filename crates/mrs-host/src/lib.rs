@@ -766,9 +766,11 @@ fn router(state: Arc<AppState>, web_dir: Option<PathBuf>) -> Router {
         .route("/api/data/sounds", get(list_sounds).post(save_sound))
         .route("/api/data/media", get(list_media).post(save_media))
         .route("/api/data/field", get(data_field))
+        .route("/api/media", get(list_library))
         .route("/api/site/place", post(place_site))
         .route("/api/site/thumbnail", post(save_thumbnail))
         .route("/api/wms", get(wms_map))
+        .route("/api/wms/layers", get(wms_layers))
         .route("/api/basemap/{service}/{z}/{x}/{y}", get(basemap_tile))
         .route("/api/sources", get(sources_page).post(save_source))
         .route("/api/sources/{id}", axum::routing::delete(remove_source))
@@ -860,6 +862,23 @@ async fn wms_map(
         }
     }
     wms::get_map(&state.site.dir, &state.sources, query).await
+}
+
+/// `GET /api/wms/layers?url=…[&service=arcgis][&source=<id>]`: the layers a service offers, as
+/// `{ layers: [{ name, title }] }` (#306). From this computer only, since it reaches out to any address.
+async fn wms_layers(
+    State(state): State<Arc<AppState>>,
+    ConnectInfo(from): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    Query(query): Query<wms::LayersQuery>,
+) -> axum::response::Response {
+    if let Err(no) = local(&from, &headers) {
+        return *no;
+    }
+    match wms::layers(&state.sources, query).await {
+        Ok(layers) => Json(json!({ "layers": layers })).into_response(),
+        Err((status, error)) => (status, Json(json!({ "error": error }))).into_response(),
+    }
 }
 
 /// `GET /api/sources`: the connections (never their keys) and the kinds that can be added.
@@ -1197,6 +1216,18 @@ async fn save_sound(
     let dir = state.site.dir.clone();
     match tokio::task::spawn_blocking(move || mrs_site::sound::save(&dir, &query.name, &body)).await {
         Ok(Ok(path)) => Json(json!({ "path": path })).into_response(),
+        Ok(Err(error)) => (StatusCode::UNPROCESSABLE_ENTITY, Json(json!({ "error": error }))).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e.to_string() }))).into_response(),
+    }
+}
+
+/// `GET /api/media`: everything the table has to show (#306), as `{ items: [{ kind, name?, path, bytes?, missing? }] }`:
+/// its datasets, pictures, video, sounds and 3D model. Online sources are `GET /api/sources`.
+async fn list_library(State(state): State<Arc<AppState>>) -> axum::response::Response {
+    let dir = state.site.dir.clone();
+    let listed = tokio::task::spawn_blocking(move || Site::load(&dir).map(|site| mrs_site::library::list(&site)).map_err(|e| e.to_string())).await;
+    match listed {
+        Ok(Ok(items)) => ([(header::CACHE_CONTROL, "no-store")], Json(json!({ "items": items }))).into_response(),
         Ok(Err(error)) => (StatusCode::UNPROCESSABLE_ENTITY, Json(json!({ "error": error }))).into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e.to_string() }))).into_response(),
     }

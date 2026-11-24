@@ -2241,3 +2241,122 @@ body[data-role='phone'] .control-presets > * {
   flex: 1 1 100%;
   min-width: 0;
 }
+
+/* A list to pick a dataset, file, column or service layer from, with type-ahead (#306). */
+.picker {
+  position: relative;
+  min-width: 0;
+}
+.picker-field {
+  display: flex;
+  align-items: stretch;
+}
+.picker-field input.picker-input {
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+.picker-toggle {
+  display: grid;
+  place-items: center;
+  width: 2rem;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-left: 0;
+  border-radius: 0 0.5rem 0.5rem 0;
+  background: var(--panel);
+  color: var(--muted);
+  cursor: pointer;
+}
+.picker.is-missing input.picker-input {
+  border-color: #d97706;
+  color: #b45309;
+}
+.picker-list {
+  position: absolute;
+  z-index: 50;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  max-height: 18rem;
+  overflow-y: auto;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+  background: var(--card, var(--panel));
+  color: var(--text);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.18);
+}
+.picker-group {
+  padding: 6px 8px 2px;
+  font-size: 0.75em;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.picker-option,
+.picker-action {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.picker-option > svg:first-child,
+.picker-option-blank {
+  flex: none;
+  width: 14px;
+  color: var(--muted);
+}
+.picker-option > svg:last-child:not(:first-child) {
+  flex: none;
+  margin-left: auto;
+  color: var(--accent);
+}
+.picker-option-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.picker-option-label,
+.picker-option-detail {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.picker-option-detail {
+  font-size: 0.85em;
+  color: var(--muted);
+}
+.picker-option.is-active,
+.picker-option:hover,
+.picker-action.is-active,
+.picker-action:hover {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+.picker-action {
+  margin-top: 4px;
+  border-top: 1px solid var(--line);
+  border-radius: 0 0 4px 4px;
+  color: var(--accent);
+}
+.picker-empty {
+  margin: 0;
+  padding: 8px;
+  color: var(--muted);
+}
+.picker-note {
+  margin: 4px 0 0;
+  font-size: 0.85em;
+  color: #b45309;
+}
