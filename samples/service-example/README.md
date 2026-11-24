@@ -1,4 +1,4 @@
-# A layer with a model behind it (#278, #279)
+# A layer with a model behind it (#278, #279, #281)
 
 The pieces a site needs to put an outside model (Python, or anything that speaks HTTP) behind a
 layer, the way ECOM's backend sits behind its layer:
@@ -9,6 +9,10 @@ layer, the way ECOM's backend sits behind its layer:
   answer on the table and the controller, and publishes `busy` while it waits. Its buildings
   are `entities` (#279): tap one on the table and change it on the controller (in the energy
   community, solar on the roof), and the model is asked again once the slider settles.
+- Its panels (#281): a `compare` panel shows grid import as today, with this plan and with the
+  optimiser's best share (not run, working, done), and a `balance` panel shows where the power
+  came from and went, with self-sufficiency. Both bind to what the layer publishes (`scenarios`,
+  `sources`, `uses`, `self_sufficiency`), and their chip forms go in the table's ribbon.
 - `site-services.json`: the `services` entry to put in a site's `site.json`.
 
 To try it on the sample site: copy `services/` and `layers/` into a copy of `sites/sample`, add the

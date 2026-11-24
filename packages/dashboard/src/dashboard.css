@@ -259,6 +259,149 @@
   transition: width 0.4s ease;
 }
 
+/* ---- Compare (#281) ---- */
+
+.mrs-compare {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  gap: calc(1.2 * var(--mrs-u));
+}
+
+.mrs-compare.is-chip {
+  display: block;
+}
+
+.mrs-scenario {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: calc(0.5 * var(--mrs-u));
+  min-width: 0;
+  padding-left: calc(1.2 * var(--mrs-u));
+  border-left: 4px solid var(--mrs-scenario, var(--mrs-line));
+}
+
+.mrs-scenario-label {
+  color: var(--mrs-muted);
+  font-size: var(--mrs-type-label);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mrs-scenario .mrs-number {
+  font-size: var(--mrs-type-number-s);
+  white-space: nowrap;
+}
+
+.mrs-scenario[data-state='idle'] .mrs-number,
+.mrs-scenario[data-state='running'] .mrs-number {
+  color: var(--mrs-muted);
+  font-size: var(--mrs-type-body);
+  font-weight: 500;
+}
+
+.mrs-scenario[data-state='running'] .mrs-number {
+  animation: mrs-working 1.4s ease-in-out infinite;
+}
+
+@keyframes mrs-working {
+  50% { opacity: 0.45; }
+}
+
+.mrs-scenario-change {
+  min-height: 1.2em;
+  font-size: var(--mrs-type-label);
+  font-variant-numeric: tabular-nums;
+  color: var(--mrs-muted);
+}
+
+.mrs-scenario-change[data-good='true'],
+.mrs-compare .mrs-number[data-good='true'] {
+  color: var(--mrs-good);
+}
+
+.mrs-scenario-change[data-good='false'],
+.mrs-compare .mrs-number[data-good='false'] {
+  color: var(--mrs-bad);
+}
+
+/* ---- Balance (#281) ---- */
+
+.mrs-balance {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-evenly;
+  gap: calc(0.8 * var(--mrs-u));
+}
+
+.mrs-band {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  column-gap: calc(1 * var(--mrs-u));
+  row-gap: calc(0.5 * var(--mrs-u));
+}
+
+.mrs-band-name {
+  color: var(--mrs-muted);
+  font-size: var(--mrs-type-label);
+  min-width: 2.4em;
+}
+
+.mrs-band-track {
+  display: flex;
+  gap: 2px;
+  height: calc(2.2 * var(--mrs-mark));
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.mrs-band-part {
+  flex: 1 1 0;
+  min-width: 2px;
+  display: flex;
+  align-items: center;
+  padding: 0 calc(0.6 * var(--mrs-u));
+  overflow: hidden;
+  transition: flex-grow 0.4s ease;
+}
+
+.mrs-band-label {
+  color: #0b0d12;
+  font-size: var(--mrs-type-label);
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mrs-band-keys {
+  grid-column: 2;
+  display: flex;
+  flex-wrap: wrap;
+  gap: calc(0.4 * var(--mrs-u)) calc(1.4 * var(--mrs-u));
+  font-size: var(--mrs-type-label);
+  font-variant-numeric: tabular-nums;
+}
+
+.mrs-band-key {
+  white-space: nowrap;
+}
+
+.mrs-band-dot {
+  display: inline-block;
+  width: 0.7em;
+  height: 0.7em;
+  margin-right: 0.35em;
+  border-radius: 50%;
+}
+
 /* ---- Trend ---- */
 
 .mrs-series {
@@ -514,4 +657,14 @@
   .mrs-timeline-head {
     transition: none;
   }
+}
+
+/* A chip holds one read: the number. Its title says what it is. */
+.mrs-compare.is-chip .mrs-unit,
+.mrs-balance-chip .mrs-unit {
+  display: none;
+}
+
+.mrs-balance-chip {
+  justify-content: flex-start;
 }

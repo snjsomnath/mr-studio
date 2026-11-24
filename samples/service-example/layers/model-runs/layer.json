@@ -80,6 +80,67 @@
           "bind": "shared.best"
         }
       }
+    },
+    {
+      "id": "scenarios",
+      "widget": "compare",
+      "size": "wide",
+      "title": "From the grid",
+      "props": {
+        "scenarios": {
+          "bind": "shared.scenarios"
+        },
+        "unit": "kW",
+        "better": "lower"
+      }
+    },
+    {
+      "id": "balance",
+      "widget": "balance",
+      "size": "wide",
+      "title": "Where the power comes from",
+      "props": {
+        "sources": {
+          "bind": "shared.sources"
+        },
+        "uses": {
+          "bind": "shared.uses"
+        },
+        "headline": {
+          "bind": "shared.self_sufficiency"
+        },
+        "headline_label": "self-sufficient",
+        "unit": "kW"
+      }
+    },
+    {
+      "id": "scenarios-ribbon",
+      "widget": "compare",
+      "size": "chip",
+      "title": "Against today",
+      "ribbon": true,
+      "props": {
+        "scenarios": {
+          "bind": "shared.scenarios"
+        },
+        "better": "lower"
+      }
+    },
+    {
+      "id": "balance-ribbon",
+      "widget": "balance",
+      "size": "chip",
+      "title": "Own power",
+      "ribbon": true,
+      "props": {
+        "sources": {
+          "bind": "shared.sources"
+        },
+        "headline": {
+          "bind": "shared.self_sufficiency"
+        },
+        "headline_label": "self-sufficient"
+      }
     }
   ],
   "entities": [

@@ -8,7 +8,7 @@ The reasoning and the full tables of rules are in [../DASHBOARD.md](../DASHBOARD
 ```ts
 interface PanelSpec {
   id: string;                      // lower-case letters, digits, dashes; unique in its layer or page
-  widget: string;                  // stat | bars | series | ramp | timeline | text | custom
+  widget: string;                  // stat | bars | compare | balance | series | ramp | timeline | text | custom
   size: PanelSize;                 // chip | tile | wide | tall | block | hero | band | strip
   title: string;                   // required, at most 28 characters
   props?: Record<string, unknown>; // per the widget's schema; literals or bindings

@@ -32,7 +32,8 @@ def result_for(share, buildings=None):
         use = 60 + 60 * (0.5 + 0.5 * math.sin(n))
         own = use * min(0.8, float(b.get("pv", 0)) / 100)
         shared = (use - own) * share * 0.6 if b.get("in", True) else 0
-        out.append({"id": b.get("id"), "import_kw": round(use - own - shared, 1)})
+        out.append({"id": b.get("id"), "in": bool(b.get("in", True)), "use_kw": round(use, 1), "own_kw": round(own, 1),
+                    "shared_kw": round(shared, 1), "import_kw": round(use - own - shared, 1)})
     return {"share": share, "buildings": out}
 
 
