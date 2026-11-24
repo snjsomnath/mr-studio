@@ -84,6 +84,15 @@ pub struct AppState {
     links: std::sync::OnceLock<Router>,
     /// The site's outside compute (#278), started with the host and stopped with it.
     pub services: services::Services,
+    /// The latest picture each layer's table sent for its controller (`ctx.view`, #351), by layer instance.
+    views: std::sync::Mutex<std::collections::HashMap<String, LayerView>>,
+}
+
+/// A picture a layer's table sent for the controller: the Magnifier's view under its glass.
+struct LayerView {
+    revision: u64,
+    kind: &'static str,
+    bytes: Bytes,
 }
 
 /// One OpenStreetMap fetch: when, and the GeoJSON it became. Kept by layer and ground.
@@ -562,6 +571,7 @@ pub async fn start(config: HostConfig) -> anyhow::Result<RunningHost> {
         osm_cache: Default::default(),
         health: Default::default(),
         bridge: Default::default(),
+        views: Default::default(),
         links: Default::default(),
     });
     // An engine that recovered from a failure (#79): noted for the operator log, and the
@@ -674,6 +684,7 @@ fn router(state: Arc<AppState>, web_dir: Option<PathBuf>) -> Router {
         .route("/api/media", get(list_library))
         .route("/api/site/place", post(place_site))
         .route("/api/site/thumbnail", post(save_thumbnail))
+        .route("/api/layers/{id}/view", get(layer_view).put(save_layer_view))
         .route("/api/wms", get(wms_map))
         .route("/api/wms/layers", get(wms_layers))
         .route("/api/basemap/{service}/{z}/{x}/{y}", get(basemap_tile))
@@ -1064,6 +1075,69 @@ async fn save_thumbnail(
         Ok(Ok(())) => StatusCode::NO_CONTENT.into_response(),
         Ok(Err(e)) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e.to_string() }))).into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e.to_string() }))).into_response(),
+    }
+}
+
+/// Largest picture a layer may send for its controller.
+const MAX_VIEW_BYTES: usize = 3 * 1024 * 1024;
+
+/// `PUT /api/layers/<id>/view`: the table sends a picture for the layer's controller (#351), a
+/// JPEG or WebP. Kept in memory, the latest only. From this computer only, as the table runs here.
+async fn save_layer_view(
+    State(state): State<Arc<AppState>>,
+    ConnectInfo(from): ConnectInfo<SocketAddr>,
+    axum::extract::Path(id): axum::extract::Path<String>,
+    body: Bytes,
+) -> axum::response::Response {
+    if !from.ip().is_loopback() {
+        return (StatusCode::FORBIDDEN, Json(json!({ "error": "a layer's view is sent from this computer only" }))).into_response();
+    }
+    let kind = if body.starts_with(&[0xFF, 0xD8, 0xFF]) {
+        "image/jpeg"
+    } else if body.len() > 12 && &body[0..4] == b"RIFF" && &body[8..12] == b"WEBP" {
+        "image/webp"
+    } else {
+        return (StatusCode::BAD_REQUEST, Json(json!({ "error": "expected a JPEG or WebP picture" }))).into_response();
+    };
+    if body.len() > MAX_VIEW_BYTES || id.len() > 128 {
+        return (StatusCode::PAYLOAD_TOO_LARGE, Json(json!({ "error": "the picture is too large" }))).into_response();
+    }
+    let mut views = state.views.lock().expect("views lock");
+    // A few layers at most; a table that keeps sending under new names cannot grow this without end.
+    if !views.contains_key(&id) && views.len() >= 32 {
+        views.clear();
+    }
+    let revision = views.get(&id).map_or(0, |v| v.revision) + 1;
+    views.insert(id, LayerView { revision, kind, bytes: body });
+    Json(json!({ "revision": revision })).into_response()
+}
+
+#[derive(serde::Deserialize)]
+struct ViewQuery {
+    /// The revision the controller already has: an answer of 204 means nothing newer.
+    #[serde(default)]
+    after: Option<u64>,
+}
+
+/// `GET /api/layers/<id>/view?after=N`: the latest picture the layer's table sent, with its
+/// revision in `X-Revision`; 204 when there is none newer than `after`.
+async fn layer_view(
+    State(state): State<Arc<AppState>>,
+    axum::extract::Path(id): axum::extract::Path<String>,
+    Query(query): Query<ViewQuery>,
+) -> axum::response::Response {
+    let views = state.views.lock().expect("views lock");
+    match views.get(&id) {
+        Some(view) if query.after.is_none_or(|after| view.revision > after) => (
+            [
+                (header::CONTENT_TYPE, view.kind.to_string()),
+                (header::CACHE_CONTROL, "no-store".to_string()),
+                (header::HeaderName::from_static("x-revision"), view.revision.to_string()),
+            ],
+            view.bytes.clone(),
+        )
+            .into_response(),
+        _ => StatusCode::NO_CONTENT.into_response(),
     }
 }
 

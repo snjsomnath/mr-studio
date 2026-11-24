@@ -199,6 +199,17 @@ pub fn tell_editor<R: Runtime>(app: &AppHandle<R>, label: &str, detail: serde_js
 }
 
 /// Where a copy goes when the dialog is not told otherwise: beside the original.
+/// A free name for a copy of the table `name` in `folder`: "Harbour copy", then "Harbour copy 2"
+/// and on, so Duplicate never overwrites a table (#99).
+pub fn copy_name(folder: &Path, name: &str) -> String {
+    let base = format!("{} copy", name.trim());
+    let taken = |n: &str| folder.join(n).exists();
+    if !taken(&base) {
+        return base;
+    }
+    (2..).map(|i| format!("{base} {i}")).find(|n| !taken(n)).unwrap()
+}
+
 pub fn default_folder(site: &Path, sites_folders: &[PathBuf]) -> PathBuf {
     sites_folders.first().cloned().or_else(|| site.parent().map(Path::to_path_buf)).unwrap_or_default()
 }
@@ -206,6 +217,19 @@ pub fn default_folder(site: &Path, sites_folders: &[PathBuf]) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_duplicate_takes_a_free_name() {
+        let dir = std::env::temp_dir().join(format!("mrs-copy-name-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        assert_eq!(copy_name(&dir, "Harbour"), "Harbour copy");
+        std::fs::create_dir_all(dir.join("Harbour copy")).unwrap();
+        assert_eq!(copy_name(&dir, "Harbour"), "Harbour copy 2");
+        std::fs::create_dir_all(dir.join("Harbour copy 2")).unwrap();
+        assert_eq!(copy_name(&dir, " Harbour "), "Harbour copy 3");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn a_copy_gets_its_own_name_and_id_and_leaves_history_behind() {

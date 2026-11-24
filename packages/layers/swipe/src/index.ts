@@ -3,7 +3,7 @@
 // on the other the table stays as it is. Same reveal core as the Magnifier (#287): the runtime
 // clips the items to the side this layer sets. Where the line is lives in the host (`at`), so
 // every view, the controller's pad and the phones agree.
-import { defineLayer, revealPath, tableFrame } from '@mrstudio/sdk';
+import { defineLayer, otherSide, revealPath, tableFrame } from '@mrstudio/sdk';
 import type { LayerManifest, PanelContext, RevealShape } from '@mrstudio/sdk';
 
 import manifest from '../layer.json';
@@ -13,6 +13,7 @@ export interface Params {
   at: number;
   axis: 'vertical' | 'horizontal';
   side: 'before' | 'after';
+  split: boolean;
   cover: boolean;
   sweep: boolean;
   colour: string;
@@ -81,8 +82,10 @@ export default defineLayer<Params>({
       } else sweepPhase = 0;
       const shape = sideOf({ ...ctx.params, at: shown }, width, height);
       ctx.reveal.set(shape);
+      // Then and now (#349): the second layer inside shows on the other side of the line.
+      ctx.reveal.item(1, ctx.params.split ? otherSide(shape) : undefined);
 
-      const key = ctx.params.cover ? JSON.stringify(shape) : '';
+      const key = ctx.params.cover && !ctx.params.split ? JSON.stringify(shape) : '';
       if (key !== coverKey) {
         coverKey = key;
         cover.clear();

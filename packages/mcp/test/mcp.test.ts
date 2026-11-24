@@ -213,11 +213,11 @@ describe('server over stdio', () => {
 
   test('offers tools, prompts and docs', async () => {
     const tools = (await client.listTools()).tools.map((t) => t.name).sort();
-    for (const name of ['overview', 'read_doc', 'list_layers', 'describe_layer', 'list_building_blocks', 'find_capabilities', 'describe_capability', 'assess_experience', 'build_experience', 'list_site_files', 'import_data', 'add_media', 'add_sound', 'find_related_issues', 'draft_development_request', 'submit_development_request', 'create_site', 'get_site', 'update_site', 'add_layer', 'set_layer', 'move_layer', 'remove_layer', 'validate_site', 'preview_site', 'check_layer_idea', 'draft_module_request', 'submit_module_request', 'whats_new']) {
+    for (const name of ['overview', 'read_doc', 'list_layers', 'describe_layer', 'list_building_blocks', 'find_capabilities', 'describe_capability', 'assess_experience', 'build_experience', 'list_site_files', 'import_data', 'add_media', 'add_sound', 'sdk_reference', 'create_layer', 'check_layer', 'build_layer', 'preview_layer', 'add_service', 'find_related_issues', 'draft_development_request', 'submit_development_request', 'create_site', 'get_site', 'update_site', 'add_layer', 'set_layer', 'move_layer', 'remove_layer', 'validate_site', 'preview_site', 'check_layer_idea', 'draft_module_request', 'submit_module_request', 'whats_new']) {
       assert.ok(tools.includes(name), `missing tool ${name}`);
     }
     const prompts = (await client.listPrompts()).prompts.map((p) => p.name).sort();
-    assert.deepEqual(prompts, ['brainstorm_layer', 'build_from_data', 'compare_scenarios', 'design_dashboard', 'design_experience', 'new_project', 'plan_workshop', 'request_module']);
+    assert.deepEqual(prompts, ['brainstorm_layer', 'build_code_layer', 'build_controller_app', 'build_from_data', 'compare_scenarios', 'design_dashboard', 'design_experience', 'new_project', 'plan_workshop', 'request_module']);
     const design = await client.getPrompt({ name: 'design_experience', arguments: { goal: 'residents see the new blocks' } });
     assert.match((design.messages[0]!.content as { text: string }).text, /assess_experience/);
     const prompt = await client.getPrompt({ name: 'brainstorm_layer', arguments: { idea: 'buses moving' } });
@@ -227,7 +227,7 @@ describe('server over stdio', () => {
     const site = await client.readResource({ uri: 'mrstudio://docs/contracts/site' });
     assert.match(String((site.contents[0] as { text: string }).text), /Site package contract/);
     const instructions = client.getInstructions() ?? '';
-    assert.match(instructions, /Configure, do not code/);
+    assert.match(instructions, /Configure before you code/);
   });
 
   test('every tool says what it touches and returns structured results (#325)', async () => {
@@ -712,6 +712,90 @@ describe('bringing data in through the mrstudio command line (#320)', () => {
     } finally {
       await client.close();
       rmSync(work, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('for layer developers (#284)', () => {
+  const root = resolve(pkg, '..', '..');
+  const template = join(root, 'crates', 'mrs-cli', 'templates', 'layer');
+  /** A site with the CLI's layer template filled in, as `mrstudio layer new` writes it. */
+  const siteWithLayer = (id: string) => {
+    const site = mkdtempSync(join(tmpdir(), 'mrstudio-layer-'));
+    writeFileSync(join(site, 'site.json'), JSON.stringify({ format: 3, id: 's', name: 'S', origin: { lon: 11.97, lat: 57.7 }, extent: { width_m: 1000, height_m: 600 }, scene: {}, layers: [] }));
+    for (const f of ['layer.json', 'src/index.ts', 'locales/sv.json']) {
+      const to = join(site, 'layers', id, f);
+      mkdirSync(dirname(to), { recursive: true });
+      writeFileSync(to, readFileSync(join(template, f), 'utf8').replaceAll('__ID__', id).replaceAll('__NAME__', 'Rings'));
+    }
+    return site;
+  };
+
+  test('the template follows the layer rules, and breaking them is caught', async () => {
+    const { checkLayerPackage } = await import('../src/devlayer.ts');
+    const site = siteWithLayer('rings');
+    const dir = join(site, 'layers', 'rings');
+    try {
+      const clean = checkLayerPackage(dir, { manifest: JSON.parse(readFileSync(join(site, 'site.json'), 'utf8')), kernels: ['sun'] });
+      assert.deepEqual(clean.issues.filter((i) => i.level === 'error'), []);
+      assert.ok(clean.issues.some((i) => i.rule === 'build'), 'not built yet');
+      const manifest = JSON.parse(readFileSync(join(dir, 'layer.json'), 'utf8'));
+      manifest.api = 99;
+      manifest.controls.push({ id: 'speed', type: 'range', label: 'Speed', min: 0, max: 1 });
+      manifest.panels.push({ id: 'big', widget: 'custom', size: 'chip', title: 'Lots', props: { reads: 4 } });
+      manifest.requires = { data: ['flows'], services: ['ecom'], kernels: ['weather'] };
+      writeFileSync(join(dir, 'layer.json'), JSON.stringify(manifest));
+      writeFileSync(join(dir, 'src', 'index.ts'), `${readFileSync(join(dir, 'src', 'index.ts'), 'utf8')}\nconst home = [11.9702, 57.7064];\nconst ws = new WebSocket('ws://localhost:4170/ws');\nimport { x } from '../../../packages/runtime/src/main.ts';\n`);
+      const rules = new Set(checkLayerPackage(dir, { manifest: {}, kernels: ['sun'] }).issues.filter((i) => i.level === 'error').map((i) => i.rule));
+      for (const rule of ['api', 'translations', 'density', 'requires', 'no-site-coordinates', 'no-direct-messaging', 'sdk-only']) assert.ok(rules.has(rule), `missing ${rule}`);
+    } finally {
+      rmSync(site, { recursive: true, force: true });
+    }
+  });
+
+  test('sdk_reference, check_layer, preview_layer and add_service over stdio', async () => {
+    const site = siteWithLayer('rings');
+    const client = await connect(bundle, site, ['--project', site]);
+    try {
+      const one = await call(client, 'sdk_reference', { name: 'defineLayer' });
+      assert.equal(one.isError, false, one.text);
+      assert.match(one.structured.export.signature, /defineLayer/);
+      const publish = await call(client, 'sdk_reference', { query: 'ctx.publish' });
+      assert.ok(publish.structured.exports.some((e: any) => /Context/.test(e.name)), publish.text);
+      assert.equal((await call(client, 'sdk_reference', { name: 'teleport' })).structured.error.code, 'not_found');
+      const checked = await call(client, 'check_layer', { site: '.', id: 'rings' });
+      assert.equal(checked.isError, false, checked.text);
+      assert.equal(checked.structured.ok_to_build, true);
+      assert.equal(checked.structured.used_by_scene, false);
+      const preview = await call(client, 'preview_layer', { site: '.', id: 'rings' });
+      assert.match(preview.text, /build_layer/);
+      assert.match(preview.text, /add_layer/);
+      const both = await call(client, 'add_service', { site: '.', id: 'ecom', url: 'https://ecom.example.org', cwd: 'services/ecom', command: ['x'] });
+      assert.equal(both.structured.error.code, 'invalid_params');
+      const added = await call(client, 'add_service', { site: '.', id: 'ecom', cwd: 'services/ecom', command: ['{python}', '-m', 'uvicorn', 'app:app', '--port', '{port}'], venv: '.venv', requirements: 'requirements.txt' });
+      assert.equal(added.isError, false, added.text);
+      const saved = JSON.parse(readFileSync(join(site, 'site.json'), 'utf8'));
+      assert.deepEqual(saved.services[0].run.command.at(-1), '{port}');
+      assert.ok(added.structured.issues.some((i: any) => /does not exist/.test(i.message)));
+    } finally {
+      await client.close();
+      rmSync(site, { recursive: true, force: true });
+    }
+  });
+
+  test('create_layer and build_layer through the command line', { skip: existsSync(join(root, 'target', 'debug', process.platform === 'win32' ? 'mrstudio.exe' : 'mrstudio')) ? false : 'build mrs-cli first' }, async () => {
+    const site = siteWithLayer('rings');
+    const client = await connect(bundle, site, ['--project', site], { MRSTUDIO_CLI: join(root, 'target', 'debug', process.platform === 'win32' ? 'mrstudio.exe' : 'mrstudio') });
+    try {
+      const made = await call(client, 'create_layer', { site: '.', id: 'energy-flows', name: 'Energy flows' });
+      assert.equal(made.isError, false, made.text);
+      assert.ok(made.structured.files.includes('src/index.ts'));
+      assert.equal(made.structured.use, './layers/energy-flows');
+      assert.equal((await call(client, 'create_layer', { site: '.', id: 'energy-flows' })).isError, true, 'it exists already');
+      assert.equal((await call(client, 'check_layer', { site: '.', id: 'energy-flows' })).structured.ok_to_build, true);
+    } finally {
+      await client.close();
+      rmSync(site, { recursive: true, force: true });
     }
   });
 });

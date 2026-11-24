@@ -109,7 +109,8 @@ impl EntitySet {
     pub fn validate(&self, values: &Map<String, Value>, phone: bool) -> Result<Map<String, Value>, String> {
         let mut out = Map::new();
         for (key, value) in values {
-            let control = self.controls.iter().find(|c| &c.id == key).ok_or_else(|| format!("'{}' entities have no control '{key}'", self.id))?;
+            let control =
+                self.controls.iter().find(|c| &c.id == key).ok_or_else(|| format!("'{}' entities have no control '{key}'", self.id))?;
             if phone && !control.phone {
                 return Err(format!("'{key}' cannot be changed from a phone"));
             }
@@ -150,7 +151,10 @@ impl LayerDef {
         }
         let mut entity_sets: Vec<EntitySet> = Vec::new();
         for e in manifest["entities"].as_array().map(Vec::as_slice).unwrap_or(&[]) {
-            let sid = e["id"].as_str().filter(|s| mrs_site::is_instance_id(s)).ok_or_else(|| anyhow!("an entity set needs an id of lowercase letters, digits and dashes"))?;
+            let sid = e["id"]
+                .as_str()
+                .filter(|s| mrs_site::is_instance_id(s))
+                .ok_or_else(|| anyhow!("an entity set needs an id of lowercase letters, digits and dashes"))?;
             if entity_sets.iter().any(|s| s.id == sid) {
                 bail!("two entity sets are called '{sid}'");
             }
@@ -248,7 +252,8 @@ impl LayerDef {
                 if !is_entity_id(id) {
                     return Err(format!("entities.{sid}: '{id}' is not an entity id"));
                 }
-                let mut values = set.validate(values.as_object().ok_or_else(|| format!("entities.{sid}.{id} must be an object"))?, phone)?;
+                let mut values =
+                    set.validate(values.as_object().ok_or_else(|| format!("entities.{sid}.{id} must be an object"))?, phone)?;
                 set.changed_only(&mut values);
                 if !values.is_empty() {
                     clean.insert(id.clone(), Value::Object(values));
@@ -756,7 +761,8 @@ mod tests {
     fn entity_values_are_checked_and_only_changes_kept() {
         let d = with_entities();
         assert!(d.defaults().is_empty(), "no entity has values of its own yet");
-        let clean = d.validate(&patch(json!({ "entities": { "members": { "3": { "pv": 33, "in": false }, "4": { "pv": 0 } } } })), false).unwrap();
+        let clean =
+            d.validate(&patch(json!({ "entities": { "members": { "3": { "pv": 33, "in": false }, "4": { "pv": 0 } } } })), false).unwrap();
         // Snapped like a layer control; defaults are dropped, and an entity left with none goes.
         assert_eq!(clean["entities"], json!({ "members": { "3": { "pv": 35.0 } } }));
         assert!(d.validate(&patch(json!({ "entities": { "other": {} } })), false).is_err());
@@ -775,7 +781,8 @@ mod tests {
         assert!(layer(json!([{ "id": "a", "dataset": "b", "key": "id", "controls": [toggle] }])).is_ok());
         assert!(layer(json!([{ "id": "a", "dataset": "b", "key": "id", "controls": [] }])).is_err());
         assert!(layer(json!([{ "id": "a", "key": "id", "controls": [toggle] }])).is_err());
-        assert!(layer(json!([{ "id": "a", "dataset": "b", "key": "id", "controls": [{ "id": "go", "type": "action", "label": "Go" }] }])).is_err());
+        assert!(layer(json!([{ "id": "a", "dataset": "b", "key": "id", "controls": [{ "id": "go", "type": "action", "label": "Go" }] }]))
+            .is_err());
         assert!(layer(json!([{ "id": "a", "dataset": "b", "key": "id", "controls": [toggle] }, { "id": "a", "dataset": "b", "key": "id", "controls": [toggle] }])).is_err());
     }
 

@@ -9,13 +9,13 @@ pub mod field;
 mod geotiff;
 pub mod history;
 pub mod import;
+pub mod library;
 mod manifest;
+pub mod media;
 mod mesh;
 pub mod migrate;
 pub mod model;
 pub mod osm;
-pub mod library;
-pub mod media;
 pub mod package;
 pub mod plan;
 mod projection;
@@ -296,7 +296,10 @@ impl Site {
                         out.push(format!("{at}.run.command: name the program to start"));
                     }
                     for (name, path) in [("venv", &run.venv), ("requirements", &run.requirements)] {
-                        if path.as_deref().is_some_and(|p| Path::new(p).components().any(|c| !matches!(c, Component::Normal(_) | Component::CurDir))) {
+                        if path
+                            .as_deref()
+                            .is_some_and(|p| Path::new(p).components().any(|c| !matches!(c, Component::Normal(_) | Component::CurDir)))
+                        {
                             out.push(format!("{at}.run.{name}: stays inside the service's folder"));
                         }
                     }

@@ -64,6 +64,7 @@ h2 { margin: 26px 0 10px; font-size: 14px; }
 .tables .tag { position: absolute; top: 8px; left: 8px; padding: 1px 7px; border-radius: 10px; background: rgba(255, 255, 255, 0.9); color: var(--text); font-size: 11px; font-weight: 600; }
 .tables li.broken button.open { opacity: 0.6; }
 .tables li.broken small { color: var(--danger); white-space: normal; }
+.tables li.fresh { outline: 2px solid var(--accent); outline-offset: 2px; }
 .tables .card-tools { position: absolute; top: 8px; right: 8px; display: flex; gap: 6px; opacity: 0; }
 .tables li:hover .card-tools, .tables .card-tools:focus-within { opacity: 1; }
 .tables button.remove { all: unset; padding: 2px 9px; border-radius: 10px; background: rgba(255, 255, 255, 0.92); color: var(--text); font-size: 11px; font-weight: 500; }

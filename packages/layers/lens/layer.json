@@ -2,8 +2,8 @@
   "api": 1,
   "id": "lens",
   "name": "Magnifier",
-  "description": "A glass people move over the table: it shows what is under it larger, or the layers placed inside it, like an X-ray",
-  "about": {"purpose": "Lets people look closer or look through: a glass that magnifies, or reveals hidden layers under it like an X-ray.", "questions": ["What lies under or behind what we see?", "What does the proposal look like right here, compared with today?"], "pairs_with": ["swipe", "plan", "media"], "limits": ["Shows layers placed inside it; it does not compute anything itself"]},
+  "description": "A glass people move over the table: the controller shows what is under it larger, or the table shows the layers placed inside it, like an X-ray",
+  "about": {"purpose": "Lets people look closer or look through: the table marks a circle and the controller shows it larger through a glass, or the table reveals hidden layers under it like an X-ray.", "questions": ["What lies under or behind what we see?", "What does the proposal look like right here, compared with today?"], "pairs_with": ["swipe", "plan", "media"], "limits": ["Shows layers placed inside it; it does not compute anything itself"]},
   "icon": "magnifier",
   "category": "analysis",
   "reveals": true,
@@ -11,14 +11,14 @@
     {
       "id": "show", "type": "select", "label": "The glass shows", "default": "zoom", "tier": "more",
       "options": [
-        { "value": "zoom", "label": "The table, larger" },
+        { "value": "zoom", "label": "The table, larger on the controller" },
         { "value": "under", "label": "The layers inside it (an X-ray)" }
       ]
     },
     { "id": "zoom", "type": "range", "label": "Magnification", "min": 1.5, "max": 6, "step": 0.25, "default": 3, "unit": "×", "phone": true, "tier": "primary", "visibleWhen": { "show": "zoom" } },
     { "id": "size", "type": "range", "label": "Size of the glass", "min": 8, "max": 70, "step": 1, "default": 26, "unit": "%", "phone": true },
     { "id": "pinned", "type": "toggle", "label": "Keep the glass where it is", "default": false, "phone": true },
-    { "id": "dim", "type": "range", "label": "Darken the table around the glass", "min": 0, "max": 0.9, "step": 0.05, "default": 0.55, "tier": "more" },
+    { "id": "dim", "type": "range", "label": "Darken the table around the glass", "min": 0, "max": 0.9, "step": 0.05, "default": 0.8, "tier": "more" },
     { "id": "cover", "type": "toggle", "label": "Hide the map inside the glass", "default": true, "tier": "more", "visibleWhen": { "show": "under" } },
     { "id": "follow", "type": "toggle", "label": "The glass follows the mouse on the table", "default": true, "tier": "more" },
     { "id": "x", "type": "range", "label": "Across", "min": 0, "max": 1, "step": 0.001, "default": 0.5, "tier": "state" },

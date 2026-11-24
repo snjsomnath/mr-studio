@@ -500,12 +500,18 @@ export interface Participant {
   colour: string;
   /** False while the slot is held for a phone that dropped. */
   connected: boolean;
+  /** The phone's animal (#339): fox, octopus, owl, frog, turtle, penguin, butterfly, unicorn, otter, hedgehog, whale or bee. */
+  avatar?: string;
+  /** With the animal, the fun name: `sunny` and `fox` make "Sunny Fox". */
+  mood?: string;
+  /** The name the visitor gave themselves, if any. */
+  name?: string | null;
 }
 
 export interface SessionState {
   protocol: number;
   /** `join_url` is what the TV's QR code points at; null when phones cannot reach the host. */
-  session: { id: string; code: string; port: number; join_url: string | null; /** The visitors' language now (#80). */ language?: string; /** False while the controller's sound switch mutes the table (#282). */ sound?: boolean };
+  session: { id: string; code: string; port: number; join_url: string | null; /** The visitors' language now (#80). */ language?: string; /** False while the controller's sound switch mutes the table (#282). */ sound?: boolean; /** The layer whose ribbon the controller chose (#231); absent or null is Auto. */ ribbon?: string | null };
   site: SiteInfo;
   /** Layer instance ids in draw order, bottom first. */
   scene: string[];

@@ -4,6 +4,119 @@ Every merge to main that carries a release note becomes a version. The newest is
 The app shows these notes, with their pictures, on Home when a newer version is out.
 How notes are written: docs/RELEASING.md.
 
+## 0.22.0 (2026-11-24)
+
+### New
+
+#### A team's own widgets, held to the same rules as the built-in ones (#353)
+A layer package can now bring its own kinds of panel. Its code makes them with `defineWidget` and lists them in `widgets`; MR Studio checks each one (sizes, a label on every setting, a cost in reads) and adds it to the one set of widgets the controller, the TV pages and the table's ribbon share, as `<layer>/<type>`. The layer's own panels name it by its short name. It counts against the density budget, binds to what layers publish and follows the theme like any built-in widget, and one that breaks only breaks its own panel. The model-runs sample shows the grid draw as a line into the community that thickens with it, on the controller and in the ribbon. Built-in widgets stay for what most tables need; a widget two teams have each written moves into the built-in set. Also: sound beds no longer fill the window's console with warnings before the first tap.
+
+![The model-runs sample's own Grid link widget on the controller](docs/screenshots/353-controller.png)
+
+![The same widget on the developer page and as a chip in the table's ribbon](docs/screenshots/353-dev.png)
+
+### Fixes
+
+#### The MCP server knows the latest table features (#349, #231, #156)
+
+An LLM designing with the MCP server now finds the Reveal line's then-and-now mode (two layers, one on each side of the line), the controller's Ribbon button and the Stormwater ribbon, and the logo on the controller and phones, and it describes the Magnifier as it now works (the controller shows the glass). A layer's data needs now point to `import_data`.
+
+![find_capabilities finding the Reveal line, the Ribbon button and the logo](docs/screenshots/mcp-current-0-20.png)
+
+## 0.21.0 (2026-11-24)
+
+### New
+
+#### Every phone is an animal with a fun name (#339)
+
+A phone that joins becomes "Sunny Fox" or "Brave Owl": an animal nobody else at the table has, on that phone's colour. Tapping it lets the visitor type a name of their own or pick another animal. The controller shows each phone's animal under the QR code, faded while it reconnects, and says "Ada turned on Wind" when a phone switches a layer. Names are in Swedish too.
+
+![Naming a phone and picking its animal](docs/screenshots/339-phone-profile.png)
+![Phones' animals under the controller's QR code](docs/screenshots/339-controller-phones.png)
+![The controller saying which phone opened Wind](docs/screenshots/339-controller-cue.png)
+
+## 0.20.0 (2026-11-24)
+
+### New
+
+#### The table's logo on the controller and on phones (#156)
+
+Pick a logo in Table settings from the table's pictures, or add one there. It shows above the title on the controller's welcome screen and beside the title on every phone.
+
+![The logo above the title on the controller's welcome screen](docs/screenshots/156-controller-welcome.png)
+
+![Choosing the logo in Table settings](docs/screenshots/156-table-settings.png)
+
+![The logo on a phone](docs/screenshots/156-phone.png)
+
+#### Choose which ribbon the table shows (#231)
+
+When more than one open layer has a ribbon, a **Ribbon** button appears under Map controls on the controller. Each press moves from Auto to each of those layers in turn. The choice holds until that layer closes. Stormwater now has a ribbon too: time into the storm, rain so far and water on the ground.
+
+![The Ribbon button on the controller, set to Stormwater](docs/screenshots/231-controller.png)
+
+![Auto: the layer turned on last, Sunlight](docs/screenshots/231-ribbon-auto.png)
+
+![Stormwater's ribbon, chosen on the controller](docs/screenshots/231-ribbon-stormwater.png)
+
+#### Download an example of each kind of file (#36)
+
+The **?** on every Your place row and in Add data now has **Download an example**: a small file of that kind (buildings, trees, streets, walking paths, trips) made around your own table, so you can open it to see its shape or bring it straight back in and see it on the table. The same words are in the guide (Bring in your data, What a good file looks like) and in the MCP server as `mrstudio://data-formats`, all from one list.
+
+![Download an example under the ? for Buildings](docs/screenshots/36-download-example.png)
+
+![The example brought back in, on the table](docs/screenshots/36-example-imported.png)
+
+#### Duplicate a table, or the example, from Home (#99)
+
+Every card under Your tables has **Duplicate**. It makes a copy named "… copy" with its own id, next to your other tables, and outlines it. Duplicate the example that comes with MR Studio to start from a working table instead of a blank one, then move it to your own place.
+
+![Duplicate on a Home card](docs/screenshots/99-duplicate.png)
+
+![The copy, outlined on Home](docs/screenshots/99-duplicated.png)
+
+## 0.19.0 (2026-11-24)
+
+### New
+
+#### The Magnifier works as the artwork's did, and the Reveal line can show then and now (#349, #351)
+
+The Magnifier now works the way round the Lindholmen artwork's did. The table marks the circle being looked at and darkens the rest, with the old warm halo and fine rim. The controller shows that circle larger, through a glass that bends the picture at its rim, with a small table picture beside it to move the circle. A Masterplan drawing is drawn again sharply for the glass. The X-ray stays on the table.
+
+The Reveal line can now show two layers, one on each side of the line, with **With two layers inside, the second shows on the other side**. For example, the 1960 aerial photo on one side and today's on the other.
+
+For layer authors: `ctx.view` sends a picture from the table to the layer's own controller, `ctx.map.addDetail` and `ctx.map.detail` draw a layer again sharply for a magnifier, and `ctx.reveal.item` gives one item a shape of its own.
+
+![The magnified glass on the controller](docs/screenshots/351-magnifier-controller.png)
+
+## 0.18.0 (2026-11-24)
+
+### New
+
+#### The MCP server guides a developer through a site code layer (#284)
+
+For the ideas that need code, an LLM can now build a team's own layer with them, the way a layer like ECOM is built: blocks first, code last. `create_layer` starts one in the site with `mrstudio layer new`. `sdk_reference` looks up what `@mrstudio/sdk` really exports, read from its source, so code is written against what exists. `check_layer` applies the layer rules: the TV's density budget, every word in Swedish, no places written into code, no talking to surfaces behind the host's back, only the SDK from the core, and the data, services and kernels the layer needs. `build_layer` bundles it and returns the build's errors, `preview_layer` says how to see it in the dev view, and `add_service` declares a model the host starts beside the table. New prompts: `build_code_layer` and `build_controller_app`.
+
+![sdk_reference, create_layer, check_layer catching a place and a WebSocket in the code, build_layer and add_service](docs/screenshots/284-layer-developers.png)
+
+## 0.17.0 (2026-11-24)
+
+### New
+
+#### Sound that follows the data, and a Sound switch on the controller (#282)
+A layer can now carry a sound bed in its layer.json, with no audio code: up to four slow voices (a band of filtered noise, a hum with harmonics, or a plain tone) whose loudness and colour follow a value the layer publishes or one of its controls. The model-runs sample hisses and hums louder as the community draws more from the grid. The bed keeps to the rules learned at the table: one level ceiling for all the voices together, slow glides and no repeating beeps. It plays on the table only. A new **Sound** button under Map controls on the controller mutes the table for the session, voices and sounds on points alike, while the rings that follow the sound carry on. How to write one: docs/contracts/layer.md, Sound voices.
+
+![The Sound switch under Map controls, on](docs/screenshots/282-controller.png)
+
+![Muted for the session](docs/screenshots/282-controller-muted.png)
+
+#### Phones turn layers on and off (#335)
+
+Visitors' phones now list every layer with an on/off switch, and show each layer's main controls, so a phone can open Wind and set its speed. Opening a layer from a phone closes the open one, as the controller's buttons do, and the controller says which phone did it with a dot in that phone's colour. A table can turn this off in Table settings ("Phones can switch layers"), phones leave the layers alone while a slideshow is showing, and a layer can keep itself to the controller with `"phone_switch": false`.
+
+![A phone with every layer and its switch](docs/screenshots/335-phone-switch.png)
+![The controller saying a phone opened Wind](docs/screenshots/335-controller-cue.png)
+
 ## 0.16.0 (2026-11-24)
 
 ### New

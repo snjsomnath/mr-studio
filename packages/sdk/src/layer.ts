@@ -133,6 +133,18 @@ export interface MapHandle {
    * copied at the next frame, with everything drawn there except this layer's own canvases.
    */
   addPicture(): TablePicture;
+  /**
+   * Lets a magnifier ask this layer for a sharp picture of part of the table (#351), drawn again
+   * at the magnifier's resolution rather than copied from the screen. `render` draws in table
+   * metres into `g`, whose transform already maps them to its pixels; `scale` is pixels per metre.
+   */
+  addDetail(render: (g: CanvasRenderingContext2D, scale: number) => void): void;
+  /**
+   * A sharp picture of the square of side `2 * radius_m` around `centre` (table metres), `size`
+   * pixels across, from every other layer that draws one (`addDetail`), in the scene's order.
+   * Null when no layer on the table draws one.
+   */
+  detail(centre: [number, number], radius_m: number, size: number): HTMLCanvasElement | null;
 }
 
 /** A rectangle in the table view's CSS pixels, as `CanvasOverlay` uses them. */
@@ -169,6 +181,17 @@ export interface TablePointer {
   on(callback: (sample: PointerSample) => void): void;
 }
 
+/**
+ * A picture a layer's table sends to its own controller (#351): the Magnifier's view under its
+ * glass. The table sends it, the hero on the controller watches it. The latest picture only.
+ */
+export interface LayerView {
+  /** On the table: sends what `canvas` holds now. Sends are spaced out, so calling it every frame is fine. */
+  send(canvas: HTMLCanvasElement | OffscreenCanvas): void;
+  /** On the controller: calls back with each new picture until the returned function is called. */
+  watch(callback: (picture: ImageBitmap) => void): () => void;
+}
+
 interface ContextBase<P> {
   readonly site: SiteInfo;
   /** Current params, as held by the host. */
@@ -186,6 +209,8 @@ interface ContextBase<P> {
    * layer.json are translated without it.
    */
   say(text: string, vars?: Record<string, string | number>): string;
+  /** A picture the table sends to the layer's controller (#351). */
+  readonly view: LayerView;
   /**
    * One of the site's outside services (#278), by its id in site.json `services`: `get`, `post`
    * and `job`, through the host. Name it in `requires.services`. While a call runs, publish

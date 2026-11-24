@@ -144,6 +144,9 @@ interface Participant {
   slot: number;         // 0-based; stable for as long as the person stays
   colour: string;
   connected: boolean;   // false while the slot is held for a phone that dropped
+  avatar: string;       // the phone's animal (#339): fox, octopus, owl, frog, turtle, penguin, butterfly, unicorn, otter, hedgehog, whale, bee; no two phones get the same one on joining
+  mood: string;         // curious, cosmic, sunny, merry, brave, gentle, lucky, swift: with the animal, the fun name ("Sunny Fox"), said in the visitor's language
+  name: string | null;  // the visitor's own name, at most 32 characters; null shows the fun name
 }
 interface LayerState {
   layer: string;                           // the layer package this instance runs
@@ -309,6 +312,7 @@ Requests:
 
 | Method | Params | Roles | Effect |
 | --- | --- | --- | --- |
+| `participant.profile` | `{ avatar?, name? }` | phone | Changes this phone's animal (one of the list above) or name (trimmed, at most 32 characters; `""` or `null` goes back to the fun name). Broadcasts `state.participants` and returns `{ participant }` (#339) |
 | `layer.activate` | `{ layer, active }` | table, tv, dev, phone | Turns a layer on or off. Phones only when `tv.phone_switch` is not false, the layer's `phone_switch` is not false, and no slideshow is showing; the host then broadcasts `phone.switched` (#335), unless `cue: false` (a layer closed to make way) |
 | `layer.intensity` | `{ layer, intensity }` | table, tv, dev | Sets how strongly the layer is drawn, clamped to 0..2. The runtime applies it to the layer's overlays and decorations; layers need no code |
 | `layer.set` | `{ layer, params }` | all (phones only for `phone: true` controls) | Validates, merges, broadcasts |
@@ -353,7 +357,7 @@ Events:
 | `catalog.removed` | `{ id }` after `custom.remove` |
 | `palette.changed` | `{ palette }` after `palette.set` |
 | `tool.input` | `{ layer, tool, geometry, from, participant? }` |
-| `phone.switched` | `{ layer, active, participant? }` after a phone turned a layer on or off; `participant` is `{ slot, colour }` |
+| `phone.switched` | `{ layer, active, participant? }` after a phone turned a layer on or off; `participant` is `{ slot, colour, avatar, mood, name }` |
 | `calibration` | `{ projector }` after a calibration was saved or cleared |
 | `calibration.mode` | `{ active }` |
 | `site.changed` | `{ site: SiteInfo }` after data was imported, or an undo or outside edit changed more than the live keys: the scene is re-baked and the engine and twin already use it. Replace `state.site`; layers that read site data at start need a reload |
@@ -371,6 +375,8 @@ Events:
 `session.language` is the language the visitors' screens speak now, one of the site's `branding.languages` (English when it lists none). `session.language { language }` switches it, from the controller (`tv`), the editor (`dev`) or the guide; the host sends `session.changed` to every surface. The controller and the phones start again in the new language; the table only redraws its ribbons. A phone may keep a language of its own (the SV / EN buttons in its header, kept in the phone's browser): it no longer follows the controller. A phone turned away at the door speaks its own choice, else its browser's language.
 
 `session.sound` is whether the table plays sound, true when the session starts (#282). `session.sound { on }` switches it, from the controller (the **Sound** button under Map controls), the editor or the guide, and the host sends `session.changed`. While it is false the table plays nothing: no voice beds (layer.md, Sound voices) and no sounds on points; what follows the sound on the map carries on.
+
+`session.ribbon` is the layer whose ribbon the table shows, or null for Auto (the layer turned on last that has ribbon panels), null when the session starts (#231). `session.ribbon { layer }` sets it, from the controller (the **Ribbon** button under Map controls, shown when more than one open layer has ribbon panels), the dev page or the guide; the layer must be on the table. The host sends `session.changed`. The controller sets it back to null when that layer closes (present.md, Ribbon).
 
 ### The guide's phone (#98)
 
@@ -438,7 +444,7 @@ Rules:
 - The host clamps numbers to `min` and `max`, snaps to `step`, and rejects unknown controls and options.
 - Events for one layer are delivered in order. A slow surface receives the latest state, not a backlog: field frames are dropped rather than queued, and a surface that falls behind on events gets one `resync`.
 - Only `table` and `dev` surfaces may publish.
-- `tool.input` geometry is GeoJSON in WGS84 and must match the tool's type: `Point` for `point`, `LineString` (2 or more positions) for `line`, `Polygon` (closed rings) for `polygon`, at most 256 positions in all. The host forwards only `type` and `coordinates`, with positions cut to `[lon, lat]`. Input for a layer that is off is refused. `from` is the sending surface; `participant` is `{ slot, colour }` when it is a phone, so a layer can draw in the sender's colour without tracking participants.
+- `tool.input` geometry is GeoJSON in WGS84 and must match the tool's type: `Point` for `point`, `LineString` (2 or more positions) for `line`, `Polygon` (closed rings) for `polygon`, at most 256 positions in all. The host forwards only `type` and `coordinates`, with positions cut to `[lon, lat]`. Input for a layer that is off is refused. `from` is the sending surface; `participant` is `{ slot, colour, avatar, mood, name }` when it is a phone, so a layer can draw in the sender's colour without tracking participants.
 - `resume` in `welcome` is given to phones only. Sent back in a later `hello` (with the code) it returns the phone to its slot; an unknown or expired token is an ordinary new join.
 - `refused` can also arrive after `welcome`, when the same phone joins again with its token (a reload that beat the old connection's close, or a second tab). The older connection gets `refused` and is closed, and must not reconnect.
 - The host accepts 20 requests per second from each phone, with bursts up to 20. Further requests are answered `ok: false` with `e: 'rate limited'` and have no effect. Other roles are not limited.

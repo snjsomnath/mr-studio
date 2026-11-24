@@ -3,7 +3,7 @@
   "id": "swipe",
   "name": "Reveal line",
   "description": "A line people move across the table: on one side of it the layers placed inside it show, such as what lies under the ground",
-  "about": {"purpose": "Compares two states with a line people drag across the table: layers inside it show on one side.", "questions": ["What changes between today and the proposal?", "What lies under the ground here?"], "pairs_with": ["plan", "media", "sunlight", "lens"], "limits": ["Shows layers placed inside it; it does not compute anything itself"]},
+  "about": {"purpose": "Compares two states with a line people drag across the table: layers inside it show on one side, or two layers one on each side, such as the 1960 aerial photo and today's.", "questions": ["What changes between today and the proposal?", "What lies under the ground here?", "What did this place look like then, compared with now?"], "pairs_with": ["plan", "media", "sunlight", "lens"], "limits": ["Shows layers placed inside it; it does not compute anything itself"]},
   "icon": "swipe",
   "category": "analysis",
   "reveals": true,
@@ -23,6 +23,7 @@
         { "value": "after", "label": "Right of the line, or below it" }
       ]
     },
+    { "id": "split", "type": "toggle", "label": "With two layers inside, the second shows on the other side", "default": false, "tier": "more" },
     { "id": "cover", "type": "toggle", "label": "Hide the map where they show", "default": false, "tier": "more" },
     { "id": "sweep", "type": "toggle", "label": "The line sweeps slowly while nobody moves it", "default": false, "tier": "more" },
     { "id": "colour", "type": "color", "label": "Colour of the line", "default": "#9ad7ff", "tier": "more" }

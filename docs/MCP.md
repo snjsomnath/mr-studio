@@ -29,6 +29,12 @@ The server writes `site.json`, never layer code. When a project needs a new laye
 | `import_data` | Brings a dataset into the site with the editor's own Add data code (the `mrstudio data add` command): from a file (GeoJSON, CSV with lon and lat, zipped Shapefile, GeoTIFF for terrain), from OpenStreetMap for the table's area, or free elevation for the ground. Detects and reprojects the coordinate system and reports the count, what is on and off the table, issues and blockers. Checks only, unless `write`; then it saves into `data/` and points `site.json` at it |
 | `add_media`, `add_sound` | Copies a picture or video into `data/media/`, or a sound into `data/sounds/`, with the editor's checks, and returns the path to use |
 | `list_site_files` | What is in the site's `data/` folder: datasets with feature counts, geometry, columns (number ranges, the values of a category) and bounds; pictures, video, sounds and models; and which `site.json` keys use each file |
+| `sdk_reference` | What `@mrstudio/sdk` really exports, read from its source: functions, constants, classes, interfaces (with their members, such as `TableContext` with `ctx.publish`) and types, each with its doc comment and declaration; searchable in words or by name |
+| `create_layer` | A site code layer, with `mrstudio layer new`: `layers/<id>/` with layer.json, src/index.ts, Swedish words, build script and README, running in the installed app without changing the core |
+| `check_layer` | The layer rules for a site layer: layer.json (api, id, controls, panels within the TV's density budget, text lengths), every visible word in `locales/sv.json`, the code (no site coordinates, no talking to surfaces or the host directly, only `@mrstudio/sdk` from the core), the datasets, services and kernels it needs, and whether its build is current |
+| `build_layer` | Bundles a site layer into `dist/index.js` with `mrstudio layer build` and returns the build errors, or the layer's checks when it builds. Needs Node 20+ for building only |
+| `preview_layer` | Whether a site layer is built and in the scene, and the dev view (`/dev`) to see it with its controls and the TV dashboard |
+| `add_service` | Declares an outside compute service in `site.json` "services": a program the host starts with the table (folder, command with `{port}` and `{python}`, venv, requirements) or a URL, for layers that call `ctx.service(id)` |
 | `validate_site` | The site and layer contracts, plus `mrstudio validate` when the CLI is installed |
 | `preview_site` | How to see the site on this computer: open it in the installed app, or a `mrstudio dev` command on a free port (never the app's 4170) with the app's own surfaces; URLs of the editor, table, controller, guide's phone, phone and dev view |
 | `check_layer_idea` | Older name, kept for this release only: says whether an idea is an existing layer to configure, a new core layer from existing blocks, or needs new blocks or kernels; also returns the idea assessed as a one-step experience plan |
@@ -38,7 +44,7 @@ The server writes `site.json`, never layer code. When a project needs a new laye
 | `draft_module_request` | Older name, kept for this release only: writes `requests/<date>-<title>.md` and a prefilled GitHub issue link. Sends nothing |
 | `submit_module_request` | Older name, kept for this release only: opens a draft as an issue, with `GITHUB_TOKEN`/`GH_TOKEN` or a signed-in `gh`; otherwise returns the link |
 
-**Prompts**: `design_experience` (from a goal to a plan, its assessment, the build and requests for gaps), `plan_workshop` (a timed workshop with a contribution step), `compare_scenarios` (today and a proposal on a one-layer-at-a-time table), `build_from_data` (a dataset as a custom layer and a step), `new_project` (story, place, scene, data, branding and welcome, TV, validation; starts from the experience), `brainstorm_layer`, `design_dashboard`, `request_module`.
+**Prompts**: `design_experience` (from a goal to a plan, its assessment, the build and requests for gaps), `plan_workshop` (a timed workshop with a contribution step), `compare_scenarios` (today and a proposal on a one-layer-at-a-time table), `build_from_data` (a dataset as a custom layer and a step), `new_project` (story, place, scene, data, branding and welcome, TV, validation; starts from the experience), `build_code_layer` (a site layer with its own code, like ECOM: no-code options first, a service for a model, then scaffold, check, build and preview), `build_controller_app` (something people do on the controller that changes the table), `brainstorm_layer`, `design_dashboard`, `request_module`.
 
 **Resources**:
 
@@ -46,6 +52,7 @@ The server writes `site.json`, never layer code. When a project needs a new laye
 | --- | --- |
 | `mrstudio://concepts` | How to design an experience: the three surfaces, what goes where, the words and the constraints ([experience-design.md](experience-design.md)) |
 | `mrstudio://patterns/<id>` | Experience patterns (compare today and the proposal, map it together, a guided story…), each with the table, controller and phone roles and the capability ids it uses |
+| `mrstudio://data-formats` | What a good file looks like for each kind of data a table takes, in the words of the editor's "?" |
 | `mrstudio://capabilities`, `mrstudio://capabilities/<id>` | The capability catalogue, and one record in full |
 | `mrstudio://schema/site`, `mrstudio://schema/recipe` | The keys `site.json` accepts at each level, and a custom layer recipe's blocks, props, colours, ramps and icons |
 | `mrstudio://examples/<id>` | Real sites and samples in the core: their layers, steps and custom layers |
@@ -66,7 +73,7 @@ mrstudio data sound <site> birds.mp3                                            
 
 `--crop` leaves out what lies well outside the table, `--swap` reads latitude first, `--crs EPSG:3006` names a terrain GeoTIFF's system, and `--json` prints the report as one line. A refusal exits with status 1 and writes nothing. A running app picks the change up as an outside edit.
 
-The server also sends short instructions on connect: build from what exists, configure rather than code, edit only through the tools, and submit requests only after the person agrees.
+The server also sends short instructions on connect: build from what exists, configure before coding (a site code layer only for behaviour nothing else gives), edit only through the tools, and submit requests only after the person agrees.
 
 ## Where its knowledge comes from
 

@@ -22,6 +22,12 @@ pub const MAX_PHONES: usize = 8;
 /// More layers than this in one scene is a mistake, not a design.
 pub const MAX_SCENE_LAYERS: usize = 64;
 const SLOT_COLOURS: [&str; 8] = ["#ff6b6b", "#4dabf7", "#51cf66", "#fcc419", "#cc5de8", "#ff922b", "#20c997", "#f06595"];
+/// The animals a phone can be (#339). Each phone gets one nobody else has, and may pick another.
+pub const AVATARS: [&str; 12] = ["fox", "octopus", "owl", "frog", "turtle", "penguin", "butterfly", "unicorn", "otter", "hedgehog", "whale", "bee"];
+/// The first half of a phone's fun name, "Sunny Fox" (#339). The pages say it in the visitor's language.
+pub const MOODS: [&str; 8] = ["curious", "cosmic", "sunny", "merry", "brave", "gentle", "lucky", "swift"];
+/// The longest name a visitor may give their phone, in characters.
+const NAME_CHARS: usize = 32;
 /// The most positions one tool input may carry.
 const MAX_VERTICES: usize = 256;
 /// How long a sequence step stays in timed mode when it gives no `duration_s`.
@@ -305,6 +311,12 @@ pub struct Participant {
     pub colour: &'static str,
     /// False while the slot is held for a phone that dropped.
     pub connected: bool,
+    /// One of `AVATARS` (#339).
+    pub avatar: &'static str,
+    /// One of `MOODS`: with the avatar, the fun name the pages show ("Sunny Fox").
+    pub mood: &'static str,
+    /// The name the visitor gave themselves, instead of the fun name.
+    pub name: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -320,6 +332,9 @@ pub struct SessionInfo {
     /// Whether the table's layers may be heard (#282). The controller's sound switch turns it
     /// off for the session; a new session starts with sound on.
     pub sound: bool,
+    /// The layer whose ribbon the table shows, chosen on the controller when more than one
+    /// open layer has ribbon panels (#231). None is Auto: the layer turned on last.
+    pub ribbon: Option<String>,
 }
 
 /// A phone's place in the session. It outlives the connection by `resume_hold`.
@@ -483,6 +498,8 @@ pub struct Hub {
     language: RwLock<String>,
     /// The controller's sound switch (#282): false mutes every layer for the session.
     sound: RwLock<bool>,
+    /// The controller's ribbon choice (#231); None is Auto.
+    ribbon: RwLock<Option<String>>,
     /// The code the guide's phone joins with (#98). Only the operator's screens are told it.
     guide_code: String,
     options: SessionOptions,
@@ -525,6 +542,16 @@ fn tv_words(key: &str) -> &str {
     }
 }
 
+/// A visitor's name for their phone: trimmed, without control characters, at most
+/// `NAME_CHARS` long. An empty name means the fun name again.
+fn clean_name(name: &str) -> Result<Option<String>, String> {
+    let name: String = name.chars().filter(|c| !c.is_control()).collect::<String>().split_whitespace().collect::<Vec<_>>().join(" ");
+    if name.chars().count() > NAME_CHARS {
+        return Err(format!("a name is at most {NAME_CHARS} characters"));
+    }
+    Ok((!name.is_empty()).then_some(name))
+}
+
 fn random_u64() -> u64 {
     std::collections::hash_map::RandomState::new().build_hasher().finish()
 }
@@ -536,7 +563,15 @@ impl Hub {
         let code = format!("{:04}", random_u64() % 10_000);
         let join_url = join_base.map(|base| format!("{}/phone?c={code}", base.trim_end_matches('/')));
         let language = offered(&site.manifest.branding)[0].clone();
-        let session = SessionInfo { id: format!("{:016x}", random_u64()), code, port, join_url, language: language.clone(), sound: true };
+        let session = SessionInfo {
+            id: format!("{:016x}", random_u64()),
+            code,
+            port,
+            join_url,
+            language: language.clone(),
+            sound: true,
+            ribbon: None,
+        };
         // Six digits, never the phones' code.
         let guide_code = loop {
             let guide = format!("{:06}", random_u64() % 1_000_000);
@@ -553,6 +588,7 @@ impl Hub {
             bridge_join: RwLock::new(None),
             language: RwLock::new(language),
             sound: RwLock::new(true),
+            ribbon: RwLock::new(None),
             guide_code,
             options,
             catalog: RwLock::new(Arc::new(catalog)),
@@ -824,6 +860,7 @@ impl Hub {
         let mut session = self.session.clone();
         session.language = self.language.read().unwrap().clone();
         session.sound = *self.sound.read().unwrap();
+        session.ribbon = self.ribbon.read().unwrap().clone();
         let relay = self.relay_join.read().unwrap().clone();
         if let Some(base) = relay.or_else(|| self.bridge_join.read().unwrap().clone()) {
             session.join_url = Some(format!("{}/phone?c={}", base.trim_end_matches('/'), session.code));
@@ -912,8 +949,12 @@ impl Hub {
         } else {
             let limit = self.options.max_phones;
             let slot = (0..limit).find(|slot| inner.seats.iter().all(|s| s.participant.slot != *slot)).ok_or("session full")?;
+            // An animal nobody here has, and a mood, picked at random.
+            let free: Vec<&'static str> = AVATARS.iter().copied().filter(|a| inner.seats.iter().all(|s| s.participant.avatar != *a)).collect();
+            let avatar = free[random_u64() as usize % free.len().max(1)];
+            let mood = MOODS[random_u64() as usize % MOODS.len()];
             inner.seats.push(Seat {
-                participant: Participant { surface, slot, colour: SLOT_COLOURS[slot % SLOT_COLOURS.len()], connected: true },
+                participant: Participant { surface, slot, colour: SLOT_COLOURS[slot % SLOT_COLOURS.len()], connected: true, avatar, mood, name: None },
                 token: format!("{:016x}{:016x}", random_u64(), random_u64()),
                 epoch: 0,
                 held_since: None,
@@ -1072,6 +1113,44 @@ impl Hub {
             self.emit("session.changed", json!({ "session": self.session() }));
             return Ok(json!({ "sound": on }));
         }
+        if method == "participant.profile" {
+            if role != Role::Phone {
+                return Err("only a phone has a name and an animal".into());
+            }
+            let seat = inner.seats.iter_mut().find(|s| s.participant.surface == surface).ok_or("this phone has no seat")?;
+            if let Some(avatar) = p.get("avatar").filter(|v| !v.is_null()) {
+                let avatar = avatar.as_str().and_then(|a| AVATARS.iter().find(|x| **x == a)).ok_or("pick one of the animals offered")?;
+                seat.participant.avatar = avatar;
+            }
+            if let Some(name) = p.get("name") {
+                seat.participant.name = match name {
+                    Value::Null => None,
+                    Value::String(name) => clean_name(name)?,
+                    _ => return Err("a name is text".into()),
+                };
+            }
+            let me = seat.participant.clone();
+            self.emit("state.participants", json!({ "participants": inner.participants() }));
+            return Ok(json!({ "participant": me }));
+        }
+        if method == "session.ribbon" {
+            if !matches!(role, Role::Tv | Role::Dev | Role::Guide) {
+                return Err("only the controller chooses the table's ribbon".into());
+            }
+            let layer = match &p["layer"] {
+                Value::Null => None,
+                Value::String(id) => {
+                    if !inner.scene.iter().any(|i| &i.id == id) {
+                        return Err(format!("no layer '{id}' on this table"));
+                    }
+                    Some(id.clone())
+                }
+                _ => return Err("say layer: an instance id, or null for Auto".into()),
+            };
+            *self.ribbon.write().unwrap() = layer.clone();
+            self.emit("session.changed", json!({ "session": self.session() }));
+            return Ok(json!({ "ribbon": layer }));
+        }
         if method == "session.guide" {
             if !matches!(role, Role::Tv | Role::Dev) {
                 return Err("only the operator's screens see the guide's code".into());
@@ -1109,7 +1188,7 @@ impl Hub {
             if role == Role::Phone && p["cue"].as_bool() != Some(false) {
                 let mut event = json!({ "layer": layer, "active": active });
                 if let Some(seat) = inner.seats.iter().find(|s| s.participant.surface == surface) {
-                    event["participant"] = json!({ "slot": seat.participant.slot, "colour": seat.participant.colour });
+                    event["participant"] = json!({ "slot": seat.participant.slot, "colour": seat.participant.colour, "avatar": seat.participant.avatar, "mood": seat.participant.mood, "name": seat.participant.name });
                 }
                 self.emit("phone.switched", event);
             }
@@ -1288,7 +1367,7 @@ impl Hub {
                 }
                 let mut event = json!({ "layer": layer, "tool": id, "geometry": geometry, "from": surface });
                 if let Some(seat) = inner.seats.iter().find(|s| s.participant.surface == surface) {
-                    event["participant"] = json!({ "slot": seat.participant.slot, "colour": seat.participant.colour });
+                    event["participant"] = json!({ "slot": seat.participant.slot, "colour": seat.participant.colour, "avatar": seat.participant.avatar, "mood": seat.participant.mood, "name": seat.participant.name });
                 }
                 self.emit("tool.input", event);
             }
@@ -2280,11 +2359,22 @@ mod tests {
         // Changed on the controller, two at once for a group, checked like controls.
         dev("layer.entity", json!({ "layer": "members", "set": "buildings", "ids": ["3"], "values": { "pv": 42 } })).unwrap();
         dev("layer.entity", json!({ "layer": "members", "set": "buildings", "ids": ["3", "4"], "values": { "in": true } })).unwrap();
-        assert_eq!(layer(&hub, "members")["params"]["entities"], json!({ "buildings": { "3": { "pv": 40.0, "in": true }, "4": { "in": true } } }));
+        assert_eq!(
+            layer(&hub, "members")["params"]["entities"],
+            json!({ "buildings": { "3": { "pv": 40.0, "in": true }, "4": { "in": true } } })
+        );
         assert!(dev("layer.entity", json!({ "layer": "members", "set": "buildings", "ids": ["3"], "values": { "pv": "lots" } })).is_err());
         // A phone may change only what is marked for phones.
-        assert!(hub.request(Role::Phone, 7, "layer.entity", &json!({ "layer": "members", "set": "buildings", "id": "5", "values": { "pv": 10 } })).is_err());
-        hub.request(Role::Phone, 7, "layer.entity", &json!({ "layer": "members", "set": "buildings", "id": "5", "values": { "in": true } })).unwrap();
+        assert!(hub
+            .request(Role::Phone, 7, "layer.entity", &json!({ "layer": "members", "set": "buildings", "id": "5", "values": { "pv": 10 } }))
+            .is_err());
+        hub.request(
+            Role::Phone,
+            7,
+            "layer.entity",
+            &json!({ "layer": "members", "set": "buildings", "id": "5", "values": { "in": true } }),
+        )
+        .unwrap();
         // Reset puts one back; back to its defaults, it has no values of its own.
         dev("layer.entity", json!({ "layer": "members", "set": "buildings", "ids": ["4", "5"], "reset": true })).unwrap();
         dev("layer.entity", json!({ "layer": "members", "set": "buildings", "ids": ["3"], "values": { "in": false } })).unwrap();
@@ -2590,6 +2680,27 @@ mod tests {
     }
 
     #[test]
+    fn every_phone_is_a_different_animal_and_may_rename_itself() {
+        let hub = hub(SessionOptions::default());
+        let code = hub.session().code.clone();
+        let phones: Vec<u64> = (0..8).map(|_| hub.join(Role::Phone, Some(&code), None).unwrap().surface).collect();
+        let people = hub.inner.lock().unwrap().participants();
+        let animals: std::collections::HashSet<_> = people.iter().map(|p| p.avatar).collect();
+        assert_eq!(animals.len(), 8, "no two phones share an animal");
+        assert!(people.iter().all(|p| MOODS.contains(&p.mood) && p.name.is_none()));
+
+        let me = phones[0];
+        let set = |p: Value| hub.request(Role::Phone, me, "participant.profile", &p);
+        let back = set(json!({ "avatar": "whale", "name": "  Ada\n  Lovelace " })).unwrap();
+        assert_eq!((back["participant"]["avatar"].clone(), back["participant"]["name"].clone()), (json!("whale"), json!("Ada Lovelace")));
+        assert!(set(json!({ "avatar": "dragon" })).is_err(), "only the animals offered");
+        assert!(set(json!({ "name": "x".repeat(33) })).is_err(), "names are short");
+        set(json!({ "name": "" })).unwrap();
+        assert_eq!(hub.inner.lock().unwrap().participants()[0].name, None, "an empty name brings the fun name back");
+        assert!(hub.request(Role::Tv, 0, "participant.profile", &json!({ "name": "TV" })).is_err());
+    }
+
+    #[test]
     fn a_dropped_phone_gets_its_seat_back_within_the_hold() {
         let hub = hub(SessionOptions::default());
         let code = hub.session().code.clone();
@@ -2761,6 +2872,22 @@ mod tests {
         assert_eq!(hub.welcome(0)["state"]["session"]["sound"], false);
         hub.request(Role::Guide, 0, "session.sound", &json!({ "on": true })).unwrap();
         assert!(hub.session().sound);
+    }
+
+    #[test]
+    fn the_controller_picks_the_ribbon() {
+        let hub = scratch_hub("ribbon");
+        assert_eq!(hub.session().ribbon, None, "a session starts on Auto");
+        let some = hub.inner.lock().unwrap().scene.first().map(|i| i.id.clone()).expect("the scratch table has layers");
+        assert!(hub.request(Role::Phone, 0, "session.ribbon", &json!({ "layer": some })).is_err());
+        assert!(hub.request(Role::Table, 0, "session.ribbon", &json!({ "layer": some })).is_err());
+        assert!(hub.request(Role::Tv, 0, "session.ribbon", &json!({ "layer": "nowhere" })).is_err());
+        assert!(hub.request(Role::Tv, 0, "session.ribbon", &json!({ "layer": 3 })).is_err());
+        hub.request(Role::Tv, 0, "session.ribbon", &json!({ "layer": some })).unwrap();
+        assert_eq!(hub.session().ribbon.as_deref(), Some(some.as_str()));
+        assert_eq!(hub.welcome(0)["state"]["session"]["ribbon"], json!(some));
+        hub.request(Role::Guide, 0, "session.ribbon", &json!({ "layer": null })).unwrap();
+        assert_eq!(hub.session().ribbon, None);
     }
 
     #[test]

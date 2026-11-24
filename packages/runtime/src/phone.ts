@@ -1,3 +1,5 @@
+import type { Connection, Participant } from '@mrstudio/sdk';
+import { ANIMALS, avatarOf, nameOf } from './avatars.ts';
 import { t } from './i18n.ts';
 import type { Store } from './store.ts';
 
@@ -33,9 +35,14 @@ export function rememberSeat(code: string, token: string): void {
   }
 }
 
-/** "You are 3", in the phone's colour: the same number and colour the TV shows. */
-export function phoneBadge(store: Store): HTMLElement {
-  const badge = el('div', 'phone-badge');
+/**
+ * The phone's animal on its colour and its fun name, "Sunny Fox" (#339): the same animal and
+ * colour the controller shows. A tap opens a sheet to change the name or pick another animal.
+ */
+export function phoneBadge(store: Store, connection: Connection): HTMLElement {
+  const badge = el('button', 'phone-badge');
+  badge.type = 'button';
+  badge.setAttribute('aria-label', t('Change your name or animal'));
   const dot = el('i');
   const label = el('span');
   badge.append(dot, label);
@@ -44,12 +51,59 @@ export function phoneBadge(store: Store): HTMLElement {
     badge.hidden = !me;
     if (!me) return;
     dot.style.background = me.colour;
-    dot.textContent = String(me.slot + 1);
-    label.textContent = t('You are {n}', { n: me.slot + 1 });
+    dot.textContent = avatarOf(me);
+    label.textContent = nameOf(me);
   };
   show();
   store.onParticipants(show);
+  badge.addEventListener('click', () => {
+    const me = store.me();
+    if (me) document.body.append(profileSheet(me, connection));
+  });
   return badge;
+}
+
+/** Where a visitor names their phone and picks its animal. Changes go to the host as they are made. */
+function profileSheet(me: Participant, connection: Connection): HTMLElement {
+  const sheet = el('div', 'profile-sheet');
+  sheet.setAttribute('role', 'dialog');
+  sheet.setAttribute('aria-modal', 'true');
+  const card = el('form', 'profile-card');
+  const name = el('input');
+  Object.assign(name, { value: me.name ?? '', maxLength: 32, placeholder: nameOf({ ...me, name: null }), autocomplete: 'off', enterKeyHint: 'done' });
+  const animals = el('div', 'profile-animals');
+  animals.setAttribute('role', 'radiogroup');
+  animals.setAttribute('aria-label', t('Pick your animal'));
+  for (const [id, animal] of Object.entries(ANIMALS)) {
+    const pick = el('button', 'profile-animal', animal.emoji);
+    pick.type = 'button';
+    pick.setAttribute('role', 'radio');
+    pick.setAttribute('aria-label', t(animal.name));
+    pick.setAttribute('aria-checked', String(id === me.avatar));
+    pick.style.setProperty('--colour', me.colour);
+    pick.addEventListener('click', () => {
+      for (const other of animals.children) other.setAttribute('aria-checked', String(other === pick));
+      void connection.request('participant.profile', { avatar: id }).catch(() => {});
+    });
+    animals.append(pick);
+  }
+  const close = () => {
+    void connection.request('participant.profile', { name: name.value }).catch(() => {});
+    sheet.remove();
+  };
+  card.addEventListener('submit', (event) => {
+    event.preventDefault();
+    close();
+  });
+  sheet.addEventListener('click', (event) => event.target === sheet && close());
+  const done = el('button', 'action primary', t('Done'));
+  done.type = 'submit';
+  name.id = 'profile-name';
+  const nameLabel = el('label', undefined, t('Your name'));
+  nameLabel.htmlFor = name.id;
+  card.append(nameLabel, name, el('p', 'profile-hint', t('Leave empty for a fun name')), el('p', 'profile-label', t('Pick your animal')), animals, done);
+  sheet.append(card);
+  return sheet;
 }
 
 /** What a phone shows instead of the controller when the host turned it away. */
