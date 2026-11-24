@@ -1,0 +1,162 @@
+<title>Editor Journey Review</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;600&display=swap">
+<style>
+/* Layout: one reading column, journey map as a horizontal strip of stages, findings as ranked rows with evidence images */
+:root{--bg:#f6f7fa;--fg:#1d2330;--mute:#5d6578;--line:#dfe3ea;--card:#ffffff;--acc:#3557D4;--acc-soft:#e8edfc;--bad:#b4342b;--warn:#a66300;--good:#1f7a45;
+--body:Inter,"Segoe UI",system-ui,sans-serif;--head:"Space Grotesk",Inter,system-ui,sans-serif}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#12151c;--fg:#e6e8ee;--mute:#9aa2b4;--line:#2a2f3b;--card:#1a1e27;--acc:#8ea6ff;--acc-soft:#232c47;--bad:#ff8a80;--warn:#f0b35a;--good:#6fd39a;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#12151c;--fg:#e6e8ee;--mute:#9aa2b4;--line:#2a2f3b;--card:#1a1e27;--acc:#8ea6ff;--acc-soft:#232c47;--bad:#ff8a80;--warn:#f0b35a;--good:#6fd39a;color-scheme:dark}
+body{background:var(--bg);color:var(--fg);font-family:var(--body);font-size:15px;line-height:1.55}
+main{max-width:980px;margin:0 auto;padding-block:40px 80px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+h1,h2,h3{font-family:var(--head);text-wrap:balance;line-height:1.2}
+h1{font-size:34px;margin:0 0 8px}h2{font-size:22px;margin:48px 0 12px}h3{font-size:17px;margin:0 0 6px}
+.lead{color:var(--mute);max-width:65ch;margin:0}
+.eyebrow{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--mute)}
+.journey{overflow-x:auto;margin-top:12px}
+.jt{display:grid;grid-template-columns:repeat(7,minmax(128px,1fr));gap:8px;min-width:900px}
+.st{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:10px;font-size:13px;display:flex;flex-direction:column;gap:6px}
+.st b{font-family:var(--head);font-size:14px}
+.where{color:var(--mute);font-size:12px}
+.pill{font-size:11.5px;border-radius:999px;padding:1px 8px;align-self:flex-start}
+.p-bad{background:color-mix(in srgb,var(--bad) 14%,transparent);color:var(--bad)}
+.p-warn{background:color-mix(in srgb,var(--warn) 16%,transparent);color:var(--warn)}
+.p-good{background:color-mix(in srgb,var(--good) 14%,transparent);color:var(--good)}
+.f{display:grid;grid-template-columns:44px 1fr;gap:14px;padding:20px 0;border-top:1px solid var(--line)}
+.rank{font-family:var(--head);font-size:26px;color:var(--acc);font-variant-numeric:tabular-nums}
+.f p{margin:4px 0;max-width:70ch}
+.f .fix{background:var(--acc-soft);border-radius:8px;padding:10px 12px;margin-top:8px}
+.f .fix b{color:var(--acc)}
+.imgs{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px}
+.imgs img,figure img{border:1px solid var(--line);border-radius:6px;display:block;max-width:100%}
+figure{margin:12px 0}figcaption{font-size:12.5px;color:var(--mute);margin-top:4px}
+.f > div{min-width:0}
+a{color:var(--acc)}
+ul{padding-left:20px}li{margin:3px 0}
+.dec{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px 18px}
+@media (max-width:640px){.imgs{grid-template-columns:1fr}.f{grid-template-columns:30px 1fr}h1{font-size:27px}}
+</style>
+<main>
+<div class="eyebrow">MR Studio 0.22 · editor review · 24 Nov 2026</div>
+<h1>The editor, walked as an author</h1>
+<p class="lead">I walked a new author and a returning author through the editor running on the sample table at 1440 × 900, and judged the ribbon and the overall UI by user flow, which is your first rule. The building blocks are good. What they lack is one spine: the setup guide and the ribbon describe the same journey in two different orders, under two sets of names.</p>
+
+<h2>Decided: back to the PowerPoint layout</h2>
+<p class="lead">Sanjay, 24 Nov: pages are too big a change; keep the Office/PowerPoint layout people know, which is where the editor started. The noise came from drifting away from it: setup steps became tabs that take over the panel and the canvas. The PowerPoint rules, applied:</p>
+<ol>
+<li><b>The canvas and the left list never change</b>, whatever tab is open. The list is our slide thumbnails: At rest, layers, Controller, Phones.</li>
+<li><b>Tabs hold commands only</b>: Home (selection and arrange), Insert (layer gallery, custom layer, data, media), Design (controller themes, buttons, base map, palette), Present (check, rehearse, present, set up, share), View (Map / Controller / Both, media library, windows), Help.</li>
+<li><b>The right panel is the Format pane</b>: whatever is selected, and the one place to edit it. At rest is a row in the list, like the Slide Master.</li>
+<li><b>Whole-table settings are dialogs</b>, as Slide Size and Set Up Slide Show are: "Table size and place…", "Welcome and languages…", "Screens and calibration…".</li>
+<li><b>The guide is the new-table flow only</b>, like PowerPoint's start screen.</li>
+</ol>
+<div class="imgs">
+<figure><img src="img/office-home.png" alt="Home tab: selection commands, the table and controller in the middle, Wind in the Format pane"><figcaption>Home: commands for the selection; Wind is edited in the right pane only.</figcaption></figure>
+<figure><img src="img/office-dialog.png" alt="Design tab with the Table size and place dialog open"><figcaption>Design › Table size and place… opens a dialog, like Slide Size. The workspace stays put.</figcaption></figure>
+<figure><img src="img/office-insert.png" alt="Insert tab"><figcaption>Insert: everything you add, in one tab.</figcaption></figure>
+<figure><img src="img/office-present.png" alt="Present tab"><figcaption>Present: like Slide Show.</figcaption></figure>
+</div>
+
+<h2>Considered and rejected: pages, not tabs</h2>
+<p class="lead">Sanjay's rule: two views of the app should never do the same thing. Today a tab only swaps the ribbon and the right panel. The middle (map plus controller) and the left list stay the same, so most of the screen is unrelated to the tab, and each tab adds its own form for things another tab already edits. The model that fixes this is DaVinci Resolve's <i>pages</i>, set in journey order. Three rules:</p>
+<ol>
+<li><b>One page, one job, one surface.</b> A page owns the whole window: its tools, its left list, its canvas and its inspector. Place shows the place, Map shows the table, Controller shows the controller. No page shows a surface it doesn't edit.</li>
+<li><b>One thing, one home.</b> Every setting has exactly one editor. Another page may show it read-only with a link ("Button: Wind, left side · Edit on Controller"), never a second form.</li>
+<li><b>The list belongs to the page.</b> Data lists files, Map lists At rest and layers, Controller lists buttons by side. At rest stops being a tab: it is the top of Map's list, because it edits the same surface as the layers.</li>
+</ol>
+<p class="lead"><b>Pages:</b> Place · Data · Map · Controller · Phones · Present. Display (calibration, colour, quality) belongs to this computer and moves to the app's settings, opened from Present. The setup guide walks the same pages in order.</p>
+<div class="imgs">
+<figure><img src="img/page-place.png" alt="Place page: the whole window is a map with the table outline, fields on the right"><figcaption>Place: just the place and the outline.</figcaption></figure>
+<figure><img src="img/page-data.png" alt="Data page: files as cards, Your place checklist on the left"><figcaption>Data: Your place and Media in one page, with one way to add files.</figcaption></figure>
+<figure><img src="img/page-map.png" alt="Map page: At rest and layers on the left, only the table in the middle"><figcaption>Map: At rest and layers in one list, only the table, with the button shown read-only.</figcaption></figure>
+<figure><img src="img/page-controller.png" alt="Controller page: buttons by side on the left, only the controller in the middle"><figcaption>Controller: buttons by side, the welcome screen and theme, only the controller.</figcaption></figure>
+</div>
+<figure><img src="img/page-present.png" alt="Present page: Check, Rehearse, Present, Share"><figcaption>Present: Check (the #369 readiness rules), Rehearse (#97), Present, Share (#372).</figcaption></figure>
+
+<h2>Task audit: how many ways to do one thing today</h2>
+<p class="lead">Counted on main (0.22, plus #369 where noted). Every task with more than one way to do it is noise. The last column is its one home under the page model.</p>
+<div class="journey"><table style="border-collapse:collapse;min-width:760px;font-size:13.5px">
+<thead><tr style="text-align:left;color:var(--mute)"><th style="padding:6px">Task</th><th>Ways today</th><th style="padding:6px">Where</th><th>One home</th></tr></thead>
+<tbody>
+<tr><td style="padding:6px">Rename the table</td><td>3</td><td style="padding:6px">Name and place tab · Table settings (gear in the list) · guide step 1</td><td>Place</td></tr>
+<tr><td style="padding:6px">Move or resize the table</td><td>2 + 2 buttons</td><td style="padding:6px">Name and place tab · guide step 1; "Move the table" in the ribbon and in the panel footer</td><td>Place</td></tr>
+<tr><td style="padding:6px">Turn traffic off at rest</td><td>4</td><td style="padding:6px">At rest ribbon · At rest panel switch · Selected › Hide · guide At rest step</td><td>Map (eye on the row)</td></tr>
+<tr><td style="padding:6px">Add a layer</td><td>4</td><td style="padding:6px">Edit ribbon · "+" in the list · guide Layers switches · Media › Show on the table</td><td>Map › Add a layer</td></tr>
+<tr><td style="padding:6px">Rename a layer's button</td><td>4</td><td style="padding:6px">Layer inspector · Design panel · guide Buttons · F2 in the list (#369)</td><td>Controller</td></tr>
+<tr><td style="padding:6px">Put a button on the right</td><td>4</td><td style="padding:6px">Inspector Side · Design panel · guide Buttons · drag or menu (#369)</td><td>Controller (drag)</td></tr>
+<tr><td style="padding:6px">Controller title and welcome line</td><td>1, wrong home</td><td style="padding:6px">Table settings; the Controller row says "comes later"</td><td>Controller › Welcome</td></tr>
+<tr><td style="padding:6px">Bring in a GeoJSON</td><td>4, two behaviours</td><td style="padding:6px">Add data in 3 ribbons · Media › Add media · guide Your place · Media's Your place cards</td><td>Data</td></tr>
+<tr><td style="padding:6px">See the map in a window</td><td>3</td><td style="padding:6px">Preview · Open in a window › Map · Present (browser)</td><td>Present › Rehearse</td></tr>
+<tr><td style="padding:6px">Calibrate the projector</td><td>3</td><td style="padding:6px">Display tab · Calibrate on the controller's map controls · Displays and settings</td><td>App settings (from Present)</td></tr>
+</tbody></table></div>
+
+<h2>Journey map: a new author</h2>
+<div class="journey"><div class="jt">
+<div class="st"><b>1 · Start</b><span class="where">Home → New table</span>Name, centre, size and scale, in one clear form with the map.<span class="pill p-good">Works</span></div>
+<div class="st"><b>2 · Bring data</b><span class="where">Guide: Your place</span>Fetch from open data in one go, then per-row cards.<span class="pill p-good">Works</span><span class="pill p-warn">No tab for it later</span></div>
+<div class="st"><b>3 · At rest</b><span class="where">Guide step 3 / At rest tab</span>Base map and map life with a live preview.<span class="pill p-warn">Same switches ×3</span></div>
+<div class="st"><b>4 · Layers</b><span class="where">Guide step 4 / Edit tab</span>Toggles in the guide; 17 big buttons in the ribbon.<span class="pill p-bad">Ribbon off screen</span></div>
+<div class="st"><b>5 · Controller</b><span class="where">Guide "Buttons" / Design tab</span>Themes gallery is good; Buttons named three ways.<span class="pill p-warn">Names differ</span></div>
+<div class="st"><b>6 · Try &amp; present</b><span class="where">Guide "Ready" / Preview, Present</span>Present is one click; no check, no rehearsal.<span class="pill p-bad">Gap: #63 #97</span></div>
+<div class="st"><b>7 · Share</b><span class="where">Nowhere yet</span>Decided in #372, not built; no place in the ribbon.<span class="pill p-bad">Gap: #372</span></div>
+</div></div>
+<p class="lead" style="margin-top:12px">At step 6 the guide says "Fine-tune in the editor", and the author lands in a different layout (ribbon, list and inspector all appear at once) on a tab called Edit that is neither the step they were on nor the first one.</p>
+
+<h2>Journey map: a returning author</h2>
+<ul>
+<li>Opens a table from Home: the editor starts on <b>Edit</b> with At rest selected. That is fine, but the tab order doesn't hint at what's left to do (no ✓ for finished setup, no "3 warnings before presenting").</li>
+<li>Wants to add one GeoJSON: finds <b>Add data</b> (asks what the file holds first) or <b>Media › Add media</b> (takes the file first). Two doors that behave differently.</li>
+<li>Tweaks a layer's look, then opens <b>Display</b> to check colour: the right panel still shows the Wind layer's settings. Opens <b>Design</b>: Wind gets selected and shown on the map without being asked.</li>
+<li>Checks it on the real displays with <b>Present</b>, edits, and presents again. A rehearsal on this screen is missing (#97).</li>
+</ul>
+
+<h2>Friction, ranked by how much it hurts the flow</h2>
+
+<div class="f"><div class="rank">1</div><div>
+<h3>The ribbon and the guide are two different maps of one journey <a href="https://github.com/snjsomnath/mr-studio/issues/382">#382</a></h3>
+<p>Guide: Name and place · Your place · At rest · Layers · Buttons · Ready. Ribbon: Edit · Name and place · At rest · Design · Display · Media · Help. Edit (step 4) comes first, Your place and Ready have no tab, Buttons became Design, and the guide hides the ribbon entirely, so the guide teaches nothing about where things live afterwards.</p>
+<div class="fix"><b>Proposal.</b> One spine in journey order, shared by both: <b>Place · Data · At rest · Layers · Controller · Present</b>, then <b>Display</b> set apart as this computer's settings. Help becomes a <b>?</b> button, Share sits next to Present. The guide becomes a coach card over the same workspace: tabs tick off as you go, Next moves to the next tab, and Close guide leaves you where you are.</div>
+<figure><img src="img/proposal-guide.png" alt="Wireframe: the guide as a coach card on the same tabs, At rest is step 3 with Place and Data ticked"><figcaption>Wireframe: the guide walks the same tabs the editor uses.</figcaption></figure>
+<figure><img src="img/proposal-present.png" alt="Wireframe: Present tab with Check, Try it, Show it and Send it groups"><figcaption>Wireframe: the journey ends in one tab, Check (#63), Try it (#97), Show it, Send it (#372).</figcaption></figure>
+</div></div>
+
+<div class="f"><div class="rank">2</div><div>
+<h3>The Edit ribbon runs off the screen <a href="https://github.com/snjsomnath/mr-studio/issues/383">#383</a></h3>
+<p>All 17 layers are large buttons, so at 1440 px wide, Make your own, Selected, Add data and Open in a window are off the right edge, behind a sideways scroll with no scrollbar. Each new core layer makes it worse, and Help has the same problem.</p>
+<div class="imgs"><img src="img/now-edit-tab.png" alt="Edit tab today: layer buttons fill the ribbon"><img src="img/now-edit-scrolled.png" alt="Edit tab scrolled right to reveal the hidden groups"></div>
+<div class="fix"><b>Proposal.</b> <b>Add a layer</b> becomes one dropdown that opens the #59 gallery (search, categories, what each layer needs). The Selected group stays fixed. Groups shrink to icons when space is short, so nothing is ever hidden.</div>
+<figure><img src="img/proposal-gallery.png" alt="Wireframe: Layers tab with an Add a layer gallery open"></figure>
+</div></div>
+
+<div class="f"><div class="rank">3</div><div>
+<h3>Switching tabs changes what you are looking at <a href="https://github.com/snjsomnath/mr-studio/issues/385">#385</a></h3>
+<p>Design selects Wind and shows it on the map. Display and Help keep Wind's inspector on the right. Picking a layer in the list throws you back to Edit from any other tab. A tab should change the tools, not the selection or the map.</p>
+<div class="imgs"><img src="img/now-design-tab.png" alt="Design tab: Wind selected on its own"><img src="img/now-display-tab.png" alt="Display tab with the Wind inspector still showing"></div>
+</div></div>
+
+<div class="f"><div class="rank">4</div><div>
+<h3>The same setting lives in two or three places <a href="https://github.com/snjsomnath/mr-studio/issues/384">#384</a></h3>
+<p>Map life switches are in the Edit ribbon, the At rest ribbon and the At rest panel (the last two side by side). Add data is in three ribbons. Move the table is in the ribbon and the panel footer. A button's words are in Design and in the inspector. Preview, Open in a window and Window all open the same views.</p>
+<figure><img src="img/now-at-rest-tab.png" alt="At rest tab: the ribbon and the panel show the same switches"></figure>
+<div class="fix"><b>Proposal.</b> A rule for the editor: the ribbon holds actions and the panel holds settings, with one home for each. Preview becomes Rehearse (#97).</div>
+</div></div>
+
+<div class="f"><div class="rank">5</div><div>
+<h3>Two doors for files <a href="https://github.com/snjsomnath/mr-studio/issues/52#issuecomment-7136200636">#52</a></h3>
+<p>Add data asks "The file holds…" before you pick a file. Add media takes the file and works out what it is. One file-first way in, in the Data tab, with drop-anywhere, is simpler. I added this to #52 instead of opening a new issue.</p>
+</div></div>
+
+<h2>Already covered elsewhere, so not filed again</h2>
+<ul>
+<li>Layer list drag, rename and sides, canvas zoom, inspector, time bar, busy states: the "Polish the editor" PR <a href="https://github.com/snjsomnath/mr-studio/pull/369">#369</a> (#58 #60 #64 #61 #68).</li>
+<li>Ready-to-present checklist #63, Rehearse #97, help #88, shortcuts #65, 13-inch laptops #66, gallery #59, Share #372.</li>
+<li>Table ribbons on the projector (#78) are outside this review: they belong to the table, not to the editor's flow.</li>
+</ul>
+
+<h2>Your call</h2>
+<div class="dec">
+<p style="margin-top:0"><b>Update:</b> #382 now describes the PowerPoint layout above; #384 (the task audit) is the test. The pages model and the first-pass tab order are kept below only for the record.</p>
+<p>My suggested build order is <b>#385</b> (small bug fix) first, then <b>#383</b> together with #59, then <b>#382</b> together with #384, landing Present-tab pieces as #63, #97 and #372 arrive. #382 renames and regroups the tabs you asked for this morning (#311 to #313), so it needs your yes before anyone builds it.</p>
+</div>
+<p class="eyebrow" style="margin-top:28px">Screens: MR Studio main at 9a84133, Chromium, sample site. Wireframes show structure only; the approved identity stays.</p>
+</main>
