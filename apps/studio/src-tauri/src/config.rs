@@ -256,6 +256,9 @@ pub struct Settings {
     pub nightly_restart: Option<String>,
     /// Do not look for a newer version when the app starts. Checking is the default.
     pub skip_update_check: bool,
+    /// The version whose "New in this version" notes were put away on Home. Home shows a
+    /// version's notes once after an update, until they are put away.
+    pub seen_notes: Option<String>,
     /// The sites opened last, newest first.
     pub recent: Vec<PathBuf>,
 }

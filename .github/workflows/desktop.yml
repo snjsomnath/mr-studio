@@ -1,9 +1,11 @@
 name: Desktop app
 
 # Builds the installers for Windows and macOS.
-# - Every pull request and every push to main: the installers are attached to the run as artifacts.
-# - A tag like v0.2.0: they are also attached to a draft GitHub release for that tag, together with
-#   the signed files and the latest.json the installed app updates itself from. See docs/RELEASING.md.
+# - Every pull request: the installers are attached to the run as artifacts.
+# - Every push to main: the release notes waiting in changes/ become a new version first
+#   (scripts/release.mjs: Cargo.toml, CHANGELOG.md, a vX.Y.Z tag), then that version is built
+#   and published as a GitHub release, which installed apps show on Home. See docs/RELEASING.md.
+# - A tag like v0.2.0 pushed by hand: built and published the same way.
 on:
   push:
     branches: [main]
@@ -11,13 +13,63 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Releases run one after another and are never cancelled half way; pull request builds are.
 concurrency:
-  group: desktop-${{ github.ref }}
-  cancel-in-progress: true
+  group: desktop-${{ github.event_name == 'pull_request' && github.ref || 'release' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  version:
+    name: New version from the release notes
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      tag: ${{ steps.release.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # Always from the newest main, so two quick merges never release the same note twice.
+      # A push that loses a race with another merge starts again from the new main.
+      - id: release
+        run: |
+          git config user.name "mr-studio-release"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          for try in 1 2 3 4; do
+            git fetch origin main && git reset --hard origin/main
+            version=$(node scripts/release.mjs apply)
+            if [ -z "$version" ]; then
+              if [ -n "$(git status --porcelain)" ]; then
+                git commit -am "Clear release notes that make no version [skip ci]" && git push origin HEAD:main || { sleep $((try * 5)); continue; }
+              fi
+              echo "No release notes waiting, so no new version."
+              exit 0
+            fi
+            git add -A
+            git commit -m "Release v$version [skip ci]"
+            git tag "v$version"
+            if git push --atomic origin HEAD:main "v$version"; then
+              echo "tag=v$version" >> "$GITHUB_OUTPUT"
+              echo "Released v$version"
+              exit 0
+            fi
+            git tag -d "v$version"
+            sleep $((try * 5))
+          done
+          echo "::error::Could not push the release after 4 tries."
+          exit 1
+
   build:
     name: ${{ matrix.name }}
+    needs: version
+    # Runs for pull requests and tags too, where the version job is skipped.
+    if: ${{ !cancelled() && needs.version.result != 'failure' && (github.event_name != 'push' || github.ref != 'refs/heads/main' || needs.version.outputs.tag != '') }}
     strategy:
       fail-fast: false
       matrix:
@@ -36,6 +88,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.version.outputs.tag || github.ref }}
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.targets }}
@@ -59,12 +113,16 @@ jobs:
           MRS_UPDATER_PUBKEY: ${{ vars.MRS_UPDATER_PUBKEY }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          RELEASE_TAG: ${{ needs.version.outputs.tag || (startsWith(github.ref, 'refs/tags/v') && github.ref_name) || '' }}
         run: |
           version=$(node scripts/app-version.mjs)
           args="${{ matrix.args }}"
-          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
-            if [[ "$GITHUB_REF_NAME" != "v$version" ]]; then
-              echo "::error::The tag is $GITHUB_REF_NAME but Cargo.toml says version $version. Set the version first, then tag."
+          # The build stamp the app shows on Home and on the Updates tab.
+          export MRS_BUILD_COMMIT=$(git rev-parse HEAD)
+          export MRS_BUILD_DATE=$(git show -s --format=%cI HEAD)
+          if [[ -n "$RELEASE_TAG" ]]; then
+            if [[ "$RELEASE_TAG" != "v$version" ]]; then
+              echo "::error::The tag is $RELEASE_TAG but Cargo.toml says version $version. Set the version first, then tag."
               exit 1
             fi
             if [[ -n "$TAURI_SIGNING_PRIVATE_KEY" && -n "$MRS_UPDATER_PUBKEY" ]]; then
@@ -98,14 +156,18 @@ jobs:
           if-no-files-found: error
 
   release:
-    name: Draft release
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: build
+    name: Publish the release
+    needs: [version, build]
+    if: ${{ !cancelled() && needs.build.result == 'success' && (needs.version.outputs.tag != '' || startsWith(github.ref, 'refs/tags/v')) }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    env:
+      TAG: ${{ needs.version.outputs.tag || github.ref_name }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
       - uses: actions/download-artifact@v4
         with:
           path: release
@@ -113,15 +175,28 @@ jobs:
       # latest.json is what an installed app reads to update itself: the version, and for
       # each platform the download link and the signature of the file behind it.
       - name: Write latest.json
-        run: node scripts/update-feed.mjs release "${{ github.repository }}" "${{ github.ref_name }}"
-      # A draft: nothing reaches installed apps until the notes are written and the release is published.
+        run: node scripts/update-feed.mjs release "${{ github.repository }}" "$TAG"
+      # The MCP server of the same version, one file, so teams download it with the release (docs/MCP.md).
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Build the MCP server
+        run: pnpm install --frozen-lockfile && pnpm mcp && cp packages/mcp/dist/mrstudio-mcp.mjs release/
+      # The notes come from CHANGELOG.md, with the pictures of the pull requests that made them.
+      - name: Write the notes
+        run: node scripts/release.mjs notes "$TAG" "${{ github.repository }}" > release-notes.md && cat release-notes.md
+      # Published straight away: the app on Home and on the Updates tab shows it from now on.
       - uses: softprops/action-gh-release@v2
         with:
-          draft: true
-          name: MR Studio ${{ github.ref_name }}
-          body_path: .github/release-notes-template.md
+          tag_name: ${{ env.TAG }}
+          name: MR Studio ${{ env.TAG }}
+          body_path: release-notes.md
+          make_latest: true
           files: |
             release/*.exe
             release/*.dmg
             release/*.app.tar.gz
             release/latest.json
+            release/mrstudio-mcp.mjs

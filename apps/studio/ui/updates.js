@@ -25,6 +25,8 @@
     } else if (found) status = `MR Studio ${state.current} is the newest version.`;
     else if (state.error) status = `Could not look for updates (${state.error}). You have ${state.current}.`;
     else status = `You have MR Studio ${state.current}. Not checked yet.`;
+    // The build stamp: which commit this copy was made from (#268).
+    if (state.commit) status += ` Build ${state.commit.slice(0, 7)}${state.built ? ` from ${new Date(state.built).toLocaleDateString()}` : ''}.`;
     $('updates-status').textContent = status;
 
     // Breaking changes come before everything else, from every release in between.
