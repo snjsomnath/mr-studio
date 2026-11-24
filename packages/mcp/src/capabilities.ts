@@ -110,7 +110,7 @@ function layerCapability(l: LayerEntry, catalog: Catalog, roadmap: RoadmapRow[])
   const tools: any[] = m.tools ?? [];
   const panels: any[] = m.panels ?? [];
   const requires: Requirement[] = [];
-  for (const d of m.requires?.data ?? []) requires.push({ kind: 'data', what: d, how: `a '${d}' dataset in the site (scene.${d} or data.${d}); import_data or the editor's Add data` });
+  for (const d of m.requires?.data ?? []) requires.push({ kind: 'data', what: d, how: `a '${d}' dataset in the site (scene.${d} or data.${d}): add the file with the editor's Add data, then point the site at it with update_site` });
   for (const k of m.requires?.kernels ?? []) if (!catalog.kernels.includes(k)) requires.push({ kind: 'kernel', what: k, how: 'not in this core' });
   for (const s of m.requires?.services ?? []) requires.push({ kind: 'service', what: s, how: `a service '${s}' under "services" in site.json` });
   const keys = new Set<string>();
@@ -261,7 +261,7 @@ export function withSite(cap: Capability, site: { data: Set<string>; services: S
 
 // ---- Search ----
 
-const STOP = new Set('a an and the of to on in for with from by at as is are be it this that or how what when which want we our their people about can could would should help make show let into over under do does them they its you your who where why'.split(' '));
+const STOP = new Set('a an and the of to on in for with from by at as is are be it this that or how what when which want we our their people about can could would should help make show let into over under do does them they its you your who where why each other yet also just very much many some'.split(' '));
 
 /** A few words people use for what layers say differently. Kept short: purposes and questions carry most of the matching. */
 const SYNONYMS: Record<string, string[]> = {
@@ -272,7 +272,7 @@ const SYNONYMS: Record<string, string[]> = {
   participation: ['phone', 'sketch', 'mark'], participate: ['phone', 'sketch'], ideas: ['sketch', 'mark'], contribute: ['sketch', 'mark', 'phone'], comment: ['sketch'],
   compare: ['reveal', 'swipe', 'proposal', 'today'], before: ['reveal', 'history', 'old'], proposal: ['plan', 'masterplan', 'proposed'], development: ['proposal', 'plan'],
   flood: ['rain', 'water', 'stormwater'], rain: ['stormwater', 'water'], water: ['stormwater', 'rain'],
-  traffic: ['car', 'cars', 'street'], transport: ['transit', 'tram', 'bus'], tram: ['transit'], bus: ['transit'],
+  traffic: ['car', 'cars', 'street'], transport: ['transit', 'tram', 'bus'], tram: ['transit', 'public transport'], bus: ['transit', 'public transport'], train: ['transit', 'public transport'],
   public: ['square', 'street', 'life'], space: ['square', 'street'], green: ['tree', 'trees', 'green'], trees: ['tree', 'green'],
   story: ['sequence', 'slideshow', 'guided'], workshop: ['sequence', 'sketch', 'guided'], tour: ['slideshow', 'guided', 'sequence'],
   history: ['old', 'historic', 'photo', 'before'], hidden: ['under', 'reveal', 'x-ray'], underground: ['under', 'reveal'],
@@ -319,7 +319,7 @@ export function rank(caps: Capability[], query: string): Match[] {
   const expanded = new Map<string, string>();
   for (const w of asked) {
     expanded.set(w, w);
-    for (const s of SYNONYMS[w] ?? []) for (const t of tokens(s)) if (!expanded.has(t)) expanded.set(t, w);
+    for (const s of SYNONYMS[w] ?? SYNONYMS[`${w}s`] ?? []) for (const t of tokens(s)) if (!expanded.has(t)) expanded.set(t, w);
   }
   const out: Match[] = [];
   for (const c of caps) {
