@@ -5,7 +5,11 @@ import { defaultSideOf, el, isAmbient, isAtRest, isOffered, layerButton, visible
 import type { Widget } from '../controls.ts';
 import { paramSender } from '../layer-manager.ts';
 import type { Store } from '../store.ts';
-import { builderSection, deleteCustomDialog, layerFromImport, newCustomLayer, paletteDialog } from './builder.ts';
+import { builderSection, customFromDataset, datasetShapes, describeShapes, deleteCustomDialog, layerFromImport, newCustomLayer, paletteDialog, vectorDatasets } from './builder.ts';
+import { openGallery } from './gallery.ts';
+import { paletteTheme, paletteThemeChoice } from './palette-theme.ts';
+import type { GallerySection } from './gallery.ts';
+import './gallery.css';
 import { DisplayTab } from './display-tab.ts';
 import { MediaTab } from './media-tab.ts';
 import { MODEL_ROW } from './model-import.ts';
@@ -506,7 +510,7 @@ export class Editor {
   }
 
   /** The Add data dialog: the same importer as "Your place", with the kind of data left to the author. */
-  private addData(file?: File): void {
+  private addData(file?: File, replace?: string): void {
     const dialog = el('dialog', 'im-dialog');
     dialog.ariaLabel = 'Add data';
     const head = el('header', 'im-dialog-head');
@@ -541,6 +545,8 @@ export class Editor {
     dialog.append(head, el('p', 'wz-lead', 'Bring a file into the table, or fetch it from OpenStreetMap. It is copied into the table and stays on this computer.'), importer.element);
     // From Add media: the file is already chosen, and its kind guessed from its name.
     if (file) importer.takeFile(file);
+    // From the Data list (#52): a new file under the same name.
+    if (replace) importer.replacing(replace);
     dialog.addEventListener('close', () => dialog.remove());
     this.shell.append(dialog);
     dialog.showModal();
@@ -815,6 +821,35 @@ export class Editor {
       dialog.showModal();
       actions.querySelector<HTMLElement>('.is-primary')?.focus();
     });
+  }
+
+  /** The New layer gallery (#59), the one place a layer is made. */
+  private gallery(start?: GallerySection): void {
+    const host = this.builderHost();
+    openGallery(
+      {
+        store: this.store,
+        shell: this.shell,
+        add: (manifest, parent) => this.addChecked(manifest, parent),
+        lifeInto: () => {
+          const { kind } = this.context;
+          const openId = kind === 'layer' ? (this.context as { id: string }).id : undefined;
+          const opened = openId ? this.store.state.layers[openId] : undefined;
+          const manifest = opened && this.store.manifest(opened.layer);
+          if (!openId || !opened || !manifest || manifest.sequence) return { name: 'the map at rest' };
+          return { id: openId, name: layerButton(openId, manifest, opened).name };
+        },
+        bringIn: (target) => this.bringIn(target),
+        addData: () => this.addData(),
+        newCustom: () => newCustomLayer(host, this.shell),
+        fromDataset: (name) => customFromDataset(host, name),
+        datasets: () => vectorDatasets(this.store),
+        shapes: (name) => datasetShapes(this.store, name),
+        describe: describeShapes,
+        extent: () => ({ width: this.store.state.site.extent.width_m, height: this.store.state.site.extent.height_m }),
+      },
+      start,
+    );
   }
 
   /** What the layer builder and the palette need from the editor. */
@@ -1107,7 +1142,6 @@ export class Editor {
     // tool that does not apply right now is greyed out with the reason, never taken away.
     const { kind } = this.context;
     const ambient = this.store.manifests.filter((m) => isAmbient(m) && isOffered(m));
-    const layers = this.store.manifests.filter((m) => !isAmbient(m) && isOffered(m));
     // Map life goes into the layer that is open, or onto the map at rest; the group says which.
     const openId = kind === 'layer' ? (this.context as { id: string }).id : undefined;
     const opened = openId ? this.store.state.layers[openId] : undefined;
@@ -1130,7 +1164,11 @@ export class Editor {
       group.title = openName && !sequence ? `These go into ${openName} and show while it is open` : `These go onto the map at rest, under every layer`;
       groups.push(group);
     }
-    if (layers.length > 0) groups.push(this.group('Add a layer', ...layers.map((m) => this.insertTool(m, true))));
+    // Every layer is made from the New layer gallery (#59): pictures, what each needs, and your own.
+    const gallery = button('ed-tool is-large', 'New layer', 'plus', 20);
+    gallery.title = 'Choose a layer from the gallery: from your data, analysis, story, your own, or map life';
+    gallery.dataset.gallery = '';
+    gallery.addEventListener('click', () => this.gallery());
     // Make a layer of your own from the table's data, and the colours every layer shares (#38, #93).
     const custom = button('ed-tool is-large', 'Custom layer', 'brush', 20);
     custom.title = 'Make a layer from your own data: choose the data, then style it, move it and save it as a button';
@@ -1143,7 +1181,7 @@ export class Editor {
     forget.disabled = saved === 0;
     forget.title = saved ? 'Delete custom layers this table no longer needs, wherever they are used' : 'This table has no custom layers';
     forget.addEventListener('click', () => deleteCustomDialog(this.builderHost(), this.shell));
-    groups.push(this.group('Make your own', custom, palette, ...this.column([forget])));
+    groups.push(this.group('Layers', gallery, custom, palette, ...this.column([forget])));
 
     // The selection: always the same four tools, greyed out when nothing is selected or a tool does not apply.
     {
@@ -1259,6 +1297,19 @@ export class Editor {
       const gallery = el('div', 'ed-themes');
       gallery.setAttribute('role', 'radiogroup');
       gallery.ariaLabel = 'Controller theme';
+      // The table's palette as a theme (#93): the controller in the map's own colours.
+      {
+        const theme = paletteTheme(this.store.state.site.palette);
+        const card = el('button', 'ed-theme');
+        card.type = 'button';
+        card.dataset.theme = theme.id;
+        card.setAttribute('role', 'radio');
+        card.setAttribute('aria-checked', String(chosen === theme.id));
+        card.title = `${theme.name}: ${theme.description} It follows the palette when the palette changes.`;
+        card.append(themeSwatch(theme), el('span', undefined, theme.name));
+        card.addEventListener('click', () => void this.send('site.tv', paletteThemeChoice(this.store.state.site.palette)));
+        gallery.append(card);
+      }
       THEMES.forEach((theme, index) => {
         const card = el('button', 'ed-theme');
         card.type = 'button';
@@ -1423,63 +1474,98 @@ export class Editor {
   }
 
   /**
-   * The + beside Layers (#305): a menu of the layers this table can add, the same tools and
-   * data checks as the ribbon's Add a layer group, then a custom layer or new data.
+   * The Data group of the tree (#52): every dataset of the table. A row opens what can be done
+   * with it: make a layer from it, replace it with another file, or take it out of the table.
    */
-  private newLayerMenu(anchor: HTMLButtonElement): void {
-    document.querySelector('.ed-add-menu')?.remove();
-    if (anchor.getAttribute('aria-expanded') === 'true') {
-      anchor.setAttribute('aria-expanded', 'false');
-      return;
+  private dataRows(): HTMLElement[] {
+    const data = this.store.state.site.data ?? {};
+    const names = Object.keys(data).sort((a, b) => a.localeCompare(b));
+    const title = el('h2', 'ed-tree-title', 'Data');
+    const plus = el('button', 'ed-icon-button');
+    plus.type = 'button';
+    plus.ariaLabel = 'Add data';
+    plus.title = 'Add data';
+    plus.append(icon('plus', 14));
+    plus.addEventListener('click', () => this.addData());
+    title.append(plus);
+    const nodes: HTMLElement[] = [title];
+    if (names.length === 0) nodes.push(el('p', 'ed-empty', 'No data yet. Bring in a file or fetch it from OpenStreetMap with the + above.'));
+    const kindOf = (path: string): [string, string] => {
+      if (/\.geojson$/i.test(path)) return ['map', 'Map data'];
+      if (/\.json$/i.test(path)) return ['file', 'Data'];
+      if (/\.csv$/i.test(path)) return ['grid', 'Table'];
+      if (/\.tiff?$|\.f32$/i.test(path)) return ['contrast', 'Raster'];
+      if (/\.(mp4|mov|webm)$/i.test(path)) return ['video', 'Video'];
+      if (/\.svg$/i.test(path)) return ['plan', 'Drawing'];
+      return ['layers', 'File'];
+    };
+    for (const name of names) {
+      const path = data[name]!;
+      const known = targetFor(name);
+      const [iconName, kind] = kindOf(path);
+      const row = this.treeRow(known?.name ?? name, `${kind} \u00b7 ${path.split('/').pop()}`, known?.icon ?? iconName, false, () => this.dataMenu(row, name, path));
+      row.dataset.dataset = name;
+      row.setAttribute('aria-haspopup', 'menu');
+      nodes.push(row);
     }
-    const menu = el('div', 'ed-file-menu ed-add-menu');
+    return nodes;
+  }
+
+  /** What can be done with one dataset, in a menu under its row. */
+  private dataMenu(anchor: HTMLElement, name: string, path: string): void {
+    document.querySelector('.ed-data-menu')?.remove();
+    const menu = el('div', 'ed-file-menu ed-data-menu');
     menu.setAttribute('role', 'menu');
-    menu.ariaLabel = 'New layer';
+    menu.ariaLabel = name;
     const close = (): void => {
       menu.remove();
-      anchor.setAttribute('aria-expanded', 'false');
       document.removeEventListener('pointerdown', outside, true);
     };
     const outside = (event: PointerEvent): void => {
       if (!menu.contains(event.target as Node) && !anchor.contains(event.target as Node)) close();
     };
-    const item = (node: HTMLButtonElement): HTMLButtonElement => {
-      node.className = `ed-file-item ed-add-item${node.classList.contains('is-needs') ? ' is-needs' : ''}`;
+    const item = (label: string, iconName: string, run: () => void, disabled = false, tip = ''): void => {
+      const node = button('ed-file-item', label, iconName);
       node.setAttribute('role', 'menuitem');
-      node.addEventListener('click', close);
-      return node;
-    };
-    const offered = this.store.manifests.filter((m) => !isAmbient(m) && isOffered(m));
-    for (const manifest of offered) menu.append(item(this.insertTool(manifest, false)));
-    if (offered.length > 0) menu.append(el('hr'));
-    const custom = item(button('ed-tool', 'Custom layer…', 'brush'));
-    custom.title = 'Make a layer from your own data: choose the data, then style it, move it and save it as a button';
-    custom.addEventListener('click', () => newCustomLayer(this.builderHost(), this.shell));
-    const data = item(button('ed-tool', 'Add data…', 'map'));
-    data.title = 'Bring in a file or OpenStreetMap data';
-    data.addEventListener('click', () => this.addData());
-    menu.append(custom, data);
-    menu.addEventListener('keydown', (event) => {
-      if (event.key === 'Escape') {
-        event.preventDefault();
+      node.disabled = disabled;
+      node.title = tip;
+      node.addEventListener('click', () => {
         close();
-        anchor.focus();
-      } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-        event.preventDefault();
-        const rows = [...menu.querySelectorAll<HTMLButtonElement>('.ed-add-item:not(:disabled)')];
-        const at = rows.indexOf(document.activeElement as HTMLButtonElement);
-        rows[(at + (event.key === 'ArrowDown' ? 1 : rows.length - 1)) % rows.length]?.focus();
-      }
-    });
+        run();
+      });
+      menu.append(node);
+    };
+    const known = targetFor(name);
+    const vector = vectorDatasets(this.store).some((d) => d.name === name);
+    item('Make a layer from it', 'brush', () => void customFromDataset(this.builderHost(), name), !vector, vector ? 'A custom layer of this data, opened in the builder' : 'Only map data and tables with places can be drawn');
+    // The files the table is made of are replaced where they were brought in: Your place.
+    const yourPlace = known && !known.target.startsWith('data:');
+    item('Replace with another file\u2026', 'reset', () => (yourPlace ? this.bringIn(known.target) : this.addData(undefined, name)));
+    item('Take out of the table', 'trash', () => void this.forgetData(name, known?.name ?? name), Boolean(yourPlace), yourPlace ? 'Part of Your place: replace it there' : `The file ${path} stays in the table folder`);
     const box = anchor.getBoundingClientRect();
     menu.style.position = 'fixed';
-    menu.style.top = `${box.bottom + 4}px`;
-    menu.style.left = `${Math.max(8, box.left)}px`;
-    menu.style.maxHeight = `${Math.max(160, window.innerHeight - box.bottom - 16)}px`;
+    menu.style.left = `${box.left + 24}px`;
+    menu.style.top = `${box.bottom + 2}px`;
     this.shell.append(menu);
-    anchor.setAttribute('aria-expanded', 'true');
+    // A row near the bottom of the window opens its menu above it, so all of it shows.
+    if (box.bottom + 2 + menu.offsetHeight > window.innerHeight - 8) menu.style.top = `${Math.max(8, box.top - menu.offsetHeight - 2)}px`;
     document.addEventListener('pointerdown', outside, true);
-    menu.querySelector<HTMLButtonElement>('.ed-add-item:not(:disabled)')?.focus();
+    menu.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') {
+        close();
+        anchor.focus();
+      }
+    });
+    menu.querySelector<HTMLButtonElement>('.ed-file-item:not(:disabled)')?.focus();
+  }
+
+  /** Takes a dataset out of site.json, or says what still reads it. */
+  private async forgetData(name: string, label: string): Promise<void> {
+    try {
+      await this.connection.request('data.remove', { name });
+    } catch (error) {
+      await this.ask(`${label} is still in use`, `${(error as Error).message.replace(/^./, (c) => c.toUpperCase())}.`, [{ id: 'ok', label: 'OK', primary: true }]);
+    }
   }
 
   private renderTree(instances: { id: string; manifest: LayerManifest; state: LayerState }[]): void {
@@ -1499,12 +1585,17 @@ export class Editor {
     plus.ariaLabel = 'New layer';
     plus.title = 'New layer';
     plus.append(icon('plus', 14));
-    plus.setAttribute('aria-haspopup', 'menu');
-    plus.setAttribute('aria-expanded', 'false');
-    plus.addEventListener('click', () => this.newLayerMenu(plus));
+    plus.setAttribute('aria-haspopup', 'dialog');
+    plus.addEventListener('click', () => this.gallery());
     title.append(plus);
     nodes.push(title);
-    if (layers.length === 0) nodes.push(el('p', 'ed-empty', 'No layers yet. Each layer becomes a button on the controller. Add one with the + above, or under Add a layer in the ribbon.'));
+    if (layers.length === 0) {
+      const empty = el('div', 'ed-empty lg-empty');
+      const start = button('ed-button is-primary', 'New layer', 'plus');
+      start.addEventListener('click', () => this.gallery());
+      empty.append(el('p', undefined, 'No layers yet. Each layer becomes a button on the controller.'), start);
+      nodes.push(empty);
+    }
     for (const { id, manifest, state } of layers) {
       const as = layerButton(id, manifest, state);
       const row = this.treeRow(as.name, '', as.icon, context.kind === 'layer' && context.id === id, () => this.go({ kind: 'layer', id }));
@@ -1545,6 +1636,7 @@ export class Editor {
     nodes.push(el('h2', 'ed-tree-title', 'Around the table'));
     nodes.push(this.treeRow('Controller', 'Buttons, controls and dashboard', 'tv', context.kind === 'controller', () => this.go({ kind: 'controller' })));
     nodes.push(this.treeRow('Phones', 'Personal controllers', 'phone', context.kind === 'phone', () => this.go({ kind: 'phone' })));
+    nodes.push(...this.dataRows());
     this.tree.replaceChildren(...nodes);
   }
 

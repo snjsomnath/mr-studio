@@ -122,6 +122,9 @@ picking on the table and the controls on the controller, so the layer writes no 
   named by its `key` property. `label` is the property shown as its name (default `key`), `group`
   a property for changing many at once, `name` what one is called on the controller.
 - `controls` are layer controls without actions. They are checked by the host like the layer's own.
+- `facts` (#38) lists properties shown on the controller for the picked entity, as a short list
+  of names and values. A set needs `controls`, `facts` or both. `key` may be `#`: the feature's
+  place in the file, for data with no id column.
 - **On the table**, a tap on an entity picks it for every surface; the picked one is outlined
   and breathes, and entities with changed values get a dashed outline.
 - **On the controller**, the layer's stage shows the picked entity's name and controls above the
