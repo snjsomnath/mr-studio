@@ -85,6 +85,8 @@ const SV: Record<string, string> = {
   'Use this one instead': 'Använd den här i stället',
   'Could not join': 'Kunde inte gå med',
   'Reconnecting…': 'Ansluter igen…',
+  'Not available right now': 'Inte tillgängligt just nu',
+  'Not available right now. It is starting again by itself.': 'Inte tillgängligt just nu. Det startar om av sig självt.',
   'Map of the table': 'Karta över bordet',
   'Undo': 'Ångra',
   'Clear': 'Rensa',

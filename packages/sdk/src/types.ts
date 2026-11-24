@@ -444,6 +444,20 @@ export interface LayerState {
   rest?: boolean;
   /** The entity picked on the table or the controller (#279), shared by every surface. */
   selection?: EntitySelection | null;
+  /**
+   * Trouble while the layer is on (#259): it could not start or lost its data. Absent while it
+   * runs as it should. The runtime reports it from the table; the editor and controller show it.
+   */
+  health?: LayerHealth;
+}
+
+/** A layer that is on but not running as it should (#259). */
+export interface LayerHealth {
+  /** `retrying`: starts again by itself in `retry_in` seconds. `failed`: waits for Retry. */
+  status: 'retrying' | 'failed';
+  /** What went wrong, in words. */
+  reason: string;
+  retry_in?: number;
 }
 
 /**

@@ -1,4 +1,5 @@
 import { Connection } from '@mrstudio/sdk';
+import { reportErrors } from './diagnostics.ts';
 import type { Role } from '@mrstudio/sdk';
 
 import { luminance, themeVariables } from '@mrstudio/dashboard';
@@ -89,6 +90,8 @@ async function main() {
     // A phone that reloads within the hold returns to its slot.
     resume: phone ? rememberedSeat(code!) : undefined,
   });
+  // Errors in this window reach the app's log (#260), from the moment it is connected.
+  reportErrors(connection, (window as { __MRS_WINDOW__?: string }).__MRS_WINDOW__);
   if (phone) {
     connection.on('welcome', (message: { resume?: string }) => message.resume && rememberSeat(code!, message.resume));
     // Refused at the door, or later: the session ended, or this phone joined again in another tab.
