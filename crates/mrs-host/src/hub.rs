@@ -360,6 +360,9 @@ pub struct Hub {
     /// Replaced when data is imported into the site.
     info: RwLock<SiteInfo>,
     session: SessionInfo,
+    /// The address phones join at through the relay (#89), while the host is connected to one.
+    /// It replaces the local network address in the QR code.
+    relay_join: RwLock<Option<String>>,
     options: SessionOptions,
     /// Every layer that can be added to a scene. Replaced whole when a custom layer is
     /// saved or removed; instances keep their index into it, which removal recomputes.
@@ -415,6 +418,7 @@ impl Hub {
             site: site.clone(),
             info: RwLock::new(site.info()),
             session,
+            relay_join: RwLock::new(None),
             options,
             catalog: RwLock::new(Arc::new(catalog)),
             inner: Mutex::new(Inner { scene, seats: Vec::new(), next_surface: 1 }),
@@ -656,8 +660,19 @@ impl Hub {
         self.catalog.read().unwrap().clone()
     }
 
-    pub fn session(&self) -> &SessionInfo {
-        &self.session
+    pub fn session(&self) -> SessionInfo {
+        let mut session = self.session.clone();
+        if let Some(base) = &*self.relay_join.read().unwrap() {
+            session.join_url = Some(format!("{}/phone?c={}", base.trim_end_matches('/'), session.code));
+        }
+        session
+    }
+
+    /// Phones join through the relay at `base` (`https://relay.example/r/<room>`), or again at
+    /// the local address with None. Every surface gets `session.changed` and redraws the QR code.
+    pub fn set_relay(&self, base: Option<String>) {
+        *self.relay_join.write().unwrap() = base;
+        self.emit("session.changed", json!({ "session": self.session() }));
     }
 
     pub fn site(&self) -> SiteInfo {
@@ -787,7 +802,7 @@ impl Hub {
             "surface": surface,
             "state": {
                 "protocol": PROTOCOL,
-                "session": self.session,
+                "session": self.session(),
                 "site": &*self.info.read().unwrap(),
                 "scene": inner.order(),
                 "layers": inner.layers(),

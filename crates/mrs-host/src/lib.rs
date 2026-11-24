@@ -9,6 +9,7 @@ pub mod health;
 mod hub;
 mod layers;
 mod model;
+pub mod relay;
 pub mod sources;
 mod transit;
 mod wms;
@@ -495,6 +496,7 @@ fn capitalise(s: &str) -> String {
 pub struct RunningHost {
     pub addr: SocketAddr,
     pub state: Arc<AppState>,
+    app: Router,
     shutdown: tokio::sync::oneshot::Sender<()>,
     task: tokio::task::JoinHandle<()>,
 }
@@ -519,6 +521,12 @@ impl RunningHost {
     /// failure does: the desktop app's watchdog then starts the table again (#79).
     pub fn is_serving(&self) -> bool {
         !self.task.is_finished()
+    }
+
+    /// Lets phones join through a relay (#89), besides the one from Sources and keys that
+    /// `start` connects by itself. `mrstudio dev --relay` uses this.
+    pub fn connect_relay(&self, link: relay::RelayLink) {
+        relay::spawn(Arc::downgrade(&self.state), self.app.clone(), self.addr.port(), link);
     }
 
     /// Runs until the server stops.
@@ -587,6 +595,10 @@ pub async fn start(config: HostConfig) -> anyhow::Result<RunningHost> {
         });
     }
     let app = router(state.clone(), config.web_dir.clone());
+    // Phones join through the relay when this computer has one (#89).
+    if let Some(link) = config.sources.relay().await {
+        relay::spawn(Arc::downgrade(&state), app.clone(), addr.port(), link);
+    }
     // Watches site.json for changes made outside the host (#72). It stops when the host is gone.
     {
         let state = Arc::downgrade(&state);
@@ -616,6 +628,7 @@ pub async fn start(config: HostConfig) -> anyhow::Result<RunningHost> {
         });
     }
 
+    let app_for_relay = app.clone();
     let (shutdown, stop) = tokio::sync::oneshot::channel::<()>();
     let task = tokio::spawn(async move {
         let serve = axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>()).with_graceful_shutdown(async {
@@ -625,7 +638,7 @@ pub async fn start(config: HostConfig) -> anyhow::Result<RunningHost> {
             tracing::error!("server stopped: {e}");
         }
     });
-    Ok(RunningHost { addr, state, shutdown, task })
+    Ok(RunningHost { addr, state, app: app_for_relay, shutdown, task })
 }
 
 /// The address a phone on the local network should use for a host bound to `bound`.

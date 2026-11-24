@@ -27,6 +27,11 @@ export class Store {
       for (const listener of this.participantListeners) listener(p.participants);
     });
     // The controller's table settings changed (a theme picked in the setup guide).
+    // Phones join somewhere else now: through the relay, or back on the local network (#89).
+    connection.on('session.changed', (p: { session: SessionState['session'] }) => {
+      this.state.session = p.session;
+      for (const listener of this.participantListeners) listener(this.state.participants);
+    });
     connection.on('site.tv', (p: { tv: TvConfig | null }) => {
       this.state.site.tv = p.tv;
       for (const listener of this.tvListeners) listener(p.tv);

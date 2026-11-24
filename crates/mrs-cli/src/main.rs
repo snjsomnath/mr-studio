@@ -42,6 +42,10 @@ enum Command {
         /// auto, gpu or cpu.
         #[arg(long, default_value = "auto")]
         backend: String,
+        /// A phone relay to join through (#89), such as https://relay.example.org. Its token
+        /// is read from MRS_RELAY_TOKEN. Without it the relay in Sources and keys is used, if any.
+        #[arg(long)]
+        relay: Option<String>,
     },
     /// Rewrite a site's site.json for this version's site format. The original is kept beside it.
     Migrate { site: PathBuf },
@@ -94,7 +98,7 @@ enum Command {
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt().with_target(false).init();
     match Cli::parse().command {
-        Command::Dev { site, layers, web, port, lan, public_url, backend } => {
+        Command::Dev { site, layers, web, port, lan, public_url, backend, relay } => {
             let backend = Backend::parse(&backend).context("backend must be auto, gpu or cpu")?;
             let ip = if lan { [0, 0, 0, 0] } else { [127, 0, 0, 1] };
             let host = mrs_host::start(HostConfig {
@@ -107,7 +111,11 @@ async fn main() -> anyhow::Result<()> {
                 sources: std::sync::Arc::new(open_sources()),
             })
             .await?;
-            let code = &host.state.hub.session().code;
+            if let Some(url) = relay {
+                let token = std::env::var("MRS_RELAY_TOKEN").context("--relay needs the relay's token in MRS_RELAY_TOKEN")?;
+                host.connect_relay(mrs_host::relay::RelayLink { url, authorization: format!("Bearer {token}") });
+            }
+            let code = host.state.hub.session().code;
             tracing::info!("host listening on http://{} (session code {code})", host.addr);
             tokio::select! {
                 _ = tokio::signal::ctrl_c() => {}
