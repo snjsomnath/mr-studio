@@ -124,7 +124,7 @@ As of 2026-11-24. What changed release by release is in [CHANGELOG.md](CHANGELOG
 | Engine: scene, jobs, kernels on GPU and CPU with parity tests: `sunlight`, `wind`, `stormwater`; point questions (`engine.probe`) | Working |
 | Site format 3, validation, migration, bake from footprints, meshes (STL), 3D models, terrain (raw or GeoTIFF) and trees; one-file `.mrstable` export | Working |
 | Host: session state, roles, validated params, field streaming, revision history with undo and redo | Working |
-| Phones: QR join on the local network or through the relay from any network, point, line and polygon tools, the guide's phone | Working; tested in desktop browsers, not yet on a real phone |
+| Phones: QR join on the local network, through the join page on GitHub Pages over WebRTC (eduroam, mobile data; no server of our own), or through the relay, point, line and polygon tools, the guide's phone | Working; tested in desktop browsers, not yet on a real phone |
 | Controller: layer rails, stage with heroes and legends, attract loop and idle reset, map controls, credits, Swedish and English | Working |
 | Table: projector calibration, colour per display, ribbons in the blank margins, table grid | Working |
 | Editor (`/edit`): Home, New table wizard, layers, buttons, slideshows and tours, custom layer builder, styling, history, Display and Table settings | Working; the main authoring tool |

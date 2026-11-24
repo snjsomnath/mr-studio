@@ -99,23 +99,36 @@ async fn connect(state: &Weak<AppState>, app: &Router, port: u16, link: &RelayLi
     drop(strong);
 
     let (mut sink, mut source) = socket.split();
+    let (frames, incoming) = mpsc::unbounded_channel::<Vec<u8>>();
     let (out, mut outbox) = mpsc::unbounded_channel::<Vec<u8>>();
-    let mut phones: HashMap<u32, mpsc::UnboundedSender<Message>> = HashMap::new();
-    loop {
+    let carrying = tokio::spawn(carry(incoming, out, app.clone(), port));
+    let result = loop {
         tokio::select! {
             frame = outbox.recv() => {
-                let Some(frame) = frame else { break };
-                sink.send(Message::Binary(frame.into())).await?;
+                let Some(frame) = frame else { break Ok(()) };
+                if let Err(e) = sink.send(Message::Binary(frame.into())).await { break Err(e.into()) }
             }
             incoming = source.next() => match incoming {
-                Some(Ok(Message::Binary(bytes))) => from_relay(&bytes, app, port, &out, &mut phones),
-                Some(Ok(Message::Close(_))) | None => break,
-                Some(Err(e)) => return Err(e.into()),
+                Some(Ok(Message::Binary(bytes))) => { let _ = frames.send(bytes.to_vec()); }
+                Some(Ok(Message::Close(_))) | None => break Ok(()),
+                Some(Err(e)) => break Err(e.into()),
                 Some(Ok(_)) => {}
             },
         }
+    };
+    drop(frames);
+    carrying.abort();
+    result
+}
+
+/// Answers the relay protocol's frames from `incoming`, sending the host's frames to `out`,
+/// until `incoming` ends. Both the relay link and the join page's WebRTC bridge (#275) use it,
+/// so a phone gets the same treatment whichever way it comes.
+pub(crate) async fn carry(mut incoming: mpsc::UnboundedReceiver<Vec<u8>>, out: mpsc::UnboundedSender<Vec<u8>>, app: Router, port: u16) {
+    let mut phones: HashMap<u32, mpsc::UnboundedSender<Message>> = HashMap::new();
+    while let Some(bytes) = incoming.recv().await {
+        from_relay(&bytes, &app, port, &out, &mut phones);
     }
-    Ok(())
 }
 
 fn from_relay(

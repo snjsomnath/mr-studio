@@ -27,7 +27,11 @@ function el(tag: string, className: string, text?: string): HTMLElement {
 
 async function main() {
   const app = document.getElementById('app')!;
-  const segment = location.pathname.split('/').filter(Boolean)[0];
+  // Through the join page (#275) the page lives under the page's own path, such as
+  // /mr-studio/v1/t/<link>/phone; the join page says which part to leave out.
+  const base = (window as { __MRS_BASE__?: string }).__MRS_BASE__;
+  const path = base && location.pathname.startsWith(base) ? location.pathname.slice(base.length - 1) : location.pathname;
+  const segment = path.split('/').filter(Boolean)[0];
   // The Help window (#271): the guides and every feature, from help.json. It needs no session.
   if (segment === 'help') {
     document.body.dataset.role = 'help';
@@ -44,6 +48,13 @@ async function main() {
     (window as { mrsShellControls?: boolean }).mrsShellControls = true;
     const { newTable } = await import('./editor/new-table.ts');
     newTable(app);
+    return;
+  }
+  // The join page's bridge alone (#275), with no surface drawn: for a window that only carries phones in.
+  if (segment === 'bridge') {
+    document.title = 'MR Studio · phones';
+    const { startBridge } = await import('./bridge.ts');
+    startBridge();
     return;
   }
   // The scene composer is an operator's tool: it joins with the dev role and has its own layout.
@@ -95,6 +106,13 @@ async function main() {
     return;
   }
   const store = new Store(connection, welcome);
+  // The controller (or, without one, the table) carries phones in from the join page on GitHub
+  // Pages (#275), for venues where they cannot reach this computer. The host takes one bridge
+  // and decides whether it is on. The controller goes first: it draws less than the table, so
+  // phones' requests wait less for its page.
+  if ((role === 'tv' || role === 'table') && !editing && !composing) {
+    window.setTimeout(() => void import('./bridge.ts').then(({ startBridge }) => startBridge()), role === 'tv' ? 0 : 5000);
+  }
   const site = store.state.site;
   if (guiding) {
     document.title = `Guide · ${site.name}`;

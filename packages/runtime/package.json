@@ -13,6 +13,7 @@
     "@mrstudio/dashboard": "workspace:*",
     "@mrstudio/sdk": "workspace:*",
     "maplibre-gl": "^5.0.0",
+    "peerjs": "1.5.5",
     "qrcode-generator": "^2.0.4",
     "three": "0.180.0"
   },
