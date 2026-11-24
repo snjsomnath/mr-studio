@@ -8,7 +8,7 @@ The reasoning and the full tables of rules are in [../DASHBOARD.md](../DASHBOARD
 ```ts
 interface PanelSpec {
   id: string;                      // lower-case letters, digits, dashes; unique in its layer or page
-  widget: string;                  // stat | bars | compare | balance | control | series | ramp | timeline | text | custom, or a team's <layer>/<type>
+  widget: string;                  // stat | bars | compare | balance | control | map | series | ramp | timeline | text | custom, or a team's <layer>/<type>
   size: PanelSize;                 // chip | tile | wide | tall | block | hero | band | strip
   title: string;                   // required, at most 28 characters
   props?: Record<string, unknown>; // per the widget's schema; literals or bindings
@@ -110,6 +110,25 @@ host checks it the same way. On the table's ribbon it only shows the value. A pa
 control the layer doesn't have draws the name and is reported in the window's console. Widgets get
 the layer's controls in `env.controls` (`find`, `value`, `set`, `press`, and `touch`, false where the
 panel can't be touched), so a team widget (below) can be an input too.
+
+### A map on a panel (#355)
+
+A `map` panel is the site's map with no code: the same map a layer's own stage gets from
+`controllerMap` (layer.md, The controller stage).
+
+```jsonc
+{ "id": "pick", "widget": "map", "size": "block", "title": "Pick a building", "layer": "model-runs",
+  "props": {
+    "data": [ { "name": "roads", "slot": 2 } ],   // up to 4 site datasets, in the data colours
+    "entities": "buildings",                      // a tap picks one of the layer's entities (#279), drawn picked
+    "tool": "start",                              // or: a tap sends a point to one of the layer's tools
+    "shapes": { "bind": "shared.route" },         // GeoJSON the layer publishes, drawn on top in the accent
+    "hint": "Tap a building to change it" } }
+```
+
+The table's outline is always drawn. A tap reaches the table the way the controller's own does
+(`layer.select`, `tool.input`), so the table marks a picked entity and the controller shows its
+controls. On the table's ribbon it is not offered (no ribbon size).
 
 ### Adding a widget
 

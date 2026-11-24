@@ -218,7 +218,7 @@ export class Ribbons {
       panel.append(title, body);
       inner.append(panel);
       try {
-        const handle = widget.mount(body, { size: input.spec.size, custom: input.custom, controls: input.controls });
+        const handle = widget.mount(body, { size: input.spec.size, custom: input.custom, controls: input.controls, layer: input.layer });
         strip.mounted.push({ input, widget, handle, title });
       } catch (error) {
         console.error(`[${input.key}] ribbon panel failed to mount`, error);

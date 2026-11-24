@@ -1,6 +1,6 @@
 import { controlProblems, DashboardView, validateLayerPanels, validatePage } from '@mrstudio/dashboard';
 import type { PanelInput } from '@mrstudio/dashboard';
-import type { Connection, LayerManifest, PanelContext, PanelControls, PanelSpec } from '@mrstudio/sdk';
+import type { Connection, LayerManifest, PanelContext, PanelControls, PanelLayer, PanelSpec } from '@mrstudio/sdk';
 
 import { say, t } from './i18n.ts';
 import { baseContext, paramSender } from './layer-manager.ts';
@@ -81,6 +81,7 @@ export function panelInput(store: Store, connection: Connection, layer: string |
   let cleanups: (() => void)[] = [];
   return {
     controls: layer === undefined ? undefined : panelControls(store, connection, id, touch),
+    layer: layer === undefined ? undefined : panelLayer(store, connection, id, touch),
     key,
     spec,
     page,
@@ -106,6 +107,26 @@ export function panelInput(store: Store, connection: Connection, layer: string |
       for (const cleanup of cleanups) cleanup();
       cleanups = [];
     },
+  };
+}
+
+/** A panel's layer as a widget reaches it (#355). */
+function panelLayer(store: Store, connection: Connection, layer: string, touch: boolean): PanelLayer {
+  const base = baseContext(store, connection, layer);
+  return {
+    touch,
+    get manifest() {
+      return store.manifest(store.state.layers[layer]?.layer ?? '');
+    },
+    get site() {
+      return base.site;
+    },
+    get selection() {
+      return base.selection;
+    },
+    select: (set, id) => touch && base.select(set, id),
+    sendTool: (tool, geometry) => (touch ? base.sendTool(tool, geometry) : Promise.resolve()),
+    action: (id) => (touch ? base.action(id) : Promise.resolve()),
   };
 }
 

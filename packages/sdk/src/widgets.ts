@@ -23,6 +23,8 @@ export type PropSpec = (
   | { kind: 'numbers'; maxLength: number }
   /** A list of objects with their own props. `max` is the most items the widget draws. */
   | { kind: 'list'; max: number; item: Record<string, PropSpec> }
+  /** GeoJSON: a FeatureCollection, a Feature or a geometry, usually bound to what a layer publishes. */
+  | { kind: 'geojson' }
 ) & {
   /** Shown in the editor. */
   label: string;
@@ -47,6 +49,12 @@ export interface WidgetEnv {
    * (the table's ribbon) `touch` is false: an input widget then shows the value and does nothing.
    */
   controls?: PanelControls;
+  /**
+   * The panel's layer (#355), for widgets that work with the site and the table: a map that picks
+   * an entity or sends a point. Absent for a panel with no layer. `touch` is false where the panel
+   * can't be touched.
+   */
+  layer?: PanelLayer;
   /** For `custom` only: hands the element to the layer's `panel` function. */
   custom?: (el: HTMLElement) => { update?(): void } | void;
 }
@@ -63,6 +71,13 @@ export interface PanelControls {
   set(id: string, value: unknown): void;
   /** Presses an action control or a named action. */
   press(id: string): void;
+}
+
+/** A panel's layer as a widget reaches it: the site, what is picked, and the ways to the table. */
+export interface PanelLayer extends Pick<import('./layer.ts').PanelContext, 'site' | 'selection' | 'select' | 'sendTool' | 'action'> {
+  readonly touch: boolean;
+  /** The layer's manifest, in the visitors' language: its entity sets, tools and controls. */
+  readonly manifest: import('./types.ts').LayerManifest | undefined;
 }
 
 export interface WidgetDefinition {

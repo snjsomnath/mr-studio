@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
-import type { PanelSpec } from '@mrstudio/sdk';
+import type { EntityFeature, PanelSpec, Position } from '@mrstudio/sdk';
 
 import { clip, formatValue, resolveProps } from '../src/bind.ts';
 import { pack } from '../src/pack.ts';
@@ -10,7 +10,7 @@ import { GRID, SCREEN, SIZES } from '../src/rules.ts';
 import { contrast, STYLE_TOKENS, themeVariables, validateTheme } from '../src/theme.ts';
 import { controlProblems, panelReads, validateLayerPanels, validatePage, validatePanel, validateRibbon } from '../src/validate.ts';
 import { defineWidget } from '../src/registry.ts';
-import { coreWidgets } from '../src/widgets/index.ts';
+import { coreWidgets, entityAt } from '../src/widgets/index.ts';
 
 const json = (path: string) => JSON.parse(readFileSync(new URL(path, import.meta.url), 'utf8'));
 const registry = coreWidgets();
@@ -174,7 +174,7 @@ test('a site can restyle but not break the rules', () => {
 
 test('the registry is plain data an editor can read', () => {
   const described = registry.describe();
-  assert.deepEqual(described.map((w) => w.type), ['stat', 'bars', 'compare', 'balance', 'control', 'series', 'ramp', 'timeline', 'text', 'custom']);
+  assert.deepEqual(described.map((w) => w.type), ['stat', 'bars', 'compare', 'balance', 'control', 'map', 'series', 'ramp', 'timeline', 'text', 'custom']);
   assert.deepEqual(JSON.parse(JSON.stringify(described)), described);
   for (const widget of described) for (const prop of Object.values(widget.props)) assert.ok(prop.label, `${widget.type} props need labels`);
 });
@@ -262,4 +262,18 @@ test('a control panel names one of its layer\'s controls and costs what it shows
   assert.deepEqual(validateLayerPanels([{ id: 'c', widget: 'control', size: 'wide', title: 'Share', props: { control: 'share' } }], registry), []);
   assert.ok(validateLayerPanels([{ id: 'c', widget: 'control', size: 'wide', title: 'Share', props: {} }], registry).length > 0);
   assert.deepEqual(controlProblems([{ id: 'c', widget: 'control', size: 'tile', props: { control: 'go' } }, { id: 'd', widget: 'control', size: 'tile', props: { control: 'nope' } }, { id: 's', widget: 'stat', size: 'tile', props: {} }], ['go']), ["panel 'd' names control 'nope', which the layer does not have"]);
+});
+
+test('a map panel picks the entity under a tap: an area that holds it, else the nearest point (#355)', () => {
+  const square = (id: string, x: number): EntityFeature => ({ id, label: id, geometry: { type: 'Polygon', coordinates: [[[x, 0], [x + 1, 0], [x + 1, 1], [x, 1], [x, 0]]] } });
+  const stop: EntityFeature = { id: 'stop', label: 'Stop', geometry: { type: 'Point', coordinates: [10, 10] } };
+  const features = [square('a', 0), square('b', 2), stop];
+  const project = ([x, y]: Position): [number, number] => [x * 10, y * 10];
+  assert.equal(entityAt(features, [2.5, 0.5], project)?.id, 'b');
+  assert.equal(entityAt(features, [10.5, 10.5], project)?.id, 'stop');
+  assert.equal(entityAt(features, [6, 6], project), undefined);
+  const widget = coreWidgets().get('map')!;
+  assert.equal(widget.reads({ data: [{ name: 'roads' }, { name: 'buildings' }], hint: 'Tap a building' }, 'block'), 4);
+  assert.deepEqual(validateLayerPanels([{ id: 'm', widget: 'map', size: 'block', title: 'Pick a building', props: { data: [{ name: 'roads', slot: 2 }], entities: 'buildings', shapes: { bind: 'shared.route' } } }], coreWidgets()), []);
+  assert.ok(validateLayerPanels([{ id: 'm', widget: 'map', size: 'block', title: 'Bad', props: { shapes: 3 } }], coreWidgets()).length > 0);
 });

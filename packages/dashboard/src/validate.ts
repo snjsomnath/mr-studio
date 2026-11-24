@@ -63,6 +63,11 @@ function checkProp(path: string, spec: PropSpec, value: unknown, limit: number |
       if (!Array.isArray(value) || value.some((v) => typeof v !== 'number' || !Number.isFinite(v))) fail('schema', 'must be a list of numbers');
       else if (value.length > spec.maxLength) fail('budget', `has ${value.length} points, the limit is ${spec.maxLength}`);
       break;
+    case 'geojson': {
+      const type = (value as { type?: unknown } | null)?.type;
+      if (typeof type !== 'string') fail('schema', 'must be GeoJSON: a FeatureCollection, a Feature or a geometry');
+      break;
+    }
     case 'list': {
       if (!Array.isArray(value)) {
         fail('schema', 'must be a list');
