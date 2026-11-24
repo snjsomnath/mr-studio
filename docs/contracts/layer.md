@@ -44,6 +44,14 @@ Control types: `range`, `select`, `toggle`, `date`, `color`, `text`, `action` (a
 Every control has `id`, `type`, `label` and `default`. `phone: true` lets phone participants change it.
 `visibleWhen: { "mode": "day" }` hides a control unless another control has that value; a list, `{ "style": ["light", "dark"] }`, means any of them.
 
+A `text` control that names something is never a box to type in (#306); the editor offers a list to pick from, with type-ahead, and refuses a name that is not in it:
+
+- `"sources": ["wms", "arcgis"]`: the id of a source of the Sources manager of one of these kinds.
+- `"media": ["map", "table"]`: a dataset or file of the table, of these kinds (as `GET /api/media` names them: `map`, `table`, `raster`, `drawing`, `picture`, `video`, `sound`, `model`, `data`). The value is the dataset's name, or the file's path for a file no dataset names; `"mediaBy": "path"` always stores the path. The list ends with Add media.
+- `"columnsOf": "dataset"`: a column of the dataset that the layer's control `dataset` names.
+- `"serviceLayers": { "url": "url", "service": "service", "source": "signin" }`: one or more layers (comma-separated) of the map service the layer's controls `url`, `service` (`wms` or `arcgis`) and `signin` name, as the service lists them (`GET /api/wms/layers`).
+- `"none": "Built-in birdsong"` names what an empty value means; it is the list's first choice. Default "None".
+
 The controls are the single source of truth for a layer's params:
 
 - The host builds the initial params from the defaults and the site's overrides.

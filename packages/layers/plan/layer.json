@@ -6,7 +6,7 @@
   "icon": "plan",
   "category": "media",
   "controls": [
-    { "id": "dataset", "type": "text", "label": "Drawing", "default": "", "tier": "more" },
+    { "id": "dataset", "type": "text", "label": "Drawing", "default": "", "none": "The table's first drawing", "media": ["drawing"], "tier": "more" },
     { "id": "reveal", "type": "toggle", "label": "Next reveals one phase at a time", "default": true, "tier": "more" },
     {
       "id": "look", "type": "select", "label": "The drawing", "default": "colour", "phone": true, "tier": "more",

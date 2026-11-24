@@ -14,6 +14,7 @@ mod mesh;
 pub mod migrate;
 pub mod model;
 pub mod osm;
+pub mod library;
 pub mod media;
 pub mod package;
 pub mod plan;
