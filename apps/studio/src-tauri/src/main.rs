@@ -185,6 +185,7 @@ fn main() -> anyhow::Result<()> {
             check_updates,
             set_update_check,
             install_update,
+            dismiss_whats_new,
             open_link,
             file_action,
             table_details,
@@ -611,16 +612,22 @@ fn copy_dir(from: &Path, to: &Path) -> std::io::Result<()> {
 
 /// Opens one surface of the running site in a normal window, for looking at it beside the editor.
 fn show_view(app: &AppHandle, role: &str) -> anyhow::Result<()> {
-    anyhow::ensure!(["table", "tv", "dev", "phone"].contains(&role), "'{role}' is not a view");
+    anyhow::ensure!(["table", "tv", "dev", "phone", "help"].contains(&role), "'{role}' is not a view");
     let running = app.state::<Shell>().running.lock().unwrap().clone().context("no site is open")?;
     let label = format!("view-{role}");
     let window = match app.get_webview_window(&label) {
         Some(window) => window,
         None => {
             let url = format!("http://127.0.0.1:{}/{role}", running.port).parse().expect("valid view url");
-            let (width, height) = if role == "phone" { (420.0, 800.0) } else { (1100.0, 700.0) };
+            let (width, height) = match role {
+                "phone" => (420.0, 800.0),
+                "help" => (1040.0, 760.0),
+                _ => (1100.0, 700.0),
+            };
+            // Help (#271) is about the app, not the table, so its title does not name the table.
+            let title = if role == "help" { "MR Studio Help".to_string() } else { format!("MR Studio · {} · {role}", running.name) };
             WebviewWindowBuilder::new(app, &label, WebviewUrl::External(url))
-                .title(format!("MR Studio · {} · {role}", running.name))
+                .title(title)
                 .inner_size(width, height)
                 .build()?
         }
@@ -1786,6 +1793,13 @@ struct UpdateState {
     available: Option<updates::Available>,
     /// Why the last look failed, for example no internet.
     error: Option<String>,
+    /// The commit and time this copy was built from, when known (the build stamp).
+    commit: Option<String>,
+    built: Option<String>,
+    /// The version whose notes were put away on Home.
+    seen_notes: Option<String>,
+    /// The installer of the newest version for this kind of computer.
+    download: Option<String>,
 }
 
 fn current_version(app: &AppHandle) -> semver::Version {
@@ -1803,6 +1817,8 @@ async fn look_for_updates(app: &AppHandle) {
     }
     *app.state::<Shell>().updates.lock().unwrap() = Some(result);
     let _ = app.emit_to(LAUNCHER, "updates", ());
+    // Home shows what is new too.
+    let _ = app.emit_to(HOME, "updates", ());
 }
 
 #[tauri::command]
@@ -1812,13 +1828,26 @@ fn update_state(app: AppHandle, shell: State<'_, Shell>) -> UpdateState {
         Some(Err(e)) => (None, Some(e)),
         None => (None, None),
     };
+    let (commit, built) = updates::build_stamp();
     UpdateState {
         current: current_version(&app).to_string(),
         automatic: !shell.settings().skip_update_check,
         can_install: updates::public_key().is_some(),
+        download: available.as_ref().and_then(|a| a.latest.as_deref()).map(updates::download_url),
         available,
         error,
+        commit: commit.map(String::from),
+        built: built.map(String::from),
+        seen_notes: shell.settings().seen_notes,
     }
+}
+
+/// Puts away "New in this version" on Home for this version.
+#[tauri::command]
+fn dismiss_whats_new(app: AppHandle, shell: State<'_, Shell>) -> Result<(), String> {
+    let mut settings = shell.settings();
+    settings.seen_notes = Some(current_version(&app).to_string());
+    settings.write(&shell.settings_path()).map_err(text)
 }
 
 #[tauri::command]
@@ -1839,7 +1868,10 @@ fn set_update_check(shell: State<'_, Shell>, automatic: bool) -> Result<(), Stri
 #[tauri::command]
 async fn install_update(app: AppHandle) -> Result<(), String> {
     let Some(key) = updates::public_key() else {
-        return app.opener().open_url(updates::DOWNLOAD_PAGE, None::<&str>).map_err(text);
+        // No signing key: the browser downloads this computer's installer of the newest version.
+        let latest = app.state::<Shell>().updates.lock().unwrap().clone().and_then(Result::ok).and_then(|a| a.latest);
+        let url = latest.as_deref().map_or_else(|| updates::DOWNLOAD_PAGE.to_string(), updates::download_url);
+        return app.opener().open_url(url, None::<&str>).map_err(text);
     };
     let feed = std::env::var("MRS_UPDATE_FEED").unwrap_or_else(|_| updates::FEED_URL.into());
     let updater = app.updater_builder().pubkey(key).endpoints(vec![feed.parse().map_err(text)?]).map_err(text)?.build().map_err(text)?;

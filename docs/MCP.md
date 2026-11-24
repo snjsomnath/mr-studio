@@ -13,7 +13,8 @@ The server writes `site.json`, never layer code. When a project needs a new laye
 | Tool | Does |
 | --- | --- |
 | `overview` | What MR Studio is, the core version, the layers, kernels and blocks it has, and the workflow |
-| `read_doc` | Architecture, roadmap and every contract, verbatim |
+| `read_doc` | Architecture, roadmap, the changelog and every contract, verbatim |
+| `whats_new` | What changed in the core, newest version first, from `CHANGELOG.md`, plus notes merged but not yet released; `since` limits it to versions newer than a team's |
 | `list_layers`, `describe_layer` | Core (and site) layers with their controls, tools, data needs and panels; planned roadmap layers |
 | `list_building_blocks` | Visual, data, interaction and TV primitives, each marked built or planned from the code itself |
 | `create_site` | A new site package: `site.json`, `data/`, `requests/`, README, `.gitignore` |
@@ -41,7 +42,12 @@ The server describes one core version. It looks, in order, for:
 2. A checkout above the project folder, the working folder or the server file itself (so running it from this repository is always current).
 3. The snapshot built into `dist/mrstudio-mcp.mjs`: the layers, docs and block status of the commit it was built from.
 
-Layers are read from `packages/layers/*/layer.json`, docs from `docs/`, kernels from `crates/mrs-engine/src/kernels/`, and a block counts as built only when its API appears in the SDK, runtime or dashboard source. A new core layer or doc shows up without touching the server.
+Layers are read from `packages/layers/*/layer.json`, docs from `docs/`, the changelog from `CHANGELOG.md` and `changes/`, site settings from the structs in `crates/mrs-site/src/manifest.rs`, kernels from `crates/mrs-engine/src/kernels/`, and a block counts as built only when its API appears in the SDK, runtime or dashboard source. A new core layer, doc or site setting shows up without touching the server.
+
+### Keeping it current
+
+`node scripts/check-docs.mjs` runs in CI on every pull request. It fails, saying which file to change, when a layer, a kernel, a site setting, an MCP tool or an SDK module exists that the docs or the server do not cover: every layer must be in `README.md` and `docs/ROADMAP.md`, every kernel in `docs/contracts/engine.md`, every site setting in `docs/contracts/site.md`, every tool in this file, and every SDK module in `packages/mcp/src/blocks.ts` (the building blocks the server offers) or `docs/blocks.md`.
+Each pull request also writes a release note in `changes/` (see [RELEASING.md](RELEASING.md)), and `whats_new` reads them, so an LLM connected to the server knows what was added since a team's version.
 
 ## Install
 
@@ -52,7 +58,7 @@ pnpm install
 pnpm --filter @mrstudio/mcp build      # writes packages/mcp/dist/mrstudio-mcp.mjs
 ```
 
-`dist/mrstudio-mcp.mjs` is a single file with no dependencies. Copy it anywhere. Until releases exist, that file is the distributable; the plan is to ship it inside the app next to the `mrstudio` CLI and publish it to npm as `@mrstudio/mcp` with the same version as the app (the "Release and distribution" work package).
+`dist/mrstudio-mcp.mjs` is a single file with no dependencies. Copy it anywhere. Every release on GitHub has it attached as `mrstudio-mcp.mjs`, built from the same commit as the app, so a team can take the server that matches the app they run. Shipping it inside the app and publishing it to npm as `@mrstudio/mcp` is still to do.
 
 ### Claude Code
 

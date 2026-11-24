@@ -11,7 +11,7 @@
     <aside>
       <div class="brand">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 3 7.5l9 4.5 9-4.5L12 3Z" /><path d="m3 12 9 4.5 9-4.5" /><path d="m3 16.5 9 4.5 9-4.5" /></svg>
-        <div><b>MR Studio</b><span id="version"></span></div>
+        <div><b>MR Studio</b><span id="version"></span><small id="build"></small></div>
       </div>
       <nav>
         <button type="button" id="nav-new"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>New table</button>
@@ -47,6 +47,27 @@
           <span>A .mrstable file exported from another computer. It becomes a new table here.</span>
         </button>
       </div>
+
+      <section id="whats-new" class="news" aria-labelledby="news-title" hidden>
+        <header>
+          <span class="pill">New</span>
+          <div class="heading">
+            <h2 id="news-title"></h2>
+            <p id="news-sub"></p>
+          </div>
+          <div class="news-actions">
+            <button type="button" id="news-more"></button>
+            <button type="button" id="news-download" class="primary"></button>
+            <button type="button" id="news-close">Put away</button>
+          </div>
+        </header>
+        <p id="news-breaking" class="news-breaking" hidden>This update has breaking changes. Read them before updating.</p>
+        <ul id="news-features" class="features"></ul>
+      </section>
+      <dialog id="news-dialog" class="sheet" aria-label="What's new">
+        <div class="sheet-head"><h2>What's new</h2><button type="button" id="news-dialog-close" aria-label="Close">Close</button></div>
+        <div id="news-dialog-body" class="sheet-body"></div>
+      </dialog>
 
       <h2>Your tables</h2>
       <ul id="tables" class="tables"></ul>
@@ -127,6 +148,8 @@
       </form>
     </main>
 
+    <script src="markdown.js"></script>
     <script src="home.js"></script>
+    <script src="whats-new.js"></script>
   </body>
 </html>

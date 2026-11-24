@@ -1,5 +1,5 @@
-import { EngineClient } from '@mrstudio/sdk';
-import type { Connection, LayerManifest, LayerModule, LayerState, PanelContext, TableContext, TableHandlers, ToolInput } from '@mrstudio/sdk';
+import { EngineClient, stepTransition, transitionGain } from '@mrstudio/sdk';
+import type { Connection, LayerManifest, LayerModule, LayerState, PanelContext, StepTransitionKind, TableContext, TableHandlers, ToolInput } from '@mrstudio/sdk';
 
 import { Cues } from './cues.ts';
 import { language, say } from './i18n.ts';
@@ -27,6 +27,25 @@ interface Running {
   ready: boolean;
   stopped: boolean;
 }
+
+/**
+ * A sequence step coming in or going out (#43). `waiting` holds it until the step coming in
+ * has started, so the old step stays on show while the new one loads; then both run the
+ * transition of the new step together.
+ */
+interface Fade {
+  role: 'in' | 'out';
+  /** The sequence showing (or that showed) the layer. */
+  sequence: string;
+  waiting: boolean;
+  since: number;
+  kind: StepTransitionKind;
+  seconds: number;
+  t: number;
+}
+
+/** How long a step going out waits for the next one to start before it goes anyway. */
+const WAIT_FOR_NEXT_MS = 4000;
 
 /**
  * Sends param changes for a layer, at most one request per animation frame, carrying the
@@ -86,6 +105,10 @@ export class LayerManager {
   private engine: EngineClient;
   private readonly cues: Cues;
   private last = performance.now();
+  /** Steps of a sequence fading in or out, by instance. */
+  private fades = new Map<string, Fade>();
+  /** How strongly each instance shows while it fades: multiplied with its intensity. */
+  private gains = new Map<string, number>();
   private readonly store: Store;
   private readonly connection: Connection;
   private readonly view: TableView;
@@ -131,8 +154,40 @@ export class LayerManager {
     });
   }
 
+  private applyIntensity(id: string): void {
+    this.view.setIntensity(id, (this.store.state.layers[id]?.intensity ?? 1) * (this.gains.get(id) ?? 1));
+  }
+
+  /** The step coming in to `sequence` has started (or failed to): it and the step going out run their transition. */
+  private entered(id: string): void {
+    const fade = this.fades.get(id);
+    if (!fade || fade.role !== 'in' || !fade.waiting) return;
+    const sequence = this.store.state.layers[fade.sequence];
+    this.run(fade.sequence, stepTransition(sequence?.steps, sequence?.step?.index));
+  }
+
+  /** Starts the transition for every step of `sequence` that waits for one. */
+  private run(sequence: string, transition: { kind: StepTransitionKind; seconds: number }): void {
+    for (const [id, fade] of this.fades) {
+      if (fade.sequence !== sequence || !fade.waiting) continue;
+      Object.assign(fade, transition, { waiting: false, t: 0 });
+      if (transition.kind === 'cut') this.finish(id, fade);
+      else if (fade.role === 'in' && transition.kind === 'dip') {
+        this.gains.set(id, 0);
+        this.applyIntensity(id);
+      }
+    }
+  }
+
+  private finish(id: string, fade: Fade): void {
+    this.fades.delete(id);
+    this.gains.delete(id);
+    if (fade.role === 'out') this.stop(id);
+    else this.applyIntensity(id);
+  }
+
   private sync(id: string, state: LayerState, previous: LayerState | undefined): void {
-    this.view.setIntensity(id, state.intensity ?? 1);
+    this.applyIntensity(id);
     const hides = Boolean(this.store.manifest(state.layer)?.hidesAtRest);
     if (hides && Boolean(state.active) !== Boolean(previous?.active)) {
       // The map at rest stops while this layer is open and comes back when it closes.
@@ -141,9 +196,31 @@ export class LayerManager {
     if (state.active && !previous?.active && !state.parent && this.store.manifest(state.layer)?.sequence) this.prefetch(state);
     const running = this.running.get(id);
     const active = state.active && !(this.atRest(id) && this.hidingAtRest());
+    const fade = this.fades.get(id);
+    if (active && fade?.role === 'out') {
+      // Shown again before it had gone, such as the same layer in the next step.
+      this.fades.delete(id);
+      this.gains.delete(id);
+      this.applyIntensity(id);
+    }
     if (active && !running) {
+      if (state.shown_by) {
+        // A step of a sequence comes in from nothing, then fades up once it has started.
+        this.fades.set(id, { role: 'in', sequence: state.shown_by, waiting: true, since: performance.now(), kind: 'cut', seconds: 0, t: 0 });
+        this.gains.set(id, 0);
+        this.applyIntensity(id);
+      }
       void this.start(id);
     } else if (!active && running) {
+      if (fade?.role === 'out') return;
+      if (previous?.shown_by) {
+        // A step going out stays on show until the next one has started, then fades with it.
+        const out: Fade = { role: 'out', sequence: previous.shown_by, waiting: true, since: performance.now(), kind: 'cut', seconds: 0, t: 0 };
+        this.fades.set(id, out);
+        const coming = [...this.fades.values()].find((f) => f.role === 'in' && f.sequence === out.sequence && !f.waiting);
+        if (coming) this.run(out.sequence, { kind: coming.kind, seconds: coming.seconds });
+        return;
+      }
       this.stop(id);
     } else if (running?.ready) {
       const changed = changedKeys(previous?.params, state.params);
@@ -191,6 +268,7 @@ export class LayerManager {
         : undefined);
     if (!module?.table) {
       if (!module) console.warn(`layer '${layer}' is not part of this build`);
+      this.entered(id);
       return;
     }
     const running: Running = { handlers: {}, cleanups: [], frames: [], ready: false, stopped: false };
@@ -253,16 +331,28 @@ export class LayerManager {
     } catch (error) {
       if (!running.stopped) console.error(`[${id}] failed to start`, error);
       if (this.running.get(id) === running) this.stop(id);
+      this.entered(id);
       return;
     }
     if (running.stopped) return;
     running.ready = true;
+    this.entered(id);
     // Params may have changed while the layer was starting.
     const changed = changedKeys(before, store.state.layers[id]?.params ?? before);
     if (changed.length > 0) this.guard(id, () => running.handlers.update?.(changed));
   }
 
   private stop(id: string): void {
+    const fade = this.fades.get(id);
+    if (fade) {
+      this.fades.delete(id);
+      this.gains.delete(id);
+      // A step that never came in lets the step going out go anyway.
+      if (fade.role === 'in' && fade.waiting) {
+        const sequence = this.store.state.layers[fade.sequence];
+        this.run(fade.sequence, stepTransition(sequence?.steps, sequence?.step?.index));
+      }
+    }
     const running = this.running.get(id);
     if (!running) return;
     running.stopped = true;
@@ -279,9 +369,31 @@ export class LayerManager {
     }
   }
 
+  /** Moves every transition on by `dt` seconds. */
+  private stepFades(dt: number, now: number): void {
+    for (const [id, fade] of this.fades) {
+      if (fade.waiting) {
+        // Going out with nothing coming in: the slideshow closed, or the next step is slow to start.
+        const sequence = this.store.state.layers[fade.sequence];
+        if (fade.role === 'out' && (!sequence?.active || now - fade.since > WAIT_FOR_NEXT_MS)) {
+          this.run(fade.sequence, stepTransition(sequence?.steps, sequence?.active ? sequence.step?.index : undefined));
+        }
+        continue;
+      }
+      fade.t += dt / Math.max(0.001, fade.seconds);
+      if (fade.t >= 1) {
+        this.finish(id, fade);
+        continue;
+      }
+      this.gains.set(id, transitionGain(fade.kind, fade.role, fade.t));
+      this.applyIntensity(id);
+    }
+  }
+
   private frame = (now: number): void => {
     const dt = Math.min(0.25, (now - this.last) / 1000);
     this.last = now;
+    this.stepFades(dt, now);
     for (const [id, running] of this.running) {
       if (running.ready) for (const callback of running.frames) this.guard(id, () => callback(dt));
     }

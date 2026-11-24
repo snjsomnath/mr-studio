@@ -1,4 +1,5 @@
-import type { LayerManifest, LayerState, SequenceStep, Steps } from '@mrstudio/sdk';
+import { DEFAULT_TRANSITION, MAX_TRANSITION_S, readSiteData } from '@mrstudio/sdk';
+import type { LayerManifest, LayerState, SequenceStep, Steps, StepTransitionKind } from '@mrstudio/sdk';
 
 import { el, isAmbient, layerButton } from '../controls.ts';
 import { qrSvg } from '../join.ts';
@@ -24,6 +25,7 @@ export const LEGACY_CONTROLS = ['slide', 'previous', 'next', 'play', 'seconds', 
 
 /** What a slide can be made from besides the table's own layers. */
 const NEW_SLIDES: { use: string; label: string }[] = [
+  { use: 'media', label: 'Picture or video' },
   { use: 'wms', label: 'Web map (WMS)' },
   { use: 'mapdata', label: 'Map data from this site' },
 ];
@@ -76,6 +78,49 @@ function guidePhone(host: SlidesHost): HTMLElement {
   return box;
 }
 
+/** How a slide comes in: the words the editor uses for each transition. */
+const TRANSITIONS: [StepTransitionKind, string][] = [
+  ['fade', 'Cross-fade'],
+  ['dip', 'Fade through the map'],
+  ['cut', 'Cut'],
+];
+
+/** The site's pictures and video, as paths inside the site (`data/media/x.png`). */
+async function siteMedia(): Promise<string[]> {
+  const answer = (await fetch('/api/data/media').then((r) => r.json()).catch(() => ({ media: [] }))) as { media?: string[] };
+  return answer.media ?? [];
+}
+
+/** Keeps pictures or video in the table; answers their paths, or throws with the host's reason. */
+async function addMedia(files: Iterable<File>): Promise<string[]> {
+  const paths: string[] = [];
+  for (const file of files) {
+    const response = await fetch(`/api/data/media?name=${encodeURIComponent(file.name)}`, { method: 'POST', body: file });
+    const answer = (await response.json().catch(() => ({}))) as { path?: string; error?: string };
+    if (!response.ok || !answer.path) throw new Error(`${file.name}: ${answer.error ?? `HTTP ${response.status}`}`);
+    paths.push(answer.path);
+  }
+  return paths;
+}
+
+/** A file's name as a slide title: "satellite_current.png" reads "Satellite current". */
+function titleOf(path: string): string {
+  const stem = (path.split('/').pop() ?? path).replace(/\.[^.]+$/, '').replace(/[-_]+/g, ' ').trim();
+  return stem.charAt(0).toUpperCase() + stem.slice(1);
+}
+
+/** A slide of the earlier app's `slideshow.json` (see the slideshow layer's README). */
+interface OldSlide {
+  type: string;
+  media?: string;
+  duration?: number;
+  fitMode?: string;
+  rotation?: number;
+  enabled?: boolean;
+  wms?: { url?: string; layers?: string };
+  metadata?: { title?: string; description?: string; source?: string };
+}
+
 function field(label: string, input: HTMLElement): HTMLElement {
   const row = el('div', 'ed-field');
   row.append(el('span', undefined, label), input);
@@ -124,6 +169,19 @@ export function slidesSection(host: SlidesHost, id: string): HTMLElement {
     [['then-next', 'Next slide'], ['stop', 'Stays']],
     (value) => void save({ reveal: value }),
   );
+
+  const transition = segmented<StepTransitionKind>('How each slide comes in', TRANSITIONS, (value) => void save({ transition: value }));
+  const fadeFor = el('input');
+  Object.assign(fadeFor, { type: 'number', min: '0', max: String(MAX_TRANSITION_S), step: '0.1', placeholder: String(DEFAULT_TRANSITION.seconds) });
+  fadeFor.ariaLabel = 'Seconds each transition takes';
+  fadeFor.addEventListener('change', () => {
+    const value = Number(fadeFor.value);
+    void save({ transition_s: fadeFor.value === '' || !Number.isFinite(value) ? undefined : Math.min(MAX_TRANSITION_S, Math.max(0, value)) });
+  });
+  const fadeWrap = el('label', 'ed-slide-seconds');
+  fadeWrap.append(fadeFor, el('span', undefined, 's'));
+  const transitionRow = el('div', 'ed-slide-transition');
+  transitionRow.append(transition.element, fadeWrap);
 
   const list = el('ol', 'ed-slide-list');
   const add = el('select', 'ed-slide-add');
@@ -185,6 +243,7 @@ export function slidesSection(host: SlidesHost, id: string): HTMLElement {
     list,
     add,
     field('Moves on', mode.element),
+    field('Transition', transitionRow),
     field('At the end', end.element),
     field('After the last category', reveal.element),
     help,
@@ -204,15 +263,120 @@ export function slidesSection(host: SlidesHost, id: string): HTMLElement {
     return { name: state.parent ? manifest.name : layerButton(layer, manifest, state).name, icon: manifest.icon, item: state.parent === id };
   };
 
+  function mediaPicker(step: SequenceStep, n: number, change: (patch: Partial<SequenceStep>) => void): HTMLElement {
+    const box = el('div', 'ed-slide-media');
+    const current = String(store.state.layers[step.layer]?.params?.file ?? '');
+    const pick = el('select');
+    pick.ariaLabel = `Picture or video of slide ${n + 1}`;
+    const status = el('span', 'ed-hint');
+    const choose = async (file: string) => {
+      await host.send('scene.set', { layer: step.layer, params: { file } });
+      if (!step.title) change({ title: titleOf(file) });
+    };
+    const fill = async () => {
+      const files = await siteMedia();
+      if (current && !files.includes(current)) files.unshift(current);
+      const none = el('option', undefined, files.length ? 'Choose a picture or video…' : 'No pictures or video in this table yet');
+      none.value = '';
+      pick.replaceChildren(none, ...files.map((f) => Object.assign(el('option', undefined, f.replace(/^data\/media\//, '')), { value: f })));
+      pick.value = current;
+    };
+    pick.addEventListener('change', () => pick.value && void choose(pick.value));
+    const input = Object.assign(el('input'), { type: 'file', accept: 'image/png,image/jpeg,image/webp,image/gif,video/mp4,video/webm,.png,.jpg,.jpeg,.webp,.gif,.mp4,.webm', hidden: true });
+    const upload = el('button', 'ed-slide-try');
+    upload.type = 'button';
+    upload.append(icon('plus', 14), el('span', undefined, 'Add a file'));
+    upload.title = 'A PNG, JPEG, WebP or GIF picture, or an MP4 or WebM video, kept in this table as it is';
+    upload.addEventListener('click', () => input.click());
+    input.addEventListener('change', async () => {
+      status.textContent = 'Adding…';
+      try {
+        const [path] = await addMedia(input.files ?? []);
+        status.textContent = '';
+        if (path) await choose(path);
+      } catch (error) {
+        status.textContent = (error as Error).message;
+      }
+      input.value = '';
+    });
+    void fill();
+    box.append(pick, upload, input, status);
+    return box;
+  }
+
+  /** Makes the earlier app's slides (`slideshow.json`) into steps: pictures, video and web maps (#197). */
+  async function bringInOldSlides(): Promise<string> {
+    const site = store.state.site;
+    const path = site.data?.slideshow;
+    const config = await readSiteData<{ slides?: OldSlide[]; settings?: { loop?: boolean; autoAdvance?: boolean } }>(site, 'slideshow');
+    if (!path || !config) return 'This table has no slideshow.json to bring in.';
+    const folder = path.includes('/') ? path.slice(0, path.lastIndexOf('/') + 1) : '';
+    const datasets = Object.entries(site.data ?? {});
+    const sequence = [...(steps().sequence ?? [])];
+    let skipped = 0;
+    for (const slide of config.slides ?? []) {
+      if (slide.enabled === false) continue;
+      const about = { title: slide.metadata?.title?.slice(0, 80), description: slide.metadata?.description?.slice(0, 300), source: slide.metadata?.source?.slice(0, 200) };
+      const timing = { duration_s: slide.duration ? slide.duration / 1000 : undefined, transition: 'fade' as const };
+      let use = '';
+      let params: Record<string, unknown> = {};
+      if ((slide.type === 'image' || slide.type === 'video') && slide.media) {
+        use = 'media';
+        params = { file: folder + slide.media, fit: ['contain', 'cover'].includes(slide.fitMode ?? '') ? slide.fitMode : 'stretch', rotation: String(((Math.round((slide.rotation ?? 0) / 90) * 90) % 360 + 360) % 360) };
+      } else if (slide.type === 'wms' && slide.wms?.url && slide.wms.layers) {
+        use = 'wms';
+        params = { url: slide.wms.url, layers: slide.wms.layers };
+      } else if (slide.type === 'geojson' && slide.media) {
+        // Map data shows a dataset of the site: the file must be one already.
+        const dataset = datasets.find(([, p]) => p === folder + slide.media)?.[0];
+        if (dataset) [use, params] = ['mapdata', { dataset }];
+      }
+      if (!use || !store.manifest(use)) {
+        skipped++;
+        continue;
+      }
+      const result = await host.send('scene.add', { use, parent: id });
+      if (!result?.id) continue;
+      await host.send('scene.set', { layer: result.id, params });
+      const step: SequenceStep = { layer: result.id, ...timing, ...about };
+      for (const key of Object.keys(step) as (keyof SequenceStep)[]) if (step[key] === undefined || step[key] === '') delete step[key];
+      sequence.push(step);
+    }
+    await save({ sequence, ...(config.settings?.autoAdvance === false ? { mode: 'manual' as const } : {}), ...(config.settings?.loop === false ? { loop: false } : {}) });
+    return skipped ? `${skipped} slides could not be brought in: map data slides need their file added to the table as a dataset first.` : '';
+  }
+
+  const legacy = el('div', 'ed-slide-legacy');
+  const legacyButton = el('button', 'ed-slide-try');
+  legacyButton.type = 'button';
+  legacyButton.append(icon('images', 14), el('span', undefined, 'Bring in the slides of slideshow.json'));
+  const legacyNote = el('p', 'ed-hint');
+  legacyButton.addEventListener('click', async () => {
+    legacyButton.disabled = true;
+    legacyNote.textContent = 'Bringing in the slides…';
+    try {
+      legacyNote.textContent = await bringInOldSlides();
+    } catch (error) {
+      legacyNote.textContent = (error as Error).message;
+    }
+    legacyButton.disabled = false;
+  });
+  legacy.append(legacyButton, legacyNote);
+  list.after(legacy);
+
   function draw(): void {
     const current = steps();
     const sequence = current.sequence ?? [];
+    legacy.hidden = sequence.length > 0 || !store.state.site.data?.slideshow;
     const timed = current.mode === 'timed';
     mode.set(timed ? 'timed' : 'manual');
     const live = store.state.layers[id]?.step;
     position.textContent = live ? `Showing ${live.index + 1} of ${live.count}${live.sub ? `, ${live.sub.index} of ${live.sub.count} revealed` : ''}` : '';
     end.set(current.loop === false ? 'stop' : 'loop');
     reveal.set(current.reveal === 'stop' ? 'stop' : 'then-next');
+    transition.set(current.transition ?? DEFAULT_TRANSITION.kind);
+    fadeWrap.hidden = current.transition === 'cut';
+    if (document.activeElement !== fadeFor) fadeFor.value = current.transition_s === undefined ? '' : String(current.transition_s);
 
     const rows = sequence.map((step, n) => {
       const { name, icon: iconName, item } = nameOf(step.layer);
@@ -295,6 +459,35 @@ export function slidesSection(host: SlidesHost, id: string): HTMLElement {
       next.value = step.next ?? '';
       next.addEventListener('change', () => change({ next: (next.value || undefined) as SequenceStep['next'] }));
       details.append(next);
+
+      // How this slide comes in: the slideshow's transition unless it has its own.
+      const comes = el('select', 'ed-slide-comes');
+      comes.ariaLabel = `How slide ${n + 1} comes in`;
+      const shared = TRANSITIONS.find(([k]) => k === (current.transition ?? DEFAULT_TRANSITION.kind))![1];
+      for (const [value, text] of [['', `Comes in: as set below (${shared.toLowerCase()})`], ...TRANSITIONS.map(([k, t]) => [k, `Comes in: ${t.toLowerCase()}`])]) {
+        const option = el('option', undefined, text);
+        option.value = value!;
+        comes.append(option);
+      }
+      comes.value = step.transition ?? '';
+      comes.addEventListener('change', () => change({ transition: (comes.value || undefined) as SequenceStep['transition'] }));
+      details.append(comes);
+      if ((step.transition ?? current.transition) !== 'cut') {
+        const fade = el('input');
+        Object.assign(fade, { type: 'number', min: '0', max: String(MAX_TRANSITION_S), step: '0.1', placeholder: String(current.transition_s ?? DEFAULT_TRANSITION.seconds), value: step.transition_s === undefined ? '' : String(step.transition_s) });
+        fade.ariaLabel = `Seconds slide ${n + 1} takes to come in`;
+        fade.title = 'Seconds the transition takes';
+        fade.addEventListener('change', () => {
+          const value = Number(fade.value);
+          change({ transition_s: fade.value === '' || !Number.isFinite(value) ? undefined : Math.min(MAX_TRANSITION_S, Math.max(0, value)) });
+        });
+        const wrap = el('label', 'ed-slide-seconds');
+        wrap.append(fade, el('span', undefined, 's'));
+        details.append(wrap);
+      }
+
+      // A picture or video slide picks its file here: one of the table's, or a new one.
+      if (store.state.layers[step.layer]?.layer === 'media') details.append(mediaPicker(step, n, change));
       row.append(head, details);
       return row;
     });
