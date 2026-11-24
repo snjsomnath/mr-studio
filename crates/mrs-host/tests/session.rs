@@ -953,6 +953,9 @@ async fn buildings_come_from_openstreetmap_when_asked() {
         json!({ "elements": [
         { "type": "way", "id": 1, "tags": { "building": "yes", "height": "14" }, "geometry": ring(57.700, 11.970) },
         { "type": "way", "id": 2, "tags": { "building": "house", "building:levels": "2" }, "geometry": ring(57.700, 11.9610) },
+        // What a fetch of everything (#310) also gets: a tree and a main street, no footways.
+        { "type": "node", "id": 3, "lat": 57.7001, "lon": 11.9701, "tags": { "natural": "tree" } },
+        { "type": "way", "id": 4, "tags": { "highway": "primary" }, "geometry": [{ "lat": 57.699, "lon": 11.965 }, { "lat": 57.701, "lon": 11.975 }] },
     ] }),
         1,
     )
@@ -978,6 +981,30 @@ async fn buildings_come_from_openstreetmap_when_asked() {
     let saved: Value = serde_json::from_slice(&std::fs::read(dir.join("data/buildings.geojson")).unwrap()).unwrap();
     assert_eq!(saved["source"]["attribution"], "© OpenStreetMap contributors");
     assert_eq!(asked.lock().unwrap().len(), 2, "the import brings in what the preview fetched, without asking again");
+
+    // Everything at once (#310): one query for trees, streets and walkways, each kept for its import.
+    let (status, answer) = http_post(&host, "/api/data/osm?targets=trees,data:roads,walkways,trips", "", b"").await;
+    assert_eq!(status, 200, "{answer}");
+    assert_eq!(asked.lock().unwrap().len(), 3, "one query for every dataset");
+    let query = asked.lock().unwrap()[2].clone();
+    assert!(query.contains("tree") && query.contains("highway"), "{query}");
+    let datasets = answer["datasets"].as_array().unwrap();
+    assert_eq!(datasets.iter().map(|d| d["dataset"].as_str().unwrap()).collect::<Vec<_>>(), ["trees", "roads", "walkways", "trips"]);
+    assert_eq!((datasets[0]["ok"].as_bool(), datasets[0]["count"].as_u64()), (Some(true), Some(1)));
+    assert_eq!((datasets[1]["ok"].as_bool(), datasets[1]["count"].as_u64()), (Some(true), Some(1)));
+    assert_eq!(datasets[2]["report"]["issues"][0]["code"], "osm.empty", "{answer}");
+    assert_eq!(datasets[3]["report"]["issues"][0]["code"], "osm.unavailable");
+    let (status, report) = http_post(&host, "/api/data/import?target=trees&source=osm", "", b"").await;
+    assert_eq!(status, 200, "{report}");
+    table.event("site.changed").await;
+    let (status, report) = http_post(&host, "/api/data/import?target=data:roads&source=osm", "", b"").await;
+    assert_eq!(status, 200, "{report}");
+    table.event("site.changed").await;
+    assert_eq!(asked.lock().unwrap().len(), 3, "the imports bring in what the fetch got");
+    // Asking again within a while answers from what was kept.
+    let (_, again) = http_post(&host, "/api/data/osm?targets=trees", "", b"").await;
+    assert_eq!(again["datasets"][0]["count"], 1);
+    assert_eq!(asked.lock().unwrap().len(), 3);
 
     // OpenStreetMap has no trips or ground heights.
     let (status, report) = http_post(&host, "/api/data/inspect?target=trips&source=osm", "", b"").await;

@@ -259,6 +259,14 @@ Add `source=osm` and send an empty body: the host asks OpenStreetMap (Overpass) 
 | `walkways` | `highway` footway, path, pedestrian, steps, cycleway, track, living street, residential, service, unclassified |
 | `data:roads` | `highway` streets, motorway to service, with `kind: 'street'` for the cars layer |
 
+#### Everything at once (#310)
+
+```
+POST /api/data/osm?targets=buildings,trees,walkways,data:roads   asks once, writes nothing
+```
+
+One Overpass query for every target (the same mirrors and retries), split into one GeoJSON per dataset by tag and kept for 15 minutes, so the `source=osm` import of each that follows asks OpenStreetMap nothing more. The answer is `{ datasets: [{ dataset, ok: true, count } | { dataset, ok: false, report }] }` in the order asked; `dataset` is the name layers know (`roads` for `data:roads`) and `report` is the refusal above (`osm.offline`, `osm.empty`, `osm.unavailable`). The wizard's **Fetch everything from open data** (`packages/runtime/src/editor/fetch-all.ts`) calls it, then imports each dataset in turn and the ground with `source=elevation`, holding the editor's reload until the last one is in.
+
 Every OSM tag is kept as a property, with `osm_id` (`way/123`). The saved file carries `source: { name: 'OpenStreetMap', layer, attribution: '© OpenStreetMap contributors', licence: 'ODbL-1.0', fetched: 'YYYY-MM-DD' }`, and the report has a note with code `source.osm`: the credit must be shown wherever the table is. A refusal is a 422 report with one blocker: `osm.unavailable` (trips, terrain or another dataset name), `osm.offline` (no answer; try again) or `osm.empty` (nothing mapped there). `MRS_OVERPASS_URL` points the host at another Overpass server.
 
 `message` is written for the author and can be shown as it is. `fix` names the option that applies the recommended fix, so an editor can offer it as a button and send the same file again with that option.
