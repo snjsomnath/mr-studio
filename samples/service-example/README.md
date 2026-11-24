@@ -1,4 +1,8 @@
+<<<<<<< HEAD
+# A layer with a model behind it (#278, #279, #281, #282)
+=======
 # A layer with a model behind it (#278, #279, #281)
+>>>>>>> origin/main
 
 The pieces a site needs to put an outside model (Python, or anything that speaks HTTP) behind a
 layer, the way ECOM's backend sits behind its layer:
@@ -13,6 +17,11 @@ layer, the way ECOM's backend sits behind its layer:
   optimiser's best share (not run, working, done), and a `balance` panel shows where the power
   came from and went, with self-sufficiency. Both bind to what the layer publishes (`scenarios`,
   `sources`, `uses`, `self_sufficiency`), and their chip forms go in the table's ribbon.
+<<<<<<< HEAD
+- Its sound (#282): a `sound` bed in layer.json, a hiss and a transformer hum that load up with the
+  grid import the layer publishes (`import_kw`), with no audio code.
+=======
+>>>>>>> origin/main
 - `site-services.json`: the `services` entry to put in a site's `site.json`.
 
 To try it on the sample site: copy `services/` and `layers/` into a copy of `sites/sample`, add the

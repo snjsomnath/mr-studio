@@ -363,9 +363,18 @@ export class SoundStage {
 /** The editor's switch for hearing sounds in its preview (#150). */
 export const LISTEN_KEY = 'mrstudio.listen';
 
-/** Whether this page should be heard: the table always, the editor only when its author turned listening on. */
+/** The controller's sound switch for the session (#282). The runtime keeps it in step with the host. */
+let sessionSound = true;
+export function setSessionSound(on: boolean): void {
+  sessionSound = on;
+}
+
+/**
+ * Whether this page should be heard: the table always, the editor only when its author turned
+ * listening on, and neither while the controller's sound switch is off for the session.
+ */
 export function hearsSound(): boolean {
-  if (typeof document === 'undefined') return false;
+  if (typeof document === 'undefined' || !sessionSound) return false;
   if (document.body?.dataset.role === 'table') return true;
   try {
     return localStorage.getItem(LISTEN_KEY) === '1';

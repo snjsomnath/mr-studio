@@ -105,6 +105,13 @@ export const BLOCKS: BlockDef[] = [
     unlocks: ['Energy communities (ECOM, #192)', 'District heating and pipe networks', 'Commuter flows between places'],
   },
   {
+    id: 'sound-voices', group: 'visual', name: 'Sound voices',
+    description: 'A sound bed of up to four slow voices (filtered noise, a hum with harmonics, a tone) declared in layer.json, whose level and colour follow published values or controls (#282). One level ceiling for the whole bed, slow glides, table only, muted by the controller Sound switch.',
+    usage: "layer.json 'sound': [{ id, kind noise|hum|tone, level, centre, width, frequency, harmonics, glide_s }], each value a number or { bind: 'shared.<key>' or 'params.<id>', from, to, curve }. Or VoiceBed from @mrstudio/sdk. See docs/contracts/layer.md, Sound voices",
+    detect: 'export class VoiceBed',
+    unlocks: ['Hearing grid import in an energy community (ECOM, #192)', 'Traffic noise that follows a scenario', 'Calm ambient beds for exhibitions'],
+  },
+  {
     id: 'palette', group: 'visual', name: 'Table palette',
     description: "The table's named colour slots (accent, warm, cool, categories) that every layer and the custom builder colour from, with a warning for colours a projector washes out.",
     usage: "site.json 'palette' (update_site), resolvePalette(site.palette) in a layer",

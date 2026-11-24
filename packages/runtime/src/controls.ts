@@ -1259,6 +1259,10 @@ export class Controller {
     line.hidden = credits.size === 0;
   }
 
+  private soundOn(): boolean {
+    return this.store.state.session?.sound !== false;
+  }
+
   private get aboutOpen(): boolean {
     return this.about !== undefined && !this.about.hidden;
   }
@@ -1324,6 +1328,20 @@ export class Controller {
         calibrating = Boolean(p.active);
         calibrate.setAttribute('aria-pressed', String(calibrating));
       });
+      // Sound (#282): mutes the table's speakers for the session, every sound and voice bed.
+      // The rings and colours that follow the sound carry on.
+      const sound = action(t('Sound'), 'sound', () => {
+        void this.connection.request('session.sound', { on: !this.soundOn() }).catch(() => {});
+      });
+      const showSound = () => {
+        const on = this.soundOn();
+        sound.setAttribute('aria-pressed', String(on));
+        sound.title = on ? t('Sound') : t('Muted');
+        sound.querySelector('.layer-button-name')!.textContent = on ? t('Sound') : t('Muted');
+        sound.querySelector('.layer-button-icon')!.replaceChildren(icon(on ? 'sound' : 'muted', 20));
+      };
+      showSound();
+      this.store.onParticipants(() => showSound());
     }
     if (this.about) {
       if (operator) box.append(el('div', 'rail-group', t('About')));

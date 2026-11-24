@@ -1,4 +1,4 @@
-import { EngineClient, entityChanges, entityValues, serviceClient, stepTransition, transitionGain } from '@mrstudio/sdk';
+import { EngineClient, VoiceBed, entityChanges, entityValues, hearsSound, serviceClient, stepTransition, transitionGain } from '@mrstudio/sdk';
 import type { RevealShape } from '@mrstudio/sdk';
 import type { Connection, EntityChange, LayerManifest, LayerModule, LayerState, PanelContext, StepTransitionKind, TableContext, TableHandlers, ToolInput } from '@mrstudio/sdk';
 
@@ -460,6 +460,17 @@ export class LayerManager {
         map: this.view.handle(id, track),
         pointer: this.view.pointer(track),
         onFrame: (callback) => running.frames.push(callback),
+      });
+    }
+    // A sound bed (#282): the layer's voices follow its params and published values, with no
+    // audio code in the layer. It fades with the controller's sound switch and stops with the layer.
+    if (manifest?.sound?.length) {
+      const bed = new VoiceBed(manifest.sound, { audible: hearsSound() });
+      track(() => bed.stop());
+      running.frames.push(() => {
+        const state = store.state.layers[id];
+        bed.audible = hearsSound();
+        bed.update({ params: state?.params ?? {}, shared: state?.shared ?? {} });
       });
     }
     this.entered(id);
