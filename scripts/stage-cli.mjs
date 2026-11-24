@@ -3,7 +3,7 @@
 // in MR Studio.app/Contents/MacOS on a Mac and in the install folder on Windows.
 //
 //   node scripts/stage-cli.mjs                         this computer's target
-//   node scripts/stage-cli.mjs universal-apple-darwin  both Mac targets, joined with lipo
+//   node scripts/stage-cli.mjs universal-apple-darwin  both Mac targets, each and joined with lipo
 //
 // It writes apps/studio/src-tauri/tauri.cli.conf.json; pass it to the build with
 // `--config src-tauri/tauri.cli.conf.json`. A plain `cargo build` of the app does not need it.
@@ -27,7 +27,11 @@ const build = (triple) => {
 mkdirSync(join(tauri, 'binaries'), { recursive: true });
 const out = join(tauri, 'binaries', `mrstudio-${target}${exe}`);
 if (target === 'universal-apple-darwin') {
-  const parts = ['aarch64-apple-darwin', 'x86_64-apple-darwin'].map(build);
+  // Tauri compiles the app once per architecture and looks for that architecture's copy each
+  // time, then bundles the joined one; so all three are staged.
+  const arches = ['aarch64-apple-darwin', 'x86_64-apple-darwin'];
+  const parts = arches.map(build);
+  arches.forEach((arch, i) => copyFileSync(parts[i], join(tauri, 'binaries', `mrstudio-${arch}`)));
   run('lipo', ['-create', '-output', out, ...parts]);
 } else {
   copyFileSync(build(target), out);
