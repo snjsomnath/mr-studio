@@ -14,18 +14,12 @@ The easiest way. Nothing else to install.
 ## Connect Claude Code
 
 1. Install **Node.js** 20 or newer from nodejs.org.
-2. In a terminal, go to the folder your tables are in and add the server once:
+2. In a terminal, go to the folder your tables are in: `cd ~/Documents/"MR Studio"/sites`
+3. Add the server once: `claude mcp add mrstudio -- npx -y @mrstudio/mcp`
+4. Check it: `claude mcp list` should say **Connected**.
+5. Run `claude` in the same folder and start talking.
 
-   ```sh
-   cd ~/Documents/"MR Studio"/sites
-   claude mcp add mrstudio -- npx -y @mrstudio/mcp
-   claude mcp list
-   ```
-
-   `claude mcp list` should say **Connected**.
-
-   ![Adding MR Studio to Claude Code, and the check that it is connected](docs/screenshots/324-claude-code.png)
-3. Run `claude` in the same folder and start talking.
+![Adding MR Studio to Claude Code, and the check that it is connected](docs/screenshots/324-claude-code.png)
 
 ## Other AI apps
 
