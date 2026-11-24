@@ -4,6 +4,46 @@ Every merge to main that carries a release note becomes a version. The newest is
 The app shows these notes, with their pictures, on Home when a newer version is out.
 How notes are written: docs/RELEASING.md.
 
+## 0.20.0 (2026-11-24)
+
+### New
+
+#### The table's logo on the controller and on phones (#156)
+
+Pick a logo in Table settings from the table's pictures, or add one there. It shows above the title on the controller's welcome screen and beside the title on every phone.
+
+![The logo above the title on the controller's welcome screen](docs/screenshots/156-controller-welcome.png)
+
+![Choosing the logo in Table settings](docs/screenshots/156-table-settings.png)
+
+![The logo on a phone](docs/screenshots/156-phone.png)
+
+#### Choose which ribbon the table shows (#231)
+
+When more than one open layer has a ribbon, a **Ribbon** button appears under Map controls on the controller. Each press moves from Auto to each of those layers in turn. The choice holds until that layer closes. Stormwater now has a ribbon too: time into the storm, rain so far and water on the ground.
+
+![The Ribbon button on the controller, set to Stormwater](docs/screenshots/231-controller.png)
+
+![Auto: the layer turned on last, Sunlight](docs/screenshots/231-ribbon-auto.png)
+
+![Stormwater's ribbon, chosen on the controller](docs/screenshots/231-ribbon-stormwater.png)
+
+#### Download an example of each kind of file (#36)
+
+The **?** on every Your place row and in Add data now has **Download an example**: a small file of that kind (buildings, trees, streets, walking paths, trips) made around your own table, so you can open it to see its shape or bring it straight back in and see it on the table. The same words are in the guide (Bring in your data, What a good file looks like) and in the MCP server as `mrstudio://data-formats`, all from one list.
+
+![Download an example under the ? for Buildings](docs/screenshots/36-download-example.png)
+
+![The example brought back in, on the table](docs/screenshots/36-example-imported.png)
+
+#### Duplicate a table, or the example, from Home (#99)
+
+Every card under Your tables has **Duplicate**. It makes a copy named "… copy" with its own id, next to your other tables, and outlines it. Duplicate the example that comes with MR Studio to start from a working table instead of a blank one, then move it to your own place.
+
+![Duplicate on a Home card](docs/screenshots/99-duplicate.png)
+
+![The copy, outlined on Home](docs/screenshots/99-duplicated.png)
+
 ## 0.19.0 (2026-11-24)
 
 ### New
