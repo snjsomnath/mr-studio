@@ -132,6 +132,16 @@ importers:
         specifier: ^5.9.0
         version: 5.9.3
 
+  packages/layers/lens:
+    dependencies:
+      '@mrstudio/sdk':
+        specifier: workspace:*
+        version: link:../../sdk
+    devDependencies:
+      typescript:
+        specifier: ^5.9.0
+        version: 5.9.3
+
   packages/layers/mapdata:
     dependencies:
       '@mrstudio/sdk':
@@ -240,6 +250,16 @@ importers:
       '@types/node':
         specifier: ^22.0.0
         version: 22.20.5
+      typescript:
+        specifier: ^5.9.0
+        version: 5.9.3
+
+  packages/layers/swipe:
+    dependencies:
+      '@mrstudio/sdk':
+        specifier: workspace:*
+        version: link:../../sdk
+    devDependencies:
       typescript:
         specifier: ^5.9.0
         version: 5.9.3

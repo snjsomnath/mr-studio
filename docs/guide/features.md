@@ -128,6 +128,30 @@ Layer `plan`, media.
 
 ![Masterplan](docs/screenshots/193-table-3.png)
 
+Set **When it opens** to *Its lines trace in* and give it a **Colour version**, and the drawing draws itself line by line, then turns to colour, as the Lindholmen artwork does. With **Before the first Next** on *Only what is outside the phases*, each Next grows one phase (a viewpoint, a stage of a plan) from its own middle. A group in the drawing named *Base* is always shown and never becomes a phase. **Place by its corners** puts a drawing that is not the table's shape where it belongs on the map. The controller shows the drawing too.
+
+![Masterplan tracing in](docs/screenshots/286-trace.png)
+
+Name the parts of each phase by what they are (Boundary, Main axis, Routes, Arrows, Points, Nodes, Green spaces) and number the phases (01_, 02_...), and each part moves the way it should: the boundary marches, the axis grows from its middle, points pop in, green spaces breathe. `samples/kit/drawing/masterplan-roles.svg` is a template.
+
+![A masterplan coming to life part by part](docs/screenshots/300-routes.png)
+
+## Magnifier
+
+A glass people move over the table with the mouse, from the controller or from a phone. It shows what is under it larger, or, set to *The layers inside it (an X-ray)*, an X-ray of the layers placed inside it in the editor (pipes under the street, an old map, a plan), only inside the glass.
+
+Layer `lens`, analysis.
+
+![Magnifier as an X-ray](docs/screenshots/287-xray.png)
+
+## Reveal line
+
+A line across the table people drag, from the table, the controller or a phone. On one side of it the layers placed inside it show, such as what is under the ground; on the other the table stays as it is. Left alone it sweeps slowly to invite people in.
+
+Layer `swipe`, analysis.
+
+![Reveal line over the underground](docs/screenshots/288-reveal-line.png)
+
 ## Video walk
 
 A video on the controller, with the walker who filmed it moving along their path on the table.
