@@ -336,6 +336,39 @@ editor's live table run the layer separately), the layer sends it on with `ctx.s
 handles it where it arrives, in `tool(input)`. `packages/layers/coolpaths` is the reference: a click sets the
 walk's start or end and dragging A or B moves it.
 
+## Site layers
+
+A site can carry layers of its own, with code, without changing or forking the core (#277). They are packages
+like core layers, in the site's `layers/` folder, and the installed app loads them:
+
+```
+sites/lindholmen/layers/energy-flows/
+  layer.json        as above
+  src/index.ts      table(), panel(), hero() as above, importing from '@mrstudio/sdk'
+  locales/sv.json
+  build.mjs         bundles src/ into dist/index.js
+  dist/index.js     what the app loads; commit it, so the table's computer needs no Node
+```
+
+- `mrstudio layer new energy-flows --site sites/lindholmen` writes a working package: rings where the table is
+  tapped (`ctx.pointer`, `ctx.sendTool`, `tool`), a primary action on the controller, a stat panel bound to
+  `ctx.publish` and a custom panel.
+- `mrstudio layer build [id] --site <site> [--watch]` bundles each package with esbuild (it runs `npm install` the
+  first time). Building needs Node 20 or newer on the developer's computer; running needs nothing.
+- `@mrstudio/sdk` is not bundled: the build turns its imports into reads of `globalThis.MRStudio.sdk`, the SDK of
+  the app the layer runs in. A layer therefore always runs against the app's SDK, and `api` in layer.json says
+  which contract it was written for; the app refuses a layer of another `api`.
+- The host lists every package in `layers/` in the composer's palette, whether or not the scene uses it; a scene
+  uses one as `{ "use": "./layers/energy-flows" }`. A package that does not load is left out with a warning,
+  unless the scene uses it, in which case the table does not open and says why.
+- The host adds `module` to the package's manifest when `dist/index.js` exists (`/site/layers/<id>/dist/index.js?v=<time>`),
+  and every surface but the phones imports it before it starts layers. A rebuilt layer is picked up when the
+  surface reloads. Without a build the layer is still listed and draws nothing.
+- A `.mrstable` export carries the packages with their `dist/`, without `node_modules`.
+
+The rules for layers above apply to site layers too. Anything a site layer needs from the core that the SDK does
+not offer is a module request (MCP `draft_module_request`), not a copy of core code.
+
 ## Dev mode
 
 `mrstudio dev --site sites/sample` serves the runtime with the layer loaded against the sample site.
