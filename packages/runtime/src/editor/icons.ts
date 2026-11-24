@@ -73,6 +73,9 @@ const PATHS: Record<string, string> = {
   redo: 'M15 14l5-5-5-5M20 9H9.500a5.500 5.500 0 0 0 0 11H13',
 };
 
+/** Every icon this set draws; any other name is drawn as `layers`. */
+export const ICON_NAMES = Object.keys(PATHS);
+
 /** Icons an author can give a layer's button. */
 export const LAYER_ICONS = ['sun', 'wind', 'droplet', 'route', 'footprints', 'tram', 'car', 'tree', 'lightbulb', 'images', 'pencil', 'map', 'magnifier', 'swipe', 'blocks', 'layers', 'home', 'eye', 'play'];
 

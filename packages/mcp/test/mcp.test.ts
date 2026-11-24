@@ -4,14 +4,15 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import assert from 'node:assert/strict';
-import { copyFileSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { after, before, describe, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-import { parseRoadmap, parseSiteSchema } from '../src/core.ts';
-import { checkControlValue } from '../src/site.ts';
+import { loadLive, parseRoadmap, parseSiteSchema, plannedKernelsFrom } from '../src/core.ts';
+import { checkPaint, checkRecipe } from '../src/recipe.ts';
+import { checkControlValue, previewPlan } from '../src/site.ts';
 
 const pkg = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const bundle = join(pkg, 'dist', 'mrstudio-mcp.mjs');
@@ -25,8 +26,8 @@ async function connect(script: string, cwd: string, args: string[] = []): Promis
   return client;
 }
 
-type Result = { content: { type: string; text: string }[]; isError?: boolean };
-async function call(client: Client, name: string, args: Record<string, unknown> = {}): Promise<{ text: string; isError: boolean; data: any }> {
+type Result = { content: { type: string; text: string }[]; isError?: boolean; structuredContent?: any };
+async function call(client: Client, name: string, args: Record<string, unknown> = {}): Promise<{ text: string; isError: boolean; data: any; structured: any }> {
   const result = (await client.callTool({ name, arguments: args })) as Result;
   const text = result.content.map((c) => c.text).join('\n');
   const brace = text.indexOf('\n\n{');
@@ -38,7 +39,7 @@ async function call(client: Client, name: string, args: Record<string, unknown> 
       data = null;
     }
   }
-  return { text, isError: Boolean(result.isError), data };
+  return { text, isError: Boolean(result.isError), data, structured: result.structuredContent ?? null };
 }
 
 describe('unit', () => {
@@ -91,6 +92,77 @@ impl Mesh {
     assert.equal(rows[0]!.built, true);
     assert.equal(rows[1]!.section, 'Climate');
   });
+
+  test('the Built table is read by its headers, so packages are never planned kernels (#319)', () => {
+    const rows = parseRoadmap('## Climate\n\n| Layer | Kernel | Blocks |\n| --- | --- | --- |\n| Heat | **`thermal`** | field overlay |\n\n## Built\n\n| Layer | Package | Kernel | Notes |\n| --- | --- | --- | --- |\n| Public transport | `transit` | none | live |\n| Sunlight | `sunlight` | `sunlight` | shadows |\n');
+    const transit = rows.find((r) => r.layer === 'Public transport')!;
+    assert.equal(transit.kernel, 'none');
+    assert.equal(transit.package, 'transit');
+    assert.equal(transit.built, true);
+    assert.deepEqual(plannedKernelsFrom(rows, ['sunlight'], ['transit', 'sunlight']), ['thermal']);
+
+    const live = loadLive(resolve(pkg, '..', '..'));
+    const layerIds = live.layers.map((l) => l.id);
+    assert.deepEqual(live.plannedKernels.filter((k) => layerIds.includes(k)), [], 'no core layer is a planned kernel');
+    for (const k of ['thermal', 'plume', 'drift', 'noise', 'isochrone']) assert.ok(live.plannedKernels.includes(k), `${k} is planned`);
+  });
+
+  test('recipes are checked against the recipe player (#321)', () => {
+    const issues = checkRecipe(
+      {
+        name: 'Junk',
+        icon: 'unicorn',
+        look: [
+          { id: 'a', block: 'extrude', data: 'd', props: { wobble: 3 } },
+          { id: 'b', block: 'fill', data: 'd', props: { color: 'red', wobble: 3 } },
+          { id: 'c', block: 'points', data: 'd', props: { color: { by: 'kind', kind: 'number', ramp: 'green' }, icon: 'rocket' } },
+          { id: 'e', block: 'lines', data: 'd', props: { color: '@accent', dash: 'dashed' } },
+        ],
+        motion: [
+          { id: 'm', block: 'flow', on: 'c', props: {} },
+          { id: 'n', block: 'wiggle', on: 'e', props: {} },
+          { id: 'o', block: 'draw-in', on: 'e', props: { duration_s: 1, speed: 2 } },
+        ],
+      },
+      'custom.junk',
+    );
+    const at = (path: string) => issues.filter((i) => i.path === path);
+    assert.match(at('custom.junk.look[0].block')[0]!.message, /not a look block/);
+    assert.equal(at('custom.junk.look[1].props.color')[0]!.level, 'error');
+    assert.equal(at('custom.junk.look[1].props.wobble')[0]!.level, 'error');
+    assert.match(at('custom.junk.look[2].props.color')[0]!.message, /not a ramp/);
+    assert.match(at('custom.junk.look[2].props.icon')[0]!.message, /not a pictogram/);
+    assert.equal(at('custom.junk.look[3].props.color').length + at('custom.junk.look[3].props.dash').length, 0, 'good props pass');
+    assert.match(at('custom.junk.motion[0].block')[0]!.message, /does not act on a points look/);
+    assert.match(at('custom.junk.motion[1].block')[0]!.message, /not a motion block/);
+    assert.equal(at('custom.junk.motion[2].props.speed')[0]!.level, 'error');
+    assert.equal(at('custom.junk.icon')[0]!.level, 'warning');
+    assert.equal(checkPaint('@accent'), null);
+    assert.equal(checkPaint('#12ab9f'), null);
+    assert.match(checkPaint('@nope')!, /palette slot/);
+  });
+
+  test('the preview avoids the app port and serves surfaces it can find (#322)', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'mrstudio-core-'));
+    const cli = join(root, 'mrstudio');
+    for (const d of ['packages/runtime/dist', 'packages/layers']) mkdirSync(join(root, d), { recursive: true });
+    writeFileSync(cli, '');
+    const before = process.env.MRSTUDIO_CLI;
+    process.env.MRSTUDIO_CLI = cli;
+    try {
+      const plan = await previewPlan(join(root, 'site'), { root } as any, { lan: false });
+      assert.equal(plan.how, 'cli');
+      assert.notEqual(plan.port, 4170);
+      assert.match(plan.command!, /--port \d+ --web .*runtime.dist --layers .*layers/);
+      assert.match(plan.urls!.editor, /\/edit$/);
+      assert.match(plan.urls!.guide, /\/guide$/);
+      assert.match(plan.urls!.controller, /\/tv$/);
+    } finally {
+      if (before === undefined) delete process.env.MRSTUDIO_CLI;
+      else process.env.MRSTUDIO_CLI = before;
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
 });
 
 describe('server over stdio', () => {
@@ -122,6 +194,29 @@ describe('server over stdio', () => {
     assert.match(String((site.contents[0] as { text: string }).text), /Site package contract/);
     const instructions = client.getInstructions() ?? '';
     assert.match(instructions, /Configure, do not code/);
+  });
+
+  test('every tool says what it touches and returns structured results (#325)', async () => {
+    const tools = (await client.listTools()).tools;
+    for (const t of tools) {
+      assert.equal(typeof t.annotations?.readOnlyHint, 'boolean', `${t.name} has readOnlyHint`);
+      assert.equal(typeof t.annotations?.openWorldHint, 'boolean', `${t.name} has openWorldHint`);
+      if (!t.annotations?.readOnlyHint) assert.equal(typeof t.annotations?.destructiveHint, 'boolean', `${t.name} has destructiveHint`);
+      assert.ok(t.outputSchema, `${t.name} has an output schema`);
+    }
+    const steps = tools.find((t) => t.name === 'set_steps')!;
+    assert.match(steps.description!, /notes/, 'set_steps documents presenter notes (#323)');
+    const overview = await call(client, 'overview');
+    assert.equal(overview.structured.ok, true);
+    assert.equal(typeof overview.structured.summary, 'string');
+    const missing = await call(client, 'describe_layer', { layer: 'teleporter' });
+    assert.equal(missing.structured.ok, false);
+    assert.equal(missing.structured.error.code, 'unknown_layer');
+    assert.equal(missing.structured.error.recoverable, true);
+    assert.ok(Array.isArray(missing.structured.error.next));
+    const v = (await client.getServerVersion())!.version;
+    assert.match(v, /^\d+\.\d+\.\d+/);
+    assert.notEqual(v, '0.1.0');
   });
 
   test('knows the core layers and docs', async () => {
@@ -195,12 +290,27 @@ describe('server over stdio', () => {
     const setSteps = await call(client, 'set_steps', { site: 'harbour', id: 'tour', steps });
     assert.equal(setSteps.isError, false, setSteps.text);
     assert.equal((await call(client, 'set_steps', { site: 'harbour', id: 'tour', steps: { sequence: [{ layer: 'ghost' }] } })).isError, true);
+    // Presenter notes are kept (#323).
+    const noted = await call(client, 'set_steps', { site: 'harbour', id: 'tour', steps: { ...steps, sequence: [{ ...steps.sequence[0], notes: 'Ask who walks here at nine.' }, steps.sequence[1]] } });
+    assert.equal(noted.isError, false, noted.text);
+    assert.equal(JSON.parse(readFileSync(join(dir, 'site.json'), 'utf8')).layers.find((l: any) => l.id === 'tour').steps.sequence[0].notes, 'Ask who walks here at nine.');
+    // A picture that is not in the site is refused (#321).
+    const pic = await call(client, 'add_layer', { site: 'harbour', use: 'media', id: 'pic', params: { file: 'data/media/missing.mp4' } });
+    assert.equal(pic.isError, true, pic.text);
+    assert.match(pic.text, /missing\.mp4 does not exist/);
+    // A refusal never reads as a success.
+    assert.doesNotMatch(pic.structured.summary, /Added/);
+    assert.equal(pic.structured.error.code, 'would_invalidate');
     assert.equal((await call(client, 'set_steps', { site: 'harbour', id: 'sunlight', steps: { sequence: [{ layer: 'tour' }] } })).isError, true);
 
     // Custom layers: saved recipes, used as custom:<id>, refused while in use.
     const recipe = { name: 'Bright paths', data: [{ id: 'aerial', wms: { url: 'https://example.org/wms', layers: 'ortho' } }], look: [{ id: 'photo', block: 'raster', data: 'aerial' }] };
     assert.equal((await call(client, 'save_custom_layer', { site: 'harbour', id: 'bright', recipe })).isError, false);
     assert.equal((await call(client, 'save_custom_layer', { site: 'harbour', id: 'broken', recipe: { name: 'x', look: [{ id: 'a', block: 'lines', data: 'nope' }] } })).isError, true);
+    const junk = await call(client, 'save_custom_layer', { site: 'harbour', id: 'junk', recipe: { name: 'Junk', data: [{ id: 'd', wms: { url: 'https://example.org/wms', layers: 'x' } }], look: [{ id: 'a', block: 'extrude', data: 'd', props: { wobble: 3 } }] } });
+    assert.equal(junk.isError, true, 'unknown blocks are refused (#321)');
+    assert.equal(junk.structured.error.code, 'would_invalidate');
+    assert.doesNotMatch(junk.structured.summary, /Saved/);
     const custom = await call(client, 'add_layer', { site: 'harbour', use: 'custom:bright' });
     assert.equal(custom.isError, false, custom.text);
     assert.equal((await call(client, 'save_custom_layer', { site: 'harbour', id: 'bright', recipe: null })).isError, true, 'still in use');
@@ -216,12 +326,14 @@ describe('server over stdio', () => {
     assert.equal((await call(client, 'update_site', { site: 'harbour', set: { basemap: { background: '#101418' } } })).isError, false);
     const welcome = await call(client, 'update_site', { site: 'harbour', set: { welcome: { title: 'Hi' } } });
     assert.equal(welcome.isError, true);
-    assert.match(welcome.text, /module request/);
+    assert.match(welcome.text, /draft_module_request/);
+    assert.equal(welcome.structured.error.code, "unknown_setting");
     const badLogo = await call(client, 'update_site', { site: 'harbour', set: { branding: { logo: '../logo.png' } } });
     assert.equal(badLogo.isError, true);
 
     const valid = await call(client, 'validate_site', { site: 'harbour', run_cli: false });
     assert.equal(valid.isError, false, valid.text);
+    assert.ok(!valid.data.issues.some((i: any) => /check the layer's docs/.test(i.message)), 'no boilerplate data notes (#321)');
     assert.equal(valid.data.cli.ran, false);
 
     // With the real CLI built (cargo build -p mrs-cli), the app's own check agrees.
@@ -250,6 +362,12 @@ describe('server over stdio', () => {
     });
     assert.equal(sun.data.verdict, 'use-existing', sun.text);
 
+    // A layer named as a kernel is that layer, not a missing kernel (#319).
+    const trams = await call(client, 'check_layer_idea', { title: 'Ambient trams', description: 'Trams moving along their lines while nobody touches the table', kernels: ['transit'] });
+    assert.equal(trams.data.verdict, 'use-existing', trams.text);
+    assert.equal(trams.data.existing_layers[0].id, 'transit');
+    assert.deepEqual(trams.data.missing, []);
+
     // The service gateway is built (#278): a model behind a layer needs no new module.
     const energy = await call(client, 'check_layer_idea', {
       title: 'Energy use per building', description: 'Energy use of each building computed by an energy model service', blocks: ['service gateway', 'choropleth'],
@@ -276,8 +394,11 @@ describe('server over stdio', () => {
 
     // No token and no gh: the server hands back the link and sends nothing.
     const submit = await call(client, 'submit_module_request', { path: draft.data.path });
-    assert.equal(submit.isError, false, submit.text);
+    assert.equal(submit.isError, true, submit.text);
     assert.match(submit.text, /Not sent/);
+    assert.equal(submit.structured.error.code, 'not_submitted');
+    assert.equal(submit.structured.submitted, false);
+    assert.match(submit.structured.issue_link, /issues\/new/);
   });
 
   test('works from the embedded snapshot outside a core checkout', async () => {

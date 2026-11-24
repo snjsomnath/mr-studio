@@ -78,10 +78,21 @@ export function checkIdea(idea: LayerIdea, catalog: Catalog, extraLayers: LayerE
     .slice(0, 5)
     .map((x) => x.row);
 
-  const kernels = (idea.kernels ?? []).map((id) => ({
-    id,
-    status: catalog.kernels.includes(id) ? ('built' as const) : catalog.plannedKernels.includes(id) ? ('planned' as const) : ('unknown' as const),
-  }));
+  // A "kernel" that is really a layer id (transit, isovist) names that layer, not a missing kernel (#319).
+  const allLayers = [...catalog.layers, ...extraLayers];
+  const layerKernels = (idea.kernels ?? []).filter((id) => !catalog.kernels.includes(id) && allLayers.some((l) => l.id === id));
+  for (const id of layerKernels) {
+    const l = allLayers.find((x) => x.id === id)!;
+    const at = existing.findIndex((e) => e.id === (l.origin === 'core' ? l.id : l.use));
+    if (at >= 0) existing.splice(at, 1);
+    existing.unshift({ id: l.origin === 'core' ? l.id : l.use, name: String(l.manifest.name ?? l.id), why: `'${id}' is a layer, not a kernel; it already exists` });
+  }
+  const kernels = (idea.kernels ?? [])
+    .filter((id) => !layerKernels.includes(id))
+    .map((id) => ({
+      id,
+      status: catalog.kernels.includes(id) ? ('built' as const) : catalog.plannedKernels.includes(id) ? ('planned' as const) : ('unknown' as const),
+    }));
 
   const blocks = (idea.blocks ?? []).map((asked) => {
     const b = findBlock(catalog.blocks, asked);
@@ -97,7 +108,7 @@ export function checkIdea(idea: LayerIdea, catalog: Catalog, extraLayers: LayerE
     ...blocks.filter((b) => b.status !== 'built').map((b) => `block '${b.id ?? b.asked}' (${b.status === 'planned' ? 'planned' : 'new'})`),
   ];
 
-  const strongMatch = existing.length > 0 && missing.length === 0 && existing[0]!.why.includes('kernel');
+  const strongMatch = existing.length > 0 && missing.length === 0 && (existing[0]!.why.includes('kernel') || layerKernels.length > 0);
   let verdict: Verdict;
   let summary: string;
   let next: string;
