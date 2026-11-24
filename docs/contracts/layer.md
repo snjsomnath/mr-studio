@@ -481,7 +481,9 @@ sites/lindholmen/layers/energy-flows/
 - A `.mrstable` export carries the packages with their `dist/`, without `node_modules`.
 
 The rules for layers above apply to site layers too. Anything a site layer needs from the core that the SDK does
-not offer is a module request (MCP `draft_module_request`), not a copy of core code.
+not offer is a development request (MCP `draft_development_request`, kind `sdk-runtime`), not a copy of core code.
+
+The MCP server walks a developer through this: `create_layer`, `sdk_reference` (the SDK's exports read from its source), `check_layer` (the rules in this document), `build_layer`, `preview_layer` and `add_service`, and the prompts `build_code_layer` and `build_controller_app` (docs/MCP.md).
 
 ## Dev mode
 

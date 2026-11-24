@@ -12,13 +12,13 @@ A project is a site package: a folder with site.json, data/ and requests/. The s
 
 Rules:
 1. Design the experience first, then build from what exists. Read mrstudio://concepts (the three surfaces, what goes where, the patterns) and call find_capabilities with the person's goal before proposing anything; describe_layer before setting params. A capability's status comes from the code: available can be used now, needs_setup needs the data or service it names, planned and unsupported are development requests, never something to configure. Never invent layer ids, controls, kernels or site.json keys.
-2. Configure, do not code. Do not write layer modules, TypeScript, kernels or copies of core files into a site. When something is missing, check it with assess_experience, look for an existing issue with find_related_issues, then draft_development_request; the core team builds it once for everyone.
+2. Configure before you code. Layers, custom layer recipes (save_custom_layer) and slideshows cover most ideas. A site code layer (create_layer, sdk_reference, check_layer, build_layer) is for behaviour nothing else gives, built with a developer who wants code; never copy core files or kernels into a site. When the core itself is missing something, check it with assess_experience, look for an existing issue with find_related_issues, then draft_development_request; the core team builds it once for everyone.
 3. Edit sites only through the tools (create_site, update_site, add_layer, set_layer, move_layer, remove_layer). They validate every change against the contracts. Finish with validate_site.
 4. Send development requests (submit_development_request) only after the person has read the drafts and said yes; one yes may cover a batch. They open public GitHub issues.
 5. Contracts are in read_doc: architecture, roadmap, contracts/site, contracts/layer and the rest. Quote them rather than guess.
 6. What changed recently is in whats_new (the changelog, newest first). Check it when someone asks for something that may have just been built.
 
-Prompts: design_experience, plan_workshop, compare_scenarios, build_from_data, new_project, brainstorm_layer, design_dashboard, request_module.`;
+Prompts: design_experience, plan_workshop, compare_scenarios, build_from_data, new_project, build_code_layer, build_controller_app, brainstorm_layer, design_dashboard, request_module.`;
 }
 
 export function newProjectPrompt(place?: string, purpose?: string): string {
@@ -29,7 +29,7 @@ Work through these steps, one short question at a time, and act with the tools a
 1. The story. Ask who stands around the table and what they should understand or decide. One or two sentences is enough; everything else follows from it. Design the experience before the scene: read mrstudio://concepts, call find_capabilities with that goal, write it as an experience plan and check it with assess_experience (the design_experience prompt walks through this); build_experience then writes steps 3 and 8 for you.
 2. The place. Agree the centre point (lon, lat in WGS84), the area the table shows in metres, and its rotation (bearing of the table's top edge, clockwise from north). Match the area's aspect ratio to the physical table. Ask the time zone. Then call create_site.
 3. The scene. Call list_layers. Pick the layers that tell the story and order them bottom to top: base and ambient layers first, analysis layers above. For each, call describe_layer and set params that frame the story (a date and hour for the sun, for example), and decide which start active. Use add_layer and set_layer.
-4. The data. Explain what the site folder needs (building footprints as GeoJSON in WGS84 with a height property, optional terrain and trees) and update scene paths with update_site once files are in data/. If the person has no data yet, the site still runs on a flat area.
+4. The data. Ask for the team's files and bring them in with import_data (it checks them like the editor's Add data, reprojects, and points site.json at them; check first, then write). Buildings, trees and streets can come from OpenStreetMap and the ground from free elevation (source osm or elevation). Pictures and sounds go in with add_media and add_sound; list_site_files shows what is there. If the person has no data yet, the site still runs on a flat area.
 5. The look and the welcome. With update_site: branding (title, logo inside the site folder, and the welcome line under the title on the controller's home screen), the basemap (style, black and white, brightness), the table's palette, and display quality. The controller's home screen loops through the layers by itself while nobody touches it (the attract loop) and returns home after a quiet spell; each layer's button (name, icon, side, group) is set with set_layer. Read contracts/site to see what a site can configure today. If they want something the contract does not offer, do not add unknown keys; capture it with draft_development_request, kind "site-setting".
 6. The table's edges. Set table.front (the side visitors stand at) and, if the projector covers more than the model, table.ribbons: at-a-glance strips in the blank space on any side.
 7. Languages. If visitors speak more than one language, set branding.languages (["en", "sv"]; the first is where the table starts) and translate the site's own words (title, welcome line, button names, slide titles) in branding.translations.
@@ -122,6 +122,33 @@ export function buildFromDataPrompt(data?: string): string {
 1. Ask what the data is (points, lines, areas; which columns), where it is, and what story it should tell. GeoJSON in WGS84 or a CSV with lon and lat columns goes into the site's data/ folder.
 2. Read mrstudio://patterns/data-story and mrstudio://schema/recipe. Most datasets need no code: a custom layer (save_custom_layer) colours areas by a column, pulses places by a weight, flows along lines, and reveals things over time. The legend is worked out from the data. A WMS map is shown with the wms layer.
 3. Decide what the table shows (one look, at most two) and what the controller explains (legend, a control bound to the recipe), then save the custom layer and use it as a step (use "custom:<id>") in an experience plan.
+
+${DESIGN_RULES}`;
+}
+
+/** A team's own code layer (#284): blocks first, code last. */
+export function buildCodeLayerPrompt(idea?: string): string {
+  return `Build an MR Studio site layer with its own code${idea ? ` for: "${idea}"` : ''}, the way a layer like ECOM is built: blocks first, code last.
+
+1. Make sure code is needed. find_capabilities and assess_experience with the idea; if an existing layer, a custom layer recipe (save_custom_layer) or a slideshow does it, build that and stop. Code is for behaviour: a model behind the table, an interaction no layer has, a controller panel of its own.
+2. Plan the three surfaces before any code (read mrstudio://concepts): what the table shows (visual, almost no text), what the controller does (layer buttons, the layer's controls, panels within the TV's density budget) and what phones do. Read docs/contracts/layer.md, "Site layers".
+3. If a model computes the answer (Python, an optimiser), put it behind a service: add_service with its folder and command (or url), then requires.services in layer.json and ctx.service(id).job(...) in the code, publishing 'busy' while it runs. The host caches the last answers for when it is down.
+4. create_layer, then look up every API with sdk_reference before using it (defineLayer, TableContext, PanelContext, ctx.publish, ctx.pointer, ctx.sendTool, ctx.service, the drawing blocks). Write against what it returns; something the SDK lacks is a development request of kind sdk-runtime (draft_development_request), never a copy of core code.
+5. Put every place and number that belongs to this table in the site's data or the layer's params, never in code. Give every word people see a Swedish line in locales/sv.json.
+6. check_layer until it passes, build_layer, add_layer with use "./layers/<id>", validate_site, then preview_layer and look at /dev with the person.
+
+${DESIGN_RULES}`;
+}
+
+/** A custom map app on the controller (#284), such as a picker or a mini map that drives the table. */
+export function buildControllerAppPrompt(idea?: string): string {
+  return `Build a controller map app for MR Studio${idea ? `: "${idea}"` : ''}: something people do on the controller's screen that changes the table.
+
+1. Check what exists first: find_capabilities with "controller map", "stage", "tools", "picker". The controller already has the layer's controls, tools that place points, lines and areas on the table, and a stage per layer (docs/contracts/layer.md, "The controller stage" and "Tools"). Use them when they fit.
+2. Design it as the controller's centre: big touch targets, words on the controller and not on the table, one task at a time. The table answers visually.
+3. If it needs code: create_layer, then sdk_reference for controllerMap, stage(), PanelContext and ctx.sendTool. Inputs go through the host (ctx.sendTool, ctx.publish), so the table, TV and phones agree; never message a surface directly.
+4. check_layer (density budget, Swedish words, no site coordinates), build_layer, add_layer, preview_layer and try it in /dev.
+5. A missing SDK piece is a development request of kind sdk-runtime or interaction, after find_related_issues.
 
 ${DESIGN_RULES}`;
 }
