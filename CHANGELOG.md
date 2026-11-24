@@ -4,6 +4,22 @@ Every merge to main that carries a release note becomes a version. The newest is
 The app shows these notes, with their pictures, on Home when a newer version is out.
 How notes are written: docs/RELEASING.md.
 
+## 0.9.0 (2026-11-24)
+
+### New
+
+#### Name and place, At rest and Design tabs on the ribbon (#311, #312, #313)
+
+Three steps of the setup guide are now tabs on the editor's ribbon, so a table can be changed without walking back through the guide. **Name and place** renames, moves, resizes or turns the table, and says what a move does before you press Move the table. **At rest** switches the map life on and off. **Design** has the controller's theme gallery, the button style, and each button's words and side.
+
+![The Design tab: theme gallery on the ribbon, buttons beside the map](docs/screenshots/311-design.png)
+
+![The At rest tab](docs/screenshots/312-at-rest.png)
+
+![The Name and place tab, with a change waiting to move the table](docs/screenshots/313-name-and-place.png)
+
+![What a move does, said before it happens](docs/screenshots/313-move-notes.png)
+
 ## 0.8.0 (2026-11-24)
 
 ### Breaking changes
