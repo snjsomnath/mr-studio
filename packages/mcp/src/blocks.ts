@@ -219,6 +219,12 @@ export const BLOCKS: BlockDef[] = [
     detect: 'export function sunPosition',
   },
   {
+    id: 'step-transitions', group: 'interaction', name: 'Step transitions',
+    description: 'How a slideshow or sequence moves from one step to the next: a cut, a fade or a dip to black, with its length.',
+    usage: "set_steps with 'transition' on the sequence or a step; stepTransition(steps, index) from @mrstudio/sdk",
+    detect: 'export function stepTransition',
+  },
+  {
     id: 'scenario-switch', group: 'interaction', name: 'Scenario switch',
     description: 'A select control whose options swap the dataset or params a layer uses.',
     usage: "a 'select' control; the layer maps each option to data or params",

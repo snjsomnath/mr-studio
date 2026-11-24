@@ -144,6 +144,14 @@ Layer `slideshow`, media.
 
 ![Slideshow](docs/screenshots/43-slides-editor.png)
 
+## Picture or video
+
+A picture or a video of the site laid over the whole table, such as a simulation, an old photo or a film of a sun study. In a slideshow, slides move on with a cut, a fade or a dip to black.
+
+Layer `media`, media.
+
+![A picture over the table](docs/screenshots/197-table-picture.png)
+
 ## Web map (WMS)
 
 A map from a WMS service, such as a planning map or an aerial photo, laid over the table.

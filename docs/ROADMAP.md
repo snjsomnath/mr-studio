@@ -133,6 +133,7 @@ The core layers in `packages/layers`, with the issue that made each one:
 | Masterplan | `plan` | none | a plan drawing revealed phase by phase (#193) |
 | Video walk | `walkthrough` | none | a video and its walker on the table (#194) |
 | Slideshow | `slideshow` | none | a sequence of layers and media; guided tours with presenter notes (#43, #98) |
+| Picture or video | `media` | none | a picture or video over the whole table; slides with transitions (#197) |
 | Web map (WMS) | `wms` | none | WMS and ArcGIS maps (#42) |
 | Sketch | `sketch` | none | phone tools: points, routes, areas |
 | Building blocks | `blocks-demo` | none | a demo of the SDK's blocks |

@@ -83,6 +83,7 @@ changes              release notes waiting for the next version (docs/RELEASING.
 | Masterplan | A plan drawing (SVG or picture) revealed phase by phase | `plan` |
 | Video walk | A video on the controller, its walker moving along the path on the table | `walkthrough` |
 | Slideshow | Images, video, map data and layers one after another; with presenter notes it is a guided tour on the guide's phone | `slideshow` |
+| Picture or video | A picture or video of the site over the whole table: a simulation, an old photo, a film of a sun study | `media` |
 | Web map (WMS) | A map from a WMS or ArcGIS service laid over the table | `wms` |
 | Sketch | Places, routes and areas marked from a phone | `sketch` |
 | Building blocks | A demo of two scenes assembled from the SDK's building blocks | `blocks-demo` |
