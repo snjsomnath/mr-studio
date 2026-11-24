@@ -1146,6 +1146,8 @@ function placeArrivals(spots: readonly Spot[], stage: () => PlaceStage): TimeRev
       return age < 0 ? { alpha: 0, fresh: 0 } : { alpha: Math.min(1, age / 0.4), fresh: Math.max(0, 1 - age / 1.2) };
     },
     share: () => 0,
+    // Places arrive in steps, not through a span of years: there is no time to name.
+    label: () => '',
   };
 }
 
