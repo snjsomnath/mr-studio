@@ -14,8 +14,8 @@
 //     this layer publishes, and its own day clock widget (#353).
 //   - a controller stage of panels in layer.json (#357): map to pick on (#355), the clock, the
 //     hour slider (#354), self-sufficiency and the comparison with going it alone.
-import { canvasSurface, defineLayer, loadSiteData, networkData, networkLook, readShapes, resolvePalette, tableFrame, withAlpha } from '@mrstudio/sdk';
-import type { GeoJsonCollection, LayerManifest, NetworkLook, Rgba, Spot } from '@mrstudio/sdk';
+import { defineLayer, loadSiteData, networkData, networkLook, readShapes, resolvePalette, tableFrame, withAlpha } from '@mrstudio/sdk';
+import type { GeoJsonCollection, LayerManifest, NetworkLook, Rgba, Spot, View } from '@mrstudio/sdk';
 
 import manifest from '../layer.json';
 import { dayClock } from './day-clock.ts';
@@ -58,7 +58,15 @@ export default defineLayer<Params>({
   async table(ctx) {
     const frame = tableFrame(ctx.site);
     const palette = resolvePalette(ctx.site.palette);
-    const surface = canvasSurface(ctx.map.addElement(), frame);
+    // A canvas that follows the map, so the drawing lands where the map puts the table
+    // (a decoration covers the whole window, which is larger than the table when it has margins).
+    const overlay = ctx.map.addCanvas('ecom');
+    const surface = {
+      begin: (time: number): View => {
+        overlay.clear();
+        return { pen: overlay.context, scale: overlay.pixelsPerMetre, time, detail: 1, toPx: (p) => overlay.project(frame.toLonLat(p)) };
+      },
+    };
     const model = ctx.service('ecom');
     const saved: Day = {
       buildings: await loadSiteData<GeoJsonCollection>(ctx.site, 'ecom_buildings'),
