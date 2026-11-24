@@ -678,6 +678,22 @@ body[data-role='tv'] .dash {
   margin-left: 0;
 }
 
+/* A slider among the primary choices: long enough to scrub, its value easy to read. */
+.controls-primary .control-range {
+  min-width: 20rem;
+  align-items: stretch;
+}
+
+.controls-primary .control-range .control-head {
+  align-items: baseline;
+  gap: 1rem;
+}
+
+.controls-primary .control-range .control-value {
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
 .controls-primary .control-label {
   margin-bottom: 0.5rem;
   color: var(--muted);

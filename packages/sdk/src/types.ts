@@ -30,6 +30,11 @@ export interface RangeControl extends ControlBase {
   step?: number;
   unit?: string;
   default: number;
+  /**
+   * A value the layer publishes, shown in place of the number while it has one: a network's
+   * Time slider is a share of its series but reads "19:00" (#338).
+   */
+  shows?: string;
 }
 export interface SelectControl extends ControlBase {
   type: 'select';

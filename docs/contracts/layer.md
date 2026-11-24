@@ -45,6 +45,7 @@ Control types: `range`, `select`, `toggle`, `date`, `color`, `text`, `action` (a
 Every control has `id`, `type`, `label` and `default`. `phone: true` lets phone participants change it; a `primary` control is on phones unless it says `phone: false` (#335).
 
 `"phone_switch": false` at the top of layer.json keeps phones from turning the layer on or off, for a layer only the controller should open (the slideshow). Default true.
+A `range` control with `"shows": "network_time"` shows that value, as the layer publishes it, in place of the number while there is one: a network's Time slider is a share of its series but reads "19:00" (#338).
 `visibleWhen: { "mode": "day" }` hides a control unless another control has that value; a list, `{ "style": ["light", "dark"] }`, means any of them.
 
 A `text` control that names something is never a box to type in (#306); the editor offers a list to pick from, with type-ahead, and refuses a name that is not in it:

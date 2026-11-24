@@ -28,7 +28,7 @@ export function el<K extends keyof HTMLElementTagNameMap>(tag: K, className?: st
 export interface Widget {
   control: Control;
   row: HTMLElement;
-  sync(value: unknown, params?: Record<string, unknown>): void;
+  sync(value: unknown, params?: Record<string, unknown>, shared?: Record<string, unknown>): void;
 }
 
 function formatNumber(value: number, control: Extract<Control, { type: 'range' }>): string {
@@ -222,7 +222,7 @@ export function widget(control: Control, send: (value: unknown) => void, act: ()
   const id = `c-${Math.random().toString(36).slice(2)}`;
   const label = el('label', 'control-label', control.label);
   label.htmlFor = id;
-  let sync: (value: unknown, params?: Record<string, unknown>) => void = () => {};
+  let sync: (value: unknown, params?: Record<string, unknown>, shared?: Record<string, unknown>) => void = () => {};
 
   switch (control.type) {
     case 'range': {
@@ -233,14 +233,19 @@ export function widget(control: Control, send: (value: unknown) => void, act: ()
       let held = false;
       input.addEventListener('pointerdown', () => (held = true));
       for (const type of ['pointerup', 'pointercancel', 'blur']) input.addEventListener(type, () => (held = false));
+      // `shows`: what the layer publishes for this value reads better than the number (#338).
+      let shown = '';
       input.addEventListener('input', () => {
-        readout.textContent = formatNumber(input.valueAsNumber, control);
+        if (!shown) readout.textContent = formatNumber(input.valueAsNumber, control);
         send(input.valueAsNumber);
       });
-      sync = (value) => {
+      sync = (value, _params, shared) => {
+        const published = control.shows ? shared?.[control.shows] : undefined;
+        shown = typeof published === 'string' || typeof published === 'number' ? String(published) : '';
+        if (shown) readout.textContent = shown;
         if (held || typeof value !== 'number') return;
         input.value = String(value);
-        readout.textContent = formatNumber(value, control);
+        if (!shown) readout.textContent = formatNumber(value, control);
       };
       const head = el('div', 'control-head');
       head.append(label, readout);
@@ -1180,7 +1185,7 @@ export class Controller {
         const stepped = Boolean(manifest.sequence && state.step);
         for (const w of widgets) {
           w.row.hidden = stepped || !isVisible(w.control, state.params) || Boolean(state.hide?.includes(w.control.id));
-          w.sync(state.params[w.control.id], state.params);
+          w.sync(state.params[w.control.id], state.params, state.shared);
         }
         more.hidden = ![...moreRows.children].some((row) => !(row as HTMLElement).hidden);
         if (state.active && stageHandlers) {
@@ -1505,7 +1510,7 @@ export class Controller {
         body.hidden = !state.active;
         for (const w of widgets) {
           w.row.hidden = !isVisible(w.control, state.params) || (phone && Boolean(state.hide?.includes(w.control.id)));
-          w.sync(state.params[w.control.id], state.params);
+          w.sync(state.params[w.control.id], state.params, state.shared);
         }
         tools?.sync(state.active);
       },
