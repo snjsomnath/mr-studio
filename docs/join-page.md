@@ -55,6 +55,6 @@ Open `http://127.0.0.1:4199/tv`, then the QR link in another browser. `/bridge` 
 
 ## Limits
 
-- The controller (or table) window must stay open: it carries the phones. Its page handles their requests between frames.
+- The controller (or table) window must stay open and in front: it carries the phones. Its page handles their requests between frames. In the app that is the controller window on the TV. In a browser tab it is fragile: a closed tab, or a browser putting a background tab to sleep, drops every phone (seen in the first real-phone test).
 - Each phone loads the phone page (about 0.5 MB) through the link when it joins.
-- Not yet tried on a real phone on eduroam or mobile data (#89).
+- Tried on a real phone on mobile data (2026-11-24): it worked. Eduroam is not tried yet (#89).
