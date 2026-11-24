@@ -310,6 +310,9 @@ pub struct SessionInfo {
     /// The language the visitors' screens speak now (#80): `en` or `sv`. The controller
     /// switches it; a phone may keep its own.
     pub language: String,
+    /// Whether the table's layers may be heard (#282). The controller's sound switch turns it
+    /// off for the session; a new session starts with sound on.
+    pub sound: bool,
 }
 
 /// A phone's place in the session. It outlives the connection by `resume_hold`.
@@ -471,6 +474,8 @@ pub struct Hub {
     bridge_join: RwLock<Option<String>>,
     /// The visitors' language now (#80), one of the site's `branding.languages`.
     language: RwLock<String>,
+    /// The controller's sound switch (#282): false mutes every layer for the session.
+    sound: RwLock<bool>,
     /// The code the guide's phone joins with (#98). Only the operator's screens are told it.
     guide_code: String,
     options: SessionOptions,
@@ -523,7 +528,7 @@ impl Hub {
         let code = format!("{:04}", random_u64() % 10_000);
         let join_url = join_base.map(|base| format!("{}/phone?c={code}", base.trim_end_matches('/')));
         let language = offered(&site.manifest.branding)[0].clone();
-        let session = SessionInfo { id: format!("{:016x}", random_u64()), code, port, join_url, language: language.clone() };
+        let session = SessionInfo { id: format!("{:016x}", random_u64()), code, port, join_url, language: language.clone(), sound: true };
         // Six digits, never the phones' code.
         let guide_code = loop {
             let guide = format!("{:06}", random_u64() % 1_000_000);
@@ -539,6 +544,7 @@ impl Hub {
             relay_join: RwLock::new(None),
             bridge_join: RwLock::new(None),
             language: RwLock::new(language),
+            sound: RwLock::new(true),
             guide_code,
             options,
             catalog: RwLock::new(Arc::new(catalog)),
@@ -792,6 +798,7 @@ impl Hub {
     pub fn session(&self) -> SessionInfo {
         let mut session = self.session.clone();
         session.language = self.language.read().unwrap().clone();
+        session.sound = *self.sound.read().unwrap();
         let relay = self.relay_join.read().unwrap().clone();
         if let Some(base) = relay.or_else(|| self.bridge_join.read().unwrap().clone()) {
             session.join_url = Some(format!("{}/phone?c={}", base.trim_end_matches('/'), session.code));
@@ -1030,6 +1037,15 @@ impl Hub {
             *self.language.write().unwrap() = language.to_string();
             self.emit("session.changed", json!({ "session": self.session() }));
             return Ok(json!({ "language": language }));
+        }
+        if method == "session.sound" {
+            if !matches!(role, Role::Tv | Role::Dev | Role::Guide) {
+                return Err("only the controller turns the table's sound on or off".into());
+            }
+            let on = p["on"].as_bool().ok_or("say on: true or false")?;
+            *self.sound.write().unwrap() = on;
+            self.emit("session.changed", json!({ "session": self.session() }));
+            return Ok(json!({ "sound": on }));
         }
         if method == "session.guide" {
             if !matches!(role, Role::Tv | Role::Dev) {
@@ -2671,6 +2687,20 @@ mod tests {
         assert!(dev("palette.set", json!({ "palette": { "slots": { "accent": "orange" } } })).is_err());
         dev("palette.set", json!({ "palette": null })).unwrap();
         assert!(Site::load(&hub.site.dir).unwrap().manifest.palette.is_none());
+    }
+
+    #[test]
+    fn the_controller_mutes_the_table_for_the_session() {
+        let hub = scratch_hub("sound");
+        assert!(hub.session().sound, "a session starts with sound");
+        assert!(hub.request(Role::Phone, 0, "session.sound", &json!({ "on": false })).is_err());
+        assert!(hub.request(Role::Table, 0, "session.sound", &json!({ "on": false })).is_err());
+        assert!(hub.request(Role::Tv, 0, "session.sound", &json!({})).is_err());
+        hub.request(Role::Tv, 0, "session.sound", &json!({ "on": false })).unwrap();
+        assert!(!hub.session().sound);
+        assert_eq!(hub.welcome(0)["state"]["session"]["sound"], false);
+        hub.request(Role::Guide, 0, "session.sound", &json!({ "on": true })).unwrap();
+        assert!(hub.session().sound);
     }
 
     #[test]

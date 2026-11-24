@@ -385,6 +385,35 @@ Visitors read the controller, the phones and the table's ribbons in English or S
 - Every core layer has `locales/sv.json`; a host test checks that every core layer's name, control labels and choices have Swedish.
 - The site's own words (title, welcome line, button names, slide titles) are in site.json, `branding.translations` (site.md).
 
+## Sound voices
+
+A layer can carry a sound bed in layer.json, `sound`, with no audio code (#282). It is up to four
+slow, continuous voices whose level and colour follow what the layer publishes or a control's value:
+
+```json
+"sound": [
+  { "id": "grid", "kind": "noise", "width": 1.2, "glide_s": 3,
+    "level":  { "bind": "shared.import_kw", "from": [0, 400], "to": [0, 0.6], "curve": "sqrt" },
+    "centre": { "bind": "shared.import_kw", "from": [0, 400], "to": [260, 900] } },
+  { "id": "hum", "kind": "hum", "frequency": 100, "harmonics": 4,
+    "level":  { "bind": "shared.import_kw", "from": [50, 400], "to": [0, 0.35] } }
+]
+```
+
+- `kind`: `noise` (white noise through a band, `centre` Hz and `width` octaves), `hum` (a pitch with
+  up to 6 `harmonics`) or `tone` (a plain sine at `frequency`).
+- Each of `level` (0 to 1), `centre`, `width` and `frequency` is a number, or a binding
+  `{ "bind": "shared.<key>" | "params.<control id>", "from": [a, b], "to": [c, d], "curve" }` that maps
+  the value's range to the voice's, holding at the ends. `curve` is `linear` (default), `sqrt` or
+  `square`. A value that is missing gives the low end, so a bed is silent until there is data.
+- The rules from the ECOM learnings (docs/visualisation.md): the voices share one level ceiling, so
+  more voices are never louder; every change glides over `glide_s` seconds (2 by default, at least
+  0.5); there are no repeating events.
+- Voices play on the table only, start and stop with their layer, and fade out while the controller's
+  **Sound** switch (under Map controls) mutes the table for the session (`session.sound {on}`, which
+  also silences sound on points). The host refuses a layer.json whose `sound` breaks these rules.
+- From code, `VoiceBed`, `voiceTargets` and `checkVoices` are in `@mrstudio/sdk` (voices.ts).
+
 ## Reveals: X-rays, magnifiers and reveal lines
 
 A layer with `"reveals": true` in layer.json shows the layers placed inside it (its items in

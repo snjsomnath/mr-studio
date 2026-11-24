@@ -369,6 +369,8 @@ Events:
 
 `session.language` is the language the visitors' screens speak now, one of the site's `branding.languages` (English when it lists none). `session.language { language }` switches it, from the controller (`tv`), the editor (`dev`) or the guide; the host sends `session.changed` to every surface. The controller and the phones start again in the new language; the table only redraws its ribbons. A phone may keep a language of its own (the SV / EN buttons in its header, kept in the phone's browser): it no longer follows the controller. A phone turned away at the door speaks its own choice, else its browser's language.
 
+`session.sound` is whether the table plays sound, true when the session starts (#282). `session.sound { on }` switches it, from the controller (the **Sound** button under Map controls), the editor or the guide, and the host sends `session.changed`. While it is false the table plays nothing: no voice beds (layer.md, Sound voices) and no sounds on points; what follows the sound on the map carries on.
+
 ### The guide's phone (#98)
 
 A guide leading a group runs a slideshow from a phone of their own, with presenter notes in hand.

@@ -41,6 +41,8 @@ const SV: Record<string, string> = {
   'Reset view': 'Återställ vyn',
   'Full screen': 'Helskärm',
   'Calibrate': 'Kalibrera',
+  'Sound': 'Ljud',
+  'Muted': 'Ljud av',
   'Map controls': 'Kartan',
   'About': 'Om',
   'Credits': 'Medverkande',

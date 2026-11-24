@@ -171,5 +171,54 @@
         }
       ]
     }
+  ],
+  "sound": [
+    {
+      "id": "grid",
+      "kind": "noise",
+      "level": {
+        "bind": "shared.import_kw",
+        "from": [
+          0,
+          400
+        ],
+        "to": [
+          0,
+          0.6
+        ],
+        "curve": "sqrt"
+      },
+      "centre": {
+        "bind": "shared.import_kw",
+        "from": [
+          0,
+          400
+        ],
+        "to": [
+          260,
+          900
+        ]
+      },
+      "width": 1.2,
+      "glide_s": 3
+    },
+    {
+      "id": "hum",
+      "kind": "hum",
+      "frequency": 100,
+      "harmonics": 4,
+      "level": {
+        "bind": "shared.import_kw",
+        "from": [
+          50,
+          400
+        ],
+        "to": [
+          0,
+          0.35
+        ]
+      },
+      "glide_s": 3
+    }
   ]
 }

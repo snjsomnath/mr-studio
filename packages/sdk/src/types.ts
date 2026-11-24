@@ -161,6 +161,8 @@ export interface LayerManifest {
   actions?: { id: string; label?: string }[];
   /** Things a visitor picks on the table and changes one by one on the controller (#279). */
   entities?: EntitySet[];
+  /** A sound bed of up to four voices that follow the layer's values (#282, voices.ts). Plays on the table only. */
+  sound?: import('./voices.ts').VoiceSpec[];
   /** TV panels the layer contributes while it is on. Rules in docs/contracts/dashboard.md. */
   panels?: PanelSpec[];
   /** The layer is a sequence: its instances may have `steps.sequence` that show other layers (the slideshow). */
@@ -484,7 +486,7 @@ export interface Participant {
 export interface SessionState {
   protocol: number;
   /** `join_url` is what the TV's QR code points at; null when phones cannot reach the host. */
-  session: { id: string; code: string; port: number; join_url: string | null; /** The visitors' language now (#80). */ language?: string };
+  session: { id: string; code: string; port: number; join_url: string | null; /** The visitors' language now (#80). */ language?: string; /** False while the controller's sound switch mutes the table (#282). */ sound?: boolean };
   site: SiteInfo;
   /** Layer instance ids in draw order, bottom first. */
   scene: string[];
