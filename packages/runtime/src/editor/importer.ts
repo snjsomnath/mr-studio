@@ -364,6 +364,18 @@ export class Importer {
     this.start({ kind: 'file', file });
   }
 
+  /** Replaces a dataset the table has (#52): the same name, a new file. */
+  replacing(name: string): void {
+    if (this.fixed) return;
+    const known = TARGETS.find((t) => t.dataset === name);
+    if (known) this.chosen = known.target;
+    else {
+      this.chosen = 'own';
+      this.ownName = name;
+    }
+    this.render();
+  }
+
   /** Whether the author has a file or fetch under way, which a redraw of the page around must keep. */
   get pending(): boolean {
     return this.source !== null;

@@ -3207,3 +3207,9 @@ body[data-role='edit'] .ed-surface .table-frame {
   background: #fff;
   padding: 2px;
 }
+
+/* The Data list's menu (#52): icon, then words, left aligned. */
+.ed-data-menu .ed-file-item {
+  justify-content: flex-start;
+  gap: 8px;
+}

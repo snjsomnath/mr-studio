@@ -495,7 +495,7 @@ export class Editor {
   }
 
   /** The Add data dialog: the same importer as "Your place", with the kind of data left to the author. */
-  private addData(file?: File): void {
+  private addData(file?: File, replace?: string): void {
     const dialog = el('dialog', 'im-dialog');
     dialog.ariaLabel = 'Add data';
     const head = el('header', 'im-dialog-head');
@@ -530,6 +530,8 @@ export class Editor {
     dialog.append(head, el('p', 'wz-lead', 'Bring a file into the table, or fetch it from OpenStreetMap. It is copied into the table and stays on this computer.'), importer.element);
     // From Add media: the file is already chosen, and its kind guessed from its name.
     if (file) importer.takeFile(file);
+    // From the Data list (#52): a new file under the same name.
+    if (replace) importer.replacing(replace);
     dialog.addEventListener('close', () => dialog.remove());
     this.shell.append(dialog);
     dialog.showModal();
@@ -1357,6 +1359,99 @@ export class Editor {
     return row;
   }
 
+  /**
+   * The Data group of the tree (#52): every dataset of the table. A row opens what can be done
+   * with it: make a layer from it, replace it with another file, or take it out of the table.
+   */
+  private dataRows(): HTMLElement[] {
+    const data = this.store.state.site.data ?? {};
+    const names = Object.keys(data).sort((a, b) => a.localeCompare(b));
+    const title = el('h2', 'ed-tree-title', 'Data');
+    const plus = el('button', 'ed-icon-button');
+    plus.type = 'button';
+    plus.ariaLabel = 'Add data';
+    plus.title = 'Add data';
+    plus.append(icon('plus', 14));
+    plus.addEventListener('click', () => this.addData());
+    title.append(plus);
+    const nodes: HTMLElement[] = [title];
+    if (names.length === 0) nodes.push(el('p', 'ed-empty', 'No data yet. Bring in a file or fetch it from OpenStreetMap with the + above.'));
+    const kindOf = (path: string): [string, string] => {
+      if (/\.geojson$/i.test(path)) return ['map', 'Map data'];
+      if (/\.json$/i.test(path)) return ['file', 'Data'];
+      if (/\.csv$/i.test(path)) return ['grid', 'Table'];
+      if (/\.tiff?$|\.f32$/i.test(path)) return ['contrast', 'Raster'];
+      if (/\.(mp4|mov|webm)$/i.test(path)) return ['video', 'Video'];
+      if (/\.svg$/i.test(path)) return ['plan', 'Drawing'];
+      return ['layers', 'File'];
+    };
+    for (const name of names) {
+      const path = data[name]!;
+      const known = targetFor(name);
+      const [iconName, kind] = kindOf(path);
+      const row = this.treeRow(known?.name ?? name, `${kind} \u00b7 ${path.split('/').pop()}`, known?.icon ?? iconName, false, () => this.dataMenu(row, name, path));
+      row.dataset.dataset = name;
+      row.setAttribute('aria-haspopup', 'menu');
+      nodes.push(row);
+    }
+    return nodes;
+  }
+
+  /** What can be done with one dataset, in a menu under its row. */
+  private dataMenu(anchor: HTMLElement, name: string, path: string): void {
+    document.querySelector('.ed-data-menu')?.remove();
+    const menu = el('div', 'ed-file-menu ed-data-menu');
+    menu.setAttribute('role', 'menu');
+    menu.ariaLabel = name;
+    const close = (): void => {
+      menu.remove();
+      document.removeEventListener('pointerdown', outside, true);
+    };
+    const outside = (event: PointerEvent): void => {
+      if (!menu.contains(event.target as Node) && !anchor.contains(event.target as Node)) close();
+    };
+    const item = (label: string, iconName: string, run: () => void, disabled = false, tip = ''): void => {
+      const node = button('ed-file-item', label, iconName);
+      node.setAttribute('role', 'menuitem');
+      node.disabled = disabled;
+      node.title = tip;
+      node.addEventListener('click', () => {
+        close();
+        run();
+      });
+      menu.append(node);
+    };
+    const known = targetFor(name);
+    const vector = vectorDatasets(this.store).some((d) => d.name === name);
+    item('Make a layer from it', 'brush', () => void customFromDataset(this.builderHost(), name), !vector, vector ? 'A custom layer of this data, opened in the builder' : 'Only map data and tables with places can be drawn');
+    // The files the table is made of are replaced where they were brought in: Your place.
+    const yourPlace = known && !known.target.startsWith('data:');
+    item('Replace with another file\u2026', 'reset', () => (yourPlace ? this.bringIn(known.target) : this.addData(undefined, name)));
+    item('Take out of the table', 'trash', () => void this.forgetData(name, known?.name ?? name), Boolean(yourPlace), yourPlace ? 'Part of Your place: replace it there' : `The file ${path} stays in the table folder`);
+    const box = anchor.getBoundingClientRect();
+    menu.style.position = 'fixed';
+    menu.style.top = `${box.bottom + 2}px`;
+    menu.style.left = `${box.left + 24}px`;
+    this.shell.append(menu);
+    document.addEventListener('pointerdown', outside, true);
+    menu.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') {
+        close();
+        anchor.focus();
+      }
+    });
+    menu.querySelector<HTMLButtonElement>('.ed-file-item:not(:disabled)')?.focus();
+  }
+
+  /** Takes a dataset out of site.json, or says what still reads it. */
+  private async forgetData(name: string, label: string): Promise<void> {
+    try {
+      await this.connection.request('data.remove', { name });
+    } catch (error) {
+      await this.ask(`${label} is still in use`, `${(error as Error).message.replace(/^./, (c) => c.toUpperCase())}.`, [{ id: 'ok', label: 'OK', primary: true }]);
+    }
+  }
+
   private renderTree(instances: { id: string; manifest: LayerManifest; state: LayerState }[]): void {
     const { context } = this;
     const ambient = instances.filter((i) => isAtRest(i.manifest, i.state) && !i.state.parent);
@@ -1419,6 +1514,7 @@ export class Editor {
     nodes.push(el('h2', 'ed-tree-title', 'Around the table'));
     nodes.push(this.treeRow('Controller', 'Buttons, controls and dashboard', 'tv', context.kind === 'controller', () => this.go({ kind: 'controller' })));
     nodes.push(this.treeRow('Phones', 'Personal controllers', 'phone', context.kind === 'phone', () => this.go({ kind: 'phone' })));
+    nodes.push(...this.dataRows());
     this.tree.replaceChildren(...nodes);
   }
 
