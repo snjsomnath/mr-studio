@@ -10,6 +10,7 @@ mod hub;
 mod layers;
 mod model;
 pub mod relay;
+pub mod bridge;
 pub mod sources;
 mod transit;
 mod wms;
@@ -75,6 +76,10 @@ pub struct AppState {
     imports: tokio::sync::Mutex<()>,
     /// The last OpenStreetMap answer, so Import brings in what the preview showed without asking again.
     osm_cache: std::sync::Mutex<Option<OsmFetch>>,
+    /// The join page's WebRTC bridge (#275): at most one surface carries phones at a time.
+    bridge: bridge::BridgeSlot,
+    /// The host's own router, for answering phones that come through a relay or the bridge.
+    links: std::sync::OnceLock<Router>,
 }
 
 /// One OpenStreetMap fetch: for which layer and ground, when, and the GeoJSON it became.
@@ -581,6 +586,8 @@ pub async fn start(config: HostConfig) -> anyhow::Result<RunningHost> {
         imports: Default::default(),
         osm_cache: Default::default(),
         health: Default::default(),
+        bridge: Default::default(),
+        links: Default::default(),
     });
     // An engine that recovered from a failure (#79): noted for the operator log, and the
     // surfaces open their streams again on the new engine.
@@ -595,6 +602,7 @@ pub async fn start(config: HostConfig) -> anyhow::Result<RunningHost> {
         });
     }
     let app = router(state.clone(), config.web_dir.clone());
+    let _ = state.links.set(app.clone());
     // Phones join through the relay when this computer has one (#89).
     if let Some(link) = config.sources.relay().await {
         relay::spawn(Arc::downgrade(&state), app.clone(), addr.port(), link);
@@ -669,6 +677,7 @@ fn reachable_ip(bound: IpAddr) -> Option<IpAddr> {
 fn router(state: Arc<AppState>, web_dir: Option<PathBuf>) -> Router {
     let mut app = Router::new()
         .route("/ws", get(ws::upgrade))
+        .route("/api/phones/bridge", get(bridge::upgrade))
         .route("/api/info", get(info))
         .route("/api/model", get(model))
         .route("/api/data/inspect", post(inspect_data))
