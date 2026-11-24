@@ -71,7 +71,8 @@ async function main() {
   const host = spawn(
     path.join(root, 'target/debug/mrstudio'),
     ['dev', '--site', site, '--web', 'packages/runtime/dist', '--port', String(port), '--backend', 'cpu', '--public-url', base],
-    { cwd: root, stdio: ['ignore', 'pipe', 'pipe'] },
+    // Phones join on the local address here; the join page over WebRTC (#275) needs the internet.
+    { cwd: root, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, MRS_JOIN_PAGE: 'off' } },
   );
   let log = '';
   host.stdout.on('data', (d) => (log += d));
@@ -190,7 +191,7 @@ async function main() {
     if (shots) await tv.screenshot({ path: path.join(shots, 'tv-shadows.png') });
     // Reset, the dashed button at the foot of the rail, closes the open layer and shows the welcome.
     // The sketch tool, kept alongside for the phones, stays on. About is there only when the site has words for it.
-    await tv.locator('.action-button[title="Reset"]').click();
+    await tv.locator('.action-button[title^="Reset"]').click();
     await tv.locator('.layer-button[aria-pressed="false"]', { hasText: 'Sunlight' }).waitFor();
     await tv.locator('.layer-welcome:not([hidden])').waitFor();
     assert.equal(await tv.locator('.layer-button[aria-pressed="true"]', { hasText: 'Sketch' }).count(), 1);
@@ -250,7 +251,7 @@ async function main() {
     await tv.locator('.sun-hero-fact b', { hasText: /^west$/ }).waitFor();
 
     // Phone tools: a point, a line and an area drawn on the small map arrive on the table.
-    const pad = phone.locator('.tool-map');
+    const pad = phone.locator('.layer-card', { hasText: 'Sketch' }).locator('.tool-map');
     // The sketch card is above Sunlight's, so the pad is found again for each tap: the page may have scrolled.
     const tap = async (u, v) => {
       await pad.scrollIntoViewIfNeeded();

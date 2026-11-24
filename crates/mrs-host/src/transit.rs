@@ -66,7 +66,11 @@ pub fn vasttrafik(body: &Value) -> Value {
         .filter_map(|j| {
             let lat = j["latitude"].as_f64()?;
             let lon = j["longitude"].as_f64()?;
-            let id = j["detailsReference"].as_str().or(j["journeyGid"].as_str()).map(str::to_string).unwrap_or_else(|| format!("{lon:.5},{lat:.5}"));
+            let id = j["detailsReference"]
+                .as_str()
+                .or(j["journeyGid"].as_str())
+                .map(str::to_string)
+                .unwrap_or_else(|| format!("{lon:.5},{lat:.5}"));
             let line = &j["line"];
             let mode = match line["transportMode"].as_str().unwrap_or("bus").to_ascii_lowercase().as_str() {
                 "tram" => "tram",

@@ -1,6 +1,6 @@
 # Phone relay
 
-Phones normally join the table over the venue's own network: the QR code holds the studio computer's address. Some venues make that impossible. Guest Wi-Fi often stops devices from seeing each other, and visitors on mobile data are on another network altogether. A relay fixes both. It is a small server on the internet that the studio computer connects out to, so nothing has to reach in.
+Phones normally join the table over the venue's own network: the QR code holds the studio computer's address. Some venues make that impossible. Guest Wi-Fi often stops devices from seeing each other, and visitors on mobile data are on another network altogether. The [join page](join-page.md) fixes both without a server of our own, and is the default. A relay fixes both too, for networks that block WebRTC. It is a small server on the internet that the studio computer connects out to, so nothing has to reach in.
 
 ```
 phone ──HTTPS──▶ relay ◀──WSS── studio computer (mrs-host)

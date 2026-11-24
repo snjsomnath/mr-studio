@@ -4,6 +4,50 @@ Every merge to main that carries a release note becomes a version. The newest is
 The app shows these notes, with their pictures, on Home when a newer version is out.
 How notes are written: docs/RELEASING.md.
 
+## 0.4.1 (2026-11-24)
+
+### Fixes
+
+#### Esc always leaves Present (#295)
+
+Esc takes you out of a full-screen Present, back to the editor, also when the table was opened without the editor. The full-screen screens now get the keyboard straight away, and the table shows a "Back to the editor" button when the pointer goes to its top edge. A table that starts by itself with the computer still ignores Esc.
+
+![The way back on the table](docs/screenshots/295-table-way-back.png)
+
+## 0.4.0 (2026-11-24)
+
+### New
+
+#### Phones join on eduroam and mobile data (#275)
+
+Visitors scan the QR code as before, from any network: the code opens a small join page on GitHub Pages that connects to the table over WebRTC, with no router or server of our own. The phone page itself still comes from the table, so it always matches. Join page link v1.
+
+![A phone that joined through the join page](docs/screenshots/275-phone-through-join-page.png)
+![The controller follows the phone](docs/screenshots/275-tv-follows-phone.png)
+![The join page while it connects](docs/screenshots/275-join-page-connecting.png)
+
+## 0.3.0 (2026-11-24)
+
+### New
+
+#### A Help page for every layer, and what to do when something is wrong (#291)
+
+Every layer now has its own page in the Help window. Each page says what the layer shows and what it is good for, and walks through setting it up step by step. It also lists what data the layer needs, every setting with its range and starting value, and some tips. The settings come from the layer itself, so the page always matches the app. In the editor, **How to use it** beside a layer's settings opens its page.
+
+A new page, **When something is wrong**, goes by what you see. It covers a projection that doesn't line up, a window on the wrong screen, an empty layer, phones that can't join, a slow table, missing map pictures, keys, the first start on a Mac or Windows, and updates.
+
+![The Traffic layer's Help page](docs/screenshots/291-help-traffic.png)
+
+## 0.2.1 (2026-11-24)
+
+### Fixes
+
+#### Present fills the screens you chose (#270)
+
+Present now opens the table and the controller full screen on the screens picked in the Display tab, also on a Mac with a Retina laptop beside a projector or TV, instead of leaving windows half on one screen. A window that ends up off its screen is put back by itself.
+
+![The controller and the table, each full screen on its own display](docs/screenshots/270-present-two-displays.png)
+
 ## 0.2.0 (2026-11-24)
 
 ### Breaking changes

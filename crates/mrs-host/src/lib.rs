@@ -10,6 +10,7 @@ mod hub;
 mod layers;
 mod model;
 pub mod relay;
+pub mod bridge;
 pub mod sources;
 mod transit;
 mod wms;
@@ -75,6 +76,10 @@ pub struct AppState {
     imports: tokio::sync::Mutex<()>,
     /// The last OpenStreetMap answer, so Import brings in what the preview showed without asking again.
     osm_cache: std::sync::Mutex<Option<OsmFetch>>,
+    /// The join page's WebRTC bridge (#275): at most one surface carries phones at a time.
+    bridge: bridge::BridgeSlot,
+    /// The host's own router, for answering phones that come through a relay or the bridge.
+    links: std::sync::OnceLock<Router>,
 }
 
 /// One OpenStreetMap fetch: for which layer and ground, when, and the GeoJSON it became.
@@ -581,6 +586,8 @@ pub async fn start(config: HostConfig) -> anyhow::Result<RunningHost> {
         imports: Default::default(),
         osm_cache: Default::default(),
         health: Default::default(),
+        bridge: Default::default(),
+        links: Default::default(),
     });
     // An engine that recovered from a failure (#79): noted for the operator log, and the
     // surfaces open their streams again on the new engine.
@@ -595,6 +602,7 @@ pub async fn start(config: HostConfig) -> anyhow::Result<RunningHost> {
         });
     }
     let app = router(state.clone(), config.web_dir.clone());
+    let _ = state.links.set(app.clone());
     // Phones join through the relay when this computer has one (#89).
     if let Some(link) = config.sources.relay().await {
         relay::spawn(Arc::downgrade(&state), app.clone(), addr.port(), link);
@@ -669,6 +677,7 @@ fn reachable_ip(bound: IpAddr) -> Option<IpAddr> {
 fn router(state: Arc<AppState>, web_dir: Option<PathBuf>) -> Router {
     let mut app = Router::new()
         .route("/ws", get(ws::upgrade))
+        .route("/api/phones/bridge", get(bridge::upgrade))
         .route("/api/info", get(info))
         .route("/api/model", get(model))
         .route("/api/data/inspect", post(inspect_data))
@@ -688,19 +697,27 @@ fn router(state: Arc<AppState>, web_dir: Option<PathBuf>) -> Router {
         .route("/api/sources/{id}/proxy", get(source_proxy))
         .route("/api/transit/{id}/vehicles", get(transit_vehicles))
         .layer(DefaultBodyLimit::max(MAX_IMPORT_BYTES))
-        // Imports replace data files at the same path, so a surface reloading after
-        // site.changed must revalidate rather than reuse a cached copy (#125).
+        // Site files are never kept by the browser (#125, #222). Every table is served at the
+        // same address (127.0.0.1:4170/site/data/buildings.geojson), and the desktop app's
+        // webview keeps its cache across tables and launches. With "no-cache" it revalidated by
+        // date: a table whose file is older than the copy it had (one copied from a repository,
+        // say) got "304 Not Modified" and drew another table's buildings and trees.
         .nest_service(
             "/site",
             SetResponseHeader::overriding(
                 ServeDir::new(&state.site.dir),
                 header::CACHE_CONTROL,
-                header::HeaderValue::from_static("no-cache"),
+                header::HeaderValue::from_static("no-store"),
             ),
         );
     app = match web_dir {
-        // Every surface path (/table, /tv, /phone, /dev) is the same single-page app.
-        Some(dir) => app.fallback_service(ServeDir::new(&dir).fallback(ServeFile::new(dir.join("index.html")))),
+        // Every surface path (/table, /tv, /phone, /dev) is the same single-page app. Its pages
+        // are checked on every load, so an updated app never runs an earlier version's page.
+        Some(dir) => app.fallback_service(SetResponseHeader::if_not_present(
+            ServeDir::new(&dir).fallback(ServeFile::new(dir.join("index.html"))),
+            header::CACHE_CONTROL,
+            header::HeaderValue::from_static("no-cache"),
+        )),
         None => app.fallback(|| async { "MR Studio host is running. Surfaces are not built; run the web dev server or pass --web." }),
     };
     app.with_state(state)

@@ -163,7 +163,20 @@ async fn welcome_carries_site_state_and_manifests() {
     let scene: Vec<&str> = state["scene"].as_array().unwrap().iter().map(|id| id.as_str().unwrap()).collect();
     assert_eq!(
         scene,
-        ["basemap", "sunlight", "building-lights", "cars", "transit", "trees", "slideshow", "sketch", "coolpaths", "isovist", "mobility", "wind"]
+        [
+            "basemap",
+            "sunlight",
+            "building-lights",
+            "cars",
+            "transit",
+            "trees",
+            "slideshow",
+            "sketch",
+            "coolpaths",
+            "isovist",
+            "mobility",
+            "wind"
+        ]
     );
     assert_eq!(state["layers"]["basemap"]["active"], true);
     assert_eq!(state["site"]["data"]["roads"], "data/roads.geojson");
@@ -1059,6 +1072,20 @@ async fn the_editor_keeps_a_picture_of_the_table_for_home() {
     // Anything but a JPEG is refused.
     let refused = client.post(&url).body("<svg/>").send().await.unwrap();
     assert_eq!(refused.status(), 400);
+    host.shutdown().await;
+    let _ = std::fs::remove_dir_all(&site);
+}
+
+#[tokio::test]
+async fn site_files_are_never_cached_by_the_browser() {
+    // Every table is served at the same address, so a cached or revalidated copy could be
+    // another table's file (#222).
+    let site = scratch_site("no-store");
+    let host = host_for(site.clone()).await;
+    let client = reqwest::Client::new();
+    let answer = client.get(format!("http://{}/site/site.json", host.addr)).send().await.unwrap();
+    assert_eq!(answer.status(), 200);
+    assert_eq!(answer.headers().get("cache-control").and_then(|v| v.to_str().ok()), Some("no-store"));
     host.shutdown().await;
     let _ = std::fs::remove_dir_all(&site);
 }

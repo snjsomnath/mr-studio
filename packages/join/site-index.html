@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex" />
+    <title>MR Studio</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #0d0f12; color: #eef1f4; font: 16px/1.45 system-ui, -apple-system, 'Segoe UI', sans-serif; }
+      main { display: grid; place-items: center; height: 100%; padding: 0 24px; text-align: center; }
+      p { color: #9aa3ad; max-width: 22em; margin: 8px auto 0; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div>
+        <h1>MR Studio</h1>
+        <p>Scan the QR code on a table's screen to join it with your phone.</p>
+      </div>
+    </main>
+    <script>
+      // A link that lost its version folder: send it to the current join page.
+      if (new URLSearchParams(location.search).has('t')) location.replace('./v1/' + location.search + location.hash);
+    </script>
+  </body>
+</html>

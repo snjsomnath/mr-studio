@@ -626,10 +626,7 @@ fn show_view(app: &AppHandle, role: &str) -> anyhow::Result<()> {
             };
             // Help (#271) is about the app, not the table, so its title does not name the table.
             let title = if role == "help" { "MR Studio Help".to_string() } else { format!("MR Studio · {} · {role}", running.name) };
-            WebviewWindowBuilder::new(app, &label, WebviewUrl::External(url))
-                .title(title)
-                .inner_size(width, height)
-                .build()?
+            WebviewWindowBuilder::new(app, &label, WebviewUrl::External(url)).title(title).inner_size(width, height).build()?
         }
     };
     window.unminimize()?;
@@ -761,18 +758,41 @@ fn open_surfaces(app: &AppHandle, port: u16, displays: &Displays) -> anyhow::Res
         let label = format!("surface-{generation}-{n}-{}", spec.role);
         // The colour pass for this display is in place before the page draws anything.
         let colour = target.map(|d| colours.for_display(d)).unwrap_or_default();
-        let window = WebviewWindowBuilder::new(app, &label, WebviewUrl::External(url))
+        let builder = WebviewWindowBuilder::new(app, &label, WebviewUrl::External(url))
             .title(format!("MR Studio · {}", spec.role))
             .inner_size(1400.0, 840.0)
-            .visible(false)
+            .visible(false);
+        // The window is made on its own display, already its size when it is to fill it, so
+        // the system knows its screen before full screen starts (#270). A move afterwards is
+        // asynchronous on macOS and full screen would size it to the screen it left.
+        #[cfg(target_os = "macos")]
+        let builder = match target {
+            Some(d) => {
+                let (x, y, w, h) = logical_frame(d);
+                let inset = if spec.fullscreen { 0.0 } else { 60.0 };
+                let builder = builder.position(x + inset, y + inset);
+                if spec.fullscreen {
+                    builder.inner_size(w, h).decorations(false)
+                } else {
+                    builder
+                }
+            }
+            None => builder,
+        };
+        let window = builder
             .initialization_script(format!(
                 // The window's name, which its page sends with each sign of life (#79).
                 "window.__MRS_SHELL__ = true;\nwindow.__MRS_WINDOW__ = {};\n{SHORTCUTS}\n{}\n{}\n{}",
                 serde_json::to_string(&label).expect("a label is a string"),
                 colour::SCRIPT,
                 colour.script(),
-                // The table shows the way back only when it is alone, on the author's own screen.
-                if spec.role == "table" && displays.windows.len() > 1 { "" } else { SURFACE_EXIT }
+                // The way back. A table with a controller beside it is seen by visitors, so
+                // there it shows only when the pointer goes to the top edge (#295).
+                if spec.role == "table" && displays.windows.len() > 1 {
+                    format!("window.__MRS_EXIT_QUIET__ = true;\n{SURFACE_EXIT}")
+                } else {
+                    SURFACE_EXIT.to_string()
+                }
             ))
             .on_navigation(move |url| match url.path().strip_prefix("/__shell/") {
                 Some(action) => {
@@ -791,26 +811,105 @@ fn open_surfaces(app: &AppHandle, port: u16, displays: &Displays) -> anyhow::Res
         }
         tracing::info!("{} window on display {:?}", spec.role, target.map(|d| (d.index, d.name.as_deref().unwrap_or(""))));
     }
+    focus_surface(app, &connected);
     let name = shell.running.lock().unwrap().as_ref().map(|r| r.name.clone()).unwrap_or_default();
     let roles: Vec<&str> = displays.windows.iter().map(|w| w.role.as_str()).collect();
     shell.operator.note(format!("Presenting '{name}' ({}).", roles.join(", ")));
     Ok(())
 }
 
+/// Gives the keyboard to the surface on the screen the editor is on, else the table, so Esc
+/// and the shortcuts reach a surface rather than the editor hidden behind it (#295). Once the
+/// windows have settled, since full screen on macOS is applied after they are shown.
+fn focus_surface(app: &AppHandle, connected: &[Display]) {
+    let surfaces = app.state::<Shell>().surfaces.lock().unwrap().clone();
+    let editor_display = app.get_webview_window(EDITOR).and_then(|editor| {
+        let at = editor.outer_position().ok()?;
+        let size = editor.outer_size().ok()?;
+        let (cx, cy) = (i64::from(at.x) + i64::from(size.width) / 2, i64::from(at.y) + i64::from(size.height) / 2);
+        let inside = |d: &&Display| {
+            (i64::from(d.x)..i64::from(d.x) + i64::from(d.width)).contains(&cx)
+                && (i64::from(d.y)..i64::from(d.y) + i64::from(d.height)).contains(&cy)
+        };
+        connected.iter().find(inside).map(|d| d.index)
+    });
+    let label = editor_display
+        .and_then(|index| surfaces.iter().find(|(_, d)| *d == index))
+        .or_else(|| surfaces.iter().find(|(label, _)| label.ends_with("-table")))
+        .or(surfaces.first())
+        .map(|(label, _)| label.clone());
+    let Some(label) = label else { return };
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        for wait in [150, 600] {
+            tokio::time::sleep(Duration::from_millis(wait)).await;
+            if let Some(window) = app.get_webview_window(&label) {
+                report(window.set_focus().map_err(anyhow::Error::from));
+            }
+        }
+    });
+}
+
+/// A display's frame in points: what window positions and sizes are given in. A display's
+/// pixel position is its point position times its own scale, so with a Retina laptop and a
+/// 1x projector a pixel position read with the wrong scale lands on the wrong screen (#270).
+fn logical_frame(d: &Display) -> (f64, f64, f64, f64) {
+    let s = if d.scale > 0.0 { d.scale } else { 1.0 };
+    (f64::from(d.x) / s, f64::from(d.y) / s, f64::from(d.width) / s, f64::from(d.height) / s)
+}
+
 /// Puts a window on its display: borderless fullscreen, or a normal window near its corner.
+/// A fullscreen window is checked again once the system has settled and put back when it
+/// does not cover its display.
 fn place(window: &WebviewWindow, display: Option<&Display>, spec: &WindowSpec) -> tauri::Result<()> {
-    if let Some(d) = display {
-        let inset = if spec.fullscreen { 0 } else { (60.0 * d.scale) as i32 };
-        window.set_position(PhysicalPosition::new(d.x + inset, d.y + inset))?;
-    }
     if !spec.fullscreen {
+        // Elsewhere positions are in the desktop's own pixels, so this is exact.
+        #[cfg(not(target_os = "macos"))]
+        if let Some(d) = display {
+            let inset = (60.0 * d.scale) as i32;
+            window.set_position(PhysicalPosition::new(d.x + inset, d.y + inset))?;
+        }
         return window.show();
     }
+    cover(window, display)?;
+    if let Some(d) = display.cloned() {
+        let window = window.clone();
+        tauri::async_runtime::spawn(async move {
+            for wait in [400, 1200] {
+                tokio::time::sleep(Duration::from_millis(wait)).await;
+                match covers(&window, &d) {
+                    Ok(true) => return,
+                    Ok(false) => {
+                        tracing::warn!(
+                            "the {} window is at {:?} {:?}, not on display {} at {},{} {}x{}; putting it back",
+                            window.label(),
+                            window.outer_position().ok(),
+                            window.outer_size().ok(),
+                            d.index,
+                            d.x,
+                            d.y,
+                            d.width,
+                            d.height
+                        );
+                        report(recover(&window, &d).map_err(anyhow::Error::from));
+                    }
+                    // The window was closed in the meantime.
+                    Err(_) => return,
+                }
+            }
+        });
+    }
+    Ok(())
+}
+
+/// Full screen on the display the window is on.
+fn cover(window: &WebviewWindow, display: Option<&Display>) -> tauri::Result<()> {
     // macOS: the system's fullscreen moves the window to a space of its own with an
     // animation, and two of those fight each other. Simple fullscreen just covers the
     // display the window is on, including the menu bar and the Dock.
     #[cfg(target_os = "macos")]
     {
+        let _ = display;
         window.show()?;
         window.set_simple_fullscreen(true)?;
     }
@@ -818,13 +917,51 @@ fn place(window: &WebviewWindow, display: Option<&Display>, spec: &WindowSpec) -
     {
         window.set_decorations(false)?;
         match display {
-            Some(d) => window.set_fullscreen_on_monitor(PhysicalPosition::new(
-                f64::from(d.x) + f64::from(d.width) / 2.0,
-                f64::from(d.y) + f64::from(d.height) / 2.0,
-            ))?,
+            Some(d) => {
+                window.set_position(PhysicalPosition::new(d.x, d.y))?;
+                window.set_fullscreen_on_monitor(PhysicalPosition::new(
+                    f64::from(d.x) + f64::from(d.width) / 2.0,
+                    f64::from(d.y) + f64::from(d.height) / 2.0,
+                ))?
+            }
             None => window.set_fullscreen(true)?,
         }
         window.show()?;
+    }
+    Ok(())
+}
+
+/// The window covers its display, within a few pixels.
+fn covers(window: &WebviewWindow, d: &Display) -> tauri::Result<bool> {
+    let at = window.outer_position()?;
+    let size = window.outer_size()?;
+    let near = |a: i64, b: i64| (a - b).abs() <= 4;
+    Ok(near(at.x.into(), d.x.into())
+        && near(at.y.into(), d.y.into())
+        && near(size.width.into(), d.width.into())
+        && near(size.height.into(), d.height.into()))
+}
+
+/// Takes a window out of full screen, onto its display, and into full screen again.
+fn recover(window: &WebviewWindow, d: &Display) -> tauri::Result<()> {
+    let (x, y, w, h) = logical_frame(d);
+    #[cfg(target_os = "macos")]
+    {
+        window.set_simple_fullscreen(false)?;
+        window.set_decorations(false)?;
+        window.set_position(tauri::LogicalPosition::new(x, y))?;
+        window.set_size(tauri::LogicalSize::new(w, h))?;
+        // The move above is asynchronous; full screen goes after it, on the main thread.
+        let again = window.clone();
+        window.run_on_main_thread(move || {
+            let _ = again.set_simple_fullscreen(true);
+        })?;
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (x, y, w, h);
+        window.set_fullscreen(false)?;
+        cover(window, Some(d))?;
     }
     Ok(())
 }
@@ -834,15 +971,24 @@ fn toggle_table_fullscreen(app: &AppHandle) -> anyhow::Result<()> {
     let Some(window) = table_window(app) else { return Ok(()) };
     let shell = app.state::<Shell>();
     let full = !shell.table_fullscreen.load(Ordering::Relaxed);
-    #[cfg(target_os = "macos")]
-    window.set_simple_fullscreen(full)?;
-    #[cfg(not(target_os = "macos"))]
-    {
-        window.set_decorations(!full)?;
-        window.set_fullscreen(full)?;
-    }
-    if !full {
+    let index = shell.surfaces.lock().unwrap().iter().find(|(label, _)| label == window.label()).map(|(_, index)| *index);
+    let display = index.and_then(|i| list_displays(app).ok()?.into_iter().find(|d| d.index == i));
+    if full {
+        match &display {
+            Some(d) => recover(&window, d)?,
+            None => cover(&window, None)?,
+        }
+    } else {
+        #[cfg(target_os = "macos")]
+        window.set_simple_fullscreen(false)?;
+        #[cfg(not(target_os = "macos"))]
+        window.set_fullscreen(false)?;
+        window.set_decorations(true)?;
         window.set_size(tauri::LogicalSize::new(1400.0, 840.0))?;
+        if let Some(d) = &display {
+            let (x, y, _, _) = logical_frame(d);
+            window.set_position(tauri::LogicalPosition::new(x + 60.0, y + 60.0))?;
+        }
     }
     shell.table_fullscreen.store(full, Ordering::Relaxed);
     Ok(())
@@ -865,9 +1011,10 @@ fn shell_action(app: &AppHandle, action: &str) {
             drop(tauri::async_runtime::spawn(async move { report(show_view(&app, &role)) }));
         }
         // Esc on a surface: the way back for the author, as in a slideshow. A table that
-        // presents by itself, with no editor open, ignores it.
-        "escape" if app.get_webview_window(EDITOR).is_some() => shell_action(&app, "edit"),
-        "escape" => {}
+        // presents by itself after the computer started (#79) ignores it; everywhere else Esc
+        // leaves, to the editor or to Home when no editor is open (#295).
+        "escape" if app.get_webview_window(EDITOR).is_none() && std::env::args().any(|a| a == "--at-login") => {}
+        "escape" => shell_action(&app, "edit"),
         "quit" => app.exit(0),
         // The controller's Full screen button (#198): the table's window in or out of full screen.
         "fullscreen" => {
