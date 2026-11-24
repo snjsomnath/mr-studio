@@ -643,3 +643,15 @@
   text-decoration: underline;
   cursor: pointer;
 }
+
+/* Delete custom layers (#154): a card per saved layer with its Delete button at the end. */
+.lb-delete-card {
+  cursor: default;
+}
+.lb-delete-card .action {
+  margin-left: auto;
+  flex: none;
+}
+.lb-delete-card .action {
+  color: #b42318;
+}
