@@ -33,7 +33,8 @@ export const PRESETS: Record<string, Preset> = {
 };
 
 /** What the layer asks the host for: a built-in map, or the address and layers given by hand. */
-export function resolve(params: { map?: string; url: string; layers: string; styles: string; source: string; signin?: string }): {
+export function resolve(params: { map?: string; service?: string; url: string; layers: string; styles: string; source: string; signin?: string }): {
+  service?: string;
   url: string;
   layers: string;
   styles: string;
@@ -42,7 +43,10 @@ export function resolve(params: { map?: string; url: string; layers: string; sty
   signin?: string;
 } {
   const preset = params.map ? PRESETS[params.map] : undefined;
-  if (!preset) return { url: params.url, layers: params.layers, styles: params.styles, source: params.source, signin: params.signin };
+  if (!preset) {
+    const own = { url: params.url, layers: params.layers, styles: params.styles, source: params.source, signin: params.signin };
+    return params.service === 'arcgis' ? { service: 'arcgis', ...own } : own;
+  }
   // A built-in map is open: no sign-in, and its own credit unless the author wrote one.
   return { url: preset.url, layers: preset.layers, styles: preset.styles ?? '', format: preset.format, source: params.source.trim() || preset.source };
 }

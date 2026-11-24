@@ -6,7 +6,7 @@ const SIDE = 2048;
 /** The box around the table in lon/lat, and the image size that keeps the table's metres square. */
 export function request(
   site: SiteInfo,
-  params: { url: string; layers: string; styles: string; signin?: string; format?: string },
+  params: { service?: string; url: string; layers: string; styles: string; signin?: string; format?: string },
 ): { href: string; bbox: [number, number, number, number]; width: number; height: number } {
   const lons = site.corners.map((c) => c[0]);
   const lats = site.corners.map((c) => c[1]);
@@ -18,6 +18,8 @@ export function request(
   const height = wide >= tall ? Math.max(1, Math.round((SIDE * tall) / wide)) : SIDE;
   const query = new URLSearchParams({ url: params.url.trim(), layers: params.layers.trim(), styles: params.styles.trim(), bbox: bbox.join(','), width: String(width), height: String(height) });
   if (params.format) query.set('format', params.format);
+  // An ArcGIS map or image service is asked through its REST export (#42).
+  if (params.service === 'arcgis') query.set('service', 'arcgis');
   // A source from the Sources manager signs the request on the host; without an address of its own the source's is used.
   if (params.signin?.trim()) query.set('source', params.signin.trim());
   return { href: `/api/wms?${query}`, bbox, width, height };

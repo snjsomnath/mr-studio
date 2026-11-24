@@ -761,7 +761,7 @@ async fn wms_map(
             return *no;
         }
     }
-    wms::get_map(&state.sources, query).await
+    wms::get_map(&state.site.dir, &state.sources, query).await
 }
 
 /// `GET /api/sources`: the connections (never their keys) and the kinds that can be added.

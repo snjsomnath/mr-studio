@@ -8,6 +8,8 @@ import { request } from './request.ts';
 interface Params {
   /** A map that comes with MR Studio (`presets.ts`), or `custom` for the address and layers below. */
   map: string;
+  /** `wms`, or `arcgis` for an ArcGIS MapServer or ImageServer address (#42). */
+  service: string;
   url: string;
   layers: string;
   styles: string;
@@ -30,7 +32,9 @@ export default defineLayer<Params>({
       canvas.clear();
       canvas.commit();
       const wanted = resolve(ctx.params);
-      if ((!wanted.url.trim() && !wanted.signin?.trim()) || !wanted.layers.trim()) {
+      // An ArcGIS service shows all its layers when none are named; a WMS needs at least one.
+      const needsLayers = wanted.service !== 'arcgis';
+      if ((!wanted.url.trim() && !wanted.signin?.trim()) || (needsLayers && !wanted.layers.trim())) {
         ctx.publish({ note: 'Choose a map, or give the service address (or a sign-in from Sources) and its layers' });
         return;
       }
@@ -65,7 +69,7 @@ export default defineLayer<Params>({
     return {
       update(changed) {
         if (changed.includes('opacity')) canvas.setOpacity(ctx.params.opacity);
-        if (changed.some((key) => key === 'map' || key === 'url' || key === 'layers' || key === 'styles' || key === 'signin')) void load();
+        if (changed.some((key) => key === 'map' || key === 'service' || key === 'url' || key === 'layers' || key === 'styles' || key === 'signin')) void load();
       },
     };
   },
