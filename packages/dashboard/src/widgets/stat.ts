@@ -9,6 +9,7 @@ export const stat = defineWidget({
   name: 'Stat',
   description: 'One headline number with its unit, and optionally a line of context and a change.',
   sizes: ['chip', 'tile', 'wide'],
+  example: { value: 412, unit: 'kW', caption: 'from the roofs', delta: 18 },
   props: {
     value: { kind: 'value', label: 'Value', required: true, bindable: true },
     unit: { kind: 'text', max: TEXT.unit, label: 'Unit' },

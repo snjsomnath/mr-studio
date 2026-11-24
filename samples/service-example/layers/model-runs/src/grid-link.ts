@@ -17,6 +17,7 @@ export const gridLink = defineWidget({
   name: 'Grid link',
   description: 'Power drawn from the grid into the community, as a line that thickens with the draw, and its size in kW.',
   sizes: ['chip', 'tile'],
+  example: { value: 4200, max: 15000 },
   props: {
     value: { kind: 'value', label: 'Drawn from the grid (kW)', required: true, bindable: true },
     max: { kind: 'number', min: 1, label: 'Draw at full thickness (kW)', default: 15000 },
