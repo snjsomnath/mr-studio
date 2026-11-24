@@ -59,7 +59,28 @@ export interface TextControl extends ControlBase {
    * editor offers the sources set up on this computer; the host signs requests with its key.
    */
   sources?: string[];
+  /**
+   * The value names something the table has (#306): a dataset or a file of one of these kinds.
+   * The editor offers a list of them to pick from, and Add media, instead of a box to type in.
+   */
+  media?: MediaKind[];
+  /** With `media`: the value is the dataset's name (the default) or the file's path in the table folder. */
+  mediaBy?: 'name' | 'path';
+  /** The value is a column of the dataset the layer's control with this id names (#306). */
+  columnsOf?: string;
+  /**
+   * The value is one or more layers (comma-separated) of the map service the layer's other
+   * controls name, by id: its address, its kind (`wms` or `arcgis`) and its sign-in (#306).
+   */
+  serviceLayers?: { url: string; service?: string; source?: string };
+  /** What an empty value means, shown as the first choice of a list (`media`, `columnsOf`), such as "Built-in birdsong". Default "None". */
+  none?: string;
 }
+/**
+ * What a table's media are (#306), as `GET /api/media` lists them: `map` (GeoJSON), `table` (CSV),
+ * `raster` (GeoTIFF), `drawing` (SVG), `picture`, `video`, `sound`, `model` (the 3D model), `data` (other files).
+ */
+export type MediaKind = 'map' | 'table' | 'raster' | 'drawing' | 'picture' | 'video' | 'sound' | 'model' | 'data';
 export interface ActionControl extends ControlBase {
   type: 'action';
 }
@@ -95,6 +116,13 @@ export interface LayerManifest {
   panels?: PanelSpec[];
   /** The layer is a sequence: its instances may have `steps.sequence` that show other layers (the slideshow). */
   sequence?: boolean;
+  /** The layer reveals its items through a shape it sets with `ctx.reveal` (the Magnifier, the Reveal line, #287). Default false. */
+  reveals?: boolean;
+  /**
+   * For a site's own code layer (#277): the address its built module is imported from, set by the
+   * host when `layers/<name>/dist/index.js` exists. Absent for core layers, which are bundled.
+   */
+  module?: string;
   /** For a custom layer saved in the site: the recipe the runtime draws. Absent for a code layer. */
   custom?: CustomLayer;
   /** Rows of the layer's legend on the controller (docs/contracts/present.md). */
@@ -123,6 +151,9 @@ export interface Steps {
   loop?: boolean;
   /** What Next does once a step's sub-steps are done. */
   reveal?: 'stop' | 'then-next';
+  /** How a sequence goes from one step to the next, unless a step says otherwise (#43). Default a 0.7 s fade. */
+  transition?: 'cut' | 'fade' | 'dip';
+  transition_s?: number;
   sequence?: SequenceStep[];
 }
 
@@ -131,7 +162,8 @@ export interface SequenceStep {
   layer: string;
   params?: Params;
   duration_s?: number;
-  transition?: 'cut' | 'fade';
+  /** `fade` cross-fades; `dip` fades out to the empty map, then in. */
+  transition?: 'cut' | 'fade' | 'dip';
   transition_s?: number;
   next?: 'stop' | 'then-next';
   title?: string;

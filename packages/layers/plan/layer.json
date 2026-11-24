@@ -6,8 +6,54 @@
   "icon": "plan",
   "category": "media",
   "controls": [
-    { "id": "dataset", "type": "text", "label": "Drawing", "default": "", "tier": "more" },
+    { "id": "dataset", "type": "text", "label": "Drawing", "default": "", "none": "The table's first drawing", "media": ["drawing"], "tier": "more" },
     { "id": "reveal", "type": "toggle", "label": "Next reveals one phase at a time", "default": true, "tier": "more" },
+    {
+      "id": "look", "type": "select", "label": "The drawing", "default": "colour", "phone": true, "tier": "more",
+      "options": [
+        { "value": "line", "label": "In lines" },
+        { "value": "colour", "label": "In colour" }
+      ]
+    },
+    {
+      "id": "opening", "type": "select", "label": "When it opens", "default": "none", "tier": "more",
+      "options": [
+        { "value": "none", "label": "It is there at once" },
+        { "value": "fade", "label": "It fades in" },
+        { "value": "trace", "label": "Its lines trace in, one after another" }
+      ]
+    },
+    { "id": "opening_s", "type": "range", "label": "Seconds it takes to come in", "min": 1, "max": 40, "step": 1, "default": 12, "unit": "s", "tier": "more", "visibleWhen": { "opening": ["fade", "trace"] } },
+    { "id": "colour", "type": "text", "label": "Colour version (a picture or SVG dataset)", "default": "", "tier": "more" },
+    { "id": "colour_after_s", "type": "range", "label": "Seconds in lines before it turns to colour", "min": 0, "max": 60, "step": 1, "default": 2, "unit": "s", "tier": "more" },
+    { "id": "colour_s", "type": "range", "label": "Seconds the turn to colour takes", "min": 0, "max": 60, "step": 1, "default": 15, "unit": "s", "tier": "more" },
+    {
+      "id": "start", "type": "select", "label": "Before the first Next", "default": "all", "tier": "more",
+      "options": [
+        { "value": "all", "label": "The whole plan" },
+        { "value": "base", "label": "Only what is outside the phases" }
+      ]
+    },
+    {
+      "id": "grow", "type": "select", "label": "A phase grows in from", "default": "middle", "tier": "more",
+      "options": [
+        { "value": "middle", "label": "The middle of the table" },
+        { "value": "phase", "label": "Its own middle" }
+      ]
+    },
+    { "id": "earlier", "type": "range", "label": "Phases before the newest show", "min": 0, "max": 1, "step": 0.05, "default": 1, "tier": "more" },
+    { "id": "later", "type": "range", "label": "Phases still to come show", "min": 0, "max": 0.5, "step": 0.02, "default": 0.12, "tier": "more" },
+    { "id": "finale", "type": "toggle", "label": "End with every phase together", "default": false, "tier": "more" },
+    { "id": "hover", "type": "toggle", "label": "Pointing at a phase lights it", "default": true, "tier": "more" },
+    { "id": "corners", "type": "text", "label": "Place by its corners (lon,lat of top left; top right; bottom left), empty to fill the table", "default": "", "tier": "more" },
+    {
+      "id": "motion", "type": "select", "label": "Parts of the drawing", "default": "roles", "tier": "more",
+      "options": [
+        { "value": "roles", "label": "Move by what they are, when the drawing names them" },
+        { "value": "none", "label": "Appear as they are" }
+      ]
+    },
+    { "id": "role_s", "type": "range", "label": "Seconds a phase takes to come to life", "min": 1, "max": 12, "step": 0.5, "default": 3.5, "unit": "s", "tier": "more", "visibleWhen": { "motion": "roles" } },
     { "id": "opacity", "type": "range", "label": "Opacity", "min": 0.1, "max": 1, "step": 0.05, "default": 1, "tier": "more" }
   ],
   "tools": []

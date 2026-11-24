@@ -21,8 +21,8 @@
     { "id": "streetview", "type": "toggle", "label": "Street View on the controller", "default": true, "tier": "more" },
     { "id": "source", "type": "text", "label": "Street View from", "default": "streetview", "sources": ["streetview"], "tier": "more" },
     { "id": "volume", "type": "range", "label": "Soundscape volume", "min": 0, "max": 1, "step": 0.05, "default": 0.8, "visibleWhen": { "sound": true }, "tier": "more" },
-    { "id": "nature", "type": "text", "label": "Nature sound (a file in data/sounds, or empty for the built-in birdsong)", "default": "", "visibleWhen": { "sound": true }, "tier": "more" },
-    { "id": "city", "type": "text", "label": "City sound (a file in data/sounds, or empty for the built-in traffic)", "default": "", "visibleWhen": { "sound": true }, "tier": "more" }
+    { "id": "nature", "type": "text", "label": "Nature sound", "default": "", "none": "Built-in birdsong", "media": ["sound"], "mediaBy": "path", "visibleWhen": { "sound": true }, "tier": "more" },
+    { "id": "city", "type": "text", "label": "City sound", "default": "", "none": "Built-in traffic", "media": ["sound"], "mediaBy": "path", "visibleWhen": { "sound": true }, "tier": "more" }
   ],
   "panels": [
     { "id": "green", "widget": "stat", "size": "tile", "title": "Green view",

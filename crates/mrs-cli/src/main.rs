@@ -11,6 +11,8 @@ use mrs_host::HostConfig;
 use mrs_site::Site;
 use serde_json::json;
 
+mod layer;
+
 #[derive(Parser)]
 #[command(name = "mrstudio", version, about = "MR Studio command line")]
 struct Cli {
@@ -87,10 +89,39 @@ enum Command {
         #[arg(long, default_value_t = 0.0, allow_hyphen_values = true)]
         rotation_deg: f64,
     },
+    /// A site's own code layers (#277): make one, or build them for the app to load.
+    Layer {
+        #[command(subcommand)]
+        action: LayerCommand,
+    },
     /// Time a kernel on a site with each backend.
     Bench {
         #[arg(default_value = "sites/sample")]
         site: PathBuf,
+    },
+}
+
+#[derive(Subcommand)]
+enum LayerCommand {
+    /// Create `<site>/layers/<id>/`: layer.json, src/index.ts, Swedish words and a build script.
+    New {
+        /// The layer's id, for example energy-flows.
+        id: String,
+        #[arg(long, default_value = ".")]
+        site: PathBuf,
+        /// Its name on buttons and in the palette. Default: from the id.
+        #[arg(long)]
+        name: Option<String>,
+    },
+    /// Bundle each site layer's src/index.ts into dist/index.js (needs Node 20+ on this computer).
+    Build {
+        /// Only this layer.
+        id: Option<String>,
+        #[arg(long, default_value = ".")]
+        site: PathBuf,
+        /// Rebuild on every change (one layer).
+        #[arg(long)]
+        watch: bool,
     },
 }
 
@@ -132,6 +163,12 @@ async fn main() -> anyhow::Result<()> {
             new_site(&dir, name, lon, lat, width_m, height_m, rotation_deg)
         }
         Command::Bench { site } => bench(&site),
+        Command::Layer { action: LayerCommand::New { id, site, name } } => {
+            let dir = layer::new(&site, &id, name.as_deref())?;
+            println!("Made {}. Build it with `mrstudio layer build {id} --site {}`.", dir.display(), site.display());
+            Ok(())
+        }
+        Command::Layer { action: LayerCommand::Build { id, site, watch } } => layer::build(&site, id.as_deref(), watch),
     }
 }
 

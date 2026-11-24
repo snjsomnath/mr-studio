@@ -47,17 +47,26 @@ fn flag(value: &Option<String>) -> Option<bool> {
 
 impl AppState {
     /// Saves or re-places the model (`file` is its name and bytes), or removes it, and re-bakes.
-    pub async fn place_model(&self, file: Option<(String, Vec<u8>)>, placement: Option<ModelPlacement>) -> Result<serde_json::Value, String> {
+    pub async fn place_model(
+        &self,
+        file: Option<(String, Vec<u8>)>,
+        placement: Option<ModelPlacement>,
+    ) -> Result<serde_json::Value, String> {
         let _one = self.imports.lock().await;
         let dir = self.site.dir.clone();
         let rebuilt = tokio::task::spawn_blocking(move || -> Result<_, String> {
             let site = Site::load(&dir).map_err(|e| e.to_string())?;
             let (site, triangles) = match &placement {
-                Some(placement) => model::place(&site, file.as_ref().map(|(name, bytes)| (name.as_str(), bytes.as_slice())), placement).map_err(|e| e.to_string())?,
+                Some(placement) => model::place(&site, file.as_ref().map(|(name, bytes)| (name.as_str(), bytes.as_slice())), placement)
+                    .map_err(|e| e.to_string())?,
                 None => (model::remove(&site).map_err(|e| e.to_string())?, 0),
             };
             let (scene, stats) = site.bake().map_err(|e| format!("the model was saved, but the scene could not be rebuilt: {e}"))?;
-            tracing::info!("re-baked with a model of {} triangles covering {:.0}% of the table", stats.mesh_triangles, stats.mesh_coverage * 100.0);
+            tracing::info!(
+                "re-baked with a model of {} triangles covering {:.0}% of the table",
+                stats.mesh_triangles,
+                stats.mesh_coverage * 100.0
+            );
             let twin = Bytes::from(site.twin(&scene).map_err(|e| e.to_string())?.encode());
             Ok((scene, twin, site.info(), triangles, stats.mesh_coverage))
         })

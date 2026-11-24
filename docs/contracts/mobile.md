@@ -4,7 +4,7 @@ The phone UI is a surface like any other. It is served by the studio's own host 
 
 ## Joining
 
-1. The TV shows a QR code for `http://<studio-lan-address>:<port>/phone?c=<code>` (the session's `join_url`), with the address and the code beside it for typing. The code is the session's join code. `/phone` without a code asks for it.
+1. The TV shows a QR code for `http://<studio-lan-address>:<port>/phone?c=<code>` (the session's `join_url`; through the join page or the relay it is their address instead), with the address and the code beside it for typing. The code is the session's join code. `/phone` without a code asks for it.
 2. The phone opens the page and sends `hello` with `role: 'phone'` and the code.
 3. The host assigns a free slot (number and colour) and announces it to every surface.
 4. The `welcome` carries a `resume` token. The page keeps it (local storage, per session code) and sends it in every later `hello`.
@@ -38,7 +38,8 @@ A guide's phone (`/guide?g=<code>`, see session.md) is not a visitor's phone: it
 
 The default is the local network.
 
+- **Join page** (#275): for venues with only eduroam or mobile data, without a server of our own. The QR code opens a static page on GitHub Pages that reaches the controller over WebRTC and loads the phone page from the table through it. Same rules as the relay. See [docs/join-page.md](../join-page.md).
 - **Relay** (#89): for venues where phones cannot reach the studio's network (guest Wi-Fi with client isolation, or phones on mobile data), the host opens one outbound WebSocket to a relay and the QR code points at the relay instead. Phones speak the same protocol through it. Setting one up is in [docs/relay.md](../relay.md).
-- **HTTPS**: phone features that need a secure context (camera, motion sensors) require the relay (deployed behind HTTPS) or a local certificate. Plain controls and tools do not.
+- **HTTPS**: phone features that need a secure context (camera, motion sensors) require the join page or the relay (both HTTPS) or a local certificate. Plain controls and tools do not.
 
 Through the relay a phone gets exactly what it gets on the local network and nothing more. The host treats relayed requests as coming from the network, so routes that only the studio computer may use refuse them. Only GET and HEAD pass, and a socket through the relay must open with a phone's `hello`.

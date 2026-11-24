@@ -1,4 +1,4 @@
-import { isVisible } from '@mrstudio/sdk';
+import { isVisible, profileColumns } from '@mrstudio/sdk';
 import type { Connection, Control, LayerManifest, LegendRow, TextControl, LayerState, PanelContext, PanelHandlers, Role, TvAbout } from '@mrstudio/sdk';
 
 import { AttractLoop, effectOf } from './attract.ts';
@@ -9,6 +9,9 @@ import { baseContext, isAtRest, paramSender } from './layer-manager.ts';
 
 export { isAtRest };
 import { layerModule } from './registry.ts';
+import { MEDIA_KINDS, canAddMedia, mediaItems, onMediaChanged, requestAddMedia, sizeOf, titleOf, valueOf } from './media.ts';
+import { Picker } from './picker.ts';
+import type { Choice, PickerAction } from './picker.ts';
 import { PHONE_SEND_INTERVAL, toolSection } from './phone-tools.ts';
 import type { Store } from './store.ts';
 
@@ -19,11 +22,11 @@ export function el<K extends keyof HTMLElementTagNameMap>(tag: K, className?: st
   return node;
 }
 
-/** One generated control. `sync` shows a value from the host; `row` is its element. */
+/** One generated control. `sync` shows a value from the host, with the layer's other params; `row` is its element. */
 export interface Widget {
   control: Control;
   row: HTMLElement;
-  sync(value: unknown): void;
+  sync(value: unknown, params?: Record<string, unknown>): void;
 }
 
 function formatNumber(value: number, control: Extract<Control, { type: 'range' }>): string {
@@ -98,6 +101,110 @@ function sourcePicker(row: HTMLElement, label: HTMLLabelElement, id: string, con
   };
 }
 
+/**
+ * A text control that names something the table has (#306): a dataset or file (`media`), a
+ * column of another control's dataset (`columnsOf`), or layers of a map service (`serviceLayers`).
+ * A list to pick from, with type-ahead, instead of a name to type; and Add media in the editor.
+ */
+function namePicker(row: HTMLElement, label: HTMLLabelElement, id: string, control: TextControl, send: (value: unknown) => void): (value: unknown, params?: Record<string, unknown>) => void {
+  let params: Record<string, unknown> = {};
+  const text = (key: string | undefined) => (key && typeof params[key] === 'string' ? (params[key] as string) : '');
+  const kinds = control.media ?? [];
+  const by = control.mediaBy ?? 'name';
+  const actions: PickerAction[] = [];
+  if (kinds.length && canAddMedia()) {
+    actions.push({
+      label: 'Add media…',
+      icon: 'plus',
+      run: async () => {
+        const item = await requestAddMedia(kinds);
+        return item && kinds.includes(item.kind) ? valueOf(item, by) : null;
+      },
+    });
+  }
+  let load: () => Promise<Choice[]>;
+  let empty = 'Nothing to choose yet.';
+  if (control.serviceLayers) {
+    const keys = control.serviceLayers;
+    empty = 'The service lists no layers.';
+    load = async () => {
+      const query = new URLSearchParams({ url: text(keys.url), service: text(keys.service) || 'wms', source: text(keys.source) });
+      if (!query.get('url') && !query.get('source')) throw new Error('give the service address first');
+      const answer = await fetch(`/api/wms/layers?${query}`);
+      const page = (await answer.json().catch(() => ({}))) as { layers?: { name: string; title: string }[]; error?: string };
+      if (!answer.ok) throw new Error(page.error ?? `the service answered ${answer.status}`);
+      return (page.layers ?? []).map((l) => ({ value: l.name, label: l.title, detail: l.title === l.name ? undefined : l.name }));
+    };
+  } else if (control.columnsOf) {
+    const of = control.columnsOf;
+    empty = 'Choose the data first: its columns are listed here.';
+    load = async () => {
+      const name = text(of);
+      if (!name) return [];
+      const item = (await mediaItems()).find((i) => i.name === name || i.path === name);
+      if (!item) return [];
+      return columnsOfFile(item.path);
+    };
+  } else {
+    const kindsLabel = kinds.map((k) => MEDIA_KINDS[k].plural.toLowerCase()).join(' or ');
+    empty = `This table has no ${kindsLabel} yet.${actions.length ? ' Add some with Add media.' : ''}`;
+    load = async () =>
+      (await mediaItems())
+        .filter((item) => kinds.includes(item.kind))
+        .map((item) => ({
+          value: valueOf(item, by),
+          label: titleOf(item),
+          detail: item.missing ? 'Missing from the table folder' : [item.name ? item.path.split('/').pop() : '', sizeOf(item.bytes)].filter(Boolean).join(' · '),
+          group: kinds.length > 1 ? MEDIA_KINDS[item.kind].plural : undefined,
+          icon: MEDIA_KINDS[item.kind].icon,
+        }));
+  }
+  const picker = new Picker({
+    id,
+    label: control.label,
+    none: control.none ?? (control.serviceLayers ? undefined : 'None'),
+    multiple: Boolean(control.serviceLayers),
+    eager: !control.serviceLayers,
+    load,
+    actions,
+    empty,
+    loading: control.serviceLayers ? 'Asking the service for its layers…' : undefined,
+    pick: (value) => send(value),
+  });
+  const stop = onMediaChanged(() => {
+    if (!row.isConnected) stop();
+    else if (!control.serviceLayers) picker.forget();
+  });
+  row.append(label, picker.element);
+  // The list depends on the other settings it names: asked again when one of them changes.
+  const depends = control.serviceLayers ? [control.serviceLayers.url, control.serviceLayers.service, control.serviceLayers.source] : control.columnsOf ? [control.columnsOf] : [];
+  return (value, next) => {
+    if (next) {
+      const changed = depends.some((key) => key && next[key] !== params[key]);
+      params = next;
+      if (changed) picker.forget();
+    }
+    if (typeof value === 'string') picker.set(value);
+  };
+}
+
+/** The columns of a GeoJSON or CSV file of the table, for a "Colour by" list. */
+async function columnsOfFile(path: string): Promise<Choice[]> {
+  const response = await fetch(`/site/${path}`, { cache: 'no-store' });
+  if (!response.ok) throw new Error('the file could not be read');
+  let rows: Record<string, unknown>[];
+  if (/\.csv$/i.test(path)) {
+    const lines = (await response.text()).split(/\r?\n/).filter(Boolean);
+    const separator = (lines[0]?.match(/;/g)?.length ?? 0) > (lines[0]?.match(/,/g)?.length ?? 0) ? ';' : ',';
+    const head = (lines[0] ?? '').split(separator).map((h) => h.trim().replace(/^"|"$/g, ''));
+    rows = lines.slice(1, 501).map((line) => Object.fromEntries(line.split(separator).map((v, i) => [head[i] ?? String(i), v.trim().replace(/^"|"$/g, '')])));
+  } else {
+    const json = (await response.json()) as { features?: { properties?: Record<string, unknown> | null }[] };
+    rows = (json.features ?? []).map((f) => f.properties ?? {});
+  }
+  return profileColumns(rows).map((c) => ({ value: c.name, label: c.name, detail: c.kind === 'number' ? 'Numbers' : `${c.distinct} ${c.distinct === 1 ? 'value' : 'values'}` }));
+}
+
 /** Four or more choices are laid out in rows where space is tight (the editor's inspector): 2 × 2 for four, three across for more. */
 function columns(group: HTMLElement, count: number) {
   if (count >= 4) group.dataset.columns = count === 4 ? '2' : '3';
@@ -113,7 +220,7 @@ export function widget(control: Control, send: (value: unknown) => void, act: ()
   const id = `c-${Math.random().toString(36).slice(2)}`;
   const label = el('label', 'control-label', control.label);
   label.htmlFor = id;
-  let sync: (value: unknown) => void = () => {};
+  let sync: (value: unknown, params?: Record<string, unknown>) => void = () => {};
 
   switch (control.type) {
     case 'range': {
@@ -208,6 +315,11 @@ export function widget(control: Control, send: (value: unknown) => void, act: ()
     case 'text': {
       if (control.type === 'text' && control.sources?.length) {
         sync = sourcePicker(row, label, id, control, send);
+        break;
+      }
+      if (control.type === 'text' && (control.media?.length || control.columnsOf || control.serviceLayers)) {
+        row.classList.add('control-pick');
+        sync = namePicker(row, label, id, control, send);
         break;
       }
       const input = el('input');
@@ -566,6 +678,34 @@ function legendZone(id: string, store: Store): { element: HTMLElement; sync(stat
   };
 }
 
+/**
+ * What a layer is waiting for (#278): `busy: { label, progress }` published while a service
+ * works, shown under the layer's name with a bar, so no layer draws its own spinner.
+ */
+function busyZone(store: Store): { element: HTMLElement; sync(state: LayerState): void } {
+  const zone = el('div', 'stage-busy');
+  zone.setAttribute('role', 'status');
+  zone.hidden = true;
+  const label = el('span', 'stage-busy-label');
+  const bar = el('span', 'stage-busy-bar');
+  const fill = el('i');
+  bar.append(fill);
+  zone.append(label, bar);
+  return {
+    element: zone,
+    sync(state) {
+      const busy = state.shared?.busy as { label?: unknown; progress?: unknown } | null | undefined;
+      const on = Boolean(busy && typeof busy.label === 'string');
+      zone.hidden = !on;
+      if (!on) return;
+      label.textContent = say(String(busy!.label), store.manifest(state.layer));
+      const progress = typeof busy!.progress === 'number' ? Math.max(0, Math.min(1, busy!.progress)) : undefined;
+      bar.classList.toggle('is-open', progress === undefined);
+      fill.style.width = progress === undefined ? '' : `${Math.round(progress * 100)}%`;
+    },
+  };
+}
+
 /** A sound a layer published for the controller (#150). */
 interface SoundRow {
   id: string;
@@ -828,7 +968,8 @@ export class Controller {
     const strip = stepStrip(id, store, connection);
     const legend = legendZone(id, store);
     const sounds = soundZone(id, store, connection);
-    body.append(words, strip.element);
+    const busy = busyZone(store);
+    body.append(words, busy.element, strip.element);
     if (!hero.hidden) body.append(hero);
     for (const group of [primary, controls]) if (group.childElementCount > 0) body.append(group);
     body.append(legend.element, sounds.element);
@@ -864,11 +1005,12 @@ export class Controller {
         strip.sync(state);
         strip.element.classList.toggle('legend-follows', legend.sync(state));
         sounds.sync(state);
+        busy.sync(state);
         // A slideshow made of layers is driven by its steps: its own slide controls step aside.
         const stepped = Boolean(manifest.sequence && state.step);
         for (const w of widgets) {
           w.row.hidden = stepped || !isVisible(w.control, state.params) || Boolean(state.hide?.includes(w.control.id));
-          w.sync(state.params[w.control.id]);
+          w.sync(state.params[w.control.id], state.params);
         }
         more.hidden = ![...moreRows.children].some((row) => !(row as HTMLElement).hidden);
         if (state.active && heroHandlers) {
@@ -1109,7 +1251,7 @@ export class Controller {
         body.hidden = !state.active;
         for (const w of widgets) {
           w.row.hidden = !isVisible(w.control, state.params) || (phone && Boolean(state.hide?.includes(w.control.id)));
-          w.sync(state.params[w.control.id]);
+          w.sync(state.params[w.control.id], state.params);
         }
         tools?.sync(state.active);
       },

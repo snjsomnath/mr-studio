@@ -1,4 +1,5 @@
-import type { CanvasOverlay, DrawingOverlay, Colormap, FieldOverlay, FieldOverlayStyle, FlowOverlay, FlowOverlayStyle, MapHandle, ModelHandle, Shape, ShapeOverlay, SiteInfo, TablePointer, DisplayQuality } from '@mrstudio/sdk';
+import { revealPath, revealPolygon, sameReveal, tableFrame } from '@mrstudio/sdk';
+import type { CanvasOverlay, DrawingOverlay, Colormap, FieldOverlay, FieldOverlayStyle, FlowOverlay, FlowOverlayStyle, MapHandle, ModelHandle, PixelRect, RevealShape, Shape, ShapeOverlay, SiteInfo, TablePicture, TablePointer, DisplayQuality } from '@mrstudio/sdk';
 import maplibregl from 'maplibre-gl';
 import type { StyleSpecification } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
@@ -33,7 +34,11 @@ export class TableView {
   private owned = new Map<string, string[]>();
   private calibrated: boolean;
   /** What each layer has drawn, so its intensity can be applied to all of it. */
-  private drawn = new Map<string, { overlays: Set<MapFieldOverlay>; elements: Set<HTMLElement>; canvases: Map<string, number>; intensity: number }>();
+  private drawn = new Map<string, Drawn>();
+  /** Layers whose drawing is clipped to a revealing layer's shape (#287): the items of a Magnifier or a Reveal line. */
+  private clippable = new Set<string>();
+  /** The shape each clipped layer shows through; absent shows everything. */
+  private clips = new Map<string, RevealShape>();
 
   /** `calibrated` applies the site's table calibration, when it has one. */
   constructor(container: HTMLElement, site: SiteInfo, calibrated = false) {
@@ -55,7 +60,11 @@ export class TableView {
       attributionControl: false,
       fadeDuration: 0,
     });
-    new ResizeObserver(() => this.fit()).observe(container);
+    new ResizeObserver(() => {
+      this.fit();
+      this.reclipElements();
+    }).observe(container);
+    this.map.on('move', this.reclipElements);
     this.ready = new Promise((resolve) => {
       this.map.once('load', () => resolve());
     });
@@ -80,8 +89,11 @@ export class TableView {
         const overlay = new MapFieldOverlay(map, id, this.site, style);
         add(id, overlay);
         overlay.setGain(drawn.intensity);
+        overlay.setClip(this.clips.get(instance) ?? null);
         drawn.overlays.add(overlay);
+        drawn.fields.add(overlay);
         track(() => {
+          drawn.fields.delete(overlay);
           drawn.overlays.delete(overlay);
           overlay.remove();
           forget(id);
@@ -97,8 +109,44 @@ export class TableView {
         const scale = element.width / width_m;
         const ctx = element.getContext('2d')!;
         ctx.setTransform(scale, 0, 0, scale, 0, 0);
+        // An item of a revealing layer draws on its own canvas; what the map shows is that canvas
+        // clipped to the shape, made again on every commit and every change of the shape.
+        let shown = element;
+        if (this.clippable.has(instance)) {
+          shown = document.createElement('canvas');
+          shown.width = element.width;
+          shown.height = element.height;
+          const out = shown.getContext('2d')!;
+          const compose = () => {
+            const clip = this.clips.get(instance);
+            out.setTransform(1, 0, 0, 1, 0, 0);
+            out.clearRect(0, 0, shown.width, shown.height);
+            if (clip?.kind === 'none') return;
+            out.save();
+            if (clip) {
+              out.setTransform(scale, 0, 0, scale, 0, 0);
+              revealPath(out, clip, width_m, height_m);
+              out.clip();
+              out.setTransform(1, 0, 0, 1, 0, 0);
+            }
+            out.drawImage(element, 0, 0);
+            out.restore();
+          };
+          compose();
+          const reclip = () => {
+            compose();
+            const source = map.getSource(id) as maplibregl.CanvasSource | undefined;
+            source?.play();
+            source?.pause();
+            map.triggerRepaint();
+          };
+          drawn.reclip.add(reclip);
+          track(() => drawn.reclip.delete(reclip));
+          drawn.compose.set(id, compose);
+          track(() => drawn.compose.delete(id));
+        }
         // The canvas is uploaded only on commit, so a static layer costs nothing per frame.
-        map.addSource(id, { type: 'canvas', canvas: element, coordinates: this.site.corners, animate: false });
+        map.addSource(id, { type: 'canvas', canvas: shown, coordinates: this.site.corners, animate: false });
         // The layer's own opacity, which its intensity scales.
         drawn.canvases.set(id, options.opacity ?? 1);
         add(id, { id, type: 'raster', source: id, paint: { 'raster-opacity': canvasOpacity(options.opacity ?? 1, drawn.intensity), 'raster-fade-duration': 0 } });
@@ -120,6 +168,7 @@ export class TableView {
           clear: () => ctx.clearRect(0, 0, width_m, height_m),
           commit: () => {
             if (removed) return;
+            drawn.compose.get(id)?.();
             const source = map.getSource(id) as maplibregl.CanvasSource | undefined;
             // Playing and pausing makes the source read the canvas once.
             source?.play();
@@ -142,29 +191,52 @@ export class TableView {
         this.container.append(element);
         styleElement(element, drawn.intensity);
         drawn.elements.add(element);
+        drawn.clipped.add(element);
+        this.clipElement(instance, element);
         track(() => {
           drawn.elements.delete(element);
+          drawn.clipped.delete(element);
           element.remove();
         });
         return element;
       },
       addCanvas: (id: string, style?: { opacity?: number }): CanvasOverlay => {
         const overlay = new MapCanvasOverlay(this.map, this.container, `canvas:${instance}:${id}`, this.site, style);
-        track(() => overlay.remove());
+        overlay.setGain(drawn.intensity);
+        drawn.overlays.add(overlay);
+        drawn.clipped.add(overlay.element);
+        this.clipElement(instance, overlay.element);
+        track(() => {
+          drawn.overlays.delete(overlay);
+          drawn.clipped.delete(overlay.element);
+          overlay.remove();
+        });
         return overlay;
       },
       addFlow: (id: string, style: FlowOverlayStyle & { colormap: Colormap }): FlowOverlay => {
         const overlay = new MapFlowOverlay(this.map, `flow:${instance}:${id}`, this.site, style);
         add(`flow:${instance}:${id}`, overlay);
+        overlay.setGain(drawn.intensity);
+        drawn.overlays.add(overlay);
         track(() => {
+          drawn.overlays.delete(overlay);
           overlay.remove();
           forget(`flow:${instance}:${id}`);
         });
         return overlay;
       },
+      addPicture: (): TablePicture => {
+        const picture = this.picture(instance);
+        track(() => picture.remove());
+        return picture;
+      },
       addShapes: (name: string, style?: { opacity?: number }): ShapeOverlay => {
-        const overlay = this.shapes(`shapes:${instance}:${name}`, style?.opacity ?? 1, add, forget);
-        track(() => overlay.remove());
+        const overlay = this.shapes(`shapes:${instance}:${name}`, style?.opacity ?? 1, add, forget, drawn.intensity);
+        drawn.overlays.add(overlay);
+        track(() => {
+          drawn.overlays.delete(overlay);
+          overlay.remove();
+        });
         return overlay;
       },
     };
@@ -176,7 +248,8 @@ export class TableView {
     opacity: number,
     add: (id: string, layer: maplibregl.AddLayerObject) => void,
     forget: (id: string) => void,
-  ): ShapeOverlay {
+    intensity: number,
+  ): ShapeOverlay & { setGain(gain: number): void } {
     const map = this.map;
     const colour = ['coalesce', ['get', 'colour'], '#ffffff'] as unknown as string;
     map.addSource(source, { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
@@ -197,7 +270,11 @@ export class TableView {
       filter: is('Point'),
       paint: { 'circle-color': colour, 'circle-radius': 9, 'circle-stroke-color': '#000000', 'circle-stroke-width': 2 },
     });
-    const setOpacity = (value: number) => {
+    let base = opacity;
+    let gain = Math.min(1, Math.max(0, intensity));
+    const setOpacity = (raw: number) => {
+      base = raw;
+      const value = raw * gain;
       map.setPaintProperty(`${source}:fill`, 'fill-opacity', 0.25 * value);
       map.setPaintProperty(`${source}:line`, 'line-opacity', value);
       map.setPaintProperty(`${source}:point`, 'circle-opacity', value);
@@ -214,6 +291,10 @@ export class TableView {
         });
       },
       setOpacity: (value: number) => !removed && setOpacity(value),
+      setGain: (value: number) => {
+        gain = Math.min(1, Math.max(0, value));
+        if (!removed) setOpacity(base);
+      },
       remove: () => {
         if (removed) return;
         removed = true;
@@ -248,8 +329,131 @@ export class TableView {
 
   private drawnBy(instance: string) {
     let drawn = this.drawn.get(instance);
-    if (!drawn) this.drawn.set(instance, (drawn = { overlays: new Set(), elements: new Set(), canvases: new Map(), intensity: 1 }));
+    if (!drawn) this.drawn.set(instance, (drawn = { overlays: new Set(), elements: new Set(), canvases: new Map(), intensity: 1, clipped: new Set(), fields: new Set(), reclip: new Set(), compose: new Map() }));
     return drawn;
+  }
+
+  /**
+   * Makes a layer clippable by a revealing layer's shape (#287): call before it starts, so its
+   * drawings get a canvas of their own to clip. Until a shape arrives it shows nowhere.
+   */
+  setClippable(instance: string, clippable: boolean): void {
+    if (clippable) {
+      this.clippable.add(instance);
+      if (!this.clips.has(instance)) this.clips.set(instance, { kind: 'none' });
+    } else {
+      this.clippable.delete(instance);
+      this.setClip(instance, null);
+    }
+  }
+
+  /** Shows what a layer draws only inside `shape` (table metres); null shows all of it. */
+  setClip(instance: string, shape: RevealShape | null): void {
+    const before = this.clips.get(instance) ?? null;
+    if (sameReveal(before, shape)) return;
+    if (shape) this.clips.set(instance, shape);
+    else this.clips.delete(instance);
+    const drawn = this.drawn.get(instance);
+    if (!drawn) return;
+    for (const reclip of drawn.reclip) reclip();
+    for (const field of drawn.fields) field.setClip(shape);
+    for (const element of drawn.clipped) this.clipElement(instance, element);
+  }
+
+  /** Clips a page element over the table (a canvas, a decoration) to its layer's shape, as a CSS polygon in the view's pixels. */
+  private clipElement(instance: string, element: HTMLElement): void {
+    const shape = this.clips.get(instance);
+    if (!shape) {
+      element.style.clipPath = '';
+      return;
+    }
+    if (shape.kind === 'none') {
+      element.style.clipPath = 'polygon(0 0, 0 0, 0 0)';
+      return;
+    }
+    const frame = this.frame ?? (this.frame = tableFrame(this.site));
+    const points = revealPolygon(shape, frame.width, frame.height).map((p) => {
+      const at = this.map.project(frame.toLonLat(p));
+      return `${at.x.toFixed(1)}px ${at.y.toFixed(1)}px`;
+    });
+    element.style.clipPath = `polygon(${points.join(', ')})`;
+  }
+
+  private frame: ReturnType<typeof tableFrame> | null = null;
+
+  /** The view moved or resized: page elements of clipped layers are clipped again. */
+  private reclipElements = (): void => {
+    for (const [instance, drawn] of this.drawn) if (this.clips.has(instance)) for (const element of drawn.clipped) this.clipElement(instance, element);
+  };
+
+  /**
+   * A copy of what the table shows inside a rectangle, for a magnifier (#287): the map with every
+   * canvas over it, except those of the layer asking. Copied as the map draws, since a WebGL
+   * picture is only readable during its frame.
+   */
+  private picture(instance: string): TablePicture {
+    const { map, container } = this;
+    const canvas = document.createElement('canvas');
+    const g = canvas.getContext('2d')!;
+    let wanted: PixelRect | null = null;
+    let removed = false;
+    const picture = {
+      canvas,
+      taken: null as PixelRect | null,
+      revision: 0,
+      want(rect: PixelRect) {
+        if (removed) return;
+        wanted = { ...rect };
+        map.triggerRepaint();
+      },
+      remove() {
+        if (removed) return;
+        removed = true;
+        map.off('render', grab);
+        canvas.width = canvas.height = 1;
+      },
+    };
+    const grab = () => {
+      if (!wanted || removed) return;
+      const rect = wanted;
+      wanted = null;
+      const source = map.getCanvas();
+      const box = container.getBoundingClientRect();
+      if (box.width < 1 || rect.width < 1 || rect.height < 1) return;
+      const ratio = source.width / Math.max(1, source.clientWidth || box.width);
+      const width = Math.max(1, Math.round(rect.width * ratio));
+      const height = Math.max(1, Math.round(rect.height * ratio));
+      if (canvas.width !== width || canvas.height !== height) {
+        canvas.width = width;
+        canvas.height = height;
+      } else g.clearRect(0, 0, width, height);
+      g.fillStyle = this.site.basemap.background;
+      g.fillRect(0, 0, width, height);
+      const k = width / rect.width;
+      try {
+        for (const layer of container.querySelectorAll('canvas')) {
+          if (layer.dataset.overlay?.startsWith(`canvas:${instance}:`) || layer.closest(`[data-layer="${instance}"]`)) continue;
+          const r = layer.getBoundingClientRect();
+          if (r.width < 1 || r.height < 1 || layer.width < 1) continue;
+          const style = getComputedStyle(layer);
+          if (style.visibility === 'hidden' || style.display === 'none') continue;
+          g.globalAlpha = Number(style.opacity) || 1;
+          const sx = layer.width / r.width;
+          const sy = layer.height / r.height;
+          // Only the part under the rectangle: source pixels of this canvas, then where they land.
+          const left = rect.x - (r.left - box.left);
+          const top = rect.y - (r.top - box.top);
+          g.drawImage(layer, left * sx, top * sy, rect.width * sx, rect.height * sy, 0, 0, rect.width * k, rect.height * k);
+        }
+      } catch (error) {
+        console.warn('[picture] the table could not be copied', error);
+      }
+      g.globalAlpha = 1;
+      picture.taken = rect;
+      picture.revision++;
+    };
+    map.on('render', grab);
+    return picture;
   }
 
   /** Stacks the scene's layers in this order, bottom first. */
@@ -400,6 +604,20 @@ export class TableView {
     this.map.resize();
     this.map.jumpTo(this.view());
   }
+}
+
+interface Drawn {
+  overlays: Set<{ setGain(gain: number): void }>;
+  elements: Set<HTMLElement>;
+  canvases: Map<string, number>;
+  intensity: number;
+  /** Page elements a reveal clips: decorations and canvases. */
+  clipped: Set<HTMLElement>;
+  fields: Set<MapFieldOverlay>;
+  /** Makes each clipped drawing again after the shape changed. */
+  reclip: Set<() => void>;
+  /** By drawing: makes its clipped copy, before a commit. */
+  compose: Map<string, () => void>;
 }
 
 /** Below 1 a decoration fades; above 1 it brightens. The filter is on the layer's own element, never the root. */

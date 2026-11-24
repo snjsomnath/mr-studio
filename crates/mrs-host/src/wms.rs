@@ -293,6 +293,181 @@ async fn fetch(
     Ok((body.to_vec(), kind))
 }
 
+/// `GET /api/wms/layers?url=…[&service=arcgis][&source=<id>]`: the layers a service offers (#306),
+/// so the editor offers them in a list instead of having their names typed.
+#[derive(Debug, serde::Deserialize)]
+pub struct LayersQuery {
+    #[serde(default)]
+    pub url: String,
+    #[serde(default)]
+    pub service: Option<String>,
+    #[serde(default)]
+    pub source: Option<String>,
+}
+
+/// One layer of a service: what a map names it by, and what people call it.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct ServiceLayer {
+    pub name: String,
+    pub title: String,
+}
+
+/// The text of the first `<tag>` (or `<prefix:tag>`) in `xml`.
+fn tag_text(xml: &str, tag: &str) -> Option<String> {
+    let mut rest = xml;
+    while let Some(at) = rest.find('<') {
+        rest = &rest[at + 1..];
+        let end = rest.find('>')?;
+        let head = &rest[..end];
+        let local = head.rsplit(':').next().unwrap_or(head);
+        if local == tag {
+            let body = &rest[end + 1..];
+            let close = body.find("</")?;
+            let text = body[..close].trim();
+            let text = text.strip_prefix("<![CDATA[").and_then(|t| t.strip_suffix("]]>")).unwrap_or(text);
+            return Some(text.replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", "\"").replace("&apos;", "'"));
+        }
+    }
+    None
+}
+
+/// The named layers in a WMS GetCapabilities answer, in the order the service lists them.
+pub fn capabilities_layers(xml: &str) -> Vec<ServiceLayer> {
+    let mut out: Vec<ServiceLayer> = Vec::new();
+    // Each opening `<Layer …>` (or `<wms:Layer>`) starts a layer; its own Name and Title come
+    // before any layer inside it, so each layer is read up to the next layer tag.
+    let mut starts: Vec<usize> = Vec::new();
+    for (at, _) in xml.match_indices('<') {
+        let head: String = xml[at + 1..].chars().take_while(|c| !c.is_whitespace() && *c != '>' && *c != '/').collect();
+        if head.rsplit(':').next() == Some("Layer") {
+            starts.push(at);
+        }
+    }
+    for (n, &start) in starts.iter().enumerate() {
+        let after = &xml[start..];
+        let end = starts.get(n + 1).map(|&next| next - start).unwrap_or(after.len());
+        let own = &after[..end];
+        let close = own.match_indices("</").map(|(i, _)| i).find(|&i| own[i + 2..].split('>').next().and_then(|h| h.rsplit(':').next()) == Some("Layer"));
+        let own = close.map(|i| &own[..i]).unwrap_or(own);
+        let Some(name) = tag_text(own, "Name").filter(|n| !n.is_empty()) else { continue };
+        if out.iter().any(|l| l.name == name) {
+            continue;
+        }
+        let title = tag_text(own, "Title").filter(|t| !t.is_empty()).unwrap_or_else(|| name.clone());
+        out.push(ServiceLayer { name, title });
+    }
+    out
+}
+
+/// The layers of an ArcGIS map service's `?f=json` answer, by id.
+pub fn arcgis_layers(json: &serde_json::Value) -> Vec<ServiceLayer> {
+    json.get("layers")
+        .and_then(|l| l.as_array())
+        .map(|layers| {
+            layers
+                .iter()
+                .filter_map(|l| {
+                    let id = l.get("id")?.as_i64()?;
+                    let title = l.get("name").and_then(|n| n.as_str()).unwrap_or("").to_string();
+                    Some(ServiceLayer { name: id.to_string(), title: if title.is_empty() { id.to_string() } else { title } })
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+pub async fn layers(sources: &Sources, mut q: LayersQuery) -> Result<Vec<ServiceLayer>, (StatusCode, String)> {
+    let source = q.source.take().filter(|s| !s.trim().is_empty());
+    if let Some(id) = &source {
+        if q.url.trim().is_empty() {
+            q.url = sources.connection(id).map(|c| c.url).ok_or((StatusCode::NOT_FOUND, format!("there is no source called '{id}'")))?;
+        }
+    }
+    let arcgis = q.service.as_deref().map(str::trim) == Some("arcgis");
+    let what = if arcgis { "ArcGIS" } else { "WMS" };
+    let mut url = reqwest::Url::parse(q.url.trim()).map_err(|e| (StatusCode::BAD_REQUEST, format!("the {what} address is not a web address: {e}")))?;
+    if !matches!(url.scheme(), "http" | "https") {
+        return Err((StatusCode::BAD_REQUEST, format!("the {what} address must start with http:// or https://")));
+    }
+    let keep: Vec<(String, String)> = url
+        .query_pairs()
+        .filter(|(k, _)| !matches!(k.to_ascii_lowercase().as_str(), "service" | "version" | "request" | "f" | "layers"))
+        .map(|(k, v)| (k.into_owned(), v.into_owned()))
+        .collect();
+    {
+        let mut pairs = url.query_pairs_mut();
+        pairs.clear().extend_pairs(keep);
+        if arcgis {
+            pairs.append_pair("f", "json");
+        } else {
+            pairs.append_pair("SERVICE", "WMS").append_pair("VERSION", "1.1.1").append_pair("REQUEST", "GetCapabilities");
+        }
+    }
+    let request = match source.as_deref() {
+        Some(id) => sources
+            .request(id, url)
+            .await
+            .map_err(|refusal| (StatusCode::from_u16(refusal.status).unwrap_or(StatusCode::BAD_GATEWAY), refusal.message))?,
+        None => reqwest::Client::builder()
+            .user_agent("MR Studio")
+            .timeout(Duration::from_secs(30))
+            .build()
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+            .get(url),
+    };
+    let answer = request
+        .send()
+        .await
+        .map_err(|e| (StatusCode::BAD_GATEWAY, format!("the {what} service could not be reached: {}", e.without_url())))?;
+    let status = answer.status();
+    if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
+        return Err((StatusCode::BAD_GATEWAY, format!("the {what} service wants a sign-in ({status})")));
+    }
+    let body = answer.text().await.map_err(|e| (StatusCode::BAD_GATEWAY, format!("the {what} service stopped answering: {}", e.without_url())))?;
+    if !status.is_success() {
+        return Err((StatusCode::BAD_GATEWAY, format!("the {what} service answered {status}")));
+    }
+    let found = if arcgis {
+        serde_json::from_str::<serde_json::Value>(&body).map(|v| arcgis_layers(&v)).unwrap_or_default()
+    } else {
+        capabilities_layers(&body)
+    };
+    if found.is_empty() {
+        return Err((StatusCode::BAD_GATEWAY, format!("the {what} service lists no layers at this address")));
+    }
+    Ok(found)
+}
+
+#[cfg(test)]
+mod layer_tests {
+    use super::*;
+
+    #[test]
+    fn capabilities() {
+        let xml = r#"<WMT_MS_Capabilities><Service><Name>OGC:WMS</Name><Title>Maps</Title></Service>
+          <Capability><LayerLimit>4</LayerLimit><Layer><Title>Root</Title>
+            <Layer queryable="1"><Name>ortofoto</Name><Title>Aerial &amp; photo</Title><Style><Name>default</Name></Style></Layer>
+            <Layer><Name>topowebb</Name><Title>Topographic</Title></Layer>
+            <Layer><Name><![CDATA[hojd]]></Name></Layer>
+          </Layer></Capability></WMT_MS_Capabilities>"#;
+        let layers = capabilities_layers(xml);
+        assert_eq!(
+            layers,
+            vec![
+                ServiceLayer { name: "ortofoto".into(), title: "Aerial & photo".into() },
+                ServiceLayer { name: "topowebb".into(), title: "Topographic".into() },
+                ServiceLayer { name: "hojd".into(), title: "hojd".into() },
+            ]
+        );
+    }
+
+    #[test]
+    fn arcgis() {
+        let json = serde_json::json!({ "layers": [{ "id": 0, "name": "Roads" }, { "id": 3, "name": "" }] });
+        assert_eq!(arcgis_layers(&json), vec![ServiceLayer { name: "0".into(), title: "Roads".into() }, ServiceLayer { name: "3".into(), title: "3".into() }]);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

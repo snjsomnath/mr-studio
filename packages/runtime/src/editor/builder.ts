@@ -34,8 +34,10 @@ import {
   CATEGORY_SCHEMES,
   paintScale,
   LISTEN_KEY,
+  TEST_DATA,
+  makeTestData,
 } from '@mrstudio/sdk';
-import type { CustomLayer, GeometryKind, LayerManifest, Paint, RecipeBlock, ResolvedPalette, Shapes, SitePalette, Size } from '@mrstudio/sdk';
+import type { CustomLayer, GeometryKind, LayerManifest, Paint, RecipeBlock, ResolvedPalette, Shapes, SitePalette, Size, TestDataDef } from '@mrstudio/sdk';
 
 import { el, layerButton } from '../controls.ts';
 import { dataUrl, loadData } from '../recipe-player.ts';
@@ -51,6 +53,8 @@ export interface BuilderHost {
   addData(): void;
   /** Adds a layer from the catalogue to the table and selects it. */
   addLayer(use: string): Promise<void>;
+  /** Holds back the reload a site change causes, so several files and a layer land as one (#308). */
+  hold?(on: boolean): void;
 }
 
 // ---- Shared bits -------------------------------------------------------------------
@@ -397,15 +401,101 @@ export function newCustomLayer(host: BuilderHost, shell: HTMLElement): void {
     dialog.close();
     host.addData();
   });
+  // Test data (#308): random points, places, lines or areas on this table, to try looks and motions on.
+  const tests = el('div', 'lb-data-list lb-test-list');
+  const status = el('p', 'lb-hint');
+  const cards: HTMLButtonElement[] = [];
+  for (const def of TEST_DATA) {
+    const card = el('button', 'lb-data-card');
+    card.type = 'button';
+    const badge = el('span', 'lb-data-icon is-test');
+    badge.append(icon(KIND_ICON[def.geometry], 20));
+    const text = el('span', 'lb-data-text');
+    text.append(el('strong', undefined, def.label), el('span', 'lb-data-detail', def.about));
+    card.append(badge, text);
+    card.addEventListener('click', async () => {
+      for (const c of cards) c.disabled = true;
+      status.textContent = `Making ${def.label.toLowerCase()}…`;
+      const made = await addTestData(host, def).catch((error: Error) => error.message);
+      if (made === true) return dialog.close();
+      status.textContent = made;
+      for (const c of cards) c.disabled = false;
+    });
+    cards.push(card);
+    tests.append(card);
+  }
   dialog.append(
     head,
     el('p', 'wz-lead', 'Choose what the layer shows. It starts with a look that fits the data, and you style it on the right while the map shows it live.'),
     datasets.length ? list : el('p', 'ed-empty', 'This table has no points, lines or areas of its own yet.'),
     more,
+    el('h3', 'lb-new-sub', 'Or try it with test data'),
+    el('p', 'lb-hint lb-new-hint', 'Made up on the spot, spread over this table, with columns to colour, size and animate by. Each becomes a dataset of the table, so you can remove it later.'),
+    tests,
+    status,
   );
   dialog.addEventListener('close', () => dialog.remove());
   shell.append(dialog);
   dialog.showModal();
+}
+
+/** A dataset name not yet used on this table: `test-points`, then `test-points-2`… */
+function freeDataset(store: Store, base: string, suffixes: readonly string[]): string {
+  const data = store.state.site.data ?? {};
+  for (let n = 1; ; n++) {
+    const name = n === 1 ? base : `${base}-${n}`;
+    if (suffixes.every((s) => !(`${name}${s}` in data))) return name;
+  }
+}
+
+/** The look each kind of test data starts with: coloured by one of its columns, places already moving. */
+function testRecipe(def: TestDataDef, dataset: string): CustomLayer {
+  const recipe = startingRecipe(def.label, dataset, def.geometry);
+  const look = recipe.look![0]!;
+  const props = look.props!;
+  if (def.kind === 'points') Object.assign(props, { color: { by: 'kind', kind: 'category' }, radius_mm: { by: 'value', range: [2, 6] } });
+  if (def.kind === 'lines') Object.assign(props, { color: { by: 'kind', kind: 'category' } });
+  if (def.kind === 'areas') Object.assign(props, { color: { by: 'population', kind: 'number' }, opacity: 0.55 });
+  if (def.kind === 'places') {
+    Object.assign(props, { color: { by: 'category', kind: 'category' }, radius_mm: { by: 'weight', range: [3, 6] } });
+    recipe.motion = [{
+      id: `${look.id}-place`,
+      block: 'place',
+      on: look.id,
+      props: { motion: 'orbiters', activity: `${dataset}-activity`, flows: `${dataset}-flows`, links: `${dataset}-links`, colours: 'category' },
+    }];
+  }
+  return recipe;
+}
+
+/**
+ * Makes test data on this table (#308): its files go through the normal import, as datasets
+ * of their own, then a custom layer showing them is saved and put on the table, all as one
+ * change. True when done, else the problem in a sentence.
+ */
+export async function addTestData(host: BuilderHost, def: TestDataDef): Promise<true | string> {
+  const files = makeTestData(def.kind, host.store.state.site);
+  const dataset = freeDataset(host.store, def.dataset, files.map((f) => f.suffix));
+  host.hold?.(true);
+  try {
+    for (const file of files) {
+      const response = await fetch(`/api/data/import?target=${encodeURIComponent(`data:${dataset}${file.suffix}`)}`, {
+        method: 'POST',
+        headers: { 'X-Filename': encodeURIComponent(file.filename.replace(def.dataset, dataset)) },
+        body: file.text,
+      });
+      if (response.status !== 200) {
+        const report = await response.json().catch(() => null) as { summary?: string } | null;
+        return `The table did not take ${file.filename}: ${report?.summary ?? response.status}.`;
+      }
+    }
+    const id = freeId(host.store, def.label);
+    if (!(await host.send('custom.save', { id, recipe: testRecipe(def, dataset) }))) return 'The layer could not be saved.';
+    await host.addLayer(`custom:${id}`);
+    return true;
+  } finally {
+    host.hold?.(false);
+  }
 }
 
 /** Where a saved custom layer is used on this table: its buttons, and the slides that show it. */
@@ -999,7 +1089,7 @@ export function builderSection(host: BuilderHost, manifest: LayerManifest, butto
   };
 
   /** The rows of a place motion (#160-163): which motion, its files, ? help and its knobs. */
-  const placeRows = (p: Record<string, any>, set: (key: string, value: unknown) => void, redraw: () => void): HTMLElement[] => {
+  const placeRows = (p: Record<string, any>, set: (key: string, value: unknown) => void, redraw: () => void, dataset?: string): HTMLElement[] => {
     const rows: HTMLElement[] = [];
     const def = placeMotion(p.motion) ?? PLACE_MOTIONS[0]!;
     const pick = el('select');
@@ -1045,13 +1135,15 @@ export function builderSection(host: BuilderHost, manifest: LayerManifest, butto
       rows.push(field(label, select));
     };
     const csvs = datasets.filter((d) => /\.csv$/i.test(d.path));
+    // Tables named after the places come first: test places bring `test-places-activity` and the like (#308).
+    const own = (table: string) => (dataset ? [`${dataset}-${table}`, `${dataset}_${table}`] : []);
     if (def.uses?.includes('streets')) choose('Streets', 'streets', datasets, null, ['roads', 'walkways', 'streets']);
     if (def.uses?.includes('buildings')) choose('Buildings', 'buildings', datasets, null, ['buildings', 'buildings_2d']);
     if (def.data === 'targets' || def.data === 'raster' || def.data === 'links') choose(def.data === 'links' ? 'Stars' : 'Targets', 'targets', datasets, 'None', []);
-    if (def.data === 'activity' || def.data === 'audio') choose('Activity', 'activity', csvs, 'Ambient (no file)', ['activity']);
+    if (def.data === 'activity' || def.data === 'audio') choose('Activity', 'activity', csvs, 'Ambient (no file)', [...own('activity'), 'activity']);
     if (def.data === 'activity' && p.activity) rows.push(field('Plays through in', slider(p.cycle_s ?? 24, 6, 120, 1, ' s', (v) => set('cycle_s', v))));
-    if (def.data === 'flows') choose('Flows', 'flows', csvs, 'Made up from weights', ['flows']);
-    if (def.data === 'links') choose('Links', 'links', csvs, 'By category', ['links']);
+    if (def.data === 'flows') choose('Flows', 'flows', csvs, 'Made up from weights', [...own('flows'), 'flows']);
+    if (def.data === 'links') choose('Links', 'links', csvs, 'By category', [...own('links'), 'links']);
     rows.push(field('Colours', segmented([['each', 'One each'], ['category', 'By category']] as const, p.colours === 'category' ? 'category' : 'each', (v) => set('colours', v), 'Colours')));
 
     // Knobs: the shared speed and glow, then the motion's own.
@@ -1146,7 +1238,7 @@ export function builderSection(host: BuilderHost, manifest: LayerManifest, butto
           } else if (name === 'sound') {
             rows.push(...soundRows(look, p, set, () => draw()));
           } else if (name === 'place') {
-            rows.push(...placeRows(p, set, () => draw()));
+            rows.push(...placeRows(p, set, () => draw(), data?.dataset));
           }
           sub.replaceChildren(...rows);
         };

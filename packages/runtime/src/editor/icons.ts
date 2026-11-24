@@ -4,7 +4,17 @@
  * this set does not have fall back to `layers`.
  */
 const PATHS: Record<string, string> = {
+  // The Media tab (#306).
+  sound: 'M4 9h4l5-4v14l-5-4H4zM16.500 9a4 4 0 0 1 0 6M19 6.500a7.500 7.500 0 0 1 0 11',
+  folder: 'M3 6a1 1 0 0 1 1-1h5l2 2h9a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z',
+  globe: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18ZM3 12h18M12 3c2.500 2.500 3.500 5.500 3.500 9s-1 6.500-3.500 9c-2.500-2.500-3.500-5.500-3.500-9s1-6.500 3.500-9Z',
+  search: 'M10.500 4a6.500 6.500 0 1 0 0 13 6.500 6.500 0 0 0 0-13ZM15.500 15.500 20 20',
+  table2: 'M4 5h16v14H4zM4 10h16M4 15h16M10 5v14',
+  file: 'M6 3h8l4 4v14H6zM14 3v4h4',
+  chevron: 'M6 9l6 6 6-6',
   plan: 'M4 4h16v16H4zM4 11h6v9M10 15h10M14 4v6h6',
+  magnifier: 'M10.500 4a6.500 6.500 0 1 0 0 13 6.500 6.500 0 0 0 0-13ZM15.300 15.300 20 20M7.500 9a3.500 3.500 0 0 1 3-2',
+  swipe: 'M4 5h16v14H4zM12 3v18M8 12l-2 0M7 10.500 5.500 12 7 13.500M16 12h2M17 10.500l1.500 1.500-1.500 1.500',
   video: 'M3 6h12v12H3zM15 10l6-3v10l-6-3M7 10l4 2-4 2z',
   layers: 'M12 3 3 8l9 5 9-5-9-5ZM3 12l9 5 9-5M3 16l9 5 9-5',
   home: 'M4 11l8-7 8 7M6 10v10h12V10M10 20v-6h4v6',
@@ -64,7 +74,7 @@ const PATHS: Record<string, string> = {
 };
 
 /** Icons an author can give a layer's button. */
-export const LAYER_ICONS = ['sun', 'wind', 'droplet', 'route', 'footprints', 'tram', 'car', 'tree', 'lightbulb', 'images', 'pencil', 'map', 'blocks', 'layers', 'home', 'eye', 'play'];
+export const LAYER_ICONS = ['sun', 'wind', 'droplet', 'route', 'footprints', 'tram', 'car', 'tree', 'lightbulb', 'images', 'pencil', 'map', 'magnifier', 'swipe', 'blocks', 'layers', 'home', 'eye', 'play'];
 
 const NS = 'http://www.w3.org/2000/svg';
 

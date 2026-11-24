@@ -34,6 +34,25 @@ importers:
         specifier: ^7.0.0
         version: 7.3.8(@types/node@22.20.5)
 
+  packages/join:
+    dependencies:
+      '@mrstudio/sdk':
+        specifier: workspace:*
+        version: link:../sdk
+      peerjs:
+        specifier: 1.5.5
+        version: 1.5.5
+    devDependencies:
+      '@types/node':
+        specifier: ^22.0.0
+        version: 22.20.5
+      typescript:
+        specifier: ^5.9.0
+        version: 5.9.3
+      vite:
+        specifier: ^7.0.0
+        version: 7.3.8(@types/node@22.20.5)
+
   packages/layers/basemap:
     dependencies:
       '@mrstudio/sdk':
@@ -113,7 +132,30 @@ importers:
         specifier: ^5.9.0
         version: 5.9.3
 
+  packages/layers/lens:
+    dependencies:
+      '@mrstudio/sdk':
+        specifier: workspace:*
+        version: link:../../sdk
+    devDependencies:
+      typescript:
+        specifier: ^5.9.0
+        version: 5.9.3
+
   packages/layers/mapdata:
+    dependencies:
+      '@mrstudio/sdk':
+        specifier: workspace:*
+        version: link:../../sdk
+    devDependencies:
+      '@types/node':
+        specifier: ^22.0.0
+        version: 22.20.5
+      typescript:
+        specifier: ^5.9.0
+        version: 5.9.3
+
+  packages/layers/media:
     dependencies:
       '@mrstudio/sdk':
         specifier: workspace:*
@@ -212,6 +254,16 @@ importers:
         specifier: ^5.9.0
         version: 5.9.3
 
+  packages/layers/swipe:
+    dependencies:
+      '@mrstudio/sdk':
+        specifier: workspace:*
+        version: link:../../sdk
+    devDependencies:
+      typescript:
+        specifier: ^5.9.0
+        version: 5.9.3
+
   packages/layers/transit:
     dependencies:
       '@mrstudio/sdk':
@@ -298,6 +350,9 @@ importers:
       maplibre-gl:
         specifier: ^5.0.0
         version: 5.24.1
+      peerjs:
+        specifier: 1.5.5
+        version: 1.5.5
       qrcode-generator:
         specifier: ^2.0.4
         version: 2.0.4
@@ -539,6 +594,10 @@ packages:
     peerDependenciesMeta:
       '@cfworker/json-schema':
         optional: true
+
+  '@msgpack/msgpack@2.8.0':
+    resolution: {integrity: sha512-h9u4u/jiIRKbq25PM+zymTyW6bhTzELvOoUd+AvYriWOAKpLGnIamaET3pnHYoI5iYphAHBI4ayx0MehR+VVPQ==}
+    engines: {node: '>= 10'}
 
   '@rollup/rollup-android-arm-eabi@4.68.3':
     resolution: {integrity: sha512-mqfypgH/liYjaSCoPI4erckUcROgZtmFUUmyOJ05oyayi/tVqOEYAzWP7ufqCoCT3xB31Fw4XIVO/jX42hYvKA==}
@@ -875,6 +934,9 @@ packages:
     resolution: {integrity: sha512-aIL5Fx7mawVa300al2BnEE4iNvo1qETxLrPI/o05L7z6go7fCw1J6EQmbK4FmJ2AS7kgVF/KEZWufBfdClMcPg==}
     engines: {node: '>= 0.6'}
 
+  eventemitter3@4.0.7:
+    resolution: {integrity: sha512-8guHBZCwKnFhYdHr2ysuRWErTwhoN2X8XELRlrRwpmfeY2jjuUN4taQMsULKUVo1K4DvZl+0pgfyoysHxvmvEw==}
+
   eventsource-parser@3.1.1:
     resolution: {integrity: sha512-EKN1vKAMcZ8MlYMpaNuxN6R9yakzH6uajHcHVTqWJzvu5pWw9DyhbP35HH8MVBQ+dZjAfDxk+A8NiR9KWaXiyQ==}
     engines: {node: '>=18.0.0'}
@@ -1080,6 +1142,14 @@ packages:
     resolution: {integrity: sha512-mnvGdvOrIvJOBGUEdGkrVXjN8E/VkIJCkf2eS1DH2yv82ORUlLttmDt0rWY38yYZmVwciZwBUvHM20qxBZf40w==}
     hasBin: true
 
+  peerjs-js-binarypack@2.1.0:
+    resolution: {integrity: sha512-YIwCC+pTzp3Bi8jPI9UFKO0t0SLo6xALnHkiNt/iUFmUUZG0fEEmEyFKvjsDKweiFitzHRyhuh6NvyJZ4nNxMg==}
+    engines: {node: '>= 14.0.0'}
+
+  peerjs@1.5.5:
+    resolution: {integrity: sha512-viMUCPDL6CSfOu0ZqVcFqbWRXNHIbv2lPqNbrBIjbFYrflebOjItJ4hPfhjnuUCstqciHVu9vVJ7jFqqKi/EuQ==}
+    engines: {node: '>= 14'}
+
   picocolors@1.1.1:
     resolution: {integrity: sha512-xceH2snhtb5M9liqDsmEw56le376mTZkEX/jEb/RxNFyegNul7eNslCXP9FDj/Lcu0X8KEyMceP2ntpaHrDEVA==}
 
@@ -1141,6 +1211,9 @@ packages:
 
   safer-buffer@2.1.2:
     resolution: {integrity: sha512-YZo3K82SD7Riyi0E1EQPojLz7kpepnSQI9IyPbHHg1XXXevb5dJI7tpyN2ADxGcQbHG7vcyRHk0cbwqcQriUtg==}
+
+  sdp@3.2.3:
+    resolution: {integrity: sha512-UYuY3JFaVa7Zc+rxxi8iblwD7mdloGxCzMEQIJPcCLiHKjjqMqLsruMkI+emgnYARkfHk4o7seEETABc4bwokg==}
 
   send@1.2.1:
     resolution: {integrity: sha512-1gnZf7DFcoIcajTjTwjwuDjzuz4PPcY2StKPlsGAQ1+YH20IRVrBaXSWmdjowTJ6u8Rc01PoYOGHXfP1mYcZNQ==}
@@ -1258,6 +1331,10 @@ packages:
         optional: true
       yaml:
         optional: true
+
+  webrtc-adapter@9.0.6:
+    resolution: {integrity: sha512-CHbl2ZQbxx164IgWRgzJno4hWtM4tFbRam1QfI3Yxhs3w/DvqluVxVWeXs3oL5/fbGkSNLKo0Ty5MgUWceNhog==}
+    engines: {node: '>=6.0.0', npm: '>=3.10.0'}
 
   which@2.0.2:
     resolution: {integrity: sha512-BLI3Tl1TW3Pvl70l3yq3Y64i+awpwXqsGBYWkkqMtnbXgrMD+yj7rhW0kuEDxzJaYXGjEW5ogapKNMEKNMjibA==}
@@ -1423,6 +1500,8 @@ snapshots:
       zod-to-json-schema: 3.25.2(zod@4.6.7)
     transitivePeerDependencies:
       - supports-color
+
+  '@msgpack/msgpack@2.8.0': {}
 
   '@rollup/rollup-android-arm-eabi@4.68.3':
     optional: true
@@ -1697,6 +1776,8 @@ snapshots:
 
   etag@1.8.1: {}
 
+  eventemitter3@4.0.7: {}
+
   eventsource-parser@3.1.1: {}
 
   eventsource@3.0.7:
@@ -1912,6 +1993,15 @@ snapshots:
     dependencies:
       resolve-protobuf-schema: 2.1.0
 
+  peerjs-js-binarypack@2.1.0: {}
+
+  peerjs@1.5.5:
+    dependencies:
+      '@msgpack/msgpack': 2.8.0
+      eventemitter3: 4.0.7
+      peerjs-js-binarypack: 2.1.0
+      webrtc-adapter: 9.0.6
+
   picocolors@1.1.1: {}
 
   picomatch@4.0.7: {}
@@ -2000,6 +2090,8 @@ snapshots:
       - supports-color
 
   safer-buffer@2.1.2: {}
+
+  sdp@3.2.3: {}
 
   send@1.2.1:
     dependencies:
@@ -2102,6 +2194,10 @@ snapshots:
     optionalDependencies:
       '@types/node': 22.20.5
       fsevents: 2.3.3
+
+  webrtc-adapter@9.0.6:
+    dependencies:
+      sdp: 3.2.3
 
   which@2.0.2:
     dependencies:

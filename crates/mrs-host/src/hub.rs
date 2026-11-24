@@ -42,11 +42,36 @@ pub struct SessionOptions {
     /// The address phones reach the studio at, such as `http://192.168.1.20:4170`.
     /// Without it the host works it out from the address it listens on.
     pub public_url: Option<String>,
+    /// The join page phones open when they cannot reach this computer (#275), such as
+    /// `https://snjsomnath.github.io/mr-studio/`. A surface of the studio links it to the host
+    /// over WebRTC; while it is linked the QR code points there. None turns it off.
+    pub join_page: Option<String>,
+    /// PeerJS options for the WebRTC link (signalling server, `config.iceServers` for a TURN
+    /// server), handed to the table's bridge and, through the QR link, to the join page.
+    pub peer_options: Option<serde_json::Value>,
+}
+
+/// Where phones join over the internet when nothing else is set (#275).
+pub const DEFAULT_JOIN_PAGE: &str = "https://snjsomnath.github.io/mr-studio/v1/";
+
+impl SessionOptions {
+    /// The join page and PeerJS options from the environment: `MRS_JOIN_PAGE` (an address, or
+    /// `off`) and `MRS_PEER_OPTIONS` (JSON). Without them, the default page.
+    pub fn join_page_from_env() -> (Option<String>, Option<serde_json::Value>) {
+        let page = match std::env::var("MRS_JOIN_PAGE") {
+            Ok(v) if v.trim().eq_ignore_ascii_case("off") || v.trim().is_empty() => None,
+            Ok(v) => Some(v.trim().to_string()),
+            Err(_) => Some(DEFAULT_JOIN_PAGE.to_string()),
+        };
+        let options = std::env::var("MRS_PEER_OPTIONS").ok().and_then(|v| serde_json::from_str(&v).ok());
+        (page, options)
+    }
 }
 
 impl Default for SessionOptions {
     fn default() -> Self {
-        Self { max_phones: MAX_PHONES, resume_hold: Duration::from_secs(60), phone_requests_per_second: 20, public_url: None }
+        let (join_page, peer_options) = Self::join_page_from_env();
+        Self { max_phones: MAX_PHONES, resume_hold: Duration::from_secs(60), phone_requests_per_second: 20, public_url: None, join_page, peer_options }
     }
 }
 
@@ -438,6 +463,9 @@ pub struct Hub {
     /// The address phones join at through the relay (#89), while the host is connected to one.
     /// It replaces the local network address in the QR code.
     relay_join: RwLock<Option<String>>,
+    /// The join page phones open while a studio surface links it over WebRTC (#275):
+    /// `https://…/mr-studio/?t=<peer>#`. Used when there is no relay.
+    bridge_join: RwLock<Option<String>>,
     /// The visitors' language now (#80), one of the site's `branding.languages`.
     language: RwLock<String>,
     /// The code the guide's phone joins with (#98). Only the operator's screens are told it.
@@ -506,6 +534,7 @@ impl Hub {
             info: RwLock::new(site.info()),
             session,
             relay_join: RwLock::new(None),
+            bridge_join: RwLock::new(None),
             language: RwLock::new(language),
             guide_code,
             options,
@@ -759,10 +788,23 @@ impl Hub {
     pub fn session(&self) -> SessionInfo {
         let mut session = self.session.clone();
         session.language = self.language.read().unwrap().clone();
-        if let Some(base) = &*self.relay_join.read().unwrap() {
+        let relay = self.relay_join.read().unwrap().clone();
+        if let Some(base) = relay.or_else(|| self.bridge_join.read().unwrap().clone()) {
             session.join_url = Some(format!("{}/phone?c={}", base.trim_end_matches('/'), session.code));
         }
         session
+    }
+
+    /// The join page and PeerJS options for the WebRTC bridge (#275), or None when it is off.
+    pub fn join_page(&self) -> Option<(String, Option<Value>)> {
+        self.options.join_page.clone().map(|page| (page, self.options.peer_options.clone()))
+    }
+
+    /// Phones join through the join page at `base` (`https://…/?t=<peer>#`), or not with None.
+    /// A relay, when linked, still wins. Every surface gets `session.changed`.
+    pub fn set_bridge(&self, base: Option<String>) {
+        *self.bridge_join.write().unwrap() = base;
+        self.emit("session.changed", json!({ "session": self.session() }));
     }
 
     /// Phones join through the relay at `base` (`https://relay.example/r/<room>`), or again at
@@ -1655,7 +1697,12 @@ impl Hub {
         if scene[index].parent.is_none() {
             for n in block(scene, index).skip(1) {
                 // A sequence's own items come on only as its steps show them.
-                let on = active && scene[n].saved.active && !sequence;
+                // The item the sequence has just shown as its first step stays on (#197).
+                let on = if sequence {
+                    active && scene[n].state.shown_by.as_deref() == Some(scene[index].id.as_str())
+                } else {
+                    active && scene[n].saved.active
+                };
                 if scene[n].state.active != on {
                     scene[n].state.active = on;
                     self.emit_layer(&scene[n].id, &scene[n].state);
@@ -2118,6 +2165,20 @@ mod tests {
 
     fn layer(hub: &Hub, id: &str) -> Value {
         hub.welcome(0)["state"]["layers"][id].clone()
+    }
+
+    #[test]
+    fn a_sequence_that_opens_on_one_of_its_own_items_shows_it() {
+        let hub = scratch_hub("first-item");
+        let dev = |method: &str, p: Value| hub.request(Role::Dev, 0, method, &p);
+        dev("scene.add", json!({ "use": "trees", "parent": "slideshow", "id": "slide-trees" })).unwrap();
+        dev("scene.set", json!({ "layer": "slideshow", "steps": { "sequence": [{ "layer": "slide-trees" }, { "layer": "sunlight" }] } }))
+            .unwrap();
+        dev("layer.activate", json!({ "layer": "slideshow", "active": true })).unwrap();
+        let trees = layer(&hub, "slide-trees");
+        assert_eq!((trees["active"].clone(), trees["shown_by"].clone()), (json!(true), json!("slideshow")));
+        dev("layer.activate", json!({ "layer": "slideshow", "active": false })).unwrap();
+        assert_eq!(layer(&hub, "slide-trees")["active"], false);
     }
 
     #[test]

@@ -11,3 +11,5 @@ sites/sample/calibration.json
 sites/*/site.format-*.json
 # Map tiles and map pictures a table keeps for offline use (#37, #42).
 .cache/
+# The Help window's content, built from docs/guide by scripts/build-help.mjs (#271).
+packages/runtime/public/help.json

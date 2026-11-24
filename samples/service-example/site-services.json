@@ -1,0 +1,12 @@
+[
+  {
+    "id": "model",
+    "name": "Energy model",
+    "health": "/health",
+    "run": {
+      "cwd": "services/model",
+      "command": ["{python}", "server.py", "{port}"],
+      "venv": ".venv"
+    }
+  }
+]

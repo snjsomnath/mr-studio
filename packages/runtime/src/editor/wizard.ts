@@ -3,6 +3,7 @@ import type { LayerManifest, LayerState, SelectControl } from '@mrstudio/sdk';
 import { defaultSideOf, el, isAmbient, isOffered, layerButton } from '../controls.ts';
 import type { Store } from '../store.ts';
 import { icon } from './icons.ts';
+import { FetchAll } from './fetch-all.ts';
 import { Importer, TARGETS, targetFor } from './importer.ts';
 import { ModelImporter } from './model-import.ts';
 import { ScaleFields } from './place-scale.ts';
@@ -79,6 +80,8 @@ export class Wizard {
   /** One importer per row of "Your place", kept across redraws so a file being checked stays. */
   private importers = new Map<string, Importer>();
   private model: ModelImporter | null = null;
+  /** "Fetch everything from open data" (#310), made once so a fetch under way stays. */
+  private fetchAll: FetchAll | null = null;
   private readonly host: WizardHost;
   /** The row of "Your place" that a layer needing data sent the author to. */
   private wanted: string | null = null;
@@ -227,6 +230,9 @@ export class Wizard {
     } else if (this.step === PLACE) {
       host.show(null);
       title('Your place', 'Bring in the files your table is made from. They are copied into the table and stay on this computer. Buildings matter most; the rest can come later.');
+      if (!this.fetchAll) this.fetchAll = new FetchAll({ site: () => this.host.store.state.site, hold: (on) => this.host.hold(on) });
+      else this.fetchAll.render();
+      body.append(this.fetchAll.element);
       for (const item of TARGETS) {
         body.append(this.importer(item.target).element);
         // The 3D model sits under the buildings: it gives them their heights.

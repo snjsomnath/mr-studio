@@ -43,3 +43,7 @@ Slides of type `wms` and `arcgis` from the earlier app are skipped for now: they
 ## A slideshow of layers (#43)
 
 A slideshow can instead be a sequence of layers: `steps.sequence` in site.json, built in the editor's **Slides** list. Each slide shows a layer of the table, which keeps its own button, or one of the slideshow's own items, such as a **Web map (WMS)** or **Map data** from a dataset of the site. The host shows one slide at a time and moves on with the controller's Next (`layer.step`), by hand or timed. On a slide whose map reveals its categories one by one, Next reveals the next category first, then moves on to the next slide, or stays there when the slide's Next is set to stay. With a sequence, the old `slideshow.json` slides and their controls are not used.
+
+Slides can be pictures and video too (#197): **Picture or video** in the Slides list adds a `media` item, and its file is picked from the table's pictures and video or added there and then (kept under `data/media/`). A table that still has an old `slideshow.json` gets a **Bring in the slides of slideshow.json** button, which makes its picture, video and web map slides into steps in their order, with their titles, sources and seconds.
+
+Each slide comes in with a transition (#43): a cross-fade (the default, 0.7 s, as in the Chalmers demo), a fade through the map, or a cut, set for the whole slideshow under **Transition** and per slide with **Comes in**. The editor's map shows the transitions when you press **Try Next**.

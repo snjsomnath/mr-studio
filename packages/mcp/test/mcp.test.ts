@@ -109,7 +109,7 @@ describe('server over stdio', () => {
 
   test('offers tools, prompts and docs', async () => {
     const tools = (await client.listTools()).tools.map((t) => t.name).sort();
-    for (const name of ['overview', 'read_doc', 'list_layers', 'describe_layer', 'list_building_blocks', 'create_site', 'get_site', 'update_site', 'add_layer', 'set_layer', 'move_layer', 'remove_layer', 'validate_site', 'preview_site', 'check_layer_idea', 'draft_module_request', 'submit_module_request']) {
+    for (const name of ['overview', 'read_doc', 'list_layers', 'describe_layer', 'list_building_blocks', 'create_site', 'get_site', 'update_site', 'add_layer', 'set_layer', 'move_layer', 'remove_layer', 'validate_site', 'preview_site', 'check_layer_idea', 'draft_module_request', 'submit_module_request', 'whats_new']) {
       assert.ok(tools.includes(name), `missing tool ${name}`);
     }
     const prompts = (await client.listPrompts()).prompts.map((p) => p.name).sort();
@@ -134,6 +134,16 @@ describe('server over stdio', () => {
     assert.match(doc.text, /A site is a folder/);
     const missing = await call(client, 'describe_layer', { layer: 'teleporter' });
     assert.equal(missing.isError, true);
+  });
+
+  test("says what's new and knows the recent building blocks", async () => {
+    const news = await call(client, 'whats_new');
+    assert.ok(!news.isError, news.text);
+    const blocks = await call(client, 'list_building_blocks');
+    const built = new Set(blocks.data.blocks.filter((b: any) => b.status === 'built').map((b: any) => b.id));
+    for (const id of ['marks', 'place-motions', 'palette', 'ribbons', 'engine-probe', 'street-network', 'thermal-comfort', 'view-analysis', 'sound', 'languages', 'guided-tour', 'attract-loop']) {
+      assert.ok(built.has(id), `block ${id} should be found in the core source`);
+    }
   });
 
   test('assembles a site through the tools', async () => {
@@ -240,11 +250,17 @@ describe('server over stdio', () => {
     });
     assert.equal(sun.data.verdict, 'use-existing', sun.text);
 
-    const buses = await call(client, 'check_layer_idea', {
-      title: 'Buses on the table', description: 'Buses moving along their routes from the timetable', blocks: ['animated paths', 'live feed', 'markers'],
+    // The service gateway is built (#278): a model behind a layer needs no new module.
+    const energy = await call(client, 'check_layer_idea', {
+      title: 'Energy use per building', description: 'Energy use of each building computed by an energy model service', blocks: ['service gateway', 'choropleth'],
     });
-    assert.equal(buses.data.verdict, 'needs-new-module', buses.text);
-    assert.ok(buses.data.roadmap.some((r: any) => r.layer === 'Public transport'));
+    assert.notEqual(energy.data.verdict, 'needs-new-module', energy.text);
+    assert.ok(!energy.data.missing.some((m: string) => m.includes('service')), energy.text);
+    // Something the core does not have still becomes a request.
+    const lidar = await call(client, 'check_layer_idea', {
+      title: 'Live lidar crowd', description: 'People counted by a lidar scanner', kernels: ['lidar-crowd'],
+    });
+    assert.equal(lidar.data.verdict, 'needs-new-module', lidar.text);
 
     const draft = await call(client, 'draft_module_request', {
       site: 'harbour', kind: 'contract', title: 'Welcome screen for the TV and table',

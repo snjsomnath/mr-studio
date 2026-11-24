@@ -60,15 +60,15 @@ export const BLOCKS: BlockDef[] = [
   {
     id: 'animated-paths', group: 'visual', name: 'Animated paths',
     description: 'Things moving along lines: cars, buses, people, from site data or generated paths.',
-    usage: 'planned',
-    detect: 'AnimatedPaths|addPaths\\(',
+    usage: 'pathHeads(paths, time) from @mrstudio/sdk; Traffic, Public transport and Street life use it',
+    detect: 'AnimatedPaths|addPaths\\(|export function pathHeads',
     unlocks: ['Traffic', 'Public transport', 'Ambient cars, people'],
   },
   {
     id: 'choropleth', group: 'visual', name: 'Choropleth',
     description: 'Polygons from a dataset filled by a property through a colormap, with a legend.',
-    usage: 'planned',
-    detect: 'addChoropleth|Choropleth',
+    usage: "a custom layer's Look block: zones coloured by a column, with class breaks (save_custom_layer)",
+    detect: 'addChoropleth|Choropleth|export function paintScale',
     unlocks: ['Building heights and age', 'Green and blue areas', 'Carbon and materials'],
   },
   {
@@ -83,6 +83,49 @@ export const BLOCKS: BlockDef[] = [
     description: 'A colour ramp with units, on the table or as a TV panel.',
     usage: "TV: a 'ramp' panel; table: draw with cssGradient(colormap) in addElement()",
     detect: "cssGradient|type: 'ramp'",
+  },
+
+  {
+    id: 'marks', group: 'visual', name: 'Marks, icons and arrows',
+    description: 'Point shapes (circle, square, diamond, triangle, ring, icon), a built-in icon set, and arrows at line ends or along lines.',
+    usage: "the custom layer builder's Look block (save_custom_layer), or traceShape/fillIcon/arrowMarks from @mrstudio/sdk",
+    detect: 'export function traceShape',
+  },
+  {
+    id: 'place-motions', group: 'visual', name: 'Place motions',
+    description: 'A gallery of 22 looping animations for places (pulses, circular waves, cultural gravity, lit blocks) driven by a table of places.',
+    usage: "a custom layer's Motion block, or placeMotion(id) from @mrstudio/sdk",
+    detect: 'export const PLACE_MOTIONS',
+  },
+  {
+    id: 'palette', group: 'visual', name: 'Table palette',
+    description: "The table's named colour slots (accent, warm, cool, categories) that every layer and the custom builder colour from, with a warning for colours a projector washes out.",
+    usage: "site.json 'palette' (update_site), resolvePalette(site.palette) in a layer",
+    detect: 'export const PALETTE_SLOTS',
+  },
+  {
+    id: 'custom-layer', group: 'visual', name: 'Custom layer recipe',
+    description: "A layer made without code: data, look (points, lines, zones, rasters coloured by data), motion and interaction blocks, saved in the site and played by the runtime.",
+    usage: "save_custom_layer, then add_layer with use 'custom:<id>' (docs/contracts/site.md, Custom layers)",
+    detect: 'export function compileLook',
+  },
+  {
+    id: 'category-schemes', group: 'visual', name: 'Category colour schemes',
+    description: 'Colour schemes for categories (land use, building kinds) that match the table palette.',
+    usage: 'categoryScheme(name) / schemeFor(values) from @mrstudio/sdk',
+    detect: 'export function categoryScheme',
+  },
+  {
+    id: 'hero', group: 'visual', name: 'Controller hero',
+    description: "The big picture at the top of a layer's controller stage: a timeline, a compass dial, a speed band.",
+    usage: "timelineHero(el, ...) in a layer's panel; layer.json 'hero'",
+    detect: 'export function timelineHero',
+  },
+  {
+    id: 'ribbons', group: 'visual', name: 'Table ribbons',
+    description: "At-a-glance strips in the projector's blank space around the model, on any side, sized from the table and the projector.",
+    usage: "site.json 'table.ribbons' and 'table.front' (update_site); panels as for the TV",
+    detect: 'export function ribbonBands',
   },
 
   // Data
@@ -113,16 +156,47 @@ export const BLOCKS: BlockDef[] = [
   {
     id: 'live-feed', group: 'data', name: 'Live feed',
     description: 'A polled or streamed external source (transit positions, sensors) relayed by the host.',
-    usage: 'planned',
-    detect: 'LiveFeed|openFeed\\(',
+    usage: 'liveSource(url, { every_s }) from @mrstudio/sdk; keys for services such as Västtrafik are set in the app under Sources and keys, and the host signs the requests',
+    detect: 'LiveFeed|openFeed\\(|export function liveSource',
     unlocks: ['Public transport', 'Live city pulse'],
   },
   {
     id: 'service', group: 'data', name: 'Service gateway',
-    description: 'A Python service declared in the manifest and reached through the host, for research models.',
-    usage: "planned: requires.services in layer.json",
-    detect: 'ctx\\.services|ServiceClient',
-    unlocks: ['Energy and solar flows (ECOM generalised)', 'Street-level walk-through'],
+    description: "A model or API beside the table (a Python optimiser in its own venv) or elsewhere, started and kept running by the host (#278): quick calls, long jobs with progress, and the last answer kept for when it is down.",
+    usage: "site.json 'services' (run or url); in the layer, requires.services and ctx.service(id).get/post/job; publish 'busy' while it works (samples/service-example)",
+    detect: 'export function serviceClient',
+    unlocks: ['Energy and solar flows (ECOM generalised)', 'Flood or noise models run on demand', 'Street-level walk-through'],
+  },
+
+  {
+    id: 'site-model', group: 'data', name: '3D model of the place',
+    description: "An imported model (OBJ, glTF, STL) placed on the site and snapped to the buildings; the engine casts its shadows, the table stays 2D.",
+    usage: "the editor's Your place step; parseTwin from @mrstudio/sdk reads the model's surfaces",
+    detect: 'export function parseTwin',
+  },
+  {
+    id: 'engine-probe', group: 'data', name: 'Point questions to a kernel',
+    description: 'Ask a kernel about one spot (how many sun hours here, in each season) without streaming a whole field.',
+    usage: "ctx.engine.probe(kernel, params, [lon, lat])",
+    detect: 'probe<T',
+  },
+  {
+    id: 'street-network', group: 'data', name: 'Street network',
+    description: 'OSM streets as a graph by road class, for routing walkers, cyclists, cars and buses, and points along streets.',
+    usage: 'new StreetGraph(lines) from @mrstudio/sdk',
+    detect: 'export class StreetGraph',
+  },
+  {
+    id: 'thermal-comfort', group: 'data', name: 'Thermal comfort (PET)',
+    description: 'Physiological equivalent temperature from sun, shade, wind and air temperature, with its colour scale and words.',
+    usage: 'pet(...), petColormap(), petFeeling(value) from @mrstudio/sdk',
+    detect: 'export function pet\\(',
+  },
+  {
+    id: 'view-analysis', group: 'data', name: 'Isovist and view',
+    description: 'What a person standing at a spot can see, from the site buildings and tree crowns, and the green share of the view.',
+    usage: 'viewScene(buildings), isovist(scene, ...) from @mrstudio/sdk',
+    detect: 'export function isovist\\(',
   },
 
   // Interaction
@@ -145,6 +219,12 @@ export const BLOCKS: BlockDef[] = [
     detect: 'export function sunPosition',
   },
   {
+    id: 'step-transitions', group: 'interaction', name: 'Step transitions',
+    description: 'How a slideshow or sequence moves from one step to the next: a cut, a fade or a dip to black, with its length.',
+    usage: "set_steps with 'transition' on the sequence or a step; stepTransition(steps, index) from @mrstudio/sdk",
+    detect: 'export function stepTransition',
+  },
+  {
     id: 'scenario-switch', group: 'interaction', name: 'Scenario switch',
     description: 'A select control whose options swap the dataset or params a layer uses.',
     usage: "a 'select' control; the layer maps each option to data or params",
@@ -158,10 +238,35 @@ export const BLOCKS: BlockDef[] = [
   },
   {
     id: 'table-pointer', group: 'interaction', name: 'Table pointer',
-    description: 'A physical pointer or marker on the table driving a person marker, view cone or magnifier.',
-    usage: 'planned',
+    description: 'A mouse or touch pick on the table map (or in the editor) that reaches the layer as a point, driving a person marker, view cone or route end.',
+    usage: "layer.json 'tools' with a point tool; picks on the table reach the layer through ctx.sendTool (Cool paths and Isovist use it)",
     detect: 'TablePointer|onPointer\\(',
     unlocks: ['Isovist and view sheds', 'Street-level walk-through', 'Acoustic listener', 'Walk and cycle isochrones'],
+  },
+
+  {
+    id: 'sound', group: 'interaction', name: 'Sound',
+    description: 'Sound cards on the controller, a step that plays a sound, and soundscapes mixed from the view.',
+    usage: 'SoundStage and Soundscape from @mrstudio/sdk; sound files in site data',
+    detect: 'export class SoundStage',
+  },
+  {
+    id: 'languages', group: 'interaction', name: 'Languages',
+    description: "Visitors switch between English and Swedish; the site's own words are translated in site.json.",
+    usage: "site.json 'branding.languages' and 'branding.translations'; a layer's words in its locales/ folder",
+    detect: 'export function setLanguage',
+  },
+  {
+    id: 'guided-tour', group: 'interaction', name: 'Guided tour',
+    description: "A slideshow of layers with presenter notes on each step, driven from the guide's phone; visitors never see the notes.",
+    usage: "set_steps with a sequence whose steps carry 'notes'",
+    detect: "guide's phone",
+  },
+  {
+    id: 'attract-loop', group: 'interaction', name: 'Attract loop and idle reset',
+    description: 'While nobody touches the controller, the table loops through its layers; after a quiet spell it goes back home.',
+    usage: "layer.json 'attract' and the scene's buttons; nothing to code",
+    detect: 'export class AttractLoop',
   },
 
   // TV

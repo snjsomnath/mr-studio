@@ -1,0 +1,60 @@
+name: Join page
+
+# Publishes the phones' join page (#275) to GitHub Pages on every merge to main. Phones that
+# cannot reach the studio computer (eduroam, mobile data) open it from the table's QR code; it
+# reaches the table over WebRTC and loads the phone page from the table itself.
+#
+# Each link version's page lives at /v<N>/ and stays published: a table at a venue running an
+# older app keeps working after the link changes. To add version N+1, bump LINK_VERSION in
+# packages/sdk/src/link.ts, crates/mrs-host/src/bridge.rs and here, and add a step that builds
+# the old version from its tag (join-v<N>) into _site/v<N>.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+env:
+  LINK_VERSION: 1
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @mrstudio/join build
+      - name: Assemble the site
+        run: |
+          mkdir -p _site
+          cp -r packages/join/dist "_site/v${LINK_VERSION}"
+          cp packages/join/site-index.html _site/index.html
+          touch _site/.nojekyll
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

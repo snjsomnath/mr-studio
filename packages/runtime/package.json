@@ -1,11 +1,11 @@
 {
   "name": "@mrstudio/runtime",
-  "version": "0.1.0",
+  "version": "0.8.0",
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
+    "dev": "node ../../scripts/build-help.mjs && vite",
+    "build": "node ../../scripts/build-help.mjs && vite build",
     "typecheck": "tsc --noEmit",
     "test": "node --test --experimental-strip-types test/*.test.ts"
   },
@@ -13,6 +13,7 @@
     "@mrstudio/dashboard": "workspace:*",
     "@mrstudio/sdk": "workspace:*",
     "maplibre-gl": "^5.0.0",
+    "peerjs": "1.5.5",
     "qrcode-generator": "^2.0.4",
     "three": "0.180.0"
   },

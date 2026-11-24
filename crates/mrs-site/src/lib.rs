@@ -14,6 +14,8 @@ mod mesh;
 pub mod migrate;
 pub mod model;
 pub mod osm;
+pub mod library;
+pub mod media;
 pub mod package;
 pub mod plan;
 mod projection;
@@ -261,6 +263,49 @@ impl Site {
             }
         }
         out.extend(self.custom_problems());
+        out.extend(self.service_problems());
+        out
+    }
+
+    /// The outside services under `services` (#278).
+    fn service_problems(&self) -> Vec<String> {
+        let mut out = Vec::new();
+        let mut seen = BTreeSet::new();
+        for service in &self.manifest.services {
+            let at = format!("services.{}", service.id);
+            if !is_instance_id(&service.id) {
+                out.push(format!("{at}: an id is lowercase letters, digits and dashes"));
+            }
+            if !seen.insert(service.id.as_str()) {
+                out.push(format!("{at}: another service has this id"));
+            }
+            match (&service.run, &service.url) {
+                (Some(_), Some(_)) | (None, None) => out.push(format!("{at}: give either run or url")),
+                (None, Some(url)) => {
+                    if !(url.starts_with("http://") || url.starts_with("https://")) {
+                        out.push(format!("{at}.url: an address starts with http:// or https://"));
+                    }
+                }
+                (Some(run), None) => {
+                    match self.resolve(&run.cwd) {
+                        Some(dir) if dir.is_dir() => {}
+                        Some(_) => out.push(format!("{at}.run.cwd: '{}' does not exist", run.cwd)),
+                        None => out.push(format!("{at}.run.cwd: '{}' leaves the site folder", run.cwd)),
+                    }
+                    if run.command.is_empty() {
+                        out.push(format!("{at}.run.command: name the program to start"));
+                    }
+                    for (name, path) in [("venv", &run.venv), ("requirements", &run.requirements)] {
+                        if path.as_deref().is_some_and(|p| Path::new(p).components().any(|c| !matches!(c, Component::Normal(_) | Component::CurDir))) {
+                            out.push(format!("{at}.run.{name}: stays inside the service's folder"));
+                        }
+                    }
+                }
+            }
+            if service.health.as_deref().is_some_and(|h| !h.starts_with('/')) {
+                out.push(format!("{at}.health: a path starts with /"));
+            }
+        }
         out
     }
 
@@ -315,6 +360,9 @@ impl Site {
                 out.push(format!("layer '{id}': {problem}"));
             }
             let Some(steps) = &layer.steps else { continue };
+            if steps.transition_s.is_some_and(|d| !(d.is_finite() && (0.0..=10.0).contains(&d))) {
+                out.push(format!("layer '{id}': steps.transition_s must be 0 to 10 seconds"));
+            }
             for (n, step) in steps.sequence.iter().enumerate() {
                 let at = format!("layer '{id}', step {}", n + 1);
                 let own = layer.items.iter().any(|i| i.id == step.layer);
@@ -328,8 +376,8 @@ impl Site {
                 if step.duration_s.is_some_and(|d| !(d.is_finite() && d > 0.0)) {
                     out.push(format!("{at}: duration_s must be a positive number of seconds"));
                 }
-                if step.transition_s.is_some_and(|d| !(d.is_finite() && d >= 0.0)) {
-                    out.push(format!("{at}: transition_s must be zero or more seconds"));
+                if step.transition_s.is_some_and(|d| !(d.is_finite() && (0.0..=10.0).contains(&d))) {
+                    out.push(format!("{at}: transition_s must be 0 to 10 seconds"));
                 }
                 let long = |text: &Option<String>, most: usize| text.as_deref().is_some_and(|t| t.chars().count() > most);
                 if long(&step.title, 80) || long(&step.description, 300) || long(&step.source, 200) {
@@ -724,7 +772,7 @@ mod tests {
             layer: layer.into(),
             params: Default::default(),
             duration_s: Some(8.0),
-            transition: Some(Transition::Fade),
+            transition: Some(StepTransition::Fade),
             transition_s: None,
             next: None,
             title: None,
