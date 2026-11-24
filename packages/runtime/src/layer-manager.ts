@@ -1,8 +1,9 @@
-import { EngineClient, serviceClient, stepTransition, transitionGain } from '@mrstudio/sdk';
+import { EngineClient, entityChanges, entityValues, serviceClient, stepTransition, transitionGain } from '@mrstudio/sdk';
 import type { RevealShape } from '@mrstudio/sdk';
-import type { Connection, LayerManifest, LayerModule, LayerState, PanelContext, StepTransitionKind, TableContext, TableHandlers, ToolInput } from '@mrstudio/sdk';
+import type { Connection, EntityChange, LayerManifest, LayerModule, LayerState, PanelContext, StepTransitionKind, TableContext, TableHandlers, ToolInput } from '@mrstudio/sdk';
 
 import { Cues } from './cues.ts';
+import { entitiesOnTable } from './entities.ts';
 import { language, say } from './i18n.ts';
 import { recipeModule } from './recipe-player.ts';
 import { layerModule } from './registry.ts';
@@ -22,6 +23,8 @@ export function isAtRest(manifest: LayerManifest, state: LayerState | undefined)
 
 interface Running {
   handlers: TableHandlers;
+  /** Entity changes waiting for their set's `debounce_ms` of quiet (#279), by set. */
+  entities?: Map<string, { ids: Set<string>; timer: ReturnType<typeof setTimeout> }>;
   cleanups: (() => void)[];
   frames: ((dt: number) => void)[];
   /** Set once activation finished; updates before that are folded into the first one. */
@@ -80,9 +83,46 @@ export function paramSender(
   };
 }
 
+/**
+ * Sends entity changes for a layer (#279), at most one request per animation frame for each set
+ * and list of entities, carrying the latest values. `null` puts the entities back to their defaults.
+ */
+export function entitySender(connection: Connection, layer: string): (set: string, ids: string | string[], values: Record<string, unknown> | null) => void {
+  const pending = new Map<string, { set: string; ids: string[]; values: Record<string, unknown> | null }>();
+  return (set, ids, values) => {
+    const list = Array.isArray(ids) ? ids : [ids];
+    const key = JSON.stringify([set, list]);
+    const waiting = pending.get(key);
+    if (waiting) {
+      waiting.values = values === null || waiting.values === null ? values : { ...waiting.values, ...values };
+      return;
+    }
+    pending.set(key, { set, ids: list, values: values === null ? null : { ...values } });
+    requestAnimationFrame(() => {
+      const change = pending.get(key)!;
+      pending.delete(key);
+      const p = change.values === null ? { layer, set, ids: change.ids, reset: true } : { layer, set, ids: change.ids, values: change.values };
+      connection.request('layer.entity', p).catch((error) => console.warn(`[${layer}] ${error.message}`));
+    });
+  };
+}
+
+type Base = Pick<PanelContext, 'site' | 'params' | 'shared' | 'setParams' | 'language' | 'say' | 'service' | 'selection' | 'select' | 'entity' | 'setEntity'>;
+
 /** Shared read-only parts of a layer context, backed by the store. */
-export function baseContext(store: Store, connection: Connection, layer: string): Pick<PanelContext, 'site' | 'params' | 'shared' | 'setParams' | 'language' | 'say' | 'service'> {
+export function baseContext(store: Store, connection: Connection, layer: string): Base {
   return {
+    get selection() {
+      return store.state.layers[layer]?.selection ?? null;
+    },
+    select: (set, id) => {
+      connection.request('layer.select', { layer, set, id }).catch((error) => console.warn(`[${layer}] ${error.message}`));
+    },
+    entity: (set, id) => {
+      const spec = store.manifest(store.state.layers[layer]?.layer ?? '')?.entities?.find((s) => s.id === set);
+      return spec ? entityValues(spec, store.layer(layer).params, id) : {};
+    },
+    setEntity: entitySender(connection, layer),
     service: (id) => serviceClient(id),
     get language() {
       return language();
@@ -241,9 +281,40 @@ export class LayerManager {
     } else if (running?.ready) {
       const changed = changedKeys(previous?.params, state.params);
       if (changed.length > 0) this.guard(id, () => running.handlers.update?.(changed));
+      if (changed.includes('entities')) this.entitiesChanged(id, running, entityChanges(previous?.params, state.params));
+      if (JSON.stringify(state.selection ?? null) !== JSON.stringify(previous?.selection ?? null)) {
+        this.guard(id, () => running.handlers.select?.(state.selection ?? null));
+      }
       const revealed = state.step?.index ?? 0;
       if (revealed !== (previous?.step?.index ?? 0)) this.guard(id, () => running.handlers.step?.(revealed));
     }
+  }
+
+  /**
+   * Hands entity changes to the layer (#279): at once for a set without `debounce_ms`, otherwise
+   * once the set has been quiet that long, with every entity changed in between.
+   */
+  private entitiesChanged(id: string, running: Running, changes: EntityChange[]): void {
+    const manifest = this.store.manifest(this.store.state.layers[id]?.layer ?? '');
+    const now: EntityChange[] = [];
+    for (const change of changes) {
+      const wait = manifest?.entities?.find((s) => s.id === change.set)?.debounce_ms ?? 0;
+      if (!(wait > 0)) {
+        now.push(change);
+        continue;
+      }
+      running.entities ??= new Map();
+      const waiting = running.entities.get(change.set);
+      if (waiting) clearTimeout(waiting.timer);
+      const ids = waiting?.ids ?? new Set<string>();
+      for (const one of change.ids) ids.add(one);
+      const timer = setTimeout(() => {
+        running.entities?.delete(change.set);
+        if (!running.stopped) this.guard(id, () => running.handlers.entities?.([{ set: change.set, ids: [...ids] }]));
+      }, wait);
+      running.entities.set(change.set, { ids, timer });
+    }
+    if (now.length > 0) this.guard(id, () => running.handlers.entities?.(now));
   }
 
   /** Whether a tool input plays the attention cue: unless its tool says `cue: false`. */
@@ -314,7 +385,7 @@ export class LayerManager {
     };
     const published: Record<string, unknown> = {};
     const { store, engine } = this;
-    const extras: Omit<TableContext, 'site' | 'params' | 'shared' | 'setParams' | 'language' | 'say' | 'service'> = {
+    const extras: Omit<TableContext, keyof Base> = {
       engine: {
         open: async (kernel, params, fields, options) => {
           const stream = await engine.open(kernel, params, fields, options);
@@ -378,6 +449,18 @@ export class LayerManager {
     }
     if (running.stopped) return;
     running.ready = true;
+    // Entities (#279) are picked and marked by the runtime, above what the layer draws.
+    if (manifest?.entities?.length) {
+      entitiesOnTable({
+        layer: id,
+        sets: manifest.entities,
+        store,
+        connection: this.connection,
+        map: this.view.handle(id, track),
+        pointer: this.view.pointer(track),
+        onFrame: (callback) => running.frames.push(callback),
+      });
+    }
     this.entered(id);
     // Params may have changed while the layer was starting.
     const changed = changedKeys(before, store.state.layers[id]?.params ?? before);
@@ -399,6 +482,7 @@ export class LayerManager {
     if (!running) return;
     running.stopped = true;
     this.running.delete(id);
+    for (const waiting of running.entities?.values() ?? []) clearTimeout(waiting.timer);
     for (const cleanup of running.cleanups.reverse()) this.guard(id, cleanup);
   }
 

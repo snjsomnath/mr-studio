@@ -189,7 +189,36 @@ export function checkParams(layer: LayerEntry, params: Record<string, unknown>, 
   const issues: Issue[] = [];
   const cleaned: Record<string, unknown> = {};
   const controls: any[] = layer.manifest.controls ?? [];
+  const sets: any[] = layer.manifest.entities ?? [];
   for (const [key, value] of Object.entries(params)) {
+    // Entities' own values (#279): entities[set][entity][control], each checked like a control.
+    if (key === 'entities' && sets.length > 0) {
+      const clean: Record<string, Record<string, Record<string, unknown>>> = {};
+      const bySet = value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
+      if (!bySet) issues.push({ level: 'error', path: `${path}.entities`, message: 'entities must be an object of sets' });
+      for (const [sid, entities] of Object.entries(bySet ?? {})) {
+        const set = sets.find((s) => s.id === sid);
+        if (!set) {
+          issues.push({ level: 'error', path: `${path}.entities.${sid}`, message: `layer '${layer.id}' has no entity set '${sid}'. Its sets are: ${sets.map((s) => s.id).join(', ')}` });
+          continue;
+        }
+        for (const [eid, values] of Object.entries((entities ?? {}) as Record<string, Record<string, unknown>>)) {
+          for (const [cid, v] of Object.entries(values ?? {})) {
+            const control = (set.controls ?? []).find((c: any) => c.id === cid);
+            const at = `${path}.entities.${sid}.${eid}.${cid}`;
+            if (!control) {
+              issues.push({ level: 'error', path: at, message: `'${sid}' entities have no control '${cid}'` });
+              continue;
+            }
+            const check = checkControlValue(control, v);
+            if (!check.ok) issues.push({ level: 'error', path: at, message: `${cid} ${check.message}` });
+            else ((clean[sid] ??= {})[eid] ??= {})[cid] = check.value;
+          }
+        }
+      }
+      cleaned.entities = clean;
+      continue;
+    }
     const control = controls.find((c) => c.id === key);
     if (!control) {
       const ids = controls.filter((c) => c.type !== 'action').map((c) => c.id);

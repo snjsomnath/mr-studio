@@ -2,18 +2,113 @@
   "api": 1,
   "id": "model-runs",
   "name": "Model runs",
-  "description": "A layer whose numbers come from a model running beside the table",
+  "description": "A layer whose numbers come from a model running beside the table: tap a building to change it",
   "icon": "bolt",
   "category": "analysis",
-  "requires": { "services": ["model"] },
+  "requires": {
+    "services": [
+      "model"
+    ],
+    "data": [
+      "buildings"
+    ]
+  },
   "controls": [
-    { "id": "share", "type": "range", "label": "Shared solar", "min": 0, "max": 1, "step": 0.05, "default": 0.3 },
-    { "id": "days", "type": "select", "label": "Optimise over", "default": "2",
-      "options": [{ "value": "1", "label": "One day" }, { "value": "2", "label": "Two days" }, { "value": "5", "label": "A week of workdays" }] },
-    { "id": "optimise", "type": "action", "label": "Find the best share", "tier": "primary" }
+    {
+      "id": "share",
+      "type": "range",
+      "label": "Shared solar",
+      "min": 0,
+      "max": 1,
+      "step": 0.05,
+      "default": 0.3
+    },
+    {
+      "id": "days",
+      "type": "select",
+      "label": "Optimise over",
+      "default": "2",
+      "options": [
+        {
+          "value": "1",
+          "label": "One day"
+        },
+        {
+          "value": "2",
+          "label": "Two days"
+        },
+        {
+          "value": "5",
+          "label": "A week of workdays"
+        }
+      ]
+    },
+    {
+      "id": "optimise",
+      "type": "action",
+      "label": "Find the best share",
+      "tier": "primary"
+    }
   ],
   "panels": [
-    { "id": "import", "widget": "stat", "size": "tile", "title": "From the grid", "props": { "value": { "bind": "shared.import_kw" }, "unit": "kW", "caption": { "bind": "shared.source" } } },
-    { "id": "saving", "widget": "stat", "size": "tile", "title": "Best saving", "props": { "value": { "bind": "shared.saving" }, "unit": "SEK", "caption": { "bind": "shared.best" } } }
+    {
+      "id": "import",
+      "widget": "stat",
+      "size": "tile",
+      "title": "From the grid",
+      "props": {
+        "value": {
+          "bind": "shared.import_kw"
+        },
+        "unit": "kW",
+        "caption": {
+          "bind": "shared.source"
+        }
+      }
+    },
+    {
+      "id": "saving",
+      "widget": "stat",
+      "size": "tile",
+      "title": "Best saving",
+      "props": {
+        "value": {
+          "bind": "shared.saving"
+        },
+        "unit": "SEK",
+        "caption": {
+          "bind": "shared.best"
+        }
+      }
+    }
+  ],
+  "entities": [
+    {
+      "id": "buildings",
+      "dataset": "buildings",
+      "key": "id",
+      "group": "kind",
+      "name": "Building",
+      "debounce_ms": 800,
+      "controls": [
+        {
+          "id": "in",
+          "type": "toggle",
+          "label": "In the energy community",
+          "default": true,
+          "phone": true
+        },
+        {
+          "id": "pv",
+          "type": "range",
+          "label": "Solar on the roof",
+          "min": 0,
+          "max": 80,
+          "step": 5,
+          "unit": "%",
+          "default": 0
+        }
+      ]
+    }
   ]
 }

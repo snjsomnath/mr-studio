@@ -2406,3 +2406,116 @@ body[data-role='phone'] .control-presets > * {
   font-size: 0.85em;
   color: #b45309;
 }
+
+/*
+ * ---- The entity inspector of the stage (#279) ----
+ * The thing picked on the table, named large, with its own controls under it. Before a pick, a
+ * line says how to pick one; the list beside it picks without the table.
+ */
+.stage-entities {
+  display: grid;
+  gap: 1rem;
+  margin: 0 0 1.25rem;
+}
+
+.stage-entities[hidden] {
+  display: none;
+}
+
+.entity-set {
+  padding: 1rem 1.25rem 1.125rem;
+  border: 1px solid color-mix(in srgb, var(--accent, #ffb84d) 25%, transparent);
+  border-radius: 1rem;
+  background: color-mix(in srgb, var(--accent, #ffb84d) 5%, transparent);
+  transition: border-color 300ms ease, background 300ms ease;
+}
+
+.entity-set.is-picked {
+  border-color: color-mix(in srgb, var(--accent, #ffb84d) 70%, transparent);
+  background: color-mix(in srgb, var(--accent, #ffb84d) 10%, transparent);
+}
+
+.entity-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.entity-words {
+  min-width: 0;
+}
+
+.entity-kicker {
+  display: block;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent, #ffb84d);
+}
+
+.entity-name {
+  margin: 0.125rem 0 0;
+  font-size: 1.75rem;
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+}
+
+.entity-hint {
+  margin: 0.25rem 0 0;
+  color: var(--muted, #9aa4b2);
+  font-size: 1.0625rem;
+}
+
+.entity-name[hidden],
+.entity-hint[hidden],
+.entity-controls[hidden],
+.entity-button[hidden] {
+  display: none;
+}
+
+.entity-list {
+  flex: 0 1 14rem;
+  min-width: 9rem;
+  min-height: 2.75rem;
+  padding: 0 0.75rem;
+  border: 1px solid var(--line, rgba(127, 127, 127, 0.3));
+  border-radius: 0.75rem;
+  background: var(--card, transparent);
+  color: inherit;
+  font: inherit;
+}
+
+.entity-controls {
+  margin-top: 1rem;
+}
+
+.entity-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 0.875rem;
+}
+
+.entity-actions:not(:has(.entity-button:not([hidden]))) .entity-count:empty {
+  display: none;
+}
+
+.entity-button {
+  min-height: 2.75rem;
+  padding: 0 1rem;
+  border: 1px solid var(--line, rgba(127, 127, 127, 0.3));
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.entity-count {
+  margin-left: auto;
+  color: var(--muted, #9aa4b2);
+  font-size: 0.9375rem;
+}

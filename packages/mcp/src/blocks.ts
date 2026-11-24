@@ -207,6 +207,13 @@ export const BLOCKS: BlockDef[] = [
     detect: 'interface RangeControl',
   },
   {
+    id: 'entities', group: 'interaction', name: 'Entity inspector',
+    description: "Things on the table a visitor picks and changes one by one (#279), such as the buildings of an energy community: a tap on the table picks one, the controller shows its own controls under its name, with Back to default and Apply to all of a group. The host checks and keeps the values; no layer code for the picking or the controls.",
+    usage: "layer.json 'entities' (id, dataset, key, label, group, name, controls, debounce_ms); read with ctx.entity(set, id), react in the table's entities(changed) handler; ctx.selection / ctx.select for the pick",
+    detect: 'export function entityValues',
+    unlocks: ['Energy and solar flows (ECOM generalised)', 'Per-building scenarios and what-ifs'],
+  },
+  {
     id: 'time-control', group: 'interaction', name: 'Time control',
     description: 'Date, hour and play controls with site-timezone conversion.',
     usage: "date + range(hour) + toggle(play) controls, zonedTimeToUtc(date, hour, ctx.site.timezone)",
