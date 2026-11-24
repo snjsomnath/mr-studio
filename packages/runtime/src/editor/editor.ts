@@ -9,6 +9,7 @@ import { builderSection, deleteCustomDialog, layerFromImport, newCustomLayer, pa
 import { DisplayTab } from './display-tab.ts';
 import { MediaTab } from './media-tab.ts';
 import { MODEL_ROW } from './model-import.ts';
+import { DrawingFrame, returnCorners } from './drawing-frame.ts';
 import { ACCEPT, kindOf, mediaChanged, mediaItems, routeOf } from '../media.ts';
 import type { MediaItem } from '../media.ts';
 import type { BuilderHost } from './builder.ts';
@@ -132,6 +133,18 @@ export class Editor {
   private readonly displayTab: DisplayTab;
   /** The Media tab (#306): everything the table has, and Add media. */
   private readonly mediaTab: MediaTab;
+  /** A Masterplan's frame on the map, to place its drawing by hand (#301). */
+  private readonly drawingFrame = new DrawingFrame({
+    site: () => this.store.state.site,
+    place: (corners) => {
+      const id = this.framedDrawing;
+      if (id) void this.send('scene.set', { layer: id, params: { corners } });
+    },
+  });
+  /** The Masterplan whose frame is shown. */
+  private framedDrawing: string | null = null;
+  /** Each Masterplan's turn when last seen, to keep its shape when it changes. */
+  private readonly drawingTurns = new Map<string, number>();
   private readonly tree = el('nav', 'ed-tree');
   private readonly canvasHead = el('header', 'ed-canvas-head');
   private readonly surfaces = el('div', 'ed-surfaces');
@@ -1444,6 +1457,7 @@ export class Editor {
 
   private renderCanvas(instances: { id: string; manifest: LayerManifest; state: LayerState }[]): void {
     const { context } = this;
+    this.frameDrawing(instances);
     let iconName: string | undefined = 'moon';
     let title = AT_REST;
     let detail = 'What the map shows when no layer is open';
@@ -1486,6 +1500,29 @@ export class Editor {
     this.canvasHead.replaceChildren(badge, el('strong', undefined, title), el('span', undefined, detail));
     this.notice.hidden = notice === null;
     this.notice.textContent = notice ?? '';
+  }
+
+  /** Shows the open Masterplan's frame on the map, with handles to place its drawing by hand (#301). */
+  private frameDrawing(instances: { id: string; manifest: LayerManifest; state: LayerState }[]): void {
+    const open = this.context.kind === 'layer' ? this.context.id : null;
+    const plan = [this.layerItem, open].map((id) => instances.find((i) => i.id === id)).find((i) => i?.manifest.id === 'plan');
+    const surface = this.canvas.querySelector<HTMLElement>('.table-surface');
+    if (!plan || !surface || this.wizard || this.ribbonTab !== 'edit') {
+      this.framedDrawing = null;
+      this.drawingFrame.hide();
+      return;
+    }
+    this.framedDrawing = plan.id;
+    const corners = String(plan.state.params.corners ?? '');
+    // A new turn keeps the drawing's own shape: the frame's sides swap about its middle.
+    const turn = Number(plan.state.params.turn ?? 0) / 90 || 0;
+    const before = this.drawingTurns.get(plan.id);
+    this.drawingTurns.set(plan.id, turn);
+    if (before !== undefined && before !== turn && corners) {
+      const turned = returnCorners(this.store.state.site, corners, turn - before);
+      if (turned !== corners) void this.send('scene.set', { layer: plan.id, params: { corners: turned } });
+    }
+    this.drawingFrame.show(surface, corners);
   }
 
   /**

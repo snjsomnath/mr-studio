@@ -17,6 +17,7 @@ import {
   multiply,
   openingAt,
   parseCorners,
+  turnCorners,
   placement,
   hasRoles,
   roleFrame,
@@ -177,8 +178,11 @@ export default defineLayer<Params>({
       }
       if (svg?.querySelector('parsererror') || svg?.documentElement.localName !== 'svg') svg = null;
       // Placed by its corners, or stretched over the table; pictured at the drawing's own pixel density.
+      // Corners are of the drawing as shown; a drawing shown turned is placed by its own corners (#301).
       const corners = parseCorners(ctx.params.corners);
-      const nextPlace = placement(drawing, corners ? (corners.map((c) => frame.toTable(c)) as [[number, number], [number, number], [number, number]]) : null);
+      const shown: [number, number][] = corners ? corners.map((c) => frame.toTable(c)) : [[0, 0], [drawing.width, 0], [0, drawing.height]];
+      const turn = Number(ctx.params.turn) / 90 || 0;
+      const nextPlace = placement(drawing, corners || turn ? turnCorners(shown, turn) : null);
       const across = Math.hypot(nextPlace[0], nextPlace[1]);
       const down = Math.hypot(nextPlace[2], nextPlace[3]);
       const budget = Math.sqrt((drawing.width * drawing.scale * drawing.height * drawing.scale) / Math.max(1e-6, across * down * drawing.scale * drawing.scale));
@@ -440,7 +444,7 @@ export default defineLayer<Params>({
     return {
       update(changed) {
         if (changed.includes('opacity')) drawing.setOpacity(ctx.params.opacity);
-        if (['dataset', 'colour', 'corners', 'opening'].some((key) => changed.includes(key))) void load();
+        if (['dataset', 'colour', 'corners', 'turn', 'opening'].some((key) => changed.includes(key))) void load();
         else if (['reveal', 'finale', 'start', 'earlier', 'later'].some((key) => changed.includes(key))) {
           describe();
           aim(false);
