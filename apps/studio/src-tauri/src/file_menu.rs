@@ -18,6 +18,9 @@ use tauri::{AppHandle, Manager, Runtime, Wry};
 /// The actions, as menu item ids and as the editor page names them.
 pub const ACTIONS: [&str; 9] = ["new", "open", "save", "save_as", "export", "reveal", "close", "home", "settings"];
 
+/// MR Studio > Install command line tool… on macOS, File on Windows and Linux (#370).
+pub const INSTALL_CLI: &str = "install-cli";
+
 /// The File submenu.
 fn file_submenu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Submenu<R>> {
     let item = |id: &str, text: &str, keys: Option<&str>| -> tauri::Result<MenuItem<R>> {
@@ -45,7 +48,11 @@ fn file_submenu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Submenu<R>> {
         .item(&item("home", "All tables", Some("CmdOrCtrl+Shift+H"))?);
     if !cfg!(target_os = "macos") {
         // On macOS these live in the app menu, where people look for them.
-        file = file.separator().item(&item("settings", "Settings…", Some("Ctrl+,"))?).item(&PredefinedMenuItem::quit(app, Some("Exit"))?);
+        file = file
+            .separator()
+            .item(&item("settings", "Settings…", Some("Ctrl+,"))?)
+            .item(&item(INSTALL_CLI, "Install command line tool…", None)?)
+            .item(&PredefinedMenuItem::quit(app, Some("Exit"))?);
     }
     file.build()
 }
@@ -60,6 +67,7 @@ pub fn app_menu(app: &AppHandle<Wry>) -> tauri::Result<Menu<Wry>> {
         .item(&PredefinedMenuItem::about(app, None, None)?)
         .separator()
         .item(&settings)
+        .item(&MenuItemBuilder::with_id(INSTALL_CLI, "Install command line tool…").build(app)?)
         .separator()
         .item(&PredefinedMenuItem::services(app, None)?)
         .separator()

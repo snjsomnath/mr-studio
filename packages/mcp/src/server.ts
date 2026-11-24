@@ -844,7 +844,7 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
   const noCli = () =>
     fail('The mrstudio command line is not on this computer, so data cannot be brought in from here.', undefined, {
       code: 'no_cli',
-      next: ['Install or update the MR Studio app (it ships the command line), or set MRSTUDIO_CLI to an mrstudio program.', "Or add the data in the editor's Your place or Add data, then call list_site_files."],
+      next: ['Install or update the MR Studio app (it ships the command line inside it), then in the app use Displays and settings, Command line, Install command line tool so terminals find mrstudio; or set MRSTUDIO_CLI to an mrstudio program.', "Or add the data in the editor's Your place or Add data, then call list_site_files."],
     });
   const TARGETS = 'buildings, trees, walkways, trips, terrain, or data:<name> for any other dataset (data:roads, data:zones)';
 

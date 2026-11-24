@@ -17,6 +17,7 @@ import { LayerManager } from './layer-manager.ts';
 import { loadSiteModules } from './registry.ts';
 import { phoneBadge, phoneCode, refusedScreen, rememberSeat, rememberedSeat } from './phone.ts';
 import { Store } from './store.ts';
+import { collectProblems, Workbench } from './workbench.ts';
 import './style.css';
 
 const ROLES: Role[] = ['table', 'tv', 'phone', 'dev', 'guide'];
@@ -65,6 +66,8 @@ async function main() {
   // The editor is the authoring window around the live table. It joins with the dev role too.
   const editing = segment === 'edit';
   const role: Role = ROLES.includes(segment as Role) ? (segment as Role) : 'dev';
+  // The workbench lists what the page complained about since it started (#358).
+  if (role === 'dev') collectProblems();
   // The editor has its own Present, Stop and Sites controls, so the desktop app adds no bar of its own.
   if (editing) (window as { mrsShellControls?: boolean }).mrsShellControls = true;
   document.body.dataset.role = editing ? 'edit' : composing ? 'compose' : role;
@@ -279,13 +282,15 @@ async function main() {
       return;
     }
   }
+  let bench: import('@mrstudio/dashboard').DashboardView | undefined;
   if (role === 'tv' || role === 'dev') {
     const dash = el('main', 'dash');
     // On the controller screen the open layer's words and controls sit above its panels.
     if (role === 'tv') stage.append(el('div', 'open-layers'));
     stage.append(dash);
     if (role === 'tv') app.append(stage);
-    mountDashboard(dash, store, connection, role === 'dev');
+    const view = mountDashboard(dash, store, connection, role === 'dev');
+    if (role === 'dev') bench = view;
   }
 
   // Everything except the bare table gets the controller.
@@ -336,6 +341,34 @@ async function main() {
         const info = await connection.request<{ backend: string; adapter: string | null }>('engine.info').catch(() => null);
         footer.append(el('span', '', `Session ${store.state.session.code}`), el('span', '', info ? `Engine: ${info.adapter ?? `${info.backend} reference`}` : ''));
         foot.append(footer);
+        // The workbench for layer and widget authors (#358), beside the live table.
+        if (bench) {
+          const workbench = new Workbench(store, connection, bench);
+          const toggle = document.createElement('button');
+          toggle.className = 'workbench-toggle';
+          toggle.textContent = 'Workbench';
+          toggle.type = 'button';
+          const open = (on: boolean) => {
+            workbench.root.hidden = !on;
+            toggle.setAttribute('aria-pressed', String(on));
+            try {
+              localStorage.setItem('mrs-workbench', on ? '1' : '0');
+            } catch {
+              // Remembering is a convenience.
+            }
+          };
+          // Open unless it was closed here before: the Developer window is the workbench.
+          let remembered = true;
+          try {
+            remembered = localStorage.getItem('mrs-workbench') !== '0';
+          } catch {
+            // Open by default.
+          }
+          toggle.onclick = () => open(workbench.root.hidden);
+          open(new URLSearchParams(location.search).has('bench') || remembered);
+          footer.prepend(toggle);
+          stage.after(workbench.root);
+        }
       }
     }
     // The dashed core buttons (Reset, About) sit at the foot of the rail the buttons start on.

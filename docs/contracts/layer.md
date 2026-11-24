@@ -171,6 +171,32 @@ controlling.
   adds the layer's own visual, with `map.project(lonLat)`. `StreetGraph.route(from, to)` gives the
   shortest way along the streets.
 
+### A stage made of panels, with no code
+
+`stage` can instead be a layout of dashboard panels (#357): the same widgets, sizes, bindings and
+density budget as the TV, including the map, gauge and control widgets and the layer's own team
+widgets. No module code is needed.
+
+```jsonc
+"stage": {
+  "controls": false,
+  "panels": [
+    { "id": "pick", "widget": "map", "size": "block", "title": "Pick a building",
+      "props": { "entities": "buildings", "hint": "Tap a building to change it" } },
+    { "id": "grid", "widget": "grid-link", "size": "tile", "props": { "value": { "bind": "shared.import_kw" } } },
+    { "id": "share", "widget": "control", "size": "wide", "props": { "control": "share" } },
+    { "id": "run", "widget": "control", "size": "tile", "props": { "control": "optimise" } }
+  ]
+}
+```
+
+- Panels without `at` are packed in the order given, like a layer's TV panels; give every panel an
+  `at` to place them by hand on the 12 by 6 grid. Either way they pass the dashboard rules.
+- `controls: false` (the default) leaves the layer's generated control rows out, since the panels
+  carry the controls the layer wants. `controls: true` keeps them under the panels.
+- The entity inspector, the step strip and the rails stay. The TV's own panels keep the strip under
+  the stage; if the stage leaves too little room for them, that strip stays blank.
+
 `samples/controller-map-example` is a route planner: two taps on the controller's map make a
 route along the streets on the table, and a button sends a light along it.
 
@@ -508,5 +534,13 @@ The MCP server walks a developer through this: `create_layer`, `sdk_reference` (
 `mrstudio dev --site sites/sample` serves the runtime with the layer loaded against the sample site.
 `pnpm dev` runs the host and the web dev server together.
 `/dev` shows the table view with the generated controls beside it and a small preview of the TV dashboard under it, in a normal browser, with hot reload.
+`/dev` opens with the workbench beside the live table; the **Workbench** button at its foot closes and reopens it beside the live table (#358). It is the same page the editor opens with **Open in a window > Developer**:
+
+- **Widgets:** every widget, core and the site's team widgets, at every size it takes with its made-up `example` props, what each size costs in reads against its budget, and the name to put in `"widget"`. The map and control widgets are shown on a layer that is on.
+- **Live values:** each layer's `shared` values and `params` as they change. A click copies the binding (`{"bind":"shared.import_kw"}`) for a panel.
+- **Controller:** the controller as the 46-inch screen shows it (1920 by 1080), scaled to fit, so a tap there and its answer on the table are both in view. It shows a stage of panels or a custom one alike.
+- **Action log:** this window's requests with their round trip, and what the host sent: actions, tool inputs, param and entity edits from any controller or phone.
+- **Problems:** panels the rules refused, bindings to values a layer has not published, and what layers and widgets complained about.
+
 `/compose` shows the palette, the table and the scene's stack: drag layers in, reorder them and edit their settings.
 No table, projector or calibration is needed.
