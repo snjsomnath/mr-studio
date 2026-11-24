@@ -44,7 +44,7 @@ impl GeoRaster {
         };
 
         let keys = decoder.find_tag(Tag::GeoKeyDirectoryTag).ok().flatten().and_then(|v| v.into_u16_vec().ok()).unwrap_or_default();
-        let key = |id: u16| keys.chunks_exact(4).skip(1).find(|k| k[0] == id && k[1] == 0).map(|k| k[3]);
+        let key = |id: u16| keys.as_chunks::<4>().0.iter().skip(1).find(|k| k[0] == id && k[1] == 0).map(|k| k[3]);
         let crs = match crs {
             Some(crs) => crs,
             None => {

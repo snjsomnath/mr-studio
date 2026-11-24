@@ -23,7 +23,8 @@ pub const MAX_PHONES: usize = 8;
 pub const MAX_SCENE_LAYERS: usize = 64;
 const SLOT_COLOURS: [&str; 8] = ["#ff6b6b", "#4dabf7", "#51cf66", "#fcc419", "#cc5de8", "#ff922b", "#20c997", "#f06595"];
 /// The animals a phone can be (#339). Each phone gets one nobody else has, and may pick another.
-pub const AVATARS: [&str; 12] = ["fox", "octopus", "owl", "frog", "turtle", "penguin", "butterfly", "unicorn", "otter", "hedgehog", "whale", "bee"];
+pub const AVATARS: [&str; 12] =
+    ["fox", "octopus", "owl", "frog", "turtle", "penguin", "butterfly", "unicorn", "otter", "hedgehog", "whale", "bee"];
 /// The first half of a phone's fun name, "Sunny Fox" (#339). The pages say it in the visitor's language.
 pub const MOODS: [&str; 8] = ["curious", "cosmic", "sunny", "merry", "brave", "gentle", "lucky", "swift"];
 /// The longest name a visitor may give their phone, in characters.
@@ -365,6 +366,9 @@ pub struct SessionInfo {
     /// The layer whose ribbon the table shows, chosen on the controller when more than one
     /// open layer has ribbon panels (#231). None is Auto: the layer turned on last.
     pub ribbon: Option<String>,
+    /// Whether the table and the controller show their frame meter (#262): frames per second,
+    /// the worst frame, and what each layer costs. Off when a session starts.
+    pub performance: bool,
 }
 
 /// A phone's place in the session. It outlives the connection by `resume_hold`.
@@ -528,6 +532,8 @@ pub struct Hub {
     language: RwLock<String>,
     /// The controller's sound switch (#282): false mutes every layer for the session.
     sound: RwLock<bool>,
+    /// The frame meter on the table and controller (#262).
+    performance: RwLock<bool>,
     /// The controller's ribbon choice (#231); None is Auto.
     ribbon: RwLock<Option<String>>,
     /// The code the guide's phone joins with (#98). Only the operator's screens are told it.
@@ -601,6 +607,7 @@ impl Hub {
             language: language.clone(),
             sound: true,
             ribbon: None,
+            performance: false,
         };
         // Six digits, never the phones' code.
         let guide_code = loop {
@@ -618,6 +625,7 @@ impl Hub {
             bridge_join: RwLock::new(None),
             language: RwLock::new(language),
             sound: RwLock::new(true),
+            performance: RwLock::new(false),
             ribbon: RwLock::new(None),
             guide_code,
             options,
@@ -892,6 +900,7 @@ impl Hub {
         session.language = self.language.read().unwrap().clone();
         session.sound = *self.sound.read().unwrap();
         session.ribbon = self.ribbon.read().unwrap().clone();
+        session.performance = *self.performance.read().unwrap();
         let relay = self.relay_join.read().unwrap().clone();
         if let Some(base) = relay.or_else(|| self.bridge_join.read().unwrap().clone()) {
             session.join_url = Some(format!("{}/phone?c={}", base.trim_end_matches('/'), session.code));
@@ -991,11 +1000,20 @@ impl Hub {
             let limit = self.options.max_phones;
             let slot = (0..limit).find(|slot| inner.seats.iter().all(|s| s.participant.slot != *slot)).ok_or("session full")?;
             // An animal nobody here has, and a mood, picked at random.
-            let free: Vec<&'static str> = AVATARS.iter().copied().filter(|a| inner.seats.iter().all(|s| s.participant.avatar != *a)).collect();
+            let free: Vec<&'static str> =
+                AVATARS.iter().copied().filter(|a| inner.seats.iter().all(|s| s.participant.avatar != *a)).collect();
             let avatar = free[random_u64() as usize % free.len().max(1)];
             let mood = MOODS[random_u64() as usize % MOODS.len()];
             inner.seats.push(Seat {
-                participant: Participant { surface, slot, colour: SLOT_COLOURS[slot % SLOT_COLOURS.len()], connected: true, avatar, mood, name: None },
+                participant: Participant {
+                    surface,
+                    slot,
+                    colour: SLOT_COLOURS[slot % SLOT_COLOURS.len()],
+                    connected: true,
+                    avatar,
+                    mood,
+                    name: None,
+                },
                 token: format!("{:016x}{:016x}", random_u64(), random_u64()),
                 epoch: 0,
                 held_since: None,
@@ -1153,6 +1171,15 @@ impl Hub {
             *self.sound.write().unwrap() = on;
             self.emit("session.changed", json!({ "session": self.session() }));
             return Ok(json!({ "sound": on }));
+        }
+        if method == "session.performance" {
+            if !matches!(role, Role::Tv | Role::Dev) {
+                return Err("only the operator shows or hides the frame meter".into());
+            }
+            let on = p["on"].as_bool().ok_or("say on: true or false")?;
+            *self.performance.write().unwrap() = on;
+            self.emit("session.changed", json!({ "session": self.session() }));
+            return Ok(json!({ "performance": on }));
         }
         if method == "participant.profile" {
             if role != Role::Phone {
@@ -1568,7 +1595,7 @@ impl Hub {
             _ => return Err("branding must be an object".into()),
         }
         // The physical table's front edge and the ribbons in the projector's blank space (#62, #78).
-        let mut table = current.table.clone();
+        let mut table = current.table;
         match &p["table"] {
             Value::Null => {}
             Value::Object(patch) => {
@@ -1579,7 +1606,10 @@ impl Hub {
                             t.front = if value.is_null() {
                                 None
                             } else {
-                                Some(serde_json::from_value(value.clone()).map_err(|_| "the front is top, bottom, left or right".to_string())?)
+                                Some(
+                                    serde_json::from_value(value.clone())
+                                        .map_err(|_| "the front is top, bottom, left or right".to_string())?,
+                                )
                             };
                             changed.push("front edge");
                         }
@@ -1589,7 +1619,8 @@ impl Hub {
                                 let ribbon: Option<mrs_site::Ribbon> = if ribbon.is_null() {
                                     None
                                 } else {
-                                    let r = serde_json::from_value(ribbon.clone()).map_err(|_| format!("the {side} ribbon is off, auto or {{\"cm\": size}}"))?;
+                                    let r = serde_json::from_value(ribbon.clone())
+                                        .map_err(|_| format!("the {side} ribbon is off, auto or {{\"cm\": size}}"))?;
                                     if let mrs_site::Ribbon::Size(size) = r {
                                         if !(2.0..=40.0).contains(&size.cm) {
                                             return Err(format!("the {side} ribbon is 2 to 40 cm wide"));
@@ -2049,16 +2080,27 @@ impl Hub {
                     let Some(def) = catalog.get(instance.def) else { continue };
                     let needs = def.manifest["requires"]["data"].as_array().is_some_and(|d| d.iter().any(|v| v.as_str() == Some(&name)));
                     let names = instance.state.params.values().any(|v| v.as_str() == Some(&name));
-                    let draws = def.manifest["custom"]["data"].as_array().is_some_and(|d| d.iter().any(|v| v["dataset"].as_str() == Some(&name)));
+                    let draws =
+                        def.manifest["custom"]["data"].as_array().is_some_and(|d| d.iter().any(|v| v["dataset"].as_str() == Some(&name)));
                     if needs || names || draws {
-                        let label = instance.state.button.name.clone().unwrap_or_else(|| def.manifest["name"].as_str().unwrap_or(&instance.id).to_string());
+                        let label = instance
+                            .state
+                            .button
+                            .name
+                            .clone()
+                            .unwrap_or_else(|| def.manifest["name"].as_str().unwrap_or(&instance.id).to_string());
                         users.push(label);
                     }
                 }
                 if !users.is_empty() {
                     users.sort();
                     users.dedup();
-                    return Err(format!("{} on the table use{} it; remove {} first", users.join(", "), if users.len() == 1 { "s" } else { "" }, if users.len() == 1 { "that" } else { "those" }));
+                    return Err(format!(
+                        "{} on the table use{} it; remove {} first",
+                        users.join(", "),
+                        if users.len() == 1 { "s" } else { "" },
+                        if users.len() == 1 { "that" } else { "those" }
+                    ));
                 }
                 let mut gone = false;
                 self.saving(who, format!("Took the dataset {name} out of the table"), || {
@@ -2137,17 +2179,17 @@ impl Hub {
                 self.switch(scene, at, false);
             }
         }
-        for at in 0..scene.len() {
+        for instance in scene.iter_mut() {
             // A layer a sequence shows has the step's params until the sequence lets it go.
-            if scene[at].state.shown_by.is_some() {
+            if instance.state.shown_by.is_some() {
                 continue;
             }
-            let mut params = self.catalog()[scene[at].def].defaults();
-            params.extend(scene[at].saved.params.clone());
-            if scene[at].state.params != params || scene[at].state.selection.is_some() {
-                scene[at].state.params = params;
-                scene[at].state.selection = None;
-                self.emit_layer(&scene[at].id, &scene[at].state);
+            let mut params = self.catalog()[instance.def].defaults();
+            params.extend(instance.saved.params.clone());
+            if instance.state.params != params || instance.state.selection.is_some() {
+                instance.state.params = params;
+                instance.state.selection = None;
+                self.emit_layer(&instance.id, &instance.state);
             }
         }
         for at in 0..scene.len() {
@@ -2727,12 +2769,20 @@ mod tests {
         table("layer.health", json!({ "layer": "wind", "status": "retrying", "reason": "x" })).unwrap();
         assert!(layer(&hub, "wind").get("health").is_none());
         dev("layer.activate", json!({ "layer": "wind", "active": true })).unwrap();
-        let r = table("layer.health", json!({ "layer": "wind", "status": "retrying", "reason": "couldn't read buildings.geojson (HTTP 404)", "retry_in": 5 })).unwrap();
+        let r = table(
+            "layer.health",
+            json!({ "layer": "wind", "status": "retrying", "reason": "couldn't read buildings.geojson (HTTP 404)", "retry_in": 5 }),
+        )
+        .unwrap();
         assert!(r["incident"].as_str().unwrap().contains("is not running: couldn't read buildings.geojson"), "{r}");
         assert_eq!(layer(&hub, "wind")["health"]["status"], "retrying");
         assert_eq!(layer(&hub, "wind")["health"]["retry_in"], 5.0);
         // A retry later with the same trouble is not a new incident.
-        let r = table("layer.health", json!({ "layer": "wind", "status": "retrying", "reason": "couldn't read buildings.geojson (HTTP 404)", "retry_in": 15 })).unwrap();
+        let r = table(
+            "layer.health",
+            json!({ "layer": "wind", "status": "retrying", "reason": "couldn't read buildings.geojson (HTTP 404)", "retry_in": 15 }),
+        )
+        .unwrap();
         assert!(r["incident"].is_null());
         // Phones can neither report nor retry; the controller and editor retry.
         assert!(hub.request(Role::Phone, 3, "layer.health", &json!({ "layer": "wind", "status": "running" })).is_err());
@@ -2768,7 +2818,11 @@ mod tests {
         dev("site.tv", json!({ "tv": { "phone_switch": null } })).unwrap();
         phone("layer.activate", json!({ "layer": "wind", "active": false })).unwrap();
         // While a slideshow shows its steps, phones leave the layers alone.
-        dev("scene.set", json!({ "layer": "slideshow", "steps": { "mode": "manual", "sequence": [{ "layer": "sunlight", "title": "Sun" }] } })).unwrap();
+        dev(
+            "scene.set",
+            json!({ "layer": "slideshow", "steps": { "mode": "manual", "sequence": [{ "layer": "sunlight", "title": "Sun" }] } }),
+        )
+        .unwrap();
         dev("layer.activate", json!({ "layer": "slideshow", "active": true })).unwrap();
         let refused = phone("layer.activate", json!({ "layer": "wind", "active": true })).unwrap_err();
         assert!(refused.contains("slideshow"), "{refused}");
@@ -3109,7 +3163,13 @@ mod tests {
         let dev = |method: &str, p: Value| hub.request(Role::Dev, 0, method, &p);
         let refused = dev("data.remove", json!({ "name": "walkways" })).unwrap_err();
         assert!(refused.contains("Cool paths"), "{refused}");
-        let coolpaths = hub.welcome(0)["state"]["scene"].as_array().unwrap().iter().find(|id| id.as_str().unwrap().starts_with("coolpaths")).unwrap().clone();
+        let coolpaths = hub.welcome(0)["state"]["scene"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|id| id.as_str().unwrap().starts_with("coolpaths"))
+            .unwrap()
+            .clone();
         dev("scene.remove", json!({ "layer": coolpaths })).unwrap();
         dev("data.remove", json!({ "name": "walkways" })).unwrap();
         assert!(!hub.site().data.contains_key("walkways"));
@@ -3143,6 +3203,13 @@ mod tests {
         assert_eq!(hub.welcome(0)["state"]["session"]["sound"], false);
         hub.request(Role::Guide, 0, "session.sound", &json!({ "on": true })).unwrap();
         assert!(hub.session().sound);
+
+        // The frame meter (#262): off at the start, the operator's to show.
+        assert!(!hub.session().performance);
+        assert!(hub.request(Role::Phone, 0, "session.performance", &json!({ "on": true })).is_err());
+        assert!(hub.request(Role::Table, 0, "session.performance", &json!({ "on": true })).is_err());
+        hub.request(Role::Dev, 0, "session.performance", &json!({ "on": true })).unwrap();
+        assert_eq!(hub.welcome(0)["state"]["session"]["performance"], true);
     }
 
     #[test]

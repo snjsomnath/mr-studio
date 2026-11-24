@@ -4,6 +4,7 @@ import type { Connection, DataProblem, EntityChange, LayerHealth, LayerManifest,
 
 import { Cues } from './cues.ts';
 import { describe, reportError } from './diagnostics.ts';
+import { meter } from './perf.ts';
 import { entitiesOnTable } from './entities.ts';
 import { language, say } from './i18n.ts';
 import { recipeModule } from './recipe-player.ts';
@@ -261,6 +262,7 @@ export class LayerManager {
       running.handlers.tool?.(p);
     });
     requestAnimationFrame(this.frame);
+    meter.start();
   }
 
   /** A top-level `base` or `ambient` layer, or one site.json starts on without a button: part of the map at rest. */
@@ -619,14 +621,18 @@ export class LayerManager {
     if (!running) return;
     running.stopped = true;
     this.running.delete(id);
+    meter.drop(id);
     for (const waiting of running.entities?.values() ?? []) clearTimeout(waiting.timer);
     for (const cleanup of running.cleanups.reverse()) this.guard(id, cleanup);
   }
 
-  /** A layer that throws must not take the table down with it. Its error reaches the app's log (#260). */
+  /**
+   * A layer that throws must not take the table down with it. Its error reaches the app's log (#260).
+   * The time it takes counts towards the layer's cost per frame (#262).
+   */
   private guard(id: string, run: () => void): void {
     try {
-      run();
+      meter.time(id, run);
     } catch (error) {
       console.error(`[${id}]`, error);
       reportError(error, id);

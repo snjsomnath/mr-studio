@@ -55,7 +55,7 @@ pub fn bake(site: &Site) -> Result<(SceneData, BakeStats), SiteError> {
             }
         } else {
             let bytes = std::fs::read(&path).map_err(|source| SiteError::Io { path: path.clone(), source })?;
-            let source: Vec<f32> = bytes.chunks_exact(4).map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]])).collect();
+            let source: Vec<f32> = bytes.as_chunks::<4>().0.iter().map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]])).collect();
             if source.iter().any(|v| !v.is_finite()) {
                 return Err(SiteError::Parse { path, message: "terrain contains non-finite values".into() });
             }
@@ -263,7 +263,7 @@ fn polygon_cells(rings: &[Vec<(f64, f64)>], width: usize, rows: usize) -> Vec<us
             }
         }
         crossings.sort_by(|a, b| a.total_cmp(b));
-        for pair in crossings.chunks_exact(2) {
+        for pair in crossings.as_chunks::<2>().0.iter() {
             let from = (pair[0] - 0.5).ceil().max(0.0) as usize;
             let to = ((pair[1] - 0.5).ceil() as i64).min(width as i64);
             for col in from as i64..to {

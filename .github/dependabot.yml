@@ -1,0 +1,44 @@
+# Dependency updates (#264): weekly and grouped, so they arrive as a few PRs, not dozens.
+# The big moving parts (wgpu, Tauri, MapLibre, three.js) come on their own when a major
+# version lands, so each can be tried on the Mac before it merges.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ['*']
+
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      cargo:
+        patterns: ['*']
+        exclude-patterns: ['wgpu*', 'naga*', 'tauri*']
+        update-types: [minor, patch]
+      wgpu:
+        patterns: ['wgpu*', 'naga*']
+      tauri:
+        patterns: ['tauri*']
+
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      npm:
+        patterns: ['*']
+        exclude-patterns: ['maplibre-gl', 'three', '@types/three', '@tauri-apps/*']
+        update-types: [minor, patch]
+      maplibre:
+        patterns: ['maplibre-gl']
+      three:
+        patterns: ['three', '@types/three']
+      tauri-js:
+        patterns: ['@tauri-apps/*']

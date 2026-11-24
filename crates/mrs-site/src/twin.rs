@@ -59,7 +59,7 @@ fn covered(rings: &[Vec<(f64, f64)>], width: usize, rows: usize) -> Vec<usize> {
             }
         }
         crossings.sort_by(|a, b| a.total_cmp(b));
-        for pair in crossings.chunks_exact(2) {
+        for pair in crossings.as_chunks::<2>().0.iter() {
             let from = (pair[0] - 0.5).ceil().max(0.0) as i64;
             let to = ((pair[1] - 0.5).ceil() as i64).min(width as i64);
             cells.extend((from..to).map(|col| row as usize * width + col as usize));

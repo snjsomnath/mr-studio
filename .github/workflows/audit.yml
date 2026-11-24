@@ -1,0 +1,31 @@
+name: Security audit
+
+# Known vulnerabilities in the Rust crates and the npm packages the app ships (#264).
+# Weekly, and as a warning: a finding opens no PR and blocks nothing, it shows in the run.
+on:
+  schedule:
+    - cron: '17 6 * * 1'
+  workflow_dispatch:
+
+jobs:
+  cargo:
+    name: Rust crates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo install cargo-audit --locked
+      - run: cargo audit || echo "::warning::cargo audit found advisories; see the log"
+
+  npm:
+    name: npm packages
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm audit --prod || echo "::warning::pnpm audit found advisories; see the log"

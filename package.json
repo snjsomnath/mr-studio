@@ -12,7 +12,9 @@
     "test:editor": "pnpm build && cargo build -p mrs-cli && node scripts/e2e-editor.cjs",
     "app": "pnpm build && cargo run -p mr-studio-app",
     "app:build": "pnpm build && pnpm --filter @mrstudio/studio exec tauri build",
-    "mcp": "pnpm --filter @mrstudio/mcp build"
+    "mcp": "pnpm --filter @mrstudio/mcp build",
+    "lint": "eslint",
+    "smoke": "node scripts/smoke.cjs"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
@@ -20,6 +22,9 @@
     ]
   },
   "devDependencies": {
-    "jsqr": "^1.4.0"
+    "eslint": "^9.39.5",
+    "jsqr": "^1.4.0",
+    "playwright": "1.63.0",
+    "typescript-eslint": "^8.74.0"
   }
 }

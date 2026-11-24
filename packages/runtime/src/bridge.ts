@@ -78,7 +78,7 @@ export function startBridge(): void {
           );
           return;
         }
-        phone.conn.send(phone.queue.shift()!);
+        void phone.conn.send(phone.queue.shift()!);
       }
     };
     const toPhone = (phone: Phone, bytes: Uint8Array) => {

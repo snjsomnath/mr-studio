@@ -141,8 +141,21 @@ fn help_submenu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Submenu<R>> {
 
 /// The menu items the editor page carries out: Edit (#57), "Table settings…" from the File
 /// menu, and View and Help (#65, #88).
-pub const EDIT_ACTIONS: [&str; 13] =
-    ["undo", "redo", "table-settings", "commands", "view-map", "view-controller", "view-both", "zoom-fit", "zoom-100", "outline", "help", "shortcuts", "report"];
+pub const EDIT_ACTIONS: [&str; 13] = [
+    "undo",
+    "redo",
+    "table-settings",
+    "commands",
+    "view-map",
+    "view-controller",
+    "view-both",
+    "zoom-fit",
+    "zoom-100",
+    "outline",
+    "help",
+    "shortcuts",
+    "report",
+];
 
 /// Undo and Redo go to the editor page, which undoes the text being typed, or else the last
 /// change to the table through the host's revision history (#72). The system's own items

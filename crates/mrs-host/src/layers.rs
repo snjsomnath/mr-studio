@@ -195,7 +195,8 @@ impl LayerDef {
             Value::String(s) if s == "custom" => {}
             // A layout of panels (#357): the dashboard checks each panel as it does a TV page's.
             Value::Object(layout) => {
-                let panels = layout.get("panels").and_then(Value::as_array).ok_or_else(|| anyhow!("a stage layout has a list of panels"))?;
+                let panels =
+                    layout.get("panels").and_then(Value::as_array).ok_or_else(|| anyhow!("a stage layout has a list of panels"))?;
                 if panels.is_empty() {
                     bail!("a stage layout has at least one panel");
                 }
@@ -471,7 +472,8 @@ fn custom_manifest(id: &str, recipe: &mrs_site::CustomLayer) -> Value {
     // controller and the mark on the table are the ones entities already have (#279).
     let mut sets = Vec::new();
     for block in recipe.interaction.iter().filter(|b| b.block == "tap-info") {
-        let Some(dataset) = block.data.as_deref().and_then(|d| recipe.data.iter().find(|r| r.id == d)).and_then(|r| r.dataset.clone()) else {
+        let Some(dataset) = block.data.as_deref().and_then(|d| recipe.data.iter().find(|r| r.id == d)).and_then(|r| r.dataset.clone())
+        else {
             continue;
         };
         let props = &block.props;
@@ -505,7 +507,8 @@ fn custom_manifest(id: &str, recipe: &mrs_site::CustomLayer) -> Value {
         let taken = |id: &str| recipe.controls.iter().any(|c| c.get("id").and_then(Value::as_str) == Some(id));
         if let Some(controls) = manifest["controls"].as_array_mut() {
             if !taken("time_play") {
-                controls.push(serde_json::json!({ "id": "time_play", "type": "toggle", "label": "Play", "default": true, "tier": "primary" }));
+                controls
+                    .push(serde_json::json!({ "id": "time_play", "type": "toggle", "label": "Play", "default": true, "tier": "primary" }));
             }
             if !taken("time_at") {
                 controls.push(serde_json::json!({
@@ -700,7 +703,10 @@ mod tests {
         let phone: Vec<bool> = def.controls.iter().map(|c| c.phone).collect();
         assert_eq!(phone, [true, false, true, false]);
         assert!(!def.phone_switch);
-        assert!(super::LayerDef::parse(json!({ "api": 1, "id": "u", "name": "U" })).unwrap().phone_switch, "phones may switch it by default");
+        assert!(
+            super::LayerDef::parse(json!({ "api": 1, "id": "u", "name": "U" })).unwrap().phone_switch,
+            "phones may switch it by default"
+        );
     }
 
     fn patch(v: Value) -> Map<String, Value> {

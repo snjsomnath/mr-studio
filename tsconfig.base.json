@@ -12,6 +12,7 @@
     "isolatedModules": true,
     "verbatimModuleSyntax": true,
     "erasableSyntaxOnly": true,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "noUnusedLocals": true
   }
 }

@@ -1060,6 +1060,20 @@ body[data-role='edit'] .table-surface {
   background: #c8372d;
 }
 
+/* The table draws slowly (#262). */
+.ed-slow {
+  border: 0;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: #fde8e4;
+  color: #9a2a1d;
+  font: inherit;
+  cursor: pointer;
+}
+.ed-slow[hidden] {
+  display: none;
+}
+
 /* ---- A layer's button on the controller ---- */
 
 .ed-row-side {

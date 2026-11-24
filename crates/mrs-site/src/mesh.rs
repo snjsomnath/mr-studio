@@ -241,7 +241,7 @@ fn parse_glb(bytes: &[u8]) -> Result<Vec<Triangle>, String> {
                         .collect::<Result<_, _>>()?
                 }
             };
-            for t in indices.chunks_exact(3) {
+            for t in indices.as_chunks::<3>().0.iter() {
                 let corner = |i: usize| points.get(i).copied().ok_or("an index past the last position");
                 triangles.push([corner(t[0])?, corner(t[1])?, corner(t[2])?]);
             }
@@ -312,7 +312,7 @@ fn parse_stl(bytes: &[u8]) -> Result<Vec<Triangle>, String> {
     if !vertices.len().is_multiple_of(3) {
         return Err("the vertex count is not a multiple of three".into());
     }
-    Ok(vertices.chunks_exact(3).map(|t| [t[0], t[1], t[2]]).collect())
+    Ok(vertices.as_chunks::<3>().0.iter().map(|t| [t[0], t[1], t[2]]).collect())
 }
 
 /// Rasterises triangles seen from above, keeping the highest surface in each cell.
@@ -431,7 +431,7 @@ mod tests {
             "buffers": [{ "byteLength": bin.len() }]
         });
         let mut text = serde_json::to_vec(&json).unwrap();
-        while text.len() % 4 != 0 {
+        while !text.len().is_multiple_of(4) {
             text.push(b' ');
         }
         let mut out = Vec::new();

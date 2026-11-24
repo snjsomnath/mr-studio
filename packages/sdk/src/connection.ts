@@ -145,10 +145,13 @@ export class Connection {
     if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ t: 'error', ...error }));
   }
 
-  /** Says this window of the desktop app is alive and drawing at `fps` (#79). Dropped while disconnected. */
-  alive(window: string, fps: number): void {
+  /**
+   * Says this window of the desktop app is alive and drawing at `fps` (#79), with its worst frame
+   * of the last 10 s and the costliest layers (#262). Dropped while disconnected.
+   */
+  alive(window: string, fps: number, budget?: { worst_ms: number; layers: { id: string; ms: number; worst_ms: number }[] }): void {
     const socket = this.socket;
-    if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ t: 'alive', window, fps: Math.round(fps * 10) / 10 }));
+    if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ t: 'alive', window, fps: Math.round(fps * 10) / 10, ...budget }));
   }
 
   /** Subscribes to an event. Returns the function that unsubscribes. */
