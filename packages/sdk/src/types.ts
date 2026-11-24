@@ -3,7 +3,8 @@
 export const PROTOCOL = 1;
 export const LAYER_API = 1;
 
-export type Role = 'table' | 'tv' | 'phone' | 'dev';
+/** `guide` is the guide's phone (#98): it drives tours and reads their notes. */
+export type Role = 'table' | 'tv' | 'phone' | 'dev' | 'guide';
 
 // ---- Layer manifest -------------------------------------------------------
 
@@ -129,6 +130,8 @@ export interface SequenceStep {
   title?: string;
   description?: string;
   source?: string;
+  /** What the guide says at this step (#98): on the guide's phone and in the editor, never for visitors. */
+  notes?: string;
 }
 
 /** A custom layer: a recipe of blocks, saved under `custom` in site.json and used as `custom:<id>`. */

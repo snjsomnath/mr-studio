@@ -7,13 +7,14 @@ import '@mrstudio/dashboard/src/dashboard.css';
 import { Composer } from './compose.ts';
 import { Controller } from './controls.ts';
 import { mountDashboard } from './dashboard.ts';
+import { guideCode, guideDoor, guideScreen } from './guide.ts';
 import { joinPanel } from './join.ts';
 import { LayerManager } from './layer-manager.ts';
 import { phoneBadge, phoneCode, refusedScreen, rememberSeat, rememberedSeat } from './phone.ts';
 import { Store } from './store.ts';
 import './style.css';
 
-const ROLES: Role[] = ['table', 'tv', 'phone', 'dev'];
+const ROLES: Role[] = ['table', 'tv', 'phone', 'dev', 'guide'];
 
 function el(tag: string, className: string, text?: string): HTMLElement {
   const node = document.createElement(tag);
@@ -44,9 +45,15 @@ async function main() {
   document.body.dataset.role = editing ? 'edit' : composing ? 'compose' : role;
 
   const phone = role === 'phone';
-  const code = phone ? phoneCode() : undefined;
+  // The guide's phone (#98) has a code of its own, from the operator's screens.
+  const guiding = role === 'guide';
+  const code = phone ? phoneCode() : guiding ? guideCode() : undefined;
   if (phone && !code) {
     app.append(refusedScreen('no code'));
+    return;
+  }
+  if (guiding && !code) {
+    app.append(guideDoor());
     return;
   }
   const scheme = location.protocol === 'https:' ? 'wss' : 'ws';
@@ -70,11 +77,17 @@ async function main() {
   try {
     welcome = await connection.connect();
   } catch (error) {
-    if (!phone) app.append(el('p', 'notice', `Could not join: ${(error as Error).message}.`));
+    if (guiding) app.append(guideDoor((error as Error).message));
+    else if (!phone) app.append(el('p', 'notice', `Could not join: ${(error as Error).message}.`));
     return;
   }
   const store = new Store(connection, welcome);
   const site = store.state.site;
+  if (guiding) {
+    document.title = `Guide · ${site.name}`;
+    app.append(guideScreen(store, connection));
+    return;
+  }
   document.title = `${site.branding.title ?? 'MR Studio'} · ${site.name}`;
 
   const status = el('div', 'connection', 'Reconnecting…');

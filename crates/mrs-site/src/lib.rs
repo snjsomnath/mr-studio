@@ -728,6 +728,7 @@ mod tests {
             title: None,
             description: None,
             source: None,
+            notes: None,
         };
         let mut tour = layer("slideshow", "tour");
         tour.items = vec![item("trees", "tour-trees")];

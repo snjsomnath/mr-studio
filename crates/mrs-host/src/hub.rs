@@ -57,6 +57,9 @@ pub enum Role {
     Tv,
     Phone,
     Dev,
+    /// The guide's phone (#98): drives a tour with Next and Previous and reads its notes.
+    /// It joins with its own code and takes no visitor's seat.
+    Guide,
 }
 
 impl Role {
@@ -66,6 +69,7 @@ impl Role {
             "tv" => Some(Self::Tv),
             "phone" => Some(Self::Phone),
             "dev" => Some(Self::Dev),
+            "guide" => Some(Self::Guide),
             _ => None,
         }
     }
@@ -84,11 +88,16 @@ impl Role {
     }
 
     pub fn may_use_engine(self) -> bool {
-        self != Self::Phone
+        matches!(self, Self::Table | Self::Tv | Self::Dev)
     }
 
     pub fn may_calibrate(self) -> bool {
-        self != Self::Phone
+        matches!(self, Self::Table | Self::Tv | Self::Dev)
+    }
+
+    /// Phones and the guide's phone come from the network: they never see the table's sources, keys or history.
+    pub fn from_a_phone(self) -> bool {
+        matches!(self, Self::Phone | Self::Guide)
     }
 }
 
@@ -363,6 +372,8 @@ pub struct Hub {
     /// The address phones join at through the relay (#89), while the host is connected to one.
     /// It replaces the local network address in the QR code.
     relay_join: RwLock<Option<String>>,
+    /// The code the guide's phone joins with (#98). Only the operator's screens are told it.
+    guide_code: String,
     options: SessionOptions,
     /// Every layer that can be added to a scene. Replaced whole when a custom layer is
     /// saved or removed; instances keep their index into it, which removal recomputes.
@@ -384,7 +395,7 @@ struct Who {
 
 impl Who {
     fn of(role: Role, surface: u64) -> Self {
-        let by = if role == Role::Tv { By::Controller } else { By::Editor };
+        let by = if matches!(role, Role::Tv | Role::Guide) { By::Controller } else { By::Editor };
         Self { by, surface: Some(surface) }
     }
 }
@@ -413,12 +424,20 @@ impl Hub {
         let code = format!("{:04}", random_u64() % 10_000);
         let join_url = join_base.map(|base| format!("{}/phone?c={code}", base.trim_end_matches('/')));
         let session = SessionInfo { id: format!("{:016x}", random_u64()), code, port, join_url };
+        // Six digits, never the phones' code.
+        let guide_code = loop {
+            let guide = format!("{:06}", random_u64() % 1_000_000);
+            if !guide.ends_with(&session.code) {
+                break guide;
+            }
+        };
         let (events, _) = broadcast::channel(256);
         let hub = Self {
             site: site.clone(),
             info: RwLock::new(site.info()),
             session,
             relay_join: RwLock::new(None),
+            guide_code,
             options,
             catalog: RwLock::new(Arc::new(catalog)),
             inner: Mutex::new(Inner { scene, seats: Vec::new(), next_surface: 1 }),
@@ -660,6 +679,13 @@ impl Hub {
         self.catalog.read().unwrap().clone()
     }
 
+    /// Where the guide's phone joins (#98): the code, and the address when phones can reach the host.
+    pub fn guide(&self) -> Value {
+        let session = self.session();
+        let base = session.join_url.as_deref().and_then(|url| url.rsplit_once("/phone?").map(|(base, _)| base.to_string()));
+        json!({ "code": self.guide_code, "url": base.map(|base| format!("{base}/guide?g={}", self.guide_code)) })
+    }
+
     pub fn session(&self) -> SessionInfo {
         let mut session = self.session.clone();
         if let Some(base) = &*self.relay_join.read().unwrap() {
@@ -701,6 +727,15 @@ impl Hub {
 
     fn join_at(&self, role: Role, code: Option<&str>, resume: Option<&str>, now: Instant) -> Result<Joined, String> {
         let mut inner = self.inner.lock().unwrap();
+        if role == Role::Guide {
+            // The guide's phone (#98) has its own code, which only the operator's screens are told.
+            if code != Some(self.guide_code.as_str()) {
+                return Err("wrong guide code".into());
+            }
+            let surface = inner.next_surface;
+            inner.next_surface += 1;
+            return Ok(Joined { surface, kick: None });
+        }
         if role != Role::Phone {
             let surface = inner.next_surface;
             inner.next_surface += 1;
@@ -849,7 +884,7 @@ impl Hub {
             return self.set_table(p, Who::of(role, surface));
         }
         if method == "site.sources" {
-            if role == Role::Phone {
+            if role.from_a_phone() {
                 return Err("phones cannot see the table's sources".into());
             }
             return Ok(self.sources_used(&inner));
@@ -865,6 +900,12 @@ impl Hub {
                 return Err("this surface cannot edit the table".into());
             }
             return self.author(&mut inner, method, p, Who::of(role, surface));
+        }
+        if method == "session.guide" {
+            if !matches!(role, Role::Tv | Role::Dev) {
+                return Err("only the operator's screens see the guide's code".into());
+            }
+            return Ok(self.guide());
         }
         if method == "layers.reset" {
             if !role.may_activate() {
@@ -1935,6 +1976,44 @@ mod tests {
         let site = Site::load(&dir).unwrap();
         let catalog = crate::layers::load_catalog(&site, &root.join("packages/layers")).unwrap();
         Hub::new(&site, catalog, 4170, None, SessionOptions::default()).unwrap()
+    }
+
+    #[test]
+    fn the_guide_drives_a_tour_with_its_own_code_and_reads_its_notes() {
+        let hub = scratch_hub("guide");
+        let dev = |method: &str, p: Value| hub.request(Role::Dev, 0, method, &p);
+        let guide = dev("session.guide", json!({})).unwrap();
+        let code = guide["code"].as_str().unwrap().to_string();
+        assert_eq!(code.len(), 6);
+        assert!(hub.request(Role::Phone, 0, "session.guide", &json!({})).is_err(), "phones are never told it");
+        assert!(hub.request(Role::Guide, 0, "session.guide", &json!({})).is_err());
+
+        // The guide joins with its code, not the visitors' one, and takes no seat.
+        let phones = hub.session().code;
+        assert!(hub.join(Role::Guide, Some(&phones), None).is_err());
+        let joined = hub.join(Role::Guide, Some(&code), None).unwrap();
+        assert!(joined.kick.is_none());
+        assert_eq!(hub.welcome(0)["state"]["participants"].as_array().unwrap().len(), 0);
+
+        // A two-step tour with notes; the notes are kept in site.json.
+        let steps = json!({ "mode": "manual", "sequence": [
+            { "layer": "sunlight", "params": { "hour": 9 }, "title": "Morning", "notes": "Point at the long shadows on the square." },
+            { "layer": "wind", "title": "Wind" }
+        ] });
+        dev("scene.set", json!({ "layer": "slideshow", "steps": steps })).unwrap();
+        let saved = Site::load(&hub.site.dir).unwrap().manifest;
+        assert!(serde_json::to_string(&saved.layers).unwrap().contains("long shadows"));
+
+        // The guide opens the tour, steps through it and ends it; it cannot edit the table.
+        let guide = |method: &str, p: Value| hub.request(Role::Guide, joined.surface, method, &p);
+        guide("layer.activate", json!({ "layer": "slideshow", "active": true })).unwrap();
+        assert_eq!(layer(&hub, "slideshow")["steps"]["sequence"][0]["notes"], "Point at the long shadows on the square.");
+        guide("layer.step", json!({ "layer": "slideshow", "to": "next" })).unwrap();
+        assert_eq!(layer(&hub, "wind")["active"], true);
+        guide("layers.reset", json!({})).unwrap();
+        assert_eq!(layer(&hub, "slideshow")["active"], false);
+        assert!(guide("scene.set", json!({ "layer": "slideshow", "steps": { "sequence": [] } })).is_err());
+        assert!(guide("site.sources", json!({})).is_err());
     }
 
     fn layer(hub: &Hub, id: &str) -> Value {

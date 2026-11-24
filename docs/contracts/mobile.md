@@ -24,6 +24,10 @@ One token is one phone: a second tab with the same token takes the slot over and
 
 A phone cannot activate layers, publish values or open engine streams. The host enforces this by role; the page hiding a control is not the protection.
 
+## The guide's phone
+
+A guide's phone (`/guide?g=<code>`, see session.md) is not a visitor's phone: it has its own code, takes no slot, and shows the slideshows of the table, then the steps of the running one with the guide's notes, the next step's title, Previous and Next, and a way to end the tour and send the table back to rest.
+
 ## Limits
 
 - Surfaces coalesce param changes: at most one request per animation frame, carrying the latest values.

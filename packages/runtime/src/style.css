@@ -1193,6 +1193,7 @@ body[data-role='tv'] .join-qr {
 
 .door {
   margin: auto;
+  box-sizing: border-box;
   width: min(100%, 22.5rem);
   padding: 1.5rem;
   display: grid;
@@ -1216,6 +1217,7 @@ body[data-role='tv'] .join-qr {
 }
 
 .door input {
+  min-width: 0;
   height: 3.5rem;
   border: 1px solid var(--line);
   border-radius: 0.75rem;
@@ -2061,4 +2063,123 @@ body[data-role='edit'] .table-frame.has-ribbons .table-surface {
   .sound-card.is-playing .sound-dot::after {
     animation: none;
   }
+}
+
+/* The guide's phone (#98): big Next and Previous, the notes in a size readable at arm's length. */
+body[data-role='guide'] {
+  background: var(--panel);
+}
+.guide {
+  width: min(100%, 36rem);
+  min-height: 100dvh;
+  margin: 0 auto;
+  padding: 1.25rem 1.25rem calc(1.25rem + env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  box-sizing: border-box;
+}
+.guide-head {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+}
+.guide-head h1 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+.guide-badge {
+  padding: 0.25rem 0.625rem;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-ink, #111);
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.guide h2 {
+  margin: 0.5rem 0 0;
+  font-size: 1.5rem;
+}
+.guide-tours {
+  display: grid;
+  gap: 0.625rem;
+}
+.guide-tour {
+  display: grid;
+  gap: 0.25rem;
+  padding: 1rem 1.125rem;
+  border: 1px solid var(--line);
+  border-radius: 0.875rem;
+  background: var(--card);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+}
+.guide-tour strong {
+  font-size: 1.15rem;
+}
+.guide-tour span,
+.guide-where,
+.guide-next,
+.guide-empty {
+  color: var(--muted);
+}
+.guide-where,
+.guide-next {
+  margin: 0;
+  font-size: 0.95rem;
+}
+.guide-notes {
+  flex: 1;
+  padding: 1rem 1.125rem;
+  border-radius: 0.875rem;
+  background: var(--card);
+  font-size: 1.2rem;
+  line-height: 1.5;
+  overflow-y: auto;
+}
+.guide-notes p {
+  margin: 0 0 0.75rem;
+}
+.guide-problem {
+  margin: 0;
+  color: #f97066;
+}
+.guide-problem:empty {
+  display: none;
+}
+.guide-buttons {
+  display: grid;
+  grid-template-columns: 1fr 2fr;
+  gap: 0.625rem;
+}
+.guide-button {
+  height: 4.25rem;
+  border: 1px solid var(--line);
+  border-radius: 0.875rem;
+  background: var(--card);
+  color: var(--text);
+  font: inherit;
+  font-size: 1.15rem;
+  font-weight: 600;
+}
+.guide-button.primary {
+  border-color: transparent;
+  background: var(--accent);
+  color: var(--accent-ink, #111);
+}
+.guide-button:disabled {
+  opacity: 0.4;
+}
+.guide-end {
+  padding: 0.75rem;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  text-decoration: underline;
 }
