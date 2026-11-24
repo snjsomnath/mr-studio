@@ -10,7 +10,7 @@ Building blocks referred to below:
 - **Data**: site scene (terrain, buildings, trees), site datasets (GeoJSON, rasters), live feed, service (Python behind the gateway), kernel stream.
 - **Interaction**: time control (date, hour, play), table pointer (person marker, magnifier), phone tools (point, line, polygon), scenario switch.
 
-Status: only sunlight is built. Wind is next, and the kernels after it start once wind has proved the pattern for iterative simulations.
+Status (2026-11-24): the kernels `sunlight`, `wind` and `stormwater` are built. The layers built so far are listed under [Built](#built) at the end; the tables below say what each planned layer reuses. `node scripts/check-docs.mjs` fails when a layer is added without appearing here.
 
 ## Climate
 
@@ -108,3 +108,33 @@ Planned additions to the sunlight layer: a point probe with a day timeline, seas
 ## What this adds up to
 
 About forty layers need eight new kernels (`wind`, `stormwater`, `thermal`, `plume`, `drift`, `isovist`, `noise`, `isochrone`) and around a dozen blocks. Several kernels feed others: `plume` and `drift` read the wind field, `thermal` reads sun and wind, and CoolPaths reads thermal. That is why the engine keeps one scene and lets a kernel take another kernel's field as input, which is the one engine feature this roadmap still needs.
+
+## Built
+
+The core layers in `packages/layers`, with the issue that made each one:
+
+| Layer | Package | Kernel | Notes |
+| --- | --- | --- | --- |
+| Base map | `basemap` | none | free styles, Sources maps, black and white, brightness, offline tile store (#37) |
+| Sunlight | `sunlight` | `sunlight` | shadows, sun hours, three seasons side by side (#256), sun at a spot (#252) |
+| Wind | `wind` | `wind` | speed map, ribbons, particles, facade glow (#159, #174) |
+| Stormwater | `stormwater` | `stormwater` | live rain run-off and ponding (#189) |
+| Cool paths | `coolpaths` | `sunlight` | shortest and coolest walk by thermal comfort (PET, #196) |
+| Mobility | `mobility` | none | trips over time, differences per cell |
+| Isovist | `isovist` | none (SDK block) | view, green view and soundscape, Street View (#190, #82) |
+| Traffic | `cars` | none | headlights, taxis, buses, emergency vehicles (#195, #201) |
+| Public transport | `transit` | none | simulated or live from Västtrafik (#202) |
+| Street life | `street-life` | none | walkers, cyclists, streetlights (#195) |
+| Street glow | `street-glow` | none | streets glowing by kind (#195) |
+| Building lights | `building-lights` | none | lit windows |
+| Trees | `trees` | none | swaying crowns |
+| Table grid | `grid` | none | glowing tile seams (#191) |
+| Map data | `mapdata` | none | a dataset revealed by category |
+| Masterplan | `plan` | none | a plan drawing revealed phase by phase (#193) |
+| Video walk | `walkthrough` | none | a video and its walker on the table (#194) |
+| Slideshow | `slideshow` | none | a sequence of layers and media; guided tours with presenter notes (#43, #98) |
+| Picture or video | `media` | none | a picture or video over the whole table; slides with transitions (#197) |
+| Web map (WMS) | `wms` | none | WMS and ArcGIS maps (#42) |
+| Sketch | `sketch` | none | phone tools: points, routes, areas |
+| Building blocks | `blocks-demo` | none | a demo of the SDK's blocks |
+

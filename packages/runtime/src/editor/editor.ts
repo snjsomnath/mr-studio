@@ -48,6 +48,22 @@ function openView(role: 'table' | 'tv' | 'dev'): void {
   else fallback();
 }
 
+/**
+ * Opens the Help window (#271) at a page. The page goes through local storage, so a Help
+ * window that is already open turns to it too; a browser opens /help#page.
+ */
+function openHelp(page: string): void {
+  try {
+    localStorage.setItem('mrstudio.help.page', page);
+  } catch {
+    /* storage off: the window opens at its first page */
+  }
+  const fallback = () => window.open(`/help#${page}`, 'mrstudio-help');
+  const invoke = shell();
+  if (invoke) invoke('open_view', { role: 'help' }).catch(fallback);
+  else fallback();
+}
+
 function button(className: string, label: string, iconName?: string, size = 16): HTMLButtonElement {
   const node = el('button', className);
   node.type = 'button';
@@ -92,7 +108,9 @@ export class Editor {
    * and Display, the colour pass and projector of this computer's displays (app settings, #73).
    */
   private readonly tabs = el('div', 'ed-tabs');
-  private ribbonTab: 'edit' | 'display' = 'edit';
+  private ribbonTab: 'edit' | 'display' | 'help' = 'edit';
+  /** The Help tab's list of guides, from help.json (#271); fetched the first time the tab opens. */
+  private helpPages: { id: string; kind: string; title: string; summary: string }[] | null = null;
   private readonly displayTab: DisplayTab;
   private readonly tree = el('nav', 'ed-tree');
   private readonly canvasHead = el('header', 'ed-canvas-head');
@@ -264,7 +282,7 @@ export class Editor {
 
   /** The ribbon's tabs. Display is the colour and post-processing of each display, and the projector. */
   private drawTabs(): void {
-    const tab = (id: 'edit' | 'display', label: string, tip: string) => {
+    const tab = (id: 'edit' | 'display' | 'help', label: string, tip: string) => {
       const node = el('button', 'ed-tab', label);
       node.type = 'button';
       node.setAttribute('role', 'tab');
@@ -277,10 +295,11 @@ export class Editor {
     this.tabs.replaceChildren(
       tab('edit', 'Edit', 'Add layers and data, and work on what is selected'),
       tab('display', 'Display', 'Colour and post-processing for each display, layer strength and projector calibration'),
+      tab('help', 'Help', 'Every feature and step-by-step guides, in a window of their own'),
     );
   }
 
-  private setRibbonTab(id: 'edit' | 'display'): void {
+  private setRibbonTab(id: 'edit' | 'display' | 'help'): void {
     if (id === this.ribbonTab) return;
     this.ribbonTab = id;
     if (id === 'display') void this.displayTab.show();
@@ -855,6 +874,10 @@ export class Editor {
   }
 
   private renderRibbon(instances: { id: string; manifest: LayerManifest; state: LayerState }[]): void {
+    if (this.ribbonTab === 'help') {
+      this.renderHelpRibbon();
+      return;
+    }
     if (this.ribbonTab === 'display') {
       // The Display tab keeps its own controls, so a slider being dragged is not rebuilt when the scene changes.
       if (this.ribbon.firstElementChild !== this.displayTab.groups[0]) this.ribbon.replaceChildren(...this.displayTab.groups);
@@ -964,6 +987,41 @@ export class Editor {
     );
     windows.classList.add('is-last');
     groups.push(windows);
+    this.ribbon.replaceChildren(...groups);
+  }
+
+  /**
+   * The Help tab (#271): the guide opens in a window of its own, at the page a tool names.
+   * The guides come from help.json, which is built from docs/guide when the app is built.
+   */
+  private renderHelpRibbon(): void {
+    if (!this.helpPages) {
+      this.helpPages = [];
+      fetch('/help.json')
+        .then((r) => r.json())
+        .then((help: { pages: { id: string; kind: string; title: string; summary: string }[] }) => {
+          this.helpPages = help.pages;
+          if (this.ribbonTab === 'help') this.renderHelpRibbon();
+        })
+        .catch(() => {});
+    }
+    const pages = this.helpPages;
+    const tool = (label: string, iconName: string, page: string, tip: string, large = false) => {
+      const node = button(large ? 'ed-tool is-large' : 'ed-tool', label, iconName, large ? 20 : 16);
+      node.title = tip;
+      node.addEventListener('click', () => openHelp(page));
+      return node;
+    };
+    const guides = pages.filter((p) => p.kind === 'guide');
+    const latest = pages.find((p) => p.kind === 'release');
+    const groups = [
+      this.group('Guide', tool('Open the guide', 'info', guides[0]?.id ?? '', 'Every feature and step-by-step guides, in a window of their own', true)),
+      this.group('Step by step', ...this.column(guides.map((g) => tool(g.title, 'route', g.id, g.summary)))),
+      this.group('Features', tool('Everything on the table', 'layers', 'features', 'Every layer, what it shows and where to find it', true)),
+    ];
+    const news = this.group("What's new", tool(latest ? latest.title.replace('MR Studio ', 'Version ') : "What's new", 'sparkle', latest?.id ?? 'features', 'What the newest versions brought', true));
+    news.classList.add('is-last');
+    groups.push(news);
     this.ribbon.replaceChildren(...groups);
   }
 

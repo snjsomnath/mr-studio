@@ -10,6 +10,26 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  notes:
+    name: Release note and docs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # Every pull request adds a note to changes/; merging it makes the next version (docs/RELEASING.md).
+      - name: Release note
+        if: github.event_name == 'pull_request'
+        run: node scripts/release.mjs check "origin/${{ github.base_ref }}"
+      - name: Release notes are readable
+        run: node scripts/release.mjs pending
+      # Every layer, kernel and site setting is covered by the docs and the MCP server.
+      - name: Docs and MCP server know what is built
+        run: node scripts/check-docs.mjs
+
   rust:
     name: Engine, site, host and CLI
     runs-on: ubuntu-latest

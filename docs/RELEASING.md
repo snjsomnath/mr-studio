@@ -1,53 +1,57 @@
 # Releasing MR Studio
 
-A release is a version tag. The "Desktop app" workflow builds the installers for it and attaches them to a draft GitHub release.
-Publishing that draft is what makes installed apps offer the update.
+Every merge to `main` that carries a release note is a release. Nobody tags or writes notes by hand.
+
+1. A pull request adds a release note to `changes/` (below). CI fails without one.
+2. When it merges, the "Desktop app" workflow turns the notes waiting in `changes/` into the next version: it raises `version` under `[workspace.package]` in `Cargo.toml` (with `Cargo.lock` and the `package.json` files), adds the version's section to [CHANGELOG.md](../CHANGELOG.md), removes the notes, commits "Release vX.Y.Z" to `main` and tags it.
+3. The same run builds the Windows installer and the macOS dmg from that tag and publishes the GitHub release, with the notes and their screenshots, and the MCP server of the same version (`mrstudio-mcp.mjs`).
+4. Installed apps see it the next time they start: Home shows **What's new**.
+
+`node scripts/release.mjs pending` prints the version the waiting notes would make. `node scripts/release.mjs apply` does step 2 on your computer, if you ever need to.
+
+## Writing a release note
+
+One file per pull request, `changes/<short-name>.md`:
+
+```markdown
+---
+bump: minor
+issues: 195, 230
+---
+### Street life at rest
+
+Walkers on the footways, cyclists on the cycleways and warm streetlights along the main streets, while nobody touches the controller.
+
+![Street life on the table at rest](docs/screenshots/195-at-rest.png)
+```
+
+- `bump`: `minor` for something new (the default), `patch` for a fix only, `none` for a change nobody running a table notices (docs, CI, tests). `major` only on purpose. The biggest bump among the waiting notes decides the next version.
+- `issues` (optional): the issues the pull request closes. They are linked after the title.
+- `breaking` (optional): one sentence of what stops working the way it did and what people must do, for example `breaking: Tables saved by this version do not open in older versions; update the app on every computer.` Breaking changes are listed first, and the app shows them in red before anyone updates.
+- The `###` line is the title the app shows on Home next to the first picture. Write it for the people who run a table, in their words.
+- Pictures are paths from the repository root, usually `docs/screenshots/<issue>-<what>.png`, committed in the same pull request. The check fails if a picture is missing. In the published notes they become links to the tagged commit, so they keep working.
+- A pull request with several separate changes may add several notes.
 
 ## What people with the app installed see
 
-The app looks at the published releases of this repository a few seconds after it starts (this can be turned off on the Updates tab).
-If a newer version exists, the launcher's Updates tab gets a dot and shows:
+The app asks GitHub for the published releases a few seconds after it starts (this can be turned off on the Updates tab). The request carries nothing about the computer or its user.
 
-- which version is available and how many releases it is ahead;
-- the release notes of every release in between, newest first, with their pictures;
-- breaking changes first, in a red box, when any of those releases has them;
-- one button: "Update to x and restart", or "Open the download page" for a copy that cannot install updates itself.
+- **Home** shows a What's new card when a newer version exists: which version, how many releases newer it is, and each new feature as a tile with its first picture. A tile opens the full notes at that feature. **Download** opens this computer's installer (the Windows setup or the macOS dmg) in the browser. After an update, Home shows what the running version brought, once, until "Put away".
+- **Displays and settings, Updates** has the same notes, breaking changes first in a red box, and the build stamp: the version, the commit and the date it was built.
+- Drafts and pre-releases are never offered.
 
-Nothing is installed until the person presses the button. A table that starts by itself is never interrupted; the dot is there the next time someone opens the launcher.
+Installing stays by hand: run the downloaded installer. The installers are not code-signed, so Windows SmartScreen asks once ("More info", "Run anyway"), and on macOS the first open is right click, Open.
 
-## Writing the notes
+## Installing in place (optional, not set up)
 
-The draft starts from `.github/release-notes-template.md`. Write for the people who run a table. A pull request that changes how something works adds its line to that file, so the draft already lists what happened since the last release; empty the lists again after publishing.
+The app can also install an update itself and restart, if releases are signed with an updater key. It is not set up, and nothing above needs it. If it is wanted later:
 
-- Pictures: drag them into the editor on GitHub. The app shows pictures hosted on github.com and githubusercontent.com.
-- **Breaking changes**: add a heading that starts with "Breaking", for example `## Breaking changes`, and under it say what changes and what people must do. The app shows that section before anything else. A release that raises the major version is also marked as breaking.
-- Pre-releases and drafts are never offered.
-
-## Steps
-
-1. Set the version: `version` under `[workspace.package]` in `Cargo.toml`. It is the only place. Merge that to `main`.
-2. Tag it and push the tag: `git tag v0.2.0 && git push origin v0.2.0`. The workflow fails if the tag and the version differ.
-3. Wait for the workflow. It creates a draft release with the Windows installer, the macOS dmg, the signed update files and `latest.json`.
-4. Open the draft, write the notes, publish. From that moment installed apps offer the update.
-
-## The updater key (once)
-
-The app only installs files signed with a key that belongs to this project. Until the key exists, releases still work and the app still announces them, but the button opens the download page.
-
-1. Make the key pair on your own computer: `pnpm --filter @mrstudio/studio exec tauri signer generate -w ~/.tauri/mr-studio.key`. Choose a password.
-2. In the repository's settings, under Secrets and variables, Actions, add:
-   - secret `TAURI_SIGNING_PRIVATE_KEY`: the contents of `~/.tauri/mr-studio.key`;
-   - secret `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`: the password;
-   - variable `MRS_UPDATER_PUBKEY`: the contents of `~/.tauri/mr-studio.key.pub`.
-3. Keep the private key and its password somewhere safe. If they are lost, copies already installed can no longer be updated from inside the app and need one manual install of a build made with a new key.
-
-The public key is compiled into the app, so only builds made after step 2 can install updates themselves. A copy installed before that needs one manual install.
-
-This key is not operating system code signing. Without an Apple Developer ID and a Windows certificate the installers still show the "unknown developer" prompts on first install.
+1. Make the key pair: `pnpm --filter @mrstudio/studio exec tauri signer generate -w ~/.tauri/mr-studio.key`, with a password.
+2. In the repository's settings, under Secrets and variables, Actions, add the secrets `TAURI_SIGNING_PRIVATE_KEY` (the key file) and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`, and the variable `MRS_UPDATER_PUBKEY` (the `.pub` file).
+3. From then on, releases carry signed update files and `latest.json`, and the Home button reads "Update to x" and installs. Copies installed before that need one manual install. If the key is lost, installed copies need one manual install of a build made with a new key.
 
 ## Older site files
 
-An update never strands a site. `site.json` carries a `format` number; when a release changes the format, it adds one step to `crates/mrs-site/src/migrate.rs`.
+An update never strands a site. `site.json` carries a `format` number; when a release changes the format, it adds one step to `crates/mrs-site/src/migrate.rs` and its release note says so under `breaking`.
 Opening a site saved by an older version runs the steps it needs, rewrites `site.json` and keeps the original beside it as `site.format-<n>.json`.
 `mrstudio migrate <site>` does the same from the command line. A site saved by a newer version than the app is refused with a message that says to update the app.
-A release that changes the format says so under "Breaking changes".
