@@ -43,6 +43,7 @@ A layer that has a `panel` function but no `panels` gets one `custom` tile.
   "map_controls": true,            // Reset view, Full screen and Calibrate on the controller (default); false leaves Reset alone
   "phone_switch": true,            // visitors' phones turn layers on and off (default; never while a slideshow shows); false: phones only change controls (#335)
   "theme": { "color.accent": "#c2410c", "shape.radius": "none" },   // style tokens only
+  "theme_name": "palette",         // the theme picked in the editor; "palette" follows the table palette (#93): accent and data colours from its slots
   "rotate_s": 12,                  // seconds per page, 6 to 60
   "pages": [                       // optional: replaces the automatic layout
     { "id": "energy", "title": "Community energy", "panels": [

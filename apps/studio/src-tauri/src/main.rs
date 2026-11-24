@@ -8,10 +8,12 @@
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod cli_tool;
 mod colour;
 mod config;
 mod diagnostics;
 mod file_menu;
+mod mail;
 #[cfg(windows)]
 mod models;
 mod operator;
@@ -200,7 +202,10 @@ fn main() -> anyhow::Result<()> {
             take_opened_file,
             open_operator_log,
             diagnostics_report,
-            save_diagnostics
+            save_diagnostics,
+            cli_state,
+            install_cli,
+            remove_cli
         ])
         .on_menu_event(|app, event| {
             let id = event.id().as_ref();
@@ -212,6 +217,9 @@ fn main() -> anyhow::Result<()> {
             }
             if diagnostics::ACTIONS.contains(&id) {
                 diagnostics::menu_action(app, id);
+            }
+            if id == file_menu::INSTALL_CLI {
+                install_cli_from_menu(app.clone());
             }
         })
         .setup(|app| {
@@ -325,13 +333,36 @@ struct ImportedTable {
     /// Sources its layers use that are not set up on this computer, or have no key yet.
     missing: Vec<mrs_site::package::SourceNeed>,
     problems: Vec<String>,
+    /// True when it replaced an earlier version of the same table (#372).
+    updated: bool,
+}
+
+/// What Home hears back from `import_table`.
+#[derive(Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum ImportOutcome {
+    /// The table is open as a new table, or as the newer version of one.
+    Done(ImportedTable),
+    /// This computer already has this table (#372): Home asks whether to update it or keep
+    /// both, and calls again with `mode`.
+    SameTable { file: PathBuf, name: String, existing: PathBuf, existing_name: String, edited: Option<u64> },
 }
 
 /// Opens a `.mrstable` file (#85): asks for one when `file` is not given, unpacks it as a new
 /// table in the sites folder and says what this computer still needs for it. `None` when the
 /// dialog was cancelled.
+///
+/// When this computer already has the same table (same id), it first answers `SameTable`.
+/// `mode` "update" then replaces that table's content and keeps this computer's calibration,
+/// history and kept answers, putting the earlier version in the Trash; "copy" opens it as a
+/// second table, as before.
 #[tauri::command]
-async fn import_table(app: AppHandle, shell: State<'_, Shell>, file: Option<PathBuf>) -> Result<Option<ImportedTable>, String> {
+async fn import_table(
+    app: AppHandle,
+    shell: State<'_, Shell>,
+    file: Option<PathBuf>,
+    mode: Option<String>,
+) -> Result<Option<ImportOutcome>, String> {
     let file = match file {
         Some(file) => file,
         None => {
@@ -345,20 +376,58 @@ async fn import_table(app: AppHandle, shell: State<'_, Shell>, file: Option<Path
             picked.into_path().map_err(text)?
         }
     };
-    let into = shell.sites_folders.first().cloned().ok_or("This computer has no folder for tables.")?;
-    let imported = tokio::task::spawn_blocking(move || mrs_site::package::import(&file, &into))
-        .await
-        .map_err(text)?
-        .map_err(|e| format!("That table file could not be opened: {e}"))?;
-    tracing::info!("opened table file as {}", imported.dir.display());
+    let opened = |e: mrs_site::package::PackageError| format!("That table file could not be opened: {e}");
+    let id = {
+        let file = file.clone();
+        tokio::task::spawn_blocking(move || mrs_site::package::table_id(&file)).await.map_err(text)?.map_err(opened)?
+    };
+    let settings = shell.settings();
+    let same = (!id.is_empty())
+        .then(|| sites::discover(&settings.sites, &shell.sites_folders, &shell.resources.join("sites")))
+        .and_then(|found| found.into_iter().find(|s| s.id == id && s.problem.is_none() && s.source != "built in"));
+    let imported = match (same, mode.as_deref()) {
+        (Some(same), None) => {
+            return Ok(Some(ImportOutcome::SameTable {
+                file,
+                name: same.name.clone(),
+                existing: same.path,
+                existing_name: same.name,
+                edited: same.edited,
+            }));
+        }
+        (Some(same), Some("update")) => {
+            let open = shell.running.lock().unwrap().as_ref().is_some_and(|r| sites::canonical(r.site.clone()) == same.path);
+            if open {
+                return Err(format!("{} is open on this computer. Close it (and stop presenting), then open the file again.", same.name));
+            }
+            let existing = same.path.clone();
+            let updated =
+                tokio::task::spawn_blocking(move || mrs_site::package::update(&file, &existing)).await.map_err(text)?.map_err(opened)?;
+            if let Some(old) = &updated.replaced {
+                if let Err(e) = sites::move_to_trash(old) {
+                    tracing::warn!("the earlier version stays in {}: {e:#}", old.display());
+                }
+            }
+            tracing::info!("updated {} from a table file", same.path.display());
+            updated
+        }
+        _ => {
+            let into = shell.sites_folders.first().cloned().ok_or("This computer has no folder for tables.")?;
+            let imported =
+                tokio::task::spawn_blocking(move || mrs_site::package::import(&file, &into)).await.map_err(text)?.map_err(opened)?;
+            tracing::info!("opened table file as {}", imported.dir.display());
+            imported
+        }
+    };
     let missing = mrs_host::missing_sources(&shell.sources, &imported.sources);
-    Ok(Some(ImportedTable {
+    Ok(Some(ImportOutcome::Done(ImportedTable {
         path: sites::canonical(imported.dir),
         name: imported.name,
         upgraded: imported.upgraded,
         missing,
         problems: imported.problems,
-    }))
+        updated: imported.replaced.is_some(),
+    })))
 }
 
 /// In a release build there is no console (on Windows not even a hidden one), so log to a file.
@@ -1574,6 +1643,46 @@ async fn open_settings(app: AppHandle) -> Result<(), String> {
     open_launcher(&app).map_err(text)
 }
 
+/// The Command line page in settings (#370): is `mrstudio` on this computer's PATH.
+#[tauri::command]
+async fn cli_state() -> Result<cli_tool::CliState, String> {
+    tauri::async_runtime::spawn_blocking(cli_tool::state).await.map_err(text)
+}
+
+/// Puts `mrstudio` on the PATH; `false` when the password prompt was cancelled.
+#[tauri::command]
+async fn install_cli() -> Result<bool, String> {
+    tauri::async_runtime::spawn_blocking(cli_tool::install).await.map_err(text)?.map_err(|e| format!("{e:#}"))
+}
+
+#[tauri::command]
+async fn remove_cli() -> Result<bool, String> {
+    tauri::async_runtime::spawn_blocking(cli_tool::remove).await.map_err(text)?.map_err(|e| format!("{e:#}"))
+}
+
+/// MR Studio > Install command line tool… (and File on Windows): installs, then says what
+/// happened in a small dialog, since the menu has no page of its own to show it on.
+fn install_cli_from_menu(app: AppHandle) {
+    tauri::async_runtime::spawn_blocking(move || {
+        let (title, message, kind) = match cli_tool::install() {
+            Ok(true) => (
+                "The mrstudio command is installed",
+                if cfg!(windows) {
+                    "Open a new terminal window and type: mrstudio --help\n\nTerminals that were already open do not see it yet."
+                        .to_string()
+                } else {
+                    "Open a new Terminal window and type: mrstudio --help\n\nIt stays up to date with the app. Remove it again under Settings, Command line.".to_string()
+                },
+                tauri_plugin_dialog::MessageDialogKind::Info,
+            ),
+            Ok(false) => return,
+            Err(e) => ("The mrstudio command was not installed", format!("{e:#}"), tauri_plugin_dialog::MessageDialogKind::Error),
+        };
+        app.state::<Shell>().operator.note(format!("{title}."));
+        app.dialog().message(message).title(title).kind(kind).show(|_| {});
+    });
+}
+
 /// Shows the Sources page: the services tables read from, their keys and a Test for each.
 #[tauri::command]
 async fn open_sources(app: AppHandle) -> Result<(), String> {
@@ -1632,7 +1741,7 @@ fn run_file_action(app: &AppHandle, action: &str) {
     // calls `file_action` with `checked`. Close only when the editor is the window in front.
     if let Some(editor) = app.get_webview_window(EDITOR) {
         let ask = match action {
-            "save" | "save_as" | "export" | "home" | "open" | "new" => true,
+            "save" | "save_as" | "export" | "share" | "home" | "open" | "new" => true,
             "close" => editor.is_focused().unwrap_or(false),
             _ => false,
         };
@@ -1666,6 +1775,7 @@ fn perform_file_action(app: &AppHandle, action: &str) {
             "save" => Ok(()),
             "save_as" => save_as(&app).await,
             "export" => export_table(&app).await,
+            "share" => share_table(&app).await,
             "reveal" => {
                 let site = app.state::<Shell>().running.lock().unwrap().as_ref().map(|r| r.site.join("site.json"));
                 match site {
@@ -1777,6 +1887,69 @@ async fn export_table(app: &AppHandle) -> anyhow::Result<()> {
         json!({ "action": "exported", "message": format!("Exported to {file}"), "detail": detail, "path": target }),
     );
     Ok(())
+}
+
+/// Share by email (#372): packs the open table as `export_table` does, into
+/// `Documents/MR Studio/Shared/<name>.mrstable` (the mail app may read it after this returns,
+/// so it stays), and opens a new message with it attached in the computer's mail app. When no
+/// mail app takes the file, the file is shown in Finder or Explorer and a plain new message
+/// opens, to drag it into. Big files are the mail app's call: Outlook offers a OneDrive link.
+async fn share_table(app: &AppHandle) -> anyhow::Result<()> {
+    let shell = app.state::<Shell>();
+    let Some(running) = shell.running.lock().unwrap().clone() else { return Ok(()) };
+    let state = shell.host.lock().await.as_ref().map(|h| h.state.clone()).context("the table is not running")?;
+    let folder = app.path().document_dir().context("this computer has no Documents folder")?.join("MR Studio").join("Shared");
+    std::fs::create_dir_all(&folder).with_context(|| format!("could not make {}", folder.display()))?;
+    let target = folder.join(format!("{}.{}", mrs_site::package::folder_name(&running.name), mrs_site::package::EXTENSION));
+    file_menu::tell_editor(app, EDITOR, json!({ "action": "sharing", "message": format!("Packing {}…", running.name) }));
+    let version = app.package_info().version.to_string();
+    let out = target.clone();
+    let exported = tokio::task::spawn_blocking(move || state.export_table(&out, &version)).await?.map_err(anyhow::Error::msg)?;
+    tracing::info!("shared '{}' as {} ({} bytes)", running.name, target.display(), exported.bytes);
+    let letter = mail::letter(&running.name);
+    let (send, receive) = tokio::sync::oneshot::channel();
+    let (file, compose_letter) = (target.clone(), mail::letter(&running.name));
+    // The macOS share service wants the main thread; MAPI waits while its window is open, so
+    // the reply comes back over a channel rather than holding up the event loop.
+    let compose = move || {
+        let _ = send.send(mail::compose(&file, &compose_letter));
+    };
+    if cfg!(target_os = "macos") {
+        app.run_on_main_thread(compose)?;
+    } else {
+        std::thread::spawn(compose);
+    }
+    let size = megabytes(exported.bytes);
+    let message = match receive.await.unwrap_or_else(|_| Err("the mail app did not answer".into())) {
+        Ok(()) => json!({
+            "action": "exported",
+            "message": format!("{} is attached to a new email ({size})", running.name),
+            "detail": "Add who it goes to and send it. If your mail app offers to send a big file as a link, that works too.",
+            "path": target,
+        }),
+        Err(why) => {
+            tracing::warn!("Share by email: {why}; showing the file instead");
+            app.opener().reveal_item_in_dir(&target)?;
+            app.opener().open_url(mail::mailto(&letter), None::<&str>)?;
+            json!({
+                "action": "exported",
+                "message": format!("Drag {} into the new email ({size})", target.file_name().unwrap_or_default().to_string_lossy()),
+                "detail": format!("Your mail app could not take the file by itself ({why}), so it is shown in its folder."),
+                "path": target,
+            })
+        }
+    };
+    file_menu::tell_editor(app, EDITOR, message);
+    Ok(())
+}
+
+/// "32 MB", "640 KB".
+fn megabytes(bytes: u64) -> String {
+    if bytes >= 1024 * 1024 {
+        format!("{:.0} MB", bytes as f64 / (1024.0 * 1024.0))
+    } else {
+        format!("{} KB", bytes.div_ceil(1024))
+    }
 }
 
 #[tauri::command]

@@ -583,6 +583,18 @@ impl Site {
         self.save_key("table", Some(value))
     }
 
+    /// Takes a dataset out of site.json's `data` (#52). The file stays in the site folder, so an
+    /// undo brings it back. False when site.json has no such dataset.
+    pub fn forget_data(&self, name: &str) -> Result<bool, SiteError> {
+        let document = self.read_document()?;
+        let mut data = document.get("data").and_then(serde_json::Value::as_object).cloned().unwrap_or_default();
+        if data.remove(name).is_none() {
+            return Ok(false);
+        }
+        self.save_key("data", (!data.is_empty()).then(|| serde_json::Value::Object(data)))?;
+        Ok(true)
+    }
+
     /// The custom layers as site.json now has them on disk.
     pub fn saved_custom(&self) -> Result<BTreeMap<String, CustomLayer>, SiteError> {
         let value = self.read_document()?;

@@ -49,6 +49,7 @@ Every control has `id`, `type`, `label` and `default`. `phone: true` lets phone 
 
 `clock` hands a control to the editor's time bar (#61), which previews any moment without changing the saved value: `"hour"` (a range in hours, 0 to 24), `"date"` (the day), `"progress"` (a range from 0 to 100 through a run, such as Mobility's trips) and `"play"` (the layer's own play switch, paused while the bar scrubs).
 
+A `range` control with `"shows": "network_time"` shows that value, as the layer publishes it, in place of the number while there is one: a network's Time slider is a share of its series but reads "19:00" (#338).
 `visibleWhen: { "mode": "day" }` hides a control unless another control has that value; a list, `{ "style": ["light", "dark"] }`, means any of them.
 
 A `text` control that names something is never a box to type in (#306); the editor offers a list to pick from, with type-ahead, and refuses a name that is not in it:
@@ -126,6 +127,9 @@ picking on the table and the controls on the controller, so the layer writes no 
   named by its `key` property. `label` is the property shown as its name (default `key`), `group`
   a property for changing many at once, `name` what one is called on the controller.
 - `controls` are layer controls without actions. They are checked by the host like the layer's own.
+- `facts` (#38) lists properties shown on the controller for the picked entity, as a short list
+  of names and values. A set needs `controls`, `facts` or both. `key` may be `#`: the feature's
+  place in the file, for data with no id column.
 - **On the table**, a tap on an entity picks it for every surface; the picked one is outlined
   and breathes, and entities with changed values get a dashed outline.
 - **On the controller**, the layer's stage shows the picked entity's name and controls above the

@@ -172,19 +172,6 @@ button.ed-brand:focus-visible {
   color: #a0a6b1;
 }
 
-.ed-add-menu {
-  overflow-y: auto;
-}
-
-.ed-add-item {
-  justify-content: flex-start;
-  gap: 8px;
-}
-
-.ed-add-item.is-needs {
-  color: var(--ed-text-2);
-}
-
 .ed-file-item kbd {
   font: inherit;
   font-size: 12px;
@@ -2358,6 +2345,13 @@ body[data-role='edit'] .ed-surface .table-frame {
 .im-histogram { display: block; width: 100%; height: auto; background: #0b0e14; border-radius: 6px; padding: 6px 6px 2px; box-sizing: border-box; }
 .im-histogram-edge { stroke: #ffffff; stroke-width: 1.5; stroke-dasharray: 3 2; }
 .im-histogram-label { fill: #c9d1dc; font-size: 10px; font-family: system-ui, sans-serif; }
+.im-histogram-edge.is-middle { stroke: #fbbf24; stroke-dasharray: none; }
+/* Ramps and own class edges at import (#94). */
+.im-ramps { gap: 6px; }
+.im-ramp { width: 56px; height: 18px; padding: 0; border: 1px solid rgba(0, 0, 0, 0.12); border-radius: 4px; cursor: pointer; }
+.im-ramp[aria-pressed="true"] { outline: 2px solid var(--ed-accent); outline-offset: 1px; }
+.im-field input { flex: 1; min-width: 0; }
+.lb-stops { height: 24px; padding: 0 6px; border: 1px solid var(--ed-line, #dcdfe5); border-radius: 4px; font: inherit; font-size: 12px; }
 .im-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 0; padding: 0; list-style: none; font-size: 12px; }
 .im-legend li { display: flex; align-items: center; gap: 6px; }
 .im-legend i { width: 12px; height: 12px; border-radius: 3px; }
@@ -4535,6 +4529,12 @@ body[data-role='edit'] > .connection {
   margin: 0 0 12px;
   padding-left: 18px;
   line-height: 1.6;
+}
+
+/* The Data list's menu (#52): icon, then words, left aligned. */
+.ed-data-menu .ed-file-item {
+  justify-content: flex-start;
+  gap: 8px;
 }
 
 /* Help > Copy diagnostics (#260): the report as it was copied, to read before pasting it anywhere. */

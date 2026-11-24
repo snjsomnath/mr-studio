@@ -88,6 +88,9 @@ pub struct Imported {
     pub sources: Vec<SourceNeed>,
     /// What is wrong with the table as it arrived (a file a layer names that is not there...).
     pub problems: Vec<String>,
+    /// After an update (#372): the earlier version, moved aside in a hidden folder beside the
+    /// table, for the caller to put in the Trash or Recycle Bin.
+    pub replaced: Option<PathBuf>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -320,7 +323,99 @@ pub fn import(file: &Path, into: &Path) -> Result<Imported, PackageError> {
         Err(e) => vec![e.to_string()],
     };
     let name = if renamed { folder } else { about.name.clone() };
-    Ok(Imported { dir: target, name, files, upgraded, sources: about.sources, problems })
+    Ok(Imported { dir: target, name, files, upgraded, sources: about.sources, problems, replaced: None })
+}
+
+/// What stays with a table on this computer when a newer version of it arrives (#372): the
+/// calibration to this computer's projector, and the hidden folders (the revision history,
+/// the picture on Home, kept service answers and map pictures).
+pub const KEPT_ON_UPDATE: [&str; 3] = ["calibration.json", ".mrstudio", ".cache"];
+
+/// The table id a package carries, to find the table it is a newer version of.
+pub fn table_id(file: &Path) -> Result<String, PackageError> {
+    Ok(about(file)?.id)
+}
+
+/// Opens the package `file` as a newer version of the table in `existing` (#372): the folder
+/// keeps its place and name, the content is the package's, and what belongs to this computer
+/// (`KEPT_ON_UPDATE`) is kept. The earlier version is moved aside, never deleted here; the
+/// caller puts it in the Trash. Refuses a package of another table.
+pub fn update(file: &Path, existing: &Path) -> Result<Imported, PackageError> {
+    let mut zip = ZipArchive::new(File::open(file)?)?;
+    let about = read_about(&mut zip)?;
+    let current = Site::load(existing).map_err(|e| refused(e.to_string()))?;
+    if about.id.is_empty() || about.id != current.manifest.id {
+        return Err(refused(format!("it is not a version of {} (it is {})", current.manifest.name, about.name)));
+    }
+    let into = existing.parent().ok_or_else(|| refused("the table has no folder around it"))?;
+    let folder = existing.file_name().ok_or_else(|| refused("the table has no folder name"))?.to_string_lossy().to_string();
+    let partial = into.join(format!(".{folder}.unpacking"));
+    let _ = std::fs::remove_dir_all(&partial);
+    let prepared = (|| -> Result<(usize, Option<String>), PackageError> {
+        let files = unpack(&mut zip, &partial)?;
+        if !partial.join("site.json").is_file() {
+            return Err(refused("there is no site.json in it, so it is not a table"));
+        }
+        let upgraded = migrate::upgrade_site(&partial)
+            .map_err(|e| refused(e.to_string()))?
+            .map(|u| format!("Brought up to date from site format {} to {}: {}", u.from, u.to, u.changes.join("; ")));
+        Ok((files, upgraded))
+    })();
+    let (files, upgraded) = match prepared {
+        Ok(done) => done,
+        Err(e) => {
+            let _ = std::fs::remove_dir_all(&partial);
+            return Err(e);
+        }
+    };
+    // This computer's own files go into the new version before it takes the folder's place.
+    for name in KEPT_ON_UPDATE {
+        let from = existing.join(name);
+        if from.exists() {
+            let to = partial.join(name);
+            if to.is_dir() {
+                let _ = std::fs::remove_dir_all(&to);
+            } else if to.exists() {
+                let _ = std::fs::remove_file(&to);
+            }
+            if let Err(e) = copy_all(&from, &to) {
+                let _ = std::fs::remove_dir_all(&partial);
+                return Err(e.into());
+            }
+        }
+    }
+    let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+    let old = into.join(format!(".{folder}.replaced-{stamp}"));
+    if let Err(e) = std::fs::rename(existing, &old) {
+        let _ = std::fs::remove_dir_all(&partial);
+        return Err(e.into());
+    }
+    if let Err(e) = std::fs::rename(&partial, existing) {
+        // Put the earlier version back: the table is never left without its folder.
+        let _ = std::fs::rename(&old, existing);
+        let _ = std::fs::remove_dir_all(&partial);
+        return Err(e.into());
+    }
+    let problems = match Site::load(existing) {
+        Ok(site) => site.problems(),
+        Err(e) => vec![e.to_string()],
+    };
+    Ok(Imported { dir: existing.to_path_buf(), name: about.name, files, upgraded, sources: about.sources, problems, replaced: Some(old) })
+}
+
+/// Copies a file, or a folder and everything in it. Links are skipped.
+fn copy_all(from: &Path, to: &Path) -> io::Result<()> {
+    let kind = std::fs::symlink_metadata(from)?.file_type();
+    if kind.is_dir() {
+        std::fs::create_dir_all(to)?;
+        for entry in std::fs::read_dir(from)? {
+            let entry = entry?;
+            copy_all(&entry.path(), &to.join(entry.file_name()))?;
+        }
+    } else if kind.is_file() {
+        std::fs::copy(from, to)?;
+    }
+    Ok(())
 }
 
 fn unpack<R: Read + Seek>(zip: &mut ZipArchive<R>, to: &Path) -> Result<usize, PackageError> {
@@ -480,5 +575,53 @@ mod tests {
         }
         assert_eq!(folder_name("Lindholmen: Science/Park "), "Lindholmen Science Park");
         assert_eq!(folder_name("..."), "Table");
+    }
+
+    #[test]
+    fn a_newer_version_updates_the_table_and_keeps_this_computers_own_files() {
+        let dir = scratch("update");
+        let site = table(&dir);
+        let out = dir.join("Lindholmen.mrstable");
+        // The studio PC has version 1, with its own calibration, history and a kept map picture.
+        export(&site, &out, Vec::new(), "2.0.0").unwrap();
+        let studio = dir.join("studio");
+        let here = import(&out, &studio).unwrap().dir;
+        std::fs::write(here.join("calibration.json"), "{\"corners\":[\"studio\"]}\n").unwrap();
+        std::fs::create_dir_all(here.join(".mrstudio/history")).unwrap();
+        std::fs::write(here.join(".mrstudio/history/r00000007.json"), "{}").unwrap();
+        std::fs::create_dir_all(here.join(".cache/maps")).unwrap();
+        std::fs::write(here.join(".cache/maps/1"), "png").unwrap();
+        std::fs::write(here.join("data-only-in-v1.geojson"), "{}").unwrap();
+
+        // The author changes the table and sends version 2.
+        std::fs::write(site.join("media/new.png"), [137, 80, 78, 71, 1]).unwrap();
+        export(&site, &out, Vec::new(), "2.0.0").unwrap();
+        let updated = update(&out, &here).unwrap();
+        assert_eq!(updated.dir, here);
+        assert!(here.join("media/new.png").is_file(), "the new content is there");
+        assert!(!here.join("data-only-in-v1.geojson").exists(), "what the author removed is gone");
+        assert_eq!(std::fs::read_to_string(here.join("calibration.json")).unwrap(), "{\"corners\":[\"studio\"]}\n");
+        assert!(here.join(".mrstudio/history/r00000007.json").is_file() && here.join(".cache/maps/1").is_file());
+        assert_eq!(Site::load(&here).unwrap().manifest.id, "lindholmen");
+        // The earlier version is aside, whole, for the Trash.
+        let old = updated.replaced.unwrap();
+        assert!(old.join("data-only-in-v1.geojson").is_file());
+        assert!(!studio.read_dir().unwrap().any(|e| e.unwrap().file_name().to_string_lossy().ends_with(".unpacking")));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn another_tables_package_does_not_update_this_one() {
+        let dir = scratch("other-table");
+        let site = table(&dir);
+        let out = dir.join("Lindholmen.mrstable");
+        export(&site, &out, Vec::new(), "2.0.0").unwrap();
+        let harbour = dir.join("sites/Harbour");
+        crate::create::create(&harbour, "Harbour", 11.9, 57.7, 400.0, 300.0, 0.0).unwrap();
+        let e = update(&out, &harbour).unwrap_err();
+        assert!(e.to_string().contains("not a version of Harbour"), "{e}");
+        assert_eq!(Site::load(&harbour).unwrap().manifest.name, "Harbour");
+        assert_eq!(table_id(&out).unwrap(), "lindholmen");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

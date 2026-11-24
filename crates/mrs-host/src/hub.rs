@@ -1126,7 +1126,7 @@ impl Hub {
             }
             return self.set_display(p, Who::of(role, surface));
         }
-        if method.starts_with("custom.") || method == "palette.set" {
+        if method.starts_with("custom.") || method == "palette.set" || method == "data.remove" {
             if !role.may_compose() {
                 return Err("this surface cannot edit the table".into());
             }
@@ -2037,6 +2037,43 @@ impl Hub {
                 }
                 *self.catalog.write().unwrap() = Arc::new(next);
                 self.emit("catalog.removed", json!({ "id": id }));
+                Ok(json!({}))
+            }
+            "data.remove" => {
+                // A dataset of the table's own (`data`), out of site.json (#52). Not while anything
+                // on the table reads it: a layer that needs it, a setting that names it, a custom layer.
+                let name = p["name"].as_str().filter(|n| !n.is_empty()).ok_or("missing name")?.to_string();
+                let catalog = self.catalog();
+                let mut users: Vec<String> = Vec::new();
+                for instance in &inner.scene {
+                    let Some(def) = catalog.get(instance.def) else { continue };
+                    let needs = def.manifest["requires"]["data"].as_array().is_some_and(|d| d.iter().any(|v| v.as_str() == Some(&name)));
+                    let names = instance.state.params.values().any(|v| v.as_str() == Some(&name));
+                    let draws = def.manifest["custom"]["data"].as_array().is_some_and(|d| d.iter().any(|v| v["dataset"].as_str() == Some(&name)));
+                    if needs || names || draws {
+                        let label = instance.state.button.name.clone().unwrap_or_else(|| def.manifest["name"].as_str().unwrap_or(&instance.id).to_string());
+                        users.push(label);
+                    }
+                }
+                if !users.is_empty() {
+                    users.sort();
+                    users.dedup();
+                    return Err(format!("{} on the table use{} it; remove {} first", users.join(", "), if users.len() == 1 { "s" } else { "" }, if users.len() == 1 { "that" } else { "those" }));
+                }
+                let mut gone = false;
+                self.saving(who, format!("Took the dataset {name} out of the table"), || {
+                    gone = self.site.forget_data(&name)?;
+                    Ok(())
+                })?;
+                if !gone {
+                    return Err(format!("this table has no dataset '{name}' of its own"));
+                }
+                let info = {
+                    let mut info = self.info.write().unwrap();
+                    info.data.remove(&name);
+                    info.clone()
+                };
+                self.emit("site.changed", json!({ "site": info }));
                 Ok(json!({}))
             }
             "palette.set" => {
@@ -3064,6 +3101,22 @@ mod tests {
         assert!(dev("custom.save", json!({ "id": "bad", "recipe": { "name": "Bad", "data": [ { "id": "x", "dataset": "nothing" } ] } }))
             .is_err());
         assert!(hub.request(Role::Phone, 0, "custom.save", &json!({ "id": "x", "recipe": recipe("#fff000") })).is_err());
+    }
+
+    #[test]
+    fn a_dataset_leaves_the_table_once_nothing_reads_it() {
+        let hub = scratch_hub("data-remove");
+        let dev = |method: &str, p: Value| hub.request(Role::Dev, 0, method, &p);
+        let refused = dev("data.remove", json!({ "name": "walkways" })).unwrap_err();
+        assert!(refused.contains("Cool paths"), "{refused}");
+        let coolpaths = hub.welcome(0)["state"]["scene"].as_array().unwrap().iter().find(|id| id.as_str().unwrap().starts_with("coolpaths")).unwrap().clone();
+        dev("scene.remove", json!({ "layer": coolpaths })).unwrap();
+        dev("data.remove", json!({ "name": "walkways" })).unwrap();
+        assert!(!hub.site().data.contains_key("walkways"));
+        assert!(!Site::load(&hub.site.dir).unwrap().manifest.data.contains_key("walkways"));
+        assert!(hub.site.dir.join("data/walkways.geojson").exists(), "the file stays, for undo");
+        assert!(dev("data.remove", json!({ "name": "walkways" })).unwrap_err().contains("no dataset"));
+        assert!(hub.request(Role::Phone, 0, "data.remove", &json!({ "name": "roads" })).is_err());
     }
 
     #[test]

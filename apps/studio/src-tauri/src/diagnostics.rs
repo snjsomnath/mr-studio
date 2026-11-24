@@ -34,7 +34,13 @@ pub async fn report(app: &AppHandle) -> String {
     let _ = writeln!(out, "  MR Studio {} (commit {}, built {})", app.package_info().version, commit.unwrap_or("-"), built.unwrap_or("-"));
     let _ = writeln!(out, "  {} {}", std::env::consts::OS, std::env::consts::ARCH);
     if let Some(running) = shell.running.lock().unwrap().clone() {
-        let _ = writeln!(out, "  Table '{}' served on port {}{}", running.name, running.port, if running.lan { ", phones on the network" } else { "" });
+        let _ = writeln!(
+            out,
+            "  Table '{}' served on port {}{}",
+            running.name,
+            running.port,
+            if running.lan { ", phones on the network" } else { "" }
+        );
     }
 
     let _ = writeln!(out, "\nDisplays");
@@ -43,7 +49,8 @@ pub async fn report(app: &AppHandle) -> String {
         Ok(displays) => {
             for d in displays {
                 // The windows on this display, by role: `surface-0-1-table` is the table.
-                let roles: Vec<&str> = surfaces.iter().filter(|(_, at)| *at == d.index).map(|(label, _)| label.rsplit('-').next().unwrap_or("")).collect();
+                let roles: Vec<&str> =
+                    surfaces.iter().filter(|(_, at)| *at == d.index).map(|(label, _)| label.rsplit('-').next().unwrap_or("")).collect();
                 let _ = writeln!(
                     out,
                     "  {}: {}{} {}x{} at {},{} scale {}{}",

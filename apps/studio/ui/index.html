@@ -29,6 +29,9 @@
         <button type="button" role="tab" data-tab="updates" aria-selected="false">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M5 21h14" /></svg>Updates<span id="updates-badge" class="badge" hidden></span>
         </button>
+        <button type="button" role="tab" data-tab="cli" aria-selected="false">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2" /><path d="m7 9 3 3-3 3M13 15h4" /></svg>Command line
+        </button>
       </nav>
       <nav class="bottom">
         <button type="button" id="open-sources">
@@ -148,6 +151,33 @@
         </section>
         <div id="updates-notes" class="notes"></div>
       </main>
+
+      <main id="tab-cli" hidden>
+        <h1>Command line</h1>
+        <p class="lead">MR Studio comes with a command, <code>mrstudio</code>, that does from a terminal what the editor does with buttons. Presenting a table never needs it.</p>
+        <section class="panel">
+          <div class="section-head">
+            <p id="cli-status" class="status"></p>
+          </div>
+          <div class="row">
+            <button id="cli-install" type="button" class="primary">Install command line tool</button>
+            <button id="cli-remove" type="button" hidden>Remove</button>
+            <span id="cli-note" class="hint"></span>
+          </div>
+        </section>
+        <section class="panel">
+          <h2>Why you would want it</h2>
+          <p class="hint">For people who build tables and layers rather than present them. Once it is installed, any terminal, script or AI assistant that runs commands (Claude Code, Cursor, Codex) can work on your tables while the app is closed:</p>
+          <ul class="cli-uses">
+            <li><b>Check a table</b> before a visit: <code>mrstudio validate &lt;table folder&gt;</code></li>
+            <li><b>Bring data in</b> with the same checks as Add data, or refresh it from a script every night: <code>mrstudio data add &lt;table&gt; --target buildings --file buildings.geojson --write</code></li>
+            <li><b>Write a layer of your own</b> and build it: <code>mrstudio layer new energy-flows --site &lt;table&gt;</code>, then <code>mrstudio layer build --site &lt;table&gt;</code></li>
+            <li><b>Pack a table</b> for another computer, or open one: <code>mrstudio export</code> and <code>mrstudio import</code></li>
+            <li><b>Try a table in a browser</b> without the app's screens: <code>mrstudio dev --site &lt;table&gt;</code></li>
+          </ul>
+          <p class="hint">Type <code>mrstudio --help</code> for the whole list. The MR Studio MCP server finds the command inside the app by itself, so it works without this too.</p>
+        </section>
+      </main>
     </div>
 
     <script src="launcher.js"></script>
@@ -155,5 +185,6 @@
     <script src="calibration.js"></script>
     <script src="markdown.js"></script>
     <script src="updates.js"></script>
+    <script src="cli.js"></script>
   </body>
 </html>

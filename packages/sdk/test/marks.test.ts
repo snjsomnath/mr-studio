@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { MOTIONS_FOR, arrowMarks, motionFor, timeColumns, timeReveal, timeValue } from '../src/index.ts';
+import { MOTIONS_FOR, SERIES_VALUE, arrowMarks, motionFor, seriesColumns, seriesLabel, seriesSweep, timeColumns, timeReveal, timeValue } from '../src/index.ts';
 
 test('arrows sit at the end or spread evenly along a line, pointing the way it runs', () => {
   const line: [number, number][] = [[0, 0], [100, 0]];
@@ -48,4 +48,29 @@ test('every look can be played through time', () => {
   for (const kind of ['points', 'lines', 'fill'] as const) assert.ok(MOTIONS_FOR[kind].includes('timeline'));
   const motion = motionFor({ motion: [{ id: 't', block: 'timeline', on: 'look', props: { column: 'year' } }] }, 'look');
   assert.equal(motion.timeline?.column, 'year');
+});
+
+test('changes through time (#95): series columns, blended values and the time on show', () => {
+  const rows = [
+    { name: 'A', pop_2000: 100, pop_2010: 200, pop_2020: 400, area: 3 },
+    { name: 'B', pop_2000: 50, pop_2010: null, pop_2020: 150, area: 4 },
+  ];
+  assert.deepEqual(seriesColumns(rows), [['pop_2000', 'pop_2010', 'pop_2020']]);
+  assert.equal(seriesLabel('pop_2010'), '2010');
+  let held: number | null = 0.25;
+  const sweep = seriesSweep(rows, { series: ['pop_2000', 'pop_2010', 'pop_2020'], position: () => held })!;
+  assert.equal(sweep.flat.length, 6);
+  sweep.apply(rows, 0);
+  // A quarter of the way: halfway from 2000 to 2010.
+  assert.equal((rows[0] as Record<string, unknown>)[SERIES_VALUE], 150);
+  assert.equal((rows[1] as Record<string, unknown>)[SERIES_VALUE], 50, 'a gap takes the value on the other side');
+  assert.equal(sweep.label(0), '2010');
+  held = 1;
+  sweep.apply(rows, 0);
+  assert.equal((rows[0] as Record<string, unknown>)[SERIES_VALUE], 400);
+  assert.equal(sweep.label(0), '2020');
+  assert.equal(seriesSweep(rows, { series: ['pop_2000'] }), null);
+  // A reveal tells its year too, and the controller can hold it.
+  const reveal = timeReveal([{ built: 1900 }, { built: 2000 }], { column: 'built', position: () => 0.5 })!;
+  assert.equal(reveal.label(0), '1950');
 });

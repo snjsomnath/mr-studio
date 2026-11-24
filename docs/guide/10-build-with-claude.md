@@ -43,6 +43,12 @@ In a terminal the same is one line: `codex mcp add mrstudio -- npx -y @mrstudio/
 
 Cursor, VS Code with GitHub Copilot, Windsurf, Gemini CLI, Zed and LM Studio work too. Each needs **Node.js** 20 or newer and the same command, `npx -y @mrstudio/mcp`; the page **docs/MCP.md** in the repository has the steps for each, including one-click links. The ChatGPT chat app cannot use it yet, because it only connects to servers on the internet, not on your computer; use Codex instead.
 
+## The mrstudio command
+
+MR Studio also comes with a command for terminals, `mrstudio`. You do not need it to talk to Claude: the MR Studio tools find it inside the app by themselves. It helps when you, a script, or an AI that runs commands (Claude Code, Codex) want to check a table (`mrstudio validate`), bring data in, build a layer of your own or pack a table for another computer from a terminal.
+
+Install it once with **Displays and settings**, **Command line**, **Install command line tool**, then open a new terminal and type `mrstudio --help`. A Mac asks for your password once, and the command follows the app through updates.
+
 ## Make a table
 
 1. Say what the table is for: who stands around it, and what they should understand or decide. Claude asks for the place, then makes the table.

@@ -11,6 +11,7 @@ import { loadEntities } from './entities.ts';
 export { isAtRest };
 import { mountStage } from './dashboard.ts';
 import { layerModule } from './registry.ts';
+import { customHero, hasCustomHero } from './custom-hero.ts';
 import { MEDIA_KINDS, canAddMedia, mediaItems, onMediaChanged, requestAddMedia, sizeOf, titleOf, valueOf } from './media.ts';
 import { Picker } from './picker.ts';
 import type { Choice, PickerAction } from './picker.ts';
@@ -29,7 +30,7 @@ export function el<K extends keyof HTMLElementTagNameMap>(tag: K, className?: st
 export interface Widget {
   control: Control;
   row: HTMLElement;
-  sync(value: unknown, params?: Record<string, unknown>): void;
+  sync(value: unknown, params?: Record<string, unknown>, shared?: Record<string, unknown>): void;
 }
 
 /** A time of day in hours as a clock reads it: 12.5 is 12:30, 24 is 24:00. */
@@ -250,7 +251,7 @@ export function widget(control: Control, send: (value: unknown) => void, act: ()
   const label = el('label', 'control-label', control.label);
   label.htmlFor = id;
   if (control.help) row.title = control.help;
-  let sync: (value: unknown, params?: Record<string, unknown>) => void = () => {};
+  let sync: (value: unknown, params?: Record<string, unknown>, shared?: Record<string, unknown>) => void = () => {};
 
   switch (control.type) {
     case 'range': {
@@ -261,16 +262,21 @@ export function widget(control: Control, send: (value: unknown) => void, act: ()
       let held = false;
       input.addEventListener('pointerdown', () => (held = true));
       for (const type of ['pointerup', 'pointercancel', 'blur']) input.addEventListener(type, () => (held = false));
+      // `shows`: what the layer publishes for this value reads better than the number (#338).
+      let shown = '';
       input.addEventListener('input', () => {
-        readout.textContent = formatNumber(input.valueAsNumber, control);
+        if (!shown) readout.textContent = formatNumber(input.valueAsNumber, control);
         send(input.valueAsNumber);
       });
-      let shown: number | null = null;
-      sync = (value) => {
+      let saved: number | null = null;
+      sync = (value, _params, shared) => {
+        const published = control.shows ? shared?.[control.shows] : undefined;
+        shown = typeof published === 'string' || typeof published === 'number' ? String(published) : '';
+        if (shown) readout.textContent = shown;
         if (held || typeof value !== 'number') return;
-        shown = value;
+        saved = value;
         input.value = String(value);
-        readout.textContent = formatNumber(value, control);
+        if (!shown) readout.textContent = formatNumber(value, control);
       };
       const head = el('div', 'control-head');
       head.append(label, readout);
@@ -284,7 +290,7 @@ export function widget(control: Control, send: (value: unknown) => void, act: ()
         const edit = (): void => {
           if (head.querySelector('.control-exact')) return;
           const field = el('input', 'control-exact');
-          Object.assign(field, { type: 'text', inputMode: control.unit === 'h' ? 'text' : 'decimal', value: shown === null ? '' : control.unit === 'h' ? clock(shown) : String(shown) });
+          Object.assign(field, { type: 'text', inputMode: control.unit === 'h' ? 'text' : 'decimal', value: saved === null ? '' : control.unit === 'h' ? clock(saved) : String(saved) });
           field.setAttribute('aria-label', `${control.label}${control.unit ? `, ${control.unit === 'h' ? 'time' : control.unit}` : ''}`);
           readout.hidden = true;
           readout.after(field);
@@ -295,8 +301,8 @@ export function widget(control: Control, send: (value: unknown) => void, act: ()
             const value = keep ? parseValue(field.value, control) : null;
             field.remove();
             readout.hidden = false;
-            if (value !== null && value !== shown) {
-              shown = value;
+            if (value !== null && value !== saved) {
+              saved = value;
               input.value = String(value);
               readout.textContent = formatNumber(value, control);
               send(value);
@@ -309,7 +315,7 @@ export function widget(control: Control, send: (value: unknown) => void, act: ()
             else if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
               // The arrows step the typed value, as on the slider.
               event.preventDefault();
-              const now = parseValue(field.value, control) ?? shown ?? control.min;
+              const now = parseValue(field.value, control) ?? saved ?? control.min;
               const step = (control.step ?? (control.max - control.min) / 100) * (event.shiftKey ? 10 : 1);
               const next = parseValue(String(now + (event.key === 'ArrowUp' ? step : -step)), control) ?? now;
               field.value = control.unit === 'h' ? clock(next) : String(next);
@@ -840,7 +846,11 @@ function entitySetPart(
   all.type = 'button';
   const count = el('span', 'entity-count');
   actions.append(reset, all, count);
-  part.append(head, controls, actions);
+  // Tap to read (#38): the picked one's facts, read only.
+  const facts = el('dl', 'entity-facts');
+  facts.hidden = true;
+  part.append(head, facts, controls, actions);
+  if (set.controls.length === 0) actions.hidden = true;
 
   let features: EntityFeature[] = [];
   let picked: string | null = null;
@@ -889,6 +899,9 @@ function entitySetPart(
     name.textContent = feature?.label ?? selection ?? '';
     name.hidden = selection === null;
     hint.hidden = selection !== null;
+    const rows = feature?.facts ?? [];
+    facts.hidden = rows.length === 0;
+    facts.replaceChildren(...rows.flatMap(([term, value]) => [el('dt', undefined, say(term, manifest)), el('dd', undefined, value)]));
     controls.hidden = selection === null;
     const values = selection !== null ? entityValues(set, state.params, selection) : {};
     for (const w of widgets) {
@@ -1180,13 +1193,17 @@ export class Controller {
     const heroCleanups: (() => void)[] = [];
     let heroHandlers: PanelHandlers | void = undefined;
     const module = layerModule(manifest.id);
-    if (module?.hero) {
+    // A custom layer has no code; its hero is a small map of its data and its places (#342).
+    const heroOf =
+      module?.hero ??
+      (!module && hasCustomHero(manifest.custom) ? (ctx: PanelContext, place: HTMLElement) => customHero(ctx, place, () => store.manifest(manifest.id)?.custom) : undefined);
+    if (heroOf) {
       const ctx: PanelContext = Object.assign(Object.create(baseContext(store, connection, id)), {
         panel: 'hero',
         onCleanup: (cleanup: () => void) => heroCleanups.push(cleanup),
       });
       try {
-        heroHandlers = module.hero(ctx, hero);
+        heroHandlers = heroOf(ctx, hero);
         hero.hidden = false;
       } catch (error) {
         console.error(`[${id}] hero`, error);
@@ -1290,7 +1307,7 @@ export class Controller {
         const stepped = Boolean(manifest.sequence && state.step);
         for (const w of widgets) {
           w.row.hidden = stepped || !isVisible(w.control, state.params) || Boolean(state.hide?.includes(w.control.id));
-          w.sync(state.params[w.control.id], state.params);
+          w.sync(state.params[w.control.id], state.params, state.shared);
         }
         more.hidden = ![...moreRows.children].some((row) => !(row as HTMLElement).hidden);
         // The stage's panels read the layer's values; one sync a frame is plenty (#357).
@@ -1617,7 +1634,7 @@ export class Controller {
         body.hidden = !state.active;
         for (const w of widgets) {
           w.row.hidden = !isVisible(w.control, state.params) || (phone && Boolean(state.hide?.includes(w.control.id)));
-          w.sync(state.params[w.control.id], state.params);
+          w.sync(state.params[w.control.id], state.params, state.shared);
         }
         tools?.sync(state.active);
       },

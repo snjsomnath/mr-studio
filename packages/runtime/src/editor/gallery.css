@@ -1,0 +1,339 @@
+/* The New layer gallery (#59). Light, like the rest of the editor; only the pictures are dark,
+   because they show the projected table. */
+
+.im-dialog.lg-gallery {
+  width: min(1040px, calc(100vw - 32px));
+  height: min(720px, calc(100vh - 48px));
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.lg-gallery[open] {
+  display: flex;
+}
+
+.lg-head {
+  gap: 12px;
+  padding: 14px 16px 12px 20px;
+  margin: 0;
+  border-bottom: 1px solid var(--ed-line, #dcdfe5);
+}
+
+.lg-head h2 {
+  flex: none;
+}
+
+.lg-search {
+  flex: 1;
+  max-width: 320px;
+  margin-left: auto;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--ed-line, #dcdfe5);
+  border-radius: 7px;
+  font: inherit;
+  font-size: 13px;
+  background: #f6f7f9;
+}
+
+.lg-search:focus {
+  outline: none;
+  border-color: var(--ed-accent, #3557d4);
+  background: #fff;
+  box-shadow: 0 0 0 3px var(--ed-accent-soft, #e9eefc);
+}
+
+.lg-frame {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+.lg-nav {
+  flex: none;
+  width: 168px;
+  padding: 12px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border-right: 1px solid var(--ed-line, #dcdfe5);
+  background: var(--ed-window, #f6f7f9);
+}
+
+.lg-nav-item {
+  text-align: left;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  color: var(--ed-text-2, #565d6a);
+  cursor: pointer;
+}
+
+.lg-nav-item:hover {
+  background: #eceef2;
+  color: var(--ed-text, #1b1f27);
+}
+
+.lg-nav-item[aria-current='true'] {
+  background: var(--ed-accent-soft, #e9eefc);
+  color: var(--ed-accent, #3557d4);
+  font-weight: 600;
+}
+
+.lg-body {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  padding: 4px 20px 24px;
+  scroll-padding-top: 8px;
+}
+
+.lg-section {
+  padding-top: 14px;
+}
+
+.lg-section-title {
+  margin: 0;
+  font-size: 14px;
+}
+
+.lg-section-about {
+  margin: 2px 0 10px;
+  font-size: 12px;
+  color: var(--ed-text-2, #565d6a);
+}
+
+.lg-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(196px, 1fr));
+  gap: 12px;
+}
+
+.lg-card {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--ed-line, #dcdfe5);
+  border-radius: 10px;
+  background: #fff;
+  overflow: hidden;
+  transition: border-color 120ms, box-shadow 120ms;
+}
+
+.lg-card:hover {
+  border-color: var(--ed-accent, #3557d4);
+  box-shadow: 0 0 0 3px var(--ed-accent-soft, #e9eefc);
+}
+
+.lg-pick {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+}
+
+.lg-pick:disabled {
+  cursor: default;
+}
+
+.lg-pick:focus-visible {
+  outline: 2px solid var(--ed-accent, #3557d4);
+  outline-offset: -2px;
+}
+
+.lg-picture {
+  position: relative;
+  display: grid;
+  place-items: center;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  background: radial-gradient(120% 90% at 30% 20%, #26304a 0%, #0f1320 70%);
+  color: #9fb2e8;
+}
+
+.lg-picture.is-data {
+  background: radial-gradient(120% 90% at 30% 20%, #1d3a3a 0%, #0c1517 70%);
+  color: #7fd6c2;
+}
+
+.lg-picture.is-own {
+  background: radial-gradient(120% 90% at 30% 20%, #3a2a4a 0%, #140f1d 70%);
+  color: #d1a8f0;
+}
+
+.lg-picture.is-story {
+  background: radial-gradient(120% 90% at 30% 20%, #45331c 0%, #18120a 70%);
+  color: #f3c27a;
+}
+
+.lg-picture.is-life {
+  background: radial-gradient(120% 90% at 30% 20%, #1f3a26 0%, #0b150e 70%);
+  color: #94dca6;
+}
+
+.lg-picture img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 400ms ease;
+}
+
+.lg-card:hover .lg-picture img {
+  transform: scale(1.04);
+}
+
+.lg-picture.has-picture .lg-picture-icon {
+  visibility: hidden;
+}
+
+.lg-words {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 12px 12px;
+}
+
+.lg-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.lg-tag {
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: #f2f3f6;
+  color: var(--ed-text-2, #565d6a);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.lg-about {
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ed-text-2, #565d6a);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.lg-card.is-needs .lg-picture {
+  filter: saturate(0.35) brightness(0.8);
+}
+
+.lg-need {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  margin: auto 0 0;
+  padding: 8px 12px 10px;
+  border-top: 1px solid #f0e2c8;
+  background: #fff8ec;
+  font-size: 12px;
+  color: #8a5a10;
+}
+
+.lg-need svg {
+  flex: none;
+}
+
+.lg-need-action {
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-weight: 600;
+  color: var(--ed-accent, #3557d4);
+  cursor: pointer;
+}
+
+.lg-need-action:hover {
+  text-decoration: underline;
+}
+
+.lg-none {
+  margin-top: 24px;
+}
+
+.lg-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.lg-empty p {
+  margin: 0;
+}
+
+@media (max-width: 640px) {
+  .lg-nav {
+    display: none;
+  }
+}
+
+.lg-sub {
+  margin: 18px 0 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ed-text-2, #565d6a);
+}
+
+.lg-cards.is-small {
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 10px;
+}
+
+.lg-card.is-small .lg-picture {
+  aspect-ratio: 5 / 3;
+}
+
+.lg-card.is-small .lg-words {
+  padding: 8px 10px 10px;
+}
+
+.lg-shapes {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.lg-shapes .is-area {
+  fill: currentColor;
+  fill-opacity: 0.45;
+  stroke: currentColor;
+  stroke-opacity: 0.9;
+  stroke-width: 0.6;
+  vector-effect: non-scaling-stroke;
+}
+
+.lg-shapes .is-line {
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-opacity: 0.85;
+}
+
+.lg-shapes .is-dot {
+  fill: currentColor;
+}
