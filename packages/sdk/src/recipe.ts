@@ -27,6 +27,8 @@ import { SOUND_DEFAULTS, SoundStage, soundLabel, soundPath } from './audio.ts';
 import type { SoundProps } from './audio.ts';
 import type { PlaceExtras, PlaceTables } from './places.ts';
 import { placeMotion, placeUnit } from './place-motions.ts';
+import { NETWORK_DEFAULTS, networkData, networkLook, networkPosition } from './networks.ts';
+import type { NetworkInputs, NetworkProps } from './networks.ts';
 import type { CustomLayer, LegendItem, RecipeBlock, SiteInfo } from './types.ts';
 
 // ---- Style values ------------------------------------------------------------
@@ -185,10 +187,11 @@ export const MOTION_DEFAULTS = {
   timeline: TIMELINE_DEFAULTS,
   place: PLACE_DEFAULTS,
   sound: SOUND_DEFAULTS,
+  network: NETWORK_DEFAULTS,
 };
 /** Which motions fit which look (L1: verbs fit the form). */
 export const MOTIONS_FOR: Record<GeometryKind, (keyof typeof MOTION_DEFAULTS)[]> = {
-  points: ['pulse', 'attract', 'gravity', 'timeline', 'place', 'sound'],
+  points: ['pulse', 'attract', 'gravity', 'timeline', 'place', 'sound', 'network'],
   lines: ['draw-in', 'flow', 'particles', 'timeline'],
   fill: ['pulse', 'timeline'],
 };
@@ -436,6 +439,8 @@ export interface CompiledLook {
     list(): SoundCard[];
     cue(point: number): void;
   };
+  /** For points with a network motion (#280): its steps and their times, and what is wrong with its data. */
+  network?: { steps: number; labels: string[]; problems: string[] };
 }
 
 /** A point's sound as the controller shows it. */
@@ -463,6 +468,12 @@ export interface LookMotion {
   place?: Partial<PlaceProps> & { extras?: PlaceExtras; tables?: PlaceTables; frame?: { width: number; height: number } };
   /** Sound on points (#150). `stage` plays the sounds; whoever draws the recipe owns it and stops it. */
   sound?: Partial<SoundProps> & { stage?: SoundStage };
+  /**
+   * A network of nodes and flows (#280): the look's points are the nodes. `inputs` are its links,
+   * series and streets, loaded by whoever draws the recipe; `position` is the shared play head
+   * (a decimal step of the series), else the series plays from the layer's own time.
+   */
+  network?: Partial<NetworkProps> & { inputs?: NetworkInputs; position?: () => number };
 }
 
 function trace(view: View, points: readonly Point[], close: boolean): void {
@@ -499,13 +510,17 @@ export function compileLook(block: RecipeBlock, shapes: Shapes, palette: Resolve
     const reveal = motion.timeline ? timeReveal(rows, motion.timeline) : null;
     const place = motion.place ? placeLook(shapes, motion.place, palette, mm) : null;
     const sound = motion.sound ? soundLook(shapes, motion.sound, paint, radius, mm) : null;
+    const network = motion.network ? networkLook(networkData(shapes.spots, motion.network.inputs ?? {}, motion.network), motion.network, palette, mm, (i) => paint.colour(shapes.spots[i]!.properties)) : null;
+    const stepSeconds = Number(motion.network?.step_s) || NETWORK_DEFAULTS.step_s;
     return {
       id: block.id,
       kind,
-      legend: legendRows(block, paint, 'point', palette, props.color),
+      legend: [...legendRows(block, paint, 'point', palette, props.color), ...(network?.legend ?? [])],
       ...(sound ? { sounds: { list: sound.list, cue: sound.cue } } : {}),
+      ...(network ? { network: { steps: network.data.steps, labels: network.data.labels, problems: network.data.problems } } : {}),
       draw(view, time, alpha) {
-        // Crowds and place motions go under the points they belong to.
+        // Crowds, networks and place motions go under the points they belong to.
+        network?.draw(view, time, alpha, motion.network?.position ? motion.network.position() : networkPosition(network.data.steps, time, stepSeconds));
         place?.draw(view, time, alpha);
         sound?.draw(view, time, alpha);
         attract?.draw(view, time, alpha);
@@ -1148,6 +1163,7 @@ export function motionFor(recipe: Pick<CustomLayer, 'motion'>, look: string, ove
     if (block.block === 'timeline') motion.timeline = props as Partial<TimelineProps>;
     if (block.block === 'place') motion.place = props as Partial<PlaceProps>;
     if (block.block === 'sound') motion.sound = props as Partial<SoundProps>;
+    if (block.block === 'network') motion.network = props as Partial<NetworkProps>;
   }
   return motion;
 }

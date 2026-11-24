@@ -15,6 +15,7 @@ import {
   parseCsv,
   SoundStage,
   hearsSound,
+  networkFiles,
   placeFiles,
   readShapes,
   resolvePalette,
@@ -129,8 +130,17 @@ export function recipeModule(current: () => LayerManifest | undefined, watch: (c
           Object.values(d).forEach((name) => datasets.add(name!));
           Object.values(t).forEach((name) => csvs.add(name!));
         }
+        // A network's links are a table or lines, its series a table, its streets lines (#280).
+        for (const m of recipe.motion ?? []) {
+          if (m.block !== 'network') continue;
+          const f = networkFiles(m.props ?? {});
+          if (f.links) (isTable(f.links) ? csvs : datasets).add(f.links);
+          if (f.series) csvs.add(f.series);
+          if (f.streets) datasets.add(f.streets);
+        }
         return { datasets: [...datasets], csvs: [...csvs] };
       };
+      const isTable = (name: string) => /\.csv$/i.test(siteFile(name, ctx.site) ?? '');
       const networks = () => [...new Set((recipe.motion ?? []).filter((m) => m.block === 'gravity').map((m) => String(m.props?.network ?? 'roads')))];
       let looks: CompiledLook[] = [];
       // Sounds play on the table itself; the editor's preview shows the rings silently unless
@@ -219,6 +229,19 @@ export function recipeModule(current: () => LayerManifest | undefined, watch: (c
             const motion = motionFor(recipe, block.id, overrides.motion);
             if (motion.gravity) motion.gravity = { ...motion.gravity, streets: streets.get(String(motion.gravity.network ?? 'roads')) };
             if (motion.sound) motion.sound = { ...motion.sound, stage: sounds };
+            if (motion.network) {
+              const f = networkFiles(motion.network);
+              motion.network = {
+                ...motion.network,
+                inputs: {
+                  linkShapes: f.links ? extraShapes.get(f.links) : null,
+                  linkRows: f.links ? extraTables.get(f.links) : null,
+                  series: f.series ? extraTables.get(f.series) : null,
+                  streets: f.streets ? extraShapes.get(f.streets) : null,
+                },
+                position: () => clock.position,
+              };
+            }
             if (motion.place) {
               const { datasets, tables: csvs } = placeFiles(motion.place);
               const shapesOf = (name?: string) => (name ? extraShapes.get(name) : undefined);
@@ -294,9 +317,29 @@ export function recipeModule(current: () => LayerManifest | undefined, watch: (c
       let published = '';
       let sincePublish = Infinity;
 
+      // ---- A network's play head (#280): one for the layer, paused and scrubbed from the controller ----
+      const clock = { position: 0, playing: ctx.params.network_play !== false };
+      const networkOf = () => looks.find((look) => look.network)?.network;
+      const stepSeconds = () => Number((recipe.motion ?? []).find((m) => m.block === 'network')?.props?.step_s) || 2;
+      const seek = () => {
+        const at = Number(ctx.params.network_at);
+        const steps = networkOf()?.steps ?? 1;
+        if (Number.isFinite(at)) clock.position = Math.min(steps - 1e-6, Math.max(0, (at / 100) * steps));
+      };
+      if (Number(ctx.params.network_at) > 0) seek();
+      let shownStep = -1;
+
       ctx.onFrame((dt) => {
         time += dt;
         refresh();
+        const network = networkOf();
+        if (network && clock.playing) clock.position = (clock.position + dt / stepSeconds()) % Math.max(1, network.steps);
+        // The time the table shows, for the controller, ribbons and dashboards to bind to.
+        const step = network ? Math.floor(clock.position) : -1;
+        if (step !== shownStep) {
+          shownStep = step;
+          ctx.publish({ network_time: network ? (network.labels[step] ?? '') || null : null, network_step: network ? step : null, network_steps: network ? network.steps : null });
+        }
         sounds.audible = hearsSound();
         const view = surface.begin(time);
         const alpha = recipe.enter === 'fade' ? ease(time / FADE_S) : 1;
@@ -316,6 +359,8 @@ export function recipeModule(current: () => LayerManifest | undefined, watch: (c
       return {
         update: (changed) => {
           if (changed.includes('play')) wanted = String(ctx.params.play ?? '').trim();
+          if (changed.includes('network_play')) clock.playing = ctx.params.network_play !== false;
+          if (changed.includes('network_at')) seek();
           refresh();
         },
         tool: (input) => {

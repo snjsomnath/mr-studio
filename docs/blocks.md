@@ -195,6 +195,7 @@ composition. Old line counts are from `main`.
 | Grid and battery rings, outward when giving, inward when taking, each against its own busiest hour | `nodePulse` + `drawRings` |
 | Node icons with gauge fill steps | `drawSpots`; pictograms from `ICONS`/`fillIcon` (marks.ts) |
 | The table's clock, an hour every few seconds, scrubbed from the controller | `Clock`, ticked in `ctx.onFrame`, seeked from the `hour` control |
+| All of the above without code: buildings and nodes, flows by hour, rings, the battery gauge, the clock | A custom layer's `network` motion (#280, networks.ts): nodes from the look's points, `links` and `series` CSVs, links routed along `roads`, Play and Time on the controller |
 | Introduction: lines arrive one at a time, captions, held hours | `Sequence` + `stagger` feeding `reveal` on `drawPaths` |
 | Timeline strip with day and night | `timeline(clock)` published; drawn by the dashboard's timeline widget |
 | Bottom ribbon: demand, solar, battery, grid, share bar | `stat`, `bars`, `shares` published; drawn by dashboard widgets |

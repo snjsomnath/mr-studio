@@ -98,6 +98,13 @@ export const BLOCKS: BlockDef[] = [
     detect: 'export const PLACE_MOTIONS',
   },
   {
+    id: 'network-flows', group: 'visual', name: 'Network of flows',
+    description: 'Nodes joined by links whose flows follow a time series (#280): links widen and carry travelling lights as busy as the flow, rings travel out of nodes that give and into nodes that take, gauges fill from a level series, and links without a line of their own follow the streets. One shared play head walks the series; the controller gets Play and Time. Fits energy communities, district heating, stormwater pipes and commuter flows.',
+    usage: "a custom layer's 'network' motion on a points look (props links, series, streets, flow, gauge, step_s, width_mm, heads, speed_mm, rings, gauges; save_custom_layer), or networkData + networkLook from @mrstudio/sdk. Data: links CSV from,to; series CSV time,id or from,to, flow, level. The builder's 'Energy network' test data shows the shape",
+    detect: 'export function networkData',
+    unlocks: ['Energy communities (ECOM, #192)', 'District heating and pipe networks', 'Commuter flows between places'],
+  },
+  {
     id: 'palette', group: 'visual', name: 'Table palette',
     description: "The table's named colour slots (accent, warm, cool, categories) that every layer and the custom builder colour from, with a warning for colours a projector washes out.",
     usage: "site.json 'palette' (update_site), resolvePalette(site.palette) in a layer",
