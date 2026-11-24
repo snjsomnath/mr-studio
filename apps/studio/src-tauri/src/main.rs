@@ -8,6 +8,7 @@
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod cli_tool;
 mod colour;
 mod config;
 mod diagnostics;
@@ -200,7 +201,10 @@ fn main() -> anyhow::Result<()> {
             take_opened_file,
             open_operator_log,
             diagnostics_report,
-            save_diagnostics
+            save_diagnostics,
+            cli_state,
+            install_cli,
+            remove_cli
         ])
         .on_menu_event(|app, event| {
             let id = event.id().as_ref();
@@ -212,6 +216,9 @@ fn main() -> anyhow::Result<()> {
             }
             if diagnostics::ACTIONS.contains(&id) {
                 diagnostics::menu_action(app, id);
+            }
+            if id == file_menu::INSTALL_CLI {
+                install_cli_from_menu(app.clone());
             }
         })
         .setup(|app| {
@@ -1572,6 +1579,46 @@ async fn open_view(app: AppHandle, role: String) -> Result<(), String> {
 #[tauri::command]
 async fn open_settings(app: AppHandle) -> Result<(), String> {
     open_launcher(&app).map_err(text)
+}
+
+/// The Command line page in settings (#370): is `mrstudio` on this computer's PATH.
+#[tauri::command]
+async fn cli_state() -> Result<cli_tool::CliState, String> {
+    tauri::async_runtime::spawn_blocking(cli_tool::state).await.map_err(text)
+}
+
+/// Puts `mrstudio` on the PATH; `false` when the password prompt was cancelled.
+#[tauri::command]
+async fn install_cli() -> Result<bool, String> {
+    tauri::async_runtime::spawn_blocking(cli_tool::install).await.map_err(text)?.map_err(|e| format!("{e:#}"))
+}
+
+#[tauri::command]
+async fn remove_cli() -> Result<bool, String> {
+    tauri::async_runtime::spawn_blocking(cli_tool::remove).await.map_err(text)?.map_err(|e| format!("{e:#}"))
+}
+
+/// MR Studio > Install command line tool… (and File on Windows): installs, then says what
+/// happened in a small dialog, since the menu has no page of its own to show it on.
+fn install_cli_from_menu(app: AppHandle) {
+    tauri::async_runtime::spawn_blocking(move || {
+        let (title, message, kind) = match cli_tool::install() {
+            Ok(true) => (
+                "The mrstudio command is installed",
+                if cfg!(windows) {
+                    "Open a new terminal window and type: mrstudio --help\n\nTerminals that were already open do not see it yet."
+                        .to_string()
+                } else {
+                    "Open a new Terminal window and type: mrstudio --help\n\nIt stays up to date with the app. Remove it again under Settings, Command line.".to_string()
+                },
+                tauri_plugin_dialog::MessageDialogKind::Info,
+            ),
+            Ok(false) => return,
+            Err(e) => ("The mrstudio command was not installed", format!("{e:#}"), tauri_plugin_dialog::MessageDialogKind::Error),
+        };
+        app.state::<Shell>().operator.note(format!("{title}."));
+        app.dialog().message(message).title(title).kind(kind).show(|_| {});
+    });
 }
 
 /// Shows the Sources page: the services tables read from, their keys and a Test for each.
