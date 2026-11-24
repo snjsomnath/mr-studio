@@ -626,10 +626,7 @@ fn show_view(app: &AppHandle, role: &str) -> anyhow::Result<()> {
             };
             // Help (#271) is about the app, not the table, so its title does not name the table.
             let title = if role == "help" { "MR Studio Help".to_string() } else { format!("MR Studio · {} · {role}", running.name) };
-            WebviewWindowBuilder::new(app, &label, WebviewUrl::External(url))
-                .title(title)
-                .inner_size(width, height)
-                .build()?
+            WebviewWindowBuilder::new(app, &label, WebviewUrl::External(url)).title(title).inner_size(width, height).build()?
         }
     };
     window.unminimize()?;
@@ -789,8 +786,13 @@ fn open_surfaces(app: &AppHandle, port: u16, displays: &Displays) -> anyhow::Res
                 serde_json::to_string(&label).expect("a label is a string"),
                 colour::SCRIPT,
                 colour.script(),
-                // The table shows the way back only when it is alone, on the author's own screen.
-                if spec.role == "table" && displays.windows.len() > 1 { "" } else { SURFACE_EXIT }
+                // The way back. A table with a controller beside it is seen by visitors, so
+                // there it shows only when the pointer goes to the top edge (#295).
+                if spec.role == "table" && displays.windows.len() > 1 {
+                    format!("window.__MRS_EXIT_QUIET__ = true;\n{SURFACE_EXIT}")
+                } else {
+                    SURFACE_EXIT.to_string()
+                }
             ))
             .on_navigation(move |url| match url.path().strip_prefix("/__shell/") {
                 Some(action) => {
@@ -809,10 +811,43 @@ fn open_surfaces(app: &AppHandle, port: u16, displays: &Displays) -> anyhow::Res
         }
         tracing::info!("{} window on display {:?}", spec.role, target.map(|d| (d.index, d.name.as_deref().unwrap_or(""))));
     }
+    focus_surface(app, &connected);
     let name = shell.running.lock().unwrap().as_ref().map(|r| r.name.clone()).unwrap_or_default();
     let roles: Vec<&str> = displays.windows.iter().map(|w| w.role.as_str()).collect();
     shell.operator.note(format!("Presenting '{name}' ({}).", roles.join(", ")));
     Ok(())
+}
+
+/// Gives the keyboard to the surface on the screen the editor is on, else the table, so Esc
+/// and the shortcuts reach a surface rather than the editor hidden behind it (#295). Once the
+/// windows have settled, since full screen on macOS is applied after they are shown.
+fn focus_surface(app: &AppHandle, connected: &[Display]) {
+    let surfaces = app.state::<Shell>().surfaces.lock().unwrap().clone();
+    let editor_display = app.get_webview_window(EDITOR).and_then(|editor| {
+        let at = editor.outer_position().ok()?;
+        let size = editor.outer_size().ok()?;
+        let (cx, cy) = (i64::from(at.x) + i64::from(size.width) / 2, i64::from(at.y) + i64::from(size.height) / 2);
+        let inside = |d: &&Display| {
+            (i64::from(d.x)..i64::from(d.x) + i64::from(d.width)).contains(&cx)
+                && (i64::from(d.y)..i64::from(d.y) + i64::from(d.height)).contains(&cy)
+        };
+        connected.iter().find(inside).map(|d| d.index)
+    });
+    let label = editor_display
+        .and_then(|index| surfaces.iter().find(|(_, d)| *d == index))
+        .or_else(|| surfaces.iter().find(|(label, _)| label.ends_with("-table")))
+        .or(surfaces.first())
+        .map(|(label, _)| label.clone());
+    let Some(label) = label else { return };
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        for wait in [150, 600] {
+            tokio::time::sleep(Duration::from_millis(wait)).await;
+            if let Some(window) = app.get_webview_window(&label) {
+                report(window.set_focus().map_err(anyhow::Error::from));
+            }
+        }
+    });
 }
 
 /// A display's frame in points: what window positions and sizes are given in. A display's
@@ -976,9 +1011,10 @@ fn shell_action(app: &AppHandle, action: &str) {
             drop(tauri::async_runtime::spawn(async move { report(show_view(&app, &role)) }));
         }
         // Esc on a surface: the way back for the author, as in a slideshow. A table that
-        // presents by itself, with no editor open, ignores it.
-        "escape" if app.get_webview_window(EDITOR).is_some() => shell_action(&app, "edit"),
-        "escape" => {}
+        // presents by itself after the computer started (#79) ignores it; everywhere else Esc
+        // leaves, to the editor or to Home when no editor is open (#295).
+        "escape" if app.get_webview_window(EDITOR).is_none() && std::env::args().any(|a| a == "--at-login") => {}
+        "escape" => shell_action(&app, "edit"),
         "quit" => app.exit(0),
         // The controller's Full screen button (#198): the table's window in or out of full screen.
         "fullscreen" => {

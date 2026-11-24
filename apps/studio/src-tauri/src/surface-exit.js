@@ -1,4 +1,4 @@
-// Runs on the controller and dev surfaces while presenting. Shows, briefly at the start and
+// Runs on every surface while presenting. Shows, briefly at the start and
 // whenever the pointer goes to the top edge, the way back to the editor.
 (() => {
   if (window.top !== window) return;
@@ -33,7 +33,8 @@
       clearTimeout(timer);
       timer = setTimeout(() => button.classList.remove('on'), ms);
     };
-    show(6000);
+    // A table that visitors see shows it only on the pointer at the top edge.
+    if (!window.__MRS_EXIT_QUIET__) show(6000);
     window.addEventListener('mousemove', (event) => event.clientY < 90 && show(2500));
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', build);
