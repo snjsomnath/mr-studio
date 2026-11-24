@@ -132,3 +132,7 @@ progress { width: 220px; }
 /* The number shown on each display by Identify (identify.html). */
 body.identify { display: grid; place-content: center; background: #ffb454; color: #1a1203; }
 body.identify #number { font-size: 150px; font-weight: 700; line-height: 1; }
+
+/* Command line (#370) */
+#tab-cli code { padding: 1px 4px; border-radius: 4px; background: #f1f3f7; font: 12px ui-monospace, Menlo, Consolas, monospace; }
+.cli-uses { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
