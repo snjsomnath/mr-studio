@@ -1,3 +1,6 @@
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+
 use serde::Serialize;
 
 use crate::EngineError;
@@ -35,22 +38,38 @@ pub struct Context {
     pub gpu: Option<Gpu>,
     /// Worker threads for the CPU reference.
     pub threads: usize,
+    /// Set when the GPU device is lost (a driver reset, a sleeping or unplugged card). The
+    /// engine cannot go on with it; the host starts a new engine on the CPU (#79).
+    pub lost: Arc<AtomicBool>,
 }
 
 impl Context {
     pub fn new(requested: Backend) -> Result<Self, EngineError> {
         let threads = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1);
+        let lost = Arc::new(AtomicBool::new(false));
         if requested == Backend::Cpu {
-            return Ok(Self { backend: Backend::Cpu, gpu: None, threads });
+            return Ok(Self { backend: Backend::Cpu, gpu: None, threads, lost });
         }
         match pollster::block_on(request_gpu()) {
-            Ok(gpu) => Ok(Self { backend: Backend::Gpu, gpu: Some(gpu), threads }),
+            Ok(gpu) => {
+                let flag = lost.clone();
+                gpu.device.set_device_lost_callback(move |reason, message| {
+                    tracing::error!("GPU device lost ({reason:?}): {message}");
+                    flag.store(true, Ordering::Relaxed);
+                });
+                Ok(Self { backend: Backend::Gpu, gpu: Some(gpu), threads, lost })
+            }
             Err(e) if requested == Backend::Auto => {
                 tracing::warn!("no GPU adapter ({e}); using the CPU reference backend");
-                Ok(Self { backend: Backend::Cpu, gpu: None, threads })
+                Ok(Self { backend: Backend::Cpu, gpu: None, threads, lost })
             }
             Err(e) => Err(EngineError::NoGpu(e)),
         }
+    }
+
+    /// Whether the GPU device was lost.
+    pub fn is_lost(&self) -> bool {
+        self.lost.load(Ordering::Relaxed)
     }
 
     pub fn gpu(&self) -> &Gpu {

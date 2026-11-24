@@ -361,24 +361,27 @@ async function main() {
     controller.close();
 
 
-    // CoolPaths: routes over the site's walkways, costed by the engine's shade.
+    // CoolPaths: routes over the site's walkways, costed by heat exposure (PET from the engine's shade, #196).
     const card = (name) => tv.locator('.layer-card', { hasText: name });
     await press('Sunlight', false);
     await press('Cool paths', true);
     const cool = card('Cool paths');
     // A layer's own panel sits on the dashboard canvas; its controls stay in its card.
     const coolPanel = tv.locator('[data-panel="coolpaths/walks"]');
-    await coolPanel.getByText(/less sun|already the coolest/).waitFor();
+    await coolPanel.getByText(/less heat|already the coolest/).waitFor();
     // Its drawing starts under its title, never over it (#137).
-    const [coolTitle, coolBody] = await Promise.all([coolPanel.locator('.mrs-panel-title').boundingBox(), coolPanel.locator('.coolpaths-head').boundingBox()]);
+    const [coolTitle, coolBody] = await Promise.all([coolPanel.locator('.mrs-panel-title').boundingBox(), coolPanel.locator('.coolpaths-verdict').boundingBox()]);
     assert.ok(coolBody.y >= coolTitle.y + coolTitle.height, 'the walks sit under the panel title');
     await dev.waitForTimeout(500);
     const walk = await table.screenshot();
     assert.notDeepEqual(walk, off, 'the network and routes should be drawn');
-    assert.match(await coolPanel.locator('[data-route="shortest"] .coolpaths-length').textContent(), /^\d+ m$/);
+    assert.match(await coolPanel.locator('[data-route="shortest"][data-fact="length"]').textContent(), /^\d+ m$/);
+    // The demo's comparison: mean PET and heat exposure for each walk.
+    assert.match(await coolPanel.locator('[data-route="shortest"][data-fact="pet"]').textContent(), /^\d+\.\d °C PET$/);
+    assert.match(await coolPanel.locator('[data-route="shortest"][data-fact="heat"]').textContent(), /^\d+\.\dk °C·m heat$/);
     if (shots) await dev.screenshot({ path: path.join(shots, 'dev-coolpaths.png') });
     // Its hero is the time of day, and says what the coolest walk saves (#76).
-    await cool.locator('.mrs-hero-fact', { hasText: /% less sun|is the shortest/ }).waitFor();
+    await cool.locator('.mrs-hero-fact', { hasText: /% less heat|is the shortest/ }).waitFor();
     // Its main action is one large button at the top of its stage (#76).
     assert.equal(await cool.locator('.controls-primary button.action', { hasText: 'Try another walk' }).count(), 1);
     if (shots) await tv.screenshot({ path: path.join(shots, 'tv-coolpaths.png') });
@@ -397,7 +400,7 @@ async function main() {
     await cool.locator('.mrs-hero-readout b', { hasText: '01:00' }).waitFor();
     await cool.locator('.mrs-hero-fact', { hasText: 'is down' }).waitFor();
     await coolPanel.getByText(/the sun is down/).waitFor();
-    await coolPanel.getByText(/^0 m sun,/).first().waitFor();
+    await coolPanel.getByText(/estimated PET/).waitFor();
     await press('Cool paths', false);
 
     // Mobility: the site's trips played over time.

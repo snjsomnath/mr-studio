@@ -248,6 +248,11 @@ export class TableView {
   }
 
   /** Pointer input on the table surface for one layer. */
+  /** A canvas above every layer, for what the runtime itself draws (the attention cue). */
+  topCanvas(id: string): CanvasOverlay {
+    return new MapCanvasOverlay(this.map, this.container, id, this.site);
+  }
+
   pointer(track: (cleanup: () => void) => void): TablePointer {
     return tablePointer(this.container, this.site, track);
   }
@@ -326,7 +331,31 @@ export class TableView {
     };
   }
 
-  /** The zoom at which the extent exactly fits the container. */
+  /**
+   * Where the site's extent (the physical model) is on this surface, as its four corners in CSS
+   * pixels from the top left: through the projector when the model is calibrated, otherwise where
+   * the flat map draws it. The table's ribbons go in the space around it (#78).
+   */
+  footprint(): [number, number][] {
+    return this.model?.footprint() ?? this.site.corners.map((corner) => {
+      const point = this.map.project(corner);
+      return [point.x, point.y];
+    });
+  }
+
+  /** Runs when the footprint may have moved: the window resized, the view or the calibration changed. */
+  onViewChange(listener: () => void): () => void {
+    const observer = new ResizeObserver(() => listener());
+    observer.observe(this.container);
+    this.map.on('moveend', listener);
+    const off = this.model?.onCalibrationChange(listener);
+    return () => {
+      observer.disconnect();
+      this.map.off('moveend', listener);
+      off?.();
+    };
+  }
+
   /**
    * A picture of the table as it is now, for the table's card on Home (#131): the map and
    * whatever is drawn over it, `width` pixels wide, as a JPEG. The map draws with WebGL,
@@ -367,6 +396,7 @@ export class TableView {
     });
   }
 
+  /** The zoom at which the extent exactly fits the container. */
   private fitZoom(): number {
     const { width_m, height_m } = this.site.extent;
     const width = Math.max(1, this.container.clientWidth);

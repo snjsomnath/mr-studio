@@ -2,6 +2,7 @@ import { DEFAULT_TRANSITION, MAX_TRANSITION_S, readSiteData } from '@mrstudio/sd
 import type { LayerManifest, LayerState, SequenceStep, Steps, StepTransitionKind } from '@mrstudio/sdk';
 
 import { el, isAmbient, layerButton } from '../controls.ts';
+import { qrSvg } from '../join.ts';
 import type { Store } from '../store.ts';
 import { icon } from './icons.ts';
 
@@ -42,6 +43,39 @@ function segmented<T extends string>(label: string, options: [T, string][], onPi
     return [value, option] as const;
   });
   return { element, set: (value) => buttons.forEach(([v, b]) => b.setAttribute('aria-checked', String(v === value))) };
+}
+
+/**
+ * The guide's phone (#98): its own code and QR, so a guide can run this slideshow from a phone
+ * with the notes in hand. The code is only ever shown here, to the operator.
+ */
+function guidePhone(host: SlidesHost): HTMLElement {
+  const box = el('details', 'ed-guide');
+  const summary = el('summary', undefined, 'Run it from the guide’s phone');
+  const body = el('div', 'ed-guide-body');
+  box.append(summary, body);
+  box.addEventListener('toggle', async () => {
+    if (!box.open || body.childElementCount) return;
+    try {
+      const guide: { code: string; url: string | null } | null = await host.send('session.guide', {});
+      if (!guide) throw new Error('the host did not answer');
+      const url = guide.url ?? `${location.origin}/guide?g=${guide.code}`;
+      const qr = el('div', 'ed-guide-qr');
+      qr.append(qrSvg(url));
+      const text = el('div', 'ed-guide-text');
+      const where = new URL(url);
+      text.append(
+        el('p', undefined, 'Scan with the guide’s phone. It shows each slide’s notes, with Next and Previous.'),
+        el('p', 'ed-guide-address', `${where.host}/guide`),
+        el('p', 'ed-guide-code', guide.code),
+        el('p', 'ed-hint', 'This code is not the visitors’ one, and is never shown on the TV or the table.'),
+      );
+      body.append(qr, text);
+    } catch (error) {
+      body.append(el('p', 'ed-hint', `The guide’s code is not available: ${(error as Error).message}`));
+    }
+  });
+  return box;
 }
 
 /** How a slide comes in: the words the editor uses for each transition. */
@@ -213,6 +247,7 @@ export function slidesSection(host: SlidesHost, id: string): HTMLElement {
     field('At the end', end.element),
     field('After the last category', reveal.element),
     help,
+    guidePhone(host),
   );
 
   /** The maps the Web map layer comes with: its `map` choices other than a service of one's own. */
@@ -392,6 +427,12 @@ export function slidesSection(host: SlidesHost, id: string): HTMLElement {
       title.addEventListener('change', () => change({ title: title.value.trim() || undefined }));
       const details = el('div', 'ed-slide-details');
       details.append(title);
+      // Presenter notes (#98): shown only on the guide's phone, never on the table or the visitors' screens.
+      const notes = el('textarea', 'ed-slide-notes');
+      Object.assign(notes, { rows: 2, maxLength: 2000, placeholder: 'Notes for the guide (only on the guide’s phone)', value: step.notes ?? '' });
+      notes.ariaLabel = `Guide's notes for slide ${n + 1}`;
+      notes.addEventListener('change', () => change({ notes: notes.value.trim() || undefined }));
+      details.append(notes);
       if (timed) {
         const seconds = el('input');
         Object.assign(seconds, { type: 'number', min: '1', max: '600', step: '1', placeholder: '8', value: step.duration_s ? String(step.duration_s) : '' });
@@ -488,7 +529,7 @@ export function slidesSection(host: SlidesHost, id: string): HTMLElement {
   draw();
   host.watch(() => {
     // Keep a title being typed.
-    if (section.contains(document.activeElement) && document.activeElement?.tagName === 'INPUT') return;
+    if (section.contains(document.activeElement) && ['INPUT', 'TEXTAREA'].includes(document.activeElement?.tagName ?? '')) return;
     draw();
   });
   return section;

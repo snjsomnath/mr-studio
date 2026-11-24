@@ -3,7 +3,11 @@ import type { Connection, Control, LayerManifest, LegendRow, TextControl, LayerS
 
 import { AttractLoop, effectOf } from './attract.ts';
 import { icon } from './editor/icons.ts';
-import { baseContext, paramSender } from './layer-manager.ts';
+import { LANGUAGE_NAMES, language, offered, say, t } from './i18n.ts';
+import type { Language } from './i18n.ts';
+import { baseContext, isAtRest, paramSender } from './layer-manager.ts';
+
+export { isAtRest };
 import { layerModule } from './registry.ts';
 import { PHONE_SEND_INTERVAL, toolSection } from './phone-tools.ts';
 import type { Store } from './store.ts';
@@ -99,6 +103,11 @@ function columns(group: HTMLElement, count: number) {
   if (count >= 4) group.dataset.columns = count === 4 ? '2' : '3';
 }
 
+/** The controls people see: all but `tier: 'state'`, which a layer keeps for itself (#194). */
+export function visibleControls(controls: readonly Control[] | undefined): Control[] {
+  return (controls ?? []).filter((control) => control.tier !== 'state');
+}
+
 export function widget(control: Control, send: (value: unknown) => void, act: () => void): Widget {
   const row = el('div', `control control-${control.type}`);
   const id = `c-${Math.random().toString(36).slice(2)}`;
@@ -164,7 +173,7 @@ export function widget(control: Control, send: (value: unknown) => void, act: ()
         group.setAttribute('aria-label', control.label);
         const input = el('input');
         Object.assign(input, { id, type: 'date', className: 'control-date-more' });
-        input.setAttribute('aria-label', `Another ${control.label.toLowerCase()}`);
+        input.setAttribute('aria-label', t('Another {thing}', { thing: control.label.toLowerCase() }));
         input.addEventListener('input', () => input.value && send(input.value));
         let shown = '';
         const dateOf = (preset: string) => {
@@ -235,8 +244,9 @@ export function layerButton(
 ): { name: string; description: string; icon: string | undefined; side: 'left' | 'right' } {
   const button = state?.button ?? {};
   return {
-    name: button.name ?? instanceTitle(id, manifest),
-    description: button.description ?? manifest.description ?? '',
+    // The site's own words are written in English and said in the visitors' language (#80).
+    name: button.name ? t(button.name) : instanceTitle(id, manifest),
+    description: button.description ? t(button.description) : (manifest.description ?? ''),
     icon: button.icon ?? manifest.icon,
     side: button.side ?? defaultSide,
   };
@@ -246,6 +256,7 @@ export function layerButton(
 export function isAmbient(manifest: LayerManifest): boolean {
   return manifest.category === 'base' || manifest.category === 'ambient';
 }
+
 
 /**
  * Layer packages the editor offers to add. The building blocks demo shows the SDK to
@@ -285,7 +296,7 @@ export function railButtons(store: Store): RailButton[] {
   const ids = scene.filter((id) => {
     const manifest = store.manifest(state.layers[id]?.layer ?? '');
     // A layer's items have no button: they come on with their layer.
-    return manifest !== undefined && !isAmbient(manifest) && !state.layers[id]?.parent;
+    return manifest !== undefined && !isAtRest(manifest, state.layers[id]) && !state.layers[id]?.parent;
   });
   const order = (id: string) => state.layers[id]?.button?.order ?? Number.POSITIVE_INFINITY;
   const sorted = [...ids].sort((a, b) => order(a) - order(b) || scene.indexOf(a) - scene.indexOf(b));
@@ -344,23 +355,73 @@ interface Card {
  * words and controls are in the centre. The map's ambient layers have no button.
  * The layer's panels are on the dashboard canvas.
  */
+/**
+ * Full screen from the controller (#198). In the app the table's window goes in or out of
+ * full screen; in a browser, as on the Chalmers demo, the controller's own page does.
+ */
+function fullScreen(): void {
+  if ((window as { __MRS_SHELL__?: boolean }).__MRS_SHELL__) {
+    // The app's shell takes the address and stays on this page.
+    window.location.href = '/__shell/fullscreen';
+    return;
+  }
+  if (document.fullscreenElement) void document.exitFullscreen().catch(() => {});
+  else void document.documentElement.requestFullscreen().catch(() => {});
+}
+
+/**
+ * The language switch (#80): the languages' codes side by side, flag-free, the current one pressed.
+ * Each says its own name to a screen reader.
+ */
+export function languageSwitch(languages: Language[], now: Language, pick: (language: Language) => void): HTMLElement {
+  const group = el('div', 'language-switch');
+  group.setAttribute('role', 'group');
+  group.setAttribute('aria-label', t('Language'));
+  for (const code of languages) {
+    const press = el('button', 'language-option', code.toUpperCase());
+    press.type = 'button';
+    press.lang = code;
+    press.title = LANGUAGE_NAMES[code];
+    press.setAttribute('aria-label', LANGUAGE_NAMES[code]);
+    press.setAttribute('aria-pressed', String(code === now));
+    press.addEventListener('click', () => code !== now && pick(code));
+    group.append(press);
+  }
+  return group;
+}
+
 /** The About page on the controller screen: the site's words and its credits. */
-function aboutPage(about: TvAbout, fallback: string): HTMLElement {
+function aboutPage(about: TvAbout, fallback: string, siteLogo: string | null): HTMLElement {
   const page = el('section', 'layer-card layer-open about-page');
   page.hidden = true;
-  page.append(el('h2', 'layer-open-name', about.title ?? fallback));
-  if (about.text) page.append(el('p', 'layer-about', about.text));
+  // The logos of the people behind the table, as the Chalmers demo has them (#198).
+  const logos = (about.logos ?? (siteLogo ? [{ path: siteLogo }] : [])).filter((l) => l && typeof l.path === 'string' && l.path);
+  if (logos.length > 0) {
+    const row = el('div', 'about-logos');
+    for (const logo of logos) {
+      const image = el('img', 'about-logo');
+      image.src = `/site/${logo.path.replace(/^\/+/, '')}`;
+      image.alt = logo.name ?? '';
+      image.addEventListener('error', () => image.remove());
+      row.append(image);
+    }
+    page.append(row);
+  }
+  page.append(el('h2', 'layer-open-name', about.title ? t(about.title) : fallback));
+  if (about.text) page.append(el('p', 'layer-about', t(about.text)));
   const credits = (about.credits ?? []).filter((c) => c && typeof c.name === 'string');
   if (credits.length > 0) {
     const list = el('dl', 'about-credits');
     for (const credit of credits) {
       const item = el('div', 'about-credit');
-      item.append(el('dt', undefined, credit.role ?? ''), el('dd', undefined, credit.name));
-      if (credit.note) item.append(el('dd', 'about-note', credit.note));
+      item.append(el('dt', undefined, credit.role ? t(credit.role) : ''), el('dd', undefined, credit.name));
+      if (credit.note) item.append(el('dd', 'about-note', t(credit.note)));
       list.append(item);
     }
     page.append(list);
   }
+  // The maps and data on the table now, in the words their services ask for (#37).
+  page.append(el('p', 'about-map'));
   return page;
 }
 
@@ -384,12 +445,12 @@ function stepStrip(id: string, store: Store, connection: Connection): { element:
     return press;
   };
   const step = (to: string) => void connection.request('layer.step', { layer: id, to }).catch(() => {});
-  const previous = button('Previous step', 'previous', () => step('previous'));
-  const play = button('Play the steps', 'play', () => {
+  const previous = button(t('Previous step'), 'previous', () => step('previous'));
+  const play = button(t('Play the steps'), 'play', () => {
     const playing = store.state.layers[id]?.step?.playing ?? false;
     void connection.request('layer.play', { layer: id, playing: !playing }).catch(() => {});
   });
-  const next = button('Next step', 'next', () => step('next'));
+  const next = button(t('Next step'), 'next', () => step('next'));
   play.classList.add('is-play');
   const words = el('div', 'step-words');
   const count = el('div', 'step-count');
@@ -410,13 +471,15 @@ function stepStrip(id: string, store: Store, connection: Connection): { element:
       // The layer the slideshow shows now, for its name and its sub-steps' names.
       const shown = sequence ? shownBy(store, id) : undefined;
       const shownState = shown ? store.state.layers[shown] : undefined;
-      const shownName = shownState ? (shownState.button?.name ?? store.manifest(shownState.layer)?.name ?? '') : '';
-      count.textContent = sequence ? `${Math.min(at.index + 1, at.count)} of ${at.count}` : `${at.index} of ${at.count} shown`;
-      title.textContent = at.title ?? shownName;
+      const shownName = shownState ? (shownState.button?.name ? t(shownState.button.name) : (store.manifest(shownState.layer)?.name ?? '')) : '';
+      // A step's words come from the site (a slide's title) or from the layer (its own steps).
+      const words = store.manifest((sequence ? shownState?.layer : state.layer) ?? state.layer);
+      count.textContent = sequence ? t('{n} of {count}', { n: Math.min(at.index + 1, at.count), count: at.count }) : t('{n} of {count} shown', { n: at.index, count: at.count });
+      title.textContent = at.title ? say(at.title, words) : shownName;
       title.hidden = !title.textContent;
-      line.textContent = at.description ?? '';
+      line.textContent = say(at.description ?? '', words);
       line.hidden = !line.textContent;
-      source.textContent = at.source ? `Source: ${at.source}` : '';
+      source.textContent = at.source ? t('Source: {source}', { source: at.source }) : '';
       source.hidden = !at.source;
       // Sub-steps: the slideshow mirrors the shown layer's; any other layer has its own.
       const sub = sequence ? at.sub : { index: at.index, count: at.count };
@@ -424,7 +487,7 @@ function stepStrip(id: string, store: Store, connection: Connection): { element:
       subs.hidden = !sub || sub.count === 0 || (sequence === false && names.length === 0);
       if (sub && sub.count > 0) {
         const items = Array.from({ length: sub.count }, (_, i) => {
-          const item = el('li', 'step-sub', names[i] ?? String(i + 1));
+          const item = el('li', 'step-sub', names[i] ? say(names[i]!, store.manifest((shownState ?? state).layer)) : String(i + 1));
           item.classList.toggle('is-shown', i < sub.index);
           item.classList.toggle('is-current', i === sub.index - 1);
           return item;
@@ -436,7 +499,7 @@ function stepStrip(id: string, store: Store, connection: Connection): { element:
       if (playing !== at.playing) {
         playing = at.playing;
         play.replaceChildren(icon(at.playing ? 'pause' : 'play', 26));
-        play.title = at.playing ? 'Pause the steps' : 'Play the steps';
+        play.title = at.playing ? t('Pause the steps') : t('Play the steps');
         play.setAttribute('aria-label', play.title);
         play.setAttribute('aria-pressed', String(at.playing));
       }
@@ -457,7 +520,7 @@ function shownBy(store: Store, sequence: string): string | undefined {
  */
 function legendZone(id: string, store: Store): { element: HTMLElement; sync(state: LayerState): boolean } {
   const zone = el('ul', 'stage-legend');
-  zone.setAttribute('aria-label', 'Legend');
+  zone.setAttribute('aria-label', t('Legend'));
   zone.hidden = true;
   let drawn = '';
   return {
@@ -494,11 +557,62 @@ function legendZone(id: string, store: Store): { element: HTMLElement; sync(stat
           const swatch = el('i', 'legend-swatch');
           swatch.dataset.shape = row.shape ?? 'fill';
           if (row.color) swatch.style.setProperty('--swatch', row.color);
-          item.append(swatch, el('span', 'legend-label', row.label));
+          item.append(swatch, el('span', 'legend-label', say(row.label, from ? store.manifest(from.layer) : undefined)));
           return item;
         }),
       );
       return follows;
+    },
+  };
+}
+
+/** A sound a layer published for the controller (#150). */
+interface SoundRow {
+  id: string;
+  label: string;
+  colour: string;
+  at: [number, number];
+  playing: boolean;
+}
+
+/**
+ * Sound cards (#150): one card per sound a layer published (`shared.sounds`), in the point's
+ * colour, lit while it plays. Tapping a card plays that sound on the table, through the layer's
+ * `sound` tool at the point. A slideshow shows the cards of the layer on show.
+ */
+function soundZone(id: string, store: Store, connection: Connection): { element: HTMLElement; sync(state: LayerState): void } {
+  const zone = el('div', 'stage-sounds');
+  zone.setAttribute('aria-label', t('Sounds'));
+  zone.hidden = true;
+  let drawn = '';
+  return {
+    element: zone,
+    sync(state) {
+      const source = (store.manifest(state.layer)?.sequence ? shownBy(store, id) : undefined) ?? id;
+      const from = store.state.layers[source];
+      const list = (from?.shared as { sounds?: unknown } | undefined)?.sounds;
+      const rows = Array.isArray(list) ? (list as SoundRow[]).filter((row) => row && typeof row.label === 'string' && Array.isArray(row.at)) : [];
+      zone.hidden = rows.length === 0;
+      const next = JSON.stringify([source, rows]);
+      if (next === drawn) return;
+      drawn = next;
+      zone.replaceChildren(
+        ...rows.slice(0, 12).map((row) => {
+          const card = el('button', 'sound-card') as HTMLButtonElement;
+          card.type = 'button';
+          card.classList.toggle('is-playing', Boolean(row.playing));
+          card.style.setProperty('--sound', row.colour || 'var(--accent)');
+          card.setAttribute('aria-pressed', String(Boolean(row.playing)));
+          const dot = el('i', 'sound-dot');
+          const words = el('span', 'sound-words');
+          words.append(el('b', undefined, row.label), el('small', undefined, row.playing ? t('Playing') : t('Tap to play')));
+          card.append(dot, words);
+          card.addEventListener('click', () => {
+            void connection.request('tool.input', { layer: source, tool: 'sound', geometry: { type: 'Point', coordinates: row.at } }).catch(() => {});
+          });
+          return card;
+        }),
+      );
     },
   };
 }
@@ -529,18 +643,21 @@ export class Controller {
     this.centre = centre;
     const { site } = store.state;
     this.store = store;
+    const heading = t(site.branding.title ?? site.name);
+    const welcome = site.branding.welcome ? t(site.branding.welcome) : undefined;
     if (centre) {
-      const credits = (site.tv?.about?.credits ?? []).map((c) => (c.role ? `${c.role}: ${c.name}` : c.name)).join('  ·  ');
-      this.attract = new AttractLoop(site.branding.title ?? site.name, () => this.attractStops(), { stepS: site.tv?.attract_s, credits: credits || undefined });
+      const credits = (site.tv?.about?.credits ?? []).map((c) => (c.role ? `${t(c.role)}: ${c.name}` : c.name)).join('  ·  ');
+      this.attract = new AttractLoop(heading, () => this.attractStops(), { stepS: site.tv?.attract_s, credits: credits || undefined, welcome });
       this.welcome = this.attract.element;
     } else {
       this.welcome = el('div', 'layer-welcome');
-      this.welcome.append(el('h2', undefined, site.branding.title ?? site.name), el('p', undefined, 'Choose a layer to bring it to the table.'));
+      this.welcome.append(el('h2', undefined, heading), el('p', undefined, welcome ?? t('Choose a layer to bring it to the table.')));
     }
     this.connection = connection;
     this.role = role;
-    this.about = centre && site.tv?.about ? aboutPage(site.tv.about, site.branding.title ?? site.name) : undefined;
+    this.about = centre && site.tv?.about ? aboutPage(site.tv.about, heading, site.branding.logo) : undefined;
     this.arrange();
+    this.creditMaps();
     if (centre) {
       this.listenForKeys();
       this.idleReset();
@@ -548,8 +665,9 @@ export class Controller {
     store.onLayer((id, state) => {
       // Opening a layer closes the About page.
       const manifest = store.manifest(state.layer);
-      if (state.active && !state.parent && this.aboutOpen && manifest && !isAmbient(manifest)) this.showAbout(false);
+      if (state.active && !state.parent && this.aboutOpen && manifest && !isAtRest(manifest, state)) this.showAbout(false);
       this.cards.get(id)?.sync(state);
+      this.creditMaps();
       // The slideshow's stage speaks for the layer it shows: its legend and step names follow that layer.
       if (state.shown_by && store.state.layers[state.shown_by]) this.cards.get(state.shown_by)?.sync(store.state.layers[state.shown_by]!);
       // A button moves when its author changes its side, and the buttons shared out around it may move too.
@@ -634,7 +752,7 @@ export class Controller {
       const state = store.state.layers[other];
       const manifest = state && store.manifest(state.layer);
       // Layers a slideshow shows go off with it; the host does that.
-      if (other === id || !state?.active || state.parent || state.shown_by || !manifest || isAmbient(manifest) || manifest.alongside) continue;
+      if (other === id || !state?.active || state.parent || state.shown_by || !manifest || isAtRest(manifest, state) || manifest.alongside) continue;
       void connection.request('layer.activate', { layer: other, active: false }).catch(() => {});
     }
   }
@@ -671,7 +789,7 @@ export class Controller {
     text.append(heading, about);
     words.append(mark, text);
     const send = paramSender(connection, id);
-    const widgets = (manifest.controls ?? []).map((control) =>
+    const widgets = visibleControls(manifest.controls).map((control) =>
       widget(
         control,
         (value) => send({ [control.id]: value }),
@@ -702,17 +820,18 @@ export class Controller {
     const controls = el('div', 'controls');
     const more = el('details', 'controls-more');
     const moreRows = el('div', 'controls');
-    more.append(el('summary', undefined, 'More settings'), moreRows);
+    more.append(el('summary', undefined, t('More settings')), moreRows);
     primary.append(...widgets.filter((w) => tierOf(w) === 'primary').map((w) => w.row));
     controls.append(...widgets.filter((w) => tierOf(w) === 'secondary').map((w) => w.row));
     moreRows.append(...widgets.filter((w) => tierOf(w) === 'more').map((w) => w.row));
     // A layer with steps (a slideshow, or a map revealed part by part) gets ◀ ▶, play and the info strip (#43, #76).
     const strip = stepStrip(id, store, connection);
     const legend = legendZone(id, store);
+    const sounds = soundZone(id, store, connection);
     body.append(words, strip.element);
     if (!hero.hidden) body.append(hero);
     for (const group of [primary, controls]) if (group.childElementCount > 0) body.append(group);
-    body.append(legend.element);
+    body.append(legend.element, sounds.element);
     // "More settings" closes the primary row when there is one, so it costs no height of its own.
     if (moreRows.childElementCount > 0) (primary.childElementCount > 0 ? primary : body).append(more);
 
@@ -744,6 +863,7 @@ export class Controller {
         body.hidden = !open;
         strip.sync(state);
         strip.element.classList.toggle('legend-follows', legend.sync(state));
+        sounds.sync(state);
         // A slideshow made of layers is driven by its steps: its own slide controls step aside.
         const stepped = Boolean(manifest.sequence && state.step);
         for (const w of widgets) {
@@ -769,7 +889,7 @@ export class Controller {
     return store.state.scene.filter((id) => {
       const state = store.state.layers[id];
       const manifest = state && store.manifest(state.layer);
-      return Boolean(state?.active && !state.parent && !state.shown_by && manifest && !isAmbient(manifest));
+      return Boolean(state?.active && !state.parent && !state.shown_by && manifest && !isAtRest(manifest, state));
     });
   }
 
@@ -835,6 +955,21 @@ export class Controller {
     }, 1000);
   }
 
+  /** The Credits page names the base map's service, and any other credit a layer on the table published as `source`. */
+  private creditMaps(): void {
+    const line = this.about?.querySelector<HTMLElement>('.about-map');
+    if (!line) return;
+    const { state } = this.store;
+    const credits = new Set<string>();
+    for (const id of state.scene) {
+      const layer = state.layers[id];
+      const source = layer?.active ? layer.shared?.source : undefined;
+      if (typeof source === 'string' && source.trim()) credits.add(source.trim());
+    }
+    line.textContent = credits.size > 0 ? t('Maps and data: {credits}', { credits: [...credits].join(' · ') }) : '';
+    line.hidden = credits.size === 0;
+  }
+
   private get aboutOpen(): boolean {
     return this.about !== undefined && !this.about.hidden;
   }
@@ -847,11 +982,19 @@ export class Controller {
   }
 
   /**
-   * Closes the open layer and the About page, so the controller goes back to its welcome.
+   * Reset view: closes the About page and puts the table back the way it starts, so the
+   * controller goes back to its welcome.
    * Tools made to run alongside (the phones' sketch) stay on, as they do when a layer opens.
    */
   reset(): void {
     this.showAbout(false);
+    // The host puts every layer back the way the table starts: what was opened goes off, the
+    // map at rest comes back, and changed settings return to the saved ones (#198).
+    void this.connection.request('layers.reset', {}).catch(() => this.closeLayers());
+  }
+
+  /** Closes the open layers, leaving tools kept alongside (the phones' sketch) on. */
+  private closeLayers(): void {
     for (const id of this.openLayers()) {
       if (this.store.manifest(this.store.state.layers[id]!.layer)?.alongside) continue;
       void this.connection.request('layer.activate', { layer: id, active: false }).catch(() => {});
@@ -860,10 +1003,13 @@ export class Controller {
 
   /**
    * The core's own buttons at the foot of the controller screen's rail, drawn dashed so they
-   * read as actions, not layers (#75): Reset, and About when the site has `tv.about`.
+   * read as actions, not layers (#75), in the Chalmers demo's groups (#198):
+   * - Map controls: Reset view, Full screen and Calibrate. `tv.map_controls: false` leaves Reset alone.
+   * - About: Credits, when the site has `tv.about`.
    */
   actions(): HTMLElement {
     const box = el('div', 'rail-actions');
+    const operator = this.store.state.site.tv?.map_controls !== false;
     const action = (label: string, iconName: string, run: () => void) => {
       const press = el('button', 'layer-button action-button');
       press.type = 'button';
@@ -875,15 +1021,33 @@ export class Controller {
       box.append(press);
       return press;
     };
-    action('Reset', 'reset', () => this.reset());
+    if (operator) box.append(el('div', 'rail-group', t('Map controls')));
+    action(operator ? t('Reset view') : t('Reset'), 'reset', () => this.reset());
+    if (operator) {
+      action(t('Full screen'), 'fullscreen', () => fullScreen());
+      // Calibrate opens the projector calibration on the table, and closes it again.
+      let calibrating = false;
+      const calibrate = action(t('Calibrate'), 'overscan', () => {
+        void this.connection.request('calibration.mode', { active: !calibrating }).catch(() => {});
+      });
+      calibrate.setAttribute('aria-pressed', 'false');
+      this.connection.on('calibration.mode', (p: { active: boolean }) => {
+        calibrating = Boolean(p.active);
+        calibrate.setAttribute('aria-pressed', String(calibrating));
+      });
+    }
     if (this.about) {
-      this.aboutButton = action('About', 'info', () => {
+      if (operator) box.append(el('div', 'rail-group', t('About')));
+      this.aboutButton = action(t('Credits'), 'people', () => {
         const show = !this.aboutOpen;
-        if (show) this.reset();
+        if (show) this.closeLayers();
         this.showAbout(show);
       });
       this.aboutButton.setAttribute('aria-pressed', 'false');
     }
+    // SV / EN (#80): the table, the controller and the phones that have not chosen for themselves.
+    const languages = offered(this.store.state);
+    if (languages.length > 1) box.append(languageSwitch(languages, language(), (next) => void this.connection.request('session.language', { language: next }).catch(() => {})));
     return box;
   }
 
@@ -901,7 +1065,7 @@ export class Controller {
     header.append(title);
 
     const power = el('input');
-    Object.assign(power, { type: 'checkbox', className: 'switch', ariaLabel: `Turn ${name} on or off` });
+    Object.assign(power, { type: 'checkbox', className: 'switch', ariaLabel: t('Turn {name} on or off', { name }) });
     power.addEventListener('change', () => {
       connection.request('layer.activate', { layer: id, active: power.checked }).catch(() => (power.checked = !power.checked));
     });
@@ -911,7 +1075,7 @@ export class Controller {
 
     const body = el('div', 'layer-body');
     const send = paramSender(connection, id, { minInterval: phone ? PHONE_SEND_INTERVAL : 0 });
-    const widgets = (manifest.controls ?? [])
+    const widgets = visibleControls(manifest.controls)
       .filter((control) => !phone || control.phone)
       .map((control) =>
         widget(

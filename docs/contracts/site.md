@@ -70,7 +70,7 @@ sites/<id>/
       "look": [ { "id": "photo", "block": "raster", "data": "photo" } ] }
   },
   "tv": { "layout": "default" },
-  "branding": { "title": "MR Studio", "logo": null }
+  "branding": { "title": "MR Studio", "logo": null, "welcome": "Choose a layer to bring it to the table." }
 }
 ```
 
@@ -87,6 +87,7 @@ Rules:
 - `layers[].button` is how the layer is offered on the controller: `{ "name", "description", "icon", "side", "group", "order" }`, all optional. `name` (up to 40 characters) and `description` (up to 200) replace the layer package's own words, `icon` is an icon name in lowercase letters, digits and dashes, `side` is `"left"` or `"right"`, `group` (up to 40 characters) puts it in a named group of its rail, and `order` (a number, lower first) places it there. The map never shows these; they are for the controller and phones. How the controller uses them is in [present.md](present.md).
 - `layers[].items` and `layers[].steps`: see [Layers, items and sequences](#layers-items-and-sequences).
 - `custom`: see [Custom layers](#custom-layers).
+- `branding` is what the controller says about the table: `title` (up to 80 characters; the table's `name` without it), `logo` (a picture inside the site folder) and `welcome`, the line under the title on the controller's home screen (up to 160; a default sentence without it). With `name` and `timezone` these are the table settings the editor changes through `site.table` (session.md, "Settings: this computer or this table"). Nothing in site.json belongs to the computer: screens, colour, keys and outside sources are app settings. `branding.languages` lists the languages visitors can switch between (#80), the first the table starts in: `["en", "sv"]`, or `["sv", "en"]` to start in Swedish; with one or none there is no switch. `branding.translations` holds the table's own words in other languages, by language and then by the English text: `{ "sv": { "Sample district": "Exempelstadsdelen" } }`. The editor lists them under Table settings, Languages for visitors.
 - `palette` is the table's colours (#93): `{ "set": "night", "slots": { "accent": "#ff8a4c" } }`. `set` is one of the SDK's built-in sets (`night`, the default, `ember`, `harbour`; `PALETTE_SETS` in `packages/sdk/src/palette.ts`), and `slots` changes single slots, each `#rrggbb`. The slots are `accent`, `focus`, `warm`, `cool`, `green`, `warning`, `neutral` and `cat1` to `cat8`, with the meanings in [visualisation.md](../visualisation.md) C4. Custom layers name colours by slot (`"@warm"`), so changing the palette recolours them.
 - `table.front` is the edge of the projected image where visitors stand: `"bottom"` (the default), `"top"`, `"left"` or `"right"`. For a viewer at the front, the model hides what is projected on the far side, so ribbons and other at-a-glance info go to the front first, and a ribbon set to `"auto"` prefers it, then the two sides next to it, and uses the far side last.
 - `table.ribbons` says what the projector's blank space around the model shows, per side (`top`, `bottom`, `left`, `right`): `"off"`, `"auto"` (use the free band when there is one) or `{ "cm": 9 }`. See [present.md](present.md), Ribbon.
@@ -114,7 +115,7 @@ A layer is data plus animation plus interaction. In the scene, an entry of `laye
 
 A template in the New layer gallery (#59) is not a definition. Adding one writes an ordinary instance with the template's params and button, and nothing refers back to the template.
 
-**Items.** A layer can hold `items`: instances that belong to it, such as public transport, traffic or trees inside a sun study, or a data visual on a slide. An item has `use`, `id`, `params`, `hide` and `active`, and nothing else: no button, no items and no steps of its own. It is drawn right on top of its layer, in list order. It shows only while its layer is open: when the layer turns on, each item whose `active` is true (the default) turns on with it, and when the layer turns off, all its items do. The map at rest is the layers with no button (category `base` and `ambient`) at the top level of the scene, so a table can have public transport at rest and another copy inside one layer.
+**Items.** A layer can hold `items`: instances that belong to it, such as public transport, traffic or trees inside a sun study, or a data visual on a slide. An item has `use`, `id`, `params`, `hide` and `active`, and nothing else: no button, no items and no steps of its own. It is drawn right on top of its layer, in list order. It shows only while its layer is open: when the layer turns on, each item whose `active` is true (the default) turns on with it, and when the layer turns off, all its items do. The map at rest is the layers with no button at the top level of the scene: those of category `base` and `ambient`, and any other layer that starts on (`active: true`) and has no `button`, such as a Map data layer colouring the streets (#204). So a table can have public transport at rest and another copy inside one layer. A layer at rest is not on the controller's rails and stays on while button layers open and close.
 
 **Steps.** `steps` says how Next moves through a layer: `mode` (`"manual"` or `"timed"`), `loop` (after the last step, back to the first) and `reveal` (once a step's sub-steps are done, Next `"stop"`s or moves on: `"then-next"`). See [present.md](present.md), Steps.
 
@@ -177,7 +178,7 @@ What the player draws today (`packages/sdk/src/recipe.ts`; WMS and tiles data ar
 | motion | `gravity` (on points) | `network` (a site dataset of lines, default `roads`), `count`, `speed_mm`, `weight`, `size_mm`, `trail`: people walking to each point along the street network by the shortest route |
 | motion | `timeline` (on any look) | `column` (a year or date column), `duration_s`, `hold_s`, `keep` (stay, or come and go), `window` (share of the span a feature stays): features appear as a sweep passes their time, with a brief flare on points; features with no time always show |
 | motion | `place` (on points) | `motion` (one of 22 place motions, `PLACE_MOTIONS` in place-motions.ts: ripples, catchment, territories, constellations, comets, metaballs, orbiters, spokes, fireflies, contours; dot-pulse, counter-rings, sound-ring, spectrum, bulge, galaxy; gravity-well, pilgrims, lit-blocks, field-lines, street-pulses, threads), its other files (`streets`, `buildings`, `targets`: site datasets; `activity`, `flows`, `links`: CSV datasets, see the place data standard below), `cycle_s` (seconds the activity table takes to play through), `colours` (`each`, `category` or a slot), `speed`, `glow` and the motion's own knobs. Places come from the look's points: `name`, `weight` and `category` are found by name |
-| motion | `sound` (on points) | `column` (names each point's sound file: a bare name is in `data/sounds/`, a path is in the site folder) or `file` (one sound for every point), `trigger` (`chorus`: a few at a time at random; `loop`: every point, always), `voices`, `gap_s`, `volume` (0 to 1), `reach_mm`, `width_mm`, `sensitivity` (0 calm to 1 every note): each call in the sound sends out a ring in the point's colour, louder calls wider, higher sounds faster. Sounds play on the table surface only; the editor shows the rings silently unless Listen here is on. Files are added with `POST /api/data/sounds?name=` (WAV, MP3, OGG, M4A, kept as they are) and listed with `GET /api/data/sounds` |
+| motion | `sound` (on points) | `column` (names each point's sound file: a bare name is in `data/sounds/`, a path is in the site folder) or `file` (one sound for every point), `trigger` (`chorus`: a few at a time at random; `loop`: every point, always; `tap`: only when asked), `voices`, `gap_s`, `volume` (0 to 1), `reach_mm`, `width_mm`, `sensitivity` (0 calm to 1 every note): each call in the sound sends out a ring in the point's colour, louder calls wider, higher sounds faster. Sounds play on the table surface only; the editor shows the rings silently unless Listen here is on. Files are added with `POST /api/data/sounds?name=` (WAV, MP3, OGG, M4A, kept as they are) and listed with `GET /api/data/sounds`. A custom layer with a sound motion also gets a `sound` point tool and a `play` param (#150): a tap on a point on the table or a phone's map, or on its card on the controller (the controller lists every sound as a card, lit while it plays), plays that sound once; a step whose `params` give `play` (the sound's name, such as `"Robin"`, or its id) plays it when the step is shown |
 
 **Place data standard (#160).** Every place motion reads the same few files, so data is prepared once and any motion can be tried on it:
 
@@ -217,7 +218,7 @@ What the composer needs, and where it stands:
 | Items that come and go with a layer, sequences, custom layers | In format 3: `items`, `steps`, `custom`; the host keeps items with their layer (`scene.add { parent }`, `scene.move { parent }`) |
 | TV dashboards built from widgets | Done: `tv` (theme, pages) and layer `panels`; see [dashboard.md](dashboard.md) |
 
-Ambient layers (`cars`, `building-lights`, `transit`, `trees`) animate on the table surface from site data or generated paths. They need no kernel; the layer rule "no solver code" still holds.
+Ambient layers (`cars`, `building-lights`, `street-life`, `street-glow`, `transit`, `trees`) animate on the table surface from site data or generated paths. They need no kernel; the layer rule "no solver code" still holds.
 `basemap` is the dark base map and `slideshow` shows a site's media. `sites/sample` has the data for all of them and is the dummy scene to start from.
 A layer whose data a site lacks still runs where it can: traffic and transit fall back to a generated street grid, and the palette says which data is missing.
 
@@ -276,3 +277,28 @@ The mesh is rasterised from above and the highest surface in each cell wins, so 
 ```
 
 The table surface (`/table`) shows exactly this view, which may be larger than `extent` when the projector overshoots the table. With `window`, the zoom is rescaled when the window has another width, so the same ground stays in view. Without a calibration, and always in dev mode, the surface fits `extent` to the window.
+
+## One file: `.mrstable` (#85)
+
+A table goes to another computer as one file, `<name>.mrstable`: a zip of the table folder
+with `mrstable.json` at the top. `crates/mrs-site/src/package.rs` writes and reads it.
+
+- **In it:** site.json, data, media, calibration.json, custom layers. Everything in the folder
+  except what is listed below.
+- **Never in it:** hidden files and folders (`.mrstudio` revision history, `.git`, `.env`,
+  `.DS_Store`), names that usually hold keys (`credentials*`, `secrets*`, `sources.json`,
+  `*.pem`, `*.key`, `*.p12`, `*.pfx`), links, and older `.mrstable` files. Keys live in the
+  computer's keychain (#41) and never travel.
+- **`mrstable.json`:** `{ format: 1, name, id, exported, app, sources: [{ id, kind, name, layers }] }`.
+  `sources` are the outside sources the layers use (as `site.sources` answers), named as the
+  exporting computer knew them, so the receiving computer knows what to set up.
+- **Opening:** unpacks into a new folder in the sites folder (into a hidden `.<name>.unpacking`
+  folder first, renamed when complete). An existing table is never overwritten. A second copy
+  becomes "Name 2" with its own id. site.json is upgraded to this build's format. Opening
+  reports the sources not set up here and any problems with the table. Paths that leave the
+  folder are refused, and so is a package that unpacks to more than 16 GB or comes from a
+  newer package format.
+
+The app has File › Export table… and, on Home, "Open a table file". Double-clicking a
+`.mrstable` file opens it as well. From the command line:
+`mrstudio export <site> --out X.mrstable` and `mrstudio import X.mrstable --into <sites>`.

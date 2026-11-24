@@ -42,9 +42,30 @@ enum Command {
         /// auto, gpu or cpu.
         #[arg(long, default_value = "auto")]
         backend: String,
+        /// A phone relay to join through (#89), such as https://relay.example.org. Its token
+        /// is read from MRS_RELAY_TOKEN. Without it the relay in Sources and keys is used, if any.
+        #[arg(long)]
+        relay: Option<String>,
     },
     /// Rewrite a site's site.json for this version's site format. The original is kept beside it.
     Migrate { site: PathBuf },
+    /// Pack a table into one .mrstable file to open on another computer. No keys go with it.
+    Export {
+        site: PathBuf,
+        /// The file to write, for example Lindholmen.mrstable.
+        #[arg(long)]
+        out: PathBuf,
+        /// Folder with the core layer packages.
+        #[arg(long, default_value = "packages/layers")]
+        layers: PathBuf,
+    },
+    /// Open a .mrstable file as a new table folder in a sites folder.
+    Import {
+        file: PathBuf,
+        /// The sites folder to unpack into.
+        #[arg(long, default_value = "sites")]
+        into: PathBuf,
+    },
     /// Check a site package and report what the scene bake produces.
     Validate { site: PathBuf },
     /// Bake the scene and write the rasters to `<site>/scene/` for inspection.
@@ -77,7 +98,7 @@ enum Command {
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt().with_target(false).init();
     match Cli::parse().command {
-        Command::Dev { site, layers, web, port, lan, public_url, backend } => {
+        Command::Dev { site, layers, web, port, lan, public_url, backend, relay } => {
             let backend = Backend::parse(&backend).context("backend must be auto, gpu or cpu")?;
             let ip = if lan { [0, 0, 0, 0] } else { [127, 0, 0, 1] };
             let host = mrs_host::start(HostConfig {
@@ -90,7 +111,11 @@ async fn main() -> anyhow::Result<()> {
                 sources: std::sync::Arc::new(open_sources()),
             })
             .await?;
-            let code = &host.state.hub.session().code;
+            if let Some(url) = relay {
+                let token = std::env::var("MRS_RELAY_TOKEN").context("--relay needs the relay's token in MRS_RELAY_TOKEN")?;
+                host.connect_relay(mrs_host::relay::RelayLink { url, authorization: format!("Bearer {token}") });
+            }
+            let code = host.state.hub.session().code;
             tracing::info!("host listening on http://{} (session code {code})", host.addr);
             tokio::select! {
                 _ = tokio::signal::ctrl_c() => {}
@@ -99,6 +124,8 @@ async fn main() -> anyhow::Result<()> {
             Ok(())
         }
         Command::Migrate { site } => migrate(&site),
+        Command::Export { site, out, layers } => export(site, &out, layers).await,
+        Command::Import { file, into } => import(&file, &into),
         Command::Validate { site } => validate(&site).map(|_| ()),
         Command::Prepare { site } => prepare(&site),
         Command::NewSite { dir, name, lon, lat, width_m, height_m, rotation_deg } => {
@@ -123,6 +150,54 @@ fn open_sources() -> mrs_host::Sources {
             Sources::in_memory()
         }
         None => Sources::in_memory(),
+    }
+}
+
+/// Starts the table's host for a moment, so the package lists the sources its layers use.
+async fn export(site: PathBuf, out: &Path, layers: PathBuf) -> anyhow::Result<()> {
+    let host = mrs_host::start(HostConfig {
+        site_dir: site,
+        layers_dir: layers,
+        web_dir: None,
+        bind: SocketAddr::from(([127, 0, 0, 1], 0)),
+        backend: Backend::Cpu,
+        session: mrs_host::SessionOptions::default(),
+        sources: std::sync::Arc::new(open_sources()),
+    })
+    .await?;
+    let exported = host.state.export_table(out, env!("CARGO_PKG_VERSION"));
+    host.stop(std::time::Duration::from_secs(2)).await;
+    let exported = exported.map_err(anyhow::Error::msg)?;
+    println!("Wrote {} ({} files, {} bytes).", exported.path.display(), exported.files, exported.bytes);
+    for left in &exported.left_out {
+        println!("  left out {left} (it looks like a key or a link outside the table)");
+    }
+    print_sources(&exported.sources, "The other computer needs these sources, set up in Sources and keys:");
+    Ok(())
+}
+
+fn import(file: &Path, into: &Path) -> anyhow::Result<()> {
+    let imported = mrs_site::package::import(file, into)?;
+    println!("Opened '{}' as {} ({} files).", imported.name, imported.dir.display(), imported.files);
+    if let Some(upgraded) = &imported.upgraded {
+        println!("  {upgraded}");
+    }
+    let missing = mrs_host::missing_sources(&open_sources(), &imported.sources);
+    print_sources(&missing, "Not set up on this computer yet (add them in Sources and keys):");
+    for problem in &imported.problems {
+        println!("  problem: {problem}");
+    }
+    Ok(())
+}
+
+fn print_sources(sources: &[mrs_site::package::SourceNeed], heading: &str) {
+    if sources.is_empty() {
+        return;
+    }
+    println!("{heading}");
+    for s in sources {
+        let name = if s.name.is_empty() { s.id.clone() } else { format!("{} ({})", s.name, s.id) };
+        println!("  {name}: used by {}", s.layers.join(", "));
     }
 }
 
@@ -239,6 +314,21 @@ fn bench(dir: &Path) -> anyhow::Result<()> {
         let rate = status.info["steps"].as_u64().unwrap_or(0) as f64 / started.elapsed().as_secs_f64();
         let domain = &status.info["lattice"]["domain"];
         println!("  wind     {rate:>8.0} steps/s on a {} x {} lattice  [{adapter}]", domain[0], domain[1]);
+        engine.drop_job(job);
+        let job = engine.create_job("stormwater", &json!({ "pace": "fast" }))?;
+        let started = Instant::now();
+        let mut status = engine.step(job, Duration::from_millis(50))?;
+        while started.elapsed() < Duration::from_secs(3) && status.state != JobState::Done {
+            status = engine.step(job, Duration::from_millis(50))?;
+        }
+        let elapsed = started.elapsed().as_secs_f64();
+        let rate = status.info["steps"].as_u64().unwrap_or(0) as f64 / elapsed;
+        let storm = status.info["seconds"].as_f64().unwrap_or(0.0) / elapsed;
+        let lattice = &status.info["lattice"];
+        println!(
+            "  storm    {rate:>8.0} steps/s, {storm:.0}x real time on a {} x {} lattice  [{adapter}]",
+            lattice["width"], lattice["height"]
+        );
         engine.drop_job(job);
     }
     Ok(())

@@ -237,7 +237,9 @@ abuse. It is how Dynamism (§3.2) is drawn.
   look next. Mark the change on the table with one bright, very visible burst at the spot (a flare and rings
   travelling out, about 1–1.5 s, *start*) that settles into the item's normal style. For its duration it is the
   brightest thing on the table (C3). It is one burst, not a blink (M5). Changes made by a pointer on the table
-  need no cue, because people are already looking there. The block is #105. (Learned from ECOM, 2026-11-23.)
+  need no cue, because people are already looking there. The block is `drawCue` in `packages/sdk/src/blocks/cue.ts` (#105):
+  the runtime plays it for every tool input from another surface (a tool can opt out with `cue: false`), and a layer
+  plays it for other changes with `ctx.cue(geometry)`. (Learned from ECOM, 2026-11-23.)
 
 ## 8. The layer model and its building blocks
 

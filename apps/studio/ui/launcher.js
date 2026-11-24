@@ -34,6 +34,9 @@ async function load() {
   $('version').textContent = `Version ${state.version}`;
   $('fullscreen').checked = screens.windows.length === 0 || screens.windows.some((w) => w.fullscreen);
   $('autostart').checked = state.autostart;
+  $('nightly-on').checked = Boolean(state.nightly_restart);
+  if (state.nightly_restart) $('nightly-time').value = state.nightly_restart;
+  $('nightly-time').disabled = !state.nightly_restart;
   $('lan').checked = state.lan;
   $('running').hidden = !state.running;
   if (state.running) {
@@ -125,7 +128,11 @@ async function save(windows) {
 async function saveSettings() {
   showError();
   try {
-    await invoke('save_settings', { lan: $('lan').checked, autostart: $('autostart').checked });
+    await invoke('save_settings', {
+      lan: $('lan').checked,
+      autostart: $('autostart').checked,
+      nightlyRestart: $('nightly-on').checked ? $('nightly-time').value || '03:00' : null,
+    });
   } catch (e) {
     showError(String(e));
   }
@@ -145,6 +152,9 @@ $('automatic').addEventListener('click', () => save([]));
 $('fullscreen').addEventListener('change', () => save());
 $('lan').addEventListener('change', saveSettings);
 $('autostart').addEventListener('change', saveSettings);
+$('nightly-on').addEventListener('change', saveSettings);
+$('nightly-time').addEventListener('change', saveSettings);
+$('operator-log').addEventListener('click', () => invoke('open_operator_log').catch((e) => showError(String(e))));
 $('open-sources').addEventListener('click', () => invoke('open_sources').catch((e) => showError(String(e))));
 
 window.addEventListener('resize', () => screens && renderMap());

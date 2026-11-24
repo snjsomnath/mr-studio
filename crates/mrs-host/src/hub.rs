@@ -9,7 +9,8 @@ use std::hash::{BuildHasher, Hasher};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
 
-use mrs_site::{is_instance_id, LayerButton, LayerItem, LayerRef, Reveal, Site, SiteInfo, StepMode, Steps};
+use mrs_site::history::{By, Change, History, Revision};
+use mrs_site::{is_instance_id, LayerButton, LayerItem, LayerRef, Reveal, Site, SiteError, SiteInfo, StepMode, Steps};
 use serde::Serialize;
 use serde_json::{json, Map, Value};
 use tokio::sync::{broadcast, Notify};
@@ -56,6 +57,72 @@ pub enum Role {
     Tv,
     Phone,
     Dev,
+    /// The guide's phone (#98): drives a tour with Next and Previous and reads its notes.
+    /// It joins with its own code and takes no visitor's seat.
+    Guide,
+}
+
+/// The languages a table offers visitors (#80), the first it starts in: never empty.
+fn offered(branding: &mrs_site::Branding) -> Vec<String> {
+    let known: Vec<String> = branding.languages.iter().filter(|l| mrs_site::LANGUAGES.contains(&l.as_str())).cloned().collect();
+    if known.is_empty() {
+        vec!["en".to_string()]
+    } else {
+        known
+    }
+}
+
+/// `branding.languages` from Table settings: known languages, each once.
+fn languages(value: &Value) -> Result<Vec<String>, String> {
+    let list = match value {
+        Value::Null => return Ok(Vec::new()),
+        Value::Array(list) => list,
+        _ => return Err("languages must be a list such as [\"en\", \"sv\"]".into()),
+    };
+    let mut out: Vec<String> = Vec::new();
+    for item in list {
+        let code = item.as_str().ok_or("languages must be a list of language codes")?;
+        if !mrs_site::LANGUAGES.contains(&code) {
+            return Err(format!("'{code}' is not a language MR Studio speaks yet ({})", mrs_site::LANGUAGES.join(", ")));
+        }
+        if !out.iter().any(|l| l == code) {
+            out.push(code.to_string());
+        }
+    }
+    Ok(out)
+}
+
+/// `branding.translations` from Table settings: `{ sv: { "English": "Svenska" } }`.
+fn translations(value: &Value) -> Result<std::collections::BTreeMap<String, std::collections::BTreeMap<String, String>>, String> {
+    let map = match value {
+        Value::Null => return Ok(Default::default()),
+        Value::Object(map) => map,
+        _ => return Err("translations must be an object of languages".into()),
+    };
+    let mut out = std::collections::BTreeMap::new();
+    for (language, words) in map {
+        if !mrs_site::LANGUAGES.contains(&language.as_str()) {
+            return Err(format!("'{language}' is not a language MR Studio speaks yet"));
+        }
+        let words = words.as_object().ok_or("each language's translations map English text to its own")?;
+        if words.len() > 2000 {
+            return Err("at most 2000 translations per language".into());
+        }
+        let mut kept = std::collections::BTreeMap::new();
+        for (english, text) in words {
+            let text = text.as_str().ok_or("a translation must be text")?.trim();
+            if english.chars().count() > 2000 || text.chars().count() > 2000 {
+                return Err("a translation can be at most 2000 characters".into());
+            }
+            if !text.is_empty() {
+                kept.insert(english.clone(), text.to_string());
+            }
+        }
+        if !kept.is_empty() {
+            out.insert(language.clone(), kept);
+        }
+    }
+    Ok(out)
 }
 
 impl Role {
@@ -65,6 +132,7 @@ impl Role {
             "tv" => Some(Self::Tv),
             "phone" => Some(Self::Phone),
             "dev" => Some(Self::Dev),
+            "guide" => Some(Self::Guide),
             _ => None,
         }
     }
@@ -78,16 +146,21 @@ impl Role {
     }
 
     /// Editing the scene rewrites site.json, so it is kept to the operator's surfaces.
-    fn may_compose(self) -> bool {
+    pub(crate) fn may_compose(self) -> bool {
         matches!(self, Self::Tv | Self::Dev)
     }
 
     pub fn may_use_engine(self) -> bool {
-        self != Self::Phone
+        matches!(self, Self::Table | Self::Tv | Self::Dev)
     }
 
     pub fn may_calibrate(self) -> bool {
-        self != Self::Phone
+        matches!(self, Self::Table | Self::Tv | Self::Dev)
+    }
+
+    /// Phones and the guide's phone come from the network: they never see the table's sources, keys or history.
+    pub fn from_a_phone(self) -> bool {
+        matches!(self, Self::Phone | Self::Guide)
     }
 }
 
@@ -118,6 +191,12 @@ pub struct LayerState {
     /// For the layer a sequence is showing as its current step: that sequence.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub shown_by: Option<String>,
+    /// Part of the map at rest although its package is not a base or ambient layer: a layer
+    /// of the scene that site.json starts on and gives no button, such as a Map data layer
+    /// colouring the streets (#204). It has no button on the controller and stays on while
+    /// the button layers open and close.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub rest: bool,
 }
 
 /// Where Next is in a layer (`docs/contracts/present.md`, Steps). For a sequence, `index`
@@ -200,6 +279,9 @@ pub struct SessionInfo {
     pub port: u16,
     /// What the TV's QR code points at. None when phones cannot reach the host.
     pub join_url: Option<String>,
+    /// The language the visitors' screens speak now (#80): `en` or `sv`. The controller
+    /// switches it; a phone may keep its own.
+    pub language: String,
 }
 
 /// A phone's place in the session. It outlives the connection by `resume_hold`.
@@ -248,6 +330,11 @@ struct Instance {
 }
 
 impl Instance {
+    /// Works out `state.rest` again after its entry's `active`, `button` or parent changed.
+    fn sync_rest(&mut self) {
+        self.state.rest = self.parent.is_none() && self.saved.active && self.saved.button.is_empty();
+    }
+
     fn item(&self) -> LayerItem {
         let s = &self.saved;
         LayerItem { r#use: s.r#use.clone(), id: s.id.clone(), active: s.active, params: s.params.clone(), hide: s.hide.clone() }
@@ -348,15 +435,52 @@ pub struct Hub {
     /// Replaced when data is imported into the site.
     info: RwLock<SiteInfo>,
     session: SessionInfo,
+    /// The address phones join at through the relay (#89), while the host is connected to one.
+    /// It replaces the local network address in the QR code.
+    relay_join: RwLock<Option<String>>,
+    /// The visitors' language now (#80), one of the site's `branding.languages`.
+    language: RwLock<String>,
+    /// The code the guide's phone joins with (#98). Only the operator's screens are told it.
+    guide_code: String,
     options: SessionOptions,
     /// Every layer that can be added to a scene. Replaced whole when a custom layer is
     /// saved or removed; instances keep their index into it, which removal recomputes.
     catalog: RwLock<Arc<Vec<LayerDef>>>,
     inner: Mutex<Inner>,
     events: broadcast::Sender<String>,
+    /// Every version of site.json (#72). Held around each write so a change and its revision land as one.
+    history: Arc<Mutex<History>>,
+    /// The revision the request being handled wrote, announced when it is done.
+    recorded: Mutex<Vec<Revision>>,
+}
+
+/// Who sent a request that changes site.json, for the history.
+#[derive(Debug, Clone, Copy)]
+struct Who {
+    by: By,
+    surface: Option<u64>,
+}
+
+impl Who {
+    fn of(role: Role, surface: u64) -> Self {
+        let by = if matches!(role, Role::Tv | Role::Guide) { By::Controller } else { By::Editor };
+        Self { by, surface: Some(surface) }
+    }
 }
 
 /// 64 unpredictable bits from the operating system, by way of the standard library's hash seeds.
+/// A controller setting in the words the editor uses.
+fn tv_words(key: &str) -> &str {
+    match key {
+        "theme" | "theme_name" => "theme",
+        "rail_style" => "button style",
+        "about" => "About page",
+        "idle_reset_s" => "idle reset",
+        "attract_s" => "welcome loop",
+        other => other,
+    }
+}
+
 fn random_u64() -> u64 {
     std::collections::hash_map::RandomState::new().build_hasher().finish()
 }
@@ -364,43 +488,32 @@ fn random_u64() -> u64 {
 impl Hub {
     /// `join_base` is the address phones reach the host at, without a path.
     pub fn new(site: &Site, catalog: Vec<LayerDef>, port: u16, join_base: Option<String>, options: SessionOptions) -> anyhow::Result<Self> {
-        let mut scene: Vec<Instance> = Vec::new();
-        let find = |used: &str| {
-            catalog
-                .iter()
-                .position(|d| d.source == used)
-                .ok_or_else(|| anyhow::anyhow!("site.json uses layer '{used}', which is not available"))
-        };
-        for reference in &site.manifest.layers {
-            let layer = LayerRef { items: Vec::new(), ..reference.clone() };
-            let parent = Self::instance(&catalog, find(&reference.r#use)?, layer, None, true)?;
-            let on = parent.state.active;
-            scene.push(parent);
-            // A sequence's items come on one at a time, as its steps show them.
-            let sequence = catalog[parent_def(&scene)].manifest["sequence"] == true;
-            for item in &reference.items {
-                let mut item = Self::instance(&catalog, find(&item.r#use)?, item_ref(item), Some(reference.id.clone()), true)?;
-                item.state.active &= on && !sequence;
-                scene.push(item);
-            }
-        }
-        for (n, instance) in scene.iter().enumerate() {
-            if scene[..n].iter().any(|i| i.id == instance.id) {
-                anyhow::bail!("'{}' names two entries of the scene in site.json; give each its own \"id\"", instance.id);
-            }
-        }
+        let scene = Self::build_scene(&catalog, &site.manifest.layers)?;
         let code = format!("{:04}", random_u64() % 10_000);
         let join_url = join_base.map(|base| format!("{}/phone?c={code}", base.trim_end_matches('/')));
-        let session = SessionInfo { id: format!("{:016x}", random_u64()), code, port, join_url };
+        let language = offered(&site.manifest.branding)[0].clone();
+        let session = SessionInfo { id: format!("{:016x}", random_u64()), code, port, join_url, language: language.clone() };
+        // Six digits, never the phones' code.
+        let guide_code = loop {
+            let guide = format!("{:06}", random_u64() % 1_000_000);
+            if !guide.ends_with(&session.code) {
+                break guide;
+            }
+        };
         let (events, _) = broadcast::channel(256);
         let hub = Self {
             site: site.clone(),
             info: RwLock::new(site.info()),
             session,
+            relay_join: RwLock::new(None),
+            language: RwLock::new(language),
+            guide_code,
             options,
             catalog: RwLock::new(Arc::new(catalog)),
             inner: Mutex::new(Inner { scene, seats: Vec::new(), next_surface: 1 }),
             events,
+            history: Arc::new(Mutex::new(History::open(&site.dir))),
+            recorded: Mutex::new(Vec::new()),
         };
         // A sequence that starts on shows its first step.
         {
@@ -412,6 +525,36 @@ impl Hub {
             }
         }
         Ok(hub)
+    }
+
+    /// The scene a site.json `layers` list stands for, each layer followed by its items.
+    fn build_scene(catalog: &[LayerDef], layers: &[LayerRef]) -> anyhow::Result<Vec<Instance>> {
+        let mut scene: Vec<Instance> = Vec::new();
+        let find = |used: &str| {
+            catalog
+                .iter()
+                .position(|d| d.source == used)
+                .ok_or_else(|| anyhow::anyhow!("site.json uses layer '{used}', which is not available"))
+        };
+        for reference in layers {
+            let layer = LayerRef { items: Vec::new(), ..reference.clone() };
+            let parent = Self::instance(catalog, find(&reference.r#use)?, layer, None, true)?;
+            let on = parent.state.active;
+            scene.push(parent);
+            // A sequence's items come on one at a time, as its steps show them.
+            let sequence = catalog[parent_def(&scene)].manifest["sequence"] == true;
+            for item in &reference.items {
+                let mut item = Self::instance(catalog, find(&item.r#use)?, item_ref(item), Some(reference.id.clone()), true)?;
+                item.state.active &= on && !sequence;
+                scene.push(item);
+            }
+        }
+        for (n, instance) in scene.iter().enumerate() {
+            if scene[..n].iter().any(|i| i.id == instance.id) {
+                anyhow::bail!("'{}' names two entries of the scene in site.json; give each its own \"id\"", instance.id);
+            }
+        }
+        Ok(scene)
     }
 
     /// Builds an instance from a site.json entry. With `lenient`, params that do not
@@ -438,8 +581,167 @@ impl Hub {
             steps: saved.steps.clone(),
             step: None,
             shown_by: None,
+            rest: false,
         };
-        Ok(Instance { id, def, parent, saved, state })
+        let mut instance = Instance { id, def, parent, saved, state };
+        instance.sync_rest();
+        Ok(instance)
+    }
+
+    // ---- History (#72) ----------------------------------------------------------
+
+    /// The site's revision history. Writers outside the hub (imports, moving the table, undo)
+    /// hold it around their write, as `saving` does.
+    pub fn history(&self) -> Arc<Mutex<History>> {
+        self.history.clone()
+    }
+
+    /// Runs a write to site.json and records it in the history, as one step.
+    fn saving(&self, who: Who, summary: impl Into<String>, write: impl FnOnce() -> Result<(), SiteError>) -> Result<(), String> {
+        let change = {
+            let mut history = self.history.lock().unwrap();
+            let ((), change) = history.write(who.by, summary, who.surface, write).map_err(|e| format!("could not save site.json: {e}"))?;
+            change
+        };
+        if let Some(change) = change {
+            self.recorded.lock().unwrap().push(change.revision);
+        }
+        Ok(())
+    }
+
+    /// Tells every surface the history moved on: a new revision, or an undo, redo or restore.
+    /// An editor shows a notice when the change came from somewhere else.
+    pub fn history_changed(&self, revision: &Revision, stepped: bool) {
+        let (can_undo, can_redo, head) = {
+            let history = self.history.lock().unwrap();
+            (history.can_undo(), history.can_redo(), history.head().clone())
+        };
+        self.emit(
+            "history.changed",
+            json!({ "revision": revision, "head": head.rev, "stepped": stepped, "can_undo": can_undo, "can_redo": can_redo }),
+        );
+    }
+
+    /// `history.list`: the kept revisions, newest first, and where undo and redo go.
+    pub fn history_list(&self) -> Value {
+        let history = self.history.lock().unwrap();
+        let mut revisions = history.list();
+        revisions.reverse();
+        json!({
+            "revisions": revisions,
+            "head": history.head().rev,
+            "can_undo": history.can_undo(),
+            "can_redo": history.can_redo(),
+        })
+    }
+
+    /// Takes site.json as it now is after a change the hub did not make itself (an undo, an
+    /// outside edit): the layers, custom layers, palette and controller settings change live,
+    /// and each surface hears only what changed. The caller re-bakes the ground and sends
+    /// `site.changed` when keys beyond these changed.
+    pub fn reload(&self, site: &Site, change: &Change) -> anyhow::Result<()> {
+        let keys = &change.keys;
+        let has = |k: &str| keys.iter().any(|x| x == k || x == "*");
+        let mut inner = self.inner.lock().unwrap();
+        let old_catalog = self.catalog();
+        let catalog = if has("custom") {
+            let mut next: Vec<LayerDef> = old_catalog.iter().filter(|d| !d.source.starts_with(mrs_site::CUSTOM_PREFIX)).cloned().collect();
+            for (id, recipe) in &site.manifest.custom {
+                next.push(crate::layers::custom_def(id, recipe)?);
+            }
+            Arc::new(next)
+        } else {
+            old_catalog.clone()
+        };
+        let mut scene = Self::build_scene(&catalog, &site.manifest.layers)?;
+        // A layer whose entry did not change keeps what it is doing now.
+        let mut fresh = Vec::new();
+        for (n, instance) in scene.iter_mut().enumerate() {
+            let same = inner.scene.iter().find(|old| {
+                old.id == instance.id
+                    && old_catalog[old.def].source == catalog[instance.def].source
+                    && old_catalog[old.def].manifest == catalog[instance.def].manifest
+                    && json!(old.saved) == json!(instance.saved)
+                    && old.parent == instance.parent
+            });
+            match same {
+                Some(old) => {
+                    let def = instance.def;
+                    *instance = old.clone();
+                    instance.def = def;
+                }
+                None => fresh.push(n),
+            }
+        }
+        let ids: Vec<String> = scene.iter().map(|i| i.id.clone()).collect();
+        for instance in &mut scene {
+            if instance.state.shown_by.as_ref().is_some_and(|by| !ids.contains(by)) {
+                instance.state.shown_by = None;
+                instance.state.active = false;
+            }
+        }
+        // The catalogue first, so a surface knows a layer before the scene uses it.
+        if !Arc::ptr_eq(&catalog, &old_catalog) {
+            *self.catalog.write().unwrap() = catalog.clone();
+            for old in old_catalog.iter().filter(|d| d.source.starts_with(mrs_site::CUSTOM_PREFIX)) {
+                if !catalog.iter().any(|d| d.source == old.source) {
+                    self.emit("catalog.removed", json!({ "id": old.id }));
+                }
+            }
+            for def in catalog.iter().filter(|d| d.source.starts_with(mrs_site::CUSTOM_PREFIX)) {
+                if !old_catalog.iter().any(|d| d.source == def.source && d.manifest == def.manifest) {
+                    self.emit("catalog.changed", json!({ "manifest": def.manifest }));
+                }
+            }
+        }
+        let info = site.info();
+        *self.info.write().unwrap() = info.clone();
+        if has("palette") {
+            self.emit("palette.changed", json!({ "palette": info.palette }));
+        }
+        if has("tv") {
+            self.emit("site.tv", json!({ "tv": info.tv }));
+        }
+        if has("display") {
+            self.emit("site.display", json!({ "display": info.display }));
+        }
+        if has("name") || has("timezone") || has("branding") {
+            self.emit("site.settings", self.settings());
+        }
+        inner.scene = scene;
+        for at in fresh {
+            if inner.scene[at].state.active && inner.scene[at].parent.is_none() && self.is_sequence(&inner.scene[at]) {
+                self.switch(&mut inner.scene, at, true);
+            }
+        }
+        if has("layers") || has("custom") {
+            self.emit("state.scene", json!({ "scene": inner.order(), "layers": inner.layers() }));
+        }
+        Ok(())
+    }
+
+    /// What the editor calls a layer: its button name, or its package's name.
+    fn label(&self, instance: &Instance) -> String {
+        instance
+            .saved
+            .button
+            .name
+            .clone()
+            .unwrap_or_else(|| self.catalog()[instance.def].manifest["name"].as_str().map_or_else(|| instance.id.clone(), str::to_string))
+    }
+
+    fn label_of(&self, scene: &[Instance], id: &str) -> String {
+        scene.iter().find(|i| i.id == id).map_or_else(|| id.to_string(), |i| self.label(i))
+    }
+
+    /// A control's label from layer.json, or its id.
+    fn control_label(&self, instance: &Instance, control: &str) -> String {
+        let manifest = &self.catalog()[instance.def].manifest;
+        manifest["controls"]
+            .as_array()
+            .and_then(|c| c.iter().find(|c| c["id"] == control))
+            .and_then(|c| c["label"].as_str())
+            .map_or_else(|| control.to_string(), |l| l.to_lowercase())
     }
 
     /// The layer catalogue as it is now.
@@ -447,8 +749,27 @@ impl Hub {
         self.catalog.read().unwrap().clone()
     }
 
-    pub fn session(&self) -> &SessionInfo {
-        &self.session
+    /// Where the guide's phone joins (#98): the code, and the address when phones can reach the host.
+    pub fn guide(&self) -> Value {
+        let session = self.session();
+        let base = session.join_url.as_deref().and_then(|url| url.rsplit_once("/phone?").map(|(base, _)| base.to_string()));
+        json!({ "code": self.guide_code, "url": base.map(|base| format!("{base}/guide?g={}", self.guide_code)) })
+    }
+
+    pub fn session(&self) -> SessionInfo {
+        let mut session = self.session.clone();
+        session.language = self.language.read().unwrap().clone();
+        if let Some(base) = &*self.relay_join.read().unwrap() {
+            session.join_url = Some(format!("{}/phone?c={}", base.trim_end_matches('/'), session.code));
+        }
+        session
+    }
+
+    /// Phones join through the relay at `base` (`https://relay.example/r/<room>`), or again at
+    /// the local address with None. Every surface gets `session.changed` and redraws the QR code.
+    pub fn set_relay(&self, base: Option<String>) {
+        *self.relay_join.write().unwrap() = base;
+        self.emit("session.changed", json!({ "session": self.session() }));
     }
 
     pub fn site(&self) -> SiteInfo {
@@ -477,6 +798,15 @@ impl Hub {
 
     fn join_at(&self, role: Role, code: Option<&str>, resume: Option<&str>, now: Instant) -> Result<Joined, String> {
         let mut inner = self.inner.lock().unwrap();
+        if role == Role::Guide {
+            // The guide's phone (#98) has its own code, which only the operator's screens are told.
+            if code != Some(self.guide_code.as_str()) {
+                return Err("wrong guide code".into());
+            }
+            let surface = inner.next_surface;
+            inner.next_surface += 1;
+            return Ok(Joined { surface, kick: None });
+        }
         if role != Role::Phone {
             let surface = inner.next_surface;
             inner.next_surface += 1;
@@ -578,7 +908,7 @@ impl Hub {
             "surface": surface,
             "state": {
                 "protocol": PROTOCOL,
-                "session": self.session,
+                "session": self.session(),
                 "site": &*self.info.read().unwrap(),
                 "scene": inner.order(),
                 "layers": inner.layers(),
@@ -594,31 +924,79 @@ impl Hub {
 
     /// Handles a session request. Engine requests are handled by the connection.
     pub fn request(&self, role: Role, surface: u64, method: &str, p: &Value) -> Result<Value, String> {
+        let result = self.handle(role, surface, method, p);
+        // A change to site.json is announced after what it did, so a surface already shows it.
+        let recorded = std::mem::take(&mut *self.recorded.lock().unwrap());
+        for revision in recorded {
+            self.history_changed(&revision, false);
+        }
+        result
+    }
+
+    fn handle(&self, role: Role, surface: u64, method: &str, p: &Value) -> Result<Value, String> {
         // One lock for the whole request, so changes and their events keep one order.
         let mut inner = self.inner.lock().unwrap();
         if method.starts_with("scene.") {
             if !role.may_compose() {
                 return Err("this surface cannot edit the scene".into());
             }
-            return self.compose(&mut inner, method, p);
+            return self.compose(&mut inner, method, p, Who::of(role, surface));
         }
         if method == "site.tv" {
             if !role.may_compose() {
                 return Err("this surface cannot change the table's settings".into());
             }
-            return self.set_tv(p);
+            return self.set_tv(p, Who::of(role, surface));
+        }
+        if method == "site.table" {
+            if !role.may_compose() {
+                return Err("this surface cannot change the table's settings".into());
+            }
+            return self.set_table(p, Who::of(role, surface));
+        }
+        if method == "site.sources" {
+            if role.from_a_phone() {
+                return Err("phones cannot see the table's sources".into());
+            }
+            return Ok(self.sources_used(&inner));
         }
         if method == "site.display" {
             if !role.may_compose() {
                 return Err("this surface cannot change the table's settings".into());
             }
-            return self.set_display(p);
+            return self.set_display(p, Who::of(role, surface));
         }
         if method.starts_with("custom.") || method == "palette.set" {
             if !role.may_compose() {
                 return Err("this surface cannot edit the table".into());
             }
-            return self.author(&mut inner, method, p);
+            return self.author(&mut inner, method, p, Who::of(role, surface));
+        }
+        if method == "session.language" {
+            if !matches!(role, Role::Tv | Role::Dev | Role::Guide) {
+                return Err("only the controller switches the table's language".into());
+            }
+            let language = p["language"].as_str().ok_or("say which language: en or sv")?;
+            let branding = self.info.read().unwrap().branding.clone();
+            if !offered(&branding).iter().any(|l| l == language) {
+                return Err(format!("this table does not offer '{language}'; turn it on in Table settings"));
+            }
+            *self.language.write().unwrap() = language.to_string();
+            self.emit("session.changed", json!({ "session": self.session() }));
+            return Ok(json!({ "language": language }));
+        }
+        if method == "session.guide" {
+            if !matches!(role, Role::Tv | Role::Dev) {
+                return Err("only the operator's screens see the guide's code".into());
+            }
+            return Ok(self.guide());
+        }
+        if method == "layers.reset" {
+            if !role.may_activate() {
+                return Err("phones cannot turn layers on or off".into());
+            }
+            self.reset(&mut inner.scene);
+            return Ok(json!({}));
         }
         let layer = p["layer"].as_str().ok_or("missing layer")?;
         let index = inner.position(layer)?;
@@ -757,7 +1135,7 @@ impl Hub {
     /// `site.tv { tv: { key: value | null } }`: changes the controller's table settings (theme,
     /// theme_name, rail_style, about), saves them to site.json and sends the new `tv` to every
     /// surface as `site.tv`, so a theme shows at once without a reload. `null` removes a key.
-    fn set_tv(&self, p: &Value) -> Result<Value, String> {
+    fn set_tv(&self, p: &Value, who: Who) -> Result<Value, String> {
         let patch = p["tv"].as_object().ok_or("missing tv")?;
         let mut tv = match self.info.read().unwrap().tv.clone() {
             Some(Value::Object(tv)) => tv,
@@ -765,7 +1143,9 @@ impl Hub {
         };
         for (key, value) in patch {
             let fits = match key.as_str() {
-                "theme" => value.as_object().is_some_and(|t| t.len() <= 64 && t.values().all(|v| v.as_str().is_some_and(|s| s.len() <= 160))),
+                "theme" => {
+                    value.as_object().is_some_and(|t| t.len() <= 64 && t.values().all(|v| v.as_str().is_some_and(|s| s.len() <= 160)))
+                }
                 "theme_name" => value.as_str().is_some_and(|s| !s.is_empty() && s.len() <= 40),
                 "rail_style" => matches!(value.as_str(), Some("icons" | "labelled")),
                 "about" => value.is_object() && value.to_string().len() <= 8_000,
@@ -782,15 +1162,152 @@ impl Hub {
             }
         }
         let tv = if tv.is_empty() { Value::Null } else { Value::Object(tv) };
-        self.site.save_tv(tv.clone()).map_err(|e| format!("could not save site.json: {e}"))?;
+        let what = patch.keys().map(|k| tv_words(k)).collect::<Vec<_>>().join(", ");
+        self.saving(who, format!("Changed the controller's {what}"), || self.site.save_tv(tv.clone()))?;
         self.info.write().unwrap().tv = if tv.is_null() { None } else { Some(tv.clone()) };
         self.emit("site.tv", json!({ "tv": tv }));
         Ok(json!({ "tv": tv }))
     }
 
+    /// `site.table { name?, timezone?, branding?: { title?, logo?, welcome? } }` (#73): the table
+    /// settings that are not its place (moving and resizing go through `/api/site/place`, which
+    /// re-bakes). A field left out stays; `null` clears an optional one. Saved to site.json and
+    /// sent to every surface as `site.settings { name, timezone, branding }`.
+    fn set_table(&self, p: &Value, who: Who) -> Result<Value, String> {
+        let current = self.info.read().unwrap().clone();
+        let mut name = current.name.clone();
+        let mut timezone = current.timezone.clone();
+        let mut branding = current.branding.clone();
+        let text = |value: &Value, field: &str, most: usize| -> Result<Option<String>, String> {
+            match value {
+                Value::Null => Ok(None),
+                Value::String(s) if s.trim().is_empty() => Ok(None),
+                Value::String(s) if s.trim().chars().count() <= most => Ok(Some(s.trim().to_string())),
+                Value::String(_) => Err(format!("{field} can be at most {most} characters")),
+                _ => Err(format!("{field} must be text")),
+            }
+        };
+        let mut changed = Vec::new();
+        if let Some(value) = p.get("name") {
+            name = text(value, "the name", 60)?.ok_or("the table needs a name")?;
+            changed.push("name");
+        }
+        if let Some(value) = p.get("timezone") {
+            timezone = text(value, "the time zone", 64)?;
+            if let Some(zone) = &timezone {
+                let fits = zone
+                    .split('/')
+                    .all(|part| !part.is_empty() && part.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '+')));
+                if !fits {
+                    return Err(format!("'{zone}' is not a time zone such as Europe/Stockholm"));
+                }
+            }
+            changed.push("time zone");
+        }
+        match &p["branding"] {
+            Value::Null => {}
+            Value::Object(patch) => {
+                for (key, value) in patch {
+                    match key.as_str() {
+                        "title" => branding.title = text(value, "the title", 80)?,
+                        "welcome" => branding.welcome = text(value, "the welcome line", 160)?,
+                        "logo" => {
+                            let logo = text(value, "the logo", 200)?;
+                            if let Some(logo) = &logo {
+                                let path = std::path::Path::new(logo);
+                                let inside = path.is_relative() && path.components().all(|c| matches!(c, std::path::Component::Normal(_)));
+                                if !inside || !self.site.dir.join(path).is_file() {
+                                    return Err(format!("the logo must be a picture inside the table's folder; '{logo}' is not"));
+                                }
+                            }
+                            branding.logo = logo;
+                        }
+                        "languages" => branding.languages = languages(value)?,
+                        "translations" => branding.translations = translations(value)?,
+                        other => return Err(format!("'{other}' is not a branding setting")),
+                    }
+                    changed.push(match key.as_str() {
+                        "title" => "title",
+                        "welcome" => "welcome line",
+                        "languages" => "languages",
+                        "translations" => "translations",
+                        _ => "logo",
+                    });
+                }
+            }
+            _ => return Err("branding must be an object".into()),
+        }
+        if changed.is_empty() {
+            return Err("nothing to change".into());
+        }
+        let summary = match changed.as_slice() {
+            ["name"] => format!("Renamed the table to {name}"),
+            [one] => format!("Changed the table's {one}"),
+            _ => "Changed the table settings".to_string(),
+        };
+        self.saving(who, summary, || self.site.save_settings(&name, timezone.as_deref(), &branding))?;
+        let language = {
+            let mut info = self.info.write().unwrap();
+            info.name = name;
+            info.timezone = timezone;
+            info.branding = branding;
+            // A language no longer offered gives way to the first one.
+            let offered = offered(&info.branding);
+            let mut language = self.language.write().unwrap();
+            if !offered.contains(&language) {
+                *language = offered[0].clone();
+                true
+            } else {
+                false
+            }
+        };
+        let settings = self.settings();
+        self.emit("site.settings", settings.clone());
+        if language {
+            self.emit("session.changed", json!({ "session": self.session() }));
+        }
+        Ok(settings)
+    }
+
+    /// The table settings `site.settings` carries.
+    fn settings(&self) -> Value {
+        let info = self.info.read().unwrap();
+        json!({ "name": info.name, "timezone": info.timezone, "branding": info.branding })
+    }
+
+    /// `site.sources`: which outside sources (#41) this table's layers use, by the controls
+    /// that name one (`"sources": [...]` in layer.json): `{ sources: [{ source, layers: [{ id, name }] }] }`.
+    /// The Sources page shows this as the table's own short list.
+    /// The outside sources the table's layers use, as `site.sources` answers: for an export (#85).
+    pub fn sources_in_use(&self) -> Value {
+        let inner = self.inner.lock().unwrap();
+        self.sources_used(&inner)
+    }
+
+    fn sources_used(&self, inner: &Inner) -> Value {
+        let catalog = self.catalog();
+        let mut used: Vec<(String, Vec<Value>)> = Vec::new();
+        for instance in &inner.scene {
+            let manifest = &catalog[instance.def].manifest;
+            for control in manifest["controls"].as_array().into_iter().flatten() {
+                if !control["sources"].is_array() {
+                    continue;
+                }
+                let Some(id) = control["id"].as_str() else { continue };
+                let Some(source) = instance.state.params.get(id).and_then(Value::as_str).filter(|s| !s.is_empty()) else { continue };
+                let layer = json!({ "id": instance.id, "name": self.label(instance) });
+                match used.iter_mut().find(|(s, _)| s == source) {
+                    Some((_, layers)) => layers.push(layer),
+                    None => used.push((source.to_string(), vec![layer])),
+                }
+            }
+        }
+        json!({ "sources": used.into_iter().map(|(source, layers)| json!({ "source": source, "layers": layers })).collect::<Vec<_>>() })
+    }
+
     /// `site.display { display: { quality: "draft" | "good" | "best" | null } }`: how the table's surfaces
     /// render (#134). Saved to site.json and sent to every surface as `site.display`, which apply it at once.
-    fn set_display(&self, p: &Value) -> Result<Value, String> {
+    fn set_display(&self, p: &Value, who: Who) -> Result<Value, String> {
         let patch = p["display"].as_object().ok_or("missing display")?;
         let mut display = match self.info.read().unwrap().display.clone() {
             Some(Value::Object(display)) => display,
@@ -810,7 +1327,7 @@ impl Hub {
             }
         }
         let display = if display.is_empty() { Value::Null } else { Value::Object(display) };
-        self.site.save_display(display.clone()).map_err(|e| format!("could not save site.json: {e}"))?;
+        self.saving(who, "Changed the display quality", || self.site.save_display(display.clone()))?;
         self.info.write().unwrap().display = if display.is_null() { None } else { Some(display.clone()) };
         self.emit("site.display", json!({ "display": display }));
         Ok(json!({ "display": display }))
@@ -818,9 +1335,10 @@ impl Hub {
 
     /// The `scene.*` requests. Each one edits a copy of the scene, saves it to
     /// site.json and only then makes it the session's scene.
-    fn compose(&self, inner: &mut Inner, method: &str, p: &Value) -> Result<Value, String> {
+    fn compose(&self, inner: &mut Inner, method: &str, p: &Value, who: Who) -> Result<Value, String> {
         let mut scene = inner.scene.clone();
         let mut result = json!({});
+        let summary;
         // `scene.set` changes one layer; the others change the list.
         let mut changed_layer = None;
         match method {
@@ -873,12 +1391,17 @@ impl Hub {
                 if let Some(parent) = &parent {
                     instance.state.active &= scene.iter().any(|i| &i.id == parent && i.state.active);
                 }
+                summary = match &parent {
+                    Some(parent) => format!("Added {} to {}", self.label(&instance), self.label_of(&scene, parent)),
+                    None => format!("Added {}", self.label(&instance)),
+                };
                 scene.insert(index, instance);
                 result = json!({ "id": id });
             }
             "scene.remove" => {
                 let index = inner.position(p["layer"].as_str().ok_or("missing layer")?)?;
                 let removed: Vec<Instance> = scene.drain(block(&scene, index)).collect();
+                summary = format!("Removed {}", self.label(&removed[0]));
                 // A sequence step that showed a removed layer goes with it.
                 let mut dropped = 0;
                 for instance in &mut scene {
@@ -918,6 +1441,7 @@ impl Hub {
                         return Err(format!("'{id}' has a button; clear it first, because an item comes on with its layer"));
                     }
                 }
+                summary = format!("Moved {}", self.label(&moving[0]));
                 let first = &mut moving[0];
                 if let Some(parent) = &parent {
                     let on = scene
@@ -930,11 +1454,30 @@ impl Hub {
                 }
                 first.parent = parent.clone();
                 first.state.parent = parent.clone();
+                first.sync_rest();
                 let to = insert_position(&scene, parent.as_deref(), Some(index))?;
                 scene.splice(to..to, moving);
             }
             "scene.set" => {
                 let index = inner.position(p["layer"].as_str().ok_or("missing layer")?)?;
+                let name = self.label(&scene[index]);
+                summary = if p.get("steps").is_some() {
+                    format!("Changed the steps of {name}")
+                } else if !p["params"].is_null() {
+                    let keys: Vec<&str> = p["params"].as_object().map(|o| o.keys().map(String::as_str).collect()).unwrap_or_default();
+                    match keys.as_slice() {
+                        [one] => format!("Changed {name}: {}", self.control_label(&scene[index], one)),
+                        _ => format!("Changed the settings of {name}"),
+                    }
+                } else if let Some(active) = p["active"].as_bool() {
+                    format!("Set {name} to start {}", if active { "on" } else { "off" })
+                } else if !p["button"].is_null() {
+                    format!("Changed the button of {name}")
+                } else if !p["hide"].is_null() {
+                    format!("Changed which controls of {name} show")
+                } else {
+                    format!("Changed {name}")
+                };
                 if scene[index].parent.is_some() && !p["button"].is_null() {
                     return Err("an item has no button: it comes on with its layer".into());
                 }
@@ -960,6 +1503,7 @@ impl Hub {
                 let button = button_patch(instance.saved.button.clone(), &p["button"])?;
                 instance.state.button = button.clone();
                 instance.saved.button = button;
+                instance.sync_rest();
                 if let Some(hide) = hide_list(&self.catalog()[instance.def], &p["hide"])? {
                     instance.state.hide = hide.clone();
                     instance.saved.hide = hide;
@@ -968,7 +1512,7 @@ impl Hub {
             }
             other => return Err(format!("unknown method '{other}'")),
         }
-        self.site.save_layers(&saved_layers(&scene)).map_err(|e| format!("could not save site.json: {e}"))?;
+        self.saving(who, summary, || self.site.save_layers(&saved_layers(&scene)))?;
         inner.scene = scene;
         match changed_layer {
             Some((index, Some(active))) => {
@@ -1002,7 +1546,7 @@ impl Hub {
     /// The requests that change what the table can show rather than its scene: custom
     /// layers (`custom.save`, `custom.remove`) and the palette (`palette.set`). Each is
     /// written to site.json first and only then takes effect.
-    fn author(&self, inner: &mut Inner, method: &str, p: &Value) -> Result<Value, String> {
+    fn author(&self, inner: &mut Inner, method: &str, p: &Value, who: Who) -> Result<Value, String> {
         match method {
             "custom.save" => {
                 let id = p["id"].as_str().ok_or("missing id")?.to_string();
@@ -1017,8 +1561,9 @@ impl Hub {
                 }
                 let def = crate::layers::custom_def(&id, &recipe).map_err(|e| format!("{e:#}"))?;
                 let mut saved = self.site.saved_custom().map_err(|e| e.to_string())?;
+                let name = recipe.name.clone();
                 saved.insert(id.clone(), recipe);
-                self.site.save_custom(&saved).map_err(|e| format!("could not save site.json: {e}"))?;
+                self.saving(who, format!("Saved the custom layer {name}"), || self.site.save_custom(&saved))?;
                 let manifest = def.manifest.clone();
                 let mut next = (*catalog).clone();
                 let at = match next.iter().position(|d| d.source == source) {
@@ -1061,8 +1606,8 @@ impl Hub {
                     return Err(format!("'{}' on the table uses it; remove that first", used.id));
                 }
                 let mut saved = self.site.saved_custom().map_err(|e| e.to_string())?;
-                saved.remove(id);
-                self.site.save_custom(&saved).map_err(|e| format!("could not save site.json: {e}"))?;
+                let name = saved.remove(id).map_or_else(|| id.to_string(), |r| r.name);
+                self.saving(who, format!("Deleted the custom layer {name}"), || self.site.save_custom(&saved))?;
                 let mut next = (*catalog).clone();
                 next.remove(at);
                 for instance in &mut inner.scene {
@@ -1079,7 +1624,7 @@ impl Hub {
                     Value::Null => None,
                     value => Some(serde_json::from_value(value.clone()).map_err(|e| format!("palette: {e}"))?),
                 };
-                self.site.save_palette(palette.as_ref()).map_err(|e| format!("could not save site.json: {e}"))?;
+                self.saving(who, "Changed the palette", || self.site.save_palette(palette.as_ref()))?;
                 self.info.write().unwrap().palette = palette.clone();
                 self.emit("palette.changed", json!({ "palette": palette }));
                 Ok(json!({}))
@@ -1116,6 +1661,34 @@ impl Hub {
                     scene[n].state.active = on;
                     self.emit_layer(&scene[n].id, &scene[n].state);
                 }
+            }
+        }
+    }
+
+    /// Puts the table back the way site.json starts it (the controller's Reset view, #198):
+    /// layers that were opened go off, the map at rest comes back on, and every layer has
+    /// its saved params again. Live changes made in the editor are not saved, so they go too.
+    fn reset(&self, scene: &mut [Instance]) {
+        for at in 0..scene.len() {
+            if scene[at].parent.is_none() && scene[at].state.active && !scene[at].saved.active {
+                self.switch(scene, at, false);
+            }
+        }
+        for at in 0..scene.len() {
+            // A layer a sequence shows has the step's params until the sequence lets it go.
+            if scene[at].state.shown_by.is_some() {
+                continue;
+            }
+            let mut params = self.catalog()[scene[at].def].defaults();
+            params.extend(scene[at].saved.params.clone());
+            if scene[at].state.params != params {
+                scene[at].state.params = params;
+                self.emit_layer(&scene[at].id, &scene[at].state);
+            }
+        }
+        for at in 0..scene.len() {
+            if scene[at].parent.is_none() && !scene[at].state.active && scene[at].saved.active {
+                self.switch(scene, at, true);
             }
         }
     }
@@ -1486,6 +2059,9 @@ mod tests {
             std::fs::create_dir_all(to).unwrap();
             for entry in std::fs::read_dir(from).unwrap() {
                 let entry = entry.unwrap();
+                if entry.file_name() == ".mrstudio" {
+                    continue;
+                }
                 let target = to.join(entry.file_name());
                 if entry.file_type().unwrap().is_dir() {
                     copy(&entry.path(), &target);
@@ -1503,6 +2079,44 @@ mod tests {
         Hub::new(&site, catalog, 4170, None, SessionOptions::default()).unwrap()
     }
 
+    #[test]
+    fn the_guide_drives_a_tour_with_its_own_code_and_reads_its_notes() {
+        let hub = scratch_hub("guide");
+        let dev = |method: &str, p: Value| hub.request(Role::Dev, 0, method, &p);
+        let guide = dev("session.guide", json!({})).unwrap();
+        let code = guide["code"].as_str().unwrap().to_string();
+        assert_eq!(code.len(), 6);
+        assert!(hub.request(Role::Phone, 0, "session.guide", &json!({})).is_err(), "phones are never told it");
+        assert!(hub.request(Role::Guide, 0, "session.guide", &json!({})).is_err());
+
+        // The guide joins with its code, not the visitors' one, and takes no seat.
+        let phones = hub.session().code;
+        assert!(hub.join(Role::Guide, Some(&phones), None).is_err());
+        let joined = hub.join(Role::Guide, Some(&code), None).unwrap();
+        assert!(joined.kick.is_none());
+        assert_eq!(hub.welcome(0)["state"]["participants"].as_array().unwrap().len(), 0);
+
+        // A two-step tour with notes; the notes are kept in site.json.
+        let steps = json!({ "mode": "manual", "sequence": [
+            { "layer": "sunlight", "params": { "hour": 9 }, "title": "Morning", "notes": "Point at the long shadows on the square." },
+            { "layer": "wind", "title": "Wind" }
+        ] });
+        dev("scene.set", json!({ "layer": "slideshow", "steps": steps })).unwrap();
+        let saved = Site::load(&hub.site.dir).unwrap().manifest;
+        assert!(serde_json::to_string(&saved.layers).unwrap().contains("long shadows"));
+
+        // The guide opens the tour, steps through it and ends it; it cannot edit the table.
+        let guide = |method: &str, p: Value| hub.request(Role::Guide, joined.surface, method, &p);
+        guide("layer.activate", json!({ "layer": "slideshow", "active": true })).unwrap();
+        assert_eq!(layer(&hub, "slideshow")["steps"]["sequence"][0]["notes"], "Point at the long shadows on the square.");
+        guide("layer.step", json!({ "layer": "slideshow", "to": "next" })).unwrap();
+        assert_eq!(layer(&hub, "wind")["active"], true);
+        guide("layers.reset", json!({})).unwrap();
+        assert_eq!(layer(&hub, "slideshow")["active"], false);
+        assert!(guide("scene.set", json!({ "layer": "slideshow", "steps": { "sequence": [] } })).is_err());
+        assert!(guide("site.sources", json!({})).is_err());
+    }
+
     fn layer(hub: &Hub, id: &str) -> Value {
         hub.welcome(0)["state"]["layers"][id].clone()
     }
@@ -1518,6 +2132,37 @@ mod tests {
         assert_eq!((trees["active"].clone(), trees["shown_by"].clone()), (json!(true), json!("slideshow")));
         dev("layer.activate", json!({ "layer": "slideshow", "active": false })).unwrap();
         assert_eq!(layer(&hub, "slide-trees")["active"], false);
+    }
+
+    #[test]
+    fn reset_puts_the_table_back_the_way_it_starts() {
+        let hub = scratch_hub("reset");
+        let dev = |method: &str, p: Value| hub.request(Role::Dev, 0, method, &p);
+        dev("layer.activate", json!({ "layer": "sunlight", "active": true })).unwrap();
+        dev("layer.set", json!({ "layer": "sunlight", "params": { "hour": 9 } })).unwrap();
+        dev("layer.activate", json!({ "layer": "trees", "active": false })).unwrap();
+        hub.request(Role::Tv, 0, "layers.reset", &json!({})).unwrap();
+        let sun = layer(&hub, "sunlight");
+        assert_eq!((sun["active"].clone(), sun["params"]["hour"].clone()), (json!(false), json!(15)));
+        assert_eq!(layer(&hub, "trees")["active"], true, "the map at rest comes back");
+        assert!(hub.request(Role::Phone, 0, "layers.reset", &json!({})).is_err(), "not from a phone");
+    }
+
+    #[test]
+    fn a_layer_on_at_start_without_a_button_is_part_of_the_map_at_rest() {
+        let hub = scratch_hub("rest");
+        let dev = |method: &str, p: Value| hub.request(Role::Dev, 0, method, &p);
+        // The sample's wind starts off: it is a button layer.
+        assert_eq!(layer(&hub, "wind")["rest"], Value::Null);
+        dev("scene.add", json!({ "use": "wind", "id": "breeze", "active": true })).unwrap();
+        assert_eq!(layer(&hub, "breeze")["rest"], true, "on at start and no button: the map at rest (#204)");
+        dev("scene.set", json!({ "layer": "breeze", "button": { "name": "Breeze" } })).unwrap();
+        assert_eq!(layer(&hub, "breeze")["rest"], Value::Null, "a button makes it a layer of the controller");
+        dev("scene.set", json!({ "layer": "breeze", "button": { "name": null }, "active": false })).unwrap();
+        assert_eq!(layer(&hub, "breeze")["rest"], Value::Null, "off at start: still a layer to open");
+        // An item comes on with its layer, never at rest.
+        dev("scene.add", json!({ "use": "trees", "parent": "slideshow", "id": "slide-trees" })).unwrap();
+        assert_eq!(layer(&hub, "slide-trees")["rest"], Value::Null);
     }
 
     #[test]
@@ -1821,6 +2466,70 @@ mod tests {
         assert!(dev("palette.set", json!({ "palette": { "slots": { "accent": "orange" } } })).is_err());
         dev("palette.set", json!({ "palette": null })).unwrap();
         assert!(Site::load(&hub.site.dir).unwrap().manifest.palette.is_none());
+    }
+
+    #[test]
+    fn the_controller_switches_the_visitors_language() {
+        let hub = scratch_hub("languages");
+        let dev = |method: &str, p: Value| hub.request(Role::Dev, 0, method, &p);
+        dev("site.table", json!({ "branding": { "languages": null } })).unwrap();
+        assert_eq!(hub.session().language, "en", "English until the table offers more");
+        assert!(dev("session.language", json!({ "language": "sv" })).is_err(), "Swedish is not offered yet");
+        dev("site.table", json!({ "branding": { "languages": ["sv", "en"], "translations": { "sv": { "Sample district": "Exempelstadsdelen", "Empty": " " } } } })).unwrap();
+        let saved = Site::load(&hub.site.dir).unwrap().manifest.branding;
+        assert_eq!(saved.languages, ["sv", "en"]);
+        assert_eq!(saved.translations["sv"].len(), 1, "an empty translation is dropped");
+        assert!(dev("site.table", json!({ "branding": { "languages": ["xx"] } })).is_err());
+
+        let mut events = hub.subscribe();
+        assert!(hub.request(Role::Phone, 0, "session.language", &json!({ "language": "en" })).is_err(), "a phone keeps its own language");
+        assert!(hub.request(Role::Table, 0, "session.language", &json!({ "language": "en" })).is_err());
+        hub.request(Role::Tv, 0, "session.language", &json!({ "language": "en" })).unwrap();
+        let event: Value = serde_json::from_str(&events.try_recv().unwrap()).unwrap();
+        assert_eq!((event["m"].as_str(), event["p"]["session"]["language"].as_str()), (Some("session.changed"), Some("en")));
+        assert_eq!(hub.welcome(0)["state"]["session"]["language"], "en");
+        hub.request(Role::Guide, 0, "session.language", &json!({ "language": "sv" })).unwrap();
+
+        // Taking a language away goes back to the first one left.
+        dev("site.table", json!({ "branding": { "languages": ["en"] } })).unwrap();
+        assert_eq!(hub.session().language, "en");
+    }
+
+    #[test]
+    fn table_settings_are_saved_sent_and_checked() {
+        let hub = scratch_hub("table-settings");
+        let dev = |method: &str, p: Value| hub.request(Role::Dev, 0, method, &p);
+        let mut events = hub.subscribe();
+        let done = dev("site.table", json!({ "name": "Harbour 2040", "timezone": "Europe/Stockholm", "branding": { "title": "Harbour", "welcome": "Touch a layer to begin" } })).unwrap();
+        assert_eq!(done["branding"]["welcome"], "Touch a layer to begin");
+        let event: Value = serde_json::from_str(&events.try_recv().unwrap()).unwrap();
+        assert_eq!((event["m"].as_str(), event["p"]["name"].as_str()), (Some("site.settings"), Some("Harbour 2040")));
+        let saved: Value = serde_json::from_str(&std::fs::read_to_string(hub.site.dir.join("site.json")).unwrap()).unwrap();
+        assert_eq!(saved["branding"]["title"], "Harbour");
+        assert_eq!(saved["name"], "Harbour 2040");
+        // A field left out stays; null clears an optional one.
+        dev("site.table", json!({ "branding": { "welcome": null } })).unwrap();
+        assert_eq!(hub.site().branding.title.as_deref(), Some("Harbour"));
+        assert!(hub.site().branding.welcome.is_none());
+        assert!(dev("site.table", json!({ "name": "" })).is_err(), "a table needs a name");
+        assert!(dev("site.table", json!({ "timezone": "Mars time" })).is_err());
+        assert!(dev("site.table", json!({ "branding": { "logo": "../secret.png" } })).is_err());
+        assert!(dev("site.table", json!({ "branding": { "colour": "#fff" } })).is_err());
+        assert!(hub.request(Role::Phone, 0, "site.table", &json!({ "name": "x" })).is_err());
+        // The history says what it was.
+        let list = hub.history_list();
+        assert_eq!(list["revisions"][1]["summary"], "Changed the table settings");
+    }
+
+    #[test]
+    fn the_sources_a_table_uses_are_listed_by_layer() {
+        let hub = scratch_hub("sources-used");
+        let dev = |method: &str, p: Value| hub.request(Role::Dev, 0, method, &p);
+        let find = |used: &Value, source: &str| used["sources"].as_array().unwrap().iter().find(|s| s["source"] == source).cloned();
+        assert!(find(&dev("site.sources", json!({})).unwrap(), "mapbox").is_none());
+        dev("scene.set", json!({ "layer": "basemap", "params": { "style": "source", "source": "mapbox" } })).unwrap();
+        let mapbox = find(&dev("site.sources", json!({})).unwrap(), "mapbox").unwrap();
+        assert_eq!(mapbox["layers"][0]["id"], "basemap");
     }
 
     #[test]

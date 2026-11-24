@@ -1,12 +1,23 @@
 import { EngineClient, stepTransition, transitionGain } from '@mrstudio/sdk';
-import type { StepTransitionKind } from '@mrstudio/sdk';
-import type { Connection, LayerModule, LayerState, PanelContext, TableContext, TableHandlers, ToolInput } from '@mrstudio/sdk';
+import type { Connection, LayerManifest, LayerModule, LayerState, PanelContext, StepTransitionKind, TableContext, TableHandlers, ToolInput } from '@mrstudio/sdk';
 
+import { Cues } from './cues.ts';
+import { language, say } from './i18n.ts';
 import { recipeModule } from './recipe-player.ts';
 import { layerModule } from './registry.ts';
 import { changedKeys } from './store.ts';
 import type { Store } from './store.ts';
 import type { TableView } from './table.ts';
+
+/**
+ * Part of the map at rest: a base or ambient layer, or a layer of the scene that site.json
+ * starts on and gives no button, such as a Map data layer colouring the streets (#204).
+ * Tools kept alongside the open layer (the phones' sketch) are not.
+ */
+export function isAtRest(manifest: LayerManifest, state: LayerState | undefined): boolean {
+  if (manifest.category === 'base' || manifest.category === 'ambient') return true;
+  return Boolean(state?.rest && !state.parent && !manifest.alongside);
+}
 
 interface Running {
   handlers: TableHandlers;
@@ -69,8 +80,12 @@ export function paramSender(
 }
 
 /** Shared read-only parts of a layer context, backed by the store. */
-export function baseContext(store: Store, connection: Connection, layer: string): Pick<PanelContext, 'site' | 'params' | 'shared' | 'setParams'> {
+export function baseContext(store: Store, connection: Connection, layer: string): Pick<PanelContext, 'site' | 'params' | 'shared' | 'setParams' | 'language' | 'say'> {
   return {
+    get language() {
+      return language();
+    },
+    say: (text, vars) => say(text, store.manifest(store.state.layers[layer]?.layer ?? ''), vars),
     get site() {
       return store.state.site;
     },
@@ -88,6 +103,7 @@ export function baseContext(store: Store, connection: Connection, layer: string)
 export class LayerManager {
   private running = new Map<string, Running>();
   private engine: EngineClient;
+  private readonly cues: Cues;
   private last = performance.now();
   /** Steps of a sequence fading in or out, by instance. */
   private fades = new Map<string, Fade>();
@@ -102,6 +118,7 @@ export class LayerManager {
     this.connection = connection;
     this.view = view;
     this.engine = new EngineClient(connection);
+    this.cues = new Cues(view);
     view.setOrder(store.state.scene);
     store.onLayer((id, state, previous) => this.sync(id, state, previous));
     store.onRemoved((id) => {
@@ -111,15 +128,22 @@ export class LayerManager {
     store.onScene((scene) => view.setOrder(scene));
     for (const id of store.state.scene) this.sync(id, store.layer(id), undefined);
     connection.on('layer.action', (p: { layer: string; action: string }) => this.running.get(p.layer)?.handlers.action?.(p.action));
-    connection.on('tool.input', (p: ToolInput) => this.running.get(p.layer)?.handlers.tool?.(p));
+    connection.on('tool.input', (p: ToolInput) => {
+      const running = this.running.get(p.layer);
+      if (!running) return;
+      // Something placed from a phone or the controller: pull eyes back to where it landed (#105).
+      // A pick made on this table's own view needs no cue: people are already looking at it.
+      if (p.from !== store.surface && this.cueFor(p)) this.cues.play(p.geometry, p.participant?.colour);
+      running.handlers.tool?.(p);
+    });
     requestAnimationFrame(this.frame);
   }
 
-  /** A top-level `base` or `ambient` layer: part of the map at rest. */
+  /** A top-level `base` or `ambient` layer, or one site.json starts on without a button: part of the map at rest. */
   private atRest(id: string): boolean {
     const state = this.store.state.layers[id];
-    const category = state ? this.store.manifest(state.layer)?.category : undefined;
-    return Boolean(state && !state.parent && (category === 'base' || category === 'ambient'));
+    const manifest = state ? this.store.manifest(state.layer) : undefined;
+    return Boolean(state && manifest && !state.parent && isAtRest(manifest, state));
   }
 
   /** An open layer that turns the map at rest off, such as the slideshow (#205). */
@@ -169,6 +193,7 @@ export class LayerManager {
       // The map at rest stops while this layer is open and comes back when it closes.
       for (const other of this.store.state.scene) if (other !== id && this.atRest(other)) this.sync(other, this.store.layer(other), this.store.layer(other));
     }
+    if (state.active && !previous?.active && !state.parent && this.store.manifest(state.layer)?.sequence) this.prefetch(state);
     const running = this.running.get(id);
     const active = state.active && !(this.atRest(id) && this.hidingAtRest());
     const fade = this.fades.get(id);
@@ -205,6 +230,30 @@ export class LayerManager {
     }
   }
 
+  /** Whether a tool input plays the attention cue: unless its tool says `cue: false`. */
+  private cueFor(input: ToolInput): boolean {
+    const layer = this.store.state.layers[input.layer]?.layer;
+    const tool = layer ? this.store.manifest(layer)?.tools?.find((t) => t.id === input.tool) : undefined;
+    return tool?.cue !== false;
+  }
+
+  /** A sequence opened: its steps' layers fetch what they will show, one after another (#42). */
+  private prefetch(sequence: LayerState): void {
+    const steps = sequence.steps?.sequence ?? [];
+    void (async () => {
+      for (const step of steps) {
+        const target = this.store.state.layers[step.layer];
+        const module = target ? (layerModule(target.layer) as LayerModule | undefined) : undefined;
+        if (!target || !module?.prefetch) continue;
+        try {
+          await module.prefetch(this.store.state.site, { ...target.params, ...step.params });
+        } catch {
+          // The layer reports its own problem when it is shown.
+        }
+      }
+    })();
+  }
+
   private async start(id: string): Promise<void> {
     // `id` names the instance; the code comes from the layer package it runs.
     const layer = this.store.layer(id).layer;
@@ -230,19 +279,23 @@ export class LayerManager {
     };
     const published: Record<string, unknown> = {};
     const { store, engine } = this;
-    const extras: Omit<TableContext, 'site' | 'params' | 'shared' | 'setParams'> = {
+    const extras: Omit<TableContext, 'site' | 'params' | 'shared' | 'setParams' | 'language' | 'say'> = {
       engine: {
         open: async (kernel, params, fields, options) => {
           const stream = await engine.open(kernel, params, fields, options);
           track(() => stream.close());
           return stream;
         },
+        probe: (kernel, params, at) => engine.probe(kernel, params, at),
         info: () => engine.info(),
       } as EngineClient,
       map: this.view.handle(id, track),
       model: this.view.modelHandle(id, track),
       pointer: this.view.pointer(track),
       sendTool: (tool, geometry) => this.connection.request<void>('tool.input', { layer: id, tool, geometry }),
+      cue: (at, options) => {
+        if (!running.stopped) this.cues.play(at, options?.colour);
+      },
       publish: (values) => {
         const patch: Record<string, unknown> = {};
         for (const [key, value] of Object.entries(values)) {

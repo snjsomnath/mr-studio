@@ -14,8 +14,8 @@ export interface SoundProps {
   column: string | null;
   /** One sound for every point, when there is no column. */
   file: string | null;
-  /** `chorus`: a few at a time, at random, as in the bird demo. `loop`: every point, always. */
-  trigger: 'chorus' | 'loop';
+  /** `chorus`: a few at a time, at random, as in the bird demo. `loop`: every point, always. `tap`: only when asked (a tap, a card, a step). */
+  trigger: 'chorus' | 'loop' | 'tap';
   /** For a chorus: how many play at once, and the quiet between one ending and the next starting. */
   voices: number;
   gap_s: number;
@@ -44,6 +44,17 @@ export function soundPath(row: Record<string, unknown> | undefined, props: Pick<
   if (/^https?:|^\/|\.\./.test(name)) return null;
   // A bare file name is one of the site's sounds; anything with a folder is a path in the site.
   return name.includes('/') ? name : `data/sounds/${name}`;
+}
+
+/** What to call a point's sound on the controller: its name, species or label, else its file name. */
+export function soundLabel(row: Record<string, unknown> | undefined, path: string | null): string {
+  for (const key of ['name', 'label', 'title', 'species', 'Name', 'Species']) {
+    const value = row?.[key];
+    if (typeof value === 'string' && value.trim()) return value.trim();
+  }
+  if (!path) return 'Sound';
+  const base = (path.split('/').pop() ?? path).replace(/\.[a-z0-9]+$/i, '').replace(/[-_]+/g, ' ').trim();
+  return base ? base[0]!.toUpperCase() + base.slice(1) : 'Sound';
 }
 
 // ---- Analysis --------------------------------------------------------------------
@@ -134,6 +145,7 @@ export class SoundSchedule {
   }
   starts(props: Pick<SoundProps, 'trigger' | 'voices' | 'gap_s'>, candidates: readonly number[], playing: ReadonlySet<number>, time: number, justEnded: boolean): number[] {
     if (props.trigger === 'loop') return candidates.filter((i) => !playing.has(i));
+    if (props.trigger === 'tap') return [];
     if (justEnded) this.next = Math.max(this.next, time + Math.max(0, props.gap_s) * (0.5 + this.random()));
     if (time < this.next || playing.size >= Math.max(1, Math.round(props.voices))) return [];
     const free = candidates.filter((i) => !playing.has(i) && (i !== this.lastPicked || candidates.length === 1));
@@ -222,6 +234,8 @@ export class SoundStage {
   private readonly profiles = new Map<string, SoundProfile>();
   private readonly buffers = new Map<string, AudioBuffer>();
   private readonly schedule = new SoundSchedule();
+  /** Points asked to play (a tap, a card, a step), started as soon as their sound is ready. */
+  private readonly cues = new Set<number>();
   private readonly url: (path: string) => string;
   audible: boolean;
   volume = 0.8;
@@ -274,6 +288,14 @@ export class SoundStage {
       if (path && this.profiles.has(path)) ready.push(i);
     });
     for (const point of this.schedule.starts(props, ready, new Set(this.voices.keys()), time, ended)) this.startVoice(point, paths[point]!, props, time);
+    for (const point of this.cues) {
+      if (!paths[point]) this.cues.delete(point);
+      else if (this.voices.has(point)) this.cues.delete(point);
+      else if (this.profiles.has(paths[point]!)) {
+        this.cues.delete(point);
+        this.startVoice(point, paths[point]!, { ...props, trigger: 'chorus' }, time);
+      }
+    }
     for (const voice of this.voices.values()) if (voice.gain) voice.gain.gain.value = this.audible ? this.volume : 0;
 
     return paths.map((_, i) => {
@@ -287,6 +309,11 @@ export class SoundStage {
     });
   }
 
+  /** Plays a point's sound now, once, whatever the trigger (a tap on it, its card, a step). */
+  cue(point: number): void {
+    this.cues.add(point);
+  }
+
   /** Points playing now. */
   playing(): number[] {
     return [...this.voices.keys()];
@@ -296,6 +323,7 @@ export class SoundStage {
   stop(): void {
     for (const voice of this.voices.values()) this.stopVoice(voice);
     this.voices.clear();
+    this.cues.clear();
   }
 
   private startVoice(point: number, path: string, props: SoundProps, time: number): void {
@@ -327,5 +355,204 @@ export class SoundStage {
     }
     voice.source?.disconnect();
     voice.gain?.disconnect();
+  }
+}
+
+// ---- Where sound is heard --------------------------------------------------------
+
+/** The editor's switch for hearing sounds in its preview (#150). */
+export const LISTEN_KEY = 'mrstudio.listen';
+
+/** Whether this page should be heard: the table always, the editor only when its author turned listening on. */
+export function hearsSound(): boolean {
+  if (typeof document === 'undefined') return false;
+  if (document.body?.dataset.role === 'table') return true;
+  try {
+    return localStorage.getItem(LISTEN_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+// ---- Soundscape (#190) -------------------------------------------------------------
+// Two looping beds, nature and city, mixed by how green the view is: walking a viewer from
+// a street into a park fades traffic into birdsong, as in the Chalmers demo's isovist.
+
+/** The demo's mix: each bed at most `max`, with a 0.05 floor while it is still in play. */
+export function soundscapeMix(gvf: number, max = 0.5): { nature: number; city: number } {
+  const g = Math.min(1, Math.max(0, gvf));
+  let nature = g * max;
+  let city = (1 - g) * max;
+  if (g > 0.1) nature = Math.max(nature, 0.05);
+  if (g < 0.9) city = Math.max(city, 0.05);
+  return { nature, city };
+}
+
+/** Eases a volume towards its target: the demo's 0.1 per frame at 60 frames a second. */
+export function easeVolume(current: number, target: number, dt: number, rate = 0.1): number {
+  return current + (target - current) * (1 - (1 - rate) ** Math.max(0, dt * 60));
+}
+
+/**
+ * A built-in bed, made from numbers so a table has a soundscape before anyone adds recordings.
+ * `nature`: chirps that sweep up and down between 2 and 6 kHz in short phrases, over soft
+ * leaves. `city`: a low rumble of traffic that swells as cars pass, over a band of hiss.
+ * The loop is seamless: what rings past the end wraps to the start.
+ */
+export function synthBed(kind: 'nature' | 'city', sampleRate = 22050, seconds = 12, seed = 7): Float32Array {
+  const n = Math.round(sampleRate * seconds);
+  const out = new Float32Array(n);
+  const random = seeded(seed);
+  // Filtered noise for the floor of both beds.
+  let low = 0;
+  let band = 0;
+  let prev = 0;
+  for (let i = 0; i < n; i++) {
+    const white = random() * 2 - 1;
+    low += (white - low) * (kind === 'city' ? 0.02 : 0.2);
+    const high = white - prev;
+    prev = white;
+    band += (high - band) * 0.3;
+    out[i] = kind === 'city' ? low * 1.6 + band * 0.05 : band * 0.04;
+  }
+  if (kind === 'city') {
+    // Cars passing: slow swells of the rumble, a few per loop.
+    const cars = Array.from({ length: 5 }, () => ({ at: random() * seconds, len: 2 + random() * 3, depth: 0.6 + random() * 0.8 }));
+    for (let i = 0; i < n; i++) {
+      const t = i / sampleRate;
+      let swell = 0.5;
+      for (const car of cars) {
+        let d = Math.abs(t - car.at);
+        d = Math.min(d, seconds - d);
+        swell += car.depth * Math.exp(-((d / (car.len / 2)) ** 2));
+      }
+      out[i]! *= swell;
+    }
+  } else {
+    // Phrases of a few chirps, each a sweep with a soft envelope.
+    let t = random() * 0.5;
+    while (t < seconds) {
+      const notes = 2 + Math.floor(random() * 5);
+      const base = 2200 + random() * 2500;
+      for (let k = 0; k < notes; k++) {
+        const len = 0.05 + random() * 0.12;
+        const from = base * (0.85 + random() * 0.3);
+        const to = from * (random() < 0.5 ? 1.35 : 0.7);
+        const loud = 0.12 + random() * 0.18;
+        const start = Math.round(t * sampleRate);
+        const count = Math.round(len * sampleRate);
+        let phase = 0;
+        for (let s = 0; s < count; s++) {
+          const u = s / count;
+          phase += (2 * Math.PI * (from + (to - from) * u)) / sampleRate;
+          const env = Math.sin(Math.PI * u) ** 2;
+          out[(start + s) % n]! += Math.sin(phase) * env * loud;
+        }
+        t += len + 0.03 + random() * 0.08;
+      }
+      t += 0.6 + random() * 2.2;
+    }
+  }
+  let peak = 0;
+  for (let i = 0; i < n; i++) peak = Math.max(peak, Math.abs(out[i]!));
+  if (peak > 0) for (let i = 0; i < n; i++) out[i]! *= 0.9 / peak;
+  return out;
+}
+
+/** A bed: a sound file in the site (`data/sounds/...`), or the built-in one when null. */
+export interface BedSpec {
+  file: string | null;
+}
+
+interface Bed {
+  key: string;
+  source: AudioBufferSourceNode | null;
+  gain: GainNode | null;
+  volume: number;
+}
+
+/**
+ * Plays the two beds and keeps their mix. Nothing is heard until the page has had a gesture
+ * (the browser's autoplay rule) or on a page that is not `audible`; the mix is still worked out,
+ * so the controller can show it.
+ */
+export class Soundscape {
+  private readonly beds: Record<'nature' | 'city', Bed> = {
+    nature: { key: '', source: null, gain: null, volume: 0 },
+    city: { key: '', source: null, gain: null, volume: 0 },
+  };
+  private readonly url: (path: string) => string;
+  private stopped = false;
+  audible: boolean;
+
+  constructor(options: { audible: boolean; url?: (path: string) => string }) {
+    this.audible = options.audible;
+    this.url = options.url ?? ((path) => `/site/${path}`);
+  }
+
+  /** The volumes now, after easing, 0 to 1. */
+  get volumes(): { nature: number; city: number } {
+    return { nature: this.beds.nature.volume, city: this.beds.city.volume };
+  }
+
+  /** Moves the mix towards `gvf` and (re)starts beds whose file changed. Call once per frame. */
+  update(gvf: number | null, specs: Record<'nature' | 'city', BedSpec>, master: number, dt: number): void {
+    if (this.stopped) return;
+    const target = gvf === null ? { nature: 0, city: 0 } : soundscapeMix(gvf);
+    for (const kind of ['nature', 'city'] as const) {
+      const bed = this.beds[kind];
+      bed.volume = easeVolume(bed.volume, target[kind], dt);
+      const key = specs[kind].file ?? `built-in:${kind}`;
+      if (bed.key !== key) {
+        this.release(bed);
+        bed.key = key;
+        void this.start(kind, bed, key, specs[kind].file);
+      }
+      if (bed.gain) bed.gain.gain.value = this.audible ? bed.volume * Math.min(1, Math.max(0, master)) : 0;
+    }
+  }
+
+  stop(): void {
+    this.stopped = true;
+    for (const bed of Object.values(this.beds)) this.release(bed);
+  }
+
+  private async start(kind: 'nature' | 'city', bed: Bed, key: string, file: string | null): Promise<void> {
+    const ctx = context();
+    if (!ctx) return;
+    let buffer: AudioBuffer | null = null;
+    if (file) buffer = (await loadSound(this.url(file)))?.buffer ?? null;
+    if (!buffer) {
+      if (file) console.warn(`[soundscape] ${file} could not be played, so the built-in ${kind} bed plays instead`);
+      const samples = synthBed(kind, 22050, 12, kind === 'nature' ? 7 : 11);
+      buffer = ctx.createBuffer(1, samples.length, 22050);
+      buffer.getChannelData(0).set(samples);
+    }
+    if (this.stopped || bed.key !== key) return;
+    try {
+      const source = ctx.createBufferSource();
+      source.buffer = buffer;
+      source.loop = true;
+      const gain = ctx.createGain();
+      gain.gain.value = 0;
+      source.connect(gain).connect(ctx.destination);
+      source.start();
+      bed.source = source;
+      bed.gain = gain;
+    } catch {
+      // Seen but not heard.
+    }
+  }
+
+  private release(bed: Bed): void {
+    try {
+      bed.source?.stop();
+    } catch {
+      // Already stopped.
+    }
+    bed.source?.disconnect();
+    bed.gain?.disconnect();
+    bed.source = null;
+    bed.gain = null;
   }
 }

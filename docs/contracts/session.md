@@ -4,7 +4,7 @@
 
 - **Studio**: one installed app on one computer. It runs one host.
 - **Session**: one site running in a studio. It has a short join code and holds all shared state.
-- **Surface**: a connected page with a role: `table`, `tv`, `phone` or `dev`.
+- **Surface**: a connected page with a role: `table`, `tv`, `phone`, `guide` or `dev`.
 - **Participant**: a person on a phone surface, with a slot (colour and number). The slot belongs to the person, not the connection: it survives a reload or a brief drop (see mobile.md).
 
 One session runs at a time. The host is the only authority over its state.
@@ -118,6 +118,7 @@ Surface URLs served by the host:
 | `/table` | Projected table view |
 | `/tv` | Controller and dashboards |
 | `/phone` | Phone controller |
+| `/guide` | The guide's phone (#98): `?g=<guide code>`. Starts a slideshow, shows each step's notes and moves it with Next and Previous |
 | `/dev` | Table view with controls side by side, for layer development |
 | `/compose` | Scene composer: layer palette, table view and the scene's stack. Joins with the `dev` role |
 | `/edit` | The editor: the authoring window around the live table. The home screen holds layers of category `base` and `ambient`; every other layer is a layer of its own. Joins with the `dev` role. With `?welcome=1` or `?setup=1`, or when the table has no layers yet, it opens in the setup guide |
@@ -173,6 +174,14 @@ A layer that reveals its parts one at a time reports how many with `layer.subste
 `session.join_url` is the address the TV's QR code carries, `http://<address>:<port>/phone?c=<code>`.
 The host works the address out from the interface it listens on. It is `null` when the host listens on the loopback interface only, and it can be set outright (`SessionOptions::public_url`, `mrstudio dev --public-url`) when phones reach the studio through something else, such as the web dev server or a relay.
 
+## Rasters on the site grid
+
+```
+GET /api/data/field?name=<dataset>[&hour=<0-23>]
+```
+
+Reads a raster dataset of the site (`data` in site.json: a GeoTIFF, or a folder of one GeoTIFF per hour whose file names end in the two-digit hour) and samples it at the centre of every grid cell. Answers a version 1 field frame (engine.md) with f32 values, NaN where the raster has no data; 404 when the folder has no raster for that hour, 422 when the dataset is missing or unreadable. Cool paths reads the Chalmers demo's prepared PET this way (#196).
+
 ## Bringing data into a site
 
 Two HTTP endpoints take a file as the request body (any content type), with its name in an `X-Filename` header. Only this computer may call them: the host listens on the network while presenting, and a request from another address gets 403.
@@ -190,8 +199,14 @@ POST /api/data/import?target=<target>[&crop=1][&swap=1][&crs=EPSG:<code>]    the
 | `trips` | The mobility layer's `trips.json` | `data/trips.json` | `data.trips` |
 | `terrain` | A GeoTIFF of ground heights | `data/terrain.tif` | `scene.terrain` (`crs` only when the file does not name it) |
 | `data:<name>` | GeoJSON, or CSV with position columns | `data/<name>.geojson` | `data.<name>` |
+| `data:<name>` | An SVG plan drawing (#193) | `data/<name>.svg` | `data.<name>` |
+| `data:<name>` | A video: MP4, QuickTime or WebM (#194) | `data/<name>.mp4`, `.mov` or `.webm` | `data.<name>` |
 
 Settings already in `scene.buildings` or `scene.trees` are kept. Coordinates that are not WGS84 are recognised when the file names its system or when SWEREF99 TM, a SWEREF99 local zone or the site's UTM zone puts them on the table, and are converted. Buildings with only `building:levels` (or `levels`, `floors`, `våningar`) get a height of 3 m a storey. A terrain GeoTIFF that only cites its grid is tried as SWEREF99 TM, the local zones, the site's UTM zone and WGS84, and the first that covers the table is kept and written as `crs`; `crs=EPSG:<code>` names it outright. Its report says how much of the table it covers and the range of ground heights. `crop=1` leaves out what lies more than a tenth of the table's size outside it; `swap=1` reads the first coordinate as latitude.
+
+An SVG (by its `.svg` name or its first element) is read as a plan drawing in `crates/mrs-site/src/plan.rs`: it covers the table's frame, its top-level groups (or the groups inside a single wrapping group) are its phases, and it is made safe to show, with scripts, embedded pages, event handlers and links to other files taken out. Each phase group is marked `data-mrs-phase` (from 0) and `data-mrs-name`. The summary names the phases; `plan.shape` warns when the drawing is another shape than the table, `plan.cleaned` lists what was taken out, and the Masterplan layer (`packages/layers/plan`) shows it.
+
+A video is known by its first bytes (`crates/mrs-site/src/video.rs`): an ISO `ftyp` box (MP4, or QuickTime when its brand is `qt  `) or a Matroska header (WebM). Only the headers are read, for the summary's length and picture size; the file is saved as it came. `video.length` warns when the file does not say how long it is, `video.format` notes that only MP4 (H.264) plays on every screen, `video.large` warns over 100 MB, and `video.walk` tells the editor to show it as a Video walk (`packages/layers/walkthrough`). A video cannot replace buildings, roads or another built-in dataset (`video.target`).
 
 Both answer with a report: 200 when it can be imported, 422 when a blocker stops it (nothing is written), 400 for a bad request such as an unknown target.
 
@@ -259,8 +274,9 @@ Text frames are JSON. Binary frames are engine field frames (see engine.md).
 
 ```ts
 // surface to host
-{ t: 'hello', protocol: 1, role: 'table' | 'tv' | 'phone' | 'dev', code?: string, resume?: string }
+{ t: 'hello', protocol: 1, role: 'table' | 'tv' | 'phone' | 'guide' | 'dev', code?: string, resume?: string }
 { t: 'req', id: number, m: string, p?: object }
+{ t: 'alive', window: string, fps: number }  // table and tv windows of the desktop app, every 2 s (see Running unattended)
 
 // host to surface
 { t: 'welcome', surface: number, state: SessionState, manifests: LayerManifest[], resume?: string }   // manifests: every layer that can be in a scene
@@ -291,6 +307,12 @@ Requests:
 | `custom.save` | `{ id, recipe }` | tv, dev | Saves a custom layer (site.md, Custom layers) under `custom` in site.json, new or replacing the one with that id, and offers it at once: every surface gets `catalog.changed { manifest }`. Instances of it on the table restyle in place and keep the params its controls still take. Refused for the id of a core layer. Returns `{ id, use }` (`use` is `custom:<id>`) |
 | `custom.remove` | `{ id }` | tv, dev | Removes a custom layer from site.json, refused while the table uses it. Surfaces get `catalog.removed { id }` |
 | `palette.set` | `{ palette }` | tv, dev | Saves the table's palette (`{ set?, slots? }`, site.md; `null` removes it). Surfaces get `palette.changed { palette }`, and the site's `palette` follows it; custom layers recolour at once |
+| `site.table` | `{ name?, timezone?, branding?: { title?, logo?, welcome? } }` | tv, dev | Changes the table settings that are not its place (see "Settings" below). A field left out stays, `null` clears an optional one. `name` 1 to 60 characters, `timezone` an IANA zone such as `Europe/Stockholm`, `title` up to 80, `welcome` up to 160, `logo` a picture inside the site folder. Every surface gets `site.settings`. Moving or resizing goes through `POST /api/site/place` |
+| `site.sources` | `{}` | table, tv, dev | Which outside sources (Sources manager, #41) this table's layers use: `{ sources: [{ source, layers: [{ id, name }] }] }`, read from the layer controls that name a source (`"sources"` in layer.json) |
+| `history.list` | `{}` | table, tv, dev | The table's revision history (see "Revision history" below): `{ revisions, head, can_undo, can_redo }`, newest first |
+| `history.undo` | `{}` | tv, dev | Puts back the version of site.json before the current one, whoever made the change. Answers like `history.list` |
+| `history.redo` | `{}` | tv, dev | Puts back the version undo last took away. A new change drops what could be redone |
+| `history.restore` | `{ revision }` | tv, dev | Brings back any kept revision as a new revision on top, so nothing is lost |
 | `layer.step` | `{ layer, to }` | all | Moves a layer that is on through its steps: `"next"`, `"previous"`, `"first"`, `"skip"` (the next step, whatever sub-steps are left), `"all"` (every sub-step revealed) or a step number. See Steps above |
 | `layer.play` | `{ layer, playing }` | all | Plays or pauses a layer's steps; the host moves them on |
 | `layer.substeps` | `{ layer, count, titles? }` | table, dev | A layer that is on says how many sub-steps it has (at most 64), with a name for each. 0 removes them |
@@ -314,7 +336,79 @@ Events:
 | `tool.input` | `{ layer, tool, geometry, from, participant? }` |
 | `calibration` | `{ projector }` after a calibration was saved or cleared |
 | `calibration.mode` | `{ active }` |
-| `site.changed` | `{ site: SiteInfo }` after data was imported: the scene is re-baked and the engine and twin already use it. Replace `state.site`; layers that read site data at start need a reload |
+| `site.changed` | `{ site: SiteInfo }` after data was imported, or an undo or outside edit changed more than the live keys: the scene is re-baked and the engine and twin already use it. Replace `state.site`; layers that read site data at start need a reload |
+| `history.changed` | `{ revision, head, stepped, can_undo, can_redo }` after every change to site.json, from any writer. `stepped` is true for undo and redo. `revision.surface` is the surface that made it, so an editor can say "changed by someone else" |
+| `site.problem` | `{ message, revision }`: site.json was changed outside MR Studio and does not load. The table keeps what it shows; undo puts the last good version back |
+| `site.tv`, `site.display` | `{ tv }`, `{ display }` after those settings changed |
+| `site.settings` | `{ name, timezone, branding }` after `site.table`, or an undo or outside edit of those keys. The controller starts again to show the new title and welcome line |
+
+### The session changing
+
+`session.changed {session}` is sent to every surface when the session's details change after the welcome, such as the join address when the host links to or loses a phone relay (#89). Surfaces showing the QR code redraw it.
+
+### Languages (#80)
+
+`session.language` is the language the visitors' screens speak now, one of the site's `branding.languages` (English when it lists none). `session.language { language }` switches it, from the controller (`tv`), the editor (`dev`) or the guide; the host sends `session.changed` to every surface. The controller and the phones start again in the new language; the table only redraws its ribbons. A phone may keep a language of its own (the SV / EN buttons in its header, kept in the phone's browser): it no longer follows the controller. A phone turned away at the door speaks its own choice, else its browser's language.
+
+### The guide's phone (#98)
+
+A guide leading a group runs a slideshow from a phone of their own, with presenter notes in hand.
+
+- A slideshow step may carry `notes` (plain text, blank lines or new lines start a paragraph). They are in the step in `site.json` and in the broadcast state, but only the guide's phone and the editor show them: never the table, the TV or the visitors' phones.
+- The guide joins with the `guide` role and the **guide code**, six digits made when the session starts and different from the visitors' code. Only the TV and the editor (`tv`, `dev`) can ask for it: `session.guide {}` → `{ code, url }`, where `url` is `<join base>/guide?g=<code>` when phones can join and `null` otherwise. The editor shows it with a QR code under a slideshow's slides.
+- A guide takes no participant slot and no colour. It can do what the controller's buttons do: turn layers on and off, step them and set their controls (`layer.activate`, `layer.step`, `layer.set`, `layers.reset`). It cannot edit the scene, use the engine, calibrate, or read the table's sources and history. Through the relay (#89) a guide joins like a phone, with its own code.
+
+### Running unattended (#79)
+
+A table in an exhibition runs all day with nobody at the computer.
+
+- **Engine.** The engine thread looks after itself. If it panics, or its GPU device is lost,
+  a new engine starts with the same scene. After a GPU failure it runs on the CPU until the
+  table is started again. Every surface gets `engine.restarted { message, backend }`: the
+  streams are gone, so the table and the controller reload. The incident goes to the
+  operator log.
+- **Windows.** Each table and controller window of the desktop app sends
+  `{ t: 'alive', window, fps }` every 2 s. `window` is the label the app gave it, as
+  `window.__MRS_WINDOW__`. Phones' and the editor's beats are ignored.
+- **Watchdog.** The app's watchdog (apps/studio/src-tauri/src/watchdog.rs) checks every 2 s:
+  - A window silent for 8 s is reloaded by navigation (a new or reloaded window gets 30 s to
+    load first), which works even when the page's
+    script has stopped. After two reloads that did not help, every window is opened again.
+  - A server that stopped by itself is started again and presented again.
+  - At the nightly restart time (`nightly_restart` in studio.json, "03:00"), a presented
+    table is started anew.
+- **Operator log.** `operator-YYYY-MM-DD.log` in the app's log folder, in local time. It
+  records starts, presenting, stopping, recoveries, engine incidents and nightly restarts.
+  90 days are kept. Displays and settings › Phones and startup has a button that shows it.
+- **Start with the computer.** "Start with this computer and present the last table by
+  itself" adds a login item: a LaunchAgent on macOS, a Run entry on Windows. The app starts
+  with `--at-login` and presents the last table on the saved screens.
+
+### Settings: this computer or this table
+
+Every setting has one home (#73):
+
+| | App settings | Table settings |
+| --- | --- | --- |
+| Belongs to | This computer, every table on it | This table only |
+| Stored in | The app's config folder (`displays.json`, colour, `sources.json` plus the OS keychain) | `site.json` and `calibration.json` in the table's folder |
+| Holds | Screens (which display is the table, which the controller), colour correction, the projector calibration tools, updates, keys and outside sources (Sources manager), phones on the network, present on open | Name, place and size, time zone, the controller's title, logo and welcome line (`branding`), welcome loop and idle reset (`tv.attract_s`, `tv.idle_reset_s`), the controller's theme and About page (`tv`), display quality (`display`), palette, and which sources its layers use (`site.sources`, a read-only view of the app's Sources) |
+| Opened from | *MR Studio > Settings…* on macOS, *File > Settings…* on Windows, Home's "Displays and settings" | The table's name at the top of the editor's layer list, or *File > Table settings…* |
+
+A table copied to another computer brings its table settings and none of the app settings: that computer's screens and keys apply. A source a table uses but the computer lacks shows as missing in the Sources manager, never as a key in site.json. The controller page in the editor (#54) previews the title and welcome line; it edits the same `branding` fields, so there is one copy of them.
+
+### Revision history
+
+The host keeps every version of `site.json` (#72), whoever wrote it, in one list:
+
+- **Who**: `by` is `editor` (a dev surface), `controller` (a tv surface), `import` (Add data, OpenStreetMap, elevation), `mcp` (the MCP server), `outside` (a text editor, `git pull`, any other program), `history` (a restore) or `start`.
+- **A revision** is `{ rev, at, by, summary, keys, surface? }`: `rev` counts up and is never reused, `at` is Unix seconds, `summary` is one line in plain words ("Added Sun study", "Changed outside MR Studio: the palette"), `keys` are the top-level keys of site.json that changed.
+- **Outside edits**: the host looks at `site.json` about once a second. A change it did not make becomes a revision and shows on every surface at once: the layers, custom layers, palette and the `tv` and `display` settings change live (`state.scene`, `catalog.*`, `palette.changed`, `site.tv`, `site.display`); anything else re-bakes the ground and sends `site.changed`. A file that does not load is recorded too and reported with `site.problem`.
+- **Naming an outside change**: a tool that writes site.json may first write `.mrstudio/next-change.json` in the site folder: `{ "by": "mcp", "summary": "Added trees", "at": <unix seconds> }`. The next outside change found within 30 seconds takes that name; the note is then deleted.
+- **Undo and redo** walk the list and rewrite site.json; the running table follows as for an outside edit. A version that no longer loads (a layer package that is gone) is refused and site.json stays as it was.
+- **A dragged slider** is one revision: the same change from the same surface within 3 seconds joins the revision before it.
+- **Two editors**: each change is written as it arrives, so the later one wins; the other editor learns of it from `history.changed` with another `surface`.
+- **Where**: `.mrstudio/history/` in the site folder, one file per revision and `head.json`, the newest 200 kept. It belongs to this computer: it is left out of Save As, copies, exports and the site's repository. Only `site.json` is versioned: a data file replaced by an import stays replaced after an undo, though site.json points back to the file it named before.
 
 Rules:
 

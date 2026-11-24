@@ -1,0 +1,21 @@
+{
+  "Public transport": "Kollektivtrafik",
+  "Trams, buses, trains and ferries on their routes, simulated or from a live feed": "Spårvagnar, bussar, tåg och färjor på sina linjer, simulerade eller från ett liveflöde",
+  "Vehicles": "Fordon",
+  "Simulated": "Simulerade",
+  "Live feed": "Liveflöde",
+  "Live data from": "Livedata från",
+  "Feed address": "Flödets adress",
+  "Vehicles per line": "Fordon per linje",
+  "Speed": "Hastighet",
+  "Routes": "Linjer",
+  "Stops": "Hållplatser",
+  "Line numbers": "Linjenummer",
+  "Trails": "Spår",
+  "Vehicle size": "Fordonens storlek",
+  "Opacity": "Opacitet",
+  "Choose where live data comes from, or enter a feed address": "Välj var livedata ska komma från, eller skriv in ett flödes adress",
+  "Live data unavailable: {reason}": "Livedata är inte tillgängligt: {reason}",
+  "This site has no transit data, so the lines are made up along its streets": "Den här platsen har inga kollektivtrafikdata, så linjerna är påhittade längs dess gator",
+  "This site has no transit data or streets, so there is nothing to show": "Den här platsen har varken kollektivtrafikdata eller gator, så det finns inget att visa"
+}

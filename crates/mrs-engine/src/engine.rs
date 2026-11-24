@@ -55,6 +55,11 @@ impl Engine {
         self.kernels.insert(kernel.info().id, kernel);
     }
 
+    /// Whether the GPU under this engine was lost. A lost engine is replaced, not repaired.
+    pub fn lost(&self) -> bool {
+        self.ctx.is_lost()
+    }
+
     pub fn info(&self) -> EngineInfo {
         EngineInfo {
             backend: self.ctx.backend,
@@ -109,6 +114,18 @@ impl Engine {
         let scene = self.scene.as_ref().ok_or(EngineError::NoScene)?;
         let entry = self.jobs.get_mut(&job).ok_or(EngineError::UnknownJob(job))?;
         entry.job.read(&self.ctx, scene, field)
+    }
+
+    /// A kernel's answer about one place, at local east/north metres from the site origin.
+    /// See `Kernel::probe`.
+    pub fn probe(&self, kernel: &str, params: &Value, east: f64, north: f64) -> Result<Value, EngineError> {
+        let scene = self.scene.as_ref().ok_or(EngineError::NoScene)?;
+        let kernel = self.kernels.get(kernel).ok_or_else(|| EngineError::UnknownKernel(kernel.to_string()))?;
+        let (col, row) = scene.grid.local_to_cell(east, north);
+        if !(0.0..scene.grid.width as f64).contains(&col) || !(0.0..scene.grid.height as f64).contains(&row) {
+            return Err(EngineError::InvalidParams("that place is not on the table".into()));
+        }
+        kernel.probe(scene, params, col, row)
     }
 
     pub fn drop_job(&mut self, job: JobId) {

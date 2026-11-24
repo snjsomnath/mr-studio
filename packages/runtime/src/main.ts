@@ -5,15 +5,18 @@ import { luminance, themeVariables } from '@mrstudio/dashboard';
 import '@mrstudio/dashboard/src/dashboard.css';
 
 import { Composer } from './compose.ts';
-import { Controller } from './controls.ts';
+import { Controller, languageSwitch } from './controls.ts';
 import { mountDashboard } from './dashboard.ts';
+import { guideCode, guideDoor, guideScreen } from './guide.ts';
+import { browserLanguage, keepOwnLanguage, language, offered, ownLanguage, setLanguage, speak, t } from './i18n.ts';
+import type { Language } from './i18n.ts';
 import { joinPanel } from './join.ts';
 import { LayerManager } from './layer-manager.ts';
 import { phoneBadge, phoneCode, refusedScreen, rememberSeat, rememberedSeat } from './phone.ts';
 import { Store } from './store.ts';
 import './style.css';
 
-const ROLES: Role[] = ['table', 'tv', 'phone', 'dev'];
+const ROLES: Role[] = ['table', 'tv', 'phone', 'dev', 'guide'];
 
 function el(tag: string, className: string, text?: string): HTMLElement {
   const node = document.createElement(tag);
@@ -44,9 +47,17 @@ async function main() {
   document.body.dataset.role = editing ? 'edit' : composing ? 'compose' : role;
 
   const phone = role === 'phone';
-  const code = phone ? phoneCode() : undefined;
+  // The guide's phone (#98) has a code of its own, from the operator's screens.
+  const guiding = role === 'guide';
+  const code = phone ? phoneCode() : guiding ? guideCode() : undefined;
+  // A phone turned away at the door speaks the language it chose, or its browser's (#80).
+  if (phone) setLanguage(ownLanguage() ?? browserLanguage());
   if (phone && !code) {
     app.append(refusedScreen('no code'));
+    return;
+  }
+  if (guiding && !code) {
+    app.append(guideDoor());
     return;
   }
   const scheme = location.protocol === 'https:' ? 'wss' : 'ws';
@@ -70,17 +81,66 @@ async function main() {
   try {
     welcome = await connection.connect();
   } catch (error) {
-    if (!phone) app.append(el('p', 'notice', `Could not join: ${(error as Error).message}.`));
+    if (guiding) app.append(guideDoor((error as Error).message));
+    else if (!phone) app.append(el('p', 'notice', `Could not join: ${(error as Error).message}.`));
     return;
   }
   const store = new Store(connection, welcome);
   const site = store.state.site;
+  if (guiding) {
+    document.title = `Guide · ${site.name}`;
+    app.append(guideScreen(store, connection));
+    return;
+  }
   document.title = `${site.branding.title ?? 'MR Studio'} · ${site.name}`;
 
-  const status = el('div', 'connection', 'Reconnecting…');
+  // The visitors' screens speak the session's language (#80); a phone may keep one of its own.
+  // The controller and the phones draw their words once, so they start again in a new language;
+  // the table only redraws its ribbons.
+  const visitors = !editing && !composing && (role === 'tv' || role === 'phone' || role === 'table');
+  if (visitors) {
+    const wanted = (): Language => {
+      const languages = offered(store.state);
+      const pick = (phone ? ownLanguage() : null) ?? (store.state.session.language as Language | undefined) ?? languages[0]!;
+      return languages.includes(pick) ? pick : languages[0]!;
+    };
+    speak(store, wanted());
+    const follow = () => {
+      if (wanted() === language()) return;
+      if (role === 'table') speak(store, wanted());
+      else location.reload();
+    };
+    connection.on('session.changed', follow);
+    connection.on('site.settings', () => (role === 'table' ? speak(store, wanted()) : follow()));
+  }
+
+  const status = el('div', 'connection', t('Reconnecting…'));
   status.hidden = true;
   // New data was brought into the site: layers read their data once, so every surface starts again. The editor does this itself.
   if (!editing) connection.on('site.changed', () => location.reload());
+  // The engine failed and a new one took over (#79): its streams are gone, so the page starts again.
+  if (!editing && !phone) connection.on('engine.restarted', () => location.reload());
+  // A table or controller window of the desktop app says it is alive, with its frame rate, so the
+  // app's watchdog can reload one that went blank or froze (#79).
+  const windowName = (window as { __MRS_WINDOW__?: string }).__MRS_WINDOW__;
+  if (windowName && (role === 'table' || role === 'tv')) {
+    let frames = 0;
+    const count = () => {
+      frames++;
+      requestAnimationFrame(count);
+    };
+    requestAnimationFrame(count);
+    let since = performance.now();
+    window.setInterval(() => {
+      const now = performance.now();
+      connection.alive(windowName, (frames * 1000) / (now - since));
+      frames = 0;
+      since = now;
+    }, 2000);
+  }
+  // The controller's title, logo and welcome line changed (Table settings, #73): it draws them once, so it starts again.
+  if (role === 'tv' && !editing) connection.on('site.settings', () => location.reload());
+  store.onSettings(() => (document.title = `${store.state.site.branding.title ?? 'MR Studio'} · ${store.state.site.name}`));
   // A reconnect that lands on a restarted host (another table opened, the app relaunched) starts the page again:
   // layers read their data once, and reads made while the host was down came back empty (#222).
   if (!phone) {
@@ -144,6 +204,29 @@ async function main() {
     const { installModel } = await import('./model/index.ts');
     await installModel(view, connection, role, { remoteCalibration: !editing });
     new LayerManager(store, connection, view);
+    // The ribbons in the projector's blank space around the model (#78). The projected table draws
+    // them where the free space is; the editor and dev keep room beside the map and preview them there.
+    const { Ribbons } = await import('./ribbon.ts');
+    const { previewReserve } = await import('./ribbon-bands.ts');
+    if (role === 'table') {
+      const ribbons = new Ribbons(surface, store, connection, () => ({ footprint: view.footprint(), surface: { width: surface.clientWidth, height: surface.clientHeight } }));
+      view.onViewChange(() => ribbons.layout());
+    } else if (!composing && site.table) {
+      for (const [side, fraction] of Object.entries(previewReserve(site.table))) surface.style.setProperty(`--ribbon-${side}`, String(fraction));
+      frame.classList.add('has-ribbons');
+      const ribbons = new Ribbons(frame, store, connection, () => {
+        const f = frame.getBoundingClientRect();
+        const r = surface.getBoundingClientRect();
+        const footprint: [number, number][] = [
+          [r.left - f.left, r.top - f.top],
+          [r.right - f.left, r.top - f.top],
+          [r.right - f.left, r.bottom - f.top],
+          [r.left - f.left, r.bottom - f.top],
+        ];
+        return r.width > 0 ? { footprint, surface: { width: f.width, height: f.height } } : null;
+      }, true);
+      new ResizeObserver(() => ribbons.layout()).observe(frame);
+    }
     if (editing) return;
     if (composing) {
       const stack = el('aside', 'controller stack');
@@ -166,9 +249,19 @@ async function main() {
     const side = el('aside', 'controller');
     const header = el('header', 'controller-header');
     const title = el('div', '');
-    title.append(el('h1', '', site.branding.title ?? 'MR Studio'), el('p', '', site.name));
+    title.append(el('h1', '', t(site.branding.title ?? 'MR Studio')), el('p', '', t(site.name)));
     header.append(title);
     if (phone) header.append(phoneBadge(store));
+    // A phone can speak another language than the table (#80): the visitor's own choice, kept on the phone.
+    const languages = offered(store.state);
+    if (phone && languages.length > 1) {
+      header.append(
+        languageSwitch(languages, language(), (next) => {
+          keepOwnLanguage(next);
+          location.reload();
+        }),
+      );
+    }
     side.append(header);
     const cards = el('div', 'cards');
     side.append(cards);

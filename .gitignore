@@ -4,6 +4,10 @@ dist/
 .DS_Store
 *.log
 sites/*/scene/
+# Each table keeps its revision history here (#72); it never goes in a repository.
+.mrstudio/
 # The demo site's projector calibration belongs to whichever machine made it.
 sites/sample/calibration.json
 sites/*/site.format-*.json
+# Map tiles and map pictures a table keeps for offline use (#37, #42).
+.cache/

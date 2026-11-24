@@ -18,7 +18,7 @@ Status: only sunlight is built. Wind is next, and the kernels after it start onc
 | --- | --- | --- |
 | Sun and shadow | `sunlight` (built) | field overlay, time control, table decoration (sun path), chart |
 | Wind comfort | **`wind`** (lattice Boltzmann) | field overlay, **particles**, legend, phone tools (draw obstacles) |
-| Rain and stormwater | **`stormwater`** (flow routing, ponding) | field overlay, particles, time control |
+| Rain and stormwater | `stormwater` (built: live shallow water, roofs, ponding) | field overlay, droplets (flow overlay), storm controls |
 | Urban heat and thermal comfort | **`thermal`**, reading `sunlight` and `wind` | field overlay, time control, legend |
 | Facade daylight | `sunlight` extended to vertical surfaces | lit buildings, legend |
 | Air quality plumes | **`plume`** (advection on the `wind` field) | field overlay, particles, phone tools (place a source) |
@@ -29,8 +29,8 @@ Status: only sunlight is built. Wind is next, and the kernels after it start onc
 
 | Layer | Kernel | Blocks |
 | --- | --- | --- |
-| Isovist and view sheds | **`isovist`** (ray cast over the scene) | field overlay, table pointer (person marker), phone tools |
-| Street-level walk-through | none; a street view service | table pointer (person marker), TV panel media |
+| Isovist and view sheds | **`isovist`** (ray cast over the scene; built as an SDK block in #190, CPU is fast enough for one viewer) | field overlay, table pointer (person marker), phone tools |
+| Street-level walk-through | none; a street view service (built in #82: Google Street View through Sources, on the Isovist hero) | table pointer (person marker), TV panel media |
 | Traffic noise | **`noise`** (propagation with building screening) | field overlay, site datasets (roads), legend |
 | Acoustic listener | `noise` sampled at a point | table pointer, audio output |
 

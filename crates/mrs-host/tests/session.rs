@@ -33,6 +33,9 @@ fn scratch_site(name: &str) -> PathBuf {
         std::fs::create_dir_all(to).unwrap();
         for entry in std::fs::read_dir(from).unwrap() {
             let entry = entry.unwrap();
+            if entry.file_name() == ".mrstudio" {
+                continue;
+            }
             let target = to.join(entry.file_name());
             if entry.file_type().unwrap().is_dir() {
                 copy(&entry.path(), &target);
@@ -114,14 +117,18 @@ impl Surface {
 
     /// Waits for an event with this name and returns its payload.
     async fn event(&mut self, name: &str) -> Value {
-        loop {
-            if let Message::Text(text) = self.next().await {
-                let message: Value = serde_json::from_str(&text).unwrap();
-                if message["t"] == "ev" && message["m"] == name {
-                    return message["p"].clone();
+        // Pings keep arriving, so the wait as a whole has a limit too.
+        let wait = async {
+            loop {
+                if let Message::Text(text) = self.next().await {
+                    let message: Value = serde_json::from_str(&text).unwrap();
+                    if message["t"] == "ev" && message["m"] == name {
+                        return message["p"].clone();
+                    }
                 }
             }
-        }
+        };
+        tokio::time::timeout(Duration::from_secs(30), wait).await.unwrap_or_else(|_| panic!("no '{name}' event"))
     }
 
     async fn frame(&mut self) -> Vec<u8> {
@@ -156,7 +163,7 @@ async fn welcome_carries_site_state_and_manifests() {
     let scene: Vec<&str> = state["scene"].as_array().unwrap().iter().map(|id| id.as_str().unwrap()).collect();
     assert_eq!(
         scene,
-        ["basemap", "sunlight", "building-lights", "cars", "transit", "trees", "slideshow", "sketch", "coolpaths", "mobility", "wind"]
+        ["basemap", "sunlight", "building-lights", "cars", "transit", "trees", "slideshow", "sketch", "coolpaths", "isovist", "mobility", "wind"]
     );
     assert_eq!(state["layers"]["basemap"]["active"], true);
     assert_eq!(state["site"]["data"]["roads"], "data/roads.geojson");
@@ -429,6 +436,27 @@ async fn engine_streams_push_frames_when_results_change() {
         .is_err());
     let mut tv = Surface::join(&host, "tv", None).await.unwrap();
     assert!(tv.request("engine.set", json!({ "stream": stream, "params": { "time": "2026-06-21T10:00:00Z" } })).await.is_err());
+    host.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_table_asks_the_engine_about_one_place() {
+    let host = host().await;
+    let mut table = Surface::join(&host, "table", None).await.unwrap();
+    // lat and lon are filled in from the site; `at` is WGS84.
+    let probe = json!({ "kernel": "sunlight", "params": { "time": "2026-06-21T12:00:00Z", "step_minutes": 15 }, "at": [11.97, 57.7] });
+    let day = table.request("engine.probe", probe).await.unwrap();
+    assert_eq!(day["light"].as_array().unwrap().len(), 96);
+    let (sun, daylight) = (day["sun_hours"].as_f64().unwrap(), day["daylight_hours"].as_f64().unwrap());
+    assert!(sun <= daylight + 1e-3 && (17.0..18.5).contains(&daylight), "{sun} h of {daylight} h");
+
+    let off = json!({ "kernel": "sunlight", "params": { "time": "2026-06-21T12:00:00Z" }, "at": [12.5, 57.7] });
+    assert!(table.request("engine.probe", off).await.unwrap_err().contains("not on the table"));
+    assert!(table.request("engine.probe", json!({ "kernel": "sunlight", "params": {} })).await.is_err());
+    let code = host.state.hub.session().code.clone();
+    let mut phone = Surface::join(&host, "phone", Some(&code)).await.unwrap();
+    let ask = json!({ "kernel": "sunlight", "params": { "time": "2026-06-21T12:00:00Z" }, "at": [11.97, 57.7] });
+    assert!(phone.request("engine.probe", ask).await.is_err(), "phones ask through tools");
     host.shutdown().await;
 }
 
@@ -1136,5 +1164,145 @@ async fn sources_keep_keys_on_the_host_and_sign_requests_for_the_table() {
     // Test says plainly when it works.
     let status: Value = client.post(format!("{base}/api/sources/my-tiles/test")).send().await.unwrap().json().await.unwrap();
     assert_eq!(status["ok"], true, "{status}");
+    host.shutdown().await;
+}
+
+/// #72: the editor's edits, an outside tool's edit (with its note) and a hand edit of the
+/// file land in one history, each shows live on the table, and each can be undone.
+#[tokio::test(flavor = "multi_thread")]
+async fn every_change_to_site_json_is_one_history_and_each_can_be_undone() {
+    let site = scratch_site("history");
+    let host = host_for(site.clone()).await;
+    let mut editor = Surface::join(&host, "dev", None).await.unwrap();
+    let mut table = Surface::join(&host, "table", None).await.unwrap();
+    let ids = |event: &Value| event["scene"].as_array().unwrap().iter().map(|id| id.as_str().unwrap().to_string()).collect::<Vec<_>>();
+
+    let start = editor.request("history.list", json!({})).await.unwrap();
+    assert_eq!(start["revisions"].as_array().unwrap().len(), 1);
+    assert_eq!(start["can_undo"], false);
+
+    // 1. The editor adds a layer.
+    editor.request("scene.add", json!({ "use": "cars", "id": "more-cars" })).await.unwrap();
+    let changed = editor.event("history.changed").await;
+    assert_eq!(changed["revision"]["by"], "editor");
+    assert_eq!(changed["revision"]["keys"], json!(["layers"]));
+    assert!(changed["revision"]["summary"].as_str().unwrap().starts_with("Added "));
+
+    // 2. The MCP server writes the file and leaves a note saying who it is.
+    let mut doc: Value = serde_json::from_str(&std::fs::read_to_string(site.join("site.json")).unwrap()).unwrap();
+    doc["palette"] = json!({ "set": "night" });
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+    std::fs::write(
+        site.join(".mrstudio/next-change.json"),
+        json!({ "by": "mcp", "summary": "Set a night palette", "at": now }).to_string(),
+    )
+    .unwrap();
+    std::fs::write(site.join("site.json"), serde_json::to_string_pretty(&doc).unwrap()).unwrap();
+    let changed = editor.event("history.changed").await;
+    assert_eq!((changed["revision"]["by"].as_str(), changed["revision"]["summary"].as_str()), (Some("mcp"), Some("Set a night palette")));
+    assert_eq!(table.event("palette.changed").await["palette"]["set"], "night");
+
+    // 3. A hand edit removes the layer the editor added.
+    let mut doc: Value = serde_json::from_str(&std::fs::read_to_string(site.join("site.json")).unwrap()).unwrap();
+    doc["layers"].as_array_mut().unwrap().retain(|l| l["id"] != "more-cars");
+    std::fs::write(site.join("site.json"), serde_json::to_string_pretty(&doc).unwrap()).unwrap();
+    let changed = editor.event("history.changed").await;
+    assert_eq!(changed["revision"]["by"], "outside");
+    assert_eq!(changed["revision"]["summary"], "Changed outside MR Studio: the layers");
+    assert!(!ids(&table.event("state.scene").await).contains(&"more-cars".to_string()), "the table follows the file");
+
+    let list = editor.request("history.list", json!({})).await.unwrap();
+    let by: Vec<&str> = list["revisions"].as_array().unwrap().iter().map(|r| r["by"].as_str().unwrap()).collect();
+    assert_eq!(by, ["outside", "mcp", "editor", "start"], "one history, newest first");
+
+    // Undo the hand edit: the layer is back on the table and in the file.
+    let after = editor.request("history.undo", json!({})).await.unwrap();
+    assert_eq!(after["can_redo"], true);
+    assert!(ids(&table.event("state.scene").await).contains(&"more-cars".to_string()));
+    assert!(saved_layers(&site).iter().any(|l| l["id"] == "more-cars"));
+    // Undo the MCP server's palette, then the editor's layer.
+    editor.request("history.undo", json!({})).await.unwrap();
+    assert!(table.event("palette.changed").await["palette"].is_null());
+    editor.request("history.undo", json!({})).await.unwrap();
+    assert!(!saved_layers(&site).iter().any(|l| l["id"] == "more-cars"));
+    assert!(editor.request("history.undo", json!({})).await.is_err(), "nothing older");
+    // The host's own writes are never seen again as outside edits.
+    tokio::time::sleep(Duration::from_millis(1600)).await;
+    let list = editor.request("history.list", json!({})).await.unwrap();
+    assert_eq!(list["revisions"].as_array().unwrap().len(), 4);
+    assert_eq!(list["head"], 1);
+
+    // Restore brings the newest version back on top, and nothing is lost.
+    editor.request("history.restore", json!({ "revision": 4 })).await.unwrap();
+    let list = editor.request("history.list", json!({})).await.unwrap();
+    assert_eq!(list["revisions"][0]["by"], "history");
+    assert_eq!(list["revisions"].as_array().unwrap().len(), 5);
+
+    // A phone may not see it.
+    let code = editor.welcome["state"]["session"]["code"].as_str().unwrap().to_string();
+    let mut phone = Surface::join(&host, "phone", Some(&code)).await.unwrap();
+    assert!(phone.request("history.list", json!({})).await.is_err());
+    host.shutdown().await;
+}
+
+/// #72: a hand edit that breaks site.json is kept in the history and reported, the table
+/// keeps what it shows, and undo puts the last good version back.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_broken_hand_edit_is_reported_and_can_be_undone() {
+    let site = scratch_site("history-broken");
+    let host = host_for(site.clone()).await;
+    let mut editor = Surface::join(&host, "dev", None).await.unwrap();
+    let good = std::fs::read_to_string(site.join("site.json")).unwrap();
+    let mut broken: Value = serde_json::from_str(&good).unwrap();
+    broken["layers"] = json!(7);
+    std::fs::write(site.join("site.json"), broken.to_string()).unwrap();
+    let problem = editor.event("site.problem").await;
+    assert!(!problem["message"].as_str().unwrap().is_empty());
+    editor.request("history.undo", json!({})).await.unwrap();
+    let back: Value = serde_json::from_str(&std::fs::read_to_string(site.join("site.json")).unwrap()).unwrap();
+    assert_eq!(back, serde_json::from_str::<Value>(&good).unwrap());
+    host.shutdown().await;
+}
+
+#[tokio::test]
+async fn a_failed_engine_is_replaced_and_the_surfaces_are_told() {
+    let host = host().await;
+    let mut table = Surface::join(&host, "table", None).await.unwrap();
+    let params = json!({ "mode": "instant", "time": "2026-06-21T13:00:00Z" });
+    table.request("engine.open", json!({ "kernel": "sunlight", "params": params, "fields": ["shadow"] })).await.unwrap();
+    table.frame().await;
+
+    host.state.engine.inject_fault();
+    let restarted = table.event("engine.restarted").await;
+    assert_eq!(restarted["backend"], "cpu");
+    assert!(restarted["message"].as_str().unwrap().contains("a fault was injected"), "{restarted}");
+    let (incidents, total) = host.state.health.incidents_after(0);
+    assert_eq!(total, 1);
+    assert!(incidents[0].1.contains("A new engine runs on the CPU"));
+
+    // The new engine has the scene: a stream opened on it works as before.
+    assert_eq!(table.request("engine.info", json!({})).await.unwrap()["backend"], "cpu");
+    let opened = table.request("engine.open", json!({ "kernel": "sunlight", "params": params, "fields": ["shadow"] })).await.unwrap();
+    assert!(opened["stream"].as_u64().is_some());
+    let frame = table.frame().await;
+    assert_eq!((u32_at(&frame, 16), u32_at(&frame, 20)), (1000, 600));
+    host.shutdown().await;
+}
+
+#[tokio::test]
+async fn windows_say_they_are_alive() {
+    let host = host().await;
+    let mut table = Surface::join(&host, "table", None).await.unwrap();
+    let mut phone = Surface::join(&host, "phone", Some(&host.state.hub.session().code)).await.unwrap();
+    let beat = |window: &str| Message::Text(json!({ "t": "alive", "window": window, "fps": 58.5 }).to_string().into());
+    table.socket.send(beat("surface-1-0-table")).await.unwrap();
+    // A phone is not a window of the app; its beats are not taken.
+    phone.socket.send(beat("surface-1-1-tv")).await.unwrap();
+    // A request after the beat: when it is answered, the beat has been read.
+    table.request("engine.info", json!({})).await.unwrap();
+    phone.request("engine.info", json!({})).await.ok();
+    let windows = host.state.health.windows();
+    assert_eq!(windows.len(), 1, "{windows:?}");
+    assert_eq!((windows[0].window.as_str(), windows[0].role.as_str(), windows[0].fps), ("surface-1-0-table", "table", 58.5));
     host.shutdown().await;
 }

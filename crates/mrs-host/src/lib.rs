@@ -2,11 +2,14 @@
 //! hub and fronts the compute engine. The desktop shell embeds it; `mrstudio dev`
 //! runs it on its own. Contract in `docs/contracts/session.md`.
 
+mod basemap;
 mod calibration;
 mod engine_bridge;
+pub mod health;
 mod hub;
 mod layers;
 mod model;
+pub mod relay;
 pub mod sources;
 mod transit;
 mod wms;
@@ -25,6 +28,7 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use mrs_engine::Backend;
 use mrs_site::elevation;
+use mrs_site::history::{By, Change};
 use mrs_site::import::{self, Options, Report, Target};
 use mrs_site::osm::{self, OsmLayer};
 use mrs_site::Site;
@@ -64,6 +68,8 @@ pub struct AppState {
     pub calibration: Calibration,
     /// Outside services and their keys. Surfaces reach them through the host only.
     pub sources: Arc<Sources>,
+    /// Windows' signs of life and recovered incidents, for running unattended (#79).
+    pub health: health::Health,
     transit: transit::Cache,
     /// One import at a time.
     imports: tokio::sync::Mutex<()>,
@@ -96,6 +102,40 @@ const ELEVATION_TRIES: u32 = 3;
 
 /// The largest file `/api/data/*` accepts.
 pub const MAX_IMPORT_BYTES: usize = 256 * 1024 * 1024;
+
+impl AppState {
+    /// Packs the running table into one `.mrstable` file at `out` (#85). The package lists the
+    /// outside sources its layers use, named as this computer knows them, and never their keys.
+    pub fn export_table(&self, out: &std::path::Path, app: &str) -> Result<mrs_site::package::Exported, String> {
+        let known = self.sources.list();
+        let used = self.hub.sources_in_use();
+        let needs = used["sources"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .map(|u| {
+                let id = u["source"].as_str().unwrap_or_default().to_string();
+                let connection = known.iter().find(|v| v.connection.id == id).map(|v| &v.connection);
+                mrs_site::package::SourceNeed {
+                    kind: connection
+                        .and_then(|c| serde_json::to_value(c.kind).ok())
+                        .and_then(|k| k.as_str().map(str::to_string))
+                        .unwrap_or_default(),
+                    name: connection.map(|c| c.name.clone()).unwrap_or_default(),
+                    layers: u["layers"].as_array().into_iter().flatten().filter_map(|l| l["name"].as_str().map(str::to_string)).collect(),
+                    id,
+                }
+            })
+            .collect();
+        mrs_site::package::export(&self.site.dir, out, needs, app).map_err(|e| e.to_string())
+    }
+}
+
+/// The sources a table needs that are not set up on this computer, or have no key yet.
+pub fn missing_sources(sources: &Sources, needs: &[mrs_site::package::SourceNeed]) -> Vec<mrs_site::package::SourceNeed> {
+    let known = sources.list();
+    needs.iter().filter(|n| !known.iter().any(|v| v.connection.id == n.id && v.ready)).cloned().collect()
+}
 
 impl AppState {
     /// Handles a `calibration.*` request and tells every surface what changed. The desktop
@@ -246,19 +286,29 @@ impl AppState {
         let _one = self.imports.lock().await;
         let dir = self.site.dir.clone();
         let filename = filename.to_string();
+        let history = self.hub.history();
         // The site as it is on disk now: earlier imports and scene edits included.
-        let (updated, report) = tokio::task::spawn_blocking(move || -> Result<(Option<Site>, Report), String> {
+        let (updated, report) = tokio::task::spawn_blocking(move || -> Result<(Option<(Site, Option<Change>)>, Report), String> {
             let site = Site::load(&dir).map_err(|e| e.to_string())?;
             let prepared = import::inspect(&site, &target, &filename, &bytes, options);
             if !write || !prepared.report.ok {
                 return Ok((None, prepared.report));
             }
-            let (site, report) = import::apply(&site, prepared).map_err(|e| e.to_string())?;
-            Ok((Some(site), report))
+            let what = import_words(&target);
+            let history = history.clone();
+            let mut history = history.lock().unwrap();
+            let ((site, report), change) = history
+                .write(By::Import, format!("Brought in {what}"), None, || import::apply(&site, prepared))
+                .map_err(|e| e.to_string())?;
+            drop(history);
+            Ok((Some((site, change)), report))
         })
         .await
         .map_err(|e| e.to_string())??;
-        let Some(site) = updated else { return Ok(report) };
+        let Some((site, change)) = updated else { return Ok(report) };
+        if let Some(change) = &change {
+            self.hub.history_changed(&change.revision, false);
+        }
 
         let rebuilt = tokio::task::spawn_blocking(move || -> anyhow::Result<_> {
             let (scene, stats) = site.bake()?;
@@ -282,16 +332,26 @@ impl AppState {
     pub async fn place_site(&self, place: mrs_site::Place) -> Result<mrs_site::SiteInfo, String> {
         let _one = self.imports.lock().await;
         let dir = self.site.dir.clone();
+        let history = self.hub.history();
         let rebuilt = tokio::task::spawn_blocking(move || -> Result<_, String> {
-            let site = Site::load(&dir).map_err(|e| e.to_string())?.place(&place).map_err(|e| e.to_string())?;
+            let before = Site::load(&dir).map_err(|e| e.to_string())?;
+            let summary = place_words(&before, &place);
+            let (site, change) =
+                history.lock().unwrap().write(By::Editor, summary, None, || before.place(&place)).map_err(|e| e.to_string())?;
+            if let Some(change) = &change {
+                tracing::info!("history: {}", change.revision.summary);
+            }
             let (scene, stats) = site.bake().map_err(|e| format!("the table was moved, but its scene could not be rebuilt: {e}"))?;
             tracing::info!("re-baked after a move: {} buildings, {} trees", stats.buildings, stats.trees);
             let twin = Bytes::from(site.twin(&scene).map_err(|e| e.to_string())?.encode());
-            Ok((scene, twin, site.info(), site.manifest.origin))
+            Ok((scene, twin, site.info(), site.manifest.origin, change))
         })
         .await
         .map_err(|e| e.to_string())?;
-        let (scene, twin, info, origin) = rebuilt?;
+        let (scene, twin, info, origin, change) = rebuilt?;
+        if let Some(change) = &change {
+            self.hub.history_changed(&change.revision, false);
+        }
         self.engine.relocate(scene, origin).await?;
         *self.twin.write().unwrap() = twin;
         self.hub.site_changed(info.clone());
@@ -299,10 +359,144 @@ impl AppState {
     }
 }
 
+/// The keys of site.json a running table takes without re-baking its ground or reloading its surfaces.
+const LIVE_KEYS: [&str; 8] = ["layers", "custom", "palette", "tv", "display", "name", "timezone", "branding"];
+
+impl AppState {
+    /// `history.list`, `history.undo`, `history.redo` and `history.restore { revision }` (#72).
+    /// Undo and redo walk the history; restore brings back any kept revision as a new one.
+    pub async fn history_request(&self, role: Role, surface: u64, method: &str, p: &Value) -> Result<Value, String> {
+        if role.from_a_phone() {
+            return Err("phones cannot see the table's history".into());
+        }
+        if method == "history.list" {
+            return Ok(self.hub.history_list());
+        }
+        if !role.may_compose() {
+            return Err("this surface cannot change the table".into());
+        }
+        let rev = p["revision"].as_u64();
+        if method == "history.restore" && rev.is_none() {
+            return Err("missing revision".into());
+        }
+        let _one = self.imports.lock().await;
+        let history = self.hub.history();
+        let method_owned = method.to_string();
+        let (change, from) = tokio::task::spawn_blocking(move || -> Result<(Change, u64), String> {
+            let mut history = history.lock().unwrap();
+            let from = history.head().rev;
+            let change = match method_owned.as_str() {
+                "history.undo" => history.undo(),
+                "history.redo" => history.redo(),
+                "history.restore" => history.restore(rev.unwrap_or_default(), Some(surface)),
+                other => Err(format!("unknown method '{other}'")),
+            }?;
+            Ok((change, from))
+        })
+        .await
+        .map_err(|e| e.to_string())??;
+        if let Err(e) = self.apply_change(&change).await {
+            // That version does not load as the table now is: leave site.json as it was.
+            let history = self.hub.history();
+            let _ = tokio::task::spawn_blocking(move || history.lock().unwrap().step_back(from)).await;
+            return Err(format!("that version of the table could not be opened: {e}"));
+        }
+        self.hub.history_changed(&change.revision, method != "history.restore");
+        Ok(self.hub.history_list())
+    }
+
+    /// Looks for a change to site.json made outside the host (the MCP server, a text editor,
+    /// `git pull`), records it in the history and shows it on every surface. A file that does
+    /// not load is recorded too, so it can be undone, and the table keeps what it shows.
+    pub async fn check_outside(&self) {
+        let Ok(_one) = self.imports.try_lock() else { return };
+        let history = self.hub.history();
+        let Ok(Some(change)) = tokio::task::spawn_blocking(move || history.lock().unwrap().check_outside()).await else { return };
+        tracing::info!("history: {}", change.revision.summary);
+        self.hub.history_changed(&change.revision, false);
+        if let Err(e) = self.apply_change(&change).await {
+            tracing::warn!("site.json changed outside MR Studio and does not load: {e}");
+            self.hub.emit("site.problem", json!({ "message": e, "revision": change.revision.rev }));
+        }
+    }
+
+    /// Makes the running table match site.json after a change the hub did not make itself.
+    async fn apply_change(&self, change: &Change) -> Result<(), String> {
+        let dir = self.site.dir.clone();
+        let deep = change.keys.iter().any(|k| !LIVE_KEYS.contains(&k.as_str()));
+        let loaded = tokio::task::spawn_blocking(move || -> Result<_, String> {
+            let site = Site::load(&dir).map_err(|e| e.to_string())?;
+            let rebuilt = if deep {
+                let (scene, _) = site.bake().map_err(|e| format!("the ground could not be rebuilt: {e}"))?;
+                let twin = Bytes::from(site.twin(&scene).map_err(|e| e.to_string())?.encode());
+                Some((scene, twin))
+            } else {
+                None
+            };
+            Ok((site, rebuilt))
+        })
+        .await
+        .map_err(|e| e.to_string())??;
+        let (site, rebuilt) = loaded;
+        self.hub.reload(&site, change).map_err(|e| format!("{e:#}"))?;
+        if let Some((scene, twin)) = rebuilt {
+            self.engine.relocate(scene, site.manifest.origin).await?;
+            *self.twin.write().unwrap() = twin;
+            self.hub.site_changed(site.info());
+        }
+        Ok(())
+    }
+}
+
+/// "the buildings", for the history's "Brought in the buildings".
+fn import_words(target: &Target) -> String {
+    match target {
+        Target::Buildings => "the buildings".into(),
+        Target::Trees => "the trees".into(),
+        Target::Walkways => "the walking paths".into(),
+        Target::Trips => "the trips".into(),
+        Target::Terrain => "the ground".into(),
+        Target::Data(name) => format!("the {name} data"),
+    }
+}
+
+/// What moving the table changed, in a few words.
+fn place_words(site: &Site, place: &mrs_site::Place) -> String {
+    let m = &site.manifest;
+    let renamed = place.name.as_deref().is_some_and(|n| n.trim() != m.name);
+    let moved = m.origin != place.origin;
+    let resized = m.extent.width_m != place.extent.width_m || m.extent.height_m != place.extent.height_m || place.table_width_cm.is_some();
+    let turned = m.extent.rotation_deg != place.extent.rotation_deg.rem_euclid(360.0);
+    let mut parts = Vec::new();
+    if renamed {
+        parts.push("renamed");
+    }
+    if moved {
+        parts.push("moved");
+    }
+    if resized {
+        parts.push("resized");
+    }
+    if turned {
+        parts.push("turned");
+    }
+    match parts.as_slice() {
+        [] => "Changed the table's place".into(),
+        [one] => format!("{} the table", capitalise(one)),
+        [rest @ .., last] => format!("{} and {last} the table", capitalise(&rest.join(", "))),
+    }
+}
+
+fn capitalise(s: &str) -> String {
+    let mut c = s.chars();
+    c.next().map_or_else(String::new, |f| f.to_uppercase().collect::<String>() + c.as_str())
+}
+
 /// A running host. Dropping it does not stop the server; call `shutdown`.
 pub struct RunningHost {
     pub addr: SocketAddr,
     pub state: Arc<AppState>,
+    app: Router,
     shutdown: tokio::sync::oneshot::Sender<()>,
     task: tokio::task::JoinHandle<()>,
 }
@@ -321,6 +515,18 @@ impl RunningHost {
         if tokio::time::timeout(grace, self.task).await.is_err() {
             abort.abort();
         }
+    }
+
+    /// Whether the server is still serving. False after it stopped by itself, which only a
+    /// failure does: the desktop app's watchdog then starts the table again (#79).
+    pub fn is_serving(&self) -> bool {
+        !self.task.is_finished()
+    }
+
+    /// Lets phones join through a relay (#89), besides the one from Sources and keys that
+    /// `start` connects by itself. `mrstudio dev --relay` uses this.
+    pub fn connect_relay(&self, link: relay::RelayLink) {
+        relay::spawn(Arc::downgrade(&self.state), self.app.clone(), self.addr.port(), link);
     }
 
     /// Runs until the server stops.
@@ -347,7 +553,8 @@ pub async fn start(config: HostConfig) -> anyhow::Result<RunningHost> {
     let twin = Bytes::from(twin.encode());
     let calibration = Calibration::load(&site.dir);
     let catalog = layers::load_catalog(&site, &config.layers_dir)?;
-    let engine = EngineHandle::spawn(config.backend, scene, site.manifest.origin)?;
+    let (incidents, mut incident_rx) = tokio::sync::mpsc::unbounded_channel();
+    let engine = EngineHandle::spawn(config.backend, scene, site.manifest.origin, incidents)?;
     let info = engine.info().await?;
     tracing::info!("engine: {:?} backend{}", info.backend, info.adapter.as_ref().map(|a| format!(", {a}")).unwrap_or_default());
 
@@ -373,8 +580,39 @@ pub async fn start(config: HostConfig) -> anyhow::Result<RunningHost> {
         transit: Default::default(),
         imports: Default::default(),
         osm_cache: Default::default(),
+        health: Default::default(),
     });
+    // An engine that recovered from a failure (#79): noted for the operator log, and the
+    // surfaces open their streams again on the new engine.
+    {
+        let state = Arc::downgrade(&state);
+        tokio::spawn(async move {
+            while let Some(incident) = incident_rx.recv().await {
+                let Some(state) = state.upgrade() else { break };
+                state.health.note(&incident.message);
+                state.hub.emit("engine.restarted", json!({ "message": incident.message, "backend": incident.backend }));
+            }
+        });
+    }
     let app = router(state.clone(), config.web_dir.clone());
+    // Phones join through the relay when this computer has one (#89).
+    if let Some(link) = config.sources.relay().await {
+        relay::spawn(Arc::downgrade(&state), app.clone(), addr.port(), link);
+    }
+    // Watches site.json for changes made outside the host (#72). It stops when the host is gone.
+    {
+        let state = Arc::downgrade(&state);
+        tokio::spawn(async move {
+            let mut every = tokio::time::interval(std::time::Duration::from_millis(700));
+            loop {
+                every.tick().await;
+                match state.upgrade() {
+                    Some(state) => state.check_outside().await,
+                    None => break,
+                }
+            }
+        });
+    }
     // Moves playing slideshows and sub-steps on. It stops when the host is gone.
     {
         let state = Arc::downgrade(&state);
@@ -390,6 +628,7 @@ pub async fn start(config: HostConfig) -> anyhow::Result<RunningHost> {
         });
     }
 
+    let app_for_relay = app.clone();
     let (shutdown, stop) = tokio::sync::oneshot::channel::<()>();
     let task = tokio::spawn(async move {
         let serve = axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>()).with_graceful_shutdown(async {
@@ -399,7 +638,7 @@ pub async fn start(config: HostConfig) -> anyhow::Result<RunningHost> {
             tracing::error!("server stopped: {e}");
         }
     });
-    Ok(RunningHost { addr, state, shutdown, task })
+    Ok(RunningHost { addr, state, app: app_for_relay, shutdown, task })
 }
 
 /// The address a phone on the local network should use for a host bound to `bound`.
@@ -437,9 +676,11 @@ fn router(state: Arc<AppState>, web_dir: Option<PathBuf>) -> Router {
         .route("/api/data/model", post(model::post))
         .route("/api/data/sounds", get(list_sounds).post(save_sound))
         .route("/api/data/media", get(list_media).post(save_media))
+        .route("/api/data/field", get(data_field))
         .route("/api/site/place", post(place_site))
         .route("/api/site/thumbnail", post(save_thumbnail))
         .route("/api/wms", get(wms_map))
+        .route("/api/basemap/{service}/{z}/{x}/{y}", get(basemap_tile))
         .route("/api/sources", get(sources_page).post(save_source))
         .route("/api/sources/{id}", axum::routing::delete(remove_source))
         .route("/api/sources/{id}/test", post(test_source))
@@ -484,6 +725,28 @@ fn local(from: &SocketAddr, headers: &HeaderMap) -> Result<(), Box<axum::respons
     }
 }
 
+/// `GET /api/basemap/<service>/<z>/<x>/<y>`: a base map tile, kept in the site folder so the
+/// table shows its map again without a connection (#37). From this computer only, since it writes to disk.
+async fn basemap_tile(
+    State(state): State<Arc<AppState>>,
+    ConnectInfo(from): ConnectInfo<SocketAddr>,
+    axum::extract::Path((service, z, x, y)): axum::extract::Path<(String, u32, u32, String)>,
+) -> axum::response::Response {
+    if !from.ip().is_loopback() {
+        return (StatusCode::FORBIDDEN, Json(json!({ "error": "the base map is drawn on this computer only" }))).into_response();
+    }
+    let Ok(y) = y.split('.').next().unwrap_or("").parse::<u32>() else {
+        return (StatusCode::BAD_REQUEST, Json(json!({ "error": "no such tile" }))).into_response();
+    };
+    match basemap::tile(&state.site.dir, &service, z, x, y).await {
+        Ok(bytes) => {
+            let kind = basemap::content_type(&bytes);
+            ([(header::CONTENT_TYPE, kind), (header::CACHE_CONTROL, "max-age=86400")], bytes).into_response()
+        }
+        Err(why) => (StatusCode::BAD_GATEWAY, Json(json!({ "error": why }))).into_response(),
+    }
+}
+
 fn refused(refusal: sources::Refusal) -> axum::response::Response {
     (StatusCode::from_u16(refusal.status).unwrap_or(StatusCode::BAD_GATEWAY), Json(json!({ "error": refusal.message }))).into_response()
 }
@@ -499,7 +762,7 @@ async fn wms_map(
             return *no;
         }
     }
-    wms::get_map(&state.sources, query).await
+    wms::get_map(&state.site.dir, &state.sources, query).await
 }
 
 /// `GET /api/sources`: the connections (never their keys) and the kinds that can be added.
@@ -733,6 +996,36 @@ async fn save_thumbnail(
     match written {
         Ok(Ok(())) => StatusCode::NO_CONTENT.into_response(),
         Ok(Err(e)) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e.to_string() }))).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e.to_string() }))).into_response(),
+    }
+}
+
+#[derive(serde::Deserialize)]
+struct FieldQuery {
+    /// The dataset's name in site.json `data`.
+    name: String,
+    /// For a folder of hourly rasters, the hour (0 to 23).
+    #[serde(default)]
+    hour: Option<u32>,
+}
+
+/// `GET /api/data/field?name=pet&hour=14`: a raster dataset sampled on the site grid, as a binary
+/// field frame of f32 values (NaN where it has no data). 404 when a folder of hourly rasters has
+/// none for that hour, so a layer can fall back to what it works out itself (#196).
+async fn data_field(State(state): State<Arc<AppState>>, Query(query): Query<FieldQuery>) -> axum::response::Response {
+    let dir = state.site.dir.clone();
+    let FieldQuery { name, hour } = query;
+    let read = tokio::task::spawn_blocking(move || {
+        let site = Site::load(&dir).map_err(|e| e.to_string())?;
+        mrs_site::field::read(&site, &name, hour)
+    })
+    .await;
+    match read {
+        Ok(Ok(Some(field))) => {
+            ([(header::CONTENT_TYPE, "application/octet-stream"), (header::CACHE_CONTROL, "no-cache")], field.to_frame()).into_response()
+        }
+        Ok(Ok(None)) => (StatusCode::NOT_FOUND, Json(json!({ "error": "no raster for that hour" }))).into_response(),
+        Ok(Err(error)) => (StatusCode::UNPROCESSABLE_ENTITY, Json(json!({ "error": error }))).into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e.to_string() }))).into_response(),
     }
 }

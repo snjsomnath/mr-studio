@@ -69,7 +69,7 @@ packages/
   sdk/            @mrstudio/sdk: layer API, protocol types, engine client, field rendering
   dashboard/      @mrstudio/dashboard: the TV panel grid, widgets, density budget, themes
   runtime/        @mrstudio/runtime: surfaces (table, tv, phone, dev), scene composer, layer manager, generated controls
-  layers/         core layer packages: basemap, ambient (cars, building-lights, transit, trees), slideshow, sunlight, sketch, then wind, stormwater, isovist, ...
+  layers/         core layer packages: basemap, ambient (cars, building-lights, street-life, street-glow, transit, trees), slideshow, sunlight, sketch, then wind, stormwater, isovist, ...
   mcp/            @mrstudio/mcp: MCP server that lets a team's LLM assemble sites and draft core requests
 sites/
   sample/         small synthetic site used by tests and layer dev mode
@@ -145,7 +145,7 @@ These are independent once the contracts are fixed.
 | --- | --- | --- |
 | Engine core and sunlight | Scene, job scheduler, sunlight kernel, parity harness | engine.md |
 | Wind kernel | D2Q9 TRT lattice Boltzmann in WGSL, ported from `cfd-core.js`, which becomes the CPU reference | engine.md |
-| Stormwater and isovist kernels | D8 flow and accumulation, ray-cast visibility | engine.md |
+| Stormwater and isovist kernels | Live shallow water (local inertial) with rain, roofs and infiltration; ray-cast visibility | engine.md |
 | Desktop shell | Tauri app, display placement, kiosk, auto-update, Windows and macOS builds | session.md |
 | Session hub and phone controller | Rooms, slots, roles, join by QR, tools, reconnect | session.md, mobile.md |
 | Layer SDK and runtime | Layer manager, generated controls, TV layout, dev mode | layer.md |

@@ -147,6 +147,22 @@ test('tracers follow the flow, respect obstacles and re-enter upwind', () => {
   assert.ok(tracers.time - oldest <= 0.5 + 1 / 60);
 });
 
+test('droplets land anywhere on the running water, not only upwind (#189)', () => {
+  const field = gapField('f32');
+  const placed = (spawn: 'upwind' | 'anywhere') => {
+    let seed = 11;
+    const random = () => ((seed = (seed * 16807) % 2147483647) - 1) / 2147483646;
+    const tracers = new Tracers(field, { count: 300, trailSeconds: 1, random, spawn });
+    // So fast that every tracer leaves the field in one frame and is placed again.
+    tracers.update(1 / 60, 1e4);
+    for (let i = 0; i < tracers.count; i++) assert.equal(field.isBlocked(Math.floor(tracers.x[i]!), Math.floor(tracers.y[i]!)), false, 'never inside an obstacle');
+    return [...tracers.x];
+  };
+  assert.ok(placed('upwind').every((x) => x < 0.1), 'wind comes back in at the upwind edge');
+  // Rain lands on the water wherever it runs.
+  assert.ok(placed('anywhere').filter((x) => x > 3).length > 150, 'drops land across the field');
+});
+
 test('streamlines run whole through the gap, never through the wall, and morph instead of jumping (#159)', () => {
   const field = gapField('f32');
   // Downstream and upstream from a point in front of the gap.

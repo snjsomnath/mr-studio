@@ -2,7 +2,7 @@
   "api": 1,
   "id": "coolpaths",
   "name": "Cool paths",
-  "description": "The shortest walk between two points, and the one that stays in the shade",
+  "description": "The shortest walk between two points, and the one with the least heat (PET), as in the Chalmers demo",
   "icon": "footprints",
   "attract": { "effect": "sun" },
   "requires": { "kernels": ["sunlight"], "data": ["walkways"] },
@@ -12,8 +12,11 @@
     { "id": "play", "type": "toggle", "label": "Animate the day", "default": false, "tier": "more" },
     { "id": "detour", "type": "range", "label": "Longest detour", "min": 0, "max": 100, "step": 5, "unit": "%", "default": 50, "phone": true },
     { "id": "example", "type": "action", "label": "Try another walk", "phone": true, "tier": "primary" },
-    { "id": "network", "type": "toggle", "label": "Colour every path by sun", "default": true, "tier": "more" },
-    { "id": "shade", "type": "toggle", "label": "Show shade", "default": true }
+    { "id": "network", "type": "toggle", "label": "Colour every path by PET", "default": true, "tier": "more" },
+    { "id": "shade", "type": "toggle", "label": "Show the heat map", "default": true },
+    { "id": "air", "type": "range", "label": "Afternoon air temperature", "min": 5, "max": 40, "step": 1, "unit": "°C", "default": 24, "tier": "more" },
+    { "id": "humidity", "type": "range", "label": "Humidity", "min": 10, "max": 100, "step": 5, "unit": "%", "default": 50, "tier": "more" },
+    { "id": "wind", "type": "range", "label": "Wind", "min": 0, "max": 8, "step": 0.5, "unit": "m/s", "default": 1.5, "tier": "more" }
   ],
   "panels": [
     { "id": "walks", "widget": "custom", "size": "wide", "title": "Shortest and coolest walk", "props": { "reads": 5 } }

@@ -48,8 +48,11 @@ export interface FlowOverlayStyle {
   colormap?: Colormap;
   /** The magnitude at the top of the colormap. Default: the frames' `max`. */
   max?: number;
-  /** `ribbons` are steady streamlines with a light travelling along them, `particles` fine specks with short tails. Default `ribbons`. */
-  mode?: 'ribbons' | 'particles';
+  /**
+   * `ribbons` are steady streamlines with a light travelling along them, `particles` fine specks with short tails,
+   * `droplets` glowing drops with longer trails that land anywhere on the flow, like rain on running water. Default `ribbons`.
+   */
+  mode?: 'ribbons' | 'particles' | 'droplets';
   /** Number of particles; ribbons use an eighth as many streamlines. Default 500. */
   count?: number;
   /** Share of the extent's longer side a tracer travels per second, per field unit. Default 0.04. */
@@ -58,6 +61,8 @@ export interface FlowOverlayStyle {
   opacity?: number;
   /** Lights building faces where the flow blows straight at them (needs `setFacades`). Default false. */
   facadeGlow?: boolean;
+  /** Speeds below this, in field units, draw nothing. Default 0.08. */
+  still?: number;
 }
 
 /** A vector field drawn on the table as moving tracers. Animation and drawing run on the surface. */
@@ -142,6 +147,15 @@ interface ContextBase<P> {
   setParams(patch: Partial<P>): void;
   /** Values the table published for other surfaces. */
   readonly shared: Readonly<Record<string, any>>;
+  /** The language visitors read now (#80): `en` or `sv`. */
+  readonly language: string;
+  /**
+   * Words for visitors in their language (#80): the English text looked up in the layer's
+   * `locales/<language>.json`, with `{name}` filled from `vars`. `ctx.say('Sun sets at {time}', { time })`.
+   * Use it for text the layer makes as it runs (a caption, a status, a legend row); words in
+   * layer.json are translated without it.
+   */
+  say(text: string, vars?: Record<string, string | number>): string;
 }
 
 export interface TableContext<P = Params> extends ContextBase<P> {
@@ -157,6 +171,13 @@ export interface TableContext<P = Params> extends ContextBase<P> {
    * Resolves once the host has accepted it.
    */
   sendTool(tool: string, geometry: ToolGeometry): Promise<void>;
+  /**
+   * Plays the attention cue (#105) at a change, in WGS84: one bright burst that pulls eyes back
+   * to the table. Tool inputs from a phone or the controller get one without any code; call this
+   * when an action without a place of its own adds something (a controller button that adds a
+   * building, say). `colour` is a CSS colour, default white.
+   */
+  cue(at: ToolGeometry, options?: { colour?: string }): void;
   /** Publishes derived values for panels. Only changed keys are sent. */
   publish(values: Record<string, unknown>): void;
   /** Sub-steps: parts of the layer that Next reveals one at a time, such as the categories of a map. */
@@ -246,6 +267,13 @@ export interface LayerModule<P = Params> {
    * `ctx.setParams`. `ctx.panel` is `"hero"`. The element is as wide as the centre; the hero sets its height.
    */
   hero?(ctx: PanelContext<P>, el: HTMLElement): PanelHandlers | void;
+  /**
+   * Fetches what the layer will need before it is shown, so a sequence (the slideshow) can step
+   * to it without waiting. Called on the table when a sequence that shows this layer opens, with
+   * the params the step will use. What the host fetches it also keeps, for venues without a
+   * connection (#42). Errors are ignored: the layer shows its own when it is turned on.
+   */
+  prefetch?(site: SiteInfo, params: P): Promise<void> | void;
 }
 
 /** Declares a layer. The default export of every layer package. */

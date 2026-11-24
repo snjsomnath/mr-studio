@@ -53,6 +53,12 @@ pub struct JobStatus {
 pub trait Kernel: Send {
     fn info(&self) -> KernelInfo;
     fn create(&self, ctx: &Context, scene: &Scene, params: &Value) -> Result<Box<dyn Job>, EngineError>;
+    /// Answers a question about one place: the cell at fractional `col`, `row`. A point question is
+    /// cheap where a whole field is not (one spot's sun across a day), so it is computed on its own,
+    /// without a job. Kernels without one say so.
+    fn probe(&self, _scene: &Scene, _params: &Value, _col: f64, _row: f64) -> Result<Value, EngineError> {
+        Err(EngineError::InvalidParams(format!("kernel '{}' answers no point questions", self.info().id)))
+    }
 }
 
 pub trait Job: Send {

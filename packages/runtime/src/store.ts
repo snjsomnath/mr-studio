@@ -7,6 +7,9 @@ export class Store {
   state: SessionState;
   manifests: LayerManifest[];
   surface: number;
+  /** Puts a manifest in the visitors' language (#80). Unset: as written, in English. */
+  private translate: ((manifest: LayerManifest) => LayerManifest) | null = null;
+  private translated = new WeakMap<LayerManifest, LayerManifest>();
   private layerListeners = new Set<LayerListener>();
   private participantListeners = new Set<(participants: Participant[]) => void>();
   private sceneListeners = new Set<(scene: string[]) => void>();
@@ -14,6 +17,7 @@ export class Store {
   private tvListeners = new Set<(tv: TvConfig | null) => void>();
   private displayListeners = new Set<(quality: DisplayQuality) => void>();
   private catalogListeners = new Set<(layer: string) => void>();
+  private settingsListeners = new Set<() => void>();
 
   constructor(connection: Connection, welcome: Welcome) {
     this.state = welcome.state;
@@ -26,6 +30,11 @@ export class Store {
       for (const listener of this.participantListeners) listener(p.participants);
     });
     // The controller's table settings changed (a theme picked in the setup guide).
+    // Phones join somewhere else now: through the relay, or back on the local network (#89).
+    connection.on('session.changed', (p: { session: SessionState['session'] }) => {
+      this.state.session = p.session;
+      for (const listener of this.participantListeners) listener(this.state.participants);
+    });
     connection.on('site.tv', (p: { tv: TvConfig | null }) => {
       this.state.site.tv = p.tv;
       for (const listener of this.tvListeners) listener(p.tv);
@@ -45,6 +54,11 @@ export class Store {
     connection.on('catalog.removed', (p: { id: string }) => {
       this.manifests = this.manifests.filter((m) => m.id !== p.id);
       for (const listener of this.catalogListeners) listener(p.id);
+    });
+    // The table's name, time zone or branding changed (Table settings, #73).
+    connection.on('site.settings', (p: Pick<SessionState['site'], 'name' | 'timezone' | 'branding'>) => {
+      this.state.site = { ...this.state.site, name: p.name, timezone: p.timezone, branding: p.branding };
+      for (const listener of this.settingsListeners) listener();
     });
     connection.on('palette.changed', (p: { palette: SessionState['site']['palette'] }) => {
       this.state.site = { ...this.state.site, palette: p.palette };
@@ -78,15 +92,31 @@ export class Store {
     return () => this.layerListeners.delete(listener);
   }
 
-  /** The catalogue entry for a layer package. */
+  /** Hands out manifests through `translate` from now on (#80); null for as written. */
+  useTranslation(translate: ((manifest: LayerManifest) => LayerManifest) | null): void {
+    this.translate = translate;
+    this.translated = new WeakMap();
+  }
+
+  /** The catalogue entry for a layer package, in the visitors' language on their screens. */
   manifest(layer: string): LayerManifest | undefined {
-    return this.manifests.find((manifest) => manifest.id === layer);
+    const manifest = this.manifests.find((manifest) => manifest.id === layer);
+    if (!manifest || !this.translate) return manifest;
+    let done = this.translated.get(manifest);
+    if (!done) this.translated.set(manifest, (done = this.translate(manifest)));
+    return done;
   }
 
   /**
    * Runs when a layer of the catalogue was saved, added or removed (by its id), or with
    * an empty id when the table's palette changed. Returns a function that stops it.
    */
+  /** The table's name, time zone or branding changed. Returns a function that stops listening. */
+  onSettings(listener: () => void): () => void {
+    this.settingsListeners.add(listener);
+    return () => this.settingsListeners.delete(listener);
+  }
+
   onCatalog(listener: (layer: string) => void): () => void {
     this.catalogListeners.add(listener);
     return () => this.catalogListeners.delete(listener);

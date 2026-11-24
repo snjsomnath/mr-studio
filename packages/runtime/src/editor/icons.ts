@@ -4,6 +4,8 @@
  * this set does not have fall back to `layers`.
  */
 const PATHS: Record<string, string> = {
+  plan: 'M4 4h16v16H4zM4 11h6v9M10 15h10M14 4v6h6',
+  video: 'M3 6h12v12H3zM15 10l6-3v10l-6-3M7 10l4 2-4 2z',
   layers: 'M12 3 3 8l9 5 9-5-9-5ZM3 12l9 5 9-5M3 16l9 5 9-5',
   home: 'M4 11l8-7 8 7M6 10v10h12V10M10 20v-6h4v6',
   plus: 'M12 5v14M5 12h14',
@@ -12,6 +14,7 @@ const PATHS: Record<string, string> = {
   map: 'M9 4 3 6v14l6-2 6 2 6-2V4l-6 2-6-2ZM9 4v14M15 6v14',
   sun: 'M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8ZM12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.4 1.4M17.6 17.6 19 19M5 19l1.4-1.4M17.6 6.4 19 5',
   wind: 'M3 9h11a3 3 0 1 0-3-3M3 13h15a3 3 0 1 1-3 3M3 17h6',
+  droplet: 'M12 3c3.500 4.500 6 8 6 11a6 6 0 0 1-12 0c0-3 2.500-6.500 6-11ZM9.500 15a2.500 2.500 0 0 0 2.500 2.500',
   lightbulb: 'M9 18h6M10 21h4M12 3a6 6 0 0 0-4 10.5c.7.7 1 1.5 1 2.5h6c0-1 .3-1.800 1-2.500A6 6 0 0 0 12 3Z',
   car: 'M5 11l1.500-4.500h11L19 11M4 11h16v6H4zM7 17v2M17 17v2M7.500 14h.01M16.500 14h.01',
   tram: 'M7 4h10a1 1 0 0 1 1 1v11H6V5a1 1 0 0 1 1-1ZM6 11h12M9 16l-2 4M15 16l2 4M9.500 13.500h.01M14.500 13.500h.01M9 2h6',
@@ -40,6 +43,9 @@ const PATHS: Record<string, string> = {
   code: 'M8 7l-5 5 5 5M16 7l5 5-5 5',
   reset: 'M4 12a8 8 0 1 0 2.300-5.700M4 4v4h4',
   info: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18ZM12 11v6M12 7.500h.01',
+  fullscreen: 'M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5',
+  overscan: 'M3 5h18v14H3zM8 9 6 12l2 3M16 9l2 3-2 3M10 8l2-1.500L14 8M10 16l2 1.500 2-1.500',
+  people: 'M9 11a3.500 3.500 0 1 0 0-7 3.500 3.500 0 0 0 0 7ZM2.500 20a6.500 6.500 0 0 1 13 0M16 4.300a3.500 3.500 0 0 1 0 6.400M18 14.200A6.500 6.500 0 0 1 21.500 20',
   point: 'M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6ZM12 4a8 8 0 1 0 0 16 8 8 0 0 0 0-16Z',
   line: 'M4 18c4 0 4-12 8-12s4 12 8 12',
   polygon: 'M5 7l6-3 8 4-2 10-11 2z',
@@ -53,10 +59,12 @@ const PATHS: Record<string, string> = {
   bars: 'M4 5h16v14H4zM8 5v14M12 5v14M16 5v14',
   settings: 'M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6ZM12 2v3M12 19v3M2 12h3M19 12h3M4.900 4.900l2.100 2.100M17 17l2.100 2.100M4.900 19.100 7 17M17 7l2.100-2.100',
   save: 'M5 4h11l3 3v13H5zM8 4v5h7V4M8 20v-6h8v6',
+  undo: 'M9 14 4 9l5-5M4 9h10.500a5.500 5.500 0 0 1 0 11H11',
+  redo: 'M15 14l5-5-5-5M20 9H9.500a5.500 5.500 0 0 0 0 11H13',
 };
 
 /** Icons an author can give a layer's button. */
-export const LAYER_ICONS = ['sun', 'wind', 'route', 'footprints', 'tram', 'car', 'tree', 'lightbulb', 'images', 'pencil', 'map', 'blocks', 'layers', 'home', 'eye', 'play'];
+export const LAYER_ICONS = ['sun', 'wind', 'droplet', 'route', 'footprints', 'tram', 'car', 'tree', 'lightbulb', 'images', 'pencil', 'map', 'blocks', 'layers', 'home', 'eye', 'play'];
 
 const NS = 'http://www.w3.org/2000/svg';
 

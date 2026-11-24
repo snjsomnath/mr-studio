@@ -1,6 +1,7 @@
 import { lonLatToTable, tableToLonLat } from '@mrstudio/sdk';
 import type { Connection, LayerManifest, Position, SiteInfo, ToolGeometry, ToolSpec } from '@mrstudio/sdk';
 
+import { t } from './i18n.ts';
 import type { Store } from './store.ts';
 
 /**
@@ -99,7 +100,7 @@ class ToolPad {
 
     this.element = el('div', 'tool-pad');
     const map = svg('svg', { viewBox: `0 0 ${this.width} ${this.height}`, class: 'tool-map', role: 'application' });
-    map.setAttribute('aria-label', 'Map of the table');
+    map.setAttribute('aria-label', t('Map of the table'));
     map.style.aspectRatio = `${this.width} / ${this.height}`;
     const buildings = svg('path', { class: 'tool-buildings' });
     this.drawing = svg('g');
@@ -111,9 +112,9 @@ class ToolPad {
 
     this.hint = el('p', 'tool-hint');
     this.actions = el('div', 'tool-actions');
-    this.undo = el('button', 'action', 'Undo');
-    this.clear = el('button', 'action', 'Clear');
-    this.done = el('button', 'action primary', 'Send');
+    this.undo = el('button', 'action', t('Undo'));
+    this.clear = el('button', 'action', t('Clear'));
+    this.done = el('button', 'action primary', t('Send'));
     for (const button of [this.undo, this.clear, this.done]) button.type = 'button';
     this.undo.addEventListener('click', () => {
       this.corners.pop();
@@ -174,7 +175,7 @@ class ToolPad {
       return;
     }
     this.lastSent = performance.now();
-    this.send(this.tool, toolGeometry(this.site, 'point', this.corners)).catch((error) => (this.hint.textContent = `Not sent: ${error.message}.`));
+    this.send(this.tool, toolGeometry(this.site, 'point', this.corners)).catch((error) => (this.hint.textContent = t('Not sent: {reason}.', { reason: error.message })));
   }
 
   private finish(): void {
@@ -185,11 +186,11 @@ class ToolPad {
     this.send(tool, geometry).then(
       () => {
         this.reset();
-        this.hint.textContent = 'Sent to the table.';
+        this.hint.textContent = t('Sent to the table.');
       },
       (error) => {
         this.render();
-        this.hint.textContent = `Not sent: ${error.message}.`;
+        this.hint.textContent = t('Not sent: {reason}.', { reason: error.message });
       },
     );
   }
@@ -216,8 +217,8 @@ class ToolPad {
     this.actions.hidden = !drawn;
     this.undo.disabled = this.clear.disabled = corners.length === 0;
     this.done.disabled = corners.length < LEAST[tool.type];
-    this.done.textContent = `Send ${NOUN[tool.type].toLowerCase()}`;
-    this.hint.textContent = HINT[tool.type];
+    this.done.textContent = t(`Send ${NOUN[tool.type].toLowerCase()}`);
+    this.hint.textContent = t(HINT[tool.type]);
   }
 }
 
@@ -232,9 +233,9 @@ export function toolSection(layer: string, manifest: LayerManifest, store: Store
 
   const picker = el('div', 'segmented');
   picker.setAttribute('role', 'radiogroup');
-  picker.setAttribute('aria-label', 'Tool');
+  picker.setAttribute('aria-label', t('Tool'));
   const buttons = tools.map((tool) => {
-    const button = el('button', undefined, tool.label ?? NOUN[tool.type]);
+    const button = el('button', undefined, tool.label ?? t(NOUN[tool.type]));
     button.type = 'button';
     button.setAttribute('role', 'radio');
     button.addEventListener('click', () => {

@@ -133,9 +133,12 @@ The host exposes the engine to surfaces through these requests (see session.md f
 | `engine.open` | `{ kernel, params, fields: string[], encoding?: "u8" \| "f32", maxHz?: number }` | `{ stream }` |
 | `engine.set` | `{ stream, params }` | `{}` |
 | `engine.close` | `{ stream }` | `{}` |
+| `engine.probe` | `{ kernel, params, at: [lon, lat] }` | the kernel's answer for that place |
 
 `engine.open` creates a job and subscribes the calling surface. The host steps the job and, whenever the job's revision changes, pushes an `engine.status` event followed by one binary frame per field, at most `maxHz` times per second (default 30). The final frame of a job is sent at once.
 Streams belong to the connection and are closed when it drops. If a kernel accepts `lat` and `lon` and the caller omits them, the host fills them from the site origin.
+
+`engine.probe` asks a kernel about one place instead of the whole table, without a job (#252): a point question is cheap where a field is not. `at` is WGS84 and must be on the table. It is answered in the engine thread between job steps, so it waits for at most one step of a running job. Kernels without a probe answer with an error; so far only `sunlight` has one. Phones cannot call it; a layer's table code asks and publishes what the controller shows.
 
 | Event | Payload |
 | --- | --- |
@@ -184,6 +187,17 @@ Algorithm: for each cell, march a ray across the `dsm` towards the sun in one-ce
 
 `shadow` and `tree_shade` exist in `instant` mode, `sun_hours` and `tree_shade_hours` in `day` mode. Where no building shades a cell, `shadow + tree_shade = 1`, so a layer can colour the two kinds of shade differently. Status `info` carries `sun: { azimuth_deg, altitude_deg }` and `daylight_hours`, so a layer can show them without recomputing.
 
+**Probe.** `engine.probe` with `params` as for a job (`time` picks the day; `step_minutes` defaults to 5 here; `mode` is ignored) marches the same rays from the one cell under `at` across the day, and returns:
+
+| Key | Meaning |
+| --- | --- |
+| `day_start` | Unix seconds of local mean solar midnight; sample `k` is at `day_start + (k + 0.5) * step_minutes * 60` |
+| `step_minutes` | The sampling interval |
+| `light`, `tree`, `altitude` | Per sample: light reaching the cell (0..1), the share trees took, the sun's height in degrees |
+| `sun_hours`, `tree_hours`, `daylight_hours` | The day's sums, in hours; `sun_hours` matches the `sun_hours` field there |
+| `first_sun`, `last_sun` | Unix seconds of the first and last sample with at least half the light, or null |
+| `roof`, `height_m` | Whether the cell is on a building, and its `dsm - dtm` |
+
 The march is the simplest correct algorithm and costs one step per cell of shadow length. The planned speed-up is a max-height pyramid that lets the ray skip empty space; the parity and physics tests are what make that change safe.
 
 ## Wind kernel
@@ -227,3 +241,44 @@ The same check enforces the numerical limits (density within 0.8 to 1.2, lattice
 Status `info` carries `steps`, `settled`, `change`, `lattice_speed`, `peak_mps`, `steps_per_second`, `lattice: { width, height, cell_m, factor, domain }` and `wind: { u, v }`, the unit vector the wind blows towards in table axes.
 
 A zero budget runs exactly one step, which is how the parity test keeps both backends on the same step.
+
+## Stormwater kernel
+
+Kernel id `stormwater`, kind Iterative. Rain running off roofs and terrain, gathering in streams, pooling and draining, simulated live: the storm runs at `speed` times real time, so the table shows it as it happens. Two dimensions, top down. Replaces the Chalmers demo's static D8 routing (`animations/stormwater-flow.js`) with real water.
+
+| Param | Type | Meaning |
+| --- | --- | --- |
+| `rain_mm_h` | number, 0 to 200, default 40 | Rain intensity. 0 stops the rain and lets the site drain; the water already there stays |
+| `infiltration_mm_h` | number, 0 to 100, default 5 | How fast open ground soaks water up; three times as fast under a full tree canopy when `trees` is on |
+| `speed` | number, 1 to 600, default 60 | Simulated seconds per real second |
+| `resolution` | number, 32 to 1024, default 384 | Lattice cells along the longer side of the site |
+| `roofs` | boolean, default true | Rain on a roof comes down at the nearest open ground beside its building, like a downpipe. Off, roof rain is dropped (a green roof that keeps it) |
+| `trees` | boolean, default true | Ground under trees soaks up more |
+| `manning` | number, 0.01 to 0.1, default 0.025 | Manning roughness of the ground |
+| `storm` | number | Any change dries the site and starts the storm again |
+| `pace` | `"realtime"` or `"fast"`, default `"realtime"` | `fast` ignores the clock and runs as many steps as the budget allows (tests, benchmarks) |
+
+| Field | Units | Meaning |
+| --- | --- | --- |
+| `depth` | m | Water on the ground, 0 inside buildings. Display range 0 to 1 m |
+| `speed` | m/s | Speed of the running water. Display range 0 to 2 m/s |
+| `u` | m/s | Velocity towards higher columns (the right of the table), plus and minus 2 m/s with zero on an 8-bit step |
+| `v` | m/s | Velocity towards higher rows (the bottom of the table), as `u` |
+
+Velocity is reported only where the water is at least 5 mm deep, so dry ground and films of rain are zero in `u` and `v`, and a flow overlay treats them as places nothing runs.
+
+Algorithm: the local inertial form of the shallow water equations (Bates, Horritt and Fewtrell 2010, the scheme behind LISFLOOD-FP), explicit, on a staggered grid. Depth lives on cells, discharge per unit width on the faces between them. One step is two dispatches:
+
+1. Faces. Each cell updates the discharge through its east and south faces from the water-surface slope across the face, `q' = (q - g h_f dt dη/dx) / (1 + g dt n² |q| / h_f^(7/3))`, Manning friction applied semi-implicitly so thin sheets stay slow and stable. The flow depth `h_f` is the water above the higher of the two beds, so water does not climb a kerb it cannot reach over. A face carries no water when it is shallower than 1 mm, and may move at most a quarter of the upstream cell's water in one step, which keeps every depth non-negative and the scheme exactly mass-conserving.
+2. Cells. Each cell adds its rain (times its rain multiplier), the net inflow through its four faces, takes off infiltration, and writes depth and velocity for the visible window.
+
+The lattice is the scene grid coarsened by a whole factor chosen from `resolution`, with a one-cell ring of outfall cells around the site. A lattice cell is a building when at least half of its scene cells are solid; buildings are walls. The bed is the mean ground of the open scene cells in a lattice cell. The outfall ring sits level with the cell inside it and is kept dry, so water reaching the edge of the table leaves it. Each roof cell drains to the nearest open cell by steps through its building (breadth first), which adds one to that cell's rain multiplier.
+
+The time step keeps a Courant number of 0.35 for gravity waves over the deeper of 2 m and one and a half times the deepest water, at most 1 s: about 0.24 s on 3 m cells. In `realtime` pace a job owes `speed` simulated seconds per wall second; each `step` call runs the steps that are due within its budget, sleeps until the next one inside the budget when none is, and drops anything owed beyond half a second of wall time, so a slow machine falls behind the clock rather than piling up work. `realtime` in the status reports the storm seconds actually achieved per wall second.
+
+Every 100 steps the depths are read back: the totals, the next time step and how much the water still changes. The run has settled, and reports `Done`, after at least 300 simulated seconds once the mean depth changes by less than 1% of the rain rate (plus 1e-8 m/s) per second for five checks in a row: either steady (as much runs off and soaks in as falls) or drained. Any param change makes it run again; `resolution` rebuilds the lattice and `storm` starts dry, everything else keeps the water.
+
+Status `info` carries `steps`, `seconds` and `minutes` into the storm, `settled`, `change`, `dt`, `rain_mm` fallen per square metre, `rain_m3` fallen on the site (roofs included when they drain), `water_m3` on the ground, `deepest_m`, `flooded_m2` (deeper than 10 cm), `steps_per_second`, `realtime` and `lattice: { width, height, cell_m, factor }`.
+
+On Chalmers at the default resolution (417 x 250 cells of 3 m) the kernel runs about 180 times real time on llvmpipe, a software GPU, so any real GPU keeps up with the fastest storm speed and leaves room for `resolution` 1024.
+A zero budget in `fast` pace runs exactly one step, which is how the parity test keeps both backends on the same step.

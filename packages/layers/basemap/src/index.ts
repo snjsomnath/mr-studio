@@ -2,11 +2,15 @@ import { defineLayer, geojsonLines, geojsonPolygons, readSiteData, STRAY_REACH, 
 import type { LayerManifest } from '@mrstudio/sdk';
 
 import manifest from '../layer.json';
-import { TILE_STYLES, tilesFor } from './tiles.ts';
-import type { Style } from './tiles.ts';
+import { TILE_STYLES, adjust, sourceTemplate, tileTemplate, tilesFor } from './tiles.ts';
+import type { Style, TileStyle } from './tiles.ts';
 
 interface Params {
   style: Style;
+  /** The Sources connection a `source` map comes from. */
+  source: string;
+  grey: boolean;
+  brightness: number;
   ground: string;
   streets: boolean;
   streetColor: string;
@@ -78,13 +82,34 @@ export default defineLayer<Params>({
       }
     }
 
-    /** A map from a key-free tile service, laid on the table tile by tile. */
-    /** `over` draws on top once the tiles are in, such as the table's own buildings. */
-    async function drawTiles(style: keyof typeof TILE_STYLES, why = '', over?: () => void) {
+    /** What a tiled style draws from: a key-free service through the host's tile store, or a source. */
+    async function serviceFor(style: TileStyle | 'source'): Promise<{ template: string; credit: string; maxzoom: number; tone?: (r: number, g: number, b: number) => [number, number, number] } | null> {
+      if (style !== 'source') {
+        const service = TILE_STYLES[style];
+        return { template: tileTemplate(style), credit: service.credit, maxzoom: service.maxzoom, tone: service.tone };
+      }
+      const id = ctx.params.source;
+      if (!id) return null;
+      // The source's own name is its credit: "Mapbox", "CARTO", "Lantmäteriet", or what the author called it.
+      const list = await fetch('/api/sources', { cache: 'no-store' })
+        .then((r) => (r.ok ? r.json() : { sources: [] }))
+        .catch(() => ({ sources: [] }));
+      const found = ((list as { sources?: { id: string; name: string }[] }).sources ?? []).find((s) => s.id === id);
+      return { template: sourceTemplate(id), credit: found?.name ?? id, maxzoom: 20 };
+    }
+
+    /** A tiled map laid on the table tile by tile. `over` draws on top once the tiles are in, such as the table's own buildings. */
+    async function drawTiles(style: TileStyle | 'source', why = '', over?: () => void) {
       const mine = ++asked;
-      const service = TILE_STYLES[style];
-      ctx.publish({ source: service.credit, note: 'Loading the map…' });
-      const tiles = tilesFor(ctx.site, canvas.scale, service);
+      const service = await serviceFor(style);
+      if (mine !== asked) return;
+      if (!service) {
+        canvas.commit();
+        ctx.publish({ source: '', note: ctx.say('Choose a map source, or set one up under Sources.') });
+        return;
+      }
+      ctx.publish({ source: service.credit, note: ctx.say('Loading the map…') });
+      const tiles = tilesFor(ctx.site, canvas.scale, service.template, service.maxzoom);
       const g = canvas.ctx;
       let failed = 0;
       await Promise.all(
@@ -108,17 +133,26 @@ export default defineLayer<Params>({
         }),
       );
       if (mine !== asked) return;
-      if (service.tone) {
-        // Tiles are fetched with CORS, so the drawing can be read back and recoloured.
+      // The night map's own tone, then black and white and brightness (#37). Only for the base map
+      // the author chose: the stand-in under a table without streets keeps its night look.
+      const own = over ? undefined : adjust(ctx.params.grey, ctx.params.brightness ?? 1);
+      const tones = [service.tone, own].filter((t): t is NonNullable<typeof t> => Boolean(t));
+      if (tones.length > 0) {
+        // Tiles come from this computer's host, so the drawing can be read back and recoloured.
         const element = g.canvas;
         const pixels = g.getImageData(0, 0, element.width, element.height);
         const d = pixels.data;
-        for (let i = 0; i < d.length; i += 4) [d[i], d[i + 1], d[i + 2]] = service.tone(d[i]!, d[i + 1]!, d[i + 2]!);
+        for (let i = 0; i < d.length; i += 4) {
+          let rgb: [number, number, number] = [d[i]!, d[i + 1]!, d[i + 2]!];
+          for (const tone of tones) rgb = tone(...rgb);
+          [d[i], d[i + 1], d[i + 2]] = rgb;
+        }
         g.putImageData(pixels, 0, 0);
       }
       over?.();
       canvas.commit();
-      ctx.publish({ source: service.credit, note: failed === tiles.length && tiles.length ? 'The map could not be loaded: no connection to the tile service.' : why });
+      const lost = failed === tiles.length && tiles.length > 0;
+      ctx.publish({ source: service.credit, note: lost ? (style === 'source' ? ctx.say('The map could not be loaded from this source. Check it under Sources.') : ctx.say('The map could not be loaded: no connection to the map service, and no copy kept from before.')) : why });
     }
 
     let shapes: [ReturnType<typeof geojsonPolygons>, ReturnType<typeof geojsonLines>] = [[], []];

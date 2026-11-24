@@ -36,6 +36,8 @@ pub struct Scene {
     pub canopy: Vec<f32>,
     /// Highest point of the top surface or canopy.
     pub max_height: f32,
+    /// Lowest point of the top surface.
+    pub min_height: f32,
     pub revision: u64,
     pub gpu: Option<SceneGpu>,
 }
@@ -54,16 +56,17 @@ impl Scene {
                 return Err(EngineError::InvalidScene(format!("{name} contains non-finite values")));
             }
         }
-        let mut max_height = f32::MIN;
+        let (mut max_height, mut min_height) = (f32::MIN, f32::MAX);
         for i in 0..n {
             max_height = max_height.max(data.dsm[i]).max(data.dtm[i] + data.canopy[i]);
+            min_height = min_height.min(data.dsm[i]);
         }
         let gpu = ctx.gpu.as_ref().map(|gpu| SceneGpu {
             dtm: gpu.storage_f32("scene.dtm", &data.dtm),
             dsm: gpu.storage_f32("scene.dsm", &data.dsm),
             canopy: gpu.storage_f32("scene.canopy", &data.canopy),
         });
-        Ok(Self { grid: data.grid, dtm: data.dtm, dsm: data.dsm, canopy: data.canopy, max_height, revision, gpu })
+        Ok(Self { grid: data.grid, dtm: data.dtm, dsm: data.dsm, canopy: data.canopy, max_height, min_height, revision, gpu })
     }
 
     pub fn is_solid(&self, index: usize) -> bool {

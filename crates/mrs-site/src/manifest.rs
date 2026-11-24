@@ -235,7 +235,22 @@ pub struct Branding {
     pub title: Option<String>,
     #[serde(default)]
     pub logo: Option<String>,
+    /// The line under the title on the controller's home screen, for visitors (#73).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub welcome: Option<String>,
+    /// The languages visitors can switch between (#80), the first the table starts in:
+    /// `["en", "sv"]`. Empty or one language: no switch.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub languages: Vec<String>,
+    /// The site's own words in other languages, by language and then by the English text:
+    /// `{ "sv": { "Sample district": "Exempelstadsdelen" } }`. Titles, the welcome line, button
+    /// names, slide titles and the like. A layer's own words are in its package (`locales/`).
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub translations: BTreeMap<String, BTreeMap<String, String>>,
 }
+
+/// The languages MR Studio's visitor screens speak (#80).
+pub const LANGUAGES: [&str; 2] = ["en", "sv"];
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -365,6 +380,10 @@ pub struct SequenceStep {
     pub description: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
+    /// What the guide says at this step (#98). Shown on the guide's phone and in the editor,
+    /// never on the table or the visitors' controller.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notes: Option<String>,
 }
 
 /// The button that opens a layer on the controller: the words and icon the site's

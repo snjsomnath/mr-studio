@@ -2,6 +2,7 @@ import { coreWidgets, DashboardView, validateLayerPanels, validatePage } from '@
 import type { PanelInput } from '@mrstudio/dashboard';
 import type { Connection, LayerManifest, PanelContext, PanelSpec } from '@mrstudio/sdk';
 
+import { say, t } from './i18n.ts';
 import { baseContext } from './layer-manager.ts';
 import { layerModule } from './registry.ts';
 import type { Store } from './store.ts';
@@ -14,7 +15,7 @@ import type { Store } from './store.ts';
 export function mountDashboard(root: HTMLElement, store: Store, connection: Connection, dev: boolean): DashboardView {
   const registry = coreWidgets();
   const tv = store.state.site.tv ?? {};
-  const view = new DashboardView(root, { registry, dev, rotateS: tv.rotate_s, empty: 'Turn a layer on to see it here' });
+  const view = new DashboardView(root, { registry, dev, rotateS: tv.rotate_s, empty: t('Turn a layer on to see it here') });
   view.setTheme(tv.theme);
   store.onTv((next) => view.setTheme(next?.theme));
 
@@ -22,38 +23,7 @@ export function mountDashboard(root: HTMLElement, store: Store, connection: Conn
     for (const issue of issues) console.warn(`[${owner}] ${issue.path} ${issue.message}`);
   };
 
-  // `layer` is the id of a layer in the scene (an instance), which may come and go while the TV is up.
-  const input = (layer: string | undefined, spec: PanelSpec, key: string, page?: number): PanelInput => {
-    const id = layer ?? '';
-    const state = () => store.state.layers[id];
-    let cleanups: (() => void)[] = [];
-    return {
-      key,
-      spec,
-      page,
-      source: () => ({
-        params: state()?.params ?? {},
-        shared: state()?.shared ?? {},
-        site: store.state.site as unknown as Record<string, unknown>,
-      }),
-      // A panel that reads a layer is only up while that layer is on. A slideshow made of layers
-      // has nothing of its own to show: the controller's step strip speaks for it (#43).
-      active: () => layer === undefined || (state()?.active === true && !(state()?.step && store.manifest(state()!.layer)?.sequence)),
-      custom: (el) => {
-        const module = state() ? layerModule(state()!.layer) : undefined;
-        if (!module?.panel) return;
-        const ctx: PanelContext = Object.assign(Object.create(baseContext(store, connection, id)), {
-          panel: spec.id,
-          onCleanup: (cleanup: () => void) => cleanups.push(cleanup),
-        });
-        return module.panel(ctx, el);
-      },
-      onRemove: () => {
-        for (const cleanup of cleanups) cleanup();
-        cleanups = [];
-      },
-    };
-  };
+  const input = (layer: string | undefined, spec: PanelSpec, key: string, page?: number) => panelInput(store, connection, layer, spec, key, page);
 
   if (tv.pages?.length) {
     const inputs: PanelInput[] = [];
@@ -100,9 +70,56 @@ export function mountDashboard(root: HTMLElement, store: Store, connection: Conn
   return view;
 }
 
-/** A layer's panels. A layer with only a `panel` function gets one tile for it. */
+// `layer` is the id of a layer in the scene (an instance), which may come and go while the TV is up.
+/** A panel of a layer in the scene, for the TV or the table's ribbon (#78). */
+export function panelInput(store: Store, connection: Connection, layer: string | undefined, spec: PanelSpec, key: string, page?: number): PanelInput {
+  const id = layer ?? '';
+  const state = () => store.state.layers[id];
+  let cleanups: (() => void)[] = [];
+  return {
+    key,
+    spec,
+    page,
+    source: () => ({
+      params: state()?.params ?? {},
+      // The words a layer publishes (a caption, a status) in the visitors' language (#80).
+      shared: sayShared(state()?.shared ?? {}, store.manifest(state()?.layer ?? '')),
+      site: store.state.site as unknown as Record<string, unknown>,
+    }),
+    // A panel that reads a layer is only up while that layer is on. A slideshow made of layers
+    // has nothing of its own to show: the controller's step strip speaks for it (#43).
+    active: () => layer === undefined || (state()?.active === true && !(state()?.step && store.manifest(state()!.layer)?.sequence)),
+    custom: (el) => {
+      const module = state() ? layerModule(state()!.layer) : undefined;
+      if (!module?.panel) return;
+      const ctx: PanelContext = Object.assign(Object.create(baseContext(store, connection, id)), {
+        panel: spec.id,
+        onCleanup: (cleanup: () => void) => cleanups.push(cleanup),
+      });
+      return module.panel(ctx, el);
+    },
+    onRemove: () => {
+      for (const cleanup of cleanups) cleanup();
+      cleanups = [];
+    },
+  };
+}
+
+/** A layer's published values with its words said in the visitors' language: only whole texts it has a translation for. */
+function sayShared(shared: Record<string, unknown>, manifest: LayerManifest | undefined): Record<string, unknown> {
+  if (!manifest?.locales) return shared;
+  let out: Record<string, unknown> | undefined;
+  for (const [key, value] of Object.entries(shared)) {
+    if (typeof value !== 'string') continue;
+    const said = say(value, manifest);
+    if (said !== value) (out ??= { ...shared })[key] = said;
+  }
+  return out ?? shared;
+}
+
+/** A layer's TV panels: everything but its ribbon panels. A layer with only a `panel` function gets one tile for it. */
 function layerPanels(manifest: LayerManifest): PanelSpec[] {
-  if (manifest.panels) return manifest.panels;
+  if (manifest.panels) return manifest.panels.filter((spec) => !spec.ribbon);
   if (!layerModule(manifest.id)?.panel) return [];
   return [{ id: 'panel', widget: 'custom', size: 'tile', title: manifest.name, props: { reads: 3 } }];
 }

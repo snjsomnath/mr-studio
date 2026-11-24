@@ -60,9 +60,15 @@
         "date": "2026-06-21",
         "hour": 15
       }
+    },
+    {
+      "use": "stormwater",
+      "id": "stormwater",
+      "active": false
     }
   ],
   "branding": {
-    "title": "ACE MR Studio"
+    "title": "ACE MR Studio",
+    "languages": ["en", "sv"]
   }
 }

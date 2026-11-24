@@ -33,11 +33,12 @@ import {
   schemeFor,
   CATEGORY_SCHEMES,
   paintScale,
+  LISTEN_KEY,
 } from '@mrstudio/sdk';
 import type { CustomLayer, GeometryKind, LayerManifest, Paint, RecipeBlock, ResolvedPalette, Shapes, SitePalette, Size } from '@mrstudio/sdk';
 
-import { el } from '../controls.ts';
-import { LISTEN_KEY, dataUrl, loadData } from '../recipe-player.ts';
+import { el, layerButton } from '../controls.ts';
+import { dataUrl, loadData } from '../recipe-player.ts';
 import type { Store } from '../store.ts';
 import { icon } from './icons.ts';
 import './builder.css';
@@ -402,6 +403,77 @@ export function newCustomLayer(host: BuilderHost, shell: HTMLElement): void {
     datasets.length ? list : el('p', 'ed-empty', 'This table has no points, lines or areas of its own yet.'),
     more,
   );
+  dialog.addEventListener('close', () => dialog.remove());
+  shell.append(dialog);
+  dialog.showModal();
+}
+
+/** Where a saved custom layer is used on this table: its buttons, and the slides that show it. */
+export function customUses(store: Store, id: string): { id: string; name: string; slide?: string }[] {
+  const uses = [];
+  for (const instance of store.state.scene) {
+    const state = store.state.layers[instance];
+    const manifest = state && store.manifest(state.layer);
+    if (!state || !manifest?.custom || state.layer !== id) continue;
+    const parent = state.parent ? store.state.layers[state.parent] : undefined;
+    const parentManifest = parent && store.manifest(parent.layer);
+    uses.push({
+      id: instance,
+      name: layerButton(instance, manifest, state).name,
+      slide: parent && parentManifest && state.parent ? layerButton(state.parent, parentManifest, parent).name : undefined,
+    });
+  }
+  return uses;
+}
+
+/**
+ * Delete custom layers (#154): every saved one, with where it is used. Deleting asks first, takes
+ * it off the table and out of any slideshow, then deletes the saved recipe. Undo brings it back.
+ */
+export function deleteCustomDialog(host: BuilderHost, shell: HTMLElement, only?: string): void {
+  const dialog = el('dialog', 'im-dialog lb-new lb-delete');
+  dialog.ariaLabel = 'Delete custom layers';
+  const head = el('header', 'im-dialog-head');
+  const close = el('button', 'ed-icon-button', '×');
+  close.type = 'button';
+  close.ariaLabel = 'Close';
+  close.addEventListener('click', () => dialog.close());
+  head.append(el('h2', undefined, only ? 'Delete this custom layer' : 'Delete custom layers'), close);
+  const list = el('div', 'lb-data-list');
+  // Deleted here: the catalogue on this surface catches up a moment later.
+  const gone = new Set<string>();
+  const draw = () => {
+    const saved = host.store.manifests.filter((m) => m.custom && !gone.has(m.id) && (!only || m.id === only));
+    list.replaceChildren();
+    if (saved.length === 0) list.append(el('p', 'ed-empty', 'This table has no custom layers.'));
+    for (const manifest of saved) {
+      const id = manifest.id.replace(/^custom:/, '');
+      const uses = customUses(host.store, id);
+      const card = el('div', 'lb-data-card lb-delete-card');
+      const badge = el('span', 'lb-data-icon');
+      badge.append(icon(manifest.icon ?? 'layers', 20));
+      const text = el('span', 'lb-data-text');
+      const where = uses.map((u) => (u.slide ? `a slide in ${u.slide}` : `the ${u.name} button`));
+      text.append(
+        el('strong', undefined, manifest.custom?.name ?? manifest.name),
+        el('span', 'lb-data-detail', where.length ? `Used by ${where.join(', ')}` : 'Not on the table'),
+      );
+      const remove = button('action', 'Delete…', 'trash');
+      remove.addEventListener('click', async () => {
+        const also = where.length ? ` It also comes off the table: ${where.join(', ')}.` : '';
+        if (!window.confirm(`Delete the custom layer "${manifest.custom?.name ?? manifest.name}"?${also} Undo brings it back.`)) return;
+        remove.disabled = true;
+        // Children first: a slide goes before the button it is part of would.
+        for (const use of uses) await host.send('scene.remove', { layer: use.id });
+        if (await host.send('custom.remove', { id })) gone.add(manifest.id);
+        draw();
+      });
+      card.append(badge, text, remove);
+      list.append(card);
+    }
+  };
+  draw();
+  dialog.append(head, el('p', 'wz-lead', 'A custom layer is saved with the table even when no button uses it. Delete the ones you no longer need.'), list);
   dialog.addEventListener('close', () => dialog.remove());
   shell.append(dialog);
   dialog.showModal();
@@ -898,11 +970,11 @@ export function builderSection(host: BuilderHost, manifest: LayerManifest, butto
       set('column', p.column ?? null);
     });
     rows.push(field('Sound from', source), fileRow, field('', add, picker), status);
-    rows.push(field('Plays', segmented([['chorus', 'A few at a time'], ['loop', 'All, looping']] as const, p.trigger === 'loop' ? 'loop' : 'chorus', (v) => {
+    rows.push(field('Plays', segmented([['chorus', 'A few at a time'], ['loop', 'All, looping'], ['tap', 'When tapped']] as const, p.trigger === 'loop' || p.trigger === 'tap' ? p.trigger : 'chorus', (v) => {
       set('trigger', v);
       redraw();
     }, 'Plays')));
-    if (p.trigger !== 'loop') {
+    if (p.trigger !== 'loop' && p.trigger !== 'tap') {
       rows.push(field('At once', slider(p.voices ?? 3, 1, 8, 1, '', (v) => set('voices', v))));
       rows.push(field('Quiet between', slider(p.gap_s ?? 1.5, 0, 10, 0.5, ' s', (v) => set('gap_s', v))));
     }

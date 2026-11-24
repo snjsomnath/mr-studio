@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { buildNetwork, distancesFrom, exampleWalk, pointAlongRoute, route, setExposure, snap } from '../src/network.ts';
+import { buildNetwork, distancesFrom, exampleWalk, pointAlongRoute, route, setExposure, setPet, snap } from '../src/network.ts';
 import type { LonLat } from '../src/network.ts';
 
 // Tests use plain metres as coordinates.
@@ -60,17 +60,25 @@ test('exposure is the sunlit share of each edge', () => {
   assert.equal(west.exposure, 0);
 });
 
-test('the coolest route detours around the sun, within the limit', () => {
+/** PET from sun and shade: 10 °C in shade, 40 °C in full sun, mixed by the edge's sunlit share. */
+const mix = (network: ReturnType<typeof town>) => setPet(network, (edge) => 10 + 30 * edge.exposure, null, 5, distance);
+
+test('the coolest route detours around the heat, within the limit', () => {
   const network = town();
   // The bottom street is in full sun; everything else is shaded.
   setExposure(network, (p) => (p[1] < 1 ? 1 : 0), 5, distance);
+  mix(network);
   const [from, to] = [at(network, 0, 0), at(network, 200, 0)];
 
   const pair = route(network, from, to, 1)!;
   assert.equal(pair.shortest.length, 200);
   assert.equal(pair.shortest.sun, 200);
+  assert.equal(pair.shortest.heat, 200 * 40);
   assert.equal(pair.coolest.length, 400);
   assert.equal(pair.coolest.sun, 0);
+  assert.equal(pair.coolest.heat, 400 * 10);
+  assert.deepEqual(pair.coolest.profile[0], [0, 10]);
+  assert.deepEqual(pair.coolest.profile.at(-1), [400, 10]);
   assert.deepEqual(pair.coolest.coordinates, [[0, 0], [0, 100], [100, 100], [200, 100], [200, 0]]);
 
   // A 50% limit allows 300 m, and the only cooler route is 400 m.
@@ -79,9 +87,29 @@ test('the coolest route detours around the sun, within the limit', () => {
   assert.equal(route(network, from, to, 0)!.coolest.length, 200);
 });
 
+test('a longer walk that is only a little cooler per metre is not cooler overall', () => {
+  const network = town();
+  setExposure(network, (p) => (p[1] < 1 ? 1 : 0), 5, distance);
+  // 30 °C in the sun, 22 °C in the shade: 200 m at 30 is 6000 °C·m, 400 m at 22 is 8800.
+  setPet(network, (edge) => 22 + 8 * edge.exposure, null, 5, distance);
+  const pair = route(network, at(network, 0, 0), at(network, 200, 0), 1)!;
+  assert.equal(pair.coolest, pair.shortest);
+});
+
+test('a prepared PET raster sets each edge, and gaps in it fall back', () => {
+  const network = town();
+  // The raster has no data on the bottom street (a building, say) and 25 °C elsewhere.
+  setPet(network, () => 99, (p) => (p[1] < 1 ? Number.NaN : 25), 5, distance);
+  const bottom = network.edges.filter((e) => e.coordinates.every((p) => p[1] === 0));
+  const west = network.edges.find((e) => e.coordinates.every((p) => p[0] === 0))!;
+  assert.ok(bottom.every((e) => e.pet === 99));
+  assert.equal(west.pet, 25);
+});
+
 test('with no sun the shortest route is kept', () => {
   const network = town();
   setExposure(network, () => 0, 5, distance);
+  mix(network);
   const pair = route(network, at(network, 0, 0), at(network, 200, 100), 1)!;
   assert.equal(pair.coolest, pair.shortest);
   assert.equal(pair.shortest.length, 300);
@@ -103,6 +131,7 @@ test('snapping respects the distance limit', () => {
 test('example walks are repeatable and connected', () => {
   const network = town();
   setExposure(network, (p) => (p[1] < 1 ? 1 : 0), 5, distance);
+  mix(network);
   const first = exampleWalk(network, 3, 150, 400, 1)!;
   assert.deepEqual(exampleWalk(network, 3, 150, 400, 1), first);
   assert.ok(route(network, first[0], first[1], 1));

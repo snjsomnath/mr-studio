@@ -33,6 +33,9 @@ pub enum Kind {
     Wmts,
     Arcgis,
     Tiles,
+    Streetview,
+    /// A phone relay (#89): phones join the table through it from any network.
+    Relay,
 }
 
 /// How a request to the service is signed.
@@ -72,7 +75,7 @@ pub struct Template {
     pub single: bool,
 }
 
-pub const TEMPLATES: [Template; 8] = [
+pub const TEMPLATES: [Template; 10] = [
     Template {
         kind: Kind::Vasttrafik,
         name: "Västtrafik",
@@ -152,6 +155,26 @@ pub const TEMPLATES: [Template; 8] = [
         param: "",
         get_key: "",
         single: false,
+    },
+    Template {
+        kind: Kind::Streetview,
+        name: "Google Street View",
+        purpose: "Street-level pictures on the controller for Isovist, with a Google Maps key",
+        url: "https://maps.googleapis.com/maps/api/streetview",
+        auth: Auth::Query,
+        param: "key",
+        get_key: "https://developers.google.com/maps/documentation/streetview/get-api-key",
+        single: true,
+    },
+    Template {
+        kind: Kind::Relay,
+        name: "Phone relay",
+        purpose: "Phones join from any network, over HTTPS, through your relay server (mrs-relay)",
+        url: "https://relay.example.org",
+        auth: Auth::Bearer,
+        param: "",
+        get_key: "https://github.com/snjsomnath/mr-studio/blob/main/docs/relay.md",
+        single: true,
     },
 ];
 
@@ -627,6 +650,17 @@ impl Sources {
     }
 
     /// Tries the connection the way it will be used and remembers the answer.
+    /// The phone relay this computer has, ready to use (#89): its address and the header that
+    /// signs the host in. None without one, or without its token.
+    pub async fn relay(&self) -> Option<crate::relay::RelayLink> {
+        let view = self.list().into_iter().find(|v| v.connection.kind == Kind::Relay && v.ready)?;
+        let url = view.connection.url.trim_end_matches('/').to_string();
+        let probe = reqwest::Url::parse(&format!("{url}/host")).ok()?;
+        let signed = self.request(&view.connection.id, probe).await.ok()?.build().ok()?;
+        let authorization = signed.headers().get(reqwest::header::AUTHORIZATION)?.to_str().ok()?.to_string();
+        Some(crate::relay::RelayLink { url, authorization })
+    }
+
     pub async fn test(&self, id: &str) -> Result<Status, String> {
         let connection = self.connection(id).ok_or_else(|| format!("there is no source called '{id}'"))?;
         let (ok, message) = match self.try_it(&connection).await {
@@ -659,6 +693,13 @@ impl Sources {
                     Some(code) => Err(Refusal::new(502, format!("Mapbox says the token is not valid ({code})."))),
                     None => Err(Refusal::new(502, "Mapbox did not answer as expected.")),
                 }
+            }
+            Kind::Relay => {
+                let answer = send(self.sign(c, parse(&format!("{}/health", c.url.trim_end_matches('/')))?, false).await?).await?;
+                if !answer.status().is_success() {
+                    return Err(Refusal::new(502, format!("The relay answered {}.", answer.status().as_u16())));
+                }
+                Ok("The relay answers. Phones join through it the next time a table starts.".into())
             }
             Kind::Mapbox | Kind::Carto | Kind::Tiles => {
                 let url = self.tile_url(&c.id, 0, 0, 0)?;
@@ -693,6 +734,25 @@ impl Sources {
                 }
                 let layers = text.matches("<Layer").count().max(text.matches("<Layer>").count());
                 Ok(if layers > 0 { format!("The service answers, with {layers} layers.") } else { "The service answers.".into() })
+            }
+            Kind::Streetview => {
+                // The metadata service is free and says whether the key works without using up a picture.
+                let mut url = parse(&format!("{host}/maps/api/streetview/metadata"))?;
+                url.query_pairs_mut().append_pair("location", "57.68838,11.97776");
+                let answer = send(self.sign(c, url, false).await?).await?;
+                if !answer.status().is_success() {
+                    return Err(Refusal::new(502, refused_words(c, answer.status().as_u16())));
+                }
+                let body: Value = answer.json().await.unwrap_or(Value::Null);
+                match body["status"].as_str() {
+                    Some("OK") | Some("ZERO_RESULTS") => Ok("The key works.".into()),
+                    Some("REQUEST_DENIED") => Err(Refusal::new(
+                        502,
+                        "Google refused the key. Turn on the Street View Static API for it in the Google Cloud console.",
+                    )),
+                    Some(status) => Err(Refusal::new(502, format!("Google answered {status}."))),
+                    None => Err(Refusal::new(502, "Google did not answer as expected.")),
+                }
             }
             Kind::Arcgis => {
                 let mut url = parse(&c.url)?;

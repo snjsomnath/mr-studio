@@ -1,18 +1,20 @@
 import { isVisible } from '@mrstudio/sdk';
 import type { Connection, LayerManifest, LayerState } from '@mrstudio/sdk';
 
-import { defaultSideOf, el, isAmbient, isOffered, layerButton, widget } from '../controls.ts';
+import { defaultSideOf, el, isAmbient, isAtRest, isOffered, layerButton, visibleControls, widget } from '../controls.ts';
 import type { Widget } from '../controls.ts';
 import { paramSender } from '../layer-manager.ts';
 import type { Store } from '../store.ts';
-import { builderSection, layerFromImport, newCustomLayer, paletteDialog } from './builder.ts';
+import { builderSection, deleteCustomDialog, layerFromImport, newCustomLayer, paletteDialog } from './builder.ts';
 import { DisplayTab } from './display-tab.ts';
 import type { BuilderHost } from './builder.ts';
 import { LAYER_ICONS, icon } from './icons.ts';
+import { HistoryControls } from './history.ts';
 import { Importer, targetFor } from './importer.ts';
 import { confirmLeave, actionFor, fileButton } from './file-menu.ts';
 import type { FileAction } from './file-menu.ts';
 import { slidesSection } from './slides.ts';
+import { tableSettings } from './table-settings.ts';
 import { AT_REST, Wizard } from './wizard.ts';
 import './editor.css';
 
@@ -22,7 +24,7 @@ import './editor.css';
  * the table, which is visual and carries almost no text; the controller, the screen
  * beside it with the layer buttons, controls, legend and dashboard; and phones.
  */
-type Context = { kind: 'home' } | { kind: 'layer'; id: string } | { kind: 'controller' } | { kind: 'phone' };
+type Context = { kind: 'home' } | { kind: 'layer'; id: string } | { kind: 'controller' } | { kind: 'phone' } | { kind: 'table' };
 
 
 type Invoke = (command: string, args?: object) => Promise<unknown>;
@@ -99,7 +101,10 @@ export class Editor {
   /** The one thing this table still lacks, with the way to it. */
   private readonly next = el('div', 'ed-next');
   private readonly inspector = el('aside', 'ed-inspector');
-  private readonly saved = el('span', 'ed-saved');
+  private readonly saved = el('button', 'ed-saved');
+  /** Undo, redo and the History panel, on the host's revision history (#57, #72). */
+  private history!: HistoryControls;
+  private readonly titleName = el('strong');
   private readonly shell = el('div', 'ed');
   private readonly body = el('div', 'ed-body');
   /** The live controller, shown in the middle in place of the map. */
@@ -116,11 +121,32 @@ export class Editor {
   constructor(root: HTMLElement, store: Store, connection: Connection) {
     this.store = store;
     this.connection = connection;
+    this.history = new HistoryControls(connection, () => store.surface, (problem) => this.setSaved(problem));
+    this.saved.type = 'button';
+    this.saved.addEventListener('click', () => this.history.toggle(this.saved));
 
     const { shell, body } = this;
     const left = el('aside', 'ed-left');
     const name = el('header', 'ed-left-head');
-    name.append(el('strong', undefined, store.state.site.name));
+    // The table's name opens its settings (#62, #73).
+    const tableName = el('button', 'ed-table-name');
+    tableName.type = 'button';
+    tableName.title = 'Table settings: name, time zone, place, and what the controller says';
+    const drawName = (): void => tableName.replaceChildren(el('strong', undefined, store.state.site.name), icon('settings', 14));
+    drawName();
+    tableName.addEventListener('click', () => this.go({ kind: 'table' }));
+    store.onSettings(() => {
+      drawName();
+      this.titleName.textContent = store.state.site.name;
+      if (this.context.kind === 'table') this.render();
+    });
+    window.addEventListener('mrs-edit', (event) => {
+      if ((event as CustomEvent<{ action: string }>).detail.action === 'table-settings') {
+        if (this.wizard) this.closeWizard();
+        this.go({ kind: 'table' });
+      }
+    });
+    name.append(tableName);
     left.append(name, this.tree);
 
     const centre = el('main', 'ed-centre');
@@ -273,6 +299,15 @@ export class Editor {
     close.ariaLabel = 'Close';
     close.addEventListener('click', () => dialog.close());
     head.append(el('h2', undefined, 'Add data'), close);
+    /** Adds the layer that shows a file just brought in, set to that file. */
+    const showWith = async (id: string, params: Record<string, unknown>) => {
+      const manifest = this.store.manifests.find((m) => m.id === id);
+      if (manifest) {
+        await this.add(manifest);
+        if (this.added) await this.send('layer.set', { layer: this.added, params });
+      }
+      dialog.close();
+    };
     const importer = new Importer({
       site: () => this.store.state.site,
       hold: (on) => this.hold(on),
@@ -282,6 +317,10 @@ export class Editor {
         await layerFromImport(this.builderHost(), layer);
         dialog.close();
       },
+      // A plan drawing (#193): a Masterplan layer that reveals it phase by phase.
+      showPlan: (dataset) => showWith('plan', { dataset }),
+      // A video (#194): a Video walk that plays it on the controller.
+      showVideo: (dataset) => showWith('walkthrough', { video: dataset }),
     });
     dialog.append(head, el('p', 'wz-lead', 'Bring a file into the table, or fetch it from OpenStreetMap. It is copied into the table and stays on this computer.'), importer.element);
     dialog.addEventListener('close', () => dialog.remove());
@@ -320,7 +359,7 @@ export class Editor {
       const state = store.state.layers[other];
       const manifest = state && store.manifest(state.layer);
       // Items come and go with their layer; the host switches them.
-      if (!state || !manifest || isAmbient(manifest) || state.parent) continue;
+      if (!state || !manifest || isAtRest(manifest, state) || state.parent) continue;
       // A layer a slideshow is showing belongs to the slideshow while it stays open.
       if (state.shown_by && state.shown_by === id) continue;
       const wanted = other === id || (state.active && id !== null && Boolean(alongside || manifest.alongside));
@@ -351,7 +390,7 @@ export class Editor {
     if (this.wizard || (this.context.kind !== 'home' && this.context.kind !== 'layer')) return;
     const manifest = this.store.manifest(state.layer);
     // A slideshow showing a layer is not someone opening that layer.
-    if (!manifest || isAmbient(manifest) || state.parent || state.shown_by) return;
+    if (!manifest || isAtRest(manifest, state) || state.parent || state.shown_by) return;
     const mine = this.context.kind === 'layer' && this.context.id === id;
     if (state.active && !mine && !manifest.alongside) this.context = { kind: 'layer', id };
     else if (!state.active && mine) this.context = { kind: 'home' };
@@ -379,7 +418,7 @@ export class Editor {
     this.problem = problem ?? null;
     const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     this.saved.replaceChildren(icon(problem ? 'alert' : 'check', 14), el('span', undefined, problem ?? `Saved ${time}`));
-    this.saved.title = problem ? 'This change could not be saved' : `Every change is saved as you make it. Last saved at ${time}.`;
+    this.saved.title = problem ? 'This change could not be saved. Click for the history.' : `Every change is saved as you make it. Last saved at ${time}. Click for the history.`;
     this.saved.classList.toggle('is-error', Boolean(problem));
   }
 
@@ -449,9 +488,10 @@ export class Editor {
     });
     // The app's native menu (src-tauri/src/file_menu.rs) asks the page to check first.
     window.addEventListener('mrs-file', (event) => {
-      const detail = (event as CustomEvent<{ action: string; then?: FileAction; message?: string }>).detail;
+      const detail = (event as CustomEvent<{ action: string; then?: FileAction; message?: string; detail?: string }>).detail;
       if (detail.action === 'ask' && detail.then) void this.file(detail.then);
       if (detail.action === 'problem' && detail.message) this.setSaved(detail.message);
+      if (detail.action === 'exported' && detail.message) this.history.notify(detail.message, detail.detail);
     });
     // The window's own close button: the app waits a moment for this before it closes.
     (window as { mrsBeforeLeave?: () => void }).mrsBeforeLeave = () => void this.keepPicture();
@@ -624,7 +664,10 @@ export class Editor {
     // Windows), so the button would repeat it (#148). A browser has no menu: it gets the button.
     const file = invoke ? null : fileButton(false, (action) => void this.file(action));
     const name = el('div', 'ed-name');
-    name.append(el('strong', undefined, this.store.state.site.name), this.saved);
+    this.titleName.textContent = this.store.state.site.name;
+    name.append(this.titleName, this.saved);
+    const steps = el('div', 'ed-steps');
+    steps.append(this.history.undoButton, this.history.redoButton);
 
     const actions = el('div', 'ed-actions');
     const preview = button('ed-button', 'Preview', 'play');
@@ -686,7 +729,7 @@ export class Editor {
       void refresh();
     }
     actions.append(preview, present);
-    bar.append(brand, ...(file ? [file] : []), name, actions);
+    bar.append(brand, ...(file ? [file] : []), steps, name, actions);
     return bar;
   }
 
@@ -857,7 +900,12 @@ export class Editor {
     const palette = button('ed-tool is-large', 'Palette', 'palette', 20);
     palette.title = 'The colours every custom layer uses. Change one and the whole table follows.';
     palette.addEventListener('click', () => paletteDialog(this.builderHost(), this.shell));
-    groups.push(this.group('Make your own', custom, palette));
+    const forget = button('ed-tool', 'Delete custom', 'trash');
+    const saved = this.store.manifests.filter((m) => m.custom).length;
+    forget.disabled = saved === 0;
+    forget.title = saved ? 'Delete custom layers this table no longer needs, wherever they are used' : 'This table has no custom layers';
+    forget.addEventListener('click', () => deleteCustomDialog(this.builderHost(), this.shell));
+    groups.push(this.group('Make your own', custom, palette, ...this.column([forget])));
 
     // The selection: always the same four tools, greyed out when nothing is selected or a tool does not apply.
     {
@@ -935,8 +983,8 @@ export class Editor {
 
   private renderTree(instances: { id: string; manifest: LayerManifest; state: LayerState }[]): void {
     const { context } = this;
-    const ambient = instances.filter((i) => isAmbient(i.manifest) && !i.state.parent);
-    const layers = instances.filter((i) => !isAmbient(i.manifest) && !i.state.parent);
+    const ambient = instances.filter((i) => isAtRest(i.manifest, i.state) && !i.state.parent);
+    const layers = instances.filter((i) => !isAtRest(i.manifest, i.state) && !i.state.parent);
     const nodes: HTMLElement[] = [];
 
     nodes.push(el('h2', 'ed-tree-title', 'Map'));
@@ -1011,6 +1059,10 @@ export class Editor {
       title = 'Phones';
       detail = 'Personal controllers for visitors';
       notice = `Visitors join with the code ${this.store.state.session.code}. Choosing which layers a phone may control comes with a later step of the editor.`;
+    } else if (context.kind === 'table') {
+      iconName = 'settings';
+      title = 'Table settings';
+      detail = 'This table only. The controller shows its title and welcome line.';
     } else if (context.kind === 'controller') {
       iconName = 'tv';
       title = 'Controller';
@@ -1018,8 +1070,9 @@ export class Editor {
       notice = 'The map stays visual. Words, buttons and numbers live on the controller. Arranging it here comes with a later step of the editor. ';
     }
     if (this.wizard) return;
-    this.showController(context.kind === 'controller');
-    if (context.kind === 'controller') notice = null;
+    const showsController = context.kind === 'controller' || context.kind === 'table';
+    this.showController(showsController);
+    if (showsController) notice = null;
     const badge = el('span', 'ed-row-icon');
     badge.append(icon(iconName));
     this.canvasHead.replaceChildren(badge, el('strong', undefined, title), el('span', undefined, detail));
@@ -1131,7 +1184,7 @@ export class Editor {
     shown.append(label, power);
 
     const send = paramSender(this.connection, id, { method: 'scene.set' });
-    const widgets: Widget[] = (manifest.controls ?? []).map((control) =>
+    const widgets: Widget[] = visibleControls(manifest.controls).map((control) =>
       widget(
         control,
         (value) => send({ [control.id]: value }),
@@ -1223,7 +1276,7 @@ export class Editor {
 
     if (context.kind === 'home') {
       nodes.push(head('moon', AT_REST, 'When no layer is open'));
-      const ambient = instances.filter((i) => isAmbient(i.manifest) && !i.state.parent);
+      const ambient = instances.filter((i) => isAtRest(i.manifest, i.state) && !i.state.parent);
       const section = el('section', 'ed-section');
       section.append(el('h3', undefined, 'On the map'));
       if (ambient.length === 0) section.append(el('p', 'ed-empty', 'Nothing yet. Add a base map and some ambient life from the toolbar above.'));
@@ -1240,6 +1293,17 @@ export class Editor {
       nodes.push(section);
       const open = ambient.find((i) => i.id === this.homeItem);
       if (open) nodes.push(this.settings(open.id, open.manifest));
+    } else if (context.kind === 'table') {
+      nodes.push(head('settings', 'Table settings', this.store.state.site.name));
+      const invoke = desktop();
+      nodes.push(
+        ...tableSettings({
+          store: this.store,
+          send: (method, params) => this.send(method, params),
+          place: () => this.openWizard(false, 0),
+          appSettings: invoke ? () => void invoke('open_settings') : null,
+        }),
+      );
     } else if (context.kind === 'layer') {
       const layer = instances.find((i) => i.id === context.id)!;
       const as = layerButton(layer.id, layer.manifest, layer.state);

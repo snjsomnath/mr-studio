@@ -209,8 +209,32 @@ impl Control {
 fn read_manifest(dir: &Path) -> anyhow::Result<LayerDef> {
     let path = dir.join("layer.json");
     let text = std::fs::read_to_string(&path).with_context(|| format!("reading {}", path.display()))?;
-    let value: Value = serde_json::from_str(&text).with_context(|| format!("parsing {}", path.display()))?;
+    let mut value: Value = serde_json::from_str(&text).with_context(|| format!("parsing {}", path.display()))?;
+    let locales = read_locales(dir)?;
+    if !locales.is_empty() {
+        value["locales"] = Value::Object(locales);
+    }
     LayerDef::parse(value).with_context(|| format!("in {}", path.display()))
+}
+
+/// A layer package's words in other languages (#80): `locales/sv.json` and so on, sent to
+/// surfaces in the manifest as `locales: { sv: {...} }`. What a file holds is in
+/// docs/contracts/layer.md, Languages.
+fn read_locales(dir: &Path) -> anyhow::Result<Map<String, Value>> {
+    let mut locales = Map::new();
+    for language in mrs_site::LANGUAGES {
+        let path = dir.join("locales").join(format!("{language}.json"));
+        if !path.is_file() {
+            continue;
+        }
+        let text = std::fs::read_to_string(&path).with_context(|| format!("reading {}", path.display()))?;
+        let words: Value = serde_json::from_str(&text).with_context(|| format!("parsing {}", path.display()))?;
+        if !words.is_object() {
+            bail!("{} must hold an object", path.display());
+        }
+        locales.insert(language.to_string(), words);
+    }
+    Ok(locales)
 }
 
 /// Loads the layer catalogue: every core layer package, then the site-only layers the
@@ -235,6 +259,20 @@ fn custom_manifest(id: &str, recipe: &mrs_site::CustomLayer) -> Value {
     }
     if let Some(attract) = &recipe.attract {
         manifest["attract"] = serde_json::to_value(attract).unwrap_or_default();
+    }
+    // Points with sounds (#150) can be played on demand: a tap on the table or a phone's map
+    // (the `sound` tool), a card on the controller (the same tool, at the point), or a step of
+    // a presentation that names the sound (the `play` param).
+    if recipe.motion.iter().any(|m| m.block == "sound") {
+        manifest["tools"] = serde_json::json!([{ "id": "sound", "type": "point", "label": "Play a sound" }]);
+        let taken = recipe.controls.iter().any(|c| c.get("id").and_then(Value::as_str) == Some("play"));
+        if !taken {
+            if let Some(controls) = manifest["controls"].as_array_mut() {
+                controls.push(serde_json::json!({
+                    "id": "play", "type": "text", "label": "Play a sound (its name)", "default": "", "tier": "more"
+                }));
+            }
+        }
     }
     manifest
 }
@@ -349,6 +387,29 @@ mod tests {
     }
 
     #[test]
+    fn every_core_layer_speaks_swedish() {
+        let repo = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let site = Site::load(repo.join("sites/sample")).unwrap();
+        let catalog = load_catalog(&site, &repo.join("packages/layers")).unwrap();
+        for def in catalog.iter().filter(|d| !d.source.starts_with(mrs_site::CUSTOM_PREFIX)) {
+            let words = &def.manifest["locales"]["sv"];
+            let name = def.manifest["name"].as_str().unwrap();
+            assert!(words[name].is_string(), "{} has no Swedish name", def.id);
+            // Every control's label and choices have a translation (#80).
+            for control in def.manifest["controls"].as_array().map(Vec::as_slice).unwrap_or(&[]) {
+                let label = control["label"].as_str().unwrap_or_default();
+                assert!(words[label].is_string(), "{}: '{label}' has no Swedish", def.id);
+                for option in control["options"].as_array().map(Vec::as_slice).unwrap_or(&[]) {
+                    let text = option["label"].as_str().unwrap_or_default();
+                    assert!(text.ends_with("m/s") || words[text].is_string(), "{}: '{text}' has no Swedish", def.id);
+                }
+            }
+        }
+        let sunlight = catalog.iter().find(|d| d.id == "sunlight").unwrap();
+        assert_eq!(sunlight.manifest["locales"]["sv"]["Sunlight"], "Solljus");
+    }
+
+    #[test]
     fn a_table_missing_a_layers_data_still_opens() {
         let repo = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
         let mut site = Site::load(repo.join("sites/sample")).unwrap();
@@ -379,5 +440,23 @@ mod tests {
             json!({ "api": 1, "id": "t", "controls": [{ "id": "x", "type": "select", "options": [{ "value": "a" }], "default": "b" }] })
         )
         .is_err());
+    }
+
+    #[test]
+    fn custom_layers_with_sounds_can_be_played_on_demand() {
+        let recipe: mrs_site::CustomLayer = serde_json::from_value(json!({
+            "name": "Birds",
+            "data": [{ "id": "birds", "dataset": "birds" }],
+            "look": [{ "id": "dots", "block": "points", "data": "birds" }],
+            "motion": [{ "id": "dots-sound", "block": "sound", "on": "dots", "props": { "column": "sound" } }]
+        }))
+        .unwrap();
+        let def = custom_def("birds", &recipe).unwrap();
+        assert_eq!(def.tool("sound").unwrap().kind, ToolKind::Point);
+        assert_eq!(def.validate(&patch(json!({ "play": "Blackbird" })), false).unwrap()["play"], json!("Blackbird"));
+        let silent: mrs_site::CustomLayer = serde_json::from_value(json!({ "name": "Dots" })).unwrap();
+        let def = custom_def("dots", &silent).unwrap();
+        assert!(def.tool("sound").is_none());
+        assert!(def.validate(&patch(json!({ "play": "x" })), false).is_err());
     }
 }

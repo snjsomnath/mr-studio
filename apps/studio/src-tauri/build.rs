@@ -85,13 +85,18 @@ fn stage(root: &Path, staged: &Path) -> io::Result<()> {
         let dir = entry?.path();
         let manifest = dir.join("layer.json");
         if manifest.exists() {
-            write_if_changed(&layers.join(dir.file_name().expect("layer folder name")).join("layer.json"), &fs::read(manifest)?)?;
+            let staged_layer = layers.join(dir.file_name().expect("layer folder name"));
+            write_if_changed(&staged_layer.join("layer.json"), &fs::read(manifest)?)?;
+            // The layer's words in other languages (#80), merged into the manifest by the host.
+            if dir.join("locales").is_dir() {
+                sync_dir(&dir.join("locales"), &staged_layer.join("locales"), &|path| path.extension().is_some_and(|e| e == "json"))?;
+            }
         }
     }
 
     // The sample site, so the app has something to show on first start.
     sync_dir(&root.join("sites/sample"), &staged.join("sites/sample"), &|path| {
-        !path.components().any(|c| c.as_os_str() == "scene" || c.as_os_str() == "tools")
+        !path.components().any(|c| c.as_os_str() == "scene" || c.as_os_str() == "tools" || c.as_os_str() == ".mrstudio")
     })
 }
 

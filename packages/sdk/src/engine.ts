@@ -133,6 +133,15 @@ export class EngineClient {
     return stream;
   }
 
+  /**
+   * Asks a kernel about one place instead of the whole table (sunlight: that spot's light every few
+   * minutes across the day, and its sun hours). `at` is WGS84 `[lon, lat]`; the site's own position
+   * fills `lat`/`lon` params as for `open`. Rejects for a place off the table or a kernel without probes.
+   */
+  probe<T = Record<string, unknown>>(kernel: string, params: Record<string, unknown>, at: readonly [number, number] | readonly number[]): Promise<T> {
+    return this.connection.request<T>('engine.probe', { kernel, params, at: [at[0], at[1]] });
+  }
+
   info(): Promise<{ backend: string; adapter: string | null; kernels: { id: string }[] }> {
     return this.connection.request('engine.info');
   }

@@ -5,7 +5,7 @@
  */
 import { el } from '../controls.ts';
 
-export type FileAction = 'new' | 'open' | 'save' | 'save_as' | 'reveal' | 'close' | 'home';
+export type FileAction = 'new' | 'open' | 'save' | 'save_as' | 'export' | 'reveal' | 'close' | 'home';
 
 const mac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 
@@ -25,7 +25,7 @@ export function actionFor(event: KeyboardEvent, inApp: boolean): FileAction | nu
 }
 
 interface Item {
-  action: FileAction | 'export';
+  action: FileAction;
   label: string;
   shortcut?: string;
   /** Needs the desktop app. */
@@ -39,7 +39,7 @@ const ITEMS: (Item | 'line')[] = [
   'line',
   { action: 'save', label: 'Save', shortcut: keys('S') },
   { action: 'save_as', label: 'Save As…', shortcut: keys('S', true), app: true },
-  { action: 'export', label: 'Export table…', note: 'Coming soon' },
+  { action: 'export', label: 'Export table…', app: true },
   { action: 'reveal', label: mac ? 'Show in Finder' : 'Show in Explorer', app: true },
   'line',
   { action: 'close', label: 'Close table', shortcut: keys('W'), app: true },
@@ -66,10 +66,10 @@ export function fileButton(inApp: boolean, run: (action: FileAction) => void): H
     row.type = 'button';
     row.setAttribute('role', 'menuitem');
     row.append(el('span', undefined, item.label), el('kbd', undefined, item.note ?? item.shortcut ?? ''));
-    const off = item.action === 'export' || (Boolean(item.app) && !inApp);
+    const off = Boolean(item.app) && !inApp;
     row.disabled = off;
     if (item.app && !inApp) row.title = 'In the MR Studio app';
-    if (item.action === 'export') row.title = 'Export the table as one file to take to another computer (#85)';
+    if (item.action === 'export' && inApp) row.title = 'One .mrstable file to open on another computer. Keys stay on this one.';
     if (!off) {
       row.addEventListener('click', () => {
         close();

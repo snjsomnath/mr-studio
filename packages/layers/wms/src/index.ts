@@ -8,6 +8,8 @@ import { request } from './request.ts';
 interface Params {
   /** A map that comes with MR Studio (`presets.ts`), or `custom` for the address and layers below. */
   map: string;
+  /** `wms`, or `arcgis` for an ArcGIS MapServer or ImageServer address (#42). */
+  service: string;
   url: string;
   layers: string;
   styles: string;
@@ -17,8 +19,23 @@ interface Params {
   opacity: number;
 }
 
+/** What to ask the host for, or nothing while the map is not set up yet. */
+function wanted(params: Params) {
+  const wanted = resolve(params);
+  // An ArcGIS service shows all its layers when none are named; a WMS needs at least one.
+  const needsLayers = wanted.service !== 'arcgis';
+  if ((!wanted.url.trim() && !wanted.signin?.trim()) || (needsLayers && !wanted.layers.trim())) return null;
+  return wanted;
+}
+
 export default defineLayer<Params>({
   manifest: manifest as LayerManifest,
+
+  // A slideshow fetches its maps when it opens; the host keeps them for a venue without a connection.
+  async prefetch(site, params) {
+    const map = wanted(params);
+    if (map) await fetch(request(site, map).href).then((response) => response.arrayBuffer());
+  },
 
   async table(ctx) {
     const canvas = ctx.map.addDrawing('wms', { opacity: ctx.params.opacity });
@@ -29,13 +46,13 @@ export default defineLayer<Params>({
       const mine = ++asked;
       canvas.clear();
       canvas.commit();
-      const wanted = resolve(ctx.params);
-      if ((!wanted.url.trim() && !wanted.signin?.trim()) || !wanted.layers.trim()) {
-        ctx.publish({ note: 'Choose a map, or give the service address (or a sign-in from Sources) and its layers' });
+      const map = wanted(ctx.params);
+      if (!map) {
+        ctx.publish({ note: ctx.say('Choose a map, or give the service address (or a sign-in from Sources) and its layers') });
         return;
       }
-      const { href, bbox, width, height } = request(ctx.site, wanted);
-      ctx.publish({ note: 'Loading the map…', source: wanted.source });
+      const { href, bbox, width, height } = request(ctx.site, map);
+      ctx.publish({ note: ctx.say('Loading the map…'), source: map.source });
       try {
         const response = await fetch(href);
         if (!response.ok) throw new Error(await response.text());
@@ -53,9 +70,9 @@ export default defineLayer<Params>({
         g.drawImage(image, 0, 0);
         g.restore();
         canvas.commit();
-        ctx.publish({ note: '', source: wanted.source });
+        ctx.publish({ note: '', source: map.source });
       } catch (error) {
-        if (mine === asked) ctx.publish({ note: `The map could not be loaded: ${(error as Error).message.slice(0, 200)}` });
+        if (mine === asked) ctx.publish({ note: ctx.say('The map could not be loaded: {reason}', { reason: (error as Error).message.slice(0, 200) }) });
       }
     }
 
@@ -65,7 +82,7 @@ export default defineLayer<Params>({
     return {
       update(changed) {
         if (changed.includes('opacity')) canvas.setOpacity(ctx.params.opacity);
-        if (changed.some((key) => key === 'map' || key === 'url' || key === 'layers' || key === 'styles' || key === 'signin')) void load();
+        if (changed.some((key) => key === 'map' || key === 'service' || key === 'url' || key === 'layers' || key === 'styles' || key === 'signin')) void load();
       },
     };
   },

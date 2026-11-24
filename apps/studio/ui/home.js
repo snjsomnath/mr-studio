@@ -149,6 +149,56 @@ async function openFolder() {
   }
 }
 
+// ---- Open a table file (#85) -------------------------------------------------
+
+/** Opens a .mrstable file: asks for one without `file`, unpacks it as a new table here and
+ *  says what this computer still needs for it. With nothing missing it opens at once. */
+async function openTableFile(file) {
+  if (busy) return;
+  showError();
+  let imported;
+  try {
+    document.body.style.cursor = 'progress';
+    imported = await invoke('import_table', { file: file ?? null });
+  } catch (e) {
+    showError(e);
+    return;
+  } finally {
+    document.body.style.cursor = '';
+  }
+  if (!imported) return;
+  if (imported.missing.length === 0 && imported.problems.length === 0) {
+    await openTable(imported.path);
+    return;
+  }
+  const dialog = $('import-dialog');
+  $('import-title').textContent = `“${imported.name}” is here`;
+  $('import-where').textContent = `It is a new table in ${imported.path}.`;
+  $('import-missing').hidden = imported.missing.length === 0;
+  $('import-sources').replaceChildren(
+    ...imported.missing.map((s) => el('li', {}, el('b', { textContent: s.name || s.id }), el('span', { textContent: `Used by ${s.layers.join(', ') || 'a layer'}` }))),
+  );
+  $('import-problems').hidden = imported.problems.length === 0;
+  $('import-problem-list').replaceChildren(...imported.problems.map((p) => el('li', { textContent: p })));
+  $('import-upgraded').hidden = !imported.upgraded;
+  $('import-upgraded').textContent = imported.upgraded ?? '';
+  $('import-sources-button').hidden = imported.missing.length === 0;
+  $('import-sources-button').onclick = () => invoke('open_sources').catch(showError);
+  $('import-open').onclick = async () => {
+    dialog.close();
+    await openTable(imported.path);
+  };
+  await load().catch(() => {});
+  dialog.showModal();
+  $('import-open').focus();
+}
+
+/** A table file the app was asked to open (a double click on one) while Home was coming up. */
+async function openWaitingFile() {
+  const file = await invoke('take_opened_file').catch(() => null);
+  if (file) await openTableFile(file);
+}
+
 async function newTable() {
   showError();
   try {
@@ -173,6 +223,8 @@ function show(view) {
 
 for (const id of ['nav-new', 'card-new']) $(id).addEventListener('click', newTable);
 for (const id of ['nav-open', 'card-open']) $(id).addEventListener('click', openFolder);
+for (const id of ['nav-file', 'card-file']) $(id).addEventListener('click', () => openTableFile());
+window.addEventListener('mrs-opened-file', () => void openWaitingFile());
 $('nav-settings').addEventListener('click', () => invoke('open_settings').catch(showError));
 $('nav-sources').addEventListener('click', () => invoke('open_sources').catch(showError));
 $('nav-quit').addEventListener('click', () => invoke('quit'));
@@ -271,4 +323,4 @@ $('new-form').addEventListener('submit', async (event) => {
   $('new-next').disabled = false;
 });
 
-load().catch(showError);
+load().then(openWaitingFile).catch(showError);

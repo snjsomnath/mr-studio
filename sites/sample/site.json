@@ -99,6 +99,11 @@
       "active": false
     },
     {
+      "use": "isovist",
+      "id": "isovist",
+      "active": false
+    },
+    {
       "use": "mobility",
       "id": "mobility",
       "active": false
@@ -110,6 +115,8 @@
     }
   ],
   "branding": {
-    "title": "MR Studio"
+    "title": "MR Studio",
+    "languages": ["en", "sv"],
+    "translations": { "sv": { "Sample district": "Exempelstadsdelen" } }
   }
 }

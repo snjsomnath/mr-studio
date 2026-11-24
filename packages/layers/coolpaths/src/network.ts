@@ -1,8 +1,8 @@
 // The walking network and the two routes across it. No DOM and no SDK runtime, so it runs in tests.
 //
-// "Sun" is the cost a cool path avoids: metres walked in direct sun. Each edge has an
-// exposure from 0 (shade) to 1 (sun), and the coolest route has the least sunlit metres
-// among routes no more than `detour` longer than the shortest one.
+// "Heat" is the cost a cool path avoids, in the units of the CoolPaths study: the edge's mean
+// PET (°C) times its length (m). Each edge also has an exposure from 0 (shade) to 1 (sun). The
+// coolest route has the least heat among routes no more than `detour` longer than the shortest one.
 
 export type LonLat = [lon: number, lat: number];
 
@@ -13,6 +13,8 @@ export interface Edge {
   coordinates: LonLat[];
   /** Share of the edge in direct sun, 0..1. */
   exposure: number;
+  /** Mean PET along the edge, °C. */
+  pet: number;
 }
 
 export interface Network {
@@ -27,6 +29,10 @@ export interface Route {
   length: number;
   /** Metres of the route in direct sun. */
   sun: number;
+  /** Heat exposure: PET times metres, summed over the route, °C·m. */
+  heat: number;
+  /** PET along the route: [metres from the start, °C] at the start and at the end of every edge. */
+  profile: [number, number][];
 }
 
 export interface RoutePair {
@@ -82,7 +88,7 @@ export function buildNetwork(geojson: { features?: LineFeature[] }, distance: Di
       for (let k = 1; k < coordinates.length; k++) length += distance(coordinates[k - 1]!, coordinates[k]!);
       const [u, v] = [node(coordinates[0]!), node(coordinates[coordinates.length - 1]!)];
       if (u === v || !(length > 0)) continue;
-      const edge = network.edges.push({ u, v, length, coordinates, exposure: 0 }) - 1;
+      const edge = network.edges.push({ u, v, length, coordinates, exposure: 0, pet: 0 }) - 1;
       network.adjacency[u]!.push(edge);
       network.adjacency[v]!.push(edge);
     }
@@ -108,6 +114,43 @@ export function setExposure(network: Network, lit: (point: LonLat) => number, sp
       }
     }
     edge.exposure = count > 0 ? Math.min(1, Math.max(0, total / count)) : 0;
+  }
+}
+
+/**
+ * Sets every edge's PET. `petAt` gives PET at a point (NaN where it has no data, such as a prepared
+ * raster under a building); an edge takes the mean of its samples when at least half of them have data,
+ * and `fallback(edge)` otherwise. Without `petAt`, every edge takes `fallback`.
+ */
+export function setPet(
+  network: Network,
+  fallback: (edge: Edge) => number,
+  petAt: ((point: LonLat) => number) | null,
+  spacing: number,
+  distance: Distance,
+): void {
+  for (const edge of network.edges) {
+    if (!petAt) {
+      edge.pet = fallback(edge);
+      continue;
+    }
+    let total = 0;
+    let found = 0;
+    let count = 0;
+    for (let i = 1; i < edge.coordinates.length; i++) {
+      const [a, b] = [edge.coordinates[i - 1]!, edge.coordinates[i]!];
+      const samples = Math.max(1, Math.round(distance(a, b) / spacing));
+      for (let k = 0; k < samples; k++) {
+        const t = (k + 0.5) / samples;
+        const value = petAt([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]);
+        count++;
+        if (Number.isFinite(value)) {
+          total += value;
+          found++;
+        }
+      }
+    }
+    edge.pet = found > 0 && found >= count / 2 ? total / found : fallback(edge);
   }
 }
 
@@ -199,7 +242,7 @@ export function distancesFrom(network: Network, source: number): { distance: Flo
 interface Label {
   node: number;
   length: number;
-  sun: number;
+  heat: number;
   previous: Label | null;
   edge: number;
   active: boolean;
@@ -209,12 +252,12 @@ interface Label {
 const MAX_LABELS = 400_000;
 
 /**
- * The least-sun route from `origin` to `destination` no longer than `budget` metres:
- * a label-setting search over (length, sun) pairs, pruned by the distance still to walk.
+ * The least-heat route from `origin` to `destination` no longer than `budget` metres:
+ * a label-setting search over (length, heat) pairs, pruned by the distance still to walk.
  * Returns edge indices in walking order, or null if no route fits or the search is too large.
  */
 function coolestEdges(network: Network, origin: number, destination: number, budget: number, remaining: Float64Array): number[] | null {
-  const first: Label = { node: origin, length: 0, sun: 0, previous: null, edge: -1, active: true };
+  const first: Label = { node: origin, length: 0, heat: 0, previous: null, edge: -1, active: true };
   const labels = new Map<number, Label[]>([[origin, [first]]]);
   const queue = new Heap<Label>();
   queue.push(0, first);
@@ -236,16 +279,16 @@ function coolestEdges(network: Network, origin: number, destination: number, bud
       const next = other(edge, current.node);
       const length = current.length + edge.length;
       if (length + remaining[next]! > budget + 1e-7) continue;
-      const sun = current.sun + edge.exposure * edge.length;
+      const heat = current.heat + edge.pet * edge.length;
       let prior = labels.get(next);
       if (!prior) labels.set(next, (prior = []));
-      if (prior.some((l) => l.length <= length + 1e-9 && l.sun <= sun + 1e-9)) continue;
-      for (const old of prior) if (length <= old.length + 1e-9 && sun <= old.sun + 1e-9) old.active = false;
+      if (prior.some((l) => l.length <= length + 1e-9 && l.heat <= heat + 1e-9)) continue;
+      for (const old of prior) if (length <= old.length + 1e-9 && heat <= old.heat + 1e-9) old.active = false;
       const kept = prior.filter((l) => l.active);
-      const label: Label = { node: next, length, sun, previous: current, edge: index, active: true };
+      const label: Label = { node: next, length, heat, previous: current, edge: index, active: true };
       kept.push(label);
       labels.set(next, kept);
-      queue.push(sun, label);
+      queue.push(heat, label);
     }
   }
   return null;
@@ -256,15 +299,20 @@ function describe(network: Network, origin: number, path: number[]): Route {
   let node = origin;
   let length = 0;
   let sun = 0;
+  let heat = 0;
+  const profile: [number, number][] = [];
   for (const index of path) {
     const edge = network.edges[index]!;
     const line = edge.u === node ? edge.coordinates : [...edge.coordinates].reverse();
     coordinates.push(...line.slice(1));
     node = other(edge, node);
+    profile.push([length, edge.pet]);
     length += edge.length;
     sun += edge.exposure * edge.length;
+    heat += edge.pet * edge.length;
+    profile.push([length, edge.pet]);
   }
-  return { coordinates, length, sun };
+  return { coordinates, length, sun, heat, profile };
 }
 
 /**
@@ -281,8 +329,8 @@ export function route(network: Network, origin: number, destination: number, det
   const shortest = describe(network, origin, direct);
   const cooler = detour > 0 ? coolestEdges(network, origin, destination, shortest.length * (1 + detour), remaining) : null;
   const coolest = cooler ? describe(network, origin, cooler) : shortest;
-  // Equal sun is no reason to walk further.
-  return { shortest, coolest: coolest.sun < shortest.sun - 1e-6 ? coolest : shortest };
+  // Equal heat is no reason to walk further.
+  return { shortest, coolest: coolest.heat < shortest.heat - 1e-6 ? coolest : shortest };
 }
 
 /** A small seeded generator, so example walks are the same on every table. */
@@ -299,11 +347,21 @@ function mulberry(seed: number): () => number {
 
 /**
  * Picks a pair of nodes that makes a good demonstration: between `minLength` and
- * `maxLength` metres apart on foot, preferring the pair whose cool route saves the most sun.
+ * `maxLength` metres apart on foot, preferring the pair whose cool route saves the most heat.
  */
-export function exampleWalk(network: Network, seed: number, minLength: number, maxLength: number, detour: number): [from: number, to: number] | null {
+export function exampleWalk(
+  network: Network,
+  seed: number,
+  minLength: number,
+  maxLength: number,
+  detour: number,
+  /** Ends the example may use, such as the nodes on the table. All of them when left out or when fewer than two pass. */
+  allowed?: (node: number) => boolean,
+): [from: number, to: number] | null {
   const random = mulberry(seed * 7919 + 17);
-  const walkable = network.nodes.map((_, i) => i).filter((i) => network.adjacency[i]!.length > 0);
+  const linked = network.nodes.map((_, i) => i).filter((i) => network.adjacency[i]!.length > 0);
+  const inside = allowed ? linked.filter(allowed) : linked;
+  const walkable = inside.length >= 2 ? inside : linked;
   if (walkable.length < 2) return null;
   let best: [number, number] | null = null;
   let bestSaving = -1;
@@ -316,7 +374,7 @@ export function exampleWalk(network: Network, seed: number, minLength: number, m
     if (pool.length === 0) continue;
     const to = pool[Math.floor(random() * pool.length)]!;
     const pair = route(network, from, to, detour);
-    const saving = pair ? pair.shortest.sun - pair.coolest.sun : -1;
+    const saving = pair ? pair.shortest.heat - pair.coolest.heat : -1;
     if (saving > bestSaving) {
       bestSaving = saving;
       best = [from, to];

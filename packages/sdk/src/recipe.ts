@@ -23,7 +23,7 @@ import { TIMELINE_DEFAULTS, arrowMarks, fillArrow, fillIcon, timeReveal, traceSh
 import type { Arrows, PointShape, TimeReveal, TimelineProps } from './marks.ts';
 import { placeData } from './places.ts';
 import { pickScheme, schemeColour, schemeOrder } from './schemes.ts';
-import { SOUND_DEFAULTS, SoundStage, soundPath } from './audio.ts';
+import { SOUND_DEFAULTS, SoundStage, soundLabel, soundPath } from './audio.ts';
 import type { SoundProps } from './audio.ts';
 import type { PlaceExtras, PlaceTables } from './places.ts';
 import { placeMotion, placeUnit } from './place-motions.ts';
@@ -431,6 +431,23 @@ export interface CompiledLook {
   /** Draws the block. `time` is seconds since the layer came on; `alpha` is the layer's fade. */
   draw(view: View, time: number, alpha: number): void;
   legend: LegendItem[];
+  /** For points with sounds (#150): each sound, for the controller's cards, and a way to play one. */
+  sounds?: {
+    list(): SoundCard[];
+    cue(point: number): void;
+  };
+}
+
+/** A point's sound as the controller shows it. */
+export interface SoundCard {
+  /** The point's index in its look block. */
+  point: number;
+  label: string;
+  /** CSS colour of the point and its rings. */
+  colour: string;
+  /** Where it is, in table metres. */
+  at: Point;
+  playing: boolean;
 }
 
 export interface LookMotion {
@@ -486,6 +503,7 @@ export function compileLook(block: RecipeBlock, shapes: Shapes, palette: Resolve
       id: block.id,
       kind,
       legend: legendRows(block, paint, 'point', palette, props.color),
+      ...(sound ? { sounds: { list: sound.list, cue: sound.cue } } : {}),
       draw(view, time, alpha) {
         // Crowds and place motions go under the points they belong to.
         place?.draw(view, time, alpha);
@@ -1051,12 +1069,25 @@ function soundLook(shapes: Shapes, motion: NonNullable<LookMotion['sound']>, pai
   const rings = shapes.spots.map(() => [] as { born: number; strength: number; life: number }[]);
   const glow = shapes.spots.map(() => 0);
   let last: number | null = null;
+  let playing = new Set<number>();
+  const labels = shapes.spots.map((s, i) => soundLabel(s.properties, paths[i] ?? null));
   return {
+    list(): SoundCard[] {
+      const cards: SoundCard[] = [];
+      shapes.spots.forEach((spot, i) => {
+        if (paths[i]) cards.push({ point: i, label: labels[i]!, colour: css(paint.colour(spot.properties)), at: spot.point, playing: playing.has(i) });
+      });
+      return cards;
+    },
+    cue(point: number) {
+      if (paths[point]) stage.cue(point);
+    },
     draw(view: View, time: number, alpha: number) {
       let dt = last === null ? 0 : time - last;
       last = time;
       if (dt < 0 || dt > 0.5) dt = 0.016;
       const now = stage.update(paths, o, time, dt);
+      playing = new Set(now.flatMap((state, i) => (state.playing ? [i] : [])));
       const pen = view.pen;
       pen.save();
       pen.globalCompositeOperation = 'lighter';

@@ -42,7 +42,7 @@ On the controller screen a layer of category `analysis` or `media` is a button, 
 
 Control types: `range`, `select`, `toggle`, `date`, `color`, `text`, `action` (a button, no stored value).
 Every control has `id`, `type`, `label` and `default`. `phone: true` lets phone participants change it.
-`visibleWhen: { "mode": "day" }` hides a control unless another control has that value.
+`visibleWhen: { "mode": "day" }` hides a control unless another control has that value; a list, `{ "style": ["light", "dark"] }`, means any of them.
 
 The controls are the single source of truth for a layer's params:
 
@@ -53,7 +53,7 @@ The controls are the single source of truth for a layer's params:
 `requires` states what the layer needs from the app and the site:
 
 - `kernels`: engine kernels it opens streams on.
-- `data`: named datasets the site must provide. A site maps each name to a file under `data` in `site.json` (see site.md), and the host refuses to start a site, or to add a layer to a scene, when one is missing; the composer's palette says so beforehand. The scene's `buildings` and `trees` count as datasets. The layer loads it with `loadSiteData(ctx.site, name)`. A layer may also use a dataset it does not require: it checks `hasSiteData(ctx.site, name)` and does without when the site has none.
+- `data`: named datasets the site must provide. A site maps each name to a file under `data` in `site.json` (see site.md), and the host refuses to start a site, or to add a layer to a scene, when one is missing; the composer's palette says so beforehand. The scene's `buildings` and `trees` count as datasets. The layer loads it with `loadSiteData(ctx.site, name)`. A layer may also use a dataset it does not require: it checks `hasSiteData(ctx.site, name)` and does without when the site has none. A raster dataset (a GeoTIFF, or a folder of one GeoTIFF per hour such as `pet_08.tif` .. `pet_20.tif`) is read laid on the site grid with `loadSiteField(ctx.site, name, hour)`: a field frame of exact values, NaN where the raster has no data, null when a folder has no raster for that hour (`GET /api/data/field?name=&hour=`).
 - `services`: Python services it reaches through the gateway.
 
 ## TV panels
@@ -115,12 +115,16 @@ export default defineLayer({
     el.textContent = '...';
     return { update() {} };                                 // params or shared values changed
   },
+
+  // Optional: fetch what the layer will show before it is shown (see below).
+  async prefetch(site, params) {},
 });
 ```
 
 The module is loaded on every surface. `table` runs only on the table surface and `panel` only on the TV, once for each `custom` panel in the manifest. Phones need no code.
 State lives in the closure, so a layer has no module-level variables and no explicit teardown:
 overlays and streams opened through `ctx` are released when the layer is turned off.
+`prefetch(site, params)` runs on the table when a sequence (the slideshow) that shows the layer opens, once per step, with the params that step will use. A layer that loads something slow, such as a map picture from a service, fetches it there, so stepping to it does not wait. What the host fetches it also keeps, for venues without a connection. Errors are ignored. The Web map layer (`packages/layers/wms`) is the example.
 `packages/layers/sunlight` is the reference to copy. `coolpaths` shows a layer that combines a kernel with site data, `mobility` one that only plays site data, and `packages/layers/wind` a running simulation with a flow overlay.
 
 ## Context
@@ -137,6 +141,7 @@ interface TableContext<P> {
   readonly model: ModelHandle;          // the 3D model: fields, lights, materials, focus, pick (see model.md)
   readonly pointer: TablePointer;       // mouse, touch and pen on the table surface
   sendTool(tool: string, geometry: ToolGeometry): Promise<void>;  // send a tool input through the host, as a phone does; every view of the table gets it
+  cue(at: ToolGeometry, options?: { colour?: string }): void;     // play the attention cue at a change (#105); tool inputs from other surfaces get one automatically
   readonly steps: LayerSteps;           // sub-steps that the controller's Next reveals one at a time
   onFrame(cb: (dt: number) => void): void;   // every animation frame while the layer is on
   onCleanup(cb: () => void): void;      // extra teardown
@@ -274,6 +279,15 @@ Rules for layers:
 3. No direct communication between surfaces. Use `setParams` and `publish`.
 4. Clean up is automatic for everything opened through `ctx`. Anything else is released with `ctx.onCleanup`.
 5. `update` must be cheap. Send params to the stream and return; frames arrive asynchronously.
+
+## Languages
+
+Visitors read the controller, the phones and the table's ribbons in English or Swedish (#80); the editor stays in English. Everything is written in English and looked up by that English text, so a missing translation shows in English rather than breaking.
+
+- **A layer's words** are in its package, `locales/sv.json`: one object from English to Swedish, `{ "Sunlight": "Solljus", "Time of day": "Tid på dagen" }`. The host reads it with layer.json and sends it in the manifest as `locales: { sv: {...} }`. It covers the words in layer.json (name, description, control labels and choices, tool labels, legend, panel titles and captions) without any code.
+- **Words the layer makes as it runs** (a status, a caption, a hero's labels) go through `ctx.say(text, vars?)`: `ctx.say('Sunrise {time}', { time })` looks up `Sunrise {time}` and fills `{time}`. `ctx.language` is `en` or `sv`, for dates and numbers. A published text that matches an entry exactly (`'Shade'`) is said in the visitor's language on the TV's panels and the controller's legend without `ctx.say`.
+- Every core layer has `locales/sv.json`; a host test checks that every core layer's name, control labels and choices have Swedish.
+- The site's own words (title, welcome line, button names, slide titles) are in site.json, `branding.translations` (site.md).
 
 ## Building blocks and interactions
 

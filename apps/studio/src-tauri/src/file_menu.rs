@@ -16,9 +16,9 @@ use tauri::menu::{Menu, MenuBuilder, MenuItem, MenuItemBuilder, PredefinedMenuIt
 use tauri::{AppHandle, Manager, Runtime, Wry};
 
 /// The actions, as menu item ids and as the editor page names them.
-pub const ACTIONS: [&str; 8] = ["new", "open", "save", "save_as", "reveal", "close", "home", "settings"];
+pub const ACTIONS: [&str; 9] = ["new", "open", "save", "save_as", "export", "reveal", "close", "home", "settings"];
 
-/// The File submenu. `export` waits for #85 and shows greyed out so people know it is coming.
+/// The File submenu.
 fn file_submenu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Submenu<R>> {
     let item = |id: &str, text: &str, keys: Option<&str>| -> tauri::Result<MenuItem<R>> {
         let builder = MenuItemBuilder::with_id(id, text);
@@ -28,24 +28,24 @@ fn file_submenu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Submenu<R>> {
         }
     };
     let reveal = if cfg!(target_os = "macos") { "Show in Finder" } else { "Show in Explorer" };
-    let export = MenuItemBuilder::with_id("export", "Export table…").enabled(false).build(app)?;
     let mut file = SubmenuBuilder::new(app, "File")
         .item(&item("new", "New table…", Some("CmdOrCtrl+N"))?)
         .item(&item("open", "Open…", Some("CmdOrCtrl+O"))?)
         .separator()
         .item(&item("save", "Save", Some("CmdOrCtrl+S"))?)
         .item(&item("save_as", "Save As…", Some("CmdOrCtrl+Shift+S"))?)
-        .item(&export)
+        // One .mrstable file to take to another computer (#85).
+        .item(&item("export", "Export table…", None)?)
         .item(&item("reveal", reveal, None)?)
+        .separator()
+        // This table's own settings, in the editor (#73); app settings are MR Studio > Settings.
+        .item(&item("table-settings", "Table settings…", None)?)
         .separator()
         .item(&item("close", "Close table", Some("CmdOrCtrl+W"))?)
         .item(&item("home", "All tables", Some("CmdOrCtrl+Shift+H"))?);
     if !cfg!(target_os = "macos") {
         // On macOS these live in the app menu, where people look for them.
-        file = file
-            .separator()
-            .item(&item("settings", "Displays and settings…", Some("Ctrl+,"))?)
-            .item(&PredefinedMenuItem::quit(app, Some("Exit"))?);
+        file = file.separator().item(&item("settings", "Settings…", Some("Ctrl+,"))?).item(&PredefinedMenuItem::quit(app, Some("Exit"))?);
     }
     file.build()
 }
@@ -54,7 +54,8 @@ fn file_submenu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Submenu<R>> {
 /// work in a webview there), View and Window.
 pub fn app_menu(app: &AppHandle<Wry>) -> tauri::Result<Menu<Wry>> {
     let name = app.package_info().name.clone();
-    let settings = MenuItemBuilder::with_id("settings", "Displays and settings…").accelerator("CmdOrCtrl+,").build(app)?;
+    // App settings: this computer, every table (#73). Table settings are in the File menu.
+    let settings = MenuItemBuilder::with_id("settings", "Settings…").accelerator("CmdOrCtrl+,").build(app)?;
     let app_menu = SubmenuBuilder::new(app, &name)
         .item(&PredefinedMenuItem::about(app, None, None)?)
         .separator()
@@ -68,7 +69,15 @@ pub fn app_menu(app: &AppHandle<Wry>) -> tauri::Result<Menu<Wry>> {
         .separator()
         .item(&PredefinedMenuItem::quit(app, None)?)
         .build()?;
-    let edit = SubmenuBuilder::new(app, "Edit").undo().redo().separator().cut().copy().paste().select_all().build()?;
+    let edit = SubmenuBuilder::new(app, "Edit")
+        .item(&edit_item(app, "undo")?)
+        .item(&edit_item(app, "redo")?)
+        .separator()
+        .cut()
+        .copy()
+        .paste()
+        .select_all()
+        .build()?;
     let view = SubmenuBuilder::new(app, "View").item(&PredefinedMenuItem::fullscreen(app, None)?).build()?;
     let window = SubmenuBuilder::new(app, "Window")
         .minimize()
@@ -81,7 +90,32 @@ pub fn app_menu(app: &AppHandle<Wry>) -> tauri::Result<Menu<Wry>> {
 
 /// The menu bar of the editor window on Windows and Linux.
 pub fn editor_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
-    MenuBuilder::new(app).item(&file_submenu(app)?).build()
+    let edit = SubmenuBuilder::new(app, "Edit").item(&edit_item(app, "undo")?).item(&edit_item(app, "redo")?).build()?;
+    MenuBuilder::new(app).item(&file_submenu(app)?).item(&edit).build()
+}
+
+/// The Edit menu's own items (#57).
+/// Also "Table settings…" from the File menu, which the editor page opens.
+pub const EDIT_ACTIONS: [&str; 3] = ["undo", "redo", "table-settings"];
+
+/// Undo and Redo go to the editor page, which undoes the text being typed, or else the last
+/// change to the table through the host's revision history (#72). The system's own items
+/// would only reach the text.
+fn edit_item<R: Runtime>(app: &AppHandle<R>, id: &str) -> tauri::Result<MenuItem<R>> {
+    let (text, keys) = match id {
+        "undo" => ("Undo", "CmdOrCtrl+Z"),
+        _ if cfg!(target_os = "macos") => ("Redo", "CmdOrCtrl+Shift+Z"),
+        _ => ("Redo", "Ctrl+Y"),
+    };
+    MenuItemBuilder::with_id(id, text).accelerator(keys).build(app)
+}
+
+/// Sends Undo or Redo from the Edit menu to the editor page.
+pub fn tell_editor_edit<R: Runtime>(app: &AppHandle<R>, label: &str, action: &str) {
+    if let Some(window) = app.get_webview_window(label) {
+        let detail = serde_json::json!({ "action": action });
+        let _ = window.eval(format!("window.dispatchEvent(new CustomEvent('mrs-edit', {{ detail: {detail} }}))"));
+    }
 }
 
 /// The same action can arrive twice: from the menu's shortcut and from the page, which

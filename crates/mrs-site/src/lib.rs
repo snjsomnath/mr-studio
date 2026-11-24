@@ -5,7 +5,9 @@ mod bake;
 pub mod create;
 mod crs;
 pub mod elevation;
+pub mod field;
 mod geotiff;
+pub mod history;
 pub mod import;
 mod manifest;
 mod mesh;
@@ -13,9 +15,12 @@ pub mod migrate;
 pub mod model;
 pub mod osm;
 pub mod media;
-pub mod sound;
+pub mod package;
+pub mod plan;
 mod projection;
+pub mod sound;
 mod twin;
+pub mod video;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Component, Path, PathBuf};
@@ -514,6 +519,17 @@ impl Site {
         self.save_key("palette", value)
     }
 
+    /// Saves the table settings (#73) that are not the place: `name`, `timezone` and `branding`,
+    /// leaving everything else as written. Each is checked by the caller.
+    pub fn save_settings(&self, name: &str, timezone: Option<&str>, branding: &Branding) -> Result<(), SiteError> {
+        let branding = serde_json::to_value(branding).map_err(|e| self.parse_error(e))?;
+        self.save_keys(&[
+            ("name", Some(serde_json::json!(name))),
+            ("timezone", timezone.map(|t| serde_json::json!(t))),
+            ("branding", Some(branding)),
+        ])
+    }
+
     /// The custom layers as site.json now has them on disk.
     pub fn saved_custom(&self) -> Result<BTreeMap<String, CustomLayer>, SiteError> {
         let value = self.read_document()?;
@@ -533,17 +549,24 @@ impl Site {
     /// Rewrites one top-level key of site.json (`None` removes it), checking that the
     /// result still loads, and replaces the file in one step.
     fn save_key(&self, key: &str, replacement: Option<serde_json::Value>) -> Result<(), SiteError> {
+        self.save_keys(&[(key, replacement)])
+    }
+
+    /// Rewrites several top-level keys of site.json as one change.
+    fn save_keys(&self, changes: &[(&str, Option<serde_json::Value>)]) -> Result<(), SiteError> {
         let path = self.dir.join("site.json");
         let io = |source| SiteError::Io { path: path.clone(), source };
         let mut value = self.read_document()?;
         let object =
             value.as_object_mut().ok_or_else(|| SiteError::Parse { path: path.clone(), message: "site.json is not an object".into() })?;
-        match replacement {
-            Some(replacement) => {
-                object.insert(key.to_string(), replacement);
-            }
-            None => {
-                object.remove(key);
+        for (key, replacement) in changes {
+            match replacement {
+                Some(replacement) => {
+                    object.insert(key.to_string(), replacement.clone());
+                }
+                None => {
+                    object.remove(*key);
+                }
             }
         }
         // What is written must load again.
@@ -711,6 +734,7 @@ mod tests {
             title: None,
             description: None,
             source: None,
+            notes: None,
         };
         let mut tour = layer("slideshow", "tour");
         tour.items = vec![item("trees", "tour-trees")];

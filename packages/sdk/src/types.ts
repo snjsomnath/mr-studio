@@ -3,7 +3,8 @@
 export const PROTOCOL = 1;
 export const LAYER_API = 1;
 
-export type Role = 'table' | 'tv' | 'phone' | 'dev';
+/** `guide` is the guide's phone (#98): it drives tours and reads their notes. */
+export type Role = 'table' | 'tv' | 'phone' | 'dev' | 'guide';
 
 // ---- Layer manifest -------------------------------------------------------
 
@@ -17,8 +18,10 @@ interface ControlBase {
   /**
    * How prominent it is on the controller (docs/contracts/present.md): `primary` controls are large and
    * come first, `secondary` (the default) sit in a row under them, `more` wait behind "More settings".
+   * `state` is never shown: a value the layer keeps for itself in its params, so every surface
+   * shares it, such as where a video is (#194).
    */
-  tier?: 'primary' | 'secondary' | 'more';
+  tier?: 'primary' | 'secondary' | 'more' | 'state';
 }
 export interface RangeControl extends ControlBase {
   type: 'range';
@@ -66,6 +69,8 @@ export interface ToolSpec {
   id: string;
   type: 'point' | 'line' | 'polygon';
   label?: string;
+  /** False: inputs from other surfaces play no attention cue on the table (#105). Default true. */
+  cue?: boolean;
 }
 
 /** Palette groups in the scene composer. */
@@ -96,6 +101,11 @@ export interface LayerManifest {
   legend?: LegendItem[];
   /** The effect behind the layer on the controller's attract loop (docs/contracts/present.md). */
   attract?: { effect: string };
+  /**
+   * The layer's words in other languages (#80), from its package's `locales/<language>.json`:
+   * by language, then by the English text. Read by the visitors' screens; see docs/contracts/layer.md.
+   */
+  locales?: Record<string, Record<string, string>>;
 }
 
 // ---- Site format 3 (docs/contracts/site.md) --------------------------------
@@ -131,6 +141,8 @@ export interface SequenceStep {
   title?: string;
   description?: string;
   source?: string;
+  /** What the guide says at this step (#98): on the guide's phone and in the editor, never for visitors. */
+  notes?: string;
 }
 
 /** A custom layer: a recipe of blocks, saved under `custom` in site.json and used as `custom:<id>`. */
@@ -187,7 +199,7 @@ export interface PanelSpec {
   title?: string;
   /** The widget's props. Values may be literals or bindings, as the widget's schema allows. */
   props?: Record<string, unknown>;
-  /** Show only while the layer's params have these values. */
+  /** Show only while the layer's params have these values. A list means any of those values. */
   visibleWhen?: Record<string, unknown>;
   /** Higher is placed first by the automatic layout. Default 0. */
   priority?: number;
@@ -195,6 +207,11 @@ export interface PanelSpec {
   at?: { col: number; row: number };
   /** In a site's pages: the layer whose params and shared values the bindings read. */
   layer?: string;
+  /**
+   * Drawn on the table's ribbon, the projector's blank space beside the model (#78), instead of the TV.
+   * Only small sizes (`chip`, `tile`, `wide`); rules in docs/contracts/present.md, Ribbon.
+   */
+  ribbon?: boolean;
 }
 
 /** `tv` in site.json. */
@@ -224,6 +241,11 @@ export interface TvConfig {
   idle_reset_s?: number;
   /** Seconds each layer stays up on the home screen's attract loop. Default 4. */
   attract_s?: number;
+  /**
+   * The controller's Map controls group (#198): Reset view, Full screen and Calibrate, for
+   * whoever runs the table. Default true; false leaves only Reset, for a table visitors run alone.
+   */
+  map_controls?: boolean;
 }
 
 /** The site's About page on the controller: a title, a few lines, and who made it. */
@@ -231,6 +253,8 @@ export interface TvAbout {
   title?: string;
   text?: string;
   credits?: { role?: string; name: string; note?: string }[];
+  /** Logos along the top of the Credits page: images in the site folder, with the name each stands for. Without them, `branding.logo`. */
+  logos?: { path: string; name?: string }[];
 }
 
 // ---- Site and session -----------------------------------------------------
@@ -261,7 +285,16 @@ export interface SiteInfo {
     ribbons?: Partial<Record<'top' | 'bottom' | 'left' | 'right', 'off' | 'auto' | { cm: number }>>;
   } | null;
   basemap: { background: string; style: string | null };
-  branding: { title: string | null; logo: string | null };
+  /** Table settings (#73): the controller's title, logo and the welcome line under the title. */
+  branding: {
+    title: string | null;
+    logo: string | null;
+    welcome?: string | null;
+    /** The languages visitors can switch between (#80), the first the table starts in. */
+    languages?: string[];
+    /** The site's own words in other languages, by language and then by the English text. */
+    translations?: Record<string, Record<string, string>>;
+  };
   /** The calibrated table view, when the site has a calibration.json. */
   calibration: {
     center: { lon: number; lat: number };
@@ -317,6 +350,12 @@ export interface LayerState {
   step?: StepState;
   /** For the layer a sequence is showing as its current step: that sequence. */
   shown_by?: string;
+  /**
+   * Part of the map at rest although its package is not a base or ambient layer: a layer of
+   * the scene that site.json starts on and gives no button (#204). It has no button on the
+   * controller and stays on while button layers open and close.
+   */
+  rest?: boolean;
 }
 
 /**
@@ -366,7 +405,7 @@ export interface Participant {
 export interface SessionState {
   protocol: number;
   /** `join_url` is what the TV's QR code points at; null when phones cannot reach the host. */
-  session: { id: string; code: string; port: number; join_url: string | null };
+  session: { id: string; code: string; port: number; join_url: string | null; /** The visitors' language now (#80). */ language?: string };
   site: SiteInfo;
   /** Layer instance ids in draw order, bottom first. */
   scene: string[];

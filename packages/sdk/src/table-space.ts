@@ -1,6 +1,7 @@
 // Geometry helpers for layers that draw on a canvas overlay: WGS84 to table metres,
 // site datasets, polylines and a seeded random generator.
 
+import type { CanvasOverlay } from './layer.ts';
 import type { SiteInfo } from './types.ts';
 
 export type XY = [x: number, y: number];
@@ -251,4 +252,21 @@ export function seededRandom(seed: number): () => number {
 export function withAlpha(hex: string, alpha: number): string {
   const n = parseInt(hex.slice(1), 16);
   return `rgb(${(n >> 16) & 255} ${(n >> 8) & 255} ${n & 255} / ${alpha})`;
+}
+
+/**
+ * Limits what a canvas overlay draws next to the table's extent, so lines from a dataset
+ * larger than the table stop at its edge instead of running into the projector's blank
+ * margin (#203). Wrap the drawing in `context.save()` and `context.restore()`.
+ */
+export function clipToTable(canvas: Pick<CanvasOverlay, 'context' | 'project'>, site: Pick<SiteInfo, 'corners'>): void {
+  const g = canvas.context;
+  g.beginPath();
+  site.corners.forEach((corner, i) => {
+    const [x, y] = canvas.project(corner);
+    if (i === 0) g.moveTo(x, y);
+    else g.lineTo(x, y);
+  });
+  g.closePath();
+  g.clip();
 }

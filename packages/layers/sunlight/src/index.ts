@@ -6,9 +6,12 @@ import { skyColormap, skyLight, sunAt, sunDay, sunHoursColormap, thresholdColorm
 import { sunlightHero } from './hero.ts';
 import { SunPath } from './sun-path.ts';
 import { hasShade, isFlat } from './flat.ts';
+import { spotOnTable } from './spot.ts';
+import { SEASONS, seasonsHero, seasonsOnTable } from './seasons.ts';
+import { trailsOnTable } from './trails.ts';
 
 interface Params {
-  mode: 'instant' | 'day';
+  mode: 'instant' | 'day' | 'seasons';
   date: string;
   hour: number;
   play: boolean;
@@ -18,6 +21,8 @@ interface Params {
   path: boolean;
   relight: boolean;
   opacity: number;
+  season: string;
+  trails: boolean;
 }
 
 /** Hours of the day that pass per second while animating. */
@@ -115,8 +120,8 @@ export default defineLayer<Params>({
     // The line under the daylight figure on the TV: progress, then what the map is flagging.
     const dayStatus = () => {
       if (ctx.params.mode !== 'day') return '';
-      if (percent < 100) return `adding up the day, ${percent}%`;
-      return ctx.params.threshold > 0 ? `under ${ctx.params.threshold} h of sun is flagged` : 'whole day added up';
+      if (percent < 100) return ctx.say('adding up the day, {percent}%', { percent });
+      return ctx.params.threshold > 0 ? ctx.say('under {hours} h of sun is flagged', { hours: ctx.params.threshold }) : ctx.say('whole day added up');
     };
     ctx.onCleanup(() => {
       generation++;
@@ -127,6 +132,16 @@ export default defineLayer<Params>({
     function dress() {
       const day = ctx.params.mode === 'day';
       const sun = sunNow();
+      if (ctx.params.mode === 'seasons') {
+        // The seasons draw their own field on a common scale (seasons.ts); only the look is set here.
+        relight();
+        overlay.setStyle({ soften: 1, opacity: ctx.params.opacity });
+        treeOverlay.setStyle({ opacity: 0 });
+        path.setVisible(ctx.params.path);
+        path.setSun({ ...sun, altitude: -90 });
+        ctx.publish({ dayStatus: '', treeLow: '', treeHigh: '' });
+        return;
+      }
       relight();
       void reshadow();
       overlay.setStyle({
@@ -153,27 +168,48 @@ export default defineLayer<Params>({
 
     // The timeline on the TV shades the hours between sunrise and sunset.
     function publishDay() {
+      if (ctx.params.mode === 'seasons') return;
       const day = sunDay(ctx.site, ctx.params.date);
       path.setDay(day);
       ctx.publish({ sunrise: day.sunrise ?? 0, sunset: day.sunset ?? 0 });
     }
 
+    let seasonSteps = false;
     // One job per mode: a shadow mask for an instant, or sun hours for the day.
     async function open() {
       const mine = ++generation;
       stream?.close();
       stream = null;
+      // Seasons run three day sums of their own; Next steps through them.
+      if (ctx.params.mode === 'seasons') {
+        seasonSteps = true;
+        ctx.steps.define(SEASONS.length, SEASONS.map((s) => ctx.say(s.name)));
+        dress();
+        await seasons.open();
+        return;
+      }
+      if (seasonSteps) {
+        seasons.close();
+        ctx.steps.define(0);
+        publishDay();
+      }
+      seasonSteps = false;
       const [field, treeField] = ctx.params.mode === 'day' ? ['sun_hours', 'tree_shade_hours'] : ['shadow', 'tree_shade'];
       // The panel shows progress from the first moment, not the previous job's.
       percent = 0;
       ctx.publish({ progress: 0 });
-      const opened = await ctx.engine.open('sunlight', kernelParams(ctx), [field, treeField]);
+      const asked = kernelParams(ctx);
+      const opened = await ctx.engine.open('sunlight', asked, [field, treeField]);
       if (mine !== generation) {
         // The mode changed again, or the layer was turned off, while this was opening.
         opened.close();
         return;
       }
       stream = opened;
+      // The time or day may have changed while the job was opening, which can take seconds while the
+      // engine is still busy with a stopped day's sums (#121). Those changes had no stream to go to.
+      const now = kernelParams(ctx);
+      if (JSON.stringify(now) !== JSON.stringify(asked)) opened.set(now);
       dress();
       // With a shadow map, the engine's cells only fill in until the first mask is ready.
       opened.on(field, (frame) => {
@@ -208,8 +244,12 @@ export default defineLayer<Params>({
       });
     }
 
+    const seasons = seasonsOnTable(ctx, overlay, (top) => hoursColormap(ctx.params.threshold, top), (day) => path.setDay(day));
+    ctx.onCleanup(() => seasons.close());
+
     let carried = 0;
     ctx.onFrame((dt) => {
+      if (ctx.params.mode === 'seasons') seasons.tick(dt);
       if (!ctx.params.play || ctx.params.mode !== 'instant') return;
       carried += dt * PLAY_HOURS_PER_SECOND;
       const steps = Math.floor(carried / HOUR_STEP);
@@ -218,14 +258,32 @@ export default defineLayer<Params>({
       ctx.setParams({ hour: Math.round(((ctx.params.hour + steps * HOUR_STEP) % 24) / HOUR_STEP) * HOUR_STEP });
     });
 
+    const spot = spotOnTable(ctx);
+    const trails = trailsOnTable(ctx, spot.at);
+
     publishDay();
     await open();
 
     return {
+      tool: (input) => spot.tool(input),
+      // Next and Previous pin a season; the overview lets them take turns.
+      step(revealed) {
+        if (ctx.params.mode !== 'seasons') return;
+        const season = revealed > 0 ? SEASONS[revealed - 1]!.key : 'cycle';
+        if (season !== ctx.params.season) ctx.setParams({ season });
+      },
+      action(id) {
+        if (id === 'clearSpot') spot.clear();
+      },
       update(changed) {
+        spot.update(changed);
+        trails.update(changed);
         if (changed.includes('date')) publishDay();
         if (changed.includes('mode')) void open();
-        else {
+        else if (ctx.params.mode === 'seasons') {
+          dress();
+          seasons.update(changed);
+        } else {
           dress();
           if (changed.some((key) => key === 'date' || key === 'hour' || key === 'trees')) stream?.set(kernelParams(ctx));
         }
@@ -235,5 +293,15 @@ export default defineLayer<Params>({
 
   // The controller's hero: the sky as a timeline, with the time scrubber (#137).
   // The daylight figure, the tree shade and the colour key are plain panels in layer.json.
-  hero: (ctx, el) => sunlightHero(ctx as never, el),
+  // In Seasons, the three seasons side by side take its place (#256).
+  hero: (ctx, el) => {
+    const sky = sunlightHero(ctx as never, el);
+    const seasons = seasonsHero(ctx as never, el);
+    return {
+      update() {
+        sky.update?.();
+        seasons.update?.();
+      },
+    };
+  },
 });
