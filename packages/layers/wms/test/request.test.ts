@@ -23,3 +23,11 @@ test('the host is asked for the box around the table, with square metres', () =>
   assert.equal(query.get('url'), 'https://maps.example.org/wms');
   assert.equal(query.get('bbox'), '11.969,57.696,11.99,57.705');
 });
+
+test('an ArcGIS service is named so the host asks its REST export', () => {
+  const { href } = request(site, { service: 'arcgis', url: 'https://gis.example.org/arcgis/rest/services/Plan/MapServer', layers: '', styles: '' });
+  const query = new URL(href, 'http://host').searchParams;
+  assert.equal(query.get('service'), 'arcgis');
+  const wms = new URL(request(site, { url: 'https://a.org/wms', layers: 'roads', styles: '' }).href, 'http://host').searchParams;
+  assert.equal(wms.get('service'), null);
+});

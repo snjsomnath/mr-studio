@@ -27,6 +27,14 @@
         { "value": "slu-water", "label": "Lakes and streams" }
       ]
     },
+    {
+      "id": "service", "type": "select", "label": "Kind of service", "default": "wms",
+      "options": [
+        { "value": "wms", "label": "WMS" },
+        { "value": "arcgis", "label": "ArcGIS map or image service" }
+      ],
+      "visibleWhen": { "map": "custom", "tier": "more" }
+    },
     { "id": "url", "type": "text", "label": "Service address", "default": "", "visibleWhen": { "map": "custom", "tier": "more" } },
     { "id": "signin", "type": "text", "label": "Sign-in", "default": "", "sources": ["wms", "lantmateriet", "arcgis"], "visibleWhen": { "map": "custom", "tier": "more" } },
     { "id": "layers", "type": "text", "label": "Layers", "default": "", "visibleWhen": { "map": "custom", "tier": "more" } },
