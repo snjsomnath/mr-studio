@@ -5,9 +5,11 @@
 
 import { execFile } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { createServer } from 'node:net';
 import { delimiter, isAbsolute, join, relative, resolve } from 'node:path';
 
 import { readLayerDir, type Catalog, type LayerEntry, type SiteSchema } from './core.ts';
+import { checkRecipe, checkIcon } from './recipe.ts';
 
 export const SITE_FORMAT = 3;
 
@@ -22,7 +24,7 @@ export type SiteManifest = Record<string, any>;
 // The keys mrs-site accepts. Unknown keys are an error there. The catalog normally carries the
 // schema read from the core's own manifest.rs; this copy of format 3 is the fallback.
 const FALLBACK_SCHEMA: SiteSchema = {
-  '': { fields: ['format', 'id', 'name', 'origin', 'extent', 'timezone', 'table', 'scene', 'data', 'basemap', 'layers', 'custom', 'tv', 'branding'], required: ['format', 'id', 'name', 'origin', 'extent', 'scene'] },
+  '': { fields: ['format', 'id', 'name', 'origin', 'extent', 'timezone', 'table', 'scene', 'data', 'basemap', 'layers', 'custom', 'tv', 'branding', 'palette', 'services', 'display'], required: ['format', 'id', 'name', 'origin', 'extent', 'scene'] },
   origin: { fields: ['lon', 'lat'], required: ['lon', 'lat'] },
   extent: { fields: ['width_m', 'height_m', 'rotation_deg'], required: ['width_m', 'height_m'] },
   table: { fields: ['width_cm', 'height_cm', 'tile_cm', 'front', 'ribbons'], required: ['width_cm', 'height_cm'] },
@@ -37,7 +39,7 @@ const FALLBACK_SCHEMA: SiteSchema = {
   'layers[].button': { fields: ['name', 'description', 'icon', 'side', 'group', 'order'], required: [] },
   'layers[].items[]': { fields: ['use', 'id', 'active', 'params', 'hide'], required: ['use', 'id'] },
   'layers[].steps': { fields: ['mode', 'loop', 'reveal', 'transition', 'transition_s', 'sequence'], required: [] },
-  'layers[].steps.sequence[]': { fields: ['layer', 'params', 'duration_s', 'transition', 'transition_s', 'next', 'title', 'description', 'source'], required: ['layer'] },
+  'layers[].steps.sequence[]': { fields: ['layer', 'params', 'duration_s', 'transition', 'transition_s', 'next', 'title', 'description', 'source', 'notes'], required: ['layer'] },
 };
 
 /** What `use` starts with for a custom layer saved in the site. */
@@ -313,6 +315,21 @@ export function validateManifest(manifest: SiteManifest, dir: string | null, cat
   if (layers !== undefined && !Array.isArray(layers)) err('layers', 'must be a list');
   const list: any[] = Array.isArray(layers) ? layers : [];
   const seen = new Map<string, string>();
+  const siteData = new Set([...Object.keys(manifest.data ?? {}), ...['buildings', 'trees', 'terrain', 'mesh'].filter((k) => manifest.scene?.[k])]);
+  // Params that name a file or dataset (controls with "media"): the file must be there (#321).
+  const checkMediaParams = (layer: LayerEntry, params: Record<string, unknown>, at: string) => {
+    for (const control of (layer.manifest.controls ?? []) as any[]) {
+      if (!control?.media) continue;
+      const value = params[control.id];
+      if (typeof value !== 'string' || !value) continue;
+      if (control.mediaBy === 'path') {
+        if (/^https?:\/\//.test(value)) continue;
+        if (!dir) continue;
+        if (!inside(dir, value)) err(`${at}.${control.id}`, `${value} must be a path inside the site folder`);
+        else if (!existsSync(join(dir, value))) err(`${at}.${control.id}`, `${value} does not exist in the site; add the file first (data/media/ for pictures and videos, data/sounds/ for sounds)`);
+      } else if (!siteData.has(value)) warn(`${at}.${control.id}`, `'${value}' is not one of the site's datasets (${[...siteData].join(', ') || 'none yet'})`);
+    }
+  };
   const checkInstance = (ref: any, at: string, item: boolean): LayerEntry | undefined => {
     if (!ref || typeof ref.use !== 'string') {
       err(at, "needs 'use': a core layer id, ./layers/<name> or custom:<id>");
@@ -340,12 +357,20 @@ export function validateManifest(manifest: SiteManifest, dir: string | null, cat
     }
     const req = layer.manifest.requires ?? {};
     for (const k of req.kernels ?? []) if (!catalog.kernels.includes(k)) err(at, `layer '${layer.id}' needs kernel '${k}', which this core does not have`);
-    for (const d of req.data ?? []) note(at, `layer '${layer.id}' reads site data '${d}'; check the layer's docs for the file it expects`);
-    for (const svc of req.services ?? []) note(at, `layer '${layer.id}' needs service '${svc}'`);
-    if (layer.origin === 'site') {
-      warn(at, `'${ref.use}' is a site-only layer. The runtime only bundles core layer code today, so it will not draw. If the scene needs it, propose it to the core with draft_module_request.`);
+    // Only data the site does not have is worth saying (#321): a note on every layer hid the real ones.
+    for (const d of req.data ?? []) {
+      if (!siteData.has(d)) warn(at, `layer '${layer.id}' reads site data '${d}', which this site does not have yet; it draws little or nothing until '${d}' is added (scene.${d} or data.${d})`);
     }
-    if (layer.origin === 'custom') note(at, `'${ref.use}' is a custom layer; the runtime draws custom layers once the layer editor (#38) lands`);
+    const services = new Set((Array.isArray(manifest.services) ? manifest.services : []).map((s: any) => s?.id));
+    for (const svc of req.services ?? []) if (!services.has(svc)) warn(at, `layer '${layer.id}' calls service '${svc}', which the site's "services" does not declare`);
+    if (layer.origin === 'site' && dir && !existsSync(join(dir, ref.use, 'dist', 'index.js'))) {
+      warn(at, `'${ref.use}' is a site layer whose code is not built yet; run \`mrstudio layer build --site <site folder>\` so the app can load it (#277)`);
+    }
+    if (ref.params && typeof ref.params === 'object') checkMediaParams(layer, ref.params, `${at}.params`);
+    if (!item && ref.button?.icon !== undefined) {
+      const why = checkIcon(ref.button.icon);
+      if (why) warn(`${at}.button.icon`, why);
+    }
     return layer;
   };
   const found = list.map((ref, i) => {
@@ -379,9 +404,13 @@ export function validateManifest(manifest: SiteManifest, dir: string | null, cat
       if (step.duration_s !== undefined && !(isNum(step.duration_s) && step.duration_s > 0)) err(`${here}.duration_s`, 'must be a positive number of seconds');
       if (step.transition !== undefined && !TRANSITIONS.includes(step.transition)) err(`${here}.transition`, "is 'cut', 'fade' or 'dip'");
       if (step.transition_s !== undefined && !(isNum(step.transition_s) && step.transition_s >= 0 && step.transition_s <= 10)) err(`${here}.transition_s`, 'must be 0 to 10 seconds');
+      if (step.notes !== undefined && typeof step.notes !== 'string') err(`${here}.notes`, "is the presenter's notes for this step, as text");
       const shown = own ? ref.items.find((item: any) => item?.id === step.layer) : top;
       const layer = shown && findLayer(catalog, dir, shown.use, manifest);
-      if (layer && step.params !== undefined) issues.push(...checkParams(layer, step.params, `${here}.params`).issues);
+      if (layer && step.params !== undefined) {
+        issues.push(...checkParams(layer, step.params, `${here}.params`).issues);
+        if (step.params && typeof step.params === 'object') checkMediaParams(layer, step.params, `${here}.params`);
+      }
     });
   });
 
@@ -419,6 +448,7 @@ export function validateManifest(manifest: SiteManifest, dir: string | null, cat
         if (block.on !== undefined && !look.has(block.on)) err(`${here}.on`, `'${block.on}' is not one of its look blocks`);
       });
     }
+    for (const issue of checkRecipe(recipe, at)) issues.push(issue);
   }
   if (Array.isArray(layers) && layers.length === 0) note('layers', 'the scene is empty; add a layer');
   if (Array.isArray(layers) && !layers.some((l: any) => l?.active)) note('layers', 'no layer starts active; the table will show only the base map until someone turns one on');
@@ -453,6 +483,111 @@ export function runCli(cli: string, args: string[], timeoutMs = 120_000): Promis
       done({ ok: !error, output: output || (error ? error.message : '') });
     });
   });
+}
+
+// ---- Previewing ----
+
+/** The installed MR Studio app: its program and the folder with its built surfaces and layers. */
+export function findApp(): { program: string; resources: string; open: (site: string) => string } | null {
+  const home = process.env.HOME ?? process.env.USERPROFILE ?? '';
+  const quote = (p: string) => `"${p}"`;
+  if (process.platform === 'darwin') {
+    for (const app of ['/Applications/MR Studio.app', join(home, 'Applications', 'MR Studio.app')]) {
+      const resources = join(app, 'Contents', 'Resources');
+      if (existsSync(join(resources, 'web'))) return { program: app, resources, open: (site) => `open -n -a ${quote(app)} --args ${quote(site)}` };
+    }
+  }
+  if (process.platform === 'win32') {
+    const roots = [process.env.LOCALAPPDATA && join(process.env.LOCALAPPDATA, 'Programs'), process.env.LOCALAPPDATA, process.env.ProgramFiles].filter(Boolean) as string[];
+    for (const root of roots) {
+      const dir = join(root, 'MR Studio');
+      const exe = join(dir, 'MR Studio.exe');
+      if (existsSync(exe) && existsSync(join(dir, 'web'))) return { program: exe, resources: dir, open: (site) => `& ${quote(exe)} ${quote(site)}` };
+    }
+  }
+  return null;
+}
+
+/** A free port on this computer, trying the given one first. */
+export function freePort(preferred: number): Promise<number> {
+  const attempt = (port: number) =>
+    new Promise<number | null>((done) => {
+      const probe = createServer();
+      probe.once('error', () => done(null));
+      probe.listen({ port, host: '127.0.0.1' }, () => {
+        const got = (probe.address() as { port: number }).port;
+        probe.close(() => done(got));
+      });
+    });
+  return (async () => (await attempt(preferred)) ?? (await attempt(preferred + 1)) ?? (await attempt(0)) ?? preferred)();
+}
+
+/**
+ * How to see a site (#322): with the installed app (the way authors work), or with the
+ * mrstudio CLI on a free port (4170 is the app's), serving the app's own surfaces and layers
+ * when there is no built core checkout.
+ */
+export async function previewPlan(dir: string, catalog: Catalog, options: { lan: boolean }) {
+  const app = findApp();
+  const cli = findCli(catalog);
+  const quote = (p: string) => (/\s/.test(p) ? `"${p}"` : p);
+  const urls = (port: number) => {
+    const base = `http://localhost:${port}`;
+    return {
+      editor: `${base}/edit`,
+      table: `${base}/table`,
+      controller: `${base}/tv`,
+      guide: `${base}/guide`,
+      phone: `${base}/phone`,
+      dev: `${base}/dev`,
+    };
+  };
+  const steps: string[] = [];
+  let command: string | null = null;
+  let port: number | null = null;
+  let how: 'app' | 'cli' | 'none' = 'none';
+  const builtCore = catalog.root && existsSync(join(catalog.root, 'packages', 'runtime', 'dist')) ? catalog.root : null;
+  const web = builtCore ? join(builtCore, 'packages', 'runtime', 'dist') : app ? join(app.resources, 'web') : null;
+  const layers = builtCore ? join(builtCore, 'packages', 'layers') : app ? join(app.resources, 'layers') : null;
+  if (cli && web && layers) {
+    how = 'cli';
+    port = await freePort(4199);
+    command = `${quote(cli)} dev --site ${quote(dir)} --port ${port} --web ${quote(web)} --layers ${quote(layers)}${options.lan ? ' --lan' : ''}`;
+    steps.push('Run the command in a terminal; it keeps running until you press Ctrl+C.', `Open the editor at ${urls(port).editor} to check the work; the table, controller and phones have their own pages below.`);
+  }
+  if (app) {
+    if (how === 'none') how = 'app';
+    steps.push(
+      `In the MR Studio app: Home, "Open a folder…", choose ${dir}. Or start it from a terminal with: ${app.open(dir)} (quit the app first; it opens the folder straight away).`,
+      'The app opens the editor; Present sends it to the table and controller screens.',
+    );
+  }
+  if (how === 'none') {
+    steps.push(
+      'Install the MR Studio app (the installer is on the GitHub releases page), then open the folder from Home, "Open a folder…".',
+      'Developers with a core checkout can instead run `pnpm dev` there, with the site passed as --site.',
+    );
+  }
+  const summary =
+    how === 'cli'
+      ? `Run the command, then open the editor at ${urls(port!).editor}.`
+      : how === 'app'
+        ? 'Open the site folder in the installed MR Studio app.'
+        : 'MR Studio is not installed on this computer, so the site cannot be previewed yet.';
+  return {
+    summary,
+    how,
+    command,
+    port,
+    urls: port ? urls(port) : null,
+    steps,
+    app: app?.program ?? null,
+    cli,
+    notes: [
+      'The installed app uses port 4170, so the command uses another; both can run at once.',
+      '/tv is the controller, the screen beside the table. /guide is the guide\'s phone with the presenter notes.',
+    ],
+  };
 }
 
 // ---- Creating a site ----
