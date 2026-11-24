@@ -23,12 +23,21 @@ The easiest way. Nothing else to install.
 
 ## Connect ChatGPT Codex
 
-Codex, in the Codex app, the `codex` command or the Codex extension for VS Code, can use MR Studio. Add it once and all three have it.
+Codex, in the ChatGPT desktop app's **Work** tab, the `codex` command or the Codex extension for VS Code, can use MR Studio. Add it once and all three have it.
 
 1. Install **Node.js** 20 or newer from nodejs.org.
-2. In the Codex app, open **Settings**, **MCP servers**, **Add server**. Name it `mrstudio`, with command `npx` and arguments `-y @mrstudio/mcp --project` followed by your tables folder (Documents, MR Studio, sites). Or in a terminal: `codex mcp add mrstudio -- npx -y @mrstudio/mcp`
-3. Start a new task. Typing `/mcp` lists the MR Studio tools.
-4. If Codex asks to write to your tables folder, allow it.
+2. In the ChatGPT app, open **Settings**, **Plugins** and the **MCPs** tab. Click **Add**, then **Add MCP server**.
+
+   ![Settings, Plugins, MCPs, Add, Add MCP server](docs/screenshots/324-codex-add.png)
+3. Name it `mrstudio` and keep the type **STDIO**. Command to launch: `npx`. Arguments, one per row (**Add argument** adds a row): `-y`, `@mrstudio/mcp`, `--project`, `~/Documents/MR Studio/sites`. Click **Save** at the bottom.
+
+   ![The form filled in for MR Studio](docs/screenshots/324-codex-form.png)
+4. **mrstudio** is now in the list, switched on.
+
+   ![MR Studio in the list of MCP servers](docs/screenshots/324-codex-list.png)
+5. Start a new task in the **Work** tab and describe the table you want. If Codex asks to write to your tables folder, allow it.
+
+In a terminal the same is one line: `codex mcp add mrstudio -- npx -y @mrstudio/mcp --project ~/Documents/"MR Studio"/sites`
 
 ## Other AI apps
 

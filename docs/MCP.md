@@ -126,7 +126,7 @@ Codex is OpenAI's agent, part of a ChatGPT plan. Unlike the ChatGPT chat app, it
 
 1. Install [Node.js](https://nodejs.org) 20 or newer.
 2. Add the server. Either:
-   - In the **Codex app**: **Settings**, **MCP servers**, **Add server**. Name `mrstudio`, command `npx`, arguments `-y @mrstudio/mcp`.
+   - In the **Codex app** (the ChatGPT desktop app, **Work** tab): **Settings**, **Plugins**, the **MCPs** tab, **Add**, **Add MCP server**. Name `mrstudio`, type **STDIO**, command to launch `npx`, and one argument per row: `-y`, `@mrstudio/mcp`, `--project`, `~/Documents/MR Studio/sites`. **Save**.
    - In a terminal: `codex mcp add mrstudio -- npx -y @mrstudio/mcp`
    - Or by hand, in `~/.codex/config.toml` (`%USERPROFILE%\.codex\config.toml` on Windows):
 
@@ -137,8 +137,14 @@ Codex is OpenAI's agent, part of a ChatGPT plan. Unlike the ChatGPT chat app, it
      startup_timeout_sec = 60
      ```
 
-3. Check it: `codex mcp list` lists `mrstudio`. In a Codex session, `/mcp` shows its tools.
+3. Check it: the MCPs tab lists `mrstudio`, switched on, and `codex mcp list` lists it too. In a Codex session, `/mcp` shows its tools.
 4. Start a new task and describe the table you want.
+
+![The Codex app: Settings, Plugins, MCPs, Add, Add MCP server](screenshots/324-codex-add.png)
+
+![The form filled in for MR Studio](screenshots/324-codex-form.png)
+
+![MR Studio in the list of MCP servers, switched on](screenshots/324-codex-list.png)
 
 **Pick the folder.** Codex starts the server in the folder the session is working in. If that is not your tables folder, add `--project` as in the example above, so new tables show up in MR Studio. Codex runs tasks in a sandbox; if it asks for permission to write to the tables folder, allow it.
 
