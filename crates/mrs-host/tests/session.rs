@@ -237,10 +237,16 @@ async fn phones_need_the_code_and_are_limited() {
     assert_eq!(people["participants"].as_array().unwrap().len(), 1);
     assert_eq!(people["participants"][0]["slot"], 0);
 
-    // `hour` is marked phone: true, `mode` is not.
+    // `hour` is marked phone: true, `mode` is a primary control so phones get it too (#335),
+    // `threshold` is neither.
     phone.request("layer.set", json!({ "layer": "sunlight", "params": { "hour": 7 } })).await.unwrap();
-    assert!(phone.request("layer.set", json!({ "layer": "sunlight", "params": { "mode": "day" } })).await.is_err());
-    assert!(phone.request("layer.activate", json!({ "layer": "sunlight", "active": false })).await.is_err());
+    phone.request("layer.set", json!({ "layer": "sunlight", "params": { "mode": "day" } })).await.unwrap();
+    assert!(phone.request("layer.set", json!({ "layer": "sunlight", "params": { "threshold": 3 } })).await.is_err());
+    // Phones turn layers on and off (#335); the controller hears which phone did it.
+    phone.request("layer.activate", json!({ "layer": "sunlight", "active": false })).await.unwrap();
+    let switched = tv.event("phone.switched").await;
+    assert_eq!((switched["layer"].clone(), switched["active"].clone(), switched["participant"]["slot"].clone()), (json!("sunlight"), json!(false), json!(0)));
+    assert!(phone.request("layers.reset", json!({})).await.is_err());
     assert!(phone.request("engine.open", json!({ "kernel": "sunlight", "params": {}, "fields": ["shadow"] })).await.is_err());
 
     // The slot is held when the phone drops (see the resume test), so eight more do not fit.

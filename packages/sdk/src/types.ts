@@ -11,7 +11,7 @@ export type Role = 'table' | 'tv' | 'phone' | 'dev' | 'guide';
 interface ControlBase {
   id: string;
   label: string;
-  /** Phone participants may change it. */
+  /** Phone participants may change it. Default: true for a `primary` control, false otherwise (#335). */
   phone?: boolean;
   /** Show only while other controls have these values. */
   visibleWhen?: Record<string, unknown>;
@@ -146,6 +146,8 @@ export interface LayerManifest {
   alongside?: boolean;
   /** While the layer is open, the map at rest (its `base` and `ambient` layers) is turned off on the table, and comes back when it closes. The slideshow does this (#205). Default false. */
   hidesAtRest?: boolean;
+  /** Phones may turn the layer on and off (#335). Default true; false for a layer only the controller should open. */
+  phone_switch?: boolean;
   requires?: { kernels?: string[]; data?: string[]; services?: string[] };
   controls?: Control[];
   tools?: ToolSpec[];
@@ -323,6 +325,11 @@ export interface TvConfig {
    * whoever runs the table. Default true; false leaves only Reset, for a table visitors run alone.
    */
   map_controls?: boolean;
+  /**
+   * Phones may turn layers on and off (#335). Default true. Phones never switch layers while a
+   * slideshow or tour is showing, whatever this says.
+   */
+  phone_switch?: boolean;
 }
 
 /** The site's About page on the controller: a title, a few lines, and who made it. */

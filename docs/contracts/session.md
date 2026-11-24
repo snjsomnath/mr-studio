@@ -309,7 +309,7 @@ Requests:
 
 | Method | Params | Roles | Effect |
 | --- | --- | --- | --- |
-| `layer.activate` | `{ layer, active }` | table, tv, dev | Turns a layer on or off |
+| `layer.activate` | `{ layer, active }` | table, tv, dev, phone | Turns a layer on or off. Phones only when `tv.phone_switch` is not false, the layer's `phone_switch` is not false, and no slideshow is showing; the host then broadcasts `phone.switched` (#335), unless `cue: false` (a layer closed to make way) |
 | `layer.intensity` | `{ layer, intensity }` | table, tv, dev | Sets how strongly the layer is drawn, clamped to 0..2. The runtime applies it to the layer's overlays and decorations; layers need no code |
 | `layer.set` | `{ layer, params }` | all (phones only for `phone: true` controls) | Validates, merges, broadcasts |
 | `layer.action` | `{ layer, action }` | all (phones only for `phone: true`) | Broadcast to the table |
@@ -353,6 +353,7 @@ Events:
 | `catalog.removed` | `{ id }` after `custom.remove` |
 | `palette.changed` | `{ palette }` after `palette.set` |
 | `tool.input` | `{ layer, tool, geometry, from, participant? }` |
+| `phone.switched` | `{ layer, active, participant? }` after a phone turned a layer on or off; `participant` is `{ slot, colour }` |
 | `calibration` | `{ projector }` after a calibration was saved or cleared |
 | `calibration.mode` | `{ active }` |
 | `site.changed` | `{ site: SiteInfo }` after data was imported, or an undo or outside edit changed more than the live keys: the scene is re-baked and the engine and twin already use it. Replace `state.site`; layers that read site data at start need a reload |
