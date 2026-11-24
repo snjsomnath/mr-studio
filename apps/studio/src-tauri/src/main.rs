@@ -612,16 +612,22 @@ fn copy_dir(from: &Path, to: &Path) -> std::io::Result<()> {
 
 /// Opens one surface of the running site in a normal window, for looking at it beside the editor.
 fn show_view(app: &AppHandle, role: &str) -> anyhow::Result<()> {
-    anyhow::ensure!(["table", "tv", "dev", "phone"].contains(&role), "'{role}' is not a view");
+    anyhow::ensure!(["table", "tv", "dev", "phone", "help"].contains(&role), "'{role}' is not a view");
     let running = app.state::<Shell>().running.lock().unwrap().clone().context("no site is open")?;
     let label = format!("view-{role}");
     let window = match app.get_webview_window(&label) {
         Some(window) => window,
         None => {
             let url = format!("http://127.0.0.1:{}/{role}", running.port).parse().expect("valid view url");
-            let (width, height) = if role == "phone" { (420.0, 800.0) } else { (1100.0, 700.0) };
+            let (width, height) = match role {
+                "phone" => (420.0, 800.0),
+                "help" => (1040.0, 760.0),
+                _ => (1100.0, 700.0),
+            };
+            // Help (#271) is about the app, not the table, so its title does not name the table.
+            let title = if role == "help" { "MR Studio Help".to_string() } else { format!("MR Studio · {} · {role}", running.name) };
             WebviewWindowBuilder::new(app, &label, WebviewUrl::External(url))
-                .title(format!("MR Studio · {} · {role}", running.name))
+                .title(title)
                 .inner_size(width, height)
                 .build()?
         }

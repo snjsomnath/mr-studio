@@ -4,7 +4,8 @@
 //   node scripts/check-docs.mjs
 //
 // It checks that:
-// - every core layer (packages/layers/*/layer.json) is in README.md and docs/ROADMAP.md, by id or name;
+// - every core layer (packages/layers/*/layer.json) is in README.md, docs/ROADMAP.md and the Help's feature list
+//   (docs/guide/features.md), by id or name;
 // - every engine kernel (crates/mrs-engine/src/kernels/*) is in docs/contracts/engine.md;
 // - every site.json setting (the SiteManifest, Table and Branding structs in mrs-site) is in docs/contracts/site.md;
 // - every MCP tool (packages/mcp/src/server.ts) is in docs/MCP.md;
@@ -22,6 +23,8 @@ const mentions = (text, ...names) => names.filter(Boolean).some((n) => text.toLo
 
 // Layers
 const readme = read('README.md');
+// The Help window's feature list (#271).
+const features = read('docs', 'guide', 'features.md');
 const roadmap = read('docs', 'ROADMAP.md');
 for (const dir of dirs('packages', 'layers')) {
   const path = join(root, 'packages', 'layers', dir, 'layer.json');
@@ -30,6 +33,7 @@ for (const dir of dirs('packages', 'layers')) {
   const names = [layer.id, layer.name, dir, `packages/layers/${dir}`];
   if (!mentions(readme, ...names)) problems.push(`README.md does not mention the layer "${layer.name ?? layer.id}" (packages/layers/${dir}). Add it to the list of layers.`);
   if (!mentions(roadmap, ...names)) problems.push(`docs/ROADMAP.md does not mention the layer "${layer.name ?? layer.id}". Mark it built there.`);
+  if (!mentions(features, layer.name, `\`${layer.id}\``)) problems.push(`docs/guide/features.md (the app's Help) does not list the layer "${layer.name ?? layer.id}". Add a section with a picture.`);
   if (!layer.description) problems.push(`packages/layers/${dir}/layer.json has no "description"; the MCP server and the editor show it.`);
 }
 
