@@ -18,8 +18,10 @@ interface ControlBase {
   /**
    * How prominent it is on the controller (docs/contracts/present.md): `primary` controls are large and
    * come first, `secondary` (the default) sit in a row under them, `more` wait behind "More settings".
+   * `state` is never shown: a value the layer keeps for itself in its params, so every surface
+   * shares it, such as where a video is (#194).
    */
-  tier?: 'primary' | 'secondary' | 'more';
+  tier?: 'primary' | 'secondary' | 'more' | 'state';
 }
 export interface RangeControl extends ControlBase {
   type: 'range';

@@ -126,6 +126,8 @@ export interface ImporterHost {
   showAs?(layer: { dataset: string; kind: GeometryKind; paint: Paint }): Promise<void>;
   /** Puts a plan drawing just brought in on the table as a Masterplan layer, revealed phase by phase (#193). */
   showPlan?(dataset: string): Promise<void>;
+  /** Puts a video just brought in on the table as a Video walk layer (#194). */
+  showVideo?(dataset: string): Promise<void>;
 }
 
 /** How the author wants an imported dataset shown: no layer, one colour, or coloured by a column. */
@@ -403,7 +405,7 @@ export class Importer {
         const field = el('label', 'wz-field');
         field.append(el('span', undefined, 'Its name'), own, el('small', undefined, 'Layers ask for data by this name. Lowercase letters, digits and dashes.'));
         kind.append(field);
-        kind.append(el('p', 'im-about', 'GeoJSON, or a CSV with lat and lon columns. A CSV without positions, such as activity through the day or flows and links between places, is kept as a table that place motions join to places by name or id. An SVG plan drawing covers the table, and its layers are revealed one phase at a time.'));
+        kind.append(el('p', 'im-about', 'GeoJSON, or a CSV with lat and lon columns. A CSV without positions, such as activity through the day or flows and links between places, is kept as a table that place motions join to places by name or id. An SVG plan drawing covers the table, and its layers are revealed one phase at a time. A video (MP4, MOV or WebM) plays on the controller as a Video walk, with the walker moving along a path on the table.'));
       }
       nodes.push(kind);
       if (item) nodes.push(el('p', 'im-about', item.about), el('pre', 'im-example', item.example));
@@ -418,7 +420,7 @@ export class Importer {
 
   private sourceButtons(item: ImportTarget | undefined, has: boolean): HTMLElement[] {
     const input = el('input');
-    Object.assign(input, { type: 'file', accept: item?.accept ?? '.geojson,.json,.csv,.svg', hidden: true, ariaLabel: `File for ${item?.name ?? 'the dataset'}` });
+    Object.assign(input, { type: 'file', accept: item?.accept ?? '.geojson,.json,.csv,.svg,.mp4,.mov,.webm', hidden: true, ariaLabel: `File for ${item?.name ?? 'the dataset'}` });
     input.addEventListener('change', () => {
       const file = input.files?.[0];
       if (file) this.start({ kind: 'file', file });
@@ -574,11 +576,13 @@ export class Importer {
     if (colouring) report.append(colouring.element);
     // A plan drawing (#193) is shown as a Masterplan layer as it comes in.
     const plan = Boolean(this.report?.issues.some((i) => i.code === 'plan.cover') && this.host.showPlan);
+    // So is a video (#194), as a Video walk.
+    const walk = Boolean(this.report?.issues.some((i) => i.code === 'video.walk') && this.host.showVideo);
     const actions = el('div', 'wz-report-actions');
-    const add = el('button', 'ed-button is-primary', plan || (colouring && this.showAs.column !== null) ? 'Add and show on the table' : 'Add to the table');
+    const add = el('button', 'ed-button is-primary', plan || walk || (colouring && this.showAs.column !== null) ? 'Add and show on the table' : 'Add to the table');
     add.type = 'button';
     add.disabled = this.busy || !this.report?.ok;
-    add.addEventListener('click', () => void (plan ? this.addPlan() : colouring && this.showAs.column !== null ? this.addAndShow(colouring.kind, colouring.paint) : this.check(true)));
+    add.addEventListener('click', () => void (plan ? this.addPlan('showPlan') : walk ? this.addPlan('showVideo') : colouring && this.showAs.column !== null ? this.addAndShow(colouring.kind, colouring.paint) : this.check(true)));
     const cancel = el('button', 'ed-button', 'Cancel');
     cancel.type = 'button';
     cancel.addEventListener('click', () => {
@@ -720,13 +724,14 @@ export class Importer {
     }
   }
 
-  /** Brings a plan drawing in, then puts it on the table as a Masterplan layer, as one change. */
-  private async addPlan(): Promise<void> {
+  /** Brings a plan drawing or a video in, then puts it on the table as its layer, as one change. */
+  private async addPlan(hook: 'showPlan' | 'showVideo'): Promise<void> {
     const dataset = this.target()?.replace(/^data:/, '');
-    if (!dataset || !this.host.showPlan) return void this.check(true);
+    const show = this.host[hook];
+    if (!dataset || !show) return void this.check(true);
     this.host.hold(true);
     try {
-      if (await this.check(true)) await this.host.showPlan(dataset);
+      if (await this.check(true)) await show.call(this.host, dataset);
     } finally {
       this.host.hold(false);
     }
