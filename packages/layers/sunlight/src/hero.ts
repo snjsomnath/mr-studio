@@ -5,12 +5,15 @@
 import { formatHour } from '@mrstudio/sdk';
 import type { PanelContext, PanelHandlers } from '@mrstudio/sdk';
 
-import { sunAt, sunDay } from './look.ts';
+import { goldenWindows, sunAt, sunDay } from './look.ts';
 import type { SunDay } from './look.ts';
 import type { SpotDay } from './spot.ts';
 import { nearestTrail, trailCss, trailHours } from './trails.ts';
 
-type Params = { mode: string; date: string; hour: number; play: boolean; trails?: boolean };
+type Params = { mode: string; date: string; hour: number; play: boolean; trails?: boolean; golden?: string };
+
+/** Shadows at a moment, plain or in the golden hour (#363): both have a time to scrub. */
+const atMoment = (mode: string) => mode === 'instant' || mode === 'golden';
 
 const SVG = 'http://www.w3.org/2000/svg';
 /** Height of the scrubber band, in rem, so it grows with the controller (#77). */
@@ -143,7 +146,10 @@ export function sunlightHero(ctx: PanelContext<Params>, el: HTMLElement): PanelH
       dayDate = ctx.params.date;
       day = sunDay(ctx.site, ctx.params.date);
     }
-    const instant = ctx.params.mode === 'instant';
+    const instant = atMoment(ctx.params.mode);
+    const golden = ctx.params.mode === 'golden';
+    const golds = goldenWindows(day);
+    const goldNow = golds[ctx.params.golden === 'morning' ? 'morning' : 'evening'];
     const hour = dragged ?? ctx.params.hour;
     const now = sunAt(ctx.site, ctx.params.date, hour);
     const { x } = scale();
@@ -153,7 +159,9 @@ export function sunlightHero(ctx: PanelContext<Params>, el: HTMLElement): PanelH
     const y = (alt: number) => horizon - (alt / MAX_ALT) * (horizon - top);
     const sx = x(now.hour);
     const sy = y(now.altitude);
-    const stops = skyStops(instant ? now.altitude : day.peak.altitude);
+    // In the golden hour the sky itself glows (#363).
+    const stops: ReturnType<typeof skyStops> =
+      golden && now.altitude > -2 && now.altitude < 8 ? ['#2d3a8c', '#6a5aa8', '#c98aa0', '#ffad72', '#ffc46e'] : skyStops(instant ? now.altitude : day.peak.altitude);
     const lit = day.samples.filter((s) => s.altitude > 0);
     const line = (samples: { hour: number; altitude: number }[]) => samples.map((s, i) => `${i ? 'L' : 'M'}${x(s.hour).toFixed(1)} ${y(s.altitude).toFixed(1)}`).join('');
     const before = lit.filter((s) => s.hour <= now.hour);
@@ -222,9 +230,21 @@ export function sunlightHero(ctx: PanelContext<Params>, el: HTMLElement): PanelH
     scrub.innerHTML = `
       <defs><linearGradient id="sun-hero-lit" x1="0" y1="0" x2="${w}" y2="0" gradientUnits="userSpaceOnUse">
         <stop offset="${rise === null ? 0 : (x(rise) / w).toFixed(3)}" stop-color="#ffb35c"/><stop offset="${(x(day.peak.hour) / w).toFixed(3)}" stop-color="#ffe08a"/>
-        <stop offset="${set === null ? 1 : (x(set) / w).toFixed(3)}" stop-color="#ff9e57"/></linearGradient></defs>
+        <stop offset="${set === null ? 1 : (x(set) / w).toFixed(3)}" stop-color="#ff9e57"/></linearGradient>
+        <linearGradient id="sun-hero-gold" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#ffd36b"/><stop offset=".55" stop-color="#ff9a4a"/><stop offset="1" stop-color="#f0607a"/></linearGradient></defs>
       <rect x="${x(0)}" y="${track - 0.25 * rem}" width="${x(24) - x(0)}" height="${0.5 * rem}" rx="${0.25 * rem}" fill="rgb(255 255 255 / .14)"/>
-      ${spot ? strip(spot, x, track, rem) : rise !== null && set !== null ? `<rect x="${x(rise)}" y="${track - 0.25 * rem}" width="${x(set) - x(rise)}" height="${0.5 * rem}" rx="${0.25 * rem}" fill="url(#sun-hero-lit)"/>` : ''}
+      ${spot ? strip(spot, x, track, rem) : !golden && rise !== null && set !== null ? `<rect x="${x(rise)}" y="${track - 0.25 * rem}" width="${x(set) - x(rise)}" height="${0.5 * rem}" rx="${0.25 * rem}" fill="url(#sun-hero-lit)"/>` : ''}
+      ${
+        golden
+          ? [golds.morning, golds.evening]
+              .filter((g, k, all) => g && all.indexOf(g) === k)
+              .map(
+                (g) =>
+                  `<rect x="${x(g!.from).toFixed(1)}" y="${(track - 0.45 * rem).toFixed(1)}" width="${Math.max(2, x(g!.to) - x(g!.from)).toFixed(1)}" height="${0.9 * rem}" rx="${0.45 * rem}" fill="url(#sun-hero-gold)" opacity="${g === goldNow ? 1 : 0.45}"/>`,
+              )
+              .join('')
+          : ''
+      }
       ${[0, 3, 6, 9, 12, 15, 18, 21, 24].map((t) => `<text x="${x(t)}" y="${track + 2.1 * rem}" fill="rgb(255 255 255 / .6)" font-size="${0.95 * rem}" text-anchor="middle">${String(t).padStart(2, '0')}</text>`).join('')}
       ${instant ? `<circle cx="${sx}" cy="${track}" r="${1.05 * rem}" fill="#fff" stroke="rgb(255 200 87 / .55)" stroke-width="${0.5 * rem}"/>` : ''}`;
 
@@ -232,7 +252,13 @@ export function sunlightHero(ctx: PanelContext<Params>, el: HTMLElement): PanelH
     const date = new Date(`${ctx.params.date}T12:00:00Z`).toLocaleDateString(ctx.language === 'sv' ? 'sv-SE' : 'en-GB', { day: 'numeric', month: 'long', timeZone: 'UTC' });
     const daylight = rise !== null && set !== null ? set - rise : 0;
     time.textContent = instant ? formatHour(hour) : `${daylight.toFixed(1)} h`;
-    when.textContent = instant ? date : ctx.say('of daylight on {date}', { date });
+    when.textContent = golden
+      ? goldNow
+        ? ctx.say('golden hour {from} to {to}', { from: formatHour(goldNow.from), to: formatHour(goldNow.to) })
+        : ctx.say('no golden hour on {date}', { date })
+      : instant
+        ? date
+        : ctx.say('of daylight on {date}', { date });
     const [here, height, from] = [...facts.querySelectorAll('b')] as [HTMLElement, HTMLElement, HTMLElement];
     for (const sky of facts.querySelectorAll<HTMLElement>('[data-sky]')) sky.hidden = !instant;
     facts.hidden = !instant && !spot;
@@ -271,7 +297,7 @@ export function sunlightHero(ctx: PanelContext<Params>, el: HTMLElement): PanelH
   // Drag anywhere on the sky or the band to set the time, to the nearest five minutes.
   const toHour = (event: PointerEvent) => Math.round(scale().hour(event.clientX - root.getBoundingClientRect().left) * 12) / 12;
   root.addEventListener('pointerdown', (event) => {
-    if (ctx.params.mode !== 'instant' || (event.target as Element).closest('.sun-hero-play')) return;
+    if (!atMoment(ctx.params.mode) || (event.target as Element).closest('.sun-hero-play')) return;
     root.setPointerCapture(event.pointerId);
     dragged = toHour(event);
     ctx.setParams({ hour: dragged, play: false });
@@ -290,7 +316,7 @@ export function sunlightHero(ctx: PanelContext<Params>, el: HTMLElement): PanelH
   root.addEventListener('pointercancel', release);
   root.addEventListener('keydown', (event) => {
     const step = { ArrowLeft: -0.25, ArrowRight: 0.25, PageDown: -1, PageUp: 1 }[event.key];
-    if (step === undefined || ctx.params.mode !== 'instant') return;
+    if (step === undefined || !atMoment(ctx.params.mode)) return;
     event.preventDefault();
     ctx.setParams({ hour: Math.min(24, Math.max(0, ctx.params.hour + step)) });
   });

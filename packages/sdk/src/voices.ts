@@ -144,8 +144,14 @@ function audio(): AudioContext | null {
   if (typeof window === 'undefined') return null;
   const Ctor = (window as any).AudioContext ?? (window as any).webkitAudioContext;
   if (!Ctor) return null;
-  shared ??= new Ctor();
-  if (shared!.state === 'suspended') void shared!.resume().catch(() => {});
+  if (shared) return shared;
+  shared = new Ctor() as AudioContext;
+  // Browsers start audio only after a gesture on the page: resume on the first one, once,
+  // rather than asking every frame (which only fills the console with warnings).
+  if (shared.state !== 'running') {
+    const wake = () => void shared?.resume().catch(() => {});
+    for (const kind of ['pointerdown', 'keydown', 'touchstart'] as const) window.addEventListener(kind, wake, { once: true, capture: true });
+  }
   return shared;
 }
 
@@ -196,7 +202,8 @@ export class VoiceBed {
   update(source: VoiceSource): void {
     if (this.stopped) return;
     const ctx = audio();
-    if (!ctx) return;
+    // Nothing is built before the page's first gesture lets audio run.
+    if (!ctx || ctx.state !== 'running') return;
     if (this.playing.length === 0) this.start(ctx);
     const targets = voiceTargets(this.voices, source);
     // Only a change schedules a glide; an unchanged frame costs nothing.
