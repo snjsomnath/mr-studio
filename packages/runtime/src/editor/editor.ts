@@ -5,7 +5,7 @@ import { defaultSideOf, el, isAmbient, isAtRest, isOffered, layerButton, widget 
 import type { Widget } from '../controls.ts';
 import { paramSender } from '../layer-manager.ts';
 import type { Store } from '../store.ts';
-import { builderSection, layerFromImport, newCustomLayer, paletteDialog } from './builder.ts';
+import { builderSection, deleteCustomDialog, layerFromImport, newCustomLayer, paletteDialog } from './builder.ts';
 import { DisplayTab } from './display-tab.ts';
 import type { BuilderHost } from './builder.ts';
 import { LAYER_ICONS, icon } from './icons.ts';
@@ -887,7 +887,12 @@ export class Editor {
     const palette = button('ed-tool is-large', 'Palette', 'palette', 20);
     palette.title = 'The colours every custom layer uses. Change one and the whole table follows.';
     palette.addEventListener('click', () => paletteDialog(this.builderHost(), this.shell));
-    groups.push(this.group('Make your own', custom, palette));
+    const forget = button('ed-tool', 'Delete custom', 'trash');
+    const saved = this.store.manifests.filter((m) => m.custom).length;
+    forget.disabled = saved === 0;
+    forget.title = saved ? 'Delete custom layers this table no longer needs, wherever they are used' : 'This table has no custom layers';
+    forget.addEventListener('click', () => deleteCustomDialog(this.builderHost(), this.shell));
+    groups.push(this.group('Make your own', custom, palette, ...this.column([forget])));
 
     // The selection: always the same four tools, greyed out when nothing is selected or a tool does not apply.
     {
