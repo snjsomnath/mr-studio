@@ -3,7 +3,8 @@
 //!
 //! The drawing covers the table's frame: its view box is stretched over the table, top to the
 //! table's top. Its top-level groups are its phases (an Inkscape or Illustrator layer each; a
-//! single group around everything is looked inside). Reading a drawing makes it safe to show:
+//! single group around everything is looked inside), except a group named "Base" or
+//! "Background", which is drawn under the phases like shapes outside every group. Reading a drawing makes it safe to show:
 //! scripts, embedded pages, event handlers and links to anything outside the file are removed,
 //! so a drawing can only draw. Each phase group gets `data-mrs-phase` (its index from 0),
 //! `data-mrs-name` and, when it has one, `data-mrs-colour` for the legend.
@@ -40,6 +41,14 @@ const UNSAFE: &[&str] =
     &["script", "foreignobject", "iframe", "object", "embed", "handler", "listener", "audio", "video", "set", "animate"];
 /// Elements that draw something, counted per phase.
 const SHAPES: &[&str] = &["path", "rect", "circle", "ellipse", "line", "polyline", "polygon", "text", "image", "use"];
+/// Names of a top-level group that is not a phase but the drawing under them (#286), such as the
+/// line work of an artwork whose viewpoints are the phases. Compared without case.
+const BASE_NAMES: &[&str] = &["base", "background", "underlay", "basis", "bakgrund", "underlag"];
+
+fn is_base_name(name: Option<&str>) -> bool {
+    name.is_some_and(|n| BASE_NAMES.contains(&n.trim().to_ascii_lowercase().as_str()))
+}
+
 /// Not drawn, so never phases.
 const NOT_DRAWN: &[&str] = &["defs", "style", "metadata", "title", "desc", "namedview", "sodipodi:namedview", "clippath", "mask", "symbol"];
 
@@ -298,7 +307,7 @@ fn rewrite(text: &str, phase_depth: usize) -> Result<Rewritten, String> {
                 out.push_attribute(("preserveAspectRatio", "none"));
                 size = Some((w, h));
             }
-            if level == phase_depth + 1 && phase.is_none() && name == "g" && !empty {
+            if level == phase_depth + 1 && phase.is_none() && name == "g" && !empty && !is_base_name(label.as_deref().or(id.as_deref())) {
                 let k = phases.len();
                 let name = label
                     .or_else(|| id.as_deref().map(pretty))
@@ -433,5 +442,17 @@ mod tests {
             .unwrap_err()
             .contains("no groups"));
         assert!(read("<svg").is_err());
+    }
+
+    #[test]
+    fn a_group_named_base_is_drawn_under_the_phases() {
+        let plan = read(
+            r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><g id="Base"><path d="M0 0L1 1" stroke="#fff"/><path d="M1 1L2 2" stroke="#fff"/></g><g id="viewpoint_1"><circle r="1"/></g></svg>"##,
+        )
+        .unwrap();
+        assert_eq!(plan.phases.len(), 1);
+        assert_eq!(plan.phases[0].name, "Viewpoint 1");
+        assert_eq!(plan.base_shapes, 2);
+        assert!(!plan.svg.contains(r#"id="Base" data-mrs-phase"#));
     }
 }

@@ -38,6 +38,11 @@ export class MapCanvasOverlay implements CanvasOverlay {
     this.measure(true);
   }
 
+  /** The canvas itself, for the runtime to clip (#287). Not part of the layer API. */
+  get element(): HTMLCanvasElement {
+    return this.canvas;
+  }
+
   project(lonLat: readonly number[]): [number, number] {
     const point = this.map.project([lonLat[0]!, lonLat[1]!]);
     return [point.x, point.y];

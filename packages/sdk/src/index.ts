@@ -26,3 +26,6 @@ export * from './schemes.ts';
 export * from './hero.ts';
 export * from './transition.ts';
 export * from './street-network.ts';
+export * from './reveal.ts';
+export * from './table-pad.ts';
+export * from './drawing-reveal.ts';

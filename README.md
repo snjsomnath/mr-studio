@@ -80,7 +80,9 @@ changes              release notes waiting for the next version (docs/RELEASING.
 | Trees | Tree crowns swaying in a light wind | `trees` |
 | Table grid | A glowing grid on the model's tile seams, to check the projection | `grid` |
 | Map data | A GeoJSON dataset coloured by category, revealed one category at a time | `mapdata` |
-| Masterplan | A plan drawing (SVG or picture) revealed phase by phase | `plan` |
+| Masterplan | A plan drawing (SVG or picture) revealed phase by phase; its lines can trace in and turn to colour, and pointing at a phase lights it | `plan` |
+| Magnifier | A glass people move over the table: a larger view of what is under it, or an X-ray of the layers placed inside it | `lens` |
+| Reveal line | A line people move across the table: on one side the layers placed inside it show, such as pipes and tunnels | `swipe` |
 | Video walk | A video on the controller, its walker moving along the path on the table | `walkthrough` |
 | Slideshow | Images, video, map data and layers one after another; with presenter notes it is a guided tour on the guide's phone | `slideshow` |
 | Picture or video | A picture or video of the site over the whole table: a simulation, an old photo, a film of a sun study | `media` |

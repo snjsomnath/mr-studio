@@ -130,7 +130,9 @@ The core layers in `packages/layers`, with the issue that made each one:
 | Trees | `trees` | none | swaying crowns |
 | Table grid | `grid` | none | glowing tile seams (#191) |
 | Map data | `mapdata` | none | a dataset revealed by category |
-| Masterplan | `plan` | none | a plan drawing revealed phase by phase (#193) |
+| Masterplan | `plan` | none | a plan drawing revealed phase by phase (#193); traced opening, turn to colour, placement by corners (#286), pointing lights a phase (#289) |
+| Magnifier | `lens` | none | a magnifier or an X-ray glass, from the mouse, the controller and phones (#287) |
+| Reveal line | `swipe` | none | a line that reveals the layers inside it on one side (#288) |
 | Video walk | `walkthrough` | none | a video and its walker on the table (#194) |
 | Slideshow | `slideshow` | none | a sequence of layers and media; guided tours with presenter notes (#43, #98) |
 | Picture or video | `media` | none | a picture or video over the whole table; slides with transitions (#197) |
