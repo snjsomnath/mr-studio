@@ -76,11 +76,58 @@ pub fn query(layer: OsmLayer, bounds: [f64; 4]) -> String {
     format!("[out:json][timeout:90];{body}")
 }
 
+/// One Overpass QL query for several layers at once (#310), so a table's open data is one
+/// polite request instead of one per layer. `to_geojson` picks each layer's share of the answer.
+pub fn query_all(layers: &[OsmLayer], bounds: [f64; 4]) -> String {
+    let [s, w, n, e] = bounds;
+    let b = format!("({s:.6},{w:.6},{n:.6},{e:.6})");
+    let mut parts = String::new();
+    if layers.contains(&OsmLayer::Buildings) {
+        parts.push_str(&format!("way[\"building\"]{b};relation[\"building\"][\"type\"=\"multipolygon\"]{b};"));
+    }
+    if layers.contains(&OsmLayer::Trees) {
+        parts.push_str(&format!("node[\"natural\"=\"tree\"]{b};"));
+    }
+    // Streets and walkways share some classes: one regex for both, so each way comes once.
+    let mut classes: Vec<&str> = Vec::new();
+    for (layer, list) in [(OsmLayer::Streets, STREETS), (OsmLayer::Walkways, WALKWAYS)] {
+        if layers.contains(&layer) {
+            for class in list.split('|') {
+                if !classes.contains(&class) {
+                    classes.push(class);
+                }
+            }
+        }
+    }
+    if !classes.is_empty() {
+        parts.push_str(&format!("way[\"highway\"~\"^({})$\"]{b};", classes.join("|")));
+    }
+    format!("[out:json][timeout:180];({parts});out geom;")
+}
+
+/// Whether an Overpass element belongs to `layer`, by its kind and tags.
+fn belongs(layer: OsmLayer, element: &Value) -> bool {
+    let tags = &element["tags"];
+    let highway = |list: &str| tags["highway"].as_str().is_some_and(|h| list.split('|').any(|c| c == h));
+    match (layer, element["type"].as_str()) {
+        (OsmLayer::Buildings, Some("way")) => tags.get("building").is_some(),
+        (OsmLayer::Buildings, Some("relation")) => tags.get("building").is_some(),
+        (OsmLayer::Trees, Some("node")) => tags["natural"] == "tree",
+        (OsmLayer::Walkways, Some("way")) => highway(WALKWAYS),
+        (OsmLayer::Streets, Some("way")) => highway(STREETS),
+        _ => false,
+    }
+}
+
 /// An Overpass answer as a GeoJSON FeatureCollection, with every OSM tag kept as a
 /// property and the source named in a `source` member, which the import keeps.
 pub fn to_geojson(layer: OsmLayer, answer: &Value, fetched: &str) -> Value {
     let mut features = Vec::new();
     for element in answer["elements"].as_array().map(Vec::as_slice).unwrap_or(&[]) {
+        // An answer to `query_all` holds every layer: keep this one's share.
+        if !belongs(layer, element) {
+            continue;
+        }
         let mut properties: Map<String, Value> = element["tags"].as_object().cloned().unwrap_or_default();
         properties.insert("osm_id".into(), json!(format!("{}/{}", element["type"].as_str().unwrap_or("?"), element["id"])));
         let geometry = match (layer, element["type"].as_str()) {
@@ -254,6 +301,37 @@ mod tests {
         assert_eq!(written["source"]["attribution"], ATTRIBUTION);
         assert_eq!(site.bake().unwrap().1.buildings, 2);
         std::fs::remove_dir_all(&base).unwrap();
+    }
+
+    #[test]
+    fn one_answer_for_every_layer() {
+        let all = [OsmLayer::Buildings, OsmLayer::Trees, OsmLayer::Walkways, OsmLayer::Streets];
+        let q = query_all(&all, [57.69, 11.96, 57.71, 11.98]);
+        assert!(q.starts_with("[out:json][timeout:180];(") && q.ends_with(");out geom;"), "{q}");
+        assert_eq!(q.matches("way[\"highway\"").count(), 1, "streets and walkways are one clause: {q}");
+        assert!(q.contains("|footway|") || q.contains("(footway|") || q.contains("|footway)"), "{q}");
+        assert!(!query_all(&[OsmLayer::Trees], [57.69, 11.96, 57.71, 11.98]).contains("highway"));
+        let (a, b, c, d) = (node(57.7000, 11.9700), node(57.7000, 11.9702), node(57.7002, 11.9702), node(57.7002, 11.9700));
+        let answer = json!({ "elements": [
+            { "type": "way", "id": 1, "tags": { "building": "yes" }, "geometry": [a, b, c, d, a] },
+            { "type": "node", "id": 2, "lat": 57.7, "lon": 11.97, "tags": { "natural": "tree" } },
+            // A residential street is both a street and a walkway; a closed footway round a square is not a building.
+            { "type": "way", "id": 3, "tags": { "highway": "residential" }, "geometry": [a, b] },
+            { "type": "way", "id": 4, "tags": { "highway": "footway" }, "geometry": [a, b, c, d, a] },
+            { "type": "way", "id": 5, "tags": { "highway": "primary" }, "geometry": [a, c] },
+        ] });
+        let ids = |layer| -> Vec<String> {
+            to_geojson(layer, &answer, "2026-11-24")["features"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|f| f["properties"]["osm_id"].as_str().unwrap().to_string())
+                .collect()
+        };
+        assert_eq!(ids(OsmLayer::Buildings), ["way/1"]);
+        assert_eq!(ids(OsmLayer::Trees), ["node/2"]);
+        assert_eq!(ids(OsmLayer::Streets), ["way/3", "way/5"]);
+        assert_eq!(ids(OsmLayer::Walkways), ["way/3", "way/4"]);
     }
 
     #[test]

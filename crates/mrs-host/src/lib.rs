@@ -74,19 +74,35 @@ pub struct AppState {
     transit: transit::Cache,
     /// One import at a time.
     imports: tokio::sync::Mutex<()>,
-    /// The last OpenStreetMap answer, so Import brings in what the preview showed without asking again.
-    osm_cache: std::sync::Mutex<Option<OsmFetch>>,
+    /// Recent OpenStreetMap answers, one per layer and place, so Import brings in what the
+    /// preview (or a fetch of everything, #310) got without asking again.
+    osm_cache: std::sync::Mutex<std::collections::HashMap<String, OsmFetch>>,
     /// The join page's WebRTC bridge (#275): at most one surface carries phones at a time.
     bridge: bridge::BridgeSlot,
     /// The host's own router, for answering phones that come through a relay or the bridge.
     links: std::sync::OnceLock<Router>,
 }
 
-/// One OpenStreetMap fetch: for which layer and ground, when, and the GeoJSON it became.
+/// One OpenStreetMap fetch: when, and the GeoJSON it became. Kept by layer and ground.
 struct OsmFetch {
-    key: String,
     at: std::time::Instant,
     bytes: Vec<u8>,
+}
+
+/// What a fetch is kept under: the layer and the ground it covers.
+fn osm_key(layer: OsmLayer, bounds: [f64; 4]) -> String {
+    format!("{layer:?} {bounds:?}")
+}
+
+/// The refusal when no Overpass server answered.
+fn osm_offline(target: &Target, detail: String) -> Report {
+    tracing::warn!("OpenStreetMap fetch failed: {detail}");
+    Report::refused(
+        target,
+        "osm.offline",
+        "We can't reach OpenStreetMap right now. Check the internet connection and try again in a minute.",
+        "OpenStreetMap did not answer.",
+    )
 }
 
 /// How long a fetch is reused: long enough to look at the preview, short enough to stay fresh.
@@ -160,50 +176,122 @@ impl AppState {
     /// The refusal is a report: no network, a busy server, or nothing mapped there.
     pub async fn fetch_osm(&self, target: &Target) -> Result<Vec<u8>, Report> {
         let layer = OsmLayer::for_target(target).map_err(|why| Report::refused(target, "osm.unavailable", why.clone(), why))?;
+        let bounds = self.osm_bounds(target).await?;
+        // The preview and the import ask for the same thing a minute apart: the second one reuses the first.
+        let key = osm_key(layer, bounds);
+        if let Some(bytes) = self.osm_cached(&key) {
+            return Ok(bytes);
+        }
+        let answer = self.ask_overpass(&osm::query(layer, bounds)).await.map_err(|detail| osm_offline(target, detail))?;
+        self.osm_keep(target, layer, key, &answer)
+    }
+
+    /// Asks OpenStreetMap once for several layers (#310), and keeps each layer's share for the
+    /// import that follows, so bringing them in asks nothing more. Each target gets its own
+    /// answer: how many features it has, or the refusal `fetch_osm` would give.
+    pub async fn fetch_osm_all(&self, targets: &[Target]) -> Vec<(Target, Result<usize, Report>)> {
+        let mut results: Vec<(Target, Result<usize, Report>)> = Vec::new();
+        let mut wanted: Vec<(Target, OsmLayer, String)> = Vec::new();
+        let mut bounds = None;
+        for target in targets {
+            let layer = match OsmLayer::for_target(target) {
+                Ok(layer) => layer,
+                Err(why) => {
+                    results.push((target.clone(), Err(Report::refused(target, "osm.unavailable", why.clone(), why))));
+                    continue;
+                }
+            };
+            let b = match bounds {
+                Some(b) => b,
+                None => match self.osm_bounds(target).await {
+                    Ok(b) => *bounds.insert(b),
+                    Err(report) => {
+                        results.push((target.clone(), Err(report)));
+                        continue;
+                    }
+                },
+            };
+            let key = osm_key(layer, b);
+            match self.osm_cached(&key) {
+                Some(bytes) => {
+                    let count = serde_json::from_slice::<Value>(&bytes).map_or(0, |v| osm::count(&v));
+                    results.push((target.clone(), Ok(count)));
+                }
+                None => wanted.push((target.clone(), layer, key)),
+            }
+        }
+        if let (false, Some(bounds)) = (wanted.is_empty(), bounds) {
+            let layers: Vec<OsmLayer> = wanted.iter().map(|(_, layer, _)| *layer).collect();
+            match self.ask_overpass(&osm::query_all(&layers, bounds)).await {
+                Ok(answer) => {
+                    for (target, layer, key) in wanted {
+                        let kept = self.osm_keep(&target, layer, key, &answer);
+                        let count = kept.map(|bytes| serde_json::from_slice::<Value>(&bytes).map_or(0, |v| osm::count(&v)));
+                        results.push((target, count));
+                    }
+                }
+                Err(detail) => {
+                    for (target, _, _) in wanted {
+                        results.push((target.clone(), Err(osm_offline(&target, detail.clone()))));
+                    }
+                }
+            }
+        }
+        // In the order asked.
+        results.sort_by_key(|(target, _)| targets.iter().position(|t| t == target));
+        results
+    }
+
+    /// The table's extent plus a margin, as OpenStreetMap is asked for it.
+    async fn osm_bounds(&self, target: &Target) -> Result<[f64; 4], Report> {
         let dir = self.site.dir.clone();
-        let bounds = tokio::task::spawn_blocking(move || Site::load(&dir).map(|site| osm::bounds(&site)))
+        tokio::task::spawn_blocking(move || Site::load(&dir).map(|site| osm::bounds(&site)))
             .await
             .map_err(|e| e.to_string())
             .and_then(|r| r.map_err(|e| e.to_string()))
-            .map_err(|e| Report::refused(target, "site.unreadable", e.clone(), e))?;
-        let offline = |detail: String| {
-            tracing::warn!("OpenStreetMap fetch failed: {detail}");
-            Report::refused(
-                target,
-                "osm.offline",
-                "We can't reach OpenStreetMap right now. Check the internet connection and try again in a minute.",
-                "OpenStreetMap did not answer.",
-            )
-        };
-        // The preview and the import ask for the same thing a minute apart: the second one reuses the first.
-        let key = format!("{layer:?} {bounds:?}");
-        if let Some(fetch) = self.osm_cache.lock().unwrap().as_ref().filter(|f| f.key == key && f.at.elapsed() < OSM_REUSE) {
-            return Ok(fetch.bytes.clone());
+            .map_err(|e| Report::refused(target, "site.unreadable", e.clone(), e))
+    }
+
+    fn osm_cached(&self, key: &str) -> Option<Vec<u8>> {
+        let mut cache = self.osm_cache.lock().unwrap();
+        cache.retain(|_, f| f.at.elapsed() < OSM_REUSE);
+        cache.get(key).map(|f| f.bytes.clone())
+    }
+
+    /// One layer's share of an Overpass answer as GeoJSON, kept for the import; empty is a refusal.
+    fn osm_keep(&self, target: &Target, layer: OsmLayer, key: String, answer: &Value) -> Result<Vec<u8>, Report> {
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs());
+        let collection = osm::to_geojson(layer, answer, &osm::date(now));
+        if osm::count(&collection) == 0 {
+            let words = osm::nothing_found(layer);
+            return Err(Report::refused(target, "osm.empty", words.clone(), words));
         }
+        let bytes = serde_json::to_vec(&collection).expect("json");
+        self.osm_cache.lock().unwrap().insert(key, OsmFetch { at: std::time::Instant::now(), bytes: bytes.clone() });
+        Ok(bytes)
+    }
+
+    /// Sends one Overpass query, trying again after a pause on the next mirror when a server is busy.
+    async fn ask_overpass(&self, query: &str) -> Result<Value, String> {
         let urls: Vec<String> = match std::env::var("MRS_OVERPASS_URL") {
             Ok(url) => vec![url],
             Err(_) => OVERPASS_URLS.iter().map(|u| u.to_string()).collect(),
         };
         let client = reqwest::Client::builder()
             .user_agent("MR Studio")
-            .timeout(std::time::Duration::from_secs(120))
+            .timeout(std::time::Duration::from_secs(200))
             .build()
-            .map_err(|e| offline(e.to_string()))?;
-        let query = osm::query(layer, bounds);
+            .map_err(|e| e.to_string())?;
         // Overpass is often busy (429, 502, 504): try again after a pause, on the next mirror.
-        let mut answer = None;
         let mut last = String::new();
         for attempt in 0..OVERPASS_TRIES {
             if attempt > 0 {
                 tokio::time::sleep(std::time::Duration::from_secs(1 << (attempt - 1))).await;
             }
             let url = &urls[attempt as usize % urls.len()];
-            match client.post(url).form(&[("data", &query)]).send().await {
+            match client.post(url).form(&[("data", query)]).send().await {
                 Ok(response) if response.status().is_success() => match response.json::<Value>().await {
-                    Ok(value) => {
-                        answer = Some(value);
-                        break;
-                    }
+                    Ok(value) => return Ok(value),
                     Err(e) => last = format!("{url}: {e}"),
                 },
                 Ok(response) => last = format!("{url} answered {}", response.status()),
@@ -211,16 +299,7 @@ impl AppState {
             }
             tracing::info!("OpenStreetMap try {} of {OVERPASS_TRIES} failed: {last}", attempt + 1);
         }
-        let Some(answer) = answer else { return Err(offline(last)) };
-        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs());
-        let collection = osm::to_geojson(layer, &answer, &osm::date(now));
-        if osm::count(&collection) == 0 {
-            let words = osm::nothing_found(layer);
-            return Err(Report::refused(target, "osm.empty", words.clone(), words));
-        }
-        let bytes = serde_json::to_vec(&collection).expect("json");
-        *self.osm_cache.lock().unwrap() = Some(OsmFetch { key, at: std::time::Instant::now(), bytes: bytes.clone() });
-        Ok(bytes)
+        Err(last)
     }
 
     /// Fetches free elevation around the table (Terrarium tiles on AWS, no key) as a GeoTIFF
@@ -682,6 +761,7 @@ fn router(state: Arc<AppState>, web_dir: Option<PathBuf>) -> Router {
         .route("/api/model", get(model))
         .route("/api/data/inspect", post(inspect_data))
         .route("/api/data/import", post(import_data))
+        .route("/api/data/osm", post(fetch_osm_all))
         .route("/api/data/model", post(model::post))
         .route("/api/data/sounds", get(list_sounds).post(save_sound))
         .route("/api/data/media", get(list_media).post(save_media))
@@ -981,6 +1061,47 @@ async fn import_data(
     body: Bytes,
 ) -> axum::response::Response {
     data_request(state, from, query, headers, body, true).await
+}
+
+#[derive(serde::Deserialize)]
+struct OsmAllQuery {
+    /// Comma-separated import targets, such as `buildings,trees,walkways,data:roads`.
+    targets: String,
+}
+
+/// `POST /api/data/osm?targets=buildings,trees,walkways,data:roads` (#310): asks OpenStreetMap
+/// once for every target and keeps each answer for the `source=osm` import that follows, which
+/// then asks nothing more. Writes nothing. Answers `{ datasets: [{ dataset, ok, count } | { dataset,
+/// ok: false, report }] }` (`dataset` as layers know it: `roads` for `data:roads`), in the order asked.
+async fn fetch_osm_all(
+    State(state): State<Arc<AppState>>,
+    ConnectInfo(from): ConnectInfo<SocketAddr>,
+    Query(query): Query<OsmAllQuery>,
+) -> axum::response::Response {
+    if !from.ip().is_loopback() {
+        return (StatusCode::FORBIDDEN, Json(json!({ "error": "data can only be added from this computer" }))).into_response();
+    }
+    let mut targets = Vec::new();
+    for name in query.targets.split(',').map(str::trim).filter(|t| !t.is_empty()) {
+        match Target::parse(name) {
+            Ok(target) if !targets.contains(&target) => targets.push(target),
+            Ok(_) => {}
+            Err(error) => return (StatusCode::BAD_REQUEST, Json(json!({ "error": error }))).into_response(),
+        }
+    }
+    if targets.is_empty() {
+        return (StatusCode::BAD_REQUEST, Json(json!({ "error": "targets must name at least one dataset" }))).into_response();
+    }
+    let datasets: Vec<Value> = state
+        .fetch_osm_all(&targets)
+        .await
+        .into_iter()
+        .map(|(target, result)| match result {
+            Ok(count) => json!({ "dataset": target.name(), "ok": true, "count": count }),
+            Err(report) => json!({ "dataset": target.name(), "ok": false, "report": report }),
+        })
+        .collect();
+    Json(json!({ "datasets": datasets })).into_response()
 }
 
 /// `POST /api/site/place`, `{ name?, origin: { lon, lat }, extent: { width_m, height_m, rotation_deg } }`:

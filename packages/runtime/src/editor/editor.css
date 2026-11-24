@@ -2733,3 +2733,97 @@ body[data-role='edit'] .ed-surface .table-frame {
   color: var(--ed-text-2);
   overflow-wrap: anywhere;
 }
+
+/* "Fetch everything from open data" at the top of Your place (#310). */
+.fa {
+  margin-bottom: 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--ed-accent-soft);
+  border-radius: 8px;
+  background: var(--ed-panel);
+}
+
+.fa-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.fa-head > div {
+  flex: 1;
+  min-width: 0;
+}
+
+.fa-head p {
+  margin: 2px 0 8px;
+  color: var(--ed-text-2);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.fa-list {
+  display: flex;
+  flex-direction: column;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--ed-line);
+}
+
+.fa-row {
+  display: grid;
+  grid-template-columns: minmax(130px, auto) minmax(0, 1fr);
+  align-items: center;
+  gap: 4px 10px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--ed-line);
+  font-size: 13px;
+}
+
+.fa-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.fa-name > span {
+  display: flex;
+  flex-direction: column;
+}
+
+.fa-from {
+  color: var(--ed-text-2);
+  font-size: 11px;
+}
+
+.fa-status svg {
+  vertical-align: -1px;
+}
+
+.fa-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  color: var(--ed-text-2);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.fa-row.is-done .fa-status {
+  color: #1d7a46;
+}
+
+.fa-row.is-empty .fa-status {
+  color: #8a5a00;
+}
+
+.fa-row.is-failed .fa-status {
+  color: #a4281b;
+}
+
+.fa-clock {
+  align-self: center;
+  color: var(--ed-text-2);
+  font-size: 12px;
+}

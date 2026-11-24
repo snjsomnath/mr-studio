@@ -22,7 +22,7 @@
 
 ## OpenStreetMap takes a long time or fails
 
-OpenStreetMap's servers are shared and sometimes busy. MR Studio waits, tries again and moves to other servers by itself, which can take a minute. If it still fails, try again later, or bring in a file of your own instead.
+OpenStreetMap's servers are shared and sometimes busy. MR Studio waits, tries again and moves to other servers by itself, which can take a minute. **Fetch everything from open data** asks OpenStreetMap once for all its datasets, which is kinder to the servers than one at a time. If it still fails, press **Try again** on that line later, or bring in a file of your own instead.
 
 ## The map pictures or the Help pictures are missing
 
