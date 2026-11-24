@@ -41,7 +41,23 @@ ul{padding-left:20px}li{margin:3px 0}
 <h1>The editor, walked as an author</h1>
 <p class="lead">I walked a new author and a returning author through the editor running on the sample table at 1440 × 900, and judged the ribbon and the overall UI by user flow, which is your first rule. The building blocks are good. What they lack is one spine: the setup guide and the ribbon describe the same journey in two different orders, under two sets of names.</p>
 
-<h2>The philosophy: pages, not tabs</h2>
+<h2>Decided: back to the PowerPoint layout</h2>
+<p class="lead">Sanjay, 24 Nov: pages are too big a change; keep the Office/PowerPoint layout people know, which is where the editor started. The noise came from drifting away from it: setup steps became tabs that take over the panel and the canvas. The PowerPoint rules, applied:</p>
+<ol>
+<li><b>The canvas and the left list never change</b>, whatever tab is open. The list is our slide thumbnails: At rest, layers, Controller, Phones.</li>
+<li><b>Tabs hold commands only</b>: Home (selection and arrange), Insert (layer gallery, custom layer, data, media), Design (controller themes, buttons, base map, palette), Present (check, rehearse, present, set up, share), View (Map / Controller / Both, media library, windows), Help.</li>
+<li><b>The right panel is the Format pane</b>: whatever is selected, and the one place to edit it. At rest is a row in the list, like the Slide Master.</li>
+<li><b>Whole-table settings are dialogs</b>, as Slide Size and Set Up Slide Show are: "Table size and place…", "Welcome and languages…", "Screens and calibration…".</li>
+<li><b>The guide is the new-table flow only</b>, like PowerPoint's start screen.</li>
+</ol>
+<div class="imgs">
+<figure><img src="img/office-home.png" alt="Home tab: selection commands, the table and controller in the middle, Wind in the Format pane"><figcaption>Home: commands for the selection; Wind is edited in the right pane only.</figcaption></figure>
+<figure><img src="img/office-dialog.png" alt="Design tab with the Table size and place dialog open"><figcaption>Design › Table size and place… opens a dialog, like Slide Size. The workspace stays put.</figcaption></figure>
+<figure><img src="img/office-insert.png" alt="Insert tab"><figcaption>Insert: everything you add, in one tab.</figcaption></figure>
+<figure><img src="img/office-present.png" alt="Present tab"><figcaption>Present: like Slide Show.</figcaption></figure>
+</div>
+
+<h2>Considered and rejected: pages, not tabs</h2>
 <p class="lead">Sanjay's rule: two views of the app should never do the same thing. Today a tab only swaps the ribbon and the right panel. The middle (map plus controller) and the left list stay the same, so most of the screen is unrelated to the tab, and each tab adds its own form for things another tab already edits. The model that fixes this is DaVinci Resolve's <i>pages</i>, set in journey order. Three rules:</p>
 <ol>
 <li><b>One page, one job, one surface.</b> A page owns the whole window: its tools, its left list, its canvas and its inspector. Place shows the place, Map shows the table, Controller shows the controller. No page shows a surface it doesn't edit.</li>
@@ -139,7 +155,7 @@ ul{padding-left:20px}li{margin:3px 0}
 
 <h2>Your call</h2>
 <div class="dec">
-<p style="margin-top:0"><b>Update after your note:</b> #382 and #384 are rewritten as the page model above, and they replace the tab-order wireframes below. The rest of this section is the first pass.</p>
+<p style="margin-top:0"><b>Update:</b> #382 now describes the PowerPoint layout above; #384 (the task audit) is the test. The pages model and the first-pass tab order are kept below only for the record.</p>
 <p>My suggested build order is <b>#385</b> (small bug fix) first, then <b>#383</b> together with #59, then <b>#382</b> together with #384, landing Present-tab pieces as #63, #97 and #372 arrive. #382 renames and regroups the tabs you asked for this morning (#311 to #313), so it needs your yes before anyone builds it.</p>
 </div>
 <p class="eyebrow" style="margin-top:28px">Screens: MR Studio main at 9a84133, Chromium, sample site. Wireframes show structure only; the approved identity stays.</p>
