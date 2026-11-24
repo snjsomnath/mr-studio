@@ -256,7 +256,7 @@ From a rough idea and a spreadsheet of points to a table ready for a workshop. T
 >
 > **Model**: I've pointed the scene at the buildings and streets and named your file `spots`, so layers can use it. `[update_site]`
 >
-> **Model**: At rest, while nobody touches the controller, I suggest a dark base map, trees, light traffic and lit windows. Then two buttons: "Morning sun", to see which spots are in shade, and "Suggested spots". `[list_layers, describe_layer, add_layer]`
+> **Model**: At rest, while nobody touches the controller, I suggest a dark base map, trees, light traffic and lit windows. Then two buttons: "Morning sun", to see which spots are in shade, and "Suggested spots". `[find_capabilities, assess_experience, build_experience]`
 >
 > **Person**: Good. Make the spots glow, coloured by type, bigger for a higher score.
 >
@@ -264,7 +264,7 @@ From a rough idea and a spreadsheet of points to a table ready for a workshop. T
 >
 > **Person**: Can people vote for spots from their phones?
 >
-> **Model**: Not as votes yet. The Sketch layer lets phones drop pins, which works for "a bench here". Real voting would be a new module, so I've drafted a request in `requests/` for you to read. I won't file it unless you say so. `[check_layer_idea, draft_module_request]`
+> **Model**: Not as votes yet. The Sketch layer lets phones drop pins, which works for "a bench here". Real voting would be a new module, so I've drafted a request in `requests/` for you to read. I won't file it unless you say so. `[assess_experience, draft_module_request]`
 >
 > **Person**: Add Sketch, and leave the request for now. For the opening talk I'd like a short slideshow: an old photo, morning sun, afternoon sun, then the spots.
 >
