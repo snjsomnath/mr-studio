@@ -1,17 +1,19 @@
 // The MR Studio MCP server: tools, prompts and resources over one core catalog.
 
 import { McpServer, ResourceTemplate } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { isAbsolute, resolve } from 'node:path';
+import { existsSync } from 'node:fs';
+import { isAbsolute, join, relative, resolve } from 'node:path';
 import { z } from 'zod';
 
 import { changelogVersions, loadCatalog, type Catalog, type CoreOptions } from './core.ts';
 import { buildCapabilities, closestIds, parsePatterns, rank, withSite, type Capability } from './capabilities.ts';
 import { assessExperience, buildExperience, type BuildResult, type ExperiencePlan } from './experience.ts';
 import { DEV_KINDS, DUPLICATE_AT, KIND_ALIASES, searchIssues, submitDevDraft, writeDevDraft, type DevKind, type DevRequest, type SubmitOutcome } from './devrequests.ts';
+import { checkLayerPackage, searchSdk } from './devlayer.ts';
 import { listSiteFiles } from './files.ts';
 import { checkIdea } from './ideas.ts';
 import { RECIPE_VOCABULARY, legendFor } from './recipe.ts';
-import { brainstormPrompt, buildFromDataPrompt, compareScenariosPrompt, designExperiencePrompt, planWorkshopPrompt, dashboardPrompt, newProjectPrompt, requestPrompt, serverInstructions } from './prompts.ts';
+import { brainstormPrompt, buildCodeLayerPrompt, buildControllerAppPrompt, buildFromDataPrompt, compareScenariosPrompt, designExperiencePrompt, planWorkshopPrompt, dashboardPrompt, newProjectPrompt, requestPrompt, serverInstructions } from './prompts.ts';
 import { CORE_REPO, REQUEST_KINDS, submitDraft, writeDraft, type RequestKind } from './requests.ts';
 import {
   availableLayers,
@@ -108,6 +110,12 @@ const ANNOTATIONS: Record<string, { readOnlyHint: boolean; destructiveHint?: boo
   import_data: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
   add_media: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   add_sound: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+  sdk_reference: { readOnlyHint: true, openWorldHint: false },
+  create_layer: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+  check_layer: { readOnlyHint: true, openWorldHint: false },
+  build_layer: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+  preview_layer: { readOnlyHint: true, openWorldHint: false },
+  add_service: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   draft_development_request: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
   submit_development_request: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
   build_experience: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
@@ -976,6 +984,179 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
     },
   );
 
+  // ---- For layer developers (#284): site code layers (#277) and services (#278) ----
+
+  const layerDir = (site: string, id: string) => join(at(site), 'layers', id);
+  const sceneUses = (manifest: any, id: string) =>
+    (Array.isArray(manifest?.layers) ? manifest.layers : []).some((l: any) => l?.use === `./layers/${id}` || (Array.isArray(l?.items) && l.items.some((i: any) => i?.use === `./layers/${id}`)));
+  const checkFor = (site: string, id: string) => {
+    let manifest: any = null;
+    try {
+      manifest = readSite(at(site));
+    } catch {
+      manifest = null;
+    }
+    return { site: manifest, ...checkLayerPackage(layerDir(site, id), { manifest, kernels: catalog.kernels }) };
+  };
+
+  tool(
+    'sdk_reference',
+    {
+      title: 'Look up the layer SDK',
+      description:
+        "What @mrstudio/sdk really exports, read from its source: functions, classes, constants, interfaces and types, each with its doc comment and declaration (an interface with its members, such as TableContext with ctx.publish, ctx.pointer, ctx.service). Search in words or by name (\"rings that pulse\", \"service jobs\", \"ctx.sendTool\", \"defineLayer\"). Write layer code only against what this returns; anything missing is a development request (kind sdk-runtime), never a copy of core code. Use find_capabilities first: most ideas need no code at all.",
+      inputSchema: {
+        query: z.string().optional().describe('Words or a name. Leave out for the list of SDK files and what each exports'),
+        name: z.string().optional().describe('One export by its exact name, in full'),
+        limit: z.number().int().min(1).max(40).optional(),
+      },
+    },
+    async ({ query, name, limit }) => {
+      const sdk = catalog.sdk ?? [];
+      if (!sdk.length) return fail('This build of the server has no SDK reference.', undefined, { code: 'no_sdk', next: ['Run the server from a core checkout (--core), or update it.'] });
+      if (name) {
+        const hit = sdk.find((e) => e.name === name) ?? sdk.find((e) => e.name.toLowerCase() === name.toLowerCase());
+        if (!hit) return fail(`@mrstudio/sdk exports nothing called ${name}.`, { closest: searchSdk(sdk, name, 5).map((e) => e.name) }, { code: 'not_found', next: ['Search with query instead.'] });
+        return reply(`${hit.kind} ${hit.name} (packages/sdk/src/${hit.file})`, { export: hit });
+      }
+      if (!query) {
+        const files: Record<string, string[]> = {};
+        for (const e of sdk) (files[e.file] ??= []).push(e.name);
+        return reply(`@mrstudio/sdk exports ${sdk.length} names from ${Object.keys(files).length} files. Search with query, or ask for one by name.`, { files, start_with: ['defineLayer', 'LayerModule', 'TableContext', 'PanelContext', 'ContextBase'] });
+      }
+      const found = searchSdk(sdk, query, limit ?? 12).map(({ score: _score, ...e }) => ({ ...e, signature: e.signature.split('\n').slice(0, 30).join('\n') }));
+      return reply(found.length ? `${found.length} exports match "${query}": ${found.slice(0, 6).map((e) => e.name).join(', ')}.` : `Nothing in @mrstudio/sdk matches "${query}". If a layer needs it, that is a development request (kind sdk-runtime).`, { exports: found });
+    },
+  );
+
+  tool(
+    'create_layer',
+    {
+      title: 'Start a site code layer',
+      description:
+        "Create a layer with its own code inside a site, for what recipes and existing layers cannot do (check find_capabilities and save_custom_layer first). Runs `mrstudio layer new`: <site>/layers/<id>/ with layer.json, src/index.ts (table(), a primary action, a stat panel bound to ctx.publish and a custom panel), locales/sv.json, build.mjs and a README. It runs in the installed app without changing the core. Then edit the files, check_layer, build_layer, add_layer with use './layers/<id>', and preview_layer. Needs the mrstudio command line.",
+      inputSchema: {
+        site: z.string(),
+        id: z.string().describe('Lowercase letters, digits and dashes: energy-flows'),
+        name: z.string().optional().describe('Its name on buttons and in the palette'),
+      },
+    },
+    async ({ site, id, name }) => {
+      const cli = findCli(catalog);
+      if (!cli) return noCli();
+      const run = await runCli(cli, ['layer', 'new', id, '--site', at(site), ...(name ? ['--name', name] : [])]);
+      if (!run.ok) return fail(run.output.split('\n').pop() || 'mrstudio layer new failed.', undefined, { code: 'create_failed', next: [] });
+      const dir = layerDir(site, id);
+      const files = ['layer.json', 'src/index.ts', 'locales/sv.json', 'build.mjs', 'README.md'].filter((f) => existsSync(join(dir, f)));
+      return reply(`Made layers/${id}. Edit src/index.ts and layer.json, then check_layer and build_layer; add it to the scene with use "./layers/${id}".`, {
+        path: relative(project, dir).replace(/\\/g, '/'),
+        files,
+        use: `./layers/${id}`,
+        next: ['sdk_reference for the API', `check_layer { id: "${id}" }`, `build_layer { id: "${id}" }`, `add_layer { use: "./layers/${id}" }`, `preview_layer { id: "${id}" }`],
+      });
+    },
+  );
+
+  tool(
+    'check_layer',
+    {
+      title: 'Check a site code layer against the rules',
+      description:
+        "Checks a site layer before it goes on a table: layer.json (api, id, controls, panels within the TV's density budget, text lengths), every word people see in locales/sv.json, the code (no longitudes and latitudes of a place, no talking to surfaces or the host behind ctx's back, only '@mrstudio/sdk' from the core), what it needs of the site (datasets, services, kernels), and whether dist/index.js is newer than its source. Writes nothing.",
+      inputSchema: { site: z.string(), id: z.string() },
+    },
+    async ({ site, id }) => {
+      if (!existsSync(join(layerDir(site, id), 'layer.json'))) return fail(`No layer package layers/${id} in this site.`, undefined, { code: 'not_found', next: ['create_layer makes one.'] });
+      const { site: m, issues } = checkFor(site, id);
+      const errors = issues.filter((i) => i.level === 'error').length;
+      const used = sceneUses(m, id);
+      const summary = errors ? `layers/${id} breaks ${errors} rule${errors === 1 ? '' : 's'}; fix ${errors === 1 ? 'it' : 'them'} before building.` : `layers/${id} follows the layer rules${issues.length ? ` (${issues.length} warning${issues.length === 1 ? '' : 's'})` : ''}.${used ? '' : ` The scene does not use it yet: add_layer with use "./layers/${id}".`}`;
+      return reply(summary, { ok_to_build: errors === 0, used_by_scene: used, issues });
+    },
+  );
+
+  tool(
+    'build_layer',
+    {
+      title: 'Build a site code layer',
+      description:
+        "Bundles a site layer's src/ into dist/index.js with `mrstudio layer build` (esbuild; npm install on the first build), which is what the app loads; commit dist/ so the table's computer needs no Node. Returns the build's errors when it fails, and the layer's checks when it builds. Needs the mrstudio command line and Node 20+ on this computer.",
+      inputSchema: { site: z.string(), id: z.string() },
+    },
+    async ({ site, id }) => {
+      const cli = findCli(catalog);
+      if (!cli) return noCli();
+      const run = await runCli(cli, ['layer', 'build', id, '--site', at(site)], 600_000);
+      if (!run.ok) {
+        const errors = run.output.split('\n').filter((l) => /error|ERROR|✘|not found|Node/.test(l)).slice(0, 20);
+        return fail(`layers/${id} did not build.`, { errors: errors.length ? errors : run.output.split('\n').slice(-20) }, { code: 'build_failed', next: ['Fix the errors in src/ and build again.', 'Node 20 or newer must be on PATH for building (not for running).'] });
+      }
+      const { issues } = checkFor(site, id);
+      const rest = issues.filter((i) => i.rule !== 'build');
+      return reply(`Built layers/${id}/dist/index.js.${rest.some((i) => i.level === 'error') ? ' It still breaks layer rules; see issues.' : ''} preview_layer shows it.`, { output: run.output.split('\n').slice(-8), issues: rest });
+    },
+  );
+
+  tool(
+    'preview_layer',
+    {
+      title: 'How to see a site layer running',
+      description:
+        "How to see a site layer on this computer: the dev view (/dev) shows the table with the layer's controls beside it and the TV dashboard under it, with no table or projector; the composer (/compose) and editor show it too. Says first whether the layer is built and in the scene. Starts nothing.",
+      inputSchema: { site: z.string(), id: z.string(), lan: z.boolean().optional() },
+    },
+    async ({ site, id, lan }) => {
+      if (!existsSync(join(layerDir(site, id), 'layer.json'))) return fail(`No layer package layers/${id} in this site.`, undefined, { code: 'not_found', next: ['create_layer makes one.'] });
+      const { site: m, issues } = checkFor(site, id);
+      const plan = await previewPlan(at(site), catalog, { lan: lan === true });
+      const built = !issues.some((i) => i.rule === 'build' && /missing/.test(i.message));
+      const used = sceneUses(m, id);
+      const before = [...(built ? [] : [`build_layer { id: "${id}" } (unbuilt layers draw nothing)`]), ...(used ? [] : [`add_layer { use: "./layers/${id}", active: true } (only layers in the scene run)`])];
+      const dev = (plan as any).urls?.dev;
+      return reply(`${before.length ? `First: ${before.join('; ')}. Then: ` : ''}${plan.summary}${dev ? ` Open ${dev} to see the layer with its controls and panels.` : ''}`, { ...plan, built, used_by_scene: used, before });
+    },
+  );
+
+  tool(
+    'add_service',
+    {
+      title: 'Add an outside compute service to a site',
+      description:
+        "Declare a model or API a site's code layers reach through the host (site.json \"services\"): a program the host starts with the table and keeps running (run: cwd, command with {port} and {python}, optional venv and requirements, env, health path) or a service elsewhere (url). Layers name it in requires.services and call ctx.service(id).get / post / job; the host caches the last answers, so the table still plays them when the service is down. Replaces a service with the same id. Keys go in the app's Sources and keys, never here. See samples/service-example.",
+      inputSchema: {
+        site: z.string(),
+        id: z.string().describe('What layers call it by: ecom'),
+        name: z.string().optional(),
+        url: z.string().optional().describe('A service that runs elsewhere: https://ecom.example.org'),
+        cwd: z.string().optional().describe('Its folder, relative to the site: services/ecom'),
+        command: z.array(z.string()).optional().describe('["{python}", "-m", "uvicorn", "app.main:app", "--port", "{port}"]'),
+        venv: z.string().optional().describe('.venv, made on the first start'),
+        requirements: z.string().optional().describe('requirements.txt, installed into the venv'),
+        env: z.record(z.string(), z.string()).optional(),
+        health: z.string().optional().describe('The path that answers 200 when ready; default /'),
+        start_s: z.number().positive().optional(),
+      },
+    },
+    async ({ site, id, name, url, cwd, command, venv, requirements, env, health, start_s }) => {
+      if (!/^[a-z0-9][a-z0-9-]*$/.test(id)) return fail(`'${id}' must be lowercase letters, digits and dashes.`, undefined, { code: 'invalid_params', next: [] });
+      if (Boolean(url) === Boolean(cwd || command)) return fail('Give either url (a service elsewhere) or cwd and command (a program the host starts), not both or neither.', undefined, { code: 'invalid_params', next: [] });
+      if (!url && (!cwd || !command?.length)) return fail('A program the host starts needs both cwd and command.', undefined, { code: 'invalid_params', next: [] });
+      if (url && !/^https?:\/\//.test(url)) return fail('url must start with http:// or https://.', undefined, { code: 'invalid_params', next: [] });
+      const issues: Issue[] = [];
+      if (cwd && !existsSync(join(at(site), cwd))) issues.push({ level: 'warning', path: `services.${id}.run.cwd`, message: `${cwd} does not exist in the site yet; put the service's code there` });
+      if (command && !command.some((a) => a.includes('{port}')) && !Object.values(env ?? {}).some((v) => v.includes('{port}'))) issues.push({ level: 'warning', path: `services.${id}.run.command`, message: 'nothing says {port}; the host picks the port and the service must listen on it' });
+      return editScene(site, (m: any) => {
+        const entry: any = { id, ...(name ? { name } : {}), ...(url ? { url } : { run: { cwd, command, ...(venv ? { venv } : {}), ...(requirements ? { requirements } : {}), ...(env && Object.keys(env).length ? { env } : {}), ...(start_s ? { start_s } : {}) } }), ...(health ? { health } : {}) };
+        const list: any[] = Array.isArray(m.services) ? m.services : [];
+        const at_ = list.findIndex((s) => s?.id === id);
+        if (at_ >= 0) list[at_] = entry;
+        else list.push(entry);
+        m.services = list;
+        return { message: `${at_ >= 0 ? 'Replaced' : 'Added'} service '${id}'${url ? ` at ${url}` : `, started from ${cwd}`}. Layers reach it with requires.services ["${id}"] and ctx.service("${id}").`, issues };
+      });
+    },
+  );
+
   // ---- Development requests (#328) ----
 
   tool(
@@ -1196,6 +1377,26 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
       argsSchema: { data: z.string().optional() },
     },
     ({ data }) => ({ messages: [{ role: 'user', content: { type: 'text', text: buildFromDataPrompt(data) } }] }),
+  );
+
+  server.registerPrompt(
+    'build_code_layer',
+    {
+      title: 'Build a layer with its own code',
+      description: 'A site code layer like ECOM: check no-code options first, plan the surfaces, add a service for a model, then scaffold, check, build and preview.',
+      argsSchema: { idea: z.string().optional() },
+    },
+    ({ idea }) => ({ messages: [{ role: 'user', content: { type: 'text', text: buildCodeLayerPrompt(idea) } }] }),
+  );
+
+  server.registerPrompt(
+    'build_controller_app',
+    {
+      title: 'Build a controller map app',
+      description: "Something people do on the controller's screen that changes the table: existing tools and stages first, code last.",
+      argsSchema: { idea: z.string().optional() },
+    },
+    ({ idea }) => ({ messages: [{ role: 'user', content: { type: 'text', text: buildControllerAppPrompt(idea) } }] }),
   );
 
   server.registerPrompt(
