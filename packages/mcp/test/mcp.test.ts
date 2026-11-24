@@ -211,11 +211,13 @@ describe('server over stdio', () => {
 
   test('offers tools, prompts and docs', async () => {
     const tools = (await client.listTools()).tools.map((t) => t.name).sort();
-    for (const name of ['overview', 'read_doc', 'list_layers', 'describe_layer', 'list_building_blocks', 'find_capabilities', 'describe_capability', 'create_site', 'get_site', 'update_site', 'add_layer', 'set_layer', 'move_layer', 'remove_layer', 'validate_site', 'preview_site', 'check_layer_idea', 'draft_module_request', 'submit_module_request', 'whats_new']) {
+    for (const name of ['overview', 'read_doc', 'list_layers', 'describe_layer', 'list_building_blocks', 'find_capabilities', 'describe_capability', 'assess_experience', 'build_experience', 'create_site', 'get_site', 'update_site', 'add_layer', 'set_layer', 'move_layer', 'remove_layer', 'validate_site', 'preview_site', 'check_layer_idea', 'draft_module_request', 'submit_module_request', 'whats_new']) {
       assert.ok(tools.includes(name), `missing tool ${name}`);
     }
     const prompts = (await client.listPrompts()).prompts.map((p) => p.name).sort();
-    assert.deepEqual(prompts, ['brainstorm_layer', 'design_dashboard', 'new_project', 'request_module']);
+    assert.deepEqual(prompts, ['brainstorm_layer', 'build_from_data', 'compare_scenarios', 'design_dashboard', 'design_experience', 'new_project', 'plan_workshop', 'request_module']);
+    const design = await client.getPrompt({ name: 'design_experience', arguments: { goal: 'residents see the new blocks' } });
+    assert.match((design.messages[0]!.content as { text: string }).text, /assess_experience/);
     const prompt = await client.getPrompt({ name: 'brainstorm_layer', arguments: { idea: 'buses moving' } });
     assert.match((prompt.messages[0]!.content as { text: string }).text, /check_layer_idea/);
     const docs = await client.listResources();
@@ -274,6 +276,59 @@ describe('server over stdio', () => {
     assert.ok(JSON.parse(await read('mrstudio://schema/site')));
     const listed = (await client.listResources()).resources.map((r) => r.uri);
     assert.ok(listed.some((u) => u.startsWith('mrstudio://examples/')), 'no example sites listed');
+  });
+
+  test('designs an experience from a goal, builds what exists and lists the gaps (#327)', async () => {
+    const plan = {
+      title: 'Harbour 2040',
+      goal: 'Residents understand how the proposed development changes sunlight and wind, and contribute ideas',
+      at_rest: ['cars', 'trees'],
+      steps: [
+        { title: 'The harbour today', want: "today's place with the proposal plan revealed phase by phase", notes: 'Ask where people live.' },
+        { title: 'Winter shadows', use: 'sunlight', with: ['transit'], controller: 'Shadows on 21 December', notes: 'Which spots lose sun?' },
+        { title: 'Wind between the blocks', want: 'how wind moves between the new buildings, draughty corners' },
+        { title: 'Your ideas', want: 'residents place ideas and draw routes from their phones' },
+        { title: 'Buildings in 3D', want: 'the new buildings extruded in 3D so people see their height' },
+      ],
+      needs: ["people vote on each other's ideas", 'export the ideas to a report'],
+    };
+    const a = await call(client, 'assess_experience', plan);
+    assert.equal(a.isError, false, a.text);
+    assert.equal(a.structured.verdict, 'partly_buildable');
+    assert.deepEqual(a.structured.steps.map((s: any) => s.layer?.use ?? null), ['plan', 'sunlight', 'wind', 'sketch', null]);
+    assert.equal(a.structured.steps[4].status, 'unsupported');
+    assert.equal(a.structured.steps[4].constraint.id, 'constraint:table-3d');
+    const vote = a.structured.needs[0];
+    assert.equal(vote.gap.kind, 'layer-change');
+    assert.deepEqual(vote.gap.related, ['layer:sketch']);
+    assert.equal(a.structured.needs[1].status, 'needs_development', 'Sketch does not export reports');
+
+    // A step naming a block, not a layer, is refused with layers to use instead.
+    const wrong = await call(client, 'assess_experience', { title: 'x', goal: 'x', steps: [{ title: 'Pick a spot', use: 'block:engine-probe' }] });
+    assert.equal(wrong.structured.verdict, 'needs_development');
+    assert.match(wrong.structured.steps[0].issues[0].message, /is a block, not a layer/);
+
+    assert.equal((await call(client, 'create_site', { dir: 'harbour-2040', name: 'Harbour 2040', lon: 11.94, lat: 57.7, width_m: 1200, height_m: 720, timezone: 'Europe/Stockholm' })).isError, false);
+    const b = await call(client, 'build_experience', { site: 'harbour-2040', ...plan });
+    assert.equal(b.isError, false, b.text);
+    assert.deepEqual(b.structured.skipped.map((s: any) => s.step), ['Buildings in 3D']);
+    assert.equal(b.structured.gaps.length, 2);
+    const site = JSON.parse(readFileSync(join(work, 'harbour-2040', 'site.json'), 'utf8'));
+    const story = site.layers.find((l: any) => l.use === 'slideshow');
+    assert.equal(story.button.name, 'Harbour 2040');
+    assert.deepEqual(story.steps.sequence.map((s: any) => s.layer), ['plan', 'sunlight', 'wind', 'sketch']);
+    assert.equal(story.steps.sequence[1].notes, 'Which spots lose sun?');
+    assert.equal(story.steps.sequence[1].description, 'Shadows on 21 December');
+    assert.deepEqual(site.layers.find((l: any) => l.id === 'sunlight').items.map((i: any) => i.use), ['transit']);
+    assert.equal(site.layers.find((l: any) => l.use === 'cars').active, true);
+    assert.ok(!site.layers.some((l: any) => l.use === 'blocks-demo'));
+    // Building twice changes nothing new.
+    const again = await call(client, 'build_experience', { site: 'harbour-2040', ...plan });
+    assert.deepEqual(again.structured.built, []);
+    assert.equal((await call(client, 'validate_site', { site: 'harbour-2040' })).isError, false);
+
+    const idea = await call(client, 'check_layer_idea', { title: 'Ambient trams', description: 'Trams moving along their lines' });
+    assert.equal(idea.structured.assessment.step.layer.use, 'transit');
   });
 
   test('knows the core layers and docs', async () => {

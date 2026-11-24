@@ -6,9 +6,10 @@ import { z } from 'zod';
 
 import { changelogVersions, loadCatalog, type Catalog, type CoreOptions } from './core.ts';
 import { buildCapabilities, closestIds, parsePatterns, rank, withSite, type Capability } from './capabilities.ts';
+import { assessExperience, buildExperience, type BuildResult, type ExperiencePlan } from './experience.ts';
 import { checkIdea } from './ideas.ts';
 import { RECIPE_VOCABULARY, legendFor } from './recipe.ts';
-import { brainstormPrompt, dashboardPrompt, newProjectPrompt, requestPrompt, serverInstructions } from './prompts.ts';
+import { brainstormPrompt, buildFromDataPrompt, compareScenariosPrompt, designExperiencePrompt, planWorkshopPrompt, dashboardPrompt, newProjectPrompt, requestPrompt, serverInstructions } from './prompts.ts';
 import { REQUEST_KINDS, submitDraft, writeDraft, type RequestKind } from './requests.ts';
 import {
   availableLayers,
@@ -98,6 +99,8 @@ const ANNOTATIONS: Record<string, { readOnlyHint: boolean; destructiveHint?: boo
   list_building_blocks: { readOnlyHint: true, openWorldHint: false },
   find_capabilities: { readOnlyHint: true, openWorldHint: false },
   describe_capability: { readOnlyHint: true, openWorldHint: false },
+  assess_experience: { readOnlyHint: true, openWorldHint: false },
+  build_experience: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   create_site: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   get_site: { readOnlyHint: true, openWorldHint: false },
   update_site: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
@@ -366,6 +369,74 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
       const controls = layer ? (layer.manifest.controls ?? []).map((x: any) => ({ id: x.id, type: x.type, label: x.label, default: x.default, ...(x.phone ? { phone: true } : {}), ...(x.options ? { options: x.options.map((o: any) => o?.value ?? o) } : {}), ...(x.min !== undefined ? { min: x.min, max: x.max } : {}) })) : undefined;
       const examples = (catalog.examples ?? []).filter((e) => c.examples.includes(e.path));
       return reply(`${c.name} (${c.id}): ${c.status}.`, { ...c, ...(controls ? { controls } : {}), example_sites: examples });
+    },
+  );
+
+  // ---- Experiences (#327) ----
+
+  const STEP = z.object({
+    title: z.string().describe('Short, in the person\'s words; becomes the step title on the controller'),
+    want: z.string().optional().describe('What the table shows and people do in this step, in plain words'),
+    use: z.string().optional().describe('The layer, if chosen with find_capabilities: "sunlight", "layer:sunlight", "custom:zones"'),
+    params: z.record(z.string(), z.unknown()).optional().describe('Settings for this step by control id (describe_layer)'),
+    with: z.array(z.string()).optional().describe('Layers shown inside this one while it is open, e.g. ["transit"]'),
+    controller: z.string().optional().describe('What the controller says for this step'),
+    phone: z.string().optional().describe('What phones do in this step'),
+    notes: z.string().optional().describe('The guide\'s words, shown only on the guide\'s phone'),
+  });
+  const PLAN = {
+    title: z.string(),
+    goal: z.string().describe('What people should leave understanding, having seen or having said'),
+    audience: z.string().optional(),
+    steps: z.array(STEP).min(1),
+    at_rest: z.array(z.string()).optional().describe('Layers playing when nobody touches the controller, e.g. ["cars", "trees"]'),
+    needs: z.array(z.string()).optional().describe('Other things the experience needs that are not a step, e.g. "people vote on each other\'s ideas"'),
+    guided: z.boolean().optional().describe('Make a guided sequence of the steps (default: yes for two or more steps)'),
+  };
+  const assessFor = (plan: ExperiencePlan, site?: string) => {
+    const dir = site ? at(site) : null;
+    return assessExperience(plan, capabilitiesFor(site), availableLayers(catalog, dir), Boolean(dir));
+  };
+
+  tool(
+    'assess_experience',
+    {
+      title: 'Check an experience plan',
+      description:
+        'Check a whole experience against what MR Studio can do, before building it. A plan is a title, a goal, the audience, and steps: each step is what the table shows and people do (want, or a layer chosen with find_capabilities as use), its settings, layers inside it (with), what the controller says, what phones do, and notes for the guide. Add layers at rest and other needs. Returns, per step and need, the layer that serves it and why, alternatives, setup still needed (data, services), param problems, a constraint it runs into, and gaps with the kind of development request they need; and a verdict: buildable, buildable_with_setup, partly_buildable or needs_development. Writes nothing. Read mrstudio://concepts and mrstudio://patterns first.',
+      inputSchema: { ...PLAN, site: z.string().optional().describe('Site folder: check data and services against it') },
+    },
+    async ({ site, ...plan }) => {
+      const a = assessFor(plan as ExperiencePlan, site);
+      return reply(`${a.summary}\nNext: ${a.next.join(' ')}`, a);
+    },
+  );
+
+  tool(
+    'build_experience',
+    {
+      title: 'Build an experience plan',
+      description:
+        'Build the parts of an experience plan that exist, in one validated change to the site: a layer for each buildable step (an existing instance is reused), the layers inside them, the layers at rest, and, for two or more steps, a guided sequence (a slideshow named after the plan) with each step\'s settings, title, controller text and notes. Steps that need development or run into a constraint are skipped and listed with their gaps; nothing that does not exist is written. Call assess_experience first and show the person the result.',
+      inputSchema: { site: z.string(), ...PLAN },
+    },
+    async ({ site, ...plan }) => {
+      const a = assessFor(plan as ExperiencePlan, site);
+      let result: BuildResult | undefined;
+      const out = editScene(site, (m) => {
+        result = buildExperience(m, plan as ExperiencePlan, a, availableLayers(catalog, at(site)));
+        if (!result.built.length && !m.layers.length) return 'Nothing in this plan can be built yet; see assess_experience for the gaps.';
+        return { message: result.message, issues: result.issues };
+      });
+      const sc = out.structuredContent as Record<string, unknown> | undefined;
+      if (sc && result) {
+        Object.assign(sc, { verdict: a.verdict, built: result.built, skipped: result.skipped, gaps: a.gaps, setup: a.setup });
+        if (sc.ok && a.gaps.length) {
+          sc.next = [`Show the person the ${a.gaps.length} gap${a.gaps.length === 1 ? '' : 's'}; with their yes, draft a request for each with draft_module_request.`];
+          (out.content[0] as { text: string }).text += `\nGaps: ${a.gaps.map((g) => `${g.for} (${g.kind})`).join('; ')}`;
+        }
+      }
+      return out;
     },
   );
 
@@ -796,7 +867,7 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
     {
       title: 'Check a layer idea',
       description:
-        'Check a sketched layer against the core: which existing layers already cover it, which kernels and building blocks exist or are planned, and whether it should be configured from an existing layer, requested as a new core layer from existing blocks, or needs new blocks or kernels first.',
+        'Check a sketched layer against the core (for a whole experience, use assess_experience): which existing layers already cover it, which kernels and building blocks exist or are planned, and whether it should be configured from an existing layer, requested as a new core layer from existing blocks, or needs new blocks or kernels first.',
       inputSchema: {
         title: z.string(),
         description: z.string().describe('What it shows and what people do with it'),
@@ -810,7 +881,9 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
     async (args) => {
       const extra = args.site ? availableLayers(catalog, at(args.site)).filter((l) => l.origin === 'site') : [];
       const report = checkIdea(args, catalog, extra);
-      return reply(`${report.verdict}: ${report.summary}\nNext: ${report.next_step}`, report);
+      // The same idea as a one-step experience plan, so callers can move to assess_experience (#327).
+      const assessment = assessFor({ title: args.title, goal: args.description, steps: [{ title: args.title, want: args.description }] }, args.site);
+      return reply(`${report.verdict}: ${report.summary}\nNext: ${report.next_step}`, { ...report, assessment: { verdict: assessment.verdict, step: assessment.steps[0], gaps: assessment.gaps } });
     },
   );
 
@@ -872,6 +945,46 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
   );
 
   // ---- Prompts ----
+
+  server.registerPrompt(
+    'design_experience',
+    {
+      title: 'Design an experience',
+      description: 'From a goal in plain words to an experience across the table, controller and phones: capabilities, a plan, its assessment, then build what exists and request what does not.',
+      argsSchema: { goal: z.string().optional(), place: z.string().optional(), audience: z.string().optional() },
+    },
+    ({ goal, place, audience }) => ({ messages: [{ role: 'user', content: { type: 'text', text: designExperiencePrompt(goal, place, audience) } }] }),
+  );
+
+  server.registerPrompt(
+    'plan_workshop',
+    {
+      title: 'Plan a workshop',
+      description: 'A timed workshop at the table: the place today, questions answered step by step, a moment where people contribute from their phones, and a close.',
+      argsSchema: { topic: z.string().optional(), minutes: z.string().optional(), participants: z.string().optional() },
+    },
+    ({ topic, minutes, participants }) => ({ messages: [{ role: 'user', content: { type: 'text', text: planWorkshopPrompt(topic, minutes, participants) } }] }),
+  );
+
+  server.registerPrompt(
+    'compare_scenarios',
+    {
+      title: 'Compare scenarios',
+      description: 'Show today and a proposal on a table that shows one layer at a time: reveal line, magnifier, phased plan or a repeated question.',
+      argsSchema: { today: z.string().optional(), proposal: z.string().optional() },
+    },
+    ({ today, proposal }) => ({ messages: [{ role: 'user', content: { type: 'text', text: compareScenariosPrompt(today, proposal) } }] }),
+  );
+
+  server.registerPrompt(
+    'build_from_data',
+    {
+      title: 'Build from data',
+      description: 'Turn a dataset into a custom layer and a step of an experience, without code.',
+      argsSchema: { data: z.string().optional() },
+    },
+    ({ data }) => ({ messages: [{ role: 'user', content: { type: 'text', text: buildFromDataPrompt(data) } }] }),
+  );
 
   server.registerPrompt(
     'new_project',

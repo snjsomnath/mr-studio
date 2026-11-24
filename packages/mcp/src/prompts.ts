@@ -18,7 +18,7 @@ Rules:
 5. Contracts are in read_doc: architecture, roadmap, contracts/site, contracts/layer and the rest. Quote them rather than guess.
 6. What changed recently is in whats_new (the changelog, newest first). Check it when someone asks for something that may have just been built.
 
-Prompts: new_project, brainstorm_layer, design_dashboard, request_module.`;
+Prompts: design_experience, plan_workshop, compare_scenarios, build_from_data, new_project, brainstorm_layer, design_dashboard, request_module.`;
 }
 
 export function newProjectPrompt(place?: string, purpose?: string): string {
@@ -26,7 +26,7 @@ export function newProjectPrompt(place?: string, purpose?: string): string {
 
 Work through these steps, one short question at a time, and act with the tools as soon as you have enough:
 
-1. The story. Ask who stands around the table and what they should understand or decide. One or two sentences is enough; everything else follows from it.
+1. The story. Ask who stands around the table and what they should understand or decide. One or two sentences is enough; everything else follows from it. Design the experience before the scene: read mrstudio://concepts, call find_capabilities with that goal, write it as an experience plan and check it with assess_experience (the design_experience prompt walks through this); build_experience then writes steps 3 and 8 for you.
 2. The place. Agree the centre point (lon, lat in WGS84), the area the table shows in metres, and its rotation (bearing of the table's top edge, clockwise from north). Match the area's aspect ratio to the physical table. Ask the time zone. Then call create_site.
 3. The scene. Call list_layers. Pick the layers that tell the story and order them bottom to top: base and ambient layers first, analysis layers above. For each, call describe_layer and set params that frame the story (a date and hour for the sun, for example), and decide which start active. Use add_layer and set_layer.
 4. The data. Explain what the site folder needs (building footprints as GeoJSON in WGS84 with a height property, optional terrain and trees) and update scene paths with update_site once files are in data/. If the person has no data yet, the site still runs on a flat area.
@@ -82,4 +82,46 @@ export function requestPrompt(need?: string): string {
 2. Pick the kind: layer-change (a control or option on an existing layer), layer (a new layer from existing blocks), block (a shared visual, data or interaction primitive), kernel (engine computation), contract (site.json, TV, protocol, CLI), or promote (a team's layer moved into core).
 3. Write it for the core maintainers: the goal in the person's words, why existing pieces fall short, a proposal in terms of reusable blocks (principle 7: building blocks before ports, and a block earns its place when a second layer can use it), what it reuses, what is missing, and an example configuration (the layer.json or site.json fragment the team would write once it exists).
 4. Call draft_module_request. Show the person the draft path and the link. Call submit_module_request only after they agree.`;
+}
+
+const DESIGN_RULES = `How to design for MR Studio:
+- Read mrstudio://concepts first: the table (2D, seen from above, almost no text), the controller (words, controls, legends, step titles) and phones (a few controls, placing points, routes and areas; the guide's notes). Read the patterns (mrstudio://patterns/<id>) and pick the one or two that fit.
+- Call find_capabilities with the person's goal in their words. Use what is available; name what needs setup (data, keys, services); treat planned and unsupported as development, never as settings.
+- Write the experience as a plan: title, goal, audience, and 3 to 8 steps. Each step says what the table shows, what the controller says, what phones do, and what the guide says (notes). Add layers at rest and other needs.
+- Call assess_experience. Show the person the plan and the verdict in a few lines: what works now, what needs setup, and each gap.
+- With their yes, call build_experience on their site (create_site first if there is none), then validate_site and preview_site.
+- For each gap, offer a development request (draft_module_request with the kind assess_experience gave). Show the drafts; send them only after the person says yes, and one yes may cover the batch.`;
+
+export function designExperiencePrompt(goal?: string, place?: string, audience?: string): string {
+  return `Design an MR Studio experience with me${goal ? ` so that ${goal}` : ''}${place ? `, at ${place}` : ''}${audience ? `, for ${audience}` : ''}.
+
+Start by asking, one short question at a time, only what you cannot infer: who stands around the table, what they should leave understanding or having said, how long they have, and whether a guide presents. Then propose one experience (not three), in the person's words.
+
+${DESIGN_RULES}`;
+}
+
+export function planWorkshopPrompt(topic?: string, minutes?: string, participants?: string): string {
+  return `Plan a workshop at the MR Studio table${topic ? ` about ${topic}` : ''}${minutes ? `, ${minutes} minutes long` : ''}${participants ? `, for ${participants}` : ''}.
+
+A workshop is a guided story with moments where people contribute. Shape it as: an opening that shows the place today (at rest: ambient life), two to four steps that each answer one question (a simulation, a comparison, a view), a contribution step where people place points, draw routes or areas from their phones (pattern map-it-together), and a closing step that shows what the group made. Give each step a time, a question the guide asks (notes) and what the controller says.
+
+${DESIGN_RULES}`;
+}
+
+export function compareScenariosPrompt(today?: string, proposal?: string): string {
+  return `Design a comparison of two scenarios at the MR Studio table${today ? `: today is ${today}` : ''}${proposal ? `, the proposal is ${proposal}` : ''}.
+
+The table shows one layer at a time, so comparison is built from a reveal line (swipe), a magnifier (lens), a plan revealed phase by phase (plan), or a sequence that shows the same question twice (sun at 3 pm today, then with the proposal). Read mrstudio://patterns/compare-existing-proposed. Ask which question matters most (sun, wind, water, views, movement) and what data exists for each scenario. Each scenario is data in the site: name the files the person must bring.
+
+${DESIGN_RULES}`;
+}
+
+export function buildFromDataPrompt(data?: string): string {
+  return `Make an MR Studio experience from data${data ? `: ${data}` : ''}.
+
+1. Ask what the data is (points, lines, areas; which columns), where it is, and what story it should tell. GeoJSON in WGS84 or a CSV with lon and lat columns goes into the site's data/ folder.
+2. Read mrstudio://patterns/data-story and mrstudio://schema/recipe. Most datasets need no code: a custom layer (save_custom_layer) colours areas by a column, pulses places by a weight, flows along lines, and reveals things over time. The legend is worked out from the data. A WMS map is shown with the wms layer.
+3. Decide what the table shows (one look, at most two) and what the controller explains (legend, a control bound to the recipe), then save the custom layer and use it as a step (use "custom:<id>") in an experience plan.
+
+${DESIGN_RULES}`;
 }
