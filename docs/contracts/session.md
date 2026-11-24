@@ -299,6 +299,7 @@ Text frames are JSON. Binary frames are engine field frames (see engine.md).
 { t: 'hello', protocol: 1, role: 'table' | 'tv' | 'phone' | 'guide' | 'dev', code?: string, resume?: string }
 { t: 'req', id: number, m: string, p?: object }
 { t: 'alive', window: string, fps: number }  // table and tv windows of the desktop app, every 2 s (see Running unattended)
+{ t: 'error', message: string, stack?: string, layer?: string, window?: string }  // an error in the window, for the app's log (see Layers in trouble)
 
 // host to surface
 { t: 'welcome', surface: number, state: SessionState, manifests: LayerManifest[], resume?: string }   // manifests: every layer that can be in a scene
@@ -318,6 +319,8 @@ Requests:
 | `layer.set` | `{ layer, params }` | all (phones only for `phone: true` controls) | Validates, merges, broadcasts |
 | `layer.action` | `{ layer, action }` | all (phones only for `phone: true`) | Broadcast to the table |
 | `layer.publish` | `{ layer, values }` | table, dev | Merges into `shared`, broadcasts |
+| `layer.health` | `{ layer, status, reason?, retry_in? }` | table, dev | How a layer that is on is doing (#259). `status` is `retrying` or `failed` (with `reason` in words, and for `retrying` the seconds to the next try) or `running`. Kept as the layer's `health` (absent while it runs) and broadcast; ignored while it is off. Returns `{ incident }` when trouble starts or ends, which goes to the operator log |
+| `layer.retry` | `{ layer }` | tv, dev | Retry for a layer in trouble: the table starts it again now (event `layer.retry { layer }`) |
 | `tool.input` | `{ layer, tool, geometry }` | all | Checked, then forwarded to the table |
 | `engine.*` | see engine.md | table, tv, dev | Kernel streams |
 | `calibration.get` | none | table, tv, dev | Returns `{ projector }`, the saved projector calibration or null (see model.md) |
@@ -412,6 +415,36 @@ A table in an exhibition runs all day with nobody at the computer.
 - **Start with the computer.** "Start with this computer and present the last table by
   itself" adds a login item: a LaunchAgent on macOS, a Run entry on Windows. The app starts
   with `--at-login` and presents the last table on the saved screens.
+
+### Layers in trouble, and diagnostics (#259, #260)
+
+A layer must never be silently missing from the table.
+
+- **Health.** When a layer's `table()` throws, or a site dataset it uses cannot be read (the
+  SDK's `readSiteData`, `loadSiteData` and `loadSiteField` report it through `onDataProblem`,
+  after their own retries for a host that is restarting), the table's runtime sends
+  `layer.health { status: 'retrying', reason, retry_in }` and starts the layer again after
+  1 s, 2 s, 5 s, 15 s, then every minute while it is on. A dataset is pinned on the layers that
+  name it in `requires.data` or in a setting; otherwise on the one layer starting just then.
+  Once a start reads everything, it sends `running` and the trouble ends. A layer whose code is
+  not in the app is `failed` and waits.
+- **Where it shows.** The editor puts a red dot on the layer's row, with why in its tooltip,
+  and a box with the reason and **Retry** at the top of its settings. The controller dims the
+  layer's button and writes "Not available right now" under its name; it comes back by itself.
+  The start and end of trouble go to the operator log.
+- **Window errors.** Every surface sends uncaught errors, rejected promises and errors thrown
+  by a layer's handlers as `{ t: 'error', message, stack, layer, window }`: the same error at
+  most once a minute, 20 a minute in all. The host counts repeats, allows 30 a minute per
+  window, keeps the last 200, and writes new ones to the app's log and (except phones') to the
+  operator log.
+- **Diagnostics.** `GET /api/diagnostics` is the host's report as JSON (`?format=text` for
+  text): version, table and site format, the engine's backend and GPU, every layer with its
+  state and trouble, the windows' last beats and frame rates, window errors and incidents. In
+  the app, Help › Copy diagnostics (also in the editor's Help tab) adds the app's build stamp,
+  the computer, the displays and which window is on each, and the last 500 lines of the app's
+  log, shows it and copies it. Save diagnostics… writes it to a file; Open log folder shows the
+  logs. Keys never pass through it, and anything in a log line that looks like a key or token
+  is blanked.
 
 ### Settings: this computer or this table
 

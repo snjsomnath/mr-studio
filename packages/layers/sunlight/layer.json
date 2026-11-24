@@ -12,10 +12,16 @@
       "id": "mode", "type": "select", "label": "Show", "help": "Shadows at one moment, the hours of direct sun over a day, or the three seasons side by side.", "default": "instant", "tier": "primary",
       "options": [
         { "value": "instant", "label": "Shadows" },
+        { "value": "golden", "label": "Golden hour" },
         { "value": "day", "label": "Sun hours" },
         { "value": "seasons", "label": "Seasons" }
       ]
     },
+    { "id": "golden", "type": "select", "label": "Golden hour", "default": "evening", "visibleWhen": { "mode": "golden" }, "tier": "primary",
+      "options": [
+        { "value": "evening", "label": "Evening" },
+        { "value": "morning", "label": "Morning" }
+      ] },
     { "id": "date", "type": "date", "clock": "date", "label": "Day", "help": "The day the sun is worked out for. Midsummer, the equinox and midwinter are one tap.", "default": "2026-06-21", "phone": true, "tier": "primary",
       "presets": [
         { "value": "06-21", "label": "Midsummer" },
@@ -23,9 +29,9 @@
         { "value": "12-21", "label": "Midwinter" },
         { "value": "today", "label": "Today" }
       ] },
-    { "id": "hour", "type": "range", "clock": "hour", "label": "Time of day", "help": "The moment the shadows are drawn for, in the table's own time zone.", "min": 0, "max": 24, "step": 0.05, "unit": "h", "default": 12, "phone": true, "visibleWhen": { "mode": "instant" }, "tier": "more" },
+    { "id": "hour", "type": "range", "clock": "hour", "label": "Time of day", "help": "The moment the shadows are drawn for, in the table's own time zone.", "min": 0, "max": 24, "step": 0.05, "unit": "h", "default": 12, "phone": true, "visibleWhen": { "mode": ["instant", "golden"] }, "tier": "more" },
     { "id": "trails", "type": "toggle", "label": "Shadow trails over the day", "help": "Every shadow of the day at once, faint, so you see where shade sweeps across.", "default": false, "visibleWhen": { "mode": "instant" } },
-    { "id": "play", "type": "toggle", "clock": "play", "label": "Animate the day", "help": "Runs through the day on its own, sunrise to sunset.", "default": false, "visibleWhen": { "mode": "instant" }, "tier": "more" },
+    { "id": "play", "type": "toggle", "clock": "play", "label": "Animate the day", "help": "Runs through the day on its own, sunrise to sunset.", "default": false, "visibleWhen": { "mode": ["instant", "golden"] }, "tier": "more" },
     {
       "id": "window", "type": "select", "label": "Sun during", "help": "Which part of the day the sun hours count.", "default": "day", "visibleWhen": { "mode": ["day", "seasons"] },
       "options": [
@@ -47,7 +53,7 @@
     },
     { "id": "threshold", "type": "range", "label": "Flag areas with less sun than", "help": "Places with fewer hours of sun than this are marked, as planning rules ask.", "min": 0, "max": 12, "step": 0.5, "unit": "h", "default": 0, "visibleWhen": { "mode": ["day", "seasons"] } },
     { "id": "path", "type": "toggle", "label": "Sun path on the table", "help": "The sun's path across the sky, drawn around the table.", "default": true, "tier": "more" },
-    { "id": "relight", "type": "toggle", "label": "Light the 3D model", "help": "Lights the walls and roofs of the 3D model from the sun's direction.", "default": false, "visibleWhen": { "mode": "instant" }, "tier": "more" },
+    { "id": "relight", "type": "toggle", "label": "Light the 3D model", "help": "Lights the walls and roofs of the 3D model from the sun's direction.", "default": false, "visibleWhen": { "mode": ["instant", "golden"] }, "tier": "more" },
     { "id": "trees", "type": "toggle", "label": "Trees cast shade", "help": "Trees in the table's data cast shade as well as buildings.", "default": true, "tier": "more" },
     { "id": "treeColor", "type": "toggle", "label": "Tree shade in its own colour", "default": true, "visibleWhen": { "trees": true }, "tier": "more" },
     { "id": "clearSpot", "type": "action", "label": "Clear the spot", "tier": "more" },
@@ -65,9 +71,9 @@
       "props": { "colormap": { "bind": "shared.treeRamp" }, "low": { "bind": "shared.treeLow" }, "high": { "bind": "shared.treeHigh" } } },
     { "id": "key", "widget": "ramp", "size": "band", "title": "On the table",
       "props": { "colormap": { "bind": "shared.ramp" }, "low": { "bind": "shared.rampLow" }, "high": { "bind": "shared.rampHigh" } } },
-    { "id": "ribbon-time", "widget": "stat", "size": "tile", "title": "Time", "ribbon": true, "visibleWhen": { "mode": "instant" },
+    { "id": "ribbon-time", "widget": "stat", "size": "tile", "title": "Time", "ribbon": true, "visibleWhen": { "mode": ["instant", "golden"] },
       "props": { "value": { "bind": "params.hour" }, "format": "hour" } },
-    { "id": "ribbon-sun", "widget": "stat", "size": "tile", "title": "Sun height", "ribbon": true, "visibleWhen": { "mode": "instant" },
+    { "id": "ribbon-sun", "widget": "stat", "size": "tile", "title": "Sun height", "ribbon": true, "visibleWhen": { "mode": ["instant", "golden"] },
       "props": { "value": { "bind": "shared.altitude" }, "unit": "°", "decimals": 0 } },
     { "id": "ribbon-daylight", "widget": "stat", "size": "tile", "title": "Daylight", "ribbon": true, "visibleWhen": { "mode": "day", "window": "day" },
       "props": { "value": { "bind": "shared.daylightHours" }, "unit": "h", "decimals": 1 } },

@@ -19,6 +19,7 @@
 - Most layers need data from the place: Traffic and Street life need **streets**, Building lights and Sunlight need **buildings**, Cool paths needs **walking paths**, Trees needs **trees**. The editor says what is missing beside the layer and takes you to **Add data**.
 - In **Add data**, **From OpenStreetMap** fetches buildings, streets, walking paths and trees around the table. **Ground** fetches free ground heights.
 - Live layers (live public transport, web maps, map styles from your sources) need the internet and, for some, a key under **Sources and keys** on Home.
+- A layer with a **red dot** in the editor's layer list is on but not running: its settings start with why ("couldn't read trees.geojson") and a **Retry** button. It also tries again by itself, sooner at first and then every minute, so putting a missing file back is enough. On the controller its button is dimmed and says "Not available right now" until it runs again.
 
 ## OpenStreetMap takes a long time or fails
 
@@ -68,4 +69,4 @@ Home says when a new version is out. Press **Download**, open the file it saves,
 
 ## Still stuck
 
-Note what you did, what you expected and what happened, with the version shown at the top of Home, and send it with the day's operator log to whoever looks after your MR Studio.
+Note what you did, what you expected and what happened. Then choose **Help › Copy diagnostics** in the app's menu (or **Copy diagnostics** on the editor's Help tab): it copies one report with the version, the table, how each layer is doing, errors in the windows, the displays and the end of the app's log, ready to paste into an issue or an email to whoever looks after your MR Studio. Keys are never in it. **Save diagnostics…** writes the same report to a file, and **Open log folder** shows the app's log and the day's operator log.

@@ -22,6 +22,7 @@ export const compare = defineWidget({
   name: 'Compare',
   description: 'Two or three scenarios side by side, one figure each and the change from the first; each card shows whether it is worked out yet.',
   sizes: ['chip', 'wide', 'block'],
+  example: { scenarios: [{ label: 'As today', value: 12500 }, { label: 'This plan', value: 10300 }, { label: 'Best share', state: 'running' }], unit: 'kW', better: 'lower' },
   props: {
     scenarios: {
       kind: 'list',

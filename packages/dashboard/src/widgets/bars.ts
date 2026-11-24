@@ -9,6 +9,7 @@ export const bars = defineWidget({
   name: 'Bars',
   description: 'Up to six labelled bars on one scale, for comparing a few things.',
   sizes: ['wide', 'tall', 'block'],
+  example: { items: [{ label: 'Roofs', value: 182 }, { label: 'Battery', value: 64 }, { label: 'Grid', value: 41 }], unit: 'kW' },
   props: {
     items: {
       kind: 'list',

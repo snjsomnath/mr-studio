@@ -2,7 +2,7 @@ import { defineLayer, formatHour, zonedTimeToUtc } from '@mrstudio/sdk';
 import type { Colormap, FieldFrame, FieldStream, LayerManifest, LightHandle, SunLight, TableContext } from '@mrstudio/sdk';
 
 import manifest from '../layer.json';
-import { windowParams, WINDOWS, skyColormap, skyLight, sunAt, sunDay, sunHoursColormap, thresholdColormap, treeHoursColormap, treeShadeColormap } from './look.ts';
+import { goldenColormap, goldenWindows, windowParams, WINDOWS, skyColormap, skyLight, sunAt, sunDay, sunHoursColormap, thresholdColormap, treeHoursColormap, treeShadeColormap } from './look.ts';
 import { sunlightHero } from './hero.ts';
 import { SunPath } from './sun-path.ts';
 import { hasShade, isFlat } from './flat.ts';
@@ -12,7 +12,8 @@ import { trailsOnTable } from './trails.ts';
 import { playPace, sharpSoften } from './pace.ts';
 
 interface Params {
-  mode: 'instant' | 'day' | 'seasons';
+  mode: 'instant' | 'golden' | 'day' | 'seasons';
+  golden: 'evening' | 'morning';
   date: string;
   hour: number;
   play: boolean;
@@ -39,13 +40,20 @@ const HOUR_STEP = 0.05;
 const PLAY_SYNC_SECONDS = 0.1;
 /** While playing, new shadow masks come every frame or two, so each eases in this fast and the shadows keep up with the sun. */
 const PLAY_GLIDE_SECONDS = 0.06;
+/** Golden hour mode plays its window this slowly: about five minutes of sunset a second (#363). */
+const GOLDEN_HOURS_PER_SECOND = 0.085;
+/** Seconds the blue hour holds at the end of a golden hour before it starts again. */
+const GOLDEN_HOLD_SECONDS = 2.5;
+
+/** Shadows at a moment: plain, or the golden hour's (#363). Both use the same shadows, sun and clock. */
+const atMoment = (mode: string) => mode === 'instant' || mode === 'golden';
 
 /** Kernel params for the layer's params. The site's time zone turns wall-clock time into UTC. */
 function kernelParams(ctx: TableContext<Params>) {
   const { mode, date, hour, trees } = ctx.params;
   const time = zonedTimeToUtc(date, mode === 'day' ? 12 : hour, ctx.site.timezone);
-  // In Sun hours, only the sun in the chosen window counts; an instant has none.
-  return { mode, time, trees, ...(mode === 'day' ? windowParams(ctx.site, date, ctx.params.window) : { from: null, until: null }) };
+  // In Sun hours, only the sun in the chosen window counts; an instant has none. Golden hour is an instant to the engine.
+  return { mode: mode === 'golden' ? 'instant' : mode, time, trees, ...(mode === 'day' ? windowParams(ctx.site, date, ctx.params.window) : { from: null, until: null }) };
 }
 
 /** The sun hours ramp, with areas under the layer's threshold flagged when one is set. */
@@ -68,10 +76,25 @@ export default defineLayer<Params>({
     const sent: number[] = [];
     let sinceSync = 0;
     const hourNow = () => clock ?? ctx.params.hour;
-    const playing = () => ctx.params.play && ctx.params.mode === 'instant';
+    const playing = () => ctx.params.play && atMoment(ctx.params.mode);
     const sunNow = () => sunAt(ctx.site, ctx.params.date, hourNow());
+    const golden = () => ctx.params.mode === 'golden';
+    // Light and shade for a sun height, in the golden hour's own grade in that mode.
+    const lightColormap = (altitude: number) => (golden() ? goldenColormap(altitude) : skyColormap(altitude));
+    // The golden hour the mode plays, or null when the sun never gets that low today.
+    let goldenDate = '';
+    let golds: ReturnType<typeof goldenWindows> | null = null;
+    const goldenWindow = () => {
+      if (!golds || goldenDate !== ctx.params.date) {
+        goldenDate = ctx.params.date;
+        golds = goldenWindows(sunDay(ctx.site, ctx.params.date));
+      }
+      return golds[ctx.params.golden === 'morning' ? 'morning' : 'evening'];
+    };
+    // Seconds left holding the blue hour before the golden hour starts again.
+    let holding = 0;
     const overlay = ctx.map.addField('sunlight', {
-      colormap: skyColormap(sunNow().altitude),
+      colormap: lightColormap(sunNow().altitude),
       opacity: ctx.params.opacity,
       soften: SOFTEN_CELLS,
       glide: GLIDE_SECONDS,
@@ -101,7 +124,7 @@ export default defineLayer<Params>({
     // While playing, the next mask waits as long as the last one took, so a slow graphics card spends at most
     // about half its time on shadows and the frame rate holds; a fast one still gets a new mask every frame or two.
     let maskFreeAt = 0;
-    const sharpWanted = () => ctx.params.mode === 'instant' && !ctx.params.relight;
+    const sharpWanted = () => atMoment(ctx.params.mode) && !ctx.params.relight;
     async function reshadow() {
       if (!sharpWanted() || sharp === false) return;
       if (masking) {
@@ -131,8 +154,9 @@ export default defineLayer<Params>({
     }
     // Without their own colour, trees shade in the same colour as buildings.
     const treeColormap = (): Colormap => {
-      if (ctx.params.treeColor || !sharp) return treeShadeColormap;
-      const [shade] = skyColormap(sunNow().altitude).stops;
+      // In the golden hour every shadow is the same violet, trees too: green would break the light (#363).
+      if ((ctx.params.treeColor && !golden()) || !sharp) return treeShadeColormap;
+      const [shade] = lightColormap(sunNow().altitude).stops;
       return { stops: [[0, shade![1], shade![2], shade![3], 0], [1, shade![1], shade![2], shade![3], shade![4]]] };
     };
     const treeOpacity = () => (ctx.params.trees && (ctx.params.treeColor || (sharp && sharpWanted())) ? ctx.params.opacity : 0);
@@ -144,7 +168,7 @@ export default defineLayer<Params>({
     // Relighting: instead of colouring a shadow mask, a sun and a sky light the twin itself,
     // so walls catch the light and shadows fall on every surface. Tree shade stays a field.
     let sunLight: LightHandle<SunLight> | null = null;
-    const relit = () => ctx.params.relight && ctx.params.mode === 'instant';
+    const relit = () => ctx.params.relight && atMoment(ctx.params.mode);
     function relight() {
       if (!relit()) {
         sunLight?.remove();
@@ -189,7 +213,7 @@ export default defineLayer<Params>({
       // While playing, each frame asks for the shadows itself (animate).
       if (!playing()) void reshadow();
       overlay.setStyle({
-        colormap: day ? hoursColormap(ctx.params.threshold, daylightHours) : skyColormap(sun.altitude),
+        colormap: day ? hoursColormap(ctx.params.threshold, daylightHours) : lightColormap(sun.altitude),
         soften: day ? 1 : SOFTEN_CELLS,
         // With nothing to cast shade the whole table would be lit in one colour; stay dark instead (#55).
         opacity: relit() || dark() ? 0 : ctx.params.opacity,
@@ -199,10 +223,11 @@ export default defineLayer<Params>({
       });
       treeOverlay.setStyle({ colormap: day ? treeHoursColormap : treeColormap(), soften: day ? 1 : SOFTEN_CELLS, opacity: treeOpacity() });
       path.setVisible(ctx.params.path);
+      path.setGolden(golden());
       path.setSun(day ? { ...sun, altitude: -90 } : sun);
       // The TV's colour key shows the ramp the table is using right now.
       ctx.publish({
-        ramp: day ? hoursColormap(ctx.params.threshold, daylightHours) : skyColormap(sun.altitude),
+        ramp: day ? hoursColormap(ctx.params.threshold, daylightHours) : lightColormap(sun.altitude),
         dayStatus: dayStatus(),
         rampLow: day ? '0 h' : 'Shade',
         treeRamp: day ? treeHoursColormap : treeShadeColormap,
@@ -217,8 +242,8 @@ export default defineLayer<Params>({
       const sun = sunNow();
       relight();
       if (performance.now() >= maskFreeAt) void reshadow();
-      if (!relit()) overlay.setStyle({ colormap: skyColormap(sun.altitude), ...(sharp ? { soften: sharpSoften(sun.altitude) } : {}) });
-      if (ctx.params.trees && !ctx.params.treeColor && sharp) treeOverlay.setStyle({ colormap: treeColormap() });
+      if (!relit()) overlay.setStyle({ colormap: lightColormap(sun.altitude), ...(sharp ? { soften: sharpSoften(sun.altitude) } : {}) });
+      if (ctx.params.trees && (!ctx.params.treeColor || golden()) && sharp) treeOverlay.setStyle({ colormap: treeColormap() });
       path.setSun(sun);
     }
 
@@ -315,15 +340,55 @@ export default defineLayer<Params>({
     ctx.onFrame((dt) => {
       if (ctx.params.mode === 'seasons') seasons.tick(dt);
       if (!playing()) return;
-      // The clock moves by the frame's own time, so the sun moves the same distance on screen for the same time.
-      clock = (hourNow() + dt * PLAY_HOURS_PER_SECOND * playPace(sunNow().altitude)) % 24;
+      if (golden()) {
+        if (!goldenTick(dt)) return;
+      } else {
+        // The clock moves by the frame's own time, so the sun moves the same distance on screen for the same time.
+        clock = (hourNow() + dt * PLAY_HOURS_PER_SECOND * playPace(sunNow().altitude)) % 24;
+      }
       sinceSync += dt;
       if (sinceSync >= PLAY_SYNC_SECONDS) {
         sinceSync = 0;
-        sync(clock);
+        sync(hourNow());
       }
       animate();
     });
+
+    /**
+     * One frame of the golden hour playing (#363): the sun sinks slowly through the window, the blue hour holds a
+     * moment, and the golden hour starts again. False while holding, when nothing moves.
+     */
+    function goldenTick(dt: number): boolean {
+      const window = goldenWindow();
+      if (!window) {
+        clock = (hourNow() + dt * GOLDEN_HOURS_PER_SECOND) % 24;
+        return true;
+      }
+      if (holding > 0) {
+        holding -= dt;
+        if (holding > 0) return false;
+        // Back to the top of the golden hour; the light eases in rather than snapping.
+        overlay.setStyle({ glide: GLIDE_SECONDS * 4 });
+        clock = window.from;
+        return true;
+      }
+      const now = hourNow();
+      // A time outside the window, from a scrub or from Shadows, starts the play at the top of the golden hour.
+      if (now < window.from - 1e-6 || now > window.to + 1e-6) clock = window.from;
+      else clock = now + dt * GOLDEN_HOURS_PER_SECOND;
+      if (clock >= window.to) {
+        clock = window.to;
+        holding = GOLDEN_HOLD_SECONDS;
+      }
+      return true;
+    }
+
+    /** Turning golden hour mode on starts its golden hour playing. */
+    function enterGolden() {
+      const window = goldenWindow();
+      holding = 0;
+      ctx.setParams({ ...(window ? { hour: Math.round(window.from / HOUR_STEP) * HOUR_STEP } : {}), play: true });
+    }
 
     const spot = spotOnTable(ctx);
     const trails = trailsOnTable(ctx, spot.at);
@@ -357,6 +422,11 @@ export default defineLayer<Params>({
         spot.update(changed);
         trails.update(changed);
         if (changed.includes('date')) publishDay();
+        if (changed.includes('mode') && golden()) enterGolden();
+        else if (changed.includes('golden') && golden()) {
+          clock = null;
+          enterGolden();
+        }
         if (changed.includes('mode')) void open();
         else if (ctx.params.mode === 'seasons') {
           dress();

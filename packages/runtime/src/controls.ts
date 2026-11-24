@@ -9,6 +9,7 @@ import { entitySender, baseContext, isAtRest, paramSender } from './layer-manage
 import { loadEntities } from './entities.ts';
 
 export { isAtRest };
+import { mountStage } from './dashboard.ts';
 import { layerModule } from './registry.ts';
 import { MEDIA_KINDS, canAddMedia, mediaItems, onMediaChanged, requestAddMedia, sizeOf, titleOf, valueOf } from './media.ts';
 import { Picker } from './picker.ts';
@@ -1139,7 +1140,10 @@ export class Controller {
     press.type = 'button';
     const badge = el('span', 'layer-button-icon');
     const name = el('span', 'layer-button-name');
-    press.append(badge, name);
+    // A layer that is on but not running (#259) says so under its name, never a dead button.
+    const note = el('span', 'layer-button-note', t('Not available right now'));
+    note.hidden = true;
+    press.append(badge, name, note);
     press.addEventListener('click', () => {
       const state = store.state.layers[id];
       // A layer a slideshow is showing is opened from its own button: it leaves the slideshow and stays.
@@ -1159,6 +1163,9 @@ export class Controller {
     const text = el('div');
     text.append(heading, about);
     words.append(mark, text);
+    // While the layer is in trouble (#259) the centre says so above its controls.
+    const troubleLine = el('p', 'layer-trouble', t('Not available right now. It is starting again by itself.'));
+    troubleLine.hidden = true;
     const send = paramSender(connection, id);
     const widgets = visibleControls(manifest.controls).map((control) =>
       widget(
@@ -1190,6 +1197,19 @@ export class Controller {
     stage.hidden = true;
     const stageCleanups: (() => void)[] = [];
     let stageHandlers: PanelHandlers | void = undefined;
+    // A layout of panels (#357): the centre built from widgets, with no code.
+    let stagePanels: { sync(): void; dispose(): void } | undefined;
+    const layout = typeof manifest.stage === 'object' && manifest.stage !== null ? manifest.stage : undefined;
+    if (layout) {
+      stage.classList.add('layer-stage-panels');
+      try {
+        stagePanels = mountStage(stage, store, connection, id, layout);
+        stageCleanups.push(() => stagePanels!.dispose());
+        stage.hidden = false;
+      } catch (error) {
+        console.error(`[${id}] stage`, error);
+      }
+    }
     if (manifest.stage === 'custom' && module?.stage) {
       const ctx: PanelContext = Object.assign(Object.create(baseContext(store, connection, id)), {
         panel: 'stage',
@@ -1218,15 +1238,17 @@ export class Controller {
     const sounds = soundZone(id, store, connection);
     const busy = busyZone(store);
     const entities = entityZone(id, manifest, store, connection);
-    body.append(words, busy.element, strip.element);
+    body.append(words, troubleLine, busy.element, strip.element);
     if (!hero.hidden) body.append(hero);
     // The picked entity's own controls come before the layer's, as the thing in hand (#279).
     if (!entities.element.hidden) body.append(entities.element);
     if (!stage.hidden) body.append(stage);
-    for (const group of [primary, controls]) if (group.childElementCount > 0) body.append(group);
+    // A layout of panels is the view: the generated control rows stay away unless it asks for them.
+    const generated = !layout || layout.controls === true;
+    if (generated) for (const group of [primary, controls]) if (group.childElementCount > 0) body.append(group);
     body.append(legend.element, sounds.element);
     // "More settings" closes the primary row when there is one, so it costs no height of its own.
-    if (moreRows.childElementCount > 0) (primary.childElementCount > 0 ? primary : body).append(more);
+    if (generated && moreRows.childElementCount > 0) (primary.childElementCount > 0 ? primary : body).append(more);
 
     let shown: string | undefined;
     return {
@@ -1254,6 +1276,10 @@ export class Controller {
         press.setAttribute('aria-pressed', String(open));
         press.classList.toggle('is-shown', Boolean(state.active && state.shown_by));
         card.classList.toggle('is-active', open);
+        card.classList.toggle('is-trouble', Boolean(state.health));
+        note.hidden = !state.health;
+        troubleLine.hidden = !state.health;
+        press.title = state.health ? t('Not available right now') : '';
         body.hidden = !open;
         strip.sync(state);
         strip.element.classList.toggle('legend-follows', legend.sync(state));
@@ -1267,6 +1293,8 @@ export class Controller {
           w.sync(state.params[w.control.id], state.params);
         }
         more.hidden = ![...moreRows.children].some((row) => !(row as HTMLElement).hidden);
+        // The stage's panels read the layer's values; one sync a frame is plenty (#357).
+        if (state.active && stagePanels) requestAnimationFrame(() => stagePanels!.sync());
         if (state.active && stageHandlers) {
           try {
             stageHandlers.update?.();

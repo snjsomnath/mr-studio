@@ -638,6 +638,20 @@ async function main() {
     await editor.locator('.ed-inspector .ed-row[data-layer="trees-2"]').waitFor({ state: 'detached' });
     // The ribbon stays the same whatever is selected (#182): nothing selected greys the selection tools out.
     assert.equal(await editor.locator('.ed-ribbon').getByRole('button', { name: 'Remove', exact: true }).isDisabled(), true);
+    // The At rest tab switches map life off and on; the base map comes back under it, not on top covering it (#368).
+    await editor.locator('.ed-tab[data-tab="rest"]').click();
+    const restTool = (id, pressed) => editor.locator(`.ed-ribbon .ed-tool[data-layer="${id}"][aria-pressed="${pressed}"]:not([disabled])`);
+    await restTool('basemap', true).click();
+    await restTool('basemap', false).click();
+    await restTool('basemap', true).waitFor();
+    assert.equal(savedLayers()[0].id ?? savedLayers()[0].use, 'basemap', 'the base map goes back to the bottom');
+    await restTool('trees', true).click();
+    await restTool('trees', false).click();
+    await restTool('trees', true).waitFor();
+    assert.equal(savedLayers()[0].id ?? savedLayers()[0].use, 'basemap', 'map life goes back above the base map');
+    await editor.locator('.ed-tab[data-tab="edit"]').click();
+    // Opening the At rest tab shows the map at rest, which puts the sketch tool away; it comes back for what follows.
+    await press('Sketch', true);
     // Inside a layer the ambient tools add into that layer: an item that shows only while it is open (#69).
     await editor.locator('.ed-tree .ed-row[data-layer="mobility"]').click();
     await editor.locator('.ed-ribbon .ed-tool[data-layer="trees"]').click();
@@ -649,7 +663,8 @@ async function main() {
     await editor.locator('.ed-ribbon').getByText('Remove').click();
     await editor.locator('.ed-tree .ed-row[data-layer="trees-2"]').waitFor({ state: 'detached' });
     assert.equal(savedLayers().find((l) => l.id === 'mobility').items, undefined);
-    await editor.locator('.ed-ribbon .ed-tool[data-layer="sunlight"]').waitFor();
+    // The ribbon is the layer's again (a small window puts some of Add a layer under More, #66).
+    await editor.locator('.ed-ribbon .ed-group-name', { hasText: 'Add a layer' }).waitFor();
     await editor.locator('.ed-inspector').getByText('Show trips').waitFor();
     // The eye beside a setting takes that control off the controller, and it is saved. The editor keeps it.
     await editor.getByRole('switch', { name: 'Show Show trips on the controller' }).click();
@@ -951,6 +966,8 @@ async function main() {
     });
     await shelled.goto(base + '/edit');
     await shelled.getByRole('button', { name: 'Present', exact: true }).click();
+    // The sample's projector is not calibrated on this computer: Present asks first (#63).
+    await shelled.locator('.ed-ask', { hasText: 'before presenting' }).getByRole('button', { name: 'Present anyway' }).click();
     await shelled.getByRole('button', { name: 'Stop presenting' }).click();
     await shelled.getByRole('button', { name: 'Present', exact: true }).waitFor();
     // Preview and "Open in a window" ask the app for a window, rather than window.open, which macOS drops (#51).
