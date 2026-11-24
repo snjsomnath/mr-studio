@@ -532,7 +532,7 @@ fn custom_manifest(id: &str, recipe: &mrs_site::CustomLayer) -> Value {
         }
         if !taken("network_at") {
             extra.push(serde_json::json!({
-                "id": "network_at", "type": "range", "label": "Time", "min": 0, "max": 100, "step": 1, "default": 0, "unit": "%", "tier": "primary"
+                "id": "network_at", "type": "range", "label": "Time", "min": 0, "max": 100, "step": 1, "default": 0, "unit": "%", "shows": "network_time", "tier": "primary"
             }));
         }
         if let Some(controls) = manifest["controls"].as_array_mut() {
@@ -972,6 +972,9 @@ mod tests {
         assert_eq!(checked["network_at"], json!(40.0));
         assert_eq!(checked["network_play"], json!(false));
         assert_eq!(def.validate(&patch(json!({ "network_at": 140 })), false).unwrap()["network_at"], json!(100.0));
+        // The Time slider reads the step's own time, which the layer publishes (#338).
+        let time = def.manifest["controls"].as_array().unwrap().iter().find(|c| c["id"] == "network_at").unwrap();
+        assert_eq!(time["shows"], json!("network_time"));
         let plain: mrs_site::CustomLayer = serde_json::from_value(json!({ "name": "Dots" })).unwrap();
         assert!(custom_def("dots", &plain).unwrap().validate(&patch(json!({ "network_at": 1 })), false).is_err());
     }

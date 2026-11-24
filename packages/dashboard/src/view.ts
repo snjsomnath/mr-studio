@@ -131,6 +131,12 @@ export class DashboardView {
   }
 
   /** Applies a site's theme. Tokens that break a rule are refused and reported. */
+  /** What the canvas says while it has no panels; empty says nothing (a layer is open, but has no panels). */
+  setEmpty(text: string): void {
+    this.empty.textContent = text;
+    this.empty.hidden = this.pages.length > 0 || !text;
+  }
+
   setTheme(theme: Record<string, unknown> | null | undefined): void {
     const { variables, issues } = themeVariables(theme);
     for (const [name, value] of Object.entries(variables)) {
@@ -203,8 +209,9 @@ export class DashboardView {
     for (const key of [...this.mounted.keys()]) if (!keep.has(key)) this.unmount(key);
 
     // Panels that are up but too tall for a cramped canvas (a layer's stage open above it) leave
-    // the canvas blank, not saying "turn a layer on" while one is (#357).
-    this.empty.hidden = this.pages.length > 0 || shown.length > 0;
+    // the canvas blank, not saying "turn a layer on" while one is (#357). With no text (a layer
+    // is open, #342), there is nothing to say.
+    this.empty.hidden = this.pages.length > 0 || shown.length > 0 || !this.empty.textContent;
     this.root.classList.toggle('mrs-no-room', shown.length > 0 && this.pages.length === 0);
     this.turn(Math.min(this.current, Math.max(0, this.pages.length - 1)));
     this.report();
