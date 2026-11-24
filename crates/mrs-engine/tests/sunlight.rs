@@ -221,7 +221,8 @@ fn gpu_matches_cpu_reference() {
 fn a_probe_gives_one_place_its_day() {
     let mut engine = engine(Backend::Cpu, box_scene(0.0)).unwrap();
     let day = params("day", "2026-06-21T12:00:00Z");
-    let field = run(&mut engine, json!({ "mode": "day", "time": "2026-06-21T12:00:00Z", "lat": LAT, "lon": LON, "step_minutes": 5 }), "sun_hours");
+    let field =
+        run(&mut engine, json!({ "mode": "day", "time": "2026-06-21T12:00:00Z", "lat": LAT, "lon": LON, "step_minutes": 5 }), "sun_hours");
     // Cell (col 100, row 85) sits 5 m north of the box: its centre is east 0.5 m, north 15 - 0.5 m.
     let north_of_box = engine.probe("sunlight", &day, 0.5, 14.5).unwrap();
     let hours = north_of_box["sun_hours"].as_f64().unwrap() as f32;
