@@ -1,5 +1,5 @@
 import { entityOverrides, entityValues, isVisible, profileColumns } from '@mrstudio/sdk';
-import type { Connection, Control, EntityFeature, EntitySet, LayerManifest, LegendRow, TextControl, LayerState, PanelContext, PanelHandlers, Role, TvAbout } from '@mrstudio/sdk';
+import type { Connection, Control, Participant, EntityFeature, EntitySet, LayerManifest, LegendRow, TextControl, LayerState, PanelContext, PanelHandlers, Role, TvAbout } from '@mrstudio/sdk';
 
 import { AttractLoop, effectOf } from './attract.ts';
 import { icon } from './editor/icons.ts';
@@ -15,6 +15,7 @@ import { Picker } from './picker.ts';
 import type { Choice, PickerAction } from './picker.ts';
 import { PHONE_SEND_INTERVAL, toolSection } from './phone-tools.ts';
 import type { Store } from './store.ts';
+import { avatarOf, nameOf } from './avatars.ts';
 
 export function el<K extends keyof HTMLElementTagNameMap>(tag: K, className?: string, text?: string): HTMLElementTagNameMap[K] {
   const node = document.createElement(tag);
@@ -955,13 +956,17 @@ export class Controller {
     cue.append(dot, words);
     centre.prepend(cue);
     let timer: ReturnType<typeof setTimeout> | undefined;
-    this.connection.on('phone.switched', (p: { layer: string; active: boolean; participant?: { colour: string } }) => {
+    this.connection.on('phone.switched', (p: { layer: string; active: boolean; participant?: Participant }) => {
       const state = this.store.state.layers[p.layer];
       const manifest = state && this.store.manifest(state.layer);
       if (!state || !manifest) return;
       const name = layerButton(p.layer, manifest, state).name;
-      words.textContent = p.active ? t('{name} turned on from a phone', { name }) : t('{name} turned off from a phone', { name });
-      dot.style.background = p.participant?.colour ?? 'currentColor';
+      // "Sunny Fox turned on Wind", with the fox on that phone's colour (#339).
+      const who = p.participant;
+      if (who) words.textContent = p.active ? t('{who} turned on {name}', { who: nameOf(who), name }) : t('{who} turned off {name}', { who: nameOf(who), name });
+      else words.textContent = p.active ? t('{name} turned on from a phone', { name }) : t('{name} turned off from a phone', { name });
+      dot.textContent = who ? avatarOf(who) : '';
+      dot.style.background = who?.colour ?? 'currentColor';
       cue.hidden = false;
       clearTimeout(timer);
       timer = setTimeout(() => (cue.hidden = true), 4000);
