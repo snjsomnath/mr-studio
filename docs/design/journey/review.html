@@ -41,6 +41,39 @@ ul{padding-left:20px}li{margin:3px 0}
 <h1>The editor, walked as an author</h1>
 <p class="lead">I walked a new author and a returning author through the editor running on the sample table at 1440 × 900, and judged the ribbon and the overall UI by user flow, which is your first rule. The building blocks are good. What they lack is one spine: the setup guide and the ribbon describe the same journey in two different orders, under two sets of names.</p>
 
+<h2>The philosophy: pages, not tabs</h2>
+<p class="lead">Sanjay's rule: two views of the app should never do the same thing. Today a tab only swaps the ribbon and the right panel. The middle (map plus controller) and the left list stay the same, so most of the screen is unrelated to the tab, and each tab adds its own form for things another tab already edits. The model that fixes this is DaVinci Resolve's <i>pages</i>, set in journey order. Three rules:</p>
+<ol>
+<li><b>One page, one job, one surface.</b> A page owns the whole window: its tools, its left list, its canvas and its inspector. Place shows the place, Map shows the table, Controller shows the controller. No page shows a surface it doesn't edit.</li>
+<li><b>One thing, one home.</b> Every setting has exactly one editor. Another page may show it read-only with a link ("Button: Wind, left side · Edit on Controller"), never a second form.</li>
+<li><b>The list belongs to the page.</b> Data lists files, Map lists At rest and layers, Controller lists buttons by side. At rest stops being a tab: it is the top of Map's list, because it edits the same surface as the layers.</li>
+</ol>
+<p class="lead"><b>Pages:</b> Place · Data · Map · Controller · Phones · Present. Display (calibration, colour, quality) belongs to this computer and moves to the app's settings, opened from Present. The setup guide walks the same pages in order.</p>
+<div class="imgs">
+<figure><img src="img/page-place.png" alt="Place page: the whole window is a map with the table outline, fields on the right"><figcaption>Place: just the place and the outline.</figcaption></figure>
+<figure><img src="img/page-data.png" alt="Data page: files as cards, Your place checklist on the left"><figcaption>Data: Your place and Media in one page, with one way to add files.</figcaption></figure>
+<figure><img src="img/page-map.png" alt="Map page: At rest and layers on the left, only the table in the middle"><figcaption>Map: At rest and layers in one list, only the table, with the button shown read-only.</figcaption></figure>
+<figure><img src="img/page-controller.png" alt="Controller page: buttons by side on the left, only the controller in the middle"><figcaption>Controller: buttons by side, the welcome screen and theme, only the controller.</figcaption></figure>
+</div>
+<figure><img src="img/page-present.png" alt="Present page: Check, Rehearse, Present, Share"><figcaption>Present: Check (the #369 readiness rules), Rehearse (#97), Present, Share (#372).</figcaption></figure>
+
+<h2>Task audit: how many ways to do one thing today</h2>
+<p class="lead">Counted on main (0.22, plus #369 where noted). Every task with more than one way to do it is noise. The last column is its one home under the page model.</p>
+<div class="journey"><table style="border-collapse:collapse;min-width:760px;font-size:13.5px">
+<thead><tr style="text-align:left;color:var(--mute)"><th style="padding:6px">Task</th><th>Ways today</th><th style="padding:6px">Where</th><th>One home</th></tr></thead>
+<tbody>
+<tr><td style="padding:6px">Rename the table</td><td>3</td><td style="padding:6px">Name and place tab · Table settings (gear in the list) · guide step 1</td><td>Place</td></tr>
+<tr><td style="padding:6px">Move or resize the table</td><td>2 + 2 buttons</td><td style="padding:6px">Name and place tab · guide step 1; "Move the table" in the ribbon and in the panel footer</td><td>Place</td></tr>
+<tr><td style="padding:6px">Turn traffic off at rest</td><td>4</td><td style="padding:6px">At rest ribbon · At rest panel switch · Selected › Hide · guide At rest step</td><td>Map (eye on the row)</td></tr>
+<tr><td style="padding:6px">Add a layer</td><td>4</td><td style="padding:6px">Edit ribbon · "+" in the list · guide Layers switches · Media › Show on the table</td><td>Map › Add a layer</td></tr>
+<tr><td style="padding:6px">Rename a layer's button</td><td>4</td><td style="padding:6px">Layer inspector · Design panel · guide Buttons · F2 in the list (#369)</td><td>Controller</td></tr>
+<tr><td style="padding:6px">Put a button on the right</td><td>4</td><td style="padding:6px">Inspector Side · Design panel · guide Buttons · drag or menu (#369)</td><td>Controller (drag)</td></tr>
+<tr><td style="padding:6px">Controller title and welcome line</td><td>1, wrong home</td><td style="padding:6px">Table settings; the Controller row says "comes later"</td><td>Controller › Welcome</td></tr>
+<tr><td style="padding:6px">Bring in a GeoJSON</td><td>4, two behaviours</td><td style="padding:6px">Add data in 3 ribbons · Media › Add media · guide Your place · Media's Your place cards</td><td>Data</td></tr>
+<tr><td style="padding:6px">See the map in a window</td><td>3</td><td style="padding:6px">Preview · Open in a window › Map · Present (browser)</td><td>Present › Rehearse</td></tr>
+<tr><td style="padding:6px">Calibrate the projector</td><td>3</td><td style="padding:6px">Display tab · Calibrate on the controller's map controls · Displays and settings</td><td>App settings (from Present)</td></tr>
+</tbody></table></div>
+
 <h2>Journey map: a new author</h2>
 <div class="journey"><div class="jt">
 <div class="st"><b>1 · Start</b><span class="where">Home → New table</span>Name, centre, size and scale, in one clear form with the map.<span class="pill p-good">Works</span></div>
@@ -106,7 +139,8 @@ ul{padding-left:20px}li{margin:3px 0}
 
 <h2>Your call</h2>
 <div class="dec">
-<p style="margin-top:0">My suggested build order is <b>#385</b> (small bug fix) first, then <b>#383</b> together with #59, then <b>#382</b> together with #384, landing Present-tab pieces as #63, #97 and #372 arrive. #382 renames and regroups the tabs you asked for this morning (#311 to #313), so it needs your yes before anyone builds it.</p>
+<p style="margin-top:0"><b>Update after your note:</b> #382 and #384 are rewritten as the page model above, and they replace the tab-order wireframes below. The rest of this section is the first pass.</p>
+<p>My suggested build order is <b>#385</b> (small bug fix) first, then <b>#383</b> together with #59, then <b>#382</b> together with #384, landing Present-tab pieces as #63, #97 and #372 arrive. #382 renames and regroups the tabs you asked for this morning (#311 to #313), so it needs your yes before anyone builds it.</p>
 </div>
 <p class="eyebrow" style="margin-top:28px">Screens: MR Studio main at 9a84133, Chromium, sample site. Wireframes show structure only; the approved identity stays.</p>
 </main>
