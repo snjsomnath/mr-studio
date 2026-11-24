@@ -112,6 +112,8 @@ pub fn left_behind(name: &str) -> bool {
         || lower == "thumbs.db"
         || lower == "desktop.ini"
         || lower == "sources.json"
+        // A site layer's build tools (#277): the table runs its built dist/ and needs none of them.
+        || lower == "node_modules"
         || lower.starts_with("credentials")
         || lower.starts_with("secrets")
         || [".pem", ".key", ".p12", ".pfx"].iter().any(|ext| lower.ends_with(ext))
@@ -123,7 +125,7 @@ pub fn left_behind(name: &str) -> bool {
 fn secret_looking(name: &str) -> bool {
     let lower = name.to_ascii_lowercase();
     left_behind(name)
-        && !matches!(lower.as_str(), ".git" | ".mrstudio" | ".ds_store" | "thumbs.db" | "desktop.ini" | ".gitignore")
+        && !matches!(lower.as_str(), ".git" | ".mrstudio" | ".ds_store" | "thumbs.db" | "desktop.ini" | ".gitignore" | "node_modules")
         && !lower.ends_with(&format!(".{EXTENSION}"))
 }
 

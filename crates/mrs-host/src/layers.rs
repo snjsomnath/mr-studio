@@ -277,6 +277,28 @@ fn custom_manifest(id: &str, recipe: &mrs_site::CustomLayer) -> Value {
     manifest
 }
 
+/// The folder of a site that holds its own layer packages (#277).
+pub const SITE_LAYERS: &str = "layers";
+/// Where a site layer's built code is, inside its package. `mrstudio layer build` writes it.
+pub const SITE_LAYER_MODULE: &str = "dist/index.js";
+
+/// `./layers/x` and `layers/x/` name the same folder.
+fn same_path(a: &str, b: &str) -> bool {
+    let tidy = |p: &str| p.trim_start_matches("./").trim_end_matches('/').to_string();
+    tidy(a) == tidy(b)
+}
+
+/// The address a surface imports a site layer's code from: its built module under the site's
+/// `/site` route, with the file's time so a rebuilt layer is not served from a browser's cache.
+/// None when the package has not been built: its manifest still loads, and it draws nothing.
+pub fn module_url(source: &str, dir: &Path) -> Option<String> {
+    let file = dir.join(SITE_LAYER_MODULE);
+    let modified = std::fs::metadata(&file).ok()?.modified().ok()?;
+    let stamp = modified.duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0);
+    let path = source.trim_start_matches("./").trim_end_matches('/');
+    Some(format!("/site/{path}/{SITE_LAYER_MODULE}?v={stamp}"))
+}
+
 /// The catalogue entry for a custom layer saved in the site.
 pub fn custom_def(id: &str, recipe: &mrs_site::CustomLayer) -> anyhow::Result<LayerDef> {
     let mut def = LayerDef::parse(custom_manifest(id, recipe)).map_err(|e| anyhow!("custom layer '{id}': {e:#}"))?;
@@ -313,18 +335,48 @@ pub fn load_catalog(site: &Site, core_layers: &Path) -> anyhow::Result<Vec<Layer
         }
         defs.push(custom_def(id, recipe)?);
     }
-    for (used, _, _) in site.instances() {
-        if used.starts_with('.') {
-            if defs.iter().any(|d| d.source == used) {
-                continue;
+    // The site's own layer packages (#277): those the scene uses, and every folder in `layers/`,
+    // so the composer's palette offers them too. One that the scene does not use and that does
+    // not load is left out with a warning, as a core layer is.
+    let mut site_layers: Vec<(String, bool)> =
+        site.instances().iter().filter(|(used, _, _)| used.starts_with('.')).map(|(used, _, _)| (used.to_string(), true)).collect();
+    if let Ok(entries) = std::fs::read_dir(site.dir.join(SITE_LAYERS)) {
+        let mut found: Vec<String> = entries
+            .filter_map(|e| e.ok())
+            .filter(|e| e.path().join("layer.json").is_file())
+            .filter_map(|e| e.file_name().to_str().map(|name| format!("./{SITE_LAYERS}/{name}")))
+            .collect();
+        found.sort();
+        for used in found {
+            if !site_layers.iter().any(|(known, _)| same_path(known, &used)) {
+                site_layers.push((used, false));
             }
-            let dir = site.resolve(used).ok_or_else(|| anyhow!("layer path '{used}' leaves the site folder"))?;
+        }
+    }
+    for (used, in_scene) in &site_layers {
+        if defs.iter().any(|d| same_path(&d.source, used)) {
+            continue;
+        }
+        let def = site.resolve(used).ok_or_else(|| anyhow!("layer path '{used}' leaves the site folder")).and_then(|dir| {
             let mut def = read_manifest(&dir)?;
             if defs.iter().any(|d| d.id == def.id) {
                 bail!("{} declares id '{}', which another layer already uses", dir.display(), def.id);
             }
             def.source = used.to_string();
-            defs.push(def);
+            if let Some(module) = module_url(used, &dir) {
+                def.manifest["module"] = Value::String(module);
+            }
+            Ok(def)
+        });
+        match def {
+            Ok(def) => defs.push(def),
+            Err(e) if *in_scene => return Err(e),
+            Err(e) => tracing::warn!("site layer '{used}' is left out of the palette: {e:#}"),
+        }
+    }
+    for (used, _, _) in site.instances() {
+        if used.starts_with('.') {
+            continue;
         } else if !defs.iter().any(|d| d.source == used) {
             bail!("site.json uses layer '{used}', which is not in {}", core_layers.display());
         }
@@ -421,6 +473,45 @@ mod tests {
         assert!(load_catalog(&site, &repo.join("packages/layers")).is_ok());
         let cars = catalog.iter().find(|d| d.id == "cars").unwrap();
         assert_eq!(cars.missing_data(&data).unwrap().as_deref(), Some("roads"));
+    }
+
+    #[test]
+    fn site_layers_are_found_and_carry_their_built_module() {
+        let repo = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let tmp = std::env::temp_dir().join(format!("mrs-site-layers-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+        let package = |name: &str, manifest: Value| {
+            let dir = tmp.join(SITE_LAYERS).join(name);
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::write(dir.join("layer.json"), manifest.to_string()).unwrap();
+            dir
+        };
+        let built = package("rings", json!({ "api": 1, "id": "rings", "name": "Rings" }));
+        std::fs::create_dir_all(built.join("dist")).unwrap();
+        std::fs::write(built.join(SITE_LAYER_MODULE), "export default {}").unwrap();
+        package("unbuilt", json!({ "api": 1, "id": "unbuilt", "name": "Unbuilt" }));
+        // Broken and not in the scene: left out of the palette, the table still opens.
+        package("broken", json!({ "api": 9, "id": "broken" }));
+        // The sample site, looked for in another folder: only its layers come from there.
+        let mut site = Site::load(repo.join("sites/sample")).unwrap();
+        site.dir = tmp.clone();
+        let catalog = load_catalog(&site, &repo.join("packages/layers")).unwrap();
+        let rings = catalog.iter().find(|d| d.id == "rings").unwrap();
+        assert_eq!(rings.source, "./layers/rings");
+        let module = rings.manifest["module"].as_str().unwrap();
+        assert!(module.starts_with("/site/layers/rings/dist/index.js?v="), "{module}");
+        let unbuilt = catalog.iter().find(|d| d.id == "unbuilt").unwrap();
+        assert!(unbuilt.manifest.get("module").is_none());
+        assert!(!catalog.iter().any(|d| d.id == "broken"));
+        // In the scene, named either way, it is the same layer, listed once.
+        site.manifest.layers.push(serde_json::from_value(json!({ "use": "./layers/rings", "id": "rings" })).unwrap());
+        let catalog = load_catalog(&site, &repo.join("packages/layers")).unwrap();
+        assert_eq!(catalog.iter().filter(|d| d.id == "rings").count(), 1);
+        // A broken layer the scene uses stops the table, with the reason.
+        site.manifest.layers.push(serde_json::from_value(json!({ "use": "./layers/broken", "id": "broken" })).unwrap());
+        assert!(load_catalog(&site, &repo.join("packages/layers")).is_err());
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 
     #[test]
