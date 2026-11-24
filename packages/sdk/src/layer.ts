@@ -207,6 +207,19 @@ interface ContextBase<P> {
    * set's controls. `null` puts them back to the defaults.
    */
   setEntity(set: string, ids: string | string[], values: Record<string, unknown> | null): void;
+  /**
+   * Sends a tool input through the host, as a phone does, for one of the layer's own tools.
+   * Every view of the table running the layer (the projector, the editor) gets it in
+   * `tool(input)`, so a pick made with the mouse on one view, or on a controller map (#283),
+   * shows on all of them. Resolves once the host has accepted it.
+   */
+  sendTool(tool: string, geometry: ToolGeometry): Promise<void>;
+  /**
+   * Presses one of the layer's actions through the host: an `action` control, or one of the
+   * named `actions` in layer.json that have no button of their own (#283). Every view of the
+   * table gets it in `action(id)`, so a controller stage can start an animation on the table.
+   */
+  action(id: string): Promise<void>;
 }
 
 export interface TableContext<P = Params> extends ContextBase<P> {
@@ -215,13 +228,6 @@ export interface TableContext<P = Params> extends ContextBase<P> {
   /** The digital twin of the physical model: fields, lights and materials on its real surfaces. */
   readonly model: ModelHandle;
   readonly pointer: TablePointer;
-  /**
-   * Sends a tool input through the host, as a phone does, for one of the layer's own tools.
-   * Every view of the table running the layer (the projector, the editor) gets it in
-   * `tool(input)`, so a pick made with the mouse on one view shows on all of them.
-   * Resolves once the host has accepted it.
-   */
-  sendTool(tool: string, geometry: ToolGeometry): Promise<void>;
   /**
    * Plays the attention cue (#105) at a change, in WGS84: one bright burst that pulls eyes back
    * to the table. Tool inputs from a phone or the controller get one without any code; call this
@@ -332,6 +338,14 @@ export interface LayerModule<P = Params> {
    * `ctx.setParams`. `ctx.panel` is `"hero"`. The element is as wide as the centre; the hero sets its height.
    */
   hero?(ctx: PanelContext<P>, el: HTMLElement): PanelHandlers | void;
+  /**
+   * Draws the layer's own stage on the controller (#283), for a layer.json with `stage: "custom"`:
+   * the whole centre under the layer's name, such as a map of the site to choose on. The rails, the
+   * step strip and the layer's controls stay. Reach the table through the host: `ctx.sendTool`,
+   * `ctx.action`, `ctx.setParams`, `ctx.select`. `controllerMap` gives a ready map of the site.
+   * `ctx.panel` is `"stage"`.
+   */
+  stage?(ctx: PanelContext<P>, el: HTMLElement): PanelHandlers | void;
   /**
    * Fetches what the layer will need before it is shown, so a sequence (the slideshow) can step
    * to it without waiting. Called on the table when a sequence that shows this layer opens, with

@@ -140,6 +140,37 @@ picking on the table and the controls on the controller, so the layer writes no 
 
 `samples/service-example` has a layer with entities that asks a model again when a building changes.
 
+## The controller stage
+
+A layer can have its own app in the controller's centre (#283), such as a map to choose on, whose
+actions start something on the table. The table stays the picture: the stage is for choosing and
+controlling.
+
+```jsonc
+"stage": "custom",
+"tools": [{ "id": "route", "type": "line", "cue": false }],
+"actions": [{ "id": "travel", "label": "Send a traveller" }]
+```
+
+- `stage: "custom"` gives the centre under the layer's name to the module's `stage(ctx, el)`, which
+  draws what it likes into `el` and may return `{ update() }`, called when params or shared values
+  change. The rails, the step strip, the entity inspector and the layer's controls stay; the TV's
+  panels keep a strip under it.
+- `actions` are named actions without a button of their own. The stage (or a hero or panel)
+  presses one with `ctx.action(id)`, and every view of the table gets it in `action(id)`. Phones
+  cannot press them.
+- `ctx.sendTool(tool, geometry)` sends a tool input from the controller as a phone would; every
+  view of the table gets it in `tool(input)`.
+- `controllerMap(el, ctx, options)` from the SDK is a ready map of the site: the table's outline,
+  upright as it stands, with its `roads` and `buildings` (or the datasets in `data`), in the
+  controller's theme. `mode: 'pick'` calls `onPick(at)` on a tap; `'line'` and `'polygon'` place
+  corners and call `onDraw(geometry)` when `points` are placed or on `finish()`. `draw(g, map)`
+  adds the layer's own visual, with `map.project(lonLat)`. `StreetGraph.route(from, to)` gives the
+  shortest way along the streets.
+
+`samples/controller-map-example` is a route planner: two taps on the controller's map make a
+route along the streets on the table, and a button sends a light along it.
+
 ## Module
 
 ```ts
@@ -395,7 +426,7 @@ like core layers, in the site's `layers/` folder, and the installed app loads th
 ```
 sites/lindholmen/layers/energy-flows/
   layer.json        as above
-  src/index.ts      table(), panel(), hero() as above, importing from '@mrstudio/sdk'
+  src/index.ts      table(), panel(), hero(), stage() as above, importing from '@mrstudio/sdk'
   locales/sv.json
   build.mjs         bundles src/ into dist/index.js
   dist/index.js     what the app loads; commit it, so the table's computer needs no Node

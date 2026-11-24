@@ -57,6 +57,8 @@ pub struct LayerDef {
     pub tools: Vec<Tool>,
     /// Things a visitor picks and changes one by one (#279), from `entities`.
     pub entity_sets: Vec<EntitySet>,
+    /// Named actions without a button (#283), pressed from a layer's stage, hero or panels.
+    pub actions: Vec<String>,
 }
 
 /// The param that holds every entity's changed values: `entities[set][entity][control]`.
@@ -143,6 +145,19 @@ impl LayerDef {
             }
             entity_sets.push(set);
         }
+        let mut actions: Vec<String> = Vec::new();
+        for a in manifest["actions"].as_array().map(Vec::as_slice).unwrap_or(&[]) {
+            let aid = a["id"].as_str().filter(|s| !s.is_empty()).ok_or_else(|| anyhow!("a named action has no id"))?;
+            if actions.iter().any(|other| other == aid) || controls.iter().any(|c| c.id == aid) {
+                bail!("action '{aid}' is named twice");
+            }
+            actions.push(aid.to_string());
+        }
+        match &manifest["stage"] {
+            Value::Null => {}
+            Value::String(s) if s == "custom" => {}
+            other => bail!("stage {other} is not \"custom\""),
+        }
         if !entity_sets.is_empty() && controls.iter().any(|c| c.id == ENTITIES) {
             bail!("a layer with entities cannot have a control called '{ENTITIES}'");
         }
@@ -157,7 +172,7 @@ impl LayerDef {
             };
             tools.push(Tool { id: tid, kind });
         }
-        Ok(Self { source: id.clone(), id, manifest, controls, tools, entity_sets })
+        Ok(Self { source: id.clone(), id, manifest, controls, tools, entity_sets, actions })
     }
 
     pub fn tool(&self, id: &str) -> Option<&Tool> {
@@ -673,6 +688,19 @@ mod tests {
         assert!(layer(json!([{ "id": "a", "key": "id", "controls": [toggle] }])).is_err());
         assert!(layer(json!([{ "id": "a", "dataset": "b", "key": "id", "controls": [{ "id": "go", "type": "action", "label": "Go" }] }])).is_err());
         assert!(layer(json!([{ "id": "a", "dataset": "b", "key": "id", "controls": [toggle] }, { "id": "a", "dataset": "b", "key": "id", "controls": [toggle] }])).is_err());
+    }
+
+    #[test]
+    fn named_actions_and_a_custom_stage_are_checked() {
+        let layer = |extra: Value| {
+            let mut m = json!({ "api": 1, "id": "s", "name": "S", "controls": [{ "id": "go", "type": "action", "label": "Go" }] });
+            m.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
+            LayerDef::parse(m)
+        };
+        assert_eq!(layer(json!({ "stage": "custom", "actions": [{ "id": "travel" }] })).unwrap().actions, vec!["travel"]);
+        assert!(layer(json!({ "stage": "big" })).is_err());
+        assert!(layer(json!({ "actions": [{ "id": "go" }] })).is_err(), "already an action control");
+        assert!(layer(json!({ "actions": [{ "label": "No id" }] })).is_err());
     }
 
     #[test]

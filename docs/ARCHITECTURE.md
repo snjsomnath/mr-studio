@@ -100,7 +100,7 @@ docs/contracts/   the interface contracts below
 - **The TV has a budget.** Dashboard panels sit on a fixed 12 by 6 grid, come in eight sizes and each spend a counted share of what one screen may ask a visitor to read. A panel over its budget is refused; too many panels become another page. Sites restyle through tokens and cannot change the rules.
 - **Controls are data.** A layer declares its controls in the manifest. The TV and phone UIs are generated from them, and the host validates every change against them.
 - **Python stays outside the app process.** Data preparation and research models run as services declared under `services` in site.json; the host starts them, keeps them running and is the only way surfaces reach them (`/api/services`, `ctx.service`; site.md, Services).
-- **Per-thing settings are data, not controller code.** Things a visitor picks and changes one by one (an energy community's buildings) are `entities` in layer.json: the runtime picks them on the table and shows their controls on the controller, and the host keeps the values in `params.entities` (layer.md, Entities; #279).
+- **Per-thing settings are data, not controller code.** Things a visitor picks and changes one by one (an energy community's buildings) are `entities` in layer.json: the runtime picks them on the table and shows their controls on the controller, and the host keeps the values in `params.entities` (layer.md, Entities; #279). A layer's own app on the controller (a map to choose on) is its `stage`, built on the SDK's `controllerMap`; it reaches the table only through the host, with tool inputs and named actions (layer.md, The controller stage; #283).
 
 ## Distribution and updates
 

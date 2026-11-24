@@ -2519,3 +2519,26 @@ body[data-role='phone'] .control-presets > * {
   color: var(--muted, #9aa4b2);
   font-size: 0.9375rem;
 }
+
+/*
+ * ---- A layer's own stage (#283) ----
+ * The centre under the layer's name for a map app of the layer's own (`stage: "custom"`). It takes
+ * most of the 46-inch screen's height; the layer's generated controls follow under it.
+ */
+/* A layer with a stage of its own takes most of the centre; the TV panels keep a strip under it. */
+.open-layers:has(.layer-open:not([hidden]) .layer-stage:not([hidden])) {
+  max-height: 88%;
+}
+
+.layer-stage {
+  position: relative;
+  flex: none;
+  height: clamp(22rem, 60vh, 50rem);
+  margin: 0 0 1.25rem;
+  border-radius: 1rem;
+  overflow: hidden;
+}
+
+.layer-stage[hidden] {
+  display: none;
+}

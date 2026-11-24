@@ -149,6 +149,16 @@ export interface LayerManifest {
   requires?: { kernels?: string[]; data?: string[]; services?: string[] };
   controls?: Control[];
   tools?: ToolSpec[];
+  /**
+   * The controller's centre for this layer (#283): `custom` gives it to the module's `stage(ctx, el)`,
+   * such as a map app of the layer's own. Default: the generated controls only.
+   */
+  stage?: 'custom';
+  /**
+   * Named actions without a button of their own (#283), pressed from the layer's stage, hero or
+   * panels with `ctx.action(id)`, and handled on the table in `action(id)`.
+   */
+  actions?: { id: string; label?: string }[];
   /** Things a visitor picks on the table and changes one by one on the controller (#279). */
   entities?: EntitySet[];
   /** TV panels the layer contributes while it is on. Rules in docs/contracts/dashboard.md. */

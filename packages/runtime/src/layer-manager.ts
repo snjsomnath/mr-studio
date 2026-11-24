@@ -107,7 +107,7 @@ export function entitySender(connection: Connection, layer: string): (set: strin
   };
 }
 
-type Base = Pick<PanelContext, 'site' | 'params' | 'shared' | 'setParams' | 'language' | 'say' | 'service' | 'selection' | 'select' | 'entity' | 'setEntity'>;
+type Base = Pick<PanelContext, 'site' | 'params' | 'shared' | 'setParams' | 'language' | 'say' | 'service' | 'selection' | 'select' | 'entity' | 'setEntity' | 'sendTool' | 'action'>;
 
 /** Shared read-only parts of a layer context, backed by the store. */
 export function baseContext(store: Store, connection: Connection, layer: string): Base {
@@ -123,6 +123,8 @@ export function baseContext(store: Store, connection: Connection, layer: string)
       return spec ? entityValues(spec, store.layer(layer).params, id) : {};
     },
     setEntity: entitySender(connection, layer),
+    sendTool: (tool, geometry) => connection.request<void>('tool.input', { layer, tool, geometry }),
+    action: (id) => connection.request<void>('layer.action', { layer, action: id }),
     service: (id) => serviceClient(id),
     get language() {
       return language();
@@ -398,7 +400,6 @@ export class LayerManager {
       map: this.view.handle(id, track),
       model: this.view.modelHandle(id, track),
       pointer: this.view.pointer(track),
-      sendTool: (tool, geometry) => this.connection.request<void>('tool.input', { layer: id, tool, geometry }),
       cue: (at, options) => {
         if (!running.stopped) this.cues.play(at, options?.colour);
       },

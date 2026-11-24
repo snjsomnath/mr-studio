@@ -1,0 +1,12 @@
+{
+  "Route planner": "Ruttplanerare",
+  "Choose a start and an end on the map; the route lights up on the table": "Välj en start och ett mål på kartan; rutten lyser upp på bordet",
+  "Route": "Rutt",
+  "Send a traveller": "Skicka en resenär",
+  "Follow the streets": "Följ gatorna",
+  "Tap a start, then an end": "Tryck på en start och sedan ett mål",
+  "Tap an end": "Tryck på ett mål",
+  "{metres} m along the streets": "{metres} m längs gatorna",
+  "{metres} m as the crow flies": "{metres} m fågelvägen",
+  "No street joins these two points": "Ingen gata förbinder de två punkterna"
+}
