@@ -2839,6 +2839,7 @@ body[data-role='edit'] .ed-surface .table-frame {
   align-self: center;
   color: var(--ed-text-2);
   font-size: 12px;
+}
 
 /* Pickers in the inspector (#306): the editor's 24 px rows. */
 .ed .picker-field input.picker-input {
