@@ -1,8 +1,37 @@
 {
   "name": "@mrstudio/mcp",
   "version": "0.13.0",
-  "private": true,
-  "description": "MCP server that lets an LLM assemble MR Studio sites from core layers and draft requests for new modules",
+  "description": "MR Studio for Claude and other AI apps: build interactive city tables by describing them",
+  "keywords": [
+    "mcp",
+    "mcp-server",
+    "mr-studio",
+    "urban-planning",
+    "city-model",
+    "projection-mapping",
+    "claude"
+  ],
+  "license": "MIT",
+  "homepage": "https://github.com/snjsomnath/mr-studio/blob/main/docs/MCP.md",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/snjsomnath/mr-studio.git",
+    "directory": "packages/mcp"
+  },
+  "bugs": "https://github.com/snjsomnath/mr-studio/issues",
+  "mcpName": "io.github.snjsomnath/mr-studio",
+  "engines": {
+    "node": ">=20"
+  },
+  "files": [
+    "dist/mrstudio-mcp.mjs",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
   "type": "module",
   "bin": {
     "mrstudio-mcp": "dist/mrstudio-mcp.mjs"
@@ -11,15 +40,15 @@
     "build": "node scripts/build.mjs",
     "start": "node dist/mrstudio-mcp.mjs",
     "typecheck": "tsc --noEmit",
-    "test": "node scripts/build.mjs && node --test --experimental-strip-types test/*.test.ts"
+    "test": "node scripts/build.mjs && node --test --experimental-strip-types test/*.test.ts",
+    "bundle": "node scripts/build.mjs && node scripts/pack.mjs"
   },
   "devDependencies": {
+    "@anthropic-ai/mcpb": "2.1.2",
+    "@modelcontextprotocol/sdk": "^1.32.2",
     "@types/node": "^22.0.0",
     "esbuild": "^0.28.2",
-    "typescript": "^5.9.0"
-  },
-  "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.32.2",
+    "typescript": "^5.9.0",
     "zod": "^4.6.7"
   }
 }

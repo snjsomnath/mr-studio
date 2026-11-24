@@ -59,6 +59,13 @@ MR Studio watches its windows while presenting and reloads one that stops drawin
 
 Home says when a new version is out. Press **Download**, open the file it saves, and install it over the old version: your tables and keys stay as they are. Keep every computer that shares tables on the same version, since a table saved by a newer version may not open in an older one.
 
+## The AI app does not show the MR Studio tools
+
+1. Start a new conversation, or restart the app. Most AI apps only look for tools when they start.
+2. In Claude Desktop, open **Settings**, **Extensions**: MR Studio should be there and turned on. If it shows an error, install the newest `mr-studio.mcpb` again.
+3. In other apps, the server needs **Node.js** 20 or newer. In a terminal, `npx -y @mrstudio/mcp --version` should print a version. If it says `npx` is not found, install Node.js from nodejs.org and restart the app.
+4. If Claude says it made a table but MR Studio does not show it, ask it for the folder (the overview tool says), and open that folder in MR Studio, or add `--project` with your tables folder to the app's settings.
+
 ## Still stuck
 
 Note what you did, what you expected and what happened, with the version shown at the top of Home, and send it with the day's operator log to whoever looks after your MR Studio.

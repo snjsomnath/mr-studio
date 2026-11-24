@@ -7,6 +7,7 @@ default-members = ["crates/mrs-engine", "crates/mrs-site", "crates/mrs-host", "c
 [workspace.package]
 version = "0.13.0"
 edition = "2021"
+license = "MIT"
 rust-version = "1.87"
 
 [workspace.lints.clippy]
