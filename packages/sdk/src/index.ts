@@ -36,3 +36,4 @@ export * from './reveal.ts';
 export * from './table-pad.ts';
 export * from './drawing-reveal.ts';
 export * from './drawing-roles.ts';
+export * from './readiness.ts';

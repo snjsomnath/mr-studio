@@ -577,6 +577,12 @@ impl Site {
         ])
     }
 
+    /// Saves the physical table (`table` in site.json): its size, tiles, front edge and ribbons.
+    pub fn save_table(&self, table: &Table) -> Result<(), SiteError> {
+        let value = serde_json::to_value(table).map_err(|e| self.parse_error(e))?;
+        self.save_key("table", Some(value))
+    }
+
     /// The custom layers as site.json now has them on disk.
     pub fn saved_custom(&self) -> Result<BTreeMap<String, CustomLayer>, SiteError> {
         let value = self.read_document()?;

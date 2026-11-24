@@ -1,5 +1,5 @@
-import { isVisible } from '@mrstudio/sdk';
-import type { Connection, Control, LayerManifest, LayerState, MediaKind } from '@mrstudio/sdk';
+import { isVisible, readiness } from '@mrstudio/sdk';
+import type { Connection, Control, LayerManifest, LayerState, MediaKind, ReadyCheck } from '@mrstudio/sdk';
 
 import { clock, defaultSideOf, el, isAmbient, isAtRest, isOffered, layerButton, railButtons, visibleControls, widget } from '../controls.ts';
 import type { Widget } from '../controls.ts';
@@ -22,6 +22,7 @@ import { fitRibbon } from './ribbon-fit.ts';
 import { commandSearch, shortcutSheet } from './commands.ts';
 import type { Command } from './commands.ts';
 import { TimeBar } from './time-bar.ts';
+import { Rehearsal } from './rehearse.ts';
 import type { MenuItem } from './tree-tools.ts';
 import type { FileAction } from './file-menu.ts';
 import { slidesSection } from './slides.ts';
@@ -193,6 +194,11 @@ export class Editor {
   private held = false;
   private reloadWaiting = false;
   private lastAction: { action: string; at: number; from: string } | null = null;
+  /** Rehearse (#97): the table as a visitor sees it, from here, with nothing saved. */
+  private rehearsal!: Rehearsal;
+  private rehearseButton!: HTMLButtonElement;
+  /** Ready to present? (#63): the count of what is left to check, and the list behind it. */
+  private readonly checksButton = el('button', 'ed-checks');
   /** In a narrow window the inspector is a drawer over the right of the map, opened from here (#66). */
   private readonly drawerToggle = el('button', 'ed-button ed-drawer-toggle');
 
@@ -263,6 +269,28 @@ export class Editor {
       },
     });
     centre.append(this.mediaTab.view);
+    this.rehearsal = new Rehearsal({
+      store,
+      connection,
+      shell: this.shell,
+      centre,
+      buttons: () => {
+        const top = this.instances().filter((i) => !i.state.parent && !isAmbient(i.manifest));
+        const rails = this.rails(top);
+        return [...rails.left, ...rails.right].flatMap((id) => {
+          const i = top.find((t) => t.id === id);
+          return i ? [{ id, name: layerButton(id, i.manifest, i.state).name, manifest: i.manifest }] : [];
+        });
+      },
+      checks: () => this.readyChecks(),
+      showChecks: () => this.showChecks(),
+      changed: (on) => {
+        if (on && this.wizard) this.closeWizard();
+        this.setDrawer(false);
+        this.drawRehearseButton();
+        if (!on) this.render();
+      },
+    });
 
     body.append(left, centre, this.inspector);
     const invoke = desktop();
@@ -286,6 +314,7 @@ export class Editor {
 
     this.setSaved();
     this.drawGuideButton();
+    this.drawRehearseButton();
     this.render();
     store.onScene(() => this.render());
     // A new theme or button style shows as chosen on the Design tab.
@@ -341,7 +370,13 @@ export class Editor {
       // A reload comes back to what was being edited.
       else if (location.hash) this.goTo(location.hash);
     }
-    connection.on('site.changed', () => {
+    connection.on('site.changed', (p: { site?: { table?: unknown }; table_only?: boolean }) => {
+      // The table's front edge or ribbons (#62): taken in place, the projector redraws on its own.
+      if (p?.table_only && p.site) {
+        // The map's own code takes the new table (main.ts); the outline follows it.
+        requestAnimationFrame(() => this.canvasTools.apply());
+        return;
+      }
       if (this.held) {
         this.reloadWaiting = true;
         return;
@@ -833,6 +868,13 @@ export class Editor {
     });
   }
 
+  private drawRehearseButton(): void {
+    const on = this.rehearsal.on;
+    this.rehearseButton.replaceChildren(icon(on ? 'check' : 'people', 16), el('span', undefined, on ? 'Finish rehearsal' : 'Rehearse'));
+    this.rehearseButton.classList.toggle('is-pressed', on);
+    this.rehearseButton.title = on ? 'Put every layer back as it was (Esc)' : 'Try the table as a visitor here: press the controller and a phone. Nothing is saved and the real displays are not used.';
+  }
+
   private setDrawer(open: boolean): void {
     const on = open && NARROW.matches;
     this.shell.classList.toggle('is-drawer-open', on);
@@ -970,6 +1012,7 @@ export class Editor {
     const none = 'Select a layer first';
     list.push(
       { id: 'present', label: 'Present', group: 'Table', icon: 'tv', keys: k('Enter'), also: 'start show projector', run: () => this.presentButton.click() },
+      { id: 'rehearse', label: this.rehearsal.on ? 'Finish rehearsal' : 'Rehearse as a visitor', group: 'Table', icon: 'people', also: 'try test controller phone practise practice', run: () => (this.rehearsal.on ? void this.rehearsal.finish() : this.rehearsal.start()) },
       { id: 'preview', label: 'Preview the table in a window', group: 'Table', icon: 'play', also: 'open', run: () => openView('table') },
       { id: 'guide', label: this.wizard ? 'Close the setup guide' : 'Setup guide', group: 'Table', icon: 'route', also: 'wizard start steps', run: () => (this.wizard ? this.closeWizard() : this.openWizard()) },
       { id: 'undo', label: 'Undo', group: 'Edit', icon: 'undo', keys: k('Z'), run: () => void this.history.step('undo') },
@@ -1285,6 +1328,9 @@ export class Editor {
     const preview = button('ed-button', 'Preview', 'play');
     preview.title = 'Open the table in a window on this screen';
     preview.addEventListener('click', () => openView('table'));
+    const rehearse = button('ed-button', 'Rehearse', 'people');
+    this.rehearseButton = rehearse;
+    rehearse.addEventListener('click', () => (this.rehearsal.on ? void this.rehearsal.finish() : this.rehearsal.start()));
     const guide = button('ed-button', 'Setup guide', 'route');
     this.guideButton = guide;
     guide.addEventListener('click', () => (this.wizard ? this.closeWizard() : this.openWizard()));
@@ -1314,10 +1360,12 @@ export class Editor {
     };
     present.addEventListener('click', async () => {
       if (!invoke) {
+        if (!(await this.checkBeforePresent())) return;
         window.open('/table', 'mrstudio-table');
         window.open('/tv', 'mrstudio-tv');
         return;
       }
+      if (!presenting && !(await this.checkBeforePresent())) return;
       present.disabled = true;
       try {
         await invoke(presenting ? 'stop_presenting' : 'present');
@@ -1340,7 +1388,7 @@ export class Editor {
       window.addEventListener('focus', () => void refresh());
       void refresh();
     }
-    actions.append(preview, present);
+    actions.append(rehearse, preview, present);
     bar.append(brand, ...(file ? [file] : []), steps, name, search, actions);
     return bar;
   }
@@ -1425,7 +1473,9 @@ export class Editor {
         engine.title = info.adapter ? 'Simulations run on this graphics card' : 'No graphics card the engine can use was found, so simulations run on the processor and take longer. Visitors are not told.';
       })
       .catch(() => {});
-    bar.append(el('span', undefined, shell() ? 'Changes are saved as you make them. File > Save As makes a copy.' : 'Changes are saved as you make them'), el('span', 'ed-grow'), work, phones, engine, connected, el('span', undefined, `${Math.round(width_m)} × ${Math.round(height_m)} m`));
+    this.checksButton.type = 'button';
+    this.checksButton.addEventListener('click', () => this.showChecks());
+    bar.append(el('span', undefined, shell() ? 'Changes are saved as you make them. File > Save As makes a copy.' : 'Changes are saved as you make them'), el('span', 'ed-grow'), work, this.checksButton, phones, engine, connected, el('span', undefined, `${Math.round(width_m)} × ${Math.round(height_m)} m`));
     return bar;
   }
 
@@ -1458,7 +1508,7 @@ export class Editor {
     this.renderTree(instances);
     this.renderCanvas(instances);
     this.renderInspector(instances);
-    this.renderNext(instances);
+    this.renderNext();
     // The time bar follows the open layer, in the editor proper (not the guide, not Media).
     const timed = this.wizard || this.ribbonTab === 'media' || this.context.kind !== 'layer' ? null : this.context.id;
     const timedState = timed ? this.store.state.layers[timed] : undefined;
@@ -1466,21 +1516,130 @@ export class Editor {
     for (const { id, state } of instances) this.sync.get(id)?.(state);
   }
 
-  /** A table that is not ready yet says what it still lacks, one thing at a time, and offers the step of the guide that gives it. */
-  private renderNext(all: { id: string; manifest: LayerManifest; state: LayerState }[]): void {
-    const instances = all.filter((i) => !i.state.parent);
-    const data = this.store.state.site.data ?? {};
-    let lack: { text: string; action: string; step: number; target?: string } | null = null;
-    if (!('buildings' in data)) lack = { text: 'This table has no buildings yet, so the map is empty.', action: 'Bring in your place', step: 1 };
-    else if (!instances.some((i) => isAmbient(i.manifest))) lack = { text: 'The map shows nothing when no layer is open.', action: `Choose what shows ${AT_REST.toLowerCase()}`, step: 2 };
-    else if (instances.every((i) => isAmbient(i.manifest))) lack = { text: 'There are no layers yet. Each layer becomes a button on the controller.', action: 'Choose layers', step: 3 };
-    else if (instances.some((i) => i.manifest.id === 'cars') && !('roads' in data)) lack = { text: 'Traffic has no streets to drive on, so no cars are shown.', action: 'Bring in streets', step: 1, target: 'data:roads' };
-    this.next.hidden = lack === null || this.wizard !== null;
-    if (!lack) return;
-    const go = button('ed-button is-primary', lack.action, 'route');
-    const { step, target } = lack;
-    go.addEventListener('click', () => (target ? this.bringIn(target) : this.openWizard(false, step)));
-    this.next.replaceChildren(el('strong', undefined, 'Next'), el('span', undefined, lack.text), go);
+  /**
+   * A table that is not ready yet says the first thing it must have, with the way to it, and the
+   * Checks button in the status bar counts everything else (#63). Both read the same rules.
+   */
+  private renderNext(): void {
+    const checks = this.readyChecks();
+    const first = checks.find((c) => c.level === 'must');
+    this.next.hidden = !first || this.wizard !== null;
+    if (first) {
+      const go = button('ed-button is-primary', first.action, 'route');
+      go.addEventListener('click', () => this.fixCheck(first));
+      const more = checks.length > 1 ? el('button', 'ed-link', `${checks.length - 1} more to check`) : null;
+      if (more) {
+        (more as HTMLButtonElement).type = 'button';
+        more.addEventListener('click', () => this.showChecks());
+      }
+      this.next.replaceChildren(el('strong', undefined, 'Next'), el('span', undefined, first.text), ...(more ? [more] : []), go);
+    }
+    const counted = checks.filter((c) => c.level !== 'nice').length;
+    const worst = checks[0]?.level;
+    this.checksButton.replaceChildren(icon(counted ? 'alert' : 'check', 12), el('span', undefined, counted ? `${counted} to check` : 'Ready to present'));
+    this.checksButton.className = `ed-checks${worst === 'must' ? ' is-must' : counted ? ' is-should' : ' is-ready'}`;
+    this.checksButton.title = counted ? 'What to check before presenting, and the way to fix each' : checks.length ? 'Ready to present. A few nice-to-haves are listed here.' : 'Nothing left to check';
+  }
+
+  /** The table as the shared readiness rules see it (#63). */
+  private readyChecks(): ReadyCheck[] {
+    const site = this.store.state.site;
+    const defaultSide = defaultSideOf(this.store, '');
+    return readiness({
+      data: Object.keys(site.data ?? {}),
+      size: Boolean(site.table?.width_cm),
+      timezone: site.timezone,
+      calibrated: shell() ? Boolean(site.calibration) : null,
+      welcome: site.branding.welcome,
+      layers: this.instances().map(({ id, manifest, state }) => {
+        const b = layerButton(id, manifest, state, defaultSideOf(this.store, id) ?? defaultSide);
+        return { id, name: b.name, ambient: isAmbient(manifest), parent: state.parent ?? null, hidden: Boolean(state.button?.hidden), side: b.side, needs: manifest.requires?.data ?? [] };
+      }),
+    });
+  }
+
+  /** Takes the person to where a check is fixed. */
+  private fixCheck(check: ReadyCheck): void {
+    document.querySelector('.ed-checks-list')?.remove();
+    const { fix } = check;
+    if (fix.kind === 'data') {
+      const target = targetFor(fix.dataset)?.target;
+      if (target) this.bringIn(target);
+      else this.addData();
+    } else if (fix.kind === 'guide') this.openWizard(false, fix.step === 'place' ? (check.id === 'table:size' ? WHERE : 1) : fix.step === 'rest' ? REST : 3);
+    else if (fix.kind === 'table' || fix.kind === 'controller') {
+      if (this.wizard) this.closeWizard();
+      this.go({ kind: fix.kind });
+    } else if (fix.kind === 'layer') {
+      if (this.wizard) this.closeWizard();
+      this.go({ kind: 'layer', id: fix.id });
+    } else if (fix.kind === 'calibrate') void shell()?.('open_settings');
+  }
+
+  /** The list behind the Checks button: Must fix, Should fix, Nice to have, each with its fix. */
+  private showChecks(anchor: HTMLElement = this.checksButton): void {
+    const open = document.querySelector('.ed-checks-list');
+    open?.remove();
+    if (open && anchor === this.checksButton) return;
+    const panel = el('div', 'ed-checks-list');
+    panel.setAttribute('role', 'dialog');
+    panel.ariaLabel = 'Ready to present?';
+    const head = el('header');
+    const close = el('button', 'ed-icon-button', '\u00d7');
+    close.type = 'button';
+    close.ariaLabel = 'Close';
+    close.addEventListener('click', () => panel.remove());
+    head.append(el('strong', undefined, 'Ready to present?'), close);
+    panel.append(head);
+    const checks = this.readyChecks();
+    if (checks.length === 0) panel.append(el('p', 'ed-empty', 'Everything is in place. Present when you are ready.'));
+    const names: Record<string, string> = { must: 'Must fix: the table will not work without it', should: 'Should fix: it works, but looks wrong', nice: 'Nice to have' };
+    for (const level of ['must', 'should', 'nice'] as const) {
+      const these = checks.filter((c) => c.level === level);
+      if (these.length === 0) continue;
+      const section = el('section', `is-${level}`);
+      section.append(el('h4', undefined, names[level]!));
+      for (const check of these) {
+        const row = el('div', 'ed-check');
+        row.dataset.check = check.id;
+        const fix = el('button', 'ed-button', check.action);
+        fix.type = 'button';
+        fix.addEventListener('click', () => this.fixCheck(check));
+        row.append(el('span', undefined, check.text), fix);
+        section.append(row);
+      }
+      panel.append(section);
+    }
+    const outside = (event: PointerEvent): void => {
+      if (!panel.isConnected) return document.removeEventListener('pointerdown', outside, true);
+      if (!panel.contains(event.target as Node) && !this.checksButton.contains(event.target as Node)) {
+        panel.remove();
+        document.removeEventListener('pointerdown', outside, true);
+      }
+    };
+    document.addEventListener('pointerdown', outside, true);
+    panel.addEventListener('keydown', (event) => event.key === 'Escape' && panel.remove());
+    this.shell.append(panel);
+  }
+
+  /**
+   * Before presenting (#63): when something must or should be fixed, a question says what, with
+   * Present anyway. Resolves true to go on.
+   */
+  private async checkBeforePresent(): Promise<boolean> {
+    const checks = this.readyChecks().filter((c) => c.level !== 'nice');
+    if (checks.length === 0) return true;
+    const list = checks.slice(0, 4).map((c) => `• ${c.text}`).join('\n') + (checks.length > 4 ? `\n• and ${checks.length - 4} more` : '');
+    const choice = await this.ask(
+      checks.length === 1 ? '1 thing to check before presenting' : `${checks.length} things to check before presenting`,
+      list,
+      [
+        { id: 'show', label: 'Show me' },
+        { id: 'present', label: 'Present anyway', primary: !checks.some((c) => c.level === 'must') },
+      ],
+    );
+    if (choice === 'show') this.showChecks();
+    return choice === 'present';
   }
 
   private group(name: string, ...children: HTMLElement[]): HTMLElement {
@@ -2567,6 +2726,7 @@ export class Editor {
           send: (method, params) => this.send(method, params),
           place: () => this.setRibbonTab('place'),
           appSettings: invoke ? () => void invoke('open_settings') : null,
+          design: () => this.setRibbonTab('design'),
         }),
       );
     } else if (context.kind === 'layer') {
