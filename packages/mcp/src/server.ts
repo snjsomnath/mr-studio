@@ -25,6 +25,7 @@ import {
   previewPlan,
   readSite,
   runCli,
+  runCliJson,
   SITE_FORMAT,
   validateManifest,
   validateSiteDir,
@@ -104,6 +105,9 @@ const ANNOTATIONS: Record<string, { readOnlyHint: boolean; destructiveHint?: boo
   assess_experience: { readOnlyHint: true, openWorldHint: false },
   find_related_issues: { readOnlyHint: true, openWorldHint: true },
   list_site_files: { readOnlyHint: true, openWorldHint: false },
+  import_data: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+  add_media: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+  add_sound: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   draft_development_request: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
   submit_development_request: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
   build_experience: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
@@ -824,6 +828,86 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
         m.custom = { ...(m.custom ?? {}), [id]: saved };
         return { message: `Saved the custom layer '${id}'. Add it with add_layer use "${use}".${legendNote}` };
       }),
+  );
+
+  // ---- Data in (#320): the editor's own import code, through the mrstudio command line ----
+
+  const noCli = () =>
+    fail('The mrstudio command line is not on this computer, so data cannot be brought in from here.', undefined, {
+      code: 'no_cli',
+      next: ['Install or update the MR Studio app (it ships the command line), or set MRSTUDIO_CLI to an mrstudio program.', "Or add the data in the editor's Your place or Add data, then call list_site_files."],
+    });
+  const TARGETS = 'buildings, trees, walkways, trips, terrain, or data:<name> for any other dataset (data:roads, data:zones)';
+
+  tool(
+    'import_data',
+    {
+      title: 'Bring data into a site',
+      description: `Bring a dataset into the site exactly as the editor's Add data does, with the same checks: from a file (GeoJSON, CSV with lon and lat, zipped Shapefile, GeoTIFF for terrain), from OpenStreetMap for the table's area (source osm: buildings, trees, walkways, data:roads), or free elevation for the ground (source elevation, target terrain). The coordinate system is detected and reprojected, and what lies off the table is reported. Without write it only checks and reports (count, how many are on the table, issues, blockers); with write it saves the file into data/ and points site.json at it (scene.* or data.<name>). Targets: ${TARGETS}. Needs the MR Studio app or the mrstudio command line.`,
+      inputSchema: {
+        site: z.string(),
+        target: z.string().describe(TARGETS),
+        file: z.string().optional().describe('Path of the file on this computer'),
+        source: z.enum(['file', 'osm', 'elevation']).optional().describe("Default file; osm or elevation fetch for the table's area"),
+        write: z.boolean().optional().describe('Save it (default false: check and report only)'),
+        crop: z.boolean().optional().describe('Leave out what lies well outside the table'),
+        swap: z.boolean().optional().describe('The file has latitude first'),
+        crs: z.string().optional().describe('For a terrain GeoTIFF that does not say: "EPSG:3006"'),
+      },
+    },
+    async ({ site, target, file, source, write, crop, swap, crs }) => {
+      const cli = findCli(catalog);
+      if (!cli) return noCli();
+      const from = source ?? 'file';
+      if (from === 'file' && !file) return fail('Give file, or source "osm" or "elevation".', undefined, { code: 'invalid_params', next: [] });
+      const args = ['data', 'add', at(site), '--target', target];
+      if (from === 'file') args.push('--file', at(file!));
+      else args.push(`--${from}`);
+      if (write) args.push('--write');
+      if (crop) args.push('--crop');
+      if (swap) args.push('--swap');
+      if (crs) args.push('--crs', crs);
+      const run = await runCliJson(cli, args);
+      const report = run.json;
+      if (!report || report.error) return fail(report?.error ?? `The command line failed: ${run.output.slice(-400)}`, undefined, { code: 'import_failed', next: [] });
+      const { preview: _preview, ...rest } = report;
+      const blockers = (report.issues ?? []).filter((i: any) => i.severity === 'blocker');
+      if (!report.ok) {
+        return fail(`Not brought in: ${report.summary}`, { report: rest }, { code: 'import_refused', next: blockers.map((b: any) => (b.fix ? `${b.message} Try again with ${b.fix}: true.` : b.message)).concat(['Nothing was written.']) });
+      }
+      return reply(write ? `Brought in ${target}: ${report.summary}. site.json now points at it.` : `Checked ${target}: ${report.summary}. Nothing written; call again with write true to save it.`, { written: Boolean(write), report: rest });
+    },
+  );
+
+  const keepFile = (kind: 'media' | 'sound') => async ({ site, file }: { site: string; file: string }) => {
+    const cli = findCli(catalog);
+    if (!cli) return noCli();
+    const run = await runCliJson(cli, ['data', kind, at(site), at(file)]);
+    if (run.json?.path) {
+      const use = kind === 'media' ? `Use it as the file of a media layer or slide step (params.file: "${run.json.path}").` : `Name it in a points dataset column used by a sound motion ("${run.json.path}").`;
+      return reply(`Saved ${run.json.path}. ${use}`, { path: run.json.path });
+    }
+    return fail(run.json?.error ?? `The command line failed: ${run.output.slice(-400)}`, undefined, { code: 'import_refused', next: ['Nothing was written.'] });
+  };
+
+  tool(
+    'add_media',
+    {
+      title: 'Add a picture or video to a site',
+      description: "Copy a picture (PNG, JPEG, WebP, GIF) or video (MP4, WebM) into the site's data/media/, with the same checks as the editor, and return the path to use in a media layer or slide step. Needs the MR Studio app or the mrstudio command line.",
+      inputSchema: { site: z.string(), file: z.string().describe('Path of the file on this computer') },
+    },
+    keepFile('media'),
+  );
+
+  tool(
+    'add_sound',
+    {
+      title: 'Add a sound to a site',
+      description: "Copy a sound (WAV, MP3, OGG, M4A) into the site's data/sounds/, with the same checks as the editor, and return the path a points dataset names for a sound motion. Needs the MR Studio app or the mrstudio command line.",
+      inputSchema: { site: z.string(), file: z.string().describe('Path of the file on this computer') },
+    },
+    keepFile('sound'),
   );
 
   tool(

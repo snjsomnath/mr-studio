@@ -6,7 +6,7 @@
 import { execFile } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
-import { delimiter, isAbsolute, join, relative, resolve } from 'node:path';
+import { delimiter, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 
 import { readLayerDir, type Catalog, type LayerEntry, type SiteSchema } from './core.ts';
 import { checkRecipe, checkIcon } from './recipe.ts';
@@ -502,7 +502,25 @@ export function findCli(catalog: Catalog): string | null {
   if (process.env.MRSTUDIO_CLI) candidates.push(process.env.MRSTUDIO_CLI);
   for (const p of (process.env.PATH ?? '').split(delimiter)) if (p) candidates.push(join(p, exe));
   if (catalog.root) for (const profile of ['release', 'debug']) candidates.push(join(catalog.root, 'target', profile, exe));
+  // The app ships the CLI beside its own program (#320): MR Studio.app/Contents/MacOS, or its install folder on Windows.
+  const app = findApp();
+  if (app) candidates.push(process.platform === 'darwin' ? join(app.program, 'Contents', 'MacOS', exe) : join(dirname(app.program), exe));
   return candidates.find((c) => existsSync(c)) ?? null;
+}
+
+/** Runs the CLI with `--json` and reads its answer; a refusal (exit 1) still carries its JSON. */
+export function runCliJson(cli: string, args: string[], timeoutMs = 300_000): Promise<{ ok: boolean; json: any | null; output: string }> {
+  return new Promise((done) => {
+    execFile(cli, [...args, '--json'], { timeout: timeoutMs, windowsHide: true, maxBuffer: 64 * 1024 * 1024, env: { ...process.env, NO_COLOR: '1', RUST_LOG: 'warn', RUST_BACKTRACE: '0' } }, (error, stdout, stderr) => {
+      let json: any = null;
+      try {
+        json = JSON.parse(stdout.trim().split('\n').pop() ?? '');
+      } catch {
+        json = null;
+      }
+      done({ ok: !error, json, output: `${stdout}${stderr}`.replace(/\x1b\[[0-9;]*m/g, '').trim() || (error ? error.message : '') });
+    });
+  });
 }
 
 export function runCli(cli: string, args: string[], timeoutMs = 120_000): Promise<{ ok: boolean; output: string }> {
