@@ -21,6 +21,12 @@ The Lindholmen artwork's three parts are settings of this layer, so another artw
 - **Pointing** (`hover`): in the overview and the finale, a pointer resting on a phase lights it on the table, its row in the controller's legend and the controller's picture. It uses the SDK's `HoverRegions`, so the camera's hands can do the same later.
 - **Placement** (`corners`): `lon,lat; lon,lat; lon,lat` of the drawing's top left, top right and bottom left puts it where it belongs on the map, rotated and of any shape; empty stretches it over the table.
 
+## Placing it by hand (#301)
+
+With the Masterplan open in the editor, its frame is drawn over the map: drag inside it to move the drawing, a corner to scale it about its middle, the round handle to turn it (it snaps square to the table within 1.5°, and Shift turns in steps of 15°). Letting go writes `corners`. **Fill the table again** empties them.
+
+`turn` (`0`, `90`, `180`, `270`, clockwise) shows a drawing that was drawn on its side the right way round. `corners` are then those of the drawing as shown, so they stay simple to type; changing `turn` in the editor swaps the frame's sides about its middle, so the drawing keeps its shape.
+
 ## Drawn the standard way: parts that move by what they are (#300)
 
 Name the parts of a phase by what they are and the layer animates each the way the Chalmers demo's Campus Vision did, with no code:
@@ -45,4 +51,4 @@ Name the parts of a phase by what they are and the layer animates each the way t
 
 The controller's hero shows the drawing as the table does: its phases, the one pointed at, and the turn to colour. Add a Magnifier for the glass.
 
-Params: `dataset` (the drawing's dataset name; empty takes the table's first SVG), `reveal`, `look`, `opening`, `opening_s`, `colour`, `colour_after_s`, `colour_s`, `start`, `grow`, `earlier`, `later`, `finale`, `hover`, `corners`, `motion`, `role_s`, `opacity`.
+Params: `dataset` (the drawing's dataset name; empty takes the table's first SVG), `reveal`, `look`, `opening`, `opening_s`, `colour`, `colour_after_s`, `colour_s`, `start`, `grow`, `earlier`, `later`, `finale`, `hover`, `turn`, `corners`, `motion`, `role_s`, `opacity`.

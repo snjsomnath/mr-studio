@@ -19,6 +19,7 @@ import {
   hearsSound,
   networkFiles,
   placeFiles,
+  placeStepTitles,
   readShapes,
   resolvePalette,
   tableFrame,
@@ -126,9 +127,11 @@ export function recipeModule(current: () => LayerManifest | undefined, watch: (c
       const placeNeeds = () => {
         const datasets = new Set<string>();
         const csvs = new Set<string>();
+        // The controller may switch the motion (a bound select): the files follow the motion on show.
+        const bound = boundOverrides(recipe, ctx.params).motion;
         for (const m of recipe.motion ?? []) {
           if (m.block !== 'place') continue;
-          const { datasets: d, tables: t } = placeFiles(m.props ?? {});
+          const { datasets: d, tables: t } = placeFiles({ ...(m.props ?? {}), ...(bound[m.id] ?? {}) });
           Object.values(d).forEach((name) => datasets.add(name!));
           Object.values(t).forEach((name) => csvs.add(name!));
         }
@@ -153,6 +156,9 @@ export function recipeModule(current: () => LayerManifest | undefined, watch: (c
       let styleKey = '';
       let time = 0;
       let loading: Promise<void> | null = null;
+      /** Where Next is in a place motion that steps (#341), and the time it got there. */
+      const placeStage = { revealed: ctx.steps.revealed, since: 0 };
+      let placeSteps = '';
 
       const loadAll = async () => {
         const next = new Map<string, Shapes>();
@@ -257,12 +263,20 @@ export function recipeModule(current: () => LayerManifest | undefined, watch: (c
                 frame,
                 extras: { streets: shapesOf(datasets.streets), buildings: shapesOf(datasets.buildings), targets: shapesOf(datasets.targets) },
                 tables: { activity: tableOf(csvs.activity), flows: tableOf(csvs.flows), links: tableOf(csvs.links) },
+                stage: () => placeStage,
               };
             }
             return compileLook(block, filterShapes((block.data && shapes.get(block.data)) || EMPTY, filters[block.id]), palette, mm, motion, overrides.look[block.id]);
           })
           .filter((look): look is CompiledLook => look !== null);
         if (!(recipe.motion ?? []).some((m) => m.block === 'sound')) sounds.stop();
+        // A place motion that steps: Next shows the places, then starts the motion (#341).
+        const stepping = (recipe.motion ?? []).find((m) => m.block === 'place' && { ...m.props, ...overrides.motion[m.id] }.reveal === true);
+        const titles = stepping ? placeStepTitles(String({ ...stepping.props, ...overrides.motion[stepping.id] }.motion ?? '')) : [];
+        if (JSON.stringify(titles) !== placeSteps) {
+          placeSteps = JSON.stringify(titles);
+          ctx.steps.define(titles.length, titles);
+        }
       };
 
       const stop = watch(() => {
@@ -371,6 +385,9 @@ export function recipeModule(current: () => LayerManifest | undefined, watch: (c
         }
       });
       return {
+        step: (revealed) => {
+          if (revealed !== placeStage.revealed) Object.assign(placeStage, { revealed, since: time });
+        },
         update: (changed) => {
           if (changed.includes('play')) wanted = String(ctx.params.play ?? '').trim();
           if (changed.includes('network_play')) clock.playing = ctx.params.network_play !== false;

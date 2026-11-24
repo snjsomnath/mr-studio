@@ -181,6 +181,12 @@ impl Site {
         if let Some(t) = &m.scene.trees {
             check(&mut out, "scene.trees.path", &t.path);
         }
+        if let Some(w) = &m.scene.water {
+            check(&mut out, "scene.water.path", &w.path);
+            if let Some(crs) = w.crs.as_deref().filter(|crs| Crs::parse(crs).is_none()) {
+                out.push(format!("scene.water.crs: '{crs}' is not supported; use one of {}", Crs::SUPPORTED));
+            }
+        }
         if let Some(t) = &m.scene.terrain {
             check(&mut out, "scene.terrain.path", &t.path);
             if t.is_geotiff() {
@@ -530,6 +536,9 @@ impl Site {
         }
         if let Some(t) = &m.scene.terrain {
             data.insert("terrain".to_string(), t.path.clone());
+        }
+        if let Some(w) = &m.scene.water {
+            data.insert("water".to_string(), w.path.clone());
         }
         data.extend(m.data.clone());
         data

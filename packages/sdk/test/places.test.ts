@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { PLACE_MOTIONS, PLACE_DATA_HELP, placeData, placeMotion, placeUnit, resolvePalette } from '../src/index.ts';
+import { ARRIVAL_S, PLACE_MOTIONS, PLACE_DATA_HELP, placeData, placeFit, placeMotion, placeSpacing, placeStepTitles, placeUnit, resolvePalette } from '../src/index.ts';
 import type { Pen, Shapes, Spot, View } from '../src/index.ts';
 
 const spots: Spot[] = [
@@ -66,4 +66,40 @@ test('every place motion draws on a pen without throwing, and says what data it 
   // No streets: the street motions draw nothing rather than fail.
   const bare = placeData(spots, {}, {}, {}, palette, { width: 500, height: 500 });
   for (const def of PLACE_MOTIONS) def.create({ data: bare, props: {}, u: 0.625, palette }).draw(view, 1, 1);
+});
+
+test('a place motion fits the places on the table: closer places, shorter reach, smaller marks (#341)', () => {
+  // Seven places on a 1600 x 1000 du district, as in the preview: the fit is about 1.
+  const u = placeUnit(1);
+  const preview = [[200, 206], [680, 206], [1280, 323], [440, 559], [920, 677], [1400, 677], [800, 441]].map(([x, y], i) => ({ id: i, point: [x! * u, y! * u] as [number, number], properties: {} }));
+  const fit = placeFit(placeData(preview, {}, {}, {}, resolvePalette(), { width: 2000, height: 1250 }), u);
+  assert.ok(fit.scale > 0.85 && fit.scale < 1.2, `preview fit ${fit.scale}`);
+  // The same places five times closer: distances shrink five times, marks by the square root, kept at half or more.
+  const close = preview.map((s) => ({ ...s, point: [s.point[0] / 5, s.point[1] / 5] as [number, number] }));
+  const near = placeFit(placeData(close, {}, {}, {}, resolvePalette(), { width: 400, height: 250 }), u);
+  assert.ok(Math.abs(near.scale / fit.scale - 0.2) < 0.01);
+  assert.ok(near.mark >= 0.45 * u && near.mark < fit.mark);
+  // The author's Scale multiplies it; one place has nothing to fit to.
+  assert.ok(Math.abs(placeFit(placeData(close, {}, {}, {}, resolvePalette(), { width: 400, height: 250 }), u, 2).scale / near.scale - 2) < 1e-9);
+  assert.equal(placeFit(placeData(close.slice(0, 1), {}, {}, {}, resolvePalette(), { width: 400, height: 250 }), u).scale, 1);
+  assert.ok(Number.isNaN(placeSpacing([[0, 0]])));
+});
+
+test('a place motion that steps draws nothing, then the places, then the motion (#341)', () => {
+  let drawn = 0;
+  const pen = new Proxy({}, { get: (_, key) => (key === 'createRadialGradient' ? () => ({ addColorStop() {} }) : key === 'drawImage' || key === 'arc' ? () => drawn++ : () => {}), set: () => true }) as unknown as Pen;
+  const view: View = { pen, scale: 2, time: 0, detail: 1, toPx: ([x, y]) => [x * 2, y * 2] };
+  const stage = { revealed: 0, since: 0 };
+  const data = placeData(spots, {}, {}, {}, resolvePalette(), { width: 500, height: 500 });
+  const motion = placeMotion('ripples')!.create({ data, props: {}, u: placeUnit(1), palette: resolvePalette(), stage: () => stage });
+  motion.draw(view, 5, 1);
+  assert.equal(drawn, 0, 'nothing before the first Next');
+  Object.assign(stage, { revealed: 1, since: 5 });
+  motion.draw(view, 5.1, 1);
+  const first = drawn;
+  assert.ok(first > 0, 'the first place arrives');
+  drawn = 0;
+  motion.draw(view, 5 + 3 * ARRIVAL_S, 1);
+  assert.ok(drawn > first, 'more places later');
+  assert.deepEqual(placeStepTitles('pilgrims'), ['The places', 'Pilgrims']);
 });

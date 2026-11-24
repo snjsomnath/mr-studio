@@ -28,7 +28,24 @@ export interface ModelPlacement {
   base_m: number;
   up: Up;
   mirror: boolean;
+  /** For a model in map coordinates: the point of the file (Z up) taken as its origin. */
+  offset?: [number, number];
   extrude: boolean;
+}
+
+/** How the table places a model in map coordinates (GET /api/data/model/locate). */
+export interface MapPlacement {
+  crs: string;
+  name: string;
+  offset: [number, number];
+  anchor: { lon: number; lat: number };
+  bearing_deg: number;
+  unit_m: number;
+}
+
+/** A model whose numbers are this large is in map coordinates (metres on a national or UTM grid), not its own. */
+export function looksLikeMapCoordinates(x: number, y: number): boolean {
+  return Math.abs(x) > 50_000 || Math.abs(y) > 50_000;
 }
 
 /** Ways a model file's numbers can be meant, as metres per unit. */
@@ -124,12 +141,15 @@ const invert = (m: Affine): Affine => {
   return [a, b, c, d, -(a * m[4] + c * m[5]), -(b * m[4] + d * m[5])];
 };
 
-/** The model's vertices in its own Z-up frame (up axis made Z, mirrored if asked), 9 numbers a triangle. */
-export function orient(raw: Float32Array, up: Up, mirror: boolean): Float32Array {
+/** The model's vertices in its own Z-up frame (up axis made Z, moved by `offset`, mirrored if asked), 9 numbers a triangle. */
+export function orient(raw: Float32Array, up: Up, mirror: boolean, offset?: [number, number]): Float32Array {
   const out = new Float32Array(raw.length);
+  const [ox, oy] = offset ?? [0, 0];
   for (let i = 0; i < raw.length; i += 3) {
     let [x, y, z] = [raw[i]!, raw[i + 1]!, raw[i + 2]!];
     if (up === 'y') [y, z] = [-z, y];
+    x -= ox;
+    y -= oy;
     out[i] = mirror ? -x : x;
     out[i + 1] = y;
     out[i + 2] = z;
@@ -300,6 +320,8 @@ interface Loaded {
   image: HTMLCanvasElement;
   /** What was guessed rather than read, for the report. */
   guessed: { unit: boolean; up: boolean };
+  /** The grid a model in map coordinates is in, such as "SWEREF 99 TM". */
+  map?: string;
 }
 
 const BUILDING_M = 2.5;
@@ -424,7 +446,9 @@ export class ModelImporter {
       const bearing = normalise(tableLong - (field.width >= field.height ? 90 : 0));
       this.placement = { lon: site.origin.lon, lat: site.origin.lat, unit_m: this.unit.unit_m, bearing_deg: bearing, base_m: 0, up, mirror: false, extrude: !site.data?.buildings ? true : false };
       this.loaded = { name: file.name, file, raw, local, field, image: picture(field, this.placement.unit_m), guessed: { unit: true, up: up === 'y' || /\.glb$/i.test(file.name) } };
-      this.centre();
+      const map = await this.locate(raw, up);
+      if (map) this.placeOnMap(map);
+      else this.centre();
       this.busy = '';
     } catch (error) {
       this.busy = '';
@@ -446,18 +470,45 @@ export class ModelImporter {
       if (!response.ok) throw new Error(`the table answered ${response.status}`);
       const raw = await readModel(mesh.path, await response.arrayBuffer());
       this.placement = placementOf(mesh);
-      const local = orient(raw, this.placement.up, this.placement.mirror);
+      const local = orient(raw, this.placement.up, this.placement.mirror, this.placement.offset);
       const field = heightfield(local);
       const choices = unitChoices(site);
       this.unit = choices.reduce((best, c) => (Math.abs(Math.log(mesh.unit_m / c.unit_m)) < Math.abs(Math.log(mesh.unit_m / best.unit_m)) ? c : best));
       this.fine = mesh.unit_m / this.unit.unit_m;
-      this.loaded = { name: mesh.path.split('/').pop() ?? mesh.path, file: null, raw, local, field, image: picture(field, mesh.unit_m), guessed: { unit: false, up: false } };
+      this.loaded = { name: mesh.path.split('/').pop() ?? mesh.path, file: null, raw, local, field, image: picture(field, mesh.unit_m), guessed: { unit: false, up: false }, map: mesh.offset ? 'map coordinates' : undefined };
       this.busy = '';
     } catch (error) {
       this.busy = '';
       this.failed = `The model could not be read: ${(error as Error).message}.`;
     }
     this.render();
+  }
+
+  /** Asks the table whether the model's middle is a point on a national or UTM grid that lands on it. */
+  private async locate(raw: Float32Array, up: Up): Promise<MapPlacement | null> {
+    const box = boxOf(orient(raw, up, false));
+    const [x, y] = [(box[0] + box[3]) / 2, (box[1] + box[4]) / 2];
+    if (!looksLikeMapCoordinates(x, y)) return null;
+    try {
+      const response = await fetch(`/api/data/model/locate?x=${Math.round(x)}&y=${Math.round(y)}`);
+      return response.ok ? ((await response.json()).map as MapPlacement | null) : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Places a model in map coordinates where it belongs: no anchor, units or turn to guess. */
+  private placeOnMap(map: MapPlacement): void {
+    const { loaded, placement: p } = this;
+    if (!loaded || !p) return;
+    Object.assign(p, { lon: map.anchor.lon, lat: map.anchor.lat, bearing_deg: map.bearing_deg, unit_m: map.unit_m, offset: map.offset });
+    this.unit = unitChoices(this.host.site()).find((c) => c.id === 'real-m') ?? this.unit;
+    this.fine = map.unit_m / (this.unit?.unit_m ?? 1);
+    loaded.local = orient(loaded.raw, p.up, p.mirror, p.offset);
+    loaded.field = heightfield(loaded.local);
+    loaded.image = picture(loaded.field, p.unit_m);
+    loaded.guessed.unit = false;
+    loaded.map = map.name;
   }
 
   /** Puts the middle of the model on the middle of the table. */
@@ -476,7 +527,7 @@ export class ModelImporter {
     const { loaded, placement: p } = this;
     if (!loaded || !p) return;
     const middle = this.middleLocal();
-    loaded.local = orient(loaded.raw, p.up, p.mirror);
+    loaded.local = orient(loaded.raw, p.up, p.mirror, p.offset);
     loaded.field = heightfield(loaded.local);
     loaded.image = picture(loaded.field, p.unit_m);
     this.moveMiddleTo(middle);
@@ -538,6 +589,7 @@ export class ModelImporter {
     const tallest = largest(f.above) * p.unit_m;
     box.append(el('p', 'wz-summary', `${loaded.name}: ${count(triangles)} triangles, ${metres(w)} × ${metres(h)} m, ${metres(low)} to ${metres(high)} m high`));
     const issues: [string, string][] = [];
+    if (loaded.map) issues.push(['note', `This model is in ${loaded.map === 'map coordinates' ? 'map coordinates' : `map coordinates (${loaded.map})`}, so it was placed where it belongs. Snap or drag only if it is off.`]);
     if (loaded.guessed.unit) issues.push(['note', `Units guessed from the model's size: ${this.unit.label.toLowerCase()}. Change them below if it looks wrong.`]);
     if (loaded.guessed.up && p.up === 'y') issues.push(['note', 'The file looks Y-up, so it was turned upright. Untick "Y is up" if the preview looks like a side view.']);
     const cover = this.coverage();
@@ -585,6 +637,11 @@ export class ModelImporter {
       toggle('Y is up', 'Swap Y and Z, for files exported Y-up (glTF, Blender, many modelling tools).', p.up === 'y', (on) => {
         p.up = on ? 'y' : 'z';
         loaded.guessed.up = false;
+        if (p.offset) {
+          // Keep the numbers small: the new middle of the file is its origin.
+          const b = boxOf(orient(loaded.raw, p.up, false));
+          p.offset = [Math.round((b[0] + b[3]) / 2), Math.round((b[1] + b[4]) / 2)];
+        }
         this.reorient();
         this.render();
       }),
@@ -685,6 +742,10 @@ export class ModelImporter {
       up: p.up,
       mirror: p.mirror ? '1' : '0',
     });
+    if (p.offset) {
+      query.set('offset_x', String(p.offset[0]));
+      query.set('offset_y', String(p.offset[1]));
+    }
     if (this.host.site().data?.buildings) query.set('extrude', p.extrude ? '1' : '0');
     await this.send(query, this.loaded?.file ?? null);
   }
@@ -1099,7 +1160,7 @@ function boxOf(raw: Float32Array): [number, number, number, number, number, numb
 }
 
 export function placementOf(mesh: SiteMesh): ModelPlacement {
-  return { lon: mesh.anchor.lon, lat: mesh.anchor.lat, unit_m: mesh.unit_m, bearing_deg: mesh.bearing_deg, base_m: mesh.base_m, up: mesh.up ?? 'z', mirror: !!mesh.mirror, extrude: mesh.extrude };
+  return { lon: mesh.anchor.lon, lat: mesh.anchor.lat, unit_m: mesh.unit_m, bearing_deg: mesh.bearing_deg, base_m: mesh.base_m, up: mesh.up ?? 'z', mirror: !!mesh.mirror, offset: mesh.offset, extrude: mesh.extrude };
 }
 
 /** A vector in the model's turned frame (+Y along `bearing` degrees clockwise from north) as east and north. */

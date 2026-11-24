@@ -6,6 +6,14 @@ import { icon } from './icons.ts';
 import { middleInput, stopsInput } from './number-inputs.ts';
 import { dataFormat } from '../data-formats.ts';
 
+/** What a check can offer to change about the file, and the words on its button. */
+type ImportFix = 'crop' | 'swap' | 'flatten';
+const FIX_WORDS: Record<ImportFix, string> = {
+  crop: 'Leave out what is off the table',
+  swap: 'Swap latitude and longitude',
+  flatten: 'Take the buildings out of the ground',
+};
+
 /** What a good file looks like, from the one list the MCP server and the guide read too (#36). */
 function formatExample(dataset: string): string {
   return dataFormat(dataset)?.example ?? '';
@@ -46,7 +54,7 @@ export interface ImportReport {
   inside?: number;
   outside?: number;
   crs?: { code: string; guessed: boolean };
-  issues: { code: string; severity: 'blocker' | 'warning' | 'note'; message: string; fix?: 'crop' | 'swap' }[];
+  issues: { code: string; severity: 'blocker' | 'warning' | 'note'; message: string; fix?: ImportFix }[];
   preview?: { type: 'FeatureCollection'; features: { geometry: { type: string; coordinates: unknown } | null; properties?: Record<string, unknown> | null }[] };
   path?: string;
 }
@@ -100,6 +108,16 @@ export const TARGETS: ImportTarget[] = [
     accept: '.geojson,.json,.csv',
     osm: true,
     example: formatExample('trees'),
+  },
+  {
+    target: 'water',
+    dataset: 'water',
+    name: 'Water',
+    icon: 'droplet',
+    about: 'Rivers, lakes and the sea. Cool in thermal comfort, where stormwater drains to. GeoJSON areas.',
+    accept: '.geojson,.json',
+    osm: true,
+    example: formatExample('water'),
   },
   {
     target: 'data:roads',
@@ -323,7 +341,7 @@ function middle(report: ImportReport): { lon: number; lat: number } | null {
 export class Importer {
   readonly element = el('div', 'wz-place im');
   private source: Source | null = null;
-  private options = new Set<'crop' | 'swap'>();
+  private options = new Set<ImportFix>();
   /** `EPSG:<code>`, named by the author when the file does not say and the host cannot tell. */
   private crs?: string;
   private report?: ImportReport;
@@ -573,7 +591,7 @@ export class Importer {
         const line = el('p', `wz-issue is-${issue.severity}`, issue.message);
         const fix = issue.fix;
         if (fix && !this.options.has(fix)) {
-          const apply = el('button', 'ed-button', fix === 'crop' ? 'Leave out what is off the table' : 'Swap latitude and longitude');
+          const apply = el('button', 'ed-button', FIX_WORDS[fix]);
           apply.type = 'button';
           apply.addEventListener('click', () => {
             this.options.add(fix);

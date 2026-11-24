@@ -130,6 +130,10 @@ pub struct Terrain {
     /// `EPSG:<code>` of a GeoTIFF that does not name its coordinate system itself.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub crs: Option<String>,
+    /// The terrain has the buildings raised in it (a surface model, #344): the ground under each
+    /// footprint, and one cell around it, is set back to the ground beside it when baking.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub flatten_buildings: bool,
 }
 
 impl Terrain {
@@ -152,7 +156,11 @@ pub struct Mesh {
     /// Whether the model is a mirror image (its X axis is flipped), as some exports are.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub mirror: bool,
-    /// Where the mesh's own origin (0, 0) is.
+    /// A model in map coordinates (#344): this point of the file, in its own units with the
+    /// up axis made Z, is taken as its origin, so the numbers stay small. The anchor is where it lies.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub offset: Option<[f64; 2]>,
+    /// Where the mesh's own origin (0, 0) is, after `offset`.
     pub anchor: LonLat,
     /// Metres per mesh unit.
     #[serde(default = "one")]
@@ -187,13 +195,15 @@ impl Up {
 
 impl Mesh {
     /// A vertex of the file in the mesh's own Z-up frame, before scale, turn and anchor:
-    /// the up axis made Z, then mirrored if asked.
+    /// the up axis made Z, moved by `offset`, then mirrored if asked.
     pub fn orient(&self, v: [f32; 3]) -> [f64; 3] {
         let [x, y, z] = v.map(f64::from);
         let [x, y, z] = match self.up {
             Up::Z => [x, y, z],
             Up::Y => [x, -z, y],
         };
+        let [ox, oy] = self.offset.unwrap_or([0.0, 0.0]);
+        let (x, y) = (x - ox, y - oy);
         [if self.mirror { -x } else { x }, y, z]
     }
 }
@@ -210,6 +220,26 @@ pub struct SceneSpec {
     pub mesh: Option<Mesh>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub trees: Option<Trees>,
+    /// Water: a river, a lake, the sea (#343). Cool ground for thermal comfort, and a sink for stormwater.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub water: Option<Water>,
+}
+
+/// Where the water is: GeoJSON polygons, or a GeoTIFF mask (cells above 0.5 are water).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Water {
+    pub path: String,
+    /// `EPSG:<code>` of a GeoTIFF mask that does not name its coordinate system itself.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub crs: Option<String>,
+}
+
+impl Water {
+    pub fn is_geotiff(&self) -> bool {
+        let path = self.path.to_ascii_lowercase();
+        path.ends_with(".tif") || path.ends_with(".tiff")
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

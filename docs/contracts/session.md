@@ -243,7 +243,8 @@ interface ImportReport {
 ### A 3D model
 
 ```
-POST /api/data/model?lon=&lat=&unit_m=[&bearing_deg=][&base_m=][&up=y][&mirror=1][&extrude=0]   saves or places the model, re-bakes, sends `site.changed`
+POST /api/data/model?lon=&lat=&unit_m=[&bearing_deg=][&base_m=][&up=y][&mirror=1][&offset_x=&offset_y=][&extrude=0]   saves or places the model, re-bakes, sends `site.changed`
+GET  /api/data/model/locate?x=&y=                                                            {map: {crs, name, offset, anchor, bearing_deg, unit_m}} when (x, y) is a point on a national or UTM grid that lands on the table, else {map: null}
 POST /api/data/model?remove=1                                                                takes it out of the scene
 ```
 
