@@ -116,6 +116,18 @@ impl Engine {
         entry.job.read(&self.ctx, scene, field)
     }
 
+    /// A kernel's answer about one place, at local east/north metres from the site origin.
+    /// See `Kernel::probe`.
+    pub fn probe(&self, kernel: &str, params: &Value, east: f64, north: f64) -> Result<Value, EngineError> {
+        let scene = self.scene.as_ref().ok_or(EngineError::NoScene)?;
+        let kernel = self.kernels.get(kernel).ok_or_else(|| EngineError::UnknownKernel(kernel.to_string()))?;
+        let (col, row) = scene.grid.local_to_cell(east, north);
+        if !(0.0..scene.grid.width as f64).contains(&col) || !(0.0..scene.grid.height as f64).contains(&row) {
+            return Err(EngineError::InvalidParams("that place is not on the table".into()));
+        }
+        kernel.probe(scene, params, col, row)
+    }
+
     pub fn drop_job(&mut self, job: JobId) {
         self.jobs.remove(&job);
     }

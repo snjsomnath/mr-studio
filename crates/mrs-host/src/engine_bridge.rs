@@ -15,7 +15,7 @@ use std::time::{Duration, Instant};
 
 use anyhow::anyhow;
 use mrs_engine::{encode_frame, Backend, Encoding, Engine, EngineConfig, EngineInfo, JobId, JobState, SceneData};
-use mrs_site::LonLat;
+use mrs_site::{LonLat, Projection};
 use serde_json::{json, Value};
 use tokio::sync::{mpsc as tmpsc, oneshot};
 
@@ -52,6 +52,12 @@ enum Command {
         stream: u32,
     },
     CloseConnection(u64),
+    Probe {
+        kernel: String,
+        params: Value,
+        at: LonLat,
+        reply: oneshot::Sender<Result<Value, String>>,
+    },
     LoadScene(SceneData, oneshot::Sender<Result<(), String>>),
     Relocate(SceneData, LonLat, oneshot::Sender<Result<(), String>>),
     /// For tests and the soak run: makes the engine thread fail as a GPU fault would.
@@ -130,6 +136,13 @@ impl EngineHandle {
     pub async fn set(&self, conn: u64, stream: u32, params: Value) -> Result<(), String> {
         let (reply, rx) = oneshot::channel();
         self.send(Command::Set { conn, stream, params, reply }).map_err(|e| e.to_string())?;
+        rx.await.map_err(|e| e.to_string())?
+    }
+
+    /// A kernel's answer about one place on the table (`Kernel::probe`), such as one spot's sun across a day.
+    pub async fn probe(&self, kernel: String, params: Value, at: LonLat) -> Result<Value, String> {
+        let (reply, rx) = oneshot::channel();
+        self.send(Command::Probe { kernel, params, at, reply }).map_err(|e| e.to_string())?;
         rx.await.map_err(|e| e.to_string())?
     }
 
@@ -282,6 +295,9 @@ fn run(mut engine: Engine, current: &mut (SceneData, LonLat), rx: &mpsc::Receive
                     *current = (scene.clone(), at);
                     let _ = reply.send(engine.load_scene(scene).map_err(|e| e.to_string()));
                 }
+                Command::Probe { kernel, params, at, reply } => {
+                    let _ = reply.send(probe(&engine, origin, &kernel, params, at));
+                }
                 Command::Fault => panic!("a fault was injected"),
                 Command::CloseConnection(conn) => {
                     streams.retain(|_, s| {
@@ -343,6 +359,28 @@ fn run(mut engine: Engine, current: &mut (SceneData, LonLat), rx: &mpsc::Receive
     }
 }
 
+fn probe(engine: &Engine, origin: LonLat, kernel: &str, params: Value, at: LonLat) -> Result<Value, String> {
+    let info = engine.info();
+    let schema = &info.kernels.iter().find(|k| k.id == kernel).ok_or_else(|| format!("unknown kernel '{kernel}'"))?.params;
+    let params = with_origin(params, schema, origin);
+    let (east, north) = Projection::new(origin).to_local(at.lon, at.lat);
+    engine.probe(kernel, &params, east, north).map_err(|e| e.to_string())
+}
+
+/// Kernels that need the site's position get it from the host, so layers never hard-code it.
+fn with_origin(mut params: Value, schema: &Value, origin: LonLat) -> Value {
+    if let Some(map) = params.as_object_mut() {
+        let accepts = |name: &str| schema["properties"].get(name).is_some();
+        if accepts("lat") && !map.contains_key("lat") {
+            map.insert("lat".into(), json!(origin.lat));
+        }
+        if accepts("lon") && !map.contains_key("lon") {
+            map.insert("lon".into(), json!(origin.lon));
+        }
+    }
+    params
+}
+
 fn open(
     engine: &mut Engine,
     origin: LonLat,
@@ -360,17 +398,7 @@ fn open(
     if request.fields.is_empty() {
         return Err("fields must not be empty".into());
     }
-    // Kernels that need the site's position get it from the host, so layers never hard-code it.
-    let mut params = request.params;
-    if let Some(map) = params.as_object_mut() {
-        let accepts = |name: &str| kernel.params["properties"].get(name).is_some();
-        if accepts("lat") && !map.contains_key("lat") {
-            map.insert("lat".into(), json!(origin.lat));
-        }
-        if accepts("lon") && !map.contains_key("lon") {
-            map.insert("lon".into(), json!(origin.lon));
-        }
-    }
+    let params = with_origin(request.params, &kernel.params, origin);
     let job = engine.create_job(&request.kernel, &params).map_err(|e| e.to_string())?;
     let id = *next;
     *next += 1;

@@ -133,9 +133,12 @@ The host exposes the engine to surfaces through these requests (see session.md f
 | `engine.open` | `{ kernel, params, fields: string[], encoding?: "u8" \| "f32", maxHz?: number }` | `{ stream }` |
 | `engine.set` | `{ stream, params }` | `{}` |
 | `engine.close` | `{ stream }` | `{}` |
+| `engine.probe` | `{ kernel, params, at: [lon, lat] }` | the kernel's answer for that place |
 
 `engine.open` creates a job and subscribes the calling surface. The host steps the job and, whenever the job's revision changes, pushes an `engine.status` event followed by one binary frame per field, at most `maxHz` times per second (default 30). The final frame of a job is sent at once.
 Streams belong to the connection and are closed when it drops. If a kernel accepts `lat` and `lon` and the caller omits them, the host fills them from the site origin.
+
+`engine.probe` asks a kernel about one place instead of the whole table, without a job (#252): a point question is cheap where a field is not. `at` is WGS84 and must be on the table. It is answered in the engine thread between job steps, so it waits for at most one step of a running job. Kernels without a probe answer with an error; so far only `sunlight` has one. Phones cannot call it; a layer's table code asks and publishes what the controller shows.
 
 | Event | Payload |
 | --- | --- |
@@ -183,6 +186,17 @@ Kernel id `sunlight`. Reference implementation of the rules above.
 Algorithm: for each cell, march a ray across the `dsm` towards the sun in one-cell steps, starting from the cell's top surface. The cell is in shadow when the `dsm` rises above the ray. The march stops when the ray clears the scene's highest point or leaves the grid. Canopy the ray passes under removes a fixed share of the light per metre. Sun position follows the NOAA solar position equations. In `day` mode the day is the 24 hours from local mean solar midnight, sampled every `step_minutes`.
 
 `shadow` and `tree_shade` exist in `instant` mode, `sun_hours` and `tree_shade_hours` in `day` mode. Where no building shades a cell, `shadow + tree_shade = 1`, so a layer can colour the two kinds of shade differently. Status `info` carries `sun: { azimuth_deg, altitude_deg }` and `daylight_hours`, so a layer can show them without recomputing.
+
+**Probe.** `engine.probe` with `params` as for a job (`time` picks the day; `step_minutes` defaults to 5 here; `mode` is ignored) marches the same rays from the one cell under `at` across the day, and returns:
+
+| Key | Meaning |
+| --- | --- |
+| `day_start` | Unix seconds of local mean solar midnight; sample `k` is at `day_start + (k + 0.5) * step_minutes * 60` |
+| `step_minutes` | The sampling interval |
+| `light`, `tree`, `altitude` | Per sample: light reaching the cell (0..1), the share trees took, the sun's height in degrees |
+| `sun_hours`, `tree_hours`, `daylight_hours` | The day's sums, in hours; `sun_hours` matches the `sun_hours` field there |
+| `first_sun`, `last_sun` | Unix seconds of the first and last sample with at least half the light, or null |
+| `roof`, `height_m` | Whether the cell is on a building, and its `dsm - dtm` |
 
 The march is the simplest correct algorithm and costs one step per cell of shadow length. The planned speed-up is a max-height pyramid that lets the ray skip empty space; the parity and physics tests are what make that change safe.
 

@@ -75,6 +75,50 @@ impl Kernel for SunlightKernel {
         job.plan(scene);
         Ok(Box::new(job))
     }
+
+    /// One place's day: how much of the sun's light reaches it every `step_minutes` (default 5)
+    /// from solar midnight to solar midnight, and what that adds up to. The same rays as day mode,
+    /// marched from one cell, so its `sun_hours` matches the field there.
+    fn probe(&self, scene: &Scene, params: &Value, col: f64, row: f64) -> Result<Value, EngineError> {
+        let params = Params { step_minutes: 5.0, ..Params::default() }.merged(params)?;
+        let (time, lat, lon) = (params.time.unwrap(), params.lat.unwrap(), params.lon.unwrap());
+        let (col, row) = (col.floor() as usize, row.floor() as usize);
+        let step = params.step_minutes * 60.0;
+        let step_hours = (step / 3600.0) as f32;
+        let start = solar_day_start(time, lon);
+        let count = (86400.0 / step).round() as usize;
+        let (mut light, mut tree, mut altitude) = (Vec::with_capacity(count), Vec::with_capacity(count), Vec::with_capacity(count));
+        let (mut first, mut last) = (None, None);
+        for k in 0..count {
+            let at = start + (k as f64 + 0.5) * step;
+            let sun = sun_position(at, lat, lon);
+            let ray = Ray::new(scene, sun, params.trees, 1.0, false);
+            let (lit, shaded) = cpu::cell_light(scene, &ray, col, row);
+            if lit >= 0.5 {
+                first.get_or_insert(at);
+                last = Some(at);
+            }
+            light.push(lit);
+            tree.push(if ray.lit > 0.0 { shaded.min(1.0 - lit) } else { 0.0 });
+            altitude.push(sun.altitude_deg as f32);
+        }
+        let up = altitude.iter().filter(|a| **a as f64 > MIN_ALTITUDE_DEG).count() as f32;
+        let index = row * scene.grid.width as usize + col;
+        Ok(json!({
+            "day_start": start,
+            "step_minutes": params.step_minutes,
+            "light": light,
+            "tree": tree,
+            "altitude": altitude,
+            "sun_hours": light.iter().sum::<f32>() * step_hours,
+            "tree_hours": tree.iter().sum::<f32>() * step_hours,
+            "daylight_hours": up * step_hours,
+            "first_sun": first,
+            "last_sun": last,
+            "roof": scene.is_solid(index),
+            "height_m": scene.dsm[index] - scene.dtm[index],
+        }))
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -160,8 +204,7 @@ impl Ray {
         let up = sun.altitude_deg > MIN_ALTITUDE_DEG;
         let (dir_col, dir_row) = grid.bearing_to_cell_dir(sun.azimuth_deg);
         let dz = if up { (sun.altitude_deg.to_radians().tan() * grid.cell_m as f64) as f32 } else { 0.0 };
-        let min_height = scene.dsm.iter().copied().fold(f32::MAX, f32::min);
-        let reach = if up { ((scene.max_height - min_height) / dz).ceil() as u32 + 1 } else { 0 };
+        let reach = if up { ((scene.max_height - scene.min_height) / dz).ceil() as u32 + 1 } else { 0 };
         Self {
             width: grid.width,
             height: grid.height,

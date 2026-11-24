@@ -216,3 +216,31 @@ fn gpu_matches_cpu_reference() {
         assert!(m < 0.002, "day rotation {rotation}: {:.4}% of cells differ", m * 100.0);
     }
 }
+
+#[test]
+fn a_probe_gives_one_place_its_day() {
+    let mut engine = engine(Backend::Cpu, box_scene(0.0)).unwrap();
+    let day = params("day", "2026-06-21T12:00:00Z");
+    let field = run(&mut engine, json!({ "mode": "day", "time": "2026-06-21T12:00:00Z", "lat": LAT, "lon": LON, "step_minutes": 5 }), "sun_hours");
+    // Cell (col 100, row 85) sits 5 m north of the box: its centre is east 0.5 m, north 15 - 0.5 m.
+    let north_of_box = engine.probe("sunlight", &day, 0.5, 14.5).unwrap();
+    let hours = north_of_box["sun_hours"].as_f64().unwrap() as f32;
+    assert!((hours - field.data[85 * 200 + 100]).abs() < 0.01, "probe {hours} h, field {} h", field.data[85 * 200 + 100]);
+    let light: Vec<f64> = north_of_box["light"].as_array().unwrap().iter().map(|v| v.as_f64().unwrap()).collect();
+    assert_eq!(light.len(), 288, "every 5 minutes for a day");
+    // Lit in the morning, in the box's shadow at noon, lit again in the evening.
+    let noon = light.len() / 2;
+    assert_eq!(light[noon], 0.0);
+    assert!(light[..noon].contains(&1.0) && light[noon..].contains(&1.0));
+    assert_eq!(north_of_box["roof"], false);
+
+    let roof = engine.probe("sunlight", &day, 0.5, 0.5).unwrap();
+    assert_eq!(roof["roof"], true);
+    let open = engine.probe("sunlight", &day, -80.0, 80.0).unwrap();
+    let daylight = open["daylight_hours"].as_f64().unwrap();
+    assert!((open["sun_hours"].as_f64().unwrap() - daylight).abs() < 0.1, "open ground sees the whole day");
+    assert!(open["first_sun"].as_f64().unwrap() < open["last_sun"].as_f64().unwrap());
+
+    assert!(engine.probe("sunlight", &day, 500.0, 0.0).is_err(), "off the table");
+    assert!(engine.probe("wind", &day, 0.0, 0.0).is_err(), "unknown or no probe");
+}

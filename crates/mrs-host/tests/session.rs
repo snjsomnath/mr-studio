@@ -440,6 +440,27 @@ async fn engine_streams_push_frames_when_results_change() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn the_table_asks_the_engine_about_one_place() {
+    let host = host().await;
+    let mut table = Surface::join(&host, "table", None).await.unwrap();
+    // lat and lon are filled in from the site; `at` is WGS84.
+    let probe = json!({ "kernel": "sunlight", "params": { "time": "2026-06-21T12:00:00Z", "step_minutes": 15 }, "at": [11.97, 57.7] });
+    let day = table.request("engine.probe", probe).await.unwrap();
+    assert_eq!(day["light"].as_array().unwrap().len(), 96);
+    let (sun, daylight) = (day["sun_hours"].as_f64().unwrap(), day["daylight_hours"].as_f64().unwrap());
+    assert!(sun <= daylight + 1e-3 && (17.0..18.5).contains(&daylight), "{sun} h of {daylight} h");
+
+    let off = json!({ "kernel": "sunlight", "params": { "time": "2026-06-21T12:00:00Z" }, "at": [12.5, 57.7] });
+    assert!(table.request("engine.probe", off).await.unwrap_err().contains("not on the table"));
+    assert!(table.request("engine.probe", json!({ "kernel": "sunlight", "params": {} })).await.is_err());
+    let code = host.state.hub.session().code.clone();
+    let mut phone = Surface::join(&host, "phone", Some(&code)).await.unwrap();
+    let ask = json!({ "kernel": "sunlight", "params": { "time": "2026-06-21T12:00:00Z" }, "at": [11.97, 57.7] });
+    assert!(phone.request("engine.probe", ask).await.is_err(), "phones ask through tools");
+    host.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn sun_hours_arrive_progressively() {
     let host = host().await;
     let mut table = Surface::join(&host, "table", None).await.unwrap();

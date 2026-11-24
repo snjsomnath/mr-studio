@@ -26,7 +26,7 @@ pub fn march(scene: &Scene, ray: &Ray, out: &mut [f32], tree: &mut [f32], thread
 }
 
 /// Light reaching the cell, and the share of light that trees alone took from it.
-fn cell_light(scene: &Scene, ray: &Ray, col: usize, row: usize) -> (f32, f32) {
+pub(super) fn cell_light(scene: &Scene, ray: &Ray, col: usize, row: usize) -> (f32, f32) {
     let (width, height) = (scene.grid.width as i32, scene.grid.height as i32);
     let mut light = ray.lit;
     if light <= 0.0 {
