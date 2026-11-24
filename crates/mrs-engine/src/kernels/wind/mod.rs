@@ -924,7 +924,7 @@ impl Job for WindJob {
         // The components' range puts zero exactly on a quantisation step (128 of 255),
         // so a still cell stays still after 8-bit encoding.
         let negative = -range * 128.0 / 127.0;
-        let cells = self.macros.chunks_exact(3);
+        let cells = self.macros.as_chunks::<3>().0.iter();
         let (min, data): (f32, Vec<f32>) = match field {
             "speed" => (0.0, cells.map(|m| (m[0] * m[0] + m[1] * m[1]).sqrt() * scale).collect()),
             "u" => (negative, cells.map(|m| m[0] * scale).collect()),

@@ -421,7 +421,9 @@ mod tests {
 
     fn area(mesh: &TwinMesh, kind: SurfaceKind) -> f32 {
         mesh.indices
-            .chunks_exact(3)
+            .as_chunks::<3>()
+            .0
+            .iter()
             .filter(|t| mesh.kinds[t[0] as usize] == kind)
             .map(|t| {
                 let [a, b, c] = [mesh.positions[t[0] as usize], mesh.positions[t[1] as usize], mesh.positions[t[2] as usize]];
@@ -464,7 +466,7 @@ mod tests {
         let mesh = TwinMesh::build(&scene, Some(&ids), TwinOptions::default());
         // The box spans columns 5..9 and rows 3..6: x from -10 to -2, y from -2 to 4.
         let centre = [-6.0f32, 1.0];
-        for t in mesh.indices.chunks_exact(3) {
+        for t in mesh.indices.as_chunks::<3>().0.iter() {
             let [a, b, c] = [mesh.positions[t[0] as usize], mesh.positions[t[1] as usize], mesh.positions[t[2] as usize]];
             let (u, v) = ([b[0] - a[0], b[1] - a[1], b[2] - a[2]], [c[0] - a[0], c[1] - a[1], c[2] - a[2]]);
             let face = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]];
@@ -486,8 +488,10 @@ mod tests {
         // Roofs and walls are quads of four vertices, after the ground sheet.
         let ground = mesh.kinds.iter().filter(|k| **k == SurfaceKind::Ground).count();
         let walls: Vec<(f32, f32)> = mesh.kinds[ground..]
-            .chunks_exact(4)
-            .zip(mesh.positions[ground..].chunks_exact(4))
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .zip(mesh.positions[ground..].as_chunks::<4>().0.iter())
             .filter(|(k, _)| k[0] == SurfaceKind::Wall)
             .map(|(_, p)| (p.iter().map(|v| v[2]).fold(f32::MAX, f32::min), p.iter().map(|v| v[2]).fold(f32::MIN, f32::max)))
             .collect();

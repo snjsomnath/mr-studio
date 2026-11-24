@@ -46,7 +46,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      # A fixed version, so a new Rust release's new lints never turn an unrelated pull request red.
+      # Raise it on purpose, fixing what the new clippy finds in the same pull request.
+      - uses: dtolnay/rust-toolchain@1.100.0
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2

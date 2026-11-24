@@ -865,7 +865,7 @@ impl Job for StormJob {
             return Err(EngineError::UnknownField(field.to_string()));
         }
         self.sync_out(ctx)?;
-        let cells = self.out.chunks_exact(3);
+        let cells = self.out.as_chunks::<3>().0.iter();
         // The components' range puts zero exactly on a quantisation step (128 of 255),
         // so still water stays still after 8-bit encoding.
         let negative = -VELOCITY_RANGE * 128.0 / 127.0;

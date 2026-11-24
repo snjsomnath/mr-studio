@@ -155,7 +155,7 @@ pub fn step(lat: &Lattice, p: &Pass, src: &[f32], dst: &mut [f32], out: &mut [f3
     let run = |first_row: usize, dst: &mut [f32], out: &mut [f32]| {
         // `out` starts at the first visible row of this chunk.
         let out_first = first_row.max(y0);
-        for (offset, cell) in dst.chunks_exact_mut(9).enumerate() {
+        for (offset, cell) in dst.as_chunks_mut::<9>().0.iter_mut().enumerate() {
             let (x, y) = (offset % nx, first_row + offset / nx);
             let visible = p.write_macros != 0 && x >= x0 && x < x0 + vw && y >= y0 && y < y0 + vh;
             let slot = if visible { ((y - out_first) * vw + (x - x0)) * 3 } else { 0 };
