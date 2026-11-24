@@ -4,6 +4,24 @@ Every merge to main that carries a release note becomes a version. The newest is
 The app shows these notes, with their pictures, on Home when a newer version is out.
 How notes are written: docs/RELEASING.md.
 
+## 0.17.0 (2026-11-24)
+
+### New
+
+#### Sound that follows the data, and a Sound switch on the controller (#282)
+A layer can now carry a sound bed in its layer.json, with no audio code: up to four slow voices (a band of filtered noise, a hum with harmonics, or a plain tone) whose loudness and colour follow a value the layer publishes or one of its controls. The model-runs sample hisses and hums louder as the community draws more from the grid. The bed keeps to the rules learned at the table: one level ceiling for all the voices together, slow glides and no repeating beeps. It plays on the table only. A new **Sound** button under Map controls on the controller mutes the table for the session, voices and sounds on points alike, while the rings that follow the sound carry on. How to write one: docs/contracts/layer.md, Sound voices.
+
+![The Sound switch under Map controls, on](docs/screenshots/282-controller.png)
+
+![Muted for the session](docs/screenshots/282-controller-muted.png)
+
+#### Phones turn layers on and off (#335)
+
+Visitors' phones now list every layer with an on/off switch, and show each layer's main controls, so a phone can open Wind and set its speed. Opening a layer from a phone closes the open one, as the controller's buttons do, and the controller says which phone did it with a dot in that phone's colour. A table can turn this off in Table settings ("Phones can switch layers"), phones leave the layers alone while a slideshow is showing, and a layer can keep itself to the controller with `"phone_switch": false`.
+
+![A phone with every layer and its switch](docs/screenshots/335-phone-switch.png)
+![The controller saying a phone opened Wind](docs/screenshots/335-controller-cue.png)
+
 ## 0.16.0 (2026-11-24)
 
 ### New
