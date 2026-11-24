@@ -42,7 +42,9 @@ Any open button layer pauses the map at rest's life on the table, keeping only t
 `requires.data` lists the site datasets the layer reads, by name (see `data` in site.md). A layer must still start when one is missing.
 
 Control types: `range`, `select`, `toggle`, `date`, `color`, `text`, `action` (a button, no stored value).
-Every control has `id`, `type`, `label` and `default`. `phone: true` lets phone participants change it.
+Every control has `id`, `type`, `label` and `default`. `phone: true` lets phone participants change it; a `primary` control is on phones unless it says `phone: false` (#335).
+
+`"phone_switch": false` at the top of layer.json keeps phones from turning the layer on or off, for a layer only the controller should open (the slideshow). Default true.
 `visibleWhen: { "mode": "day" }` hides a control unless another control has that value; a list, `{ "style": ["light", "dark"] }`, means any of them.
 
 A `text` control that names something is never a box to type in (#306); the editor offers a list to pick from, with type-ahead, and refuses a name that is not in it:

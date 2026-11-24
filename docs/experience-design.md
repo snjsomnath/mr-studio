@@ -10,7 +10,7 @@ This page is what the MCP server gives an LLM as `mrstudio://concepts` and `mrst
 | --- | --- | --- | --- |
 | Table | The physical model or map, lit from above by a projector, seen top-down | Light, colour, motion and a few place labels. Shadows, wind, water, people moving, plans revealed | Paragraphs, buttons, charts, a 3D camera, extrusion |
 | Controller | The screen beside the table (a TV or touch screen), `/tv` | Layer buttons down the sides, the open layer's controls in the centre, its legend, step titles, panels and charts, Street View | Anything people must read from across the room |
-| Phones | Visitors join by QR code, `/phone`; the guide's phone is `/guide` | A few controls a layer marks `phone: true`, phone tools (place a point, draw a route or area), the guide's presenter notes | Controls only the operator should touch |
+| Phones | Visitors join by QR code, `/phone`; the guide's phone is `/guide` | Every layer's switch (unless the table, the layer or a running slideshow holds it back), its `primary` controls and those it marks `phone: true`, phone tools (place a point, draw a route or area), the guide's presenter notes | Controls only the operator should touch |
 
 At rest, when nobody touches the controller, the table plays its ambient layers and the controller loops through the layers by itself (the attract loop).
 
