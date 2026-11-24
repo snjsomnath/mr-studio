@@ -227,6 +227,7 @@ interface TableContext<P> {
   cue(at: ToolGeometry, options?: { colour?: string }): void;     // play the attention cue at a change (#105); tool inputs from other surfaces get one automatically
   readonly steps: LayerSteps;           // sub-steps that the controller's Next reveals one at a time
   readonly reveal: LayerReveal;         // where the layers inside this one show, for a layer with "reveals": true (see Reveals)
+  readonly view: LayerView;             // a picture for this layer's own controller: send(canvas) here, watch(cb) in its hero (#351)
   onFrame(cb: (dt: number) => void): void;   // every animation frame while the layer is on
   onCleanup(cb: () => void): void;      // extra teardown
 }
@@ -276,6 +277,8 @@ interface MapHandle {
   addShapes(id: string, style?: { opacity?: number }): ShapeOverlay;   // points, lines and areas
   addDrawing(id: string, options?: { opacity?: number; resolution?: number }): DrawingOverlay;
   addPicture(): TablePicture;       // a copy of what the table shows now, for a magnifier (#287)
+  addDetail(render: (g: CanvasRenderingContext2D, scale: number) => void): void;  // draw this layer again sharply for a magnifier, in table metres (#351)
+  detail(centre: [number, number], radius_m: number, size: number): HTMLCanvasElement | null;  // the other layers' sharp pictures of a square, size px across
 }
 
 // What the table shows, copied each frame after the map has drawn: the base map and every
@@ -396,7 +399,11 @@ type RevealShape =
   | { kind: 'side'; axis: 'x' | 'y'; at_m: number; keep: 'before' | 'after' }  // one side of a line
   | { kind: 'none' };                                                          // nowhere
 ctx.reveal.set(shape | null);   // null: everywhere, as without a revealer
+ctx.reveal.item(index, shape | null | undefined);  // one item (0 is the first) gets a shape of its own; undefined hands it back
 ```
+
+`otherSide(shape)` turns a side round, for a Reveal line with `split` on: its first item shows on one
+side and its second on the other, then and now (#349).
 
 Places are table metres. Until the layer sets a shape its items show nowhere. The runtime does the
 clipping, so the items need no code of their own: drawings (`addDrawing`) are composed through the

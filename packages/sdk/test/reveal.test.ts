@@ -3,7 +3,7 @@ import { test } from 'node:test';
 
 import { HoverRegions, areaRegion, circleRegion, maskRegion } from '../src/blocks/interaction.ts';
 import type { PointerSample } from '../src/blocks/interaction.ts';
-import { revealContains, revealPolygon, revealUniform, sameReveal } from '../src/reveal.ts';
+import { otherSide, revealContains, revealPolygon, revealUniform, sameReveal } from '../src/reveal.ts';
 
 const sample = (id: string, point: [number, number], time: number, phase: PointerSample['phase'] = 'move', source: PointerSample['source'] = 'mouse'): PointerSample => ({
   id,
@@ -90,4 +90,15 @@ test('a mask region is inside where its picture is painted', () => {
   assert.ok(region.contains([60, 30]));
   assert.ok(!region.contains([10, 10]));
   assert.ok(!region.contains([-5, 30]));
+});
+
+test('the other side of a line shows what the line keeps out (#349)', () => {
+  const left = { kind: 'side', axis: 'x', at_m: 40, keep: 'before' } as const;
+  const right = otherSide(left);
+  assert.deepEqual(right, { kind: 'side', axis: 'x', at_m: 40, keep: 'after' });
+  assert.equal(revealContains(left, [10, 5]), true);
+  assert.equal(revealContains(right, [10, 5]), false);
+  assert.equal(revealContains(right, [70, 5]), true);
+  const glass = { kind: 'circle', centre: [1, 2], radius_m: 3 } as const;
+  assert.equal(otherSide(glass), glass);
 });

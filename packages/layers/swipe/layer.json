@@ -23,6 +23,7 @@
         { "value": "after", "label": "Right of the line, or below it" }
       ]
     },
+    { "id": "split", "type": "toggle", "label": "With two layers inside, the second shows on the other side", "default": false, "tier": "more" },
     { "id": "cover", "type": "toggle", "label": "Hide the map where they show", "default": false, "tier": "more" },
     { "id": "sweep", "type": "toggle", "label": "The line sweeps slowly while nobody moves it", "default": false, "tier": "more" },
     { "id": "colour", "type": "color", "label": "Colour of the line", "default": "#9ad7ff", "tier": "more" }
