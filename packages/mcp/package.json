@@ -11,6 +11,7 @@
     "projection-mapping",
     "claude"
   ],
+  "license": "MIT",
   "homepage": "https://github.com/snjsomnath/mr-studio/blob/main/docs/MCP.md",
   "repository": {
     "type": "git",
@@ -24,7 +25,8 @@
   },
   "files": [
     "dist/mrstudio-mcp.mjs",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "publishConfig": {
     "access": "public",
