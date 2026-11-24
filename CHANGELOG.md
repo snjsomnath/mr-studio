@@ -4,6 +4,16 @@ Every merge to main that carries a release note becomes a version. The newest is
 The app shows these notes, with their pictures, on Home when a newer version is out.
 How notes are written: docs/RELEASING.md.
 
+## 0.29.0 (2026-11-24)
+
+### New
+
+#### A frame meter shows what each layer costs (#262)
+
+Press Ctrl+Shift+P on the table or controller, or choose Help › Show frame meter in the editor, to see frames per second, the worst frame of the last 10 seconds and how many milliseconds each layer takes per frame. When the table falls below 54 frames a second, the editor's status bar says so and its tooltip names the costliest layer and what to try. Diagnostics list each window's worst frame and costliest layers.
+
+![The frame meter on the table](docs/screenshots/262-meter.png)
+
 ## 0.28.0 (2026-11-24)
 
 ### New
