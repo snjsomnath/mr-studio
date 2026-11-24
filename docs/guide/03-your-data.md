@@ -52,6 +52,10 @@ GeoJSON areas where there is water: a river, a lake, a harbour, the sea. Thermal
 
 OpenStreetMap can fill it too: Add data, Water, From OpenStreetMap takes the rivers, lakes and basins mapped as areas.
 
+### 3D model (STL, OBJ or GLB)
+
+A model of the ground and buildings, so shadows and wind follow its real heights. Media, 3D model, Choose a file shows it from above against the table and the footprints to scale, turn and move it, or **Snap to buildings**. A model exported in map coordinates (SWEREF 99 TM, a SWEREF 99 local zone or UTM metres) needs none of that: it is placed where it belongs as it comes in.
+
 ### Streets (GeoJSON)
 
 GeoJSON lines along the middle of each street. An optional width in metres and a kind (street, primary…) help traffic look right.

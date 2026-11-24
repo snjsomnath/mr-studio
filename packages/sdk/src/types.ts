@@ -409,6 +409,8 @@ export interface SiteMesh {
   /** Which axis of the file points up. Default z. */
   up?: 'z' | 'y';
   mirror?: boolean;
+  /** For a model in map coordinates: the point of the file (Z up) taken as its origin (#344). */
+  offset?: [number, number];
   ground_tolerance_m: number;
   /** False when the model, not the footprints, gives the buildings their shape. */
   extrude: boolean;

@@ -78,7 +78,8 @@ pub fn bake(site: &Site) -> Result<(SceneData, BakeStats), SiteError> {
             }
             // A surface model's buildings bleed a metre or two past their footprints (pixel size, resampling).
             let reach = (2.0 / grid.cell_m).ceil().max(1.0) as usize;
-            stats.terrain_flattened_cells = flatten(&mut scene.dtm, &dilate(&mask, grid.width as usize, grid.height as usize, reach), grid.width as usize);
+            stats.terrain_flattened_cells =
+                flatten(&mut scene.dtm, &dilate(&mask, grid.width as usize, grid.height as usize, reach), grid.width as usize);
         }
     }
     scene.dsm.copy_from_slice(&scene.dtm);

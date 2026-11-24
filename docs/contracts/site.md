@@ -308,13 +308,14 @@ The first band is read as elevation in metres. The file must be north-up (`Model
   "base_m": 0,                                    // elevation of the mesh's z = 0, default 0
   "ground_tolerance_m": 1,                        // default 1
   "up": "z",                                      // which axis of the file points up: "z" (default) or "y"
-  "mirror": false                                 // the file is a mirror image: flip its X axis, default false
+  "mirror": false,                                // the file is a mirror image: flip its X axis, default false
+  "offset": [317751, 6400316]                     // optional: the point of the file taken as its origin (a model in map coordinates)
 }
 ```
 
-The file is read in its own coordinates. `up: "y"` turns a Y-up export (glTF, Blender, many modelling tools) upright, reading each vertex (x, y, z) as (x, -z, y); `mirror` then flips x. A GLB's node transforms are applied, and every triangle primitive of its default scene is used; compressed (Draco, quantised) GLBs and `.gltf` files with separate buffers are not read. OBJ faces with more than three corners are fanned into triangles.
+The file is read in its own coordinates. `up: "y"` turns a Y-up export (glTF, Blender, many modelling tools) upright, reading each vertex (x, y, z) as (x, -z, y); `offset` is then subtracted from (x, y), and `mirror` flips x. A GLB's node transforms are applied, and every triangle primitive of its default scene is used; compressed (Draco, quantised) GLBs and `.gltf` files with separate buffers are not read. OBJ faces with more than three corners are fanned into triangles.
 
-The editor's Your place step brings a model in and places it: units guessed from its size and the table scale, Y up guessed from its shape, then turned, scaled, moved and mirrored against the table outline and the footprints, or fitted to the footprints with "Snap to buildings" (POST `/api/data/model`, session.md).
+The editor's Your place step brings a model in and places it: units guessed from its size and the table scale, Y up guessed from its shape, then turned, scaled, moved and mirrored against the table outline and the footprints, or fitted to the footprints with "Snap to buildings" (POST `/api/data/model`, session.md). A model in map coordinates (numbers in the hundreds of thousands, such as SWEREF 99 TM metres) is placed by itself (#344): the host finds the grid that puts the model's middle on the table (SWEREF 99 TM, the SWEREF 99 local zones, then the table's UTM zone; GET `/api/data/model/locate`), and the middle becomes `offset`, the anchor its lon/lat, `bearing_deg` the grid convergence there and `unit_m` the grid's scale.
 
 A mesh has no georeference of its own, so these five numbers place it: a point, a scale, a turn and a height. `bearing_deg` is what makes a model drawn on a national grid line up, because grid north is not true north (2.6 degrees off at Chalmers).
 

@@ -73,7 +73,17 @@ impl Scene {
             dsm: gpu.storage_f32("scene.dsm", &data.dsm),
             canopy: gpu.storage_f32("scene.canopy", &data.canopy),
         });
-        Ok(Self { grid: data.grid, dtm: data.dtm, dsm: data.dsm, canopy: data.canopy, water: data.water, max_height, min_height, revision, gpu })
+        Ok(Self {
+            grid: data.grid,
+            dtm: data.dtm,
+            dsm: data.dsm,
+            canopy: data.canopy,
+            water: data.water,
+            max_height,
+            min_height,
+            revision,
+            gpu,
+        })
     }
 
     pub fn is_solid(&self, index: usize) -> bool {

@@ -156,7 +156,11 @@ pub struct Mesh {
     /// Whether the model is a mirror image (its X axis is flipped), as some exports are.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub mirror: bool,
-    /// Where the mesh's own origin (0, 0) is.
+    /// A model in map coordinates (#344): this point of the file, in its own units with the
+    /// up axis made Z, is taken as its origin, so the numbers stay small. The anchor is where it lies.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub offset: Option<[f64; 2]>,
+    /// Where the mesh's own origin (0, 0) is, after `offset`.
     pub anchor: LonLat,
     /// Metres per mesh unit.
     #[serde(default = "one")]
@@ -191,13 +195,15 @@ impl Up {
 
 impl Mesh {
     /// A vertex of the file in the mesh's own Z-up frame, before scale, turn and anchor:
-    /// the up axis made Z, then mirrored if asked.
+    /// the up axis made Z, moved by `offset`, then mirrored if asked.
     pub fn orient(&self, v: [f32; 3]) -> [f64; 3] {
         let [x, y, z] = v.map(f64::from);
         let [x, y, z] = match self.up {
             Up::Z => [x, y, z],
             Up::Y => [x, -z, y],
         };
+        let [ox, oy] = self.offset.unwrap_or([0.0, 0.0]);
+        let (x, y) = (x - ox, y - oy);
         [if self.mirror { -x } else { x }, y, z]
     }
 }

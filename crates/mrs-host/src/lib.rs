@@ -679,6 +679,7 @@ fn router(state: Arc<AppState>, web_dir: Option<PathBuf>) -> Router {
         .route("/api/data/import", post(import_data))
         .route("/api/data/osm", post(fetch_osm_all))
         .route("/api/data/model", post(model::post))
+        .route("/api/data/model/locate", get(model::locate))
         .route("/api/data/sounds", get(list_sounds).post(save_sound))
         .route("/api/data/media", get(list_media).post(save_media))
         .route("/api/data/field", get(data_field))

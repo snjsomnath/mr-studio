@@ -55,7 +55,9 @@ impl Target {
             "terrain" => Self::Terrain,
             other => {
                 let name = other.strip_prefix("data:").ok_or_else(|| {
-                    format!("'{other}' is not something a table can take; use buildings, trees, water, walkways, trips, terrain or data:<name>")
+                    format!(
+                        "'{other}' is not something a table can take; use buildings, trees, water, walkways, trips, terrain or data:<name>"
+                    )
                 })?;
                 if name.is_empty() || !name.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '-') {
                     return Err("a dataset name is lowercase letters, digits, dashes and underscores".into());
@@ -284,7 +286,8 @@ pub fn inspect(site: &Site, target: &Target, filename: &str, bytes: &[u8], optio
             path: None,
         },
         content: None,
-        terrain_crs: None, flatten: false,
+        terrain_crs: None,
+        flatten: false,
         file: None,
     };
 
@@ -485,7 +488,8 @@ pub fn inspect(site: &Site, target: &Target, filename: &str, bytes: &[u8], optio
             path: None,
         },
         content: Some(content),
-        terrain_crs: None, flatten: false,
+        terrain_crs: None,
+        flatten: false,
         file: None,
     }
 }
@@ -605,7 +609,8 @@ fn video(target: &Target, bytes: &[u8], found: crate::video::Video) -> Prepared 
             target: target.clone(),
             report: Report::refused(target, "video.target", message, "A video, not data."),
             content: None,
-            terrain_crs: None, flatten: false,
+            terrain_crs: None,
+            flatten: false,
             file: None,
         };
     };
@@ -659,7 +664,8 @@ fn video(target: &Target, bytes: &[u8], found: crate::video::Video) -> Prepared 
             path: None,
         },
         content: Some(bytes.to_vec()),
-        terrain_crs: None, flatten: false,
+        terrain_crs: None,
+        flatten: false,
         file: Some(format!("data/{name}.{}", found.format)),
     }
 }
@@ -680,7 +686,8 @@ fn drawing(site: &Site, target: &Target, text: &str, mut issues: Vec<Issue>) -> 
         target: target.clone(),
         report: Report { issues, ..Report::refused(target, "", "", summary) },
         content: None,
-        terrain_crs: None, flatten: false,
+        terrain_crs: None,
+        flatten: false,
         file: None,
     };
     let Target::Data(name) = target else {
@@ -736,7 +743,8 @@ fn drawing(site: &Site, target: &Target, text: &str, mut issues: Vec<Issue>) -> 
             path: None,
         },
         content: Some(plan.svg.into_bytes()),
-        terrain_crs: None, flatten: false,
+        terrain_crs: None,
+        flatten: false,
         file: Some(format!("data/{name}.svg")),
     }
 }
@@ -1101,7 +1109,14 @@ fn table(site: &Site, target: &Target, text: &str, mut issues: Vec<Issue>) -> Pr
         path: None,
     };
     let content = ok.then(|| out.into_bytes());
-    Prepared { target: target.clone(), report, content, terrain_crs: None, flatten: false, file: Some(format!("data/{}.csv", target.name())) }
+    Prepared {
+        target: target.clone(),
+        report,
+        content,
+        terrain_crs: None,
+        flatten: false,
+        file: Some(format!("data/{}.csv", target.name())),
+    }
 }
 
 // ---- Terrain -----------------------------------------------------------------
@@ -1240,14 +1255,19 @@ fn raised_footprints(site: &Site, raster: &GeoRaster) -> Option<(usize, usize, f
     let (mut raised, mut checked, mut rises) = (0, 0, Vec::new());
     for feature in features.iter().take(400) {
         for polygon in crate::bake::polygons(&feature["geometry"]) {
-            let outer: Vec<(f64, f64)> =
-                polygon.first().and_then(Value::as_array).map(|ring| ring.iter().filter_map(|p| Some((p.get(0)?.as_f64()?, p.get(1)?.as_f64()?))).collect()).unwrap_or_default();
+            let outer: Vec<(f64, f64)> = polygon
+                .first()
+                .and_then(Value::as_array)
+                .map(|ring| ring.iter().filter_map(|p| Some((p.get(0)?.as_f64()?, p.get(1)?.as_f64()?))).collect())
+                .unwrap_or_default();
             if outer.len() < 4 {
                 continue;
             }
             let n = outer.len() as f64;
             let (lon, lat) = (outer.iter().map(|p| p.0).sum::<f64>() / n, outer.iter().map(|p| p.1).sum::<f64>() / n);
-            let (w, s, e, north) = outer.iter().fold((f64::MAX, f64::MAX, f64::MIN, f64::MIN), |(w, s, e, n), p| (w.min(p.0), s.min(p.1), e.max(p.0), n.max(p.1)));
+            let (w, s, e, north) = outer
+                .iter()
+                .fold((f64::MAX, f64::MAX, f64::MIN, f64::MIN), |(w, s, e, n), p| (w.min(p.0), s.min(p.1), e.max(p.0), n.max(p.1)));
             // 6 m beyond each side of the footprint's box.
             let (dx, dy) = (6.0 / (111_320.0 * lat.to_radians().cos()), 6.0 / 110_540.0);
             let around = [(w - dx, lat), (e + dx, lat), (lon, s - dy), (lon, north + dy)];
@@ -1784,7 +1804,9 @@ mod tests {
         })]);
         let prepared = inspect(&site, &Target::Water, "river.geojson", &river, Options::default());
         assert!(prepared.report.ok, "{:?}", prepared.report.issues);
-        let lines = collection(vec![json!({ "type": "Feature", "properties": {}, "geometry": { "type": "LineString", "coordinates": [[11.969, 57.70], [11.971, 57.70]] } })]);
+        let lines = collection(vec![
+            json!({ "type": "Feature", "properties": {}, "geometry": { "type": "LineString", "coordinates": [[11.969, 57.70], [11.971, 57.70]] } }),
+        ]);
         assert!(!inspect(&site, &Target::Water, "l.geojson", &lines, Options::default()).report.ok, "water needs areas");
         let (site2, _) = apply(&site, prepared).unwrap();
         assert_eq!(site2.manifest.scene.water.as_ref().unwrap().path, "data/water.geojson");
@@ -1860,7 +1882,15 @@ mod tests {
         let rings: Vec<Vec<(f64, f64)>> = crate::bake::features(&path)
             .unwrap()
             .iter()
-            .flat_map(|f| crate::bake::polygons(&f["geometry"]).into_iter().flat_map(|p| p.iter().map(|ring| ring.as_array().unwrap().iter().map(|q| (q[0].as_f64().unwrap(), q[1].as_f64().unwrap())).collect())).collect::<Vec<_>>())
+            .flat_map(|f| {
+                crate::bake::polygons(&f["geometry"])
+                    .into_iter()
+                    .flat_map(|p| {
+                        p.iter()
+                            .map(|ring| ring.as_array().unwrap().iter().map(|q| (q[0].as_f64().unwrap(), q[1].as_f64().unwrap())).collect())
+                    })
+                    .collect::<Vec<_>>()
+            })
             .collect();
         let inside = |x: f64, y: f64, ring: &[(f64, f64)]| {
             let mut hit = false;
@@ -1872,9 +1902,16 @@ mod tests {
             }
             hit
         };
-        let boxes: Vec<[f64; 4]> = rings.iter().map(|r| r.iter().fold([f64::MAX, f64::MAX, f64::MIN, f64::MIN], |b, p| [b[0].min(p.0), b[1].min(p.1), b[2].max(p.0), b[3].max(p.1)])).collect();
+        let boxes: Vec<[f64; 4]> = rings
+            .iter()
+            .map(|r| {
+                r.iter().fold([f64::MAX, f64::MAX, f64::MIN, f64::MIN], |b, p| [b[0].min(p.0), b[1].min(p.1), b[2].max(p.0), b[3].max(p.1)])
+            })
+            .collect();
         // Even-odd over every ring, so courtyards stay ground.
-        let raised = |x: f64, y: f64| rings.iter().zip(&boxes).filter(|(r, b)| x >= b[0] && x <= b[2] && y >= b[1] && y <= b[3] && inside(x, y, r)).count() % 2 == 1;
+        let raised = |x: f64, y: f64| {
+            rings.iter().zip(&boxes).filter(|(r, b)| x >= b[0] && x <= b[2] && y >= b[1] && y <= b[3] && inside(x, y, r)).count() % 2 == 1
+        };
         // About a metre a pixel, as a national surface model.
         let dsm = wgs84_tif([57.6955, 11.9590, 57.7040, 11.9810], 0.000012, |x, y| if raised(x, y) { 25.0 } else { 10.0 });
         let plain = inspect(&site, &Target::Terrain, "dsm.tif", &dsm, Options::default());
