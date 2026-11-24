@@ -799,3 +799,166 @@
   min-height: 0;
   position: relative;
 }
+
+/* Gauge (#356): a half circle that fills, the number under it. */
+.mrs-gauge {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+.mrs-gauge-arc {
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+}
+.mrs-gauge-track,
+.mrs-gauge-fill {
+  fill: none;
+  stroke-width: 9;
+  stroke-linecap: round;
+}
+.mrs-gauge-track {
+  stroke: var(--mrs-line);
+}
+.mrs-gauge-target {
+  stroke: var(--mrs-text);
+  stroke-width: 2.5;
+}
+.mrs-gauge .mrs-number {
+  font-size: var(--mrs-type-number-s);
+}
+.mrs-gauge-chip {
+  flex-direction: row;
+  gap: var(--mrs-gap);
+}
+.mrs-gauge-chip .mrs-gauge-arc {
+  height: 100%;
+  width: auto;
+}
+.mrs-gauge-chip .mrs-number {
+  font-size: var(--mrs-type-number-s);
+}
+
+/* List and the donut's key (#356): a mark, a name, a number. */
+.mrs-list,
+.mrs-donut-key,
+.mrs-legend {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-evenly;
+  gap: calc(0.6 * var(--mrs-u));
+  min-height: 0;
+}
+.mrs-list {
+  flex: 1;
+}
+.mrs-list-row,
+.mrs-donut-row {
+  display: grid;
+  grid-template-columns: calc(1.2 * var(--mrs-u)) minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: calc(1 * var(--mrs-u));
+  font-size: var(--mrs-type-body);
+}
+.mrs-list-mark {
+  width: calc(1.2 * var(--mrs-u));
+  height: calc(1.2 * var(--mrs-u));
+  border-radius: 50%;
+}
+.mrs-list-label {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.mrs-list-value {
+  font-family: var(--mrs-font-number);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Donut (#356): the ring with its middle, the key beside it. */
+.mrs-donut {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  gap: calc(2 * var(--mrs-u));
+}
+.mrs-donut-hole {
+  flex: none;
+  height: 100%;
+  aspect-ratio: 1;
+  position: relative;
+  display: grid;
+  place-items: center;
+}
+.mrs-donut-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  -webkit-mask: radial-gradient(circle, transparent 52%, #000 53%);
+  mask: radial-gradient(circle, transparent 52%, #000 53%);
+}
+.mrs-donut-middle {
+  position: relative;
+  font-size: calc(3.6 * var(--mrs-u));
+}
+.mrs-donut {
+  position: relative;
+}
+.mrs-donut-key {
+  flex: 1;
+}
+
+/* Picture or video (#356). */
+.mrs-media {
+  flex: 1;
+  min-height: 0;
+  border-radius: calc(0.6 * var(--mrs-u));
+  overflow: hidden;
+  background: var(--mrs-line);
+}
+.mrs-media img,
+.mrs-media video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.mrs-media[data-fit='contain'] img,
+.mrs-media[data-fit='contain'] video {
+  object-fit: contain;
+}
+
+/* Legend (#356): big swatches, as on the controller's stage. */
+.mrs-legend-row {
+  display: flex;
+  align-items: center;
+  gap: calc(1.2 * var(--mrs-u));
+  font-size: var(--mrs-type-body);
+}
+.mrs-legend-swatch {
+  flex: none;
+  width: calc(3.2 * var(--mrs-u));
+  height: calc(2.2 * var(--mrs-u));
+  border-radius: calc(0.4 * var(--mrs-u));
+  background: var(--swatch);
+}
+.mrs-legend-swatch[data-shape='line'] {
+  height: calc(0.6 * var(--mrs-u));
+}
+.mrs-legend-swatch[data-shape='point'] {
+  width: calc(2.2 * var(--mrs-u));
+  border-radius: 50%;
+}
+.mrs-legend-band {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: calc(3 * var(--mrs-u));
+}

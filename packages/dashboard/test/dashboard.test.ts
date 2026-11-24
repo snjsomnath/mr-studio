@@ -10,7 +10,7 @@ import { GRID, SCREEN, SIZES } from '../src/rules.ts';
 import { contrast, STYLE_TOKENS, themeVariables, validateTheme } from '../src/theme.ts';
 import { controlProblems, panelReads, validateLayerPanels, validatePage, validatePanel, validateRibbon } from '../src/validate.ts';
 import { defineWidget } from '../src/registry.ts';
-import { coreWidgets, entityAt } from '../src/widgets/index.ts';
+import { coreWidgets, donutParts, entityAt, gaugeShare, mediaUrl } from '../src/widgets/index.ts';
 
 const json = (path: string) => JSON.parse(readFileSync(new URL(path, import.meta.url), 'utf8'));
 const registry = coreWidgets();
@@ -174,7 +174,7 @@ test('a site can restyle but not break the rules', () => {
 
 test('the registry is plain data an editor can read', () => {
   const described = registry.describe();
-  assert.deepEqual(described.map((w) => w.type), ['stat', 'bars', 'compare', 'balance', 'control', 'map', 'series', 'ramp', 'timeline', 'text', 'custom']);
+  assert.deepEqual(described.map((w) => w.type), ['stat', 'gauge', 'bars', 'list', 'donut', 'compare', 'balance', 'control', 'map', 'media', 'legend', 'series', 'ramp', 'timeline', 'text', 'custom']);
   assert.deepEqual(JSON.parse(JSON.stringify(described)), described);
   for (const widget of described) for (const prop of Object.values(widget.props)) assert.ok(prop.label, `${widget.type} props need labels`);
 });
@@ -276,4 +276,24 @@ test('a map panel picks the entity under a tap: an area that holds it, else the 
   assert.equal(widget.reads({ data: [{ name: 'roads' }, { name: 'buildings' }], hint: 'Tap a building' }, 'block'), 4);
   assert.deepEqual(validateLayerPanels([{ id: 'm', widget: 'map', size: 'block', title: 'Pick a building', props: { data: [{ name: 'roads', slot: 2 }], entities: 'buildings', shapes: { bind: 'shared.route' } } }], coreWidgets()), []);
   assert.ok(validateLayerPanels([{ id: 'm', widget: 'map', size: 'block', title: 'Bad', props: { shapes: 3 } }], coreWidgets()).length > 0);
+});
+
+test('gauge, list, donut, picture and legend widgets hold to the budget (#356)', () => {
+  const registry = coreWidgets();
+  assert.equal(gaugeShare(50, 0, 200), 0.25);
+  assert.equal(gaugeShare(500, 0, 200), 1);
+  assert.equal(gaugeShare('x', 0, 1), null);
+  assert.deepEqual(donutParts([1, 3, -2, undefined]), [{ from: 0, to: 0.25 }, { from: 0.25, to: 1 }, { from: 1, to: 1 }, { from: 1, to: 1 }]);
+  assert.equal(mediaUrl('media/plan view.png'), '/site/media/plan%20view.png');
+  assert.equal(mediaUrl('../secret.txt'), null);
+  assert.equal(mediaUrl('https://example.com/a.png'), null);
+  const rows = (n: number) => Array.from({ length: n }, (_, i) => ({ label: `Row ${i}`, value: i }));
+  // A tile list shows three rows; asking for more is over its size.
+  assert.deepEqual(validateLayerPanels([{ id: 'l', widget: 'list', size: 'tile', title: 'Busiest', props: { items: rows(3) } }], registry), []);
+  assert.ok(validateLayerPanels([{ id: 'l', widget: 'list', size: 'tile', title: 'Busiest', props: { items: rows(5) } }], registry).length > 0);
+  assert.deepEqual(validateLayerPanels([{ id: 'g', widget: 'gauge', size: 'chip', title: 'Battery', props: { value: { bind: 'shared.soc' }, max: 1, format: 'percent' } }], registry), []);
+  assert.deepEqual(validateLayerPanels([{ id: 'd', widget: 'donut', size: 'wide', title: 'Sources', props: { items: rows(4), headline: 0.4, format: 'percent' } }], registry), []);
+  assert.deepEqual(validateLayerPanels([{ id: 'm', widget: 'media', size: 'wide', title: 'The plan', props: { path: 'media/plan.png' } }], registry), []);
+  // A legend with no rows of its own reads the layer's.
+  assert.deepEqual(validateLayerPanels([{ id: 'k', widget: 'legend', size: 'tall', title: 'Key', props: {} }], registry), []);
 });
