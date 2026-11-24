@@ -105,6 +105,13 @@ export const BLOCKS: BlockDef[] = [
     unlocks: ['Energy communities (ECOM, #192)', 'District heating and pipe networks', 'Commuter flows between places'],
   },
   {
+    id: 'team-widgets', group: 'visual', name: 'Team widgets',
+    description: "A layer package's own kinds of dashboard panel (#353), held to the core widgets' contract: sizes, labelled props, bindings to published values, theme tokens and an honest read cost in the density budget. Known on the site as <layer>/<type>.",
+    usage: "defineWidget from @mrstudio/sdk, listed in the layer module's widgets; panels name it by type (own layer) or <layer>/<type> (TV pages). checkWidget says what is wrong. See docs/contracts/dashboard.md, Adding a widget",
+    detect: 'export function defineWidget',
+    unlocks: ['Panels no core widget covers, such as an energy community grid link', 'Trying a widget in one site before it moves into core'],
+  },
+  {
     id: 'sound-voices', group: 'visual', name: 'Sound voices',
     description: 'A sound bed of up to four slow voices (filtered noise, a hum with harmonics, a tone) declared in layer.json, whose level and colour follow published values or controls (#282). One level ceiling for the whole bed, slow glides, table only, muted by the controller Sound switch.',
     usage: "layer.json 'sound': [{ id, kind noise|hum|tone, level, centre, width, frequency, harmonics, glide_s }], each value a number or { bind: 'shared.<key>' or 'params.<id>', from, to, curve }. Or VoiceBed from @mrstudio/sdk. See docs/contracts/layer.md, Sound voices",

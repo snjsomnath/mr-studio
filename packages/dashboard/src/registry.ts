@@ -3,60 +3,10 @@
 // here except `mount` is plain data, so an editor can list widgets, draw a form
 // for a widget's props and refuse a drop the rules do not allow.
 
-import type { PanelSize } from '@mrstudio/sdk';
-
-/** One prop of a widget. `kind` decides both validation and the editor's field. */
-export type PropSpec = (
-  | { kind: 'text'; max: number }
-  | { kind: 'number'; min?: number; max?: number }
-  /** A number or a short string, shown as the widget's value. */
-  | { kind: 'value' }
-  | { kind: 'boolean' }
-  | { kind: 'enum'; options: string[] }
-  /** A colour ramp: a name from `@mrstudio/sdk`, or a ramp object (`{ stops }`) a layer publishes. */
-  | { kind: 'colormap' }
-  /** A categorical colour slot of the theme, 1 to 6. */
-  | { kind: 'slot' }
-  /** A list of numbers, such as a series' values. Always live. */
-  | { kind: 'numbers'; maxLength: number }
-  /** A list of objects with their own props. `max` is the most items the widget draws. */
-  | { kind: 'list'; max: number; item: Record<string, PropSpec> }
-) & {
-  /** Shown in the editor. */
-  label: string;
-  required?: boolean;
-  /** May be `{ "bind": "shared.x" }` instead of a literal. */
-  bindable?: boolean;
-  default?: unknown;
-};
-
-export interface WidgetHandle {
-  /** Draws the resolved props. Called on every change, so it must be cheap. */
-  update(props: Record<string, any>): void;
-  destroy?(): void;
-}
-
-/** What a widget gets when it is mounted. */
-export interface WidgetEnv {
-  size: PanelSize;
-  /** For `custom` only: hands the element to the layer's `panel` function. */
-  custom?: (el: HTMLElement) => { update?(): void } | void;
-}
-
-export interface WidgetDefinition {
-  type: string;
-  name: string;
-  description: string;
-  /** The sizes it may take, smallest first. */
-  sizes: PanelSize[];
-  props: Record<string, PropSpec>;
-  /** Stricter limits on a list prop for a size, such as fewer bars in a `wide` panel. */
-  listMax?: (prop: string, size: PanelSize) => number | undefined;
-  /** What the panel costs: the number of separate things a visitor has to read. */
-  reads(props: Record<string, any>, size: PanelSize): number;
-  /** Builds the widget inside a panel body. Only called in a browser. */
-  mount(el: HTMLElement, env: WidgetEnv): WidgetHandle;
-}
+import { checkWidget, teamWidgetType } from '@mrstudio/sdk';
+import type { PanelSize, PropSpec, WidgetDefinition } from '@mrstudio/sdk';
+export type { PropSpec, WidgetDefinition, WidgetEnv, WidgetHandle } from '@mrstudio/sdk';
+export { defineWidget } from '@mrstudio/sdk';
 
 export class WidgetRegistry {
   private widgets = new Map<string, WidgetDefinition>();
@@ -65,6 +15,36 @@ export class WidgetRegistry {
     if (this.widgets.has(widget.type)) throw new Error(`widget '${widget.type}' is already registered`);
     this.widgets.set(widget.type, widget);
     return this;
+  }
+
+  /**
+   * Adds a layer package's own widgets (#353), as `<layer>/<type>`. A widget with problems is
+   * skipped and its problems returned; a layer rebuilt while the app runs replaces its widgets.
+   * A team widget that throws only breaks its own panel, as a core one would.
+   */
+  registerTeam(layer: string, widgets: readonly unknown[] | undefined): string[] {
+    if (widgets === undefined) return [];
+    if (!Array.isArray(widgets)) return [`layer '${layer}': widgets is a list made with defineWidget`];
+    const problems: string[] = [];
+    for (const widget of widgets) {
+      const found = checkWidget(widget);
+      if (found.length) {
+        problems.push(...found.map((p) => `layer '${layer}': ${p}`));
+        continue;
+      }
+      const def = widget as WidgetDefinition;
+      const type = teamWidgetType(layer, def.type);
+      this.widgets.set(type, { ...def, type, owner: layer });
+    }
+    return problems;
+  }
+
+  /**
+   * The widget a panel names. A layer's own panels may name its team widgets without the
+   * `<layer>/` part; core widgets win when both exist.
+   */
+  find(type: string, layer?: string): WidgetDefinition | undefined {
+    return this.widgets.get(type) ?? (layer ? this.widgets.get(teamWidgetType(layer, type)) : undefined);
   }
 
   get(type: string): WidgetDefinition | undefined {
@@ -76,12 +56,7 @@ export class WidgetRegistry {
   }
 
   /** The registry as JSON: what an editor needs for its palette and its forms. */
-  describe(): { type: string; name: string; description: string; sizes: PanelSize[]; props: Record<string, PropSpec> }[] {
-    return this.list().map(({ type, name, description, sizes, props }) => ({ type, name, description, sizes, props }));
+  describe(): { type: string; name: string; description: string; sizes: PanelSize[]; props: Record<string, PropSpec>; owner?: string }[] {
+    return this.list().map(({ type, name, description, sizes, props, owner }) => ({ type, name, description, sizes, props, ...(owner ? { owner } : {}) }));
   }
-}
-
-/** Declares a widget. */
-export function defineWidget(widget: WidgetDefinition): WidgetDefinition {
-  return widget;
 }

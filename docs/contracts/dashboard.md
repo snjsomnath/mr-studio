@@ -109,6 +109,15 @@ export const gauge = defineWidget({
 A widget uses only the type and colour tokens in `dashboard.css`, states an honest cost, and is added to `coreWidgets`.
 Every prop needs a `label`, because an editor will draw a form from the schema.
 
+**Core or a team's own (#353).** Widgets that most tables need are core: they live here, work without
+code and are added to `coreWidgets`. A team that needs something else writes it in its layer package
+with the same `defineWidget` (exported from `@mrstudio/sdk`) and lists it in the module's `widgets`.
+The runtime registers it as `<layer id>/<type>` in the one registry the controller, the TV pages and the
+table's ribbon share, after checking it (`checkWidget`: a lower-case type, a name and description,
+known sizes, `reads`, `mount`, and a label on every prop). The layer's own panels may name it by
+`type` alone; core widgets win a clash. It is styled with the `--mrs-*` tokens, so it follows the theme.
+When two teams have each written the same widget, it moves into core.
+
 ## Style tokens
 
 `color.background`, `color.panel`, `color.line`, `color.text`, `color.muted`, `color.accent`, `color.accent-ink`, `color.good`, `color.warn`, `color.bad`, `data.1` to `data.6`, `font.text`, `font.number`, `shape.radius` (`none`, `small`, `medium`, `large`), `panel.style` (`filled`, `outlined`, `glass`, `plain`), `rail.look` (`tiles`, `bare`: how the controller draws layer buttons) and `density` (`comfortable`, `minimal`: minimal drops surfaces, dividers and group labels).
