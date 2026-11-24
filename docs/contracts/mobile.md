@@ -32,7 +32,9 @@ A phone cannot activate layers, publish values or open engine streams. The host 
 
 ## Reaching the studio
 
-The default is the local network. Two later additions use the same protocol unchanged:
+The default is the local network.
 
-- **Relay**: for venues where phones cannot reach the studio's network, the host opens an outbound connection to a relay and phones connect to the relay's URL instead.
-- **HTTPS**: phone features that need a secure context (camera, motion sensors) require the relay or a local certificate. Plain controls and tools do not.
+- **Relay** (#89): for venues where phones cannot reach the studio's network (guest Wi-Fi with client isolation, or phones on mobile data), the host opens one outbound WebSocket to a relay and the QR code points at the relay instead. Phones speak the same protocol through it. Setting one up is in [docs/relay.md](../relay.md).
+- **HTTPS**: phone features that need a secure context (camera, motion sensors) require the relay (deployed behind HTTPS) or a local certificate. Plain controls and tools do not.
+
+Through the relay a phone gets exactly what it gets on the local network and nothing more. The host treats relayed requests as coming from the network, so routes that only the studio computer may use refuse them. Only GET and HEAD pass, and a socket through the relay must open with a phone's `hello`.

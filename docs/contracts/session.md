@@ -335,6 +335,10 @@ Events:
 | `site.tv`, `site.display` | `{ tv }`, `{ display }` after those settings changed |
 | `site.settings` | `{ name, timezone, branding }` after `site.table`, or an undo or outside edit of those keys. The controller starts again to show the new title and welcome line |
 
+### The session changing
+
+`session.changed {session}` is sent to every surface when the session's details change after the welcome, such as the join address when the host links to or loses a phone relay (#89). Surfaces showing the QR code redraw it.
+
 ### Running unattended (#79)
 
 A table in an exhibition runs all day with nobody at the computer.
