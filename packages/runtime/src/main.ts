@@ -20,6 +20,18 @@ import { Store } from './store.ts';
 import { collectProblems, Workbench } from './workbench.ts';
 import './style.css';
 
+// A stylesheet that comes with code loaded later (the map's, with the table) can fail to load
+// while the page reloads or the host restarts; WebKit then failed the whole import and the table
+// stayed blank (#261's smoke). The code still runs, so the page carries on without it until the
+// next reload brings it. A failed script still fails.
+window.addEventListener('vite:preloadError', (event) => {
+  const message = String((event as Event & { payload?: Error }).payload?.message ?? '');
+  if (/preload CSS/i.test(message)) {
+    event.preventDefault();
+    console.warn(message);
+  }
+});
+
 const ROLES: Role[] = ['table', 'tv', 'phone', 'dev', 'guide'];
 
 function el(tag: string, className: string, text?: string): HTMLElement {
