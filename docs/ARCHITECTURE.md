@@ -69,7 +69,7 @@ packages/
   sdk/            @mrstudio/sdk: layer API, protocol types, engine client, field rendering
   dashboard/      @mrstudio/dashboard: the TV panel grid, widgets, density budget, themes
   runtime/        @mrstudio/runtime: surfaces (table, tv, phone, dev), scene composer, layer manager, generated controls
-  layers/         core layer packages: basemap, ambient (cars, building-lights, transit, trees), slideshow, sunlight, sketch, then wind, stormwater, isovist, ...
+  layers/         core layer packages: basemap, ambient (cars, building-lights, street-life, street-glow, transit, trees), slideshow, sunlight, sketch, then wind, stormwater, isovist, ...
   mcp/            @mrstudio/mcp: MCP server that lets a team's LLM assemble sites and draft core requests
 sites/
   sample/         small synthetic site used by tests and layer dev mode
