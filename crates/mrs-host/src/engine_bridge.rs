@@ -2,8 +2,14 @@
 //!
 //! The thread steps every open stream inside a frame budget and pushes a frame
 //! when a job's revision changes. Slow connections lose frames, never queue them.
+//!
+//! A table runs all day with nobody at the computer (#79), so the thread looks after itself:
+//! when the engine panics or its GPU is lost, it starts a new engine (on the CPU after a GPU
+//! failure) with the same scene and reports an [`Incident`]. Streams do not survive that; the
+//! host tells the surfaces with `engine.restarted` and they open new ones.
 
 use std::collections::HashMap;
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::mpsc::{self, RecvTimeoutError, TryRecvError};
 use std::time::{Duration, Instant};
 
@@ -35,12 +41,43 @@ pub struct OpenRequest {
 enum Command {
     Info(oneshot::Sender<EngineInfo>),
     Open(OpenRequest, oneshot::Sender<Result<u32, String>>),
-    Set { conn: u64, stream: u32, params: Value, reply: oneshot::Sender<Result<(), String>> },
-    Close { conn: u64, stream: u32 },
+    Set {
+        conn: u64,
+        stream: u32,
+        params: Value,
+        reply: oneshot::Sender<Result<(), String>>,
+    },
+    Close {
+        conn: u64,
+        stream: u32,
+    },
     CloseConnection(u64),
     LoadScene(SceneData, oneshot::Sender<Result<(), String>>),
     Relocate(SceneData, LonLat, oneshot::Sender<Result<(), String>>),
+    /// For tests and the soak run: makes the engine thread fail as a GPU fault would.
+    Fault,
 }
+
+/// Something the engine thread recovered from, for the operator log and the surfaces.
+#[derive(Debug, Clone)]
+pub struct Incident {
+    /// What happened and what was done, in words for the operator log.
+    pub message: String,
+    /// The backend the new engine runs on.
+    pub backend: Backend,
+}
+
+/// Why `run` returned.
+enum Exit {
+    /// The host dropped its handle: the thread ends.
+    Closed,
+    /// The GPU device was lost; the engine must be replaced.
+    Lost,
+}
+
+/// After this many restarts within a minute the thread waits before trying again, so a fault
+/// that comes back at once does not spin a core.
+const RESTARTS_PER_MINUTE: usize = 5;
 
 #[derive(Clone)]
 pub struct EngineHandle {
@@ -60,23 +97,18 @@ struct Stream {
 }
 
 impl EngineHandle {
-    pub fn spawn(backend: Backend, scene: SceneData, origin: LonLat) -> anyhow::Result<Self> {
+    pub fn spawn(backend: Backend, scene: SceneData, origin: LonLat, incidents: tmpsc::UnboundedSender<Incident>) -> anyhow::Result<Self> {
         let (tx, rx) = mpsc::channel();
         let (ready_tx, ready_rx) = mpsc::channel();
-        std::thread::Builder::new().name("mrs-engine".into()).spawn(move || {
-            let engine = Engine::new(EngineConfig { backend }).and_then(|mut e| e.load_scene(scene).map(|_| e));
-            match engine {
-                Ok(engine) => {
-                    let _ = ready_tx.send(Ok(()));
-                    run(engine, origin, rx);
-                }
-                Err(e) => {
-                    let _ = ready_tx.send(Err(e.to_string()));
-                }
-            }
-        })?;
+        std::thread::Builder::new().name("mrs-engine".into()).spawn(move || supervise(backend, scene, origin, rx, ready_tx, incidents))?;
         ready_rx.recv()?.map_err(|e| anyhow!("engine failed to start: {e}"))?;
         Ok(Self { tx })
+    }
+
+    /// Makes the engine thread fail as a GPU fault would. For tests and soak runs (#79).
+    #[doc(hidden)]
+    pub fn inject_fault(&self) {
+        let _ = self.send(Command::Fault);
     }
 
     fn send(&self, command: Command) -> anyhow::Result<()> {
@@ -125,7 +157,77 @@ impl EngineHandle {
     }
 }
 
-fn run(mut engine: Engine, mut origin: LonLat, rx: mpsc::Receiver<Command>) {
+/// Runs engines on this thread until the host lets go: a new one after each panic or GPU loss.
+fn supervise(
+    requested: Backend,
+    scene: SceneData,
+    origin: LonLat,
+    rx: mpsc::Receiver<Command>,
+    ready: mpsc::Sender<Result<(), String>>,
+    incidents: tmpsc::UnboundedSender<Incident>,
+) {
+    let mut backend = requested;
+    // The scene and place the next engine starts with; `run` keeps them current.
+    let mut current = (scene, origin);
+    let mut started = false;
+    let mut restarts: Vec<Instant> = Vec::new();
+    let mut reason = String::new();
+    loop {
+        let built = Engine::new(EngineConfig { backend }).and_then(|mut e| e.load_scene(current.0.clone()).map(|_| e));
+        let engine = match built {
+            Ok(engine) => engine,
+            Err(e) if !started => {
+                let _ = ready.send(Err(e.to_string()));
+                return;
+            }
+            Err(e) if backend != Backend::Cpu => {
+                reason = format!("{reason}; a new engine on the GPU failed too ({e})");
+                backend = Backend::Cpu;
+                continue;
+            }
+            Err(e) => {
+                tracing::error!("the engine could not be started again: {e}");
+                let _ = incidents.send(Incident { message: format!("{reason}. The engine could not be started again: {e}"), backend });
+                return;
+            }
+        };
+        let running_on = engine.info().backend;
+        if started {
+            let message = format!("{reason}. A new engine runs on the {}.", if running_on == Backend::Gpu { "GPU" } else { "CPU" });
+            tracing::warn!("{message}");
+            let _ = incidents.send(Incident { message, backend: running_on });
+        } else {
+            let _ = ready.send(Ok(()));
+            started = true;
+        }
+        let outcome = catch_unwind(AssertUnwindSafe(|| run(engine, &mut current, &rx)));
+        reason = match outcome {
+            Ok(Exit::Closed) => return,
+            Ok(Exit::Lost) => "The GPU was lost".to_string(),
+            Err(panic) => {
+                let what = panic
+                    .downcast_ref::<&str>()
+                    .map(|s| s.to_string())
+                    .or_else(|| panic.downcast_ref::<String>().cloned())
+                    .unwrap_or_default();
+                format!("The engine failed ({})", if what.is_empty() { "no message" } else { what.as_str() })
+            }
+        };
+        // A GPU that failed once is not trusted again until the table is started anew.
+        if running_on == Backend::Gpu {
+            backend = Backend::Cpu;
+        }
+        let now = Instant::now();
+        restarts.retain(|t| now.duration_since(*t) < Duration::from_secs(60));
+        restarts.push(now);
+        if restarts.len() > RESTARTS_PER_MINUTE {
+            std::thread::sleep(Duration::from_secs(10));
+        }
+    }
+}
+
+fn run(mut engine: Engine, current: &mut (SceneData, LonLat), rx: &mpsc::Receiver<Command>) -> Exit {
+    let mut origin = current.1;
     let mut streams: HashMap<u32, Stream> = HashMap::new();
     let mut next_stream = 1u32;
     let mut busy = false;
@@ -135,13 +237,13 @@ fn run(mut engine: Engine, mut origin: LonLat, rx: mpsc::Receiver<Command>) {
             match rx.try_recv() {
                 Ok(c) => Some(c),
                 Err(TryRecvError::Empty) => None,
-                Err(TryRecvError::Disconnected) => return,
+                Err(TryRecvError::Disconnected) => return Exit::Closed,
             }
         } else {
             match rx.recv_timeout(Duration::from_secs(5)) {
                 Ok(c) => Some(c),
                 Err(RecvTimeoutError::Timeout) => None,
-                Err(RecvTimeoutError::Disconnected) => return,
+                Err(RecvTimeoutError::Disconnected) => return Exit::Closed,
             }
         };
         let mut pending = first;
@@ -169,6 +271,7 @@ fn run(mut engine: Engine, mut origin: LonLat, rx: mpsc::Receiver<Command>) {
                     }
                 }
                 Command::LoadScene(scene, reply) => {
+                    current.0 = scene.clone();
                     let _ = reply.send(engine.load_scene(scene).map_err(|e| e.to_string()));
                 }
                 Command::Relocate(scene, at, reply) => {
@@ -176,8 +279,10 @@ fn run(mut engine: Engine, mut origin: LonLat, rx: mpsc::Receiver<Command>) {
                         engine.drop_job(stream.job);
                     }
                     origin = at;
+                    *current = (scene.clone(), at);
                     let _ = reply.send(engine.load_scene(scene).map_err(|e| e.to_string()));
                 }
+                Command::Fault => panic!("a fault was injected"),
                 Command::CloseConnection(conn) => {
                     streams.retain(|_, s| {
                         if s.conn == conn {
@@ -188,6 +293,9 @@ fn run(mut engine: Engine, mut origin: LonLat, rx: mpsc::Receiver<Command>) {
                 }
             }
             pending = rx.try_recv().ok();
+        }
+        if engine.lost() {
+            return Exit::Lost;
         }
 
         let active = streams.values().filter(|s| s.running).count().max(1) as u32;

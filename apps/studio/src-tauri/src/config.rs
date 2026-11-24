@@ -248,8 +248,12 @@ pub struct Settings {
     /// Listen on the local network so phones can join. Off keeps the host on this
     /// computer only, which also avoids the Windows firewall prompt.
     pub lan: bool,
-    /// Start the last site on the saved displays without showing the launcher.
+    /// Start the last site on the saved displays without showing the launcher. The app also
+    /// starts with the computer then (a login item; #79).
     pub autostart: bool,
+    /// Restart the presented table every night at this local time ("03:00"), for a table
+    /// that runs for weeks (#79). None: never.
+    pub nightly_restart: Option<String>,
     /// Do not look for a newer version when the app starts. Checking is the default.
     pub skip_update_check: bool,
     /// The sites opened last, newest first.

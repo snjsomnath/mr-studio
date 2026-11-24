@@ -81,6 +81,26 @@ async function main() {
   status.hidden = true;
   // New data was brought into the site: layers read their data once, so every surface starts again. The editor does this itself.
   if (!editing) connection.on('site.changed', () => location.reload());
+  // The engine failed and a new one took over (#79): its streams are gone, so the page starts again.
+  if (!editing && !phone) connection.on('engine.restarted', () => location.reload());
+  // A table or controller window of the desktop app says it is alive, with its frame rate, so the
+  // app's watchdog can reload one that went blank or froze (#79).
+  const windowName = (window as { __MRS_WINDOW__?: string }).__MRS_WINDOW__;
+  if (windowName && (role === 'table' || role === 'tv')) {
+    let frames = 0;
+    const count = () => {
+      frames++;
+      requestAnimationFrame(count);
+    };
+    requestAnimationFrame(count);
+    let since = performance.now();
+    window.setInterval(() => {
+      const now = performance.now();
+      connection.alive(windowName, (frames * 1000) / (now - since));
+      frames = 0;
+      since = now;
+    }, 2000);
+  }
   // The controller's title, logo and welcome line changed (Table settings, #73): it draws them once, so it starts again.
   if (role === 'tv' && !editing) connection.on('site.settings', () => location.reload());
   store.onSettings(() => (document.title = `${store.state.site.branding.title ?? 'MR Studio'} · ${store.state.site.name}`));

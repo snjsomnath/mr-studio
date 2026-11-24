@@ -114,6 +114,12 @@ export class Connection {
     });
   }
 
+  /** Says this window of the desktop app is alive and drawing at `fps` (#79). Dropped while disconnected. */
+  alive(window: string, fps: number): void {
+    const socket = this.socket;
+    if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ t: 'alive', window, fps: Math.round(fps * 10) / 10 }));
+  }
+
   /** Subscribes to an event. Returns the function that unsubscribes. */
   on(event: string, listener: Listener): () => void {
     let set = this.listeners.get(event);

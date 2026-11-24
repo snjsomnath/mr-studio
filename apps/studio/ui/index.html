@@ -115,8 +115,15 @@
         <section class="panel">
           <label class="check"><input id="lan" type="checkbox" /> Let phones on this network join <span class="hint" data-only="windows">Windows may ask once to allow network access.</span></label>
           <p class="hint indent">Phones scan the code on the controller. Off keeps everything on this computer.</p>
-          <label class="check"><input id="autostart" type="checkbox" /> Present the last table by itself every time the app opens</label>
-          <p class="hint indent">For a finished installation: the app starts straight on the screens chosen under Screens.</p>
+          <label class="check"><input id="autostart" type="checkbox" /> Start with this computer and present the last table by itself</label>
+          <p class="hint indent">For a finished installation: when someone logs in, MR Studio starts straight on the screens chosen under Screens.</p>
+        </section>
+        <section class="panel">
+          <h2>Running unattended</h2>
+          <p class="hint">While a table is presented, MR Studio watches it. A window that goes blank or stops answering is reloaded, and a table that stops is started again. A failed graphics card hands over to the processor. None of this shows on the screens.</p>
+          <label class="check"><input id="nightly-on" type="checkbox" /> Restart the table every night at <input id="nightly-time" type="time" value="03:00" /></label>
+          <p class="hint indent">For a table that runs for weeks. It takes a few seconds, best when nobody is there.</p>
+          <div class="row"><button id="operator-log" type="button">Show the operator log</button><span class="hint">One file a day: what started, stopped and was recovered.</span></div>
         </section>
         <section class="panel">
           <h2>Keys while presenting</h2>

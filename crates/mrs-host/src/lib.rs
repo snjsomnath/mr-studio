@@ -5,6 +5,7 @@
 mod basemap;
 mod calibration;
 mod engine_bridge;
+pub mod health;
 mod hub;
 mod layers;
 mod model;
@@ -66,6 +67,8 @@ pub struct AppState {
     pub calibration: Calibration,
     /// Outside services and their keys. Surfaces reach them through the host only.
     pub sources: Arc<Sources>,
+    /// Windows' signs of life and recovered incidents, for running unattended (#79).
+    pub health: health::Health,
     transit: transit::Cache,
     /// One import at a time.
     imports: tokio::sync::Mutex<()>,
@@ -512,6 +515,12 @@ impl RunningHost {
         }
     }
 
+    /// Whether the server is still serving. False after it stopped by itself, which only a
+    /// failure does: the desktop app's watchdog then starts the table again (#79).
+    pub fn is_serving(&self) -> bool {
+        !self.task.is_finished()
+    }
+
     /// Runs until the server stops.
     pub async fn wait(self) {
         let _ = self.task.await;
@@ -536,7 +545,8 @@ pub async fn start(config: HostConfig) -> anyhow::Result<RunningHost> {
     let twin = Bytes::from(twin.encode());
     let calibration = Calibration::load(&site.dir);
     let catalog = layers::load_catalog(&site, &config.layers_dir)?;
-    let engine = EngineHandle::spawn(config.backend, scene, site.manifest.origin)?;
+    let (incidents, mut incident_rx) = tokio::sync::mpsc::unbounded_channel();
+    let engine = EngineHandle::spawn(config.backend, scene, site.manifest.origin, incidents)?;
     let info = engine.info().await?;
     tracing::info!("engine: {:?} backend{}", info.backend, info.adapter.as_ref().map(|a| format!(", {a}")).unwrap_or_default());
 
@@ -562,7 +572,20 @@ pub async fn start(config: HostConfig) -> anyhow::Result<RunningHost> {
         transit: Default::default(),
         imports: Default::default(),
         osm_cache: Default::default(),
+        health: Default::default(),
     });
+    // An engine that recovered from a failure (#79): noted for the operator log, and the
+    // surfaces open their streams again on the new engine.
+    {
+        let state = Arc::downgrade(&state);
+        tokio::spawn(async move {
+            while let Some(incident) = incident_rx.recv().await {
+                let Some(state) = state.upgrade() else { break };
+                state.health.note(&incident.message);
+                state.hub.emit("engine.restarted", json!({ "message": incident.message, "backend": incident.backend }));
+            }
+        });
+    }
     let app = router(state.clone(), config.web_dir.clone());
     // Watches site.json for changes made outside the host (#72). It stops when the host is gone.
     {

@@ -1242,3 +1242,46 @@ async fn a_broken_hand_edit_is_reported_and_can_be_undone() {
     assert_eq!(back, serde_json::from_str::<Value>(&good).unwrap());
     host.shutdown().await;
 }
+
+#[tokio::test]
+async fn a_failed_engine_is_replaced_and_the_surfaces_are_told() {
+    let host = host().await;
+    let mut table = Surface::join(&host, "table", None).await.unwrap();
+    let params = json!({ "mode": "instant", "time": "2026-06-21T13:00:00Z" });
+    table.request("engine.open", json!({ "kernel": "sunlight", "params": params, "fields": ["shadow"] })).await.unwrap();
+    table.frame().await;
+
+    host.state.engine.inject_fault();
+    let restarted = table.event("engine.restarted").await;
+    assert_eq!(restarted["backend"], "cpu");
+    assert!(restarted["message"].as_str().unwrap().contains("a fault was injected"), "{restarted}");
+    let (incidents, total) = host.state.health.incidents_after(0);
+    assert_eq!(total, 1);
+    assert!(incidents[0].1.contains("A new engine runs on the CPU"));
+
+    // The new engine has the scene: a stream opened on it works as before.
+    assert_eq!(table.request("engine.info", json!({})).await.unwrap()["backend"], "cpu");
+    let opened = table.request("engine.open", json!({ "kernel": "sunlight", "params": params, "fields": ["shadow"] })).await.unwrap();
+    assert!(opened["stream"].as_u64().is_some());
+    let frame = table.frame().await;
+    assert_eq!((u32_at(&frame, 16), u32_at(&frame, 20)), (1000, 600));
+    host.shutdown().await;
+}
+
+#[tokio::test]
+async fn windows_say_they_are_alive() {
+    let host = host().await;
+    let mut table = Surface::join(&host, "table", None).await.unwrap();
+    let mut phone = Surface::join(&host, "phone", Some(&host.state.hub.session().code)).await.unwrap();
+    let beat = |window: &str| Message::Text(json!({ "t": "alive", "window": window, "fps": 58.5 }).to_string().into());
+    table.socket.send(beat("surface-1-0-table")).await.unwrap();
+    // A phone is not a window of the app; its beats are not taken.
+    phone.socket.send(beat("surface-1-1-tv")).await.unwrap();
+    // A request after the beat: when it is answered, the beat has been read.
+    table.request("engine.info", json!({})).await.unwrap();
+    phone.request("engine.info", json!({})).await.ok();
+    let windows = host.state.health.windows();
+    assert_eq!(windows.len(), 1, "{windows:?}");
+    assert_eq!((windows[0].window.as_str(), windows[0].role.as_str(), windows[0].fps), ("surface-1-0-table", "table", 58.5));
+    host.shutdown().await;
+}

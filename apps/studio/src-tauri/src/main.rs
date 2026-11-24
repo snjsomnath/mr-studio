@@ -13,8 +13,10 @@ mod config;
 mod file_menu;
 #[cfg(windows)]
 mod models;
+mod operator;
 mod sites;
 mod updates;
+mod watchdog;
 
 use std::collections::BTreeMap;
 use std::net::SocketAddr;
@@ -99,6 +101,8 @@ struct Shell {
     /// A table file the app was asked to open (a double click, or `mr-studio file.mrstable`)
     /// that Home has not picked up yet.
     opened_file: Mutex<Option<PathBuf>>,
+    /// What happened while nobody watched: one file a day for the team (#79).
+    operator: operator::OperatorLog,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -144,6 +148,9 @@ fn main() -> anyhow::Result<()> {
             });
         }))
         .plugin(tauri_plugin_dialog::init())
+        // Starting with the computer, for a table that runs unattended (#79). The flag marks a
+        // start by the system; the saved settings decide what is presented.
+        .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, Some(vec!["--at-login"])))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
@@ -187,7 +194,8 @@ fn main() -> anyhow::Result<()> {
             sources_remove,
             sources_test,
             import_table,
-            take_opened_file
+            take_opened_file,
+            open_operator_log
         ])
         .on_menu_event(|app, event| {
             let id = event.id().as_ref();
@@ -233,7 +241,12 @@ fn main() -> anyhow::Result<()> {
                 file_debounce: file_menu::Debounce::new(),
                 sources: Arc::new(sources),
                 opened_file: Mutex::new(None),
+                operator: operator::OperatorLog::new(paths.app_log_dir().ok()),
             });
+            app.state::<Shell>().operator.note(format!("MR Studio {} started.", app.package_info().version));
+            // Keeps a presented table running with nobody at the computer (#79).
+            let handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move { watchdog::run(handle).await });
             // macOS has one menu bar for the app. Elsewhere the File menu sits on the editor window only.
             if cfg!(target_os = "macos") {
                 app.set_menu(file_menu::app_menu(app.handle())?)?;
@@ -252,10 +265,10 @@ fn main() -> anyhow::Result<()> {
         })
         .build(tauri::generate_context!())
         .context("building the app")?
-        .run(|app, event| {
+        .run(|app, event| match event {
             // macOS hands a double-clicked table file to the running app as an event.
             #[cfg(any(target_os = "macos", target_os = "ios"))]
-            if let tauri::RunEvent::Opened { urls } = event {
+            tauri::RunEvent::Opened { urls } => {
                 for url in urls {
                     if let Ok(path) = url.to_file_path() {
                         if is_table_file(&path) {
@@ -264,8 +277,8 @@ fn main() -> anyhow::Result<()> {
                     }
                 }
             }
-            #[cfg(not(any(target_os = "macos", target_os = "ios")))]
-            let _ = (app, event);
+            tauri::RunEvent::Exit => app.state::<Shell>().operator.note("MR Studio quit."),
+            _ => {}
         });
     Ok(())
 }
@@ -746,7 +759,9 @@ fn open_surfaces(app: &AppHandle, port: u16, displays: &Displays) -> anyhow::Res
             .inner_size(1400.0, 840.0)
             .visible(false)
             .initialization_script(format!(
-                "window.__MRS_SHELL__ = true;\n{SHORTCUTS}\n{}\n{}\n{}",
+                // The window's name, which its page sends with each sign of life (#79).
+                "window.__MRS_SHELL__ = true;\nwindow.__MRS_WINDOW__ = {};\n{SHORTCUTS}\n{}\n{}\n{}",
+                serde_json::to_string(&label).expect("a label is a string"),
                 colour::SCRIPT,
                 colour.script(),
                 // The table shows the way back only when it is alone, on the author's own screen.
@@ -769,6 +784,9 @@ fn open_surfaces(app: &AppHandle, port: u16, displays: &Displays) -> anyhow::Res
         }
         tracing::info!("{} window on display {:?}", spec.role, target.map(|d| (d.index, d.name.as_deref().unwrap_or(""))));
     }
+    let name = shell.running.lock().unwrap().as_ref().map(|r| r.name.clone()).unwrap_or_default();
+    let roles: Vec<&str> = displays.windows.iter().map(|w| w.role.as_str()).collect();
+    shell.operator.note(format!("Presenting '{name}' ({}).", roles.join(", ")));
     Ok(())
 }
 
@@ -871,6 +889,8 @@ struct LauncherState {
     configured: bool,
     lan: bool,
     autostart: bool,
+    /// The nightly restart time, "03:00", or none.
+    nightly_restart: Option<String>,
     running: Option<Running>,
     /// The running site is on the displays, not only open in the editor.
     presenting: bool,
@@ -931,6 +951,7 @@ fn launcher_state(app: AppHandle, shell: State<'_, Shell>) -> Result<LauncherSta
         lan: settings.lan,
         // A table that starts by itself is a choice for a finished installation, never the default.
         autostart: settings.autostart,
+        nightly_restart: settings.nightly_restart.clone(),
         running,
         presenting: is_presenting(&app),
         error,
@@ -1055,8 +1076,12 @@ async fn start(app: AppHandle, shell: State<'_, Shell>, request: StartRequest) -
     displays.write(&shell.displays_path()).map_err(text)?;
     let mut settings = shell.settings();
     settings.lan = request.lan;
+    let login_changed = settings.autostart != request.autostart;
     settings.autostart = request.autostart;
     settings.write(&shell.settings_path()).map_err(text)?;
+    if login_changed {
+        start_with_computer(&app, request.autostart)?;
+    }
 
     // An editor that is open on this site stays open; its changes are already on the table.
     let site = ensure_running(&app, &request.site, request.lan).await.map_err(text)?;
@@ -1207,11 +1232,28 @@ fn presenting_state(app: AppHandle, shell: State<'_, Shell>) -> Result<Presentin
 /// opens" from Displays and settings (#40). A table that is running is restarted on the
 /// new network setting, and the editor and the screens follow it.
 #[tauri::command]
-async fn save_settings(app: AppHandle, shell: State<'_, Shell>, lan: bool, autostart: bool) -> Result<(), String> {
+async fn save_settings(
+    app: AppHandle,
+    shell: State<'_, Shell>,
+    lan: bool,
+    autostart: bool,
+    nightly_restart: Option<String>,
+) -> Result<(), String> {
+    let nightly_restart = nightly_restart.filter(|t| !t.is_empty());
+    if let Some(at) = &nightly_restart {
+        if chrono::NaiveTime::parse_from_str(at, "%H:%M").is_err() {
+            return Err(format!("'{at}' is not a time of day, such as 03:00"));
+        }
+    }
     let mut settings = shell.settings();
     settings.lan = lan;
+    let login_changed = settings.autostart != autostart;
     settings.autostart = autostart;
+    settings.nightly_restart = nightly_restart;
     settings.write(&shell.settings_path()).map_err(text)?;
+    if login_changed {
+        start_with_computer(&app, autostart)?;
+    }
     let running = shell.running.lock().unwrap().clone();
     if let Some(running) = running.filter(|r| r.lan != lan) {
         let presenting = is_presenting(&app);
@@ -1228,6 +1270,37 @@ async fn save_settings(app: AppHandle, shell: State<'_, Shell>, lan: bool, autos
         }
     }
     Ok(())
+}
+
+/// Makes the app start when someone logs in to this computer, or stops it doing so: a login
+/// item on macOS, a startup entry on Windows (#79). Goes with "present the last table by itself".
+fn start_with_computer(app: &AppHandle, on: bool) -> Result<(), String> {
+    use tauri_plugin_autostart::ManagerExt;
+    let launcher = app.autolaunch();
+    let done =
+        if on { launcher.enable() } else { launcher.is_enabled().and_then(|enabled| if enabled { launcher.disable() } else { Ok(()) }) };
+    match done {
+        Ok(()) => {
+            app.state::<Shell>().operator.note(if on {
+                "MR Studio will start with this computer."
+            } else {
+                "MR Studio no longer starts with this computer."
+            });
+            Ok(())
+        }
+        Err(e) => Err(format!(
+            "The setting is saved, but this computer did not let MR Studio {} start with it: {e}",
+            if on { "" } else { "stop" }
+        )),
+    }
+}
+
+/// Shows the folder with the operator logs (#79).
+#[tauri::command]
+fn open_operator_log(app: AppHandle, shell: State<'_, Shell>) -> Result<(), String> {
+    let dir = shell.operator.dir().ok_or("This computer has no folder for logs.")?;
+    std::fs::create_dir_all(dir).map_err(text)?;
+    app.opener().open_path(dir.to_string_lossy(), None::<&str>).map_err(text)
 }
 
 /// Saves which display shows the table and which the controller, from the editor's
@@ -1270,6 +1343,7 @@ async fn present(app: AppHandle, shell: State<'_, Shell>, windows: Option<Vec<As
 /// Takes the site off the displays. It stays open in the editor.
 #[tauri::command]
 async fn stop_presenting(app: AppHandle) -> Result<(), String> {
+    app.state::<Shell>().operator.note("Stopped presenting.");
     close_surfaces(&app).map_err(text)
 }
 
