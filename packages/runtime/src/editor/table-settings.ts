@@ -33,6 +33,53 @@ function field(label: string, input: HTMLElement, hint?: string): HTMLElement {
   return wrap;
 }
 
+/**
+ * The table's own words in Swedish (#80): its name, title and welcome line, its About page,
+ * the names it gave layer buttons and its slides' titles. Each English text with a box for its
+ * Swedish; the layers' own words come with them.
+ */
+function swedishWords(store: Store, save: (translations: Record<string, string>) => void): HTMLElement {
+  const box = el('div', 'ed-translations');
+  const site = store.state.site;
+  const texts = new Set<string>();
+  const add = (text: string | null | undefined) => text?.trim() && texts.add(text.trim());
+  add(site.name);
+  add(site.branding.title);
+  add(site.branding.welcome);
+  add(site.tv?.about?.title);
+  add(site.tv?.about?.text);
+  for (const credit of site.tv?.about?.credits ?? []) {
+    add(credit.role);
+    add(credit.note);
+  }
+  for (const id of store.state.scene) {
+    const state = store.state.layers[id];
+    add(state?.button?.name);
+    add(state?.button?.description);
+    for (const step of state?.steps?.sequence ?? []) {
+      add(step.title);
+      add(step.description);
+    }
+  }
+  const saved = { ...(site.branding.translations?.sv ?? {}) };
+  const missing = [...texts].filter((english) => !saved[english]).length;
+  box.append(el('p', 'ed-hint', missing === 0 ? 'Every text of this table has its Swedish.' : `${missing} of ${texts.size} texts have no Swedish yet. Visitors see those in English.`));
+  for (const english of texts) {
+    const row = el('label', 'ed-translation');
+    const input = el('input');
+    Object.assign(input, { type: 'text', maxLength: 2000, placeholder: 'Swedish', value: saved[english] ?? '', lang: 'sv' });
+    input.addEventListener('change', () => {
+      const value = input.value.trim();
+      if (value) saved[english] = value;
+      else delete saved[english];
+      save(saved);
+    });
+    row.append(el('span', undefined, english), input);
+    box.append(row);
+  }
+  return box;
+}
+
 function text(value: string | null | undefined, maxLength: number, placeholder: string, onChange: (value: string | null) => void): HTMLInputElement {
   const input = el('input');
   Object.assign(input, { type: 'text', maxLength, placeholder, value: value ?? '' });
@@ -113,6 +160,30 @@ export function tableSettings(host: TableSettingsHost): HTMLElement[] {
     field('Welcome loop', loop),
   );
 
+  // ---- Languages for visitors (#80) ----
+  const speech = el('section', 'ed-section');
+  const languages = el('select');
+  for (const [value, label] of [
+    ['en', 'English only'],
+    ['en,sv', 'English and Swedish, starting in English'],
+    ['sv,en', 'Swedish and English, starting in Swedish'],
+  ] as const) {
+    languages.append(Object.assign(el('option'), { value, textContent: label }));
+  }
+  const offeredNow = (b.languages ?? []).join(',');
+  languages.value = ['en,sv', 'sv,en'].includes(offeredNow) ? offeredNow : 'en';
+  const words = swedishWords(store, (translations) => table({ branding: { translations: { ...(store.state.site.branding.translations ?? {}), sv: translations } } }));
+  words.hidden = languages.value === 'en';
+  languages.addEventListener('change', () => {
+    table({ branding: { languages: languages.value.split(',') } });
+    words.hidden = languages.value === 'en';
+  });
+  speech.append(
+    el('h3', undefined, 'Languages for visitors'),
+    field('Visitors read', languages, 'With two languages, SV and EN buttons appear on the controller and the phones. The layers bring their own Swedish; the words this table adds are below.'),
+    words,
+  );
+
   // ---- Sources ----
   const sources = el('section', 'ed-section');
   const list = el('div', 'ed-sources-used');
@@ -149,5 +220,5 @@ export function tableSettings(host: TableSettingsHost): HTMLElement[] {
     el('h3', undefined, 'On this computer'),
     el('p', 'ed-empty', `Screens, colour, calibration, updates, keys and phones on the network are the same for every table on this computer. They are in ${settingsName}`),
   );
-  return [about, look, sources, elsewhere];
+  return [about, look, speech, sources, elsewhere];
 }

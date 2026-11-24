@@ -13,6 +13,7 @@ import type { Connection } from '@mrstudio/sdk';
 import { isAmbient } from './controls.ts';
 import { panelInput } from './dashboard.ts';
 import { qrSvg } from './join.ts';
+import { t } from './i18n.ts';
 import { ribbonBands } from './ribbon-bands.ts';
 import type { Band, Side } from './ribbon-bands.ts';
 import type { Store } from './store.ts';
@@ -76,6 +77,12 @@ export class Ribbons {
     });
     store.onParticipants(() => this.queue());
     store.onTv(() => this.layout());
+    // The visitors' language changed (#80): every strip draws again in it.
+    window.addEventListener('mrs-language', () => {
+      this.inputs.clear();
+      this.contentKey = '-';
+      this.queue();
+    });
     this.layout();
   }
 
@@ -197,7 +204,7 @@ export class Ribbons {
       const qr = el('div', 'table-ribbon-qr');
       qr.append(qrSvg(content.url));
       const words = el('div', 'table-ribbon-join');
-      words.append(el('p', 'mrs-panel-title', 'Join from your phone'), el('p', 'table-ribbon-code', content.code));
+      words.append(el('p', 'mrs-panel-title', t('Join from your phone')), el('p', 'table-ribbon-code', content.code));
       inner.append(qr, words);
       return;
     }

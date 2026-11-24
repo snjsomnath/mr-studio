@@ -147,6 +147,15 @@ interface ContextBase<P> {
   setParams(patch: Partial<P>): void;
   /** Values the table published for other surfaces. */
   readonly shared: Readonly<Record<string, any>>;
+  /** The language visitors read now (#80): `en` or `sv`. */
+  readonly language: string;
+  /**
+   * Words for visitors in their language (#80): the English text looked up in the layer's
+   * `locales/<language>.json`, with `{name}` filled from `vars`. `ctx.say('Sun sets at {time}', { time })`.
+   * Use it for text the layer makes as it runs (a caption, a status, a legend row); words in
+   * layer.json are translated without it.
+   */
+  say(text: string, vars?: Record<string, string | number>): string;
 }
 
 export interface TableContext<P = Params> extends ContextBase<P> {

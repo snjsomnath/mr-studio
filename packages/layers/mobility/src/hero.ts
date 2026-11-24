@@ -14,7 +14,7 @@ export function mobilityHero(ctx: PanelContext<Params>, el: HTMLElement): PanelH
   const hero = timelineHero(
     el,
     {
-      label: 'Time of the trips',
+      label: ctx.say('Time of the trips'),
       min: 0,
       max: 100,
       step: 0.5,
@@ -23,12 +23,15 @@ export function mobilityHero(ctx: PanelContext<Params>, el: HTMLElement): PanelH
       set: (progress) => ctx.setParams({ progress, play: false }),
       ticks: [0, 25, 50, 75, 100],
       tick: (progress) => (duration() > 0 ? clock(at(progress)) : `${progress}%`),
-      format: (progress) => (duration() > 0 ? `${clock(at(progress))} of ${clock(duration())}` : `${progress}%`),
+      format: (progress) => (duration() > 0 ? ctx.say('{at} of {all}', { at: clock(at(progress)), all: clock(duration()) }) : `${progress}%`),
       playing: () => ctx.params.play,
       play: (play) => ctx.setParams({ play }),
       // The clock counts minutes and seconds since the trips began.
-      readout: (progress) => (duration() > 0 ? { value: clock(at(progress)), unit: 'min', line: ctx.shared.title || 'Trips under way' } : { value: `${Math.round(progress)}%`, line: ctx.shared.title || 'Trips under way' }),
-      facts: () => ((ctx.shared.groups ?? []) as Group[]).map((g) => ({ label: g.label, value: `${g.arrived} of ${g.total}` })),
+      readout: (progress) => {
+        const line = ctx.say(ctx.shared.title || 'Trips under way');
+        return duration() > 0 ? { value: clock(at(progress)), unit: 'min', line } : { value: `${Math.round(progress)}%`, line };
+      },
+      facts: () => ((ctx.shared.groups ?? []) as Group[]).map((g) => ({ label: ctx.say(g.label), value: ctx.say('{at} of {all}', { at: g.arrived, all: g.total }) })),
       sky: (progress) => {
         // The backdrop warms as the trips play out, from early blue to late amber.
         const t = Math.min(1, Math.max(0, progress / 100));

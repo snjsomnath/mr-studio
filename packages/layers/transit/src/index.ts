@@ -211,7 +211,7 @@ export default defineLayer<Params>({
     async function poll() {
       const feed = feedAddress();
       if (!feed) {
-        feedState = 'Choose where live data comes from, or enter a feed address';
+        feedState = ctx.say('Choose where live data comes from, or enter a feed address');
         return;
       }
       polling = true;
@@ -241,7 +241,7 @@ export default defineLayer<Params>({
         }
         feedState = '';
       } catch (error) {
-        feedState = `Live data unavailable: ${(error as Error).message}`;
+        feedState = ctx.say('Live data unavailable: {reason}', { reason: (error as Error).message });
       } finally {
         polling = false;
       }
@@ -466,7 +466,13 @@ export default defineLayer<Params>({
       draw(vehicles);
       ctx.publish({
         vehicles: vehicles.length,
-        status: isLive ? feedState : generated ? (routes.length > 0 ? 'This site has no transit data, so the lines are made up along its streets' : 'This site has no transit data or streets, so there is nothing to show') : '',
+        status: isLive
+          ? feedState
+          : generated
+            ? routes.length > 0
+              ? ctx.say('This site has no transit data, so the lines are made up along its streets')
+              : ctx.say('This site has no transit data or streets, so there is nothing to show')
+            : '',
         lines: (isLive && generated ? [] : routes).map((route) => ({ line: route.line, mode: route.mode, colour: route.colour })),
       });
     });

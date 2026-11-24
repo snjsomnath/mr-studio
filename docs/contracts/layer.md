@@ -280,6 +280,15 @@ Rules for layers:
 4. Clean up is automatic for everything opened through `ctx`. Anything else is released with `ctx.onCleanup`.
 5. `update` must be cheap. Send params to the stream and return; frames arrive asynchronously.
 
+## Languages
+
+Visitors read the controller, the phones and the table's ribbons in English or Swedish (#80); the editor stays in English. Everything is written in English and looked up by that English text, so a missing translation shows in English rather than breaking.
+
+- **A layer's words** are in its package, `locales/sv.json`: one object from English to Swedish, `{ "Sunlight": "Solljus", "Time of day": "Tid på dagen" }`. The host reads it with layer.json and sends it in the manifest as `locales: { sv: {...} }`. It covers the words in layer.json (name, description, control labels and choices, tool labels, legend, panel titles and captions) without any code.
+- **Words the layer makes as it runs** (a status, a caption, a hero's labels) go through `ctx.say(text, vars?)`: `ctx.say('Sunrise {time}', { time })` looks up `Sunrise {time}` and fills `{time}`. `ctx.language` is `en` or `sv`, for dates and numbers. A published text that matches an entry exactly (`'Shade'`) is said in the visitor's language on the TV's panels and the controller's legend without `ctx.say`.
+- Every core layer has `locales/sv.json`; a host test checks that every core layer's name, control labels and choices have Swedish.
+- The site's own words (title, welcome line, button names, slide titles) are in site.json, `branding.translations` (site.md).
+
 ## Building blocks and interactions
 
 Layers are composed from the primitives in `@mrstudio/sdk` (`packages/sdk/src/blocks/`): data sources,

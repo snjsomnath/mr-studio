@@ -63,7 +63,7 @@ export function windHero(ctx: PanelContext<Params>, el: HTMLElement): PanelHandl
   const band = document.createElement('div');
   band.className = 'wind-hero-band';
   band.setAttribute('role', 'slider');
-  band.setAttribute('aria-label', 'Speed of the wind');
+  band.setAttribute('aria-label', ctx.say('Speed of the wind'));
   band.setAttribute('aria-valuemin', String(MIN));
   band.setAttribute('aria-valuemax', String(MAX));
   band.tabIndex = 0;
@@ -155,7 +155,7 @@ export function windHero(ctx: PanelContext<Params>, el: HTMLElement): PanelHandl
 
     const [value, words] = readout.children as unknown as [HTMLElement, HTMLElement];
     value.innerHTML = `${speed}<small>m/s</small>`;
-    words.textContent = `${windName(speed)}, from the ${COMPASS[Math.round(direction / 45) % 8]}`;
+    words.textContent = ctx.say('{name}, from the {direction}', { name: ctx.say(windName(speed)), direction: ctx.say(COMPASS[Math.round(direction / 45) % 8]!) });
   }
 
   // ---- The air: streaks that blow the way the wind does ----

@@ -1,0 +1,14 @@
+{
+  "Map data": "Kartdata",
+  "A GeoJSON dataset of the site drawn on the table, coloured by category, revealed one category at a time": "Ett GeoJSON-dataset för platsen ritat på bordet, färgat efter kategori och visat en kategori i taget",
+  "Dataset": "Dataset",
+  "Colour by": "Färga efter",
+  "Colour": "Färg",
+  "Category colours": "Kategorifärger",
+  "Their own, when they have them": "Sina egna, när de har några",
+  "The table palette": "Bordets palett",
+  "Energy classes (A to G)": "Energiklasser (A till G)",
+  "Next reveals one category at a time": "Nästa visar en kategori i taget",
+  "Line width": "Linjebredd",
+  "Opacity": "Opacitet"
+}

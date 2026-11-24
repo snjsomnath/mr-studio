@@ -115,8 +115,8 @@ export default defineLayer<Params>({
     // The line under the daylight figure on the TV: progress, then what the map is flagging.
     const dayStatus = () => {
       if (ctx.params.mode !== 'day') return '';
-      if (percent < 100) return `adding up the day, ${percent}%`;
-      return ctx.params.threshold > 0 ? `under ${ctx.params.threshold} h of sun is flagged` : 'whole day added up';
+      if (percent < 100) return ctx.say('adding up the day, {percent}%', { percent });
+      return ctx.params.threshold > 0 ? ctx.say('under {hours} h of sun is flagged', { hours: ctx.params.threshold }) : ctx.say('whole day added up');
     };
     ctx.onCleanup(() => {
       generation++;

@@ -2655,3 +2655,20 @@ body[data-role='edit'] .ed-surface .table-frame {
   font-weight: 700;
   letter-spacing: 0.12em;
 }
+
+/* The table's own words in Swedish (#80). */
+.ed-translations {
+  display: grid;
+  gap: 6px;
+}
+.ed-translation {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  font-size: 12px;
+}
+.ed-translation span {
+  color: var(--ed-text-2);
+  overflow-wrap: anywhere;
+}

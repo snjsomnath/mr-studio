@@ -284,8 +284,8 @@ export default defineLayer<Params>({
     const find = (selector: string) => el.querySelector<HTMLElement>(selector)!;
     function update() {
       const s = ctx.shared as { index?: number; count?: number; title?: string; description?: string; source?: string; note?: string; legend?: { color: string; label: string }[] };
-      find('h3').textContent = s.title || (s.count ? `Slide ${s.index}` : 'Slideshow');
-      find('.slideshow-description').textContent = [s.description, s.note].filter(Boolean).join(' · ');
+      find('h3').textContent = s.title ? ctx.say(s.title) : s.count ? ctx.say('Slide {n}', { n: s.index ?? 0 }) : ctx.say('Slideshow');
+      find('.slideshow-description').textContent = [s.description, s.note].filter(Boolean).map((text) => ctx.say(text!)).join(' · ');
       find('.slideshow-source').textContent = s.source ?? '';
       find('.slideshow-count').textContent = s.count ? `${s.index} / ${s.count}` : '';
       find('.slideshow-legend').replaceChildren(

@@ -36,15 +36,17 @@ function kernelParams(ctx: TableContext<Params>, storm?: number) {
 }
 
 /** How a status reads on the controller. */
-function describe(info: Record<string, number>, rain: number, settled: boolean): Record<string, unknown> {
+function describe(info: Record<string, number>, rain: number, settled: boolean, ctx: Pick<TableContext, 'say' | 'language'>): Record<string, unknown> {
   const flooded = Math.round(info.flooded_m2 ?? 0);
+  const say = ctx.say;
+  const number = (value: number) => value.toLocaleString(ctx.language === 'sv' ? 'sv-SE' : 'en-GB');
   return {
     minutes: Math.floor(info.minutes ?? 0),
-    status: settled ? (rain > 0 ? 'Steady: as much runs off as falls' : 'Drained') : rain > 0 ? `Raining ${rain} mm/h` : 'Draining',
+    status: settled ? (rain > 0 ? say('Steady: as much runs off as falls') : say('Drained')) : rain > 0 ? say('Raining {rain} mm/h', { rain }) : say('Draining'),
     rainMm: Math.round((info.rain_mm ?? 0) * 10) / 10,
-    rainCaption: `${Math.round(info.rain_m3 ?? 0).toLocaleString('en-GB')} m³ on the site`,
+    rainCaption: say('{volume} m³ on the site', { volume: number(Math.round(info.rain_m3 ?? 0)) }),
     waterM3: Math.round(info.water_m3 ?? 0),
-    waterCaption: flooded > 0 ? `${flooded.toLocaleString('en-GB')} m² deeper than 10 cm` : `Deepest ${Math.round((info.deepest_m ?? 0) * 100)} cm`,
+    waterCaption: flooded > 0 ? say('{area} m² deeper than 10 cm', { area: number(flooded) }) : say('Deepest {depth} cm', { depth: Math.round((info.deepest_m ?? 0) * 100) }),
     deepest: Math.round((info.deepest_m ?? 0) * 100) / 100,
     realtime: Math.round(info.realtime ?? 0),
   };
@@ -83,7 +85,7 @@ export default defineLayer<Params>({
       }
     };
     restyle();
-    ctx.publish({ ramp: colormaps.water, ...describe({}, ctx.params.rain, false) });
+    ctx.publish({ ramp: colormaps.water, ...describe({}, ctx.params.rain, false, ctx) });
 
     const stream = await ctx.engine.open('stormwater', kernelParams(ctx), ['depth', 'u', 'v'], { maxHz: FIELD_HZ });
     stream.on('depth', (frame) => pools.set(frame));
@@ -93,7 +95,7 @@ export default defineLayer<Params>({
       // The components travel as two frames; draw once both belong to the same result.
       if (u && u.revision === frame.revision) flow?.set(u, frame);
     });
-    stream.onStatus((status) => ctx.publish(describe(status.info, ctx.params.rain, status.state === 'done')));
+    stream.onStatus((status) => ctx.publish(describe(status.info, ctx.params.rain, status.state === 'done', ctx)));
 
     return {
       update(changed) {

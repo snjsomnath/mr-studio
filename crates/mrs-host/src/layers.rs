@@ -209,8 +209,32 @@ impl Control {
 fn read_manifest(dir: &Path) -> anyhow::Result<LayerDef> {
     let path = dir.join("layer.json");
     let text = std::fs::read_to_string(&path).with_context(|| format!("reading {}", path.display()))?;
-    let value: Value = serde_json::from_str(&text).with_context(|| format!("parsing {}", path.display()))?;
+    let mut value: Value = serde_json::from_str(&text).with_context(|| format!("parsing {}", path.display()))?;
+    let locales = read_locales(dir)?;
+    if !locales.is_empty() {
+        value["locales"] = Value::Object(locales);
+    }
     LayerDef::parse(value).with_context(|| format!("in {}", path.display()))
+}
+
+/// A layer package's words in other languages (#80): `locales/sv.json` and so on, sent to
+/// surfaces in the manifest as `locales: { sv: {...} }`. What a file holds is in
+/// docs/contracts/layer.md, Languages.
+fn read_locales(dir: &Path) -> anyhow::Result<Map<String, Value>> {
+    let mut locales = Map::new();
+    for language in mrs_site::LANGUAGES {
+        let path = dir.join("locales").join(format!("{language}.json"));
+        if !path.is_file() {
+            continue;
+        }
+        let text = std::fs::read_to_string(&path).with_context(|| format!("reading {}", path.display()))?;
+        let words: Value = serde_json::from_str(&text).with_context(|| format!("parsing {}", path.display()))?;
+        if !words.is_object() {
+            bail!("{} must hold an object", path.display());
+        }
+        locales.insert(language.to_string(), words);
+    }
+    Ok(locales)
 }
 
 /// Loads the layer catalogue: every core layer package, then the site-only layers the
@@ -360,6 +384,29 @@ mod tests {
         let d = def();
         assert!(d.validate(&patch(json!({ "hour": 9 })), true).is_ok());
         assert!(d.validate(&patch(json!({ "mode": "b" })), true).is_err());
+    }
+
+    #[test]
+    fn every_core_layer_speaks_swedish() {
+        let repo = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let site = Site::load(repo.join("sites/sample")).unwrap();
+        let catalog = load_catalog(&site, &repo.join("packages/layers")).unwrap();
+        for def in catalog.iter().filter(|d| !d.source.starts_with(mrs_site::CUSTOM_PREFIX)) {
+            let words = &def.manifest["locales"]["sv"];
+            let name = def.manifest["name"].as_str().unwrap();
+            assert!(words[name].is_string(), "{} has no Swedish name", def.id);
+            // Every control's label and choices have a translation (#80).
+            for control in def.manifest["controls"].as_array().map(Vec::as_slice).unwrap_or(&[]) {
+                let label = control["label"].as_str().unwrap_or_default();
+                assert!(words[label].is_string(), "{}: '{label}' has no Swedish", def.id);
+                for option in control["options"].as_array().map(Vec::as_slice).unwrap_or(&[]) {
+                    let text = option["label"].as_str().unwrap_or_default();
+                    assert!(text.ends_with("m/s") || words[text].is_string(), "{}: '{text}' has no Swedish", def.id);
+                }
+            }
+        }
+        let sunlight = catalog.iter().find(|d| d.id == "sunlight").unwrap();
+        assert_eq!(sunlight.manifest["locales"]["sv"]["Sunlight"], "Solljus");
     }
 
     #[test]
