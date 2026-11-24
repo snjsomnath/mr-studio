@@ -5,7 +5,7 @@
 import { lut, zonedTimeToUtc } from '@mrstudio/sdk';
 import type { Colormap, FieldFrame, FieldOverlay, FieldStream, PanelContext, PanelHandlers, TableContext } from '@mrstudio/sdk';
 
-import { sunDay, sunHoursColormap } from './look.ts';
+import { sunDay, sunHoursColormap, windowParams } from './look.ts';
 import type { SunDay } from './look.ts';
 
 export const SEASONS = [
@@ -30,7 +30,7 @@ export interface SeasonCard {
   h: number;
 }
 
-type Params = { mode: string; date: string; trees: boolean; threshold: number; season: string; opacity: number };
+type Params = { mode: string; date: string; trees: boolean; threshold: number; season: string; opacity: number; window: string };
 
 /** Seconds each season stays on the table while they take turns. */
 export const CYCLE_S = 7;
@@ -150,7 +150,16 @@ export function seasonsOnTable(
     drawnRevision = '';
     const opened = await Promise.all(
       SEASONS.map((_, k) =>
-        ctx.engine.open('sunlight', { mode: 'day', time: zonedTimeToUtc(seasonDate(ctx.params.date, k), 12, ctx.site.timezone), trees: ctx.params.trees }, ['sun_hours']),
+        ctx.engine.open(
+          'sunlight',
+          {
+            mode: 'day',
+            time: zonedTimeToUtc(seasonDate(ctx.params.date, k), 12, ctx.site.timezone),
+            trees: ctx.params.trees,
+            ...windowParams(ctx.site, seasonDate(ctx.params.date, k), ctx.params.window),
+          },
+          ['sun_hours'],
+        ),
       ),
     );
     if (mine !== generation) {
@@ -206,7 +215,7 @@ export function seasonsOnTable(
       draw();
     },
     update(changed: string[]) {
-      if (changed.some((key) => key === 'date' || key === 'trees')) void open();
+      if (changed.some((key) => key === 'date' || key === 'trees' || key === 'window')) void open();
       else {
         if (changed.includes('season')) clock = 0;
         if (changed.includes('threshold')) publish();

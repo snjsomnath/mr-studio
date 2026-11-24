@@ -80,7 +80,9 @@ changes              release notes waiting for the next version (docs/RELEASING.
 | Trees | Tree crowns swaying in a light wind | `trees` |
 | Table grid | A glowing grid on the model's tile seams, to check the projection | `grid` |
 | Map data | A GeoJSON dataset coloured by category, revealed one category at a time | `mapdata` |
-| Masterplan | A plan drawing (SVG or picture) revealed phase by phase | `plan` |
+| Masterplan | A plan drawing (SVG or picture) revealed phase by phase; its lines can trace in and turn to colour, and pointing at a phase lights it | `plan` |
+| Magnifier | A glass people move over the table: a larger view of what is under it, or an X-ray of the layers placed inside it | `lens` |
+| Reveal line | A line people move across the table: on one side the layers placed inside it show, such as pipes and tunnels | `swipe` |
 | Video walk | A video on the controller, its walker moving along the path on the table | `walkthrough` |
 | Slideshow | Images, video, map data and layers one after another; with presenter notes it is a guided tour on the guide's phone | `slideshow` |
 | Picture or video | A picture or video of the site over the whole table: a simulation, an old photo, a film of a sun study | `media` |
@@ -94,6 +96,7 @@ Custom layers made in the editor's layer builder (data, look, motion and interac
 
 - **A layer**: copy `packages/layers/sunlight`. A layer is `layer.json` (id, controls, tools) plus `src/index.ts`. The TV and phone controls are generated from the manifest. List the layer in a site's `site.json`. See [docs/contracts/layer.md](docs/contracts/layer.md).
 - **A kernel**: add `crates/mrs-engine/src/kernels/<id>/` with `kernel.wgsl`, `cpu.rs` and `mod.rs`, register it in `kernels/mod.rs`, and add `tests/<id>.rs` with physics tests on the CPU reference and a GPU/CPU parity test. See [docs/contracts/engine.md](docs/contracts/engine.md).
+- **A layer of your own site**: `mrstudio layer new <id> --site <site>`, then `mrstudio layer build`. It lives in the site's `layers/` folder and runs in the installed app, with no change to the core. See "Site layers" in [docs/contracts/layer.md](docs/contracts/layer.md#site-layers).
 - **A site**: `mrstudio new-site`, add data, `mrstudio validate`. See [docs/contracts/site.md](docs/contracts/site.md).
 - **A site, with an LLM**: connect the MCP server and use its `new_project` prompt. Ideas the core cannot serve become module requests to this repository. See [docs/MCP.md](docs/MCP.md).
 

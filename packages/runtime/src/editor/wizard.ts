@@ -3,6 +3,7 @@ import type { LayerManifest, LayerState, SelectControl } from '@mrstudio/sdk';
 import { defaultSideOf, el, isAmbient, isOffered, layerButton } from '../controls.ts';
 import type { Store } from '../store.ts';
 import { icon } from './icons.ts';
+import { FetchAll } from './fetch-all.ts';
 import { Importer, TARGETS, targetFor } from './importer.ts';
 import { ModelImporter } from './model-import.ts';
 import { ScaleFields } from './place-scale.ts';
@@ -27,17 +28,19 @@ export interface WizardHost {
   resumeAt(step: number): void;
   /** Holds back the reload that a change of site causes, until released. */
   hold(on: boolean): void;
+  /** For a panel: takes the author to the place to bring in `target`, outside the panel. */
+  bringIn?(target: string): void;
 }
 
 /** One name for the table when no layer is open, used everywhere in the editor and the guide. */
 export const AT_REST = 'At rest';
 
 export const WIZARD_STEPS = ['Name and place', 'Your place', AT_REST, 'Layers', 'Buttons', 'Ready'] as const;
-const WHERE = 0;
+export const WHERE = 0;
 const PLACE = 1;
-const REST = 2;
+export const REST = 2;
 const LAYERS = 3;
-const BUTTONS = 4;
+export const BUTTONS = 4;
 
 /** Degrees as a bearing from 0 up to 360, so -93 and 267 are the same turn. */
 const turn = (degrees: number) => ((degrees % 360) + 360) % 360;
@@ -68,6 +71,43 @@ export function stepList(names: readonly string[], current: number, go?: (index:
   return list;
 }
 
+/** A theme drawn small (#126): its background, a filled, outlined, frosted or bare panel, its accent and data colours. */
+export function themeSwatch(theme: (typeof THEMES)[number]): HTMLElement {
+  const t = theme.tokens;
+  const swatch = el('span', 'wz-theme-swatch');
+  swatch.style.background = t['color.background']!;
+  const panel = el('span', 'wz-theme-panel');
+  const surface = t['density'] === 'minimal' ? 'none' : (t['panel.style'] ?? 'filled');
+  panel.dataset.surface = surface;
+  panel.style.background = surface === 'filled' ? t['color.panel']! : surface === 'glass' ? `color-mix(in srgb, ${t['color.panel']} 55%, transparent)` : 'transparent';
+  panel.style.borderColor = surface === 'none' ? 'transparent' : surface === 'glass' ? `color-mix(in srgb, ${t['color.text']} 18%, transparent)` : t['color.line']!;
+  if (surface === 'glass') swatch.style.background = `radial-gradient(90% 120% at 15% 0%, color-mix(in srgb, ${t['color.accent']} 35%, transparent), transparent 70%), ${t['color.background']}`;
+  const accent = el('span', 'wz-theme-accent');
+  accent.style.background = t['color.accent']!;
+  const data = el('span', 'wz-theme-data');
+  for (const n of [1, 2, 3, 4]) {
+    const dot = el('i');
+    dot.style.background = t[`data.${n}`]!;
+    data.append(dot);
+  }
+  const line = el('span', 'wz-theme-line');
+  line.style.background = t['color.text']!;
+  panel.append(line, accent, data);
+  swatch.append(panel);
+  return swatch;
+}
+
+/** The `site.tv` change that picks a theme. The first is the core default, so choosing it clears the site's theme. */
+export function themeChoice(index: number): { tv: object } {
+  const theme = THEMES[index]!;
+  return { tv: index === 0 ? { theme: null, theme_name: null } : { theme: theme.tokens, theme_name: theme.id } };
+}
+
+/** The theme a site uses, or null for a theme written by hand. */
+export function chosenTheme(tv: { theme?: unknown; theme_name?: string | null } | null | undefined): string | null {
+  return tv?.theme_name ?? (tv?.theme ? null : THEMES[0]!.id);
+}
+
 /**
  * The setup wizard: the guided way through a new table. It works on the live scene
  * with the same requests as the rest of the editor, so it can be opened again at
@@ -79,6 +119,8 @@ export class Wizard {
   /** One importer per row of "Your place", kept across redraws so a file being checked stays. */
   private importers = new Map<string, Importer>();
   private model: ModelImporter | null = null;
+  /** "Fetch everything from open data" (#310), made once so a fetch under way stays. */
+  private fetchAll: FetchAll | null = null;
   private readonly host: WizardHost;
   /** The row of "Your place" that a layer needing data sent the author to. */
   private wanted: string | null = null;
@@ -91,16 +133,60 @@ export class Wizard {
   private tileM: number | null = null;
   private moving = false;
   private problem = '';
+  /**
+   * One step on its own, as a panel beside the map under a ribbon tab (#311, #312, #313):
+   * the same questions and the same requests, without the list of steps or Back and Next.
+   */
+  private readonly panel: boolean;
+  /** A panel only draws while its tab is open, so a closed one never moves the map. */
+  private shown = true;
 
-  constructor(host: WizardHost, options: { created?: boolean; step?: number } = {}) {
+  constructor(host: WizardHost, options: { created?: boolean; step?: number; panel?: boolean } = {}) {
     this.host = host;
+    this.panel = options.panel ?? false;
     // Someone who has just named and placed the table goes on to what it is made of.
     this.step = options.step ?? (options.created ? PLACE : WHERE);
+    if (this.panel) {
+      this.element.classList.add('is-panel');
+      this.element.classList.toggle('is-place', this.step === WHERE);
+      this.shown = false;
+    }
     host.store.onScene(() => this.render());
-    host.store.onLayer(() => (this.step === BUTTONS || this.step === REST) && this.syncButtons());
-    host.store.onTv(() => this.step === BUTTONS && this.syncLook());
+    host.store.onLayer(() => this.shown && (this.step === BUTTONS || this.step === REST) && this.syncButtons());
+    host.store.onTv(() => this.shown && this.step === BUTTONS && this.syncLook());
     this.render();
   }
+
+  /** Opens or closes a panel. Opening shows the map the way its step does. */
+  setShown(shown: boolean): void {
+    if (!this.panel || shown === this.shown) return;
+    this.shown = shown;
+    if (!shown) return;
+    this.problem = '';
+    this.render(true);
+  }
+
+  /** Whether the Name and place panel holds a change that has not moved the table yet. */
+  get pending(): boolean {
+    return this.step === WHERE && this.placeChanged();
+  }
+
+  /** Moves the table to the place the Name and place panel describes. */
+  moveTable(): void {
+    if (this.pending && !this.moving) void this.move(WHERE);
+  }
+
+  /** Forgets the edits in Name and place, back to where the table is. */
+  putBack(): void {
+    this.where = null;
+    this.problem = '';
+    this.placeMap?.set(this.placement());
+    this.render();
+    this.onPending();
+  }
+
+  /** Told when the Name and place panel gains or loses a change, so the ribbon can follow. */
+  onPending: () => void = () => {};
 
   private go(step: number): void {
     const next = Math.max(0, Math.min(WIZARD_STEPS.length - 1, step));
@@ -151,31 +237,8 @@ export class Wizard {
       card.type = 'button';
       card.setAttribute('role', 'radio');
       card.title = theme.description;
-      const t = theme.tokens;
-      const swatch = el('span', 'wz-theme-swatch');
-      swatch.style.background = t['color.background']!;
-      const panel = el('span', 'wz-theme-panel');
-      // The card shows the look too (#126): a filled, outlined, frosted or bare panel.
-      const surface = t['density'] === 'minimal' ? 'none' : (t['panel.style'] ?? 'filled');
-      panel.dataset.surface = surface;
-      panel.style.background = surface === 'filled' ? t['color.panel']! : surface === 'glass' ? `color-mix(in srgb, ${t['color.panel']} 55%, transparent)` : 'transparent';
-      panel.style.borderColor = surface === 'none' ? 'transparent' : surface === 'glass' ? `color-mix(in srgb, ${t['color.text']} 18%, transparent)` : t['color.line']!;
-      if (surface === 'glass') swatch.style.background = `radial-gradient(90% 120% at 15% 0%, color-mix(in srgb, ${t['color.accent']} 35%, transparent), transparent 70%), ${t['color.background']}`;
-      const accent = el('span', 'wz-theme-accent');
-      accent.style.background = t['color.accent']!;
-      const data = el('span', 'wz-theme-data');
-      for (const n of [1, 2, 3, 4]) {
-        const dot = el('i');
-        dot.style.background = t[`data.${n}`]!;
-        data.append(dot);
-      }
-      const line = el('span', 'wz-theme-line');
-      line.style.background = t['color.text']!;
-      panel.append(line, accent, data);
-      swatch.append(panel);
-      card.append(swatch, el('span', 'wz-theme-name', theme.name));
-      // The first theme is the core default, so choosing it clears the site's theme.
-      card.addEventListener('click', () => void host.send('site.tv', { tv: index === 0 ? { theme: null, theme_name: null } : { theme: theme.tokens, theme_name: theme.id } }));
+      card.append(themeSwatch(theme), el('span', 'wz-theme-name', theme.name));
+      card.addEventListener('click', () => void host.send('site.tv', themeChoice(index)));
       themes.append(card);
       return [theme.id, card] as const;
     });
@@ -196,7 +259,7 @@ export class Wizard {
     const sync = () => {
       const tv = host.store.state.site.tv;
       // A theme written by hand, not one of these, leaves every card unticked.
-      const chosen = tv?.theme_name ?? (tv?.theme ? null : THEMES[0]!.id);
+      const chosen = chosenTheme(tv);
       for (const [id, card] of cards) card.setAttribute('aria-checked', String(id === chosen));
       for (const [value, option] of styles) option.setAttribute('aria-checked', String(value === (tv?.rail_style ?? 'icons')));
     };
@@ -211,22 +274,29 @@ export class Wizard {
   /** The layer package just switched on, shown on the map as soon as the scene has it. */
   private fresh: string | null = null;
 
-  private render(): void {
+  private render(opening = false): void {
+    if (!this.shown) return;
     const { host } = this;
+    // A panel moves the map only when its tab opens, not every time the scene changes under it.
+    const real = { show: (id: string | null) => void ((!this.panel || opening) && host.show(id)) };
     const body = el('div', 'wz-body');
     const title = (text: string, lead: string) => body.append(el('h2', undefined, text), el('p', 'wz-lead', lead));
     const instances = this.instances();
     const layers = instances.filter((i) => !isAmbient(i.manifest));
     this.syncButtons = () => {};
-    host.controller(this.step === BUTTONS);
+    if (!this.panel) host.controller(this.step === BUTTONS);
 
     if (this.step === WHERE) {
-      host.show(null);
+      real.show(null);
       title('Name and place', 'What the table is called, where it is and how much ground it covers. Moving the table keeps the data you brought in; whatever lies inside the new outline is shown.');
       body.append(this.whereForm());
+      if (this.panel) body.append(this.moveNotes());
     } else if (this.step === PLACE) {
       host.show(null);
       title('Your place', 'Bring in the files your table is made from. They are copied into the table and stay on this computer. Buildings matter most; the rest can come later.');
+      if (!this.fetchAll) this.fetchAll = new FetchAll({ site: () => this.host.store.state.site, hold: (on) => this.host.hold(on) });
+      else this.fetchAll.render();
+      body.append(this.fetchAll.element);
       for (const item of TARGETS) {
         body.append(this.importer(item.target).element);
         // The 3D model sits under the buildings: it gives them their heights.
@@ -247,7 +317,7 @@ export class Wizard {
         requestAnimationFrame(() => wanted.scrollIntoView({ block: 'nearest' }));
       }
     } else if (this.step === REST) {
-      host.show(null);
+      real.show(null);
       title(AT_REST, 'What the map shows when no layer is open, and nobody is using the table. Pick a base map and some life to make it feel like a place.');
       body.append(this.choices(host.store.manifests.filter((m) => isAmbient(m) && isOffered(m)), instances, false));
       this.syncButtons();
@@ -261,9 +331,12 @@ export class Wizard {
       }
       if (layers.length === 0) body.append(el('p', 'wz-hint', 'Pick at least one layer to give the table something to show.'));
     } else if (this.step === BUTTONS) {
-      host.show(layers[0]?.id ?? null);
-      title('Buttons', 'Pick how the controller looks, give each button words a visitor understands, and choose its side. The controller on the right is live.');
-      body.append(this.lookPicker());
+      real.show(layers[0]?.id ?? null);
+      if (this.panel) title('Buttons', 'Give each button words a visitor understands, and choose its side. The theme and button style are on the ribbon above; the controller beside the map is live.');
+      else {
+        title('Buttons', 'Pick how the controller looks, give each button words a visitor understands, and choose its side. The controller on the right is live.');
+        body.append(this.lookPicker());
+      }
       if (layers.length === 0) body.append(el('p', 'wz-hint', 'There are no layers yet. Go back a step and pick one.'));
       const syncs: (() => void)[] = [];
       for (const { id, manifest } of layers) {
@@ -343,6 +416,26 @@ export class Wizard {
       tune.type = 'button';
       tune.addEventListener('click', () => host.close());
       body.append(present, tune, el('p', 'wz-hint', 'In the editor you can change every setting of a layer, reorder things and add more. This guide stays one click away, under Setup guide.'));
+    }
+
+    if (this.panel) {
+      const parts: HTMLElement[] = [body];
+      if (this.step === WHERE) {
+        const foot = el('footer', 'wz-foot');
+        const back = el('button', 'ed-button', 'Put back');
+        back.type = 'button';
+        back.title = 'Forget these changes and show where the table is now';
+        back.disabled = !this.placeChanged() || this.moving;
+        back.addEventListener('click', () => this.putBack());
+        const move = el('button', 'ed-button is-primary', 'Move the table');
+        move.type = 'button';
+        move.disabled = !this.placeChanged() || this.moving;
+        move.addEventListener('click', () => this.moveTable());
+        foot.append(back, move);
+        parts.push(foot);
+      }
+      this.element.replaceChildren(...parts);
+      return;
     }
 
     const foot = el('footer', 'wz-foot');
@@ -534,6 +627,27 @@ export class Wizard {
     return form;
   }
 
+  /**
+   * What moving the table does, said before it happens (#313). Nothing is fetched again by
+   * itself: the files brought in stay as they are, and the layers stay on the table.
+   */
+  private moveNotes(): HTMLElement {
+    const box = el('section', 'wz-notes');
+    box.append(el('h3', undefined, 'When the table moves'));
+    const data = Object.keys(this.host.store.state.site.data ?? {});
+    const names = data.map((name) => targetFor(name)?.name.toLowerCase() ?? name.replace(/[_-]/g, ' '));
+    const list = el('ul', 'wz-facts');
+    list.append(
+      el('li', undefined, data.length ? `The data you brought in stays: ${names.join(', ')}. Whatever of it lies inside the new outline is shown.` : 'This table has no data yet.'),
+      el('li', undefined, 'Every layer and its settings stay. Layers that work things out from the place, such as the sun, do it again for the new one.'),
+      el('li', undefined, 'Map pictures, such as the base map, are fetched again for the new outline when the internet is there.'),
+      el('li', undefined, 'If the new outline goes past what your files cover, bring them in again under Your place. OpenStreetMap data can be fetched again there in one click.'),
+      el('li', undefined, 'Undo puts the table back where it was.'),
+    );
+    box.append(list);
+    return box;
+  }
+
   /** The placement the form describes, or null while the centre cannot be read. */
   private placement(): Placement | null {
     const values = this.placeValues();
@@ -545,8 +659,14 @@ export class Wizard {
 
   /** Only the footer's words change while the place is edited, so a field keeps its focus. */
   private nextWords(): void {
+    const changed = this.placeChanged();
+    if (this.panel) {
+      for (const button of this.element.querySelectorAll<HTMLButtonElement>('.wz-foot button')) button.disabled = !changed || this.moving;
+      this.onPending();
+      return;
+    }
     const next = this.element.querySelector<HTMLButtonElement>('.wz-foot .is-primary');
-    if (next) next.textContent = this.placeChanged() ? 'Move the table' : 'Next';
+    if (next) next.textContent = changed ? 'Move the table' : 'Next';
   }
 
   /** Writes the new name and place, then carries on at `next` once every surface has reloaded. */
@@ -640,7 +760,8 @@ export class Wizard {
         bring.type = 'button';
         bring.addEventListener('click', (event) => {
           event.preventDefault();
-          this.bringIn(source.target, this.step);
+          if (this.panel && host.bringIn) host.bringIn(source.target);
+          else this.bringIn(source.target, this.step);
         });
         words.append(bring);
       }

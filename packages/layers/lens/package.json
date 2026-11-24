@@ -1,0 +1,10 @@
+{
+  "name": "@mrstudio/layer-lens",
+  "version": "0.12.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": { "typecheck": "tsc --noEmit" },
+  "dependencies": { "@mrstudio/sdk": "workspace:*" },
+  "devDependencies": { "typescript": "^5.9.0" }
+}

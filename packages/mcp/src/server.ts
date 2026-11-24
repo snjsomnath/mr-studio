@@ -5,8 +5,11 @@ import { isAbsolute, resolve } from 'node:path';
 import { z } from 'zod';
 
 import { changelogVersions, loadCatalog, type Catalog, type CoreOptions } from './core.ts';
+import { buildCapabilities, closestIds, parsePatterns, rank, withSite, type Capability } from './capabilities.ts';
+import { assessExperience, buildExperience, type BuildResult, type ExperiencePlan } from './experience.ts';
 import { checkIdea } from './ideas.ts';
-import { brainstormPrompt, dashboardPrompt, newProjectPrompt, requestPrompt, serverInstructions } from './prompts.ts';
+import { RECIPE_VOCABULARY, legendFor } from './recipe.ts';
+import { brainstormPrompt, buildFromDataPrompt, compareScenariosPrompt, designExperiencePrompt, planWorkshopPrompt, dashboardPrompt, newProjectPrompt, requestPrompt, serverInstructions } from './prompts.ts';
 import { REQUEST_KINDS, submitDraft, writeDraft, type RequestKind } from './requests.ts';
 import {
   availableLayers,
@@ -17,6 +20,7 @@ import {
   findLayer,
   freeId,
   instanceIds,
+  previewPlan,
   readSite,
   runCli,
   SITE_FORMAT,
@@ -27,23 +31,93 @@ import {
   type SiteManifest,
 } from './site.ts';
 
-export const SERVER_VERSION = '0.1.0';
+// The package version (the core release it was built with), stamped in by scripts/build.mjs.
+declare const __MRSTUDIO_SERVER_VERSION__: string | undefined;
+export const SERVER_VERSION = typeof __MRSTUDIO_SERVER_VERSION__ === 'string' ? __MRSTUDIO_SERVER_VERSION__ : '0.0.0-dev';
 
 export interface ServerOptions extends CoreOptions {
   /** Folder that relative site paths are resolved against. */
   project?: string;
 }
 
-type Content = { content: { type: 'text'; text: string }[]; isError?: boolean };
+type Content = { content: { type: 'text'; text: string }[]; structuredContent?: Record<string, unknown>; isError?: boolean };
+
+/**
+ * Why a tool refused, in one shape for every tool (#325): a code a model can branch on, the
+ * message in words, whether trying again differently can work, and what to do next.
+ */
+export interface ToolError {
+  code: string;
+  message: string;
+  recoverable: boolean;
+  next: string[];
+}
+
+/** Every tool's result carries at least these; the rest of the fields are the tool's own. */
+const RESULT = z.looseObject({
+  ok: z.boolean().describe('false when the tool refused or failed; then error says why'),
+  summary: z.string().describe('One line on what happened'),
+  error: z
+    .object({ code: z.string(), message: z.string(), recoverable: z.boolean(), next: z.array(z.string()) })
+    .optional(),
+});
+
+function asFields(data: unknown): Record<string, unknown> {
+  if (data === undefined) return {};
+  if (data && typeof data === 'object' && !Array.isArray(data)) return data as Record<string, unknown>;
+  return { result: data };
+}
+
+function text(summary: string, data?: unknown): string {
+  return data === undefined ? summary : `${summary}\n\n${typeof data === 'string' ? data : JSON.stringify(data, null, 2)}`;
+}
 
 function reply(summary: string, data?: unknown): Content {
-  const text = data === undefined ? summary : `${summary}\n\n${typeof data === 'string' ? data : JSON.stringify(data, null, 2)}`;
-  return { content: [{ type: 'text', text }] };
+  return { content: [{ type: 'text', text: text(summary, data) }], structuredContent: { ok: true, summary, ...asFields(data) } };
 }
 
-function fail(message: string, data?: unknown): Content {
-  return { ...reply(message, data), isError: true };
+function fail(message: string, data?: unknown, how: Partial<Omit<ToolError, 'message'>> = {}): Content {
+  const error: ToolError = { code: how.code ?? 'refused', message, recoverable: how.recoverable ?? true, next: how.next ?? [] };
+  const next = error.next.length ? `\nNext: ${error.next.join(' ')}` : '';
+  return {
+    content: [{ type: 'text', text: text(`${message}${next}`, data) }],
+    structuredContent: { ok: false, summary: message, error, ...asFields(data) },
+    isError: true,
+  };
 }
+
+/**
+ * What each tool does to the world (MCP tool annotations). Every tool is listed; a test checks
+ * that none is missing. Writes touch only the site folder unless openWorldHint says otherwise.
+ */
+const ANNOTATIONS: Record<string, { readOnlyHint: boolean; destructiveHint?: boolean; idempotentHint?: boolean; openWorldHint: boolean }> = {
+  overview: { readOnlyHint: true, openWorldHint: false },
+  read_doc: { readOnlyHint: true, openWorldHint: false },
+  whats_new: { readOnlyHint: true, openWorldHint: false },
+  list_layers: { readOnlyHint: true, openWorldHint: false },
+  describe_layer: { readOnlyHint: true, openWorldHint: false },
+  list_building_blocks: { readOnlyHint: true, openWorldHint: false },
+  find_capabilities: { readOnlyHint: true, openWorldHint: false },
+  describe_capability: { readOnlyHint: true, openWorldHint: false },
+  assess_experience: { readOnlyHint: true, openWorldHint: false },
+  build_experience: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  create_site: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+  get_site: { readOnlyHint: true, openWorldHint: false },
+  update_site: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+  add_layer: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+  set_layer: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+  move_layer: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  remove_layer: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
+  set_steps: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+  save_custom_layer: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+  validate_site: { readOnlyHint: true, openWorldHint: false },
+  preview_site: { readOnlyHint: true, openWorldHint: false },
+  check_layer_idea: { readOnlyHint: true, openWorldHint: false },
+  draft_module_request: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+  submit_module_request: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+};
+
+export const TOOL_NAMES = Object.keys(ANNOTATIONS);
 
 function counts(issues: Issue[]): string {
   const e = issues.filter((i) => i.level === 'error').length;
@@ -74,15 +148,21 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
 
   const server = new McpServer({ name: 'mrstudio', title: 'MR Studio', version: SERVER_VERSION }, { instructions: serverInstructions(catalog) });
 
+  // Every tool gets its annotations from ANNOTATIONS and the shared result schema (#325).
+  const tool: typeof server.registerTool = (name, config, cb) => {
+    const annotations = ANNOTATIONS[name];
+    if (!annotations) throw new Error(`Tool '${name}' has no entry in ANNOTATIONS`);
+    return server.registerTool(name, { ...config, outputSchema: (config.outputSchema ?? RESULT) as any, annotations: { title: config.title, ...annotations } }, cb);
+  };
+
   // ---- Knowledge ----
 
-  server.registerTool(
+  tool(
     'overview',
     {
       title: 'MR Studio overview',
       description: 'Start here. What MR Studio is, how a project is structured, what this core offers, and the workflow for building a project with these tools.',
       inputSchema: {},
-      annotations: { readOnlyHint: true },
     },
     async () =>
       reply(serverInstructions(catalog), {
@@ -100,23 +180,22 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
       }),
   );
 
-  server.registerTool(
+  tool(
     'read_doc',
     {
       title: 'Read an MR Studio doc',
       description: 'Read a core document: "architecture", "roadmap", or a contract such as "contracts/site", "contracts/layer", "contracts/session", "contracts/engine". Call with no name to list them.',
       inputSchema: { name: z.string().optional().describe('Doc name, e.g. "contracts/site"') },
-      annotations: { readOnlyHint: true },
     },
     async ({ name }) => {
       if (!name) return reply('Docs in this core:', Object.keys(catalog.docs));
       const key = name.toLowerCase().replace(/\.md$/, '').replace(/^docs\//, '');
       const text = catalog.docs[key] ?? catalog.docs[`contracts/${key}`];
-      return text ? reply(text) : fail(`No doc '${name}'. Docs: ${Object.keys(catalog.docs).join(', ')}`);
+      return text ? { ...reply(`Doc '${name}'.`, { name, text }), content: [{ type: 'text' as const, text }] } : fail(`No doc '${name}'. Docs: ${Object.keys(catalog.docs).join(', ')}`, undefined, { code: 'unknown_doc' });
     },
   );
 
-  server.registerTool(
+  tool(
     'whats_new',
     {
       title: "What's new in MR Studio",
@@ -125,7 +204,6 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
         since: z.string().optional().describe('Only versions newer than this one, e.g. "0.3.0"'),
         limit: z.number().int().positive().optional().describe('How many versions (default 5)'),
       },
-      annotations: { readOnlyHint: true },
     },
     async ({ since, limit }) => {
       const newer = (v: string) => {
@@ -145,7 +223,7 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
     },
   );
 
-  server.registerTool(
+  tool(
     'list_layers',
     {
       title: 'List layers',
@@ -154,7 +232,6 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
         site: z.string().optional().describe('Site folder, to include its own layers'),
         include_roadmap: z.boolean().optional().describe('Include planned roadmap layers (default true)'),
       },
-      annotations: { readOnlyHint: true },
     },
     async ({ site, include_roadmap }) => {
       const layers = availableLayers(catalog, site ? at(site) : null).map(layerSummary);
@@ -163,7 +240,7 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
     },
   );
 
-  server.registerTool(
+  tool(
     'describe_layer',
     {
       title: 'Describe a layer',
@@ -172,22 +249,20 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
         layer: z.string().describe('Core layer id, or ./layers/<name> for a site layer'),
         site: z.string().optional().describe('Site folder, needed for site layers'),
       },
-      annotations: { readOnlyHint: true },
     },
     async ({ layer, site }) => {
       const found = findLayer(catalog, site ? at(site) : null, layer);
-      if (!found) return fail(`No layer '${layer}'. Core layers: ${catalog.layers.map((l) => l.id).join(', ')}`);
+      if (!found) return fail(`No layer '${layer}'. Core layers: ${catalog.layers.map((l) => l.id).join(', ')}`, undefined, { code: 'unknown_layer', next: ['Pick one of the core layers, or use check_layer_idea for something new.'] });
       return reply(`${found.manifest.name} (${found.origin} layer). Params are the control ids; set them in the site's layer entry.`, found.manifest);
     },
   );
 
-  server.registerTool(
+  tool(
     'list_building_blocks',
     {
       title: 'List building blocks',
-      description: 'The shared primitives layers are composed from (visuals, data sources, interactions, TV panels), whether each is built or planned in this core, and the kernels. Use it to brainstorm layers as reuse.',
+      description: 'The shared primitives layers are composed from (visuals, data sources, interactions, TV panels), whether each is built or planned in this core, and the kernels. find_capabilities with kind "block" or "kernel" gives the same with evidence; this tool stays for older prompts.',
       inputSchema: { group: z.enum(['visual', 'data', 'interaction', 'tv']).optional() },
-      annotations: { readOnlyHint: true },
     },
     async ({ group }) => {
       const blocks = catalog.blocks.filter((b) => !group || b.group === group).map(({ detect: _d, ...b }) => b);
@@ -198,9 +273,176 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
     },
   );
 
+  // ---- Capabilities (#326) ----
+
+  const siteFacts = (dir: string | null) => {
+    if (!dir) return null;
+    try {
+      const m = readSite(dir);
+      return {
+        data: new Set<string>([...Object.keys(m.data ?? {}), ...['buildings', 'trees', 'terrain', 'mesh'].filter((k) => m.scene?.[k])]),
+        services: new Set<string>((Array.isArray(m.services) ? m.services : []).map((x: any) => x?.id).filter(Boolean)),
+      };
+    } catch {
+      return null;
+    }
+  };
+  const capabilitiesFor = (site?: string) => {
+    const dir = site ? at(site) : null;
+    const extra = dir ? availableLayers(catalog, dir).filter((l) => l.origin !== 'core') : [];
+    const facts = siteFacts(dir);
+    return buildCapabilities(catalog, extra).map((c) => withSite(c, facts));
+  };
+  const brief = (c: Capability) => ({
+    id: c.id,
+    name: c.name,
+    status: c.status,
+    ...(c.use ? { use: c.use } : {}),
+    purpose: c.purpose ?? c.summary,
+    ...(c.questions.length ? { questions: c.questions } : {}),
+    surfaces: c.surfaces,
+    ...(c.interactions.length ? { interactions: c.interactions } : {}),
+    ...(c.requires.length ? { requires: c.requires } : {}),
+    ...(c.pairs_with.length ? { pairs_with: c.pairs_with } : {}),
+    ...(c.limitations.length ? { limitations: c.limitations } : {}),
+    evidence: c.evidence,
+  });
+  const KINDS = ['layer', 'block', 'kernel', 'site', 'constraint'] as const;
+  const STATUSES = ['available', 'needs_setup', 'planned', 'unsupported'] as const;
+
+  tool(
+    'find_capabilities',
+    {
+      title: 'Find what MR Studio can do for a goal',
+      description:
+        'Search everything MR Studio can do (layers, building blocks, kernels, site features) and what it cannot (planned items, constraints) for a goal, question or idea in plain words, e.g. "help residents see how a new development changes sun and wind". Returns ranked capabilities, each with why it matched, its status from the code (available, needs_setup, planned, unsupported), what it needs (data, keys, services), what the table, controller and phones do, what it pairs with, and the files that prove it. Use it before proposing an experience; a planned or unsupported capability is a development request, never something to configure. With site, requirements say whether that site meets them.',
+      inputSchema: {
+        goal: z.string().optional().describe('What the people at the table should see, understand or do, in plain words'),
+        kind: z.enum(KINDS).optional().describe('Only this kind'),
+        surface: z.enum(['table', 'controller', 'phone']).optional().describe('Only capabilities that use this surface'),
+        status: z.enum(STATUSES).optional().describe('Only this status'),
+        site: z.string().optional().describe('Site folder: check requirements against its data and services'),
+        limit: z.number().int().positive().max(50).optional().describe('How many (default 12; all when no goal)'),
+      },
+    },
+    async ({ goal, kind, surface, status, site, limit }) => {
+      let caps = capabilitiesFor(site);
+      if (kind) caps = caps.filter((c) => c.kind === kind);
+      if (surface) caps = caps.filter((c) => Boolean(c.surfaces[surface]));
+      if (status) caps = caps.filter((c) => c.status === status);
+      if (!goal) {
+        const list = caps.slice(0, limit ?? caps.length).map(brief);
+        return reply(`${list.length} capabilit${list.length === 1 ? 'y' : 'ies'}${kind ? ` of kind ${kind}` : ''}.`, { matches: list });
+      }
+      const ranked = rank(caps, goal).slice(0, limit ?? 12);
+      if (!ranked.length) {
+        return reply('Nothing in MR Studio matches those words. If it is truly missing, it is a development request: check_layer_idea, then draft_module_request.', { matches: [] });
+      }
+      const matches = ranked.map((m) => ({ ...brief(m.capability), matched: m.why }));
+      const counts = STATUSES.map((st) => [st, matches.filter((x) => x.status === st).length] as const).filter(([, n]) => n);
+      return reply(`${matches.length} matches (${counts.map(([st, n]) => `${n} ${st}`).join(', ')}). Read purpose and questions to judge fit; a match on words is not a match on intent.`, {
+        matches,
+        patterns: 'mrstudio://patterns lists experience shapes (compare today and the proposal, map it together…) that combine these',
+      });
+    },
+  );
+
+  tool(
+    'describe_capability',
+    {
+      title: 'Describe one capability',
+      description: 'Everything known about one capability by id (from find_capabilities): purpose, questions it answers, status and why, requirements, surfaces, interactions, what it uses and pairs with, limits, example sites that use it, evidence files and related issues. For a layer, also its controls (the params a site sets).',
+      inputSchema: {
+        id: z.string().describe('e.g. "layer:sunlight", "block:phone-tools", "kernel:thermal", "site:ribbons", "constraint:table-3d"'),
+        site: z.string().optional().describe('Site folder, to check requirements and include its own layers'),
+      },
+    },
+    async ({ id, site }) => {
+      const caps = capabilitiesFor(site);
+      const key = id.includes(':') ? id : `layer:${id}`;
+      const c = caps.find((x) => x.id === key || (x.use !== undefined && x.use === id));
+      if (!c) {
+        const near = closestIds(caps, id);
+        return fail(`No capability '${id}'.`, { similar: near }, { code: 'unknown_capability', next: ['Use one of the similar ids, or find_capabilities with a goal.'] });
+      }
+      const layer = c.kind === 'layer' && c.use ? findLayer(catalog, site ? at(site) : null, c.use) : undefined;
+      const controls = layer ? (layer.manifest.controls ?? []).map((x: any) => ({ id: x.id, type: x.type, label: x.label, default: x.default, ...(x.phone ? { phone: true } : {}), ...(x.options ? { options: x.options.map((o: any) => o?.value ?? o) } : {}), ...(x.min !== undefined ? { min: x.min, max: x.max } : {}) })) : undefined;
+      const examples = (catalog.examples ?? []).filter((e) => c.examples.includes(e.path));
+      return reply(`${c.name} (${c.id}): ${c.status}.`, { ...c, ...(controls ? { controls } : {}), example_sites: examples });
+    },
+  );
+
+  // ---- Experiences (#327) ----
+
+  const STEP = z.object({
+    title: z.string().describe('Short, in the person\'s words; becomes the step title on the controller'),
+    want: z.string().optional().describe('What the table shows and people do in this step, in plain words'),
+    use: z.string().optional().describe('The layer, if chosen with find_capabilities: "sunlight", "layer:sunlight", "custom:zones"'),
+    params: z.record(z.string(), z.unknown()).optional().describe('Settings for this step by control id (describe_layer)'),
+    with: z.array(z.string()).optional().describe('Layers shown inside this one while it is open, e.g. ["transit"]'),
+    controller: z.string().optional().describe('What the controller says for this step'),
+    phone: z.string().optional().describe('What phones do in this step'),
+    notes: z.string().optional().describe('The guide\'s words, shown only on the guide\'s phone'),
+  });
+  const PLAN = {
+    title: z.string(),
+    goal: z.string().describe('What people should leave understanding, having seen or having said'),
+    audience: z.string().optional(),
+    steps: z.array(STEP).min(1),
+    at_rest: z.array(z.string()).optional().describe('Layers playing when nobody touches the controller, e.g. ["cars", "trees"]'),
+    needs: z.array(z.string()).optional().describe('Other things the experience needs that are not a step, e.g. "people vote on each other\'s ideas"'),
+    guided: z.boolean().optional().describe('Make a guided sequence of the steps (default: yes for two or more steps)'),
+  };
+  const assessFor = (plan: ExperiencePlan, site?: string) => {
+    const dir = site ? at(site) : null;
+    return assessExperience(plan, capabilitiesFor(site), availableLayers(catalog, dir), Boolean(dir));
+  };
+
+  tool(
+    'assess_experience',
+    {
+      title: 'Check an experience plan',
+      description:
+        'Check a whole experience against what MR Studio can do, before building it. A plan is a title, a goal, the audience, and steps: each step is what the table shows and people do (want, or a layer chosen with find_capabilities as use), its settings, layers inside it (with), what the controller says, what phones do, and notes for the guide. Add layers at rest and other needs. Returns, per step and need, the layer that serves it and why, alternatives, setup still needed (data, services), param problems, a constraint it runs into, and gaps with the kind of development request they need; and a verdict: buildable, buildable_with_setup, partly_buildable or needs_development. Writes nothing. Read mrstudio://concepts and mrstudio://patterns first.',
+      inputSchema: { ...PLAN, site: z.string().optional().describe('Site folder: check data and services against it') },
+    },
+    async ({ site, ...plan }) => {
+      const a = assessFor(plan as ExperiencePlan, site);
+      return reply(`${a.summary}\nNext: ${a.next.join(' ')}`, a);
+    },
+  );
+
+  tool(
+    'build_experience',
+    {
+      title: 'Build an experience plan',
+      description:
+        'Build the parts of an experience plan that exist, in one validated change to the site: a layer for each buildable step (an existing instance is reused), the layers inside them, the layers at rest, and, for two or more steps, a guided sequence (a slideshow named after the plan) with each step\'s settings, title, controller text and notes. Steps that need development or run into a constraint are skipped and listed with their gaps; nothing that does not exist is written. Call assess_experience first and show the person the result.',
+      inputSchema: { site: z.string(), ...PLAN },
+    },
+    async ({ site, ...plan }) => {
+      const a = assessFor(plan as ExperiencePlan, site);
+      let result: BuildResult | undefined;
+      const out = editScene(site, (m) => {
+        result = buildExperience(m, plan as ExperiencePlan, a, availableLayers(catalog, at(site)));
+        if (!result.built.length && !m.layers.length) return 'Nothing in this plan can be built yet; see assess_experience for the gaps.';
+        return { message: result.message, issues: result.issues };
+      });
+      const sc = out.structuredContent as Record<string, unknown> | undefined;
+      if (sc && result) {
+        Object.assign(sc, { verdict: a.verdict, built: result.built, skipped: result.skipped, gaps: a.gaps, setup: a.setup });
+        if (sc.ok && a.gaps.length) {
+          sc.next = [`Show the person the ${a.gaps.length} gap${a.gaps.length === 1 ? '' : 's'}; with their yes, draft a request for each with draft_module_request.`];
+          (out.content[0] as { text: string }).text += `\nGaps: ${a.gaps.map((g) => `${g.for} (${g.kind})`).join('; ')}`;
+        }
+      }
+      return out;
+    },
+  );
+
   // ---- Sites ----
 
-  server.registerTool(
+  tool(
     'create_site',
     {
       title: 'Create a site',
@@ -227,7 +469,7 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
     async (args) => {
       try {
         const result = createSite({ ...args, dir: at(args.dir) }, catalog);
-        if (!result.files.length) return fail('The site was not created:', result.issues);
+        if (!result.files.length) return fail('The site was not created.', { issues: result.issues }, { code: 'invalid_site', next: ['Fix the values listed and call create_site again.'] });
         return reply(`Created ${result.manifest.name} in ${at(args.dir)} (${counts(result.issues)}). Next: add data to data/, compose the scene with add_layer, then validate_site.`, {
           files: result.files,
           site: result.manifest,
@@ -239,18 +481,17 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
     },
   );
 
-  server.registerTool(
+  tool(
     'get_site',
     {
       title: 'Read a site',
       description: "Read a site's site.json, its scene (layers bottom to top with effective params) and its current problems.",
       inputSchema: { site: z.string().describe('Site folder') },
-      annotations: { readOnlyHint: true },
     },
     async ({ site }) => {
       const dir = at(site);
       const { manifest, issues } = validateSiteDir(dir, catalog);
-      if (!manifest) return fail(issues[0]!.message);
+      if (!manifest) return fail(issues[0]!.message, undefined, { code: 'no_site', next: ['Check the folder, or create the site with create_site.'] });
       const describe = (ref: any) => {
         const layer = findLayer(catalog, dir, ref.use, manifest);
         const defaults = Object.fromEntries((layer?.manifest.controls ?? []).filter((c: any) => c.type !== 'action').map((c: any) => [c.id, c.default]));
@@ -271,7 +512,7 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
     (k) => !['format', 'id', 'layers', 'custom'].includes(k),
   );
 
-  server.registerTool(
+  tool(
     'update_site',
     {
       title: 'Update site settings',
@@ -296,7 +537,7 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
         if (key === 'custom') return fail('Use save_custom_layer to save or remove a custom layer.');
         if (key === 'format' || key === 'id') return fail(`'${key}' cannot be changed here.`);
         if (!editable.includes(key)) {
-          return fail(`'${key}' is not a site.json setting in format ${SITE_FORMAT}. Settable: ${editable.join(', ')}. If the site needs it, draft a module request (kind "contract").`);
+          return fail(`'${key}' is not a site.json setting in format ${SITE_FORMAT}. Settable: ${editable.join(', ')}.`, undefined, { code: 'unknown_setting', next: ['If the site really needs it, it is a core change: check_layer_idea, then draft_module_request (kind "contract").'] });
         }
         if (value === null) delete next[key];
         else if (value && typeof value === 'object' && !Array.isArray(value) && next[key] && typeof next[key] === 'object') {
@@ -310,7 +551,7 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
       const issues = validateManifest(next, dir, catalog);
       const before = new Set(validateManifest(manifest, dir, catalog).filter((i) => i.level === 'error').map((i) => `${i.path}|${i.message}`));
       const added = issues.filter((i) => i.level === 'error' && !before.has(`${i.path}|${i.message}`));
-      if (added.length) return fail('Not saved; the change would make the site invalid:', added);
+      if (added.length) return fail('Not saved: the change would make the site invalid.', { issues: added }, { code: 'would_invalidate', next: ['Fix the values listed and call update_site again; nothing was written.'] });
       writeSite(dir, next, `Changed ${Object.keys(set).join(', ')}`);
       return reply(`Saved (${counts(issues)}).`, { issues, changed: Object.keys(set) });
     },
@@ -349,15 +590,17 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
       return fail((error as Error).message);
     }
     if (typeof manifest.format === 'number' && manifest.format < SITE_FORMAT) {
-      return fail(`This site is in the older site format ${manifest.format}. Run \`mrstudio migrate <site folder>\` (or open it once in the MR Studio app) to bring it to format ${SITE_FORMAT}, then try again.`);
+      return fail(`This site is in the older site format ${manifest.format}.`, undefined, { code: 'old_site_format', next: [`Run \`mrstudio migrate <site folder>\` (or open it once in the MR Studio app) to bring it to format ${SITE_FORMAT}, then try again.`] });
     }
     manifest.layers = Array.isArray(manifest.layers) ? manifest.layers : [];
     const result = edit(manifest);
-    if (typeof result === 'string') return fail(result);
-    if (result.issues?.some((i) => i.level === 'error')) return fail(`Not saved: ${result.message}`, result.issues);
+    if (typeof result === 'string') return fail(result, undefined, { code: 'not_found', next: ['Call get_site to see the scene and its ids.'] });
+    // A refusal never repeats the success line it would have had (#321): say what was refused and why.
+    const next = ['Fix the issues listed and call the tool again; nothing was written.'];
+    if (result.issues?.some((i) => i.level === 'error')) return fail('Not saved: the values given are not valid.', { attempted: result.message, issues: result.issues }, { code: 'invalid_params', next });
     const issues = validateManifest(manifest, dir, catalog);
     const errors = issues.filter((i) => i.level === 'error' && /^(layers|custom)/.test(i.path));
-    if (errors.length) return fail(`Not saved: ${result.message} It would leave the scene invalid:`, errors);
+    if (errors.length) return fail('Not saved: the change would leave the scene invalid.', { attempted: result.message, issues: errors }, { code: 'would_invalidate', next });
     writeSite(dir, manifest, result.message.replace(/\.$/, ''));
     const scene = manifest.layers.map(
       (l: any, i: number) => `${i}: ${l.id} (${l.use})${l.active ? ' active' : ''}${l.items?.length ? `, items ${l.items.map((item: any) => item.id).join(', ')}` : ''}${l.steps?.sequence?.length ? `, ${l.steps.sequence.length} steps` : ''}`,
@@ -365,7 +608,7 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
     return reply(`${result.message} Site is ${counts(issues)}.`, { scene_bottom_to_top: scene, issues: [...(result.issues ?? []), ...issues.filter((i) => i.level !== 'note')] });
   }
 
-  server.registerTool(
+  tool(
     'add_layer',
     {
       title: 'Add a layer to the scene',
@@ -404,7 +647,7 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
       }),
   );
 
-  server.registerTool(
+  tool(
     'set_layer',
     {
       title: 'Change a layer in the scene',
@@ -456,7 +699,7 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
       }),
   );
 
-  server.registerTool(
+  tool(
     'move_layer',
     {
       title: 'Reorder the scene',
@@ -491,13 +734,12 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
       }),
   );
 
-  server.registerTool(
+  tool(
     'remove_layer',
     {
       title: 'Remove a layer from the scene',
       description: "Remove one layer (with its items) or one item. Sequence steps that showed it are removed too.",
       inputSchema: { site: z.string(), ...target },
-      annotations: { destructiveHint: true },
     },
     async ({ site, id, index, use }) =>
       editScene(site, (m) => {
@@ -517,16 +759,16 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
       }),
   );
 
-  server.registerTool(
+  tool(
     'set_steps',
     {
       title: 'Set how Next moves through a layer',
       description:
-        'Set or clear a layer\'s steps: mode (manual or timed), loop, reveal (what Next does after a step\'s sub-steps: stop or then-next), the sequence\'s default transition and transition_s and, for a sequence such as the slideshow, the sequence of steps. Each step shows another layer of the scene or one of the sequence\'s own items, by id, with optional params for that step only, duration_s, transition (cut, fade or dip: through the empty map) and transition_s, next, title, description and source. Replaces the whole steps object; null clears it.',
+        'Set or clear a layer\'s steps: mode (manual or timed), loop, reveal (what Next does after a step\'s sub-steps: stop or then-next), the sequence\'s default transition and transition_s and, for a sequence such as the slideshow, the sequence of steps. Each step shows another layer of the scene or one of the sequence\'s own items, by id, with optional params for that step only, duration_s, transition (cut, fade or dip: through the empty map) and transition_s, next, title, description, source and notes. notes are the presenter\'s words for that step: they show on the guide\'s phone (/guide) and in the editor, never on the table or the controller. Replaces the whole steps object; null clears it.',
       inputSchema: {
         site: z.string(),
         ...target,
-        steps: z.record(z.string(), z.unknown()).nullable().describe('e.g. { "mode": "manual", "loop": true, "sequence": [{ "layer": "sunlight", "params": { "hour": 9 }, "title": "Morning" }] }'),
+        steps: z.record(z.string(), z.unknown()).nullable().describe('e.g. { "mode": "manual", "loop": true, "sequence": [{ "layer": "sunlight", "params": { "hour": 9 }, "title": "Morning", "notes": "Ask who walks here before work." }] }'),
       },
     },
     async ({ site, id, index, use, steps }) =>
@@ -541,12 +783,12 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
       }),
   );
 
-  server.registerTool(
+  tool(
     'save_custom_layer',
     {
       title: 'Save a custom layer',
       description:
-        'Save (or with recipe null, remove) a custom layer in the site: a recipe of blocks the runtime draws without code. A recipe has name, description, icon, category, data (each { id, and one of dataset | path | wms { url, layers, styles, format, source } | tiles }), look, motion and interaction (each a list of { id, block, data?, on?, props }), enter (cut or fade), controls (as in layer.json, with bind: "look.<block id>.<prop>"), legend and attract. The table is 2D only. Then add it to the scene with add_layer use "custom:<id>". The block names are in docs/blocks.md.',
+        'Save (or with recipe null, remove) a custom layer in the site: a recipe of blocks the runtime draws without code. A recipe has name, description, icon, category, data (each { id, and one of dataset | path | wms { url, layers, styles, format, source } | tiles }), look, motion and interaction (each a list of { id, block, data?, on?, props }), enter (cut or fade), controls (as in layer.json, with bind: "look.<block id>.<prop>"), legend and attract. Leave legend out and it is worked out from the looks and their data, as the editor does. The table is 2D only. Then add it to the scene with add_layer use "custom:<id>". The block names are in docs/blocks.md.',
       inputSchema: {
         site: z.string(),
         id: z.string().describe('Custom layer id: lowercase letters, digits and dashes'),
@@ -564,18 +806,26 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
           if (!Object.keys(m.custom).length) delete m.custom;
           return { message: `Removed the custom layer '${id}'.` };
         }
-        m.custom = { ...(m.custom ?? {}), [id]: recipe };
-        return { message: `Saved the custom layer '${id}'. Add it with add_layer use "${use}".` };
+        const saved: Record<string, any> = { ...recipe };
+        let legendNote = '';
+        if (saved.legend === undefined) {
+          const legend = legendFor(saved, at(site), m.data ?? {}, m.palette);
+          if (legend?.length) {
+            saved.legend = legend;
+            legendNote = ` The controller's legend has ${legend.length} row${legend.length === 1 ? '' : 's'}, worked out from the looks and their data.`;
+          } else if ((saved.look ?? []).length) legendNote = ' No legend yet: the looks\' data could not be read; save again once the data is in the site, or give legend yourself.';
+        }
+        m.custom = { ...(m.custom ?? {}), [id]: saved };
+        return { message: `Saved the custom layer '${id}'. Add it with add_layer use "${use}".${legendNote}` };
       }),
   );
 
-  server.registerTool(
+  tool(
     'validate_site',
     {
       title: 'Validate a site',
       description: 'Check a site against the site and layer contracts: keys, geometry, data paths, layer ids, params. Also runs `mrstudio validate` (the app\'s own check, which bakes the scene) when the CLI is installed.',
       inputSchema: { site: z.string(), run_cli: z.boolean().optional().describe('Run the mrstudio CLI too (default true when found)') },
-      annotations: { readOnlyHint: true },
     },
     async ({ site, run_cli }) => {
       const dir = at(site);
@@ -590,44 +840,34 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
       }
       const errors = issues.filter((i) => i.level === 'error').length;
       const ok = errors === 0 && cli.ok !== false;
-      return { ...reply(`${manifest?.name ?? site}: ${counts(issues)}${cli.ran ? `; mrstudio validate ${cli.ok ? 'passed' : 'failed'}` : ''}.`, { issues, cli }), isError: !ok };
+      const summary = `${manifest?.name ?? site}: ${counts(issues)}${cli.ran ? `; mrstudio validate ${cli.ok ? 'passed' : 'failed'}` : ''}.`;
+      if (!ok) return fail(summary, { valid: false, issues, cli }, { code: 'site_invalid', next: ['Fix each error with the site tools, then validate again.'] });
+      return reply(summary, { valid: true, issues, cli });
     },
   );
 
-  server.registerTool(
+  tool(
     'preview_site',
     {
       title: 'How to preview a site',
-      description: 'The commands to run the site on this computer (Windows or macOS) and the URLs of the table, TV, phone and dev views. Does not start anything.',
+      description:
+        'How to see a site running on this computer (Windows or macOS): with the installed MR Studio app (the usual way), or with the mrstudio CLI on a free port so it does not clash with the running app. Returns the command or steps and the URLs of the editor, table, controller, guide\'s phone, phone and dev views. Starts nothing.',
       inputSchema: { site: z.string(), lan: z.boolean().optional().describe('Let phones on the local network join') },
-      annotations: { readOnlyHint: true },
     },
     async ({ site, lan }) => {
-      const dir = at(site);
-      const exe = findCli(catalog);
-      const quote = (p: string) => (/\s/.test(p) ? `"${p}"` : p);
-      const cmd = `${exe ? quote(exe) : 'mrstudio'} dev --site ${quote(dir)}${lan ? ' --lan' : ''}`;
-      const fromCore = catalog.root ? `cd ${quote(catalog.root)} && pnpm dev   (runs the host and web dev server with hot reload; edit scripts/dev.mjs's site or pass --site)` : null;
-      return reply('Run this in a terminal, then open the dev view:', {
-        command: cmd,
-        from_core_checkout: fromCore,
-        open: { dev: 'http://localhost:4170/dev', table: 'http://localhost:4170/table', tv: 'http://localhost:4170/tv', phone: 'http://localhost:4170/phone' },
-        notes: [
-          exe ? `CLI found at ${exe}.` : 'The mrstudio CLI ships inside the MR Studio app; on macOS it is inside the .app bundle, on Windows next to MR Studio.exe. Add it to PATH or set MRSTUDIO_CLI.',
-          'The installed app opens the same folder for a real table: choose the site folder in the app.',
-        ],
-      });
+      const plan = await previewPlan(at(site), catalog, { lan: lan === true });
+      return reply(plan.summary, plan);
     },
   );
 
   // ---- Ideas and requests ----
 
-  server.registerTool(
+  tool(
     'check_layer_idea',
     {
       title: 'Check a layer idea',
       description:
-        'Check a sketched layer against the core: which existing layers already cover it, which kernels and building blocks exist or are planned, and whether it should be configured from an existing layer, requested as a new core layer from existing blocks, or needs new blocks or kernels first.',
+        'Check a sketched layer against the core (for a whole experience, use assess_experience): which existing layers already cover it, which kernels and building blocks exist or are planned, and whether it should be configured from an existing layer, requested as a new core layer from existing blocks, or needs new blocks or kernels first.',
       inputSchema: {
         title: z.string(),
         description: z.string().describe('What it shows and what people do with it'),
@@ -637,16 +877,17 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
         tools: z.array(z.enum(['point', 'line', 'polygon'])).optional(),
         site: z.string().optional(),
       },
-      annotations: { readOnlyHint: true },
     },
     async (args) => {
       const extra = args.site ? availableLayers(catalog, at(args.site)).filter((l) => l.origin === 'site') : [];
       const report = checkIdea(args, catalog, extra);
-      return reply(`${report.verdict}: ${report.summary}\nNext: ${report.next_step}`, report);
+      // The same idea as a one-step experience plan, so callers can move to assess_experience (#327).
+      const assessment = assessFor({ title: args.title, goal: args.description, steps: [{ title: args.title, want: args.description }] }, args.site);
+      return reply(`${report.verdict}: ${report.summary}\nNext: ${report.next_step}`, { ...report, assessment: { verdict: assessment.verdict, step: assessment.steps[0], gaps: assessment.gaps } });
     },
   );
 
-  server.registerTool(
+  tool(
     'draft_module_request',
     {
       title: 'Draft a module request',
@@ -682,25 +923,68 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
     },
   );
 
-  server.registerTool(
+  tool(
     'submit_module_request',
     {
       title: 'Submit a module request',
       description: 'Open a drafted module request as a GitHub issue on the core repository. Only call this after the person has read the draft and agreed: it posts publicly. Uses GITHUB_TOKEN or GH_TOKEN, else a signed-in gh CLI, else returns the link to file by hand.',
       inputSchema: { path: z.string().describe('Path of the draft in <site>/requests/') },
-      annotations: { openWorldHint: true },
     },
     async ({ path }) => {
       try {
         const result = await submitDraft(at(path));
-        return result.submitted ? reply(`Opened ${result.url} (${result.how}).`) : reply(`Not sent: ${result.how}.`, { issue_link: result.url });
+        if (result.submitted) {
+          const number = Number(/\/issues\/(\d+)/.exec(result.url)?.[1]) || null;
+          return reply(`Opened ${number ? `#${number}` : 'the issue'}: ${result.url} (${result.how}).`, { submitted: true, number, url: result.url, how: result.how });
+        }
+        return fail(`Not sent: ${result.how}.`, { submitted: false, issue_link: result.url }, { code: 'not_submitted', next: ['Give the person the issue_link to file it by hand, or sign in (GITHUB_TOKEN, GH_TOKEN or gh auth login) and try again. Never say it was filed.'] });
       } catch (error) {
-        return fail((error as Error).message);
+        return fail((error as Error).message, undefined, { code: 'no_draft', next: ['Draft it first with draft_module_request and pass the path it returns.'] });
       }
     },
   );
 
   // ---- Prompts ----
+
+  server.registerPrompt(
+    'design_experience',
+    {
+      title: 'Design an experience',
+      description: 'From a goal in plain words to an experience across the table, controller and phones: capabilities, a plan, its assessment, then build what exists and request what does not.',
+      argsSchema: { goal: z.string().optional(), place: z.string().optional(), audience: z.string().optional() },
+    },
+    ({ goal, place, audience }) => ({ messages: [{ role: 'user', content: { type: 'text', text: designExperiencePrompt(goal, place, audience) } }] }),
+  );
+
+  server.registerPrompt(
+    'plan_workshop',
+    {
+      title: 'Plan a workshop',
+      description: 'A timed workshop at the table: the place today, questions answered step by step, a moment where people contribute from their phones, and a close.',
+      argsSchema: { topic: z.string().optional(), minutes: z.string().optional(), participants: z.string().optional() },
+    },
+    ({ topic, minutes, participants }) => ({ messages: [{ role: 'user', content: { type: 'text', text: planWorkshopPrompt(topic, minutes, participants) } }] }),
+  );
+
+  server.registerPrompt(
+    'compare_scenarios',
+    {
+      title: 'Compare scenarios',
+      description: 'Show today and a proposal on a table that shows one layer at a time: reveal line, magnifier, phased plan or a repeated question.',
+      argsSchema: { today: z.string().optional(), proposal: z.string().optional() },
+    },
+    ({ today, proposal }) => ({ messages: [{ role: 'user', content: { type: 'text', text: compareScenariosPrompt(today, proposal) } }] }),
+  );
+
+  server.registerPrompt(
+    'build_from_data',
+    {
+      title: 'Build from data',
+      description: 'Turn a dataset into a custom layer and a step of an experience, without code.',
+      argsSchema: { data: z.string().optional() },
+    },
+    ({ data }) => ({ messages: [{ role: 'user', content: { type: 'text', text: buildFromDataPrompt(data) } }] }),
+  );
 
   server.registerPrompt(
     'new_project',
@@ -743,6 +1027,72 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
   );
 
   // ---- Resources ----
+
+  const patterns = () => parsePatterns(catalog.docs['experience-design'] ?? '');
+
+  server.registerResource(
+    'concepts',
+    'mrstudio://concepts',
+    { title: 'Designing an MR Studio experience', description: 'Read first: the three surfaces (table, controller, phones), what goes where, the words, the constraints, and the experience patterns', mimeType: 'text/markdown' },
+    async (uri) => ({ contents: [{ uri: uri.href, mimeType: 'text/markdown', text: catalog.docs['experience-design'] ?? 'docs/experience-design.md is missing from this core.' }] }),
+  );
+
+  server.registerResource(
+    'patterns',
+    new ResourceTemplate('mrstudio://patterns/{id}', {
+      list: async () => ({ resources: patterns().map((p) => ({ uri: `mrstudio://patterns/${p.id}`, name: p.name, mimeType: 'text/markdown', description: `Uses ${p.capabilities.join(', ')}` })) }),
+    }),
+    { title: 'Experience patterns', description: 'Shapes of experience that work at a table, each with the table, controller and phone roles and the capabilities it uses', mimeType: 'text/markdown' },
+    async (uri, { id }) => {
+      const p = patterns().find((x) => x.id === String(id));
+      return { contents: [{ uri: uri.href, mimeType: 'text/markdown', text: p ? p.text : `No pattern ${id}. Patterns: ${patterns().map((x) => x.id).join(', ')}` }] };
+    },
+  );
+
+  server.registerResource(
+    'capabilities',
+    'mrstudio://capabilities',
+    { title: 'Capability catalogue', description: 'Every capability with its status from the code: id, name, kind, status, one line', mimeType: 'application/json' },
+    async (uri) => ({
+      contents: [{ uri: uri.href, mimeType: 'application/json', text: JSON.stringify(capabilitiesFor().map((c) => ({ id: c.id, kind: c.kind, name: c.name, status: c.status, summary: c.purpose ?? c.summary })), null, 2) }],
+    }),
+  );
+
+  server.registerResource(
+    'capability',
+    new ResourceTemplate('mrstudio://capabilities/{id}', {
+      list: async () => ({ resources: capabilitiesFor().map((c) => ({ uri: `mrstudio://capabilities/${c.id}`, name: c.name, mimeType: 'application/json' })) }),
+    }),
+    { title: 'One capability', description: 'A capability record in full', mimeType: 'application/json' },
+    async (uri, { id }) => ({ contents: [{ uri: uri.href, mimeType: 'application/json', text: JSON.stringify(capabilitiesFor().find((c) => c.id === decodeURIComponent(String(id))) ?? null, null, 2) }] }),
+  );
+
+  server.registerResource(
+    'schema',
+    new ResourceTemplate('mrstudio://schema/{name}', {
+      list: async () => ({
+        resources: [
+          { uri: 'mrstudio://schema/site', name: 'site.json keys', mimeType: 'application/json' },
+          { uri: 'mrstudio://schema/recipe', name: 'Custom layer recipe vocabulary', mimeType: 'application/json' },
+        ],
+      }),
+    }),
+    { title: 'Schemas', description: 'The keys site.json accepts at each level (from manifest.rs), and the blocks, props, colours, ramps and icons a custom layer recipe may use (from the SDK)', mimeType: 'application/json' },
+    async (uri, { name }) => {
+      const body = String(name) === 'site' ? (catalog.siteSchema ?? null) : String(name) === 'recipe' ? RECIPE_VOCABULARY : null;
+      return { contents: [{ uri: uri.href, mimeType: 'application/json', text: JSON.stringify(body, null, 2) }] };
+    },
+  );
+
+  server.registerResource(
+    'examples',
+    new ResourceTemplate('mrstudio://examples/{id}', {
+      list: async () => ({ resources: (catalog.examples ?? []).map((e) => ({ uri: `mrstudio://examples/${e.id}`, name: e.name, mimeType: 'application/json', description: e.about.slice(0, 160) })) }),
+    }),
+    { title: 'Example sites', description: 'Real sites and samples in the core repository: their layers, steps and custom layers', mimeType: 'application/json' },
+    async (uri, { id }) => ({ contents: [{ uri: uri.href, mimeType: 'application/json', text: JSON.stringify((catalog.examples ?? []).find((e) => e.id === String(id)) ?? null, null, 2) }] }),
+  );
+
 
   server.registerResource(
     'docs',

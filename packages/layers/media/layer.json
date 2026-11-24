@@ -3,12 +3,13 @@
   "id": "media",
   "name": "Picture or video",
   "description": "A picture or a video of the site laid over the whole table, such as a simulation, an old photo or a film of a sun study",
+  "about": {"purpose": "Lays a picture or video over the whole table: a simulation, an old photo, a rendering of a proposal.", "questions": ["What did this look like before?", "What does the proposal or a simulation show here?"], "pairs_with": ["slideshow", "swipe", "lens"], "limits": ["The file must be in the site's media", "Covers the whole table; no interaction of its own"]},
   "icon": "images",
   "attract": { "effect": "grid" },
   "category": "media",
   "hidesAtRest": true,
   "controls": [
-    { "id": "file", "type": "text", "label": "File", "default": "", "tier": "more" },
+    { "id": "file", "type": "text", "label": "File", "default": "", "media": ["picture", "video"], "mediaBy": "path", "tier": "more" },
     {
       "id": "fit", "type": "select", "label": "Fit to the table", "default": "stretch", "tier": "more",
       "options": [

@@ -86,7 +86,7 @@ export default defineLayer<Params>({
     async function load() {
       const mine = ++loading;
       const videoName = videoDataset(ctx.site, ctx.params.video);
-      const videoUrl = videoName ? siteDataUrl(ctx.site, videoName) : null;
+      const videoUrl = videoName ? (siteDataUrl(ctx.site, videoName) ?? (videoName.includes('/') ? `/site/${videoName}` : null)) : null;
       const pathName = pathDataset(ctx.site, ctx.params.path);
       const [length, geojson] = await Promise.all([videoUrl ? videoLength(videoUrl) : 0, pathName ? readSiteData(ctx.site, pathName) : null]);
       if (mine !== loading) return;

@@ -99,7 +99,8 @@ docs/contracts/   the interface contracts below
 - **A scene is a list.** What a table shows is the ordered `layers` list in `site.json`, drawn bottom to top. The composer at `/compose` edits it through the host, and layers that are not analysis (base map, ambient life, media) are ordinary layer packages that draw on a canvas.
 - **The TV has a budget.** Dashboard panels sit on a fixed 12 by 6 grid, come in eight sizes and each spend a counted share of what one screen may ask a visitor to read. A panel over its budget is refused; too many panels become another page. Sites restyle through tokens and cannot change the rules.
 - **Controls are data.** A layer declares its controls in the manifest. The TV and phone UIs are generated from them, and the host validates every change against them.
-- **Python stays outside the app process.** Data preparation and research models run as services declared in the site or layer manifest and reached through the host gateway.
+- **Python stays outside the app process.** Data preparation and research models run as services declared under `services` in site.json; the host starts them, keeps them running and is the only way surfaces reach them (`/api/services`, `ctx.service`; site.md, Services).
+- **Per-thing settings are data, not controller code.** Things a visitor picks and changes one by one (an energy community's buildings) are `entities` in layer.json: the runtime picks them on the table and shows their controls on the controller, and the host keeps the values in `params.entities` (layer.md, Entities; #279). A layer's own app on the controller (a map to choose on) is its `stage`, built on the SDK's `controllerMap`; it reaches the table only through the host, with tool inputs and named actions (layer.md, The controller stage; #283).
 
 ## Distribution and updates
 
@@ -116,7 +117,7 @@ What a team installs:
 | MR Studio MCP server | One file inside the app, also npm `@mrstudio/mcp` | Building a site by talking to an LLM ([MCP.md](MCP.md)) |
 
 What a team owns: a site repository made from a template (`mrstudio new-site`, later a GitHub template repository).
-It holds `site.json`, data, custom layers and dashboards, and a `mrstudio` version range. It contains no core code.
+It holds `site.json`, data, custom layers and dashboards, its own code layers in `layers/` (built with `mrstudio layer build`, loaded by the app; see layer.md, Site layers), and a `mrstudio` version range. It contains no core code.
 The app opens that folder. Updating the core is installing a newer app; the site folder is not touched.
 
 Versioning. The app, CLI and SDK share one semantic version. What that version promises is the contracts, each of which carries its own number:

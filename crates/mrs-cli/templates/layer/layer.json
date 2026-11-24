@@ -1,0 +1,19 @@
+{
+  "api": 1,
+  "id": "__ID__",
+  "name": "__NAME__",
+  "description": "A site layer: rings where the table is tapped, and a counter on the controller",
+  "icon": "sparkle",
+  "category": "analysis",
+  "requires": { "kernels": [], "data": [], "services": [] },
+  "controls": [
+    { "id": "color", "type": "color", "label": "Colour", "default": "#ffb84d", "tier": "more" },
+    { "id": "size", "type": "range", "label": "Ring size", "min": 10, "max": 200, "step": 5, "default": 60, "unit": "m" },
+    { "id": "burst", "type": "action", "label": "Pulse the centre", "tier": "primary" }
+  ],
+  "tools": [{ "id": "ring", "type": "point", "label": "Place a ring" }],
+  "panels": [
+    { "id": "count", "widget": "stat", "size": "tile", "title": "Rings so far", "props": { "value": { "bind": "shared.rings" } } },
+    { "id": "last", "widget": "custom", "size": "tile", "title": "Last ring", "props": { "reads": 2 } }
+  ]
+}

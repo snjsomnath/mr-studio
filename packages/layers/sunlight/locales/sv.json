@@ -61,5 +61,13 @@
   "Each in turn": "Var och en i tur",
   "Sun, on average": "Sol i snitt",
   "At least {hours} h": "Minst {hours} h",
-  "Shadow trails over the day": "Skuggornas spår under dagen"
+  "Shadow trails over the day": "Skuggornas spår under dagen",
+  "Sun during": "Sol under",
+  "sun from {from} to {to} added up": "sol {from}–{to} summerad",
+  "All day": "Hela dagen",
+  "Morning": "Morgon",
+  "Lunch": "Lunch",
+  "Afternoon": "Eftermiddag",
+  "Evening": "Kväll",
+  "Sun hours counted": "Soltimmar som räknas"
 }

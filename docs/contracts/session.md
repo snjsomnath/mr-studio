@@ -182,6 +182,17 @@ GET /api/data/field?name=<dataset>[&hour=<0-23>]
 
 Reads a raster dataset of the site (`data` in site.json: a GeoTIFF, or a folder of one GeoTIFF per hour whose file names end in the two-digit hour) and samples it at the centre of every grid cell. Answers a version 1 field frame (engine.md) with f32 values, NaN where the raster has no data; 404 when the folder has no raster for that hour, 422 when the dataset is missing or unreadable. Cool paths reads the Chalmers demo's prepared PET this way (#196).
 
+## A table's media
+
+```
+GET /api/media
+GET /api/wms/layers?url=<address>[&service=wms|arcgis][&source=<id>]
+```
+
+`/api/media` lists everything the table has to show (#306), as `{ items: [{ kind, name?, path, bytes?, missing? }] }`: the scene's `buildings`, `terrain` and `trees`, every dataset of `data` (by `name`), then the pictures and video under `data/media/`, the sounds under `data/sounds/` and the 3D model (by `path` only). `kind` is `map` (GeoJSON), `table` (CSV), `raster` (GeoTIFF or a folder of them), `drawing` (SVG), `picture`, `video`, `sound`, `model` or `data` (anything else, such as trips). `missing` is true for a file `site.json` names that is not in the folder. The editor's Media tab shows the list, and every setting with `media` in its control (layer.md) picks from it. Online sources are `GET /api/sources`.
+
+`/api/wms/layers` asks a WMS service for its GetCapabilities, or an ArcGIS map service for its `?f=json`, and answers `{ layers: [{ name, title }] }` (an ArcGIS layer's `name` is its id). `source` signs the request with a source of the Sources manager, and stands in for `url` when that is empty. From this computer only. A WMS layer's Layers setting picks from it.
+
 ## Bringing data into a site
 
 Two HTTP endpoints take a file as the request body (any content type), with its name in an `X-Filename` header. Only this computer may call them: the host listens on the network while presenting, and a request from another address gets 403.
@@ -247,6 +258,14 @@ Add `source=osm` and send an empty body: the host asks OpenStreetMap (Overpass) 
 | `trees` | `natural=tree` points |
 | `walkways` | `highway` footway, path, pedestrian, steps, cycleway, track, living street, residential, service, unclassified |
 | `data:roads` | `highway` streets, motorway to service, with `kind: 'street'` for the cars layer |
+
+#### Everything at once (#310)
+
+```
+POST /api/data/osm?targets=buildings,trees,walkways,data:roads   asks once, writes nothing
+```
+
+One Overpass query for every target (the same mirrors and retries), split into one GeoJSON per dataset by tag and kept for 15 minutes, so the `source=osm` import of each that follows asks OpenStreetMap nothing more. The answer is `{ datasets: [{ dataset, ok: true, count } | { dataset, ok: false, report }] }` in the order asked; `dataset` is the name layers know (`roads` for `data:roads`) and `report` is the refusal above (`osm.offline`, `osm.empty`, `osm.unavailable`). The wizard's **Fetch everything from open data** (`packages/runtime/src/editor/fetch-all.ts`) calls it, then imports each dataset in turn and the ground with `source=elevation`, holding the editor's reload until the last one is in.
 
 Every OSM tag is kept as a property, with `osm_id` (`way/123`). The saved file carries `source: { name: 'OpenStreetMap', layer, attribution: '© OpenStreetMap contributors', licence: 'ODbL-1.0', fetched: 'YYYY-MM-DD' }`, and the report has a note with code `source.osm`: the credit must be shown wherever the table is. A refusal is a 422 report with one blocker: `osm.unavailable` (trips, terrain or another dataset name), `osm.offline` (no answer; try again) or `osm.empty` (nothing mapped there). `MRS_OVERPASS_URL` points the host at another Overpass server.
 

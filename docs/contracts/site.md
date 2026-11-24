@@ -116,7 +116,7 @@ A layer is data plus animation plus interaction. In the scene, an entry of `laye
 
 A template in the New layer gallery (#59) is not a definition. Adding one writes an ordinary instance with the template's params and button, and nothing refers back to the template.
 
-**Items.** A layer can hold `items`: instances that belong to it, such as public transport, traffic or trees inside a sun study, or a data visual on a slide. An item has `use`, `id`, `params`, `hide` and `active`, and nothing else: no button, no items and no steps of its own. It is drawn right on top of its layer, in list order. It shows only while its layer is open: when the layer turns on, each item whose `active` is true (the default) turns on with it, and when the layer turns off, all its items do. The map at rest is the layers with no button at the top level of the scene: those of category `base` and `ambient`, and any other layer that starts on (`active: true`) and has no `button`, such as a Map data layer colouring the streets (#204). So a table can have public transport at rest and another copy inside one layer. A layer at rest is not on the controller's rails and stays on while button layers open and close.
+**Items.** A layer can hold `items`: instances that belong to it, such as public transport, traffic or trees inside a sun study, or a data visual on a slide. An item has `use`, `id`, `params`, `hide` and `active`, and nothing else: no button, no items and no steps of its own. It is drawn right on top of its layer, in list order. It shows only while its layer is open: when the layer turns on, each item whose `active` is true (the default) turns on with it, and when the layer turns off, all its items do. The map at rest is the layers with no button at the top level of the scene: those of category `base` and `ambient`, and any other layer that starts on (`active: true`) and has no `button`, such as a Map data layer colouring the streets (#204). So a table can have public transport at rest and another copy inside one layer. A layer at rest is not on the controller's rails. While a button layer is open, the table pauses the map at rest's life (every layer at rest except the base map) and starts it again when the layer closes, as the Chalmers demo's Street Life gave way to an open layer (#303). Layers with `hidesAtRest` (the slideshow, Picture or video) pause the base map too. Tools kept alongside (`alongside`, such as Sketch) do not count as open layers. The host's state does not change: the editor still shows those layers as on, and a layer that wants some of that life carries it as items.
 
 **Steps.** `steps` says how Next moves through a layer: `mode` (`"manual"` or `"timed"`), `loop` (after the last step, back to the first) and `reveal` (once a step's sub-steps are done, Next `"stop"`s or moves on: `"then-next"`). See [present.md](present.md), Steps.
 
@@ -130,6 +130,7 @@ A template in the New layer gallery (#59) is not a definition. Adding one writes
 | `transition`, `transition_s` | How the step comes in: `"cut"`, `"fade"` (a cross-fade) or `"dip"` (the old step fades out to the empty map, then this one fades in), and how many seconds that takes (0 to 10). Unset, the sequence's own `steps.transition` and `steps.transition_s` apply, and without those a 0.7 s fade |
 | `next` | This step's own `reveal` |
 | `title`, `description`, `source` | For the controller's info strip (up to 80, 300 and 200 characters). The table never shows them |
+| `notes` | The presenter's notes for the step (#98): shown on the guide's phone (`/guide`) and in the editor, never on the table or the controller |
 
 Removing a layer from the scene also removes the steps that showed it.
 
@@ -196,6 +197,45 @@ Names in the tables match the places' `name`, case-insensitive; names that match
 - A colour is a palette slot (`"@accent"`), `"#rrggbb"`, or driven by a column: `{ "by": "kind", "kind": "category", "scheme"?: "auto" | "palette" | "epc", "colors"?: { "<value>": "@cat2" } }` (six values shown, the rest grouped as Others; values that already have known colours, such as energy classes A to G, keep them and their order unless `scheme` is `palette`; `colors` wins over both, #207) or `{ "by": "population", "kind": "number", "ramp": "sun", "classes": "continuous" | "equal" | "quantile", "count": 5 }`. A size may be `{ "by": "<column>", "range": [2, 8] }`.
 - A data `path` or dataset may be GeoJSON, or a CSV of points with `lon` and `lat` columns.
 - The builder writes the legend the looks give into `legend`.
+
+## Services
+
+`services` lists the outside compute the table's layers use (#278): a model, an optimiser or an API.
+The host either starts it with the table (`run`) or forwards to it where it already runs (`url`).
+Layers reach a service only through the host, from this computer, and name it in `requires.services`.
+
+```jsonc
+"services": [
+  {
+    "id": "ecom", "name": "Energy model", "health": "/api/health",
+    "run": {
+      "cwd": "services/ecom",                                   // inside the site
+      "command": ["{python}", "-m", "uvicorn", "app.main:app", "--port", "{port}"],
+      "venv": ".venv", "requirements": "requirements.txt",     // made and installed on the first start
+      "env": { "SCENARIO": "campus" },                          // never keys: those go in Sources and keys
+      "start_s": 90
+    }
+  },
+  { "id": "weather", "url": "https://models.example.org/weather" }
+]
+```
+
+| Key | Meaning |
+| --- | --- |
+| `id` | What a layer calls it by: lowercase letters, digits and dashes |
+| `run.command` | The program and its arguments. `{port}` is a free port the host picks (also in `PORT`), `{python}` the venv's Python, or this computer's without a venv |
+| `run.venv`, `run.requirements` | A virtual environment, made with this computer's Python when it is missing, and the requirements installed into it. They are installed again when the requirements file changes |
+| `health` | A path that answers 200 when the service is ready. Default `/` |
+| `run.start_s` | Seconds it may take to become ready. Default 60 |
+
+What the host does with them:
+
+- Starts each `run` service when the table opens, waits for `health`, and starts it again after a crash with a growing pause (1 s up to a minute). Each stop is in the operator log. It stops them when the table closes. A change to `services` takes effect when the table opens again.
+- `GET /api/services` gives each service's state (`installing`, `starting`, `up`, `down`, `remote`), why, and how often it restarted; `/api/services/<id>/log` the last lines it wrote.
+- `/api/services/<id>/call/<path>` forwards any method, with its body and query, to the service. The same request from several views of the table at once (the projector and the editor both run the layer) reaches the service once, and they share the answer, so a job starts once.
+- Every good answer is kept in `.mrstudio/services/<id>/`. When the service is down or fails, the kept answer to the same request is given instead, marked with `x-mrs-cached`, so a table without its model, or offline, still shows the last result. `.mrstable` exports leave this folder out.
+
+In a layer, `ctx.service(id)` has `get(path)`, `post(path, body)` and `job(path, body, { onProgress })`: a job POST answers `{ "job": "<id>" }`, and the SDK polls `<path>/<id>` until `state` is done or failed, passing on `progress` and `message`. A finished job's result is kept too. While a call runs, the layer publishes `busy: { label, progress }` and the controller shows it under the layer's name. `samples/service-example` has a model and a layer to copy.
 
 ## Composing a scene
 

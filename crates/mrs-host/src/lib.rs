@@ -7,10 +7,11 @@ mod calibration;
 mod engine_bridge;
 pub mod health;
 mod hub;
-mod layers;
+pub mod layers;
 mod model;
 pub mod relay;
 pub mod bridge;
+pub mod services;
 pub mod sources;
 mod transit;
 mod wms;
@@ -74,19 +75,37 @@ pub struct AppState {
     transit: transit::Cache,
     /// One import at a time.
     imports: tokio::sync::Mutex<()>,
-    /// The last OpenStreetMap answer, so Import brings in what the preview showed without asking again.
-    osm_cache: std::sync::Mutex<Option<OsmFetch>>,
+    /// Recent OpenStreetMap answers, one per layer and place, so Import brings in what the
+    /// preview (or a fetch of everything, #310) got without asking again.
+    osm_cache: std::sync::Mutex<std::collections::HashMap<String, OsmFetch>>,
     /// The join page's WebRTC bridge (#275): at most one surface carries phones at a time.
     bridge: bridge::BridgeSlot,
     /// The host's own router, for answering phones that come through a relay or the bridge.
     links: std::sync::OnceLock<Router>,
+    /// The site's outside compute (#278), started with the host and stopped with it.
+    pub services: services::Services,
 }
 
-/// One OpenStreetMap fetch: for which layer and ground, when, and the GeoJSON it became.
+/// One OpenStreetMap fetch: when, and the GeoJSON it became. Kept by layer and ground.
 struct OsmFetch {
-    key: String,
     at: std::time::Instant,
     bytes: Vec<u8>,
+}
+
+/// What a fetch is kept under: the layer and the ground it covers.
+fn osm_key(layer: OsmLayer, bounds: [f64; 4]) -> String {
+    format!("{layer:?} {bounds:?}")
+}
+
+/// The refusal when no Overpass server answered.
+fn osm_offline(target: &Target, detail: String) -> Report {
+    tracing::warn!("OpenStreetMap fetch failed: {detail}");
+    Report::refused(
+        target,
+        "osm.offline",
+        "We can't reach OpenStreetMap right now. Check the internet connection and try again in a minute.",
+        "OpenStreetMap did not answer.",
+    )
 }
 
 /// How long a fetch is reused: long enough to look at the preview, short enough to stay fresh.
@@ -160,50 +179,122 @@ impl AppState {
     /// The refusal is a report: no network, a busy server, or nothing mapped there.
     pub async fn fetch_osm(&self, target: &Target) -> Result<Vec<u8>, Report> {
         let layer = OsmLayer::for_target(target).map_err(|why| Report::refused(target, "osm.unavailable", why.clone(), why))?;
+        let bounds = self.osm_bounds(target).await?;
+        // The preview and the import ask for the same thing a minute apart: the second one reuses the first.
+        let key = osm_key(layer, bounds);
+        if let Some(bytes) = self.osm_cached(&key) {
+            return Ok(bytes);
+        }
+        let answer = self.ask_overpass(&osm::query(layer, bounds)).await.map_err(|detail| osm_offline(target, detail))?;
+        self.osm_keep(target, layer, key, &answer)
+    }
+
+    /// Asks OpenStreetMap once for several layers (#310), and keeps each layer's share for the
+    /// import that follows, so bringing them in asks nothing more. Each target gets its own
+    /// answer: how many features it has, or the refusal `fetch_osm` would give.
+    pub async fn fetch_osm_all(&self, targets: &[Target]) -> Vec<(Target, Result<usize, Report>)> {
+        let mut results: Vec<(Target, Result<usize, Report>)> = Vec::new();
+        let mut wanted: Vec<(Target, OsmLayer, String)> = Vec::new();
+        let mut bounds = None;
+        for target in targets {
+            let layer = match OsmLayer::for_target(target) {
+                Ok(layer) => layer,
+                Err(why) => {
+                    results.push((target.clone(), Err(Report::refused(target, "osm.unavailable", why.clone(), why))));
+                    continue;
+                }
+            };
+            let b = match bounds {
+                Some(b) => b,
+                None => match self.osm_bounds(target).await {
+                    Ok(b) => *bounds.insert(b),
+                    Err(report) => {
+                        results.push((target.clone(), Err(report)));
+                        continue;
+                    }
+                },
+            };
+            let key = osm_key(layer, b);
+            match self.osm_cached(&key) {
+                Some(bytes) => {
+                    let count = serde_json::from_slice::<Value>(&bytes).map_or(0, |v| osm::count(&v));
+                    results.push((target.clone(), Ok(count)));
+                }
+                None => wanted.push((target.clone(), layer, key)),
+            }
+        }
+        if let (false, Some(bounds)) = (wanted.is_empty(), bounds) {
+            let layers: Vec<OsmLayer> = wanted.iter().map(|(_, layer, _)| *layer).collect();
+            match self.ask_overpass(&osm::query_all(&layers, bounds)).await {
+                Ok(answer) => {
+                    for (target, layer, key) in wanted {
+                        let kept = self.osm_keep(&target, layer, key, &answer);
+                        let count = kept.map(|bytes| serde_json::from_slice::<Value>(&bytes).map_or(0, |v| osm::count(&v)));
+                        results.push((target, count));
+                    }
+                }
+                Err(detail) => {
+                    for (target, _, _) in wanted {
+                        results.push((target.clone(), Err(osm_offline(&target, detail.clone()))));
+                    }
+                }
+            }
+        }
+        // In the order asked.
+        results.sort_by_key(|(target, _)| targets.iter().position(|t| t == target));
+        results
+    }
+
+    /// The table's extent plus a margin, as OpenStreetMap is asked for it.
+    async fn osm_bounds(&self, target: &Target) -> Result<[f64; 4], Report> {
         let dir = self.site.dir.clone();
-        let bounds = tokio::task::spawn_blocking(move || Site::load(&dir).map(|site| osm::bounds(&site)))
+        tokio::task::spawn_blocking(move || Site::load(&dir).map(|site| osm::bounds(&site)))
             .await
             .map_err(|e| e.to_string())
             .and_then(|r| r.map_err(|e| e.to_string()))
-            .map_err(|e| Report::refused(target, "site.unreadable", e.clone(), e))?;
-        let offline = |detail: String| {
-            tracing::warn!("OpenStreetMap fetch failed: {detail}");
-            Report::refused(
-                target,
-                "osm.offline",
-                "We can't reach OpenStreetMap right now. Check the internet connection and try again in a minute.",
-                "OpenStreetMap did not answer.",
-            )
-        };
-        // The preview and the import ask for the same thing a minute apart: the second one reuses the first.
-        let key = format!("{layer:?} {bounds:?}");
-        if let Some(fetch) = self.osm_cache.lock().unwrap().as_ref().filter(|f| f.key == key && f.at.elapsed() < OSM_REUSE) {
-            return Ok(fetch.bytes.clone());
+            .map_err(|e| Report::refused(target, "site.unreadable", e.clone(), e))
+    }
+
+    fn osm_cached(&self, key: &str) -> Option<Vec<u8>> {
+        let mut cache = self.osm_cache.lock().unwrap();
+        cache.retain(|_, f| f.at.elapsed() < OSM_REUSE);
+        cache.get(key).map(|f| f.bytes.clone())
+    }
+
+    /// One layer's share of an Overpass answer as GeoJSON, kept for the import; empty is a refusal.
+    fn osm_keep(&self, target: &Target, layer: OsmLayer, key: String, answer: &Value) -> Result<Vec<u8>, Report> {
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs());
+        let collection = osm::to_geojson(layer, answer, &osm::date(now));
+        if osm::count(&collection) == 0 {
+            let words = osm::nothing_found(layer);
+            return Err(Report::refused(target, "osm.empty", words.clone(), words));
         }
+        let bytes = serde_json::to_vec(&collection).expect("json");
+        self.osm_cache.lock().unwrap().insert(key, OsmFetch { at: std::time::Instant::now(), bytes: bytes.clone() });
+        Ok(bytes)
+    }
+
+    /// Sends one Overpass query, trying again after a pause on the next mirror when a server is busy.
+    async fn ask_overpass(&self, query: &str) -> Result<Value, String> {
         let urls: Vec<String> = match std::env::var("MRS_OVERPASS_URL") {
             Ok(url) => vec![url],
             Err(_) => OVERPASS_URLS.iter().map(|u| u.to_string()).collect(),
         };
         let client = reqwest::Client::builder()
             .user_agent("MR Studio")
-            .timeout(std::time::Duration::from_secs(120))
+            .timeout(std::time::Duration::from_secs(200))
             .build()
-            .map_err(|e| offline(e.to_string()))?;
-        let query = osm::query(layer, bounds);
+            .map_err(|e| e.to_string())?;
         // Overpass is often busy (429, 502, 504): try again after a pause, on the next mirror.
-        let mut answer = None;
         let mut last = String::new();
         for attempt in 0..OVERPASS_TRIES {
             if attempt > 0 {
                 tokio::time::sleep(std::time::Duration::from_secs(1 << (attempt - 1))).await;
             }
             let url = &urls[attempt as usize % urls.len()];
-            match client.post(url).form(&[("data", &query)]).send().await {
+            match client.post(url).form(&[("data", query)]).send().await {
                 Ok(response) if response.status().is_success() => match response.json::<Value>().await {
-                    Ok(value) => {
-                        answer = Some(value);
-                        break;
-                    }
+                    Ok(value) => return Ok(value),
                     Err(e) => last = format!("{url}: {e}"),
                 },
                 Ok(response) => last = format!("{url} answered {}", response.status()),
@@ -211,16 +302,7 @@ impl AppState {
             }
             tracing::info!("OpenStreetMap try {} of {OVERPASS_TRIES} failed: {last}", attempt + 1);
         }
-        let Some(answer) = answer else { return Err(offline(last)) };
-        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs());
-        let collection = osm::to_geojson(layer, &answer, &osm::date(now));
-        if osm::count(&collection) == 0 {
-            let words = osm::nothing_found(layer);
-            return Err(Report::refused(target, "osm.empty", words.clone(), words));
-        }
-        let bytes = serde_json::to_vec(&collection).expect("json");
-        *self.osm_cache.lock().unwrap() = Some(OsmFetch { key, at: std::time::Instant::now(), bytes: bytes.clone() });
-        Ok(bytes)
+        Err(last)
     }
 
     /// Fetches free elevation around the table (Terrarium tiles on AWS, no key) as a GeoTIFF
@@ -575,7 +657,14 @@ pub async fn start(config: HostConfig) -> anyhow::Result<RunningHost> {
         None => tracing::info!("listening on this computer only; phones cannot join"),
     }
     let hub = Hub::new(&site, catalog, addr.port(), join_base, config.session.clone())?;
+    // The site's services start now and come up in the background; their incidents go to the operator log.
+    let (service_incidents, mut service_incident_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+    let services = services::Services::start(&site, move |message| {
+        tracing::warn!("{message}");
+        let _ = service_incidents.send(message);
+    });
     let state = Arc::new(AppState {
+        services,
         hub,
         engine,
         site,
@@ -598,6 +687,15 @@ pub async fn start(config: HostConfig) -> anyhow::Result<RunningHost> {
                 let Some(state) = state.upgrade() else { break };
                 state.health.note(&incident.message);
                 state.hub.emit("engine.restarted", json!({ "message": incident.message, "backend": incident.backend }));
+            }
+        });
+    }
+    {
+        let state = Arc::downgrade(&state);
+        tokio::spawn(async move {
+            while let Some(message) = service_incident_rx.recv().await {
+                let Some(state) = state.upgrade() else { break };
+                state.health.note(&message);
             }
         });
     }
@@ -682,13 +780,16 @@ fn router(state: Arc<AppState>, web_dir: Option<PathBuf>) -> Router {
         .route("/api/model", get(model))
         .route("/api/data/inspect", post(inspect_data))
         .route("/api/data/import", post(import_data))
+        .route("/api/data/osm", post(fetch_osm_all))
         .route("/api/data/model", post(model::post))
         .route("/api/data/sounds", get(list_sounds).post(save_sound))
         .route("/api/data/media", get(list_media).post(save_media))
         .route("/api/data/field", get(data_field))
+        .route("/api/media", get(list_library))
         .route("/api/site/place", post(place_site))
         .route("/api/site/thumbnail", post(save_thumbnail))
         .route("/api/wms", get(wms_map))
+        .route("/api/wms/layers", get(wms_layers))
         .route("/api/basemap/{service}/{z}/{x}/{y}", get(basemap_tile))
         .route("/api/sources", get(sources_page).post(save_source))
         .route("/api/sources/{id}", axum::routing::delete(remove_source))
@@ -696,20 +797,33 @@ fn router(state: Arc<AppState>, web_dir: Option<PathBuf>) -> Router {
         .route("/api/sources/{id}/tile/{z}/{x}/{y}", get(source_tile))
         .route("/api/sources/{id}/proxy", get(source_proxy))
         .route("/api/transit/{id}/vehicles", get(transit_vehicles))
+        .route("/api/services", get(services_page))
+        .route("/api/services/{id}/log", get(service_log))
+        .route("/api/services/{id}/kept", get(service_kept).put(keep_for_service))
+        .route("/api/services/{id}/call/{*path}", axum::routing::any(call_service))
+        .route("/api/services/{id}/call", axum::routing::any(call_service_root))
         .layer(DefaultBodyLimit::max(MAX_IMPORT_BYTES))
-        // Imports replace data files at the same path, so a surface reloading after
-        // site.changed must revalidate rather than reuse a cached copy (#125).
+        // Site files are never kept by the browser (#125, #222). Every table is served at the
+        // same address (127.0.0.1:4170/site/data/buildings.geojson), and the desktop app's
+        // webview keeps its cache across tables and launches. With "no-cache" it revalidated by
+        // date: a table whose file is older than the copy it had (one copied from a repository,
+        // say) got "304 Not Modified" and drew another table's buildings and trees.
         .nest_service(
             "/site",
             SetResponseHeader::overriding(
                 ServeDir::new(&state.site.dir),
                 header::CACHE_CONTROL,
-                header::HeaderValue::from_static("no-cache"),
+                header::HeaderValue::from_static("no-store"),
             ),
         );
     app = match web_dir {
-        // Every surface path (/table, /tv, /phone, /dev) is the same single-page app.
-        Some(dir) => app.fallback_service(ServeDir::new(&dir).fallback(ServeFile::new(dir.join("index.html")))),
+        // Every surface path (/table, /tv, /phone, /dev) is the same single-page app. Its pages
+        // are checked on every load, so an updated app never runs an earlier version's page.
+        Some(dir) => app.fallback_service(SetResponseHeader::if_not_present(
+            ServeDir::new(&dir).fallback(ServeFile::new(dir.join("index.html"))),
+            header::CACHE_CONTROL,
+            header::HeaderValue::from_static("no-cache"),
+        )),
         None => app.fallback(|| async { "MR Studio host is running. Surfaces are not built; run the web dev server or pass --web." }),
     };
     app.with_state(state)
@@ -772,6 +886,23 @@ async fn wms_map(
         }
     }
     wms::get_map(&state.site.dir, &state.sources, query).await
+}
+
+/// `GET /api/wms/layers?url=…[&service=arcgis][&source=<id>]`: the layers a service offers, as
+/// `{ layers: [{ name, title }] }` (#306). From this computer only, since it reaches out to any address.
+async fn wms_layers(
+    State(state): State<Arc<AppState>>,
+    ConnectInfo(from): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    Query(query): Query<wms::LayersQuery>,
+) -> axum::response::Response {
+    if let Err(no) = local(&from, &headers) {
+        return *no;
+    }
+    match wms::layers(&state.sources, query).await {
+        Ok(layers) => Json(json!({ "layers": layers })).into_response(),
+        Err((status, error)) => (status, Json(json!({ "error": error }))).into_response(),
+    }
 }
 
 /// `GET /api/sources`: the connections (never their keys) and the kinds that can be added.
@@ -975,6 +1106,47 @@ async fn import_data(
     data_request(state, from, query, headers, body, true).await
 }
 
+#[derive(serde::Deserialize)]
+struct OsmAllQuery {
+    /// Comma-separated import targets, such as `buildings,trees,walkways,data:roads`.
+    targets: String,
+}
+
+/// `POST /api/data/osm?targets=buildings,trees,walkways,data:roads` (#310): asks OpenStreetMap
+/// once for every target and keeps each answer for the `source=osm` import that follows, which
+/// then asks nothing more. Writes nothing. Answers `{ datasets: [{ dataset, ok, count } | { dataset,
+/// ok: false, report }] }` (`dataset` as layers know it: `roads` for `data:roads`), in the order asked.
+async fn fetch_osm_all(
+    State(state): State<Arc<AppState>>,
+    ConnectInfo(from): ConnectInfo<SocketAddr>,
+    Query(query): Query<OsmAllQuery>,
+) -> axum::response::Response {
+    if !from.ip().is_loopback() {
+        return (StatusCode::FORBIDDEN, Json(json!({ "error": "data can only be added from this computer" }))).into_response();
+    }
+    let mut targets = Vec::new();
+    for name in query.targets.split(',').map(str::trim).filter(|t| !t.is_empty()) {
+        match Target::parse(name) {
+            Ok(target) if !targets.contains(&target) => targets.push(target),
+            Ok(_) => {}
+            Err(error) => return (StatusCode::BAD_REQUEST, Json(json!({ "error": error }))).into_response(),
+        }
+    }
+    if targets.is_empty() {
+        return (StatusCode::BAD_REQUEST, Json(json!({ "error": "targets must name at least one dataset" }))).into_response();
+    }
+    let datasets: Vec<Value> = state
+        .fetch_osm_all(&targets)
+        .await
+        .into_iter()
+        .map(|(target, result)| match result {
+            Ok(count) => json!({ "dataset": target.name(), "ok": true, "count": count }),
+            Err(report) => json!({ "dataset": target.name(), "ok": false, "report": report }),
+        })
+        .collect();
+    Json(json!({ "datasets": datasets })).into_response()
+}
+
 /// `POST /api/site/place`, `{ name?, origin: { lon, lat }, extent: { width_m, height_m, rotation_deg } }`:
 /// renames, moves, resizes or turns the table. Answers with the site as surfaces see it.
 /// Where Home finds the picture of a table: the map as it was when the table was last left
@@ -1068,6 +1240,18 @@ async fn save_sound(
     let dir = state.site.dir.clone();
     match tokio::task::spawn_blocking(move || mrs_site::sound::save(&dir, &query.name, &body)).await {
         Ok(Ok(path)) => Json(json!({ "path": path })).into_response(),
+        Ok(Err(error)) => (StatusCode::UNPROCESSABLE_ENTITY, Json(json!({ "error": error }))).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e.to_string() }))).into_response(),
+    }
+}
+
+/// `GET /api/media`: everything the table has to show (#306), as `{ items: [{ kind, name?, path, bytes?, missing? }] }`:
+/// its datasets, pictures, video, sounds and 3D model. Online sources are `GET /api/sources`.
+async fn list_library(State(state): State<Arc<AppState>>) -> axum::response::Response {
+    let dir = state.site.dir.clone();
+    let listed = tokio::task::spawn_blocking(move || Site::load(&dir).map(|site| mrs_site::library::list(&site)).map_err(|e| e.to_string())).await;
+    match listed {
+        Ok(Ok(items)) => ([(header::CACHE_CONTROL, "no-store")], Json(json!({ "items": items }))).into_response(),
         Ok(Err(error)) => (StatusCode::UNPROCESSABLE_ENTITY, Json(json!({ "error": error }))).into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e.to_string() }))).into_response(),
     }
@@ -1183,4 +1367,189 @@ async fn data_request(
         Ok(report) => (StatusCode::UNPROCESSABLE_ENTITY, Json(json!(report))).into_response(),
         Err(error) => (StatusCode::BAD_REQUEST, Json(json!({ "error": error }))).into_response(),
     }
+}
+
+/// `GET /api/services`: what each of the site's services is doing (#278).
+async fn services_page(State(state): State<Arc<AppState>>) -> Json<Value> {
+    Json(json!({ "services": state.services.statuses() }))
+}
+
+/// `GET /api/services/<id>/log`: the last lines the service wrote.
+async fn service_log(State(state): State<Arc<AppState>>, axum::extract::Path(id): axum::extract::Path<String>) -> axum::response::Response {
+    match state.services.log(&id) {
+        Some(lines) => Json(json!({ "lines": lines })).into_response(),
+        None => (StatusCode::NOT_FOUND, Json(json!({ "error": format!("this table has no service '{id}'") }))).into_response(),
+    }
+}
+
+#[derive(serde::Deserialize)]
+struct KeptQuery {
+    key: String,
+}
+
+/// `GET /api/services/<id>/kept?key=`: a value a layer kept for when the service cannot answer.
+async fn service_kept(
+    State(state): State<Arc<AppState>>,
+    axum::extract::Path(id): axum::extract::Path<String>,
+    Query(query): Query<KeptQuery>,
+) -> axum::response::Response {
+    if !state.services.knows(&id) {
+        return (StatusCode::NOT_FOUND, Json(json!({ "error": format!("this table has no service '{id}'") }))).into_response();
+    }
+    match tokio::fs::read(state.services.kept_file(&id, &query.key)).await {
+        Ok(body) => ([(header::CONTENT_TYPE, "application/json")], body).into_response(),
+        Err(_) => (StatusCode::NOT_FOUND, Json(json!({ "error": "nothing kept under that key" }))).into_response(),
+    }
+}
+
+/// `PUT /api/services/<id>/kept?key=`: keeps a JSON value, such as a finished job's result. From this computer only.
+async fn keep_for_service(
+    State(state): State<Arc<AppState>>,
+    ConnectInfo(from): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    axum::extract::Path(id): axum::extract::Path<String>,
+    Query(query): Query<KeptQuery>,
+    body: Bytes,
+) -> axum::response::Response {
+    if let Err(no) = local(&from, &headers) {
+        return *no;
+    }
+    if !state.services.knows(&id) {
+        return (StatusCode::NOT_FOUND, Json(json!({ "error": format!("this table has no service '{id}'") }))).into_response();
+    }
+    if serde_json::from_slice::<Value>(&body).is_err() {
+        return (StatusCode::BAD_REQUEST, Json(json!({ "error": "keep a JSON value" }))).into_response();
+    }
+    let file = state.services.kept_file(&id, &query.key);
+    match write_cache(&file, &body, "application/json").await {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e.to_string() }))).into_response(),
+    }
+}
+
+async fn write_cache(file: &std::path::Path, body: &[u8], kind: &str) -> std::io::Result<()> {
+    if let Some(dir) = file.parent() {
+        tokio::fs::create_dir_all(dir).await?;
+    }
+    let partial = file.with_extension("partial");
+    tokio::fs::write(&partial, body).await?;
+    tokio::fs::write(file.with_extension("type"), kind).await?;
+    tokio::fs::rename(&partial, file).await
+}
+
+async fn call_service_root(
+    state: State<Arc<AppState>>,
+    from: ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    axum::extract::Path(id): axum::extract::Path<String>,
+    method: axum::http::Method,
+    uri: axum::http::Uri,
+    body: Bytes,
+) -> axum::response::Response {
+    forward_to_service(state, from, headers, id, String::new(), method, uri, body).await
+}
+
+async fn call_service(
+    state: State<Arc<AppState>>,
+    from: ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    axum::extract::Path((id, path)): axum::extract::Path<(String, String)>,
+    method: axum::http::Method,
+    uri: axum::http::Uri,
+    body: Bytes,
+) -> axum::response::Response {
+    forward_to_service(state, from, headers, id, path, method, uri, body).await
+}
+
+/// `/api/services/<id>/call/<path>`: forwards to the service, any method, from this computer only.
+/// A good answer is kept; when the service is down or fails, the kept answer to the same
+/// request is given instead, marked with `x-mrs-cached` (its time, in seconds since 1970).
+#[allow(clippy::too_many_arguments)]
+async fn forward_to_service(
+    State(state): State<Arc<AppState>>,
+    ConnectInfo(from): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    id: String,
+    path: String,
+    method: axum::http::Method,
+    uri: axum::http::Uri,
+    body: Bytes,
+) -> axum::response::Response {
+    if let Err(no) = local(&from, &headers) {
+        return *no;
+    }
+    if !state.services.knows(&id) {
+        return (StatusCode::NOT_FOUND, Json(json!({ "error": format!("this table has no service '{id}'") }))).into_response();
+    }
+    let tail = match uri.query() {
+        Some(q) => format!("/{path}?{q}"),
+        None => format!("/{path}"),
+    };
+    let cache = state.services.cache_file(&id, method.as_str(), &tail, &body);
+    let why = match state.services.address(&id) {
+        Ok(address) => {
+            let kind = headers.get(header::CONTENT_TYPE).and_then(|v| v.to_str().ok()).map(str::to_string);
+            let url = format!("{address}{tail}");
+            let method = method.as_str().to_string();
+            // Every view of the table runs the layer, so the same request comes from each of them:
+            // the service is asked once, and they all get its answer (a job is started once).
+            let answer = state.services.once(cache.clone(), ask_service(method, url, kind, body.clone())).await;
+            match answer {
+                Ok((status, kind, bytes)) => {
+                    let status = StatusCode::from_u16(status).unwrap_or(StatusCode::BAD_GATEWAY);
+                    if status.is_success() {
+                        if let Err(e) = write_cache(&cache, &bytes, &kind).await {
+                            tracing::warn!("keeping an answer of service '{id}': {e}");
+                        }
+                    }
+                    return (status, [(header::CONTENT_TYPE, kind)], bytes).into_response();
+                }
+                Err(why) => why,
+            }
+        }
+        Err(services::Refusal::NotUp(service_state, message)) => {
+            format!(
+                "it is {}{}",
+                serde_json::to_value(&service_state).ok().and_then(|v| v.as_str().map(str::to_string)).unwrap_or_default(),
+                message.map(|m| format!(": {m}")).unwrap_or_default()
+            )
+        }
+        Err(services::Refusal::Unknown) => unreachable!("checked above"),
+    };
+    // The service cannot answer: the last answer to the same request, if there is one.
+    if let Ok(body) = tokio::fs::read(&cache).await {
+        let kind = tokio::fs::read_to_string(cache.with_extension("type")).await.unwrap_or_else(|_| "application/octet-stream".into());
+        let when = std::fs::metadata(&cache)
+            .and_then(|m| m.modified())
+            .ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        return ([(header::CONTENT_TYPE, kind), (header::HeaderName::from_static("x-mrs-cached"), when.to_string())], body).into_response();
+    }
+    (StatusCode::SERVICE_UNAVAILABLE, Json(json!({ "error": format!("service '{id}' cannot answer: {why}"), "service": id })))
+        .into_response()
+}
+
+/// One request to a service: its status, content type and body, or why it gave no usable answer
+/// (it could not be reached, or it failed with a server error).
+async fn ask_service(method: String, url: String, kind: Option<String>, body: Bytes) -> services::Answer {
+    static CLIENT: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
+    // Models take their time: a campus day is seconds, a year minutes. Jobs poll instead.
+    let client =
+        CLIENT.get_or_init(|| reqwest::Client::builder().timeout(std::time::Duration::from_secs(300)).build().expect("an HTTP client"));
+    let method = reqwest::Method::from_bytes(method.as_bytes()).unwrap_or(reqwest::Method::GET);
+    let mut request = client.request(method, url).body(body);
+    if let Some(kind) = kind {
+        request = request.header(reqwest::header::CONTENT_TYPE, kind);
+    }
+    let answer = request.send().await.map_err(|e| format!("it could not be reached: {}", e.without_url()))?;
+    if answer.status().is_server_error() {
+        return Err(format!("the service answered {}", answer.status()));
+    }
+    let status = answer.status().as_u16();
+    let kind =
+        answer.headers().get(reqwest::header::CONTENT_TYPE).and_then(|v| v.to_str().ok()).unwrap_or("application/octet-stream").to_string();
+    let bytes = answer.bytes().await.map_err(|e| format!("reading its answer: {}", e.without_url()))?;
+    Ok((status, kind, bytes))
 }

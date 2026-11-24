@@ -2,13 +2,14 @@ import { defineLayer, formatHour, zonedTimeToUtc } from '@mrstudio/sdk';
 import type { Colormap, FieldFrame, FieldStream, LayerManifest, LightHandle, SunLight, TableContext } from '@mrstudio/sdk';
 
 import manifest from '../layer.json';
-import { skyColormap, skyLight, sunAt, sunDay, sunHoursColormap, thresholdColormap, treeHoursColormap, treeShadeColormap } from './look.ts';
+import { windowParams, WINDOWS, skyColormap, skyLight, sunAt, sunDay, sunHoursColormap, thresholdColormap, treeHoursColormap, treeShadeColormap } from './look.ts';
 import { sunlightHero } from './hero.ts';
 import { SunPath } from './sun-path.ts';
 import { hasShade, isFlat } from './flat.ts';
 import { spotOnTable } from './spot.ts';
 import { SEASONS, seasonsHero, seasonsOnTable } from './seasons.ts';
 import { trailsOnTable } from './trails.ts';
+import { playPace, sharpSoften } from './pace.ts';
 
 interface Params {
   mode: 'instant' | 'day' | 'seasons';
@@ -23,17 +24,28 @@ interface Params {
   opacity: number;
   season: string;
   trails: boolean;
+  window: string;
 }
 
-/** Hours of the day that pass per second while animating. */
+/** Hours of the day that pass per second while animating, with the sun well up or well down. */
 const PLAY_HOURS_PER_SECOND = 1;
-/** The step of the `hour` control. Animation advances in whole steps. */
+/** The step of the `hour` control: the time the host is told is rounded to it. */
 const HOUR_STEP = 0.05;
+/**
+ * While playing, the table runs its own clock and moves the sun and its shadows every frame (#302). The host, and
+ * through it the controller and the TV, hears the time this often. Each time it hears costs a round trip and the
+ * engine's tree shade, so the table must never wait for it to move.
+ */
+const PLAY_SYNC_SECONDS = 0.1;
+/** While playing, new shadow masks come every frame or two, so each eases in this fast and the shadows keep up with the sun. */
+const PLAY_GLIDE_SECONDS = 0.06;
 
 /** Kernel params for the layer's params. The site's time zone turns wall-clock time into UTC. */
 function kernelParams(ctx: TableContext<Params>) {
   const { mode, date, hour, trees } = ctx.params;
-  return { mode, time: zonedTimeToUtc(date, mode === 'day' ? 12 : hour, ctx.site.timezone), trees };
+  const time = zonedTimeToUtc(date, mode === 'day' ? 12 : hour, ctx.site.timezone);
+  // In Sun hours, only the sun in the chosen window counts; an instant has none.
+  return { mode, time, trees, ...(mode === 'day' ? windowParams(ctx.site, date, ctx.params.window) : { from: null, until: null }) };
 }
 
 /** The sun hours ramp, with areas under the layer's threshold flagged when one is set. */
@@ -45,14 +57,19 @@ function hoursColormap(threshold: number, daylightHours: number | undefined) {
 const SOFTEN_CELLS = 1.6;
 /** Seconds a new result takes to ease in, so stepped times read as continuous motion. */
 const GLIDE_SECONDS = 0.14;
-/** Softening of the shadow-map mask, in its pixels of about 0.3 m. */
-const SHARP_SOFTEN = 1.2;
 
 export default defineLayer<Params>({
   manifest: manifest as LayerManifest,
 
   async table(ctx) {
-    const sunNow = () => sunAt(ctx.site, ctx.params.date, ctx.params.hour);
+    // The table's own clock while the day plays, ahead of the host's `hour`; null when it follows the host.
+    let clock: number | null = null;
+    // The hours this table sent while playing, so their echoes from the host are told apart from someone scrubbing.
+    const sent: number[] = [];
+    let sinceSync = 0;
+    const hourNow = () => clock ?? ctx.params.hour;
+    const playing = () => ctx.params.play && ctx.params.mode === 'instant';
+    const sunNow = () => sunAt(ctx.site, ctx.params.date, hourNow());
     const overlay = ctx.map.addField('sunlight', {
       colormap: skyColormap(sunNow().altitude),
       opacity: ctx.params.opacity,
@@ -68,25 +85,49 @@ export default defineLayer<Params>({
     // Whether the light field is one colour everywhere, and whether trees shade anything (#55).
     let flat = false;
     let treesShade = false;
-    const dark = () => flat && !(ctx.params.trees && treesShade);
+    // After sunset the mask is shade everywhere: that is night falling, not a table without shade, so the light
+    // field stays and its colours fade into the night instead of the map popping back (#302).
+    const dark = () => flat && sunNow().altitude > 0 && !(ctx.params.trees && treesShade);
     const show = (frame: FieldFrame) => {
       overlay.set(frame);
       const was = dark();
-      flat = isFlat(frame);
+      flat = sunNow().altitude > 0 ? isFlat(frame) : true;
       if (dark() !== was) dress();
     };
     let maskRequest = 0;
+    // One mask is drawn at a time; a sun that moved meanwhile is drawn as soon as it is back, for the newest time.
+    let masking = false;
+    let maskAgain = false;
+    // While playing, the next mask waits as long as the last one took, so a slow graphics card spends at most
+    // about half its time on shadows and the frame rate holds; a fast one still gets a new mask every frame or two.
+    let maskFreeAt = 0;
     const sharpWanted = () => ctx.params.mode === 'instant' && !ctx.params.relight;
     async function reshadow() {
       if (!sharpWanted() || sharp === false) return;
+      if (masking) {
+        maskAgain = true;
+        return;
+      }
+      masking = true;
+      maskAgain = false;
       const mine = ++maskRequest;
-      const frame = await ctx.model.sunShadowMask(sunNow(), () => void reshadow());
-      if (mine !== maskRequest || !sharpWanted()) return;
-      const first = sharp === undefined;
-      sharp = frame !== null;
-      if (frame) show(frame);
-      // The first answer changes how the field and tree shade are styled.
-      if (first) dress();
+      let frame: FieldFrame | null;
+      const started = performance.now();
+      try {
+        frame = await ctx.model.sunShadowMask(sunNow(), () => void reshadow());
+      } finally {
+        masking = false;
+        const now = performance.now();
+        maskFreeAt = now + (now - started);
+      }
+      if (mine === maskRequest && sharpWanted()) {
+        const first = sharp === undefined;
+        sharp = frame !== null;
+        if (frame) show(frame);
+        // The first answer changes how the field and tree shade are styled.
+        if (first) dress();
+      }
+      if (maskAgain && !playing()) void reshadow();
     }
     // Without their own colour, trees shade in the same colour as buildings.
     const treeColormap = (): Colormap => {
@@ -121,7 +162,9 @@ export default defineLayer<Params>({
     const dayStatus = () => {
       if (ctx.params.mode !== 'day') return '';
       if (percent < 100) return ctx.say('adding up the day, {percent}%', { percent });
-      return ctx.params.threshold > 0 ? ctx.say('under {hours} h of sun is flagged', { hours: ctx.params.threshold }) : ctx.say('whole day added up');
+      if (ctx.params.threshold > 0) return ctx.say('under {hours} h of sun is flagged', { hours: ctx.params.threshold });
+      const window = WINDOWS[ctx.params.window];
+      return window ? ctx.say('sun from {from} to {to} added up', { from: window[0], to: window[1] }) : ctx.say('whole day added up');
     };
     ctx.onCleanup(() => {
       generation++;
@@ -143,14 +186,16 @@ export default defineLayer<Params>({
         return;
       }
       relight();
-      void reshadow();
+      // While playing, each frame asks for the shadows itself (animate).
+      if (!playing()) void reshadow();
       overlay.setStyle({
         colormap: day ? hoursColormap(ctx.params.threshold, daylightHours) : skyColormap(sun.altitude),
         soften: day ? 1 : SOFTEN_CELLS,
         // With nothing to cast shade the whole table would be lit in one colour; stay dark instead (#55).
         opacity: relit() || dark() ? 0 : ctx.params.opacity,
         // A shadow-map mask has fine pixels; soften by a few of them, like a real penumbra.
-        ...(sharp && sharpWanted() ? { soften: SHARP_SOFTEN } : {}),
+        ...(sharp && sharpWanted() ? { soften: sharpSoften(sun.altitude) } : {}),
+        glide: playing() ? PLAY_GLIDE_SECONDS : GLIDE_SECONDS,
       });
       treeOverlay.setStyle({ colormap: day ? treeHoursColormap : treeColormap(), soften: day ? 1 : SOFTEN_CELLS, opacity: treeOpacity() });
       path.setVisible(ctx.params.path);
@@ -164,6 +209,17 @@ export default defineLayer<Params>({
         treeLow: day ? 'No sun lost' : 'No shade',
         treeHigh: day ? 'Most lost' : 'Full shade',
       });
+    }
+
+    // Each frame of a play: the sun on its path, the light's colour and the shadows follow the table's clock.
+    // The rest of dress() (the TV's key, tree shade) follows the host's time, a few times a second.
+    function animate() {
+      const sun = sunNow();
+      relight();
+      if (performance.now() >= maskFreeAt) void reshadow();
+      if (!relit()) overlay.setStyle({ colormap: skyColormap(sun.altitude), ...(sharp ? { soften: sharpSoften(sun.altitude) } : {}) });
+      if (ctx.params.trees && !ctx.params.treeColor && sharp) treeOverlay.setStyle({ colormap: treeColormap() });
+      path.setSun(sun);
     }
 
     // The timeline on the TV shades the hours between sunrise and sunset.
@@ -247,15 +303,26 @@ export default defineLayer<Params>({
     const seasons = seasonsOnTable(ctx, overlay, (top) => hoursColormap(ctx.params.threshold, top), (day) => path.setDay(day));
     ctx.onCleanup(() => seasons.close());
 
-    let carried = 0;
+    /** Tells the host the table's time, rounded to the control's step, and remembers it to know its echo. */
+    function sync(hour: number) {
+      const rounded = Math.round((hour % 24) / HOUR_STEP) * HOUR_STEP;
+      sent.push(rounded);
+      if (sent.length > 32) sent.shift();
+      ctx.setParams({ hour: rounded });
+    }
+    const wasSent = (hour: number) => sent.some((h) => Math.abs(h - hour) < 1e-6);
+
     ctx.onFrame((dt) => {
       if (ctx.params.mode === 'seasons') seasons.tick(dt);
-      if (!ctx.params.play || ctx.params.mode !== 'instant') return;
-      carried += dt * PLAY_HOURS_PER_SECOND;
-      const steps = Math.floor(carried / HOUR_STEP);
-      if (steps === 0) return;
-      carried -= steps * HOUR_STEP;
-      ctx.setParams({ hour: Math.round(((ctx.params.hour + steps * HOUR_STEP) % 24) / HOUR_STEP) * HOUR_STEP });
+      if (!playing()) return;
+      // The clock moves by the frame's own time, so the sun moves the same distance on screen for the same time.
+      clock = (hourNow() + dt * PLAY_HOURS_PER_SECOND * playPace(sunNow().altitude)) % 24;
+      sinceSync += dt;
+      if (sinceSync >= PLAY_SYNC_SECONDS) {
+        sinceSync = 0;
+        sync(clock);
+      }
+      animate();
     });
 
     const spot = spotOnTable(ctx);
@@ -276,6 +343,17 @@ export default defineLayer<Params>({
         if (id === 'clearSpot') spot.clear();
       },
       update(changed) {
+        if (clock !== null) {
+          if (changed.includes('hour') && !wasSent(ctx.params.hour)) {
+            // Someone moved the time while it played, or after: the table follows them.
+            clock = null;
+          } else if (!playing()) {
+            // Stopped: the host is told where the table's clock got to, and the table holds there until it hears back.
+            if (Math.abs(ctx.params.hour - Math.round(clock / HOUR_STEP) * HOUR_STEP) < 1e-6) clock = null;
+            else if (changed.includes('play') || changed.includes('mode')) sync(clock);
+          }
+          if (clock === null) sent.length = 0;
+        }
         spot.update(changed);
         trails.update(changed);
         if (changed.includes('date')) publishDay();
@@ -285,7 +363,7 @@ export default defineLayer<Params>({
           seasons.update(changed);
         } else {
           dress();
-          if (changed.some((key) => key === 'date' || key === 'hour' || key === 'trees')) stream?.set(kernelParams(ctx));
+          if (changed.some((key) => key === 'date' || key === 'hour' || key === 'trees' || key === 'window')) stream?.set(kernelParams(ctx));
         }
       },
     };

@@ -1,14 +1,18 @@
-import { isVisible } from '@mrstudio/sdk';
-import type { Connection, Control, LayerManifest, LegendRow, TextControl, LayerState, PanelContext, PanelHandlers, Role, TvAbout } from '@mrstudio/sdk';
+import { entityOverrides, entityValues, isVisible, profileColumns } from '@mrstudio/sdk';
+import type { Connection, Control, EntityFeature, EntitySet, LayerManifest, LegendRow, TextControl, LayerState, PanelContext, PanelHandlers, Role, TvAbout } from '@mrstudio/sdk';
 
 import { AttractLoop, effectOf } from './attract.ts';
 import { icon } from './editor/icons.ts';
 import { LANGUAGE_NAMES, language, offered, say, t } from './i18n.ts';
 import type { Language } from './i18n.ts';
-import { baseContext, isAtRest, paramSender } from './layer-manager.ts';
+import { entitySender, baseContext, isAtRest, paramSender } from './layer-manager.ts';
+import { loadEntities } from './entities.ts';
 
 export { isAtRest };
 import { layerModule } from './registry.ts';
+import { MEDIA_KINDS, canAddMedia, mediaItems, onMediaChanged, requestAddMedia, sizeOf, titleOf, valueOf } from './media.ts';
+import { Picker } from './picker.ts';
+import type { Choice, PickerAction } from './picker.ts';
 import { PHONE_SEND_INTERVAL, toolSection } from './phone-tools.ts';
 import type { Store } from './store.ts';
 
@@ -19,11 +23,11 @@ export function el<K extends keyof HTMLElementTagNameMap>(tag: K, className?: st
   return node;
 }
 
-/** One generated control. `sync` shows a value from the host; `row` is its element. */
+/** One generated control. `sync` shows a value from the host, with the layer's other params; `row` is its element. */
 export interface Widget {
   control: Control;
   row: HTMLElement;
-  sync(value: unknown): void;
+  sync(value: unknown, params?: Record<string, unknown>): void;
 }
 
 function formatNumber(value: number, control: Extract<Control, { type: 'range' }>): string {
@@ -98,6 +102,110 @@ function sourcePicker(row: HTMLElement, label: HTMLLabelElement, id: string, con
   };
 }
 
+/**
+ * A text control that names something the table has (#306): a dataset or file (`media`), a
+ * column of another control's dataset (`columnsOf`), or layers of a map service (`serviceLayers`).
+ * A list to pick from, with type-ahead, instead of a name to type; and Add media in the editor.
+ */
+function namePicker(row: HTMLElement, label: HTMLLabelElement, id: string, control: TextControl, send: (value: unknown) => void): (value: unknown, params?: Record<string, unknown>) => void {
+  let params: Record<string, unknown> = {};
+  const text = (key: string | undefined) => (key && typeof params[key] === 'string' ? (params[key] as string) : '');
+  const kinds = control.media ?? [];
+  const by = control.mediaBy ?? 'name';
+  const actions: PickerAction[] = [];
+  if (kinds.length && canAddMedia()) {
+    actions.push({
+      label: 'Add media…',
+      icon: 'plus',
+      run: async () => {
+        const item = await requestAddMedia(kinds);
+        return item && kinds.includes(item.kind) ? valueOf(item, by) : null;
+      },
+    });
+  }
+  let load: () => Promise<Choice[]>;
+  let empty = 'Nothing to choose yet.';
+  if (control.serviceLayers) {
+    const keys = control.serviceLayers;
+    empty = 'The service lists no layers.';
+    load = async () => {
+      const query = new URLSearchParams({ url: text(keys.url), service: text(keys.service) || 'wms', source: text(keys.source) });
+      if (!query.get('url') && !query.get('source')) throw new Error('give the service address first');
+      const answer = await fetch(`/api/wms/layers?${query}`);
+      const page = (await answer.json().catch(() => ({}))) as { layers?: { name: string; title: string }[]; error?: string };
+      if (!answer.ok) throw new Error(page.error ?? `the service answered ${answer.status}`);
+      return (page.layers ?? []).map((l) => ({ value: l.name, label: l.title, detail: l.title === l.name ? undefined : l.name }));
+    };
+  } else if (control.columnsOf) {
+    const of = control.columnsOf;
+    empty = 'Choose the data first: its columns are listed here.';
+    load = async () => {
+      const name = text(of);
+      if (!name) return [];
+      const item = (await mediaItems()).find((i) => i.name === name || i.path === name);
+      if (!item) return [];
+      return columnsOfFile(item.path);
+    };
+  } else {
+    const kindsLabel = kinds.map((k) => MEDIA_KINDS[k].plural.toLowerCase()).join(' or ');
+    empty = `This table has no ${kindsLabel} yet.${actions.length ? ' Add some with Add media.' : ''}`;
+    load = async () =>
+      (await mediaItems())
+        .filter((item) => kinds.includes(item.kind))
+        .map((item) => ({
+          value: valueOf(item, by),
+          label: titleOf(item),
+          detail: item.missing ? 'Missing from the table folder' : [item.name ? item.path.split('/').pop() : '', sizeOf(item.bytes)].filter(Boolean).join(' · '),
+          group: kinds.length > 1 ? MEDIA_KINDS[item.kind].plural : undefined,
+          icon: MEDIA_KINDS[item.kind].icon,
+        }));
+  }
+  const picker = new Picker({
+    id,
+    label: control.label,
+    none: control.none ?? (control.serviceLayers ? undefined : 'None'),
+    multiple: Boolean(control.serviceLayers),
+    eager: !control.serviceLayers,
+    load,
+    actions,
+    empty,
+    loading: control.serviceLayers ? 'Asking the service for its layers…' : undefined,
+    pick: (value) => send(value),
+  });
+  const stop = onMediaChanged(() => {
+    if (!row.isConnected) stop();
+    else if (!control.serviceLayers) picker.forget();
+  });
+  row.append(label, picker.element);
+  // The list depends on the other settings it names: asked again when one of them changes.
+  const depends = control.serviceLayers ? [control.serviceLayers.url, control.serviceLayers.service, control.serviceLayers.source] : control.columnsOf ? [control.columnsOf] : [];
+  return (value, next) => {
+    if (next) {
+      const changed = depends.some((key) => key && next[key] !== params[key]);
+      params = next;
+      if (changed) picker.forget();
+    }
+    if (typeof value === 'string') picker.set(value);
+  };
+}
+
+/** The columns of a GeoJSON or CSV file of the table, for a "Colour by" list. */
+async function columnsOfFile(path: string): Promise<Choice[]> {
+  const response = await fetch(`/site/${path}`, { cache: 'no-store' });
+  if (!response.ok) throw new Error('the file could not be read');
+  let rows: Record<string, unknown>[];
+  if (/\.csv$/i.test(path)) {
+    const lines = (await response.text()).split(/\r?\n/).filter(Boolean);
+    const separator = (lines[0]?.match(/;/g)?.length ?? 0) > (lines[0]?.match(/,/g)?.length ?? 0) ? ';' : ',';
+    const head = (lines[0] ?? '').split(separator).map((h) => h.trim().replace(/^"|"$/g, ''));
+    rows = lines.slice(1, 501).map((line) => Object.fromEntries(line.split(separator).map((v, i) => [head[i] ?? String(i), v.trim().replace(/^"|"$/g, '')])));
+  } else {
+    const json = (await response.json()) as { features?: { properties?: Record<string, unknown> | null }[] };
+    rows = (json.features ?? []).map((f) => f.properties ?? {});
+  }
+  return profileColumns(rows).map((c) => ({ value: c.name, label: c.name, detail: c.kind === 'number' ? 'Numbers' : `${c.distinct} ${c.distinct === 1 ? 'value' : 'values'}` }));
+}
+
 /** Four or more choices are laid out in rows where space is tight (the editor's inspector): 2 × 2 for four, three across for more. */
 function columns(group: HTMLElement, count: number) {
   if (count >= 4) group.dataset.columns = count === 4 ? '2' : '3';
@@ -113,7 +221,7 @@ export function widget(control: Control, send: (value: unknown) => void, act: ()
   const id = `c-${Math.random().toString(36).slice(2)}`;
   const label = el('label', 'control-label', control.label);
   label.htmlFor = id;
-  let sync: (value: unknown) => void = () => {};
+  let sync: (value: unknown, params?: Record<string, unknown>) => void = () => {};
 
   switch (control.type) {
     case 'range': {
@@ -208,6 +316,11 @@ export function widget(control: Control, send: (value: unknown) => void, act: ()
     case 'text': {
       if (control.type === 'text' && control.sources?.length) {
         sync = sourcePicker(row, label, id, control, send);
+        break;
+      }
+      if (control.type === 'text' && (control.media?.length || control.columnsOf || control.serviceLayers)) {
+        row.classList.add('control-pick');
+        sync = namePicker(row, label, id, control, send);
         break;
       }
       const input = el('input');
@@ -566,6 +679,150 @@ function legendZone(id: string, store: Store): { element: HTMLElement; sync(stat
   };
 }
 
+/**
+ * What a layer is waiting for (#278): `busy: { label, progress }` published while a service
+ * works, shown under the layer's name with a bar, so no layer draws its own spinner.
+ */
+function busyZone(store: Store): { element: HTMLElement; sync(state: LayerState): void } {
+  const zone = el('div', 'stage-busy');
+  zone.setAttribute('role', 'status');
+  zone.hidden = true;
+  const label = el('span', 'stage-busy-label');
+  const bar = el('span', 'stage-busy-bar');
+  const fill = el('i');
+  bar.append(fill);
+  zone.append(label, bar);
+  return {
+    element: zone,
+    sync(state) {
+      const busy = state.shared?.busy as { label?: unknown; progress?: unknown } | null | undefined;
+      const on = Boolean(busy && typeof busy.label === 'string');
+      zone.hidden = !on;
+      if (!on) return;
+      label.textContent = say(String(busy!.label), store.manifest(state.layer));
+      const progress = typeof busy!.progress === 'number' ? Math.max(0, Math.min(1, busy!.progress)) : undefined;
+      bar.classList.toggle('is-open', progress === undefined);
+      fill.style.width = progress === undefined ? '' : `${Math.round(progress * 100)}%`;
+    },
+  };
+}
+
+/**
+ * The entity inspector (#279): for each of a layer's entity sets, the picked entity's name and
+ * its own controls, a list to pick one without the table, Back to default, and "Apply to all
+ * of <group>" when the set has a group. Picks and values go through the host, so the table, the
+ * editor and every controller agree. No layer code takes part.
+ */
+function entityZone(id: string, manifest: LayerManifest, store: Store, connection: Connection): { element: HTMLElement; sync(state: LayerState): void } {
+  const zone = el('div', 'stage-entities');
+  const sets = manifest.entities ?? [];
+  zone.hidden = sets.length === 0;
+  const setEntity = entitySender(connection, id);
+  const parts = sets.map((set) => entitySetPart(id, set, manifest, store, connection, setEntity));
+  zone.append(...parts.map((part) => part.element));
+  return {
+    element: zone,
+    sync(state) {
+      for (const part of parts) part.sync(state);
+    },
+  };
+}
+
+function entitySetPart(
+  id: string,
+  set: EntitySet,
+  manifest: LayerManifest,
+  store: Store,
+  connection: Connection,
+  setEntity: (set: string, ids: string | string[], values: Record<string, unknown> | null) => void,
+): { element: HTMLElement; sync(state: LayerState): void } {
+  const part = el('section', 'entity-set');
+  part.dataset.set = set.id;
+  const kind = say(set.name ?? 'Item', manifest);
+  const head = el('header', 'entity-head');
+  const words = el('div', 'entity-words');
+  const kicker = el('span', 'entity-kicker', kind);
+  const name = el('h3', 'entity-name');
+  const hint = el('p', 'entity-hint', t('Tap one on the table, or choose it from the list.'));
+  words.append(kicker, name, hint);
+  const list = el('select', 'entity-list');
+  list.setAttribute('aria-label', t('Choose a {thing}', { thing: kind.toLowerCase() }));
+  head.append(words, list);
+  const controls = el('div', 'controls entity-controls');
+  const actions = el('div', 'entity-actions');
+  const reset = el('button', 'entity-button', t('Back to default'));
+  reset.type = 'button';
+  const all = el('button', 'entity-button');
+  all.type = 'button';
+  const count = el('span', 'entity-count');
+  actions.append(reset, all, count);
+  part.append(head, controls, actions);
+
+  let features: EntityFeature[] = [];
+  let picked: string | null = null;
+  const widgets = set.controls.map((control) =>
+    widget(
+      { ...control, label: say(control.label, manifest) } as Control,
+      (value) => picked !== null && setEntity(set.id, picked, { [control.id]: value }),
+      () => {},
+    ),
+  );
+  controls.append(...widgets.map((w) => w.row));
+  list.addEventListener('change', () => {
+    void connection.request('layer.select', { layer: id, set: set.id, id: list.value || null }).catch(() => {});
+  });
+  reset.addEventListener('click', () => picked !== null && setEntity(set.id, picked, null));
+  all.addEventListener('click', () => {
+    const feature = features.find((f) => f.id === picked);
+    if (!feature?.group) return;
+    const ids = features.filter((f) => f.group === feature.group).map((f) => f.id);
+    setEntity(set.id, ids, entityValues(set, store.layer(id).params, feature.id));
+  });
+
+  let listed = '';
+  const sync = (state: LayerState) => {
+    const selection = state.selection?.set === set.id ? state.selection.id : null;
+    picked = selection;
+    const feature = features.find((f) => f.id === selection);
+    const changed = Object.keys(entityOverrides(state.params, set.id));
+    const key = JSON.stringify([features.length, changed]);
+    if (key !== listed) {
+      listed = key;
+      const marked = new Set(changed);
+      const choose = el('option', undefined, t('Choose…'));
+      choose.value = '';
+      const options = [...features]
+        .sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true }))
+        .map((f) => {
+          const option = el('option', undefined, marked.has(f.id) ? `${f.label} •` : f.label);
+          option.value = f.id;
+          return option;
+        });
+      list.replaceChildren(choose, ...options);
+    }
+    list.value = selection ?? '';
+    part.classList.toggle('is-picked', selection !== null);
+    name.textContent = feature?.label ?? selection ?? '';
+    name.hidden = selection === null;
+    hint.hidden = selection !== null;
+    controls.hidden = selection === null;
+    const values = selection !== null ? entityValues(set, state.params, selection) : {};
+    for (const w of widgets) {
+      w.row.hidden = !isVisible(w.control, values);
+      w.sync(values[w.control.id], values);
+    }
+    reset.hidden = selection === null || !changed.includes(selection);
+    all.hidden = selection === null || !feature?.group;
+    if (feature?.group) all.textContent = t('Apply to all of {group}', { group: feature.group });
+    count.textContent = changed.length > 0 ? t('{count} changed', { count: changed.length }) : '';
+  };
+  void loadEntities(store.state.site, set).then((list) => {
+    features = list;
+    sync(store.layer(id));
+  });
+  return { element: part, sync };
+}
+
 /** A sound a layer published for the controller (#150). */
 interface SoundRow {
   id: string;
@@ -814,6 +1071,23 @@ export class Controller {
         console.error(`[${id}] hero`, error);
       }
     }
+    // The layer's own stage (#283): the centre under its name, for a map app of its own.
+    const stage = el('div', 'layer-stage');
+    stage.hidden = true;
+    const stageCleanups: (() => void)[] = [];
+    let stageHandlers: PanelHandlers | void = undefined;
+    if (manifest.stage === 'custom' && module?.stage) {
+      const ctx: PanelContext = Object.assign(Object.create(baseContext(store, connection, id)), {
+        panel: 'stage',
+        onCleanup: (cleanup: () => void) => stageCleanups.push(cleanup),
+      });
+      try {
+        stageHandlers = module.stage(ctx, stage);
+        stage.hidden = false;
+      } catch (error) {
+        console.error(`[${id}] stage`, error);
+      }
+    }
     // Controls by tier: primary ones large and first, then the rest in a row, then "More settings", closed.
     const tierOf = (w: Widget) => w.control.tier ?? 'secondary';
     const primary = el('div', 'controls controls-primary');
@@ -828,8 +1102,13 @@ export class Controller {
     const strip = stepStrip(id, store, connection);
     const legend = legendZone(id, store);
     const sounds = soundZone(id, store, connection);
-    body.append(words, strip.element);
+    const busy = busyZone(store);
+    const entities = entityZone(id, manifest, store, connection);
+    body.append(words, busy.element, strip.element);
     if (!hero.hidden) body.append(hero);
+    // The picked entity's own controls come before the layer's, as the thing in hand (#279).
+    if (!entities.element.hidden) body.append(entities.element);
+    if (!stage.hidden) body.append(stage);
     for (const group of [primary, controls]) if (group.childElementCount > 0) body.append(group);
     body.append(legend.element, sounds.element);
     // "More settings" closes the primary row when there is one, so it costs no height of its own.
@@ -841,6 +1120,7 @@ export class Controller {
       body,
       dispose: () => {
         for (const cleanup of heroCleanups) cleanup();
+        for (const cleanup of stageCleanups) cleanup();
         body.remove();
       },
       sync: (state) => {
@@ -864,13 +1144,22 @@ export class Controller {
         strip.sync(state);
         strip.element.classList.toggle('legend-follows', legend.sync(state));
         sounds.sync(state);
+        busy.sync(state);
+        entities.sync(state);
         // A slideshow made of layers is driven by its steps: its own slide controls step aside.
         const stepped = Boolean(manifest.sequence && state.step);
         for (const w of widgets) {
           w.row.hidden = stepped || !isVisible(w.control, state.params) || Boolean(state.hide?.includes(w.control.id));
-          w.sync(state.params[w.control.id]);
+          w.sync(state.params[w.control.id], state.params);
         }
         more.hidden = ![...moreRows.children].some((row) => !(row as HTMLElement).hidden);
+        if (state.active && stageHandlers) {
+          try {
+            stageHandlers.update?.();
+          } catch (error) {
+            console.error(`[${id}] stage`, error);
+          }
+        }
         if (state.active && heroHandlers) {
           try {
             heroHandlers.update?.();
@@ -1109,7 +1398,7 @@ export class Controller {
         body.hidden = !state.active;
         for (const w of widgets) {
           w.row.hidden = !isVisible(w.control, state.params) || (phone && Boolean(state.hide?.includes(w.control.id)));
-          w.sync(state.params[w.control.id]);
+          w.sync(state.params[w.control.id], state.params);
         }
         tools?.sync(state.active);
       },

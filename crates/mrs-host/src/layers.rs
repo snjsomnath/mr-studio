@@ -55,6 +55,48 @@ pub struct LayerDef {
     pub manifest: Value,
     pub controls: Vec<Control>,
     pub tools: Vec<Tool>,
+    /// Things a visitor picks and changes one by one (#279), from `entities`.
+    pub entity_sets: Vec<EntitySet>,
+    /// Named actions without a button (#283), pressed from a layer's stage, hero or panels.
+    pub actions: Vec<String>,
+}
+
+/// The param that holds every entity's changed values: `entities[set][entity][control]`.
+pub const ENTITIES: &str = "entities";
+/// The most entities a layer keeps values for, and the longest entity id.
+pub const MOST_ENTITIES: usize = 10_000;
+const LONGEST_ENTITY_ID: usize = 200;
+
+/// A set of entities (#279): the controls each of its entities has.
+#[derive(Debug, Clone)]
+pub struct EntitySet {
+    pub id: String,
+    pub controls: Vec<Control>,
+}
+
+impl EntitySet {
+    /// Checks values for one entity, as `LayerDef::validate` does for a layer's params.
+    pub fn validate(&self, values: &Map<String, Value>, phone: bool) -> Result<Map<String, Value>, String> {
+        let mut out = Map::new();
+        for (key, value) in values {
+            let control = self.controls.iter().find(|c| &c.id == key).ok_or_else(|| format!("'{}' entities have no control '{key}'", self.id))?;
+            if phone && !control.phone {
+                return Err(format!("'{key}' cannot be changed from a phone"));
+            }
+            out.insert(key.clone(), control.validate(value).map_err(|e| format!("{key}: {e}"))?);
+        }
+        Ok(out)
+    }
+
+    /// Drops values that are the control's default, so only real changes are kept and marked.
+    pub fn changed_only(&self, values: &mut Map<String, Value>) {
+        values.retain(|key, value| self.controls.iter().find(|c| &c.id == key).is_none_or(|c| &c.default != value));
+    }
+}
+
+/// Whether a string can name an entity: not empty, at most 200 characters.
+pub fn is_entity_id(id: &str) -> bool {
+    !id.is_empty() && id.chars().count() <= LONGEST_ENTITY_ID
 }
 
 impl LayerDef {
@@ -74,39 +116,50 @@ impl LayerDef {
         }
         let mut controls = Vec::new();
         for c in manifest["controls"].as_array().map(Vec::as_slice).unwrap_or(&[]) {
-            let cid = c["id"].as_str().ok_or_else(|| anyhow!("a control has no id"))?.to_string();
-            let num = |key: &str| c[key].as_f64().ok_or_else(|| anyhow!("control '{cid}' needs a numeric {key}"));
-            let kind = match c["type"].as_str() {
-                Some("range") => {
-                    let (min, max) = (num("min")?, num("max")?);
-                    let step = c["step"].as_f64().unwrap_or(0.0);
-                    if !(max > min) || step < 0.0 {
-                        bail!("control '{cid}' has an empty range");
-                    }
-                    ControlKind::Range { min, max, step }
-                }
-                Some("select") => {
-                    let options: Vec<Value> = c["options"]
-                        .as_array()
-                        .map(|o| o.iter().map(|o| o.get("value").cloned().unwrap_or_else(|| o.clone())).collect())
-                        .unwrap_or_default();
-                    if options.is_empty() {
-                        bail!("control '{cid}' has no options");
-                    }
-                    ControlKind::Select { options }
-                }
-                Some("toggle") => ControlKind::Toggle,
-                Some("date") => ControlKind::Date,
-                Some("color") => ControlKind::Color,
-                Some("text") => ControlKind::Text,
-                Some("action") => ControlKind::Action,
-                other => bail!("control '{cid}' has unknown type {other:?}"),
-            };
-            let mut control = Control { id: cid.clone(), kind, phone: c["phone"].as_bool().unwrap_or(false), default: Value::Null };
-            if !matches!(control.kind, ControlKind::Action) {
-                control.default = control.validate(&c["default"]).map_err(|e| anyhow!("control '{cid}' default: {e}"))?;
+            controls.push(Control::parse(c)?);
+        }
+        let mut entity_sets: Vec<EntitySet> = Vec::new();
+        for e in manifest["entities"].as_array().map(Vec::as_slice).unwrap_or(&[]) {
+            let sid = e["id"].as_str().filter(|s| mrs_site::is_instance_id(s)).ok_or_else(|| anyhow!("an entity set needs an id of lowercase letters, digits and dashes"))?;
+            if entity_sets.iter().any(|s| s.id == sid) {
+                bail!("two entity sets are called '{sid}'");
             }
-            controls.push(control);
+            for field in ["dataset", "key"] {
+                if e[field].as_str().is_none_or(str::is_empty) {
+                    bail!("entity set '{sid}' needs a {field}");
+                }
+            }
+            let mut set = EntitySet { id: sid.to_string(), controls: Vec::new() };
+            for c in e["controls"].as_array().map(Vec::as_slice).unwrap_or(&[]) {
+                let control = Control::parse(c).map_err(|err| anyhow!("entity set '{sid}': {err}"))?;
+                if matches!(control.kind, ControlKind::Action) {
+                    bail!("entity set '{sid}': '{}' is an action; entities have values only", control.id);
+                }
+                if set.controls.iter().any(|other| other.id == control.id) {
+                    bail!("entity set '{sid}' has two controls called '{}'", control.id);
+                }
+                set.controls.push(control);
+            }
+            if set.controls.is_empty() {
+                bail!("entity set '{sid}' has no controls");
+            }
+            entity_sets.push(set);
+        }
+        let mut actions: Vec<String> = Vec::new();
+        for a in manifest["actions"].as_array().map(Vec::as_slice).unwrap_or(&[]) {
+            let aid = a["id"].as_str().filter(|s| !s.is_empty()).ok_or_else(|| anyhow!("a named action has no id"))?;
+            if actions.iter().any(|other| other == aid) || controls.iter().any(|c| c.id == aid) {
+                bail!("action '{aid}' is named twice");
+            }
+            actions.push(aid.to_string());
+        }
+        match &manifest["stage"] {
+            Value::Null => {}
+            Value::String(s) if s == "custom" => {}
+            other => bail!("stage {other} is not \"custom\""),
+        }
+        if !entity_sets.is_empty() && controls.iter().any(|c| c.id == ENTITIES) {
+            bail!("a layer with entities cannot have a control called '{ENTITIES}'");
         }
         let mut tools = Vec::new();
         for t in manifest["tools"].as_array().map(Vec::as_slice).unwrap_or(&[]) {
@@ -119,11 +172,45 @@ impl LayerDef {
             };
             tools.push(Tool { id: tid, kind });
         }
-        Ok(Self { source: id.clone(), id, manifest, controls, tools })
+        Ok(Self { source: id.clone(), id, manifest, controls, tools, entity_sets, actions })
     }
 
     pub fn tool(&self, id: &str) -> Option<&Tool> {
         self.tools.iter().find(|t| t.id == id)
+    }
+
+    pub fn entity_set(&self, id: &str) -> Option<&EntitySet> {
+        self.entity_sets.iter().find(|s| s.id == id)
+    }
+
+    /// Checks a whole `entities` param: known sets, entity ids, and each value against its control.
+    pub fn validate_entities(&self, value: &Value, phone: bool) -> Result<Value, String> {
+        let sets = value.as_object().ok_or("entities must be an object of sets")?;
+        let mut out = Map::new();
+        let mut count = 0;
+        for (sid, entities) in sets {
+            let set = self.entity_set(sid).ok_or_else(|| format!("layer '{}' has no entity set '{sid}'", self.id))?;
+            let entities = entities.as_object().ok_or_else(|| format!("entities.{sid} must be an object of entities"))?;
+            let mut clean = Map::new();
+            for (id, values) in entities {
+                if !is_entity_id(id) {
+                    return Err(format!("entities.{sid}: '{id}' is not an entity id"));
+                }
+                let mut values = set.validate(values.as_object().ok_or_else(|| format!("entities.{sid}.{id} must be an object"))?, phone)?;
+                set.changed_only(&mut values);
+                if !values.is_empty() {
+                    clean.insert(id.clone(), Value::Object(values));
+                }
+            }
+            count += clean.len();
+            if !clean.is_empty() {
+                out.insert(sid.clone(), Value::Object(clean));
+            }
+        }
+        if count > MOST_ENTITIES {
+            return Err(format!("at most {MOST_ENTITIES} entities can have their own values"));
+        }
+        Ok(Value::Object(out))
     }
 
     pub fn control(&self, id: &str) -> Option<&Control> {
@@ -149,6 +236,13 @@ impl LayerDef {
     pub fn validate(&self, patch: &Map<String, Value>, phone: bool) -> Result<Map<String, Value>, String> {
         let mut out = Map::new();
         for (key, value) in patch {
+            if key == ENTITIES && !self.entity_sets.is_empty() {
+                if phone {
+                    return Err("phones change entities one at a time".into());
+                }
+                out.insert(key.clone(), self.validate_entities(value, false)?);
+                continue;
+            }
             let control = self.control(key).ok_or_else(|| format!("layer '{}' has no control '{key}'", self.id))?;
             if matches!(control.kind, ControlKind::Action) {
                 return Err(format!("'{key}' is an action, not a value"));
@@ -163,6 +257,43 @@ impl LayerDef {
 }
 
 impl Control {
+    /// Reads one control of a layer.json: its id, type, phone flag and checked default.
+    pub fn parse(c: &Value) -> anyhow::Result<Self> {
+        let cid = c["id"].as_str().ok_or_else(|| anyhow!("a control has no id"))?.to_string();
+        let num = |key: &str| c[key].as_f64().ok_or_else(|| anyhow!("control '{cid}' needs a numeric {key}"));
+        let kind = match c["type"].as_str() {
+            Some("range") => {
+                let (min, max) = (num("min")?, num("max")?);
+                let step = c["step"].as_f64().unwrap_or(0.0);
+                if !(max > min) || step < 0.0 {
+                    bail!("control '{cid}' has an empty range");
+                }
+                ControlKind::Range { min, max, step }
+            }
+            Some("select") => {
+                let options: Vec<Value> = c["options"]
+                    .as_array()
+                    .map(|o| o.iter().map(|o| o.get("value").cloned().unwrap_or_else(|| o.clone())).collect())
+                    .unwrap_or_default();
+                if options.is_empty() {
+                    bail!("control '{cid}' has no options");
+                }
+                ControlKind::Select { options }
+            }
+            Some("toggle") => ControlKind::Toggle,
+            Some("date") => ControlKind::Date,
+            Some("color") => ControlKind::Color,
+            Some("text") => ControlKind::Text,
+            Some("action") => ControlKind::Action,
+            other => bail!("control '{cid}' has unknown type {other:?}"),
+        };
+        let mut control = Control { id: cid.clone(), kind, phone: c["phone"].as_bool().unwrap_or(false), default: Value::Null };
+        if !matches!(control.kind, ControlKind::Action) {
+            control.default = control.validate(&c["default"]).map_err(|e| anyhow!("control '{cid}' default: {e}"))?;
+        }
+        Ok(control)
+    }
+
     /// Returns the value as it will be stored: clamped, snapped and type-checked.
     pub fn validate(&self, value: &Value) -> Result<Value, String> {
         match &self.kind {
@@ -277,6 +408,28 @@ fn custom_manifest(id: &str, recipe: &mrs_site::CustomLayer) -> Value {
     manifest
 }
 
+/// The folder of a site that holds its own layer packages (#277).
+pub const SITE_LAYERS: &str = "layers";
+/// Where a site layer's built code is, inside its package. `mrstudio layer build` writes it.
+pub const SITE_LAYER_MODULE: &str = "dist/index.js";
+
+/// `./layers/x` and `layers/x/` name the same folder.
+fn same_path(a: &str, b: &str) -> bool {
+    let tidy = |p: &str| p.trim_start_matches("./").trim_end_matches('/').to_string();
+    tidy(a) == tidy(b)
+}
+
+/// The address a surface imports a site layer's code from: its built module under the site's
+/// `/site` route, with the file's time so a rebuilt layer is not served from a browser's cache.
+/// None when the package has not been built: its manifest still loads, and it draws nothing.
+pub fn module_url(source: &str, dir: &Path) -> Option<String> {
+    let file = dir.join(SITE_LAYER_MODULE);
+    let modified = std::fs::metadata(&file).ok()?.modified().ok()?;
+    let stamp = modified.duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0);
+    let path = source.trim_start_matches("./").trim_end_matches('/');
+    Some(format!("/site/{path}/{SITE_LAYER_MODULE}?v={stamp}"))
+}
+
 /// The catalogue entry for a custom layer saved in the site.
 pub fn custom_def(id: &str, recipe: &mrs_site::CustomLayer) -> anyhow::Result<LayerDef> {
     let mut def = LayerDef::parse(custom_manifest(id, recipe)).map_err(|e| anyhow!("custom layer '{id}': {e:#}"))?;
@@ -313,18 +466,48 @@ pub fn load_catalog(site: &Site, core_layers: &Path) -> anyhow::Result<Vec<Layer
         }
         defs.push(custom_def(id, recipe)?);
     }
-    for (used, _, _) in site.instances() {
-        if used.starts_with('.') {
-            if defs.iter().any(|d| d.source == used) {
-                continue;
+    // The site's own layer packages (#277): those the scene uses, and every folder in `layers/`,
+    // so the composer's palette offers them too. One that the scene does not use and that does
+    // not load is left out with a warning, as a core layer is.
+    let mut site_layers: Vec<(String, bool)> =
+        site.instances().iter().filter(|(used, _, _)| used.starts_with('.')).map(|(used, _, _)| (used.to_string(), true)).collect();
+    if let Ok(entries) = std::fs::read_dir(site.dir.join(SITE_LAYERS)) {
+        let mut found: Vec<String> = entries
+            .filter_map(|e| e.ok())
+            .filter(|e| e.path().join("layer.json").is_file())
+            .filter_map(|e| e.file_name().to_str().map(|name| format!("./{SITE_LAYERS}/{name}")))
+            .collect();
+        found.sort();
+        for used in found {
+            if !site_layers.iter().any(|(known, _)| same_path(known, &used)) {
+                site_layers.push((used, false));
             }
-            let dir = site.resolve(used).ok_or_else(|| anyhow!("layer path '{used}' leaves the site folder"))?;
+        }
+    }
+    for (used, in_scene) in &site_layers {
+        if defs.iter().any(|d| same_path(&d.source, used)) {
+            continue;
+        }
+        let def = site.resolve(used).ok_or_else(|| anyhow!("layer path '{used}' leaves the site folder")).and_then(|dir| {
             let mut def = read_manifest(&dir)?;
             if defs.iter().any(|d| d.id == def.id) {
                 bail!("{} declares id '{}', which another layer already uses", dir.display(), def.id);
             }
             def.source = used.to_string();
-            defs.push(def);
+            if let Some(module) = module_url(used, &dir) {
+                def.manifest["module"] = Value::String(module);
+            }
+            Ok(def)
+        });
+        match def {
+            Ok(def) => defs.push(def),
+            Err(e) if *in_scene => return Err(e),
+            Err(e) => tracing::warn!("site layer '{used}' is left out of the palette: {e:#}"),
+        }
+    }
+    for (used, _, _) in site.instances() {
+        if used.starts_with('.') {
+            continue;
         } else if !defs.iter().any(|d| d.source == used) {
             bail!("site.json uses layer '{used}', which is not in {}", core_layers.display());
         }
@@ -337,6 +520,13 @@ pub fn load_catalog(site: &Site, core_layers: &Path) -> anyhow::Result<Vec<Layer
         let Some(def) = defs.iter().find(|d| d.source == used) else { continue };
         if let Some(name) = def.missing_data(&data)? {
             tracing::warn!("layer '{}' needs the dataset '{name}', which this site does not have yet", def.id);
+        }
+        // A layer that calls a service the site does not declare (#278) still starts; its calls are refused.
+        for wanted in def.manifest["requires"]["services"].as_array().map(Vec::as_slice).unwrap_or(&[]) {
+            let wanted = wanted.as_str().unwrap_or_default();
+            if !site.manifest.services.iter().any(|s| s.id == wanted) {
+                tracing::warn!("layer '{}' needs the service '{wanted}', which this site does not have under \"services\"", def.id);
+            }
         }
     }
     Ok(defs)
@@ -421,6 +611,96 @@ mod tests {
         assert!(load_catalog(&site, &repo.join("packages/layers")).is_ok());
         let cars = catalog.iter().find(|d| d.id == "cars").unwrap();
         assert_eq!(cars.missing_data(&data).unwrap().as_deref(), Some("roads"));
+    }
+
+    #[test]
+    fn site_layers_are_found_and_carry_their_built_module() {
+        let repo = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let tmp = std::env::temp_dir().join(format!("mrs-site-layers-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+        let package = |name: &str, manifest: Value| {
+            let dir = tmp.join(SITE_LAYERS).join(name);
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::write(dir.join("layer.json"), manifest.to_string()).unwrap();
+            dir
+        };
+        let built = package("rings", json!({ "api": 1, "id": "rings", "name": "Rings" }));
+        std::fs::create_dir_all(built.join("dist")).unwrap();
+        std::fs::write(built.join(SITE_LAYER_MODULE), "export default {}").unwrap();
+        package("unbuilt", json!({ "api": 1, "id": "unbuilt", "name": "Unbuilt" }));
+        // Broken and not in the scene: left out of the palette, the table still opens.
+        package("broken", json!({ "api": 9, "id": "broken" }));
+        // The sample site, looked for in another folder: only its layers come from there.
+        let mut site = Site::load(repo.join("sites/sample")).unwrap();
+        site.dir = tmp.clone();
+        let catalog = load_catalog(&site, &repo.join("packages/layers")).unwrap();
+        let rings = catalog.iter().find(|d| d.id == "rings").unwrap();
+        assert_eq!(rings.source, "./layers/rings");
+        let module = rings.manifest["module"].as_str().unwrap();
+        assert!(module.starts_with("/site/layers/rings/dist/index.js?v="), "{module}");
+        let unbuilt = catalog.iter().find(|d| d.id == "unbuilt").unwrap();
+        assert!(unbuilt.manifest.get("module").is_none());
+        assert!(!catalog.iter().any(|d| d.id == "broken"));
+        // In the scene, named either way, it is the same layer, listed once.
+        site.manifest.layers.push(serde_json::from_value(json!({ "use": "./layers/rings", "id": "rings" })).unwrap());
+        let catalog = load_catalog(&site, &repo.join("packages/layers")).unwrap();
+        assert_eq!(catalog.iter().filter(|d| d.id == "rings").count(), 1);
+        // A broken layer the scene uses stops the table, with the reason.
+        site.manifest.layers.push(serde_json::from_value(json!({ "use": "./layers/broken", "id": "broken" })).unwrap());
+        assert!(load_catalog(&site, &repo.join("packages/layers")).is_err());
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    fn with_entities() -> LayerDef {
+        LayerDef::parse(json!({
+            "api": 1, "id": "e", "name": "E",
+            "entities": [{ "id": "members", "dataset": "buildings", "key": "id", "controls": [
+                { "id": "in", "type": "toggle", "label": "In", "default": false, "phone": true },
+                { "id": "pv", "type": "range", "label": "PV", "min": 0, "max": 80, "step": 5, "default": 0 }
+            ] }]
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn entity_values_are_checked_and_only_changes_kept() {
+        let d = with_entities();
+        assert!(d.defaults().is_empty(), "no entity has values of its own yet");
+        let clean = d.validate(&patch(json!({ "entities": { "members": { "3": { "pv": 33, "in": false }, "4": { "pv": 0 } } } })), false).unwrap();
+        // Snapped like a layer control; defaults are dropped, and an entity left with none goes.
+        assert_eq!(clean["entities"], json!({ "members": { "3": { "pv": 35.0 } } }));
+        assert!(d.validate(&patch(json!({ "entities": { "other": {} } })), false).is_err());
+        assert!(d.validate(&patch(json!({ "entities": { "members": { "3": { "nope": 1 } } } })), false).is_err());
+        assert!(d.validate(&patch(json!({ "entities": { "members": { "": { "pv": 5 } } } })), false).is_err());
+        assert!(d.validate(&patch(json!({ "entities": {} })), true).is_err(), "phones go one entity at a time");
+        let set = d.entity_set("members").unwrap();
+        assert!(set.validate(&patch(json!({ "in": true })), true).is_ok());
+        assert!(set.validate(&patch(json!({ "pv": 10 })), true).is_err());
+    }
+
+    #[test]
+    fn bad_entity_sets_are_refused() {
+        let layer = |sets: Value| LayerDef::parse(json!({ "api": 1, "id": "e", "name": "E", "entities": sets }));
+        let toggle = json!({ "id": "in", "type": "toggle", "label": "In", "default": false });
+        assert!(layer(json!([{ "id": "a", "dataset": "b", "key": "id", "controls": [toggle] }])).is_ok());
+        assert!(layer(json!([{ "id": "a", "dataset": "b", "key": "id", "controls": [] }])).is_err());
+        assert!(layer(json!([{ "id": "a", "key": "id", "controls": [toggle] }])).is_err());
+        assert!(layer(json!([{ "id": "a", "dataset": "b", "key": "id", "controls": [{ "id": "go", "type": "action", "label": "Go" }] }])).is_err());
+        assert!(layer(json!([{ "id": "a", "dataset": "b", "key": "id", "controls": [toggle] }, { "id": "a", "dataset": "b", "key": "id", "controls": [toggle] }])).is_err());
+    }
+
+    #[test]
+    fn named_actions_and_a_custom_stage_are_checked() {
+        let layer = |extra: Value| {
+            let mut m = json!({ "api": 1, "id": "s", "name": "S", "controls": [{ "id": "go", "type": "action", "label": "Go" }] });
+            m.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
+            LayerDef::parse(m)
+        };
+        assert_eq!(layer(json!({ "stage": "custom", "actions": [{ "id": "travel" }] })).unwrap().actions, vec!["travel"]);
+        assert!(layer(json!({ "stage": "big" })).is_err());
+        assert!(layer(json!({ "actions": [{ "id": "go" }] })).is_err(), "already an action control");
+        assert!(layer(json!({ "actions": [{ "label": "No id" }] })).is_err());
     }
 
     #[test]

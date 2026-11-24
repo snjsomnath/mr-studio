@@ -1,8 +1,10 @@
+import type { ServiceClient } from './service.ts';
 import type { PointerSample } from './blocks/interaction.ts';
 import type { Colormap } from './colormap.ts';
 import type { EngineClient } from './engine.ts';
 import type { ModelHandle } from './model.ts';
-import type { FieldFrame, LayerManifest, Params, SiteInfo, StepState, ToolGeometry, ToolInput } from './types.ts';
+import type { LayerReveal } from './reveal.ts';
+import type { EntityChange, EntitySelection, FieldFrame, LayerManifest, Params, SiteInfo, StepState, ToolGeometry, ToolInput } from './types.ts';
 
 export interface FieldOverlayStyle {
   colormap?: Colormap;
@@ -126,6 +128,34 @@ export interface MapHandle {
   addDrawing(id: string, options?: { opacity?: number; /** Canvas width in pixels. Default 2048. */ resolution?: number }): DrawingOverlay;
   /** A canvas above the scene, in CSS pixels, with a projection from WGS84. */
   addCanvas(id: string, style?: { opacity?: number }): CanvasOverlay;
+  /**
+   * What the table shows, for a magnifier (#287): ask for a rectangle of the table view and it is
+   * copied at the next frame, with everything drawn there except this layer's own canvases.
+   */
+  addPicture(): TablePicture;
+}
+
+/** A rectangle in the table view's CSS pixels, as `CanvasOverlay` uses them. */
+export interface PixelRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * A copy of part of what the table shows (`ctx.map.addPicture()`), for drawing it larger.
+ * `want` asks for a rectangle; the copy lands in `canvas` when the table next draws, at the
+ * screen's own pixel density, and `taken` says which rectangle it holds.
+ */
+export interface TablePicture {
+  want(rect: PixelRect): void;
+  readonly canvas: HTMLCanvasElement;
+  /** The rectangle `canvas` holds now, or null before the first copy. */
+  readonly taken: PixelRect | null;
+  /** Raised with every copy. */
+  readonly revision: number;
+  remove(): void;
 }
 
 /**
@@ -156,6 +186,40 @@ interface ContextBase<P> {
    * layer.json are translated without it.
    */
   say(text: string, vars?: Record<string, string | number>): string;
+  /**
+   * One of the site's outside services (#278), by its id in site.json `services`: `get`, `post`
+   * and `job`, through the host. Name it in `requires.services`. While a call runs, publish
+   * `busy: { label, progress }` and the controller shows it under the layer's name.
+   */
+  service(id: string): ServiceClient;
+  /**
+   * The entity picked on the table or the controller (#279), the same on every surface, or null.
+   * Entities are declared in layer.json `entities`; the runtime picks them on the table and
+   * shows the picked one's controls on the controller without layer code.
+   */
+  readonly selection: EntitySelection | null;
+  /** Picks an entity, or none with null, for every surface: the controller shows its controls. */
+  select(set: string, id: string | null): void;
+  /** One entity's values: its controls' defaults with what was set for it on top. */
+  entity(set: string, id: string): Record<string, unknown>;
+  /**
+   * Changes the values of one or more entities through the host, which checks them against the
+   * set's controls. `null` puts them back to the defaults.
+   */
+  setEntity(set: string, ids: string | string[], values: Record<string, unknown> | null): void;
+  /**
+   * Sends a tool input through the host, as a phone does, for one of the layer's own tools.
+   * Every view of the table running the layer (the projector, the editor) gets it in
+   * `tool(input)`, so a pick made with the mouse on one view, or on a controller map (#283),
+   * shows on all of them. Resolves once the host has accepted it.
+   */
+  sendTool(tool: string, geometry: ToolGeometry): Promise<void>;
+  /**
+   * Presses one of the layer's actions through the host: an `action` control, or one of the
+   * named `actions` in layer.json that have no button of their own (#283). Every view of the
+   * table gets it in `action(id)`, so a controller stage can start an animation on the table.
+   */
+  action(id: string): Promise<void>;
 }
 
 export interface TableContext<P = Params> extends ContextBase<P> {
@@ -164,13 +228,6 @@ export interface TableContext<P = Params> extends ContextBase<P> {
   /** The digital twin of the physical model: fields, lights and materials on its real surfaces. */
   readonly model: ModelHandle;
   readonly pointer: TablePointer;
-  /**
-   * Sends a tool input through the host, as a phone does, for one of the layer's own tools.
-   * Every view of the table running the layer (the projector, the editor) gets it in
-   * `tool(input)`, so a pick made with the mouse on one view shows on all of them.
-   * Resolves once the host has accepted it.
-   */
-  sendTool(tool: string, geometry: ToolGeometry): Promise<void>;
   /**
    * Plays the attention cue (#105) at a change, in WGS84: one bright burst that pulls eyes back
    * to the table. Tool inputs from a phone or the controller get one without any code; call this
@@ -184,6 +241,12 @@ export interface TableContext<P = Params> extends ContextBase<P> {
   readonly steps: LayerSteps;
   /** The legend on the controller's stage, when it changes as the layer runs. */
   readonly legend: LayerLegend;
+  /**
+   * For a layer whose layer.json says `reveals: true` (the Magnifier, the Reveal line): where its
+   * items show on the table. The runtime clips everything the items draw to the shape. Other
+   * layers' calls do nothing.
+   */
+  readonly reveal: LayerReveal;
   /** Runs every animation frame while the layer is active. `dt` is seconds since the last call. */
   onFrame(callback: (dt: number) => void): void;
   /** Registers cleanup to run when the layer is turned off. */
@@ -205,6 +268,14 @@ export interface TableHandlers {
   tool?(input: ToolInput): void;
   /** Next or Previous changed how many sub-steps are revealed (`ctx.steps.revealed`). */
   step?(revealed: number): void;
+  /**
+   * Entities' values changed (#279), from the controller, a phone or the editor: which ones, by
+   * set. Read them with `ctx.entity(set, id)`. Waits for the set's `debounce_ms` of quiet, so a
+   * layer that asks a model on every change asks once per gesture.
+   */
+  entities?(changed: EntityChange[]): void;
+  /** Another entity was picked, or none (`ctx.selection`). The runtime marks it on the table itself. */
+  select?(selection: EntitySelection | null): void;
 }
 
 /**
@@ -267,6 +338,14 @@ export interface LayerModule<P = Params> {
    * `ctx.setParams`. `ctx.panel` is `"hero"`. The element is as wide as the centre; the hero sets its height.
    */
   hero?(ctx: PanelContext<P>, el: HTMLElement): PanelHandlers | void;
+  /**
+   * Draws the layer's own stage on the controller (#283), for a layer.json with `stage: "custom"`:
+   * the whole centre under the layer's name, such as a map of the site to choose on. The rails, the
+   * step strip and the layer's controls stay. Reach the table through the host: `ctx.sendTool`,
+   * `ctx.action`, `ctx.setParams`, `ctx.select`. `controllerMap` gives a ready map of the site.
+   * `ctx.panel` is `"stage"`.
+   */
+  stage?(ctx: PanelContext<P>, el: HTMLElement): PanelHandlers | void;
   /**
    * Fetches what the layer will need before it is shown, so a sequence (the slideshow) can step
    * to it without waiting. Called on the table when a sequence that shows this layer opens, with

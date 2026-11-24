@@ -4,6 +4,237 @@ Every merge to main that carries a release note becomes a version. The newest is
 The app shows these notes, with their pictures, on Home when a newer version is out.
 How notes are written: docs/RELEASING.md.
 
+## 0.12.0 (2026-11-24)
+
+### New
+
+#### A layer's own map app on the controller (#283)
+A layer can now put its own app in the middle of the controller, such as a map of the site to choose on. What visitors do there reaches the table: a tap can draw a route, and a button can start an animation. The SDK gives layers a ready map of the site, upright as the table stands, with its streets and buildings, and it can find the shortest way along the streets. `samples/controller-map-example` has a route planner: tap a start and an end on the controller, the route lights up on the table, and **Send a traveller** sends a light along it.
+
+![The route planner on the controller: a map of the site with a route along the streets](docs/screenshots/283-controller.png)
+![The route on the table, with a traveller on its way](docs/screenshots/283-table.png)
+
+#### The MCP server knows what each part of MR Studio is for, and what it cannot do (#326)
+
+An LLM can now design an experience before it builds one. `find_capabilities` takes a goal in plain words and returns the layers, building blocks, kernels and site features that serve it, ranked, each with its status from the code (available, needs setup, planned, unsupported), what it needs, what the table, controller and phones do, what it pairs with, and the files that prove it; `describe_capability` gives one in full. Every core layer now says in its `layer.json` what it is for, the questions it answers, what it pairs with and its limits (`about`), and CI checks them. New resources give the three surfaces and eight experience patterns (`mrstudio://concepts`, `mrstudio://patterns/<id>`, from [docs/experience-design.md](docs/experience-design.md)), the catalogue, the site and recipe schemas, and the example sites. `save_custom_layer` works out the controller's legend from the looks and their data, as the editor does. Roadmap rows that are already built (ambient cars and people, dark and light maps, guided tours, annotations) are marked built.
+
+![find_capabilities for a goal, the constraints, the patterns, and a worked-out legend](docs/screenshots/326-capabilities.png)
+
+## 0.11.0 (2026-11-24)
+
+### New
+
+#### Tap a building on the table, change it on the controller (#279)
+A layer can now list things visitors change one at a time, such as the buildings of an energy community. Tap one on the table and it lights up. The controller then shows its name and its own settings, like whether it is in the community and how much of its roof has solar panels. Visitors can also pick one from a list, put it back to how it was, or apply its settings to every building of the same kind. Changed buildings get a dashed outline on the table. The layer needs no code for any of this: it only reads the values, and it can wait for a slider to settle before asking a model again. `samples/service-example` now works this way.
+
+![The controller with building 77 picked: in the energy community, 60 % solar on the roof](docs/screenshots/279-controller.png)
+![The table with the picked building outlined and every shop changed at once, dashed](docs/screenshots/279-table.png)
+
+#### Where is it sunny at 5 pm? (#273)
+
+Sun hours and Seasons can count just part of the day: the morning, lunch, the afternoon or the evening. Pick Evening and the terraces that get the evening sun light up.
+
+![Evening sun on the table](docs/screenshots/sun-window-evening.jpg)
+
+## 0.10.0 (2026-11-24)
+
+### New
+
+#### The MCP server tells the truth about what exists, and refuses what would not draw (#319, #321, #322, #323, #325)
+
+An LLM connected to MR Studio no longer asks for modules that already exist: the planned kernels are only real planned kernels, and naming a layer (such as `transit`) as a kernel finds that layer. Custom layer recipes are checked against the recipe player (blocks, props, colours, ramps, pictograms, icons), files named by layer params must be in the site, and a refusal never reads as a success. Every tool now returns structured results with one error shape and full MCP annotations. `preview_site` explains how to open the site in the installed app, or gives a `mrstudio dev` command on a free port with the app's own surfaces, and lists the editor and guide's phone. Presenter `notes` on slideshow steps are documented in `set_steps` and the site contract.
+
+![Before and after: planned kernels, the trams idea, and two refused edits](docs/screenshots/325-mcp-structured.png)
+
+## 0.9.0 (2026-11-24)
+
+### New
+
+#### Name and place, At rest and Design tabs on the ribbon (#311, #312, #313)
+
+Three steps of the setup guide are now tabs on the editor's ribbon, so a table can be changed without walking back through the guide. **Name and place** renames, moves, resizes or turns the table, and says what a move does before you press Move the table. **At rest** switches the map life on and off. **Design** has the controller's theme gallery, the button style, and each button's words and side.
+
+![The Design tab: theme gallery on the ribbon, buttons beside the map](docs/screenshots/311-design.png)
+
+![The At rest tab](docs/screenshots/312-at-rest.png)
+
+![The Name and place tab, with a change waiting to move the table](docs/screenshots/313-name-and-place.png)
+
+![What a move does, said before it happens](docs/screenshots/313-move-notes.png)
+
+## 0.8.0 (2026-11-24)
+
+### Breaking changes
+
+- A table with "services" in its site.json opens only in this version or newer; update the app on every computer that runs it. (#278)
+
+### New
+
+#### Fetch everything from open data in one go (#310)
+
+A new table's **Your place** step starts with **Fetch everything from open data**: buildings, streets, walking paths and trees from OpenStreetMap and the ground from free elevation, ticked and fetched together. OpenStreetMap is asked once for all of them, which is quicker and kinder to its shared servers than one request per dataset. One list shows how each one is doing, the editor reloads once at the end, and anything that failed has its own **Try again**. Datasets already on the table start unticked, so nothing is replaced unless you ask.
+
+![Fetching everything: one line per dataset](docs/screenshots/310-fetch-all-fetching.png)
+![Done: four in from OpenStreetMap, the ground left to try again](docs/screenshots/310-fetch-all-done.png)
+
+#### Models that run beside the table (#278)
+A table can now start its own models, such as an energy optimiser in Python, every time it opens. It keeps them running, restarting any that stop, and its layers ask them for answers. Long runs show their progress on the controller. If a model is down or the table is offline, the table shows the last answer it got. `samples/service-example` has a small model and a layer that uses it.
+
+![The controller while the model optimises, with its progress under the layer's name](docs/screenshots/278-controller-busy.png)
+![The model's answer drawn on the table, one circle per building](docs/screenshots/278-table.png)
+
+### Fixes
+
+#### The sun glides through the day (#302)
+
+Playing the sun study no longer jerks. The table now keeps its own clock while the day plays, so the sun, its glow and the shadows move a little every frame instead of jumping each time the time came back from the host. Shadows are drawn without stalling the frame, and on a slower graphics card they are drawn a little less often rather than slowing the whole table. The controller and the TV still follow the time a few times a second.
+
+Sunset is calm now too. The day slows to a third of its speed near sunrise and sunset, when shadows race across the table, so the golden hour gets its time. Long low shadows are drawn a little softer, and after sunset the table fades into night instead of switching back to the bright map.
+
+![Sunset before and after](docs/screenshots/302-sunset.png)
+
+![The table playing the sun study](docs/screenshots/302-sun-playing.png)
+
+![Frame times on the Mac, before and after](docs/screenshots/302-frame-times.png)
+
+## 0.7.0 (2026-11-24)
+
+### New
+
+#### A Media tab, and lists instead of names to type (#306)
+
+The editor's ribbon has a **Media** tab with everything the table can show: map data, drawings, pictures, video, sounds, the 3D model and the online sources of this computer. Each has a preview and says which layers use it, and goes on the table with one click. **Add media** takes any file, and the files a table is made from can be brought in or replaced here as in the guide's Your place.
+
+Settings that named a dataset, a file, a column or a WMS layer were boxes to type the exact name in. They are now lists to pick from, with type-ahead: a name that is not in the table is refused, so a typo can no longer leave a layer empty.
+
+![The Media tab](docs/screenshots/306-media-tab.png)
+
+![Picking a dataset](docs/screenshots/306-picker-typing.png)
+
+#### Try a custom layer with test data (#308)
+
+No data yet? The New custom layer window now offers random points, places, lines or areas, made up on the spot inside your table with columns to colour, size and animate by. Random places come with a day of activity, flows and links and start with a place motion, so you can switch through every place motion, cultural gravity included, straight away.
+
+![Test data in the New custom layer window](docs/screenshots/308-new-layer.png)
+
+![Random places with a gravity well, the activity table already picked](docs/screenshots/308-places-motion.png)
+
+## 0.6.0 (2026-11-24)
+
+### New
+
+#### Artworks that draw themselves, a magnifier and X-ray, and a reveal line (#286, #287, #288, #289)
+
+The Lindholmen artwork is now made of parts any table can use. A plan drawing can trace its lines in, turn to colour and grow viewpoints one at a time, placed on the map by its corners, and shows on the controller too. Pointing at a part of it lights it.
+
+![A drawing tracing in from the middle](docs/screenshots/286-trace.png)
+
+![The drawing in colour with a viewpoint growing in](docs/screenshots/286-viewpoint-growing.png)
+
+![The drawing on the controller](docs/screenshots/286-controller.png)
+
+The new Magnifier is a glass people move with the mouse, the controller or a phone. It shows the table larger, or, as an X-ray, the layers placed inside it, such as pipes and tunnels under the street.
+
+![The Magnifier as an X-ray](docs/screenshots/287-xray.png)
+
+![Moving the glass from the controller](docs/screenshots/287-controller.png)
+
+The new Reveal line is a line people drag across the table, with the layers inside it showing on one side.
+
+![The Reveal line over what is under the ground](docs/screenshots/288-reveal-line.png)
+
+Large parts of the map can now start an animation when a pointer rests over them, ready for the camera's hands later.
+
+![Pointing at a viewpoint lights it](docs/screenshots/289-finale-hover.png)
+
+#### Plans that come to life part by part (#300)
+
+A masterplan drawn with its parts named by what they are now animates each part the way the Chalmers demo's Campus Vision did. The boundary traces and its dashes march, the main axis grows from its middle, routes are drawn one after another, points pop in, nodes grow their rays and green spaces breathe. Phases numbered in their names are revealed in that order. There is a template drawing in the sample kit.
+
+![The boundary tracing in](docs/screenshots/300-boundary.png)
+
+![The main axis growing from its middle](docs/screenshots/300-axis.png)
+
+![Routes, points and nodes coming in](docs/screenshots/300-routes.png)
+
+![The whole plan, with the green spaces breathing](docs/screenshots/300-all.png)
+
+### Fixes
+
+#### The + beside Layers opens a list of layers to add (#305)
+
+In the editor, the **+** next to **Layers** on the left looked like it did nothing. It now opens a short list under it with every layer the table can add, then **Custom layer…** and **Add data…**. Picking one does the same as the ribbon's tool: a layer that needs data first takes you to bring it in, and adding a layer the table already has still asks first. Esc or a click elsewhere closes the list.
+
+![The list under the + beside Layers](https://raw.githubusercontent.com/snjsomnath/mr-studio/claude/project-thread-dfn6dv/docs/screenshots/305-new-layer-menu.png)
+
+## 0.5.0 (2026-11-24)
+
+### New
+
+#### Opening a layer quiets the map at rest (#303)
+
+When a layer is opened from the controller, the life on the map at rest steps aside: traffic, street life, public transport, building lights and trees pause, and the base map stays underneath for context. Close the layer and everything at rest comes back, as Street Life did in the Chalmers demo. The slideshow and picture layers still hide the base map too. Sketch and other tools kept alongside don't count as an open layer.
+
+![Wind open over the base map, with traffic, transit and trees paused](docs/screenshots/303-wind-open.png)
+
+#### Your own layers, with code, in the installed app (#277)
+A table can now carry layers its team wrote, with their own drawing on the table and their own panels on the controller, without changing MR Studio. `mrstudio layer new` makes a working layer in the site's `layers/` folder, `mrstudio layer build` gets it ready, and the app loads it next to the built-in layers. Developers write against the same SDK as the core layers. The table's computer runs the built layer and needs no extra tools.
+
+![A site layer drawing rings on the table where it was clicked](docs/screenshots/277-site-layer-table.png)
+![The same layer on the controller: its button, primary action, counter and its own panel](docs/screenshots/277-site-layer-controller.png)
+
+## 0.4.2 (2026-11-24)
+
+### Fixes
+
+#### Every table shows its own buildings and trees (#222)
+
+In the desktop app, a table could open with its streets and traffic but no buildings, trees or building lights. All tables use the same addresses for their files, and the app's window kept copies from an earlier table. A table whose files were older than those copies, such as one copied from a repository, was given the earlier table's buildings and trees, which lay somewhere else. The app now always fetches a table's files fresh, and it checks its own pages on every load, so an updated app never shows an earlier version's page.
+
+## 0.4.1 (2026-11-24)
+
+### Fixes
+
+#### Esc always leaves Present (#295)
+
+Esc takes you out of a full-screen Present, back to the editor, also when the table was opened without the editor. The full-screen screens now get the keyboard straight away, and the table shows a "Back to the editor" button when the pointer goes to its top edge. A table that starts by itself with the computer still ignores Esc.
+
+![The way back on the table](docs/screenshots/295-table-way-back.png)
+
+## 0.4.0 (2026-11-24)
+
+### New
+
+#### Phones join on eduroam and mobile data (#275)
+
+Visitors scan the QR code as before, from any network: the code opens a small join page on GitHub Pages that connects to the table over WebRTC, with no router or server of our own. The phone page itself still comes from the table, so it always matches. Join page link v1.
+
+![A phone that joined through the join page](docs/screenshots/275-phone-through-join-page.png)
+![The controller follows the phone](docs/screenshots/275-tv-follows-phone.png)
+![The join page while it connects](docs/screenshots/275-join-page-connecting.png)
+
+## 0.3.0 (2026-11-24)
+
+### New
+
+#### A Help page for every layer, and what to do when something is wrong (#291)
+
+Every layer now has its own page in the Help window. Each page says what the layer shows and what it is good for, and walks through setting it up step by step. It also lists what data the layer needs, every setting with its range and starting value, and some tips. The settings come from the layer itself, so the page always matches the app. In the editor, **How to use it** beside a layer's settings opens its page.
+
+A new page, **When something is wrong**, goes by what you see. It covers a projection that doesn't line up, a window on the wrong screen, an empty layer, phones that can't join, a slow table, missing map pictures, keys, the first start on a Mac or Windows, and updates.
+
+![The Traffic layer's Help page](docs/screenshots/291-help-traffic.png)
+
+## 0.2.1 (2026-11-24)
+
+### Fixes
+
+#### Present fills the screens you chose (#270)
+
+Present now opens the table and the controller full screen on the screens picked in the Display tab, also on a Mac with a Retina laptop beside a projector or TV, instead of leaving windows half on one screen. A window that ends up off its screen is put back by itself.
+
+![The controller and the table, each full screen on its own display](docs/screenshots/270-present-two-displays.png)
+
 ## 0.2.0 (2026-11-24)
 
 ### Breaking changes

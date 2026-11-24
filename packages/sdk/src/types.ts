@@ -59,7 +59,28 @@ export interface TextControl extends ControlBase {
    * editor offers the sources set up on this computer; the host signs requests with its key.
    */
   sources?: string[];
+  /**
+   * The value names something the table has (#306): a dataset or a file of one of these kinds.
+   * The editor offers a list of them to pick from, and Add media, instead of a box to type in.
+   */
+  media?: MediaKind[];
+  /** With `media`: the value is the dataset's name (the default) or the file's path in the table folder. */
+  mediaBy?: 'name' | 'path';
+  /** The value is a column of the dataset the layer's control with this id names (#306). */
+  columnsOf?: string;
+  /**
+   * The value is one or more layers (comma-separated) of the map service the layer's other
+   * controls name, by id: its address, its kind (`wms` or `arcgis`) and its sign-in (#306).
+   */
+  serviceLayers?: { url: string; service?: string; source?: string };
+  /** What an empty value means, shown as the first choice of a list (`media`, `columnsOf`), such as "Built-in birdsong". Default "None". */
+  none?: string;
 }
+/**
+ * What a table's media are (#306), as `GET /api/media` lists them: `map` (GeoJSON), `table` (CSV),
+ * `raster` (GeoTIFF), `drawing` (SVG), `picture`, `video`, `sound`, `model` (the 3D model), `data` (other files).
+ */
+export type MediaKind = 'map' | 'table' | 'raster' | 'drawing' | 'picture' | 'video' | 'sound' | 'model' | 'data';
 export interface ActionControl extends ControlBase {
   type: 'action';
 }
@@ -71,6 +92,43 @@ export interface ToolSpec {
   label?: string;
   /** False: inputs from other surfaces play no attention cue on the table (#105). Default true. */
   cue?: boolean;
+}
+
+/**
+ * A set of things on the table a visitor can pick and change one by one (#279): the buildings of
+ * an energy community, the stops of a line. Each entity is a feature of `dataset`, named by its
+ * `key` property, and has its own values for `controls`. The controller shows the picked one's
+ * controls under its name; the host keeps the values in `params.entities[set][entity]`.
+ */
+export interface EntitySet {
+  /** The set's id, unique in the layer: `params.entities[id]`. */
+  id: string;
+  /** A dataset from site.json `data` (also `buildings`, the scene's footprints). Name it in `requires.data`. */
+  dataset: string;
+  /** The feature property that names each entity: unique, a string or a number. */
+  key: string;
+  /** The feature property shown as its name. Default `key`. */
+  label?: string;
+  /** A feature property for changes to many at once, such as the owner: "Apply to all of <owner>". */
+  group?: string;
+  /** What one entity is called on the controller, such as "Building". Default "Item". */
+  name?: string;
+  /** Each entity's values. Actions are not allowed; `phone: true` lets phones change it. */
+  controls: Exclude<Control, ActionControl>[];
+  /** Milliseconds of quiet before the table's `entities` handler runs, for layers that call a model on change. Default 0. */
+  debounce_ms?: number;
+}
+
+/** An entity that is picked on the table and the controller: `state.selection`. */
+export interface EntitySelection {
+  set: string;
+  id: string;
+}
+
+/** Entities whose values changed, by set: what the table's `entities` handler gets. */
+export interface EntityChange {
+  set: string;
+  ids: string[];
 }
 
 /** Palette groups in the scene composer. */
@@ -91,10 +149,29 @@ export interface LayerManifest {
   requires?: { kernels?: string[]; data?: string[]; services?: string[] };
   controls?: Control[];
   tools?: ToolSpec[];
+  /**
+   * The controller's centre for this layer (#283): `custom` gives it to the module's `stage(ctx, el)`,
+   * such as a map app of the layer's own. Default: the generated controls only.
+   */
+  stage?: 'custom';
+  /**
+   * Named actions without a button of their own (#283), pressed from the layer's stage, hero or
+   * panels with `ctx.action(id)`, and handled on the table in `action(id)`.
+   */
+  actions?: { id: string; label?: string }[];
+  /** Things a visitor picks on the table and changes one by one on the controller (#279). */
+  entities?: EntitySet[];
   /** TV panels the layer contributes while it is on. Rules in docs/contracts/dashboard.md. */
   panels?: PanelSpec[];
   /** The layer is a sequence: its instances may have `steps.sequence` that show other layers (the slideshow). */
   sequence?: boolean;
+  /** The layer reveals its items through a shape it sets with `ctx.reveal` (the Magnifier, the Reveal line, #287). Default false. */
+  reveals?: boolean;
+  /**
+   * For a site's own code layer (#277): the address its built module is imported from, set by the
+   * host when `layers/<name>/dist/index.js` exists. Absent for core layers, which are bundled.
+   */
+  module?: string;
   /** For a custom layer saved in the site: the recipe the runtime draws. Absent for a code layer. */
   custom?: CustomLayer;
   /** Rows of the layer's legend on the controller (docs/contracts/present.md). */
@@ -356,6 +433,8 @@ export interface LayerState {
    * controller and stays on while button layers open and close.
    */
   rest?: boolean;
+  /** The entity picked on the table or the controller (#279), shared by every surface. */
+  selection?: EntitySelection | null;
 }
 
 /**

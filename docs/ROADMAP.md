@@ -47,7 +47,7 @@ Status (2026-11-24): the kernels `sunlight`, `wind` and `stormwater` are built. 
 
 | Layer | Kernel | Blocks |
 | --- | --- | --- |
-| Ambient cars, people | none | animated paths, markers |
+| Ambient cars, people | none (built: Traffic and Street life) | animated paths, markers |
 | Building lights | none | lit buildings, time control |
 | Trees | none | markers, site scene (trees) |
 | Day, night and seasons | `sunlight` for the light | time control, field overlay |
@@ -60,7 +60,7 @@ Status (2026-11-24): the kernels `sunlight`, `wind` and `stormwater` are built. 
 
 | Layer | Kernel | Blocks |
 | --- | --- | --- |
-| Dark and light maps | none | basemap style |
+| Dark and light maps | none (built: Base map) | basemap style |
 | Terrain | none | field overlay on the scene's `dtm` |
 | Building heights and age | none | choropleth, legend |
 | Green and blue areas | none | choropleth |
@@ -71,9 +71,9 @@ Status (2026-11-24): the kernels `sunlight`, `wind` and `stormwater` are built. 
 | Layer | Kernel | Blocks |
 | --- | --- | --- |
 | Slideshow | none | TV panel media |
-| Guided tours | none | a script that drives other layers' params through the host |
+| Guided tours | none (built: Slideshow steps with presenter notes, #98) | a script that drives other layers' params through the host |
 | Scenario compare | none | scenario switch, split view |
-| Annotations | none | phone tools, markers |
+| Annotations | none (built: Sketch) | phone tools, markers |
 
 ## Analysis
 
@@ -107,7 +107,7 @@ Planned additions to the sunlight layer: a point probe with a day timeline, seas
 
 ## What this adds up to
 
-About forty layers need eight new kernels (`wind`, `stormwater`, `thermal`, `plume`, `drift`, `isovist`, `noise`, `isochrone`) and around a dozen blocks. Several kernels feed others: `plume` and `drift` read the wind field, `thermal` reads sun and wind, and CoolPaths reads thermal. That is why the engine keeps one scene and lets a kernel take another kernel's field as input, which is the one engine feature this roadmap still needs.
+About forty layers needed eight new kernels. `wind` and `stormwater` are built and Isovist became an SDK block; `thermal`, `plume`, `drift`, `noise` and `isochrone` remain. Several kernels feed others: `plume` and `drift` read the wind field, `thermal` reads sun and wind, and CoolPaths reads thermal. That is why the engine keeps one scene and lets a kernel take another kernel's field as input, which is the one engine feature this roadmap still needs.
 
 ## Built
 
@@ -130,7 +130,9 @@ The core layers in `packages/layers`, with the issue that made each one:
 | Trees | `trees` | none | swaying crowns |
 | Table grid | `grid` | none | glowing tile seams (#191) |
 | Map data | `mapdata` | none | a dataset revealed by category |
-| Masterplan | `plan` | none | a plan drawing revealed phase by phase (#193) |
+| Masterplan | `plan` | none | a plan drawing revealed phase by phase (#193); traced opening, turn to colour, placement by corners (#286), pointing lights a phase (#289) |
+| Magnifier | `lens` | none | a magnifier or an X-ray glass, from the mouse, the controller and phones (#287) |
+| Reveal line | `swipe` | none | a line that reveals the layers inside it on one side (#288) |
 | Video walk | `walkthrough` | none | a video and its walker on the table (#194) |
 | Slideshow | `slideshow` | none | a sequence of layers and media; guided tours with presenter notes (#43, #98) |
 | Picture or video | `media` | none | a picture or video over the whole table; slides with transitions (#197) |

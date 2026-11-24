@@ -162,10 +162,10 @@ export const BLOCKS: BlockDef[] = [
   },
   {
     id: 'service', group: 'data', name: 'Service gateway',
-    description: 'A Python service declared in the manifest and reached through the host, for research models.',
-    usage: "planned: requires.services in layer.json",
-    detect: 'ctx\\.services|ServiceClient',
-    unlocks: ['Energy and solar flows (ECOM generalised)', 'Street-level walk-through'],
+    description: "A model or API beside the table (a Python optimiser in its own venv) or elsewhere, started and kept running by the host (#278): quick calls, long jobs with progress, and the last answer kept for when it is down.",
+    usage: "site.json 'services' (run or url); in the layer, requires.services and ctx.service(id).get/post/job; publish 'busy' while it works (samples/service-example)",
+    detect: 'export function serviceClient',
+    unlocks: ['Energy and solar flows (ECOM generalised)', 'Flood or noise models run on demand', 'Street-level walk-through'],
   },
 
   {
@@ -205,6 +205,20 @@ export const BLOCKS: BlockDef[] = [
     description: 'range, select, toggle, date, color, text and action controls declared in layer.json; the TV and phone UIs are generated from them.',
     usage: "layer.json 'controls'; set 'phone': true to let phones change one",
     detect: 'interface RangeControl',
+  },
+  {
+    id: 'entities', group: 'interaction', name: 'Entity inspector',
+    description: "Things on the table a visitor picks and changes one by one (#279), such as the buildings of an energy community: a tap on the table picks one, the controller shows its own controls under its name, with Back to default and Apply to all of a group. The host checks and keeps the values; no layer code for the picking or the controls.",
+    usage: "layer.json 'entities' (id, dataset, key, label, group, name, controls, debounce_ms); read with ctx.entity(set, id), react in the table's entities(changed) handler; ctx.selection / ctx.select for the pick",
+    detect: 'export function entityValues',
+    unlocks: ['Energy and solar flows (ECOM generalised)', 'Per-building scenarios and what-ifs'],
+  },
+  {
+    id: 'controller-stage', group: 'interaction', name: 'Controller stage and map',
+    description: "A layer's own app in the controller's centre (#283): a map of the site in the table's orientation with its buildings and streets, where taps become points, routes or areas sent to the table as tool inputs, and buttons press named actions that start animations on the table. Routes can follow the streets (StreetGraph.route).",
+    usage: "layer.json stage: 'custom' and 'actions'; the module's stage(ctx, el) with controllerMap(el, ctx, { mode, points, onPick, onDraw, draw }); ctx.sendTool and ctx.action reach the table's tool() and action() handlers (samples/controller-map-example)",
+    detect: 'export function controllerMap',
+    unlocks: ['Custom map apps on the controller', 'Route and journey planners'],
   },
   {
     id: 'time-control', group: 'interaction', name: 'Time control',

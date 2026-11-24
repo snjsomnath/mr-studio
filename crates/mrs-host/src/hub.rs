@@ -222,6 +222,9 @@ pub struct LayerState {
     /// the button layers open and close.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub rest: bool,
+    /// The entity picked on the table or the controller (#279): `{ set, id }`. Cleared when the layer goes off.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub selection: Option<Value>,
 }
 
 /// Where Next is in a layer (`docs/contracts/present.md`, Steps). For a sequence, `index`
@@ -611,6 +614,7 @@ impl Hub {
             step: None,
             shown_by: None,
             rest: false,
+            selection: None,
         };
         let mut instance = Instance { id, def, parent, saved, state };
         instance.sync_rest();
@@ -1140,6 +1144,69 @@ impl Hub {
                 state.params.extend(def.validate(patch, role == Role::Phone)?);
                 self.emit_layer(layer, state);
             }
+            "layer.entity" => {
+                // One or more entities' values (#279): merged into `params.entities`, or put back with `reset`.
+                let sid = p["set"].as_str().ok_or("missing set")?;
+                let set = def.entity_set(sid).ok_or_else(|| format!("layer '{layer}' has no entity set '{sid}'"))?;
+                let ids: Vec<&str> = match (&p["ids"], &p["id"]) {
+                    (Value::Array(ids), _) => ids.iter().map(|id| id.as_str().ok_or("ids must be strings")).collect::<Result<_, _>>()?,
+                    (Value::Null, Value::String(id)) => vec![id.as_str()],
+                    _ => return Err("missing ids".into()),
+                };
+                if ids.is_empty() || ids.len() > crate::layers::MOST_ENTITIES || !ids.iter().all(|id| crate::layers::is_entity_id(id)) {
+                    return Err("ids must be 1 to 10000 entity ids".into());
+                }
+                let mut all = state.params.get(crate::layers::ENTITIES).and_then(Value::as_object).cloned().unwrap_or_default();
+                let mut of_set = all.get(sid).and_then(Value::as_object).cloned().unwrap_or_default();
+                if p["reset"].as_bool() == Some(true) {
+                    for id in &ids {
+                        of_set.remove(*id);
+                    }
+                } else {
+                    let clean = set.validate(p["values"].as_object().ok_or("missing values")?, role == Role::Phone)?;
+                    for id in &ids {
+                        let mut values = of_set.get(*id).and_then(Value::as_object).cloned().unwrap_or_default();
+                        values.extend(clean.clone());
+                        set.changed_only(&mut values);
+                        if values.is_empty() {
+                            of_set.remove(*id);
+                        } else {
+                            of_set.insert(id.to_string(), Value::Object(values));
+                        }
+                    }
+                }
+                if of_set.is_empty() {
+                    all.remove(sid);
+                } else {
+                    all.insert(sid.to_string(), Value::Object(of_set));
+                }
+                let kept: usize = all.values().filter_map(Value::as_object).map(Map::len).sum();
+                if kept > crate::layers::MOST_ENTITIES {
+                    return Err(format!("at most {} entities can have their own values", crate::layers::MOST_ENTITIES));
+                }
+                if all.is_empty() {
+                    state.params.remove(crate::layers::ENTITIES);
+                } else {
+                    state.params.insert(crate::layers::ENTITIES.into(), Value::Object(all));
+                }
+                self.emit_layer(layer, state);
+            }
+            "layer.select" => {
+                // The entity picked on the table or the controller (#279), or none.
+                let sid = p["set"].as_str().ok_or("missing set")?;
+                if def.entity_set(sid).is_none() {
+                    return Err(format!("layer '{layer}' has no entity set '{sid}'"));
+                }
+                let selection = match &p["id"] {
+                    Value::Null => None,
+                    Value::String(id) if crate::layers::is_entity_id(id) => Some(json!({ "set": sid, "id": id })),
+                    _ => return Err("id must be an entity id or null".into()),
+                };
+                if state.selection != selection {
+                    state.selection = selection;
+                    self.emit_layer(layer, state);
+                }
+            }
             "layer.publish" => {
                 if !role.may_publish() {
                     return Err("only the table publishes".into());
@@ -1150,8 +1217,12 @@ impl Hub {
             "layer.action" => {
                 let action = p["action"].as_str().ok_or("missing action")?;
                 let control = def.control(action).filter(|c| matches!(c.kind, crate::ControlKind::Action));
-                let control = control.ok_or_else(|| format!("layer '{layer}' has no action '{action}'"))?;
-                if role == Role::Phone && !control.phone {
+                let named = def.actions.iter().any(|a| a == action);
+                if control.is_none() && !named {
+                    return Err(format!("layer '{layer}' has no action '{action}'"));
+                }
+                // Named actions (#283) come from the controller's stage, never from a phone.
+                if role == Role::Phone && !control.is_some_and(|c| c.phone) {
                     return Err(format!("'{action}' cannot be used from a phone"));
                 }
                 self.emit("layer.action", json!({ "layer": layer, "action": action, "from": surface }));
@@ -1681,6 +1752,7 @@ impl Hub {
         let sequence = self.is_sequence(&scene[index]);
         if !active {
             scene[index].state.step = None;
+            scene[index].state.selection = None;
         }
         scene[index].state.active = active;
         if sequence && !active {
@@ -1698,7 +1770,11 @@ impl Hub {
             for n in block(scene, index).skip(1) {
                 // A sequence's own items come on only as its steps show them.
                 // The item the sequence has just shown as its first step stays on (#197).
-                let on = if sequence { active && scene[n].state.shown_by.as_deref() == Some(scene[index].id.as_str()) } else { active && scene[n].saved.active };
+                let on = if sequence {
+                    active && scene[n].state.shown_by.as_deref() == Some(scene[index].id.as_str())
+                } else {
+                    active && scene[n].saved.active
+                };
                 if scene[n].state.active != on {
                     scene[n].state.active = on;
                     self.emit_layer(&scene[n].id, &scene[n].state);
@@ -1723,8 +1799,9 @@ impl Hub {
             }
             let mut params = self.catalog()[scene[at].def].defaults();
             params.extend(scene[at].saved.params.clone());
-            if scene[at].state.params != params {
+            if scene[at].state.params != params || scene[at].state.selection.is_some() {
                 scene[at].state.params = params;
+                scene[at].state.selection = None;
                 self.emit_layer(&scene[at].id, &scene[at].state);
             }
         }
@@ -2122,6 +2199,91 @@ mod tests {
     }
 
     #[test]
+    fn an_entity_is_picked_changed_reset_and_saved() {
+        let hub = scratch_hub("entities");
+        let dir = hub.site.dir.clone();
+        // A site layer with buildings to pick, added to the scene.
+        let package = dir.join("layers/members");
+        std::fs::create_dir_all(&package).unwrap();
+        let manifest = json!({ "api": 1, "id": "members", "name": "Members", "requires": { "data": ["buildings"] },
+            "entities": [{ "id": "buildings", "dataset": "buildings", "key": "id", "group": "kind", "controls": [
+                { "id": "in", "type": "toggle", "label": "In", "default": false, "phone": true },
+                { "id": "pv", "type": "range", "label": "PV", "min": 0, "max": 80, "step": 5, "default": 0 }
+            ] }] });
+        std::fs::write(package.join("layer.json"), manifest.to_string()).unwrap();
+        let site = Site::load(&dir).unwrap();
+        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let catalog = crate::layers::load_catalog(&site, &root.join("packages/layers")).unwrap();
+        let hub = Hub::new(&site, catalog, 4170, None, SessionOptions::default()).unwrap();
+        let dev = |method: &str, p: Value| hub.request(Role::Dev, 0, method, &p);
+        dev("scene.add", json!({ "use": "./layers/members" })).unwrap();
+        dev("layer.activate", json!({ "layer": "members", "active": true })).unwrap();
+
+        // Picked on the table, the same for everyone.
+        dev("layer.select", json!({ "layer": "members", "set": "buildings", "id": "3" })).unwrap();
+        assert_eq!(layer(&hub, "members")["selection"], json!({ "set": "buildings", "id": "3" }));
+        assert!(dev("layer.select", json!({ "layer": "members", "set": "trees", "id": "3" })).is_err());
+
+        // Changed on the controller, two at once for a group, checked like controls.
+        dev("layer.entity", json!({ "layer": "members", "set": "buildings", "ids": ["3"], "values": { "pv": 42 } })).unwrap();
+        dev("layer.entity", json!({ "layer": "members", "set": "buildings", "ids": ["3", "4"], "values": { "in": true } })).unwrap();
+        assert_eq!(layer(&hub, "members")["params"]["entities"], json!({ "buildings": { "3": { "pv": 40.0, "in": true }, "4": { "in": true } } }));
+        assert!(dev("layer.entity", json!({ "layer": "members", "set": "buildings", "ids": ["3"], "values": { "pv": "lots" } })).is_err());
+        // A phone may change only what is marked for phones.
+        assert!(hub.request(Role::Phone, 7, "layer.entity", &json!({ "layer": "members", "set": "buildings", "id": "5", "values": { "pv": 10 } })).is_err());
+        hub.request(Role::Phone, 7, "layer.entity", &json!({ "layer": "members", "set": "buildings", "id": "5", "values": { "in": true } })).unwrap();
+        // Reset puts one back; back to its defaults, it has no values of its own.
+        dev("layer.entity", json!({ "layer": "members", "set": "buildings", "ids": ["4", "5"], "reset": true })).unwrap();
+        dev("layer.entity", json!({ "layer": "members", "set": "buildings", "ids": ["3"], "values": { "in": false } })).unwrap();
+        assert_eq!(layer(&hub, "members")["params"]["entities"], json!({ "buildings": { "3": { "pv": 40.0 } } }));
+
+        // Kept in site.json from the editor, with a step in the history to undo.
+        let entities = layer(&hub, "members")["params"]["entities"].clone();
+        dev("scene.set", json!({ "layer": "members", "params": { "entities": entities } })).unwrap();
+        let saved: Value = serde_json::from_str(&std::fs::read_to_string(dir.join("site.json")).unwrap()).unwrap();
+        let entry = saved["layers"].as_array().unwrap().iter().find(|l| l["use"] == "./layers/members").unwrap().clone();
+        assert_eq!(entry["params"]["entities"]["buildings"]["3"]["pv"], json!(40.0));
+        assert_eq!(hub.history_list()["revisions"][0]["summary"], json!("Changed Members: entities"));
+
+        // A visitor's changes since then go with Reset, and so does the pick.
+        dev("layer.entity", json!({ "layer": "members", "set": "buildings", "ids": ["9"], "values": { "pv": 80 } })).unwrap();
+        dev("layers.reset", json!({})).unwrap();
+        assert_eq!(layer(&hub, "members")["params"]["entities"], json!({ "buildings": { "3": { "pv": 40.0 } } }));
+        assert!(layer(&hub, "members").get("selection").is_none());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_controller_stage_presses_named_actions_and_sends_tools() {
+        let hub = scratch_hub("stage");
+        let dir = hub.site.dir.clone();
+        let package = dir.join("layers/planner");
+        std::fs::create_dir_all(&package).unwrap();
+        let manifest = json!({ "api": 1, "id": "planner", "name": "Planner", "stage": "custom",
+            "tools": [{ "id": "route", "type": "line" }], "actions": [{ "id": "travel", "label": "Travel" }] });
+        std::fs::write(package.join("layer.json"), manifest.to_string()).unwrap();
+        let site = Site::load(&dir).unwrap();
+        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let catalog = crate::layers::load_catalog(&site, &root.join("packages/layers")).unwrap();
+        let hub = Hub::new(&site, catalog, 4170, None, SessionOptions::default()).unwrap();
+        let dev = |method: &str, p: Value| hub.request(Role::Dev, 0, method, &p);
+        dev("scene.add", json!({ "use": "./layers/planner" })).unwrap();
+        hub.request(Role::Tv, 3, "layer.activate", &json!({ "layer": "planner", "active": true })).unwrap();
+        let mut events = hub.subscribe();
+        // The controller's stage sends a route and presses an action with no button of its own.
+        let route = json!({ "type": "LineString", "coordinates": [[11.97, 57.70], [11.971, 57.701]] });
+        hub.request(Role::Tv, 3, "tool.input", &json!({ "layer": "planner", "tool": "route", "geometry": route })).unwrap();
+        hub.request(Role::Tv, 3, "layer.action", &json!({ "layer": "planner", "action": "travel" })).unwrap();
+        let sent: Vec<Value> = std::iter::from_fn(|| events.try_recv().ok()).map(|e| serde_json::from_str(&e).unwrap()).collect();
+        assert!(sent.iter().any(|e| e["m"] == "tool.input" && e["p"]["from"] == 3), "{sent:?}");
+        assert!(sent.iter().any(|e| e["m"] == "layer.action" && e["p"]["action"] == "travel"));
+        // Not from a phone, and not an action the layer does not name.
+        assert!(hub.request(Role::Phone, 7, "layer.action", &json!({ "layer": "planner", "action": "travel" })).is_err());
+        assert!(dev("layer.action", json!({ "layer": "planner", "action": "fly" })).is_err());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn the_guide_drives_a_tour_with_its_own_code_and_reads_its_notes() {
         let hub = scratch_hub("guide");
         let dev = |method: &str, p: Value| hub.request(Role::Dev, 0, method, &p);
@@ -2168,7 +2330,8 @@ mod tests {
         let hub = scratch_hub("first-item");
         let dev = |method: &str, p: Value| hub.request(Role::Dev, 0, method, &p);
         dev("scene.add", json!({ "use": "trees", "parent": "slideshow", "id": "slide-trees" })).unwrap();
-        dev("scene.set", json!({ "layer": "slideshow", "steps": { "sequence": [{ "layer": "slide-trees" }, { "layer": "sunlight" }] } })).unwrap();
+        dev("scene.set", json!({ "layer": "slideshow", "steps": { "sequence": [{ "layer": "slide-trees" }, { "layer": "sunlight" }] } }))
+            .unwrap();
         dev("layer.activate", json!({ "layer": "slideshow", "active": true })).unwrap();
         let trees = layer(&hub, "slide-trees");
         assert_eq!((trees["active"].clone(), trees["shown_by"].clone()), (json!(true), json!("slideshow")));

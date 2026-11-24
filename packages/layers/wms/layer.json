@@ -3,6 +3,7 @@
   "id": "wms",
   "name": "Web map (WMS)",
   "description": "A map from a WMS service, such as a planning map or an aerial photo, laid over the table",
+  "about": {"purpose": "Brings an official map onto the table: a detailed plan, zoning, a historic or aerial map from a WMS or ArcGIS service.", "questions": ["What does the official plan or zoning say here?"], "pairs_with": ["swipe", "lens", "basemap"], "limits": ["Needs the service's address; some need a key in Sources and keys"]},
   "icon": "map",
   "attract": { "effect": "grid" },
   "category": "media",
@@ -37,7 +38,7 @@
     },
     { "id": "url", "type": "text", "label": "Service address", "default": "", "visibleWhen": { "map": "custom", "tier": "more" } },
     { "id": "signin", "type": "text", "label": "Sign-in", "default": "", "sources": ["wms", "lantmateriet", "arcgis"], "visibleWhen": { "map": "custom", "tier": "more" } },
-    { "id": "layers", "type": "text", "label": "Layers", "default": "", "visibleWhen": { "map": "custom", "tier": "more" } },
+    { "id": "layers", "type": "text", "label": "Layers", "default": "", "serviceLayers": {"url": "url", "service": "service", "source": "signin"}, "visibleWhen": { "map": "custom", "tier": "more" } },
     { "id": "styles", "type": "text", "label": "Styles", "default": "", "visibleWhen": { "map": "custom", "tier": "more" } },
     { "id": "source", "type": "text", "label": "Source", "default": "", "tier": "more" },
     { "id": "opacity", "type": "range", "label": "Opacity", "min": 0.1, "max": 1, "step": 0.05, "default": 0.9, "tier": "more" }

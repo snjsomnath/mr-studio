@@ -4,8 +4,8 @@
 //   node scripts/check-docs.mjs
 //
 // It checks that:
-// - every core layer (packages/layers/*/layer.json) is in README.md, docs/ROADMAP.md and the Help's feature list
-//   (docs/guide/features.md), by id or name;
+// - every core layer (packages/layers/*/layer.json) is in README.md, docs/ROADMAP.md and the Help's feature list, and says what it is for (about)
+//   (docs/guide/features.md), by id or name, and has its own Help page (docs/guide/layers/<id>.md);
 // - every engine kernel (crates/mrs-engine/src/kernels/*) is in docs/contracts/engine.md;
 // - every site.json setting (the SiteManifest, Table and Branding structs in mrs-site) is in docs/contracts/site.md;
 // - every MCP tool (packages/mcp/src/server.ts) is in docs/MCP.md;
@@ -33,7 +33,21 @@ for (const dir of dirs('packages', 'layers')) {
   const names = [layer.id, layer.name, dir, `packages/layers/${dir}`];
   if (!mentions(readme, ...names)) problems.push(`README.md does not mention the layer "${layer.name ?? layer.id}" (packages/layers/${dir}). Add it to the list of layers.`);
   if (!mentions(roadmap, ...names)) problems.push(`docs/ROADMAP.md does not mention the layer "${layer.name ?? layer.id}". Mark it built there.`);
+  // What the layer is for (#326): the MCP server's capability catalogue reads it.
+  const about = layer.about;
+  if (!about || typeof about.purpose !== 'string' || !Array.isArray(about.questions) || !about.questions.length) {
+    problems.push(`packages/layers/${dir}/layer.json has no "about" with a purpose and questions (docs/contracts/layer.md): say what the layer helps a group see or do.`);
+  } else {
+    for (const other of about.pairs_with ?? []) if (!existsSync(join(root, 'packages', 'layers', other, 'layer.json'))) problems.push(`packages/layers/${dir}/layer.json about.pairs_with names '${other}', which is not a core layer.`);
+  }
   if (!mentions(features, layer.name, `\`${layer.id}\``)) problems.push(`docs/guide/features.md (the app's Help) does not list the layer "${layer.name ?? layer.id}". Add a section with a picture.`);
+  // Its own page in the Help window (#291): what it shows, how to set it up, tips.
+  const guide = join(root, 'docs', 'guide', 'layers', `${dir}.md`);
+  if (!existsSync(guide)) problems.push(`docs/guide/layers/${dir}.md is missing: the Help window has no page for the layer "${layer.name ?? layer.id}". Copy another layer's page and write what it shows, how to set it up and tips; its settings are added from layer.json.`);
+  else {
+    const text = readFileSync(guide, 'utf8');
+    for (const part of ['## What it shows', '## Set it up']) if (!text.includes(part)) problems.push(`docs/guide/layers/${dir}.md has no "${part}" section.`);
+  }
   if (!layer.description) problems.push(`packages/layers/${dir}/layer.json has no "description"; the MCP server and the editor show it.`);
 }
 

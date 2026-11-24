@@ -1,7 +1,9 @@
-import { EngineClient, stepTransition, transitionGain } from '@mrstudio/sdk';
-import type { Connection, LayerManifest, LayerModule, LayerState, PanelContext, StepTransitionKind, TableContext, TableHandlers, ToolInput } from '@mrstudio/sdk';
+import { EngineClient, entityChanges, entityValues, serviceClient, stepTransition, transitionGain } from '@mrstudio/sdk';
+import type { RevealShape } from '@mrstudio/sdk';
+import type { Connection, EntityChange, LayerManifest, LayerModule, LayerState, PanelContext, StepTransitionKind, TableContext, TableHandlers, ToolInput } from '@mrstudio/sdk';
 
 import { Cues } from './cues.ts';
+import { entitiesOnTable } from './entities.ts';
 import { language, say } from './i18n.ts';
 import { recipeModule } from './recipe-player.ts';
 import { layerModule } from './registry.ts';
@@ -21,6 +23,8 @@ export function isAtRest(manifest: LayerManifest, state: LayerState | undefined)
 
 interface Running {
   handlers: TableHandlers;
+  /** Entity changes waiting for their set's `debounce_ms` of quiet (#279), by set. */
+  entities?: Map<string, { ids: Set<string>; timer: ReturnType<typeof setTimeout> }>;
   cleanups: (() => void)[];
   frames: ((dt: number) => void)[];
   /** Set once activation finished; updates before that are folded into the first one. */
@@ -79,9 +83,49 @@ export function paramSender(
   };
 }
 
+/**
+ * Sends entity changes for a layer (#279), at most one request per animation frame for each set
+ * and list of entities, carrying the latest values. `null` puts the entities back to their defaults.
+ */
+export function entitySender(connection: Connection, layer: string): (set: string, ids: string | string[], values: Record<string, unknown> | null) => void {
+  const pending = new Map<string, { set: string; ids: string[]; values: Record<string, unknown> | null }>();
+  return (set, ids, values) => {
+    const list = Array.isArray(ids) ? ids : [ids];
+    const key = JSON.stringify([set, list]);
+    const waiting = pending.get(key);
+    if (waiting) {
+      waiting.values = values === null || waiting.values === null ? values : { ...waiting.values, ...values };
+      return;
+    }
+    pending.set(key, { set, ids: list, values: values === null ? null : { ...values } });
+    requestAnimationFrame(() => {
+      const change = pending.get(key)!;
+      pending.delete(key);
+      const p = change.values === null ? { layer, set, ids: change.ids, reset: true } : { layer, set, ids: change.ids, values: change.values };
+      connection.request('layer.entity', p).catch((error) => console.warn(`[${layer}] ${error.message}`));
+    });
+  };
+}
+
+type Base = Pick<PanelContext, 'site' | 'params' | 'shared' | 'setParams' | 'language' | 'say' | 'service' | 'selection' | 'select' | 'entity' | 'setEntity' | 'sendTool' | 'action'>;
+
 /** Shared read-only parts of a layer context, backed by the store. */
-export function baseContext(store: Store, connection: Connection, layer: string): Pick<PanelContext, 'site' | 'params' | 'shared' | 'setParams' | 'language' | 'say'> {
+export function baseContext(store: Store, connection: Connection, layer: string): Base {
   return {
+    get selection() {
+      return store.state.layers[layer]?.selection ?? null;
+    },
+    select: (set, id) => {
+      connection.request('layer.select', { layer, set, id }).catch((error) => console.warn(`[${layer}] ${error.message}`));
+    },
+    entity: (set, id) => {
+      const spec = store.manifest(store.state.layers[layer]?.layer ?? '')?.entities?.find((s) => s.id === set);
+      return spec ? entityValues(spec, store.layer(layer).params, id) : {};
+    },
+    setEntity: entitySender(connection, layer),
+    sendTool: (tool, geometry) => connection.request<void>('tool.input', { layer, tool, geometry }),
+    action: (id) => connection.request<void>('layer.action', { layer, action: id }),
+    service: (id) => serviceClient(id),
     get language() {
       return language();
     },
@@ -112,6 +156,8 @@ export class LayerManager {
   private readonly store: Store;
   private readonly connection: Connection;
   private readonly view: TableView;
+  /** The shape each revealing layer shows its items through (#287); absent until it sets one. */
+  private reveals = new Map<string, RevealShape | null>();
 
   constructor(store: Store, connection: Connection, view: TableView) {
     this.store = store;
@@ -146,12 +192,25 @@ export class LayerManager {
     return Boolean(state && manifest && !state.parent && isAtRest(manifest, state));
   }
 
-  /** An open layer that turns the map at rest off, such as the slideshow (#205). */
-  private hidingAtRest(): boolean {
-    return this.store.state.scene.some((id) => {
-      const state = this.store.state.layers[id];
-      return Boolean(state?.active && !state.parent && this.store.manifest(state.layer)?.hidesAtRest);
-    });
+  /** A layer opened from the controller: on, top-level, not part of the map at rest and not a tool kept alongside. */
+  private opensOver(id: string): boolean {
+    const state = this.store.state.layers[id];
+    const manifest = state ? this.store.manifest(state.layer) : undefined;
+    return Boolean(state?.active && manifest && !state.parent && !manifest.alongside && !isAtRest(manifest, state));
+  }
+
+  /**
+   * Whether the map at rest's layer `id` steps aside for an open layer (#300). Any open layer turns
+   * the map's life off (traffic, street life, lights, trees), as the Chalmers demo did; the base map
+   * stays under it for context. A layer that hides the map at rest (the slideshow, #205) turns the
+   * base map off too.
+   */
+  private hiddenAtRest(id: string): boolean {
+    if (!this.atRest(id)) return false;
+    const open = this.store.state.scene.filter((other) => other !== id && this.opensOver(other));
+    if (open.length === 0) return false;
+    if (open.some((other) => this.store.manifest(this.store.state.layers[other]!.layer)?.hidesAtRest)) return true;
+    return this.store.manifest(this.store.state.layers[id]!.layer)?.category !== 'base';
   }
 
   private applyIntensity(id: string): void {
@@ -188,14 +247,13 @@ export class LayerManager {
 
   private sync(id: string, state: LayerState, previous: LayerState | undefined): void {
     this.applyIntensity(id);
-    const hides = Boolean(this.store.manifest(state.layer)?.hidesAtRest);
-    if (hides && Boolean(state.active) !== Boolean(previous?.active)) {
-      // The map at rest stops while this layer is open and comes back when it closes.
+    if (!this.atRest(id) && Boolean(state.active) !== Boolean(previous?.active)) {
+      // The map at rest steps aside while a layer is open and comes back when it closes.
       for (const other of this.store.state.scene) if (other !== id && this.atRest(other)) this.sync(other, this.store.layer(other), this.store.layer(other));
     }
     if (state.active && !previous?.active && !state.parent && this.store.manifest(state.layer)?.sequence) this.prefetch(state);
     const running = this.running.get(id);
-    const active = state.active && !(this.atRest(id) && this.hidingAtRest());
+    const active = state.active && !this.hiddenAtRest(id);
     const fade = this.fades.get(id);
     if (active && fade?.role === 'out') {
       // Shown again before it had gone, such as the same layer in the next step.
@@ -225,9 +283,40 @@ export class LayerManager {
     } else if (running?.ready) {
       const changed = changedKeys(previous?.params, state.params);
       if (changed.length > 0) this.guard(id, () => running.handlers.update?.(changed));
+      if (changed.includes('entities')) this.entitiesChanged(id, running, entityChanges(previous?.params, state.params));
+      if (JSON.stringify(state.selection ?? null) !== JSON.stringify(previous?.selection ?? null)) {
+        this.guard(id, () => running.handlers.select?.(state.selection ?? null));
+      }
       const revealed = state.step?.index ?? 0;
       if (revealed !== (previous?.step?.index ?? 0)) this.guard(id, () => running.handlers.step?.(revealed));
     }
+  }
+
+  /**
+   * Hands entity changes to the layer (#279): at once for a set without `debounce_ms`, otherwise
+   * once the set has been quiet that long, with every entity changed in between.
+   */
+  private entitiesChanged(id: string, running: Running, changes: EntityChange[]): void {
+    const manifest = this.store.manifest(this.store.state.layers[id]?.layer ?? '');
+    const now: EntityChange[] = [];
+    for (const change of changes) {
+      const wait = manifest?.entities?.find((s) => s.id === change.set)?.debounce_ms ?? 0;
+      if (!(wait > 0)) {
+        now.push(change);
+        continue;
+      }
+      running.entities ??= new Map();
+      const waiting = running.entities.get(change.set);
+      if (waiting) clearTimeout(waiting.timer);
+      const ids = waiting?.ids ?? new Set<string>();
+      for (const one of change.ids) ids.add(one);
+      const timer = setTimeout(() => {
+        running.entities?.delete(change.set);
+        if (!running.stopped) this.guard(id, () => running.handlers.entities?.([{ set: change.set, ids: [...ids] }]));
+      }, wait);
+      running.entities.set(change.set, { ids, timer });
+    }
+    if (now.length > 0) this.guard(id, () => running.handlers.entities?.(now));
   }
 
   /** Whether a tool input plays the attention cue: unless its tool says `cue: false`. */
@@ -254,9 +343,28 @@ export class LayerManager {
     })();
   }
 
+  /** Whether an instance is an item of a revealing layer, so the runtime clips what it draws. */
+  private revealedBy(id: string): string | null {
+    const parent = this.store.state.layers[id]?.parent;
+    const state = parent ? this.store.state.layers[parent] : undefined;
+    return parent && state && this.store.manifest(state.layer)?.reveals ? parent : null;
+  }
+
+  /** A revealing layer set its shape: its items show only inside it. */
+  private reveal(parent: string, shape: RevealShape | null): void {
+    this.reveals.set(parent, shape);
+    for (const id of this.store.state.scene) {
+      if (this.store.state.layers[id]?.parent === parent) this.view.setClip(id, shape);
+    }
+  }
+
   private async start(id: string): Promise<void> {
     // `id` names the instance; the code comes from the layer package it runs.
     const layer = this.store.layer(id).layer;
+    // An item of a Magnifier or a Reveal line is clipped to its shape, and shows nowhere until there is one.
+    const revealer = this.revealedBy(id);
+    this.view.setClippable(id, revealer !== null);
+    if (revealer !== null && this.reveals.has(revealer)) this.view.setClip(id, this.reveals.get(revealer) ?? null);
     // A custom layer has no code: the recipe player draws it from its manifest, and restyles as it is saved again.
     const manifest = this.store.manifest(layer);
     const module = (layerModule(layer) as LayerModule | undefined) ??
@@ -279,7 +387,7 @@ export class LayerManager {
     };
     const published: Record<string, unknown> = {};
     const { store, engine } = this;
-    const extras: Omit<TableContext, 'site' | 'params' | 'shared' | 'setParams' | 'language' | 'say'> = {
+    const extras: Omit<TableContext, keyof Base> = {
       engine: {
         open: async (kernel, params, fields, options) => {
           const stream = await engine.open(kernel, params, fields, options);
@@ -292,7 +400,6 @@ export class LayerManager {
       map: this.view.handle(id, track),
       model: this.view.modelHandle(id, track),
       pointer: this.view.pointer(track),
-      sendTool: (tool, geometry) => this.connection.request<void>('tool.input', { layer: id, tool, geometry }),
       cue: (at, options) => {
         if (!running.stopped) this.cues.play(at, options?.colour);
       },
@@ -320,9 +427,16 @@ export class LayerManager {
         highlight: (item) => extras.publish({ legend_highlight: item }),
         show: (ids) => extras.publish({ legend_shown: ids === 'all' ? null : ids }),
       },
+      reveal: {
+        set: (shape) => {
+          if (running.stopped || !manifest?.reveals) return;
+          this.reveal(id, shape);
+        },
+      },
       onFrame: (callback) => running.frames.push(callback),
       onCleanup: track,
     };
+    if (manifest?.reveals) track(() => this.reveals.delete(id));
     // The base context has live getters, so it is the prototype rather than a copy.
     const ctx: TableContext = Object.assign(Object.create(baseContext(store, this.connection, id)), extras);
     const before = { ...store.layer(id).params };
@@ -336,6 +450,18 @@ export class LayerManager {
     }
     if (running.stopped) return;
     running.ready = true;
+    // Entities (#279) are picked and marked by the runtime, above what the layer draws.
+    if (manifest?.entities?.length) {
+      entitiesOnTable({
+        layer: id,
+        sets: manifest.entities,
+        store,
+        connection: this.connection,
+        map: this.view.handle(id, track),
+        pointer: this.view.pointer(track),
+        onFrame: (callback) => running.frames.push(callback),
+      });
+    }
     this.entered(id);
     // Params may have changed while the layer was starting.
     const changed = changedKeys(before, store.state.layers[id]?.params ?? before);
@@ -357,6 +483,7 @@ export class LayerManager {
     if (!running) return;
     running.stopped = true;
     this.running.delete(id);
+    for (const waiting of running.entities?.values() ?? []) clearTimeout(waiting.timer);
     for (const cleanup of running.cleanups.reverse()) this.guard(id, cleanup);
   }
 

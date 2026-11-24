@@ -34,15 +34,24 @@ packages/layers/sunlight/        (or sites/<id>/layers/<name>/)
 `category` puts the layer in a group of the composer's palette: `base`, `ambient`, `analysis` (the default) or `media`.
 On the controller screen a layer of category `analysis` or `media` is a button, and pressing it opens that layer and closes the others. `base` and `ambient` layers are the map at rest and have no button there.
 `alongside: true` keeps the layer open when another layer's button is pressed, and lets it open without closing the others. Use it for a tool people keep while they look at something else, such as the sketch layer. Default false.
-`hidesAtRest: true` turns the map at rest off on the table while the layer is open: every top-level `base` and `ambient` layer stops, and starts again when the layer closes. The host's state does not change, so the controller and editor still show them as on. The slideshow does this, so slides are seen on their own (#205). Default false.
+Any open button layer pauses the map at rest's life on the table, keeping only the base map (#303). `hidesAtRest: true` turns the whole map at rest off while the layer is open, the base map included: every top-level `base` and `ambient` layer stops, and starts again when the layer closes. The host's state does not change, so the controller and editor still show them as on. The slideshow does this, so slides are seen on their own (#205). Default false.
 
 `sequence: true` makes the layer a sequence: an instance of it may have `steps.sequence`, steps that show other layers one after another (see site.md). The slideshow is one.
 `legend` and `attract` are proposed in [present.md](present.md); site format 3 already carries them for custom layers.
+`about` says what the layer is *for*, for people and LLMs designing an experience rather than picking a layer by name (#326): `purpose` (one sentence: what it helps a group see or do), `questions` (the questions it helps a group answer at the table), `pairs_with` (layer ids it works well with) and `limits` (what it cannot do, or what it needs). The MCP server's capability catalogue reads it (`find_capabilities`), and `scripts/check-docs.mjs` fails when a core layer has none. Example: `"about": { "purpose": "Shows shadows at any moment…", "questions": ["How does a proposal change sun and shade on squares?"], "pairs_with": ["plan", "swipe"], "limits": ["Shadows fall on the ground; sun on facades is planned"] }`.
 `requires.data` lists the site datasets the layer reads, by name (see `data` in site.md). A layer must still start when one is missing.
 
 Control types: `range`, `select`, `toggle`, `date`, `color`, `text`, `action` (a button, no stored value).
 Every control has `id`, `type`, `label` and `default`. `phone: true` lets phone participants change it.
 `visibleWhen: { "mode": "day" }` hides a control unless another control has that value; a list, `{ "style": ["light", "dark"] }`, means any of them.
+
+A `text` control that names something is never a box to type in (#306); the editor offers a list to pick from, with type-ahead, and refuses a name that is not in it:
+
+- `"sources": ["wms", "arcgis"]`: the id of a source of the Sources manager of one of these kinds.
+- `"media": ["map", "table"]`: a dataset or file of the table, of these kinds (as `GET /api/media` names them: `map`, `table`, `raster`, `drawing`, `picture`, `video`, `sound`, `model`, `data`). The value is the dataset's name, or the file's path for a file no dataset names; `"mediaBy": "path"` always stores the path. The list ends with Add media.
+- `"columnsOf": "dataset"`: a column of the dataset that the layer's control `dataset` names.
+- `"serviceLayers": { "url": "url", "service": "service", "source": "signin" }`: one or more layers (comma-separated) of the map service the layer's controls `url`, `service` (`wms` or `arcgis`) and `signin` name, as the service lists them (`GET /api/wms/layers`).
+- `"none": "Built-in birdsong"` names what an empty value means; it is the list's first choice. Default "None".
 
 The controls are the single source of truth for a layer's params:
 
@@ -54,7 +63,7 @@ The controls are the single source of truth for a layer's params:
 
 - `kernels`: engine kernels it opens streams on.
 - `data`: named datasets the site must provide. A site maps each name to a file under `data` in `site.json` (see site.md), and the host refuses to start a site, or to add a layer to a scene, when one is missing; the composer's palette says so beforehand. The scene's `buildings` and `trees` count as datasets. The layer loads it with `loadSiteData(ctx.site, name)`. A layer may also use a dataset it does not require: it checks `hasSiteData(ctx.site, name)` and does without when the site has none. A raster dataset (a GeoTIFF, or a folder of one GeoTIFF per hour such as `pet_08.tif` .. `pet_20.tif`) is read laid on the site grid with `loadSiteField(ctx.site, name, hour)`: a field frame of exact values, NaN where the raster has no data, null when a folder has no raster for that hour (`GET /api/data/field?name=&hour=`).
-- `services`: Python services it reaches through the gateway.
+- `services`: outside services it calls with `ctx.service(id)`, by their id under `services` in site.json (site.md, Services). The layer still starts when one is missing; its calls are refused, and the host warns.
 
 ## TV panels
 
@@ -88,6 +97,80 @@ interface ToolInput {
 
 A phone shows a layer's tools on a small map as soon as the manifest declares them; the layer writes no phone code.
 `packages/layers/sketch` is the reference for a layer with tools.
+
+## Entities
+
+Entities are things on the table a visitor picks and changes one by one (#279): the buildings of
+an energy community, the stops of a line. A layer declares the sets it has; the runtime does the
+picking on the table and the controls on the controller, so the layer writes no UI code.
+
+```jsonc
+"requires": { "data": ["buildings"] },
+"entities": [
+  { "id": "buildings", "dataset": "buildings", "key": "id", "label": "name", "group": "owner",
+    "name": "Building", "debounce_ms": 800,
+    "controls": [
+      { "id": "in", "type": "toggle", "label": "In the energy community", "default": true, "phone": true },
+      { "id": "pv", "type": "range", "label": "Solar on the roof", "min": 0, "max": 80, "step": 5, "unit": "%", "default": 0 }
+    ] }
+]
+```
+
+- `dataset` is a dataset of the site (the scene's `buildings` counts); each feature is one entity,
+  named by its `key` property. `label` is the property shown as its name (default `key`), `group`
+  a property for changing many at once, `name` what one is called on the controller.
+- `controls` are layer controls without actions. They are checked by the host like the layer's own.
+- **On the table**, a tap on an entity picks it for every surface; the picked one is outlined
+  and breathes, and entities with changed values get a dashed outline.
+- **On the controller**, the layer's stage shows the picked entity's name and controls above the
+  layer's own, a list to pick one without the table, Back to default, and "Apply to all of
+  <group>" (the picked one's values to every entity of its group).
+- **The host** keeps only changed values, in `params.entities[set][entity][control]`, and
+  the pick in the layer state's `selection` (`{ set, id }`, cleared when the layer goes off).
+  Requests: `layer.select { layer, set, id | null }` and
+  `layer.entity { layer, set, ids, values }` or `{ layer, set, ids, reset: true }`. Phones may
+  change only controls marked `phone`. Reset on the controller puts the saved values back.
+- **Saved and undone** like any param: `scene.set { layer, params: { entities } }` (the editor,
+  the MCP's `set_params`) writes them to site.json as one step of the history.
+- **In the layer**, `ctx.entity(set, id)` gives one entity's values (defaults with the changes on
+  top), `ctx.setEntity` and `ctx.select` change them, and `ctx.selection` is the pick. The
+  table's `entities(changed)` handler names what changed, by set, once the set's `debounce_ms`
+  has passed with no change, so a layer that asks a model asks once per gesture; `select` runs
+  when the pick changes. `entityFeatures`, `pickEntity` and `entityValues` in the SDK do the
+  same reading for a layer's own drawing.
+
+`samples/service-example` has a layer with entities that asks a model again when a building changes.
+
+## The controller stage
+
+A layer can have its own app in the controller's centre (#283), such as a map to choose on, whose
+actions start something on the table. The table stays the picture: the stage is for choosing and
+controlling.
+
+```jsonc
+"stage": "custom",
+"tools": [{ "id": "route", "type": "line", "cue": false }],
+"actions": [{ "id": "travel", "label": "Send a traveller" }]
+```
+
+- `stage: "custom"` gives the centre under the layer's name to the module's `stage(ctx, el)`, which
+  draws what it likes into `el` and may return `{ update() }`, called when params or shared values
+  change. The rails, the step strip, the entity inspector and the layer's controls stay; the TV's
+  panels keep a strip under it.
+- `actions` are named actions without a button of their own. The stage (or a hero or panel)
+  presses one with `ctx.action(id)`, and every view of the table gets it in `action(id)`. Phones
+  cannot press them.
+- `ctx.sendTool(tool, geometry)` sends a tool input from the controller as a phone would; every
+  view of the table gets it in `tool(input)`.
+- `controllerMap(el, ctx, options)` from the SDK is a ready map of the site: the table's outline,
+  upright as it stands, with its `roads` and `buildings` (or the datasets in `data`), in the
+  controller's theme. `mode: 'pick'` calls `onPick(at)` on a tap; `'line'` and `'polygon'` place
+  corners and call `onDraw(geometry)` when `points` are placed or on `finish()`. `draw(g, map)`
+  adds the layer's own visual, with `map.project(lonLat)`. `StreetGraph.route(from, to)` gives the
+  shortest way along the streets.
+
+`samples/controller-map-example` is a route planner: two taps on the controller's map make a
+route along the streets on the table, and a button sends a light along it.
 
 ## Module
 
@@ -143,6 +226,7 @@ interface TableContext<P> {
   sendTool(tool: string, geometry: ToolGeometry): Promise<void>;  // send a tool input through the host, as a phone does; every view of the table gets it
   cue(at: ToolGeometry, options?: { colour?: string }): void;     // play the attention cue at a change (#105); tool inputs from other surfaces get one automatically
   readonly steps: LayerSteps;           // sub-steps that the controller's Next reveals one at a time
+  readonly reveal: LayerReveal;         // where the layers inside this one show, for a layer with "reveals": true (see Reveals)
   onFrame(cb: (dt: number) => void): void;   // every animation frame while the layer is on
   onCleanup(cb: () => void): void;      // extra teardown
 }
@@ -191,6 +275,18 @@ interface MapHandle {
   addCanvas(id: string, style?: { opacity?: number }): CanvasOverlay;      // a canvas above the scene, in CSS pixels, with a projection
   addShapes(id: string, style?: { opacity?: number }): ShapeOverlay;   // points, lines and areas
   addDrawing(id: string, options?: { opacity?: number; resolution?: number }): DrawingOverlay;
+  addPicture(): TablePicture;       // a copy of what the table shows now, for a magnifier (#287)
+}
+
+// What the table shows, copied each frame after the map has drawn: the base map and every
+// layer's canvases except this layer's own. `want(rect)` names the part (CSS pixels of the
+// table view) to copy at the next frame; `canvas` holds it once `taken` is true.
+interface TablePicture {
+  want(rect: PixelRect | null): void;
+  readonly canvas: HTMLCanvasElement;
+  readonly taken: boolean;
+  readonly revision: number;          // goes up with every copy
+  remove(): void;
 }
 
 // A 2D drawing inside the scene's draw order, for layers that draw shapes themselves:
@@ -289,6 +385,27 @@ Visitors read the controller, the phones and the table's ribbons in English or S
 - Every core layer has `locales/sv.json`; a host test checks that every core layer's name, control labels and choices have Swedish.
 - The site's own words (title, welcome line, button names, slide titles) are in site.json, `branding.translations` (site.md).
 
+## Reveals: X-rays, magnifiers and reveal lines
+
+A layer with `"reveals": true` in layer.json shows the layers placed inside it (its items in
+`site.json`, added in the editor) only where it says, with `ctx.reveal.set(shape)` (#287, #288):
+
+```ts
+type RevealShape =
+  | { kind: 'circle'; centre: [number, number]; radius_m: number }               // a glass
+  | { kind: 'side'; axis: 'x' | 'y'; at_m: number; keep: 'before' | 'after' }  // one side of a line
+  | { kind: 'none' };                                                          // nowhere
+ctx.reveal.set(shape | null);   // null: everywhere, as without a revealer
+```
+
+Places are table metres. Until the layer sets a shape its items show nowhere. The runtime does the
+clipping, so the items need no code of their own: drawings (`addDrawing`) are composed through the
+shape, canvases and elements (`addCanvas`, `addElement`) get a CSS clip that follows the map, and
+fields (`addField`) are cut in their shader. Shapes (`addShapes`), flows (`addFlow`) and fields on the
+model are not clipped yet. `revealPath(g, shape, w, h)` traces the same shape on a canvas, for a cover
+under the items or a rim. The Magnifier (`packages/layers/lens`) and the Reveal line
+(`packages/layers/swipe`) are the reference layers.
+
 ## Building blocks and interactions
 
 Layers are composed from the primitives in `@mrstudio/sdk` (`packages/sdk/src/blocks/`): data sources,
@@ -301,6 +418,39 @@ When a pick made with the pointer has to reach every view of the table (the proj
 editor's live table run the layer separately), the layer sends it on with `ctx.sendTool(tool, geometry)` and
 handles it where it arrives, in `tool(input)`. `packages/layers/coolpaths` is the reference: a click sets the
 walk's start or end and dragging A or B moves it.
+
+## Site layers
+
+A site can carry layers of its own, with code, without changing or forking the core (#277). They are packages
+like core layers, in the site's `layers/` folder, and the installed app loads them:
+
+```
+sites/lindholmen/layers/energy-flows/
+  layer.json        as above
+  src/index.ts      table(), panel(), hero(), stage() as above, importing from '@mrstudio/sdk'
+  locales/sv.json
+  build.mjs         bundles src/ into dist/index.js
+  dist/index.js     what the app loads; commit it, so the table's computer needs no Node
+```
+
+- `mrstudio layer new energy-flows --site sites/lindholmen` writes a working package: rings where the table is
+  tapped (`ctx.pointer`, `ctx.sendTool`, `tool`), a primary action on the controller, a stat panel bound to
+  `ctx.publish` and a custom panel.
+- `mrstudio layer build [id] --site <site> [--watch]` bundles each package with esbuild (it runs `npm install` the
+  first time). Building needs Node 20 or newer on the developer's computer; running needs nothing.
+- `@mrstudio/sdk` is not bundled: the build turns its imports into reads of `globalThis.MRStudio.sdk`, the SDK of
+  the app the layer runs in. A layer therefore always runs against the app's SDK, and `api` in layer.json says
+  which contract it was written for; the app refuses a layer of another `api`.
+- The host lists every package in `layers/` in the composer's palette, whether or not the scene uses it; a scene
+  uses one as `{ "use": "./layers/energy-flows" }`. A package that does not load is left out with a warning,
+  unless the scene uses it, in which case the table does not open and says why.
+- The host adds `module` to the package's manifest when `dist/index.js` exists (`/site/layers/<id>/dist/index.js?v=<time>`),
+  and every surface but the phones imports it before it starts layers. A rebuilt layer is picked up when the
+  surface reloads. Without a build the layer is still listed and draws nothing.
+- A `.mrstable` export carries the packages with their `dist/`, without `node_modules`.
+
+The rules for layers above apply to site layers too. Anything a site layer needs from the core that the SDK does
+not offer is a module request (MCP `draft_module_request`), not a copy of core code.
 
 ## Dev mode
 

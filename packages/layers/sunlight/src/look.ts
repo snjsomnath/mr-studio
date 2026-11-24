@@ -138,3 +138,17 @@ export function thresholdColormap(share: number): Colormap {
   const at = [1, 2, 3, 4].map((c) => Math.round(a[c]! + (b[c]! - a[c]!) * f)) as [number, number, number, number];
   return { stops: [[0, ...flag], [t - 0.004, ...flag], [t + 0.004, ...at], ...above] };
 }
+
+/** The windows of the day sun hours can be counted in (#81), in the site's wall-clock hours. */
+export const WINDOWS: Record<string, [number, number]> = {
+  morning: [6, 12],
+  lunch: [11, 14],
+  afternoon: [12, 17],
+  evening: [17, 21],
+};
+
+/** The kernel's `from` and `until` for a window on a date; nulls for the whole day. */
+export function windowParams(site: Pick<SiteInfo, 'timezone'>, date: string, window: string): { from: string | null; until: string | null } {
+  const hours = WINDOWS[window];
+  return hours ? { from: zonedTimeToUtc(date, hours[0], site.timezone), until: zonedTimeToUtc(date, hours[1], site.timezone) } : { from: null, until: null };
+}

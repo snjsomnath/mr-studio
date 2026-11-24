@@ -5,7 +5,7 @@ members = ["crates/mrs-engine", "crates/mrs-site", "crates/mrs-host", "crates/mr
 default-members = ["crates/mrs-engine", "crates/mrs-site", "crates/mrs-host", "crates/mrs-cli", "crates/mrs-relay"]
 
 [workspace.package]
-version = "0.2.0"
+version = "0.12.0"
 edition = "2021"
 rust-version = "1.87"
 
@@ -26,7 +26,7 @@ serde = { version = "1", features = ["derive"] }
 # preserve_order keeps the key order of site.json when the host rewrites its layer list.
 serde_json = { version = "1", features = ["preserve_order"] }
 thiserror = "2"
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "net", "signal", "time", "io-util", "fs"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "net", "signal", "time", "io-util", "fs", "process"] }
 axum = { version = "0.8", features = ["ws"] }
 tower-http = { version = "0.6", features = ["fs", "cors", "set-header"] }
 tracing = "0.1"

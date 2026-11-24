@@ -23,6 +23,7 @@ export class SunPath {
   private marks: SVGGElement;
   private sun: SVGGElement;
   private up: number;
+  private background = '';
 
   /** `up` is the compass bearing of the table's top edge. */
   constructor(host: HTMLElement, up: number) {
@@ -92,6 +93,12 @@ export class SunPath {
     const low = Math.min(1, Math.max(0, 1 - sun.altitude / 45));
     const strength = upness * (0.06 + 0.2 * low);
     const angle = sun.azimuth - this.up;
-    this.glow.style.background = `linear-gradient(${angle.toFixed(1)}deg, rgba(255,170,90,0) 35%, rgba(255,186,110,${strength.toFixed(3)}) 100%)`;
+    // The glow covers the whole table and blends with it, so it is repainted only when it changes enough to
+    // see: a play through the day moves the sun every frame (#302).
+    const background = `linear-gradient(${(Math.round(angle * 2) / 2).toFixed(1)}deg, rgba(255,170,90,0) 35%, rgba(255,186,110,${(Math.round(strength * 200) / 200).toFixed(3)}) 100%)`;
+    if (background !== this.background) {
+      this.background = background;
+      this.glow.style.background = background;
+    }
   }
 }
