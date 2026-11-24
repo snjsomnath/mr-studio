@@ -245,3 +245,42 @@ fn a_probe_gives_one_place_its_day() {
     assert!(engine.probe("sunlight", &day, 500.0, 0.0).is_err(), "off the table");
     assert!(engine.probe("wind", &day, 0.0, 0.0).is_err(), "unknown or no probe");
 }
+
+#[test]
+fn a_window_counts_only_the_sun_inside_it() {
+    let mut engine = engine(Backend::Cpu, box_scene(0.0)).unwrap();
+    // The evening of midsummer, 17 to 21 local time (UTC+2): four hours of open sky.
+    let mut evening = params("day", "2026-06-21T10:00:00Z");
+    evening["from"] = json!("2026-06-21T15:00:00Z");
+    evening["until"] = json!("2026-06-21T19:00:00Z");
+    let hours = run(&mut engine, evening, "sun_hours");
+    let at = |col: usize, row: usize| hours.data[row * 200 + col];
+    assert!((at(20, 20) - 4.0).abs() < 0.3, "open ground gets the whole window: {}", at(20, 20));
+    // East of the box is in its shadow in the evening; west of it is not.
+    assert!(at(120, 100) < 1.0, "east of the box loses the evening sun: {}", at(120, 100));
+    assert!((at(80, 100) - 4.0).abs() < 0.3, "west of the box keeps it: {}", at(80, 100));
+    // The morning window gives the other side's sun instead.
+    let mut morning = params("day", "2026-06-21T10:00:00Z");
+    morning["from"] = json!("2026-06-21T04:00:00Z");
+    morning["until"] = json!("2026-06-21T08:00:00Z");
+    let hours = run(&mut engine, morning, "sun_hours");
+    assert!(hours.data[100 * 200 + 80] < 1.0, "west of the box is in its morning shadow");
+    // Changing the window on an open job recounts it, as the controller does.
+    let mut evening = params("day", "2026-06-21T10:00:00Z");
+    evening["from"] = json!("2026-06-21T15:00:00Z");
+    evening["until"] = json!("2026-06-21T19:00:00Z");
+    let job = engine.create_job("sunlight", &evening).unwrap();
+    let finish = |engine: &mut Engine| {
+        while engine.step(job, Duration::from_millis(50)).unwrap().state != JobState::Done {}
+        engine.read_field(job, "sun_hours").unwrap()
+    };
+    assert!((finish(&mut engine).data[100 * 200 + 80] - 4.0).abs() < 0.3);
+    engine.set_params(job, &json!({ "from": "2026-06-21T04:00:00Z", "until": "2026-06-21T08:00:00Z" })).unwrap();
+    let hours = finish(&mut engine);
+    assert!(hours.data[100 * 200 + 80] < 1.0 && (hours.data[100 * 200 + 120] - 4.0).abs() < 0.3, "the window moved to the morning");
+    engine.drop_job(job);
+    assert!(matches!(
+        engine.create_job("sunlight", &json!({ "time": "2026-06-21T10:00:00Z", "lat": LAT, "lon": LON, "from": true })),
+        Err(EngineError::InvalidParams(_))
+    ));
+}

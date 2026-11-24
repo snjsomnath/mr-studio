@@ -175,6 +175,7 @@ Kernel id `sunlight`. Reference implementation of the rules above.
 | `lat`, `lon` | number | Required by the kernel; the host fills them from the site |
 | `step_minutes` | number, 5 to 60, default 15 | Sampling interval in `day` mode |
 | `trees` | boolean, default true | Tree canopy dims the light that passes through it |
+| `from`, `until` | RFC 3339 or Unix seconds, optional | In `day` mode, only samples between these times count, so `sun_hours` is the sun in that window (an evening on a terrace) and `daylight_hours` the daylight in it |
 
 | Field | Units | Meaning |
 | --- | --- | --- |

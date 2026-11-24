@@ -48,7 +48,9 @@ impl Kernel for SunlightKernel {
                     "lat": { "type": "number", "minimum": -90, "maximum": 90 },
                     "lon": { "type": "number", "minimum": -180, "maximum": 180 },
                     "step_minutes": { "type": "number", "minimum": 5, "maximum": 60, "default": 15 },
-                    "trees": { "type": "boolean", "default": true }
+                    "trees": { "type": "boolean", "default": true },
+                    "from": { "type": "string", "format": "date-time", "description": "Day mode: count only sun from this time on (RFC 3339 or Unix seconds)" },
+                    "until": { "type": "string", "format": "date-time", "description": "Day mode: count only sun up to this time (RFC 3339 or Unix seconds)" }
                 }
             }),
             fields: FIELDS,
@@ -135,11 +137,14 @@ struct Params {
     lon: Option<f64>,
     step_minutes: f64,
     trees: bool,
+    /// Day mode: only sun between these Unix times counts, such as the evening on a terrace.
+    from: Option<f64>,
+    until: Option<f64>,
 }
 
 impl Default for Params {
     fn default() -> Self {
-        Self { mode: Mode::Instant, time: None, lat: None, lon: None, step_minutes: 15.0, trees: true }
+        Self { mode: Mode::Instant, time: None, lat: None, lon: None, step_minutes: 15.0, trees: true, from: None, until: None }
     }
 }
 
@@ -170,6 +175,27 @@ impl Params {
                 "lon" => p.lon = Some(value.as_f64().filter(|v| (-180.0..=180.0).contains(v)).ok_or_else(|| bad("lon must be -180..180"))?),
                 "step_minutes" => p.step_minutes = value.as_f64().ok_or_else(|| bad("step_minutes must be a number"))?.clamp(5.0, 60.0),
                 "trees" => p.trees = value.as_bool().ok_or_else(|| bad("trees must be a boolean"))?,
+                "from" | "until" => {
+                    let t = match value {
+                        Value::Null => None,
+                        Value::String(s) => Some(
+                            parse_rfc3339(s)
+                                .filter(|t| t.is_finite())
+                                .ok_or_else(|| bad("from and until must be RFC 3339 strings or Unix seconds"))?,
+                        ),
+                        Value::Number(n) => Some(
+                            n.as_f64()
+                                .filter(|t| t.is_finite())
+                                .ok_or_else(|| bad("from and until must be RFC 3339 strings or Unix seconds"))?,
+                        ),
+                        _ => return Err(bad("from and until must be RFC 3339 strings or Unix seconds")),
+                    };
+                    if key == "from" {
+                        p.from = t;
+                    } else {
+                        p.until = t;
+                    }
+                }
                 other => return Err(EngineError::InvalidParams(format!("unknown param '{other}'"))),
             }
         }
@@ -336,7 +362,12 @@ impl SunlightJob {
                 let start = solar_day_start(time, lon);
                 let count = (86400.0 / step).round() as usize;
                 for k in 0..count {
-                    let sun = sun_position(start + (k as f64 + 0.5) * step, lat, lon);
+                    let at = start + (k as f64 + 0.5) * step;
+                    // Outside the window, if there is one, the sun does not count.
+                    if self.params.from.is_some_and(|from| at < from) || self.params.until.is_some_and(|until| at > until) {
+                        continue;
+                    }
+                    let sun = sun_position(at, lat, lon);
                     if sun.altitude_deg > MIN_ALTITUDE_DEG {
                         self.samples.push(sun);
                     }

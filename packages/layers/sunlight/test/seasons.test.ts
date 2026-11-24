@@ -32,3 +32,9 @@ test('the small map keeps the grid shape', () => {
   assert.equal(small.data[10], 0);
   assert.equal(small.data[90], 255);
 });
+
+test('a window of the day becomes the kernel window in the site time zone', async () => {
+  const { windowParams } = await import('../src/look.ts');
+  assert.deepEqual(windowParams({ timezone: 'Europe/Stockholm' }, '2026-06-21', 'evening'), { from: '2026-06-21T15:00:00Z', until: '2026-06-21T19:00:00Z' });
+  assert.deepEqual(windowParams({ timezone: 'Europe/Stockholm' }, '2026-06-21', 'day'), { from: null, until: null });
+});

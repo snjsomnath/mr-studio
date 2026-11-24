@@ -469,7 +469,7 @@ async function main() {
     // The legend names the reveal, so the strip's row of names steps aside.
     assert.equal(await uses.locator('.step-subs').isVisible(), false);
     // The map's settings are the author's, behind More settings: the stage is the legend and the steps.
-    assert.equal(await uses.getByLabel('Colour by').isVisible(), false);
+    assert.equal(await uses.getByLabel('Colour by', { exact: true }).isVisible(), false);
     await uses.getByRole('button', { name: 'Next step' }).click();
     await uses.locator('.step-count', { hasText: '2 of 4 shown' }).waitFor();
     assert.equal(await uses.locator('.legend-row.is-waiting').count(), 2);
@@ -492,17 +492,21 @@ async function main() {
     const windHero = tv.locator('.wind-hero');
     await windHero.getByRole('slider', { name: 'Speed of the wind' }).focus();
     await tv.keyboard.press('PageUp');
-    await dev.getByText('10 m/s', { exact: true }).waitFor();
+    // The dev page draws the wind, the traffic and the lights in software here, and runs well behind:
+    // its checks wait longer. "10 m/s" alone also names a colour range, so the dashboard's reading is the one.
+    const slow = { timeout: 120_000 };
+    await dev.locator('.mrs-dash').getByText('10 m/s', { exact: true }).waitFor(slow);
     await windHero.locator('.wind-hero-readout', { hasText: 'Fresh breeze, from the west' }).waitFor();
     await windHero.getByRole('slider', { name: 'Direction the wind comes from' }).focus();
     await tv.keyboard.press('PageDown');
     await tv.keyboard.press('PageDown');
-    await dev.getByText('from the south').waitFor();
+    await dev.getByText('from the south').waitFor(slow);
     // A tap on the dial turns it there: tapped at the dial's top, the wind comes from the table's top.
+    await windHero.locator('.wind-hero-ring').waitFor();
     const dial = await windHero.locator('.wind-hero-ring').boundingBox();
     await tv.mouse.click(dial.x + dial.width / 2, dial.y + 2);
     await windHero.locator('.wind-hero-dial[aria-valuenow="0"]').waitFor();
-    await dev.getByText('from the north').waitFor();
+    await dev.getByText('from the north').waitFor(slow);
     if (shots) await tv.screenshot({ path: path.join(shots, 'tv-wind.png') });
     await tv.getByRole('radio', { name: 'Speed map' }).click();
     await dev.waitForTimeout(500);
@@ -520,11 +524,11 @@ async function main() {
     // The pages that are done with are closed first: every open table costs rendering time.
     for (const page of [stranger, phone, typist, projected]) await page.close();
     // Tall enough that the whole stack is on screen while one layer's settings are open.
-    const compose = await open('/compose', { width: 1700, height: 1200 });
+    const compose = await open('/compose', { width: 1700, height: 1700 });
     const stage = compose.locator('.table-surface');
     const rows = () => compose.locator('.stack-row strong').allTextContents();
     await compose.locator('.palette-group', { hasText: 'Analysis' }).getByText('Sunlight').waitFor();
-    assert.deepEqual(await rows(), ['Map data (uses)', 'Wind', 'Mobility', 'Cool paths', 'Sketch', 'Slideshow', 'Trees', 'Public transport', 'Traffic', 'Building lights', 'Sunlight', 'Base map']);
+    assert.deepEqual(await rows(), ['Map data (uses)', 'Wind', 'Mobility', 'Isovist', 'Cool paths', 'Sketch', 'Slideshow', 'Trees', 'Public transport', 'Traffic', 'Building lights', 'Sunlight', 'Base map']);
     const drag = async (from, to, where = 0.5) => {
       const a = await from.boundingBox();
       const b = await to.boundingBox();
@@ -585,14 +589,14 @@ async function main() {
     await compose.getByLabel('Remove Traffic (cars-2)').click();
     await compose.getByLabel('Remove Trees (trees-2)').click();
     await row('Trees (trees-2)').waitFor({ state: 'detached' });
-    assert.deepEqual(savedLayers().map((l) => l.id ?? l.use), ['basemap', 'sunlight', 'building-lights', 'cars', 'transit', 'trees', 'slideshow', 'sketch', 'coolpaths', 'mobility', 'wind', 'uses']);
+    assert.deepEqual(savedLayers().map((l) => l.id ?? l.use), ['basemap', 'sunlight', 'building-lights', 'cars', 'transit', 'trees', 'slideshow', 'sketch', 'coolpaths', 'isovist', 'mobility', 'wind', 'uses']);
 
     // ---- The editor ----
     await compose.close();
     const editor = await open('/edit', { width: 1440, height: 900 });
     const treeLayers = () => editor.locator('.ed-tree .ed-row[data-layer] .ed-row-label').allTextContents();
     await editor.locator('.ed-row[data-context="home"]').waitFor();
-    assert.deepEqual(await treeLayers(), ['Building uses', 'Wind', 'Mobility', 'Cool paths', 'Sketch', 'Slideshow', 'Sunlight']);
+    assert.deepEqual(await treeLayers(), ['Building uses', 'Wind', 'Mobility', 'Isovist', 'Cool paths', 'Sketch', 'Slideshow', 'Sunlight']);
     // The home screen holds the base map and the ambient life, and offers more of it.
     assert.deepEqual(await editor.locator('.ed-inspector .ed-row .ed-row-label').allTextContents(), ['Trees', 'Public transport', 'Traffic', 'Building lights', 'Base map']);
     await editor.locator('.ed-ribbon .ed-tool[data-layer="trees"]').click();
@@ -681,10 +685,11 @@ async function main() {
     await editor.getByLabel('Description').blur();
     await editor.getByLabel('Group').fill('');
     await editor.getByLabel('Group').blur();
-    await tv.locator('.rail-group').first().waitFor({ state: 'detached' });
+    // The operator's own rail headings (Map controls, About) stay; the layer group heading goes.
+    await tv.locator('.rail-group', { hasNotText: /^(Map controls|About)$/ }).first().waitFor({ state: 'detached' });
     await editor.locator('.ed-tree .ed-row[data-layer="mobility"] .ed-row-label', { hasText: 'Mobility' }).waitFor();
     await tv.locator('.controller-right .layer-button', { hasText: 'Mobility' }).waitFor();
-    assert.deepEqual(savedLayers().map((l) => l.id ?? l.use), ['basemap', 'sunlight', 'building-lights', 'cars', 'transit', 'trees', 'slideshow', 'sketch', 'coolpaths', 'mobility', 'wind', 'uses']);
+    assert.deepEqual(savedLayers().map((l) => l.id ?? l.use), ['basemap', 'sunlight', 'building-lights', 'cars', 'transit', 'trees', 'slideshow', 'sketch', 'coolpaths', 'isovist', 'mobility', 'wind', 'uses']);
 
     // A refused file answers 422, which the browser logs on its own.
     const real = errors.filter((e) => !/wrong session code|WebSocket|status of 422/.test(e));
@@ -799,7 +804,7 @@ async function main() {
     await guide.getByLabel('Name of Wind').blur();
     await live.locator('.layer-button', { hasText: 'Wind' }).waitFor();
     await guide.getByRole('button', { name: 'Next' }).click();
-    await guide.getByText('7 layers, each a button on the controller').waitFor();
+    await guide.getByText('8 layers, each a button on the controller').waitFor();
     if (shots) await guide.screenshot({ path: path.join(shots, 'wizard.png') });
     // Leaving the guide lands in the editor, and the guide stays one click away.
     await guide.getByRole('button', { name: 'Fine-tune in the editor' }).click();
