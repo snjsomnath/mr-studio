@@ -4,6 +4,16 @@ Every merge to main that carries a release note becomes a version. The newest is
 The app shows these notes, with their pictures, on Home when a newer version is out.
 How notes are written: docs/RELEASING.md.
 
+## 0.2.1 (2026-11-24)
+
+### Fixes
+
+#### Present fills the screens you chose (#270)
+
+Present now opens the table and the controller full screen on the screens picked in the Display tab, also on a Mac with a Retina laptop beside a projector or TV, instead of leaving windows half on one screen. A window that ends up off its screen is put back by itself.
+
+![The controller and the table, each full screen on its own display](docs/screenshots/270-present-two-displays.png)
+
 ## 0.2.0 (2026-11-24)
 
 ### Breaking changes
