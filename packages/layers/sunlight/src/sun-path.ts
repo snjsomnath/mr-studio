@@ -24,6 +24,7 @@ export class SunPath {
   private sun: SVGGElement;
   private up: number;
   private background = '';
+  private golden = false;
 
   /** `up` is the compass bearing of the table's top edge. */
   constructor(host: HTMLElement, up: number) {
@@ -83,6 +84,11 @@ export class SunPath {
     }
   }
 
+  /** Golden hour mode (#363): the light that spills in from the sun's side is stronger and warmer. */
+  setGolden(golden: boolean): void {
+    this.golden = golden;
+  }
+
   /** Moves the sun, and lets its light spill in from that side of the table. */
   setSun(sun: SunSample): void {
     const upness = Math.min(1, Math.max(0, (sun.altitude + 2) / 6));
@@ -95,7 +101,14 @@ export class SunPath {
     const angle = sun.azimuth - this.up;
     // The glow covers the whole table and blends with it, so it is repainted only when it changes enough to
     // see: a play through the day moves the sun every frame (#302).
-    const background = `linear-gradient(${(Math.round(angle * 2) / 2).toFixed(1)}deg, rgba(255,170,90,0) 35%, rgba(255,186,110,${(Math.round(strength * 200) / 200).toFixed(3)}) 100%)`;
+    const deg = (Math.round(angle * 2) / 2).toFixed(1);
+    const alpha = (a: number) => (Math.round(a * 200) / 200).toFixed(3);
+    // In the golden hour the wash reaches further in, rose at its far edge and ember gold on the sun's side.
+    const sunk = Math.min(1, Math.max(0, (sun.altitude + 4) / 4));
+    const gold = sunk * 0.5;
+    const background = this.golden
+      ? `linear-gradient(${deg}deg, rgba(255,90,120,0) 10%, rgba(255,110,96,${alpha(gold * 0.35)}) 50%, rgba(255,170,80,${alpha(gold)}) 100%)`
+      : `linear-gradient(${deg}deg, rgba(255,170,90,0) 35%, rgba(255,186,110,${alpha(strength)}) 100%)`;
     if (background !== this.background) {
       this.background = background;
       this.glow.style.background = background;

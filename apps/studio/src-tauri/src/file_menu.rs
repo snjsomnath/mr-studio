@@ -87,13 +87,24 @@ pub fn app_menu(app: &AppHandle<Wry>) -> tauri::Result<Menu<Wry>> {
         .separator()
         .item(&PredefinedMenuItem::close_window(app, Some("Close window"))?)
         .build()?;
-    MenuBuilder::new(app).items(&[&app_menu, &file_submenu(app)?, &edit, &view, &window]).build()
+    MenuBuilder::new(app).items(&[&app_menu, &file_submenu(app)?, &edit, &view, &window, &help_submenu(app)?]).build()
+}
+
+/// The Help menu (#260): a report of how the table and this computer are doing, to send with
+/// a problem, and the folder with the logs. Handled in `diagnostics.rs`.
+fn help_submenu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Submenu<R>> {
+    SubmenuBuilder::new(app, "Help")
+        .item(&MenuItemBuilder::with_id("copy-diagnostics", "Copy diagnostics").build(app)?)
+        .item(&MenuItemBuilder::with_id("save-diagnostics", "Save diagnostics…").build(app)?)
+        .separator()
+        .item(&MenuItemBuilder::with_id("open-logs", "Open log folder").build(app)?)
+        .build()
 }
 
 /// The menu bar of the editor window on Windows and Linux.
 pub fn editor_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
     let edit = SubmenuBuilder::new(app, "Edit").item(&edit_item(app, "undo")?).item(&edit_item(app, "redo")?).build()?;
-    MenuBuilder::new(app).item(&file_submenu(app)?).item(&edit).build()
+    MenuBuilder::new(app).item(&file_submenu(app)?).item(&edit).item(&help_submenu(app)?).build()
 }
 
 /// The Edit menu's own items (#57).

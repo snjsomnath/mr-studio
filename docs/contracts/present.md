@@ -34,7 +34,7 @@ A fixed template with five zones (#76, #283). The layer fills them as data:
 | Zone | From | Notes |
 |---|---|---|
 | **Hero** | the one entry in `panels` with `"hero": true` | Large, at the top, optional. Sunlight's is the new `sky` widget. |
-| **Stage** | the module's `stage(ctx, el)`, with `"stage": "custom"` in layer.json | Optional: a layer's own app in the centre, such as a map to choose on (#283). Takes most of the centre's height; the generated controls follow. |
+| **Stage** | the module's `stage(ctx, el)`, with `"stage": "custom"` in layer.json | Optional: a layer's own app in the centre, such as a map to choose on (#283). Takes most of the centre's height; the generated controls follow. Or `"stage": { "panels": [...] }`, a layout of dashboard panels with no code (#357). |
 | **Controls** | `controls` (built) | Bigger and fewer per row. `action` controls marked `"primary": true` become large buttons. |
 | **Legend** | `legend` in layer.json, or `ctx.legend` at run time | Swatch, label and optional value id. It follows the table (see Steps). |
 | **Info strip** | the current step | Step counter, title, one line of description, source. |

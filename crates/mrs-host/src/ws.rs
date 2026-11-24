@@ -13,6 +13,7 @@ use serde_json::{json, Value};
 use tokio::sync::{broadcast, mpsc};
 
 use crate::engine_bridge::{OpenRequest, Out};
+use crate::health::WindowError;
 use crate::hub::{Role, PROTOCOL};
 use crate::AppState;
 
@@ -84,6 +85,13 @@ async fn connection(socket: WebSocket, state: Arc<AppState>) {
                     state.health.beat(window, if role == Role::Table { "table" } else { "tv" }, message["fps"].as_f64().unwrap_or(0.0));
                     continue;
                 }
+                // An error in the window (#260): to the app's log, and to the operator log unless a phone's.
+                if message["t"] == "error" {
+                    if role != Role::Phone || state.hub.allow(surface) {
+                        report_error(&state, role, surface, &message);
+                    }
+                    continue;
+                }
                 if message["t"] != "req" {
                     continue;
                 }
@@ -150,6 +158,23 @@ async fn replaced(kick: &Option<Arc<tokio::sync::Notify>>) {
     }
 }
 
+/// Keeps an error a window reported, and logs it the first time it is seen.
+fn report_error(state: &AppState, role: Role, surface: u64, message: &Value) {
+    let Some(error) = WindowError::from_report(role.name(), message) else { return };
+    let line = error.line();
+    let stack = error.stack.clone();
+    if !state.health.error(&surface.to_string(), error) {
+        return;
+    }
+    match stack {
+        Some(stack) => tracing::warn!("error in the {line}\n{stack}"),
+        None => tracing::warn!("error in the {line}"),
+    }
+    if role != Role::Phone {
+        state.health.note(format!("Error in the {line}"));
+    }
+}
+
 /// Ends a surface's part in the session. A phone's seat is held for a while first.
 fn release(state: &Arc<AppState>, surface: u64) {
     if let Some(hold) = state.hub.leave(surface) {
@@ -174,7 +199,15 @@ async fn request(state: &AppState, role: Role, surface: u64, message: &Value, ou
         return state.history_request(role, surface, method, p).await;
     }
     if !method.starts_with("engine.") {
-        return state.hub.request(role, surface, method, p);
+        let result = state.hub.request(role, surface, method, p);
+        // A layer's trouble starting or ending goes to the operator log (#259).
+        if method == "layer.health" {
+            if let Some(incident) = result.as_ref().ok().and_then(|r| r["incident"].as_str()) {
+                tracing::warn!("{incident}");
+                state.health.note(incident);
+            }
+        }
+        return result;
     }
     if !role.may_use_engine() {
         return Err("phones cannot open engine streams".into());
