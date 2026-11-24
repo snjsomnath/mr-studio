@@ -4,6 +4,18 @@ Every merge to main that carries a release note becomes a version. The newest is
 The app shows these notes, with their pictures, on Home when a newer version is out.
 How notes are written: docs/RELEASING.md.
 
+## 0.4.0 (2026-11-24)
+
+### New
+
+#### Phones join on eduroam and mobile data (#275)
+
+Visitors scan the QR code as before, from any network: the code opens a small join page on GitHub Pages that connects to the table over WebRTC, with no router or server of our own. The phone page itself still comes from the table, so it always matches. Join page link v1.
+
+![A phone that joined through the join page](docs/screenshots/275-phone-through-join-page.png)
+![The controller follows the phone](docs/screenshots/275-tv-follows-phone.png)
+![The join page while it connects](docs/screenshots/275-join-page-connecting.png)
+
 ## 0.3.0 (2026-11-24)
 
 ### New
