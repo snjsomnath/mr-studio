@@ -3,6 +3,7 @@
   "id": "plan",
   "name": "Masterplan",
   "description": "A plan drawing over the table, revealed one phase at a time",
+  "about": {"purpose": "Introduces a proposal progressively: a plan drawing revealed phase by phase over today's place.", "questions": ["What is proposed, and in what order?", "Which parts of today's place change?"], "pairs_with": ["swipe", "lens", "sunlight", "wind"], "limits": ["Needs the plan as a drawing (SVG or picture) placed on the site", "Shows the plan; it does not change the scene for sun or wind"]},
   "icon": "plan",
   "category": "media",
   "controls": [

@@ -5,8 +5,11 @@ import { isAbsolute, resolve } from 'node:path';
 import { z } from 'zod';
 
 import { changelogVersions, loadCatalog, type Catalog, type CoreOptions } from './core.ts';
+import { buildCapabilities, closestIds, parsePatterns, rank, withSite, type Capability } from './capabilities.ts';
+import { assessExperience, buildExperience, type BuildResult, type ExperiencePlan } from './experience.ts';
 import { checkIdea } from './ideas.ts';
-import { brainstormPrompt, dashboardPrompt, newProjectPrompt, requestPrompt, serverInstructions } from './prompts.ts';
+import { RECIPE_VOCABULARY, legendFor } from './recipe.ts';
+import { brainstormPrompt, buildFromDataPrompt, compareScenariosPrompt, designExperiencePrompt, planWorkshopPrompt, dashboardPrompt, newProjectPrompt, requestPrompt, serverInstructions } from './prompts.ts';
 import { REQUEST_KINDS, submitDraft, writeDraft, type RequestKind } from './requests.ts';
 import {
   availableLayers,
@@ -94,6 +97,10 @@ const ANNOTATIONS: Record<string, { readOnlyHint: boolean; destructiveHint?: boo
   list_layers: { readOnlyHint: true, openWorldHint: false },
   describe_layer: { readOnlyHint: true, openWorldHint: false },
   list_building_blocks: { readOnlyHint: true, openWorldHint: false },
+  find_capabilities: { readOnlyHint: true, openWorldHint: false },
+  describe_capability: { readOnlyHint: true, openWorldHint: false },
+  assess_experience: { readOnlyHint: true, openWorldHint: false },
+  build_experience: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   create_site: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   get_site: { readOnlyHint: true, openWorldHint: false },
   update_site: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
@@ -254,7 +261,7 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
     'list_building_blocks',
     {
       title: 'List building blocks',
-      description: 'The shared primitives layers are composed from (visuals, data sources, interactions, TV panels), whether each is built or planned in this core, and the kernels. Use it to brainstorm layers as reuse.',
+      description: 'The shared primitives layers are composed from (visuals, data sources, interactions, TV panels), whether each is built or planned in this core, and the kernels. find_capabilities with kind "block" or "kernel" gives the same with evidence; this tool stays for older prompts.',
       inputSchema: { group: z.enum(['visual', 'data', 'interaction', 'tv']).optional() },
     },
     async ({ group }) => {
@@ -263,6 +270,173 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
         blocks,
         kernels: { built: catalog.kernels, planned: catalog.plannedKernels },
       });
+    },
+  );
+
+  // ---- Capabilities (#326) ----
+
+  const siteFacts = (dir: string | null) => {
+    if (!dir) return null;
+    try {
+      const m = readSite(dir);
+      return {
+        data: new Set<string>([...Object.keys(m.data ?? {}), ...['buildings', 'trees', 'terrain', 'mesh'].filter((k) => m.scene?.[k])]),
+        services: new Set<string>((Array.isArray(m.services) ? m.services : []).map((x: any) => x?.id).filter(Boolean)),
+      };
+    } catch {
+      return null;
+    }
+  };
+  const capabilitiesFor = (site?: string) => {
+    const dir = site ? at(site) : null;
+    const extra = dir ? availableLayers(catalog, dir).filter((l) => l.origin !== 'core') : [];
+    const facts = siteFacts(dir);
+    return buildCapabilities(catalog, extra).map((c) => withSite(c, facts));
+  };
+  const brief = (c: Capability) => ({
+    id: c.id,
+    name: c.name,
+    status: c.status,
+    ...(c.use ? { use: c.use } : {}),
+    purpose: c.purpose ?? c.summary,
+    ...(c.questions.length ? { questions: c.questions } : {}),
+    surfaces: c.surfaces,
+    ...(c.interactions.length ? { interactions: c.interactions } : {}),
+    ...(c.requires.length ? { requires: c.requires } : {}),
+    ...(c.pairs_with.length ? { pairs_with: c.pairs_with } : {}),
+    ...(c.limitations.length ? { limitations: c.limitations } : {}),
+    evidence: c.evidence,
+  });
+  const KINDS = ['layer', 'block', 'kernel', 'site', 'constraint'] as const;
+  const STATUSES = ['available', 'needs_setup', 'planned', 'unsupported'] as const;
+
+  tool(
+    'find_capabilities',
+    {
+      title: 'Find what MR Studio can do for a goal',
+      description:
+        'Search everything MR Studio can do (layers, building blocks, kernels, site features) and what it cannot (planned items, constraints) for a goal, question or idea in plain words, e.g. "help residents see how a new development changes sun and wind". Returns ranked capabilities, each with why it matched, its status from the code (available, needs_setup, planned, unsupported), what it needs (data, keys, services), what the table, controller and phones do, what it pairs with, and the files that prove it. Use it before proposing an experience; a planned or unsupported capability is a development request, never something to configure. With site, requirements say whether that site meets them.',
+      inputSchema: {
+        goal: z.string().optional().describe('What the people at the table should see, understand or do, in plain words'),
+        kind: z.enum(KINDS).optional().describe('Only this kind'),
+        surface: z.enum(['table', 'controller', 'phone']).optional().describe('Only capabilities that use this surface'),
+        status: z.enum(STATUSES).optional().describe('Only this status'),
+        site: z.string().optional().describe('Site folder: check requirements against its data and services'),
+        limit: z.number().int().positive().max(50).optional().describe('How many (default 12; all when no goal)'),
+      },
+    },
+    async ({ goal, kind, surface, status, site, limit }) => {
+      let caps = capabilitiesFor(site);
+      if (kind) caps = caps.filter((c) => c.kind === kind);
+      if (surface) caps = caps.filter((c) => Boolean(c.surfaces[surface]));
+      if (status) caps = caps.filter((c) => c.status === status);
+      if (!goal) {
+        const list = caps.slice(0, limit ?? caps.length).map(brief);
+        return reply(`${list.length} capabilit${list.length === 1 ? 'y' : 'ies'}${kind ? ` of kind ${kind}` : ''}.`, { matches: list });
+      }
+      const ranked = rank(caps, goal).slice(0, limit ?? 12);
+      if (!ranked.length) {
+        return reply('Nothing in MR Studio matches those words. If it is truly missing, it is a development request: check_layer_idea, then draft_module_request.', { matches: [] });
+      }
+      const matches = ranked.map((m) => ({ ...brief(m.capability), matched: m.why }));
+      const counts = STATUSES.map((st) => [st, matches.filter((x) => x.status === st).length] as const).filter(([, n]) => n);
+      return reply(`${matches.length} matches (${counts.map(([st, n]) => `${n} ${st}`).join(', ')}). Read purpose and questions to judge fit; a match on words is not a match on intent.`, {
+        matches,
+        patterns: 'mrstudio://patterns lists experience shapes (compare today and the proposal, map it together…) that combine these',
+      });
+    },
+  );
+
+  tool(
+    'describe_capability',
+    {
+      title: 'Describe one capability',
+      description: 'Everything known about one capability by id (from find_capabilities): purpose, questions it answers, status and why, requirements, surfaces, interactions, what it uses and pairs with, limits, example sites that use it, evidence files and related issues. For a layer, also its controls (the params a site sets).',
+      inputSchema: {
+        id: z.string().describe('e.g. "layer:sunlight", "block:phone-tools", "kernel:thermal", "site:ribbons", "constraint:table-3d"'),
+        site: z.string().optional().describe('Site folder, to check requirements and include its own layers'),
+      },
+    },
+    async ({ id, site }) => {
+      const caps = capabilitiesFor(site);
+      const key = id.includes(':') ? id : `layer:${id}`;
+      const c = caps.find((x) => x.id === key || (x.use !== undefined && x.use === id));
+      if (!c) {
+        const near = closestIds(caps, id);
+        return fail(`No capability '${id}'.`, { similar: near }, { code: 'unknown_capability', next: ['Use one of the similar ids, or find_capabilities with a goal.'] });
+      }
+      const layer = c.kind === 'layer' && c.use ? findLayer(catalog, site ? at(site) : null, c.use) : undefined;
+      const controls = layer ? (layer.manifest.controls ?? []).map((x: any) => ({ id: x.id, type: x.type, label: x.label, default: x.default, ...(x.phone ? { phone: true } : {}), ...(x.options ? { options: x.options.map((o: any) => o?.value ?? o) } : {}), ...(x.min !== undefined ? { min: x.min, max: x.max } : {}) })) : undefined;
+      const examples = (catalog.examples ?? []).filter((e) => c.examples.includes(e.path));
+      return reply(`${c.name} (${c.id}): ${c.status}.`, { ...c, ...(controls ? { controls } : {}), example_sites: examples });
+    },
+  );
+
+  // ---- Experiences (#327) ----
+
+  const STEP = z.object({
+    title: z.string().describe('Short, in the person\'s words; becomes the step title on the controller'),
+    want: z.string().optional().describe('What the table shows and people do in this step, in plain words'),
+    use: z.string().optional().describe('The layer, if chosen with find_capabilities: "sunlight", "layer:sunlight", "custom:zones"'),
+    params: z.record(z.string(), z.unknown()).optional().describe('Settings for this step by control id (describe_layer)'),
+    with: z.array(z.string()).optional().describe('Layers shown inside this one while it is open, e.g. ["transit"]'),
+    controller: z.string().optional().describe('What the controller says for this step'),
+    phone: z.string().optional().describe('What phones do in this step'),
+    notes: z.string().optional().describe('The guide\'s words, shown only on the guide\'s phone'),
+  });
+  const PLAN = {
+    title: z.string(),
+    goal: z.string().describe('What people should leave understanding, having seen or having said'),
+    audience: z.string().optional(),
+    steps: z.array(STEP).min(1),
+    at_rest: z.array(z.string()).optional().describe('Layers playing when nobody touches the controller, e.g. ["cars", "trees"]'),
+    needs: z.array(z.string()).optional().describe('Other things the experience needs that are not a step, e.g. "people vote on each other\'s ideas"'),
+    guided: z.boolean().optional().describe('Make a guided sequence of the steps (default: yes for two or more steps)'),
+  };
+  const assessFor = (plan: ExperiencePlan, site?: string) => {
+    const dir = site ? at(site) : null;
+    return assessExperience(plan, capabilitiesFor(site), availableLayers(catalog, dir), Boolean(dir));
+  };
+
+  tool(
+    'assess_experience',
+    {
+      title: 'Check an experience plan',
+      description:
+        'Check a whole experience against what MR Studio can do, before building it. A plan is a title, a goal, the audience, and steps: each step is what the table shows and people do (want, or a layer chosen with find_capabilities as use), its settings, layers inside it (with), what the controller says, what phones do, and notes for the guide. Add layers at rest and other needs. Returns, per step and need, the layer that serves it and why, alternatives, setup still needed (data, services), param problems, a constraint it runs into, and gaps with the kind of development request they need; and a verdict: buildable, buildable_with_setup, partly_buildable or needs_development. Writes nothing. Read mrstudio://concepts and mrstudio://patterns first.',
+      inputSchema: { ...PLAN, site: z.string().optional().describe('Site folder: check data and services against it') },
+    },
+    async ({ site, ...plan }) => {
+      const a = assessFor(plan as ExperiencePlan, site);
+      return reply(`${a.summary}\nNext: ${a.next.join(' ')}`, a);
+    },
+  );
+
+  tool(
+    'build_experience',
+    {
+      title: 'Build an experience plan',
+      description:
+        'Build the parts of an experience plan that exist, in one validated change to the site: a layer for each buildable step (an existing instance is reused), the layers inside them, the layers at rest, and, for two or more steps, a guided sequence (a slideshow named after the plan) with each step\'s settings, title, controller text and notes. Steps that need development or run into a constraint are skipped and listed with their gaps; nothing that does not exist is written. Call assess_experience first and show the person the result.',
+      inputSchema: { site: z.string(), ...PLAN },
+    },
+    async ({ site, ...plan }) => {
+      const a = assessFor(plan as ExperiencePlan, site);
+      let result: BuildResult | undefined;
+      const out = editScene(site, (m) => {
+        result = buildExperience(m, plan as ExperiencePlan, a, availableLayers(catalog, at(site)));
+        if (!result.built.length && !m.layers.length) return 'Nothing in this plan can be built yet; see assess_experience for the gaps.';
+        return { message: result.message, issues: result.issues };
+      });
+      const sc = out.structuredContent as Record<string, unknown> | undefined;
+      if (sc && result) {
+        Object.assign(sc, { verdict: a.verdict, built: result.built, skipped: result.skipped, gaps: a.gaps, setup: a.setup });
+        if (sc.ok && a.gaps.length) {
+          sc.next = [`Show the person the ${a.gaps.length} gap${a.gaps.length === 1 ? '' : 's'}; with their yes, draft a request for each with draft_module_request.`];
+          (out.content[0] as { text: string }).text += `\nGaps: ${a.gaps.map((g) => `${g.for} (${g.kind})`).join('; ')}`;
+        }
+      }
+      return out;
     },
   );
 
@@ -614,7 +788,7 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
     {
       title: 'Save a custom layer',
       description:
-        'Save (or with recipe null, remove) a custom layer in the site: a recipe of blocks the runtime draws without code. A recipe has name, description, icon, category, data (each { id, and one of dataset | path | wms { url, layers, styles, format, source } | tiles }), look, motion and interaction (each a list of { id, block, data?, on?, props }), enter (cut or fade), controls (as in layer.json, with bind: "look.<block id>.<prop>"), legend and attract. The table is 2D only. Then add it to the scene with add_layer use "custom:<id>". The block names are in docs/blocks.md.',
+        'Save (or with recipe null, remove) a custom layer in the site: a recipe of blocks the runtime draws without code. A recipe has name, description, icon, category, data (each { id, and one of dataset | path | wms { url, layers, styles, format, source } | tiles }), look, motion and interaction (each a list of { id, block, data?, on?, props }), enter (cut or fade), controls (as in layer.json, with bind: "look.<block id>.<prop>"), legend and attract. Leave legend out and it is worked out from the looks and their data, as the editor does. The table is 2D only. Then add it to the scene with add_layer use "custom:<id>". The block names are in docs/blocks.md.',
       inputSchema: {
         site: z.string(),
         id: z.string().describe('Custom layer id: lowercase letters, digits and dashes'),
@@ -632,8 +806,17 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
           if (!Object.keys(m.custom).length) delete m.custom;
           return { message: `Removed the custom layer '${id}'.` };
         }
-        m.custom = { ...(m.custom ?? {}), [id]: recipe };
-        return { message: `Saved the custom layer '${id}'. Add it with add_layer use "${use}".` };
+        const saved: Record<string, any> = { ...recipe };
+        let legendNote = '';
+        if (saved.legend === undefined) {
+          const legend = legendFor(saved, at(site), m.data ?? {}, m.palette);
+          if (legend?.length) {
+            saved.legend = legend;
+            legendNote = ` The controller's legend has ${legend.length} row${legend.length === 1 ? '' : 's'}, worked out from the looks and their data.`;
+          } else if ((saved.look ?? []).length) legendNote = ' No legend yet: the looks\' data could not be read; save again once the data is in the site, or give legend yourself.';
+        }
+        m.custom = { ...(m.custom ?? {}), [id]: saved };
+        return { message: `Saved the custom layer '${id}'. Add it with add_layer use "${use}".${legendNote}` };
       }),
   );
 
@@ -684,7 +867,7 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
     {
       title: 'Check a layer idea',
       description:
-        'Check a sketched layer against the core: which existing layers already cover it, which kernels and building blocks exist or are planned, and whether it should be configured from an existing layer, requested as a new core layer from existing blocks, or needs new blocks or kernels first.',
+        'Check a sketched layer against the core (for a whole experience, use assess_experience): which existing layers already cover it, which kernels and building blocks exist or are planned, and whether it should be configured from an existing layer, requested as a new core layer from existing blocks, or needs new blocks or kernels first.',
       inputSchema: {
         title: z.string(),
         description: z.string().describe('What it shows and what people do with it'),
@@ -698,7 +881,9 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
     async (args) => {
       const extra = args.site ? availableLayers(catalog, at(args.site)).filter((l) => l.origin === 'site') : [];
       const report = checkIdea(args, catalog, extra);
-      return reply(`${report.verdict}: ${report.summary}\nNext: ${report.next_step}`, report);
+      // The same idea as a one-step experience plan, so callers can move to assess_experience (#327).
+      const assessment = assessFor({ title: args.title, goal: args.description, steps: [{ title: args.title, want: args.description }] }, args.site);
+      return reply(`${report.verdict}: ${report.summary}\nNext: ${report.next_step}`, { ...report, assessment: { verdict: assessment.verdict, step: assessment.steps[0], gaps: assessment.gaps } });
     },
   );
 
@@ -762,6 +947,46 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
   // ---- Prompts ----
 
   server.registerPrompt(
+    'design_experience',
+    {
+      title: 'Design an experience',
+      description: 'From a goal in plain words to an experience across the table, controller and phones: capabilities, a plan, its assessment, then build what exists and request what does not.',
+      argsSchema: { goal: z.string().optional(), place: z.string().optional(), audience: z.string().optional() },
+    },
+    ({ goal, place, audience }) => ({ messages: [{ role: 'user', content: { type: 'text', text: designExperiencePrompt(goal, place, audience) } }] }),
+  );
+
+  server.registerPrompt(
+    'plan_workshop',
+    {
+      title: 'Plan a workshop',
+      description: 'A timed workshop at the table: the place today, questions answered step by step, a moment where people contribute from their phones, and a close.',
+      argsSchema: { topic: z.string().optional(), minutes: z.string().optional(), participants: z.string().optional() },
+    },
+    ({ topic, minutes, participants }) => ({ messages: [{ role: 'user', content: { type: 'text', text: planWorkshopPrompt(topic, minutes, participants) } }] }),
+  );
+
+  server.registerPrompt(
+    'compare_scenarios',
+    {
+      title: 'Compare scenarios',
+      description: 'Show today and a proposal on a table that shows one layer at a time: reveal line, magnifier, phased plan or a repeated question.',
+      argsSchema: { today: z.string().optional(), proposal: z.string().optional() },
+    },
+    ({ today, proposal }) => ({ messages: [{ role: 'user', content: { type: 'text', text: compareScenariosPrompt(today, proposal) } }] }),
+  );
+
+  server.registerPrompt(
+    'build_from_data',
+    {
+      title: 'Build from data',
+      description: 'Turn a dataset into a custom layer and a step of an experience, without code.',
+      argsSchema: { data: z.string().optional() },
+    },
+    ({ data }) => ({ messages: [{ role: 'user', content: { type: 'text', text: buildFromDataPrompt(data) } }] }),
+  );
+
+  server.registerPrompt(
     'new_project',
     {
       title: 'New MR Studio project',
@@ -802,6 +1027,72 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
   );
 
   // ---- Resources ----
+
+  const patterns = () => parsePatterns(catalog.docs['experience-design'] ?? '');
+
+  server.registerResource(
+    'concepts',
+    'mrstudio://concepts',
+    { title: 'Designing an MR Studio experience', description: 'Read first: the three surfaces (table, controller, phones), what goes where, the words, the constraints, and the experience patterns', mimeType: 'text/markdown' },
+    async (uri) => ({ contents: [{ uri: uri.href, mimeType: 'text/markdown', text: catalog.docs['experience-design'] ?? 'docs/experience-design.md is missing from this core.' }] }),
+  );
+
+  server.registerResource(
+    'patterns',
+    new ResourceTemplate('mrstudio://patterns/{id}', {
+      list: async () => ({ resources: patterns().map((p) => ({ uri: `mrstudio://patterns/${p.id}`, name: p.name, mimeType: 'text/markdown', description: `Uses ${p.capabilities.join(', ')}` })) }),
+    }),
+    { title: 'Experience patterns', description: 'Shapes of experience that work at a table, each with the table, controller and phone roles and the capabilities it uses', mimeType: 'text/markdown' },
+    async (uri, { id }) => {
+      const p = patterns().find((x) => x.id === String(id));
+      return { contents: [{ uri: uri.href, mimeType: 'text/markdown', text: p ? p.text : `No pattern ${id}. Patterns: ${patterns().map((x) => x.id).join(', ')}` }] };
+    },
+  );
+
+  server.registerResource(
+    'capabilities',
+    'mrstudio://capabilities',
+    { title: 'Capability catalogue', description: 'Every capability with its status from the code: id, name, kind, status, one line', mimeType: 'application/json' },
+    async (uri) => ({
+      contents: [{ uri: uri.href, mimeType: 'application/json', text: JSON.stringify(capabilitiesFor().map((c) => ({ id: c.id, kind: c.kind, name: c.name, status: c.status, summary: c.purpose ?? c.summary })), null, 2) }],
+    }),
+  );
+
+  server.registerResource(
+    'capability',
+    new ResourceTemplate('mrstudio://capabilities/{id}', {
+      list: async () => ({ resources: capabilitiesFor().map((c) => ({ uri: `mrstudio://capabilities/${c.id}`, name: c.name, mimeType: 'application/json' })) }),
+    }),
+    { title: 'One capability', description: 'A capability record in full', mimeType: 'application/json' },
+    async (uri, { id }) => ({ contents: [{ uri: uri.href, mimeType: 'application/json', text: JSON.stringify(capabilitiesFor().find((c) => c.id === decodeURIComponent(String(id))) ?? null, null, 2) }] }),
+  );
+
+  server.registerResource(
+    'schema',
+    new ResourceTemplate('mrstudio://schema/{name}', {
+      list: async () => ({
+        resources: [
+          { uri: 'mrstudio://schema/site', name: 'site.json keys', mimeType: 'application/json' },
+          { uri: 'mrstudio://schema/recipe', name: 'Custom layer recipe vocabulary', mimeType: 'application/json' },
+        ],
+      }),
+    }),
+    { title: 'Schemas', description: 'The keys site.json accepts at each level (from manifest.rs), and the blocks, props, colours, ramps and icons a custom layer recipe may use (from the SDK)', mimeType: 'application/json' },
+    async (uri, { name }) => {
+      const body = String(name) === 'site' ? (catalog.siteSchema ?? null) : String(name) === 'recipe' ? RECIPE_VOCABULARY : null;
+      return { contents: [{ uri: uri.href, mimeType: 'application/json', text: JSON.stringify(body, null, 2) }] };
+    },
+  );
+
+  server.registerResource(
+    'examples',
+    new ResourceTemplate('mrstudio://examples/{id}', {
+      list: async () => ({ resources: (catalog.examples ?? []).map((e) => ({ uri: `mrstudio://examples/${e.id}`, name: e.name, mimeType: 'application/json', description: e.about.slice(0, 160) })) }),
+    }),
+    { title: 'Example sites', description: 'Real sites and samples in the core repository: their layers, steps and custom layers', mimeType: 'application/json' },
+    async (uri, { id }) => ({ contents: [{ uri: uri.href, mimeType: 'application/json', text: JSON.stringify((catalog.examples ?? []).find((e) => e.id === String(id)) ?? null, null, 2) }] }),
+  );
+
 
   server.registerResource(
     'docs',

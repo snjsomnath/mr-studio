@@ -3,6 +3,7 @@
   "id": "slideshow",
   "name": "Slideshow",
   "description": "Images, video and map data shown on the table one after another",
+  "about": {"purpose": "Turns layers and media into a guided sequence, stepped from the controller, with notes for the guide's phone.", "questions": ["What is the story, step by step?"], "pairs_with": ["media", "plan", "sunlight", "wind"], "limits": ["Shows one layer or item per step"]},
   "icon": "images",
   "attract": { "effect": "grid" },
   "category": "media",

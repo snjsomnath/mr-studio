@@ -3,6 +3,7 @@
   "id": "blocks-demo",
   "name": "Building blocks",
   "description": "Two scenes assembled from the SDK's building blocks, with pointer interactions",
+  "about": {"purpose": "Shows what the SDK's building blocks can do, for people deciding what to build.", "questions": ["What kinds of visuals and pointer interactions can MR Studio draw?"], "pairs_with": [], "limits": ["A demo, not a layer for a public table"]},
   "icon": "blocks",
   "attract": { "effect": "particles" },
   "controls": [

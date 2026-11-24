@@ -3,6 +3,7 @@
   "id": "sketch",
   "name": "Sketch",
   "description": "Mark places, routes and areas on the table from a phone",
+  "about": {"purpose": "Lets everyone contribute: people mark places, routes and areas on the table from their phones.", "questions": ["Where do you go, and what would you change?", "Which places feel unsafe, loved or missing?"], "pairs_with": ["isovist", "coolpaths", "plan"], "limits": ["There is no voting or commenting on each other's marks yet"]},
   "icon": "pencil",
   "attract": { "effect": "waves" },
   "alongside": true,

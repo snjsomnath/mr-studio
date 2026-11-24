@@ -3,6 +3,7 @@
   "id": "mapdata",
   "name": "Map data",
   "description": "A GeoJSON dataset of the site drawn on the table, coloured by category, revealed one category at a time",
+  "about": {"purpose": "Draws any dataset of the site by category, revealed one category at a time, for telling what is where.", "questions": ["Where are the schools, shops or green areas?", "How is land used across the site?"], "pairs_with": ["basemap", "lens", "swipe"], "limits": ["Needs a dataset added to the site"]},
   "icon": "layers",
   "attract": { "effect": "grid" },
   "category": "analysis",

@@ -38,6 +38,7 @@ Any open button layer pauses the map at rest's life on the table, keeping only t
 
 `sequence: true` makes the layer a sequence: an instance of it may have `steps.sequence`, steps that show other layers one after another (see site.md). The slideshow is one.
 `legend` and `attract` are proposed in [present.md](present.md); site format 3 already carries them for custom layers.
+`about` says what the layer is *for*, for people and LLMs designing an experience rather than picking a layer by name (#326): `purpose` (one sentence: what it helps a group see or do), `questions` (the questions it helps a group answer at the table), `pairs_with` (layer ids it works well with) and `limits` (what it cannot do, or what it needs). The MCP server's capability catalogue reads it (`find_capabilities`), and `scripts/check-docs.mjs` fails when a core layer has none. Example: `"about": { "purpose": "Shows shadows at any moment…", "questions": ["How does a proposal change sun and shade on squares?"], "pairs_with": ["plan", "swipe"], "limits": ["Shadows fall on the ground; sun on facades is planned"] }`.
 `requires.data` lists the site datasets the layer reads, by name (see `data` in site.md). A layer must still start when one is missing.
 
 Control types: `range`, `select`, `toggle`, `date`, `color`, `text`, `action` (a button, no stored value).

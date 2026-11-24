@@ -3,6 +3,7 @@
   "id": "mobility",
   "name": "Mobility",
   "description": "People on the move: trips played over time, and a map of how travel differs from place to place",
+  "about": {"purpose": "Shows how people move over a day and where travel differs, from trip data.", "questions": ["When and where are people on the move?", "Which parts of the site are hard to reach?"], "pairs_with": ["transit", "cars", "street-life"], "limits": ["Needs a trips dataset"]},
   "icon": "route",
   "attract": { "effect": "particles" },
   "requires": { "data": ["trips"] },

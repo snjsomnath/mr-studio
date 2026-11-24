@@ -3,6 +3,7 @@
   "id": "wms",
   "name": "Web map (WMS)",
   "description": "A map from a WMS service, such as a planning map or an aerial photo, laid over the table",
+  "about": {"purpose": "Brings an official map onto the table: a detailed plan, zoning, a historic or aerial map from a WMS or ArcGIS service.", "questions": ["What does the official plan or zoning say here?"], "pairs_with": ["swipe", "lens", "basemap"], "limits": ["Needs the service's address; some need a key in Sources and keys"]},
   "icon": "map",
   "attract": { "effect": "grid" },
   "category": "media",
