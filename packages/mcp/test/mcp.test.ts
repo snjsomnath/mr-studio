@@ -748,6 +748,14 @@ describe('for layer developers (#284)', () => {
       writeFileSync(join(dir, 'src', 'index.ts'), `${readFileSync(join(dir, 'src', 'index.ts'), 'utf8')}\nconst home = [11.9702, 57.7064];\nconst ws = new WebSocket('ws://localhost:4170/ws');\nimport { x } from '../../../packages/runtime/src/main.ts';\n`);
       const rules = new Set(checkLayerPackage(dir, { manifest: {}, kernels: ['sun'] }).issues.filter((i) => i.level === 'error').map((i) => i.rule));
       for (const rule of ['api', 'translations', 'density', 'requires', 'no-site-coordinates', 'no-direct-messaging', 'sdk-only']) assert.ok(rules.has(rule), `missing ${rule}`);
+      // A stage made of panels (#357) passes the same rules, and its control and map panels must name real ones.
+      manifest.api = 1;
+      manifest.stage = { panels: [{ id: 'pick', widget: 'map', size: 'block', title: 'Rings so far', props: { tool: 'nope' } }, { id: 'c', widget: 'control', size: 'wide', props: { control: 'nothing' } }, { id: 'g', widget: 'grid-link', size: 'tile' }] };
+      writeFileSync(join(dir, 'layer.json'), JSON.stringify(manifest));
+      const stage = checkLayerPackage(dir, { manifest: {}, kernels: ['sun'] }).issues.filter((i) => /stage/.test(i.message));
+      assert.ok(stage.some((i) => /tool 'nope'/.test(i.message)), JSON.stringify(stage));
+      assert.ok(stage.some((i) => /control 'nothing'/.test(i.message)));
+      assert.ok(stage.some((i) => i.rule === 'widgets' && /grid-link/.test(i.message)));
     } finally {
       rmSync(site, { recursive: true, force: true });
     }

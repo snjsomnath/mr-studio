@@ -4,6 +4,65 @@ Every merge to main that carries a release note becomes a version. The newest is
 The app shows these notes, with their pictures, on Home when a newer version is out.
 How notes are written: docs/RELEASING.md.
 
+## 0.27.1 (2026-11-24)
+
+### Fixes
+
+#### The MCP server knows golden hour and stages made of panels (#363, #357, #353, #358, #370, #342)
+
+An LLM designing with the MCP server now finds the sun study's golden hour, and it helps a developer build a controller view from panels before writing code: `check_layer` checks a stage made of panels against the same density budget as the TV, makes sure its control and map panels name the layer's real controls and tools, recognises a layer's own widgets, and asks for their titles in Swedish. `preview_layer` points to the Developer workbench in `/dev`, and the code layer and controller app prompts start from panels. Custom layers now say they can be tapped for facts, filtered, given a palette theme and a map of their places on the controller, and the command-line help points to the app's Install command line tool.
+
+![find_capabilities finding golden hour, and check_layer on the model-runs sample's stage](docs/screenshots/mcp-current-0-22.png)
+
+## 0.27.0 (2026-11-24)
+
+### New
+
+#### The campus energy community (ECOM) on the Chalmers table (#192)
+The Chalmers table has the energy community from the old interactive map, rebuilt on 2.0's building blocks as a test of how well a code-heavy layer ports. It plays a summer day. Energy flows along the streets from roofs, the grid and the battery, and each building fills by how much of its use the community covers that hour. On the controller you can:
+
+- tap a building to take it out of the community or change the solar on its roof
+- watch self-sufficiency and where the power comes from
+- compare the day's grid import together against each building on its own
+
+With the ECOM model running, a change asks the model again. Without it, the last exported day is shown. What the port still needs from the SDK is in #373.
+
+![The controller: a building taken out of the community on the panel map, and the numbers it changed](docs/screenshots/192-controller.png)
+
+![The table: flows along the streets, buildings filled by the hour, the building taken out outlined](docs/screenshots/192-table.png)
+
+## 0.26.0 (2026-11-24)
+
+### New
+
+#### Place a drawing by hand on the map (#301)
+
+With a Masterplan open in the editor, its frame now sits on the map with handles: drag inside it to move the drawing, a corner to scale it, the round handle to turn it. Letting go saves where it is. **Turn the drawing** shows a drawing that was drawn on its side the right way round, and keeps its shape when you change it.
+
+![The drawing's frame on the map, turned by hand (left), then a quarter turn clockwise (right)](docs/screenshots/301-place-by-hand.png)
+
+#### Place motions fit a real table, and Next tells their story (#341)
+
+The place motions now follow how far apart your places are. Reach, pull and travel scale with the places' spacing, and dots, lines and glows shrink only a little, so Gravity well no longer floods the map and Pilgrims are small walkers again on a 1 m table. A new **Scale** knob adjusts the fit. Motions that need the buildings (Threads of belonging, Lit blocks, Gravity well) now get them when the controller switches to them, so threads appear.
+
+Turn on **Next shows the places, then starts it** in the builder's Motion tab and a guide can step it like the old Cultural Gravity layer: the first Next brings the places in one by one, the second starts the motion.
+
+![Gravity well and Threads of belonging on the Lindholmen table, before and after](docs/screenshots/341-fitted.png)
+
+![Stepping a place motion: nothing, the places, the pull](docs/screenshots/341-steps.png)
+
+#### Water on the table: rivers stay cool and take the rain (#343)
+
+A table can now say where its water is: a river, a lake, a harbour or the sea. Bring it in with **Add data, Water** (a GeoJSON of areas, or straight from OpenStreetMap), or point `scene.water` at a GeoTIFF mask. Thermal comfort shows the water as cool instead of hot ground, Stormwater lets the runoff drain into it, and the dark base map draws it. On the Lindholmen table, Göta älv now reads as water.
+
+![CoolPaths and Stormwater on the Lindholmen table without and with water](docs/screenshots/343-water.png)
+
+#### Models in map coordinates and surface-model terrain come in through Add data (#344)
+
+A 3D model exported in SWEREF 99 TM (or a SWEREF 99 local zone, or UTM) metres is now placed where it belongs as it comes in: no anchor, units or turn to work out. A terrain GeoTIFF that has the buildings raised in it (a surface model) is noticed, and **Take the buildings out of the ground** keeps only the ground under them, so the buildings stop counting as hills. Both Lindholmen files now come in with no script: the model lands where the hand-placed one did, and the built area is 24 % of the table again.
+
+![The Lindholmen model placed by itself, and the surface-model terrain offering to take the buildings out](docs/screenshots/344-model-and-terrain.png)
+
 ## 0.25.0 (2026-11-24)
 
 ### New

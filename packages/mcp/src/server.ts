@@ -1063,7 +1063,7 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
     {
       title: 'Check a site code layer against the rules',
       description:
-        "Checks a site layer before it goes on a table: layer.json (api, id, controls, panels within the TV's density budget, text lengths), every word people see in locales/sv.json, the code (no longitudes and latitudes of a place, no talking to surfaces or the host behind ctx's back, only '@mrstudio/sdk' from the core), what it needs of the site (datasets, services, kernels), and whether dist/index.js is newer than its source. Writes nothing.",
+        "Checks a site layer before it goes on a table: layer.json (api, id, controls, TV panels and a stage made of panels within the density budget, control and map panels naming real controls and tools, team widgets declared, text lengths), every word people see in locales/sv.json, the code (no longitudes and latitudes of a place, no talking to surfaces or the host behind ctx's back, only '@mrstudio/sdk' from the core), what it needs of the site (datasets, services, kernels), and whether dist/index.js is newer than its source. Writes nothing.",
       inputSchema: { site: z.string(), id: z.string() },
     },
     async ({ site, id }) => {
@@ -1103,7 +1103,7 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
     {
       title: 'How to see a site layer running',
       description:
-        "How to see a site layer on this computer: the dev view (/dev) shows the table with the layer's controls beside it and the TV dashboard under it, with no table or projector; the composer (/compose) and editor show it too. Says first whether the layer is built and in the scene. Starts nothing.",
+        "How to see a site layer on this computer: the dev view (/dev) opens the live table with the Developer workbench beside it (every widget at every size with its cost in reads, live shared values and params with bindings to copy, the controller as the 46-inch screen shows it, an action log, and problems such as refused panels or unpublished bindings); the composer (/compose) and editor show it too. Says first whether the layer is built and in the scene. Starts nothing.",
       inputSchema: { site: z.string(), id: z.string(), lan: z.boolean().optional() },
     },
     async ({ site, id, lan }) => {

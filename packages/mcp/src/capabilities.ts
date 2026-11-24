@@ -87,7 +87,7 @@ const SITE_FEATURES: { id: string; path: string; name: string; summary: string; 
   { id: 'site:branding', path: 'branding', name: 'Title, welcome line and logo', summary: 'The table\'s title and welcome line on the controller\'s home screen, and a logo from the table\'s pictures above the title and beside it on phones.', surfaces: { controller: 'title, welcome line and logo on the home screen', phone: 'the logo beside the title' } },
   { id: 'site:items', path: 'layers[].items[]', name: 'Layers inside a layer', summary: 'A layer shown only while another is open, such as trams inside a sun study.', surfaces: { table: 'both together while the outer layer is open' } },
   { id: 'site:buttons', path: 'layers[].button', name: 'Controller buttons and groups', summary: 'Each layer\'s button: name, icon, side and group (Simulations, Stories…).', surfaces: { controller: 'buttons down the left and right' } },
-  { id: 'site:custom-layers', path: 'custom', name: 'Custom layers (recipes)', summary: 'Layers made from data, look and motion blocks without code, saved in the site.', surfaces: { table: 'the recipe\'s looks and motions', controller: 'its legend and bound controls' } },
+  { id: 'site:custom-layers', path: 'custom', name: 'Custom layers (recipes)', summary: 'Layers made from data, look and motion blocks without code, saved in the site.', surfaces: { table: 'the recipe\'s looks and motions; tap-info makes features pickable, filter controls show only matching ones', controller: 'its legend, bound controls, a palette theme, and a map of its places where visitors pick a feature to read its facts (the palette theme also colours the TV)' } },
   { id: 'site:services', path: 'services', name: 'Outside compute services', summary: 'A model or API (such as a Python optimiser) the app starts and keeps running beside the table, for site code layers.', surfaces: { controller: 'a progress bar while it works' } },
   { id: 'site:palette', path: 'palette', name: 'Table palette', summary: 'The colour set every layer draws with, tuned for projection.', surfaces: { table: 'colours' } },
 ];
@@ -266,7 +266,7 @@ const STOP = new Set('a an and the of to on in for with from by at as is are be 
 
 /** A few words people use for what layers say differently. Kept short: purposes and questions carry most of the matching. */
 const SYNONYMS: Record<string, string[]> = {
-  shade: ['sun', 'shadow', 'sunlight'], shadow: ['sun', 'sunlight'], overshadowing: ['shadow', 'sun'], daylight: ['sun'],
+  shade: ['sun', 'shadow', 'sunlight'], shadow: ['sun', 'sunlight'], overshadowing: ['shadow', 'sun'], daylight: ['sun'], golden: ['sun', 'evening', 'light'], sunset: ['sun', 'golden', 'evening'], evening: ['sun', 'golden'],
   comfort: ['thermal', 'heat', 'pet', 'cool', 'wind'], pedestrian: ['walk', 'walker', 'walking'], walkability: ['walk'], heat: ['thermal', 'cool', 'pet'],
   see: ['view', 'sight', 'visibility'], seen: ['view', 'visibility'],
   view: ['see', 'sight', 'visibility', 'isovist'], visibility: ['see', 'view', 'isovist'], enclosure: ['view', 'enclosed'],
