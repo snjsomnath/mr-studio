@@ -103,6 +103,11 @@ function columns(group: HTMLElement, count: number) {
   if (count >= 4) group.dataset.columns = count === 4 ? '2' : '3';
 }
 
+/** The controls people see: all but `tier: 'state'`, which a layer keeps for itself (#194). */
+export function visibleControls(controls: readonly Control[] | undefined): Control[] {
+  return (controls ?? []).filter((control) => control.tier !== 'state');
+}
+
 export function widget(control: Control, send: (value: unknown) => void, act: () => void): Widget {
   const row = el('div', `control control-${control.type}`);
   const id = `c-${Math.random().toString(36).slice(2)}`;
@@ -784,7 +789,7 @@ export class Controller {
     text.append(heading, about);
     words.append(mark, text);
     const send = paramSender(connection, id);
-    const widgets = (manifest.controls ?? []).map((control) =>
+    const widgets = visibleControls(manifest.controls).map((control) =>
       widget(
         control,
         (value) => send({ [control.id]: value }),
@@ -1070,7 +1075,7 @@ export class Controller {
 
     const body = el('div', 'layer-body');
     const send = paramSender(connection, id, { minInterval: phone ? PHONE_SEND_INTERVAL : 0 });
-    const widgets = (manifest.controls ?? [])
+    const widgets = visibleControls(manifest.controls)
       .filter((control) => !phone || control.phone)
       .map((control) =>
         widget(

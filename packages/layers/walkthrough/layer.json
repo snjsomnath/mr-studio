@@ -1,0 +1,20 @@
+{
+  "api": 1,
+  "id": "walkthrough",
+  "name": "Video walk",
+  "description": "A video on the controller, with the walker who filmed it moving along their path on the table",
+  "icon": "video",
+  "category": "media",
+  "requires": { "kernels": [], "data": [] },
+  "controls": [
+    { "id": "view", "type": "toggle", "label": "Show what the walker sees", "default": true },
+    { "id": "loop", "type": "toggle", "label": "Play again from the start", "default": true, "tier": "more" },
+    { "id": "video", "type": "text", "label": "Video (a dataset, or empty for the table's first video)", "default": "", "tier": "more" },
+    { "id": "path", "type": "text", "label": "Path (a dataset, or empty for the table's first walk or route)", "default": "", "tier": "more" },
+    { "id": "opacity", "type": "range", "label": "Opacity", "min": 0.1, "max": 1, "step": 0.05, "default": 1, "tier": "more" },
+    { "id": "playing", "type": "toggle", "label": "Playing", "default": false, "tier": "state" },
+    { "id": "at", "type": "range", "label": "Where the video is", "min": 0, "max": 36000, "step": 0.01, "unit": "s", "default": 0, "tier": "state" },
+    { "id": "since", "type": "range", "label": "When it was there", "min": 0, "max": 10000000000000, "step": 1, "default": 0, "tier": "state" }
+  ],
+  "tools": []
+}

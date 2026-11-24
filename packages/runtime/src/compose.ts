@@ -1,7 +1,7 @@
 import { isVisible } from '@mrstudio/sdk';
 import type { Connection, LayerCategory, LayerManifest, LayerState } from '@mrstudio/sdk';
 
-import { el, instanceTitle, widget } from './controls.ts';
+import { el, instanceTitle, visibleControls, widget } from './controls.ts';
 import type { Widget } from './controls.ts';
 import { paramSender } from './layer-manager.ts';
 import type { Store } from './store.ts';
@@ -160,7 +160,7 @@ export class Composer {
     if (open) {
       const settings = el('div', 'stack-settings controls');
       const send = paramSender(this.connection, id, { method: 'scene.set' });
-      widgets = (manifest.controls ?? []).map((control) =>
+      widgets = visibleControls(manifest.controls).map((control) =>
         widget(
           control,
           (value) => send({ [control.id]: value }),

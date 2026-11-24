@@ -14,11 +14,12 @@ mod mesh;
 pub mod migrate;
 pub mod model;
 pub mod osm;
-pub mod plan;
 pub mod package;
+pub mod plan;
 mod projection;
 pub mod sound;
 mod twin;
+pub mod video;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Component, Path, PathBuf};

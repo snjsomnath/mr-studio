@@ -1,7 +1,7 @@
 import { isVisible } from '@mrstudio/sdk';
 import type { Connection, LayerManifest, LayerState } from '@mrstudio/sdk';
 
-import { defaultSideOf, el, isAmbient, isAtRest, isOffered, layerButton, widget } from '../controls.ts';
+import { defaultSideOf, el, isAmbient, isAtRest, isOffered, layerButton, visibleControls, widget } from '../controls.ts';
 import type { Widget } from '../controls.ts';
 import { paramSender } from '../layer-manager.ts';
 import type { Store } from '../store.ts';
@@ -299,6 +299,15 @@ export class Editor {
     close.ariaLabel = 'Close';
     close.addEventListener('click', () => dialog.close());
     head.append(el('h2', undefined, 'Add data'), close);
+    /** Adds the layer that shows a file just brought in, set to that file. */
+    const showWith = async (id: string, params: Record<string, unknown>) => {
+      const manifest = this.store.manifests.find((m) => m.id === id);
+      if (manifest) {
+        await this.add(manifest);
+        if (this.added) await this.send('layer.set', { layer: this.added, params });
+      }
+      dialog.close();
+    };
     const importer = new Importer({
       site: () => this.store.state.site,
       hold: (on) => this.hold(on),
@@ -309,14 +318,9 @@ export class Editor {
         dialog.close();
       },
       // A plan drawing (#193): a Masterplan layer that reveals it phase by phase.
-      showPlan: async (dataset) => {
-        const manifest = this.store.manifests.find((m) => m.id === 'plan');
-        if (manifest) {
-          await this.add(manifest);
-          if (this.added) await this.send('layer.set', { layer: this.added, params: { dataset } });
-        }
-        dialog.close();
-      },
+      showPlan: (dataset) => showWith('plan', { dataset }),
+      // A video (#194): a Video walk that plays it on the controller.
+      showVideo: (dataset) => showWith('walkthrough', { video: dataset }),
     });
     dialog.append(head, el('p', 'wz-lead', 'Bring a file into the table, or fetch it from OpenStreetMap. It is copied into the table and stays on this computer.'), importer.element);
     dialog.addEventListener('close', () => dialog.remove());
@@ -1180,7 +1184,7 @@ export class Editor {
     shown.append(label, power);
 
     const send = paramSender(this.connection, id, { method: 'scene.set' });
-    const widgets: Widget[] = (manifest.controls ?? []).map((control) =>
+    const widgets: Widget[] = visibleControls(manifest.controls).map((control) =>
       widget(
         control,
         (value) => send({ [control.id]: value }),

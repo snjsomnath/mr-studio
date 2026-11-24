@@ -282,6 +282,10 @@ pub fn inspect(site: &Site, target: &Target, filename: &str, bytes: &[u8], optio
         return terrain(site, bytes, options.crs);
     }
 
+    if let Some(found) = crate::video::sniff(bytes) {
+        return video(target, bytes, found);
+    }
+
     let text = match decode(bytes) {
         Ok((text, recoded)) => {
             if recoded {
@@ -571,6 +575,75 @@ fn point_at(document: &mut Value, target: &Target, path: &str, height_property: 
             }
             document["data"][other.name()] = json!(path);
         }
+    }
+}
+
+// ---- Videos (#194) -----------------------------------------------------------------
+
+/// A video for a layer to play, such as a walk along a path: `data/<name>.mp4`, `.mov` or `.webm`.
+fn video(target: &Target, bytes: &[u8], found: crate::video::Video) -> Prepared {
+    let Target::Data(name) = target else {
+        let message = format!("A video can't be {}. Add it as a dataset of its own, such as \"walk\".", target.noun().1);
+        return Prepared {
+            target: target.clone(),
+            report: Report::refused(target, "video.target", message, "A video, not data."),
+            content: None,
+            terrain_crs: None,
+            file: None,
+        };
+    };
+    let mut issues = Vec::new();
+    let kind = match found.format {
+        "mp4" => "An MP4 video",
+        "mov" => "A QuickTime video",
+        _ => "A WebM video",
+    };
+    let mut words = vec![kind.to_string()];
+    match found.duration_s {
+        Some(d) => words.push(crate::video::length_words(d)),
+        None => issues.push(Issue::new(
+            "video.length",
+            Severity::Warning,
+            "The file does not say how long it is; a path is paced to the video once it plays.",
+        )),
+    }
+    if let Some((w, h)) = found.size.filter(|(w, h)| *w > 0 && *h > 0) {
+        words.push(format!("{w} by {h}"));
+    }
+    if found.format != "mp4" {
+        issues.push(Issue::new(
+            "video.format",
+            Severity::Note,
+            "MP4 (H.264) plays everywhere; some screens can't play other kinds of video.",
+        ));
+    }
+    issues.push(Issue::new(
+        "video.walk",
+        Severity::Note,
+        "Shown as a Video walk: the video plays on the controller while the walker moves along the path it was filmed on.",
+    ));
+    let mb = bytes.len() as f64 / 1e6;
+    if mb > 100.0 {
+        issues.push(Issue::new("video.large", Severity::Warning, format!("The video is {mb:.0} MB; the table file grows by as much.")));
+    }
+    Prepared {
+        target: target.clone(),
+        report: Report {
+            ok: true,
+            target: name.clone(),
+            summary: words.join(", "),
+            count: 1,
+            inside: 1,
+            outside: 0,
+            crs: None,
+            height_property: None,
+            issues,
+            preview: None,
+            path: None,
+        },
+        content: Some(bytes.to_vec()),
+        terrain_crs: None,
+        file: Some(format!("data/{name}.{}", found.format)),
     }
 }
 
@@ -1571,6 +1644,27 @@ mod tests {
         // Column names alone are not a table.
         let empty = inspect(&site2, &Target::Data("flows".into()), "flows.csv", b"from,to,weight\n", Options::default()).report;
         assert!(!empty.ok);
+        std::fs::remove_dir_all(&site.dir).unwrap();
+    }
+
+    #[test]
+    fn a_video_lands_with_its_length() {
+        let site = scratch("video");
+        // An MP4 whose movie header says 90 s: ftyp, then moov > mvhd.
+        let mut mvhd = vec![0u8; 100];
+        mvhd[12..16].copy_from_slice(&600u32.to_be_bytes());
+        mvhd[16..20].copy_from_slice(&54_000u32.to_be_bytes());
+        let boxed = |kind: &[u8], body: &[u8]| [&((body.len() + 8) as u32).to_be_bytes()[..], kind, body].concat();
+        let bytes = [boxed(b"ftyp", b"isom\0\0\x02\0"), boxed(b"moov", &boxed(b"mvhd", &mvhd))].concat();
+        let prepared = inspect(&site, &Target::Data("walk".into()), "walk.mp4", &bytes, Options::default());
+        assert!(prepared.report.ok, "{:?}", prepared.report.issues);
+        assert_eq!(prepared.report.summary, "An MP4 video, 1 min 30 s");
+        let (site2, report) = apply(&site, prepared).unwrap();
+        assert_eq!(report.path.as_deref(), Some("data/walk.mp4"));
+        assert_eq!(site2.data()["walk"], "data/walk.mp4");
+        assert_eq!(std::fs::read(site.dir.join("data/walk.mp4")).unwrap(), bytes);
+        let trees = inspect(&site2, &Target::Trees, "walk.mp4", &bytes, Options::default()).report;
+        assert!(!trees.ok && trees.issues[0].code == "video.target");
         std::fs::remove_dir_all(&site.dir).unwrap();
     }
 

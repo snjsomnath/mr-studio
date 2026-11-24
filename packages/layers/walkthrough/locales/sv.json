@@ -1,0 +1,16 @@
+{
+  "Video walk": "Videopromenad",
+  "A video on the controller, with the walker who filmed it moving along their path on the table": "En video på kontrollen, medan den som filmade går sin väg på bordet",
+  "Show what the walker sees": "Visa vad den som går ser",
+  "Play again from the start": "Spela igen från början",
+  "Video (a dataset, or empty for the table's first video)": "Video (en datamängd, eller tomt för bordets första video)",
+  "Path (a dataset, or empty for the table's first walk or route)": "Väg (en datamängd, eller tomt för bordets första promenad eller rutt)",
+  "Opacity": "Opacitet",
+  "Playing": "Spelar",
+  "Where the video is": "Var videon är",
+  "When it was there": "När den var där",
+  "Add a video to the table": "Lägg till en video på bordet",
+  "Add the path the video was filmed along (GeoJSON)": "Lägg till vägen videon filmades längs (GeoJSON)",
+  "Pause the walk": "Pausa promenaden",
+  "Play the walk": "Spela promenaden"
+}
