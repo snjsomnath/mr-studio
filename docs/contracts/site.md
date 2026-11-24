@@ -32,7 +32,8 @@ sites/<id>/
     "buildings": { "path": "data/buildings.geojson", "height_property": "height", "default_height_m": 12 },
     "terrain":   { "path": "data/terrain.f32", "width": 100, "height": 60 },   // optional, flat if absent; or a GeoTIFF
     "mesh":      { "path": "data/model.stl", "anchor": { "lon": 11.972, "lat": 57.6826 }, "unit_m": 1 },   // optional
-    "trees":     { "path": "data/trees.geojson", "height_property": "height", "crown_radius_m": 3 }  // optional, points
+    "trees":     { "path": "data/trees.geojson", "height_property": "height", "crown_radius_m": 3 },  // optional, points
+    "water":     { "path": "data/water.geojson" }   // optional: areas, or a GeoTIFF mask ("crs" if it names none)
   },
   "data": {                                        // optional, named datasets for layers
     "roads": "data/roads.geojson",
@@ -95,6 +96,8 @@ Rules:
 - `terrain` is one of two things, told apart by the file extension:
   - Raw little-endian f32 elevations covering the extent, row-major with row 0 at the top, at any resolution. Needs `width` and `height`.
   - A GeoTIFF (`.tif`, `.tiff`): `{ "path": "data/terrain.tif" }`. It is placed by its own georeference, so it may be larger than the extent and on a national grid. Add `"crs": "EPSG:3006"` when the file does not name its coordinate system. See [Terrain from a GeoTIFF](#terrain-from-a-geotiff).
+- `water` (#343) says where there is water: GeoJSON areas, or a GeoTIFF mask whose cells above 0.5 are water (`"crs": "EPSG:3006"` when the file names no coordinate system). It is available to layers as the `water` dataset. Thermal comfort (CoolPaths) counts water as cool ground, stormwater lets runoff drain into it as it does at the table's edge, and the dark base map draws it.
+- `terrain.flatten_buildings` (#344, default `false`) is for a terrain that has the buildings raised in it (a surface model). The bake sets the ground under each footprint, and one cell around it, to the nearest ground beside it, so buildings stand on the ground instead of being part of it. Add data offers it when it sees raised footprints.
 - `mesh` is a 3D model of the top surface, for sites whose footprints have no heights. See [Buildings from a mesh](#buildings-from-a-mesh).
 - `buildings.extrude` (default `true`) says whether the footprints are raised into the scene. Set it to `false` when a mesh gives the buildings their shape; the footprints are then only drawn on the table.
 - `layers[].hide` lists ids of the layer's controls that the controller and phones leave out, for example `["opacity", "detail"]`. The control keeps its value, and the editor and the developer page still show it.
@@ -282,6 +285,9 @@ The host turns the sources into the rasters the engine loads, in memory at start
 1. `dtm`: the terrain raster resampled to the grid, or 0 everywhere.
 2. `dsm`: `dtm`, raised by the mesh where it stands clear of the ground, then by each extruded building polygon, filled with a flat roof at its height above the lowest ground it covers. Courtyards (polygon holes) stay open.
 3. `canopy`: each tree as a disc of `crown_radius_m` with the tree's height.
+4. `water`: 1 in the cells whose centres lie in a water area (or where the mask is above 0.5), else 0.
+
+With `terrain.flatten_buildings`, step 1 also sets the footprint cells (grown by one cell) to the nearest ground outside them.
 
 Baking a 1000 × 600 grid takes well under a second, and the Chalmers campus (1250 × 750 cells from a GeoTIFF and a 79 000 triangle mesh) about a second. `mrstudio validate <site>` checks the manifest and reports what the bake produced; `mrstudio prepare <site>` also writes the rasters to `scene/` so they can be inspected.
 

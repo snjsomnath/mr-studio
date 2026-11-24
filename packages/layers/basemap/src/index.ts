@@ -1,4 +1,4 @@
-import { defineLayer, geojsonLines, geojsonPolygons, readSiteData, STRAY_REACH, tableReach, tableSpace, traceLine, tracePolygon, withAlpha } from '@mrstudio/sdk';
+import { defineLayer, geojsonLines, hasSiteData, loadSiteField, sample, geojsonPolygons, readSiteData, STRAY_REACH, tableReach, tableSpace, traceLine, tracePolygon, withAlpha } from '@mrstudio/sdk';
 import type { LayerManifest } from '@mrstudio/sdk';
 
 import manifest from '../layer.json';
@@ -15,6 +15,7 @@ interface Params {
   streets: boolean;
   streetColor: string;
   buildingColor: string;
+  waterColor: string;
   outlines: boolean;
   opacity: number;
 }
@@ -59,6 +60,19 @@ export default defineLayer<Params>({
         g.fillRect(0, 0, canvas.width, canvas.height);
       }
       if ((p.style ?? 'dark') !== 'dark') return;
+      // The scene's water (#343): polygons, or a mask on the site grid stretched over the table.
+      if (water) {
+        g.fillStyle = p.waterColor;
+        for (const area of water.areas) {
+          g.beginPath();
+          tracePolygon(g, area.geometry);
+          g.fill('evenodd');
+        }
+        if (water.mask) {
+          g.imageSmoothingEnabled = true;
+          g.drawImage(water.mask, 0, 0, ctx.site.extent.width_m, ctx.site.extent.height_m);
+        }
+      }
       if (p.streets) {
         g.strokeStyle = p.streetColor;
         g.lineCap = 'round';
@@ -157,6 +171,7 @@ export default defineLayer<Params>({
 
     let shapes: [ReturnType<typeof geojsonPolygons>, ReturnType<typeof geojsonLines>] = [[], []];
     let loaded = false;
+    let water: { areas: ReturnType<typeof geojsonPolygons>; mask: OffscreenCanvas | null } | null = null;
     function draw() {
       const style = ctx.params.style ?? 'dark';
       drawOwn(...shapes);
@@ -184,10 +199,32 @@ export default defineLayer<Params>({
       void drawTiles(style);
     }
 
+    /** The water, as polygons in table metres or as a picture of the mask in the water colour. */
+    async function readWater(): Promise<typeof water> {
+      if (!hasSiteData(ctx.site, 'water')) return null;
+      if (!/\.tiff?$/i.test(String(ctx.site.data?.water))) return { areas: geojsonPolygons(await readSiteData(ctx.site, 'water'), space), mask: null };
+      const field = await loadSiteField(ctx.site, 'water');
+      if (!field || typeof OffscreenCanvas === 'undefined') return null;
+      const mask = new OffscreenCanvas(field.width, field.height);
+      const g = mask.getContext('2d')!;
+      const image = g.createImageData(field.width, field.height);
+      const [r, gr, b] = [1, 3, 5].map((i) => parseInt(ctx.params.waterColor.slice(i, i + 2), 16) || 0);
+      for (let i = 0; i < field.width * field.height; i++) {
+        if (!(sample(field, i % field.width, Math.floor(i / field.width)) > 0.5)) continue;
+        image.data.set([r!, gr!, b!, 255], i * 4);
+      }
+      g.putImageData(image, 0, 0);
+      return { areas: [], mask };
+    }
+
     ctx.onCleanup(() => void asked++);
     draw();
     const [buildings, roads] = await Promise.all([readSiteData(ctx.site, 'buildings'), readSiteData(ctx.site, 'roads')]);
     shapes = [geojsonPolygons(buildings, space), geojsonLines(roads, space)];
+    water = await readWater().catch((error) => {
+      console.warn('[basemap] water not read', error);
+      return null;
+    });
     loaded = true;
     // The base map is static: it is drawn once, and again only when a setting changes.
     if ((ctx.params.style ?? 'dark') === 'dark') draw();
@@ -195,7 +232,12 @@ export default defineLayer<Params>({
     return {
       update(changed) {
         if (changed.includes('opacity')) canvas.setOpacity(ctx.params.opacity);
-        if (changed.some((key) => key !== 'opacity')) draw();
+        if (changed.includes('waterColor') && water?.mask) {
+          void readWater().then((next) => {
+            water = next;
+            draw();
+          });
+        } else if (changed.some((key) => key !== 'opacity')) draw();
       },
     };
   },

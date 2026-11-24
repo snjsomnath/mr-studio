@@ -31,6 +31,8 @@ pub enum Target {
     Buildings,
     /// Tree points: `scene.trees`.
     Trees,
+    /// Water areas (a river, a lake, the sea): `scene.water` (#343).
+    Water,
     /// Paths people walk: the `walkways` dataset (cool paths).
     Walkways,
     /// The mobility layer's `trips.json`: the `trips` dataset.
@@ -47,12 +49,13 @@ impl Target {
         Ok(match text {
             "buildings" => Self::Buildings,
             "trees" => Self::Trees,
+            "water" => Self::Water,
             "walkways" => Self::Walkways,
             "trips" => Self::Trips,
             "terrain" => Self::Terrain,
             other => {
                 let name = other.strip_prefix("data:").ok_or_else(|| {
-                    format!("'{other}' is not something a table can take; use buildings, trees, walkways, trips, terrain or data:<name>")
+                    format!("'{other}' is not something a table can take; use buildings, trees, water, walkways, trips, terrain or data:<name>")
                 })?;
                 if name.is_empty() || !name.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '-') {
                     return Err("a dataset name is lowercase letters, digits, dashes and underscores".into());
@@ -60,6 +63,7 @@ impl Target {
                 match name {
                     "buildings" => Self::Buildings,
                     "trees" => Self::Trees,
+                    "water" => Self::Water,
                     "walkways" => Self::Walkways,
                     "trips" => Self::Trips,
                     "terrain" => Self::Terrain,
@@ -74,6 +78,7 @@ impl Target {
         match self {
             Self::Buildings => "buildings",
             Self::Trees => "trees",
+            Self::Water => "water",
             Self::Walkways => "walkways",
             Self::Trips => "trips",
             Self::Terrain => "terrain",
@@ -95,6 +100,7 @@ impl Target {
         match self {
             Self::Buildings => ("building", "buildings"),
             Self::Trees => ("tree", "trees"),
+            Self::Water => ("water area", "water areas"),
             Self::Walkways => ("path", "paths"),
             Self::Trips => ("trip", "trips"),
             Self::Terrain => ("terrain", "terrain"),
@@ -105,7 +111,7 @@ impl Target {
     /// The geometry kind it needs, if any.
     fn shape(&self) -> Option<Shape> {
         match self {
-            Self::Buildings => Some(Shape::Area),
+            Self::Buildings | Self::Water => Some(Shape::Area),
             Self::Trees => Some(Shape::Point),
             Self::Walkways => Some(Shape::Line),
             Self::Trips | Self::Terrain | Self::Data(_) => None,
@@ -561,6 +567,10 @@ fn point_at(document: &mut Value, target: &Target, path: &str, height_property: 
     match target {
         Target::Buildings => scene_entry(document, "buildings"),
         Target::Trees => scene_entry(document, "trees"),
+        Target::Water => {
+            // A mask's `crs` belonged to the old file.
+            document["scene"]["water"] = json!({ "path": path });
+        }
         Target::Terrain => {
             // A GeoTIFF carries its own size and place, so the raw format's keys and the old
             // file's `crs` go; `crs` is written only when the author had to name it.
@@ -1700,6 +1710,26 @@ mod tests {
         )
         .report;
         assert!(!r.ok && r.issues[0].code == "plan.unreadable");
+        std::fs::remove_dir_all(&site.dir).unwrap();
+    }
+
+    #[test]
+    fn water_areas_go_into_the_scene_and_bake_as_water() {
+        let site = scratch("water");
+        let river = collection(vec![json!({
+            "type": "Feature", "properties": { "natural": "water" },
+            "geometry": { "type": "Polygon", "coordinates": [[[11.968, 57.6995], [11.972, 57.6995], [11.972, 57.7005], [11.968, 57.7005], [11.968, 57.6995]]] }
+        })]);
+        let prepared = inspect(&site, &Target::Water, "river.geojson", &river, Options::default());
+        assert!(prepared.report.ok, "{:?}", prepared.report.issues);
+        let lines = collection(vec![json!({ "type": "Feature", "properties": {}, "geometry": { "type": "LineString", "coordinates": [[11.969, 57.70], [11.971, 57.70]] } })]);
+        assert!(!inspect(&site, &Target::Water, "l.geojson", &lines, Options::default()).report.ok, "water needs areas");
+        let (site2, _) = apply(&site, prepared).unwrap();
+        assert_eq!(site2.manifest.scene.water.as_ref().unwrap().path, "data/water.geojson");
+        assert_eq!(site2.data()["water"], "data/water.geojson");
+        let (scene, stats) = site2.bake().unwrap();
+        assert!(stats.water_fraction > 0.01, "{stats:?}");
+        assert_eq!(scene.water.iter().filter(|w| **w != 0).count() as f32 / scene.water.len() as f32, stats.water_fraction);
         std::fs::remove_dir_all(&site.dir).unwrap();
     }
 

@@ -40,6 +40,18 @@ lat;lon;höjd
 57,7001;11,9701;9,5
 ```
 
+### Water (GeoJSON or GeoTIFF)
+
+GeoJSON areas where there is water: a river, a lake, a harbour, the sea. Thermal comfort counts it as cool, stormwater lets the rain run into it, and the base map draws it. A GeoTIFF mask works too (water cells 1, land 0) in site.json under scene.water.
+
+```
+{ "type": "Feature",
+  "properties": { "natural": "water" },
+  "geometry": { "type": "Polygon", "coordinates": [[[11.970, 57.690], [11.975, 57.690], [11.975, 57.688], [11.970, 57.690]]] } }
+```
+
+OpenStreetMap can fill it too: Add data, Water, From OpenStreetMap takes the rivers, lakes and basins mapped as areas.
+
 ### Streets (GeoJSON)
 
 GeoJSON lines along the middle of each street. An optional width in metres and a kind (street, primary…) help traffic look right.

@@ -435,6 +435,7 @@ fn import_words(target: &Target) -> String {
     match target {
         Target::Buildings => "the buildings".into(),
         Target::Trees => "the trees".into(),
+        Target::Water => "the water".into(),
         Target::Walkways => "the walking paths".into(),
         Target::Trips => "the trips".into(),
         Target::Terrain => "the ground".into(),

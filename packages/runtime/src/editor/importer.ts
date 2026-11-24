@@ -101,6 +101,16 @@ export const TARGETS: ImportTarget[] = [
     example: formatExample('trees'),
   },
   {
+    target: 'water',
+    dataset: 'water',
+    name: 'Water',
+    icon: 'droplet',
+    about: 'Rivers, lakes and the sea. Cool in thermal comfort, where stormwater drains to. GeoJSON areas.',
+    accept: '.geojson,.json',
+    osm: true,
+    example: formatExample('water'),
+  },
+  {
     target: 'data:roads',
     dataset: 'roads',
     name: 'Streets',

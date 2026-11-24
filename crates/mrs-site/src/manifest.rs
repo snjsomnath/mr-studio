@@ -130,6 +130,10 @@ pub struct Terrain {
     /// `EPSG:<code>` of a GeoTIFF that does not name its coordinate system itself.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub crs: Option<String>,
+    /// The terrain has the buildings raised in it (a surface model, #344): the ground under each
+    /// footprint, and one cell around it, is set back to the ground beside it when baking.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub flatten_buildings: bool,
 }
 
 impl Terrain {
@@ -210,6 +214,26 @@ pub struct SceneSpec {
     pub mesh: Option<Mesh>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub trees: Option<Trees>,
+    /// Water: a river, a lake, the sea (#343). Cool ground for thermal comfort, and a sink for stormwater.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub water: Option<Water>,
+}
+
+/// Where the water is: GeoJSON polygons, or a GeoTIFF mask (cells above 0.5 are water).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Water {
+    pub path: String,
+    /// `EPSG:<code>` of a GeoTIFF mask that does not name its coordinate system itself.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub crs: Option<String>,
+}
+
+impl Water {
+    pub fn is_geotiff(&self) -> bool {
+        let path = self.path.to_ascii_lowercase();
+        path.ends_with(".tif") || path.ends_with(".tiff")
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
