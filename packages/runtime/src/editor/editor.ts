@@ -323,7 +323,16 @@ export class Editor {
     store.onCatalog(() => {
       if (!this.wizard) this.renderRibbon(this.instances());
     });
+    // A button that moved, was renamed or hidden can come after the scene event: the list follows it.
+    const buttons = new Map(Object.entries(store.state.layers).map(([id, state]) => [id, JSON.stringify(state.button ?? {})]));
+    let redraw = 0;
     store.onLayer((id, state) => {
+      const button = JSON.stringify(state.button ?? {});
+      if (buttons.get(id) !== button) {
+        cancelAnimationFrame(redraw);
+        redraw = requestAnimationFrame(() => this.render());
+      }
+      buttons.set(id, button);
       this.sync.get(id)?.(state);
       this.timeBar.sync(id, state);
       this.follow(id, state);
