@@ -126,6 +126,77 @@ export class StreetGraph {
     return random() < straightOn ? straight : choices[Math.floor(random() * choices.length)]!;
   }
 
+  /** The junction or bend nearest a point, or -1 when the network is empty. */
+  nearest(point: XY): number {
+    let best = -1;
+    let distance = Infinity;
+    this.nodes.forEach(([x, y], i) => {
+      if (this.out[i]!.length === 0) return;
+      const d = Math.hypot(x - point[0], y - point[1]);
+      if (d < distance) [best, distance] = [i, d];
+    });
+    return best;
+  }
+
+  /**
+   * The shortest way along the streets between two points (#283): from the street point nearest
+   * `from` to the one nearest `to`, as a line in table metres. Null when they are not connected.
+   */
+  route(from: XY, to: XY): XY[] | null {
+    const start = this.nearest(from);
+    const end = this.nearest(to);
+    if (start < 0 || end < 0) return null;
+    const distance = new Float64Array(this.nodes.length).fill(Infinity);
+    const via = new Int32Array(this.nodes.length).fill(-1);
+    distance[start] = 0;
+    // A binary heap of [distance, node].
+    const heap: [number, number][] = [[0, start]];
+    const push = (item: [number, number]) => {
+      heap.push(item);
+      for (let i = heap.length - 1; i > 0; ) {
+        const up = (i - 1) >> 1;
+        if (heap[up]![0] <= heap[i]![0]) break;
+        [heap[up], heap[i]] = [heap[i]!, heap[up]!];
+        i = up;
+      }
+    };
+    const pop = (): [number, number] => {
+      const top = heap[0]!;
+      const last = heap.pop()!;
+      if (heap.length > 0) {
+        heap[0] = last;
+        for (let i = 0; ; ) {
+          const [l, r] = [2 * i + 1, 2 * i + 2];
+          let m = i;
+          if (l < heap.length && heap[l]![0] < heap[m]![0]) m = l;
+          if (r < heap.length && heap[r]![0] < heap[m]![0]) m = r;
+          if (m === i) break;
+          [heap[m], heap[i]] = [heap[i]!, heap[m]!];
+          i = m;
+        }
+      }
+      return top;
+    };
+    while (heap.length > 0) {
+      const [d, node] = pop();
+      if (node === end) break;
+      if (d > distance[node]!) continue;
+      for (const e of this.out[node]!) {
+        const edge = this.edges[e]!;
+        const next = d + edge.length;
+        if (next < distance[edge.to]!) {
+          distance[edge.to] = next;
+          via[edge.to] = node;
+          push([next, edge.to]);
+        }
+      }
+    }
+    if (distance[end] === Infinity) return null;
+    const path: XY[] = [];
+    for (let node = end; node !== -1; node = via[node]!) path.push(this.nodes[node]!);
+    return path.reverse();
+  }
+
   /** The point `s` metres along an edge, `offset` metres to its right (y grows down the table). */
   at(edge: number, s: number, offset = 0): XY {
     const e = this.edges[edge]!;

@@ -3,6 +3,7 @@
   "id": "isovist",
   "name": "Isovist",
   "description": "What a person standing here can see, how green that view is, and how it sounds",
+  "about": {"purpose": "Puts people in someone's shoes: what they see from a spot, how green that view is, and how it sounds.", "questions": ["What does a person see from here, and how enclosed does it feel?", "Does the proposal block a view or open one up?"], "pairs_with": ["sketch", "swipe", "sunlight"], "limits": ["Needs buildings", "One viewer at a time", "Street View needs its key in Sources and keys"]},
   "icon": "eye",
   "attract": { "effect": "sightlines" },
   "requires": { "kernels": [], "data": ["buildings"] },

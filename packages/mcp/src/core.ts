@@ -6,7 +6,7 @@
 // always describes the core it shipped with.
 
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { BLOCKS, type BlockDef } from './blocks.ts';
@@ -32,6 +32,20 @@ export interface RoadmapRow {
 
 export interface Block extends BlockDef {
   status: 'built' | 'planned';
+  /** The source file its pattern was found in, when built. */
+  evidence?: string;
+}
+
+/** A real site or sample in the core repository. */
+export interface Example {
+  id: string;
+  path: string;
+  name: string;
+  /** The layer uses in its scene, items included. */
+  layers: string[];
+  steps: number;
+  custom: string[];
+  about: string;
 }
 
 /** Keys allowed at each path of site.json, read from mrs-site's manifest structs. "layers[]" is a layer entry. */
@@ -52,6 +66,8 @@ export interface Catalog {
   changelog?: string;
   /** Release notes merged since the last version, waiting in changes/ (live checkouts only). */
   pending?: string[];
+  /** Sites and samples in the core repository. */
+  examples?: Example[];
 }
 
 /** The released versions in CHANGELOG.md, newest first, each with its text. */
@@ -129,6 +145,10 @@ function findUp(start: string): string | null {
   }
 }
 
+function rel(root: string, path: string): string {
+  return relative(root, path).replace(/\\/g, '/');
+}
+
 function readJson(path: string): any {
   return JSON.parse(readFileSync(path, 'utf8'));
 }
@@ -198,7 +218,7 @@ export function parseRoadmap(text: string): RoadmapRow[] {
     };
     const kernel = col('kernel');
     const pkg = col('package').replace(/`/g, '');
-    const built = /^built$/i.test(section) || /\(built\)/.test(kernel);
+    const built = /^built$/i.test(section) || /\(built\b/.test(kernel);
     rows.push({ section, layer: cells[0] ?? '', kernel, blocks: col('blocks') || col('notes'), built, ...(pkg ? { package: pkg } : {}) });
   }
   return rows;
@@ -228,11 +248,40 @@ export function loadLive(root: string): Catalog {
 
   const kernels = subdirs(join(root, 'crates', 'mrs-engine', 'src', 'kernels'));
 
-  const sources = ['sdk', 'runtime', 'dashboard']
+  const sourceFiles = ['sdk', 'runtime', 'dashboard']
     .flatMap((p) => walkFiles(join(root, 'packages', p, 'src'), /\.ts$/))
-    .map((p) => readFileSync(p, 'utf8'))
-    .join('\n');
-  const blocks: Block[] = BLOCKS.map((b) => ({ ...b, status: new RegExp(b.detect).test(sources) ? 'built' : 'planned' }));
+    .map((p) => ({ path: rel(root, p), text: readFileSync(p, 'utf8') }));
+  // A block is built when its pattern is in the source; the first file it is found in is the evidence.
+  const blocks: Block[] = BLOCKS.map((b) => {
+    const re = new RegExp(b.detect);
+    const hit = sourceFiles.find((f) => re.test(f.text));
+    return { ...b, status: hit ? 'built' : 'planned', ...(hit ? { evidence: hit.path } : {}) };
+  });
+
+  // Real sites and samples, as examples of what a layer looks like in use.
+  const examples: Example[] = [];
+  for (const base of ['sites', 'samples']) {
+    for (const name of subdirs(join(root, base))) {
+      const path = join(root, base, name, 'site.json');
+      if (!existsSync(path)) continue;
+      try {
+        const m = readJson(path);
+        const uses = (Array.isArray(m.layers) ? m.layers : []).flatMap((l: any) => [l?.use, ...(Array.isArray(l?.items) ? l.items.map((i: any) => i?.use) : [])]).filter((u: unknown): u is string => typeof u === 'string');
+        const readme = join(root, base, name, 'README.md');
+        examples.push({
+          id: name,
+          path: `${base}/${name}`,
+          name: String(m.name ?? name),
+          layers: [...new Set<string>(uses)],
+          steps: (Array.isArray(m.layers) ? m.layers : []).filter((l: any) => Array.isArray(l?.steps?.sequence)).reduce((n: number, l: any) => n + l.steps.sequence.length, 0),
+          custom: Object.keys(m.custom ?? {}),
+          about: existsSync(readme) ? readFileSync(readme, 'utf8').split(/\r?\n\r?\n/).find((p) => p.trim() && !p.startsWith('#'))?.trim().slice(0, 400) ?? '' : '',
+        });
+      } catch {
+        // A broken sample is not an example.
+      }
+    }
+  }
 
   const roadmap = parseRoadmap(docs['roadmap'] ?? '');
   const layerNames = new Set(layers.map((l) => String(l.manifest.name ?? '').toLowerCase()));
@@ -261,6 +310,7 @@ export function loadLive(root: string): Catalog {
     siteSchema,
     changelog,
     pending,
+    examples,
   };
 }
 

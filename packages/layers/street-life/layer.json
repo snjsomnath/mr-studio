@@ -3,6 +3,7 @@
   "id": "street-life",
   "name": "Street life",
   "description": "Walkers on the footways and paths, cyclists on the cycleways and warm streetlights along the main streets",
+  "about": {"purpose": "Fills the site with walkers, cyclists and streetlights, an ambient sense of public life.", "questions": ["Where do people walk and cycle?", "How lively does the place feel?"], "pairs_with": ["cars", "building-lights", "trees"], "limits": ["Needs a roads dataset", "People are simulated, not counted"]},
   "icon": "footprints",
   "category": "ambient",
   "requires": { "data": ["roads"] },

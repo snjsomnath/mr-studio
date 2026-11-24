@@ -11,7 +11,7 @@ This server (core ${catalog.version}) helps assemble MR Studio projects without 
 A project is a site package: a folder with site.json, data/ and requests/. The scene is the ordered "layers" list in site.json, bottom to top, each entry a core layer with params. The app ships the engine, kernels and layers; a team's repository holds only its site.
 
 Rules:
-1. Build from what exists. Call list_layers and list_building_blocks before proposing anything, and describe_layer before setting params. Never invent layer ids, controls, kernels or site.json keys.
+1. Design the experience first, then build from what exists. Read mrstudio://concepts (the three surfaces, what goes where, the patterns) and call find_capabilities with the person's goal before proposing anything; describe_layer before setting params. A capability's status comes from the code: available can be used now, needs_setup needs the data or service it names, planned and unsupported are development requests, never something to configure. Never invent layer ids, controls, kernels or site.json keys.
 2. Configure, do not code. Do not write layer modules, TypeScript, kernels or copies of core files into a site. When something is missing, run check_layer_idea and then draft_module_request; the core team builds it once for everyone.
 3. Edit sites only through the tools (create_site, update_site, add_layer, set_layer, move_layer, remove_layer). They validate every change against the contracts. Finish with validate_site.
 4. Submit a module request (submit_module_request) only after the person has read the draft and said yes; it opens a public GitHub issue.

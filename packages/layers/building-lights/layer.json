@@ -3,6 +3,7 @@
   "id": "building-lights",
   "name": "Building lights",
   "description": "Lit windows along the facades that come on and go off",
+  "about": {"purpose": "Makes the model feel inhabited at dusk and night, and sets a mood between analyses.", "questions": ["How does the place feel after dark?"], "pairs_with": ["street-life", "trees", "sunlight"], "limits": ["Needs building footprints", "Windows are suggested, not real occupancy data"]},
   "icon": "lightbulb",
   "category": "ambient",
   "requires": { "data": ["buildings"] },
