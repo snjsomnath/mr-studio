@@ -14,6 +14,7 @@ mod mesh;
 pub mod migrate;
 pub mod model;
 pub mod osm;
+pub mod plan;
 pub mod package;
 mod projection;
 pub mod sound;

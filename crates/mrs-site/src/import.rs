@@ -303,6 +303,10 @@ pub fn inspect(site: &Site, target: &Target, filename: &str, bytes: &[u8], optio
         return trips(site, target, &text, issues);
     }
 
+    if is_drawing(filename, &text) {
+        return drawing(site, target, &text, issues);
+    }
+
     // Features in the file's own coordinates.
     let (mut features, declared) = match read_features(&text, filename, &mut issues) {
         Ok(read) => read,
@@ -567,6 +571,83 @@ fn point_at(document: &mut Value, target: &Target, path: &str, height_property: 
             }
             document["data"][other.name()] = json!(path);
         }
+    }
+}
+
+// ---- Plan drawings (#193) -------------------------------------------------------
+
+/// An SVG file, by its name or its first element.
+fn is_drawing(filename: &str, text: &str) -> bool {
+    let start = text.trim_start();
+    filename.to_ascii_lowercase().ends_with(".svg")
+        || start.starts_with("<svg")
+        || (start.starts_with("<?xml") && start.get(..2048).unwrap_or(start).contains("<svg"))
+}
+
+/// A plan drawing over the table, whose groups a table reveals one at a time: `data/<name>.svg`.
+fn drawing(site: &Site, target: &Target, text: &str, mut issues: Vec<Issue>) -> Prepared {
+    let refused = |issues: Vec<Issue>, summary: &str| Prepared {
+        target: target.clone(),
+        report: Report { issues, ..Report::refused(target, "", "", summary) },
+        content: None,
+        terrain_crs: None,
+        file: None,
+    };
+    let Target::Data(name) = target else {
+        let message = format!("A drawing can't be {}. Add it as a dataset of its own, such as \"masterplan\".", target.noun().1);
+        return refused(vec![Issue::new("plan.target", Severity::Blocker, message)], "A drawing, not data.");
+    };
+    let plan = match crate::plan::read(text) {
+        Ok(plan) => plan,
+        Err(message) => {
+            issues.push(Issue::new("plan.unreadable", Severity::Blocker, message));
+            return refused(issues, "Not a drawing MR Studio can show.");
+        }
+    };
+    let (w, h) = plan.size;
+    let (tw, th) = (site.manifest.extent.width_m, site.manifest.extent.height_m);
+    let off = ((w / h) / (tw / th) - 1.0).abs();
+    if off > 0.03 {
+        let message = format!(
+            "The drawing is {} by {} and the table {} by {} m, a different shape, so it is stretched {} to cover the table.",
+            w.round(),
+            h.round(),
+            tw.round(),
+            th.round(),
+            if w / h > tw / th { "taller" } else { "wider" }
+        );
+        issues.push(Issue::new("plan.shape", Severity::Warning, message));
+    }
+    if !plan.removed.is_empty() {
+        let message = format!("Taken out so the drawing can only draw: {}.", plan.removed.join(", "));
+        issues.push(Issue::new("plan.cleaned", Severity::Note, message));
+    }
+    issues.push(Issue::new(
+        "plan.cover",
+        Severity::Note,
+        "The drawing covers the whole table, its top along the table's top. Each group is a phase that Next reveals.",
+    ));
+    let names: Vec<&str> = plan.phases.iter().map(|p| p.name.as_str()).collect();
+    let count = plan.phases.len();
+    let summary = format!("A plan in {count} {}: {}", if count == 1 { "phase" } else { "phases" }, names.join(", "));
+    Prepared {
+        target: target.clone(),
+        report: Report {
+            ok: true,
+            target: name.clone(),
+            summary,
+            count,
+            inside: count,
+            outside: 0,
+            crs: None,
+            height_property: None,
+            issues,
+            preview: None,
+            path: None,
+        },
+        content: Some(plan.svg.into_bytes()),
+        terrain_crs: None,
+        file: Some(format!("data/{name}.svg")),
     }
 }
 
@@ -892,7 +973,10 @@ fn table(site: &Site, target: &Target, text: &str, mut issues: Vec<Issue>) -> Pr
     let mut out = header.iter().map(|h| quote(h)).collect::<Vec<_>>().join(",");
     out.push('\n');
     for row in &rows {
-        let line = (0..header.len()).map(|i| quote(&cell(row.get(i).map(String::as_str).unwrap_or(""), &mut comma_used))).collect::<Vec<_>>().join(",");
+        let line = (0..header.len())
+            .map(|i| quote(&cell(row.get(i).map(String::as_str).unwrap_or(""), &mut comma_used)))
+            .collect::<Vec<_>>()
+            .join(",");
         out.push_str(&line);
         out.push('\n');
     }
@@ -1487,6 +1571,41 @@ mod tests {
         // Column names alone are not a table.
         let empty = inspect(&site2, &Target::Data("flows".into()), "flows.csv", b"from,to,weight\n", Options::default()).report;
         assert!(!empty.ok);
+        std::fs::remove_dir_all(&site.dir).unwrap();
+    }
+
+    #[test]
+    fn a_plan_drawing_lands_as_svg_with_its_phases() {
+        let site = scratch("plan");
+        let drawing = br##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 600"><script>alert(1)</script>
+            <g id="boundary"><path d="M0 0H10" stroke="#e03131"/></g><g id="green_spaces"><rect width="5" height="5" fill="#2f9e44"/></g></svg>"##;
+        let prepared = inspect(&site, &Target::Data("masterplan".into()), "campus.svg", drawing, Options::default());
+        let report = &prepared.report;
+        assert!(report.ok, "{:?}", report.issues);
+        assert_eq!(report.summary, "A plan in 2 phases: Boundary, Green spaces");
+        assert!(report.issues.iter().any(|i| i.code == "plan.cleaned"));
+        assert!(!report.issues.iter().any(|i| i.code == "plan.shape"), "1000 by 600 is the sample table's shape");
+        let (site2, report) = apply(&site, prepared).unwrap();
+        assert_eq!(report.path.as_deref(), Some("data/masterplan.svg"));
+        assert_eq!(site2.data()["masterplan"], "data/masterplan.svg");
+        let written = std::fs::read_to_string(site.dir.join("data/masterplan.svg")).unwrap();
+        assert!(written.contains(r#"data-mrs-name="Green spaces""#) && !written.contains("alert"));
+
+        // Another shape is stretched, and said so; a drawing is never buildings.
+        let square = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><g id="a"><path d="M0 0"/></g></svg>"#;
+        let r = inspect(&site2, &Target::Data("square".into()), "square.svg", square, Options::default()).report;
+        assert!(r.ok && r.issues.iter().any(|i| i.code == "plan.shape" && i.message.contains("wider")), "{:?}", r.issues);
+        let r = inspect(&site2, &Target::Buildings, "square.svg", square, Options::default()).report;
+        assert!(!r.ok && r.issues[0].code == "plan.target");
+        let r = inspect(
+            &site2,
+            &Target::Data("flat".into()),
+            "flat.svg",
+            br#"<svg viewBox="0 0 10 10"><path d="M0 0"/></svg>"#,
+            Options::default(),
+        )
+        .report;
+        assert!(!r.ok && r.issues[0].code == "plan.unreadable");
         std::fs::remove_dir_all(&site.dir).unwrap();
     }
 
