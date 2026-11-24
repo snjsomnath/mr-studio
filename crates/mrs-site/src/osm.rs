@@ -17,6 +17,8 @@ const MARGIN: f64 = 0.1;
 /// The road classes traffic drives on.
 const STREETS: &str = "motorway|motorway_link|trunk|trunk_link|primary|primary_link|secondary|secondary_link|tertiary|tertiary_link|unclassified|residential|living_street|service";
 /// The paths people walk on.
+const WATER_WAY: &str = "way[\"natural\"=\"water\"]";
+const WATER_RELATION: &str = "relation[\"natural\"=\"water\"][\"type\"=\"multipolygon\"]";
 const WALKWAYS: &str = "footway|path|pedestrian|steps|living_street|cycleway|track|residential|service|unclassified";
 
 /// What OpenStreetMap can give a table.
@@ -26,6 +28,8 @@ pub enum OsmLayer {
     Trees,
     Walkways,
     Streets,
+    /// Rivers, lakes and harbour basins mapped as areas (#343).
+    Water,
 }
 
 impl OsmLayer {
@@ -35,10 +39,11 @@ impl OsmLayer {
             Target::Buildings => Ok(Self::Buildings),
             Target::Trees => Ok(Self::Trees),
             Target::Walkways => Ok(Self::Walkways),
+            Target::Water => Ok(Self::Water),
             Target::Data(name) if name == "roads" || name == "streets" => Ok(Self::Streets),
             Target::Trips => Err("OpenStreetMap has no trips; they come from a travel survey or a simulation".into()),
             Target::Terrain => Err("OpenStreetMap has no ground heights; use a terrain GeoTIFF".into()),
-            Target::Data(name) => Err(format!("OpenStreetMap can fill buildings, trees, walkways and roads, not '{name}'")),
+            Target::Data(name) => Err(format!("OpenStreetMap can fill buildings, trees, water, walkways and roads, not '{name}'")),
         }
     }
 
@@ -48,6 +53,7 @@ impl OsmLayer {
             Self::Trees => "trees",
             Self::Walkways => "walkways",
             Self::Streets => "streets",
+            Self::Water => "water areas",
         }
     }
 }
@@ -72,6 +78,7 @@ pub fn query(layer: OsmLayer, bounds: [f64; 4]) -> String {
         OsmLayer::Trees => format!("node[\"natural\"=\"tree\"]{b};out;"),
         OsmLayer::Walkways => format!("way[\"highway\"~\"^({WALKWAYS})$\"]{b};out geom;"),
         OsmLayer::Streets => format!("way[\"highway\"~\"^({STREETS})$\"]{b};out geom;"),
+        OsmLayer::Water => format!("({WATER_WAY}{b};{WATER_RELATION}{b};way[\"waterway\"=\"riverbank\"]{b};);out geom;"),
     };
     format!("[out:json][timeout:90];{body}")
 }
@@ -84,6 +91,9 @@ pub fn query_all(layers: &[OsmLayer], bounds: [f64; 4]) -> String {
     let mut parts = String::new();
     if layers.contains(&OsmLayer::Buildings) {
         parts.push_str(&format!("way[\"building\"]{b};relation[\"building\"][\"type\"=\"multipolygon\"]{b};"));
+    }
+    if layers.contains(&OsmLayer::Water) {
+        parts.push_str(&format!("{WATER_WAY}{b};{WATER_RELATION}{b};way[\"waterway\"=\"riverbank\"]{b};"));
     }
     if layers.contains(&OsmLayer::Trees) {
         parts.push_str(&format!("node[\"natural\"=\"tree\"]{b};"));
@@ -113,6 +123,7 @@ fn belongs(layer: OsmLayer, element: &Value) -> bool {
         (OsmLayer::Buildings, Some("way")) => tags.get("building").is_some(),
         (OsmLayer::Buildings, Some("relation")) => tags.get("building").is_some(),
         (OsmLayer::Trees, Some("node")) => tags["natural"] == "tree",
+        (OsmLayer::Water, Some("way" | "relation")) => tags["natural"] == "water" || tags["waterway"] == "riverbank",
         (OsmLayer::Walkways, Some("way")) => highway(WALKWAYS),
         (OsmLayer::Streets, Some("way")) => highway(STREETS),
         _ => false,
@@ -135,14 +146,14 @@ pub fn to_geojson(layer: OsmLayer, answer: &Value, fetched: &str) -> Value {
                 let (Some(lon), Some(lat)) = (element["lon"].as_f64(), element["lat"].as_f64()) else { continue };
                 json!({ "type": "Point", "coordinates": [lon, lat] })
             }
-            (OsmLayer::Buildings, Some("way")) => {
+            (OsmLayer::Buildings | OsmLayer::Water, Some("way")) => {
                 let ring = line(&element["geometry"]);
                 if ring.len() < 4 || ring.first() != ring.last() {
                     continue;
                 }
                 json!({ "type": "Polygon", "coordinates": [ring] })
             }
-            (OsmLayer::Buildings, Some("relation")) => {
+            (OsmLayer::Buildings | OsmLayer::Water, Some("relation")) => {
                 let Some(polygons) = multipolygon(&element["members"]) else { continue };
                 json!({ "type": "MultiPolygon", "coordinates": polygons })
             }

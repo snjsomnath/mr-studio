@@ -13,12 +13,14 @@ pub struct SceneData {
     pub dsm: Vec<f32>,
     /// Tree canopy height above ground, 0 where there is none.
     pub canopy: Vec<f32>,
+    /// 1 where the ground is water (a river, a lake, the sea), else 0 (#343).
+    pub water: Vec<u8>,
 }
 
 impl SceneData {
     pub fn flat(grid: Grid) -> Self {
         let n = grid.len();
-        Self { grid, dtm: vec![0.0; n], dsm: vec![0.0; n], canopy: vec![0.0; n] }
+        Self { grid, dtm: vec![0.0; n], dsm: vec![0.0; n], canopy: vec![0.0; n], water: vec![0; n] }
     }
 }
 
@@ -34,6 +36,8 @@ pub struct Scene {
     pub dtm: Vec<f32>,
     pub dsm: Vec<f32>,
     pub canopy: Vec<f32>,
+    /// 1 where the ground is water.
+    pub water: Vec<u8>,
     /// Highest point of the top surface or canopy.
     pub max_height: f32,
     /// Lowest point of the top surface.
@@ -56,6 +60,9 @@ impl Scene {
                 return Err(EngineError::InvalidScene(format!("{name} contains non-finite values")));
             }
         }
+        if data.water.len() != n {
+            return Err(EngineError::InvalidScene(format!("water has {} values, grid has {n}", data.water.len())));
+        }
         let (mut max_height, mut min_height) = (f32::MIN, f32::MAX);
         for i in 0..n {
             max_height = max_height.max(data.dsm[i]).max(data.dtm[i] + data.canopy[i]);
@@ -66,7 +73,17 @@ impl Scene {
             dsm: gpu.storage_f32("scene.dsm", &data.dsm),
             canopy: gpu.storage_f32("scene.canopy", &data.canopy),
         });
-        Ok(Self { grid: data.grid, dtm: data.dtm, dsm: data.dsm, canopy: data.canopy, max_height, min_height, revision, gpu })
+        Ok(Self {
+            grid: data.grid,
+            dtm: data.dtm,
+            dsm: data.dsm,
+            canopy: data.canopy,
+            water: data.water,
+            max_height,
+            min_height,
+            revision,
+            gpu,
+        })
     }
 
     pub fn is_solid(&self, index: usize) -> bool {

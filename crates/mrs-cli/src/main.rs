@@ -133,6 +133,9 @@ enum DataCommand {
         /// Read the first coordinate as latitude.
         #[arg(long)]
         swap: bool,
+        /// The terrain has the buildings raised in it: set the ground under them back.
+        #[arg(long)]
+        flatten: bool,
         /// The coordinate system of a terrain GeoTIFF that does not say, such as EPSG:3006.
         #[arg(long)]
         crs: Option<String>,
@@ -326,6 +329,12 @@ fn validate(dir: &Path) -> anyhow::Result<(Site, mrs_engine::SceneData)> {
         println!("  terrain    {} cells are outside the terrain raster and took its lowest elevation", stats.terrain_missing_cells);
     }
     println!("  trees      {}", stats.trees);
+    if site.manifest.scene.water.is_some() {
+        println!("  water      {:.1}% of cells", stats.water_fraction * 100.0);
+    }
+    if stats.terrain_flattened_cells > 0 {
+        println!("  terrain    {} cells under footprints set to the ground beside them", stats.terrain_flattened_cells);
+    }
     println!("  built area {:.1}% of cells, highest point {:.1} m", stats.solid_fraction * 100.0, stats.max_height_m);
     let layer = |l: &mrs_site::LayerRef| {
         let name = if l.id == mrs_site::LayerRef::default_id(&l.r#use) { l.id.clone() } else { format!("{} ({})", l.id, l.r#use) };
@@ -443,7 +452,7 @@ async fn data(action: DataCommand) -> anyhow::Result<()> {
         std::process::exit(1);
     };
     match action {
-        DataCommand::Add { site, target, file, osm, elevation, write, crop, swap, crs, json } => {
+        DataCommand::Add { site, target, file, osm, elevation, write, crop, swap, flatten, crs, json } => {
             let parsed = Target::parse(&target).map_err(anyhow::Error::msg)?;
             let crs = match crs.as_deref().map(|c| c.trim().trim_start_matches("EPSG:").trim_start_matches("epsg:").parse::<u32>()) {
                 None => None,
@@ -470,7 +479,7 @@ async fn data(action: DataCommand) -> anyhow::Result<()> {
             };
             let site_dir = site.clone();
             let mut report = tokio::task::spawn_blocking(move || {
-                mrs_host::data::import_file(&site_dir, &target, &filename, &bytes, Options { crop, swap, crs }, write)
+                mrs_host::data::import_file(&site_dir, &target, &filename, &bytes, Options { crop, swap, crs, flatten }, write)
             })
             .await?
             .map_err(anyhow::Error::msg)?;

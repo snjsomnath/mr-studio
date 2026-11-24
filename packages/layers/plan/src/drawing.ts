@@ -19,6 +19,8 @@ export interface Params {
   finale: boolean;
   hover: boolean;
   corners: string;
+  /** Quarter turns the drawing is shown at, in degrees clockwise: "0", "90", "180" or "270". */
+  turn: string;
   motion: 'roles' | 'none';
   role_s: number;
   opacity: number;

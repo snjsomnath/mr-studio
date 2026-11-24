@@ -103,7 +103,15 @@ pub fn on_grid(raster: &GeoRaster, grid: Grid, projection: &Projection) -> GridF
 /// Reads a dataset (for `hour`, when it is a folder of hourly rasters) onto the site grid.
 pub fn read(site: &Site, name: &str, hour: Option<u32>) -> Result<Option<GridField>, String> {
     let Some(path) = dataset_file(site, name, hour)? else { return Ok(None) };
-    let raster = GeoRaster::read(&path, None).map_err(|e| format!("{}: {e}", path.display()))?;
+    // The scene's rasters may name their coordinate system in site.json, for files that do not.
+    let scene = &site.manifest.scene;
+    let crs = match name {
+        "water" => scene.water.as_ref().and_then(|w| w.crs.as_deref()),
+        "terrain" => scene.terrain.as_ref().and_then(|t| t.crs.as_deref()),
+        _ => None,
+    }
+    .and_then(crate::Crs::parse);
+    let raster = GeoRaster::read(&path, crs).map_err(|e| format!("{}: {e}", path.display()))?;
     Ok(Some(on_grid(&raster, site.grid(), &site.projection())))
 }
 

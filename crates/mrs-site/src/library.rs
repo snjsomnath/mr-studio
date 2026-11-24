@@ -66,6 +66,9 @@ pub fn list(site: &Site) -> Vec<Item> {
     if let Some(t) = &scene.trees {
         named.push(("trees".into(), t.path.clone()));
     }
+    if let Some(w) = &scene.water {
+        named.push(("water".into(), w.path.clone()));
+    }
     for (name, path) in &site.manifest.data {
         if !named.iter().any(|(n, _)| n == name) {
             named.push((name.clone(), path.clone()));
@@ -74,7 +77,12 @@ pub fn list(site: &Site) -> Vec<Item> {
     named.sort();
     for (name, path) in &named {
         let path = path.trim_start_matches("./").to_string();
-        let kind = if dir.join(&path).is_dir() || name == "terrain" { "raster" } else { kind_of(&path, Some(name)) };
+        let kind =
+            if dir.join(&path).is_dir() || name == "terrain" || (name == "water" && scene.water.as_ref().is_some_and(|w| w.is_geotiff())) {
+                "raster"
+            } else {
+                kind_of(&path, Some(name))
+            };
         out.push(item(dir, kind, Some(name.clone()), path));
     }
     let named: std::collections::HashSet<String> = out.iter().map(|i| i.path.clone()).collect();

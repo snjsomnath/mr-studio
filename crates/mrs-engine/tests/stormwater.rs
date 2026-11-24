@@ -104,6 +104,30 @@ fn rain_into_a_bowl_conserves_water_and_pools_at_the_bottom() {
 }
 
 #[test]
+fn a_lake_takes_the_runoff_and_stays_off_the_flood_map() {
+    // The walled bowl again, but its bottom is a lake (#343): what runs into it is gone.
+    let mut scene = bowl(64);
+    for i in 0..64usize {
+        for n in [i, 63 * 64 + i, i * 64, i * 64 + 63] {
+            scene.dsm[n] = scene.dtm[n] + 10.0;
+        }
+    }
+    for row in 24..40usize {
+        for col in 24..40usize {
+            scene.water[row * 64 + col] = 1;
+        }
+    }
+    let mut engine = engine(Backend::Cpu, scene).unwrap();
+    let job = engine.create_job("stormwater", &fast(json!({ "rain_mm_h": 100, "resolution": 64, "roofs": false }))).unwrap();
+    run_exactly(&mut engine, job, 2000);
+    let depth = engine.read_field(job, "depth").unwrap();
+    assert_eq!(at(&depth, 32, 32), 0.0, "the lake is not flooded ground");
+    let status = engine.step(job, Duration::ZERO).unwrap();
+    let fallen = status.info["rain_m3"].as_f64().unwrap() as f32;
+    assert!(volume(&depth, 2.0) < 0.5 * fallen, "most of the rain should have run into the lake");
+}
+
+#[test]
 fn water_runs_downhill_and_leaves_at_the_edge() {
     // Falls 1 m in 20 towards the right of the table.
     let scene = ground(80, 40, 2.0, |x, _| 8.0 - 0.1 * x);

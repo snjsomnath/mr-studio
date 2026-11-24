@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { apply, batchProgress, growRadius, invert, multiply, openingAt, parseCorners, parseTransform, placement, shapePath, stagedWeight, traceBucket } from '../src/drawing-reveal.ts';
+import { apply, batchProgress, formatCorners, growRadius, invert, multiply, openingAt, parseCorners, parseTransform, placement, shapePath, stagedWeight, traceBucket, turnCorners } from '../src/drawing-reveal.ts';
 
 const near = (a: number, b: number) => Math.abs(a - b) < 1e-9;
 
@@ -57,6 +57,20 @@ test('a drawing is stretched over the table or placed by its corners', () => {
   assert.equal(parseCorners(''), null);
   assert.equal(parseCorners('1,2; 3,4'), null);
   assert.equal(growRadius([0, 0], [0, 0, 3, 4]), 5);
+});
+
+test('a drawing shown turned is placed by its own corners (#301)', () => {
+  // Shown a quarter turn clockwise in a 600 wide, 1000 tall frame: drawn 1000 wide and 600 tall.
+  const shown: [number, number][] = [[0, 0], [600, 0], [0, 1000]];
+  const placed = placement({ width: 1, height: 1 }, turnCorners(shown, 1));
+  // The drawing's top left is the frame's top right, its top right the frame's bottom right.
+  assert.deepEqual(apply(placed, [0, 0]), [600, 0]);
+  assert.deepEqual(apply(placed, [1, 0]), [600, 1000]);
+  assert.deepEqual(apply(placed, [0, 1]), [0, 0]);
+  assert.deepEqual(apply(placement({ width: 1, height: 1 }, turnCorners(shown, 2)), [0, 0]), [600, 1000]);
+  assert.deepEqual(apply(placement({ width: 1, height: 1 }, turnCorners(shown, 3)), [0, 0]), [0, 1000]);
+  assert.deepEqual(turnCorners(shown, 4), shown);
+  assert.equal(formatCorners([[11.96832512, 57.6954681]]), '11.9683251,57.6954681');
 });
 
 test('staged weights: a masterplan keeps its phases, viewpoints dim the earlier ones', () => {

@@ -26,7 +26,8 @@ import { pickScheme, schemeColour, schemeOrder } from './schemes.ts';
 import { SOUND_DEFAULTS, SoundStage, soundLabel, soundPath } from './audio.ts';
 import type { SoundProps } from './audio.ts';
 import type { PlaceExtras, PlaceTables } from './places.ts';
-import { placeMotion, placeUnit } from './place-motions.ts';
+import { ARRIVAL_S, placeMotion, placeUnit } from './place-motions.ts';
+import type { PlaceStage } from './place-motions.ts';
 import { NETWORK_DEFAULTS, networkData, networkLook, networkPosition } from './networks.ts';
 import type { NetworkInputs, NetworkProps } from './networks.ts';
 import type { CustomLayer, LegendItem, RecipeBlock, SiteInfo } from './types.ts';
@@ -200,9 +201,11 @@ export interface PlaceProps {
   cycle_s: number;
   /** One palette colour each, by category, or one slot for all. */
   colours: string;
+  /** Next steps it (#341): first the places appear one by one, then the motion starts. */
+  reveal: boolean;
   [knob: string]: unknown;
 }
-export const PLACE_DEFAULTS: PlaceProps = { motion: 'ripples', streets: 'roads', buildings: 'buildings', targets: null, activity: null, flows: null, links: null, cycle_s: 24, colours: 'each' };
+export const PLACE_DEFAULTS: PlaceProps = { motion: 'ripples', streets: 'roads', buildings: 'buildings', targets: null, activity: null, flows: null, links: null, cycle_s: 24, colours: 'each', reveal: false };
 
 export const MOTION_DEFAULTS = {
   pulse: { period_s: 2, size_mm: 14, rings: 2, direction: 1 } satisfies PulseProps,
@@ -514,7 +517,7 @@ export interface LookMotion {
   /** `position` holds the sweep where the controller put it (a share of the span), or null to play. */
   timeline?: Partial<TimelineProps> & { position?: TimelinePosition };
   /** A place motion (#161-163): `extras` and `tables` are its other files, loaded by whoever draws the recipe. */
-  place?: Partial<PlaceProps> & { extras?: PlaceExtras; tables?: PlaceTables; frame?: { width: number; height: number } };
+  place?: Partial<PlaceProps> & { extras?: PlaceExtras; tables?: PlaceTables; frame?: { width: number; height: number }; stage?: () => PlaceStage };
   /** Sound on points (#150). `stage` plays the sounds; whoever draws the recipe owns it and stops it. */
   sound?: Partial<SoundProps> & { stage?: SoundStage };
   /**
@@ -560,6 +563,8 @@ export function compileLook(block: RecipeBlock, shapes: Shapes, palette: Resolve
     const attract = motion.attract ? attractCrowd(shapes.spots, paint, { ...MOTION_DEFAULTS.attract, ...motion.attract }, mm) : null;
     const walkers = motion.gravity ? streetCrowd(shapes.spots, paint, { ...MOTION_DEFAULTS.gravity, ...motion.gravity }, motion.gravity.streets, mm) : null;
     const place = motion.place ? placeLook(shapes, motion.place, palette, mm) : null;
+    // A place motion that steps shows its places only as they arrive (#341).
+    const arrive = place?.stage ? placeArrivals(shapes.spots, place.stage) : null;
     const sound = motion.sound ? soundLook(shapes, motion.sound, paint, radius, mm) : null;
     const network = motion.network ? networkLook(networkData(shapes.spots, motion.network.inputs ?? {}, motion.network), motion.network, palette, mm, (i) => paint.colour(shapes.spots[i]!.properties)) : null;
     const stepSeconds = Number(motion.network?.step_s) || NETWORK_DEFAULTS.step_s;
@@ -578,7 +583,7 @@ export function compileLook(block: RecipeBlock, shapes: Shapes, palette: Resolve
         sound?.draw(view, time, alpha);
         attract?.draw(view, time, alpha);
         walkers?.draw(view, time, alpha);
-        drawPoints(view, shapes.spots, { paint, radius, props, stroke, pulse, px: (m) => px(view, m), time, alpha, timeline: reveal });
+        drawPoints(view, shapes.spots, { paint, radius, props, stroke, pulse, px: (m) => px(view, m), time, alpha, timeline: arrive ?? reveal });
       },
     };
   }
@@ -1125,7 +1130,23 @@ function placeLook(shapes: Shapes, motion: NonNullable<LookMotion['place']>, pal
   const data = placeData(shapes.spots, { colours: o.colours }, motion.tables ?? {}, motion.extras ?? {}, palette, frame, Number(o.cycle_s) || 24);
   const knobs: Record<string, number> = {};
   for (const [k, v] of Object.entries(o)) if (typeof v === 'number') knobs[k] = v;
-  return def.create({ data, props: knobs, u: placeUnit(mm), palette });
+  const stage = o.reveal && motion.stage ? motion.stage : undefined;
+  return { ...def.create({ data, props: knobs, u: placeUnit(mm), palette, stage }), stage };
+}
+
+/** The look's points, each shown from the moment its place arrives while a place motion steps (#341). */
+function placeArrivals(spots: readonly Spot[], stage: () => PlaceStage): TimeReveal {
+  const order = new Map(spots.map((s, i) => [s.properties, i]));
+  return {
+    at(props, time) {
+      const { revealed, since } = stage();
+      if (revealed >= 2) return { alpha: 1, fresh: 0 };
+      if (revealed < 1) return { alpha: 0, fresh: 0 };
+      const age = time - since - (order.get(props as Props) ?? 0) * ARRIVAL_S;
+      return age < 0 ? { alpha: 0, fresh: 0 } : { alpha: Math.min(1, age / 0.4), fresh: Math.max(0, 1 - age / 1.2) };
+    },
+    share: () => 0,
+  };
 }
 
 // ---- Sound on points (#150) ---------------------------------------------------------

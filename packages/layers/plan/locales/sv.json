@@ -31,5 +31,10 @@
   "Parts of the drawing": "Delarna i ritningen",
   "Move by what they are, when the drawing names them": "Rör sig efter vad de är, när ritningen namnger dem",
   "Appear as they are": "Visas som de är",
-  "Seconds a phase takes to come to life": "Sekunder det tar för en etapp att vakna till liv"
+  "Seconds a phase takes to come to life": "Sekunder det tar för en etapp att vakna till liv",
+  "Turn the drawing": "Vrid ritningen",
+  "As it is drawn": "Som den är ritad",
+  "A quarter turn clockwise": "Ett kvarts varv medurs",
+  "Half a turn": "Ett halvt varv",
+  "A quarter turn anticlockwise": "Ett kvarts varv moturs"
 }

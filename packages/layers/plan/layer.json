@@ -46,6 +46,15 @@
     { "id": "later", "type": "range", "label": "Phases still to come show", "min": 0, "max": 0.5, "step": 0.02, "default": 0.12, "tier": "more" },
     { "id": "finale", "type": "toggle", "label": "End with every phase together", "default": false, "tier": "more" },
     { "id": "hover", "type": "toggle", "label": "Pointing at a phase lights it", "default": true, "tier": "more" },
+    {
+      "id": "turn", "type": "select", "label": "Turn the drawing", "default": "0", "tier": "more",
+      "options": [
+        { "value": "0", "label": "As it is drawn" },
+        { "value": "90", "label": "A quarter turn clockwise" },
+        { "value": "180", "label": "Half a turn" },
+        { "value": "270", "label": "A quarter turn anticlockwise" }
+      ]
+    },
     { "id": "corners", "type": "text", "label": "Place by its corners (lon,lat of top left; top right; bottom left), empty to fill the table", "default": "", "tier": "more" },
     {
       "id": "motion", "type": "select", "label": "Parts of the drawing", "default": "roles", "tier": "more",

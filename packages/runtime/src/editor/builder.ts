@@ -1200,7 +1200,9 @@ export function builderSection(host: BuilderHost, manifest: LayerManifest, butto
     if (def.data === 'links') choose('Links', 'links', csvs, 'By category', [...own('links'), 'links']);
     rows.push(field('Colours', segmented([['each', 'One each'], ['category', 'By category']] as const, p.colours === 'category' ? 'category' : 'each', (v) => set('colours', v), 'Colours')));
 
-    // Knobs: the shared speed and glow, then the motion's own.
+    // Next steps it (#341): the places appear one by one, then the motion starts, as in the old Cultural Gravity.
+    rows.push(field('Next shows the places, then starts it', toggle(p.reveal === true, (on) => set('reveal', on), 'Next shows the places, then starts the motion')));
+    // Knobs: the shared speed, glow and scale (fitted to the places' spacing, #341), then the motion's own.
     for (const knob of [...SHARED_KNOBS, ...def.knobs]) rows.push(field(knob.label, slider(p[knob.key] ?? knob.value, knob.min, knob.max, knob.step, knob.unit ?? '', (v) => set(knob.key, v))));
     return rows;
   };

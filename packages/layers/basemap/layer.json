@@ -29,6 +29,7 @@
     { "id": "streets", "type": "toggle", "label": "Streets", "default": true, "visibleWhen": { "style": "dark" } },
     { "id": "streetColor", "type": "color", "label": "Street colour", "default": "#1b2233", "visibleWhen": { "style": "dark", "streets": true } },
     { "id": "buildingColor", "type": "color", "label": "Buildings", "default": "#232b3d", "visibleWhen": { "style": "dark" } },
+    { "id": "waterColor", "type": "color", "label": "Water", "default": "#0d1a2c", "visibleWhen": { "style": "dark" } },
     { "id": "outlines", "type": "toggle", "label": "Building outlines", "default": true, "visibleWhen": { "style": "dark" } },
     { "id": "opacity", "type": "range", "label": "Opacity", "min": 0.1, "max": 1, "step": 0.05, "default": 1 }
   ],
