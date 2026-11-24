@@ -123,6 +123,7 @@ export class LayerManager {
       // The map at rest stops while this layer is open and comes back when it closes.
       for (const other of this.store.state.scene) if (other !== id && this.atRest(other)) this.sync(other, this.store.layer(other), this.store.layer(other));
     }
+    if (state.active && !previous?.active && !state.parent && this.store.manifest(state.layer)?.sequence) this.prefetch(state);
     const running = this.running.get(id);
     const active = state.active && !(this.atRest(id) && this.hidingAtRest());
     if (active && !running) {
@@ -135,6 +136,23 @@ export class LayerManager {
       const revealed = state.step?.index ?? 0;
       if (revealed !== (previous?.step?.index ?? 0)) this.guard(id, () => running.handlers.step?.(revealed));
     }
+  }
+
+  /** A sequence opened: its steps' layers fetch what they will show, one after another (#42). */
+  private prefetch(sequence: LayerState): void {
+    const steps = sequence.steps?.sequence ?? [];
+    void (async () => {
+      for (const step of steps) {
+        const target = this.store.state.layers[step.layer];
+        const module = target ? (layerModule(target.layer) as LayerModule | undefined) : undefined;
+        if (!target || !module?.prefetch) continue;
+        try {
+          await module.prefetch(this.store.state.site, { ...target.params, ...step.params });
+        } catch {
+          // The layer reports its own problem when it is shown.
+        }
+      }
+    })();
   }
 
   private async start(id: string): Promise<void> {

@@ -115,12 +115,16 @@ export default defineLayer({
     el.textContent = '...';
     return { update() {} };                                 // params or shared values changed
   },
+
+  // Optional: fetch what the layer will show before it is shown (see below).
+  async prefetch(site, params) {},
 });
 ```
 
 The module is loaded on every surface. `table` runs only on the table surface and `panel` only on the TV, once for each `custom` panel in the manifest. Phones need no code.
 State lives in the closure, so a layer has no module-level variables and no explicit teardown:
 overlays and streams opened through `ctx` are released when the layer is turned off.
+`prefetch(site, params)` runs on the table when a sequence (the slideshow) that shows the layer opens, once per step, with the params that step will use. A layer that loads something slow, such as a map picture from a service, fetches it there, so stepping to it does not wait. What the host fetches it also keeps, for venues without a connection. Errors are ignored. The Web map layer (`packages/layers/wms`) is the example.
 `packages/layers/sunlight` is the reference to copy. `coolpaths` shows a layer that combines a kernel with site data, `mobility` one that only plays site data, and `packages/layers/wind` a running simulation with a flow overlay.
 
 ## Context

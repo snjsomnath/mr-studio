@@ -251,6 +251,13 @@ export interface LayerModule<P = Params> {
    * `ctx.setParams`. `ctx.panel` is `"hero"`. The element is as wide as the centre; the hero sets its height.
    */
   hero?(ctx: PanelContext<P>, el: HTMLElement): PanelHandlers | void;
+  /**
+   * Fetches what the layer will need before it is shown, so a sequence (the slideshow) can step
+   * to it without waiting. Called on the table when a sequence that shows this layer opens, with
+   * the params the step will use. What the host fetches it also keeps, for venues without a
+   * connection (#42). Errors are ignored: the layer shows its own when it is turned on.
+   */
+  prefetch?(site: SiteInfo, params: P): Promise<void> | void;
 }
 
 /** Declares a layer. The default export of every layer package. */
