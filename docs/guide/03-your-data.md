@@ -29,7 +29,7 @@ GeoJSON polygons, one per building, with a height in metres (height, höjd) or a
 
 ### Ground (GeoTIFF)
 
-A GeoTIFF of ground heights in metres, such as a Lantmäteriet elevation model. It may be larger than the table and on a national grid; if it does not say which, you will be asked for its EPSG code (3006 for SWEREF99 TM).
+A GeoTIFF of ground heights in metres, such as a Lantmäteriet elevation model. It may be larger than the table and on a national grid; if it does not say which, you will be asked for its EPSG code (3006 for SWEREF99 TM). If the file is a surface model with the buildings in it, Add data notices the raised footprints and offers **Take the buildings out of the ground**, which keeps only the ground under them.
 
 ### Trees (GeoJSON or CSV)
 

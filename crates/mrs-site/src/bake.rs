@@ -76,7 +76,9 @@ pub fn bake(site: &Site) -> Result<(SceneData, BakeStats), SiteError> {
                     }
                 }
             }
-            stats.terrain_flattened_cells = flatten(&mut scene.dtm, &dilate(&mask, grid.width as usize, grid.height as usize), grid.width as usize);
+            // A surface model's buildings bleed a metre or two past their footprints (pixel size, resampling).
+            let reach = (2.0 / grid.cell_m).ceil().max(1.0) as usize;
+            stats.terrain_flattened_cells = flatten(&mut scene.dtm, &dilate(&mask, grid.width as usize, grid.height as usize, reach), grid.width as usize);
         }
     }
     scene.dsm.copy_from_slice(&scene.dtm);
@@ -271,16 +273,16 @@ fn polygon_cells(rings: &[Vec<(f64, f64)>], width: usize, rows: usize) -> Vec<us
     cells
 }
 
-/// The mask grown by one cell in every direction (eight neighbours).
-fn dilate(mask: &[bool], width: usize, rows: usize) -> Vec<bool> {
+/// The mask grown by `reach` cells in every direction (a square around each cell).
+fn dilate(mask: &[bool], width: usize, rows: usize, reach: usize) -> Vec<bool> {
     let mut out = mask.to_vec();
     for row in 0..rows {
         for col in 0..width {
             if !mask[row * width + col] {
                 continue;
             }
-            for y in row.saturating_sub(1)..=(row + 1).min(rows - 1) {
-                for x in col.saturating_sub(1)..=(col + 1).min(width - 1) {
+            for y in row.saturating_sub(reach)..=(row + reach).min(rows - 1) {
+                for x in col.saturating_sub(reach)..=(col + reach).min(width - 1) {
                     out[y * width + x] = true;
                 }
             }
@@ -405,13 +407,13 @@ mod tests {
         }
         let mut mask = vec![false; 100];
         mask[44] = true;
-        let grown = dilate(&mask, 10, 10);
+        let grown = dilate(&mask, 10, 10, 1);
         assert_eq!(grown.iter().filter(|m| **m).count(), 9);
         let mut footprint = vec![false; 100];
         for i in [44, 45, 54, 55] {
             footprint[i] = true;
         }
-        assert_eq!(flatten(&mut dtm, &dilate(&footprint, 10, 10), 10), 16);
+        assert_eq!(flatten(&mut dtm, &dilate(&footprint, 10, 10, 1), 10), 16);
         assert!(dtm.iter().all(|h| *h == 2.0));
     }
 

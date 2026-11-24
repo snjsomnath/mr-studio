@@ -133,6 +133,9 @@ enum DataCommand {
         /// Read the first coordinate as latitude.
         #[arg(long)]
         swap: bool,
+        /// The terrain has the buildings raised in it: set the ground under them back.
+        #[arg(long)]
+        flatten: bool,
         /// The coordinate system of a terrain GeoTIFF that does not say, such as EPSG:3006.
         #[arg(long)]
         crs: Option<String>,
@@ -449,7 +452,7 @@ async fn data(action: DataCommand) -> anyhow::Result<()> {
         std::process::exit(1);
     };
     match action {
-        DataCommand::Add { site, target, file, osm, elevation, write, crop, swap, crs, json } => {
+        DataCommand::Add { site, target, file, osm, elevation, write, crop, swap, flatten, crs, json } => {
             let parsed = Target::parse(&target).map_err(anyhow::Error::msg)?;
             let crs = match crs.as_deref().map(|c| c.trim().trim_start_matches("EPSG:").trim_start_matches("epsg:").parse::<u32>()) {
                 None => None,
@@ -476,7 +479,7 @@ async fn data(action: DataCommand) -> anyhow::Result<()> {
             };
             let site_dir = site.clone();
             let mut report = tokio::task::spawn_blocking(move || {
-                mrs_host::data::import_file(&site_dir, &target, &filename, &bytes, Options { crop, swap, crs }, write)
+                mrs_host::data::import_file(&site_dir, &target, &filename, &bytes, Options { crop, swap, crs, flatten }, write)
             })
             .await?
             .map_err(anyhow::Error::msg)?;

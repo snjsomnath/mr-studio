@@ -969,6 +969,9 @@ struct ImportQuery {
     crop: Option<String>,
     #[serde(default)]
     swap: Option<String>,
+    /// `1`: the terrain has the buildings raised in it; set them back to the ground (#344).
+    #[serde(default)]
+    flatten: Option<String>,
     /// `EPSG:3006`, for a terrain GeoTIFF that does not say.
     #[serde(default)]
     crs: Option<String>,
@@ -1311,7 +1314,7 @@ async fn data_request(
         Some(Ok(code)) => Some(code),
         Some(Err(_)) => return (StatusCode::BAD_REQUEST, Json(json!({ "error": "crs must look like EPSG:3006" }))).into_response(),
     };
-    let options = Options { crop: flag(&query.crop), swap: flag(&query.swap), crs };
+    let options = Options { crop: flag(&query.crop), swap: flag(&query.swap), crs, flatten: flag(&query.flatten) };
     let free_elevation = query.source.as_deref() == Some("elevation");
     match state.import_data(&query.target, &filename, body, options, write).await.map(|mut report| {
         if free_elevation {
