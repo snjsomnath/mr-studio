@@ -284,7 +284,7 @@ async function main() {
     const title = el('div', '');
     title.append(el('h1', '', t(site.branding.title ?? 'MR Studio')), el('p', '', t(site.name)));
     header.append(title);
-    if (phone) header.append(phoneBadge(store));
+    if (phone) header.append(phoneBadge(store, connection));
     // A phone can speak another language than the table (#80): the visitor's own choice, kept on the phone.
     const languages = offered(store.state);
     if (phone && languages.length > 1) {

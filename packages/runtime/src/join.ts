@@ -1,6 +1,7 @@
 import qrcode from 'qrcode-generator';
 
 import { t } from './i18n.ts';
+import { avatarOf, nameOf } from './avatars.ts';
 import type { Store } from './store.ts';
 
 function el(tag: string, className: string, text?: string): HTMLElement {
@@ -89,10 +90,11 @@ export function joinPanel(store: Store): HTMLElement {
     const visible = participants.filter((p) => p.connected || now - (away.get(p.slot) ?? now) < AWAY_MS);
     people.replaceChildren(
       ...visible.map((p) => {
-        const dot = el('span', 'join-person', String(p.slot + 1));
+        // Each phone's animal on its colour (#339), its name on hover.
+        const dot = el('span', 'join-person', avatarOf(p));
         dot.style.background = p.colour;
         dot.classList.toggle('is-away', !p.connected);
-        dot.title = p.connected ? t('Phone {n}', { n: p.slot + 1 }) : t('Phone {n}, reconnecting', { n: p.slot + 1 });
+        dot.title = p.connected ? nameOf(p) : t('{who}, reconnecting', { who: nameOf(p) });
         return dot;
       }),
     );
