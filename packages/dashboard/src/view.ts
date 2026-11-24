@@ -202,7 +202,10 @@ export class DashboardView {
     });
     for (const key of [...this.mounted.keys()]) if (!keep.has(key)) this.unmount(key);
 
-    this.empty.hidden = this.pages.length > 0;
+    // Panels that are up but too tall for a cramped canvas (a layer's stage open above it) leave
+    // the canvas blank, not saying "turn a layer on" while one is (#357).
+    this.empty.hidden = this.pages.length > 0 || shown.length > 0;
+    this.root.classList.toggle('mrs-no-room', shown.length > 0 && this.pages.length === 0);
     this.turn(Math.min(this.current, Math.max(0, this.pages.length - 1)));
     this.report();
   }

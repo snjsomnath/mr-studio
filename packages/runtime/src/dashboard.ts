@@ -1,6 +1,6 @@
 import { controlProblems, DashboardView, validateLayerPanels, validatePage } from '@mrstudio/dashboard';
 import type { PanelInput } from '@mrstudio/dashboard';
-import type { Connection, LayerManifest, PanelContext, PanelControls, PanelLayer, PanelSpec } from '@mrstudio/sdk';
+import type { Connection, LayerManifest, PanelContext, PanelControls, PanelLayer, PanelSpec, StageLayout } from '@mrstudio/sdk';
 
 import { say, t } from './i18n.ts';
 import { baseContext, paramSender } from './layer-manager.ts';
@@ -71,6 +71,30 @@ export function mountDashboard(root: HTMLElement, store: Store, connection: Conn
     });
   });
   return view;
+}
+
+/**
+ * A layer's controller centre made of panels (#357): the dashboard's grid inside the layer's card,
+ * with the layer's own widgets, controls and map. Panels with `at` stay put; the rest are laid out.
+ */
+export function mountStage(el: HTMLElement, store: Store, connection: Connection, id: string, layout: StageLayout): { sync(): void; dispose(): void } {
+  const manifest = store.manifest(store.state.layers[id]?.layer ?? '');
+  const view = new DashboardView(el, { registry: widgets, rotateS: 60, empty: '' });
+  view.setTheme(store.state.site.tv?.theme);
+  const panels = withTeamWidgets(manifest?.id ?? '', layout.panels ?? []);
+  const placed = panels.every((spec) => spec.at);
+  if (placed) for (const issue of validatePage({ id: 'stage', panels }, widgets)) console.warn(`[${id}] stage ${issue.path} ${issue.message}`);
+  else for (const issue of validateLayerPanels(panels, widgets)) console.warn(`[${id}] stage ${issue.path} ${issue.message}`);
+  for (const problem of controlProblems(panels, controlIds(manifest))) console.warn(`[${id}] stage ${problem}`);
+  view.setPanels(panels.map((spec) => panelInput(store, connection, id, spec, `${id}/stage/${spec.id}`, placed ? 0 : undefined)));
+  const stopTheme = store.onTv((tv) => view.setTheme(tv?.theme));
+  return {
+    sync: () => view.sync(),
+    dispose: () => {
+      stopTheme();
+      view.destroy();
+    },
+  };
 }
 
 // `layer` is the id of a layer in the scene (an instance), which may come and go while the TV is up.

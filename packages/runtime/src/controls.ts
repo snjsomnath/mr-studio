@@ -9,6 +9,7 @@ import { entitySender, baseContext, isAtRest, paramSender } from './layer-manage
 import { loadEntities } from './entities.ts';
 
 export { isAtRest };
+import { mountStage } from './dashboard.ts';
 import { layerModule } from './registry.ts';
 import { MEDIA_KINDS, canAddMedia, mediaItems, onMediaChanged, requestAddMedia, sizeOf, titleOf, valueOf } from './media.ts';
 import { Picker } from './picker.ts';
@@ -1101,6 +1102,19 @@ export class Controller {
     stage.hidden = true;
     const stageCleanups: (() => void)[] = [];
     let stageHandlers: PanelHandlers | void = undefined;
+    // A layout of panels (#357): the centre built from widgets, with no code.
+    let stagePanels: { sync(): void; dispose(): void } | undefined;
+    const layout = typeof manifest.stage === 'object' && manifest.stage !== null ? manifest.stage : undefined;
+    if (layout) {
+      stage.classList.add('layer-stage-panels');
+      try {
+        stagePanels = mountStage(stage, store, connection, id, layout);
+        stageCleanups.push(() => stagePanels!.dispose());
+        stage.hidden = false;
+      } catch (error) {
+        console.error(`[${id}] stage`, error);
+      }
+    }
     if (manifest.stage === 'custom' && module?.stage) {
       const ctx: PanelContext = Object.assign(Object.create(baseContext(store, connection, id)), {
         panel: 'stage',
@@ -1134,10 +1148,12 @@ export class Controller {
     // The picked entity's own controls come before the layer's, as the thing in hand (#279).
     if (!entities.element.hidden) body.append(entities.element);
     if (!stage.hidden) body.append(stage);
-    for (const group of [primary, controls]) if (group.childElementCount > 0) body.append(group);
+    // A layout of panels is the view: the generated control rows stay away unless it asks for them.
+    const generated = !layout || layout.controls === true;
+    if (generated) for (const group of [primary, controls]) if (group.childElementCount > 0) body.append(group);
     body.append(legend.element, sounds.element);
     // "More settings" closes the primary row when there is one, so it costs no height of its own.
-    if (moreRows.childElementCount > 0) (primary.childElementCount > 0 ? primary : body).append(more);
+    if (generated && moreRows.childElementCount > 0) (primary.childElementCount > 0 ? primary : body).append(more);
 
     let shown: string | undefined;
     return {
@@ -1178,6 +1194,8 @@ export class Controller {
           w.sync(state.params[w.control.id], state.params);
         }
         more.hidden = ![...moreRows.children].some((row) => !(row as HTMLElement).hidden);
+        // The stage's panels read the layer's values; one sync a frame is plenty (#357).
+        if (state.active && stagePanels) requestAnimationFrame(() => stagePanels!.sync());
         if (state.active && stageHandlers) {
           try {
             stageHandlers.update?.();

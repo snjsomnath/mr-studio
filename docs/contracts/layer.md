@@ -171,6 +171,32 @@ controlling.
   adds the layer's own visual, with `map.project(lonLat)`. `StreetGraph.route(from, to)` gives the
   shortest way along the streets.
 
+### A stage made of panels, with no code
+
+`stage` can instead be a layout of dashboard panels (#357): the same widgets, sizes, bindings and
+density budget as the TV, including the map, gauge and control widgets and the layer's own team
+widgets. No module code is needed.
+
+```jsonc
+"stage": {
+  "controls": false,
+  "panels": [
+    { "id": "pick", "widget": "map", "size": "block", "title": "Pick a building",
+      "props": { "entities": "buildings", "hint": "Tap a building to change it" } },
+    { "id": "grid", "widget": "grid-link", "size": "tile", "props": { "value": { "bind": "shared.import_kw" } } },
+    { "id": "share", "widget": "control", "size": "wide", "props": { "control": "share" } },
+    { "id": "run", "widget": "control", "size": "tile", "props": { "control": "optimise" } }
+  ]
+}
+```
+
+- Panels without `at` are packed in the order given, like a layer's TV panels; give every panel an
+  `at` to place them by hand on the 12 by 6 grid. Either way they pass the dashboard rules.
+- `controls: false` (the default) leaves the layer's generated control rows out, since the panels
+  carry the controls the layer wants. `controls: true` keeps them under the panels.
+- The entity inspector, the step strip and the rails stay. The TV's own panels keep the strip under
+  the stage; if the stage leaves too little room for them, that strip stays blank.
+
 `samples/controller-map-example` is a route planner: two taps on the controller's map make a
 route along the streets on the table, and a button sends a light along it.
 
