@@ -166,6 +166,8 @@ export class Editor {
   /** The live controller, shown in the middle in place of the map. */
   private readonly preview = el('div', 'ed-preview');
   private presentButton!: HTMLButtonElement;
+  /** Share by email (#372), in the app only; off while the table is being packed. */
+  private shareButton?: HTMLButtonElement;
   private guideButton!: HTMLButtonElement;
   private wizard: Wizard | null = null;
   /** The guide step to come back at after the next reload, when it is not the one on show. */
@@ -715,6 +717,12 @@ export class Editor {
       const detail = (event as CustomEvent<{ action: string; then?: FileAction; message?: string; detail?: string }>).detail;
       if (detail.action === 'ask' && detail.then) void this.file(detail.then);
       if (detail.action === 'problem' && detail.message) this.setSaved(detail.message);
+      if (detail.action === 'sharing') {
+        if (this.shareButton) this.shareButton.disabled = true;
+        if (detail.message) this.history.notify(detail.message);
+      }
+      if (detail.action === 'exported' && this.shareButton) this.shareButton.disabled = false;
+      if (detail.action === 'problem' && this.shareButton) this.shareButton.disabled = false;
       if (detail.action === 'exported' && detail.message) this.history.notify(detail.message, detail.detail);
       // Help > Copy diagnostics in the app's menu (#260).
       if (detail.action === 'diagnostics') void this.copyDiagnostics();
@@ -988,7 +996,17 @@ export class Editor {
       window.addEventListener('focus', () => void refresh());
       void refresh();
     }
-    actions.append(preview, present);
+    actions.append(preview);
+    if (invoke) {
+      // Share by email (#372): the table as one file, attached to a new email in this
+      // computer's mail app, for someone to open on another computer, such as the studio PC.
+      const share = button('ed-button', 'Share', 'share');
+      share.title = 'Email this table as one file. Keys stay on this computer.';
+      share.addEventListener('click', () => void this.file('share'));
+      this.shareButton = share;
+      actions.append(share);
+    }
+    actions.append(present);
     bar.append(brand, ...(file ? [file] : []), steps, name, actions);
     return bar;
   }

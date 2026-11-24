@@ -83,6 +83,16 @@
           <button type="button" id="delete-confirm" class="danger">Move to Trash</button>
         </div>
       </dialog>
+      <dialog id="same-dialog" class="confirm" aria-labelledby="same-title">
+        <h2 id="same-title">This table is already on this computer</h2>
+        <p>The file is another version of it. Update it to show what the file has; this computer's calibration stays as it is, and the version here goes to the <span class="trash-name">Trash</span>.</p>
+        <p id="same-when" class="hint"></p>
+        <div class="actions">
+          <button type="button" id="same-cancel">Cancel</button>
+          <button type="button" id="same-copy">Keep both</button>
+          <button type="button" id="same-update" class="primary">Update it</button>
+        </div>
+      </dialog>
       <dialog id="import-dialog" class="confirm" aria-labelledby="import-title">
         <h2 id="import-title">The table is here</h2>
         <p id="import-where"></p>

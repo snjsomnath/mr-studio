@@ -354,7 +354,15 @@ with `mrstable.json` at the top. `crates/mrs-site/src/package.rs` writes and rea
   reports the sources not set up here and any problems with the table. Paths that leave the
   folder are refused, and so is a package that unpacks to more than 16 GB or comes from a
   newer package format.
+- **Updating (#372):** when the receiving computer already has a table with the same `id`, the
+  app asks first. "Update it" (`package::update`) unpacks beside it, carries over what belongs
+  to that computer (`calibration.json`, `.mrstudio/`, `.cache/`), swaps the folders and moves
+  the earlier version to the Trash. It refuses a package of another table, and the app refuses
+  while that table is open. "Keep both" opens it as a second copy, as above.
 
-The app has File › Export table… and, on Home, "Open a table file". Double-clicking a
+The app has File › Export table…, Share (top right of the editor, and File › Share by email…,
+which attaches the file to a new email in the default mail app: the macOS Compose Email
+service, Simple MAPI on Windows, `xdg-email` on Linux, else the file shown in its folder and a
+`mailto:`) and, on Home, "Open a table file". Double-clicking a
 `.mrstable` file opens it as well. From the command line:
 `mrstudio export <site> --out X.mrstable` and `mrstudio import X.mrstable --into <sites>`.
