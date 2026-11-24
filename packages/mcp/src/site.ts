@@ -36,7 +36,7 @@ const FALLBACK_SCHEMA: SiteSchema = {
   'layers[]': { fields: ['use', 'id', 'active', 'params', 'button', 'hide', 'items', 'steps'], required: ['use', 'id'] },
   'layers[].button': { fields: ['name', 'description', 'icon', 'side', 'group', 'order'], required: [] },
   'layers[].items[]': { fields: ['use', 'id', 'active', 'params', 'hide'], required: ['use', 'id'] },
-  'layers[].steps': { fields: ['mode', 'loop', 'reveal', 'sequence'], required: [] },
+  'layers[].steps': { fields: ['mode', 'loop', 'reveal', 'transition', 'transition_s', 'sequence'], required: [] },
   'layers[].steps.sequence[]': { fields: ['layer', 'params', 'duration_s', 'transition', 'transition_s', 'next', 'title', 'description', 'source'], required: ['layer'] },
 };
 
@@ -354,6 +354,7 @@ export function validateManifest(manifest: SiteManifest, dir: string | null, cat
     (Array.isArray(ref?.items) ? ref.items : []).forEach((child: any, j: number) => checkInstance(child, `layers[${i}].items[${j}]`, true));
     return layer;
   });
+  const TRANSITIONS = ['cut', 'fade', 'dip'];
   const sequences = new Set(list.filter((l) => Array.isArray(l?.steps?.sequence) && l.steps.sequence.length).map((l) => l.id));
   list.forEach((ref, i) => {
     const steps = ref?.steps;
@@ -362,6 +363,8 @@ export function validateManifest(manifest: SiteManifest, dir: string | null, cat
     if (!steps || typeof steps !== 'object' || Array.isArray(steps)) return err(at, 'must be an object');
     if (steps.mode !== undefined && !['manual', 'timed'].includes(steps.mode)) err(`${at}.mode`, "is 'manual' or 'timed'");
     if (steps.reveal !== undefined && !['stop', 'then-next'].includes(steps.reveal)) err(`${at}.reveal`, "is 'stop' or 'then-next'");
+    if (steps.transition !== undefined && !TRANSITIONS.includes(steps.transition)) err(`${at}.transition`, "is 'cut', 'fade' or 'dip'");
+    if (steps.transition_s !== undefined && !(isNum(steps.transition_s) && steps.transition_s >= 0 && steps.transition_s <= 10)) err(`${at}.transition_s`, 'must be 0 to 10 seconds');
     if (steps.sequence === undefined) return;
     if (!Array.isArray(steps.sequence)) return err(`${at}.sequence`, 'must be a list of steps');
     if (steps.sequence.length && found[i] && found[i]!.manifest.sequence !== true) err(`${at}.sequence`, `only a sequence layer, such as the slideshow, shows other layers; '${ref.use}' is not one`);
@@ -374,7 +377,8 @@ export function validateManifest(manifest: SiteManifest, dir: string | null, cat
       if (sequences.has(step.layer)) return err(here, `'${step.layer}' is a sequence too; a step shows one layer`);
       if (!own && !top) return err(here, `shows '${step.layer}', which is neither a layer of the scene nor an item of this one`);
       if (step.duration_s !== undefined && !(isNum(step.duration_s) && step.duration_s > 0)) err(`${here}.duration_s`, 'must be a positive number of seconds');
-      if (step.transition !== undefined && !['cut', 'fade'].includes(step.transition)) err(`${here}.transition`, "is 'cut' or 'fade'");
+      if (step.transition !== undefined && !TRANSITIONS.includes(step.transition)) err(`${here}.transition`, "is 'cut', 'fade' or 'dip'");
+      if (step.transition_s !== undefined && !(isNum(step.transition_s) && step.transition_s >= 0 && step.transition_s <= 10)) err(`${here}.transition_s`, 'must be 0 to 10 seconds');
       const shown = own ? ref.items.find((item: any) => item?.id === step.layer) : top;
       const layer = shown && findLayer(catalog, dir, shown.use, manifest);
       if (layer && step.params !== undefined) issues.push(...checkParams(layer, step.params, `${here}.params`).issues);
