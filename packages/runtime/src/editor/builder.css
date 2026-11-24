@@ -438,6 +438,19 @@
   color: #565d6a;
 }
 
+/* Test data (#308): set apart from the table's own datasets. */
+.lb-new-sub {
+  margin: 18px 0 2px;
+  padding-top: 14px;
+  border-top: 1px solid var(--ed-line, #dcdfe5);
+  font-size: 14px;
+}
+
+.lb-data-icon.is-test {
+  background: #fff4e5;
+  color: #b25e09;
+}
+
 /* ---- Palette ---- */
 
 .im-dialog.lb-palette {
@@ -654,4 +667,8 @@
 }
 .lb-delete-card .action {
   color: #b42318;
+}
+
+.lb-new-hint {
+  margin: 0;
 }
