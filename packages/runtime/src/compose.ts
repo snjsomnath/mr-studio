@@ -177,7 +177,7 @@ export class Composer {
       row.classList.toggle('is-off', !state.active);
       for (const w of widgets) {
         w.row.hidden = !isVisible(w.control, state.params);
-        w.sync(state.params[w.control.id]);
+        w.sync(state.params[w.control.id], state.params);
       }
     };
     sync(initial);

@@ -7,8 +7,8 @@
   "attract": { "effect": "grid" },
   "category": "analysis",
   "controls": [
-    { "id": "dataset", "type": "text", "label": "Dataset", "default": "", "tier": "more" },
-    { "id": "colorBy", "type": "text", "label": "Colour by", "default": "", "tier": "more" },
+    { "id": "dataset", "type": "text", "label": "Dataset", "default": "", "media": ["map", "table"], "tier": "more" },
+    { "id": "colorBy", "type": "text", "label": "Colour by", "default": "", "none": "One colour", "columnsOf": "dataset", "tier": "more" },
     { "id": "color", "type": "color", "label": "Colour", "default": "#4dabf7", "tier": "more" },
     {
       "id": "scheme", "type": "select", "label": "Category colours", "default": "auto", "tier": "more",
