@@ -18,6 +18,8 @@ The server writes `site.json`, never layer code. When a project needs a new laye
 | `list_layers`, `describe_layer` | Core (and site) layers with their controls, tools, data needs and panels; planned roadmap layers |
 | `find_capabilities` | Everything MR Studio can and cannot do for a goal in plain words: layers, building blocks, kernels, site features, planned work and constraints, ranked, each with why it matched, its status from the code (`available`, `needs_setup`, `planned`, `unsupported`), what it needs, what the table, controller and phones do, what it pairs with and the files that prove it. With `site`, requirements say whether that site meets them |
 | `describe_capability` | One capability in full: purpose, questions it answers, requirements, surfaces, limits, example sites, evidence, related issues, and a layer's controls |
+| `assess_experience` | Checks a whole experience plan (title, goal, audience, steps with what the table shows, the controller says, phones do and the guide's notes; layers at rest; other needs) against the catalogue: per step the layer that serves it and why, alternatives, setup still needed, param problems, a constraint it runs into, and gaps with the kind of development request each needs. Verdict `buildable`, `buildable_with_setup`, `partly_buildable` or `needs_development`. Writes nothing |
+| `build_experience` | Builds the parts of a plan that exist in one validated change: a layer per step (reusing instances), items inside them, layers at rest, and for two or more steps a guided sequence (a slideshow named after the plan) with titles, controller text and notes. Skipped steps and gaps are listed, never written |
 | `list_building_blocks` | Visual, data, interaction and TV primitives, each marked built or planned from the code itself (`find_capabilities` with `kind` gives the same with evidence) |
 | `create_site` | A new site package: `site.json`, `data/`, `requests/`, README, `.gitignore` |
 | `get_site`, `update_site` | Read a site with effective params; change settings (place, table, scene sources, basemap, branding, tv) |
@@ -26,11 +28,11 @@ The server writes `site.json`, never layer code. When a project needs a new laye
 | `save_custom_layer` | Save or remove a custom layer: a recipe of data, look, motion and interaction blocks, used as `custom:<id>`. Blocks, props, colours, ramps, pictograms and icons are checked against the recipe player in `packages/sdk`, and the controller's legend is worked out from the looks and their data, as the editor does |
 | `validate_site` | The site and layer contracts, plus `mrstudio validate` when the CLI is installed |
 | `preview_site` | How to see the site on this computer: open it in the installed app, or a `mrstudio dev` command on a free port (never the app's 4170) with the app's own surfaces; URLs of the editor, table, controller, guide's phone, phone and dev view |
-| `check_layer_idea` | Says whether an idea is an existing layer to configure, a new core layer from existing blocks, or needs new blocks or kernels |
+| `check_layer_idea` | Says whether an idea is an existing layer to configure, a new core layer from existing blocks, or needs new blocks or kernels; also returns the idea assessed as a one-step experience plan |
 | `draft_module_request` | Writes `requests/<date>-<title>.md` and a prefilled GitHub issue link. Sends nothing |
 | `submit_module_request` | Opens a draft as an issue, with `GITHUB_TOKEN`/`GH_TOKEN` or a signed-in `gh`; otherwise returns the link |
 
-**Prompts**: `new_project` (story, place, scene, data, branding and welcome, TV, validation), `brainstorm_layer`, `design_dashboard`, `request_module`.
+**Prompts**: `design_experience` (from a goal to a plan, its assessment, the build and requests for gaps), `plan_workshop` (a timed workshop with a contribution step), `compare_scenarios` (today and a proposal on a one-layer-at-a-time table), `build_from_data` (a dataset as a custom layer and a step), `new_project` (story, place, scene, data, branding and welcome, TV, validation; starts from the experience), `brainstorm_layer`, `design_dashboard`, `request_module`.
 
 **Resources**:
 
