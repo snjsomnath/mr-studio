@@ -128,6 +128,13 @@ After that, **Present › Ready to present?** (#63) is the guide: each missing i
 - **File and Settings** (#393): File holds the table's file actions (New, Open, Recent, Save As, Share, Export, Close). File › Settings holds the app: sources and keys, updates, the command-line tool, language, and This computer (screens, projector, colour, quality, phones). Present › Screens and calibration… opens that page. The separate Displays and settings window goes.
 - **The operator**: running a table at an exhibition (Present controls, a lock so visitors can't reach the editor, idle reset) is a different person from the author, and not designed yet.
 - **One place for messages**: saved state, live data sources, performance warnings (#262) and readiness report in the status bar; a change that can be undone shows one notice with Undo.
+- **Version history** (#72): File › Version history… lists saved versions of the table (from the host's revision history) and restores one. Undo stays for this session's changes; Version history is for going back further.
+- **Two authors at once**: the MCP server, a second editor window or a colleague can change the same table. A setting changed elsewhere updates in place with a short notice in the status bar; it never silently overwrites what the author is typing.
+- **Units and formats**: metres and kilometres, the 24-hour clock, and dates and decimals in the editor's language (decimal comma in Swedish). One formatter, used by the Format pane, the dialogs, the table and the phones.
+
+## The user test
+
+The rulebook is a hypothesis until people use it. Before #382 is built, and again after, three newcomers who have never seen MR Studio do the tasks below on the sample table, thinking aloud. We note where they look first, wrong turns, and time per task. A task that takes a wrong turn for two of three people means its home is in the wrong place. Script and notes: [docs/design/user-test.md](design/user-test.md).
 
 ## Built to change
 
