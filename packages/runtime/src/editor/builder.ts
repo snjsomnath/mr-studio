@@ -465,6 +465,15 @@ function testRecipe(def: TestDataDef, dataset: string): CustomLayer {
       props: { motion: 'orbiters', activity: `${dataset}-activity`, flows: `${dataset}-flows`, links: `${dataset}-links`, colours: 'category' },
     }];
   }
+  if (def.kind === 'network') {
+    Object.assign(props, { color: { by: 'kind', kind: 'category' }, radius_mm: 5, glow: 0.4 });
+    recipe.motion = [{
+      id: `${look.id}-network`,
+      block: 'network',
+      on: look.id,
+      props: { links: `${dataset}-links`, series: `${dataset}-series`, streets: 'roads' },
+    }];
+  }
   return recipe;
 }
 
@@ -1001,6 +1010,7 @@ export function builderSection(host: BuilderHost, manifest: LayerManifest, butto
     gravity: ['Crowd on the streets', 'People walk to each point along the street network, more to the places that pull harder.'],
     timeline: ['Through time', 'Plays the layer through a date or year column: each feature appears when its time comes, with a brief flare.'],
     sound: ['Sound', 'Points with a sound file (WAV, MP3, OGG) send out rings as they sound, like the bird-sounds demo. The table plays the sound.'],
+    network: ['Network of flows', 'The points are nodes joined by links: flows run along them, as wide and quick as a time series says, rings show which nodes give and take, and gauges fill. Energy, heat, water or people.'],
     place: ['Place motion', 'Twenty-two ways to bring places alive, from ripples and orbiters to gravity wells that bend the streets. Pick one, then tune it.'],
   };
   /** The rows of a sound motion (#150): where the sounds come from, how they play and the rings. */
@@ -1151,6 +1161,36 @@ export function builderSection(host: BuilderHost, manifest: LayerManifest, butto
     return rows;
   };
 
+  /** The rows of a network motion (#280): its links, series and streets, then how it looks. */
+  const networkRows = (p: Record<string, any>, set: (key: string, value: unknown) => void, dataset?: string): HTMLElement[] => {
+    const rows: HTMLElement[] = [];
+    const datasets = vectorDatasets(host.store);
+    const csvs = datasets.filter((d) => /\.csv$/i.test(d.path));
+    const own = (table: string) => (dataset ? [`${dataset}-${table}`, `${dataset}_${table}`, table] : [table]);
+    const choose = (label: string, key: string, list: { name: string }[], none: string | null, preferred: string[]) => {
+      const select = el('select');
+      select.setAttribute('aria-label', label);
+      if (none) select.append(Object.assign(el('option'), { value: '', textContent: none }));
+      if (p[key] === undefined || (p[key] && !list.some((d) => d.name === p[key]))) p[key] = preferred.find((n) => list.some((d) => d.name === n)) ?? (none ? null : list[0]?.name ?? null);
+      for (const d of list) select.append(Object.assign(el('option'), { value: d.name, textContent: d.name, selected: d.name === p[key] }));
+      select.addEventListener('change', () => set(key, select.value || null));
+      rows.push(field(label, select));
+    };
+    choose('Links', 'links', datasets.filter((d) => d.name !== dataset), 'None', own('links'));
+    rows.push(el('p', 'lb-hint', 'A table with from and to columns naming the points by id (or name), or lines with from and to.'));
+    choose('Series', 'series', csvs, 'None: each link keeps its value', own('series'));
+    rows.push(el('p', 'lb-hint', 'Long format: id, time, then a column per series. Links take flow (positive runs from → to); points take level, 0 to 1, for their gauge.'));
+    choose('Links follow', 'streets', datasets.filter((d) => !/\.csv$/i.test(d.path) && d.name !== dataset), 'Straight lines', ['roads', 'walkways', 'streets']);
+    rows.push(field('Each step takes', slider(p.step_s ?? 2, 0.5, 10, 0.5, ' s', (v) => set('step_s', v))));
+    rows.push(field('Busiest width', slider(p.width_mm ?? 3, 1, 8, 0.5, ' mm', (v) => set('width_mm', v))));
+    rows.push(field('Lights per link', slider(p.heads ?? 2, 0, 6, 1, '', (v) => set('heads', v))));
+    rows.push(field('Light speed', slider(p.speed_mm ?? 40, 5, 120, 5, ' mm/s', (v) => set('speed_mm', v))));
+    rows.push(field('Give and take rings', toggle(p.rings ?? true, (v) => set('rings', v), 'Give and take rings')));
+    rows.push(field('Gauges', toggle(p.gauges ?? true, (v) => set('gauges', v), 'Gauges')));
+    rows.push(el('p', 'lb-hint', 'The controller gets Play and Time, so a visitor can pause the day and scrub through it. The time shown is published as network_time for ribbons and dashboards.'));
+    return rows;
+  };
+
   const motionTab = (): HTMLElement[] => {
     const nodes: HTMLElement[] = [el('p', 'lb-lead', 'Motion is the strongest thing on the table: keep one kind in focus, and make any second one quieter.')];
     for (const look of recipe.look!) {
@@ -1239,12 +1279,14 @@ export function builderSection(host: BuilderHost, manifest: LayerManifest, butto
             rows.push(...soundRows(look, p, set, () => draw()));
           } else if (name === 'place') {
             rows.push(...placeRows(p, set, () => draw(), data?.dataset));
+          } else if (name === 'network') {
+            rows.push(...networkRows(p, set, data?.dataset));
           }
           sub.replaceChildren(...rows);
         };
         const on = toggle(Boolean(existing), (checked) => {
           recipe.motion = recipe.motion!.filter((m) => !(m.on === look.id && m.block === name));
-          if (checked) recipe.motion!.push({ id: `${look.id}-${name}`, block: name, on: look.id, props: name === 'place' ? { motion: 'ripples' } : name === 'sound' ? { trigger: 'chorus' } : { ...(MOTION_DEFAULTS as Record<string, object>)[name] } });
+          if (checked) recipe.motion!.push({ id: `${look.id}-${name}`, block: name, on: look.id, props: name === 'place' ? { motion: 'ripples' } : name === 'sound' ? { trigger: 'chorus' } : name === 'network' ? {} : { ...(MOTION_DEFAULTS as Record<string, object>)[name] } });
           save();
           draw();
         }, title);

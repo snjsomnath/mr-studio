@@ -405,6 +405,23 @@ fn custom_manifest(id: &str, recipe: &mrs_site::CustomLayer) -> Value {
             }
         }
     }
+    // A network of flows (#280) plays its series on one shared play head that the controller
+    // can pause and scrub: `network_play` and `network_at` (a share of the series, in %).
+    if recipe.motion.iter().any(|m| m.block == "network") {
+        let taken = |id: &str| recipe.controls.iter().any(|c| c.get("id").and_then(Value::as_str) == Some(id));
+        let mut extra = Vec::new();
+        if !taken("network_play") {
+            extra.push(serde_json::json!({ "id": "network_play", "type": "toggle", "label": "Play", "default": true, "tier": "primary" }));
+        }
+        if !taken("network_at") {
+            extra.push(serde_json::json!({
+                "id": "network_at", "type": "range", "label": "Time", "min": 0, "max": 100, "step": 1, "default": 0, "unit": "%", "tier": "primary"
+            }));
+        }
+        if let Some(controls) = manifest["controls"].as_array_mut() {
+            controls.extend(extra);
+        }
+    }
     manifest
 }
 
@@ -738,5 +755,23 @@ mod tests {
         let def = custom_def("dots", &silent).unwrap();
         assert!(def.tool("sound").is_none());
         assert!(def.validate(&patch(json!({ "play": "x" })), false).is_err());
+    }
+
+    #[test]
+    fn custom_networks_can_be_paused_and_scrubbed() {
+        let recipe: mrs_site::CustomLayer = serde_json::from_value(json!({
+            "name": "Energy",
+            "data": [{ "id": "nodes", "dataset": "nodes" }],
+            "look": [{ "id": "dots", "block": "points", "data": "nodes" }],
+            "motion": [{ "id": "dots-network", "block": "network", "on": "dots", "props": { "links": "links" } }]
+        }))
+        .unwrap();
+        let def = custom_def("energy", &recipe).unwrap();
+        let checked = def.validate(&patch(json!({ "network_at": 40, "network_play": false })), false).unwrap();
+        assert_eq!(checked["network_at"], json!(40.0));
+        assert_eq!(checked["network_play"], json!(false));
+        assert_eq!(def.validate(&patch(json!({ "network_at": 140 })), false).unwrap()["network_at"], json!(100.0));
+        let plain: mrs_site::CustomLayer = serde_json::from_value(json!({ "name": "Dots" })).unwrap();
+        assert!(custom_def("dots", &plain).unwrap().validate(&patch(json!({ "network_at": 1 })), false).is_err());
     }
 }
