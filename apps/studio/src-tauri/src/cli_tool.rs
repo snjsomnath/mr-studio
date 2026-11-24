@@ -183,7 +183,8 @@ pub fn remove() -> anyhow::Result<bool> {
 }
 
 /// A path as one single-quoted shell word.
-#[cfg(target_os = "macos")]
+#[cfg(unix)]
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 fn sh(path: &Path) -> String {
     format!("'{}'", path.display().to_string().replace('\'', r"'\''"))
 }
