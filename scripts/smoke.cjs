@@ -120,7 +120,8 @@ function launch() {
       // Map tiles come from the internet, which a test may not reach.
       await page.route(/basemaps\.cartocdn\.com|tile\.openstreetmap\.org|arcgisonline|api\.mapbox\.com/, (route) => route.fulfill({ status: 204 }));
       await page.addInitScript(FRAME_METER);
-      page.on('pageerror', (e) => problems.push(`${url}: ${e.message}`));
+      // WebKit reports a ResizeObserver that settles over two frames as an error; it is not one (the spec only notes it).
+      page.on('pageerror', (e) => !/ResizeObserver loop/.test(e.message) && problems.push(`${url}: ${e.message}`));
       // Which file did not load, and why: a failed import names neither.
       page.on('requestfailed', (r) => /\/assets\//.test(r.url()) && console.warn(`  ${url} could not load ${r.url().replace(base, '')}: ${r.failure()?.errorText}`));
       page.on('console', (m) => m.type() === 'error' && console.warn(`  ${url} console: ${m.text().slice(0, 200)}`));
