@@ -1444,9 +1444,11 @@ export class Editor {
     item('Take out of the table', 'trash', () => void this.forgetData(name, known?.name ?? name), Boolean(yourPlace), yourPlace ? 'Part of Your place: replace it there' : `The file ${path} stays in the table folder`);
     const box = anchor.getBoundingClientRect();
     menu.style.position = 'fixed';
-    menu.style.top = `${box.bottom + 2}px`;
     menu.style.left = `${box.left + 24}px`;
+    menu.style.top = `${box.bottom + 2}px`;
     this.shell.append(menu);
+    // A row near the bottom of the window opens its menu above it, so all of it shows.
+    if (box.bottom + 2 + menu.offsetHeight > window.innerHeight - 8) menu.style.top = `${Math.max(8, box.top - menu.offsetHeight - 2)}px`;
     document.addEventListener('pointerdown', outside, true);
     menu.addEventListener('keydown', (event) => {
       if (event.key === 'Escape') {
