@@ -227,6 +227,11 @@ export class TableView {
   }
 
   /** Pointer input on the table surface for one layer. */
+  /** A canvas above every layer, for what the runtime itself draws (the attention cue). */
+  topCanvas(id: string): CanvasOverlay {
+    return new MapCanvasOverlay(this.map, this.container, id, this.site);
+  }
+
   pointer(track: (cleanup: () => void) => void): TablePointer {
     return tablePointer(this.container, this.site, track);
   }

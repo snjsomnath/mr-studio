@@ -141,6 +141,7 @@ interface TableContext<P> {
   readonly model: ModelHandle;          // the 3D model: fields, lights, materials, focus, pick (see model.md)
   readonly pointer: TablePointer;       // mouse, touch and pen on the table surface
   sendTool(tool: string, geometry: ToolGeometry): Promise<void>;  // send a tool input through the host, as a phone does; every view of the table gets it
+  cue(at: ToolGeometry, options?: { colour?: string }): void;     // play the attention cue at a change (#105); tool inputs from other surfaces get one automatically
   readonly steps: LayerSteps;           // sub-steps that the controller's Next reveals one at a time
   onFrame(cb: (dt: number) => void): void;   // every animation frame while the layer is on
   onCleanup(cb: () => void): void;      // extra teardown

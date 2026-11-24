@@ -66,6 +66,8 @@ export interface ToolSpec {
   id: string;
   type: 'point' | 'line' | 'polygon';
   label?: string;
+  /** False: inputs from other surfaces play no attention cue on the table (#105). Default true. */
+  cue?: boolean;
 }
 
 /** Palette groups in the scene composer. */

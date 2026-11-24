@@ -162,6 +162,13 @@ export interface TableContext<P = Params> extends ContextBase<P> {
    * Resolves once the host has accepted it.
    */
   sendTool(tool: string, geometry: ToolGeometry): Promise<void>;
+  /**
+   * Plays the attention cue (#105) at a change, in WGS84: one bright burst that pulls eyes back
+   * to the table. Tool inputs from a phone or the controller get one without any code; call this
+   * when an action without a place of its own adds something (a controller button that adds a
+   * building, say). `colour` is a CSS colour, default white.
+   */
+  cue(at: ToolGeometry, options?: { colour?: string }): void;
   /** Publishes derived values for panels. Only changed keys are sent. */
   publish(values: Record<string, unknown>): void;
   /** Sub-steps: parts of the layer that Next reveals one at a time, such as the categories of a map. */

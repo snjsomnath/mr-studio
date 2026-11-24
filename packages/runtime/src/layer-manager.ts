@@ -1,6 +1,7 @@
 import { EngineClient } from '@mrstudio/sdk';
 import type { Connection, LayerManifest, LayerModule, LayerState, PanelContext, TableContext, TableHandlers, ToolInput } from '@mrstudio/sdk';
 
+import { Cues } from './cues.ts';
 import { recipeModule } from './recipe-player.ts';
 import { layerModule } from './registry.ts';
 import { changedKeys } from './store.ts';
@@ -78,6 +79,7 @@ export function baseContext(store: Store, connection: Connection, layer: string)
 export class LayerManager {
   private running = new Map<string, Running>();
   private engine: EngineClient;
+  private readonly cues: Cues;
   private last = performance.now();
   private readonly store: Store;
   private readonly connection: Connection;
@@ -88,6 +90,7 @@ export class LayerManager {
     this.connection = connection;
     this.view = view;
     this.engine = new EngineClient(connection);
+    this.cues = new Cues(view);
     view.setOrder(store.state.scene);
     store.onLayer((id, state, previous) => this.sync(id, state, previous));
     store.onRemoved((id) => {
@@ -97,7 +100,14 @@ export class LayerManager {
     store.onScene((scene) => view.setOrder(scene));
     for (const id of store.state.scene) this.sync(id, store.layer(id), undefined);
     connection.on('layer.action', (p: { layer: string; action: string }) => this.running.get(p.layer)?.handlers.action?.(p.action));
-    connection.on('tool.input', (p: ToolInput) => this.running.get(p.layer)?.handlers.tool?.(p));
+    connection.on('tool.input', (p: ToolInput) => {
+      const running = this.running.get(p.layer);
+      if (!running) return;
+      // Something placed from a phone or the controller: pull eyes back to where it landed (#105).
+      // A pick made on this table's own view needs no cue: people are already looking at it.
+      if (p.from !== store.surface && this.cueFor(p)) this.cues.play(p.geometry, p.participant?.colour);
+      running.handlers.tool?.(p);
+    });
     requestAnimationFrame(this.frame);
   }
 
@@ -136,6 +146,13 @@ export class LayerManager {
       const revealed = state.step?.index ?? 0;
       if (revealed !== (previous?.step?.index ?? 0)) this.guard(id, () => running.handlers.step?.(revealed));
     }
+  }
+
+  /** Whether a tool input plays the attention cue: unless its tool says `cue: false`. */
+  private cueFor(input: ToolInput): boolean {
+    const layer = this.store.state.layers[input.layer]?.layer;
+    const tool = layer ? this.store.manifest(layer)?.tools?.find((t) => t.id === input.tool) : undefined;
+    return tool?.cue !== false;
   }
 
   /** A sequence opened: its steps' layers fetch what they will show, one after another (#42). */
@@ -192,6 +209,9 @@ export class LayerManager {
       model: this.view.modelHandle(id, track),
       pointer: this.view.pointer(track),
       sendTool: (tool, geometry) => this.connection.request<void>('tool.input', { layer: id, tool, geometry }),
+      cue: (at, options) => {
+        if (!running.stopped) this.cues.play(at, options?.colour);
+      },
       publish: (values) => {
         const patch: Record<string, unknown> = {};
         for (const [key, value] of Object.entries(values)) {

@@ -3,6 +3,7 @@ import { test } from 'node:test';
 
 import { colormaps } from '../src/colormap.ts';
 import {
+  CUE_SECONDS,
   Agent,
   Clock,
   Dwell,
@@ -25,6 +26,7 @@ import {
   css,
   cumulative,
   drawAreas,
+  drawCue,
   drawLens,
   drawPaths,
   drawRings,
@@ -38,6 +40,7 @@ import {
   gravityField,
   heatField,
   hitTest,
+  offTable,
   joinRows,
   keepOnTable,
   levelScale,
@@ -557,4 +560,37 @@ test('dwelling in one place fires once, and moving away ends it', () => {
   assert.deepEqual(events, ['dwell']);
   dwell.handle({ ...sample('m', 'move', [300, 100]), time: 2 });
   assert.deepEqual(events, ['dwell', 'leave']);
+});
+
+// ---- Attention cue (#105) -------------------------------------------------------
+
+test('a cue plays once, brightest at the start, and then stops drawing', () => {
+  const brightest = (age: number) => {
+    const { pen, calls } = recorder();
+    const playing = drawCue(tableView(pen, frame, 1000, age), { point: [500, 300] }, age, { frame });
+    return { playing, calls };
+  };
+  assert.ok(brightest(0).playing && brightest(0).calls.length > 0);
+  assert.ok(brightest(CUE_SECONDS * 0.9).playing);
+  const done = brightest(CUE_SECONDS + 0.01);
+  assert.equal(done.playing, false);
+  assert.equal(done.calls.length, 0, 'nothing is left on the table');
+});
+
+test('a line is drawn in from its start, and an area flashes its outline', () => {
+  const { pen, ops } = recorder();
+  drawCue(tableView(pen, frame, 1000), { line: [[100, 100], [900, 100]] }, CUE_SECONDS * 0.2, { frame });
+  const reached = Math.max(...ops('lineTo').map((c) => (c.args as number[])[0]!));
+  assert.ok(reached > 100 && reached < 900, `the head is part way along (${reached})`);
+  const area = recorder();
+  drawCue(tableView(area.pen, frame, 1000), { area: [[100, 100], [300, 100], [300, 300], [100, 100]] }, 0.3, { frame });
+  assert.ok(area.ops('fill').length > 0 && area.ops('stroke').length > 0);
+});
+
+test('a change off the table is pointed at from the nearest edge', () => {
+  assert.equal(offTable([[500, 300]], frame), null);
+  assert.equal(offTable([[-50, 300], [50, 300]], frame), null, 'partly on the table');
+  const away = offTable([[1200, 300]], frame)!;
+  assert.deepEqual(away.at, [1000, 300]);
+  assert.deepEqual(away.towards, [1, 0]);
 });
