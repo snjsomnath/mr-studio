@@ -228,7 +228,7 @@ Ask the model: "Use the MR Studio overview tool and tell me which core version y
 | `--core <folder>` | `MRSTUDIO_CORE` | Read the core live from a checkout instead of the snapshot |
 | | `MRSTUDIO_CLI` | Path to the `mrstudio` binary. Without it the server looks on `PATH`, in a core checkout's `target/`, and inside the installed app, which ships it |
 | | `MRSTUDIO_REPO` | Repository requests go to. Default `snjsomnath/mr-studio` |
-| | `GITHUB_TOKEN`, `GH_TOKEN` | Lets `submit_module_request` open issues directly |
+| | `GITHUB_TOKEN`, `GH_TOKEN` | Lets `submit_development_request` open issues directly (otherwise the gh CLI sign-in is used) |
 
 `--version` prints the server's version, which is the MR Studio version it was built with.
 
@@ -271,11 +271,11 @@ From a rough idea and a spreadsheet of points to a table ready for a workshop. T
 >
 > **Person**: The spreadsheet is `spots.csv`, with lat, lon, type and score.
 >
-> **Model**: Put it in the table's `data/` folder. For buildings and streets, open the table in MR Studio and use Add data, OpenStreetMap. Tell me when they are in.
+> **Model**: Tell me where it is. I'll check it first, then fetch buildings and streets from OpenStreetMap for the table's area.
 >
-> **Person**: Done.
+> **Person**: It's in my Downloads folder.
 >
-> **Model**: I've pointed the scene at the buildings and streets and named your file `spots`, so layers can use it. `[update_site]`
+> **Model**: 40 spots, all on the table. Buildings: 118 from OpenStreetMap, 104 with a height. The scene now uses them, and your file is the dataset `spots`, with `type` (bench, tree, kiosk) and `score` (1 to 5). `[import_data, list_site_files]`
 >
 > **Model**: At rest, while nobody touches the controller, I suggest a dark base map, trees, light traffic and lit windows. Then two buttons: "Morning sun", to see which spots are in shade, and "Suggested spots". `[find_capabilities, assess_experience, build_experience]`
 >
@@ -285,11 +285,11 @@ From a rough idea and a spreadsheet of points to a table ready for a workshop. T
 >
 > **Person**: Can people vote for spots from their phones?
 >
-> **Model**: Not as votes yet. The Sketch layer lets phones drop pins, which works for "a bench here". Real voting would be a new module, so I've drafted a request in `requests/` for you to read. I won't file it unless you say so. `[assess_experience, draft_module_request]`
+> **Model**: Not as votes yet. The Sketch layer lets phones drop pins, which works for "a bench here". Real voting would be a change to the Sketch layer; nothing on GitHub asks for it yet, so I've drafted a request in `requests/` for you to read. I won't file it unless you say so. `[assess_experience, find_related_issues, draft_development_request]`
 >
 > **Person**: Add Sketch, and leave the request for now. For the opening talk I'd like a short slideshow: an old photo, morning sun, afternoon sun, then the spots.
 >
-> **Model**: Put the photo in `data/media/` first. The tour now has four steps that dip through the empty map, each with a note for your phone, such as "Ask: which spots are in shade at nine?" `[add_layer with parent, set_steps]`
+> **Model**: Added the photo to `data/media/`. The tour now has four steps that dip through the empty map, each with a note for your phone, such as "Ask: which spots are in shade at nine?" `[add_media, add_layer with parent, set_steps]`
 >
 > **Person**: Swedish first, please, and call it "Bänkar i Lindholmen".
 >
