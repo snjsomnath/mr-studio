@@ -172,6 +172,19 @@ button.ed-brand:focus-visible {
   color: #a0a6b1;
 }
 
+.ed-add-menu {
+  overflow-y: auto;
+}
+
+.ed-add-item {
+  justify-content: flex-start;
+  gap: 8px;
+}
+
+.ed-add-item.is-needs {
+  color: var(--ed-text-2);
+}
+
 .ed-file-item kbd {
   font: inherit;
   font-size: 12px;
