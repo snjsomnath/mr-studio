@@ -1,6 +1,8 @@
 import { revealPath, revealPolygon, sameReveal, tableFrame } from '@mrstudio/sdk';
 import type { CanvasOverlay, DrawingOverlay, Colormap, FieldOverlay, FieldOverlayStyle, FlowOverlay, FlowOverlayStyle, MapHandle, ModelHandle, PixelRect, RevealShape, Shape, ShapeOverlay, SiteInfo, TablePicture, TablePointer, DisplayQuality } from '@mrstudio/sdk';
 import maplibregl from 'maplibre-gl';
+
+type DetailRenderer = (g: CanvasRenderingContext2D, scale: number) => void;
 import type { StyleSpecification } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 
@@ -39,6 +41,10 @@ export class TableView {
   private clippable = new Set<string>();
   /** The shape each clipped layer shows through; absent shows everything. */
   private clips = new Map<string, RevealShape>();
+  /** Layers that draw a sharp picture for a magnifier (#351), and the scene's order to stack them in. */
+  private details = new Map<string, DetailRenderer>();
+  private order: string[] = [];
+  private detailCanvas: HTMLCanvasElement | null = null;
 
   /** `calibrated` applies the site's table calibration, when it has one. */
   constructor(container: HTMLElement, site: SiteInfo, calibrated = false) {
@@ -230,6 +236,13 @@ export class TableView {
         track(() => picture.remove());
         return picture;
       },
+      addDetail: (render: DetailRenderer): void => {
+        this.details.set(instance, render);
+        track(() => {
+          if (this.details.get(instance) === render) this.details.delete(instance);
+        });
+      },
+      detail: (centre: [number, number], radius_m: number, size: number) => this.detail(instance, centre, radius_m, size),
       addShapes: (name: string, style?: { opacity?: number }): ShapeOverlay => {
         const overlay = this.shapes(`shapes:${instance}:${name}`, style?.opacity ?? 1, add, forget, drawn.intensity);
         drawn.overlays.add(overlay);
@@ -456,8 +469,32 @@ export class TableView {
     return picture;
   }
 
+  /** The sharp pictures layers draw for a magnifier, other than `asking`'s own, in the scene's order (#351). */
+  private detail(asking: string, centre: [number, number], radius_m: number, size: number): HTMLCanvasElement | null {
+    const renderers = this.order.filter((id) => id !== asking && this.details.has(id) && !this.clips.has(id));
+    if (renderers.length === 0 || radius_m <= 0 || size < 1) return null;
+    const canvas = this.detailCanvas ??= document.createElement('canvas');
+    if (canvas.width !== size || canvas.height !== size) canvas.width = canvas.height = size;
+    const g = canvas.getContext('2d')!;
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    g.clearRect(0, 0, size, size);
+    const scale = size / (2 * radius_m);
+    for (const id of renderers) {
+      g.save();
+      g.setTransform(scale, 0, 0, scale, -(centre[0] - radius_m) * scale, -(centre[1] - radius_m) * scale);
+      try {
+        this.details.get(id)!(g, scale);
+      } catch (error) {
+        console.warn(`[${id}] detail`, error);
+      }
+      g.restore();
+    }
+    return canvas;
+  }
+
   /** Stacks the scene's layers in this order, bottom first. */
   setOrder(scene: string[]): void {
+    this.order = [...scene];
     for (const instance of scene) {
       this.ensureSlot(instance);
       for (const id of this.owned.get(instance)!) if (this.map.getLayer(id)) this.map.moveLayer(id);

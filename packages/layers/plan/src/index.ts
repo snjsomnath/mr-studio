@@ -133,6 +133,8 @@ export default defineLayer<Params>({
     /** The look's own cross-fade after a change from the controller: from, to, and how far. */
     let lookFade: { from: number; to: number; t: number } | null = null;
     let lookNow = 0;
+    /** How far the opening has drawn the lines, 0 to 1, as last painted. */
+    let drawnNow = 0;
     let publishedTurn: boolean | null = null;
     let diagonal = Math.hypot(drawing.width, drawing.height);
 
@@ -323,6 +325,7 @@ export default defineLayer<Params>({
       const opened = drawn >= 1 && (lookFade ? lookFade.t >= 1 : timing.colour_after_s === null || clock >= timing.in_s + timing.colour_after_s + timing.colour_s);
       if (!opened || colour !== lookNow) dirty = true;
       lookNow = colour;
+      drawnNow = drawn;
       // The controller's picture turns with the table: in lines until the turn is half way.
       const turned = colour >= 0.5 && drawn >= 1;
       if (turned !== publishedTurn) {
@@ -331,95 +334,106 @@ export default defineLayer<Params>({
       }
       if (!dirty) return;
       dirty = false;
-      const g = drawing.ctx;
-      const { width: w, height: h } = drawing;
       drawing.clear();
-      // The drawing as it is placed: its unit square drawn through the placement.
-      const placed = (draw: () => void) => {
-        g.save();
-        g.transform(...place);
-        draw();
-        g.restore();
-      };
-      // What lies outside every phase: traced in, faded in, or there; then turned to colour.
-      if (base && colour < 1) {
-        if (ctx.params.opening === 'trace' && drawn < 1) {
-          placed(() => {
-            g.globalAlpha = drawn * 0.22;
-            g.drawImage(base!, 0, 0, 1, 1);
-          });
-          drawTrace(g, trace, drawn, { dash: diagonal * 0.11, minWidth: 0.8 / drawing.scale });
-        } else {
-          placed(() => {
-            g.globalAlpha = (ctx.params.opening === 'fade' ? drawn : 1) * (1 - colour);
-            g.drawImage(base!, 0, 0, 1, 1);
-          });
-        }
-      }
-      if (colourImage && colour > 0) {
-        placed(() => {
-          g.globalAlpha = colour;
-          g.drawImage(colourImage!, 0, 0, 1, 1);
-        });
-      }
-      const reach = Math.hypot(w, h) / 2;
-      const fadeIn = ctx.params.opening === 'none' ? 1 : drawn;
-      phases.forEach((p, k) => {
-        if (p.shown <= 0) return;
-        const rising = p.target === 1 && p.shown < 1 && k === newest;
-        const progress = rising ? (p.shown - p.from) / Math.max(1e-6, 1 - p.from) : 1;
-        const from: [number, number] = ctx.params.grow === 'phase' ? p.middle : [w / 2, h / 2];
-        const radius = ctx.params.grow === 'phase' && p.bounds ? growRadius(from, p.bounds) : reach;
-        const lit = hover.level(`phase-${k}`);
-        if (p.pieces) {
-          // Moving by role: its parts come to life over role_s, then keep their steady motion.
-          const progress = Math.min(1, p.motion / Math.max(0.1, ctx.params.role_s));
-          const weight = Math.min(1, (p.target >= 1 ? Math.max(p.shown, progress > 0 ? 1 : 0) : p.shown) + (1 - p.shown) * lit) * fadeIn;
-          const style = { weight, glowPx: drawing.width * drawing.scale * 0.01, minWidth: 0.8 / drawing.scale, dash: [diagonal * 0.011, diagonal * 0.008] as [number, number] };
-          for (const piece of p.pieces) drawRolePiece(g, piece, roleFrame(piece.role, progress, clock, piece.index, piece.count), style);
-        } else {
-          g.save();
-          if (rising) {
-            // Coming in: the faint phase, and the full one inside a circle growing from its start.
-            placed(() => {
-              g.globalAlpha = p.from * fadeIn;
-              g.drawImage(p.image, 0, 0, 1, 1);
-            });
-            g.beginPath();
-            g.arc(from[0], from[1], ease(progress) * radius, 0, Math.PI * 2);
-            g.clip();
-            g.globalAlpha = fadeIn;
-          } else {
-            g.globalAlpha = Math.min(1, (p.shown + (1 - p.shown) * lit) * fadeIn);
-          }
-          placed(() => g.drawImage(p.image, 0, 0, 1, 1));
-          g.restore();
-          if (rising) {
-            const r = ease(progress) * radius;
-            g.save();
-            g.strokeStyle = 'rgb(255 255 255 / 0.55)';
-            g.lineWidth = 6 / drawing.scale;
-            g.shadowColor = '#fff';
-            g.shadowBlur = 24;
-            g.beginPath();
-            g.arc(from[0], from[1], r, 0, Math.PI * 2);
-            g.stroke();
-            g.restore();
-          }
-        }
-        // The newest phase glows once it has landed, and a phase pointed at glows while it is held.
-        const landed = !p.pieces && k === newest && glow > 0 && glow < GLOW_S && p.target === 1 ? 0.45 * Math.sin((glow / GLOW_S) * Math.PI) : 0;
-        const shine = Math.max(landed, 0.3 * lit);
-        if (shine > 0) {
-          g.save();
-          g.globalCompositeOperation = 'lighter';
-          g.globalAlpha = shine;
-          placed(() => g.drawImage(p.image, 0, 0, 1, 1));
-          g.restore();
-        }
-      });
+      paint(drawing.ctx, drawing.scale, false);
       drawing.commit();
     });
+
+    /**
+     * Paints the drawing as it is now into `g`, in table metres; `scale` is pixels per metre.
+     * The table's drawing, and a magnifier's sharp picture (`sharp`, #351), are both painted here.
+     */
+    function paint(g: CanvasRenderingContext2D, scale: number, sharp: boolean): void {
+      const { width: w, height: h } = drawing;
+      const colour = lookNow;
+      const drawn = drawnNow;
+    // The drawing as it is placed: its unit square drawn through the placement.
+    const placed = (draw: () => void) => {
+      g.save();
+      g.transform(...place);
+      draw();
+      g.restore();
+    };
+    // What lies outside every phase: traced in, faded in, or there; then turned to colour.
+    if (base && colour < 1) {
+      if (ctx.params.opening === 'trace' && drawn < 1) {
+        placed(() => {
+          g.globalAlpha = drawn * 0.22;
+          g.drawImage(base!, 0, 0, 1, 1);
+        });
+        drawTrace(g, trace, drawn, { dash: diagonal * 0.11, minWidth: 0.8 / scale });
+      } else {
+        placed(() => {
+          g.globalAlpha = (ctx.params.opening === 'fade' ? drawn : 1) * (1 - colour);
+          g.drawImage(base!, 0, 0, 1, 1);
+        });
+      }
+    }
+    if (colourImage && colour > 0) {
+      placed(() => {
+        g.globalAlpha = colour;
+        g.drawImage(colourImage!, 0, 0, 1, 1);
+      });
+    }
+    const reach = Math.hypot(w, h) / 2;
+    const fadeIn = ctx.params.opening === 'none' ? 1 : drawn;
+    phases.forEach((p, k) => {
+      if (p.shown <= 0) return;
+      const rising = p.target === 1 && p.shown < 1 && k === newest;
+      const progress = rising ? (p.shown - p.from) / Math.max(1e-6, 1 - p.from) : 1;
+      const from: [number, number] = ctx.params.grow === 'phase' ? p.middle : [w / 2, h / 2];
+      const radius = ctx.params.grow === 'phase' && p.bounds ? growRadius(from, p.bounds) : reach;
+      const lit = hover.level(`phase-${k}`);
+      if (p.pieces) {
+        // Moving by role: its parts come to life over role_s, then keep their steady motion.
+        const progress = Math.min(1, p.motion / Math.max(0.1, ctx.params.role_s));
+        const weight = Math.min(1, (p.target >= 1 ? Math.max(p.shown, progress > 0 ? 1 : 0) : p.shown) + (1 - p.shown) * lit) * fadeIn;
+        const style = { weight, glowPx: drawing.width * scale * 0.01, minWidth: 0.8 / scale, dash: [diagonal * 0.011, diagonal * 0.008] as [number, number] };
+        for (const piece of p.pieces) drawRolePiece(g, piece, roleFrame(piece.role, progress, clock, piece.index, piece.count), style);
+      } else {
+        g.save();
+        if (rising) {
+          // Coming in: the faint phase, and the full one inside a circle growing from its start.
+          placed(() => {
+            g.globalAlpha = p.from * fadeIn;
+            g.drawImage(p.image, 0, 0, 1, 1);
+          });
+          g.beginPath();
+          g.arc(from[0], from[1], ease(progress) * radius, 0, Math.PI * 2);
+          g.clip();
+          g.globalAlpha = fadeIn;
+        } else {
+          g.globalAlpha = Math.min(1, (p.shown + (1 - p.shown) * lit) * fadeIn);
+        }
+        placed(() => g.drawImage(p.image, 0, 0, 1, 1));
+        g.restore();
+        if (rising) {
+          const r = ease(progress) * radius;
+          g.save();
+          g.strokeStyle = 'rgb(255 255 255 / 0.55)';
+          g.lineWidth = 6 / scale;
+          g.shadowColor = '#fff';
+          g.shadowBlur = 24;
+          g.beginPath();
+          g.arc(from[0], from[1], r, 0, Math.PI * 2);
+          g.stroke();
+          g.restore();
+        }
+      }
+      // The newest phase glows once it has landed, and a phase pointed at glows while it is held.
+      const landed = !p.pieces && k === newest && glow > 0 && glow < GLOW_S && p.target === 1 ? 0.45 * Math.sin((glow / GLOW_S) * Math.PI) : 0;
+      const shine = Math.max(landed, 0.3 * lit);
+      if (shine > 0) {
+        g.save();
+        g.globalCompositeOperation = 'lighter';
+        g.globalAlpha = shine;
+        placed(() => g.drawImage(p.image, 0, 0, 1, 1));
+        g.restore();
+      }
+    });
+    }
+
+    ctx.map.addDetail((g, scale) => paint(g, scale, true));
 
     await load();
 

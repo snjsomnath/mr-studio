@@ -1,5 +1,5 @@
 import { EngineClient, VoiceBed, entityChanges, entityValues, hearsSound, serviceClient, stepTransition, transitionGain } from '@mrstudio/sdk';
-import type { RevealShape } from '@mrstudio/sdk';
+import type { LayerView, RevealShape } from '@mrstudio/sdk';
 import type { Connection, EntityChange, LayerManifest, LayerModule, LayerState, PanelContext, StepTransitionKind, TableContext, TableHandlers, ToolInput } from '@mrstudio/sdk';
 
 import { Cues } from './cues.ts';
@@ -107,7 +107,60 @@ export function entitySender(connection: Connection, layer: string): (set: strin
   };
 }
 
-type Base = Pick<PanelContext, 'site' | 'params' | 'shared' | 'setParams' | 'language' | 'say' | 'service' | 'selection' | 'select' | 'entity' | 'setEntity' | 'sendTool' | 'action'>;
+type Base = Pick<PanelContext, 'site' | 'params' | 'shared' | 'setParams' | 'language' | 'say' | 'service' | 'selection' | 'select' | 'entity' | 'setEntity' | 'sendTool' | 'action' | 'view'>;
+
+/** Fewest milliseconds between two pictures a table sends, and between two looks from a controller. */
+const VIEW_SEND_MS = 90;
+const VIEW_WATCH_MS = 80;
+
+/**
+ * `ctx.view` (#351): the table sends a picture to the host for the layer's controller, one at a
+ * time and spaced out; the controller asks for anything newer than what it has.
+ */
+export function layerView(layer: string): LayerView {
+  const url = `/api/layers/${encodeURIComponent(layer)}/view`;
+  let sending = false;
+  let lastSent = 0;
+  return {
+    send(canvas) {
+      const now = performance.now();
+      if (sending || now - lastSent < VIEW_SEND_MS || canvas.width === 0 || canvas.height === 0) return;
+      sending = true;
+      lastSent = now;
+      const blob = 'convertToBlob' in canvas
+        ? canvas.convertToBlob({ type: 'image/jpeg', quality: 0.86 })
+        : new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.86));
+      void blob
+        .then((body) => (body ? fetch(url, { method: 'PUT', body }) : undefined))
+        .catch(() => {})
+        .finally(() => (sending = false));
+    },
+    watch(callback) {
+      let revision = 0;
+      let stopped = false;
+      let timer = 0;
+      const look = async () => {
+        try {
+          const response = await fetch(`${url}?after=${revision}`, { cache: 'no-store' });
+          if (!stopped && response.status === 200) {
+            revision = Number(response.headers.get('x-revision')) || revision + 1;
+            const picture = await createImageBitmap(await response.blob());
+            if (stopped) picture.close();
+            else callback(picture);
+          }
+        } catch {
+          // The host is away for a moment; look again.
+        }
+        if (!stopped) timer = window.setTimeout(look, VIEW_WATCH_MS);
+      };
+      void look();
+      return () => {
+        stopped = true;
+        clearTimeout(timer);
+      };
+    },
+  };
+}
 
 /** Shared read-only parts of a layer context, backed by the store. */
 export function baseContext(store: Store, connection: Connection, layer: string): Base {
@@ -140,6 +193,7 @@ export function baseContext(store: Store, connection: Connection, layer: string)
       return store.layer(layer).shared;
     },
     setParams: paramSender(connection, layer),
+    view: layerView(layer),
   };
 }
 
@@ -158,6 +212,8 @@ export class LayerManager {
   private readonly view: TableView;
   /** The shape each revealing layer shows its items through (#287); absent until it sets one. */
   private reveals = new Map<string, RevealShape | null>();
+  /** Items a revealing layer gave a shape of their own (#349), by item instance id. */
+  private itemReveals = new Map<string, RevealShape | null>();
 
   constructor(store: Store, connection: Connection, view: TableView) {
     this.store = store;
@@ -354,8 +410,24 @@ export class LayerManager {
   private reveal(parent: string, shape: RevealShape | null): void {
     this.reveals.set(parent, shape);
     for (const id of this.store.state.scene) {
-      if (this.store.state.layers[id]?.parent === parent) this.view.setClip(id, shape);
+      if (this.store.state.layers[id]?.parent === parent && !this.itemReveals.has(id)) this.view.setClip(id, shape);
     }
+  }
+
+  /** The items of a layer, in the order site.json lists them. */
+  private itemsOf(parent: string): string[] {
+    return Object.keys(this.store.state.layers).filter((id) => this.store.state.layers[id]?.parent === parent);
+  }
+
+  /** A revealing layer gave one of its items a shape of its own, or handed it back (`undefined`). */
+  private revealItem(parent: string, index: number, shape: RevealShape | null | undefined): void {
+    const id = this.itemsOf(parent)[index];
+    if (!id) return;
+    if (shape === undefined) this.itemReveals.delete(id);
+    else this.itemReveals.set(id, shape);
+    if (!this.store.state.scene.includes(id)) return;
+    const own = this.itemReveals.has(id) ? this.itemReveals.get(id)! : this.reveals.get(parent);
+    if (own !== undefined) this.view.setClip(id, own);
   }
 
   private async start(id: string): Promise<void> {
@@ -364,7 +436,8 @@ export class LayerManager {
     // An item of a Magnifier or a Reveal line is clipped to its shape, and shows nowhere until there is one.
     const revealer = this.revealedBy(id);
     this.view.setClippable(id, revealer !== null);
-    if (revealer !== null && this.reveals.has(revealer)) this.view.setClip(id, this.reveals.get(revealer) ?? null);
+    if (revealer !== null && this.itemReveals.has(id)) this.view.setClip(id, this.itemReveals.get(id) ?? null);
+    else if (revealer !== null && this.reveals.has(revealer)) this.view.setClip(id, this.reveals.get(revealer) ?? null);
     // A custom layer has no code: the recipe player draws it from its manifest, and restyles as it is saved again.
     const manifest = this.store.manifest(layer);
     const module = (layerModule(layer) as LayerModule | undefined) ??
@@ -432,11 +505,20 @@ export class LayerManager {
           if (running.stopped || !manifest?.reveals) return;
           this.reveal(id, shape);
         },
+        item: (index, shape) => {
+          if (running.stopped || !manifest?.reveals) return;
+          this.revealItem(id, index, shape);
+        },
       },
       onFrame: (callback) => running.frames.push(callback),
       onCleanup: track,
     };
-    if (manifest?.reveals) track(() => this.reveals.delete(id));
+    if (manifest?.reveals) {
+      track(() => {
+        this.reveals.delete(id);
+        for (const item of this.itemsOf(id)) this.itemReveals.delete(item);
+      });
+    }
     // The base context has live getters, so it is the prototype rather than a copy.
     const ctx: TableContext = Object.assign(Object.create(baseContext(store, this.connection, id)), extras);
     const before = { ...store.layer(id).params };

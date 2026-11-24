@@ -21,3 +21,6 @@ Comparing what is above and below ground, then and now, or a plan against today,
 
 - Turn on **The line sweeps slowly while nobody moves it** to have it invite people in when the table is idle.
 - **Hide the map where they show** gives the revealed side a dark background.
+- For then and now, put two layers inside (say the 1960 aerial photo, then today's) and turn on **With two layers inside, the second shows on the other side**.
+
+![Then and now: one drawing each side of the line](docs/screenshots/349-then-and-now.png)
