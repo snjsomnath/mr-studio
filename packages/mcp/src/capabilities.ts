@@ -83,7 +83,8 @@ const CONSTRAINTS: Omit<Capability, 'questions' | 'interactions' | 'requires' | 
 const SITE_FEATURES: { id: string; path: string; name: string; summary: string; surfaces: Capability['surfaces']; interactions?: string[] }[] = [
   { id: 'site:steps-notes', path: 'layers[].steps.sequence[]', name: 'Presenter notes', summary: 'Notes for each step of a sequence, shown on the guide\'s phone and in the editor, never on the table.', surfaces: { phone: "the guide's phone (/guide) shows the notes" } },
   { id: 'site:languages', path: 'branding', name: 'Languages for visitors', summary: 'Visitors switch the controller and phones between languages; the site\'s own words are translated in branding.translations.', surfaces: { controller: 'a language switch', phone: 'the same language' } },
-  { id: 'site:ribbons', path: 'table.ribbons', name: 'Table ribbons', summary: 'At-a-glance strips in the blank margins of the projection, on any side of the model.', surfaces: { table: 'strips beside the model' } },
+  { id: 'site:ribbons', path: 'table.ribbons', name: 'Table ribbons', summary: 'At-a-glance strips in the blank margins of the projection, on any side of the model, filled by the open layer\'s ribbon panels (Sunlight, Stormwater…).', surfaces: { table: 'strips beside the model', controller: 'a Ribbon button picks whose ribbon shows when more than one open layer has one' } },
+  { id: 'site:branding', path: 'branding', name: 'Title, welcome line and logo', summary: 'The table\'s title and welcome line on the controller\'s home screen, and a logo from the table\'s pictures above the title and beside it on phones.', surfaces: { controller: 'title, welcome line and logo on the home screen', phone: 'the logo beside the title' } },
   { id: 'site:items', path: 'layers[].items[]', name: 'Layers inside a layer', summary: 'A layer shown only while another is open, such as trams inside a sun study.', surfaces: { table: 'both together while the outer layer is open' } },
   { id: 'site:buttons', path: 'layers[].button', name: 'Controller buttons and groups', summary: 'Each layer\'s button: name, icon, side and group (Simulations, Stories…).', surfaces: { controller: 'buttons down the left and right' } },
   { id: 'site:custom-layers', path: 'custom', name: 'Custom layers (recipes)', summary: 'Layers made from data, look and motion blocks without code, saved in the site.', surfaces: { table: 'the recipe\'s looks and motions', controller: 'its legend and bound controls' } },
@@ -110,7 +111,7 @@ function layerCapability(l: LayerEntry, catalog: Catalog, roadmap: RoadmapRow[])
   const tools: any[] = m.tools ?? [];
   const panels: any[] = m.panels ?? [];
   const requires: Requirement[] = [];
-  for (const d of m.requires?.data ?? []) requires.push({ kind: 'data', what: d, how: `a '${d}' dataset in the site (scene.${d} or data.${d}): add the file with the editor's Add data, then point the site at it with update_site` });
+  for (const d of m.requires?.data ?? []) requires.push({ kind: 'data', what: d, how: `a '${d}' dataset in the site (scene.${d} or data.${d}): bring the file in with import_data (target ${['buildings', 'trees', 'walkways', 'trips', 'terrain'].includes(d) ? d : `data:${d}`}), or the editor's Add data` });
   for (const k of m.requires?.kernels ?? []) if (!catalog.kernels.includes(k)) requires.push({ kind: 'kernel', what: k, how: 'not in this core' });
   for (const s of m.requires?.services ?? []) requires.push({ kind: 'service', what: s, how: `a service '${s}' under "services" in site.json` });
   const keys = new Set<string>();
@@ -275,7 +276,7 @@ const SYNONYMS: Record<string, string[]> = {
   traffic: ['car', 'cars', 'street'], transport: ['transit', 'tram', 'bus'], tram: ['transit', 'public transport'], bus: ['transit', 'public transport'], train: ['transit', 'public transport'],
   public: ['square', 'street', 'life'], space: ['square', 'street'], green: ['tree', 'trees', 'green'], trees: ['tree', 'green'],
   story: ['sequence', 'slideshow', 'guided'], workshop: ['sequence', 'sketch', 'guided'], tour: ['slideshow', 'guided', 'sequence'],
-  history: ['old', 'historic', 'photo', 'before'], hidden: ['under', 'reveal', 'x-ray'], underground: ['under', 'reveal'],
+  history: ['old', 'historic', 'photo', 'before'], then: ['history', 'before', 'swipe'], now: ['today'], hidden: ['under', 'reveal', 'x-ray'], underground: ['under', 'reveal'],
   noise: ['sound', 'soundscape'], sound: ['soundscape', 'sound'], night: ['light', 'lights', 'dark'],
 };
 
