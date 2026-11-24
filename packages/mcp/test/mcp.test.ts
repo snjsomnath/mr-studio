@@ -250,11 +250,12 @@ describe('server over stdio', () => {
     });
     assert.equal(sun.data.verdict, 'use-existing', sun.text);
 
-    const buses = await call(client, 'check_layer_idea', {
-      title: 'Buses on the table', description: 'Buses moving along their routes from the timetable', blocks: ['animated paths', 'live feed', 'markers'],
+    // Moving things and live feeds are built now; a Python service behind the gateway is still planned.
+    const energy = await call(client, 'check_layer_idea', {
+      title: 'Energy use per building', description: 'Energy use of each building computed by an energy model service', blocks: ['service gateway', 'choropleth'],
     });
-    assert.equal(buses.data.verdict, 'needs-new-module', buses.text);
-    assert.ok(buses.data.roadmap.some((r: any) => r.layer === 'Public transport'));
+    assert.equal(energy.data.verdict, 'needs-new-module', energy.text);
+    assert.ok(energy.data.missing.some((m: string) => m.includes('service')), energy.text);
 
     const draft = await call(client, 'draft_module_request', {
       site: 'harbour', kind: 'contract', title: 'Welcome screen for the TV and table',
