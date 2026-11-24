@@ -1,3 +1,4 @@
+import type { ServiceClient } from './service.ts';
 import type { PointerSample } from './blocks/interaction.ts';
 import type { Colormap } from './colormap.ts';
 import type { EngineClient } from './engine.ts';
@@ -185,6 +186,12 @@ interface ContextBase<P> {
    * layer.json are translated without it.
    */
   say(text: string, vars?: Record<string, string | number>): string;
+  /**
+   * One of the site's outside services (#278), by its id in site.json `services`: `get`, `post`
+   * and `job`, through the host. Name it in `requires.services`. While a call runs, publish
+   * `busy: { label, progress }` and the controller shows it under the layer's name.
+   */
+  service(id: string): ServiceClient;
 }
 
 export interface TableContext<P = Params> extends ContextBase<P> {

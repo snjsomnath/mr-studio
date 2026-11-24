@@ -162,10 +162,10 @@ export const BLOCKS: BlockDef[] = [
   },
   {
     id: 'service', group: 'data', name: 'Service gateway',
-    description: 'A Python service declared in the manifest and reached through the host, for research models.',
-    usage: "planned: requires.services in layer.json",
-    detect: 'ctx\\.services|ServiceClient',
-    unlocks: ['Energy and solar flows (ECOM generalised)', 'Street-level walk-through'],
+    description: "A model or API beside the table (a Python optimiser in its own venv) or elsewhere, started and kept running by the host (#278): quick calls, long jobs with progress, and the last answer kept for when it is down.",
+    usage: "site.json 'services' (run or url); in the layer, requires.services and ctx.service(id).get/post/job; publish 'busy' while it works (samples/service-example)",
+    detect: 'export function serviceClient',
+    unlocks: ['Energy and solar flows (ECOM generalised)', 'Flood or noise models run on demand', 'Street-level walk-through'],
   },
 
   {

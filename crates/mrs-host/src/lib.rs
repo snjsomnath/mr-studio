@@ -11,6 +11,7 @@ pub mod layers;
 mod model;
 pub mod relay;
 pub mod bridge;
+pub mod services;
 pub mod sources;
 mod transit;
 mod wms;
@@ -81,6 +82,8 @@ pub struct AppState {
     bridge: bridge::BridgeSlot,
     /// The host's own router, for answering phones that come through a relay or the bridge.
     links: std::sync::OnceLock<Router>,
+    /// The site's outside compute (#278), started with the host and stopped with it.
+    pub services: services::Services,
 }
 
 /// One OpenStreetMap fetch: when, and the GeoJSON it became. Kept by layer and ground.
@@ -654,7 +657,14 @@ pub async fn start(config: HostConfig) -> anyhow::Result<RunningHost> {
         None => tracing::info!("listening on this computer only; phones cannot join"),
     }
     let hub = Hub::new(&site, catalog, addr.port(), join_base, config.session.clone())?;
+    // The site's services start now and come up in the background; their incidents go to the operator log.
+    let (service_incidents, mut service_incident_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+    let services = services::Services::start(&site, move |message| {
+        tracing::warn!("{message}");
+        let _ = service_incidents.send(message);
+    });
     let state = Arc::new(AppState {
+        services,
         hub,
         engine,
         site,
@@ -677,6 +687,15 @@ pub async fn start(config: HostConfig) -> anyhow::Result<RunningHost> {
                 let Some(state) = state.upgrade() else { break };
                 state.health.note(&incident.message);
                 state.hub.emit("engine.restarted", json!({ "message": incident.message, "backend": incident.backend }));
+            }
+        });
+    }
+    {
+        let state = Arc::downgrade(&state);
+        tokio::spawn(async move {
+            while let Some(message) = service_incident_rx.recv().await {
+                let Some(state) = state.upgrade() else { break };
+                state.health.note(&message);
             }
         });
     }
@@ -778,6 +797,11 @@ fn router(state: Arc<AppState>, web_dir: Option<PathBuf>) -> Router {
         .route("/api/sources/{id}/tile/{z}/{x}/{y}", get(source_tile))
         .route("/api/sources/{id}/proxy", get(source_proxy))
         .route("/api/transit/{id}/vehicles", get(transit_vehicles))
+        .route("/api/services", get(services_page))
+        .route("/api/services/{id}/log", get(service_log))
+        .route("/api/services/{id}/kept", get(service_kept).put(keep_for_service))
+        .route("/api/services/{id}/call/{*path}", axum::routing::any(call_service))
+        .route("/api/services/{id}/call", axum::routing::any(call_service_root))
         .layer(DefaultBodyLimit::max(MAX_IMPORT_BYTES))
         // Site files are never kept by the browser (#125, #222). Every table is served at the
         // same address (127.0.0.1:4170/site/data/buildings.geojson), and the desktop app's
@@ -1343,4 +1367,189 @@ async fn data_request(
         Ok(report) => (StatusCode::UNPROCESSABLE_ENTITY, Json(json!(report))).into_response(),
         Err(error) => (StatusCode::BAD_REQUEST, Json(json!({ "error": error }))).into_response(),
     }
+}
+
+/// `GET /api/services`: what each of the site's services is doing (#278).
+async fn services_page(State(state): State<Arc<AppState>>) -> Json<Value> {
+    Json(json!({ "services": state.services.statuses() }))
+}
+
+/// `GET /api/services/<id>/log`: the last lines the service wrote.
+async fn service_log(State(state): State<Arc<AppState>>, axum::extract::Path(id): axum::extract::Path<String>) -> axum::response::Response {
+    match state.services.log(&id) {
+        Some(lines) => Json(json!({ "lines": lines })).into_response(),
+        None => (StatusCode::NOT_FOUND, Json(json!({ "error": format!("this table has no service '{id}'") }))).into_response(),
+    }
+}
+
+#[derive(serde::Deserialize)]
+struct KeptQuery {
+    key: String,
+}
+
+/// `GET /api/services/<id>/kept?key=`: a value a layer kept for when the service cannot answer.
+async fn service_kept(
+    State(state): State<Arc<AppState>>,
+    axum::extract::Path(id): axum::extract::Path<String>,
+    Query(query): Query<KeptQuery>,
+) -> axum::response::Response {
+    if !state.services.knows(&id) {
+        return (StatusCode::NOT_FOUND, Json(json!({ "error": format!("this table has no service '{id}'") }))).into_response();
+    }
+    match tokio::fs::read(state.services.kept_file(&id, &query.key)).await {
+        Ok(body) => ([(header::CONTENT_TYPE, "application/json")], body).into_response(),
+        Err(_) => (StatusCode::NOT_FOUND, Json(json!({ "error": "nothing kept under that key" }))).into_response(),
+    }
+}
+
+/// `PUT /api/services/<id>/kept?key=`: keeps a JSON value, such as a finished job's result. From this computer only.
+async fn keep_for_service(
+    State(state): State<Arc<AppState>>,
+    ConnectInfo(from): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    axum::extract::Path(id): axum::extract::Path<String>,
+    Query(query): Query<KeptQuery>,
+    body: Bytes,
+) -> axum::response::Response {
+    if let Err(no) = local(&from, &headers) {
+        return *no;
+    }
+    if !state.services.knows(&id) {
+        return (StatusCode::NOT_FOUND, Json(json!({ "error": format!("this table has no service '{id}'") }))).into_response();
+    }
+    if serde_json::from_slice::<Value>(&body).is_err() {
+        return (StatusCode::BAD_REQUEST, Json(json!({ "error": "keep a JSON value" }))).into_response();
+    }
+    let file = state.services.kept_file(&id, &query.key);
+    match write_cache(&file, &body, "application/json").await {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e.to_string() }))).into_response(),
+    }
+}
+
+async fn write_cache(file: &std::path::Path, body: &[u8], kind: &str) -> std::io::Result<()> {
+    if let Some(dir) = file.parent() {
+        tokio::fs::create_dir_all(dir).await?;
+    }
+    let partial = file.with_extension("partial");
+    tokio::fs::write(&partial, body).await?;
+    tokio::fs::write(file.with_extension("type"), kind).await?;
+    tokio::fs::rename(&partial, file).await
+}
+
+async fn call_service_root(
+    state: State<Arc<AppState>>,
+    from: ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    axum::extract::Path(id): axum::extract::Path<String>,
+    method: axum::http::Method,
+    uri: axum::http::Uri,
+    body: Bytes,
+) -> axum::response::Response {
+    forward_to_service(state, from, headers, id, String::new(), method, uri, body).await
+}
+
+async fn call_service(
+    state: State<Arc<AppState>>,
+    from: ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    axum::extract::Path((id, path)): axum::extract::Path<(String, String)>,
+    method: axum::http::Method,
+    uri: axum::http::Uri,
+    body: Bytes,
+) -> axum::response::Response {
+    forward_to_service(state, from, headers, id, path, method, uri, body).await
+}
+
+/// `/api/services/<id>/call/<path>`: forwards to the service, any method, from this computer only.
+/// A good answer is kept; when the service is down or fails, the kept answer to the same
+/// request is given instead, marked with `x-mrs-cached` (its time, in seconds since 1970).
+#[allow(clippy::too_many_arguments)]
+async fn forward_to_service(
+    State(state): State<Arc<AppState>>,
+    ConnectInfo(from): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    id: String,
+    path: String,
+    method: axum::http::Method,
+    uri: axum::http::Uri,
+    body: Bytes,
+) -> axum::response::Response {
+    if let Err(no) = local(&from, &headers) {
+        return *no;
+    }
+    if !state.services.knows(&id) {
+        return (StatusCode::NOT_FOUND, Json(json!({ "error": format!("this table has no service '{id}'") }))).into_response();
+    }
+    let tail = match uri.query() {
+        Some(q) => format!("/{path}?{q}"),
+        None => format!("/{path}"),
+    };
+    let cache = state.services.cache_file(&id, method.as_str(), &tail, &body);
+    let why = match state.services.address(&id) {
+        Ok(address) => {
+            let kind = headers.get(header::CONTENT_TYPE).and_then(|v| v.to_str().ok()).map(str::to_string);
+            let url = format!("{address}{tail}");
+            let method = method.as_str().to_string();
+            // Every view of the table runs the layer, so the same request comes from each of them:
+            // the service is asked once, and they all get its answer (a job is started once).
+            let answer = state.services.once(cache.clone(), ask_service(method, url, kind, body.clone())).await;
+            match answer {
+                Ok((status, kind, bytes)) => {
+                    let status = StatusCode::from_u16(status).unwrap_or(StatusCode::BAD_GATEWAY);
+                    if status.is_success() {
+                        if let Err(e) = write_cache(&cache, &bytes, &kind).await {
+                            tracing::warn!("keeping an answer of service '{id}': {e}");
+                        }
+                    }
+                    return (status, [(header::CONTENT_TYPE, kind)], bytes).into_response();
+                }
+                Err(why) => why,
+            }
+        }
+        Err(services::Refusal::NotUp(service_state, message)) => {
+            format!(
+                "it is {}{}",
+                serde_json::to_value(&service_state).ok().and_then(|v| v.as_str().map(str::to_string)).unwrap_or_default(),
+                message.map(|m| format!(": {m}")).unwrap_or_default()
+            )
+        }
+        Err(services::Refusal::Unknown) => unreachable!("checked above"),
+    };
+    // The service cannot answer: the last answer to the same request, if there is one.
+    if let Ok(body) = tokio::fs::read(&cache).await {
+        let kind = tokio::fs::read_to_string(cache.with_extension("type")).await.unwrap_or_else(|_| "application/octet-stream".into());
+        let when = std::fs::metadata(&cache)
+            .and_then(|m| m.modified())
+            .ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        return ([(header::CONTENT_TYPE, kind), (header::HeaderName::from_static("x-mrs-cached"), when.to_string())], body).into_response();
+    }
+    (StatusCode::SERVICE_UNAVAILABLE, Json(json!({ "error": format!("service '{id}' cannot answer: {why}"), "service": id })))
+        .into_response()
+}
+
+/// One request to a service: its status, content type and body, or why it gave no usable answer
+/// (it could not be reached, or it failed with a server error).
+async fn ask_service(method: String, url: String, kind: Option<String>, body: Bytes) -> services::Answer {
+    static CLIENT: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
+    // Models take their time: a campus day is seconds, a year minutes. Jobs poll instead.
+    let client =
+        CLIENT.get_or_init(|| reqwest::Client::builder().timeout(std::time::Duration::from_secs(300)).build().expect("an HTTP client"));
+    let method = reqwest::Method::from_bytes(method.as_bytes()).unwrap_or(reqwest::Method::GET);
+    let mut request = client.request(method, url).body(body);
+    if let Some(kind) = kind {
+        request = request.header(reqwest::header::CONTENT_TYPE, kind);
+    }
+    let answer = request.send().await.map_err(|e| format!("it could not be reached: {}", e.without_url()))?;
+    if answer.status().is_server_error() {
+        return Err(format!("the service answered {}", answer.status()));
+    }
+    let status = answer.status().as_u16();
+    let kind =
+        answer.headers().get(reqwest::header::CONTENT_TYPE).and_then(|v| v.to_str().ok()).unwrap_or("application/octet-stream").to_string();
+    let bytes = answer.bytes().await.map_err(|e| format!("reading its answer: {}", e.without_url()))?;
+    Ok((status, kind, bytes))
 }

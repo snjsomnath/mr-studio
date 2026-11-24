@@ -1,0 +1,19 @@
+{
+  "Model runs": "Modellkörningar",
+  "Shared solar": "Delad solel",
+  "Optimise over": "Optimera över",
+  "One day": "En dag",
+  "Two days": "Två dagar",
+  "A week of workdays": "En arbetsvecka",
+  "Find the best share": "Hitta bästa andelen",
+  "From the grid": "Från elnätet",
+  "Best saving": "Bästa besparing",
+  "Asking the model": "Frågar modellen",
+  "Last answer, model offline": "Senaste svaret, modellen är nere",
+  "From the model": "Från modellen",
+  "The model is not answering": "Modellen svarar inte",
+  "Optimising {days} days": "Optimerar {days} dagar",
+  "Optimising": "Optimerar",
+  "Best share {share} %": "Bästa andel {share} %",
+  "The optimiser did not finish": "Optimeringen blev inte klar"
+}
