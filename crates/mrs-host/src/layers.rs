@@ -91,33 +91,6 @@ fn check_voices(sound: &Value) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// The most voices a layer's sound bed has (#282): a bed is a few slow layers, never a band.
-pub const MOST_VOICES: usize = 4;
-
-/// A layer's `sound` (#282): up to four voices, each `noise`, `hum` or `tone` with its own id.
-/// What each voice's values mean is checked where it plays (`@mrstudio/sdk` voices.ts).
-fn check_voices(sound: &Value) -> anyhow::Result<()> {
-    let list = match sound {
-        Value::Null => return Ok(()),
-        Value::Array(list) => list,
-        _ => bail!("sound is a list of voices"),
-    };
-    if list.len() > MOST_VOICES {
-        bail!("sound has at most {MOST_VOICES} voices");
-    }
-    let mut ids = std::collections::HashSet::new();
-    for voice in list {
-        let id = voice["id"].as_str().filter(|id| is_entity_id(id) && !id.is_empty()).ok_or_else(|| anyhow!("every voice needs an id"))?;
-        if !ids.insert(id) {
-            bail!("two voices are called '{id}'");
-        }
-        if !matches!(voice["kind"].as_str(), Some("noise" | "hum" | "tone")) {
-            bail!("voice '{id}' has kind noise, hum or tone");
-        }
-    }
-    Ok(())
-}
-
 /// The param that holds every entity's changed values: `entities[set][entity][control]`.
 pub const ENTITIES: &str = "entities";
 /// The most entities a layer keeps values for, and the longest entity id.

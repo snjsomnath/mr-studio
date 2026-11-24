@@ -6,7 +6,7 @@
 // `table.ribbons`, defaulting to the front edge (`table.front`) on auto. What: the open layer's
 // ribbon panels, otherwise the home ribbon (the join QR). Every ribbon faces its own edge.
 
-import { coreWidgets, LOOK_ATTRIBUTES, resolveProps, themeVariables, validateRibbon } from '@mrstudio/dashboard';
+import { LOOK_ATTRIBUTES, resolveProps, themeVariables, validateRibbon } from '@mrstudio/dashboard';
 import type { PanelInput, WidgetDefinition, WidgetHandle } from '@mrstudio/dashboard';
 import type { Connection } from '@mrstudio/sdk';
 
@@ -14,6 +14,7 @@ import { isAmbient } from './controls.ts';
 import { panelInput } from './dashboard.ts';
 import { qrSvg } from './join.ts';
 import { t } from './i18n.ts';
+import { widgets, withTeamWidgets } from './registry.ts';
 import { ribbonBands } from './ribbon-bands.ts';
 import type { Band, Side } from './ribbon-bands.ts';
 import type { Store } from './store.ts';
@@ -43,7 +44,7 @@ function el(tag: string, className: string, text?: string): HTMLElement {
  * itself; in the editor it is the frame around the map, and the ribbons are a preview.
  */
 export class Ribbons {
-  private readonly registry = coreWidgets();
+  private readonly registry = widgets;
   private strips = new Map<Side, Strip>();
   private bands: Band[] = [];
   private content: Content = null;
@@ -169,7 +170,7 @@ export class Ribbons {
 
   private layerInputs(id: string): PanelInput[] {
     const manifest = this.store.manifest(this.store.state.layers[id]?.layer ?? '');
-    const specs = manifest?.panels?.filter((spec) => spec.ribbon) ?? [];
+    const specs = manifest ? withTeamWidgets(manifest.id, manifest.panels?.filter((spec) => spec.ribbon) ?? []) : [];
     if (!specs.length) return [];
     const cached = this.inputs.get(id);
     if (cached) return cached;

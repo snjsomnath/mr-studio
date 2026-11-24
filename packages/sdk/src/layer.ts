@@ -347,6 +347,12 @@ export interface LayerModule<P = Params> {
    */
   stage?(ctx: PanelContext<P>, el: HTMLElement): PanelHandlers | void;
   /**
+   * The layer's own widgets (#353), made with `defineWidget`. They are known on the site as
+   * `<layer id>/<type>`, and the layer's own panels may name them by `type` alone. They follow the
+   * core widgets' contract: sizes, labelled props, bindings, theme tokens and an honest read cost.
+   */
+  widgets?: import('./widgets.ts').WidgetDefinition[];
+  /**
    * Fetches what the layer will need before it is shown, so a sequence (the slideshow) can step
    * to it without waiting. Called on the table when a sequence that shows this layer opens, with
    * the params the step will use. What the host fetches it also keeps, for venues without a

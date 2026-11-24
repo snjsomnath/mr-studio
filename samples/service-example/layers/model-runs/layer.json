@@ -53,17 +53,15 @@
   "panels": [
     {
       "id": "import",
-      "widget": "stat",
+      "widget": "grid-link",
       "size": "tile",
       "title": "From the grid",
       "props": {
         "value": {
           "bind": "shared.import_kw"
         },
-        "unit": "kW",
-        "caption": {
-          "bind": "shared.source"
-        }
+        "max": 15000,
+        "unit": "kW"
       }
     },
     {
@@ -140,6 +138,19 @@
           "bind": "shared.self_sufficiency"
         },
         "headline_label": "self-sufficient"
+      }
+    },
+    {
+      "id": "grid-ribbon",
+      "widget": "grid-link",
+      "size": "chip",
+      "title": "From the grid",
+      "ribbon": true,
+      "props": {
+        "value": {
+          "bind": "shared.import_kw"
+        },
+        "max": 15000
       }
     }
   ],

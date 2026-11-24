@@ -13,6 +13,7 @@ import { defineLayer, entityFeatures, loadSiteData, withAlpha } from '@mrstudio/
 import type { EntityFeature, LayerManifest, Position } from '@mrstudio/sdk';
 
 import manifest from '../layer.json';
+import { gridLink } from './grid-link.ts';
 
 interface Params {
   share: number;
@@ -36,7 +37,9 @@ function middle(feature: EntityFeature): Position {
 }
 
 export default defineLayer<Params>({
-  manifest: manifest as LayerManifest,
+  manifest: manifest as unknown as LayerManifest,
+  // Its own widget (#353): the panels below name it `grid-link`.
+  widgets: [gridLink],
 
   async table(ctx) {
     const model = ctx.service('model');
@@ -48,7 +51,7 @@ export default defineLayer<Params>({
     let best: { state: State; import_kw?: number } = { state: 'idle' };
 
     // The buildings the visitor changes, as layer.json's entity set names them.
-    const set = (manifest as LayerManifest).entities![0]!;
+    const set = (manifest as unknown as LayerManifest).entities![0]!;
     const buildings = entityFeatures(await loadSiteData(ctx.site, set.dataset), set);
     const at = new Map(buildings.map((b) => [b.id, middle(b)] as const));
 
