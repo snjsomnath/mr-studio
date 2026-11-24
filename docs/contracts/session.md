@@ -4,7 +4,7 @@
 
 - **Studio**: one installed app on one computer. It runs one host.
 - **Session**: one site running in a studio. It has a short join code and holds all shared state.
-- **Surface**: a connected page with a role: `table`, `tv`, `phone` or `dev`.
+- **Surface**: a connected page with a role: `table`, `tv`, `phone`, `guide` or `dev`.
 - **Participant**: a person on a phone surface, with a slot (colour and number). The slot belongs to the person, not the connection: it survives a reload or a brief drop (see mobile.md).
 
 One session runs at a time. The host is the only authority over its state.
@@ -118,6 +118,7 @@ Surface URLs served by the host:
 | `/table` | Projected table view |
 | `/tv` | Controller and dashboards |
 | `/phone` | Phone controller |
+| `/guide` | The guide's phone (#98): `?g=<guide code>`. Starts a slideshow, shows each step's notes and moves it with Next and Previous |
 | `/dev` | Table view with controls side by side, for layer development |
 | `/compose` | Scene composer: layer palette, table view and the scene's stack. Joins with the `dev` role |
 | `/edit` | The editor: the authoring window around the live table. The home screen holds layers of category `base` and `ambient`; every other layer is a layer of its own. Joins with the `dev` role. With `?welcome=1` or `?setup=1`, or when the table has no layers yet, it opens in the setup guide |
@@ -267,7 +268,7 @@ Text frames are JSON. Binary frames are engine field frames (see engine.md).
 
 ```ts
 // surface to host
-{ t: 'hello', protocol: 1, role: 'table' | 'tv' | 'phone' | 'dev', code?: string, resume?: string }
+{ t: 'hello', protocol: 1, role: 'table' | 'tv' | 'phone' | 'guide' | 'dev', code?: string, resume?: string }
 { t: 'req', id: number, m: string, p?: object }
 { t: 'alive', window: string, fps: number }  // table and tv windows of the desktop app, every 2 s (see Running unattended)
 
@@ -338,6 +339,14 @@ Events:
 ### The session changing
 
 `session.changed {session}` is sent to every surface when the session's details change after the welcome, such as the join address when the host links to or loses a phone relay (#89). Surfaces showing the QR code redraw it.
+
+### The guide's phone (#98)
+
+A guide leading a group runs a slideshow from a phone of their own, with presenter notes in hand.
+
+- A slideshow step may carry `notes` (plain text, blank lines or new lines start a paragraph). They are in the step in `site.json` and in the broadcast state, but only the guide's phone and the editor show them: never the table, the TV or the visitors' phones.
+- The guide joins with the `guide` role and the **guide code**, six digits made when the session starts and different from the visitors' code. Only the TV and the editor (`tv`, `dev`) can ask for it: `session.guide {}` → `{ code, url }`, where `url` is `<join base>/guide?g=<code>` when phones can join and `null` otherwise. The editor shows it with a QR code under a slideshow's slides.
+- A guide takes no participant slot and no colour. It can do what the controller's buttons do: turn layers on and off, step them and set their controls (`layer.activate`, `layer.step`, `layer.set`, `layers.reset`). It cannot edit the scene, use the engine, calibrate, or read the table's sources and history. Through the relay (#89) a guide joins like a phone, with its own code.
 
 ### Running unattended (#79)
 

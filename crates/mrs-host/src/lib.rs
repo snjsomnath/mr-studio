@@ -366,7 +366,7 @@ impl AppState {
     /// `history.list`, `history.undo`, `history.redo` and `history.restore { revision }` (#72).
     /// Undo and redo walk the history; restore brings back any kept revision as a new one.
     pub async fn history_request(&self, role: Role, surface: u64, method: &str, p: &Value) -> Result<Value, String> {
-        if role == Role::Phone {
+        if role.from_a_phone() {
             return Err("phones cannot see the table's history".into());
         }
         if method == "history.list" {

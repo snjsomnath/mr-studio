@@ -9,7 +9,7 @@
 //! computer. Phones' requests are answered by the host's own router in process, as if from
 //! [`RELAYED`], so every route that only this computer may use refuses them. Only GET and
 //! HEAD pass, and a socket through the relay can only be a phone: its first message must be a
-//! phone's `hello`.
+//! phone's (or the guide's) `hello`.
 
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -189,7 +189,8 @@ async fn phone(port: u16, stream: u32, mut inbox: mpsc::UnboundedReceiver<Messag
     };
     let Some(Message::Text(hello)) = inbox.recv().await else { return close(&out) };
     let said: Value = serde_json::from_str(&hello).unwrap_or(Value::Null);
-    if said["t"] != "hello" || said["role"] != "phone" {
+    // The guide's phone (#98) comes through too; it still needs its own code.
+    if said["t"] != "hello" || (said["role"] != "phone" && said["role"] != "guide") {
         tracing::warn!("refused a socket through the relay that was not a phone");
         let refused = serde_json::json!({ "t": "refused", "e": "only phones join through the relay" }).to_string();
         let _ = out.send(protocol::frame(protocol::WS_TEXT, stream, refused.as_bytes()));

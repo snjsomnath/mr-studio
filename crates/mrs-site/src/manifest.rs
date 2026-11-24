@@ -352,6 +352,10 @@ pub struct SequenceStep {
     pub description: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
+    /// What the guide says at this step (#98). Shown on the guide's phone and in the editor,
+    /// never on the table or the visitors' controller.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notes: Option<String>,
 }
 
 /// The button that opens a layer on the controller: the words and icon the site's

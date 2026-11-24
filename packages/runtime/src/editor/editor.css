@@ -2610,3 +2610,48 @@ body[data-role='edit'] .ed-surface .table-frame {
   font: inherit;
   font-size: 12px;
 }
+
+.ed-slide-notes {
+  flex: 1 1 100%;
+  resize: vertical;
+  min-height: 2.6em;
+  font: inherit;
+  font-size: 12px;
+}
+
+/* The guide's phone (#98). */
+.ed-guide {
+  margin-top: 12px;
+  border: 1px solid var(--ed-line, #e4e4e7);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+.ed-guide summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.ed-guide-body {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  margin-top: 8px;
+}
+.ed-guide-qr {
+  flex: 0 0 112px;
+}
+.ed-guide-qr svg {
+  display: block;
+  width: 112px;
+  height: 112px;
+}
+.ed-guide-text p {
+  margin: 0 0 6px;
+}
+.ed-guide-address {
+  color: var(--ed-text-2);
+}
+.ed-guide-code {
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+}
