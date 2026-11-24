@@ -126,6 +126,10 @@ After that, **Present › Ready to present?** (#63) is the guide: each missing i
 - **Selecting several things** at once (hide, remove), as Office does: to decide.
 - **Mac and Windows**: shortcuts, menus and dialog button order follow each platform.
 
+## Built to change
+
+The layout is data, so a future change of philosophy is a layout change, not a rebuild (#392). Commands and settings are each declared once (name, icon, help, when greyed out, owner, home). The ribbon, right-click, ⌘K, the Format pane, dialogs, the wizard and the MCP all read those declarations. Which tab and group a command sits in is a layout file. A test checks that each setting has exactly one editable placement, and end-to-end tests address command and setting ids, not screen text.
+
 ## How to check a change
 
 Every editor pull request answers these in its description:
