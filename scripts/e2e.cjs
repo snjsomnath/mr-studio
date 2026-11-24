@@ -469,7 +469,7 @@ async function main() {
     // The legend names the reveal, so the strip's row of names steps aside.
     assert.equal(await uses.locator('.step-subs').isVisible(), false);
     // The map's settings are the author's, behind More settings: the stage is the legend and the steps.
-    assert.equal(await uses.getByLabel('Colour by').isVisible(), false);
+    assert.equal(await uses.getByLabel('Colour by', { exact: true }).isVisible(), false);
     await uses.getByRole('button', { name: 'Next step' }).click();
     await uses.locator('.step-count', { hasText: '2 of 4 shown' }).waitFor();
     assert.equal(await uses.locator('.legend-row.is-waiting').count(), 2);
