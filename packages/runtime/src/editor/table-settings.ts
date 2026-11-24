@@ -151,6 +151,10 @@ export function tableSettings(host: TableSettingsHost): HTMLElement[] {
   };
   const idle = number(site.tv?.idle_reset_s ?? 180, 0, 3600, 's, 0 never', (s) => tv({ idle_reset_s: s }));
   const loop = number(site.tv?.attract_s ?? 4, 2, 30, 's per layer', (s) => tv({ attract_s: s }));
+  // Phones turn layers on and off unless the table says not (#335).
+  const phones = el('input');
+  Object.assign(phones, { type: 'checkbox', checked: site.tv?.phone_switch !== false });
+  phones.addEventListener('change', () => tv({ phone_switch: phones.checked ? null : false }));
   look.append(
     el('h3', undefined, 'On the controller'),
     field('Title', title),
@@ -158,6 +162,7 @@ export function tableSettings(host: TableSettingsHost): HTMLElement[] {
     field('Logo', logo),
     field('Back home after', idle),
     field('Welcome loop', loop),
+    field('Phones can switch layers', phones, 'Visitors turn layers on and off from their phones. Never while a slideshow is showing.'),
   );
 
   // ---- Languages for visitors (#80) ----

@@ -26,6 +26,9 @@ The server writes `site.json`, never layer code. When a project needs a new laye
 | `add_layer`, `set_layer`, `move_layer`, `remove_layer` | Compose the scene by instance id: layers, items inside a layer (`parent`), and buttons with groups; params are checked against the layer's controls with the host's rules |
 | `set_steps` | How Next moves through a layer, and a slideshow's sequence of layers, with presenter `notes` per step for the guide's phone |
 | `save_custom_layer` | Save or remove a custom layer: a recipe of data, look, motion and interaction blocks, used as `custom:<id>`. Blocks, props, colours, ramps, pictograms and icons are checked against the recipe player in `packages/sdk`, and the controller's legend is worked out from the looks and their data, as the editor does |
+| `import_data` | Brings a dataset into the site with the editor's own Add data code (the `mrstudio data add` command): from a file (GeoJSON, CSV with lon and lat, zipped Shapefile, GeoTIFF for terrain), from OpenStreetMap for the table's area, or free elevation for the ground. Detects and reprojects the coordinate system and reports the count, what is on and off the table, issues and blockers. Checks only, unless `write`; then it saves into `data/` and points `site.json` at it |
+| `add_media`, `add_sound` | Copies a picture or video into `data/media/`, or a sound into `data/sounds/`, with the editor's checks, and returns the path to use |
+| `list_site_files` | What is in the site's `data/` folder: datasets with feature counts, geometry, columns (number ranges, the values of a category) and bounds; pictures, video, sounds and models; and which `site.json` keys use each file |
 | `validate_site` | The site and layer contracts, plus `mrstudio validate` when the CLI is installed |
 | `preview_site` | How to see the site on this computer: open it in the installed app, or a `mrstudio dev` command on a free port (never the app's 4170) with the app's own surfaces; URLs of the editor, table, controller, guide's phone, phone and dev view |
 | `check_layer_idea` | Older name, kept for this release only: says whether an idea is an existing layer to configure, a new core layer from existing blocks, or needs new blocks or kernels; also returns the idea assessed as a one-step experience plan |
@@ -48,7 +51,20 @@ The server writes `site.json`, never layer code. When a project needs a new laye
 | `mrstudio://examples/<id>` | Real sites and samples in the core: their layers, steps and custom layers |
 | `mrstudio://docs/<name>`, `mrstudio://layers/<id>` | Every doc verbatim, and each layer's `layer.json` |
 
-**Results.** Every tool declares an output schema and returns `structuredContent` (with a text copy for older clients): `ok`, a one-line `summary`, and the tool's own fields. A refusal has `ok: false` and `error: { code, message, recoverable, next }`, for example `would_invalidate`, `unknown_layer`, `unknown_setting`, `site_invalid` or `not_submitted`; nothing is written when a tool refuses. Every tool carries MCP annotations (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`); only `find_related_issues`, `draft_development_request` (which searches), `submit_development_request` and `submit_module_request` reach outside the computer.
+**Results.** Every tool declares an output schema and returns `structuredContent` (with a text copy for older clients): `ok`, a one-line `summary`, and the tool's own fields. A refusal has `ok: false` and `error: { code, message, recoverable, next }`, for example `would_invalidate`, `unknown_layer`, `unknown_setting`, `site_invalid` or `not_submitted`; nothing is written when a tool refuses. Every tool carries MCP annotations (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`); only `find_related_issues`, `draft_development_request` (which searches), `submit_development_request`, `submit_module_request` and `import_data` (for OpenStreetMap or elevation) reach outside the computer.
+
+**Bringing data in.** `import_data`, `add_media` and `add_sound` run the `mrstudio` command line, which the app installer puts beside the app (inside `MR Studio.app/Contents/MacOS` on a Mac, the install folder on Windows), so they work with the app closed and use exactly the editor's checks. Without it they answer `no_cli` with what to do. The same commands work by hand:
+
+```sh
+mrstudio data add <site> --target buildings --file buildings.geojson            # check only
+mrstudio data add <site> --target buildings --file buildings.geojson --write    # save and wire site.json
+mrstudio data add <site> --target data:roads --osm --write                       # OpenStreetMap for the table's area
+mrstudio data add <site> --target terrain --elevation --write                    # free elevation
+mrstudio data media <site> overlay.png                                           # data/media/overlay.png
+mrstudio data sound <site> birds.mp3                                             # data/sounds/birds.mp3
+```
+
+`--crop` leaves out what lies well outside the table, `--swap` reads latitude first, `--crs EPSG:3006` names a terrain GeoTIFF's system, and `--json` prints the report as one line. A refusal exits with status 1 and writes nothing. A running app picks the change up as an outside edit.
 
 The server also sends short instructions on connect: build from what exists, configure rather than code, edit only through the tools, and submit requests only after the person agrees.
 
@@ -210,9 +226,9 @@ Ask the model: "Use the MR Studio overview tool and tell me which core version y
 | --- | --- | --- |
 | `--project <folder>` | `MRSTUDIO_PROJECT` | Folder that relative site paths resolve against. Default: the working folder, or `Documents/MR Studio/sites` when started from the home folder or the root of the disk |
 | `--core <folder>` | `MRSTUDIO_CORE` | Read the core live from a checkout instead of the snapshot |
-| | `MRSTUDIO_CLI` | Path to the `mrstudio` binary, if it is not on `PATH` |
+| | `MRSTUDIO_CLI` | Path to the `mrstudio` binary. Without it the server looks on `PATH`, in a core checkout's `target/`, and inside the installed app, which ships it |
 | | `MRSTUDIO_REPO` | Repository requests go to. Default `snjsomnath/mr-studio` |
-| | `GITHUB_TOKEN`, `GH_TOKEN` | Lets `submit_module_request` open issues directly |
+| | `GITHUB_TOKEN`, `GH_TOKEN` | Lets `submit_development_request` open issues directly (otherwise the gh CLI sign-in is used) |
 
 `--version` prints the server's version, which is the MR Studio version it was built with.
 
@@ -255,11 +271,11 @@ From a rough idea and a spreadsheet of points to a table ready for a workshop. T
 >
 > **Person**: The spreadsheet is `spots.csv`, with lat, lon, type and score.
 >
-> **Model**: Put it in the table's `data/` folder. For buildings and streets, open the table in MR Studio and use Add data, OpenStreetMap. Tell me when they are in.
+> **Model**: Tell me where it is. I'll check it first, then fetch buildings and streets from OpenStreetMap for the table's area.
 >
-> **Person**: Done.
+> **Person**: It's in my Downloads folder.
 >
-> **Model**: I've pointed the scene at the buildings and streets and named your file `spots`, so layers can use it. `[update_site]`
+> **Model**: 40 spots, all on the table. Buildings: 118 from OpenStreetMap, 104 with a height. The scene now uses them, and your file is the dataset `spots`, with `type` (bench, tree, kiosk) and `score` (1 to 5). `[import_data, list_site_files]`
 >
 > **Model**: At rest, while nobody touches the controller, I suggest a dark base map, trees, light traffic and lit windows. Then two buttons: "Morning sun", to see which spots are in shade, and "Suggested spots". `[find_capabilities, assess_experience, build_experience]`
 >
@@ -269,11 +285,11 @@ From a rough idea and a spreadsheet of points to a table ready for a workshop. T
 >
 > **Person**: Can people vote for spots from their phones?
 >
-> **Model**: Not as votes yet. The Sketch layer lets phones drop pins, which works for "a bench here". Real voting would be a new module, so I've drafted a request in `requests/` for you to read. I won't file it unless you say so. `[assess_experience, draft_module_request]`
+> **Model**: Not as votes yet. The Sketch layer lets phones drop pins, which works for "a bench here". Real voting would be a change to the Sketch layer; nothing on GitHub asks for it yet, so I've drafted a request in `requests/` for you to read. I won't file it unless you say so. `[assess_experience, find_related_issues, draft_development_request]`
 >
 > **Person**: Add Sketch, and leave the request for now. For the opening talk I'd like a short slideshow: an old photo, morning sun, afternoon sun, then the spots.
 >
-> **Model**: Put the photo in `data/media/` first. The tour now has four steps that dip through the empty map, each with a note for your phone, such as "Ask: which spots are in shade at nine?" `[add_layer with parent, set_steps]`
+> **Model**: Added the photo to `data/media/`. The tour now has four steps that dip through the empty map, each with a note for your phone, such as "Ask: which spots are in shade at nine?" `[add_media, add_layer with parent, set_steps]`
 >
 > **Person**: Swedish first, please, and call it "Bänkar i Lindholmen".
 >
@@ -331,4 +347,4 @@ pnpm --filter @mrstudio/mcp bundle     # builds, then writes dist/mr-studio.mcpb
 - `package.json` is the npm package `@mrstudio/mcp`: only `dist/mrstudio-mcp.mjs` and `README.md` are published, and it has no runtime dependencies because the bundle carries them. `mcpName` ties it to the registry entry.
 - `mcpb/manifest.json` is the Claude Desktop extension's manifest (MCPB format); `scripts/pack.mjs` stamps the version, adds the bundle and the icon, and packs it with `@anthropic-ai/mcpb`, which also checks the manifest. CI packs it on every pull request.
 - `server.json` is the [MCP Registry](https://registry.modelcontextprotocol.io) entry, `io.github.snjsomnath/mr-studio`. The release workflow adds the version and the release's `.mcpb` with its checksum.
-- Publishing to npm and the registry happens in the "Desktop app" workflow after each release, once it is switched on ([RELEASING.md](RELEASING.md#publishing-the-mcp-server)).
+- Publishing: after each release the `MCP publish` workflow stages the version on npm, a maintainer approves it on npmjs.com, and the same workflow then lists it in the registry ([RELEASING.md](RELEASING.md#publishing-the-mcp-server)).

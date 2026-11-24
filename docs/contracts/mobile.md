@@ -16,13 +16,15 @@ One token is one phone: a second tab with the same token takes the slot over and
 
 ## What a phone can do
 
-- See the active layers and change the controls marked `phone: true`.
+- See every layer of the table, turn one on or off with its switch (#335), and change its controls marked `phone: true`. A layer's `primary` controls are for phones too unless they say `phone: false`.
+  Turning a layer on from a phone closes the open layer, as its button on the controller does. The controller shows a short line, "Wind turned on from a phone", with a dot in that phone's colour.
+  Phones cannot switch layers while a slideshow or tour is showing, on a table with `tv.phone_switch: false` (Table settings, "Phones can switch layers"), or for a layer whose layer.json says `"phone_switch": false` (the slideshow does).
 - Use a layer's tools: tap a point, draw a line or polygon on a small map of the table area. The result is sent as `tool.input` in WGS84.
   A point is sent on touch and follows a dragged finger. A line or polygon is built corner by corner (with undo) and sent when the person presses send.
   The map shows the site's building footprints and maps finger positions through the site's `corners`, so it needs no map library and no internet.
 - Press actions marked `phone: true`.
 
-A phone cannot activate layers, publish values or open engine streams. The host enforces this by role; the page hiding a control is not the protection.
+A phone cannot reset the table, publish values or open engine streams, and switches layers only as above. The host enforces this by role; the page hiding a control is not the protection.
 
 ## The guide's phone
 

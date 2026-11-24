@@ -71,7 +71,14 @@ impl SessionOptions {
 impl Default for SessionOptions {
     fn default() -> Self {
         let (join_page, peer_options) = Self::join_page_from_env();
-        Self { max_phones: MAX_PHONES, resume_hold: Duration::from_secs(60), phone_requests_per_second: 20, public_url: None, join_page, peer_options }
+        Self {
+            max_phones: MAX_PHONES,
+            resume_hold: Duration::from_secs(60),
+            phone_requests_per_second: 20,
+            public_url: None,
+            join_page,
+            peer_options,
+        }
     }
 }
 
@@ -513,6 +520,7 @@ fn tv_words(key: &str) -> &str {
         "about" => "About page",
         "idle_reset_s" => "idle reset",
         "attract_s" => "welcome loop",
+        "phone_switch" => "phones switching layers",
         other => other,
     }
 }
@@ -781,6 +789,23 @@ impl Hub {
             .and_then(|c| c.iter().find(|c| c["id"] == control))
             .and_then(|c| c["label"].as_str())
             .map_or_else(|| control.to_string(), |l| l.to_lowercase())
+    }
+
+    /// Whether a visitor's phone may turn this layer on or off now (#335): the table allows it
+    /// (`tv.phone_switch`, default true), the layer does (`phone_switch` in layer.json), and no
+    /// slideshow or guided tour is running.
+    fn phone_may_switch(&self, scene: &[Instance], index: usize) -> Result<(), String> {
+        let tv_allows = self.info.read().unwrap().tv.as_ref().is_none_or(|tv| tv["phone_switch"].as_bool() != Some(false));
+        if !tv_allows {
+            return Err("this table does not let phones turn layers on or off".into());
+        }
+        if !self.catalog()[scene[index].def].phone_switch {
+            return Err(format!("'{}' is turned on and off from the controller only", scene[index].id));
+        }
+        if scene.iter().any(|i| i.state.shown_by.is_some()) {
+            return Err("a slideshow is running; phones can switch layers again when it ends".into());
+        }
+        Ok(())
     }
 
     /// The layer catalogue as it is now.
@@ -1063,7 +1088,9 @@ impl Hub {
         let layer = p["layer"].as_str().ok_or("missing layer")?;
         let index = inner.position(layer)?;
         if method == "layer.activate" {
-            if !role.may_activate() {
+            if role == Role::Phone {
+                self.phone_may_switch(&inner.scene, index)?;
+            } else if !role.may_activate() {
                 return Err("phones cannot turn layers on or off".into());
             }
             let active = p["active"].as_bool().ok_or("missing active")?;
@@ -1077,6 +1104,15 @@ impl Hub {
                 self.release(&mut inner.scene, index, false);
             }
             self.switch(&mut inner.scene, index, active);
+            // The controller says which phone did it, in that phone's colour (#335). The layers a
+            // phone closes to make way (`cue: false`) are not worth a word.
+            if role == Role::Phone && p["cue"].as_bool() != Some(false) {
+                let mut event = json!({ "layer": layer, "active": active });
+                if let Some(seat) = inner.seats.iter().find(|s| s.participant.surface == surface) {
+                    event["participant"] = json!({ "slot": seat.participant.slot, "colour": seat.participant.colour });
+                }
+                self.emit("phone.switched", event);
+            }
             return Ok(json!({}));
         }
         match method {
@@ -1280,6 +1316,7 @@ impl Hub {
                 "about" => value.is_object() && value.to_string().len() <= 8_000,
                 "idle_reset_s" => value.as_f64().is_some_and(|s| (0.0..=3600.0).contains(&s)),
                 "attract_s" => value.as_f64().is_some_and(|s| (2.0..=30.0).contains(&s)),
+                "phone_switch" => value.is_boolean(),
                 _ => return Err(format!("'{key}' is not a controller setting that can be changed here")),
             };
             if value.is_null() {
@@ -2367,6 +2404,29 @@ mod tests {
         assert_eq!((sun["active"].clone(), sun["params"]["hour"].clone()), (json!(false), json!(15)));
         assert_eq!(layer(&hub, "trees")["active"], true, "the map at rest comes back");
         assert!(hub.request(Role::Phone, 0, "layers.reset", &json!({})).is_err(), "not from a phone");
+    }
+
+    #[test]
+    fn phones_switch_layers_unless_the_table_a_layer_or_a_tour_holds_them_back() {
+        let hub = scratch_hub("phone-switch");
+        let phone = |method: &str, p: Value| hub.request(Role::Phone, 3, method, &p);
+        let dev = |method: &str, p: Value| hub.request(Role::Dev, 0, method, &p);
+        // A visitor turns Wind on and uses its primary control, which phones get by default (#335).
+        phone("layer.activate", json!({ "layer": "wind", "active": true })).unwrap();
+        assert_eq!(layer(&hub, "wind")["active"], true);
+        phone("layer.set", json!({ "layer": "wind", "params": { "style": "particles" } })).unwrap();
+        // The rest of the map stays out of reach, and so does Reset.
+        assert!(phone("layers.reset", json!({})).is_err());
+        // The table can turn phone switching off.
+        dev("site.tv", json!({ "tv": { "phone_switch": false } })).unwrap();
+        assert!(phone("layer.activate", json!({ "layer": "wind", "active": false })).is_err());
+        dev("site.tv", json!({ "tv": { "phone_switch": null } })).unwrap();
+        phone("layer.activate", json!({ "layer": "wind", "active": false })).unwrap();
+        // While a slideshow shows its steps, phones leave the layers alone.
+        dev("scene.set", json!({ "layer": "slideshow", "steps": { "mode": "manual", "sequence": [{ "layer": "sunlight", "title": "Sun" }] } })).unwrap();
+        dev("layer.activate", json!({ "layer": "slideshow", "active": true })).unwrap();
+        let refused = phone("layer.activate", json!({ "layer": "wind", "active": true })).unwrap_err();
+        assert!(refused.contains("slideshow"), "{refused}");
     }
 
     #[test]
