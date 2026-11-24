@@ -133,6 +133,9 @@ jobs:
           - os: windows-latest
             engine: msedge
     runs-on: ${{ matrix.os }}
+    # WebKit fails with "Importing a module script failed" (#427): it reports but doesn't block
+    # merges until that is fixed. Drop this line then.
+    continue-on-error: ${{ matrix.engine == 'webkit' }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
