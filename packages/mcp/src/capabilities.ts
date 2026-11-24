@@ -266,7 +266,7 @@ const STOP = new Set('a an and the of to on in for with from by at as is are be 
 
 /** A few words people use for what layers say differently. Kept short: purposes and questions carry most of the matching. */
 const SYNONYMS: Record<string, string[]> = {
-  shade: ['sun', 'shadow', 'sunlight'], shadow: ['sun', 'sunlight'], overshadowing: ['shadow', 'sun'], daylight: ['sun'],
+  shade: ['sun', 'shadow', 'sunlight'], shadow: ['sun', 'sunlight'], overshadowing: ['shadow', 'sun'], daylight: ['sun'], golden: ['sun', 'evening', 'light'], sunset: ['sun', 'golden', 'evening'], evening: ['sun', 'golden'],
   comfort: ['thermal', 'heat', 'pet', 'cool', 'wind'], pedestrian: ['walk', 'walker', 'walking'], walkability: ['walk'], heat: ['thermal', 'cool', 'pet'],
   see: ['view', 'sight', 'visibility'], seen: ['view', 'visibility'],
   view: ['see', 'sight', 'visibility', 'isovist'], visibility: ['see', 'view', 'isovist'], enclosure: ['view', 'enclosed'],

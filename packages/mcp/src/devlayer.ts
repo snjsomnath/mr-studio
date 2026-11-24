@@ -113,6 +113,8 @@ export interface LayerIssue {
 /** The dashboard's panel sizes and their density budget (packages/dashboard/src/rules.ts). */
 const PANEL_READS: Record<string, number> = { chip: 1, tile: 3, wide: 5, tall: 6, block: 8, hero: 10, band: 3, strip: 6 };
 const TEXT = { title: 28, label: 20 };
+/** The core widgets (docs/contracts/dashboard.md); anything else is a team's own (#353). */
+const CORE_WIDGETS = new Set(['stat', 'gauge', 'bars', 'list', 'donut', 'compare', 'balance', 'control', 'map', 'media', 'legend', 'series', 'ramp', 'timeline', 'text', 'custom']);
 /** The layer API this server's core speaks (packages/sdk/src/types.ts LAYER_API). */
 export const LAYER_API = 1;
 
@@ -149,6 +151,8 @@ export function checkLayerPackage(dir: string, site: { manifest: any; kernels: s
   if (manifest.api !== api) add('error', 'api', `layer.json says api ${manifest.api}; this core runs layer api ${api}, so the app would refuse it`, 'layer.json');
   if (manifest.id !== id) add('error', 'id', `layer.json id is '${manifest.id}' but the folder is '${id}'; they must match`, 'layer.json');
   if (!manifest.name) add('error', 'name', 'layer.json has no name', 'layer.json');
+  const srcText = walk(join(dir, 'src'), /\.(ts|tsx|js|mjs)$/).map((f) => readFileSync(f, 'utf8')).join('\n');
+  const declaresWidget = (type: string) => new RegExp(`type:\\s*['"\`]${type}['"\`]`).test(srcText) && /defineWidget/.test(srcText);
   const controls: any[] = Array.isArray(manifest.controls) ? manifest.controls : [];
   const tools: any[] = Array.isArray(manifest.tools) ? manifest.tools : [];
   const panels: any[] = Array.isArray(manifest.panels) ? manifest.panels : [];
@@ -159,22 +163,37 @@ export function checkLayerPackage(dir: string, site: { manifest: any; kernels: s
     seen.add(c?.id);
     if (c?.label && String(c.label).length > TEXT.label) add('warning', 'text', `control '${c.id}' label "${c.label}" is longer than ${TEXT.label} characters; the controller cuts it`, 'layer.json');
   }
-  // Panels within the dashboard's density budget.
-  for (const p of panels) {
+  // Panels within the dashboard's density budget: the TV's, and a stage made of panels (#357).
+  const stage = manifest.stage && typeof manifest.stage === 'object' ? manifest.stage : null;
+  const stagePanels: any[] = Array.isArray(stage?.panels) ? stage.panels : [];
+  if (manifest.stage !== undefined && manifest.stage !== 'custom' && !stage) add('error', 'stage', `stage must be "custom" or a layout { panels: [...] }`, 'layer.json');
+  if (stage && !stagePanels.length) add('error', 'stage', 'the stage layout has no panels', 'layer.json');
+  const toolIds = new Set(tools.map((t) => t?.id));
+  const controlIds = new Set(controls.map((c) => c?.id));
+  const checkPanel = (p: any, where: string) => {
     const budget = PANEL_READS[p?.size];
     if (budget === undefined) {
-      add('error', 'panels', `panel '${p?.id}' has size '${p?.size}'; use one of ${Object.keys(PANEL_READS).join(', ')}`, 'layer.json');
-      continue;
+      add('error', 'panels', `${where} panel '${p?.id}' has size '${p?.size}'; use one of ${Object.keys(PANEL_READS).join(', ')}`, 'layer.json');
+      return;
     }
+    // A team widget (#353) states its own cost in reads; the runtime checks it, not this file.
+    const team = typeof p?.widget === 'string' && !CORE_WIDGETS.has(p.widget);
     const reads = Number(p?.props?.reads ?? (p?.widget === 'custom' ? NaN : 0));
     if (p?.widget === 'custom' && !Number.isFinite(reads)) add('error', 'density', `custom panel '${p.id}' must say how many things it asks people to read (props.reads, at most ${budget} for a ${p.size})`, 'layer.json');
-    else if (reads > budget) add('error', 'density', `panel '${p.id}' asks for ${reads} reads; a ${p.size} holds ${budget}. Use a bigger size or show less`, 'layer.json');
-    if (p?.title && String(p.title).length > TEXT.title) add('warning', 'text', `panel '${p.id}' title is longer than ${TEXT.title} characters`, 'layer.json');
-  }
+    else if (!team && reads > budget) add('error', 'density', `${where} panel '${p.id}' asks for ${reads} reads; a ${p.size} holds ${budget}. Use a bigger size or show less`, 'layer.json');
+    if (team && !p.widget.includes('/') && !declaresWidget(p.widget)) add('warning', 'widgets', `${where} panel '${p.id}' uses widget '${p.widget}', which is not a core widget; it must be one of this layer's own widgets (module widgets, made with defineWidget)`, 'layer.json');
+    if (p?.widget === 'control' && !p?.layer && p?.props?.control && !controlIds.has(p.props.control)) add('error', 'panels', `${where} panel '${p.id}' puts control '${p.props.control}' on screen, which layer.json does not have`, 'layer.json');
+    if (p?.widget === 'map' && !p?.layer && p?.props?.tool && !toolIds.has(p.props.tool)) add('error', 'panels', `${where} map panel '${p.id}' sends to tool '${p.props.tool}', which layer.json does not have`, 'layer.json');
+    if (p?.title && String(p.title).length > TEXT.title) add('warning', 'text', `${where} panel '${p.id}' title is longer than ${TEXT.title} characters`, 'layer.json');
+  };
+  for (const p of panels) checkPanel(p, 'TV');
+  for (const p of stagePanels) checkPanel(p, 'stage');
   if (panels.length > 8) add('warning', 'density', `${panels.length} panels; one TV screen holds 8, the rest rotate onto another page`, 'layer.json');
+  const stageReads = stagePanels.reduce((n, p) => n + Number(p?.props?.reads ?? 0), 0);
+  if (stagePanels.length > 8 || stageReads > 24) add('error', 'density', `the stage has ${stagePanels.length} panels and ${stageReads} reads; one controller screen holds 8 panels and 24 reads`, 'layer.json');
 
   // Every word people see, in Swedish.
-  const words = [manifest.name, ...controls.map((c) => c?.label), ...controls.flatMap((c) => (Array.isArray(c?.options) ? c.options.map((o: any) => o?.label) : [])), ...tools.map((t) => t?.label), ...panels.map((p) => p?.title)].filter((w): w is string => typeof w === 'string' && w.trim() !== '');
+  const words = [manifest.name, ...controls.map((c) => c?.label), ...controls.flatMap((c) => (Array.isArray(c?.options) ? c.options.map((o: any) => o?.label) : [])), ...tools.map((t) => t?.label), ...panels.map((p) => p?.title), ...stagePanels.map((p) => p?.title)].filter((w): w is string => typeof w === 'string' && w.trim() !== '');
   let sv: Record<string, string> = {};
   try {
     sv = JSON.parse(readFileSync(join(dir, 'locales', 'sv.json'), 'utf8'));
@@ -213,8 +232,8 @@ export function checkLayerPackage(dir: string, site: { manifest: any; kernels: s
 
   // What it needs of the site.
   const req = manifest.requires ?? {};
-  const data = new Set(Object.keys(site.manifest?.data ?? {}));
-  for (const d of req.data ?? []) if (!data.has(d)) add('error', 'requires', `needs dataset '${d}', which site.json "data" does not have; bring it in with import_data (target data:${d})`, 'layer.json');
+  const data = new Set([...Object.keys(site.manifest?.data ?? {}), ...['buildings', 'trees', 'walkways', 'trips', 'terrain', 'mesh'].filter((k) => site.manifest?.scene?.[k])]);
+  for (const d of req.data ?? []) if (!data.has(d)) add('error', 'requires', `needs dataset '${d}', which site.json "data" does not have; bring it in with import_data (target ${['buildings', 'trees', 'walkways', 'trips', 'terrain'].includes(d) ? d : `data:${d}`})`, 'layer.json');
   const services = new Set((Array.isArray(site.manifest?.services) ? site.manifest.services : []).map((s: any) => s?.id));
   for (const s of req.services ?? []) if (!services.has(s)) add('error', 'requires', `calls service '${s}', which site.json "services" does not declare; add it with add_service`, 'layer.json');
   for (const k of req.kernels ?? []) if (!site.kernels.includes(k)) add('error', 'requires', `needs kernel '${k}', which this core does not have (${site.kernels.join(', ')})`, 'layer.json');
