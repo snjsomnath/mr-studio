@@ -472,7 +472,8 @@ fn custom_manifest(id: &str, recipe: &mrs_site::CustomLayer) -> Value {
     // controller and the mark on the table are the ones entities already have (#279).
     let mut sets = Vec::new();
     for block in recipe.interaction.iter().filter(|b| b.block == "tap-info") {
-        let Some(dataset) = block.data.as_deref().and_then(|d| recipe.data.iter().find(|r| r.id == d)).and_then(|r| r.dataset.clone()) else {
+        let Some(dataset) = block.data.as_deref().and_then(|d| recipe.data.iter().find(|r| r.id == d)).and_then(|r| r.dataset.clone())
+        else {
             continue;
         };
         let props = &block.props;
@@ -506,7 +507,8 @@ fn custom_manifest(id: &str, recipe: &mrs_site::CustomLayer) -> Value {
         let taken = |id: &str| recipe.controls.iter().any(|c| c.get("id").and_then(Value::as_str) == Some(id));
         if let Some(controls) = manifest["controls"].as_array_mut() {
             if !taken("time_play") {
-                controls.push(serde_json::json!({ "id": "time_play", "type": "toggle", "label": "Play", "default": true, "tier": "primary" }));
+                controls
+                    .push(serde_json::json!({ "id": "time_play", "type": "toggle", "label": "Play", "default": true, "tier": "primary" }));
             }
             if !taken("time_at") {
                 controls.push(serde_json::json!({

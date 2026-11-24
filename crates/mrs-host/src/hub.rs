@@ -1986,16 +1986,27 @@ impl Hub {
                     let Some(def) = catalog.get(instance.def) else { continue };
                     let needs = def.manifest["requires"]["data"].as_array().is_some_and(|d| d.iter().any(|v| v.as_str() == Some(&name)));
                     let names = instance.state.params.values().any(|v| v.as_str() == Some(&name));
-                    let draws = def.manifest["custom"]["data"].as_array().is_some_and(|d| d.iter().any(|v| v["dataset"].as_str() == Some(&name)));
+                    let draws =
+                        def.manifest["custom"]["data"].as_array().is_some_and(|d| d.iter().any(|v| v["dataset"].as_str() == Some(&name)));
                     if needs || names || draws {
-                        let label = instance.state.button.name.clone().unwrap_or_else(|| def.manifest["name"].as_str().unwrap_or(&instance.id).to_string());
+                        let label = instance
+                            .state
+                            .button
+                            .name
+                            .clone()
+                            .unwrap_or_else(|| def.manifest["name"].as_str().unwrap_or(&instance.id).to_string());
                         users.push(label);
                     }
                 }
                 if !users.is_empty() {
                     users.sort();
                     users.dedup();
-                    return Err(format!("{} on the table use{} it; remove {} first", users.join(", "), if users.len() == 1 { "s" } else { "" }, if users.len() == 1 { "that" } else { "those" }));
+                    return Err(format!(
+                        "{} on the table use{} it; remove {} first",
+                        users.join(", "),
+                        if users.len() == 1 { "s" } else { "" },
+                        if users.len() == 1 { "that" } else { "those" }
+                    ));
                 }
                 let mut gone = false;
                 self.saving(who, format!("Took the dataset {name} out of the table"), || {
@@ -3050,7 +3061,13 @@ mod tests {
         let dev = |method: &str, p: Value| hub.request(Role::Dev, 0, method, &p);
         let refused = dev("data.remove", json!({ "name": "walkways" })).unwrap_err();
         assert!(refused.contains("Cool paths"), "{refused}");
-        let coolpaths = hub.welcome(0)["state"]["scene"].as_array().unwrap().iter().find(|id| id.as_str().unwrap().starts_with("coolpaths")).unwrap().clone();
+        let coolpaths = hub.welcome(0)["state"]["scene"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|id| id.as_str().unwrap().starts_with("coolpaths"))
+            .unwrap()
+            .clone();
         dev("scene.remove", json!({ "layer": coolpaths })).unwrap();
         dev("data.remove", json!({ "name": "walkways" })).unwrap();
         assert!(!hub.site().data.contains_key("walkways"));
