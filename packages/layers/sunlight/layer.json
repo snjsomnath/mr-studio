@@ -3,6 +3,7 @@
   "id": "sunlight",
   "name": "Sunlight",
   "description": "Shadows at any moment, or hours of direct sun over a day",
+  "about": {"purpose": "Shows shadows at any moment or sun hours over a day, the clearest way to discuss overshadowing.", "questions": ["How does a proposal change sun and shade on squares and courtyards?", "Which places get sun in the morning, at lunch, in winter?"], "pairs_with": ["plan", "swipe", "coolpaths", "lens"], "limits": ["Shadows fall on the ground; sun on facades is planned", "Uses the site's buildings and trees for shadows"]},
   "icon": "sun",
   "attract": { "effect": "sun" },
   "requires": { "kernels": ["sunlight"] },

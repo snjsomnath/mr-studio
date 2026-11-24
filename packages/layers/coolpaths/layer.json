@@ -3,6 +3,7 @@
   "id": "coolpaths",
   "name": "Cool paths",
   "description": "The shortest walk between two points, and the one with the least heat (PET), as in the Chalmers demo",
+  "about": {"purpose": "Compares the shortest walk with the most comfortable one in summer heat (PET), so people see where shade and trees matter.", "questions": ["Which route would you take on a hot afternoon, and why?", "Where does a proposal remove shade from a walking route?"], "pairs_with": ["sunlight", "trees", "isovist"], "limits": ["Needs a walkways network", "Comfort is modelled for one weather setting at a time"]},
   "icon": "footprints",
   "attract": { "effect": "sun" },
   "requires": { "kernels": ["sunlight"], "data": ["walkways"] },

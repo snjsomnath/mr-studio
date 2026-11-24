@@ -3,6 +3,7 @@
   "id": "street-glow",
   "name": "Street glow",
   "description": "Streets glowing in a colour for each kind of street, pulsing, with light flowing along them",
+  "about": {"purpose": "Makes the street network legible at a glance by colouring streets by kind.", "questions": ["What kinds of streets are there, and how do they connect?"], "pairs_with": ["cars", "street-life", "basemap"], "limits": ["Needs a roads dataset"]},
   "icon": "route",
   "category": "ambient",
   "requires": { "data": ["roads"] },

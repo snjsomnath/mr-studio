@@ -3,6 +3,7 @@
   "id": "transit",
   "name": "Public transport",
   "description": "Trams, buses, trains and ferries on their routes, simulated or from a live feed",
+  "about": {"purpose": "Shows trams, buses, trains and ferries on their routes, simulated or live, so people see how the site is served.", "questions": ["How well is the site served by public transport?"], "pairs_with": ["mobility", "cars", "street-life"], "limits": ["Live vehicles need a Västtrafik key in Sources and keys"]},
   "icon": "tram",
   "category": "ambient",
   "controls": [

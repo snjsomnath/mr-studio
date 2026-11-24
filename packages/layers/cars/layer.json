@@ -3,6 +3,7 @@
   "id": "cars",
   "name": "Traffic",
   "description": "Cars, taxis and buses with headlights driving the street network, and now and then an emergency vehicle",
+  "about": {"purpose": "Brings streets to life with moving traffic, so people read the street network and how busy it feels.", "questions": ["Which streets carry traffic, and how would calmer streets feel?"], "pairs_with": ["street-life", "transit", "street-glow"], "limits": ["Needs a roads dataset", "Traffic is simulated, not counts"]},
   "icon": "car",
   "category": "ambient",
   "requires": { "data": ["roads"] },

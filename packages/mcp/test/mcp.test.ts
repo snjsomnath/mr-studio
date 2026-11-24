@@ -10,6 +10,7 @@ import { dirname, join, resolve } from 'node:path';
 import { after, before, describe, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
+import { buildCapabilities, parsePatterns, rank } from '../src/capabilities.ts';
 import { loadLive, parseRoadmap, parseSiteSchema, plannedKernelsFrom } from '../src/core.ts';
 import { checkPaint, checkRecipe } from '../src/recipe.ts';
 import { checkControlValue, previewPlan } from '../src/site.ts';
@@ -142,6 +143,35 @@ impl Mesh {
     assert.match(checkPaint('@nope')!, /palette slot/);
   });
 
+  test('the capability catalogue is honest and every pattern resolves (#326)', () => {
+    const catalog = loadLive(resolve(pkg, '..', '..'));
+    const caps = buildCapabilities(catalog);
+    const byId = new Map(caps.map((c) => [c.id, c]));
+    // Every core layer is a capability, available or needing setup, with its purpose from layer.json.
+    for (const l of catalog.layers) {
+      const c = byId.get(`layer:${l.id}`);
+      assert.ok(c, `layer ${l.id} missing`);
+      assert.ok(['available', 'needs_setup'].includes(c!.status), `${l.id} is ${c!.status}`);
+      assert.ok(c!.purpose, `${l.id} has no about.purpose`);
+      assert.ok(c!.evidence.length, `${l.id} has no evidence`);
+    }
+    // Constraints are unsupported; nothing built is also listed as planned.
+    assert.equal(byId.get('constraint:table-3d')?.status, 'unsupported');
+    assert.equal(byId.get('constraint:hand-tracking')?.status, 'unsupported');
+    const planned = caps.filter((c) => c.status === 'planned').map((c) => c.name.toLowerCase());
+    for (const built of ['ambient cars and people', 'guided tours']) assert.ok(!planned.includes(built), `${built} is built, not planned`);
+    // Every capability a pattern names exists.
+    const patterns = parsePatterns(catalog.docs['experience-design'] ?? '');
+    assert.ok(patterns.length >= 8);
+    for (const p of patterns) for (const id of p.capabilities) assert.ok(byId.has(id), `pattern ${p.id} names unknown ${id}`);
+    // Plain-language goals reach the layers that serve them.
+    const top = (q: string, n = 6) => rank(caps, q).slice(0, n).map((m) => m.capability.id);
+    assert.ok(top('pedestrian comfort in summer heat').includes('layer:coolpaths'));
+    assert.ok(top('what can people see from this square').includes('layer:isovist'));
+    assert.ok(top('flooding in a cloudburst').includes('layer:stormwater'));
+    assert.ok(top('residents place ideas on the map').includes('layer:sketch'));
+  });
+
   test('the preview avoids the app port and serves surfaces it can find (#322)', async () => {
     const root = mkdtempSync(join(tmpdir(), 'mrstudio-core-'));
     const cli = join(root, 'mrstudio');
@@ -181,7 +211,7 @@ describe('server over stdio', () => {
 
   test('offers tools, prompts and docs', async () => {
     const tools = (await client.listTools()).tools.map((t) => t.name).sort();
-    for (const name of ['overview', 'read_doc', 'list_layers', 'describe_layer', 'list_building_blocks', 'create_site', 'get_site', 'update_site', 'add_layer', 'set_layer', 'move_layer', 'remove_layer', 'validate_site', 'preview_site', 'check_layer_idea', 'draft_module_request', 'submit_module_request', 'whats_new']) {
+    for (const name of ['overview', 'read_doc', 'list_layers', 'describe_layer', 'list_building_blocks', 'find_capabilities', 'describe_capability', 'create_site', 'get_site', 'update_site', 'add_layer', 'set_layer', 'move_layer', 'remove_layer', 'validate_site', 'preview_site', 'check_layer_idea', 'draft_module_request', 'submit_module_request', 'whats_new']) {
       assert.ok(tools.includes(name), `missing tool ${name}`);
     }
     const prompts = (await client.listPrompts()).prompts.map((p) => p.name).sort();
@@ -217,6 +247,33 @@ describe('server over stdio', () => {
     const v = (await client.getServerVersion())!.version;
     assert.match(v, /^\d+\.\d+\.\d+/);
     assert.notEqual(v, '0.1.0');
+  });
+
+  test('finds capabilities for a goal and reads them as resources (#326)', async () => {
+    const found = await call(client, 'find_capabilities', { goal: 'show residents how a new building changes sunlight', limit: 8 });
+    assert.equal(found.isError, false, found.text);
+    const ids = found.structured.matches.map((m: any) => m.id);
+    assert.ok(ids.includes('layer:sunlight'), ids.join(', '));
+    const sun = found.structured.matches.find((m: any) => m.id === 'layer:sunlight');
+    assert.ok(sun.matched.length && sun.surfaces.table && sun.evidence.length);
+    const missing = await call(client, 'find_capabilities', { kind: 'constraint' });
+    assert.ok(missing.structured.matches.every((m: any) => m.status === 'unsupported'));
+    const one = await call(client, 'describe_capability', { id: 'sunlight' });
+    assert.equal(one.structured.id, 'layer:sunlight');
+    assert.ok(one.structured.controls.length);
+    const bad = await call(client, 'describe_capability', { id: 'layer:sunlite' });
+    assert.equal(bad.structured.error.code, 'unknown_capability');
+    assert.ok(bad.structured.similar.includes('layer:sunlight'));
+
+    const read = async (uri: string) => String(((await client.readResource({ uri })).contents[0] as { text: string }).text);
+    assert.match(await read('mrstudio://concepts'), /three surfaces/);
+    assert.match(await read('mrstudio://patterns/map-it-together'), /layer:sketch/);
+    assert.ok(JSON.parse(await read('mrstudio://capabilities')).length > 50);
+    assert.equal(JSON.parse(await read('mrstudio://capabilities/layer:sketch')).id, 'layer:sketch');
+    assert.ok(JSON.parse(await read('mrstudio://schema/recipe')).look.points);
+    assert.ok(JSON.parse(await read('mrstudio://schema/site')));
+    const listed = (await client.listResources()).resources.map((r) => r.uri);
+    assert.ok(listed.some((u) => u.startsWith('mrstudio://examples/')), 'no example sites listed');
   });
 
   test('knows the core layers and docs', async () => {
@@ -306,6 +363,15 @@ describe('server over stdio', () => {
     // Custom layers: saved recipes, used as custom:<id>, refused while in use.
     const recipe = { name: 'Bright paths', data: [{ id: 'aerial', wms: { url: 'https://example.org/wms', layers: 'ortho' } }], look: [{ id: 'photo', block: 'raster', data: 'aerial' }] };
     assert.equal((await call(client, 'save_custom_layer', { site: 'harbour', id: 'bright', recipe })).isError, false);
+    // The legend is worked out from the looks and their data, as the editor does (#326).
+    mkdirSync(join(dir, 'data', 'zones'), { recursive: true });
+    const square = (x: number) => [[[x, 57.7], [x + 0.001, 57.7], [x + 0.001, 57.701], [x, 57.701], [x, 57.7]]];
+    writeFileSync(join(dir, 'data', 'zones', 'use.geojson'), JSON.stringify({ type: 'FeatureCollection', features: ['homes', 'shops', 'park'].map((use, i) => ({ type: 'Feature', properties: { use }, geometry: { type: 'Polygon', coordinates: square(11.9 + i * 0.002) } })) }));
+    const zones = await call(client, 'save_custom_layer', { site: 'harbour', id: 'zones', recipe: { name: 'Land use', data: [{ id: 'z', path: 'data/zones/use.geojson' }], look: [{ id: 'fill', block: 'fill', data: 'z', props: { color: { by: 'use', kind: 'category' } } }] } });
+    assert.equal(zones.isError, false, zones.text);
+    const legend = JSON.parse(readFileSync(join(dir, 'site.json'), 'utf8')).custom.zones.legend;
+    assert.deepEqual(legend.map((r: any) => r.label).sort(), ['homes', 'park', 'shops']);
+    assert.match(zones.structured.summary, /legend has 3 rows/);
     assert.equal((await call(client, 'save_custom_layer', { site: 'harbour', id: 'broken', recipe: { name: 'x', look: [{ id: 'a', block: 'lines', data: 'nope' }] } })).isError, true);
     const junk = await call(client, 'save_custom_layer', { site: 'harbour', id: 'junk', recipe: { name: 'Junk', data: [{ id: 'd', wms: { url: 'https://example.org/wms', layers: 'x' } }], look: [{ id: 'a', block: 'extrude', data: 'd', props: { wobble: 3 } }] } });
     assert.equal(junk.isError, true, 'unknown blocks are refused (#321)');

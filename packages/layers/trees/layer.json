@@ -3,6 +3,7 @@
   "id": "trees",
   "name": "Trees",
   "description": "Tree crowns that sway in a light wind",
+  "about": {"purpose": "Adds swaying tree crowns, making green structure visible and the model feel alive.", "questions": ["Where are the trees, and where are they missing?"], "pairs_with": ["sunlight", "coolpaths", "building-lights"], "limits": ["Needs a trees dataset"]},
   "icon": "tree",
   "category": "ambient",
   "requires": { "data": ["trees"] },

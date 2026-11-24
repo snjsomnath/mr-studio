@@ -3,6 +3,7 @@
   "id": "basemap",
   "name": "Base map",
   "description": "What the table stands on: your own streets and buildings drawn dark, a light, dark, grey, street or terrain map, an aerial photo, a map from your sources (Mapbox, CARTO, Lantmäteriet), or plain ground",
+  "about": {"purpose": "Sets the ground the whole table stands on: the place itself, quiet enough for every other layer to read over it.", "questions": ["Where are we, and what is around the model?", "What did this place look like from the air, or on the official map?"], "pairs_with": ["trees", "street-glow", "plan"], "limits": ["A map service needs its key in Sources and keys", "Text on the map is kept to a few place labels"]},
   "icon": "map",
   "category": "base",
   "controls": [

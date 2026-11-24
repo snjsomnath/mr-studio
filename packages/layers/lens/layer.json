@@ -3,6 +3,7 @@
   "id": "lens",
   "name": "Magnifier",
   "description": "A glass people move over the table: it shows what is under it larger, or the layers placed inside it, like an X-ray",
+  "about": {"purpose": "Lets people look closer or look through: a glass that magnifies, or reveals hidden layers under it like an X-ray.", "questions": ["What lies under or behind what we see?", "What does the proposal look like right here, compared with today?"], "pairs_with": ["swipe", "plan", "media"], "limits": ["Shows layers placed inside it; it does not compute anything itself"]},
   "icon": "magnifier",
   "category": "analysis",
   "reveals": true,
