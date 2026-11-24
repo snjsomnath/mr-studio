@@ -99,7 +99,7 @@ docs/contracts/   the interface contracts below
 - **A scene is a list.** What a table shows is the ordered `layers` list in `site.json`, drawn bottom to top. The composer at `/compose` edits it through the host, and layers that are not analysis (base map, ambient life, media) are ordinary layer packages that draw on a canvas.
 - **The TV has a budget.** Dashboard panels sit on a fixed 12 by 6 grid, come in eight sizes and each spend a counted share of what one screen may ask a visitor to read. A panel over its budget is refused; too many panels become another page. Sites restyle through tokens and cannot change the rules.
 - **Controls are data.** A layer declares its controls in the manifest. The TV and phone UIs are generated from them, and the host validates every change against them.
-- **Python stays outside the app process.** Data preparation and research models run as services declared in the site or layer manifest and reached through the host gateway.
+- **Python stays outside the app process.** Data preparation and research models run as services declared under `services` in site.json; the host starts them, keeps them running and is the only way surfaces reach them (`/api/services`, `ctx.service`; site.md, Services).
 
 ## Distribution and updates
 

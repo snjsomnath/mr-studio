@@ -54,7 +54,7 @@ The controls are the single source of truth for a layer's params:
 
 - `kernels`: engine kernels it opens streams on.
 - `data`: named datasets the site must provide. A site maps each name to a file under `data` in `site.json` (see site.md), and the host refuses to start a site, or to add a layer to a scene, when one is missing; the composer's palette says so beforehand. The scene's `buildings` and `trees` count as datasets. The layer loads it with `loadSiteData(ctx.site, name)`. A layer may also use a dataset it does not require: it checks `hasSiteData(ctx.site, name)` and does without when the site has none. A raster dataset (a GeoTIFF, or a folder of one GeoTIFF per hour such as `pet_08.tif` .. `pet_20.tif`) is read laid on the site grid with `loadSiteField(ctx.site, name, hour)`: a field frame of exact values, NaN where the raster has no data, null when a folder has no raster for that hour (`GET /api/data/field?name=&hour=`).
-- `services`: Python services it reaches through the gateway.
+- `services`: outside services it calls with `ctx.service(id)`, by their id under `services` in site.json (site.md, Services). The layer still starts when one is missing; its calls are refused, and the host warns.
 
 ## TV panels
 

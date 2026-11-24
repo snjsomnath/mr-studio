@@ -26,3 +26,4 @@ export * from './schemes.ts';
 export * from './hero.ts';
 export * from './transition.ts';
 export * from './street-network.ts';
+export * from './service.ts';

@@ -158,6 +158,7 @@ composition. Old line counts are from `main`.
 | ECOM today | Blocks |
 | --- | --- |
 | `ecom-buildings/nodes/flows.geojson`, fetched with `no-store` | `geojsonSource` + `readShapes`. When the controller pushes a new community, `liveSource` on the service replaces the file |
+| The dispatch and optimiser backend (`Dashboard/backend`, its venv, `scripts/services.py`, the allow-list in `host_server.py`) | A site `services` entry the host starts and keeps running; the layer calls it with `ctx.service('ecom').post` and `.job`, and publishes `busy` while it waits (#278, `samples/service-example`) |
 | Live EHUB battery, peaks endpoint | `liveSource(url, { every: 30 })`, last good value kept |
 | Battery host by folded name ("Kårhus" = "karhus") | `joinRows` / `foldKey` |
 | Footprints shaded by demand against the busiest building-hour, `MEMBER_FLOOR` 0.35 | `drawAreas` with `fill: twoColourScale('#2a0b23', pink)(levelScale({ domain: [0, sharedPeak], curve: 'sqrt', floor: 0.35 })(demandNow))` |

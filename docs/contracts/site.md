@@ -197,6 +197,45 @@ Names in the tables match the places' `name`, case-insensitive; names that match
 - A data `path` or dataset may be GeoJSON, or a CSV of points with `lon` and `lat` columns.
 - The builder writes the legend the looks give into `legend`.
 
+## Services
+
+`services` lists the outside compute the table's layers use (#278): a model, an optimiser or an API.
+The host either starts it with the table (`run`) or forwards to it where it already runs (`url`).
+Layers reach a service only through the host, from this computer, and name it in `requires.services`.
+
+```jsonc
+"services": [
+  {
+    "id": "ecom", "name": "Energy model", "health": "/api/health",
+    "run": {
+      "cwd": "services/ecom",                                   // inside the site
+      "command": ["{python}", "-m", "uvicorn", "app.main:app", "--port", "{port}"],
+      "venv": ".venv", "requirements": "requirements.txt",     // made and installed on the first start
+      "env": { "SCENARIO": "campus" },                          // never keys: those go in Sources and keys
+      "start_s": 90
+    }
+  },
+  { "id": "weather", "url": "https://models.example.org/weather" }
+]
+```
+
+| Key | Meaning |
+| --- | --- |
+| `id` | What a layer calls it by: lowercase letters, digits and dashes |
+| `run.command` | The program and its arguments. `{port}` is a free port the host picks (also in `PORT`), `{python}` the venv's Python, or this computer's without a venv |
+| `run.venv`, `run.requirements` | A virtual environment, made with this computer's Python when it is missing, and the requirements installed into it. They are installed again when the requirements file changes |
+| `health` | A path that answers 200 when the service is ready. Default `/` |
+| `run.start_s` | Seconds it may take to become ready. Default 60 |
+
+What the host does with them:
+
+- Starts each `run` service when the table opens, waits for `health`, and starts it again after a crash with a growing pause (1 s up to a minute). Each stop is in the operator log. It stops them when the table closes. A change to `services` takes effect when the table opens again.
+- `GET /api/services` gives each service's state (`installing`, `starting`, `up`, `down`, `remote`), why, and how often it restarted; `/api/services/<id>/log` the last lines it wrote.
+- `/api/services/<id>/call/<path>` forwards any method, with its body and query, to the service. The same request from several views of the table at once (the projector and the editor both run the layer) reaches the service once, and they share the answer, so a job starts once.
+- Every good answer is kept in `.mrstudio/services/<id>/`. When the service is down or fails, the kept answer to the same request is given instead, marked with `x-mrs-cached`, so a table without its model, or offline, still shows the last result. `.mrstable` exports leave this folder out.
+
+In a layer, `ctx.service(id)` has `get(path)`, `post(path, body)` and `job(path, body, { onProgress })`: a job POST answers `{ "job": "<id>" }`, and the SDK polls `<path>/<id>` until `state` is done or failed, passing on `progress` and `message`. A finished job's result is kept too. While a call runs, the layer publishes `busy: { label, progress }` and the controller shows it under the layer's name. `samples/service-example` has a model and a layer to copy.
+
 ## Composing a scene
 
 A table scene is the ordered `layers` list and nothing else: the first entry is drawn at the bottom, the last on top, and a layer's items right on top of it.

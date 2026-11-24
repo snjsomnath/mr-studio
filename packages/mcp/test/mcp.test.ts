@@ -250,12 +250,17 @@ describe('server over stdio', () => {
     });
     assert.equal(sun.data.verdict, 'use-existing', sun.text);
 
-    // Moving things and live feeds are built now; a Python service behind the gateway is still planned.
+    // The service gateway is built (#278): a model behind a layer needs no new module.
     const energy = await call(client, 'check_layer_idea', {
       title: 'Energy use per building', description: 'Energy use of each building computed by an energy model service', blocks: ['service gateway', 'choropleth'],
     });
-    assert.equal(energy.data.verdict, 'needs-new-module', energy.text);
-    assert.ok(energy.data.missing.some((m: string) => m.includes('service')), energy.text);
+    assert.notEqual(energy.data.verdict, 'needs-new-module', energy.text);
+    assert.ok(!energy.data.missing.some((m: string) => m.includes('service')), energy.text);
+    // Something the core does not have still becomes a request.
+    const lidar = await call(client, 'check_layer_idea', {
+      title: 'Live lidar crowd', description: 'People counted by a lidar scanner', kernels: ['lidar-crowd'],
+    });
+    assert.equal(lidar.data.verdict, 'needs-new-module', lidar.text);
 
     const draft = await call(client, 'draft_module_request', {
       site: 'harbour', kind: 'contract', title: 'Welcome screen for the TV and table',

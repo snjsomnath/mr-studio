@@ -566,6 +566,34 @@ function legendZone(id: string, store: Store): { element: HTMLElement; sync(stat
   };
 }
 
+/**
+ * What a layer is waiting for (#278): `busy: { label, progress }` published while a service
+ * works, shown under the layer's name with a bar, so no layer draws its own spinner.
+ */
+function busyZone(store: Store): { element: HTMLElement; sync(state: LayerState): void } {
+  const zone = el('div', 'stage-busy');
+  zone.setAttribute('role', 'status');
+  zone.hidden = true;
+  const label = el('span', 'stage-busy-label');
+  const bar = el('span', 'stage-busy-bar');
+  const fill = el('i');
+  bar.append(fill);
+  zone.append(label, bar);
+  return {
+    element: zone,
+    sync(state) {
+      const busy = state.shared?.busy as { label?: unknown; progress?: unknown } | null | undefined;
+      const on = Boolean(busy && typeof busy.label === 'string');
+      zone.hidden = !on;
+      if (!on) return;
+      label.textContent = say(String(busy!.label), store.manifest(state.layer));
+      const progress = typeof busy!.progress === 'number' ? Math.max(0, Math.min(1, busy!.progress)) : undefined;
+      bar.classList.toggle('is-open', progress === undefined);
+      fill.style.width = progress === undefined ? '' : `${Math.round(progress * 100)}%`;
+    },
+  };
+}
+
 /** A sound a layer published for the controller (#150). */
 interface SoundRow {
   id: string;
@@ -828,7 +856,8 @@ export class Controller {
     const strip = stepStrip(id, store, connection);
     const legend = legendZone(id, store);
     const sounds = soundZone(id, store, connection);
-    body.append(words, strip.element);
+    const busy = busyZone(store);
+    body.append(words, busy.element, strip.element);
     if (!hero.hidden) body.append(hero);
     for (const group of [primary, controls]) if (group.childElementCount > 0) body.append(group);
     body.append(legend.element, sounds.element);
@@ -864,6 +893,7 @@ export class Controller {
         strip.sync(state);
         strip.element.classList.toggle('legend-follows', legend.sync(state));
         sounds.sync(state);
+        busy.sync(state);
         // A slideshow made of layers is driven by its steps: its own slide controls step aside.
         const stepped = Boolean(manifest.sequence && state.step);
         for (const w of widgets) {

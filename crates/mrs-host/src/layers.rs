@@ -390,6 +390,13 @@ pub fn load_catalog(site: &Site, core_layers: &Path) -> anyhow::Result<Vec<Layer
         if let Some(name) = def.missing_data(&data)? {
             tracing::warn!("layer '{}' needs the dataset '{name}', which this site does not have yet", def.id);
         }
+        // A layer that calls a service the site does not declare (#278) still starts; its calls are refused.
+        for wanted in def.manifest["requires"]["services"].as_array().map(Vec::as_slice).unwrap_or(&[]) {
+            let wanted = wanted.as_str().unwrap_or_default();
+            if !site.manifest.services.iter().any(|s| s.id == wanted) {
+                tracing::warn!("layer '{}' needs the service '{wanted}', which this site does not have under \"services\"", def.id);
+            }
+        }
     }
     Ok(defs)
 }

@@ -1,4 +1,4 @@
-import { EngineClient, stepTransition, transitionGain } from '@mrstudio/sdk';
+import { EngineClient, serviceClient, stepTransition, transitionGain } from '@mrstudio/sdk';
 import type { Connection, LayerManifest, LayerModule, LayerState, PanelContext, StepTransitionKind, TableContext, TableHandlers, ToolInput } from '@mrstudio/sdk';
 
 import { Cues } from './cues.ts';
@@ -80,8 +80,9 @@ export function paramSender(
 }
 
 /** Shared read-only parts of a layer context, backed by the store. */
-export function baseContext(store: Store, connection: Connection, layer: string): Pick<PanelContext, 'site' | 'params' | 'shared' | 'setParams' | 'language' | 'say'> {
+export function baseContext(store: Store, connection: Connection, layer: string): Pick<PanelContext, 'site' | 'params' | 'shared' | 'setParams' | 'language' | 'say' | 'service'> {
   return {
+    service: (id) => serviceClient(id),
     get language() {
       return language();
     },
@@ -279,7 +280,7 @@ export class LayerManager {
     };
     const published: Record<string, unknown> = {};
     const { store, engine } = this;
-    const extras: Omit<TableContext, 'site' | 'params' | 'shared' | 'setParams' | 'language' | 'say'> = {
+    const extras: Omit<TableContext, 'site' | 'params' | 'shared' | 'setParams' | 'language' | 'say' | 'service'> = {
       engine: {
         open: async (kernel, params, fields, options) => {
           const stream = await engine.open(kernel, params, fields, options);

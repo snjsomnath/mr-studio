@@ -262,6 +262,49 @@ impl Site {
             }
         }
         out.extend(self.custom_problems());
+        out.extend(self.service_problems());
+        out
+    }
+
+    /// The outside services under `services` (#278).
+    fn service_problems(&self) -> Vec<String> {
+        let mut out = Vec::new();
+        let mut seen = BTreeSet::new();
+        for service in &self.manifest.services {
+            let at = format!("services.{}", service.id);
+            if !is_instance_id(&service.id) {
+                out.push(format!("{at}: an id is lowercase letters, digits and dashes"));
+            }
+            if !seen.insert(service.id.as_str()) {
+                out.push(format!("{at}: another service has this id"));
+            }
+            match (&service.run, &service.url) {
+                (Some(_), Some(_)) | (None, None) => out.push(format!("{at}: give either run or url")),
+                (None, Some(url)) => {
+                    if !(url.starts_with("http://") || url.starts_with("https://")) {
+                        out.push(format!("{at}.url: an address starts with http:// or https://"));
+                    }
+                }
+                (Some(run), None) => {
+                    match self.resolve(&run.cwd) {
+                        Some(dir) if dir.is_dir() => {}
+                        Some(_) => out.push(format!("{at}.run.cwd: '{}' does not exist", run.cwd)),
+                        None => out.push(format!("{at}.run.cwd: '{}' leaves the site folder", run.cwd)),
+                    }
+                    if run.command.is_empty() {
+                        out.push(format!("{at}.run.command: name the program to start"));
+                    }
+                    for (name, path) in [("venv", &run.venv), ("requirements", &run.requirements)] {
+                        if path.as_deref().is_some_and(|p| Path::new(p).components().any(|c| !matches!(c, Component::Normal(_) | Component::CurDir))) {
+                            out.push(format!("{at}.run.{name}: stays inside the service's folder"));
+                        }
+                    }
+                }
+            }
+            if service.health.as_deref().is_some_and(|h| !h.starts_with('/')) {
+                out.push(format!("{at}.health: a path starts with /"));
+            }
+        }
         out
     }
 

@@ -629,6 +629,10 @@ pub struct SiteManifest {
     pub palette: Option<Palette>,
     #[serde(default)]
     pub tv: Option<Value>,
+    /// Outside compute the table's layers reach through the host (#278): programs the host
+    /// starts beside the table (a Python model in its own venv) or addresses it forwards to.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub services: Vec<Service>,
     /// How the table's surfaces render (#134): `{ "quality": "draft" | "good" | "best" }`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub display: Option<Value>,
@@ -689,4 +693,48 @@ fn default_crown_radius() -> f64 {
 }
 fn default_background() -> String {
     "#0b0e14".into()
+}
+
+/// One outside service (#278). Exactly one of `run` and `url`. Contract in docs/contracts/site.md.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Service {
+    /// What layers call it by: `requires.services` and `ctx.service(id)`.
+    pub id: String,
+    /// Its name for people, in the operator's view. Default: the id.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    /// A program the host starts with the table and keeps running.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub run: Option<ServiceRun>,
+    /// A service that runs elsewhere, such as `https://ecom.example.org`. The host forwards to it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+    /// The path that answers 200 when the service is ready. Default `/`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub health: Option<String>,
+}
+
+/// How the host starts a service of this site.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ServiceRun {
+    /// Its folder, relative to the site, for example `services/ecom`.
+    pub cwd: String,
+    /// The program and its arguments. `{port}` is the port the host picked for it, and
+    /// `{python}` the Python of `venv` (or of this computer when there is none).
+    pub command: Vec<String>,
+    /// A virtual environment, relative to `cwd`, for example `.venv`. The host makes it on the
+    /// first start when it is missing, and installs `requirements` into it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub venv: Option<String>,
+    /// A requirements file, relative to `cwd`, installed when the venv is made or the file changed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub requirements: Option<String>,
+    /// Extra environment variables. `{port}` is filled in here too. Keys go in Sources and keys, never here.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub env: BTreeMap<String, String>,
+    /// Seconds the service may take to answer its health path after it starts. Default 60.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub start_s: Option<f64>,
 }
