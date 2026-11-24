@@ -11,6 +11,7 @@
 mod cli_tool;
 mod colour;
 mod config;
+mod diagnostics;
 mod file_menu;
 #[cfg(windows)]
 mod models;
@@ -199,6 +200,8 @@ fn main() -> anyhow::Result<()> {
             import_table,
             take_opened_file,
             open_operator_log,
+            diagnostics_report,
+            save_diagnostics,
             cli_state,
             install_cli,
             remove_cli
@@ -210,6 +213,9 @@ fn main() -> anyhow::Result<()> {
             }
             if file_menu::EDIT_ACTIONS.contains(&id) {
                 file_menu::tell_editor_edit(app, EDITOR, id);
+            }
+            if diagnostics::ACTIONS.contains(&id) {
+                diagnostics::menu_action(app, id);
             }
             if id == file_menu::INSTALL_CLI {
                 install_cli_from_menu(app.clone());
@@ -1496,6 +1502,18 @@ fn open_operator_log(app: AppHandle, shell: State<'_, Shell>) -> Result<(), Stri
     let dir = shell.operator.dir().ok_or("This computer has no folder for logs.")?;
     std::fs::create_dir_all(dir).map_err(text)?;
     app.opener().open_path(dir.to_string_lossy(), None::<&str>).map_err(text)
+}
+
+/// The diagnostics report (#260), for the editor's Copy diagnostics.
+#[tauri::command]
+async fn diagnostics_report(app: AppHandle) -> Result<String, String> {
+    Ok(diagnostics::report(&app).await)
+}
+
+/// Save diagnostics… (#260): the report as a text file.
+#[tauri::command]
+async fn save_diagnostics(app: AppHandle) -> Result<(), String> {
+    diagnostics::save(&app).await.map_err(text)
 }
 
 /// Saves which display shows the table and which the controller, from the editor's

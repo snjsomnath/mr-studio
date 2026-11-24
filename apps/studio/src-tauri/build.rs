@@ -62,6 +62,9 @@ fn main() {
         "sources_save",
         "sources_remove",
         "sources_test",
+        "open_operator_log",
+        "diagnostics_report",
+        "save_diagnostics",
     ]);
     tauri_build::try_build(tauri_build::Attributes::new().app_manifest(commands)).expect("the Tauri build step");
 }

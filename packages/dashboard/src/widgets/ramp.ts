@@ -10,6 +10,7 @@ export const ramp = defineWidget({
   name: 'Colour key',
   description: 'The colour ramp of the field on the table, with what its two ends mean.',
   sizes: ['tile', 'band'],
+  example: { colormap: 'daylight', low: 'Shade', high: 'Sun' },
   props: {
     colormap: { kind: 'colormap', label: 'Colour ramp', required: true, bindable: true },
     low: { kind: 'text', max: 12, label: 'Low end', required: true, bindable: true },

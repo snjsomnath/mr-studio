@@ -668,3 +668,297 @@
 .mrs-balance-chip {
   justify-content: flex-start;
 }
+
+/* Control (#354): one of the layer's controls on a panel. Sized from the unit, like the rest. */
+.mrs-control {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: calc(1 * var(--mrs-u));
+}
+.mrs-control-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--mrs-gap);
+}
+.mrs-control-label {
+  font-size: var(--mrs-type-body);
+  color: var(--mrs-text);
+}
+.mrs-control-value {
+  font-family: var(--mrs-font-number);
+  font-size: var(--mrs-type-body);
+  color: var(--mrs-muted);
+}
+.mrs-control button,
+.mrs-control select {
+  font: inherit;
+  font-size: var(--mrs-type-body);
+  color: var(--mrs-text);
+  cursor: pointer;
+}
+.mrs-control button:disabled,
+.mrs-control select:disabled,
+.mrs-control input:disabled {
+  cursor: default;
+}
+.mrs-control-button {
+  width: 100%;
+  min-height: calc(6 * var(--mrs-u));
+  border: none;
+  border-radius: var(--mrs-radius);
+  background: var(--mrs-accent);
+  color: var(--mrs-accent-ink) !important;
+  font-weight: 600;
+}
+.mrs-control-toggle {
+  display: flex;
+  align-items: center;
+  gap: calc(1.2 * var(--mrs-u));
+  border: none;
+  background: none;
+  padding: 0;
+  text-align: left;
+}
+.mrs-control-knob {
+  flex: none;
+  position: relative;
+  width: calc(6 * var(--mrs-u));
+  height: calc(3.4 * var(--mrs-u));
+  border-radius: calc(1.7 * var(--mrs-u));
+  background: var(--mrs-line);
+  transition: background 0.2s;
+}
+.mrs-control-knob::after {
+  content: '';
+  position: absolute;
+  top: calc(0.4 * var(--mrs-u));
+  left: calc(0.4 * var(--mrs-u));
+  width: calc(2.6 * var(--mrs-u));
+  height: calc(2.6 * var(--mrs-u));
+  border-radius: 50%;
+  background: var(--mrs-text);
+  transition: transform 0.2s;
+}
+.mrs-control-toggle[aria-checked='true'] .mrs-control-knob {
+  background: var(--mrs-accent);
+}
+.mrs-control-toggle[aria-checked='true'] .mrs-control-knob::after {
+  transform: translateX(calc(2.6 * var(--mrs-u)));
+  background: var(--mrs-accent-ink);
+}
+.mrs-control-slider {
+  width: 100%;
+  accent-color: var(--mrs-accent);
+  height: calc(4 * var(--mrs-u));
+}
+.mrs-control-choices {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  border: var(--mrs-stroke) solid var(--mrs-line);
+  border-radius: var(--mrs-radius);
+  overflow: hidden;
+}
+.mrs-control-choice {
+  border: none;
+  background: none;
+  padding: calc(1 * var(--mrs-u)) calc(0.6 * var(--mrs-u));
+  min-height: calc(5 * var(--mrs-u));
+}
+.mrs-control-choice[aria-checked='true'] {
+  background: var(--mrs-accent);
+  color: var(--mrs-accent-ink) !important;
+  font-weight: 600;
+}
+.mrs-control-select {
+  width: 100%;
+  min-height: calc(5 * var(--mrs-u));
+  background: var(--mrs-panel);
+  border: var(--mrs-stroke) solid var(--mrs-line);
+  border-radius: var(--mrs-radius);
+}
+.mrs-control-chip .mrs-control-head,
+.mrs-control-chip .mrs-control-value {
+  display: none;
+}
+
+/* Map (#355): the site's map fills the panel; a line under it says what a tap does. */
+.mrs-map {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: calc(0.8 * var(--mrs-u));
+}
+.mrs-map-area {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+}
+
+/* Gauge (#356): a half circle that fills, the number under it. */
+.mrs-gauge {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+.mrs-gauge-arc {
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+}
+.mrs-gauge-track,
+.mrs-gauge-fill {
+  fill: none;
+  stroke-width: 9;
+  stroke-linecap: round;
+}
+.mrs-gauge-track {
+  stroke: var(--mrs-line);
+}
+.mrs-gauge-target {
+  stroke: var(--mrs-text);
+  stroke-width: 2.5;
+}
+.mrs-gauge .mrs-number {
+  font-size: var(--mrs-type-number-s);
+}
+.mrs-gauge-chip {
+  flex-direction: row;
+  gap: var(--mrs-gap);
+}
+.mrs-gauge-chip .mrs-gauge-arc {
+  height: 100%;
+  width: auto;
+}
+.mrs-gauge-chip .mrs-number {
+  font-size: var(--mrs-type-number-s);
+}
+
+/* List and the donut's key (#356): a mark, a name, a number. */
+.mrs-list,
+.mrs-donut-key,
+.mrs-legend {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-evenly;
+  gap: calc(0.6 * var(--mrs-u));
+  min-height: 0;
+}
+.mrs-list {
+  flex: 1;
+}
+.mrs-list-row,
+.mrs-donut-row {
+  display: grid;
+  grid-template-columns: calc(1.2 * var(--mrs-u)) minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: calc(1 * var(--mrs-u));
+  font-size: var(--mrs-type-body);
+}
+.mrs-list-mark {
+  width: calc(1.2 * var(--mrs-u));
+  height: calc(1.2 * var(--mrs-u));
+  border-radius: 50%;
+}
+.mrs-list-label {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.mrs-list-value {
+  font-family: var(--mrs-font-number);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Donut (#356): the ring with its middle, the key beside it. */
+.mrs-donut {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  gap: calc(2 * var(--mrs-u));
+}
+.mrs-donut-hole {
+  flex: none;
+  height: 100%;
+  aspect-ratio: 1;
+  position: relative;
+  display: grid;
+  place-items: center;
+}
+.mrs-donut-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  -webkit-mask: radial-gradient(circle, transparent 52%, #000 53%);
+  mask: radial-gradient(circle, transparent 52%, #000 53%);
+}
+.mrs-donut-middle {
+  position: relative;
+  font-size: calc(3.6 * var(--mrs-u));
+}
+.mrs-donut {
+  position: relative;
+}
+.mrs-donut-key {
+  flex: 1;
+}
+
+/* Picture or video (#356). */
+.mrs-media {
+  flex: 1;
+  min-height: 0;
+  border-radius: calc(0.6 * var(--mrs-u));
+  overflow: hidden;
+  background: var(--mrs-line);
+}
+.mrs-media img,
+.mrs-media video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.mrs-media[data-fit='contain'] img,
+.mrs-media[data-fit='contain'] video {
+  object-fit: contain;
+}
+
+/* Legend (#356): big swatches, as on the controller's stage. */
+.mrs-legend-row {
+  display: flex;
+  align-items: center;
+  gap: calc(1.2 * var(--mrs-u));
+  font-size: var(--mrs-type-body);
+}
+.mrs-legend-swatch {
+  flex: none;
+  width: calc(3.2 * var(--mrs-u));
+  height: calc(2.2 * var(--mrs-u));
+  border-radius: calc(0.4 * var(--mrs-u));
+  background: var(--swatch);
+}
+.mrs-legend-swatch[data-shape='line'] {
+  height: calc(0.6 * var(--mrs-u));
+}
+.mrs-legend-swatch[data-shape='point'] {
+  width: calc(2.2 * var(--mrs-u));
+  border-radius: 50%;
+}
+.mrs-legend-band {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: calc(3 * var(--mrs-u));
+}

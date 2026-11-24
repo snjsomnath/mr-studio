@@ -455,3 +455,25 @@ test('streets that cross the table reach all of it; streets from another place r
   assert.ok(tableReach(away, space) > 0 && tableReach(away, space) < STRAY_REACH);
   assert.equal(tableReach([[[2000, 2000]]], space), 0);
 });
+
+test('a connection reports its requests and events to a tracer (#358)', async () => {
+  const { Connection } = await import('../src/connection.ts');
+  const sent: string[] = [];
+  const socket = { readyState: 1, send: (text: string) => sent.push(text) };
+  const connection = new Connection({ url: 'ws://x', role: 'dev' });
+  (connection as unknown as { socket: unknown }).socket = socket;
+  const traces: { kind: string; method: string; ok?: boolean }[] = [];
+  const stop = connection.trace((t) => traces.push({ kind: t.kind, method: t.method, ok: t.ok }));
+  (globalThis as { WebSocket?: unknown }).WebSocket ??= { OPEN: 1 };
+  const answer = connection.request('layer.action', { layer: 'a', action: 'go' });
+  const { id } = JSON.parse(sent[0]!);
+  const pending = (connection as unknown as { pending: Map<number, { resolve: (v: unknown) => void }> }).pending;
+  pending.get(id)!.resolve(true);
+  await answer;
+  assert.deepEqual(traces, [{ kind: 'request', method: 'layer.action', ok: true }]);
+  stop();
+  const again = connection.request('layer.set', {});
+  pending.get(JSON.parse(sent[1]!).id)!.resolve(true);
+  await again;
+  assert.equal(traces.length, 1);
+});

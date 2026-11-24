@@ -2,14 +2,15 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
-import type { PanelSpec } from '@mrstudio/sdk';
+import type { EntityFeature, PanelSpec, Position } from '@mrstudio/sdk';
 
 import { clip, formatValue, resolveProps } from '../src/bind.ts';
 import { pack } from '../src/pack.ts';
 import { GRID, SCREEN, SIZES } from '../src/rules.ts';
 import { contrast, STYLE_TOKENS, themeVariables, validateTheme } from '../src/theme.ts';
-import { panelReads, validateLayerPanels, validatePage, validatePanel, validateRibbon } from '../src/validate.ts';
-import { coreWidgets } from '../src/widgets/index.ts';
+import { controlProblems, panelReads, validateLayerPanels, validatePage, validatePanel, validateRibbon } from '../src/validate.ts';
+import { defineWidget } from '../src/registry.ts';
+import { coreWidgets, donutParts, entityAt, gaugeShare, mediaUrl } from '../src/widgets/index.ts';
 
 const json = (path: string) => JSON.parse(readFileSync(new URL(path, import.meta.url), 'utf8'));
 const registry = coreWidgets();
@@ -173,7 +174,7 @@ test('a site can restyle but not break the rules', () => {
 
 test('the registry is plain data an editor can read', () => {
   const described = registry.describe();
-  assert.deepEqual(described.map((w) => w.type), ['stat', 'bars', 'compare', 'balance', 'series', 'ramp', 'timeline', 'text', 'custom']);
+  assert.deepEqual(described.map((w) => w.type), ['stat', 'gauge', 'bars', 'list', 'donut', 'compare', 'balance', 'control', 'map', 'media', 'legend', 'series', 'ramp', 'timeline', 'text', 'custom']);
   assert.deepEqual(JSON.parse(JSON.stringify(described)), described);
   for (const widget of described) for (const prop of Object.values(widget.props)) assert.ok(prop.label, `${widget.type} props need labels`);
 });
@@ -223,4 +224,89 @@ test('compare and balance panels fit their sizes, in a ribbon too, and are count
   assert.equal(scenarioChange(undefined, 90), null);
   assert.equal(selfSufficiency([{ label: 'Solar', value: 60 }, { label: 'Grid', value: 40 }], 'Grid'), 0.6);
   assert.equal(selfSufficiency([], 'Grid'), null);
+});
+
+test('a layer package brings its own widgets, held to the core contract (#353)', () => {
+  const registry = coreWidgets();
+  const meter = defineWidget({
+    type: 'meter', name: 'Meter', description: 'A level.', sizes: ['chip', 'tile'],
+    props: { value: { kind: 'value', label: 'Value', required: true, bindable: true } },
+    reads: () => 1,
+    mount: () => ({ update() {} }),
+  });
+  const broken = { type: 'Bad Name', name: '', sizes: ['huge'], props: { x: { kind: 'number' } }, mount: () => ({ update() {} }) };
+  const problems = registry.registerTeam('energy', [meter, broken]);
+  for (const words of [/lower-case/, /needs a name/, /sizes is a list/, /needs reads/, /prop 'x' needs a label/]) assert.match(problems.join(' | '), words);
+  assert.equal(registry.get('energy/meter')?.owner, 'energy');
+  assert.equal(registry.get('meter'), undefined);
+  // The layer's own panels may name it short; core widgets keep their names.
+  assert.equal(registry.find('meter', 'energy')?.type, 'energy/meter');
+  assert.equal(registry.find('stat', 'energy')?.type, 'stat');
+  assert.equal(registry.find('meter', 'other'), undefined);
+  // It counts in the density budget and validates like a core widget.
+  assert.deepEqual(validateLayerPanels([{ id: 'm', widget: 'energy/meter', size: 'tile', title: 'Level', props: { value: 3 } }], registry), []);
+  assert.ok(validateLayerPanels([{ id: 'm', widget: 'energy/meter', size: 'block', title: 'Level', props: { value: 3 } }], registry).length > 0);
+  // A rebuilt layer replaces its widget, and the editor sees who owns it.
+  registry.registerTeam('energy', [{ ...meter, name: 'Meter 2' }]);
+  assert.equal(registry.get('energy/meter')?.name, 'Meter 2');
+  assert.equal(registry.describe().find((w) => w.type === 'energy/meter')?.owner, 'energy');
+  assert.deepEqual(registry.registerTeam('energy', undefined), []);
+});
+
+test('a control panel names one of its layer\'s controls and costs what it shows (#354)', () => {
+  const registry = coreWidgets();
+  const widget = registry.get('control')!;
+  assert.deepEqual(widget.sizes, ['chip', 'tile', 'wide']);
+  assert.equal(widget.reads({ control: 'share' }, 'chip'), 1);
+  assert.equal(widget.reads({ control: 'share' }, 'wide'), 2);
+  assert.deepEqual(validateLayerPanels([{ id: 'c', widget: 'control', size: 'wide', title: 'Share', props: { control: 'share' } }], registry), []);
+  assert.ok(validateLayerPanels([{ id: 'c', widget: 'control', size: 'wide', title: 'Share', props: {} }], registry).length > 0);
+  assert.deepEqual(controlProblems([{ id: 'c', widget: 'control', size: 'tile', props: { control: 'go' } }, { id: 'd', widget: 'control', size: 'tile', props: { control: 'nope' } }, { id: 's', widget: 'stat', size: 'tile', props: {} }], ['go']), ["panel 'd' names control 'nope', which the layer does not have"]);
+});
+
+test('a map panel picks the entity under a tap: an area that holds it, else the nearest point (#355)', () => {
+  const square = (id: string, x: number): EntityFeature => ({ id, label: id, geometry: { type: 'Polygon', coordinates: [[[x, 0], [x + 1, 0], [x + 1, 1], [x, 1], [x, 0]]] } });
+  const stop: EntityFeature = { id: 'stop', label: 'Stop', geometry: { type: 'Point', coordinates: [10, 10] } };
+  const features = [square('a', 0), square('b', 2), stop];
+  const project = ([x, y]: Position): [number, number] => [x * 10, y * 10];
+  assert.equal(entityAt(features, [2.5, 0.5], project)?.id, 'b');
+  assert.equal(entityAt(features, [10.5, 10.5], project)?.id, 'stop');
+  assert.equal(entityAt(features, [6, 6], project), undefined);
+  const widget = coreWidgets().get('map')!;
+  assert.equal(widget.reads({ data: [{ name: 'roads' }, { name: 'buildings' }], hint: 'Tap a building' }, 'block'), 4);
+  assert.deepEqual(validateLayerPanels([{ id: 'm', widget: 'map', size: 'block', title: 'Pick a building', props: { data: [{ name: 'roads', slot: 2 }], entities: 'buildings', shapes: { bind: 'shared.route' } } }], coreWidgets()), []);
+  assert.ok(validateLayerPanels([{ id: 'm', widget: 'map', size: 'block', title: 'Bad', props: { shapes: 3 } }], coreWidgets()).length > 0);
+});
+
+test('gauge, list, donut, picture and legend widgets hold to the budget (#356)', () => {
+  const registry = coreWidgets();
+  assert.equal(gaugeShare(50, 0, 200), 0.25);
+  assert.equal(gaugeShare(500, 0, 200), 1);
+  assert.equal(gaugeShare('x', 0, 1), null);
+  assert.deepEqual(donutParts([1, 3, -2, undefined]), [{ from: 0, to: 0.25 }, { from: 0.25, to: 1 }, { from: 1, to: 1 }, { from: 1, to: 1 }]);
+  assert.equal(mediaUrl('media/plan view.png'), '/site/media/plan%20view.png');
+  assert.equal(mediaUrl('../secret.txt'), null);
+  assert.equal(mediaUrl('https://example.com/a.png'), null);
+  const rows = (n: number) => Array.from({ length: n }, (_, i) => ({ label: `Row ${i}`, value: i }));
+  // A tile list shows three rows; asking for more is over its size.
+  assert.deepEqual(validateLayerPanels([{ id: 'l', widget: 'list', size: 'tile', title: 'Busiest', props: { items: rows(3) } }], registry), []);
+  assert.ok(validateLayerPanels([{ id: 'l', widget: 'list', size: 'tile', title: 'Busiest', props: { items: rows(5) } }], registry).length > 0);
+  assert.deepEqual(validateLayerPanels([{ id: 'g', widget: 'gauge', size: 'chip', title: 'Battery', props: { value: { bind: 'shared.soc' }, max: 1, format: 'percent' } }], registry), []);
+  assert.deepEqual(validateLayerPanels([{ id: 'd', widget: 'donut', size: 'wide', title: 'Sources', props: { items: rows(4), headline: 0.4, format: 'percent' } }], registry), []);
+  assert.deepEqual(validateLayerPanels([{ id: 'm', widget: 'media', size: 'wide', title: 'The plan', props: { path: 'media/plan.png' } }], registry), []);
+  // A legend with no rows of its own reads the layer's.
+  assert.deepEqual(validateLayerPanels([{ id: 'k', widget: 'legend', size: 'tall', title: 'Key', props: {} }], registry), []);
+});
+
+test('every core widget has an example that passes the rules at every size it takes (#358)', async () => {
+  const { coreWidgets } = await import('../src/widgets/index.ts');
+  const { examplePanel } = await import('../src/validate.ts');
+  const registry = coreWidgets();
+  for (const widget of registry.list()) {
+    assert.ok(widget.example, `${widget.type} has an example`);
+    for (const size of widget.sizes) {
+      const issues = validatePanel(examplePanel(widget, size), registry, `${widget.type}.${size}`);
+      assert.deepEqual(issues, [], `${widget.type} at ${size}`);
+    }
+  }
 });

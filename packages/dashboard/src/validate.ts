@@ -2,7 +2,7 @@
 // same checks run in tests, on the TV before a panel is shown, and in an editor
 // before a drop is accepted.
 
-import type { Binding, PanelSpec } from '@mrstudio/sdk';
+import type { Binding, PanelSize, PanelSpec } from '@mrstudio/sdk';
 
 import type { PropSpec, WidgetDefinition, WidgetRegistry } from './registry.ts';
 import { DATA_SLOTS, GRID, PANEL_SIZES, RIBBON, SCREEN, SIZES, TEXT } from './rules.ts';
@@ -63,6 +63,11 @@ function checkProp(path: string, spec: PropSpec, value: unknown, limit: number |
       if (!Array.isArray(value) || value.some((v) => typeof v !== 'number' || !Number.isFinite(v))) fail('schema', 'must be a list of numbers');
       else if (value.length > spec.maxLength) fail('budget', `has ${value.length} points, the limit is ${spec.maxLength}`);
       break;
+    case 'geojson': {
+      const type = (value as { type?: unknown } | null)?.type;
+      if (typeof type !== 'string') fail('schema', 'must be GeoJSON: a FeatureCollection, a Feature or a geometry');
+      break;
+    }
     case 'list': {
       if (!Array.isArray(value)) {
         fail('schema', 'must be a list');
@@ -216,4 +221,31 @@ export function validatePage(page: { id: string; panels: PanelSpec[] }, registry
   if ((page.panels ?? []).length > SCREEN.panels) issues.push({ path: root, rule: 'screen', message: `has ${page.panels.length} panels, one screen holds ${SCREEN.panels}` });
   if (reads > SCREEN.reads) issues.push({ path: root, rule: 'screen', message: `asks for ${reads} reads, one screen holds ${SCREEN.reads}. Move panels to another page` });
   return issues;
+}
+
+/**
+ * Control panels (#354) that name a control or action their layer doesn't have. `ids` are the
+ * layer's control ids and named action ids. The panel still draws, saying what it names.
+ */
+export function controlProblems(panels: readonly PanelSpec[], ids: readonly string[]): string[] {
+  return panels
+    .filter((p) => p.widget === 'control' && typeof p.props?.control === 'string' && !ids.includes(p.props.control as string))
+    .map((p) => `panel '${p.id}' names control '${p.props!.control}', which the layer does not have`);
+}
+
+/**
+ * A widget's made-up panel at one size, for the Developer window's gallery (#358): its `example`
+ * props, with each list cut to what the size shows, as a bound list would be.
+ */
+export function examplePanel(widget: WidgetDefinition, size: PanelSize, props: Record<string, unknown> = widget.example ?? {}): PanelSpec {
+  const out: Record<string, unknown> = { ...props };
+  for (const [key, prop] of Object.entries(widget.props)) {
+    const most = widget.listMax?.(key, size) ?? (prop.kind === 'list' ? prop.max : undefined);
+    if (Array.isArray(out[key]) && most !== undefined) out[key] = (out[key] as unknown[]).slice(0, most);
+  }
+  // What a small size can't afford is left out, the last optional prop first, as an author would.
+  const optional = Object.keys(widget.props).filter((key) => !widget.props[key]!.required && key in out);
+  const spec: PanelSpec = { id: size, widget: widget.type, size, title: size, props: out };
+  while (optional.length && panelReads(spec, widget) > SIZES[size].reads) delete out[optional.pop()!];
+  return spec;
 }

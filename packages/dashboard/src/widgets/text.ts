@@ -8,6 +8,7 @@ export const text = defineWidget({
   name: 'Note',
   description: 'One or two sentences. For explaining what the table shows, not for paragraphs.',
   sizes: ['tile', 'wide'],
+  example: { body: 'Tap a building on the table to see what its roof makes.' },
   props: {
     body: { kind: 'text', max: TEXT.line * 2, label: 'Text', required: true, bindable: true },
   },
