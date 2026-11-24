@@ -105,7 +105,7 @@ export interface EntitySet {
   id: string;
   /** A dataset from site.json `data` (also `buildings`, the scene's footprints). Name it in `requires.data`. */
   dataset: string;
-  /** The feature property that names each entity: unique, a string or a number. */
+  /** The feature property that names each entity: unique, a string or a number. `#` is the feature's place in the dataset. */
   key: string;
   /** The feature property shown as its name. Default `key`. */
   label?: string;
@@ -115,6 +115,11 @@ export interface EntitySet {
   name?: string;
   /** Each entity's values. Actions are not allowed; `phone: true` lets phones change it. */
   controls: Exclude<Control, ActionControl>[];
+  /**
+   * Feature properties the controller shows for the picked entity, read only (#38: a custom
+   * layer's "tap to read"). A set may have facts and no controls.
+   */
+  facts?: string[];
   /** Milliseconds of quiet before the table's `entities` handler runs, for layers that call a model on change. Default 0. */
   debounce_ms?: number;
 }
@@ -152,10 +157,11 @@ export interface LayerManifest {
   controls?: Control[];
   tools?: ToolSpec[];
   /**
-   * The controller's centre for this layer (#283): `custom` gives it to the module's `stage(ctx, el)`,
-   * such as a map app of the layer's own. Default: the generated controls only.
+   * The controller's centre for this layer. `custom` gives it to the module's `stage(ctx, el)`, such
+   * as a map app of the layer's own (#283). A layout (#357) builds it from panels with no code: any
+   * widget, its controls, a map. Default: the generated controls only.
    */
-  stage?: 'custom';
+  stage?: 'custom' | StageLayout;
   /**
    * Named actions without a button of their own (#283), pressed from the layer's stage, hero or
    * panels with `ctx.action(id)`, and handled on the table in `action(id)`.
@@ -190,6 +196,17 @@ export interface LayerManifest {
 }
 
 // ---- Site format 3 (docs/contracts/site.md) --------------------------------
+
+/**
+ * A layer's controller centre made of panels (#357), on the dashboard's grid: the same panel format
+ * as a site's TV pages, so one editor edits both. Panels with `at` stay where they are put; panels
+ * without are laid out in order.
+ */
+export interface StageLayout {
+  panels: PanelSpec[];
+  /** Also show the layer's generated control rows under the panels. Default false: the panels are the view. */
+  controls?: boolean;
+}
 
 export interface LegendItem {
   id: string;

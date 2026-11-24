@@ -619,7 +619,8 @@ async function main() {
     assert.deepEqual(await treeLayers(), ['Building uses', 'Wind', 'Mobility', 'Isovist', 'Cool paths', 'Sketch', 'Slideshow', 'Sunlight']);
     // The home screen holds the base map and the ambient life, and offers more of it.
     assert.deepEqual(await editor.locator('.ed-inspector .ed-row .ed-row-label').allTextContents(), ['Trees', 'Public transport', 'Traffic', 'Building lights', 'Base map']);
-    await editor.locator('.ed-ribbon .ed-tool[data-layer="trees"]').click();
+    await editor.locator('.ed-ribbon [data-gallery]').click();
+    await editor.locator('.lg-gallery .lg-card[data-layer="trees"] .lg-pick').click();
     // Trees are already at rest, so the editor asks before adding a second one (#183).
     await editor.locator('.ed-ask h2', { hasText: 'Trees is already on the map at rest' }).waitFor();
     await editor.locator('.ed-ask [data-choice="add"]').click();
@@ -638,9 +639,24 @@ async function main() {
     await editor.locator('.ed-inspector .ed-row[data-layer="trees-2"]').waitFor({ state: 'detached' });
     // The ribbon stays the same whatever is selected (#182): nothing selected greys the selection tools out.
     assert.equal(await editor.locator('.ed-ribbon').getByRole('button', { name: 'Remove', exact: true }).isDisabled(), true);
-    // Inside a layer the ambient tools add into that layer: an item that shows only while it is open (#69).
+    // The At rest tab switches map life off and on; the base map comes back under it, not on top covering it (#368).
+    await editor.locator('.ed-tab[data-tab="rest"]').click();
+    const restTool = (id, pressed) => editor.locator(`.ed-ribbon .ed-tool[data-layer="${id}"][aria-pressed="${pressed}"]:not([disabled])`);
+    await restTool('basemap', true).click();
+    await restTool('basemap', false).click();
+    await restTool('basemap', true).waitFor();
+    assert.equal(savedLayers()[0].id ?? savedLayers()[0].use, 'basemap', 'the base map goes back to the bottom');
+    await restTool('trees', true).click();
+    await restTool('trees', false).click();
+    await restTool('trees', true).waitFor();
+    assert.equal(savedLayers()[0].id ?? savedLayers()[0].use, 'basemap', 'map life goes back above the base map');
+    await editor.locator('.ed-tab[data-tab="edit"]').click();
+    // Opening the At rest tab shows the map at rest, which puts the sketch tool away; it comes back for what follows.
+    await press('Sketch', true);
+    // Inside a layer the gallery's ambient life adds into that layer: an item that shows only while it is open (#69).
     await editor.locator('.ed-tree .ed-row[data-layer="mobility"]').click();
-    await editor.locator('.ed-ribbon .ed-tool[data-layer="trees"]').click();
+    await editor.locator('.ed-ribbon [data-gallery]').click();
+    await editor.locator('.lg-gallery .lg-card[data-layer="trees"] .lg-pick').click();
     await editor.locator('.ed-tree .ed-row.is-item[data-layer="trees-2"][aria-current="true"]').waitFor();
     await editor.locator('.ed-inspector [data-items="mobility"] .ed-row[data-layer="trees-2"]').waitFor();
     assert.deepEqual(savedLayers().find((l) => l.id === 'mobility').items, [{ use: 'trees', id: 'trees-2' }]);
@@ -649,7 +665,7 @@ async function main() {
     await editor.locator('.ed-ribbon').getByText('Remove').click();
     await editor.locator('.ed-tree .ed-row[data-layer="trees-2"]').waitFor({ state: 'detached' });
     assert.equal(savedLayers().find((l) => l.id === 'mobility').items, undefined);
-    await editor.locator('.ed-ribbon .ed-tool[data-layer="sunlight"]').waitFor();
+    await editor.locator('.ed-ribbon [data-gallery]').waitFor();
     await editor.locator('.ed-inspector').getByText('Show trips').waitFor();
     // The eye beside a setting takes that control off the controller, and it is saved. The editor keeps it.
     await editor.getByRole('switch', { name: 'Show Show trips on the controller' }).click();

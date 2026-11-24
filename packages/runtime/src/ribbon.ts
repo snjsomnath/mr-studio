@@ -182,7 +182,7 @@ export class Ribbons {
     if (cached) return cached;
     const issues = validateRibbon(specs, this.registry);
     for (const issue of issues) console.warn(`[${manifest!.id}] ribbon ${issue.path} ${issue.message}`);
-    const inputs = issues.length ? [] : specs.map((spec) => panelInput(this.store, this.connection, id, spec, `${id}/ribbon/${spec.id}`));
+    const inputs = issues.length ? [] : specs.map((spec) => panelInput(this.store, this.connection, id, spec, `${id}/ribbon/${spec.id}`, undefined, false));
     this.inputs.set(id, inputs);
     return inputs;
   }
@@ -224,7 +224,7 @@ export class Ribbons {
       panel.append(title, body);
       inner.append(panel);
       try {
-        const handle = widget.mount(body, { size: input.spec.size, custom: input.custom });
+        const handle = widget.mount(body, { size: input.spec.size, custom: input.custom, controls: input.controls, layer: input.layer });
         strip.mounted.push({ input, widget, handle, title });
       } catch (error) {
         console.error(`[${input.key}] ribbon panel failed to mount`, error);

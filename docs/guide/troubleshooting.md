@@ -25,6 +25,10 @@
 
 OpenStreetMap's servers are shared and sometimes busy. MR Studio waits, tries again and moves to other servers by itself, which can take a minute. **Fetch everything from open data** asks OpenStreetMap once for all its datasets, which is kinder to the servers than one at a time. If it still fails, press **Try again** on that line later, or bring in a file of your own instead.
 
+## A terminal says "mrstudio: command not found"
+
+The `mrstudio` command comes inside the app, but a terminal only finds it once it is installed for terminals. Open **Displays and settings**, the **Command line** tab, and press **Install command line tool** (on a Mac it is also in the **MR Studio** menu, on Windows in the editor's **File** menu). A Mac asks for your password once. Then open a **new** terminal window: ones that were already open do not see it.
+
 ## The map pictures or the Help pictures are missing
 
 The aerial photo, ready-made map styles, web maps and the pictures in this Help come from the internet. The first time needs a connection; MR Studio keeps map pictures for the table afterwards, so a table that has been shown once works offline.

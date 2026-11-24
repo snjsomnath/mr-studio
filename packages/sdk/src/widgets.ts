@@ -23,6 +23,8 @@ export type PropSpec = (
   | { kind: 'numbers'; maxLength: number }
   /** A list of objects with their own props. `max` is the most items the widget draws. */
   | { kind: 'list'; max: number; item: Record<string, PropSpec> }
+  /** GeoJSON: a FeatureCollection, a Feature or a geometry, usually bound to what a layer publishes. */
+  | { kind: 'geojson' }
 ) & {
   /** Shown in the editor. */
   label: string;
@@ -41,8 +43,41 @@ export interface WidgetHandle {
 /** What a widget gets when it is mounted. */
 export interface WidgetEnv {
   size: PanelSize;
+  /**
+   * For input widgets (#354): the layer's controls and named actions, to read and to change. Absent
+   * for a panel with no layer (a site page panel without `layer`). Where a panel can't be touched
+   * (the table's ribbon) `touch` is false: an input widget then shows the value and does nothing.
+   */
+  controls?: PanelControls;
+  /**
+   * The panel's layer (#355), for widgets that work with the site and the table: a map that picks
+   * an entity or sends a point. Absent for a panel with no layer. `touch` is false where the panel
+   * can't be touched.
+   */
+  layer?: PanelLayer;
   /** For `custom` only: hands the element to the layer's `panel` function. */
   custom?: (el: HTMLElement) => { update?(): void } | void;
+}
+
+/** A layer's controls as a panel reaches them: the host checks every change as it does the controller's. */
+export interface PanelControls {
+  /** False where the panel can't be touched, such as the table's ribbon. */
+  touch: boolean;
+  /** A control of the layer (layer.json `controls`) or a named action (`actions`), by id. */
+  find(id: string): import('./types.ts').Control | { type: 'action'; id: string; label?: string } | undefined;
+  /** A control's value now. */
+  value(id: string): unknown;
+  /** Changes a control's value, as its controller control would. */
+  set(id: string, value: unknown): void;
+  /** Presses an action control or a named action. */
+  press(id: string): void;
+}
+
+/** A panel's layer as a widget reaches it: the site, what is picked, and the ways to the table. */
+export interface PanelLayer extends Pick<import('./layer.ts').PanelContext, 'site' | 'selection' | 'select' | 'sendTool' | 'action'> {
+  readonly touch: boolean;
+  /** The layer's manifest, in the visitors' language: its entity sets, tools and controls. */
+  readonly manifest: import('./types.ts').LayerManifest | undefined;
 }
 
 export interface WidgetDefinition {
@@ -60,6 +95,11 @@ export interface WidgetDefinition {
   mount(el: HTMLElement, env: WidgetEnv): WidgetHandle;
   /** Set by the runtime on a team widget: the layer package it came from. */
   owner?: string;
+  /**
+   * Made-up props for the Developer window's widget gallery (#358): plain values, no bindings.
+   * A widget without one is shown with no props.
+   */
+  example?: Record<string, unknown>;
 }
 
 /** Declares a widget. */
@@ -90,5 +130,6 @@ export function checkWidget(widget: unknown): string[] {
   else for (const [key, spec] of Object.entries(w.props)) {
     if (!spec || typeof (spec as PropSpec).label !== 'string' || !(spec as PropSpec).label.trim()) problems.push(`widget '${name}': prop '${key}' needs a label, for the editor's form`);
   }
+  if (w.example !== undefined && (typeof w.example !== 'object' || w.example === null || Array.isArray(w.example))) problems.push(`widget '${name}': example is an object of props`);
   return problems;
 }

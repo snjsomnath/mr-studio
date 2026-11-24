@@ -154,8 +154,100 @@ export interface TimelineProps {
   keep: boolean;
   /** For a moving window, how long a feature stays, as a share of the whole span. */
   window: number;
+  /**
+   * Changes through time (#95): columns that hold the same measure at successive times, in
+   * order (`pop_2000`, `pop_2010`, `pop_2020`). A colour or size by one of them follows the
+   * sweep from column to column, blending between them. Null plays a reveal by `column` instead.
+   */
+  series: string[] | null;
 }
-export const TIMELINE_DEFAULTS: TimelineProps = { column: null, duration_s: 12, hold_s: 3, keep: true, window: 0.15 };
+export const TIMELINE_DEFAULTS: TimelineProps = { column: null, duration_s: 12, hold_s: 3, keep: true, window: 0.15, series: null };
+
+/** Where a timeline is held, as a share of its span, or null to let it play (the controller's Play and When). */
+export type TimelinePosition = () => number | null;
+
+/** A time as a person reads it: a year as it is, a date as a date. */
+export function timeLabel(value: number, years: boolean): string {
+  if (!Number.isFinite(value)) return '';
+  if (years || Math.abs(value) < 1e7) return String(Math.round(value));
+  return new Date(value).toISOString().slice(0, 10);
+}
+
+/** The time a series column stands for: the last number in its name (`pop_2010` is 2010), else its name. */
+export function seriesLabel(column: string): string {
+  return column.match(/(\d+)(?!.*\d)/)?.[1] ?? column;
+}
+
+/**
+ * Columns that look like one measure at successive times: names that differ only in a number at
+ * the end (`pop_2000`, `pop_2010`), each with numbers in it, at least two. The longest run is
+ * offered first, in time order.
+ */
+export function seriesColumns(rows: readonly Record<string, unknown>[]): string[][] {
+  const sample = rows.slice(0, 200);
+  const keys = new Set<string>();
+  for (const row of sample) for (const k of Object.keys(row ?? {})) keys.add(k);
+  const groups = new Map<string, { column: string; at: number }[]>();
+  for (const key of keys) {
+    const m = key.match(/^(.*?)(\d+)(\D*)$/);
+    if (!m) continue;
+    const numeric = sample.some((r) => Number.isFinite(Number(r?.[key])) && r?.[key] !== '' && r?.[key] !== null);
+    if (!numeric) continue;
+    const stem = `${m[1]}#${m[3]}`;
+    (groups.get(stem) ?? groups.set(stem, []).get(stem)!).push({ column: key, at: Number(m[2]) });
+  }
+  return [...groups.values()]
+    .filter((g) => g.length >= 2)
+    .map((g) => g.sort((a, b) => a.at - b.at).map((x) => x.column))
+    .sort((a, b) => b.length - a.length);
+}
+
+/** The value a series feature has now: kept on each row under this key while the series plays. */
+export const SERIES_VALUE = '__now';
+
+export interface SeriesSweep {
+  columns: string[];
+  /** Every value of every column, as rows of `SERIES_VALUE`, so colours and sizes keep one scale through time. */
+  flat: Record<string, unknown>[];
+  /** Sets each row's `SERIES_VALUE` for this moment. */
+  apply(rows: readonly (Record<string, unknown> | undefined)[], time: number): void;
+  /** The time on show: the nearest column's label. */
+  label(time: number): string;
+}
+
+/** Prepares changes through time over the features' rows; null without two series columns. */
+export function seriesSweep(rows: readonly (Record<string, unknown> | undefined)[], props: Partial<TimelineProps> & { position?: TimelinePosition }): SeriesSweep | null {
+  const o = { ...TIMELINE_DEFAULTS, ...props };
+  const columns = (o.series ?? []).filter((c) => rows.some((r) => r && c in r));
+  if (columns.length < 2) return null;
+  const duration = Math.max(1, o.duration_s);
+  const cycle = duration + Math.max(0, o.hold_s);
+  const share = (time: number) => {
+    const held = props.position?.();
+    if (held !== null && held !== undefined && Number.isFinite(held)) return Math.min(1, Math.max(0, held));
+    return Math.min(1, (((time % cycle) + cycle) % cycle) / duration);
+  };
+  const at = (time: number) => share(time) * (columns.length - 1);
+  const flat = rows.flatMap((r) => columns.map((c) => ({ [SERIES_VALUE]: r?.[c] })));
+  const number = (v: unknown) => (v === null || v === undefined || v === '' ? NaN : Number(v));
+  return {
+    columns,
+    flat,
+    apply(list, time) {
+      const position = at(time);
+      const i = Math.min(columns.length - 2, Math.floor(position));
+      const f = position - i;
+      const [a, b] = [columns[i]!, columns[i + 1]!];
+      for (const row of list) {
+        if (!row) continue;
+        const x = number(row[a]);
+        const y = number(row[b]);
+        row[SERIES_VALUE] = Number.isFinite(x) && Number.isFinite(y) ? x + (y - x) * f : Number.isFinite(x) ? x : Number.isFinite(y) ? y : null;
+      }
+    },
+    label: (time) => seriesLabel(columns[Math.round(at(time))]!),
+  };
+}
 
 /** A time value from a cell: a number as it is, a date string as milliseconds, or NaN. */
 export function timeValue(value: unknown): number {
@@ -196,10 +288,12 @@ export interface TimeReveal {
   at(props: Record<string, unknown> | undefined, time: number): { alpha: number; fresh: number };
   /** Where the sweep is, as a share of the span. */
   share(time: number): number;
+  /** The time the sweep has reached, for the controller: a year or a date. */
+  label(time: number): string;
 }
 
 /** Prepares a timeline over the features' rows. Features with no time are always shown. */
-export function timeReveal(rows: readonly (Record<string, unknown> | undefined)[], props: Partial<TimelineProps>): TimeReveal | null {
+export function timeReveal(rows: readonly (Record<string, unknown> | undefined)[], props: Partial<TimelineProps> & { position?: TimelinePosition }): TimeReveal | null {
   const o = { ...TIMELINE_DEFAULTS, ...props };
   if (!o.column) return null;
   const column = o.column;
@@ -213,10 +307,19 @@ export function timeReveal(rows: readonly (Record<string, unknown> | undefined)[
   const span = max - min || 1;
   const duration = Math.max(1, o.duration_s);
   const cycle = duration + Math.max(0, o.hold_s);
-  const share = (time: number) => Math.min(1, (((time % cycle) + cycle) % cycle) / duration);
+  const share = (time: number) => {
+    const held = props.position?.();
+    if (held !== null && held !== undefined && Number.isFinite(held)) return Math.min(1, Math.max(0, held));
+    return Math.min(1, (((time % cycle) + cycle) % cycle) / duration);
+  };
   const window = Math.max(0.01, o.window);
+  const years = rows.every((row) => {
+    const v = row?.[column];
+    return v === null || v === undefined || v === '' || (Number.isInteger(Number(v)) && Number(v) >= 1000 && Number(v) <= 2200);
+  });
   return {
     share,
+    label: (time) => timeLabel(min + share(time) * span, years),
     at(row, time) {
       const t = timeValue(row?.[column]);
       if (!Number.isFinite(t)) return { alpha: 1, fresh: 0 };

@@ -7,13 +7,52 @@
 # It downloads the macOS dmg from GitHub, quits a running MR Studio, replaces
 # "/Applications/MR Studio.app" and clears the download quarantine, so the app opens
 # without the right click, Open step. Tables in ~/Documents/MR Studio are not touched.
+# It also links /usr/local/bin/mrstudio to the command inside the app (#370), so a new Terminal
+# finds `mrstudio`; that asks for your password once when the folder needs it. Pass --no-cli to
+# skip the link.
 # Written for the bash 3.2 that ships with macOS.
 
 set -euo pipefail
 
 REPO="snjsomnath/mr-studio"
 APP="/Applications/MR Studio.app"
-TAG="${1:-}"
+TAG=""
+LINK_CLI=1
+for arg in "$@"; do
+  case "$arg" in
+    --no-cli) LINK_CLI=0 ;;
+    *) TAG="$arg" ;;
+  esac
+done
+CLI="$APP/Contents/MacOS/mrstudio"
+LINK="/usr/local/bin/mrstudio"
+
+# Links the mrstudio command, the same as MR Studio > Install command line tool. Never fatal:
+# the app is installed either way.
+link_cli() {
+  [ "$LINK_CLI" = 1 ] || return 0
+  if [ ! -x "$CLI" ]; then
+    echo "This version has no mrstudio command inside the app; skipping the link."
+    return 0
+  fi
+  if [ -L "$LINK" ] && [ "$(readlink "$LINK")" = "$CLI" ]; then
+    return 0
+  fi
+  if [ -e "$LINK" ] && [ ! -L "$LINK" ]; then
+    echo "$LINK is a separate copy of mrstudio; leaving it. Delete it and run this again to link the app's own."
+    return 0
+  fi
+  if mkdir -p "$(dirname "$LINK")" 2>/dev/null && ln -sfn "$CLI" "$LINK" 2>/dev/null; then
+    echo "Linked $LINK, so Terminal finds mrstudio."
+  else
+    echo "Linking $LINK needs your password (sudo)…"
+    if sudo mkdir -p "$(dirname "$LINK")" && sudo ln -sfn "$CLI" "$LINK"; then
+      echo "Linked $LINK, so Terminal finds mrstudio."
+    else
+      echo "The mrstudio command was not linked. MR Studio > Install command line tool does the same later."
+    fi
+  fi
+}
 
 if [ "$(uname -s)" != "Darwin" ]; then
   echo "This script is for macOS. On Windows, run the setup .exe from the release page." >&2
@@ -45,6 +84,7 @@ if [ -f "$APP/Contents/Info.plist" ]; then
 fi
 if [ -n "$INSTALLED" ] && [ "v$INSTALLED" = "$VERSION" ]; then
   echo "MR Studio $VERSION is already installed."
+  link_cli
   exit 0
 fi
 
@@ -87,3 +127,4 @@ if [ -n "$INSTALLED" ]; then
 else
   echo "MR Studio $VERSION is installed."
 fi
+link_cli

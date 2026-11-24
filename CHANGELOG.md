@@ -4,6 +4,92 @@ Every merge to main that carries a release note becomes a version. The newest is
 The app shows these notes, with their pictures, on Home when a newer version is out.
 How notes are written: docs/RELEASING.md.
 
+## 0.24.0 (2026-11-24)
+
+### New
+
+#### Install the mrstudio command for terminals (#370)
+
+The `mrstudio` command has come inside the app for a while, but a terminal could not find it. **Displays and settings** now has a **Command line** tab with **Install command line tool** (also in the MR Studio menu on a Mac, and the editor's File menu on Windows). On a Mac it links `/usr/local/bin/mrstudio` to the copy inside the app, asking for the password once, and the link follows the app through updates. On Windows it adds the MR Studio folder to your own PATH, with no administrator needed. **Remove** takes it away again. The tab says why you would want it: checking a table, bringing data in, building a layer of your own or packing a table from a terminal, a script or an AI assistant. `scripts/install-latest-mac.sh` makes the link too.
+
+![The Command line tab on a Mac, before installing](docs/screenshots/370-command-line-mac.png)
+
+## 0.23.0 (2026-11-24)
+
+### New
+
+#### Golden hour on the sun study (#363, #81)
+
+Sunlight has a new **Golden hour** choice under Show. The table plays the evening (or morning) golden hour on a slow loop: honey light turning ember orange as the sun meets the horizon, long violet shadows with a warm rim, then a moment of blue hour before it starts again. The controller's sky turns to dusk and marks both golden hours on the timeline, with their times.
+
+![The golden hour on the table, from a few degrees up to the blue hour](docs/screenshots/363-golden-hour.png)
+
+![Shadows and Golden hour at the same moment](docs/screenshots/363-shadows-vs-golden.png)
+
+![The controller in golden hour mode](docs/screenshots/363-controller.png)
+
+#### Sliders, toggles, choices and buttons on panels (#354)
+A panel can now hold one of its layer's controls: a slider, a toggle, up to three choices side by side, or a button for an action. It takes its label, range and choices from the layer, so they are written once, and it changes the table exactly as the controller's own control does. With this a view of the controller or the TV can be put together from panels alone, the first step towards custom controller views without code. On the table's ribbon a control only shows its value. A team's own widgets can be controls too.
+
+![A TV page built from panels: a slider, three choices and a button drive the model-runs layer](docs/screenshots/354-after.png)
+
+#### A map of the site on a panel, with no code (#355)
+A panel can now be the site's map: chosen datasets in the theme's data colours, the table's outline, shapes a layer publishes on top, and a tap that picks one of the layer's things (a building in the energy community) or sends a point to one of its tools. The table answers exactly as if the visitor had tapped the table: the picked building is outlined there and its controls open on the controller. It is the same map a layer's own controller stage gets from code, so a custom controller view with a map no longer needs any code.
+
+![A TV page with a map panel: a tap on the map picked building 71, and the controller opened its controls](docs/screenshots/355-picked.png)
+
+![The table outlines the building picked on the panel's map](docs/screenshots/355-table.png)
+
+#### Five more widgets: gauge, list, donut, picture or video, and legend (#356)
+Panels can now show one value against its range (a gauge with a target tick), a short ranked list, the shares of a whole as a ring with a headline in its middle, a picture or a silent looping video from the table folder, and a layer's legend. Each comes in the sizes it reads well at, counts against the density budget, binds to what a layer publishes and follows the theme. A list or a donut holds fewer rows in a smaller panel, so nothing gets squeezed.
+
+![Gauge, donut, list, picture and legend on a TV page, bound to the model-runs sample](docs/screenshots/356-widgets.png)
+
+#### A layer's controller view made of panels, with no code (#357)
+A layer can now lay out its own controller view in layer.json: `"stage": { "panels": [...] }` puts dashboard panels in the controller's centre, with the same widgets, sizes, bindings and density budget as the TV. With the map, control and gauge widgets and a layer's own team widgets, a custom controller view (a map to pick buildings on, the grid link, the share slider, the optimiser button) needs no module code. The generated control rows step aside unless `"controls": true`. The TV strip under a tall stage now stays blank instead of saying "Turn a layer on" while one is on.
+
+![The model-runs layer's controller view, made of seven panels in layer.json](docs/screenshots/357-stage.png)
+
+#### The Developer window is now a workbench for layer and widget authors (#358)
+The Developer window (Open in a window > Developer) now opens with a workbench of five tabs beside the live table; its **Workbench** button hides it:
+
+- **Widgets:** every widget, the site's team widgets too, at every size with made-up data, with what each size costs against its budget.
+- **Live values:** what each layer publishes and its params as they change. A click copies the binding for a panel.
+- **Controller:** the 46-inch controller at its real layout, scaled to fit.
+- **Action log:** actions, tool inputs and param and entity edits, with their round trip.
+- **Problems:** refused panels, bindings to values a layer hasn't published, and what layers complained about.
+
+![The widget gallery: the donut at each size it takes, with its cost](docs/screenshots/358-widgets.png)
+
+![The controller at 46-inch size beside the live table](docs/screenshots/358-stage.png)
+
+![The action log: a choice, the optimiser button and the model's progress](docs/screenshots/358-log.png)
+
+![Live values: click one to copy its binding](docs/screenshots/358-values.png)
+
+#### Layers say when they are in trouble, and heal themselves (#259, #260)
+
+A layer that cannot start, or cannot read its data, is never silently missing any more. It tries again by itself (after 1 s, 2 s, 5 s, 15 s, then every minute), so putting a missing file back or waiting out a restart is enough. Meanwhile the editor shows a red dot on its row, with why ("couldn't read walkways.geojson") and a **Retry** button, and the controller dims its button with "Not available right now". The start and end of the trouble go to the operator log.
+
+![The editor shows why Cool paths is not running, with Retry](docs/screenshots/259-editor.png)
+
+![On the controller, the button of a layer in trouble is dimmed](docs/screenshots/259-controller.png)
+
+#### Diagnostics you can send
+
+Errors in the table, controller, editor and phone windows now reach the app's log, so a problem at a site can be seen without the developer tools. **Help › Copy diagnostics** (also on the editor's Help tab) gathers one report to paste into an issue: the version and build, the table, how each layer is doing, the windows' frame rates, errors, incidents, the displays and the end of the app's log. Keys are never in it. **Save diagnostics…** writes it to a file and **Open log folder** shows the logs.
+
+![Copy diagnostics shows the report it copied](docs/screenshots/260-diagnostics.png)
+
+### Fixes
+
+#### Map life stays on show after switching the base map off and on (#368)
+
+Switching the base map off and on again in the At rest tab (or the guide's At rest step) put it back on top of the trees, traffic, public transport and building lights, so they seemed to vanish. The base map now goes back to the bottom, under the map life.
+
+![The table after the base map was switched off and on: everything still shows](docs/screenshots/368-after.png)
+![The At rest tab after switching map life off and on](docs/screenshots/368-at-rest-tab.png)
+
 ## 0.22.0 (2026-11-24)
 
 ### New

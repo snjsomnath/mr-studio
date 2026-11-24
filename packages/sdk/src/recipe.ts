@@ -19,8 +19,8 @@ import type { View } from './blocks/view.ts';
 import type { Point } from './blocks/geo.ts';
 import { categorySlots, paletteColour, paletteHex, rampColour } from './palette.ts';
 import type { ResolvedPalette } from './palette.ts';
-import { TIMELINE_DEFAULTS, arrowMarks, fillArrow, fillIcon, timeReveal, traceShape } from './marks.ts';
-import type { Arrows, PointShape, TimeReveal, TimelineProps } from './marks.ts';
+import { SERIES_VALUE, TIMELINE_DEFAULTS, arrowMarks, fillArrow, fillIcon, seriesSweep, timeReveal, traceShape } from './marks.ts';
+import type { Arrows, PointShape, SeriesSweep, TimeReveal, TimelinePosition, TimelineProps } from './marks.ts';
 import { placeData } from './places.ts';
 import { pickScheme, schemeColour, schemeOrder } from './schemes.ts';
 import { SOUND_DEFAULTS, SoundStage, soundLabel, soundPath } from './audio.ts';
@@ -45,10 +45,37 @@ export interface PaintBy {
   scheme?: string;
   /** For numbers: the ramp's name in the palette. Default `sun`. */
   ramp?: string;
-  /** For numbers: a smooth ramp, or classes of equal width, equal count, or natural breaks (Jenks). Default `continuous`. */
-  classes?: 'continuous' | 'equal' | 'quantile' | 'natural';
+  /**
+   * For numbers: a smooth ramp, or classes of equal width, equal count, natural breaks (Jenks),
+   * or the author's own edges (`custom`, in `stops`). Default `continuous`.
+   */
+  classes?: 'continuous' | 'equal' | 'quantile' | 'natural' | 'custom';
   /** How many classes, 2 to 7. Default 5. */
   count?: number;
+  /** With `classes: custom`: the edges between classes, low to high, at most six (#94). */
+  stops?: number[];
+  /**
+   * The value the ramp's middle colour stands for (#94). With a diverging ramp it is the calm
+   * middle, such as 0 or an average, and the two ends spread from it. Default: halfway.
+   */
+  mid?: number;
+}
+
+/** The class edges a numeric paint draws with: the author's own, or worked out from the values. */
+export function paintBreaks(paint: Pick<PaintBy, 'classes' | 'count' | 'stops'>, values: readonly number[]): number[] {
+  const classes = paint.classes ?? 'continuous';
+  if (classes === 'continuous') return [];
+  if (classes === 'custom') return [...new Set((paint.stops ?? []).filter(Number.isFinite))].sort((a, b) => a - b).slice(0, 6);
+  return classBreaks(values, classes, paint.count ?? 5);
+}
+
+/**
+ * Where a value sits on the ramp, 0 to 1. With a middle the two halves stretch apart, so the
+ * middle colour lands on `mid` however lopsided the data is.
+ */
+export function rampShare(n: number, lo: number, hi: number, mid?: number): number {
+  if (mid === undefined || !Number.isFinite(mid) || mid <= lo || mid >= hi) return hi > lo ? Math.min(1, Math.max(0, (n - lo) / (hi - lo))) : 1;
+  return n <= mid ? 0.5 * Math.max(0, (n - lo) / (mid - lo)) : 0.5 + 0.5 * Math.min(1, (n - mid) / (hi - mid));
 }
 
 /** A size in table millimetres: fixed, or spread over a range by a numeric column. */
@@ -364,20 +391,25 @@ export function paintScale(paint: Paint | undefined, rows: readonly Props[], pal
   };
   const format = (n: number) => (Math.abs(n) >= 100 ? Math.round(n).toLocaleString('en') : String(Math.round(n * 10) / 10));
   const classes = paint.classes ?? 'continuous';
+  const mid = paint.mid !== undefined && paint.mid > lo && paint.mid < hi ? paint.mid : undefined;
   if (classes === 'continuous') {
-    const steps = [0, 0.5, 1];
+    const stops = [lo, mid ?? lo + (hi - lo) / 2, hi];
     return {
       colour: (p) => {
         const n = number(p);
-        return n === null ? missing : rampColour(ramp, hi > lo ? (n - lo) / (hi - lo) : 1);
+        return n === null ? missing : rampColour(ramp, rampShare(n, lo, hi, mid));
       },
-      legend: steps.map((t) => ({ label: format(lo + (hi - lo) * t), color: hexOf(rampColour(ramp, t)) })),
+      legend: stops.map((v) => ({ label: format(v), color: hexOf(rampColour(ramp, rampShare(v, lo, hi, mid))) })),
     };
   }
-  const breaks = classBreaks(values, classes, paint.count ?? 5);
+  // The author's own edges may lie outside the data: those classes are kept, so the legend is the same across files.
+  const breaks = paintBreaks(paint, values);
   const count = breaks.length + 1;
-  const colours = Array.from({ length: count }, (_, i) => rampColour(ramp, count === 1 ? 1 : i / (count - 1)));
-  const bounds = [lo, ...breaks, hi];
+  const bounds = [Math.min(lo, breaks[0] ?? lo), ...breaks, Math.max(hi, breaks.at(-1) ?? hi)];
+  // Each class takes the ramp's colour at its middle when there is a middle value; else they spread evenly.
+  const colours = Array.from({ length: count }, (_, i) =>
+    rampColour(ramp, mid !== undefined ? rampShare((bounds[i]! + bounds[i + 1]!) / 2, lo, hi, mid) : count === 1 ? 1 : i / (count - 1)),
+  );
   return {
     colour: (p) => {
       const n = number(p);
@@ -441,6 +473,22 @@ export interface CompiledLook {
   };
   /** For points with a network motion (#280): its steps and their times, and what is wrong with its data. */
   network?: { steps: number; labels: string[]; problems: string[] };
+  /** With a Through time motion (#95): the year or date on show now, for the controller. */
+  timeLabel?(time: number): string;
+}
+
+/** A colour or size by a series column follows the series (#95): it reads the value on show now. */
+function onSeries<T extends Paint | Size | undefined>(value: T, sweep: SeriesSweep | null): T {
+  if (!sweep || value === undefined || typeof value !== 'object' || !sweep.columns.includes(value.by)) return value;
+  if ('kind' in value && value.kind !== 'number') return value;
+  return { ...value, by: SERIES_VALUE } as T;
+}
+
+/** The time parts of a look: a reveal by a time column, or values that change through time. */
+function timeParts(rows: readonly Props[], timeline: LookMotion['timeline']): { reveal: TimeReveal | null; sweep: SeriesSweep | null } {
+  if (!timeline) return { reveal: null, sweep: null };
+  const sweep = timeline.series?.length ? seriesSweep(rows, timeline) : null;
+  return { sweep, reveal: sweep ? null : timeReveal(rows, timeline) };
 }
 
 /** A point's sound as the controller shows it. */
@@ -463,7 +511,8 @@ export interface LookMotion {
   attract?: Partial<AttractProps>;
   /** `streets` is the network dataset in table metres, loaded by whoever draws the recipe. */
   gravity?: Partial<GravityProps> & { streets?: Shapes };
-  timeline?: Partial<TimelineProps>;
+  /** `position` holds the sweep where the controller put it (a share of the span), or null to play. */
+  timeline?: Partial<TimelineProps> & { position?: TimelinePosition };
   /** A place motion (#161-163): `extras` and `tables` are its other files, loaded by whoever draws the recipe. */
   place?: Partial<PlaceProps> & { extras?: PlaceExtras; tables?: PlaceTables; frame?: { width: number; height: number } };
   /** Sound on points (#150). `stage` plays the sounds; whoever draws the recipe owns it and stops it. */
@@ -501,13 +550,15 @@ export function compileLook(block: RecipeBlock, shapes: Shapes, palette: Resolve
   if (kind === 'points') {
     const props = lookProps('points', block, overrides);
     const rows = shapes.spots.map((s) => s.properties);
-    const paint = paintScale(props.color, rows, palette);
-    const radius = sizeScale(props.radius_mm, rows, 4);
+    const { reveal, sweep } = timeParts(rows, motion.timeline);
+    const colour = onSeries(props.color, sweep);
+    const paint = paintScale(colour, colour !== props.color ? sweep!.flat : rows, palette);
+    const size = onSeries(props.radius_mm, sweep);
+    const radius = sizeScale(size, size !== props.radius_mm ? sweep!.flat : rows, 4);
     const stroke = props.stroke ? paletteColour(props.stroke, palette) : null;
     const pulse = motion.pulse ? { ...MOTION_DEFAULTS.pulse, ...motion.pulse } : null;
     const attract = motion.attract ? attractCrowd(shapes.spots, paint, { ...MOTION_DEFAULTS.attract, ...motion.attract }, mm) : null;
     const walkers = motion.gravity ? streetCrowd(shapes.spots, paint, { ...MOTION_DEFAULTS.gravity, ...motion.gravity }, motion.gravity.streets, mm) : null;
-    const reveal = motion.timeline ? timeReveal(rows, motion.timeline) : null;
     const place = motion.place ? placeLook(shapes, motion.place, palette, mm) : null;
     const sound = motion.sound ? soundLook(shapes, motion.sound, paint, radius, mm) : null;
     const network = motion.network ? networkLook(networkData(shapes.spots, motion.network.inputs ?? {}, motion.network), motion.network, palette, mm, (i) => paint.colour(shapes.spots[i]!.properties)) : null;
@@ -518,7 +569,9 @@ export function compileLook(block: RecipeBlock, shapes: Shapes, palette: Resolve
       legend: [...legendRows(block, paint, 'point', palette, props.color), ...(network?.legend ?? [])],
       ...(sound ? { sounds: { list: sound.list, cue: sound.cue } } : {}),
       ...(network ? { network: { steps: network.data.steps, labels: network.data.labels, problems: network.data.problems } } : {}),
+      ...(sweep || reveal ? { timeLabel: (time: number) => (sweep ?? reveal)!.label(time) } : {}),
       draw(view, time, alpha) {
+        sweep?.apply(rows, time);
         // Crowds, networks and place motions go under the points they belong to.
         network?.draw(view, time, alpha, motion.network?.position ? motion.network.position() : networkPosition(network.data.steps, time, stepSeconds));
         place?.draw(view, time, alpha);
@@ -532,17 +585,21 @@ export function compileLook(block: RecipeBlock, shapes: Shapes, palette: Resolve
   if (kind === 'lines') {
     const props = lookProps('lines', block, overrides);
     const rows = shapes.paths.map((p) => p.properties);
-    const paint = paintScale(props.color, rows, palette);
-    const width = sizeScale(props.width_mm, rows, 2);
+    const { reveal, sweep } = timeParts(rows, motion.timeline);
+    const colour = onSeries(props.color, sweep);
+    const paint = paintScale(colour, colour !== props.color ? sweep!.flat : rows, palette);
+    const size = onSeries(props.width_mm, sweep);
+    const width = sizeScale(size, size !== props.width_mm ? sweep!.flat : rows, 2);
     const drawIn = motion.drawIn ? { ...MOTION_DEFAULTS['draw-in'], ...motion.drawIn } : null;
     const flow = motion.flow ? { ...MOTION_DEFAULTS.flow, ...motion.flow } : null;
     const particles = motion.particles ? { ...MOTION_DEFAULTS.particles, ...motion.particles } : null;
-    const reveal = motion.timeline ? timeReveal(rows, motion.timeline) : null;
     return {
       id: block.id,
       kind,
       legend: legendRows(block, paint, 'line', palette, props.color),
+      ...(sweep || reveal ? { timeLabel: (time: number) => (sweep ?? reveal)!.label(time) } : {}),
       draw(view, time, alpha) {
+        sweep?.apply(rows, time);
         drawLines(view, shapes.paths, { paint, width, props, drawIn, flow, px: (m) => px(view, m), time, alpha, timeline: reveal });
         if (particles) {
           const heads = pathHeads(shapes.paths, time, { speed: Math.max(0.1, particles.speed_mm * mm), count: Math.max(1, Math.round(particles.per_line)) });
@@ -553,15 +610,18 @@ export function compileLook(block: RecipeBlock, shapes: Shapes, palette: Resolve
   }
   const props = lookProps('fill', block, overrides);
   const rows = shapes.areas.map((a) => a.properties);
-  const paint = paintScale(props.color, rows, palette);
+  const { reveal, sweep } = timeParts(rows, motion.timeline);
+  const colour = onSeries(props.color, sweep);
+  const paint = paintScale(colour, colour !== props.color ? sweep!.flat : rows, palette);
   const stroke = props.stroke ? paletteColour(props.stroke, palette) : null;
   const pulse = motion.pulse ? { ...MOTION_DEFAULTS.pulse, ...motion.pulse } : null;
-  const reveal = motion.timeline ? timeReveal(rows, motion.timeline) : null;
   return {
     id: block.id,
     kind,
     legend: legendRows(block, paint, 'fill', palette, props.color),
+    ...(sweep || reveal ? { timeLabel: (time: number) => (sweep ?? reveal)!.label(time) } : {}),
     draw(view, time, alpha) {
+      sweep?.apply(rows, time);
       drawFills(view, shapes.areas, { paint, props, stroke, pulse, px: (m) => px(view, m), time, alpha, timeline: reveal });
     },
   };
@@ -1180,6 +1240,50 @@ export function boundOverrides(recipe: Pick<CustomLayer, 'controls'>, params: Re
     (out[stage][block] ??= {})[prop] = params[control.id];
   }
   return out;
+}
+
+/** One "show only" rule on a look (#38): features whose column is this value, or at least this number. */
+export interface ShapeFilter {
+  column: string;
+  is?: string;
+  atLeast?: number;
+}
+
+/**
+ * The "show only" rules the controller's controls set, by look: a control bound to
+ * `filter.<look>.<column>`. A choice keeps the features with that value (an empty choice keeps
+ * all); a slider keeps those at or above its value.
+ */
+export function boundFilters(recipe: Pick<CustomLayer, 'controls'>, params: Record<string, unknown>): Record<string, ShapeFilter[]> {
+  const out: Record<string, ShapeFilter[]> = {};
+  for (const control of recipe.controls ?? []) {
+    const [stage, block, ...rest] = (control.bind ?? '').split('.');
+    const column = rest.join('.');
+    if (stage !== 'filter' || !block || !column) continue;
+    const value = control.id in params ? params[control.id] : (control as { default?: unknown }).default;
+    if (control.type === 'range') {
+      const at = Number(value);
+      if (Number.isFinite(at) && at > control.min) (out[block] ??= []).push({ column, atLeast: at });
+    } else if (value !== undefined && value !== null && value !== '') (out[block] ??= []).push({ column, is: String(value) });
+  }
+  return out;
+}
+
+/** The shapes that pass every rule. The same object when there are no rules, so nothing is copied. */
+export function filterShapes<S extends Shapes>(shapes: S, filters: readonly ShapeFilter[] | undefined): S {
+  if (!filters?.length) return shapes;
+  const keep = (properties: Record<string, unknown> | undefined) =>
+    filters.every((f) => {
+      const value = properties?.[f.column];
+      if (f.atLeast !== undefined) return Number(value) >= f.atLeast;
+      return value !== undefined && value !== null && String(value) === f.is;
+    });
+  return {
+    ...shapes,
+    areas: shapes.areas.filter((a) => keep(a.properties)),
+    paths: shapes.paths.filter((p) => keep(p.properties)),
+    spots: shapes.spots.filter((s) => keep(s.properties)),
+  };
 }
 
 /** The legend a recipe's looks give, for the controller (S2: every colour on the table has its swatch). */
