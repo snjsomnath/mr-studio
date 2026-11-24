@@ -189,8 +189,23 @@ export class SunMask {
     this.replace(this.rest, rest);
   }
 
-  /** The mask for a sun position, over the table's extent: row 0 at the top, 255 in the sun, 0 in the shade. */
-  render(azimuth: number, altitude: number): FieldFrame {
+  /**
+   * The mask for a sun position, over the table's extent: row 0 at the top, 255 in the sun, 0 in the shade.
+   * The pixels come back from the GPU without stalling the frame (#302): a play through the day asks for a mask
+   * every frame, and a blocking read would stall each one while the GPU finished. One render runs at a time.
+   */
+  render(azimuth: number, altitude: number): Promise<FieldFrame> {
+    const run = this.queue.then(() => this.draw(azimuth, altitude));
+    this.queue = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
+  }
+
+  private queue: Promise<void> = Promise.resolve();
+
+  private async draw(azimuth: number, altitude: number): Promise<FieldFrame> {
     const data = new Uint8Array(this.width * this.height);
     if (altitude > 0) {
       const a = (azimuth * Math.PI) / 180;
@@ -208,15 +223,17 @@ export class SunMask {
       renderer.setClearColor(0xffffff, 1);
       renderer.clear();
       renderer.render(this.scene, this.camera);
-      renderer.readRenderTargetPixels(this.target, 0, 0, this.width, this.height, this.pixels);
       renderer.setRenderTarget(previous);
       renderer.setClearColor(clear, clearAlpha);
+      const read = renderer.readRenderTargetPixelsAsync(this.target, 0, 0, this.width, this.height, this.pixels);
+      await read;
 
-      // The target's rows run bottom up.
+      // The target's rows run bottom up, four bytes a pixel; the red byte is the low one of each word.
+      const words = new Uint32Array(this.pixels.buffer, this.pixels.byteOffset, this.width * this.height);
       for (let y = 0; y < this.height; y++) {
-        const from = (this.height - 1 - y) * this.width * 4;
+        const from = (this.height - 1 - y) * this.width;
         const to = y * this.width;
-        for (let x = 0; x < this.width; x++) data[to + x] = this.pixels[from + x * 4]!;
+        for (let x = 0; x < this.width; x++) data[to + x] = words[from + x]! & 0xff;
       }
     }
     return { stream: -1, field: 0, width: this.width, height: this.height, revision: ++this.revision, min: 0, max: 1, progress: 1, data };
