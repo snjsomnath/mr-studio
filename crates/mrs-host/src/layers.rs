@@ -191,7 +191,27 @@ impl LayerDef {
         match &manifest["stage"] {
             Value::Null => {}
             Value::String(s) if s == "custom" => {}
-            other => bail!("stage {other} is not \"custom\""),
+            // A layout of panels (#357): the dashboard checks each panel as it does a TV page's.
+            Value::Object(layout) => {
+                let panels = layout.get("panels").and_then(Value::as_array).ok_or_else(|| anyhow!("a stage layout has a list of panels"))?;
+                if panels.is_empty() {
+                    bail!("a stage layout has at least one panel");
+                }
+                let mut ids = std::collections::HashSet::new();
+                for panel in panels {
+                    let pid = panel["id"].as_str().filter(|s| !s.is_empty()).ok_or_else(|| anyhow!("every stage panel needs an id"))?;
+                    if !ids.insert(pid) {
+                        bail!("two stage panels are called '{pid}'");
+                    }
+                    if panel["widget"].as_str().is_none() {
+                        bail!("stage panel '{pid}' needs a widget");
+                    }
+                }
+                if !matches!(layout.get("controls"), None | Some(Value::Bool(_))) {
+                    bail!("stage controls is true or false");
+                }
+            }
+            other => bail!("stage {other} is \"custom\" or a layout of panels"),
         }
         if !entity_sets.is_empty() && controls.iter().any(|c| c.id == ENTITIES) {
             bail!("a layer with entities cannot have a control called '{ENTITIES}'");
@@ -775,6 +795,12 @@ mod tests {
         };
         assert_eq!(layer(json!({ "stage": "custom", "actions": [{ "id": "travel" }] })).unwrap().actions, vec!["travel"]);
         assert!(layer(json!({ "stage": "big" })).is_err());
+        // A layout of panels (#357).
+        assert!(layer(json!({ "stage": { "panels": [{ "id": "map", "widget": "map", "size": "block" }] } })).is_ok());
+        assert!(layer(json!({ "stage": { "panels": [] } })).is_err());
+        assert!(layer(json!({ "stage": { "panels": [{ "id": "a", "widget": "map" }, { "id": "a", "widget": "stat" }] } })).is_err());
+        assert!(layer(json!({ "stage": { "panels": [{ "id": "a" }] } })).is_err());
+        assert!(layer(json!({ "stage": { "panels": [{ "id": "a", "widget": "map" }], "controls": "yes" } })).is_err());
         assert!(layer(json!({ "actions": [{ "id": "go" }] })).is_err(), "already an action control");
         assert!(layer(json!({ "actions": [{ "label": "No id" }] })).is_err());
     }

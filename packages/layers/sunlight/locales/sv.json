@@ -69,5 +69,8 @@
   "Lunch": "Lunch",
   "Afternoon": "Eftermiddag",
   "Evening": "Kväll",
-  "Sun hours counted": "Soltimmar som räknas"
+  "Sun hours counted": "Soltimmar som räknas",
+  "Golden hour": "Gyllene timmen",
+  "golden hour {from} to {to}": "gyllene timmen {from} till {to}",
+  "no golden hour on {date}": "ingen gyllene timme den {date}"
 }

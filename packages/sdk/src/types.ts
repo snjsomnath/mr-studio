@@ -157,10 +157,11 @@ export interface LayerManifest {
   controls?: Control[];
   tools?: ToolSpec[];
   /**
-   * The controller's centre for this layer (#283): `custom` gives it to the module's `stage(ctx, el)`,
-   * such as a map app of the layer's own. Default: the generated controls only.
+   * The controller's centre for this layer. `custom` gives it to the module's `stage(ctx, el)`, such
+   * as a map app of the layer's own (#283). A layout (#357) builds it from panels with no code: any
+   * widget, its controls, a map. Default: the generated controls only.
    */
-  stage?: 'custom';
+  stage?: 'custom' | StageLayout;
   /**
    * Named actions without a button of their own (#283), pressed from the layer's stage, hero or
    * panels with `ctx.action(id)`, and handled on the table in `action(id)`.
@@ -195,6 +196,17 @@ export interface LayerManifest {
 }
 
 // ---- Site format 3 (docs/contracts/site.md) --------------------------------
+
+/**
+ * A layer's controller centre made of panels (#357), on the dashboard's grid: the same panel format
+ * as a site's TV pages, so one editor edits both. Panels with `at` stay where they are put; panels
+ * without are laid out in order.
+ */
+export interface StageLayout {
+  panels: PanelSpec[];
+  /** Also show the layer's generated control rows under the panels. Default false: the panels are the view. */
+  controls?: boolean;
+}
 
 export interface LegendItem {
   id: string;
@@ -449,6 +461,20 @@ export interface LayerState {
   rest?: boolean;
   /** The entity picked on the table or the controller (#279), shared by every surface. */
   selection?: EntitySelection | null;
+  /**
+   * Trouble while the layer is on (#259): it could not start or lost its data. Absent while it
+   * runs as it should. The runtime reports it from the table; the editor and controller show it.
+   */
+  health?: LayerHealth;
+}
+
+/** A layer that is on but not running as it should (#259). */
+export interface LayerHealth {
+  /** `retrying`: starts again by itself in `retry_in` seconds. `failed`: waits for Retry. */
+  status: 'retrying' | 'failed';
+  /** What went wrong, in words. */
+  reason: string;
+  retry_in?: number;
 }
 
 /**

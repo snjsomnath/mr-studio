@@ -1,7 +1,7 @@
 // The dashboard canvas: mounts panels on the grid, keeps them in step with the
 // state, and turns pages. Nothing here knows about a particular layer or site.
 
-import type { PanelSpec } from '@mrstudio/sdk';
+import type { PanelControls, PanelLayer, PanelSpec } from '@mrstudio/sdk';
 
 import { resolveProps } from './bind.ts';
 import type { BindSource } from './bind.ts';
@@ -26,6 +26,10 @@ export interface PanelInput {
   active?(): boolean;
   /** For `custom` panels: the layer's own drawing function. */
   custom?: (el: HTMLElement) => { update?(): void } | void;
+  /** For input widgets (#354): the panel's layer's controls. */
+  controls?: PanelControls;
+  /** For widgets that work with the site and the table (#355): the panel's layer. */
+  layer?: PanelLayer;
   /** Called when the panel leaves the canvas. */
   onRemove?(): void;
   /** For a site's hand-made pages: the page it is on. Requires `spec.at`. */
@@ -204,7 +208,11 @@ export class DashboardView {
     });
     for (const key of [...this.mounted.keys()]) if (!keep.has(key)) this.unmount(key);
 
-    this.empty.hidden = this.pages.length > 0 || !this.empty.textContent;
+    // Panels that are up but too tall for a cramped canvas (a layer's stage open above it) leave
+    // the canvas blank, not saying "turn a layer on" while one is (#357). With no text (a layer
+    // is open, #342), there is nothing to say.
+    this.empty.hidden = this.pages.length > 0 || shown.length > 0 || !this.empty.textContent;
+    this.root.classList.toggle('mrs-no-room', shown.length > 0 && this.pages.length === 0);
     this.turn(Math.min(this.current, Math.max(0, this.pages.length - 1)));
     this.report();
   }
@@ -225,7 +233,7 @@ export class DashboardView {
     const body = h('div', 'mrs-panel-body');
     el.append(title, body);
     try {
-      const handle = widget.mount(body, { size: input.spec.size, custom: input.custom });
+      const handle = widget.mount(body, { size: input.spec.size, custom: input.custom, controls: input.controls, layer: input.layer });
       const mounted = { input, widget, el, title, handle };
       this.mounted.set(input.key, mounted);
       return mounted;

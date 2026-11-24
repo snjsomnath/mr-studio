@@ -9,6 +9,7 @@ export const custom = defineWidget({
   name: 'Custom',
   description: 'Drawn by the layer\'s own code, for what no widget covers. It declares its own cost in reads.',
   sizes: ['chip', 'tile', 'wide', 'tall', 'block', 'hero', 'band', 'strip'],
+  example: { reads: 1 },
   props: {
     reads: { kind: 'number', min: 1, max: 10, label: 'Reads it asks for', required: true },
   },
