@@ -1,10 +1,10 @@
-import { coreWidgets, DashboardView, validateLayerPanels, validatePage } from '@mrstudio/dashboard';
+import { DashboardView, validateLayerPanels, validatePage } from '@mrstudio/dashboard';
 import type { PanelInput } from '@mrstudio/dashboard';
 import type { Connection, LayerManifest, PanelContext, PanelSpec } from '@mrstudio/sdk';
 
 import { say, t } from './i18n.ts';
 import { baseContext, isAtRest } from './layer-manager.ts';
-import { layerModule } from './registry.ts';
+import { layerModule, widgets, withTeamWidgets } from './registry.ts';
 import type { Store } from './store.ts';
 
 /**
@@ -13,7 +13,7 @@ import type { Store } from './store.ts';
  * pages in `tv.pages`, from those. Either way they pass the same rules.
  */
 export function mountDashboard(root: HTMLElement, store: Store, connection: Connection, dev: boolean): DashboardView {
-  const registry = coreWidgets();
+  const registry = widgets;
   const tv = store.state.site.tv ?? {};
   const view = new DashboardView(root, { registry, dev, rotateS: tv.rotate_s, empty: t('Turn a layer on to see it here') });
   view.setTheme(tv.theme);
@@ -132,7 +132,7 @@ function sayShared(shared: Record<string, unknown>, manifest: LayerManifest | un
 
 /** A layer's TV panels: everything but its ribbon panels. A layer with only a `panel` function gets one tile for it. */
 function layerPanels(manifest: LayerManifest): PanelSpec[] {
-  if (manifest.panels) return manifest.panels.filter((spec) => !spec.ribbon);
+  if (manifest.panels) return withTeamWidgets(manifest.id, manifest.panels.filter((spec) => !spec.ribbon));
   if (!layerModule(manifest.id)?.panel) return [];
   return [{ id: 'panel', widget: 'custom', size: 'tile', title: manifest.name, props: { reads: 3 } }];
 }

@@ -454,10 +454,19 @@ body[data-role='tv'] .controller .join-address .join-code {
 }
 
 .phone-cue-dot {
-  width: 0.8rem;
-  height: 0.8rem;
+  display: grid;
+  place-items: center;
+  min-width: 0.8rem;
+  min-height: 0.8rem;
   border-radius: 50%;
   flex: none;
+  font-size: 1.1rem;
+  line-height: 1;
+}
+
+.phone-cue-dot:not(:empty) {
+  width: 1.9rem;
+  height: 1.9rem;
 }
 
 /* The open layer, in the centre of the controller screen. */
@@ -1303,13 +1312,29 @@ body[data-role='tv'] .join-qr {
   font-style: normal;
 }
 
+/* A phone's animal (#339) fills its round badge. */
+.join-person {
+  font-size: 0.95rem;
+  line-height: 1;
+}
+
 .join-person.is-away {
   opacity: 0.35;
 }
 
 /* ---- Phone ---- */
 
+.phone-badge i {
+  width: 1.9rem;
+  height: 1.9rem;
+  font-size: 1.15rem;
+  line-height: 1;
+}
+
 .phone-badge {
+  font: inherit;
+  background: none;
+  cursor: pointer;
   flex: none;
   display: flex;
   align-items: center;
@@ -2676,4 +2701,71 @@ body[data-role='phone'] .control-presets > * {
 
 .layer-stage[hidden] {
   display: none;
+}
+
+/* Naming the phone and picking its animal (#339). */
+.profile-sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  align-items: end;
+  background: rgba(0, 0, 0, 0.5);
+}
+
+.profile-card {
+  display: grid;
+  gap: 0.6rem;
+  padding: 1.25rem 1rem calc(1.25rem + env(safe-area-inset-bottom));
+  border-radius: 1rem 1rem 0 0;
+  background: var(--panel, #1a2030);
+  color: var(--text, inherit);
+}
+
+.profile-card label,
+.profile-label {
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.profile-card input {
+  font: inherit;
+  font-size: 1.05rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 0.6rem;
+  background: transparent;
+  color: inherit;
+}
+
+.profile-label {
+  margin: 0;
+}
+
+.profile-hint {
+  margin: -0.3rem 0 0.4rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.profile-animals {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 0.5rem;
+  margin-bottom: 0.6rem;
+}
+
+.profile-animal {
+  aspect-ratio: 1;
+  border: 2px solid transparent;
+  border-radius: 50%;
+  background: rgba(127, 127, 127, 0.15);
+  font-size: 1.5rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.profile-animal[aria-checked='true'] {
+  background: var(--colour);
+  border-color: var(--text, #fff);
 }
