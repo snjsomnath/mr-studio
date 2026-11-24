@@ -1,6 +1,6 @@
 ---
 bump: none
-issues: 382, 383, 384, 385, 388, 389, 390, 392
+issues: 382, 383, 384, 385, 388, 389, 390, 392, 393
 ---
 ### The editor's UI design logic
 

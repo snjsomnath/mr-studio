@@ -125,6 +125,9 @@ After that, **Present › Ready to present?** (#63) is the guide: each missing i
 - **Empty states**: a table with no layers shows "Insert a layer" on the canvas.
 - **Selecting several things** at once (hide, remove), as Office does: to decide.
 - **Mac and Windows**: shortcuts, menus and dialog button order follow each platform.
+- **File and Settings** (#393): File holds the table's file actions (New, Open, Recent, Save As, Share, Export, Close). File › Settings holds the app: sources and keys, updates, the command-line tool, language, and This computer (screens, projector, colour, quality, phones). Present › Screens and calibration… opens that page. The separate Displays and settings window goes.
+- **The operator**: running a table at an exhibition (Present controls, a lock so visitors can't reach the editor, idle reset) is a different person from the author, and not designed yet.
+- **One place for messages**: saved state, live data sources, performance warnings (#262) and readiness report in the status bar; a change that can be undone shows one notice with Undo.
 
 ## Built to change
 
