@@ -61,7 +61,8 @@ export function walkHero(ctx: PanelContext<Params>, el: HTMLElement): PanelHandl
   /** The video follows the shared clock: playing or paused, and where. */
   function sync() {
     const name = videoDataset(ctx.site, ctx.params.video);
-    const url = name ? siteDataUrl(ctx.site, name) ?? '' : '';
+    // A dataset by name, or a video kept under data/media by its path (#306).
+    const url = name ? (siteDataUrl(ctx.site, name) ?? (name.includes('/') ? `/site/${name}` : '')) : '';
     if (url !== src) {
       src = url;
       if (url) video.src = url;

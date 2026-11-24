@@ -59,7 +59,28 @@ export interface TextControl extends ControlBase {
    * editor offers the sources set up on this computer; the host signs requests with its key.
    */
   sources?: string[];
+  /**
+   * The value names something the table has (#306): a dataset or a file of one of these kinds.
+   * The editor offers a list of them to pick from, and Add media, instead of a box to type in.
+   */
+  media?: MediaKind[];
+  /** With `media`: the value is the dataset's name (the default) or the file's path in the table folder. */
+  mediaBy?: 'name' | 'path';
+  /** The value is a column of the dataset the layer's control with this id names (#306). */
+  columnsOf?: string;
+  /**
+   * The value is one or more layers (comma-separated) of the map service the layer's other
+   * controls name, by id: its address, its kind (`wms` or `arcgis`) and its sign-in (#306).
+   */
+  serviceLayers?: { url: string; service?: string; source?: string };
+  /** What an empty value means, shown as the first choice of a list (`media`, `columnsOf`), such as "Built-in birdsong". Default "None". */
+  none?: string;
 }
+/**
+ * What a table's media are (#306), as `GET /api/media` lists them: `map` (GeoJSON), `table` (CSV),
+ * `raster` (GeoTIFF), `drawing` (SVG), `picture`, `video`, `sound`, `model` (the 3D model), `data` (other files).
+ */
+export type MediaKind = 'map' | 'table' | 'raster' | 'drawing' | 'picture' | 'video' | 'sound' | 'model' | 'data';
 export interface ActionControl extends ControlBase {
   type: 'action';
 }

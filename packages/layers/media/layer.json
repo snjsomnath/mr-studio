@@ -8,7 +8,7 @@
   "category": "media",
   "hidesAtRest": true,
   "controls": [
-    { "id": "file", "type": "text", "label": "File", "default": "", "tier": "more" },
+    { "id": "file", "type": "text", "label": "File", "default": "", "media": ["picture", "video"], "mediaBy": "path", "tier": "more" },
     {
       "id": "fit", "type": "select", "label": "Fit to the table", "default": "stretch", "tier": "more",
       "options": [
