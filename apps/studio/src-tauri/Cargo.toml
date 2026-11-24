@@ -36,7 +36,13 @@ tracing-subscriber.workspace = true
 
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.61", features = ["Win32_Devices_Display", "Win32_Foundation"] }
+windows-sys = { version = "0.61", features = ["Win32_Devices_Display", "Win32_Foundation", "Win32_System_LibraryLoader", "Win32_System_Mapi"] }
+
+# Share by email (#372): the Compose Email share service.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSArray", "NSString", "NSURL"] }
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSSharingService"] }
 
 [lints]
 workspace = true
