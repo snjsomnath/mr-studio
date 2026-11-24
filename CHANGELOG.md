@@ -4,6 +4,28 @@ Every merge to main that carries a release note becomes a version. The newest is
 The app shows these notes, with their pictures, on Home when a newer version is out.
 How notes are written: docs/RELEASING.md.
 
+## 0.7.0 (2026-11-24)
+
+### New
+
+#### A Media tab, and lists instead of names to type (#306)
+
+The editor's ribbon has a **Media** tab with everything the table can show: map data, drawings, pictures, video, sounds, the 3D model and the online sources of this computer. Each has a preview and says which layers use it, and goes on the table with one click. **Add media** takes any file, and the files a table is made from can be brought in or replaced here as in the guide's Your place.
+
+Settings that named a dataset, a file, a column or a WMS layer were boxes to type the exact name in. They are now lists to pick from, with type-ahead: a name that is not in the table is refused, so a typo can no longer leave a layer empty.
+
+![The Media tab](docs/screenshots/306-media-tab.png)
+
+![Picking a dataset](docs/screenshots/306-picker-typing.png)
+
+#### Try a custom layer with test data (#308)
+
+No data yet? The New custom layer window now offers random points, places, lines or areas, made up on the spot inside your table with columns to colour, size and animate by. Random places come with a day of activity, flows and links and start with a place motion, so you can switch through every place motion, cultural gravity included, straight away.
+
+![Test data in the New custom layer window](docs/screenshots/308-new-layer.png)
+
+![Random places with a gravity well, the activity table already picked](docs/screenshots/308-places-motion.png)
+
 ## 0.6.0 (2026-11-24)
 
 ### New
