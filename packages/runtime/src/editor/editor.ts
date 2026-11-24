@@ -1018,6 +1018,7 @@ export class Editor {
       this.group('Guide', tool('Open the guide', 'info', guides[0]?.id ?? '', 'Every feature and step-by-step guides, in a window of their own', true)),
       this.group('Step by step', ...this.column(guides.map((g) => tool(g.title, 'route', g.id, g.summary)))),
       this.group('Features', tool('Everything on the table', 'layers', 'features', 'Every layer, what it shows and where to find it', true)),
+      this.group('Problems', tool('When something is wrong', 'alert', 'troubleshooting', 'The usual problems and how to fix them: projection, phones, empty layers, speed, updates', true)),
     ];
     const news = this.group("What's new", tool(latest ? latest.title.replace('MR Studio ', 'Version ') : "What's new", 'sparkle', latest?.id ?? 'features', 'What the newest versions brought', true));
     news.classList.add('is-last');
@@ -1269,7 +1270,16 @@ export class Editor {
     });
     const controls = el('div', 'controls');
     controls.append(shown, ...rows.map((r) => r.row));
-    section.append(el('h3', undefined, title), controls);
+    const heading = el('h3', 'ed-settings-head', title);
+    // A core layer has a page of its own in the Help window (#291).
+    if (!manifest.custom && manifest.id) {
+      const help = button('ed-help-link', 'How to use it', 'info', 14);
+      help.title = `How to use ${manifest.name ?? 'this layer'}: what it needs, each setting and tips`;
+      help.ariaLabel = help.title;
+      help.addEventListener('click', () => openHelp(`layer-${manifest.id}`));
+      heading.append(help);
+    }
+    section.append(heading, controls);
     if (offered && rows.length > 0) section.append(el('p', 'ed-empty', 'The eye beside a setting decides whether visitors get it on the controller and their phones.'));
 
     const previous = this.sync.get(id);

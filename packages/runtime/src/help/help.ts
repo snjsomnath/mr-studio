@@ -6,7 +6,7 @@ import { icon } from '../editor/icons.ts';
 
 interface Page {
   id: string;
-  kind: 'guide' | 'features' | 'release';
+  kind: 'guide' | 'features' | 'layer' | 'trouble' | 'release';
   title: string;
   summary: string;
   body: string;
@@ -42,7 +42,7 @@ function inline(parent: HTMLElement, text: string, help: Help): HTMLElement {
         a.href = m[4];
         a.target = '_blank';
         a.rel = 'noreferrer';
-      }
+      } else if (/^#[a-z0-9-]+$/.test(m[4])) a.href = m[4]; // another page of the Help (#291)
       parent.append(a);
     } else if (m[5]) parent.append(el('strong', undefined, m[5]));
     else if (m[6]) parent.append(el('code', undefined, m[6]));
@@ -120,6 +120,8 @@ export async function helpWindow(app: HTMLElement): Promise<void> {
   const groups: [string, Page['kind']][] = [
     ['Step by step', 'guide'],
     ['Everything on the table', 'features'],
+    ['Layers one by one', 'layer'],
+    ['When something is wrong', 'trouble'],
     ["What's new", 'release'],
   ];
   let current = '';

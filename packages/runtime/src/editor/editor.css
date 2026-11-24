@@ -839,6 +839,28 @@ body[data-role='edit'] .table-surface {
   color: var(--ed-text-2);
 }
 
+/* A layer's settings heading, with its Help page beside it (#291). */
+.ed-settings-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.ed-help-link {
+  all: unset;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ed-accent, #3557d4);
+  cursor: default;
+}
+.ed-help-link:hover { background: var(--ed-accent-soft, #e9eefc); }
+.ed-help-link:focus-visible { outline: 2px solid var(--ed-accent, #3557d4); }
+
 /* The generated controls, at the editor's density. */
 .ed .controls {
   gap: 10px;
