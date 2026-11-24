@@ -233,7 +233,7 @@ export function checkLayerPackage(dir: string, site: { manifest: any; kernels: s
   // What it needs of the site.
   const req = manifest.requires ?? {};
   const data = new Set([...Object.keys(site.manifest?.data ?? {}), ...['buildings', 'trees', 'walkways', 'trips', 'terrain', 'mesh'].filter((k) => site.manifest?.scene?.[k])]);
-  for (const d of req.data ?? []) if (!data.has(d)) add('error', 'requires', `needs dataset '${d}', which site.json "data" does not have; bring it in with import_data (target ${['buildings', 'trees', 'walkways', 'trips', 'terrain'].includes(d) ? d : `data:${d}`})`, 'layer.json');
+  for (const d of req.data ?? []) if (!data.has(d)) add('error', 'requires', `needs dataset '${d}', which the site does not have yet (scene.${d} or data.${d}); bring it in with import_data (target ${['buildings', 'trees', 'walkways', 'trips', 'terrain'].includes(d) ? d : `data:${d}`})`, 'layer.json');
   const services = new Set((Array.isArray(site.manifest?.services) ? site.manifest.services : []).map((s: any) => s?.id));
   for (const s of req.services ?? []) if (!services.has(s)) add('error', 'requires', `calls service '${s}', which site.json "services" does not declare; add it with add_service`, 'layer.json');
   for (const k of req.kernels ?? []) if (!site.kernels.includes(k)) add('error', 'requires', `needs kernel '${k}', which this core does not have (${site.kernels.join(', ')})`, 'layer.json');
