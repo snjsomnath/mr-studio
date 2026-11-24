@@ -4,6 +4,38 @@ Every merge to main that carries a release note becomes a version. The newest is
 The app shows these notes, with their pictures, on Home when a newer version is out.
 How notes are written: docs/RELEASING.md.
 
+## 0.26.0 (2026-11-24)
+
+### New
+
+#### Place a drawing by hand on the map (#301)
+
+With a Masterplan open in the editor, its frame now sits on the map with handles: drag inside it to move the drawing, a corner to scale it, the round handle to turn it. Letting go saves where it is. **Turn the drawing** shows a drawing that was drawn on its side the right way round, and keeps its shape when you change it.
+
+![The drawing's frame on the map, turned by hand (left), then a quarter turn clockwise (right)](docs/screenshots/301-place-by-hand.png)
+
+#### Place motions fit a real table, and Next tells their story (#341)
+
+The place motions now follow how far apart your places are. Reach, pull and travel scale with the places' spacing, and dots, lines and glows shrink only a little, so Gravity well no longer floods the map and Pilgrims are small walkers again on a 1 m table. A new **Scale** knob adjusts the fit. Motions that need the buildings (Threads of belonging, Lit blocks, Gravity well) now get them when the controller switches to them, so threads appear.
+
+Turn on **Next shows the places, then starts it** in the builder's Motion tab and a guide can step it like the old Cultural Gravity layer: the first Next brings the places in one by one, the second starts the motion.
+
+![Gravity well and Threads of belonging on the Lindholmen table, before and after](docs/screenshots/341-fitted.png)
+
+![Stepping a place motion: nothing, the places, the pull](docs/screenshots/341-steps.png)
+
+#### Water on the table: rivers stay cool and take the rain (#343)
+
+A table can now say where its water is: a river, a lake, a harbour or the sea. Bring it in with **Add data, Water** (a GeoJSON of areas, or straight from OpenStreetMap), or point `scene.water` at a GeoTIFF mask. Thermal comfort shows the water as cool instead of hot ground, Stormwater lets the runoff drain into it, and the dark base map draws it. On the Lindholmen table, Göta älv now reads as water.
+
+![CoolPaths and Stormwater on the Lindholmen table without and with water](docs/screenshots/343-water.png)
+
+#### Models in map coordinates and surface-model terrain come in through Add data (#344)
+
+A 3D model exported in SWEREF 99 TM (or a SWEREF 99 local zone, or UTM) metres is now placed where it belongs as it comes in: no anchor, units or turn to work out. A terrain GeoTIFF that has the buildings raised in it (a surface model) is noticed, and **Take the buildings out of the ground** keeps only the ground under them, so the buildings stop counting as hills. Both Lindholmen files now come in with no script: the model lands where the hand-placed one did, and the built area is 24 % of the table again.
+
+![The Lindholmen model placed by itself, and the surface-model terrain offering to take the buildings out](docs/screenshots/344-model-and-terrain.png)
+
 ## 0.25.0 (2026-11-24)
 
 ### New
