@@ -4,6 +4,22 @@ Every merge to main that carries a release note becomes a version. The newest is
 The app shows these notes, with their pictures, on Home when a newer version is out.
 How notes are written: docs/RELEASING.md.
 
+## 0.11.0 (2026-11-24)
+
+### New
+
+#### Tap a building on the table, change it on the controller (#279)
+A layer can now list things visitors change one at a time, such as the buildings of an energy community. Tap one on the table and it lights up. The controller then shows its name and its own settings, like whether it is in the community and how much of its roof has solar panels. Visitors can also pick one from a list, put it back to how it was, or apply its settings to every building of the same kind. Changed buildings get a dashed outline on the table. The layer needs no code for any of this: it only reads the values, and it can wait for a slider to settle before asking a model again. `samples/service-example` now works this way.
+
+![The controller with building 77 picked: in the energy community, 60 % solar on the roof](docs/screenshots/279-controller.png)
+![The table with the picked building outlined and every shop changed at once, dashed](docs/screenshots/279-table.png)
+
+#### Where is it sunny at 5 pm? (#273)
+
+Sun hours and Seasons can count just part of the day: the morning, lunch, the afternoon or the evening. Pick Evening and the terraces that get the evening sun light up.
+
+![Evening sun on the table](docs/screenshots/sun-window-evening.jpg)
+
 ## 0.10.0 (2026-11-24)
 
 ### New

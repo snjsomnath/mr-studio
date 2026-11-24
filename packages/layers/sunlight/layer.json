@@ -26,6 +26,16 @@
     { "id": "trails", "type": "toggle", "label": "Shadow trails over the day", "default": false, "visibleWhen": { "mode": "instant" } },
     { "id": "play", "type": "toggle", "label": "Animate the day", "default": false, "visibleWhen": { "mode": "instant" }, "tier": "more" },
     {
+      "id": "window", "type": "select", "label": "Sun during", "default": "day", "visibleWhen": { "mode": ["day", "seasons"] },
+      "options": [
+        { "value": "day", "label": "All day" },
+        { "value": "morning", "label": "Morning" },
+        { "value": "lunch", "label": "Lunch" },
+        { "value": "afternoon", "label": "Afternoon" },
+        { "value": "evening", "label": "Evening" }
+      ]
+    },
+    {
       "id": "season", "type": "select", "label": "Season on the table", "default": "cycle", "visibleWhen": { "mode": "seasons" },
       "options": [
         { "value": "cycle", "label": "Each in turn" },
@@ -46,7 +56,9 @@
     { "id": "spot", "type": "point", "label": "How much sun here?" }
   ],
   "panels": [
-    { "id": "daylight", "widget": "stat", "size": "tile", "title": "Daylight on this date", "visibleWhen": { "mode": "day" },
+    { "id": "daylight", "widget": "stat", "size": "tile", "title": "Daylight on this date", "visibleWhen": { "mode": "day", "window": "day" },
+      "props": { "value": { "bind": "shared.daylightHours" }, "unit": "h", "decimals": 1, "caption": { "bind": "shared.dayStatus" } } },
+    { "id": "window", "widget": "stat", "size": "tile", "title": "Sun hours counted", "visibleWhen": { "mode": "day", "window": ["morning", "lunch", "afternoon", "evening"] },
       "props": { "value": { "bind": "shared.daylightHours" }, "unit": "h", "decimals": 1, "caption": { "bind": "shared.dayStatus" } } },
     { "id": "trees", "widget": "ramp", "size": "tile", "title": "Shade from trees", "visibleWhen": { "trees": true, "treeColor": true, "mode": ["instant", "day"] },
       "props": { "colormap": { "bind": "shared.treeRamp" }, "low": { "bind": "shared.treeLow" }, "high": { "bind": "shared.treeHigh" } } },
@@ -56,7 +68,7 @@
       "props": { "value": { "bind": "params.hour" }, "format": "hour" } },
     { "id": "ribbon-sun", "widget": "stat", "size": "tile", "title": "Sun height", "ribbon": true, "visibleWhen": { "mode": "instant" },
       "props": { "value": { "bind": "shared.altitude" }, "unit": "°", "decimals": 0 } },
-    { "id": "ribbon-daylight", "widget": "stat", "size": "tile", "title": "Daylight", "ribbon": true, "visibleWhen": { "mode": "day" },
+    { "id": "ribbon-daylight", "widget": "stat", "size": "tile", "title": "Daylight", "ribbon": true, "visibleWhen": { "mode": "day", "window": "day" },
       "props": { "value": { "bind": "shared.daylightHours" }, "unit": "h", "decimals": 1 } },
     { "id": "ribbon-key", "widget": "ramp", "size": "tile", "title": "On the table", "ribbon": true,
       "props": { "colormap": { "bind": "shared.ramp" }, "low": { "bind": "shared.rampLow" }, "high": { "bind": "shared.rampHigh" } } }
