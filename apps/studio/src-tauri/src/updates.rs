@@ -198,7 +198,11 @@ mod tests {
         assert!(!found.breaking);
         assert_eq!(found.releases[1].title, "MR Studio 0.3.0");
 
-        assert_eq!(found.installed.as_ref().map(|r| r.notes.as_str()), Some("this one"), "the running version's own notes are kept for Home");
+        assert_eq!(
+            found.installed.as_ref().map(|r| r.notes.as_str()),
+            Some("this one"),
+            "the running version's own notes are kept for Home"
+        );
 
         let none = available(&Version::new(1, 0, 0), vec![published("v1.0.0", ""), published("v0.9.0", "")]);
         assert_eq!((none.latest, none.releases.len(), none.breaking), (None, 0, false));
