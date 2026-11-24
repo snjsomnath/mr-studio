@@ -15,5 +15,9 @@
   "Optimising {days} days": "Optimerar {days} dagar",
   "Optimising": "Optimerar",
   "Best share {share} %": "Bästa andel {share} %",
-  "The optimiser did not finish": "Optimeringen blev inte klar"
+  "The optimiser did not finish": "Optimeringen blev inte klar",
+  "Building": "Byggnad",
+  "In the energy community": "Med i energigemenskapen",
+  "Solar on the roof": "Solceller på taket",
+  "A layer whose numbers come from a model running beside the table: tap a building to change it": "Ett lager vars siffror kommer från en modell bredvid bordet: tryck på en byggnad för att ändra den"
 }

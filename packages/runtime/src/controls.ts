@@ -1,11 +1,12 @@
-import { isVisible, profileColumns } from '@mrstudio/sdk';
-import type { Connection, Control, LayerManifest, LegendRow, TextControl, LayerState, PanelContext, PanelHandlers, Role, TvAbout } from '@mrstudio/sdk';
+import { entityOverrides, entityValues, isVisible, profileColumns } from '@mrstudio/sdk';
+import type { Connection, Control, EntityFeature, EntitySet, LayerManifest, LegendRow, TextControl, LayerState, PanelContext, PanelHandlers, Role, TvAbout } from '@mrstudio/sdk';
 
 import { AttractLoop, effectOf } from './attract.ts';
 import { icon } from './editor/icons.ts';
 import { LANGUAGE_NAMES, language, offered, say, t } from './i18n.ts';
 import type { Language } from './i18n.ts';
-import { baseContext, isAtRest, paramSender } from './layer-manager.ts';
+import { entitySender, baseContext, isAtRest, paramSender } from './layer-manager.ts';
+import { loadEntities } from './entities.ts';
 
 export { isAtRest };
 import { layerModule } from './registry.ts';
@@ -706,6 +707,122 @@ function busyZone(store: Store): { element: HTMLElement; sync(state: LayerState)
   };
 }
 
+/**
+ * The entity inspector (#279): for each of a layer's entity sets, the picked entity's name and
+ * its own controls, a list to pick one without the table, Back to default, and "Apply to all
+ * of <group>" when the set has a group. Picks and values go through the host, so the table, the
+ * editor and every controller agree. No layer code takes part.
+ */
+function entityZone(id: string, manifest: LayerManifest, store: Store, connection: Connection): { element: HTMLElement; sync(state: LayerState): void } {
+  const zone = el('div', 'stage-entities');
+  const sets = manifest.entities ?? [];
+  zone.hidden = sets.length === 0;
+  const setEntity = entitySender(connection, id);
+  const parts = sets.map((set) => entitySetPart(id, set, manifest, store, connection, setEntity));
+  zone.append(...parts.map((part) => part.element));
+  return {
+    element: zone,
+    sync(state) {
+      for (const part of parts) part.sync(state);
+    },
+  };
+}
+
+function entitySetPart(
+  id: string,
+  set: EntitySet,
+  manifest: LayerManifest,
+  store: Store,
+  connection: Connection,
+  setEntity: (set: string, ids: string | string[], values: Record<string, unknown> | null) => void,
+): { element: HTMLElement; sync(state: LayerState): void } {
+  const part = el('section', 'entity-set');
+  part.dataset.set = set.id;
+  const kind = say(set.name ?? 'Item', manifest);
+  const head = el('header', 'entity-head');
+  const words = el('div', 'entity-words');
+  const kicker = el('span', 'entity-kicker', kind);
+  const name = el('h3', 'entity-name');
+  const hint = el('p', 'entity-hint', t('Tap one on the table, or choose it from the list.'));
+  words.append(kicker, name, hint);
+  const list = el('select', 'entity-list');
+  list.setAttribute('aria-label', t('Choose a {thing}', { thing: kind.toLowerCase() }));
+  head.append(words, list);
+  const controls = el('div', 'controls entity-controls');
+  const actions = el('div', 'entity-actions');
+  const reset = el('button', 'entity-button', t('Back to default'));
+  reset.type = 'button';
+  const all = el('button', 'entity-button');
+  all.type = 'button';
+  const count = el('span', 'entity-count');
+  actions.append(reset, all, count);
+  part.append(head, controls, actions);
+
+  let features: EntityFeature[] = [];
+  let picked: string | null = null;
+  const widgets = set.controls.map((control) =>
+    widget(
+      { ...control, label: say(control.label, manifest) } as Control,
+      (value) => picked !== null && setEntity(set.id, picked, { [control.id]: value }),
+      () => {},
+    ),
+  );
+  controls.append(...widgets.map((w) => w.row));
+  list.addEventListener('change', () => {
+    void connection.request('layer.select', { layer: id, set: set.id, id: list.value || null }).catch(() => {});
+  });
+  reset.addEventListener('click', () => picked !== null && setEntity(set.id, picked, null));
+  all.addEventListener('click', () => {
+    const feature = features.find((f) => f.id === picked);
+    if (!feature?.group) return;
+    const ids = features.filter((f) => f.group === feature.group).map((f) => f.id);
+    setEntity(set.id, ids, entityValues(set, store.layer(id).params, feature.id));
+  });
+
+  let listed = '';
+  const sync = (state: LayerState) => {
+    const selection = state.selection?.set === set.id ? state.selection.id : null;
+    picked = selection;
+    const feature = features.find((f) => f.id === selection);
+    const changed = Object.keys(entityOverrides(state.params, set.id));
+    const key = JSON.stringify([features.length, changed]);
+    if (key !== listed) {
+      listed = key;
+      const marked = new Set(changed);
+      const choose = el('option', undefined, t('Choose…'));
+      choose.value = '';
+      const options = [...features]
+        .sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true }))
+        .map((f) => {
+          const option = el('option', undefined, marked.has(f.id) ? `${f.label} •` : f.label);
+          option.value = f.id;
+          return option;
+        });
+      list.replaceChildren(choose, ...options);
+    }
+    list.value = selection ?? '';
+    part.classList.toggle('is-picked', selection !== null);
+    name.textContent = feature?.label ?? selection ?? '';
+    name.hidden = selection === null;
+    hint.hidden = selection !== null;
+    controls.hidden = selection === null;
+    const values = selection !== null ? entityValues(set, state.params, selection) : {};
+    for (const w of widgets) {
+      w.row.hidden = !isVisible(w.control, values);
+      w.sync(values[w.control.id], values);
+    }
+    reset.hidden = selection === null || !changed.includes(selection);
+    all.hidden = selection === null || !feature?.group;
+    if (feature?.group) all.textContent = t('Apply to all of {group}', { group: feature.group });
+    count.textContent = changed.length > 0 ? t('{count} changed', { count: changed.length }) : '';
+  };
+  void loadEntities(store.state.site, set).then((list) => {
+    features = list;
+    sync(store.layer(id));
+  });
+  return { element: part, sync };
+}
+
 /** A sound a layer published for the controller (#150). */
 interface SoundRow {
   id: string;
@@ -969,8 +1086,11 @@ export class Controller {
     const legend = legendZone(id, store);
     const sounds = soundZone(id, store, connection);
     const busy = busyZone(store);
+    const entities = entityZone(id, manifest, store, connection);
     body.append(words, busy.element, strip.element);
     if (!hero.hidden) body.append(hero);
+    // The picked entity's own controls come before the layer's, as the thing in hand (#279).
+    if (!entities.element.hidden) body.append(entities.element);
     for (const group of [primary, controls]) if (group.childElementCount > 0) body.append(group);
     body.append(legend.element, sounds.element);
     // "More settings" closes the primary row when there is one, so it costs no height of its own.
@@ -1006,6 +1126,7 @@ export class Controller {
         strip.element.classList.toggle('legend-follows', legend.sync(state));
         sounds.sync(state);
         busy.sync(state);
+        entities.sync(state);
         // A slideshow made of layers is driven by its steps: its own slide controls step aside.
         const stepped = Boolean(manifest.sequence && state.step);
         for (const w of widgets) {

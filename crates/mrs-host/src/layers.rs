@@ -55,6 +55,46 @@ pub struct LayerDef {
     pub manifest: Value,
     pub controls: Vec<Control>,
     pub tools: Vec<Tool>,
+    /// Things a visitor picks and changes one by one (#279), from `entities`.
+    pub entity_sets: Vec<EntitySet>,
+}
+
+/// The param that holds every entity's changed values: `entities[set][entity][control]`.
+pub const ENTITIES: &str = "entities";
+/// The most entities a layer keeps values for, and the longest entity id.
+pub const MOST_ENTITIES: usize = 10_000;
+const LONGEST_ENTITY_ID: usize = 200;
+
+/// A set of entities (#279): the controls each of its entities has.
+#[derive(Debug, Clone)]
+pub struct EntitySet {
+    pub id: String,
+    pub controls: Vec<Control>,
+}
+
+impl EntitySet {
+    /// Checks values for one entity, as `LayerDef::validate` does for a layer's params.
+    pub fn validate(&self, values: &Map<String, Value>, phone: bool) -> Result<Map<String, Value>, String> {
+        let mut out = Map::new();
+        for (key, value) in values {
+            let control = self.controls.iter().find(|c| &c.id == key).ok_or_else(|| format!("'{}' entities have no control '{key}'", self.id))?;
+            if phone && !control.phone {
+                return Err(format!("'{key}' cannot be changed from a phone"));
+            }
+            out.insert(key.clone(), control.validate(value).map_err(|e| format!("{key}: {e}"))?);
+        }
+        Ok(out)
+    }
+
+    /// Drops values that are the control's default, so only real changes are kept and marked.
+    pub fn changed_only(&self, values: &mut Map<String, Value>) {
+        values.retain(|key, value| self.controls.iter().find(|c| &c.id == key).is_none_or(|c| &c.default != value));
+    }
+}
+
+/// Whether a string can name an entity: not empty, at most 200 characters.
+pub fn is_entity_id(id: &str) -> bool {
+    !id.is_empty() && id.chars().count() <= LONGEST_ENTITY_ID
 }
 
 impl LayerDef {
@@ -74,39 +114,37 @@ impl LayerDef {
         }
         let mut controls = Vec::new();
         for c in manifest["controls"].as_array().map(Vec::as_slice).unwrap_or(&[]) {
-            let cid = c["id"].as_str().ok_or_else(|| anyhow!("a control has no id"))?.to_string();
-            let num = |key: &str| c[key].as_f64().ok_or_else(|| anyhow!("control '{cid}' needs a numeric {key}"));
-            let kind = match c["type"].as_str() {
-                Some("range") => {
-                    let (min, max) = (num("min")?, num("max")?);
-                    let step = c["step"].as_f64().unwrap_or(0.0);
-                    if !(max > min) || step < 0.0 {
-                        bail!("control '{cid}' has an empty range");
-                    }
-                    ControlKind::Range { min, max, step }
-                }
-                Some("select") => {
-                    let options: Vec<Value> = c["options"]
-                        .as_array()
-                        .map(|o| o.iter().map(|o| o.get("value").cloned().unwrap_or_else(|| o.clone())).collect())
-                        .unwrap_or_default();
-                    if options.is_empty() {
-                        bail!("control '{cid}' has no options");
-                    }
-                    ControlKind::Select { options }
-                }
-                Some("toggle") => ControlKind::Toggle,
-                Some("date") => ControlKind::Date,
-                Some("color") => ControlKind::Color,
-                Some("text") => ControlKind::Text,
-                Some("action") => ControlKind::Action,
-                other => bail!("control '{cid}' has unknown type {other:?}"),
-            };
-            let mut control = Control { id: cid.clone(), kind, phone: c["phone"].as_bool().unwrap_or(false), default: Value::Null };
-            if !matches!(control.kind, ControlKind::Action) {
-                control.default = control.validate(&c["default"]).map_err(|e| anyhow!("control '{cid}' default: {e}"))?;
+            controls.push(Control::parse(c)?);
+        }
+        let mut entity_sets: Vec<EntitySet> = Vec::new();
+        for e in manifest["entities"].as_array().map(Vec::as_slice).unwrap_or(&[]) {
+            let sid = e["id"].as_str().filter(|s| mrs_site::is_instance_id(s)).ok_or_else(|| anyhow!("an entity set needs an id of lowercase letters, digits and dashes"))?;
+            if entity_sets.iter().any(|s| s.id == sid) {
+                bail!("two entity sets are called '{sid}'");
             }
-            controls.push(control);
+            for field in ["dataset", "key"] {
+                if e[field].as_str().is_none_or(str::is_empty) {
+                    bail!("entity set '{sid}' needs a {field}");
+                }
+            }
+            let mut set = EntitySet { id: sid.to_string(), controls: Vec::new() };
+            for c in e["controls"].as_array().map(Vec::as_slice).unwrap_or(&[]) {
+                let control = Control::parse(c).map_err(|err| anyhow!("entity set '{sid}': {err}"))?;
+                if matches!(control.kind, ControlKind::Action) {
+                    bail!("entity set '{sid}': '{}' is an action; entities have values only", control.id);
+                }
+                if set.controls.iter().any(|other| other.id == control.id) {
+                    bail!("entity set '{sid}' has two controls called '{}'", control.id);
+                }
+                set.controls.push(control);
+            }
+            if set.controls.is_empty() {
+                bail!("entity set '{sid}' has no controls");
+            }
+            entity_sets.push(set);
+        }
+        if !entity_sets.is_empty() && controls.iter().any(|c| c.id == ENTITIES) {
+            bail!("a layer with entities cannot have a control called '{ENTITIES}'");
         }
         let mut tools = Vec::new();
         for t in manifest["tools"].as_array().map(Vec::as_slice).unwrap_or(&[]) {
@@ -119,11 +157,45 @@ impl LayerDef {
             };
             tools.push(Tool { id: tid, kind });
         }
-        Ok(Self { source: id.clone(), id, manifest, controls, tools })
+        Ok(Self { source: id.clone(), id, manifest, controls, tools, entity_sets })
     }
 
     pub fn tool(&self, id: &str) -> Option<&Tool> {
         self.tools.iter().find(|t| t.id == id)
+    }
+
+    pub fn entity_set(&self, id: &str) -> Option<&EntitySet> {
+        self.entity_sets.iter().find(|s| s.id == id)
+    }
+
+    /// Checks a whole `entities` param: known sets, entity ids, and each value against its control.
+    pub fn validate_entities(&self, value: &Value, phone: bool) -> Result<Value, String> {
+        let sets = value.as_object().ok_or("entities must be an object of sets")?;
+        let mut out = Map::new();
+        let mut count = 0;
+        for (sid, entities) in sets {
+            let set = self.entity_set(sid).ok_or_else(|| format!("layer '{}' has no entity set '{sid}'", self.id))?;
+            let entities = entities.as_object().ok_or_else(|| format!("entities.{sid} must be an object of entities"))?;
+            let mut clean = Map::new();
+            for (id, values) in entities {
+                if !is_entity_id(id) {
+                    return Err(format!("entities.{sid}: '{id}' is not an entity id"));
+                }
+                let mut values = set.validate(values.as_object().ok_or_else(|| format!("entities.{sid}.{id} must be an object"))?, phone)?;
+                set.changed_only(&mut values);
+                if !values.is_empty() {
+                    clean.insert(id.clone(), Value::Object(values));
+                }
+            }
+            count += clean.len();
+            if !clean.is_empty() {
+                out.insert(sid.clone(), Value::Object(clean));
+            }
+        }
+        if count > MOST_ENTITIES {
+            return Err(format!("at most {MOST_ENTITIES} entities can have their own values"));
+        }
+        Ok(Value::Object(out))
     }
 
     pub fn control(&self, id: &str) -> Option<&Control> {
@@ -149,6 +221,13 @@ impl LayerDef {
     pub fn validate(&self, patch: &Map<String, Value>, phone: bool) -> Result<Map<String, Value>, String> {
         let mut out = Map::new();
         for (key, value) in patch {
+            if key == ENTITIES && !self.entity_sets.is_empty() {
+                if phone {
+                    return Err("phones change entities one at a time".into());
+                }
+                out.insert(key.clone(), self.validate_entities(value, false)?);
+                continue;
+            }
             let control = self.control(key).ok_or_else(|| format!("layer '{}' has no control '{key}'", self.id))?;
             if matches!(control.kind, ControlKind::Action) {
                 return Err(format!("'{key}' is an action, not a value"));
@@ -163,6 +242,43 @@ impl LayerDef {
 }
 
 impl Control {
+    /// Reads one control of a layer.json: its id, type, phone flag and checked default.
+    pub fn parse(c: &Value) -> anyhow::Result<Self> {
+        let cid = c["id"].as_str().ok_or_else(|| anyhow!("a control has no id"))?.to_string();
+        let num = |key: &str| c[key].as_f64().ok_or_else(|| anyhow!("control '{cid}' needs a numeric {key}"));
+        let kind = match c["type"].as_str() {
+            Some("range") => {
+                let (min, max) = (num("min")?, num("max")?);
+                let step = c["step"].as_f64().unwrap_or(0.0);
+                if !(max > min) || step < 0.0 {
+                    bail!("control '{cid}' has an empty range");
+                }
+                ControlKind::Range { min, max, step }
+            }
+            Some("select") => {
+                let options: Vec<Value> = c["options"]
+                    .as_array()
+                    .map(|o| o.iter().map(|o| o.get("value").cloned().unwrap_or_else(|| o.clone())).collect())
+                    .unwrap_or_default();
+                if options.is_empty() {
+                    bail!("control '{cid}' has no options");
+                }
+                ControlKind::Select { options }
+            }
+            Some("toggle") => ControlKind::Toggle,
+            Some("date") => ControlKind::Date,
+            Some("color") => ControlKind::Color,
+            Some("text") => ControlKind::Text,
+            Some("action") => ControlKind::Action,
+            other => bail!("control '{cid}' has unknown type {other:?}"),
+        };
+        let mut control = Control { id: cid.clone(), kind, phone: c["phone"].as_bool().unwrap_or(false), default: Value::Null };
+        if !matches!(control.kind, ControlKind::Action) {
+            control.default = control.validate(&c["default"]).map_err(|e| anyhow!("control '{cid}' default: {e}"))?;
+        }
+        Ok(control)
+    }
+
     /// Returns the value as it will be stored: clamped, snapped and type-checked.
     pub fn validate(&self, value: &Value) -> Result<Value, String> {
         match &self.kind {
@@ -519,6 +635,44 @@ mod tests {
         site.manifest.layers.push(serde_json::from_value(json!({ "use": "./layers/broken", "id": "broken" })).unwrap());
         assert!(load_catalog(&site, &repo.join("packages/layers")).is_err());
         let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    fn with_entities() -> LayerDef {
+        LayerDef::parse(json!({
+            "api": 1, "id": "e", "name": "E",
+            "entities": [{ "id": "members", "dataset": "buildings", "key": "id", "controls": [
+                { "id": "in", "type": "toggle", "label": "In", "default": false, "phone": true },
+                { "id": "pv", "type": "range", "label": "PV", "min": 0, "max": 80, "step": 5, "default": 0 }
+            ] }]
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn entity_values_are_checked_and_only_changes_kept() {
+        let d = with_entities();
+        assert!(d.defaults().is_empty(), "no entity has values of its own yet");
+        let clean = d.validate(&patch(json!({ "entities": { "members": { "3": { "pv": 33, "in": false }, "4": { "pv": 0 } } } })), false).unwrap();
+        // Snapped like a layer control; defaults are dropped, and an entity left with none goes.
+        assert_eq!(clean["entities"], json!({ "members": { "3": { "pv": 35.0 } } }));
+        assert!(d.validate(&patch(json!({ "entities": { "other": {} } })), false).is_err());
+        assert!(d.validate(&patch(json!({ "entities": { "members": { "3": { "nope": 1 } } } })), false).is_err());
+        assert!(d.validate(&patch(json!({ "entities": { "members": { "": { "pv": 5 } } } })), false).is_err());
+        assert!(d.validate(&patch(json!({ "entities": {} })), true).is_err(), "phones go one entity at a time");
+        let set = d.entity_set("members").unwrap();
+        assert!(set.validate(&patch(json!({ "in": true })), true).is_ok());
+        assert!(set.validate(&patch(json!({ "pv": 10 })), true).is_err());
+    }
+
+    #[test]
+    fn bad_entity_sets_are_refused() {
+        let layer = |sets: Value| LayerDef::parse(json!({ "api": 1, "id": "e", "name": "E", "entities": sets }));
+        let toggle = json!({ "id": "in", "type": "toggle", "label": "In", "default": false });
+        assert!(layer(json!([{ "id": "a", "dataset": "b", "key": "id", "controls": [toggle] }])).is_ok());
+        assert!(layer(json!([{ "id": "a", "dataset": "b", "key": "id", "controls": [] }])).is_err());
+        assert!(layer(json!([{ "id": "a", "key": "id", "controls": [toggle] }])).is_err());
+        assert!(layer(json!([{ "id": "a", "dataset": "b", "key": "id", "controls": [{ "id": "go", "type": "action", "label": "Go" }] }])).is_err());
+        assert!(layer(json!([{ "id": "a", "dataset": "b", "key": "id", "controls": [toggle] }, { "id": "a", "dataset": "b", "key": "id", "controls": [toggle] }])).is_err());
     }
 
     #[test]

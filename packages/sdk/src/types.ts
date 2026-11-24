@@ -94,6 +94,43 @@ export interface ToolSpec {
   cue?: boolean;
 }
 
+/**
+ * A set of things on the table a visitor can pick and change one by one (#279): the buildings of
+ * an energy community, the stops of a line. Each entity is a feature of `dataset`, named by its
+ * `key` property, and has its own values for `controls`. The controller shows the picked one's
+ * controls under its name; the host keeps the values in `params.entities[set][entity]`.
+ */
+export interface EntitySet {
+  /** The set's id, unique in the layer: `params.entities[id]`. */
+  id: string;
+  /** A dataset from site.json `data` (also `buildings`, the scene's footprints). Name it in `requires.data`. */
+  dataset: string;
+  /** The feature property that names each entity: unique, a string or a number. */
+  key: string;
+  /** The feature property shown as its name. Default `key`. */
+  label?: string;
+  /** A feature property for changes to many at once, such as the owner: "Apply to all of <owner>". */
+  group?: string;
+  /** What one entity is called on the controller, such as "Building". Default "Item". */
+  name?: string;
+  /** Each entity's values. Actions are not allowed; `phone: true` lets phones change it. */
+  controls: Exclude<Control, ActionControl>[];
+  /** Milliseconds of quiet before the table's `entities` handler runs, for layers that call a model on change. Default 0. */
+  debounce_ms?: number;
+}
+
+/** An entity that is picked on the table and the controller: `state.selection`. */
+export interface EntitySelection {
+  set: string;
+  id: string;
+}
+
+/** Entities whose values changed, by set: what the table's `entities` handler gets. */
+export interface EntityChange {
+  set: string;
+  ids: string[];
+}
+
 /** Palette groups in the scene composer. */
 export type LayerCategory = 'base' | 'ambient' | 'analysis' | 'media';
 
@@ -112,6 +149,8 @@ export interface LayerManifest {
   requires?: { kernels?: string[]; data?: string[]; services?: string[] };
   controls?: Control[];
   tools?: ToolSpec[];
+  /** Things a visitor picks on the table and changes one by one on the controller (#279). */
+  entities?: EntitySet[];
   /** TV panels the layer contributes while it is on. Rules in docs/contracts/dashboard.md. */
   panels?: PanelSpec[];
   /** The layer is a sequence: its instances may have `steps.sequence` that show other layers (the slideshow). */
@@ -384,6 +423,8 @@ export interface LayerState {
    * controller and stays on while button layers open and close.
    */
   rest?: boolean;
+  /** The entity picked on the table or the controller (#279), shared by every surface. */
+  selection?: EntitySelection | null;
 }
 
 /**

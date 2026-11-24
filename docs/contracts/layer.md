@@ -97,6 +97,49 @@ interface ToolInput {
 A phone shows a layer's tools on a small map as soon as the manifest declares them; the layer writes no phone code.
 `packages/layers/sketch` is the reference for a layer with tools.
 
+## Entities
+
+Entities are things on the table a visitor picks and changes one by one (#279): the buildings of
+an energy community, the stops of a line. A layer declares the sets it has; the runtime does the
+picking on the table and the controls on the controller, so the layer writes no UI code.
+
+```jsonc
+"requires": { "data": ["buildings"] },
+"entities": [
+  { "id": "buildings", "dataset": "buildings", "key": "id", "label": "name", "group": "owner",
+    "name": "Building", "debounce_ms": 800,
+    "controls": [
+      { "id": "in", "type": "toggle", "label": "In the energy community", "default": true, "phone": true },
+      { "id": "pv", "type": "range", "label": "Solar on the roof", "min": 0, "max": 80, "step": 5, "unit": "%", "default": 0 }
+    ] }
+]
+```
+
+- `dataset` is a dataset of the site (the scene's `buildings` counts); each feature is one entity,
+  named by its `key` property. `label` is the property shown as its name (default `key`), `group`
+  a property for changing many at once, `name` what one is called on the controller.
+- `controls` are layer controls without actions. They are checked by the host like the layer's own.
+- **On the table**, a tap on an entity picks it for every surface; the picked one is outlined
+  and breathes, and entities with changed values get a dashed outline.
+- **On the controller**, the layer's stage shows the picked entity's name and controls above the
+  layer's own, a list to pick one without the table, Back to default, and "Apply to all of
+  <group>" (the picked one's values to every entity of its group).
+- **The host** keeps only changed values, in `params.entities[set][entity][control]`, and
+  the pick in the layer state's `selection` (`{ set, id }`, cleared when the layer goes off).
+  Requests: `layer.select { layer, set, id | null }` and
+  `layer.entity { layer, set, ids, values }` or `{ layer, set, ids, reset: true }`. Phones may
+  change only controls marked `phone`. Reset on the controller puts the saved values back.
+- **Saved and undone** like any param: `scene.set { layer, params: { entities } }` (the editor,
+  the MCP's `set_params`) writes them to site.json as one step of the history.
+- **In the layer**, `ctx.entity(set, id)` gives one entity's values (defaults with the changes on
+  top), `ctx.setEntity` and `ctx.select` change them, and `ctx.selection` is the pick. The
+  table's `entities(changed)` handler names what changed, by set, once the set's `debounce_ms`
+  has passed with no change, so a layer that asks a model asks once per gesture; `select` runs
+  when the pick changes. `entityFeatures`, `pickEntity` and `entityValues` in the SDK do the
+  same reading for a layer's own drawing.
+
+`samples/service-example` has a layer with entities that asks a model again when a building changes.
+
 ## Module
 
 ```ts
