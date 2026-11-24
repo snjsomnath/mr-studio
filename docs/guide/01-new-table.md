@@ -14,4 +14,18 @@
 
 ![The setup guide in the editor](docs/screenshots/110-114-name-and-place.png)
 
+## Change it later
+
+Three of the guide's steps are also tabs on the editor's ribbon, so you never have to walk back through the guide:
+
+- **Name and place** opens the guide's Name and place beside the map: rename the table, or move, resize or turn it on the map. Nothing moves until you press **Move the table** (on the ribbon or under the form); **Put back** forgets the changes. The panel says what a move does: the data you brought in and every layer stay, map pictures are fetched again for the new outline, and if the new outline goes past what your files cover you bring them in again under Your place. **Undo** puts the table back.
+- **At rest** switches each piece of map life on or off from the ribbon, with the descriptions, the base map's style and **Bring in** for missing data in the panel.
+- **Design** has the controller's theme as a gallery and the button style (icons, or icons and names) on the ribbon, and each button's name, description and side in the panel. The controller beside the map is live.
+
+Choosing something in the list on the left goes back to the Edit tab and its settings.
+
+![The Design tab](docs/screenshots/311-design.png)
+
+![The Name and place tab, with a change waiting](docs/screenshots/313-name-and-place.png)
+
 Tip: everything you change is saved at once, and **Undo** (Ctrl+Z, or ⌘Z on a Mac) takes it back.
