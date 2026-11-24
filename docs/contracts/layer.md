@@ -34,7 +34,7 @@ packages/layers/sunlight/        (or sites/<id>/layers/<name>/)
 `category` puts the layer in a group of the composer's palette: `base`, `ambient`, `analysis` (the default) or `media`.
 On the controller screen a layer of category `analysis` or `media` is a button, and pressing it opens that layer and closes the others. `base` and `ambient` layers are the map at rest and have no button there.
 `alongside: true` keeps the layer open when another layer's button is pressed, and lets it open without closing the others. Use it for a tool people keep while they look at something else, such as the sketch layer. Default false.
-`hidesAtRest: true` turns the map at rest off on the table while the layer is open: every top-level `base` and `ambient` layer stops, and starts again when the layer closes. The host's state does not change, so the controller and editor still show them as on. The slideshow does this, so slides are seen on their own (#205). Default false.
+Any open button layer pauses the map at rest's life on the table, keeping only the base map (#303). `hidesAtRest: true` turns the whole map at rest off while the layer is open, the base map included: every top-level `base` and `ambient` layer stops, and starts again when the layer closes. The host's state does not change, so the controller and editor still show them as on. The slideshow does this, so slides are seen on their own (#205). Default false.
 
 `sequence: true` makes the layer a sequence: an instance of it may have `steps.sequence`, steps that show other layers one after another (see site.md). The slideshow is one.
 `legend` and `attract` are proposed in [present.md](present.md); site format 3 already carries them for custom layers.
@@ -143,6 +143,7 @@ interface TableContext<P> {
   sendTool(tool: string, geometry: ToolGeometry): Promise<void>;  // send a tool input through the host, as a phone does; every view of the table gets it
   cue(at: ToolGeometry, options?: { colour?: string }): void;     // play the attention cue at a change (#105); tool inputs from other surfaces get one automatically
   readonly steps: LayerSteps;           // sub-steps that the controller's Next reveals one at a time
+  readonly reveal: LayerReveal;         // where the layers inside this one show, for a layer with "reveals": true (see Reveals)
   onFrame(cb: (dt: number) => void): void;   // every animation frame while the layer is on
   onCleanup(cb: () => void): void;      // extra teardown
 }
@@ -191,6 +192,18 @@ interface MapHandle {
   addCanvas(id: string, style?: { opacity?: number }): CanvasOverlay;      // a canvas above the scene, in CSS pixels, with a projection
   addShapes(id: string, style?: { opacity?: number }): ShapeOverlay;   // points, lines and areas
   addDrawing(id: string, options?: { opacity?: number; resolution?: number }): DrawingOverlay;
+  addPicture(): TablePicture;       // a copy of what the table shows now, for a magnifier (#287)
+}
+
+// What the table shows, copied each frame after the map has drawn: the base map and every
+// layer's canvases except this layer's own. `want(rect)` names the part (CSS pixels of the
+// table view) to copy at the next frame; `canvas` holds it once `taken` is true.
+interface TablePicture {
+  want(rect: PixelRect | null): void;
+  readonly canvas: HTMLCanvasElement;
+  readonly taken: boolean;
+  readonly revision: number;          // goes up with every copy
+  remove(): void;
 }
 
 // A 2D drawing inside the scene's draw order, for layers that draw shapes themselves:
@@ -289,6 +302,27 @@ Visitors read the controller, the phones and the table's ribbons in English or S
 - Every core layer has `locales/sv.json`; a host test checks that every core layer's name, control labels and choices have Swedish.
 - The site's own words (title, welcome line, button names, slide titles) are in site.json, `branding.translations` (site.md).
 
+## Reveals: X-rays, magnifiers and reveal lines
+
+A layer with `"reveals": true` in layer.json shows the layers placed inside it (its items in
+`site.json`, added in the editor) only where it says, with `ctx.reveal.set(shape)` (#287, #288):
+
+```ts
+type RevealShape =
+  | { kind: 'circle'; centre: [number, number]; radius_m: number }               // a glass
+  | { kind: 'side'; axis: 'x' | 'y'; at_m: number; keep: 'before' | 'after' }  // one side of a line
+  | { kind: 'none' };                                                          // nowhere
+ctx.reveal.set(shape | null);   // null: everywhere, as without a revealer
+```
+
+Places are table metres. Until the layer sets a shape its items show nowhere. The runtime does the
+clipping, so the items need no code of their own: drawings (`addDrawing`) are composed through the
+shape, canvases and elements (`addCanvas`, `addElement`) get a CSS clip that follows the map, and
+fields (`addField`) are cut in their shader. Shapes (`addShapes`), flows (`addFlow`) and fields on the
+model are not clipped yet. `revealPath(g, shape, w, h)` traces the same shape on a canvas, for a cover
+under the items or a rim. The Magnifier (`packages/layers/lens`) and the Reveal line
+(`packages/layers/swipe`) are the reference layers.
+
 ## Building blocks and interactions
 
 Layers are composed from the primitives in `@mrstudio/sdk` (`packages/sdk/src/blocks/`): data sources,
@@ -301,6 +335,39 @@ When a pick made with the pointer has to reach every view of the table (the proj
 editor's live table run the layer separately), the layer sends it on with `ctx.sendTool(tool, geometry)` and
 handles it where it arrives, in `tool(input)`. `packages/layers/coolpaths` is the reference: a click sets the
 walk's start or end and dragging A or B moves it.
+
+## Site layers
+
+A site can carry layers of its own, with code, without changing or forking the core (#277). They are packages
+like core layers, in the site's `layers/` folder, and the installed app loads them:
+
+```
+sites/lindholmen/layers/energy-flows/
+  layer.json        as above
+  src/index.ts      table(), panel(), hero() as above, importing from '@mrstudio/sdk'
+  locales/sv.json
+  build.mjs         bundles src/ into dist/index.js
+  dist/index.js     what the app loads; commit it, so the table's computer needs no Node
+```
+
+- `mrstudio layer new energy-flows --site sites/lindholmen` writes a working package: rings where the table is
+  tapped (`ctx.pointer`, `ctx.sendTool`, `tool`), a primary action on the controller, a stat panel bound to
+  `ctx.publish` and a custom panel.
+- `mrstudio layer build [id] --site <site> [--watch]` bundles each package with esbuild (it runs `npm install` the
+  first time). Building needs Node 20 or newer on the developer's computer; running needs nothing.
+- `@mrstudio/sdk` is not bundled: the build turns its imports into reads of `globalThis.MRStudio.sdk`, the SDK of
+  the app the layer runs in. A layer therefore always runs against the app's SDK, and `api` in layer.json says
+  which contract it was written for; the app refuses a layer of another `api`.
+- The host lists every package in `layers/` in the composer's palette, whether or not the scene uses it; a scene
+  uses one as `{ "use": "./layers/energy-flows" }`. A package that does not load is left out with a warning,
+  unless the scene uses it, in which case the table does not open and says why.
+- The host adds `module` to the package's manifest when `dist/index.js` exists (`/site/layers/<id>/dist/index.js?v=<time>`),
+  and every surface but the phones imports it before it starts layers. A rebuilt layer is picked up when the
+  surface reloads. Without a build the layer is still listed and draws nothing.
+- A `.mrstable` export carries the packages with their `dist/`, without `node_modules`.
+
+The rules for layers above apply to site layers too. Anything a site layer needs from the core that the SDK does
+not offer is a module request (MCP `draft_module_request`), not a copy of core code.
 
 ## Dev mode
 

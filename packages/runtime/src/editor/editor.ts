@@ -1040,6 +1040,66 @@ export class Editor {
     return row;
   }
 
+  /**
+   * The + beside Layers (#305): a menu of the layers this table can add, the same tools and
+   * data checks as the ribbon's Add a layer group, then a custom layer or new data.
+   */
+  private newLayerMenu(anchor: HTMLButtonElement): void {
+    document.querySelector('.ed-add-menu')?.remove();
+    if (anchor.getAttribute('aria-expanded') === 'true') {
+      anchor.setAttribute('aria-expanded', 'false');
+      return;
+    }
+    const menu = el('div', 'ed-file-menu ed-add-menu');
+    menu.setAttribute('role', 'menu');
+    menu.ariaLabel = 'New layer';
+    const close = (): void => {
+      menu.remove();
+      anchor.setAttribute('aria-expanded', 'false');
+      document.removeEventListener('pointerdown', outside, true);
+    };
+    const outside = (event: PointerEvent): void => {
+      if (!menu.contains(event.target as Node) && !anchor.contains(event.target as Node)) close();
+    };
+    const item = (node: HTMLButtonElement): HTMLButtonElement => {
+      node.className = `ed-file-item ed-add-item${node.classList.contains('is-needs') ? ' is-needs' : ''}`;
+      node.setAttribute('role', 'menuitem');
+      node.addEventListener('click', close);
+      return node;
+    };
+    const offered = this.store.manifests.filter((m) => !isAmbient(m) && isOffered(m));
+    for (const manifest of offered) menu.append(item(this.insertTool(manifest, false)));
+    if (offered.length > 0) menu.append(el('hr'));
+    const custom = item(button('ed-tool', 'Custom layer…', 'brush'));
+    custom.title = 'Make a layer from your own data: choose the data, then style it, move it and save it as a button';
+    custom.addEventListener('click', () => newCustomLayer(this.builderHost(), this.shell));
+    const data = item(button('ed-tool', 'Add data…', 'map'));
+    data.title = 'Bring in a file or OpenStreetMap data';
+    data.addEventListener('click', () => this.addData());
+    menu.append(custom, data);
+    menu.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        close();
+        anchor.focus();
+      } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+        event.preventDefault();
+        const rows = [...menu.querySelectorAll<HTMLButtonElement>('.ed-add-item:not(:disabled)')];
+        const at = rows.indexOf(document.activeElement as HTMLButtonElement);
+        rows[(at + (event.key === 'ArrowDown' ? 1 : rows.length - 1)) % rows.length]?.focus();
+      }
+    });
+    const box = anchor.getBoundingClientRect();
+    menu.style.position = 'fixed';
+    menu.style.top = `${box.bottom + 4}px`;
+    menu.style.left = `${Math.max(8, box.left)}px`;
+    menu.style.maxHeight = `${Math.max(160, window.innerHeight - box.bottom - 16)}px`;
+    this.shell.append(menu);
+    anchor.setAttribute('aria-expanded', 'true');
+    document.addEventListener('pointerdown', outside, true);
+    menu.querySelector<HTMLButtonElement>('.ed-add-item:not(:disabled)')?.focus();
+  }
+
   private renderTree(instances: { id: string; manifest: LayerManifest; state: LayerState }[]): void {
     const { context } = this;
     const ambient = instances.filter((i) => isAtRest(i.manifest, i.state) && !i.state.parent);
@@ -1057,13 +1117,12 @@ export class Editor {
     plus.ariaLabel = 'New layer';
     plus.title = 'New layer';
     plus.append(icon('plus', 14));
-    plus.addEventListener('click', () => {
-      this.setRibbonTab('edit');
-      this.ribbon.querySelector<HTMLElement>('.ed-tool.is-large')?.focus();
-    });
+    plus.setAttribute('aria-haspopup', 'menu');
+    plus.setAttribute('aria-expanded', 'false');
+    plus.addEventListener('click', () => this.newLayerMenu(plus));
     title.append(plus);
     nodes.push(title);
-    if (layers.length === 0) nodes.push(el('p', 'ed-empty', 'No layers yet. Each layer becomes a button on the controller. Pick one under Add a layer, above.'));
+    if (layers.length === 0) nodes.push(el('p', 'ed-empty', 'No layers yet. Each layer becomes a button on the controller. Add one with the + above, or under Add a layer in the ribbon.'));
     for (const { id, manifest, state } of layers) {
       const as = layerButton(id, manifest, state);
       const row = this.treeRow(as.name, '', as.icon, context.kind === 'layer' && context.id === id, () => this.go({ kind: 'layer', id }));

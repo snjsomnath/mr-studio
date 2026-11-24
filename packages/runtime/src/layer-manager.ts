@@ -1,4 +1,5 @@
 import { EngineClient, stepTransition, transitionGain } from '@mrstudio/sdk';
+import type { RevealShape } from '@mrstudio/sdk';
 import type { Connection, LayerManifest, LayerModule, LayerState, PanelContext, StepTransitionKind, TableContext, TableHandlers, ToolInput } from '@mrstudio/sdk';
 
 import { Cues } from './cues.ts';
@@ -112,6 +113,8 @@ export class LayerManager {
   private readonly store: Store;
   private readonly connection: Connection;
   private readonly view: TableView;
+  /** The shape each revealing layer shows its items through (#287); absent until it sets one. */
+  private reveals = new Map<string, RevealShape | null>();
 
   constructor(store: Store, connection: Connection, view: TableView) {
     this.store = store;
@@ -146,12 +149,25 @@ export class LayerManager {
     return Boolean(state && manifest && !state.parent && isAtRest(manifest, state));
   }
 
-  /** An open layer that turns the map at rest off, such as the slideshow (#205). */
-  private hidingAtRest(): boolean {
-    return this.store.state.scene.some((id) => {
-      const state = this.store.state.layers[id];
-      return Boolean(state?.active && !state.parent && this.store.manifest(state.layer)?.hidesAtRest);
-    });
+  /** A layer opened from the controller: on, top-level, not part of the map at rest and not a tool kept alongside. */
+  private opensOver(id: string): boolean {
+    const state = this.store.state.layers[id];
+    const manifest = state ? this.store.manifest(state.layer) : undefined;
+    return Boolean(state?.active && manifest && !state.parent && !manifest.alongside && !isAtRest(manifest, state));
+  }
+
+  /**
+   * Whether the map at rest's layer `id` steps aside for an open layer (#300). Any open layer turns
+   * the map's life off (traffic, street life, lights, trees), as the Chalmers demo did; the base map
+   * stays under it for context. A layer that hides the map at rest (the slideshow, #205) turns the
+   * base map off too.
+   */
+  private hiddenAtRest(id: string): boolean {
+    if (!this.atRest(id)) return false;
+    const open = this.store.state.scene.filter((other) => other !== id && this.opensOver(other));
+    if (open.length === 0) return false;
+    if (open.some((other) => this.store.manifest(this.store.state.layers[other]!.layer)?.hidesAtRest)) return true;
+    return this.store.manifest(this.store.state.layers[id]!.layer)?.category !== 'base';
   }
 
   private applyIntensity(id: string): void {
@@ -188,14 +204,13 @@ export class LayerManager {
 
   private sync(id: string, state: LayerState, previous: LayerState | undefined): void {
     this.applyIntensity(id);
-    const hides = Boolean(this.store.manifest(state.layer)?.hidesAtRest);
-    if (hides && Boolean(state.active) !== Boolean(previous?.active)) {
-      // The map at rest stops while this layer is open and comes back when it closes.
+    if (!this.atRest(id) && Boolean(state.active) !== Boolean(previous?.active)) {
+      // The map at rest steps aside while a layer is open and comes back when it closes.
       for (const other of this.store.state.scene) if (other !== id && this.atRest(other)) this.sync(other, this.store.layer(other), this.store.layer(other));
     }
     if (state.active && !previous?.active && !state.parent && this.store.manifest(state.layer)?.sequence) this.prefetch(state);
     const running = this.running.get(id);
-    const active = state.active && !(this.atRest(id) && this.hidingAtRest());
+    const active = state.active && !this.hiddenAtRest(id);
     const fade = this.fades.get(id);
     if (active && fade?.role === 'out') {
       // Shown again before it had gone, such as the same layer in the next step.
@@ -254,9 +269,28 @@ export class LayerManager {
     })();
   }
 
+  /** Whether an instance is an item of a revealing layer, so the runtime clips what it draws. */
+  private revealedBy(id: string): string | null {
+    const parent = this.store.state.layers[id]?.parent;
+    const state = parent ? this.store.state.layers[parent] : undefined;
+    return parent && state && this.store.manifest(state.layer)?.reveals ? parent : null;
+  }
+
+  /** A revealing layer set its shape: its items show only inside it. */
+  private reveal(parent: string, shape: RevealShape | null): void {
+    this.reveals.set(parent, shape);
+    for (const id of this.store.state.scene) {
+      if (this.store.state.layers[id]?.parent === parent) this.view.setClip(id, shape);
+    }
+  }
+
   private async start(id: string): Promise<void> {
     // `id` names the instance; the code comes from the layer package it runs.
     const layer = this.store.layer(id).layer;
+    // An item of a Magnifier or a Reveal line is clipped to its shape, and shows nowhere until there is one.
+    const revealer = this.revealedBy(id);
+    this.view.setClippable(id, revealer !== null);
+    if (revealer !== null && this.reveals.has(revealer)) this.view.setClip(id, this.reveals.get(revealer) ?? null);
     // A custom layer has no code: the recipe player draws it from its manifest, and restyles as it is saved again.
     const manifest = this.store.manifest(layer);
     const module = (layerModule(layer) as LayerModule | undefined) ??
@@ -320,9 +354,16 @@ export class LayerManager {
         highlight: (item) => extras.publish({ legend_highlight: item }),
         show: (ids) => extras.publish({ legend_shown: ids === 'all' ? null : ids }),
       },
+      reveal: {
+        set: (shape) => {
+          if (running.stopped || !manifest?.reveals) return;
+          this.reveal(id, shape);
+        },
+      },
       onFrame: (callback) => running.frames.push(callback),
       onCleanup: track,
     };
+    if (manifest?.reveals) track(() => this.reveals.delete(id));
     // The base context has live getters, so it is the prototype rather than a copy.
     const ctx: TableContext = Object.assign(Object.create(baseContext(store, this.connection, id)), extras);
     const before = { ...store.layer(id).params };

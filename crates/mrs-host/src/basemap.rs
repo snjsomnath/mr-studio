@@ -52,7 +52,9 @@ pub fn content_type(bytes: &[u8]) -> &'static str {
 
 fn client() -> &'static reqwest::Client {
     static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
-    CLIENT.get_or_init(|| reqwest::Client::builder().user_agent("MR Studio").timeout(Duration::from_secs(20)).build().expect("an HTTP client"))
+    CLIENT.get_or_init(|| {
+        reqwest::Client::builder().user_agent("MR Studio").timeout(Duration::from_secs(20)).build().expect("an HTTP client")
+    })
 }
 
 /// A tile: the kept copy while it is fresh, else from the service (and kept), else the kept
@@ -61,7 +63,8 @@ pub async fn tile(site: &Path, service: &str, z: u32, x: u32, y: u32) -> Result<
     let url = tile_url(service, z, x, y).ok_or("no such tile")?;
     let path = cache_path(site, service, z, x, y);
     let kept = tokio::fs::read(&path).await.ok();
-    let fresh = tokio::fs::metadata(&path).await.ok().and_then(|m| m.modified().ok()).and_then(|t| t.elapsed().ok()).is_some_and(|age| age < FRESH);
+    let fresh =
+        tokio::fs::metadata(&path).await.ok().and_then(|m| m.modified().ok()).and_then(|t| t.elapsed().ok()).is_some_and(|age| age < FRESH);
     if let (Some(bytes), true) = (&kept, fresh) {
         return Ok(bytes.clone());
     }
@@ -95,9 +98,15 @@ mod tests {
 
     #[test]
     fn only_listed_services_and_real_tiles() {
-        assert_eq!(tile_url("esri-grey", 14, 8737, 4783).unwrap(), "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/14/4783/8737");
+        assert_eq!(
+            tile_url("esri-grey", 14, 8737, 4783).unwrap(),
+            "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/14/4783/8737"
+        );
         assert!(tile_url("carto-light", 1, 0, 0).is_none(), "CARTO wants a key now: it goes through Sources");
-        assert_eq!(tile_url("esri-imagery", 2, 1, 3).unwrap(), "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/2/3/1");
+        assert_eq!(
+            tile_url("esri-imagery", 2, 1, 3).unwrap(),
+            "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/2/3/1"
+        );
         assert!(tile_url("http://example.com", 1, 0, 0).is_none());
         assert!(tile_url("osm", 2, 4, 0).is_none(), "x past the edge of the world");
         assert!(tile_url("osm", 21, 0, 0).is_none());

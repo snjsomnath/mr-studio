@@ -1,0 +1,32 @@
+{
+  "api": 1,
+  "id": "swipe",
+  "name": "Reveal line",
+  "description": "A line people move across the table: on one side of it the layers placed inside it show, such as what lies under the ground",
+  "icon": "swipe",
+  "category": "analysis",
+  "reveals": true,
+  "controls": [
+    { "id": "at", "type": "range", "label": "Where the line is", "min": 0, "max": 100, "step": 0.5, "default": 50, "unit": "%", "phone": true, "tier": "primary" },
+    {
+      "id": "axis", "type": "select", "label": "The line runs", "default": "vertical", "phone": true,
+      "options": [
+        { "value": "vertical", "label": "Up and down, moved sideways" },
+        { "value": "horizontal", "label": "Side to side, moved up and down" }
+      ]
+    },
+    {
+      "id": "side", "type": "select", "label": "The layers inside show", "default": "before", "tier": "more",
+      "options": [
+        { "value": "before", "label": "Left of the line, or above it" },
+        { "value": "after", "label": "Right of the line, or below it" }
+      ]
+    },
+    { "id": "cover", "type": "toggle", "label": "Hide the map where they show", "default": false, "tier": "more" },
+    { "id": "sweep", "type": "toggle", "label": "The line sweeps slowly while nobody moves it", "default": false, "tier": "more" },
+    { "id": "colour", "type": "color", "label": "Colour of the line", "default": "#9ad7ff", "tier": "more" }
+  ],
+  "tools": [
+    { "id": "move", "type": "point", "label": "Move the line here", "cue": false }
+  ]
+}
