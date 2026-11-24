@@ -9,6 +9,8 @@ import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { parseSdk, type SdkExport } from './devlayer.ts';
+
 import { BLOCKS, type BlockDef } from './blocks.ts';
 
 export interface LayerEntry {
@@ -68,6 +70,8 @@ export interface Catalog {
   pending?: string[];
   /** Sites and samples in the core repository. */
   examples?: Example[];
+  /** What @mrstudio/sdk exports, read from its source (#284). */
+  sdk?: SdkExport[];
 }
 
 /** The released versions in CHANGELOG.md, newest first, each with its text. */
@@ -311,6 +315,7 @@ export function loadLive(root: string): Catalog {
     changelog,
     pending,
     examples,
+    sdk: parseSdk(walkFiles(join(root, 'packages', 'sdk', 'src'), /\.ts$/).filter((p) => !/\.test\.ts$/.test(p)).map((p) => ({ path: rel(join(root, 'packages', 'sdk', 'src'), p), text: readFileSync(p, 'utf8') }))),
   };
 }
 

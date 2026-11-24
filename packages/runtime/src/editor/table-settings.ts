@@ -9,6 +9,7 @@
 import type { Store } from '../store.ts';
 import { el } from '../controls.ts';
 import { icon } from './icons.ts';
+import { addMedia, siteMedia } from './slides.ts';
 
 export interface TableSettingsHost {
   store: Store;
@@ -100,6 +101,64 @@ function zones(current: string | null): string[] {
   return list;
 }
 
+/** Pictures a logo can be: the table's media that are images. */
+const PICTURE = /\.(png|jpe?g|webp|gif|svg)$/i;
+
+/**
+ * The logo (#156): a list of the table's pictures, a small preview, and Add a picture,
+ * instead of a path to type. Choosing "No logo" takes it off the controller.
+ */
+function logoPicker(current: string | null, onChange: (path: string | null) => void): HTMLElement {
+  const box = el('div', 'ed-logo');
+  const preview = el('img', 'ed-logo-preview');
+  preview.alt = '';
+  const pick = el('select');
+  pick.ariaLabel = 'Logo';
+  const status = el('span', 'ed-hint');
+  let value = current;
+  const show = () => {
+    preview.hidden = !value;
+    if (value) preview.src = `/site/${value.replace(/^\/+/, '')}`;
+  };
+  const fill = async () => {
+    const files = (await siteMedia()).filter((f) => PICTURE.test(f));
+    if (value && !files.includes(value)) files.unshift(value);
+    const none = Object.assign(el('option', undefined, 'No logo'), { value: '' });
+    pick.replaceChildren(none, ...files.map((f) => Object.assign(el('option', undefined, f.replace(/^data\/media\//, '')), { value: f })));
+    pick.value = value ?? '';
+  };
+  const choose = (path: string | null) => {
+    value = path;
+    show();
+    onChange(path);
+  };
+  pick.addEventListener('change', () => choose(pick.value || null));
+  const input = Object.assign(el('input'), { type: 'file', accept: 'image/png,image/jpeg,image/webp,image/gif,image/svg+xml,.png,.jpg,.jpeg,.webp,.gif,.svg', hidden: true });
+  const upload = el('button', 'ed-button');
+  upload.type = 'button';
+  upload.append(icon('plus', 14), el('span', undefined, 'Add a picture'));
+  upload.title = 'A PNG, JPEG, WebP, GIF or SVG picture, kept in this table';
+  upload.addEventListener('click', () => input.click());
+  input.addEventListener('change', async () => {
+    status.textContent = 'Adding…';
+    try {
+      const [path] = await addMedia(input.files ?? []);
+      status.textContent = '';
+      if (path) {
+        choose(path);
+        await fill();
+      }
+    } catch (error) {
+      status.textContent = (error as Error).message;
+    }
+    input.value = '';
+  });
+  show();
+  void fill();
+  box.append(preview, pick, upload, input, status);
+  return box;
+}
+
 export function tableSettings(host: TableSettingsHost): HTMLElement[] {
   const { store, send } = host;
   const site = store.state.site;
@@ -137,7 +196,7 @@ export function tableSettings(host: TableSettingsHost): HTMLElement[] {
   const b = site.branding;
   const title = text(b.title, 80, site.name, (value) => table({ branding: { title: value } }));
   const welcome = text(b.welcome, 160, 'Choose a layer to bring it to the table.', (value) => table({ branding: { welcome: value } }));
-  const logo = text(b.logo, 200, 'A picture in the table’s folder, such as media/logo.png', (value) => table({ branding: { logo: value } }));
+  const logo = logoPicker(b.logo ?? null, (value) => table({ branding: { logo: value } }));
   const number = (value: number | undefined, min: number, max: number, unit: string, onChange: (value: number) => void) => {
     const box = el('div', 'ed-number');
     const input = el('input');
@@ -159,7 +218,7 @@ export function tableSettings(host: TableSettingsHost): HTMLElement[] {
     el('h3', undefined, 'On the controller'),
     field('Title', title),
     field('Welcome', welcome, 'Under the title when nobody is using the table.'),
-    field('Logo', logo),
+    field('Logo', logo, 'Shown above the title on the controller’s welcome screen and on phones.'),
     field('Back home after', idle),
     field('Welcome loop', loop),
     field('Phones can switch layers', phones, 'Visitors turn layers on and off from their phones. Never while a slideshow is showing.'),

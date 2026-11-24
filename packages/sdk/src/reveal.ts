@@ -22,6 +22,17 @@ export type RevealShape =
 export interface LayerReveal {
   /** Shows the layer's items only inside `shape`; null shows them everywhere. Cheap to call every frame. */
   set(shape: RevealShape | null): void;
+  /**
+   * Gives one item, by its place among the layer's items (0 is the first), a shape of its own
+   * instead of the layer's: the Reveal line's second map on the other side of the line (#349).
+   * `undefined` hands the item back to the layer's shape.
+   */
+  item(index: number, shape: RevealShape | null | undefined): void;
+}
+
+/** The other side of a line; any other shape is returned as it is. */
+export function otherSide(shape: RevealShape): RevealShape {
+  return shape.kind === 'side' ? { ...shape, keep: shape.keep === 'before' ? 'after' : 'before' } : shape;
 }
 
 /** Whether a point (table metres) is where the items show. */

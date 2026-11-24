@@ -14,6 +14,12 @@
 
 ![The setup guide in the editor](docs/screenshots/110-114-name-and-place.png)
 
+## Start from a copy
+
+Rather than start blank, start from a table that already works. Point at a card under **Your tables** on Home and choose **Duplicate**: the example that comes with MR Studio, or one of your own tables. The copy is called "… copy", gets its own name and id, and appears on Home outlined; the original is not touched. Open it, then use **Name and place** and **Your place** to move it to your own place and bring in your own data.
+
+![Duplicate on a Home card](docs/screenshots/99-duplicate.png)
+
 ## Change it later
 
 Three of the guide's steps are also tabs on the editor's ribbon, so you never have to walk back through the guide:

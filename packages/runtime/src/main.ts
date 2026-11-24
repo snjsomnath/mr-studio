@@ -283,7 +283,17 @@ async function main() {
     const header = el('header', 'controller-header');
     const title = el('div', '');
     title.append(el('h1', '', t(site.branding.title ?? 'MR Studio')), el('p', '', t(site.name)));
-    header.append(title);
+    // The site's logo beside its title on phones and the developer page (#156); the controller screen shows it on its welcome.
+    if (site.branding.logo) {
+      const logo = document.createElement('img');
+      logo.className = 'controller-logo';
+      logo.alt = '';
+      logo.src = `/site/${site.branding.logo.replace(/^\/+/, '')}`;
+      logo.addEventListener('error', () => logo.remove());
+      const brand = el('div', 'controller-brand');
+      brand.append(logo, title);
+      header.append(brand);
+    } else header.append(title);
     if (phone) header.append(phoneBadge(store, connection));
     // A phone can speak another language than the table (#80): the visitor's own choice, kept on the phone.
     const languages = offered(store.state);

@@ -4,6 +4,48 @@ Every merge to main that carries a release note becomes a version. The newest is
 The app shows these notes, with their pictures, on Home when a newer version is out.
 How notes are written: docs/RELEASING.md.
 
+## 0.19.0 (2026-11-24)
+
+### New
+
+#### The Magnifier works as the artwork's did, and the Reveal line can show then and now (#349, #351)
+
+The Magnifier now works the way round the Lindholmen artwork's did. The table marks the circle being looked at and darkens the rest, with the old warm halo and fine rim. The controller shows that circle larger, through a glass that bends the picture at its rim, with a small table picture beside it to move the circle. A Masterplan drawing is drawn again sharply for the glass. The X-ray stays on the table.
+
+The Reveal line can now show two layers, one on each side of the line, with **With two layers inside, the second shows on the other side**. For example, the 1960 aerial photo on one side and today's on the other.
+
+For layer authors: `ctx.view` sends a picture from the table to the layer's own controller, `ctx.map.addDetail` and `ctx.map.detail` draw a layer again sharply for a magnifier, and `ctx.reveal.item` gives one item a shape of its own.
+
+![The magnified glass on the controller](docs/screenshots/351-magnifier-controller.png)
+
+## 0.18.0 (2026-11-24)
+
+### New
+
+#### The MCP server guides a developer through a site code layer (#284)
+
+For the ideas that need code, an LLM can now build a team's own layer with them, the way a layer like ECOM is built: blocks first, code last. `create_layer` starts one in the site with `mrstudio layer new`. `sdk_reference` looks up what `@mrstudio/sdk` really exports, read from its source, so code is written against what exists. `check_layer` applies the layer rules: the TV's density budget, every word in Swedish, no places written into code, no talking to surfaces behind the host's back, only the SDK from the core, and the data, services and kernels the layer needs. `build_layer` bundles it and returns the build's errors, `preview_layer` says how to see it in the dev view, and `add_service` declares a model the host starts beside the table. New prompts: `build_code_layer` and `build_controller_app`.
+
+![sdk_reference, create_layer, check_layer catching a place and a WebSocket in the code, build_layer and add_service](docs/screenshots/284-layer-developers.png)
+
+## 0.17.0 (2026-11-24)
+
+### New
+
+#### Sound that follows the data, and a Sound switch on the controller (#282)
+A layer can now carry a sound bed in its layer.json, with no audio code: up to four slow voices (a band of filtered noise, a hum with harmonics, or a plain tone) whose loudness and colour follow a value the layer publishes or one of its controls. The model-runs sample hisses and hums louder as the community draws more from the grid. The bed keeps to the rules learned at the table: one level ceiling for all the voices together, slow glides and no repeating beeps. It plays on the table only. A new **Sound** button under Map controls on the controller mutes the table for the session, voices and sounds on points alike, while the rings that follow the sound carry on. How to write one: docs/contracts/layer.md, Sound voices.
+
+![The Sound switch under Map controls, on](docs/screenshots/282-controller.png)
+
+![Muted for the session](docs/screenshots/282-controller-muted.png)
+
+#### Phones turn layers on and off (#335)
+
+Visitors' phones now list every layer with an on/off switch, and show each layer's main controls, so a phone can open Wind and set its speed. Opening a layer from a phone closes the open one, as the controller's buttons do, and the controller says which phone did it with a dot in that phone's colour. A table can turn this off in Table settings ("Phones can switch layers"), phones leave the layers alone while a slideshow is showing, and a layer can keep itself to the controller with `"phone_switch": false`.
+
+![A phone with every layer and its switch](docs/screenshots/335-phone-switch.png)
+![The controller saying a phone opened Wind](docs/screenshots/335-controller-cue.png)
+
 ## 0.16.0 (2026-11-24)
 
 ### New

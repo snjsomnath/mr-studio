@@ -154,15 +154,21 @@ export class Ribbons {
       const manifest = store.manifest(store.state.layers[id]?.layer ?? '');
       return manifest && !isAmbient(manifest);
     });
+    // The controller can pick one open layer's ribbon over Auto (#231).
+    const chosen = store.state.session?.ribbon;
+    if (chosen && open.includes(chosen)) {
+      const inputs = this.layerInputs(chosen);
+      if (inputs.length) return { kind: 'layer', instance: chosen, inputs };
+    }
     for (const id of [...open].reverse()) {
       const inputs = this.layerInputs(id);
       if (inputs.length) return { kind: 'layer', instance: id, inputs };
     }
-    const chosen = open.some((id) => {
+    const opened = open.some((id) => {
       const state = store.state.layers[id]!;
       return !state.parent && !state.shown_by && !store.manifest(state.layer)?.alongside;
     });
-    if (chosen) return null;
+    if (opened) return null;
     const { join_url: url, code } = store.state.session;
     return url ? { kind: 'join', url, code } : null;
   }

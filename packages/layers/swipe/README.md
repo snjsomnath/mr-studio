@@ -6,4 +6,6 @@ It uses the same reveal core as the Magnifier's X-ray (docs/contracts/layer.md, 
 
 Left alone for 8 seconds with `sweep` on, the line sweeps slowly across the table to invite people in; the sweep is drawn by each view on its own.
 
-Params: `at` (percent across or down), `axis` (`vertical`, `horizontal`), `side` (which side shows the items: `before` is left or above), `cover` (hide the map on that side), `sweep`, `colour`. Tool: `move` (a point).
+With `split` on and two layers inside, the first shows on one side and the second on the other: then and now, such as the 1960 aerial photo beside today's (#349).
+
+Params: `at` (percent across or down), `axis` (`vertical`, `horizontal`), `side` (which side shows the items: `before` is left or above), `split` (the second item on the other side), `cover` (hide the map on that side), `sweep`, `colour`. Tool: `move` (a point).
