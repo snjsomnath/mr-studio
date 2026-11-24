@@ -1,6 +1,6 @@
 import { Connection } from '@mrstudio/sdk';
 import { reportErrors } from './diagnostics.ts';
-import type { Role } from '@mrstudio/sdk';
+import type { Role, SiteInfo } from '@mrstudio/sdk';
 
 import { luminance, themeVariables } from '@mrstudio/dashboard';
 import '@mrstudio/dashboard/src/dashboard.css';
@@ -156,7 +156,14 @@ async function main() {
   const status = el('div', 'connection', t('Reconnecting…'));
   status.hidden = true;
   // New data was brought into the site: layers read their data once, so every surface starts again. The editor does this itself.
-  if (!editing) connection.on('site.changed', () => location.reload());
+  // A new front edge or ribbons (#62) only moves the ribbons: the table takes it in place.
+  let tableChanged: (() => void) | null = null;
+  connection.on('site.changed', (p: { site?: SiteInfo; table_only?: boolean }) => {
+    if (p?.table_only && p.site) {
+      store.state.site.table = p.site.table;
+      tableChanged?.();
+    } else if (!editing) location.reload();
+  });
   // The engine failed and a new one took over (#79): its streams are gone, so the page starts again.
   if (!editing && !phone) connection.on('engine.restarted', () => location.reload());
   // A table or controller window of the desktop app says it is alive, with its frame rate, so the
@@ -250,8 +257,13 @@ async function main() {
     if (role === 'table') {
       const ribbons = new Ribbons(surface, store, connection, () => ({ footprint: view.footprint(), surface: { width: surface.clientWidth, height: surface.clientHeight } }));
       view.onViewChange(() => ribbons.layout());
+      tableChanged = () => ribbons.layout();
     } else if (!composing && site.table) {
-      for (const [side, fraction] of Object.entries(previewReserve(site.table))) surface.style.setProperty(`--ribbon-${side}`, String(fraction));
+      const reserve = (): void => {
+        if (!store.state.site.table) return;
+        for (const [side, fraction] of Object.entries(previewReserve(store.state.site.table))) surface.style.setProperty(`--ribbon-${side}`, String(fraction));
+      };
+      reserve();
       frame.classList.add('has-ribbons');
       const ribbons = new Ribbons(frame, store, connection, () => {
         const f = frame.getBoundingClientRect();
@@ -265,6 +277,10 @@ async function main() {
         return r.width > 0 ? { footprint, surface: { width: f.width, height: f.height } } : null;
       }, true);
       new ResizeObserver(() => ribbons.layout()).observe(frame);
+      tableChanged = () => {
+        reserve();
+        requestAnimationFrame(() => ribbons.layout());
+      };
     }
     if (editing) return;
     if (composing) {

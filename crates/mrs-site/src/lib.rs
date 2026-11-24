@@ -586,6 +586,12 @@ impl Site {
         ])
     }
 
+    /// Saves the physical table (`table` in site.json): its size, tiles, front edge and ribbons.
+    pub fn save_table(&self, table: &Table) -> Result<(), SiteError> {
+        let value = serde_json::to_value(table).map_err(|e| self.parse_error(e))?;
+        self.save_key("table", Some(value))
+    }
+
     /// Takes a dataset out of site.json's `data` (#52). The file stays in the site folder, so an
     /// undo brings it back. False when site.json has no such dataset.
     pub fn forget_data(&self, name: &str) -> Result<bool, SiteError> {

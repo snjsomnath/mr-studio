@@ -436,6 +436,9 @@ pub struct LayerButton {
     /// Its place in the rail; lower first. Buttons without one follow the scene order.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub order: Option<f64>,
+    /// Kept off the controller and phones without taking the layer out of the table (#58).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub hidden: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

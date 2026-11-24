@@ -1567,6 +1567,52 @@ impl Hub {
             }
             _ => return Err("branding must be an object".into()),
         }
+        // The physical table's front edge and the ribbons in the projector's blank space (#62, #78).
+        let mut table = current.table.clone();
+        match &p["table"] {
+            Value::Null => {}
+            Value::Object(patch) => {
+                let t = table.as_mut().ok_or("the table has no size yet: set it with the place first")?;
+                for (key, value) in patch {
+                    match key.as_str() {
+                        "front" => {
+                            t.front = if value.is_null() {
+                                None
+                            } else {
+                                Some(serde_json::from_value(value.clone()).map_err(|_| "the front is top, bottom, left or right".to_string())?)
+                            };
+                            changed.push("front edge");
+                        }
+                        "ribbons" => {
+                            let Value::Object(sides) = value else { return Err("ribbons must be an object of sides".into()) };
+                            for (side, ribbon) in sides {
+                                let ribbon: Option<mrs_site::Ribbon> = if ribbon.is_null() {
+                                    None
+                                } else {
+                                    let r = serde_json::from_value(ribbon.clone()).map_err(|_| format!("the {side} ribbon is off, auto or {{\"cm\": size}}"))?;
+                                    if let mrs_site::Ribbon::Size(size) = r {
+                                        if !(2.0..=40.0).contains(&size.cm) {
+                                            return Err(format!("the {side} ribbon is 2 to 40 cm wide"));
+                                        }
+                                    }
+                                    Some(r)
+                                };
+                                match side.as_str() {
+                                    "top" => t.ribbons.top = ribbon,
+                                    "bottom" => t.ribbons.bottom = ribbon,
+                                    "left" => t.ribbons.left = ribbon,
+                                    "right" => t.ribbons.right = ribbon,
+                                    other => return Err(format!("'{other}' is not a side of the table")),
+                                }
+                            }
+                            changed.push("ribbons");
+                        }
+                        other => return Err(format!("'{other}' is not a table setting here; the size and tiles change with the place")),
+                    }
+                }
+            }
+            _ => return Err("table must be an object".into()),
+        }
         if changed.is_empty() {
             return Err("nothing to change".into());
         }
@@ -1575,7 +1621,25 @@ impl Hub {
             [one] => format!("Changed the table's {one}"),
             _ => "Changed the table settings".to_string(),
         };
-        self.saving(who, summary, || self.site.save_settings(&name, timezone.as_deref(), &branding))?;
+        let table_changed = table != current.table;
+        self.saving(who, summary, || {
+            if table_changed {
+                if let Some(table) = &table {
+                    self.site.save_table(table)?;
+                }
+            }
+            self.site.save_settings(&name, timezone.as_deref(), &branding)
+        })?;
+        if table_changed {
+            // The table draws its ribbons from the site: every surface takes the new one.
+            // `table_only` lets the editor take it in place instead of starting again.
+            let info = {
+                let mut info = self.info.write().unwrap();
+                info.table = table;
+                info.clone()
+            };
+            self.emit("site.changed", json!({ "site": info, "table_only": true }));
+        }
         let language = {
             let mut info = self.info.write().unwrap();
             info.name = name;
@@ -1787,6 +1851,32 @@ impl Hub {
                 first.sync_rest();
                 let to = insert_position(&scene, parent.as_deref(), Some(index))?;
                 scene.splice(to..to, moving);
+            }
+            "scene.arrange" => {
+                // The controller's rails as the editor's layer list was dragged into (#58): every button
+                // named gets its side and its place, in one save, so one undo puts them all back.
+                let rails = p["rails"].as_object().ok_or("rails is { left: [layer ids], right: [layer ids] }")?;
+                for (side, ids) in rails {
+                    let side = match side.as_str() {
+                        "left" => mrs_site::ButtonSide::Left,
+                        "right" => mrs_site::ButtonSide::Right,
+                        other => return Err(format!("a rail is 'left' or 'right', not '{other}'")),
+                    };
+                    let ids = ids.as_array().ok_or("each rail is a list of layer ids")?;
+                    for (at, id) in ids.iter().enumerate() {
+                        let id = id.as_str().ok_or("each rail is a list of layer ids")?;
+                        let instance = scene.iter_mut().find(|i| i.id == id).ok_or_else(|| format!("there is no layer '{id}'"))?;
+                        if instance.parent.is_some() {
+                            return Err(format!("'{id}' is an item of a layer, so it has no button"));
+                        }
+                        let mut button = instance.saved.button.clone();
+                        button.side = Some(side);
+                        button.order = Some((at + 1) as f64);
+                        instance.state.button = button.clone();
+                        instance.saved.button = button;
+                    }
+                }
+                summary = "Rearranged the controller's buttons".to_string();
             }
             "scene.set" => {
                 let index = inner.position(p["layer"].as_str().ok_or("missing layer")?)?;
@@ -2386,6 +2476,14 @@ fn button_patch(mut button: LayerButton, patch: &Value) -> Result<LayerButton, S
                 Value::Null => None,
                 Value::Number(n) => n.as_f64(),
                 _ => return Err("button.order must be a number or null".into()),
+            };
+            continue;
+        }
+        if key == "hidden" {
+            button.hidden = match value {
+                Value::Null => false,
+                Value::Bool(hidden) => *hidden,
+                _ => return Err("button.hidden must be true, false or null".into()),
             };
             continue;
         }
@@ -3114,6 +3212,33 @@ mod tests {
         // The history says what it was.
         let list = hub.history_list();
         assert_eq!(list["revisions"][1]["summary"], "Changed the table settings");
+    }
+
+    #[test]
+    fn the_front_edge_and_ribbons_are_table_settings() {
+        let hub = scratch_hub("table-ribbons");
+        let dev = |method: &str, p: Value| hub.request(Role::Dev, 0, method, &p);
+        let mut events = hub.subscribe();
+        dev("site.table", json!({ "table": { "front": "left", "ribbons": { "left": { "cm": 12 }, "top": "off" } } })).unwrap();
+        let table = hub.site().table.unwrap();
+        assert_eq!(table.front, Some(mrs_site::TableSide::Left));
+        assert_eq!(table.ribbons.left, Some(mrs_site::Ribbon::Size(mrs_site::RibbonSize { cm: 12.0 })));
+        assert_eq!(table.ribbons.top, Some(mrs_site::Ribbon::Mode(mrs_site::RibbonMode::Off)));
+        let saved = Site::load(&hub.site.dir).unwrap().manifest.table.unwrap();
+        assert_eq!(saved.ribbons, table.ribbons);
+        // Every surface hears of the new table, so the projector redraws its ribbons.
+        let mut heard = false;
+        while let Ok(event) = events.try_recv() {
+            heard |= event.contains("\"site.changed\"");
+        }
+        assert!(heard);
+        // null puts a side back to the automatic choice; the size stays with the place.
+        dev("site.table", json!({ "table": { "front": null, "ribbons": { "top": null } } })).unwrap();
+        assert_eq!(hub.site().table.unwrap().front, None);
+        assert!(hub.site().table.unwrap().ribbons.top.is_none());
+        assert!(dev("site.table", json!({ "table": { "front": "middle" } })).is_err());
+        assert!(dev("site.table", json!({ "table": { "ribbons": { "left": { "cm": 90 } } } })).is_err());
+        assert!(dev("site.table", json!({ "table": { "width_cm": 10 } })).is_err());
     }
 
     #[test]

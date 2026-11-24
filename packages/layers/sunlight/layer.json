@@ -9,7 +9,7 @@
   "requires": { "kernels": ["sunlight"] },
   "controls": [
     {
-      "id": "mode", "type": "select", "label": "Show", "default": "instant", "tier": "primary",
+      "id": "mode", "type": "select", "label": "Show", "help": "Shadows at one moment, the hours of direct sun over a day, or the three seasons side by side.", "default": "instant", "tier": "primary",
       "options": [
         { "value": "instant", "label": "Shadows" },
         { "value": "golden", "label": "Golden hour" },
@@ -22,18 +22,18 @@
         { "value": "evening", "label": "Evening" },
         { "value": "morning", "label": "Morning" }
       ] },
-    { "id": "date", "type": "date", "label": "Day", "default": "2026-06-21", "phone": true, "tier": "primary",
+    { "id": "date", "type": "date", "clock": "date", "label": "Day", "help": "The day the sun is worked out for. Midsummer, the equinox and midwinter are one tap.", "default": "2026-06-21", "phone": true, "tier": "primary",
       "presets": [
         { "value": "06-21", "label": "Midsummer" },
         { "value": "03-20", "label": "Equinox" },
         { "value": "12-21", "label": "Midwinter" },
         { "value": "today", "label": "Today" }
       ] },
-    { "id": "hour", "type": "range", "label": "Time of day", "min": 0, "max": 24, "step": 0.05, "unit": "h", "default": 12, "phone": true, "visibleWhen": { "mode": ["instant", "golden"] }, "tier": "more" },
-    { "id": "trails", "type": "toggle", "label": "Shadow trails over the day", "default": false, "visibleWhen": { "mode": "instant" } },
-    { "id": "play", "type": "toggle", "label": "Animate the day", "default": false, "visibleWhen": { "mode": ["instant", "golden"] }, "tier": "more" },
+    { "id": "hour", "type": "range", "clock": "hour", "label": "Time of day", "help": "The moment the shadows are drawn for, in the table's own time zone.", "min": 0, "max": 24, "step": 0.05, "unit": "h", "default": 12, "phone": true, "visibleWhen": { "mode": ["instant", "golden"] }, "tier": "more" },
+    { "id": "trails", "type": "toggle", "label": "Shadow trails over the day", "help": "Every shadow of the day at once, faint, so you see where shade sweeps across.", "default": false, "visibleWhen": { "mode": "instant" } },
+    { "id": "play", "type": "toggle", "clock": "play", "label": "Animate the day", "help": "Runs through the day on its own, sunrise to sunset.", "default": false, "visibleWhen": { "mode": ["instant", "golden"] }, "tier": "more" },
     {
-      "id": "window", "type": "select", "label": "Sun during", "default": "day", "visibleWhen": { "mode": ["day", "seasons"] },
+      "id": "window", "type": "select", "label": "Sun during", "help": "Which part of the day the sun hours count.", "default": "day", "visibleWhen": { "mode": ["day", "seasons"] },
       "options": [
         { "value": "day", "label": "All day" },
         { "value": "morning", "label": "Morning" },
@@ -43,7 +43,7 @@
       ]
     },
     {
-      "id": "season", "type": "select", "label": "Season on the table", "default": "cycle", "visibleWhen": { "mode": "seasons" },
+      "id": "season", "type": "select", "label": "Season on the table", "help": "Which season the table shows while the controller compares all three.", "default": "cycle", "visibleWhen": { "mode": "seasons" },
       "options": [
         { "value": "cycle", "label": "Each in turn" },
         { "value": "mar", "label": "Equinox" },
@@ -51,16 +51,16 @@
         { "value": "dec", "label": "Midwinter" }
       ]
     },
-    { "id": "threshold", "type": "range", "label": "Flag areas with less sun than", "min": 0, "max": 12, "step": 0.5, "unit": "h", "default": 0, "visibleWhen": { "mode": ["day", "seasons"] } },
-    { "id": "path", "type": "toggle", "label": "Sun path on the table", "default": true, "tier": "more" },
-    { "id": "relight", "type": "toggle", "label": "Light the 3D model", "default": false, "visibleWhen": { "mode": ["instant", "golden"] }, "tier": "more" },
-    { "id": "trees", "type": "toggle", "label": "Trees cast shade", "default": true, "tier": "more" },
+    { "id": "threshold", "type": "range", "label": "Flag areas with less sun than", "help": "Places with fewer hours of sun than this are marked, as planning rules ask.", "min": 0, "max": 12, "step": 0.5, "unit": "h", "default": 0, "visibleWhen": { "mode": ["day", "seasons"] } },
+    { "id": "path", "type": "toggle", "label": "Sun path on the table", "help": "The sun's path across the sky, drawn around the table.", "default": true, "tier": "more" },
+    { "id": "relight", "type": "toggle", "label": "Light the 3D model", "help": "Lights the walls and roofs of the 3D model from the sun's direction.", "default": false, "visibleWhen": { "mode": ["instant", "golden"] }, "tier": "more" },
+    { "id": "trees", "type": "toggle", "label": "Trees cast shade", "help": "Trees in the table's data cast shade as well as buildings.", "default": true, "tier": "more" },
     { "id": "treeColor", "type": "toggle", "label": "Tree shade in its own colour", "default": true, "visibleWhen": { "trees": true }, "tier": "more" },
     { "id": "clearSpot", "type": "action", "label": "Clear the spot", "tier": "more" },
-    { "id": "opacity", "type": "range", "label": "Opacity", "min": 0.1, "max": 1, "step": 0.05, "default": 1, "tier": "more" }
+    { "id": "opacity", "type": "range", "label": "Opacity", "help": "How strongly the layer draws over the map.", "min": 0.1, "max": 1, "step": 0.05, "default": 1, "tier": "more" }
   ],
   "tools": [
-    { "id": "spot", "type": "point", "label": "How much sun here?" }
+    { "id": "spot", "type": "point", "label": "How much sun here?", "help": "Tap a place to see how many hours of sun it gets." }
   ],
   "panels": [
     { "id": "daylight", "widget": "stat", "size": "tile", "title": "Daylight on this date", "visibleWhen": { "mode": "day", "window": "day" },

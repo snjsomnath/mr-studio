@@ -10,6 +10,7 @@ import { delimiter, dirname, isAbsolute, join, relative, resolve } from 'node:pa
 
 import { readLayerDir, type Catalog, type LayerEntry, type SiteSchema } from './core.ts';
 import { checkRecipe, checkIcon } from './recipe.ts';
+import { readiness } from '../../sdk/src/readiness.ts';
 
 export const SITE_FORMAT = 3;
 
@@ -36,7 +37,7 @@ const FALLBACK_SCHEMA: SiteSchema = {
   basemap: { fields: ['background', 'style'], required: [] },
   branding: { fields: ['title', 'logo', 'welcome'], required: [] },
   'layers[]': { fields: ['use', 'id', 'active', 'params', 'button', 'hide', 'items', 'steps'], required: ['use', 'id'] },
-  'layers[].button': { fields: ['name', 'description', 'icon', 'side', 'group', 'order'], required: [] },
+  'layers[].button': { fields: ['name', 'description', 'icon', 'side', 'group', 'order', 'hidden'], required: [] },
   'layers[].items[]': { fields: ['use', 'id', 'active', 'params', 'hide'], required: ['use', 'id'] },
   'layers[].steps': { fields: ['mode', 'loop', 'reveal', 'transition', 'transition_s', 'sequence'], required: [] },
   'layers[].steps.sequence[]': { fields: ['layer', 'params', 'duration_s', 'transition', 'transition_s', 'next', 'title', 'description', 'source', 'notes'], required: ['layer'] },
@@ -478,6 +479,27 @@ export function validateManifest(manifest: SiteManifest, dir: string | null, cat
       });
     }
     for (const issue of checkRecipe(recipe, at)) issues.push(issue);
+  }
+  // Ready to present? (#63): the same checks the editor's Checks button shows. Missing data is said above.
+  {
+    const refs: any[] = Array.isArray(layers) ? layers : [];
+    const ready = readiness({
+      data: [...siteData],
+      size: Boolean(manifest.table?.width_cm),
+      timezone: manifest.timezone,
+      calibrated: null,
+      welcome: manifest.branding?.welcome,
+      layers: refs.flatMap((ref: any) => {
+        const entry = typeof ref?.use === 'string' ? findLayer(catalog, dir, ref.use, manifest) : undefined;
+        const category = entry?.manifest?.category;
+        const top = { id: String(ref?.id ?? ref?.use), name: ref?.button?.name ?? entry?.manifest?.name ?? String(ref?.use), ambient: category === 'base' || category === 'ambient', hidden: Boolean(ref?.button?.hidden), side: ref?.button?.side, needs: [] };
+        return [top, ...(Array.isArray(ref?.items) ? ref.items : []).map((item: any) => ({ id: String(item?.id ?? item?.use), name: String(item?.use), ambient: true, parent: top.id }))];
+      }),
+    });
+    for (const check of ready) {
+      if (check.id.startsWith('data:') && check.id !== 'data:buildings') continue;
+      (check.level === 'must' ? warn : note)(`ready.${check.id}`, `${check.text} (${check.action} in the editor.)`);
+    }
   }
   if (Array.isArray(layers) && layers.length === 0) note('layers', 'the scene is empty; add a layer');
   if (Array.isArray(layers) && !layers.some((l: any) => l?.active)) note('layers', 'no layer starts active; the table will show only the base map until someone turns one on');
