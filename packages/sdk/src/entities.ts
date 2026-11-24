@@ -41,6 +41,8 @@ export interface EntityFeature {
   id: string;
   label: string;
   group?: string;
+  /** The set's facts for this entity, as name and value, when the set has `facts`. */
+  facts?: [string, string][];
   geometry: ToolGeometry | { type: 'MultiPolygon'; coordinates: Position[][][] } | { type: 'MultiLineString'; coordinates: Position[][] };
 }
 
@@ -49,23 +51,45 @@ interface Collection {
 }
 
 /** The entities of a set in its dataset, in the dataset's order. Features without a key are left out. */
-export function entityFeatures(collection: Collection, set: Pick<EntitySet, 'key' | 'label' | 'group'>): EntityFeature[] {
+export function entityFeatures(collection: Collection, set: Pick<EntitySet, 'key' | 'label' | 'group' | 'facts'>): EntityFeature[] {
   const out: EntityFeature[] = [];
   const seen = new Set<string>();
-  for (const feature of collection.features ?? []) {
-    const key = feature.properties?.[set.key];
+  for (const [index, feature] of (collection.features ?? []).entries()) {
+    const key = set.key === '#' ? index + 1 : feature.properties?.[set.key];
     if ((typeof key !== 'string' && typeof key !== 'number') || !feature.geometry) continue;
     const id = String(key);
     if (seen.has(id)) continue;
     seen.add(id);
-    const label = feature.properties?.[set.label ?? set.key];
+    const label = set.label === '#' ? undefined : feature.properties?.[set.label ?? set.key];
     const group = set.group ? feature.properties?.[set.group] : undefined;
     out.push({
       id,
       label: typeof label === 'string' || typeof label === 'number' ? String(label) : id,
       group: typeof group === 'string' || typeof group === 'number' ? String(group) : undefined,
+      // The name is on show already, so it is not repeated among the facts.
+      ...(set.facts?.length ? { facts: factsOf(feature.properties ?? {}, set.facts.filter((c) => c !== set.label)) } : {}),
       geometry: feature.geometry as EntityFeature['geometry'],
     });
+  }
+  return out;
+}
+
+/** A number as a person reads it: thousands grouped, at most two decimals. */
+function readable(value: unknown): string | null {
+  if (value === null || value === undefined || value === '') return null;
+  if (typeof value === 'number') return Number.isInteger(value) ? value.toLocaleString('en-GB') : value.toLocaleString('en-GB', { maximumFractionDigits: 2 });
+  if (typeof value === 'boolean') return value ? 'Yes' : 'No';
+  if (typeof value === 'object') return null;
+  return String(value);
+}
+
+/** The facts of one feature, in the set's order; empty values are left out. Names are tidied: `floor_area` reads "Floor area". */
+export function factsOf(properties: Record<string, unknown>, columns: readonly string[]): [string, string][] {
+  const out: [string, string][] = [];
+  for (const column of columns) {
+    if (column === '#') continue;
+    const value = readable(properties[column]);
+    if (value !== null) out.push([column.replace(/[-_]+/g, ' ').replace(/^./, (c) => c.toUpperCase()), value]);
   }
   return out;
 }

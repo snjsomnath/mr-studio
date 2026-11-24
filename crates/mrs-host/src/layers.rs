@@ -174,8 +174,10 @@ impl LayerDef {
                 }
                 set.controls.push(control);
             }
-            if set.controls.is_empty() {
-                bail!("entity set '{sid}' has no controls");
+            // A set with facts only (a custom layer's "tap to read", #38) is read on the controller, not changed.
+            let facts = e["facts"].as_array().is_some_and(|f| !f.is_empty());
+            if set.controls.is_empty() && !facts {
+                bail!("entity set '{sid}' has no controls and no facts");
             }
             entity_sets.push(set);
         }
@@ -443,6 +445,39 @@ fn custom_manifest(id: &str, recipe: &mrs_site::CustomLayer) -> Value {
                 }));
             }
         }
+    }
+    // Tap to read (#38): a tap on a feature of the layer picks it, and the controller shows its
+    // name and facts. It is an entity set with facts and no controls, so picking, the list on the
+    // controller and the mark on the table are the ones entities already have (#279).
+    let mut sets = Vec::new();
+    for block in recipe.interaction.iter().filter(|b| b.block == "tap-info") {
+        let Some(dataset) = block.data.as_deref().and_then(|d| recipe.data.iter().find(|r| r.id == d)).and_then(|r| r.dataset.clone()) else {
+            continue;
+        };
+        let props = &block.props;
+        let text = |key: &str| props.get(key).and_then(Value::as_str).filter(|s| !s.is_empty()).map(str::to_string);
+        let facts: Vec<Value> = props.get("facts").and_then(Value::as_array).cloned().unwrap_or_default();
+        let mut set = serde_json::json!({
+            "id": block.id,
+            "dataset": dataset,
+            "key": text("key").unwrap_or_else(|| "#".into()),
+            "controls": [],
+            "facts": facts,
+        });
+        if let Some(label) = text("label") {
+            set["label"] = label.into();
+        }
+        if let Some(name) = text("name") {
+            set["name"] = name.into();
+        }
+        if set["facts"].as_array().is_none_or(Vec::is_empty) {
+            // Without facts the name alone is read; the set still needs something to show.
+            set["facts"] = serde_json::json!([set["label"].as_str().unwrap_or("#")]);
+        }
+        sets.push(set);
+    }
+    if !sets.is_empty() {
+        manifest["entities"] = Value::Array(sets);
     }
     // A network of flows (#280) plays its series on one shared play head that the controller
     // can pause and scrub: `network_play` and `network_at` (a share of the series, in %).
@@ -829,6 +864,32 @@ mod tests {
         let def = custom_def("dots", &silent).unwrap();
         assert!(def.tool("sound").is_none());
         assert!(def.validate(&patch(json!({ "play": "x" })), false).is_err());
+    }
+
+    #[test]
+    fn custom_layers_tap_to_read() {
+        let recipe: mrs_site::CustomLayer = serde_json::from_value(json!({
+            "name": "Zones",
+            "data": [{ "id": "data", "dataset": "zones" }, { "id": "file", "path": "data/x.geojson" }],
+            "look": [{ "id": "look", "block": "fill", "data": "data" }, { "id": "look-2", "block": "fill", "data": "file" }],
+            "interaction": [
+                { "id": "tap", "block": "tap-info", "data": "data", "props": { "label": "name", "facts": ["use", "population"], "name": "Zone" } },
+                { "id": "tap-2", "block": "tap-info", "data": "file" }
+            ]
+        }))
+        .unwrap();
+        let def = custom_def("zones", &recipe).unwrap();
+        // Only a named dataset can be picked: entities load by dataset name.
+        assert_eq!(def.entity_sets.len(), 1);
+        let set = &def.manifest["entities"][0];
+        assert_eq!(set["dataset"], json!("zones"));
+        assert_eq!(set["key"], json!("#"));
+        assert_eq!(set["label"], json!("name"));
+        assert_eq!(set["facts"], json!(["use", "population"]));
+        assert_eq!(set["name"], json!("Zone"));
+        // A set with neither controls nor facts is still refused in layer.json.
+        let bare = json!({ "api": LAYER_API, "id": "x", "name": "X", "entities": [{ "id": "s", "dataset": "d", "key": "id" }] });
+        assert!(LayerDef::parse(bare).is_err());
     }
 
     #[test]

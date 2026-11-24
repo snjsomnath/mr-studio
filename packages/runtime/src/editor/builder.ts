@@ -30,6 +30,7 @@ import {
   soundColumns,
   soundPath,
   columnCategories,
+  columnNumbers,
   schemeFor,
   CATEGORY_SCHEMES,
   paintScale,
@@ -37,7 +38,7 @@ import {
   TEST_DATA,
   makeTestData,
 } from '@mrstudio/sdk';
-import type { CustomLayer, GeometryKind, LayerManifest, Paint, RecipeBlock, ResolvedPalette, Shapes, SitePalette, Size, TestDataDef } from '@mrstudio/sdk';
+import type { CustomLayer, GeometryKind, LayerManifest, Paint, RecipeBlock, RecipeData, ResolvedPalette, Shapes, SitePalette, Size, TestDataDef } from '@mrstudio/sdk';
 
 import { el, layerButton } from '../controls.ts';
 import { dataUrl, loadData } from '../recipe-player.ts';
@@ -261,6 +262,9 @@ export function colourPicker(value: string | null, palette: () => ResolvedPalett
   return wrap;
 }
 
+/** A column name as words: `green_share` reads "Green share". */
+const tidy = (name: string): string => name.replace(/[-_]+/g, ' ').replace(/^./, (c) => c.toUpperCase());
+
 // ---- Data -----------------------------------------------------------------------
 
 /** The datasets of the site a custom layer can draw: vector files, by name. */
@@ -282,7 +286,17 @@ function shapesOf(store: Store, url: string): Promise<Shapes> {
   return shapes;
 }
 
-function describeShapes(shapes: Shapes): string {
+/** A dataset's shapes in table metres, read once per page; null when it has none or cannot be read. */
+export function datasetShapes(store: Store, name: string): Promise<Shapes | null> {
+  const path = vectorDatasets(store).find((d) => d.name === name)?.path;
+  if (!path) return Promise.resolve(null);
+  return shapesOf(store, `/site/${path}`).then(
+    (shapes) => (shapes.areas.length + shapes.paths.length + shapes.spots.length > 0 ? shapes : null),
+    () => null,
+  );
+}
+
+export function describeShapes(shapes: Shapes): string {
   const parts: string[] = [];
   if (shapes.spots.length) parts.push(`${shapes.spots.length} point${shapes.spots.length === 1 ? '' : 's'}`);
   if (shapes.paths.length) parts.push(`${shapes.paths.length} line${shapes.paths.length === 1 ? '' : 's'}`);
@@ -352,6 +366,21 @@ export async function layerFromImport(host: BuilderHost, layer: { dataset: strin
 }
 
 /**
+ * A custom layer of one of the table's datasets, started with the look that fits its geometry,
+ * saved, put on the table and opened in the builder. `kind` is read from the data when not given.
+ */
+export async function customFromDataset(host: BuilderHost, name: string, kind?: GeometryKind): Promise<void> {
+  if (!kind) {
+    const path = vectorDatasets(host.store).find((d) => d.name === name)?.path;
+    kind = path ? await shapesOf(host.store, `/site/${path}`).then(lookFor, () => 'points' as const) : 'points';
+  }
+  const title = name.replace(/[-_]+/g, ' ').replace(/^./, (c) => c.toUpperCase());
+  const id = freeId(host.store, title);
+  const saved = await host.send('custom.save', { id, recipe: startingRecipe(title, name, kind) });
+  if (saved) await host.addLayer(`custom:${id}`);
+}
+
+/**
  * New custom layer: pick what it shows from the table's data, and it is made, put on
  * the table and opened in the builder. The New layer gallery (#59) opens the same dialog
  * from its Custom card.
@@ -388,11 +417,8 @@ export function newCustomLayer(host: BuilderHost, shell: HTMLElement): void {
       () => (detail.textContent = 'Could not be read'),
     );
     card.addEventListener('click', async () => {
-      const title = name.replace(/[-_]+/g, ' ').replace(/^./, (c) => c.toUpperCase());
-      const id = freeId(host.store, title);
-      const saved = await host.send('custom.save', { id, recipe: startingRecipe(title, name, kind) });
       dialog.close();
-      if (saved) await host.addLayer(`custom:${id}`);
+      await customFromDataset(host, name, kind);
     });
     list.append(card);
   }
@@ -1310,19 +1336,220 @@ export function builderSection(host: BuilderHost, manifest: LayerManifest, butto
     return nodes;
   };
 
-  // -- Interaction
-  const interactionTab = (): HTMLElement[] => [
-    el('p', 'lb-lead', 'What a visitor can do with this layer.'),
-    el('div', 'lb-card lb-soon'),
-  ].map((node, i) => {
-    if (i === 1) {
-      node.append(
-        el('strong', undefined, 'Coming in the next steps of the builder'),
-        el('span', undefined, 'Tap a feature to read it on the controller, step through categories with Next, sliders on the controller and phones, and a cue at the spot when something changes (#105).'),
-      );
+  // -- Interaction (#38): what a visitor can do with this layer. Everything here is plain recipe:
+  // a `tap-info` interaction block, and controls with a `bind` the player reads.
+  const interactionTab = (): HTMLElement[] => {
+    const nodes: HTMLElement[] = [el('p', 'lb-lead', 'What a visitor can do with this layer. It all shows on the controller, beside the table; the map itself stays free of words.')];
+    if (recipe.look!.length === 0) nodes.push(el('p', 'ed-empty', 'Give the layer a look first.'));
+    for (const block of recipe.look!) nodes.push(interactionCard(block));
+    recipe.interaction ??= [];
+    return nodes;
+  };
+
+  /** Controls of this layer that this look owns, by what they do. */
+  const controlsOf = (block: RecipeBlock, stage: 'filter' | 'look') => (recipe.controls ??= []).filter((c) => (c.bind ?? '').startsWith(`${stage}.${block.id}.`));
+  const dropControls = (keep: (c: NonNullable<CustomLayer['controls']>[number]) => boolean) => {
+    recipe.controls = (recipe.controls ?? []).filter(keep);
+    if (recipe.controls.length === 0) delete recipe.controls;
+  };
+
+  const interactionCard = (block: RecipeBlock): HTMLElement => {
+    const card = el('div', 'lb-card lb-interaction');
+    const data = recipe.data!.find((d) => d.id === block.data);
+    const head = el('header', 'lb-card-head');
+    head.append(icon(KIND_ICON[block.block as GeometryKind] ?? 'layers', 16), el('strong', undefined, data?.dataset ?? data?.path ?? block.id));
+    const content = el('div', 'lb-card-body');
+    content.append(el('p', 'lb-hint', 'Reading the data…'));
+    card.append(head, content);
+    void shapes(block).then((s) => {
+      const kind = block.block as GeometryKind;
+      const rows = s ? (kind === 'points' ? s.spots : kind === 'lines' ? s.paths : s.areas).map((x) => x.properties as Record<string, unknown>) : [];
+      const columns = profileColumns(rows);
+      content.replaceChildren(...tapPart(block, data, columns), ...onlyPart(block, columns, rows), ...changePart(block));
+    });
+    return card;
+  };
+
+  // Tap to read: a tap on a feature picks it, and the controller shows its name and facts.
+  const tapPart = (block: RecipeBlock, data: RecipeData | undefined, columns: { name: string; kind: 'number' | 'category' }[]): HTMLElement[] => {
+    const nodes: HTMLElement[] = [el('h4', undefined, 'Tap to read')];
+    if (!data?.dataset) {
+      nodes.push(el('p', 'lb-hint', 'Only a dataset of the table can be tapped. Bring this file in with Add data to use it.'));
+      return nodes;
     }
-    return node;
-  });
+    const tapId = `${block.id}-tap`;
+    let tap = recipe.interaction!.find((b) => b.block === 'tap-info' && b.data === block.data);
+    const body = el('div', 'lb-tap');
+    const draw = () => {
+      body.replaceChildren();
+      if (!tap) return;
+      const props = (tap.props ??= {});
+      const label = el('select');
+      label.append(Object.assign(el('option'), { value: '', textContent: 'Its number in the file' }));
+      for (const c of columns) label.append(Object.assign(el('option'), { value: c.name, textContent: c.name, selected: c.name === props.label }));
+      label.addEventListener('change', () => {
+        if (label.value) props.label = label.value;
+        else delete props.label;
+        save();
+      });
+      const called = el('input');
+      called.type = 'text';
+      called.placeholder = 'Item';
+      called.value = String(props.name ?? '');
+      called.addEventListener('change', () => {
+        if (called.value.trim()) props.name = called.value.trim();
+        else delete props.name;
+        save();
+      });
+      const facts = el('div', 'lb-facts');
+      const chosen = new Set<string>(Array.isArray(props.facts) ? (props.facts as string[]) : []);
+      for (const c of columns) {
+        const row = el('label', 'lb-fact');
+        const box = el('input');
+        box.type = 'checkbox';
+        box.checked = chosen.has(c.name);
+        box.addEventListener('change', () => {
+          if (box.checked) chosen.add(c.name);
+          else chosen.delete(c.name);
+          // Kept in the data's column order, at most eight: the controller is read from across the room.
+          props.facts = columns.map((x) => x.name).filter((n) => chosen.has(n)).slice(0, 8);
+          save();
+        });
+        row.append(box, el('span', undefined, c.name));
+        facts.append(row);
+      }
+      body.append(
+        field('Its name', label),
+        field('One is called', called),
+        el('span', 'lb-field-label', 'Facts on the controller'),
+        columns.length ? facts : el('p', 'lb-hint', 'This data has no columns to show.'),
+      );
+    };
+    const switchRow = el('label', 'lb-fact lb-switch-row');
+    nodes.push(switchRow, body);
+    switchRow.append(
+      toggle(Boolean(tap), (on) => {
+        recipe.interaction = recipe.interaction!.filter((b) => b !== tap);
+        tap = undefined;
+        if (on) {
+          const name = columns.find((c) => /^(name|namn|title|label)$/i.test(c.name))?.name;
+          tap = { id: tapId, block: 'tap-info', data: block.data, on: block.id, props: { ...(name ? { label: name } : {}), facts: columns.filter((c) => c.name !== name).slice(0, 4).map((c) => c.name) } };
+          recipe.interaction!.push(tap);
+        }
+        if (recipe.interaction!.length === 0) delete recipe.interaction;
+        draw();
+        save();
+      }, 'A tap on one shows it on the controller'),
+      el('span', undefined, 'A tap on one shows it on the controller'),
+    );
+    draw();
+    return nodes;
+  };
+
+  // Show only: one control on the controller that keeps the features of a category, or at least a value.
+  const onlyPart = (block: RecipeBlock, columns: { name: string; kind: 'number' | 'category'; distinct: number }[], rows: readonly Record<string, unknown>[]): HTMLElement[] => {
+    const nodes: HTMLElement[] = [el('h4', undefined, 'Show only…')];
+    const current = controlsOf(block, 'filter')[0];
+    const column = current?.bind?.split('.').slice(2).join('.') ?? '';
+    const select = el('select');
+    select.append(Object.assign(el('option'), { value: '', textContent: 'Everything, always' }));
+    for (const c of columns) {
+      if (c.kind === 'category' && c.distinct > 12) continue;
+      select.append(Object.assign(el('option'), { value: c.name, textContent: c.kind === 'number' ? `${c.name}: at least…` : `${c.name}: one at a time`, selected: c.name === column }));
+    }
+    const words = el('input');
+    words.type = 'text';
+    words.value = current?.label ?? '';
+    words.placeholder = 'Show';
+    const hint = el('p', 'lb-hint');
+    const make = () => {
+      dropControls((c) => !(c.bind ?? '').startsWith(`filter.${block.id}.`));
+      const name = select.value;
+      const c = columns.find((x) => x.name === name);
+      if (!c) {
+        hint.textContent = 'Visitors see every feature.';
+        save();
+        return;
+      }
+      const id = `${block.id}-only`;
+      const bind = `filter.${block.id}.${name}`;
+      if (c.kind === 'number') {
+        const values = columnNumbers(rows, name);
+        const min = Math.min(...values);
+        const max = Math.max(...values);
+        const span = max - min || 1;
+        const step = Number((10 ** Math.floor(Math.log10(span / 20))).toPrecision(1));
+        (recipe.controls ??= []).push({ id, type: 'range', label: words.value.trim() || `${tidy(name)} at least`, min, max: max > min ? max : min + 1, step, default: min, bind } as never);
+        hint.textContent = `A slider on the controller. Only features with ${name} at or above it stay on the table.`;
+      } else {
+        const values = columnCategories(rows, name).slice(0, 12);
+        (recipe.controls ??= []).push({
+          id,
+          type: 'select',
+          label: words.value.trim() || 'Show',
+          options: [{ value: '', label: 'All' }, ...values.map((v) => ({ value: v, label: v }))],
+          default: '',
+          tier: 'primary',
+          bind,
+        } as never);
+        hint.textContent = `Buttons on the controller: All, then each ${name}. A press shows only that one; a presentation can step through them.`;
+      }
+      save();
+    };
+    select.addEventListener('change', make);
+    words.addEventListener('change', () => {
+      const control = controlsOf(block, 'filter')[0];
+      if (!control) return;
+      control.label = words.value.trim() || (control.type === 'range' ? `${tidy(column)} at least` : 'Show');
+      save();
+    });
+    hint.textContent = current ? (current.type === 'range' ? `A slider on the controller. Only features with ${column} at or above it stay on the table.` : `Buttons on the controller: All, then each ${column}.`) : 'Visitors see every feature.';
+    nodes.push(field('By', select), field('Its words', words), hint);
+    return nodes;
+  };
+
+  // Sliders for the look: size, glow and how solid, each a control bound to the look's prop.
+  const LIVE: Record<GeometryKind, [string, string, number, number, number, string][]> = {
+    points: [
+      ['radius_mm', 'Size', 1, 12, 0.5, 'mm'],
+      ['glow', 'Glow', 0, 1, 0.05, ''],
+      ['opacity', 'Strength', 0.1, 1, 0.05, ''],
+    ],
+    lines: [
+      ['width_mm', 'Width', 0.3, 6, 0.1, 'mm'],
+      ['glow', 'Glow', 0, 1, 0.05, ''],
+      ['opacity', 'Strength', 0.1, 1, 0.05, ''],
+    ],
+    fill: [
+      ['opacity', 'Strength', 0.05, 1, 0.05, ''],
+      ['edge_glow', 'Edge glow', 0, 1, 0.05, ''],
+    ],
+  };
+  const changePart = (block: RecipeBlock): HTMLElement[] => {
+    const kind = block.block as GeometryKind;
+    const nodes: HTMLElement[] = [el('h4', undefined, 'Visitors can change')];
+    const list = el('div', 'lb-facts');
+    for (const [prop, label, min, max, step, unit] of LIVE[kind] ?? []) {
+      const bind = `look.${block.id}.${prop}`;
+      const row = el('label', 'lb-fact');
+      const box = el('input');
+      box.type = 'checkbox';
+      box.checked = (recipe.controls ?? []).some((c) => c.bind === bind);
+      box.addEventListener('change', () => {
+        dropControls((c) => c.bind !== bind);
+        if (box.checked) {
+          const now = Number(block.props?.[prop] ?? (LOOK_DEFAULTS[kind] as Record<string, unknown>)[prop]);
+          const value = Math.min(max, Math.max(min, Number.isFinite(now) ? now : min));
+          (recipe.controls ??= []).push({ id: `${block.id}-${prop.replace(/_/g, '-')}`, type: 'range', label, min, max, step, default: value, ...(unit ? { unit } : {}), bind } as never);
+        }
+        save();
+      });
+      row.append(box, el('span', undefined, label));
+      list.append(row);
+    }
+    nodes.push(list, el('p', 'lb-hint', 'Each becomes a slider in the centre of the controller while this layer is open. It starts where the look is now.'));
+    return nodes;
+  };
 
   section.append(tabs, body);
   show(lastTabs.get(id) ?? 'look');

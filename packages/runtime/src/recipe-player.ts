@@ -6,7 +6,9 @@
 // the table stays live and nothing replays unless the data changed.
 
 import {
+  boundFilters,
   boundOverrides,
+  filterShapes,
   canvasSurface,
   compileLook,
   ease,
@@ -224,6 +226,8 @@ export function recipeModule(current: () => LayerManifest | undefined, watch: (c
         const palette = resolvePalette(ctx.site.palette);
         const mm = metresPerTableMm(ctx.site);
         const overrides = boundOverrides(recipe, ctx.params);
+        // "Show only" on the controller (#38): the features each look keeps.
+        const filters = boundFilters(recipe, ctx.params);
         looks = (recipe.look ?? [])
           .map((block) => {
             const motion = motionFor(recipe, block.id, overrides.motion);
@@ -253,7 +257,7 @@ export function recipeModule(current: () => LayerManifest | undefined, watch: (c
                 tables: { activity: tableOf(csvs.activity), flows: tableOf(csvs.flows), links: tableOf(csvs.links) },
               };
             }
-            return compileLook(block, (block.data && shapes.get(block.data)) || EMPTY, palette, mm, motion, overrides.look[block.id]);
+            return compileLook(block, filterShapes((block.data && shapes.get(block.data)) || EMPTY, filters[block.id]), palette, mm, motion, overrides.look[block.id]);
           })
           .filter((look): look is CompiledLook => look !== null);
         if (!(recipe.motion ?? []).some((m) => m.block === 'sound')) sounds.stop();

@@ -1182,6 +1182,50 @@ export function boundOverrides(recipe: Pick<CustomLayer, 'controls'>, params: Re
   return out;
 }
 
+/** One "show only" rule on a look (#38): features whose column is this value, or at least this number. */
+export interface ShapeFilter {
+  column: string;
+  is?: string;
+  atLeast?: number;
+}
+
+/**
+ * The "show only" rules the controller's controls set, by look: a control bound to
+ * `filter.<look>.<column>`. A choice keeps the features with that value (an empty choice keeps
+ * all); a slider keeps those at or above its value.
+ */
+export function boundFilters(recipe: Pick<CustomLayer, 'controls'>, params: Record<string, unknown>): Record<string, ShapeFilter[]> {
+  const out: Record<string, ShapeFilter[]> = {};
+  for (const control of recipe.controls ?? []) {
+    const [stage, block, ...rest] = (control.bind ?? '').split('.');
+    const column = rest.join('.');
+    if (stage !== 'filter' || !block || !column) continue;
+    const value = control.id in params ? params[control.id] : (control as { default?: unknown }).default;
+    if (control.type === 'range') {
+      const at = Number(value);
+      if (Number.isFinite(at) && at > control.min) (out[block] ??= []).push({ column, atLeast: at });
+    } else if (value !== undefined && value !== null && value !== '') (out[block] ??= []).push({ column, is: String(value) });
+  }
+  return out;
+}
+
+/** The shapes that pass every rule. The same object when there are no rules, so nothing is copied. */
+export function filterShapes<S extends Shapes>(shapes: S, filters: readonly ShapeFilter[] | undefined): S {
+  if (!filters?.length) return shapes;
+  const keep = (properties: Record<string, unknown> | undefined) =>
+    filters.every((f) => {
+      const value = properties?.[f.column];
+      if (f.atLeast !== undefined) return Number(value) >= f.atLeast;
+      return value !== undefined && value !== null && String(value) === f.is;
+    });
+  return {
+    ...shapes,
+    areas: shapes.areas.filter((a) => keep(a.properties)),
+    paths: shapes.paths.filter((p) => keep(p.properties)),
+    spots: shapes.spots.filter((s) => keep(s.properties)),
+  };
+}
+
 /** The legend a recipe's looks give, for the controller (S2: every colour on the table has its swatch). */
 export function recipeLegend(looks: readonly CompiledLook[]): LegendItem[] {
   return looks.flatMap((look) => look.legend);

@@ -2,7 +2,9 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import {
+  boundFilters,
   boundOverrides,
+  filterShapes,
   classBreaks,
   compileLook,
   drawnShare,
@@ -177,4 +179,19 @@ test('natural breaks put the class edges in the gaps of the data', async () => {
   const many = [...Array.from({ length: 3000 }, (_, i) => i % 50), ...Array.from({ length: 3000 }, (_, i) => 1000 + (i % 50))].sort((a, b) => a - b);
   const [edge] = naturalBreaks(many, 2);
   assert.ok(edge! >= 1000 && edge! <= 1001, `edge at ${edge}`);
+});
+
+test('show only (#38): controls bound to filter.<look>.<column> keep the features that pass', () => {
+  const recipe = {
+    controls: [
+      { id: 'only', type: 'select', label: 'Show', options: [{ value: '', label: 'All' }, { value: 'park', label: 'park' }], default: '', bind: 'filter.zones.use' },
+      { id: 'least', type: 'range', label: 'At least', min: 0, max: 100, default: 0, bind: 'filter.zones.pop' },
+    ],
+  } as unknown as Parameters<typeof boundFilters>[0];
+  assert.deepEqual(boundFilters(recipe, {}), {});
+  assert.deepEqual(boundFilters(recipe, { only: 'park', least: 20 }), { zones: [{ column: 'use', is: 'park' }, { column: 'pop', atLeast: 20 }] });
+  const area = (use: string, pop: number) => ({ id: use + pop, polygons: [], centre: [0, 0] as [number, number], properties: { use, pop } });
+  const shapes = { areas: [area('park', 10), area('park', 50), area('home', 80)], paths: [], spots: [] };
+  assert.equal(filterShapes(shapes, undefined), shapes);
+  assert.deepEqual(filterShapes(shapes, boundFilters(recipe, { only: 'park', least: 20 }).zones).areas.map((a) => a.id), ['park50']);
 });

@@ -105,7 +105,7 @@ export interface EntitySet {
   id: string;
   /** A dataset from site.json `data` (also `buildings`, the scene's footprints). Name it in `requires.data`. */
   dataset: string;
-  /** The feature property that names each entity: unique, a string or a number. */
+  /** The feature property that names each entity: unique, a string or a number. `#` is the feature's place in the dataset. */
   key: string;
   /** The feature property shown as its name. Default `key`. */
   label?: string;
@@ -115,6 +115,11 @@ export interface EntitySet {
   name?: string;
   /** Each entity's values. Actions are not allowed; `phone: true` lets phones change it. */
   controls: Exclude<Control, ActionControl>[];
+  /**
+   * Feature properties the controller shows for the picked entity, read only (#38: a custom
+   * layer's "tap to read"). A set may have facts and no controls.
+   */
+  facts?: string[];
   /** Milliseconds of quiet before the table's `entities` handler runs, for layers that call a model on change. Default 0. */
   debounce_ms?: number;
 }

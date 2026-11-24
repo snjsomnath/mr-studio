@@ -756,7 +756,11 @@ function entitySetPart(
   all.type = 'button';
   const count = el('span', 'entity-count');
   actions.append(reset, all, count);
-  part.append(head, controls, actions);
+  // Tap to read (#38): the picked one's facts, read only.
+  const facts = el('dl', 'entity-facts');
+  facts.hidden = true;
+  part.append(head, facts, controls, actions);
+  if (set.controls.length === 0) actions.hidden = true;
 
   let features: EntityFeature[] = [];
   let picked: string | null = null;
@@ -805,6 +809,9 @@ function entitySetPart(
     name.textContent = feature?.label ?? selection ?? '';
     name.hidden = selection === null;
     hint.hidden = selection !== null;
+    const rows = feature?.facts ?? [];
+    facts.hidden = rows.length === 0;
+    facts.replaceChildren(...rows.flatMap(([term, value]) => [el('dt', undefined, say(term, manifest)), el('dd', undefined, value)]));
     controls.hidden = selection === null;
     const values = selection !== null ? entityValues(set, state.params, selection) : {};
     for (const w of widgets) {
