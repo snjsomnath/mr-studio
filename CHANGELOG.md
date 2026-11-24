@@ -4,6 +4,16 @@ Every merge to main that carries a release note becomes a version. The newest is
 The app shows these notes, with their pictures, on Home when a newer version is out.
 How notes are written: docs/RELEASING.md.
 
+## 0.4.1 (2026-11-24)
+
+### Fixes
+
+#### Esc always leaves Present (#295)
+
+Esc takes you out of a full-screen Present, back to the editor, also when the table was opened without the editor. The full-screen screens now get the keyboard straight away, and the table shows a "Back to the editor" button when the pointer goes to its top edge. A table that starts by itself with the computer still ignores Esc.
+
+![The way back on the table](docs/screenshots/295-table-way-back.png)
+
 ## 0.4.0 (2026-11-24)
 
 ### New
