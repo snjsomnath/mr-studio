@@ -45,6 +45,10 @@ Control types: `range`, `select`, `toggle`, `date`, `color`, `text`, `action` (a
 Every control has `id`, `type`, `label` and `default`. `phone: true` lets phone participants change it; a `primary` control is on phones unless it says `phone: false` (#335).
 
 `"phone_switch": false` at the top of layer.json keeps phones from turning the layer on or off, for a layer only the controller should open (the slideshow). Default true.
+`help` is one or two sentences on what a control does; the editor shows it as the control's tooltip (#64).
+
+`clock` hands a control to the editor's time bar (#61), which previews any moment without changing the saved value: `"hour"` (a range in hours, 0 to 24), `"date"` (the day), `"progress"` (a range from 0 to 100 through a run, such as Mobility's trips) and `"play"` (the layer's own play switch, paused while the bar scrubs).
+
 `visibleWhen: { "mode": "day" }` hides a control unless another control has that value; a list, `{ "style": ["light", "dark"] }`, means any of them.
 
 A `text` control that names something is never a box to type in (#306); the editor offers a list to pick from, with type-ahead, and refuses a name that is not in it:

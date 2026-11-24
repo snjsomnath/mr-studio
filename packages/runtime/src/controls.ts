@@ -30,9 +30,31 @@ export interface Widget {
   sync(value: unknown, params?: Record<string, unknown>): void;
 }
 
+/** A time of day in hours as a clock reads it: 12.5 is 12:30, 24 is 24:00. */
+export function clock(hours: number): string {
+  const minutes = Math.round(hours * 60);
+  return `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
+}
+
 function formatNumber(value: number, control: Extract<Control, { type: 'range' }>): string {
+  // Hours read as a clock (#64), not as a decimal.
+  if (control.unit === 'h' && control.max <= 24) return clock(value);
   const decimals = control.step && control.step < 1 ? Math.min(3, String(control.step).split('.')[1]?.length ?? 0) : 0;
   return `${value.toFixed(decimals)}${control.unit ? ` ${control.unit}` : ''}`;
+}
+
+/**
+ * A typed value for a range control: a number in its unit ("5.5", "5,5", "5.5 m/s"), or a time
+ * of day for hours ("13:30", "9"). Kept inside the range and on its steps; null when it is not a number.
+ */
+export function parseValue(text: string, control: Extract<Control, { type: 'range' }>): number | null {
+  const clean = text.trim().replace(',', '.');
+  const time = /^(\d{1,2})[:.h](\d{2})$/.exec(clean);
+  let value = control.unit === 'h' && time ? Number(time[1]) + Number(time[2]) / 60 : Number.parseFloat(clean);
+  if (!Number.isFinite(value)) return null;
+  value = Math.min(control.max, Math.max(control.min, value));
+  if (control.step) value = control.min + Math.round((value - control.min) / control.step) * control.step;
+  return Number(value.toFixed(6));
 }
 
 /** A source as `/api/sources` lists it: never its key. */
@@ -216,11 +238,16 @@ export function visibleControls(controls: readonly Control[] | undefined): Contr
   return (controls ?? []).filter((control) => control.tier !== 'state');
 }
 
-export function widget(control: Control, send: (value: unknown) => void, act: () => void): Widget {
+/**
+ * One control. `exact` (the editor, #64) lets a range's value be typed: click the number,
+ * type, press Enter.
+ */
+export function widget(control: Control, send: (value: unknown) => void, act: () => void, options: { exact?: boolean } = {}): Widget {
   const row = el('div', `control control-${control.type}`);
   const id = `c-${Math.random().toString(36).slice(2)}`;
   const label = el('label', 'control-label', control.label);
   label.htmlFor = id;
+  if (control.help) row.title = control.help;
   let sync: (value: unknown, params?: Record<string, unknown>) => void = () => {};
 
   switch (control.type) {
@@ -236,14 +263,68 @@ export function widget(control: Control, send: (value: unknown) => void, act: ()
         readout.textContent = formatNumber(input.valueAsNumber, control);
         send(input.valueAsNumber);
       });
+      let shown: number | null = null;
       sync = (value) => {
         if (held || typeof value !== 'number') return;
+        shown = value;
         input.value = String(value);
         readout.textContent = formatNumber(value, control);
       };
       const head = el('div', 'control-head');
       head.append(label, readout);
       row.append(head, input);
+      if (options.exact) {
+        // The number is a field in disguise: click it, type a value, Enter keeps it, Escape does not.
+        readout.tabIndex = 0;
+        readout.classList.add('is-exact');
+        readout.setAttribute('role', 'button');
+        readout.title = control.unit === 'h' ? 'Click to type a time, such as 13:30' : `Click to type a value from ${control.min} to ${control.max}${control.unit ? ` ${control.unit}` : ''}`;
+        const edit = (): void => {
+          if (head.querySelector('.control-exact')) return;
+          const field = el('input', 'control-exact');
+          Object.assign(field, { type: 'text', inputMode: control.unit === 'h' ? 'text' : 'decimal', value: shown === null ? '' : control.unit === 'h' ? clock(shown) : String(shown) });
+          field.setAttribute('aria-label', `${control.label}${control.unit ? `, ${control.unit === 'h' ? 'time' : control.unit}` : ''}`);
+          readout.hidden = true;
+          readout.after(field);
+          let done = false;
+          const finish = (keep: boolean): void => {
+            if (done) return;
+            done = true;
+            const value = keep ? parseValue(field.value, control) : null;
+            field.remove();
+            readout.hidden = false;
+            if (value !== null && value !== shown) {
+              shown = value;
+              input.value = String(value);
+              readout.textContent = formatNumber(value, control);
+              send(value);
+            }
+          };
+          field.addEventListener('keydown', (event) => {
+            event.stopPropagation();
+            if (event.key === 'Enter') finish(true);
+            else if (event.key === 'Escape') finish(false);
+            else if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+              // The arrows step the typed value, as on the slider.
+              event.preventDefault();
+              const now = parseValue(field.value, control) ?? shown ?? control.min;
+              const step = (control.step ?? (control.max - control.min) / 100) * (event.shiftKey ? 10 : 1);
+              const next = parseValue(String(now + (event.key === 'ArrowUp' ? step : -step)), control) ?? now;
+              field.value = control.unit === 'h' ? clock(next) : String(next);
+            }
+          });
+          field.addEventListener('blur', () => finish(true));
+          field.focus();
+          field.select();
+        };
+        readout.addEventListener('click', edit);
+        readout.addEventListener('keydown', (event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            edit();
+          }
+        });
+      }
       break;
     }
     case 'select': {

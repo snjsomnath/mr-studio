@@ -8,10 +8,10 @@
   "attract": { "effect": "wind" },
   "requires": { "kernels": ["wind"] },
   "controls": [
-    { "id": "speed", "type": "range", "label": "Wind speed", "min": 1, "max": 20, "step": 0.5, "unit": "m/s", "default": 5, "phone": true, "tier": "more" },
-    { "id": "direction", "type": "range", "label": "Wind from", "min": 0, "max": 355, "step": 5, "unit": "°", "default": 270, "phone": true, "tier": "more" },
+    { "id": "speed", "type": "range", "label": "Wind speed", "help": "The wind speed the simulation starts from, measured well above the roofs.", "min": 1, "max": 20, "step": 0.5, "unit": "m/s", "default": 5, "phone": true, "tier": "more" },
+    { "id": "direction", "type": "range", "label": "Wind from", "help": "The compass direction the wind blows from: 270 is from the west.", "min": 0, "max": 355, "step": 5, "unit": "°", "default": 270, "phone": true, "tier": "more" },
     {
-      "id": "style", "type": "select", "label": "Show", "default": "ribbons", "tier": "primary",
+      "id": "style", "type": "select", "label": "Show", "help": "Ribbons that flow with the wind, particles, or a coloured map of its speed.", "default": "ribbons", "tier": "primary",
       "options": [
         { "value": "ribbons", "label": "Ribbons" },
         { "value": "particles", "label": "Particles" },
@@ -19,7 +19,7 @@
       ]
     },
     {
-      "id": "scale", "type": "select", "label": "Colour range", "default": "10", "tier": "more",
+      "id": "scale", "type": "select", "label": "Colour range", "help": "The speed that gets the strongest colour. Lower it to see light winds.", "default": "10", "tier": "more",
       "options": [
         { "value": "5", "label": "5 m/s" },
         { "value": "10", "label": "10 m/s" },
@@ -27,19 +27,19 @@
         { "value": "40", "label": "40 m/s" }
       ]
     },
-    { "id": "backdrop", "type": "range", "label": "Speed map underneath", "min": 0, "max": 1, "step": 0.05, "default": 0.25, "tier": "more" },
-    { "id": "facades", "type": "toggle", "label": "Light the walls the wind hits", "default": true, "tier": "more" },
-    { "id": "trees", "type": "toggle", "label": "Trees slow the wind", "default": true, "tier": "more" },
+    { "id": "backdrop", "type": "range", "label": "Speed map underneath", "help": "How much of the speed map shows under the ribbons or particles.", "min": 0, "max": 1, "step": 0.05, "default": 0.25, "tier": "more" },
+    { "id": "facades", "type": "toggle", "label": "Light the walls the wind hits", "help": "Walls facing into the wind light up.", "default": true, "tier": "more" },
+    { "id": "trees", "type": "toggle", "label": "Trees slow the wind", "help": "Trees in the table's data slow the wind as it passes.", "default": true, "tier": "more" },
     {
-      "id": "detail", "type": "select", "label": "Detail", "default": "256", "tier": "more",
+      "id": "detail", "type": "select", "label": "Detail", "help": "Finer detail is sharper and needs more of the computer.", "default": "256", "tier": "more",
       "options": [
         { "value": "128", "label": "Coarse" },
         { "value": "256", "label": "Normal" },
         { "value": "512", "label": "Fine" }
       ]
     },
-    { "id": "playback", "type": "range", "label": "Animation speed", "min": 0.25, "max": 3, "step": 0.25, "unit": "×", "default": 1, "tier": "more" },
-    { "id": "opacity", "type": "range", "label": "Opacity", "min": 0.1, "max": 1, "step": 0.05, "default": 1, "tier": "more" }
+    { "id": "playback", "type": "range", "label": "Animation speed", "help": "How fast the ribbons and particles move.", "min": 0.25, "max": 3, "step": 0.25, "unit": "×", "default": 1, "tier": "more" },
+    { "id": "opacity", "type": "range", "label": "Opacity", "help": "How strongly the layer draws over the map.", "min": 0.1, "max": 1, "step": 0.05, "default": 1, "tier": "more" }
   ],
   "tools": []
 }

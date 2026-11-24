@@ -1,7 +1,7 @@
 import { isVisible } from '@mrstudio/sdk';
-import type { Connection, LayerManifest, LayerState, MediaKind } from '@mrstudio/sdk';
+import type { Connection, Control, LayerManifest, LayerState, MediaKind } from '@mrstudio/sdk';
 
-import { defaultSideOf, el, isAmbient, isAtRest, isOffered, layerButton, railButtons, visibleControls, widget } from '../controls.ts';
+import { clock, defaultSideOf, el, isAmbient, isAtRest, isOffered, layerButton, railButtons, visibleControls, widget } from '../controls.ts';
 import type { Widget } from '../controls.ts';
 import { paramSender } from '../layer-manager.ts';
 import type { Store } from '../store.ts';
@@ -18,6 +18,7 @@ import { Importer, targetFor } from './importer.ts';
 import { confirmLeave, actionFor, fileButton, keys as shortcut, mac } from './file-menu.ts';
 import { contextMenu, renameInline, typing } from './tree-tools.ts';
 import { CanvasTools } from './canvas-tools.ts';
+import { TimeBar } from './time-bar.ts';
 import type { MenuItem } from './tree-tools.ts';
 import type { FileAction } from './file-menu.ts';
 import { slidesSection } from './slides.ts';
@@ -140,6 +141,8 @@ export class Editor {
   private readonly surfaces = el('div', 'ed-surfaces');
   /** Map, controller or both in the middle, the map's zoom and its outline (#60). */
   private readonly canvasTools: CanvasTools;
+  /** Scrubs a layer that runs on time through the day in the preview (#61). */
+  private readonly timeBar: TimeBar;
   private readonly notice = el('div', 'ed-notice');
   /** The one thing this table still lacks, with the way to it. */
   private readonly next = el('div', 'ed-next');
@@ -203,7 +206,12 @@ export class Editor {
       return box;
     };
     this.surfaces.append(surface('map', 'Map', 'Projected on the table. Visual only.', this.canvas), surface('controller', 'Controller', 'The screen beside the table. Buttons, words and controls.', this.preview));
-    centre.append(this.canvasHead, this.next, this.surfaces, this.notice);
+    this.timeBar = new TimeBar({
+      site: () => store.state.site,
+      connection,
+      save: (layer, params) => this.send('scene.set', { layer, params }),
+    });
+    centre.append(this.canvasHead, this.next, this.surfaces, this.timeBar.element, this.notice);
     this.canvasTools = new CanvasTools({
       site: () => store.state.site,
       surfaces: this.surfaces,
@@ -260,6 +268,7 @@ export class Editor {
     });
     store.onLayer((id, state) => {
       this.sync.get(id)?.(state);
+      this.timeBar.sync(id, state);
       this.follow(id, state);
     });
 
@@ -625,6 +634,8 @@ export class Editor {
 
   private async send(method: string, params: object): Promise<any> {
     this.pending++;
+    // A change the host has not confirmed in a moment says so, rather than claiming it is saved (#68).
+    const slow = window.setTimeout(() => this.pending > 0 && this.setSaving(), 300);
     try {
       const result = await this.connection.request(method, params);
       this.setSaved();
@@ -633,8 +644,17 @@ export class Editor {
       this.setSaved((error as Error).message);
       return null;
     } finally {
+      window.clearTimeout(slow);
       this.pending--;
     }
+  }
+
+  private setSaving(): void {
+    const spinner = el('span', 'ed-spinner');
+    spinner.setAttribute('aria-hidden', 'true');
+    this.saved.replaceChildren(spinner, el('span', undefined, 'Saving…'));
+    this.saved.title = 'Waiting for the table to confirm the change';
+    this.saved.classList.remove('is-error');
   }
 
   private setSaved(problem?: string): void {
@@ -1037,13 +1057,61 @@ export class Editor {
   private statusBar(): HTMLElement {
     const bar = el('footer', 'ed-status');
     const connected = el('span', 'ed-connected', 'Connected to the table');
+    // Losing the table is said plainly, and edits wait until it is back (#68). The page reconnects by itself.
+    const lost = el('div', 'ed-offline');
+    lost.setAttribute('role', 'alert');
+    lost.hidden = true;
+    const lostText = el('div');
+    lostText.append(el('strong', undefined, 'Lost connection to the table. Reconnecting…'), el('span', undefined, 'Changes wait until it is back. Nothing you made so far is lost.'));
+    const spinner = el('span', 'ed-spinner');
+    lost.append(spinner, lostText);
+    this.shell.append(lost);
+    let since = 0;
     this.connection.on('disconnected', () => {
-      connected.textContent = 'Reconnecting';
+      connected.textContent = 'Reconnecting…';
       connected.classList.add('is-off');
+      since = performance.now();
+      // A blink is not worth a banner.
+      window.setTimeout(() => {
+        if (connected.classList.contains('is-off') && performance.now() - since >= 700) {
+          lost.hidden = false;
+          this.shell.classList.add('is-offline');
+        }
+      }, 800);
     });
     this.connection.on('welcome', () => {
       connected.textContent = 'Connected to the table';
       connected.classList.remove('is-off');
+      lost.hidden = true;
+      this.shell.classList.remove('is-offline');
+    });
+    // The engine working something out (a simulation settling, shadows for a new moment): a line in the status bar (#68).
+    const work = el('span', 'ed-work');
+    work.hidden = true;
+    const streams = new Map<number, { progress: number; at: number }>();
+    const drawWork = (): void => {
+      const now = performance.now();
+      for (const [id, s] of streams) if (now - s.at > 3000) streams.delete(id);
+      work.hidden = streams.size === 0;
+      if (work.hidden) return;
+      const least = Math.min(...[...streams.values()].map((s) => s.progress));
+      const bar = el('span', 'ed-work-bar');
+      const fill = el('span');
+      fill.style.width = `${Math.max(2, least * 100)}%`;
+      bar.append(fill);
+      work.replaceChildren(el('span', 'ed-spinner'), el('span', undefined, `The engine is working out the preview · ${Math.floor(least * 100)} %`), bar);
+      work.title = 'A simulation is settling or a new moment is being worked out. The map fills in as it goes.';
+    };
+    this.connection.on('engine.status', (p: { stream: number; state: string; progress: number; info?: { settled?: boolean } }) => {
+      const finished = p.state !== 'running' || p.info?.settled === true || p.progress >= 0.999;
+      if (finished) streams.delete(p.stream);
+      else streams.set(p.stream, { progress: p.progress, at: performance.now() });
+      drawWork();
+    });
+    window.setInterval(drawWork, 1500);
+    this.connection.on('disconnected', () => {
+      streams.clear();
+      drawWork();
     });
     const { width_m, height_m } = this.store.state.site.extent;
     // What only the operator needs to know lives here, never on the visitors' controller.
@@ -1062,10 +1130,11 @@ export class Editor {
     void this.connection
       .request<{ backend: string; adapter: string | null }>('engine.info')
       .then((info) => {
-        engine.textContent = info.adapter ? `Engine: ${info.adapter}` : `Engine: ${info.backend}, no graphics card`;
+        engine.textContent = info.adapter ? `Engine: ${info.adapter}` : 'Engine: CPU, slower';
+        engine.title = info.adapter ? 'Simulations run on this graphics card' : 'No graphics card the engine can use was found, so simulations run on the processor and take longer. Visitors are not told.';
       })
       .catch(() => {});
-    bar.append(el('span', undefined, shell() ? 'Changes are saved as you make them. File > Save As makes a copy.' : 'Changes are saved as you make them'), el('span', 'ed-grow'), phones, engine, connected, el('span', undefined, `${Math.round(width_m)} × ${Math.round(height_m)} m`));
+    bar.append(el('span', undefined, shell() ? 'Changes are saved as you make them. File > Save As makes a copy.' : 'Changes are saved as you make them'), el('span', 'ed-grow'), work, phones, engine, connected, el('span', undefined, `${Math.round(width_m)} × ${Math.round(height_m)} m`));
     return bar;
   }
 
@@ -1099,6 +1168,10 @@ export class Editor {
     this.renderCanvas(instances);
     this.renderInspector(instances);
     this.renderNext(instances);
+    // The time bar follows the open layer, in the editor proper (not the guide, not Media).
+    const timed = this.wizard || this.ribbonTab === 'media' || this.context.kind !== 'layer' ? null : this.context.id;
+    const timedState = timed ? this.store.state.layers[timed] : undefined;
+    this.timeBar.open(timed, timedState && this.store.manifest(timedState.layer), timedState);
     for (const { id, state } of instances) this.sync.get(id)?.(state);
   }
 
@@ -1148,9 +1221,20 @@ export class Editor {
     tool.classList.toggle('is-needs', missing.length > 0);
     // A layer that needs data takes the author to the place to bring it in, rather than doing nothing.
     tool.disabled = missing.length > 0 && !source;
-    tool.addEventListener('click', () => {
-      if (missing.length === 0) void this.addChecked(manifest, parent);
-      else if (source) this.bringIn(source);
+    tool.addEventListener('click', async () => {
+      if (missing.length > 0) {
+        if (source) this.bringIn(source);
+        return;
+      }
+      // Busy until the layer is in (#68): a second click does not add a second one.
+      tool.disabled = true;
+      tool.classList.add('is-busy');
+      try {
+        await this.addChecked(manifest, parent);
+      } finally {
+        tool.disabled = false;
+        tool.classList.remove('is-busy');
+      }
     });
     return tool;
   }
@@ -1257,8 +1341,13 @@ export class Editor {
       remove.title = live ? 'Take this out of the table' : none;
       remove.disabled = !live;
       remove.addEventListener('click', () => live && void this.send('scene.remove', { layer: live.id }));
+      const reset = button('ed-tool', 'Reset', 'reset');
+      const resettable = Boolean(live && visibleControls(live.manifest.controls).some((c) => 'default' in c));
+      reset.disabled = !resettable;
+      reset.title = !live ? none : resettable ? 'Put every setting of this back to its own value' : 'This has no settings to reset';
+      reset.addEventListener('click', () => live && void this.resetLayer(live.id));
       const name = live ? `Selected: ${layerButton(live.id, live.manifest, live.state).name}` : 'Nothing selected';
-      groups.push(this.group(name, ...this.column([show, up, down]), ...this.column([remove])));
+      groups.push(this.group(name, ...this.column([show, up, down]), ...this.column([remove, reset])));
     }
 
     const open = (label: string, iconName: string, role: 'table' | 'tv' | 'dev', tip: string) => {
@@ -1783,6 +1872,7 @@ export class Editor {
         },
       );
     }
+    items.push({ label: 'Reset settings', icon: 'reset', disabled: !visibleControls(manifest.controls).some((c) => 'default' in c), run: () => void this.resetLayer(id) });
     items.push('line', { label: 'Remove', icon: 'trash', keys: mac ? '⌫' : 'Del', danger: true, run: () => void this.removeLayer(id) });
     contextMenu(items, { x: event.clientX, y: event.clientY }, this.shell, `${layerButton(id, manifest, state).name}`);
   }
@@ -1852,7 +1942,7 @@ export class Editor {
     Object.assign(name, { type: 'text', maxLength: 40, placeholder: manifest.name });
     name.addEventListener('change', () => set({ name: name.value.trim() || null }));
     const description = el('textarea');
-    Object.assign(description, { rows: 2, maxLength: 200, placeholder: manifest.description ?? 'One line about what this layer shows' });
+    Object.assign(description, { rows: 3, maxLength: 200, placeholder: manifest.description ?? 'One line about what this layer shows' });
     description.addEventListener('change', () => set({ description: description.value.trim() || null }));
 
     // The group of buttons it sits in on its rail. The groups already in use are offered.
@@ -1899,7 +1989,22 @@ export class Editor {
     row.append(el('span', undefined, 'Side'), side);
     const iconRow = el('div', 'ed-field is-tall');
     iconRow.append(el('span', undefined, 'Icon'), icons);
-    section.append(el('h3', undefined, 'Button on the controller'), field('Name', name), field('Description', description), field('Group', group), known, row, iconRow);
+    // The button as visitors will see it, as the fields change (#64).
+    const preview = el('div', 'ed-button-preview');
+    preview.setAttribute('aria-hidden', 'true');
+    const previewIcon = el('span', 'ed-button-preview-icon');
+    const previewText = el('span', 'ed-button-preview-text');
+    const previewName = el('strong');
+    const previewWords = el('span');
+    previewText.append(previewName, previewWords);
+    preview.append(previewIcon, previewText);
+    // The section folds away, and stays as it was left (#64).
+    const fold = el('details', 'ed-fold');
+    fold.open = this.opened('button');
+    fold.addEventListener('toggle', () => this.opened('button', fold.open));
+    const summary = el('summary', undefined, 'Button on the controller');
+    fold.append(summary, preview, field('Name', name), field('Description', description), field('Group', group), known, row, iconRow);
+    section.append(fold);
 
     const previous = this.sync.get(id);
     this.sync.set(id, (state) => {
@@ -1910,6 +2015,11 @@ export class Editor {
       if (document.activeElement !== group) group.value = state.button?.group ?? '';
       for (const [value, option] of sides) option.setAttribute('aria-checked', String(value === button.side));
       for (const [value, option] of choices) option.setAttribute('aria-checked', String(value === button.icon));
+      previewIcon.replaceChildren(icon(button.icon, 18));
+      previewName.textContent = button.name;
+      previewWords.textContent = button.description;
+      preview.dataset.side = button.side;
+      preview.classList.toggle('is-hidden', Boolean(state.button?.hidden));
       // The headings that show the layer's name follow it.
       this.inspector.querySelector('.ed-inspector-head strong')!.textContent = button.name;
       this.inspector.querySelector('.ed-inspector-head svg')!.replaceWith(icon(button.icon));
@@ -1944,12 +2054,28 @@ export class Editor {
         control,
         (value) => send({ [control.id]: value }),
         () => void this.connection.request('layer.action', { layer: id, action: control.id }).catch(() => {}),
+        { exact: true },
       ),
     );
-    // Each control has an eye: closed, the controller and phones leave the control out. It stays here.
+    // Each control has a screen: switched off, the controller and phones leave the control out. It stays here.
     const offered = !isAmbient(manifest) && !item;
+    const defaults = new Map(visibleControls(manifest.controls).flatMap((c) => ('default' in c ? [[c.id, c.default as unknown]] : [])));
     const rows = widgets.map((w) => {
       const row = el('div', 'ed-setting');
+      row.dataset.control = w.control.id;
+      // Back to the layer's own value (#64): on hover, or Alt-click (Option-click) the control's name.
+      const reset = el('button', 'ed-reset');
+      reset.type = 'button';
+      reset.append(icon('reset', 12));
+      const fallback = defaults.get(w.control.id);
+      reset.title = `Back to ${this.describe(w.control, fallback)}`;
+      reset.ariaLabel = `Reset ${w.control.label}`;
+      reset.addEventListener('click', () => send({ [w.control.id]: fallback }));
+      w.row.querySelector('.control-label')?.addEventListener('click', (event) => {
+        if (!(event as MouseEvent).altKey || fallback === undefined) return;
+        event.preventDefault();
+        send({ [w.control.id]: fallback });
+      });
       const eye = el('button', 'ed-eye');
       eye.type = 'button';
       eye.setAttribute('role', 'switch');
@@ -1961,38 +2087,103 @@ export class Editor {
         void this.send('scene.set', { layer: id, hide: [...hide] });
       });
       row.append(w.row);
+      if (fallback !== undefined) row.append(reset);
       if (offered) row.append(eye);
-      return { row, eye, w };
+      return { row, eye, reset, w, fallback };
     });
+    // Long lists are split as the controller splits them: the main settings, then "More settings" (#64).
+    const main = rows.filter((r) => r.w.control.tier !== 'more' && r.w.control.tier !== 'state');
+    const more = rows.filter((r) => r.w.control.tier === 'more');
     const controls = el('div', 'controls');
-    controls.append(shown, ...rows.map((r) => r.row));
+    controls.append(shown, ...main.map((r) => r.row));
     const heading = el('h3', 'ed-settings-head', title);
+    const tools = el('span', 'ed-settings-tools');
+    if (rows.some((r) => r.fallback !== undefined)) {
+      const resetAll = button('ed-help-link', 'Reset', 'reset', 14);
+      resetAll.title = `Put every setting of ${manifest.name} back to its own value. Undo brings yours back.`;
+      resetAll.addEventListener('click', () => void this.resetLayer(id));
+      tools.append(resetAll);
+    }
     // A core layer has a page of its own in the Help window (#291).
     if (!manifest.custom && manifest.id) {
       const help = button('ed-help-link', 'How to use it', 'info', 14);
       help.title = `How to use ${manifest.name ?? 'this layer'}: what it needs, each setting and tips`;
       help.ariaLabel = help.title;
       help.addEventListener('click', () => openHelp(`layer-${manifest.id}`));
-      heading.append(help);
+      tools.append(help);
     }
-    section.append(heading, controls);
-    if (offered && rows.length > 0) section.append(el('p', 'ed-empty', 'The eye beside a setting decides whether visitors get it on the controller and their phones.'));
+    heading.append(tools);
+    section.append(heading);
+    // The screen column says once what it is, rather than an unexplained icon on every row (#64).
+    if (offered && rows.length > 0) {
+      const columns = el('div', 'ed-settings-cols');
+      columns.append(el('span', undefined, 'On the controller'), icon('tv', 12));
+      columns.title = 'Switch a setting off here and visitors do not get it on the controller or their phones. It stays here for you.';
+      section.append(columns);
+    }
+    section.append(controls);
+    if (more.length > 0) {
+      const extra = el('details', 'ed-more');
+      extra.open = this.opened('more');
+      extra.addEventListener('toggle', () => this.opened('more', extra.open));
+      const summary = el('summary', undefined, 'More settings');
+      summary.title = 'On the controller these wait behind "More settings" too';
+      const list = el('div', 'controls');
+      list.append(...more.map((r) => r.row));
+      extra.append(summary, list);
+      section.append(extra);
+    }
 
     const previous = this.sync.get(id);
     this.sync.set(id, (state) => {
       previous?.(state);
       power.checked = item ? this.comesOn(id) : state.active;
-      for (const { row, eye, w } of rows) {
+      for (const { row, eye, reset, w, fallback } of rows) {
         row.hidden = !isVisible(w.control, state.params);
-        w.sync(state.params[w.control.id], state.params);
+        const value = state.params[w.control.id];
+        w.sync(value, state.params);
+        reset.hidden = fallback === undefined || JSON.stringify(value ?? fallback) === JSON.stringify(fallback);
         const hidden = Boolean(state.hide?.includes(w.control.id));
         eye.setAttribute('aria-checked', String(!hidden));
-        eye.title = hidden ? 'Hidden from the controller and phones. Click to show it.' : 'Shown on the controller. Click to hide it from visitors.';
-        eye.replaceChildren(icon(hidden ? 'eye-off' : 'eye', 14));
+        eye.title = hidden ? 'Not on the controller or phones. Click to give it to visitors.' : 'On the controller and phones. Click to keep it for yourself.';
+        eye.replaceChildren(icon(hidden ? 'tv-off' : 'tv', 14));
         row.classList.toggle('is-hidden', hidden);
       }
     });
     return section;
+  }
+
+  /** A control's value in words, for a tooltip: "12:00", "5 m/s", "Ribbons", "on". */
+  private describe(control: Control, value: unknown): string {
+    if (value === undefined) return 'its own value';
+    if (control.type === 'range' && typeof value === 'number') return control.unit === 'h' && control.max <= 24 ? clock(value) : `${value}${control.unit ? ` ${control.unit}` : ''}`;
+    if (control.type === 'select') return control.options.find((o) => o.value === value)?.label ?? String(value);
+    if (control.type === 'toggle') return value ? 'on' : 'off';
+    return String(value) || 'empty';
+  }
+
+  /** Every setting of a layer back to the layer's own, as one change (#64). */
+  private async resetLayer(id: string): Promise<void> {
+    const state = this.store.state.layers[id];
+    const manifest = state && this.store.manifest(state.layer);
+    if (!state || !manifest) return;
+    const params: Record<string, unknown> = {};
+    for (const control of visibleControls(manifest.controls)) if ('default' in control && control.tier !== 'state') params[control.id] = control.default;
+    if (Object.keys(params).length === 0) return;
+    const done = await this.send('scene.set', { layer: id, params });
+    if (done) this.history.undoable(`Reset ${layerButton(id, manifest, state).name}`, 'Every setting is back to its own value.');
+  }
+
+  /** Whether a part of the inspector that folds is open, remembered on this computer (#64). */
+  private opened(key: string, open?: boolean): boolean {
+    const name = `mrs-inspector-${key}`;
+    try {
+      if (open === undefined) return localStorage.getItem(name) !== 'closed';
+      localStorage.setItem(name, open ? 'open' : 'closed');
+    } catch {
+      // Storage off: everything starts open.
+    }
+    return open ?? true;
   }
 
   /** Whether an item is set to come on when its layer opens, as saved in the table. */

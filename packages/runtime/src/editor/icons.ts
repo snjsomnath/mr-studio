@@ -41,6 +41,7 @@ const PATHS: Record<string, string> = {
   blocks: 'M4 13h7v7H4zM13 13h7v7h-7zM8.500 4h7v7h-7z',
   phone: 'M8 3h8a1 1 0 0 1 1 1v16a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1ZM11 18h2',
   tv: 'M3 7h18v12H3zM8 3l4 4 4-4',
+  'tv-off': 'M3 7h18v12H3zM8 3l4 4 4-4M4 20 20 6',
   table: 'M3 6h18v12H3zM7 10h10v4H7z',
   play: 'M7 5l12 7-12 7z',
   stop: 'M6 6h12v12H6z',
