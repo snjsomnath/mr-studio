@@ -22,3 +22,14 @@ test('points along a line are evenly spaced', () => {
   assert.equal(points.length, 5);
   assert.deepEqual(points[0], [100 / 6, 0]);
 });
+
+test('a route follows the streets the short way round (#283)', () => {
+  // A square block with a long detour: from the bottom left to the top right corner.
+  const line = (...points: [number, number][]) => ({ geometry: points, properties: {} });
+  const graph = new StreetGraph(
+    [line([0, 0], [100, 0], [100, 100]), line([0, 0], [0, 300], [100, 300], [100, 100]), line([400, 400], [500, 400])],
+    { shortestPieceM: 0 },
+  );
+  assert.deepEqual(graph.route([2, 3], [99, 98]), [[0, 0], [100, 0], [100, 100]]);
+  assert.equal(graph.route([0, 0], [450, 401]), null, 'not connected');
+});

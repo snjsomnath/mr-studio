@@ -1071,6 +1071,23 @@ export class Controller {
         console.error(`[${id}] hero`, error);
       }
     }
+    // The layer's own stage (#283): the centre under its name, for a map app of its own.
+    const stage = el('div', 'layer-stage');
+    stage.hidden = true;
+    const stageCleanups: (() => void)[] = [];
+    let stageHandlers: PanelHandlers | void = undefined;
+    if (manifest.stage === 'custom' && module?.stage) {
+      const ctx: PanelContext = Object.assign(Object.create(baseContext(store, connection, id)), {
+        panel: 'stage',
+        onCleanup: (cleanup: () => void) => stageCleanups.push(cleanup),
+      });
+      try {
+        stageHandlers = module.stage(ctx, stage);
+        stage.hidden = false;
+      } catch (error) {
+        console.error(`[${id}] stage`, error);
+      }
+    }
     // Controls by tier: primary ones large and first, then the rest in a row, then "More settings", closed.
     const tierOf = (w: Widget) => w.control.tier ?? 'secondary';
     const primary = el('div', 'controls controls-primary');
@@ -1091,6 +1108,7 @@ export class Controller {
     if (!hero.hidden) body.append(hero);
     // The picked entity's own controls come before the layer's, as the thing in hand (#279).
     if (!entities.element.hidden) body.append(entities.element);
+    if (!stage.hidden) body.append(stage);
     for (const group of [primary, controls]) if (group.childElementCount > 0) body.append(group);
     body.append(legend.element, sounds.element);
     // "More settings" closes the primary row when there is one, so it costs no height of its own.
@@ -1102,6 +1120,7 @@ export class Controller {
       body,
       dispose: () => {
         for (const cleanup of heroCleanups) cleanup();
+        for (const cleanup of stageCleanups) cleanup();
         body.remove();
       },
       sync: (state) => {
@@ -1134,6 +1153,13 @@ export class Controller {
           w.sync(state.params[w.control.id], state.params);
         }
         more.hidden = ![...moreRows.children].some((row) => !(row as HTMLElement).hidden);
+        if (state.active && stageHandlers) {
+          try {
+            stageHandlers.update?.();
+          } catch (error) {
+            console.error(`[${id}] stage`, error);
+          }
+        }
         if (state.active && heroHandlers) {
           try {
             heroHandlers.update?.();

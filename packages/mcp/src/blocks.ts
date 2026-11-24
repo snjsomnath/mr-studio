@@ -214,6 +214,13 @@ export const BLOCKS: BlockDef[] = [
     unlocks: ['Energy and solar flows (ECOM generalised)', 'Per-building scenarios and what-ifs'],
   },
   {
+    id: 'controller-stage', group: 'interaction', name: 'Controller stage and map',
+    description: "A layer's own app in the controller's centre (#283): a map of the site in the table's orientation with its buildings and streets, where taps become points, routes or areas sent to the table as tool inputs, and buttons press named actions that start animations on the table. Routes can follow the streets (StreetGraph.route).",
+    usage: "layer.json stage: 'custom' and 'actions'; the module's stage(ctx, el) with controllerMap(el, ctx, { mode, points, onPick, onDraw, draw }); ctx.sendTool and ctx.action reach the table's tool() and action() handlers (samples/controller-map-example)",
+    detect: 'export function controllerMap',
+    unlocks: ['Custom map apps on the controller', 'Route and journey planners'],
+  },
+  {
     id: 'time-control', group: 'interaction', name: 'Time control',
     description: 'Date, hour and play controls with site-timezone conversion.',
     usage: "date + range(hour) + toggle(play) controls, zonedTimeToUtc(date, hour, ctx.site.timezone)",

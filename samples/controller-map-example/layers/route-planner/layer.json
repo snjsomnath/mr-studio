@@ -1,0 +1,15 @@
+{
+  "api": 1,
+  "id": "route-planner",
+  "name": "Route planner",
+  "description": "Choose a start and an end on the map; the route lights up on the table",
+  "icon": "route",
+  "category": "analysis",
+  "stage": "custom",
+  "requires": { "data": ["roads"] },
+  "tools": [{ "id": "route", "type": "line", "label": "Route", "cue": false }],
+  "actions": [{ "id": "travel", "label": "Send a traveller" }],
+  "controls": [
+    { "id": "streets", "type": "toggle", "label": "Follow the streets", "default": true }
+  ]
+}

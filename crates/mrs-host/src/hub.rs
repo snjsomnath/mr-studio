@@ -1217,8 +1217,12 @@ impl Hub {
             "layer.action" => {
                 let action = p["action"].as_str().ok_or("missing action")?;
                 let control = def.control(action).filter(|c| matches!(c.kind, crate::ControlKind::Action));
-                let control = control.ok_or_else(|| format!("layer '{layer}' has no action '{action}'"))?;
-                if role == Role::Phone && !control.phone {
+                let named = def.actions.iter().any(|a| a == action);
+                if control.is_none() && !named {
+                    return Err(format!("layer '{layer}' has no action '{action}'"));
+                }
+                // Named actions (#283) come from the controller's stage, never from a phone.
+                if role == Role::Phone && !control.is_some_and(|c| c.phone) {
                     return Err(format!("'{action}' cannot be used from a phone"));
                 }
                 self.emit("layer.action", json!({ "layer": layer, "action": action, "from": surface }));
@@ -2246,6 +2250,36 @@ mod tests {
         dev("layers.reset", json!({})).unwrap();
         assert_eq!(layer(&hub, "members")["params"]["entities"], json!({ "buildings": { "3": { "pv": 40.0 } } }));
         assert!(layer(&hub, "members").get("selection").is_none());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_controller_stage_presses_named_actions_and_sends_tools() {
+        let hub = scratch_hub("stage");
+        let dir = hub.site.dir.clone();
+        let package = dir.join("layers/planner");
+        std::fs::create_dir_all(&package).unwrap();
+        let manifest = json!({ "api": 1, "id": "planner", "name": "Planner", "stage": "custom",
+            "tools": [{ "id": "route", "type": "line" }], "actions": [{ "id": "travel", "label": "Travel" }] });
+        std::fs::write(package.join("layer.json"), manifest.to_string()).unwrap();
+        let site = Site::load(&dir).unwrap();
+        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let catalog = crate::layers::load_catalog(&site, &root.join("packages/layers")).unwrap();
+        let hub = Hub::new(&site, catalog, 4170, None, SessionOptions::default()).unwrap();
+        let dev = |method: &str, p: Value| hub.request(Role::Dev, 0, method, &p);
+        dev("scene.add", json!({ "use": "./layers/planner" })).unwrap();
+        hub.request(Role::Tv, 3, "layer.activate", &json!({ "layer": "planner", "active": true })).unwrap();
+        let mut events = hub.subscribe();
+        // The controller's stage sends a route and presses an action with no button of its own.
+        let route = json!({ "type": "LineString", "coordinates": [[11.97, 57.70], [11.971, 57.701]] });
+        hub.request(Role::Tv, 3, "tool.input", &json!({ "layer": "planner", "tool": "route", "geometry": route })).unwrap();
+        hub.request(Role::Tv, 3, "layer.action", &json!({ "layer": "planner", "action": "travel" })).unwrap();
+        let sent: Vec<Value> = std::iter::from_fn(|| events.try_recv().ok()).map(|e| serde_json::from_str(&e).unwrap()).collect();
+        assert!(sent.iter().any(|e| e["m"] == "tool.input" && e["p"]["from"] == 3), "{sent:?}");
+        assert!(sent.iter().any(|e| e["m"] == "layer.action" && e["p"]["action"] == "travel"));
+        // Not from a phone, and not an action the layer does not name.
+        assert!(hub.request(Role::Phone, 7, "layer.action", &json!({ "layer": "planner", "action": "travel" })).is_err());
+        assert!(dev("layer.action", json!({ "layer": "planner", "action": "fly" })).is_err());
         let _ = std::fs::remove_dir_all(&dir);
     }
 
