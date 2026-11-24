@@ -47,6 +47,7 @@ import { dataUrl, loadData } from '../recipe-player.ts';
 import type { Store } from '../store.ts';
 import { icon } from './icons.ts';
 import { middleInput, stopsInput } from './number-inputs.ts';
+import { PALETTE_THEME, paletteThemeChoice } from './palette-theme.ts';
 import './builder.css';
 
 export interface BuilderHost {
@@ -1643,7 +1644,10 @@ export function paletteDialog(host: BuilderHost, shell: HTMLElement): void {
     if (timer) clearTimeout(timer);
     timer = setTimeout(() => {
       const empty = !palette.set && Object.keys(palette.slots ?? {}).length === 0;
-      void host.send('palette.set', { palette: empty ? null : palette });
+      void host.send('palette.set', { palette: empty ? null : palette }).then(() => {
+        // A controller in the table palette's theme follows it (#93).
+        if (host.store.state.site.tv?.theme_name === PALETTE_THEME) void host.send('site.tv', paletteThemeChoice(empty ? null : palette));
+      });
     }, 120);
   };
   const content = el('div', 'lb-palette-body');
@@ -1707,7 +1711,17 @@ export function paletteDialog(host: BuilderHost, shell: HTMLElement): void {
       r.title = name;
       ramps.append(r, el('span', 'lb-ramp-name', name));
     }
-    content.replaceChildren(el('h4', undefined, 'Start from'), sets, el('h4', undefined, 'Colours'), slots, el('h4', undefined, 'Ramps'), ramps);
+    // The controller in the same colours (#93): its theme follows the palette from now on.
+    const follow = el('label', 'lb-fact lb-follow');
+    const following = host.store.state.site.tv?.theme_name === PALETTE_THEME;
+    follow.append(
+      toggle(following, (on) => {
+        const empty = !palette.set && Object.keys(palette.slots ?? {}).length === 0;
+        void host.send('site.tv', on ? paletteThemeChoice(empty ? null : palette) : { tv: { theme: null, theme_name: null } });
+      }, 'The controller in these colours too'),
+      el('span', undefined, 'The controller in these colours too'),
+    );
+    content.replaceChildren(el('h4', undefined, 'Start from'), sets, el('h4', undefined, 'Colours'), slots, el('h4', undefined, 'Ramps'), ramps, el('h4', undefined, 'Controller'), follow);
   };
   draw();
   dialog.append(head, el('p', 'wz-lead', 'Layers use these colours by name, so changing one here recolours every custom layer and its legend at once. Colours marked ! are too dark to read on the projected table.'), content);

@@ -7,6 +7,7 @@ import { paramSender } from '../layer-manager.ts';
 import type { Store } from '../store.ts';
 import { builderSection, customFromDataset, datasetShapes, describeShapes, deleteCustomDialog, layerFromImport, newCustomLayer, paletteDialog, vectorDatasets } from './builder.ts';
 import { openGallery } from './gallery.ts';
+import { paletteTheme, paletteThemeChoice } from './palette-theme.ts';
 import type { GallerySection } from './gallery.ts';
 import './gallery.css';
 import { DisplayTab } from './display-tab.ts';
@@ -1278,6 +1279,19 @@ export class Editor {
       const gallery = el('div', 'ed-themes');
       gallery.setAttribute('role', 'radiogroup');
       gallery.ariaLabel = 'Controller theme';
+      // The table's palette as a theme (#93): the controller in the map's own colours.
+      {
+        const theme = paletteTheme(this.store.state.site.palette);
+        const card = el('button', 'ed-theme');
+        card.type = 'button';
+        card.dataset.theme = theme.id;
+        card.setAttribute('role', 'radio');
+        card.setAttribute('aria-checked', String(chosen === theme.id));
+        card.title = `${theme.name}: ${theme.description} It follows the palette when the palette changes.`;
+        card.append(themeSwatch(theme), el('span', undefined, theme.name));
+        card.addEventListener('click', () => void this.send('site.tv', paletteThemeChoice(this.store.state.site.palette)));
+        gallery.append(card);
+      }
       THEMES.forEach((theme, index) => {
         const card = el('button', 'ed-theme');
         card.type = 'button';
