@@ -59,7 +59,9 @@ pub struct WindowError {
 impl WindowError {
     /// Builds one from what a window sent, cut to sensible sizes. None without a message.
     pub fn from_report(role: &str, report: &serde_json::Value) -> Option<Self> {
-        let text = |key: &str, most: usize| report[key].as_str().map(|s| s.trim()).filter(|s| !s.is_empty()).map(|s| s.chars().take(most).collect::<String>());
+        let text = |key: &str, most: usize| {
+            report[key].as_str().map(|s| s.trim()).filter(|s| !s.is_empty()).map(|s| s.chars().take(most).collect::<String>())
+        };
         Some(Self {
             at: SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0),
             role: role.to_string(),
@@ -170,9 +172,12 @@ impl Health {
         if errors.budget.len() > 256 {
             errors.budget.retain(|_, (since, _)| now.duration_since(*since) < Duration::from_secs(60));
         }
-        let same = errors.list.iter_mut().rev().take_while(|(at, _)| now.duration_since(*at) < SAME_ERROR).find(|(_, e)| {
-            e.role == error.role && e.layer == error.layer && e.message == error.message
-        });
+        let same = errors
+            .list
+            .iter_mut()
+            .rev()
+            .take_while(|(at, _)| now.duration_since(*at) < SAME_ERROR)
+            .find(|(_, e)| e.role == error.role && e.layer == error.layer && e.message == error.message);
         if let Some((_, same)) = same {
             same.count += 1;
             return false;
@@ -232,7 +237,8 @@ mod tests {
     #[test]
     fn window_errors_are_counted_once_and_kept_to_an_allowance() {
         let health = Health::default();
-        let report = |message: &str| WindowError::from_report("table", &serde_json::json!({ "message": message, "layer": "trees" })).unwrap();
+        let report =
+            |message: &str| WindowError::from_report("table", &serde_json::json!({ "message": message, "layer": "trees" })).unwrap();
         assert!(health.error("surface-1", report("boom")));
         // The same error again only counts up.
         assert!(!health.error("surface-1", report("boom")));

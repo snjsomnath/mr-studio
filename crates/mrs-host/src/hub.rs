@@ -23,7 +23,8 @@ pub const MAX_PHONES: usize = 8;
 pub const MAX_SCENE_LAYERS: usize = 64;
 const SLOT_COLOURS: [&str; 8] = ["#ff6b6b", "#4dabf7", "#51cf66", "#fcc419", "#cc5de8", "#ff922b", "#20c997", "#f06595"];
 /// The animals a phone can be (#339). Each phone gets one nobody else has, and may pick another.
-pub const AVATARS: [&str; 12] = ["fox", "octopus", "owl", "frog", "turtle", "penguin", "butterfly", "unicorn", "otter", "hedgehog", "whale", "bee"];
+pub const AVATARS: [&str; 12] =
+    ["fox", "octopus", "owl", "frog", "turtle", "penguin", "butterfly", "unicorn", "otter", "hedgehog", "whale", "bee"];
 /// The first half of a phone's fun name, "Sunny Fox" (#339). The pages say it in the visitor's language.
 pub const MOODS: [&str; 8] = ["curious", "cosmic", "sunny", "merry", "brave", "gentle", "lucky", "swift"];
 /// The longest name a visitor may give their phone, in characters.
@@ -991,11 +992,20 @@ impl Hub {
             let limit = self.options.max_phones;
             let slot = (0..limit).find(|slot| inner.seats.iter().all(|s| s.participant.slot != *slot)).ok_or("session full")?;
             // An animal nobody here has, and a mood, picked at random.
-            let free: Vec<&'static str> = AVATARS.iter().copied().filter(|a| inner.seats.iter().all(|s| s.participant.avatar != *a)).collect();
+            let free: Vec<&'static str> =
+                AVATARS.iter().copied().filter(|a| inner.seats.iter().all(|s| s.participant.avatar != *a)).collect();
             let avatar = free[random_u64() as usize % free.len().max(1)];
             let mood = MOODS[random_u64() as usize % MOODS.len()];
             inner.seats.push(Seat {
-                participant: Participant { surface, slot, colour: SLOT_COLOURS[slot % SLOT_COLOURS.len()], connected: true, avatar, mood, name: None },
+                participant: Participant {
+                    surface,
+                    slot,
+                    colour: SLOT_COLOURS[slot % SLOT_COLOURS.len()],
+                    connected: true,
+                    avatar,
+                    mood,
+                    name: None,
+                },
                 token: format!("{:016x}{:016x}", random_u64(), random_u64()),
                 epoch: 0,
                 held_since: None,
@@ -2010,17 +2020,17 @@ impl Hub {
                 self.switch(scene, at, false);
             }
         }
-        for at in 0..scene.len() {
+        for instance in scene.iter_mut() {
             // A layer a sequence shows has the step's params until the sequence lets it go.
-            if scene[at].state.shown_by.is_some() {
+            if instance.state.shown_by.is_some() {
                 continue;
             }
-            let mut params = self.catalog()[scene[at].def].defaults();
-            params.extend(scene[at].saved.params.clone());
-            if scene[at].state.params != params || scene[at].state.selection.is_some() {
-                scene[at].state.params = params;
-                scene[at].state.selection = None;
-                self.emit_layer(&scene[at].id, &scene[at].state);
+            let mut params = self.catalog()[instance.def].defaults();
+            params.extend(instance.saved.params.clone());
+            if instance.state.params != params || instance.state.selection.is_some() {
+                instance.state.params = params;
+                instance.state.selection = None;
+                self.emit_layer(&instance.id, &instance.state);
             }
         }
         for at in 0..scene.len() {
@@ -2592,12 +2602,20 @@ mod tests {
         table("layer.health", json!({ "layer": "wind", "status": "retrying", "reason": "x" })).unwrap();
         assert!(layer(&hub, "wind").get("health").is_none());
         dev("layer.activate", json!({ "layer": "wind", "active": true })).unwrap();
-        let r = table("layer.health", json!({ "layer": "wind", "status": "retrying", "reason": "couldn't read buildings.geojson (HTTP 404)", "retry_in": 5 })).unwrap();
+        let r = table(
+            "layer.health",
+            json!({ "layer": "wind", "status": "retrying", "reason": "couldn't read buildings.geojson (HTTP 404)", "retry_in": 5 }),
+        )
+        .unwrap();
         assert!(r["incident"].as_str().unwrap().contains("is not running: couldn't read buildings.geojson"), "{r}");
         assert_eq!(layer(&hub, "wind")["health"]["status"], "retrying");
         assert_eq!(layer(&hub, "wind")["health"]["retry_in"], 5.0);
         // A retry later with the same trouble is not a new incident.
-        let r = table("layer.health", json!({ "layer": "wind", "status": "retrying", "reason": "couldn't read buildings.geojson (HTTP 404)", "retry_in": 15 })).unwrap();
+        let r = table(
+            "layer.health",
+            json!({ "layer": "wind", "status": "retrying", "reason": "couldn't read buildings.geojson (HTTP 404)", "retry_in": 15 }),
+        )
+        .unwrap();
         assert!(r["incident"].is_null());
         // Phones can neither report nor retry; the controller and editor retry.
         assert!(hub.request(Role::Phone, 3, "layer.health", &json!({ "layer": "wind", "status": "running" })).is_err());
@@ -2633,7 +2651,11 @@ mod tests {
         dev("site.tv", json!({ "tv": { "phone_switch": null } })).unwrap();
         phone("layer.activate", json!({ "layer": "wind", "active": false })).unwrap();
         // While a slideshow shows its steps, phones leave the layers alone.
-        dev("scene.set", json!({ "layer": "slideshow", "steps": { "mode": "manual", "sequence": [{ "layer": "sunlight", "title": "Sun" }] } })).unwrap();
+        dev(
+            "scene.set",
+            json!({ "layer": "slideshow", "steps": { "mode": "manual", "sequence": [{ "layer": "sunlight", "title": "Sun" }] } }),
+        )
+        .unwrap();
         dev("layer.activate", json!({ "layer": "slideshow", "active": true })).unwrap();
         let refused = phone("layer.activate", json!({ "layer": "wind", "active": true })).unwrap_err();
         assert!(refused.contains("slideshow"), "{refused}");

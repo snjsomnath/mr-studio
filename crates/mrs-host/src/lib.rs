@@ -6,8 +6,8 @@ mod basemap;
 pub mod bridge;
 mod calibration;
 pub mod data;
-mod engine_bridge;
 pub mod diagnostics;
+mod engine_bridge;
 pub mod health;
 mod hub;
 pub mod layers;
@@ -968,7 +968,8 @@ struct DiagnosticsQuery {
 async fn diagnostics_page(State(state): State<Arc<AppState>>, Query(query): Query<DiagnosticsQuery>) -> axum::response::Response {
     let report = diagnostics::report(&state).await;
     if query.format.as_deref() == Some("text") {
-        return ([(header::CONTENT_TYPE, "text/plain; charset=utf-8"), (header::CACHE_CONTROL, "no-store")], diagnostics::text(&report)).into_response();
+        return ([(header::CONTENT_TYPE, "text/plain; charset=utf-8"), (header::CACHE_CONTROL, "no-store")], diagnostics::text(&report))
+            .into_response();
     }
     ([(header::CACHE_CONTROL, "no-store")], Json(report)).into_response()
 }

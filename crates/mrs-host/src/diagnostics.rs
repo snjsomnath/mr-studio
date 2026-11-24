@@ -39,7 +39,13 @@ pub fn text(report: &Value) -> String {
     let _ = writeln!(out, "MR Studio diagnostics");
     let _ = writeln!(out, "Version: {}", s(&report["version"]));
     let _ = writeln!(out, "System: {}", s(&report["os"]));
-    let _ = writeln!(out, "Table: {} ({}), site format {}", s(&report["table"]["name"]), s(&report["table"]["id"]), s(&report["table"]["format"]));
+    let _ = writeln!(
+        out,
+        "Table: {} ({}), site format {}",
+        s(&report["table"]["name"]),
+        s(&report["table"]["id"]),
+        s(&report["table"]["format"])
+    );
     let _ = writeln!(out, "Engine: {} on {}", s(&report["engine"]["backend"]), s(&report["engine"]["adapter"]));
 
     let _ = writeln!(out, "\nLayers");
@@ -58,7 +64,14 @@ pub fn text(report: &Value) -> String {
         let _ = writeln!(out, "  none have reported (only presented table and controller windows do)");
     }
     for w in windows {
-        let _ = writeln!(out, "  {} ({}): last heard {:.0} s ago, {:.0} fps", s(&w["window"]), s(&w["role"]), w["age"].as_f64().unwrap_or(0.0), w["fps"].as_f64().unwrap_or(0.0));
+        let _ = writeln!(
+            out,
+            "  {} ({}): last heard {:.0} s ago, {:.0} fps",
+            s(&w["window"]),
+            s(&w["role"]),
+            w["age"].as_f64().unwrap_or(0.0),
+            w["fps"].as_f64().unwrap_or(0.0)
+        );
     }
 
     let _ = writeln!(out, "\nErrors in the windows");
@@ -98,7 +111,8 @@ fn clock(at: u64) -> String {
 }
 
 /// Words after which a log line may carry a secret.
-const SECRET_WORDS: [&str; 10] = ["key", "token", "secret", "password", "passwd", "authorization", "bearer", "apikey", "api_key", "access_token"];
+const SECRET_WORDS: [&str; 10] =
+    ["key", "token", "secret", "password", "passwd", "authorization", "bearer", "apikey", "api_key", "access_token"];
 
 /// Blanks anything in a line that looks like a key: the value after `key=`, `token: `,
 /// `Authorization: Bearer …` and the like, and long runs of letters and digits.
@@ -126,7 +140,9 @@ pub fn redact(line: &str) -> String {
             if lower[j..].starts_with("bearer ") || lower[j..].starts_with("basic ") {
                 j += lower[j..].find(' ').unwrap_or(0) + 1;
             }
-            let value_end = line[j..].find(|c: char| c.is_whitespace() || matches!(c, '&' | '"' | '\'' | ',' | ';' | ')' | '}')).map_or(line.len(), |n| j + n);
+            let value_end = line[j..]
+                .find(|c: char| c.is_whitespace() || matches!(c, '&' | '"' | '\'' | ',' | ';' | ')' | '}'))
+                .map_or(line.len(), |n| j + n);
             if separated && value_end > j {
                 out.push_str(&line[i..j]);
                 out.push_str("[hidden]");

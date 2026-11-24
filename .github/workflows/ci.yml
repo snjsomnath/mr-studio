@@ -41,6 +41,19 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends mesa-vulkan-drivers
       - run: cargo test
 
+  rust-lint:
+    name: Rust format and lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --all --check
+      # The engine, site, host, CLI and relay. The desktop shell needs a webview to build and is linted where it is built.
+      - run: cargo clippy --all-targets -- -D warnings
+
   web:
     name: SDK, runtime and layers
     runs-on: ubuntu-latest
@@ -53,6 +66,8 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm -r typecheck
+      # Promises nobody awaits or catches (#264): how errors went missing before #259 and #260.
+      - run: pnpm lint
       # Every package with tests, including the density budget: every panel and theme in the repo is checked against the dashboard rules.
       - run: pnpm -r test
       - run: pnpm build
@@ -76,3 +91,65 @@ jobs:
       - run: pnpm --filter @mrstudio/mcp test
       # The Claude Desktop extension and the MCP Registry entry (checks the extension manifest).
       - run: pnpm --filter @mrstudio/mcp exec node scripts/pack.mjs
+
+  e2e:
+    name: End-to-end (Chromium)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm build
+      - run: cargo build -p mrs-cli
+      # The host, engine, every surface, the core layers, the editor and a phone (#261).
+      - run: node scripts/e2e.cjs e2e-screenshots
+      - run: node scripts/smoke.cjs chromium e2e-screenshots
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: e2e-screenshots
+          path: e2e-screenshots
+          if-no-files-found: ignore
+
+  smoke:
+    name: Engine smoke (${{ matrix.engine }} on ${{ matrix.os }})
+    # The Mac app draws with WebKit and the Windows app with WebView2 (Edge): bugs that only one
+    # engine has (PR 220: SVG filters froze WebKit) go red here instead of on a site's computer.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            engine: webkit
+          - os: windows-latest
+            engine: msedge
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # Edge is already on Windows runners; WebKit comes with Playwright.
+      - if: matrix.engine == 'webkit'
+        run: pnpm exec playwright install webkit
+      - run: pnpm build
+      - run: cargo build -p mrs-cli
+      - run: node scripts/smoke.cjs ${{ matrix.engine }} smoke-screenshots
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: smoke-${{ matrix.engine }}
+          path: smoke-screenshots
+          if-no-files-found: ignore

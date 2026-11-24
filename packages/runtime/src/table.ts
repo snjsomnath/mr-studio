@@ -72,7 +72,7 @@ export class TableView {
     }).observe(container);
     this.map.on('move', this.reclipElements);
     this.ready = new Promise((resolve) => {
-      this.map.once('load', () => resolve());
+      void this.map.once('load', () => resolve());
     });
   }
 
@@ -586,7 +586,7 @@ export class TableView {
     const { map, container } = this;
     return new Promise((resolve) => {
       const timer = setTimeout(() => resolve(null), 1500);
-      map.once('render', () => {
+      void map.once('render', () => {
         clearTimeout(timer);
         try {
           const box = container.getBoundingClientRect();

@@ -622,7 +622,10 @@ mod tests {
         let phone: Vec<bool> = def.controls.iter().map(|c| c.phone).collect();
         assert_eq!(phone, [true, false, true, false]);
         assert!(!def.phone_switch);
-        assert!(super::LayerDef::parse(json!({ "api": 1, "id": "u", "name": "U" })).unwrap().phone_switch, "phones may switch it by default");
+        assert!(
+            super::LayerDef::parse(json!({ "api": 1, "id": "u", "name": "U" })).unwrap().phone_switch,
+            "phones may switch it by default"
+        );
     }
 
     fn patch(v: Value) -> Map<String, Value> {

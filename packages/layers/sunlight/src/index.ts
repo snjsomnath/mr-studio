@@ -1,4 +1,4 @@
-import { defineLayer, formatHour, zonedTimeToUtc } from '@mrstudio/sdk';
+import { defineLayer, zonedTimeToUtc } from '@mrstudio/sdk';
 import type { Colormap, FieldFrame, FieldStream, LayerManifest, LightHandle, SunLight, TableContext } from '@mrstudio/sdk';
 
 import manifest from '../layer.json';

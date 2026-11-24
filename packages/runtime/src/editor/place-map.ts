@@ -204,7 +204,7 @@ export class PlaceMap {
       if (!keyed) return;
       const swap = () => (this.map.getSource('base') as RasterTileSource | undefined)?.setTiles(keyed.tiles);
       if (this.map.isStyleLoaded()) swap();
-      else this.map.once('load', swap);
+      else void this.map.once('load', swap);
     });
     let failed = 0;
     this.map.on('error', (event) => {
@@ -241,7 +241,7 @@ export class PlaceMap {
     this.map.on('click', (event) => this.change({ lon: event.lngLat.lng, lat: event.lngLat.lat }));
 
     // Once the style is read, not on load: load waits for tiles, which may never come offline.
-    this.map.once('style.load', () => {
+    void this.map.once('style.load', () => {
       this.map.addSource('table', { type: 'geojson', data: this.geojson() });
       this.map.addSource('tiles', { type: 'geojson', data: this.tileGeojson() });
       if (options.data) {

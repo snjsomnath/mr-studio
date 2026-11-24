@@ -105,7 +105,12 @@ Custom layers made in the editor's layer builder (data, look, motion and interac
 ```bash
 pnpm test        # cargo test, typecheck, SDK tests
 pnpm test:e2e    # real browser against the real host (needs Playwright with Chromium)
+pnpm smoke webkit  # every core layer on and off in one engine: chromium, webkit or msedge
+pnpm lint        # promises nobody awaits or catches
+cargo fmt --check && cargo clippy --all-targets -- -D warnings
 ```
+
+CI runs all of these on every pull request: the end-to-end check in Chromium on Linux, and the engine smoke with WebKit on macOS (as the Mac app draws) and Edge on Windows (as WebView2 does). The smoke fails on any error a page throws, a frame slower than 2 s, and known engine traps such as large SVG filters, which WebKit draws in software. Dependabot opens grouped dependency updates weekly, and a weekly security audit warns about known advisories.
 
 Measured on an Apple M4 Pro (Metal), 2026-11-14, sunlight kernel:
 

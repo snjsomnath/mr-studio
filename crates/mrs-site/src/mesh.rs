@@ -431,7 +431,7 @@ mod tests {
             "buffers": [{ "byteLength": bin.len() }]
         });
         let mut text = serde_json::to_vec(&json).unwrap();
-        while text.len() % 4 != 0 {
+        while !text.len().is_multiple_of(4) {
             text.push(b' ');
         }
         let mut out = Vec::new();

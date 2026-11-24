@@ -245,7 +245,10 @@ async fn phones_need_the_code_and_are_limited() {
     // Phones turn layers on and off (#335); the controller hears which phone did it.
     phone.request("layer.activate", json!({ "layer": "sunlight", "active": false })).await.unwrap();
     let switched = tv.event("phone.switched").await;
-    assert_eq!((switched["layer"].clone(), switched["active"].clone(), switched["participant"]["slot"].clone()), (json!("sunlight"), json!(false), json!(0)));
+    assert_eq!(
+        (switched["layer"].clone(), switched["active"].clone(), switched["participant"]["slot"].clone()),
+        (json!("sunlight"), json!(false), json!(0))
+    );
     assert!(phone.request("layers.reset", json!({})).await.is_err());
     assert!(phone.request("engine.open", json!({ "kernel": "sunlight", "params": {}, "fields": ["shadow"] })).await.is_err());
 
