@@ -3,6 +3,7 @@ import type { PointerSample } from './blocks/interaction.ts';
 import type { Colormap } from './colormap.ts';
 import type { EngineClient } from './engine.ts';
 import type { ModelHandle } from './model.ts';
+import type { LayerReveal } from './reveal.ts';
 import type { FieldFrame, LayerManifest, Params, SiteInfo, StepState, ToolGeometry, ToolInput } from './types.ts';
 
 export interface FieldOverlayStyle {
@@ -127,6 +128,34 @@ export interface MapHandle {
   addDrawing(id: string, options?: { opacity?: number; /** Canvas width in pixels. Default 2048. */ resolution?: number }): DrawingOverlay;
   /** A canvas above the scene, in CSS pixels, with a projection from WGS84. */
   addCanvas(id: string, style?: { opacity?: number }): CanvasOverlay;
+  /**
+   * What the table shows, for a magnifier (#287): ask for a rectangle of the table view and it is
+   * copied at the next frame, with everything drawn there except this layer's own canvases.
+   */
+  addPicture(): TablePicture;
+}
+
+/** A rectangle in the table view's CSS pixels, as `CanvasOverlay` uses them. */
+export interface PixelRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * A copy of part of what the table shows (`ctx.map.addPicture()`), for drawing it larger.
+ * `want` asks for a rectangle; the copy lands in `canvas` when the table next draws, at the
+ * screen's own pixel density, and `taken` says which rectangle it holds.
+ */
+export interface TablePicture {
+  want(rect: PixelRect): void;
+  readonly canvas: HTMLCanvasElement;
+  /** The rectangle `canvas` holds now, or null before the first copy. */
+  readonly taken: PixelRect | null;
+  /** Raised with every copy. */
+  readonly revision: number;
+  remove(): void;
 }
 
 /**
@@ -191,6 +220,12 @@ export interface TableContext<P = Params> extends ContextBase<P> {
   readonly steps: LayerSteps;
   /** The legend on the controller's stage, when it changes as the layer runs. */
   readonly legend: LayerLegend;
+  /**
+   * For a layer whose layer.json says `reveals: true` (the Magnifier, the Reveal line): where its
+   * items show on the table. The runtime clips everything the items draw to the shape. Other
+   * layers' calls do nothing.
+   */
+  readonly reveal: LayerReveal;
   /** Runs every animation frame while the layer is active. `dt` is seconds since the last call. */
   onFrame(callback: (dt: number) => void): void;
   /** Registers cleanup to run when the layer is turned off. */
