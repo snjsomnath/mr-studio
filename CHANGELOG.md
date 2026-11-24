@@ -4,6 +4,41 @@ Every merge to main that carries a release note becomes a version. The newest is
 The app shows these notes, with their pictures, on Home when a newer version is out.
 How notes are written: docs/RELEASING.md.
 
+## 0.8.0 (2026-11-24)
+
+### Breaking changes
+
+- A table with "services" in its site.json opens only in this version or newer; update the app on every computer that runs it. (#278)
+
+### New
+
+#### Fetch everything from open data in one go (#310)
+
+A new table's **Your place** step starts with **Fetch everything from open data**: buildings, streets, walking paths and trees from OpenStreetMap and the ground from free elevation, ticked and fetched together. OpenStreetMap is asked once for all of them, which is quicker and kinder to its shared servers than one request per dataset. One list shows how each one is doing, the editor reloads once at the end, and anything that failed has its own **Try again**. Datasets already on the table start unticked, so nothing is replaced unless you ask.
+
+![Fetching everything: one line per dataset](docs/screenshots/310-fetch-all-fetching.png)
+![Done: four in from OpenStreetMap, the ground left to try again](docs/screenshots/310-fetch-all-done.png)
+
+#### Models that run beside the table (#278)
+A table can now start its own models, such as an energy optimiser in Python, every time it opens. It keeps them running, restarting any that stop, and its layers ask them for answers. Long runs show their progress on the controller. If a model is down or the table is offline, the table shows the last answer it got. `samples/service-example` has a small model and a layer that uses it.
+
+![The controller while the model optimises, with its progress under the layer's name](docs/screenshots/278-controller-busy.png)
+![The model's answer drawn on the table, one circle per building](docs/screenshots/278-table.png)
+
+### Fixes
+
+#### The sun glides through the day (#302)
+
+Playing the sun study no longer jerks. The table now keeps its own clock while the day plays, so the sun, its glow and the shadows move a little every frame instead of jumping each time the time came back from the host. Shadows are drawn without stalling the frame, and on a slower graphics card they are drawn a little less often rather than slowing the whole table. The controller and the TV still follow the time a few times a second.
+
+Sunset is calm now too. The day slows to a third of its speed near sunrise and sunset, when shadows race across the table, so the golden hour gets its time. Long low shadows are drawn a little softer, and after sunset the table fades into night instead of switching back to the bright map.
+
+![Sunset before and after](docs/screenshots/302-sunset.png)
+
+![The table playing the sun study](docs/screenshots/302-sun-playing.png)
+
+![Frame times on the Mac, before and after](docs/screenshots/302-frame-times.png)
+
 ## 0.7.0 (2026-11-24)
 
 ### New
