@@ -7,6 +7,7 @@ import type { PanelContext, PanelHandlers } from '@mrstudio/sdk';
 
 import { sunAt, sunDay } from './look.ts';
 import type { SunDay } from './look.ts';
+import type { SpotDay } from './spot.ts';
 
 type Params = { mode: string; date: string; hour: number; play: boolean };
 
@@ -30,6 +31,12 @@ const STYLE = `
 .sun-hero-fact { padding: 0.625rem 1rem; border-radius: 0.75rem; text-align: right; }
 .sun-hero-fact small { display: block; font-size: 0.75rem; letter-spacing: 0.08em; text-transform: uppercase; opacity: 0.78; }
 .sun-hero-fact b { font-size: 1.5rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.sun-hero-fact > span { display: block; margin-top: 0.125rem; font-size: 0.8125rem; opacity: 0.85; }
+.sun-hero-spot { text-align: left; min-width: 9rem; }
+.sun-hero-key { display: flex; gap: 0.625rem; margin-top: 0.375rem; font-size: 0.75rem; opacity: 0.85; white-space: nowrap; }
+.sun-hero-key i { display: inline-block; width: 0.75rem; height: 0.375rem; margin-right: 0.25rem; border-radius: 0.125rem; vertical-align: 0.0625rem; }
+.sun-hero-spot small::before { content: ''; display: inline-block; width: 0.625rem; height: 0.625rem; margin-right: 0.375rem; border-radius: 50%;
+  border: 0.1875rem solid #ffd45e; vertical-align: -0.0625rem; }
 .sun-hero-band { position: absolute; left: 0; right: 0; bottom: 0; height: ${BAND_REM}rem; background: linear-gradient(rgb(10 13 20 / 0.55), rgb(10 13 20 / 0.85));
   backdrop-filter: blur(0.625rem); -webkit-backdrop-filter: blur(0.625rem); border-top: 1px solid rgb(255 255 255 / 0.08); }
 .sun-hero-play { position: absolute; left: 2.25rem; bottom: 1.25rem; width: 4rem; height: 4rem; border: 0; border-radius: 50%; display: grid; place-items: center; cursor: pointer;
@@ -53,6 +60,24 @@ function skyStops(altitude: number): [string, string, string, string, string] {
   return ['#1f5fc7', '#4f8fe0', '#9cc3ef', '#f4dcb8', '#f7c89a'];
 }
 
+/** The spot's day on the scrubber: sun, shade under trees, shade of buildings, night left bare. */
+function strip(spot: SpotDay, x: (hour: number) => number, track: number, rem: number): string {
+  const runs: { from: number; to: number; colour: string }[] = [];
+  spot.light.forEach((light, k) => {
+    if (!spot.up[k]) return;
+    const colour = light >= 0.5 ? '#ffd45e' : spot.tree[k]! > 0 ? '#7fbf6a' : '#4c5d8a';
+    const from = Math.max(0, spot.start + (k - 0.5) * spot.step);
+    const to = Math.min(24, spot.start + (k + 0.5) * spot.step);
+    const last = runs[runs.length - 1];
+    if (last && last.colour === colour && Math.abs(last.to - from) < 1e-6) last.to = to;
+    else runs.push({ from, to, colour });
+  });
+  const height = 0.875 * rem;
+  return runs
+    .map((r) => `<rect x="${x(r.from).toFixed(1)}" y="${(track - height / 2).toFixed(1)}" width="${Math.max(1, x(r.to) - x(r.from)).toFixed(1)}" height="${height}" fill="${r.colour}"/>`)
+    .join('');
+}
+
 export function sunlightHero(ctx: PanelContext<Params>, el: HTMLElement): PanelHandlers {
   el.innerHTML = `<style>${STYLE}</style>`;
   const root = document.createElement('div');
@@ -67,8 +92,22 @@ export function sunlightHero(ctx: PanelContext<Params>, el: HTMLElement): PanelH
   clock.innerHTML = '<b></b><span></span>';
   const facts = document.createElement('div');
   facts.className = 'sun-hero-facts';
-  facts.innerHTML = '<div class="sun-hero-fact glass"><small></small><b></b></div><div class="sun-hero-fact glass"><small></small><b></b></div>';
-  const [heightName, fromName] = [...facts.querySelectorAll('small')];
+  facts.innerHTML =
+    '<div class="sun-hero-fact sun-hero-spot glass"><small></small><b></b><span></span><div class="sun-hero-key"></div></div>' +
+    '<div class="sun-hero-fact glass" data-sky><small></small><b></b></div><div class="sun-hero-fact glass" data-sky><small></small><b></b></div>';
+  const spotFact = facts.querySelector<HTMLElement>('.sun-hero-spot')!;
+  const [spotName, heightName, fromName] = [...facts.querySelectorAll('small')];
+  spotName!.textContent = ctx.say('Sun here');
+  // The strip's colours, the same as `strip` draws.
+  spotFact.querySelector('.sun-hero-key')!.innerHTML = (
+    [
+      ['#ffd45e', 'Sun'],
+      ['#7fbf6a', 'Trees'],
+      ['#4c5d8a', 'Shade'],
+    ] as const
+  )
+    .map(([colour, word]) => `<span><i style="background:${colour}"></i>${ctx.say(word)}</span>`)
+    .join('');
   heightName!.textContent = ctx.say('Sun height');
   fromName!.textContent = ctx.say('From the');
   const band = document.createElement('div');
@@ -93,6 +132,7 @@ export function sunlightHero(ctx: PanelContext<Params>, el: HTMLElement): PanelH
   };
 
   function draw() {
+    const spot = (ctx.shared.spot ?? null) as SpotDay | null;
     const { w, h, rem } = size();
     if (w === 0 || h === 0) return;
     if (dayDate !== ctx.params.date || !day) {
@@ -168,7 +208,7 @@ export function sunlightHero(ctx: PanelContext<Params>, el: HTMLElement): PanelH
         <stop offset="${rise === null ? 0 : (x(rise) / w).toFixed(3)}" stop-color="#ffb35c"/><stop offset="${(x(day.peak.hour) / w).toFixed(3)}" stop-color="#ffe08a"/>
         <stop offset="${set === null ? 1 : (x(set) / w).toFixed(3)}" stop-color="#ff9e57"/></linearGradient></defs>
       <rect x="${x(0)}" y="${track - 0.25 * rem}" width="${x(24) - x(0)}" height="${0.5 * rem}" rx="${0.25 * rem}" fill="rgb(255 255 255 / .14)"/>
-      ${rise !== null && set !== null ? `<rect x="${x(rise)}" y="${track - 0.25 * rem}" width="${x(set) - x(rise)}" height="${0.5 * rem}" rx="${0.25 * rem}" fill="url(#sun-hero-lit)"/>` : ''}
+      ${spot ? strip(spot, x, track, rem) : rise !== null && set !== null ? `<rect x="${x(rise)}" y="${track - 0.25 * rem}" width="${x(set) - x(rise)}" height="${0.5 * rem}" rx="${0.25 * rem}" fill="url(#sun-hero-lit)"/>` : ''}
       ${[0, 3, 6, 9, 12, 15, 18, 21, 24].map((t) => `<text x="${x(t)}" y="${track + 2.1 * rem}" fill="rgb(255 255 255 / .6)" font-size="${0.95 * rem}" text-anchor="middle">${String(t).padStart(2, '0')}</text>`).join('')}
       ${instant ? `<circle cx="${sx}" cy="${track}" r="${1.05 * rem}" fill="#fff" stroke="rgb(255 200 87 / .55)" stroke-width="${0.5 * rem}"/>` : ''}`;
 
@@ -177,8 +217,27 @@ export function sunlightHero(ctx: PanelContext<Params>, el: HTMLElement): PanelH
     const daylight = rise !== null && set !== null ? set - rise : 0;
     time.textContent = instant ? formatHour(hour) : `${daylight.toFixed(1)} h`;
     when.textContent = instant ? date : ctx.say('of daylight on {date}', { date });
-    const [height, from] = [...facts.querySelectorAll('b')] as [HTMLElement, HTMLElement];
-    facts.hidden = !instant;
+    const [here, height, from] = [...facts.querySelectorAll('b')] as [HTMLElement, HTMLElement, HTMLElement];
+    for (const sky of facts.querySelectorAll<HTMLElement>('[data-sky]')) sky.hidden = !instant;
+    facts.hidden = !instant && !spot;
+    spotFact.hidden = !spot;
+    if (spot) {
+      here.textContent = `${spot.sunHours.toFixed(1)} h`;
+      const note = spotFact.querySelector<HTMLElement>(':scope > span')!;
+      const now = instant ? (spot.light[Math.min(spot.light.length - 1, Math.max(0, Math.round((hour - spot.start) / spot.step)))] ?? 0) : null;
+      note.textContent =
+        now !== null && spot.up[Math.round((hour - spot.start) / spot.step)]
+          ? now >= 0.5
+            ? ctx.say('in the sun now')
+            : now > 0
+              ? ctx.say('under trees now')
+              : ctx.say('in shade now')
+          : spot.treeHours >= 0.1
+            ? ctx.say('{hours} h lost to trees', { hours: spot.treeHours.toFixed(1) })
+            : spot.firstSun !== null && spot.lastSun !== null
+              ? ctx.say('sun {from} to {to}', { from: formatHour(spot.firstSun), to: formatHour(spot.lastSun) })
+              : ctx.say('no direct sun');
+    }
     height.textContent = now.altitude > 0 ? `${Math.round(now.altitude)}°` : ctx.say('Below');
     from.textContent = ctx.say(COMPASS[Math.round((((now.azimuth % 360) + 360) % 360) / 45) % 8]!);
     play.hidden = !instant;

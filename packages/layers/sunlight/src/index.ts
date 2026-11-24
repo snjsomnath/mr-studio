@@ -6,6 +6,7 @@ import { skyColormap, skyLight, sunAt, sunDay, sunHoursColormap, thresholdColorm
 import { sunlightHero } from './hero.ts';
 import { SunPath } from './sun-path.ts';
 import { hasShade, isFlat } from './flat.ts';
+import { spotOnTable } from './spot.ts';
 
 interface Params {
   mode: 'instant' | 'day';
@@ -223,11 +224,18 @@ export default defineLayer<Params>({
       ctx.setParams({ hour: Math.round(((ctx.params.hour + steps * HOUR_STEP) % 24) / HOUR_STEP) * HOUR_STEP });
     });
 
+    const spot = spotOnTable(ctx);
+
     publishDay();
     await open();
 
     return {
+      tool: (input) => spot.tool(input),
+      action(id) {
+        if (id === 'clearSpot') spot.clear();
+      },
       update(changed) {
+        spot.update(changed);
         if (changed.includes('date')) publishDay();
         if (changed.includes('mode')) void open();
         else {

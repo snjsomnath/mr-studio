@@ -8,6 +8,7 @@ use axum::extract::State;
 use axum::response::Response;
 use futures_util::{SinkExt, StreamExt};
 use mrs_engine::Encoding;
+use mrs_site::LonLat;
 use serde_json::{json, Value};
 use tokio::sync::{broadcast, mpsc};
 
@@ -200,6 +201,14 @@ async fn request(state: &AppState, role: Role, surface: u64, message: &Value, ou
         "engine.set" => {
             let params = p.get("params").cloned().ok_or("missing params")?;
             state.engine.set(surface, stream()?, params).await.map(|_| json!({}))
+        }
+        "engine.probe" => {
+            let at = p["at"]
+                .as_array()
+                .and_then(|a| Some(LonLat { lon: a.first()?.as_f64()?, lat: a.get(1)?.as_f64()? }))
+                .ok_or("at must be [lon, lat]")?;
+            let kernel = p["kernel"].as_str().ok_or("missing kernel")?.to_string();
+            state.engine.probe(kernel, p.get("params").cloned().unwrap_or_else(|| json!({})), at).await
         }
         "engine.close" => {
             state.engine.close(surface, stream()?);

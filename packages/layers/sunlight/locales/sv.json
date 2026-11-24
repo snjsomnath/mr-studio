@@ -45,5 +45,15 @@
   "south": "söder",
   "south-west": "sydväst",
   "west": "väster",
-  "north-west": "nordväst"
+  "north-west": "nordväst",
+  "How much sun here?": "Hur mycket sol får platsen?",
+  "Clear the spot": "Rensa platsen",
+  "Sun here": "Sol här",
+  "in the sun now": "i solen nu",
+  "under trees now": "under träd nu",
+  "in shade now": "i skugga nu",
+  "{hours} h lost to trees": "träden tar {hours} h",
+  "sun {from} to {to}": "sol {from}–{to}",
+  "no direct sun": "ingen direkt sol",
+  "Trees": "Träd"
 }

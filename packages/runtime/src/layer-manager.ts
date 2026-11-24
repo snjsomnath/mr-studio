@@ -208,6 +208,7 @@ export class LayerManager {
           track(() => stream.close());
           return stream;
         },
+        probe: (kernel, params, at) => engine.probe(kernel, params, at),
         info: () => engine.info(),
       } as EngineClient,
       map: this.view.handle(id, track),
