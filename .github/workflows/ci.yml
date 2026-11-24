@@ -74,3 +74,5 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @mrstudio/mcp typecheck
       - run: pnpm --filter @mrstudio/mcp test
+      # The Claude Desktop extension and the MCP Registry entry (checks the extension manifest).
+      - run: pnpm --filter @mrstudio/mcp exec node scripts/pack.mjs

@@ -4,6 +4,39 @@ Every merge to main that carries a release note becomes a version. The newest is
 The app shows these notes, with their pictures, on Home when a newer version is out.
 How notes are written: docs/RELEASING.md.
 
+## 0.14.0 (2026-11-24)
+
+### New
+
+#### Networks of flows, made in the layer builder without code (#280)
+A custom layer can now show a network: its points are the nodes, a links table joins them, and a time series says how much flows along each link hour by hour. Links widen and carry lights as busy as the flow, going the way it runs, in the colour of the node they leave. Rings travel out of a node that gives and into one that takes, and a gauge fills round a node with a level, such as a battery. Links without a line of their own follow the streets. The controller gets **Play** and **Time**, so a visitor can pause the day and scrub through it. The same picture fits an energy community, district heating, stormwater pipes or commuter flows. To try it, pick **Energy network** under test data in **New custom layer**: a grid, a battery, solar roofs and homes over a day.
+
+![The energy network on the table at seven in the evening: the grid in blue and the battery in pink feed the homes along the streets](docs/screenshots/280-table.png)
+![The layer builder's Motion tab with Network of flows turned on](docs/screenshots/280-builder.png)
+![Play and Time on the controller](docs/screenshots/280-controller.png)
+
+#### Development requests from the MCP server check for duplicates and are ready to build (#328)
+
+When an experience needs something MR Studio cannot do, the MCP server now writes an issue a developer can act on: a kind (layer enhancement, new layer, block, kernel, data integration, interaction, site setting, SDK or runtime, architecture, other), the context, a user story, the proposed functionality, what the table, controller and phones do, technical considerations, acceptance criteria, dependencies and current limitations. `find_related_issues` and the draft search open and closed issues first, and `submit_development_request` searches again and holds back a likely duplicate unless the person says it differs. One yes can send a batch. Issues get `development-request`, their kind and `needs-triage`, and are added to the build order in #49 at triage. An issue number is reported only when GitHub returned it; without a sign-in or permission nothing is sent and the prefilled link comes back. A new issue form, `development-request.yml`, matches the sections. `check_layer_idea`, `list_building_blocks`, `draft_module_request` and `submit_module_request` still work for this release only.
+
+![find_related_issues, the request sections, and a batch where the duplicate is held back](docs/screenshots/328-requests.png)
+
+#### Connect Claude and other AI apps in a minute (#324)
+
+Every release now carries a Claude Desktop extension: download `mr-studio.mcpb`, double-click, and Claude can build tables in your tables folder. ChatGPT Codex, Cursor, VS Code, Gemini CLI and other AI apps connect with one command, `npx -y @mrstudio/mcp`. A new Help guide, Build a table by talking to Claude, shows the steps for each app and a conversation from a rough idea to a finished table.
+
+![Adding MR Studio to Claude Code, and the check that it is connected](docs/screenshots/324-claude-code.png)
+
+## 0.13.0 (2026-11-24)
+
+### New
+
+#### The MCP server designs a whole experience, builds what exists and names what does not (#327)
+
+An LLM can now take one sentence, such as "residents understand how the proposed development changes sunlight and wind, and contribute ideas", and turn it into an experience plan: steps with what the table shows, what the controller says, what phones do and the guide's notes, plus layers at rest and other needs. `assess_experience` checks the plan against the capability catalogue and says, for each step, which layer serves it, what setup it still needs, which constraint it runs into (no 3D on the table), and which gaps need a development request of which kind. `build_experience` writes the parts that exist in one validated change, including a guided sequence with notes, and never writes a gap into `site.json`. New prompts: `design_experience`, `plan_workshop`, `compare_scenarios` and `build_from_data`; `new_project` now starts from the experience, and `check_layer_idea` also returns its idea as a one-step plan.
+
+![assess_experience and build_experience on the residents example](docs/screenshots/327-experience.png)
+
 ## 0.12.0 (2026-11-24)
 
 ### New

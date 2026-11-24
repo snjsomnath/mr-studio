@@ -12,9 +12,9 @@ A project is a site package: a folder with site.json, data/ and requests/. The s
 
 Rules:
 1. Design the experience first, then build from what exists. Read mrstudio://concepts (the three surfaces, what goes where, the patterns) and call find_capabilities with the person's goal before proposing anything; describe_layer before setting params. A capability's status comes from the code: available can be used now, needs_setup needs the data or service it names, planned and unsupported are development requests, never something to configure. Never invent layer ids, controls, kernels or site.json keys.
-2. Configure, do not code. Do not write layer modules, TypeScript, kernels or copies of core files into a site. When something is missing, run check_layer_idea and then draft_module_request; the core team builds it once for everyone.
+2. Configure, do not code. Do not write layer modules, TypeScript, kernels or copies of core files into a site. When something is missing, check it with assess_experience, look for an existing issue with find_related_issues, then draft_development_request; the core team builds it once for everyone.
 3. Edit sites only through the tools (create_site, update_site, add_layer, set_layer, move_layer, remove_layer). They validate every change against the contracts. Finish with validate_site.
-4. Submit a module request (submit_module_request) only after the person has read the draft and said yes; it opens a public GitHub issue.
+4. Send development requests (submit_development_request) only after the person has read the drafts and said yes; one yes may cover a batch. They open public GitHub issues.
 5. Contracts are in read_doc: architecture, roadmap, contracts/site, contracts/layer and the rest. Quote them rather than guess.
 6. What changed recently is in whats_new (the changelog, newest first). Check it when someone asks for something that may have just been built.
 
@@ -30,7 +30,7 @@ Work through these steps, one short question at a time, and act with the tools a
 2. The place. Agree the centre point (lon, lat in WGS84), the area the table shows in metres, and its rotation (bearing of the table's top edge, clockwise from north). Match the area's aspect ratio to the physical table. Ask the time zone. Then call create_site.
 3. The scene. Call list_layers. Pick the layers that tell the story and order them bottom to top: base and ambient layers first, analysis layers above. For each, call describe_layer and set params that frame the story (a date and hour for the sun, for example), and decide which start active. Use add_layer and set_layer.
 4. The data. Explain what the site folder needs (building footprints as GeoJSON in WGS84 with a height property, optional terrain and trees) and update scene paths with update_site once files are in data/. If the person has no data yet, the site still runs on a flat area.
-5. The look and the welcome. With update_site: branding (title, logo inside the site folder, and the welcome line under the title on the controller's home screen), the basemap (style, black and white, brightness), the table's palette, and display quality. The controller's home screen loops through the layers by itself while nobody touches it (the attract loop) and returns home after a quiet spell; each layer's button (name, icon, side, group) is set with set_layer. Read contracts/site to see what a site can configure today. If they want something the contract does not offer, do not add unknown keys; capture it with draft_module_request, kind "contract".
+5. The look and the welcome. With update_site: branding (title, logo inside the site folder, and the welcome line under the title on the controller's home screen), the basemap (style, black and white, brightness), the table's palette, and display quality. The controller's home screen loops through the layers by itself while nobody touches it (the attract loop) and returns home after a quiet spell; each layer's button (name, icon, side, group) is set with set_layer. Read contracts/site to see what a site can configure today. If they want something the contract does not offer, do not add unknown keys; capture it with draft_development_request, kind "site-setting".
 6. The table's edges. Set table.front (the side visitors stand at) and, if the projector covers more than the model, table.ribbons: at-a-glance strips in the blank space on any side.
 7. Languages. If visitors speak more than one language, set branding.languages (["en", "sv"]; the first is where the table starts) and translate the site's own words (title, welcome line, button names, slide titles) in branding.translations.
 8. A guided tour. If someone will present, make a slideshow of layers with set_steps and give each step notes: they show on the guide's phone and in the editor, never on the table.
@@ -78,10 +78,10 @@ The TV is where people steer the table and read results. ${
 export function requestPrompt(need?: string): string {
   return `Write a module request for the MR Studio core${need ? ` for: "${need}"` : ''}.
 
-1. Check it is really missing: list_layers, list_building_blocks, read_doc "roadmap", and check_layer_idea. If an existing layer or param covers it, say so and stop.
+1. Check it is really missing: find_capabilities and assess_experience. If an existing layer or param covers it, say so and stop. Then find_related_issues: if an issue already asks for it, point the person there and stop.
 2. Pick the kind: layer-change (a control or option on an existing layer), layer (a new layer from existing blocks), block (a shared visual, data or interaction primitive), kernel (engine computation), contract (site.json, TV, protocol, CLI), or promote (a team's layer moved into core).
 3. Write it for the core maintainers: the goal in the person's words, why existing pieces fall short, a proposal in terms of reusable blocks (principle 7: building blocks before ports, and a block earns its place when a second layer can use it), what it reuses, what is missing, and an example configuration (the layer.json or site.json fragment the team would write once it exists).
-4. Call draft_module_request. Show the person the draft path and the link. Call submit_module_request only after they agree.`;
+4. Call draft_development_request with a user story, the experience on the table, controller and phones, and acceptance criteria. Show the person the draft path and the link. Call submit_development_request only after they agree.`;
 }
 
 const DESIGN_RULES = `How to design for MR Studio:
@@ -90,7 +90,7 @@ const DESIGN_RULES = `How to design for MR Studio:
 - Write the experience as a plan: title, goal, audience, and 3 to 8 steps. Each step says what the table shows, what the controller says, what phones do, and what the guide says (notes). Add layers at rest and other needs.
 - Call assess_experience. Show the person the plan and the verdict in a few lines: what works now, what needs setup, and each gap.
 - With their yes, call build_experience on their site (create_site first if there is none), then validate_site and preview_site.
-- For each gap, offer a development request (draft_module_request with the kind assess_experience gave). Show the drafts; send them only after the person says yes, and one yes may cover the batch.`;
+- For each gap, look for an existing issue (find_related_issues); if one asks for it, point the person to it instead. Otherwise draft a development request (draft_development_request with the kind assess_experience gave, a user story and acceptance criteria). Show the drafts; send them with submit_development_request only after the person says yes, and one yes may cover the batch.`;
 
 export function designExperiencePrompt(goal?: string, place?: string, audience?: string): string {
   return `Design an MR Studio experience with me${goal ? ` so that ${goal}` : ''}${place ? `, at ${place}` : ''}${audience ? `, for ${audience}` : ''}.

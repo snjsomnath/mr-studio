@@ -7,10 +7,11 @@ import { z } from 'zod';
 import { changelogVersions, loadCatalog, type Catalog, type CoreOptions } from './core.ts';
 import { buildCapabilities, closestIds, parsePatterns, rank, withSite, type Capability } from './capabilities.ts';
 import { assessExperience, buildExperience, type BuildResult, type ExperiencePlan } from './experience.ts';
+import { DEV_KINDS, DUPLICATE_AT, KIND_ALIASES, searchIssues, submitDevDraft, writeDevDraft, type DevKind, type DevRequest, type SubmitOutcome } from './devrequests.ts';
 import { checkIdea } from './ideas.ts';
 import { RECIPE_VOCABULARY, legendFor } from './recipe.ts';
 import { brainstormPrompt, buildFromDataPrompt, compareScenariosPrompt, designExperiencePrompt, planWorkshopPrompt, dashboardPrompt, newProjectPrompt, requestPrompt, serverInstructions } from './prompts.ts';
-import { REQUEST_KINDS, submitDraft, writeDraft, type RequestKind } from './requests.ts';
+import { CORE_REPO, REQUEST_KINDS, submitDraft, writeDraft, type RequestKind } from './requests.ts';
 import {
   availableLayers,
   checkParams,
@@ -100,6 +101,9 @@ const ANNOTATIONS: Record<string, { readOnlyHint: boolean; destructiveHint?: boo
   find_capabilities: { readOnlyHint: true, openWorldHint: false },
   describe_capability: { readOnlyHint: true, openWorldHint: false },
   assess_experience: { readOnlyHint: true, openWorldHint: false },
+  find_related_issues: { readOnlyHint: true, openWorldHint: true },
+  draft_development_request: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+  submit_development_request: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
   build_experience: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   create_site: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   get_site: { readOnlyHint: true, openWorldHint: false },
@@ -252,7 +256,7 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
     },
     async ({ layer, site }) => {
       const found = findLayer(catalog, site ? at(site) : null, layer);
-      if (!found) return fail(`No layer '${layer}'. Core layers: ${catalog.layers.map((l) => l.id).join(', ')}`, undefined, { code: 'unknown_layer', next: ['Pick one of the core layers, or use check_layer_idea for something new.'] });
+      if (!found) return fail(`No layer '${layer}'. Core layers: ${catalog.layers.map((l) => l.id).join(', ')}`, undefined, { code: 'unknown_layer', next: ['Pick one of the core layers, or find_capabilities and assess_experience for something new.'] });
       return reply(`${found.manifest.name} (${found.origin} layer). Params are the control ids; set them in the site's layer entry.`, found.manifest);
     },
   );
@@ -261,7 +265,7 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
     'list_building_blocks',
     {
       title: 'List building blocks',
-      description: 'The shared primitives layers are composed from (visuals, data sources, interactions, TV panels), whether each is built or planned in this core, and the kernels. find_capabilities with kind "block" or "kernel" gives the same with evidence; this tool stays for older prompts.',
+      description: 'The shared primitives layers are composed from (visuals, data sources, interactions, TV panels), whether each is built or planned in this core, and the kernels. Superseded by find_capabilities with kind "block" or "kernel", which gives the same with evidence; this name works for this release only.',
       inputSchema: { group: z.enum(['visual', 'data', 'interaction', 'tv']).optional() },
     },
     async ({ group }) => {
@@ -336,7 +340,7 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
       }
       const ranked = rank(caps, goal).slice(0, limit ?? 12);
       if (!ranked.length) {
-        return reply('Nothing in MR Studio matches those words. If it is truly missing, it is a development request: check_layer_idea, then draft_module_request.', { matches: [] });
+        return reply('Nothing in MR Studio matches those words. If it is truly missing, it is a development request: find_related_issues, then draft_development_request.', { matches: [] });
       }
       const matches = ranked.map((m) => ({ ...brief(m.capability), matched: m.why }));
       const counts = STATUSES.map((st) => [st, matches.filter((x) => x.status === st).length] as const).filter(([, n]) => n);
@@ -432,7 +436,7 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
       if (sc && result) {
         Object.assign(sc, { verdict: a.verdict, built: result.built, skipped: result.skipped, gaps: a.gaps, setup: a.setup });
         if (sc.ok && a.gaps.length) {
-          sc.next = [`Show the person the ${a.gaps.length} gap${a.gaps.length === 1 ? '' : 's'}; with their yes, draft a request for each with draft_module_request.`];
+          sc.next = [`Show the person the ${a.gaps.length} gap${a.gaps.length === 1 ? '' : 's'}; with their yes, look for an existing issue with find_related_issues, then draft a request for each with draft_development_request.`];
           (out.content[0] as { text: string }).text += `\nGaps: ${a.gaps.map((g) => `${g.for} (${g.kind})`).join('; ')}`;
         }
       }
@@ -537,7 +541,7 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
         if (key === 'custom') return fail('Use save_custom_layer to save or remove a custom layer.');
         if (key === 'format' || key === 'id') return fail(`'${key}' cannot be changed here.`);
         if (!editable.includes(key)) {
-          return fail(`'${key}' is not a site.json setting in format ${SITE_FORMAT}. Settable: ${editable.join(', ')}.`, undefined, { code: 'unknown_setting', next: ['If the site really needs it, it is a core change: check_layer_idea, then draft_module_request (kind "contract").'] });
+          return fail(`'${key}' is not a site.json setting in format ${SITE_FORMAT}. Settable: ${editable.join(', ')}.`, undefined, { code: 'unknown_setting', next: ['If the site really needs it, it is a core change: find_related_issues, then draft_development_request (kind "site-setting").'] });
         }
         if (value === null) delete next[key];
         else if (value && typeof value === 'object' && !Array.isArray(value) && next[key] && typeof next[key] === 'object') {
@@ -627,7 +631,7 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
     async ({ site, use, id, parent, active, params, position }) =>
       editScene(site, (m) => {
         const layer = findLayer(catalog, at(site), use, m);
-        if (!layer) return `No layer '${use}'. Core layers: ${catalog.layers.map((l) => l.id).join(', ')}. For something new, use check_layer_idea.`;
+        if (!layer) return `No layer '${use}'. Core layers: ${catalog.layers.map((l) => l.id).join(', ')}. For something new, use find_capabilities and assess_experience.`;
         const checked = params ? checkParams(layer, params, 'params') : { issues: [], cleaned: undefined };
         const name = id ?? freeId(m, use);
         if (instanceIds(m).includes(name)) return `'${name}' is already the id of a layer or item; give another id.`;
@@ -860,6 +864,102 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
     },
   );
 
+  // ---- Development requests (#328) ----
+
+  tool(
+    'find_related_issues',
+    {
+      title: 'Find issues that already ask for this',
+      description:
+        `Before drafting a development request, look for what already exists: issues on ${CORE_REPO} (open and closed) that may ask for the same thing, ranked by how much of the title they share, and capabilities or planned roadmap items that cover it. An issue with similarity 0.6 or more is a likely duplicate: show it to the person and comment there instead of filing a new one. Reads GitHub's public search; signs in with GITHUB_TOKEN, GH_TOKEN or the gh CLI when available.`,
+      inputSchema: {
+        title: z.string().describe('What is missing, as an issue title would say it: "Voting on sketch marks from phones"'),
+        context: z.string().optional().describe('A sentence or two more, used when the title is short'),
+      },
+    },
+    async ({ title, context }) => {
+      const found = await searchIssues(title, context ?? '');
+      const caps = rank(capabilitiesFor(), `${title} ${context ?? ''}`).slice(0, 5).map((m) => ({ id: m.capability.id, name: m.capability.name, status: m.capability.status, matched: m.why }));
+      const likely = found.issues.filter((i) => i.similarity >= DUPLICATE_AT);
+      const summary = found.error
+        ? `Could not search GitHub (${found.error.code}); check ${CORE_REPO} issues by hand before filing. ${caps.length} capabilities match.`
+        : likely.length
+          ? `#${likely[0]!.number} "${likely[0]!.title}" (${likely[0]!.state}) likely already asks for this.`
+          : `${found.issues.length} related issue${found.issues.length === 1 ? '' : 's'}, none a likely duplicate.`;
+      return reply(summary, { issues: found.issues, likely_duplicates: likely.map((i) => i.number), capabilities: caps, ...(found.error ? { github_error: found.error } : {}) });
+    },
+  );
+
+  tool(
+    'draft_development_request',
+    {
+      title: 'Draft a development request',
+      description: `Write an actionable issue for the MR Studio core when an experience needs something it cannot do (a gap from assess_experience, or a planned or missing capability). Searches existing issues first and returns them: if one is a likely duplicate, do not file, comment there. Saves a markdown draft in <site>/requests/ and returns a prefilled issue link; nothing is sent. Kinds: ${Object.entries(DEV_KINDS).map(([k, v]) => `${k} (${v})`).join('; ')}. The issue gets the labels development-request, its kind and needs-triage.`,
+      inputSchema: {
+        kind: z.string().describe(`One of ${Object.keys(DEV_KINDS).join(', ')} (the older kinds and assess_experience's gap kinds are accepted)`),
+        title: z.string().describe('Specific and short: "Voting on sketch marks from phones"'),
+        context: z.string().describe('The site, the people at the table, and what they are trying to do'),
+        user_story: z.string().describe('"As a <who>, I want <what>, so that <why>"'),
+        proposal: z.string().describe('What should exist, in plain words'),
+        experience: z.object({ table: z.string().optional(), controller: z.string().optional(), phone: z.string().optional() }).optional().describe('What each surface does with it'),
+        technical: z.string().optional().describe('Blocks it could reuse, kernels, data, risks'),
+        acceptance: z.array(z.string()).min(1).describe('Checks that say it is done'),
+        dependencies: z.array(z.string()).optional(),
+        limitations: z.string().optional().describe('What MR Studio does today and why that falls short'),
+        references: z.array(z.string()).optional(),
+        related_capabilities: z.array(z.string()).optional().describe('Capability ids it reuses or extends'),
+        related_issues: z.array(z.object({ number: z.number().int(), why: z.string() })).optional().describe('Related issues this is not a duplicate of, and how it differs'),
+        example: z.unknown().optional().describe('The layer.json or site.json fragment a team would write once it exists'),
+        site: z.string().optional().describe('Site folder; the draft is saved in its requests/ folder'),
+      },
+    },
+    async (args) => {
+      const kind = (args.kind in DEV_KINDS ? args.kind : KIND_ALIASES[args.kind]) as DevKind | undefined;
+      if (!kind) return fail(`'${args.kind}' is not a request kind.`, { kinds: Object.keys(DEV_KINDS) }, { code: 'invalid_params', next: [`Use one of ${Object.keys(DEV_KINDS).join(', ')}.`] });
+      const dir = args.site ? at(args.site) : null;
+      let siteName: string | undefined;
+      if (dir) {
+        try {
+          siteName = readSite(dir).name;
+        } catch {
+          siteName = undefined;
+        }
+      }
+      const found = await searchIssues(args.title, args.context);
+      const draft = writeDevDraft({ ...args, kind, site: siteName ?? args.site } as DevRequest, catalog.version, dir);
+      const likely = found.issues.filter((i) => i.similarity >= DUPLICATE_AT && !(args.related_issues ?? []).some((r) => r.number === i.number));
+      const warn = likely.length ? ` Careful: #${likely[0]!.number} "${likely[0]!.title}" may already ask for this; show it to the person before filing.` : found.error ? ` GitHub could not be searched (${found.error.code}); check for duplicates by hand.` : '';
+      return reply(
+        `Drafted "${draft.title}" (${kind}).${draft.path ? ` Saved to ${draft.path}.` : ''}${warn} Show the person the draft; send it with submit_development_request only after they say yes (one yes may cover several drafts).`,
+        { path: draft.path, issue_link: draft.url, labels: draft.labels, body: draft.body, related_issues: found.issues, likely_duplicates: likely.map((i) => i.number), ...(found.error ? { github_error: found.error } : {}) },
+      );
+    },
+  );
+
+  tool(
+    'submit_development_request',
+    {
+      title: 'Send development requests',
+      description: `Open drafted development requests as GitHub issues on ${CORE_REPO}. Only after the person has read the drafts and said yes; one yes may cover the batch. Each draft is checked against existing issues again first and refused as possible_duplicate unless its number is in not_duplicate_of. Signs in with GITHUB_TOKEN, GH_TOKEN or the gh CLI; without one, or when GitHub refuses, nothing is sent and the prefilled link is returned. An issue number and link are reported only when GitHub returned them.`,
+      inputSchema: {
+        paths: z.array(z.string()).min(1).describe('Draft paths in <site>/requests/'),
+        not_duplicate_of: z.array(z.number().int()).optional().describe('Issue numbers the person agreed these are not duplicates of'),
+      },
+    },
+    async ({ paths, not_duplicate_of }) => {
+      const results: SubmitOutcome[] = [];
+      for (const p of paths) results.push(await submitDevDraft(at(p), not_duplicate_of ?? []));
+      const sent = results.filter((r): r is Extract<SubmitOutcome, { submitted: true }> => r.submitted);
+      const held = results.filter((r): r is Extract<SubmitOutcome, { submitted: false }> => !r.submitted);
+      const summary = `${sent.length ? `Sent ${sent.map((r) => `#${r.number}`).join(', ')}.` : 'Nothing was sent.'}${held.length ? ` Not sent: ${held.map((r) => `${r.path.split(/[\\/]/).pop()} (${r.error.code})`).join(', ')}.` : ''}`;
+      if (!sent.length) {
+        const first = held[0]!;
+        return fail(summary, { submitted: [], results }, { code: first.error.code, recoverable: first.error.recoverable, next: first.error.next });
+      }
+      return reply(summary, { submitted: sent.map(({ number, url, title }) => ({ number, url, title })), results });
+    },
+  );
+
   // ---- Ideas and requests ----
 
   tool(
@@ -867,7 +967,7 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
     {
       title: 'Check a layer idea',
       description:
-        'Check a sketched layer against the core (for a whole experience, use assess_experience): which existing layers already cover it, which kernels and building blocks exist or are planned, and whether it should be configured from an existing layer, requested as a new core layer from existing blocks, or needs new blocks or kernels first.',
+        'Superseded by assess_experience (a one-step plan gives the same answer); this name works for this release only. Check a sketched layer against the core: which existing layers already cover it, which kernels and building blocks exist or are planned, and whether it should be configured from an existing layer, requested as a new core layer from existing blocks, or needs new blocks or kernels first.',
       inputSchema: {
         title: z.string(),
         description: z.string().describe('What it shows and what people do with it'),
@@ -891,7 +991,7 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
     'draft_module_request',
     {
       title: 'Draft a module request',
-      description: `Write a request for the MR Studio core team when a project needs something the core lacks, instead of writing custom code. Saves a markdown draft in <site>/requests/ and returns a prefilled GitHub issue link for ${process.env.MRSTUDIO_REPO ?? 'snjsomnath/mr-studio'}. Nothing is sent. Kinds: ${Object.entries(REQUEST_KINDS).map(([k, v]) => `${k} (${v})`).join('; ')}.`,
+      description: `Superseded by draft_development_request, which also searches existing issues; this name works for this release only. Write a request for the MR Studio core team when a project needs something the core lacks, instead of writing custom code. Saves a markdown draft in <site>/requests/ and returns a prefilled GitHub issue link for ${process.env.MRSTUDIO_REPO ?? 'snjsomnath/mr-studio'}. Nothing is sent. Kinds: ${Object.entries(REQUEST_KINDS).map(([k, v]) => `${k} (${v})`).join('; ')}.`,
       inputSchema: {
         kind: z.enum(Object.keys(REQUEST_KINDS) as [RequestKind, ...RequestKind[]]),
         title: z.string().describe('Short, specific: "Animated paths block for vehicles along road data"'),
@@ -927,7 +1027,7 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
     'submit_module_request',
     {
       title: 'Submit a module request',
-      description: 'Open a drafted module request as a GitHub issue on the core repository. Only call this after the person has read the draft and agreed: it posts publicly. Uses GITHUB_TOKEN or GH_TOKEN, else a signed-in gh CLI, else returns the link to file by hand.',
+      description: 'Superseded by submit_development_request, which checks for duplicates and sends a batch; this name works for this release only. Open a drafted module request as a GitHub issue on the core repository. Only call this after the person has read the draft and agreed: it posts publicly. Uses GITHUB_TOKEN or GH_TOKEN, else a signed-in gh CLI, else returns the link to file by hand.',
       inputSchema: { path: z.string().describe('Path of the draft in <site>/requests/') },
     },
     async ({ path }) => {

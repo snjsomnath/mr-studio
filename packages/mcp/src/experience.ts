@@ -40,7 +40,8 @@ export interface ExperiencePlan {
 }
 
 export type StepStatus = 'buildable' | 'needs_setup' | 'needs_development' | 'unsupported';
-export type GapKind = 'layer-change' | 'layer' | 'block' | 'kernel' | 'contract';
+/** The development request kinds (devrequests.ts) a gap can need. */
+export type GapKind = 'layer-enhancement' | 'new-layer' | 'block' | 'kernel' | 'site-setting' | 'interaction' | 'data-integration';
 
 export interface Gap {
   /** The step title or need it comes from. */
@@ -121,7 +122,7 @@ function gapFor(caps: Capability[], forWhat: string, text: string): Gap {
   const ranked = rank(caps, text);
   const planned = ranked.find((m) => m.capability.status === 'planned' && m.score >= MIN_SCORE);
   if (planned) {
-    const kind: GapKind = planned.capability.kind === 'kernel' ? 'kernel' : planned.capability.kind === 'block' ? 'block' : 'layer';
+    const kind: GapKind = planned.capability.kind === 'kernel' ? 'kernel' : planned.capability.kind === 'block' ? 'block' : 'new-layer';
     return { for: forWhat, kind, summary: `On the roadmap but not built: ${planned.capability.name}.`, related: [planned.capability.id] };
   }
   const asked = new Set(tokens(text));
@@ -129,7 +130,7 @@ function gapFor(caps: Capability[], forWhat: string, text: string): Gap {
   const parts = ranked.filter((m) => (m.capability.kind === 'block' || m.capability.kind === 'kernel') && m.capability.status !== 'planned' && m.score >= MIN_SCORE / 2);
   const together = new Set(parts.flatMap((m) => m.why.map((w) => w.split('→')[0]!)));
   if (parts.length && (together.size / Math.max(1, asked.size) >= 0.5 || parts.some((m) => covers(m) >= 0.5)))
-    return { for: forWhat, kind: 'layer', summary: 'No layer does this, but the pieces exist; a new core layer could compose them.', related: parts.slice(0, 4).map((m) => m.capability.id) };
+    return { for: forWhat, kind: 'new-layer', summary: 'No layer does this, but the pieces exist; a new core layer could compose them.', related: parts.slice(0, 4).map((m) => m.capability.id) };
   return { for: forWhat, kind: 'block', summary: 'Nothing in the core does this yet; it needs a new building block or kernel.', related: [] };
 }
 
@@ -189,7 +190,7 @@ export function assessExperience(plan: ExperiencePlan, caps: Capability[], layer
     }
     report.layer = { use: cap.use ?? cap.id.slice(6), name: cap.name, capability: cap.id, why };
     const limit = limitHit(cap, text);
-    if (limit) report.gap = { for: step.title, kind: 'layer-change', summary: `${cap.name} cannot do this yet: ${limit}`, related: [cap.id] };
+    if (limit) report.gap = { for: step.title, kind: 'layer-enhancement', summary: `${cap.name} cannot do this yet: ${limit}`, related: [cap.id] };
 
     const layer = layerOf(report.layer.use);
     if (layer && step.params) report.issues.push(...checkParams(layer, step.params, `steps[${index}].params`).issues);
@@ -200,7 +201,7 @@ export function assessExperience(plan: ExperiencePlan, caps: Capability[], layer
     }
 
     if (report.issues.some((i) => i.level === 'error') || report.with.some((w) => !w.ok)) report.status = 'needs_development';
-    if (report.issues.some((i) => i.level === 'error')) report.gap ??= { for: step.title, kind: 'layer-change', summary: `Fix the step first: ${report.issues.filter((i) => i.level === 'error').map((i) => i.message).join('; ')}`, related: [cap.id] };
+    if (report.issues.some((i) => i.level === 'error')) report.gap ??= { for: step.title, kind: 'layer-enhancement', summary: `Fix the step first: ${report.issues.filter((i) => i.level === 'error').map((i) => i.message).join('; ')}`, related: [cap.id] };
     else if (report.gap) report.status = 'buildable';
     else if (report.setup.length) report.status = 'needs_setup';
     return report;
@@ -222,7 +223,7 @@ export function assessExperience(plan: ExperiencePlan, caps: Capability[], layer
     if (hit && hit.score >= MIN_SCORE && covered.size / Math.max(1, asked.size) >= 0.5) {
       const limit = limitHit(hit.capability, need);
       if (!limit) return { need, status: hit.capability.status === 'needs_setup' ? 'needs_setup' : 'buildable', covered_by: { id: hit.capability.id, name: hit.capability.name } };
-      return { need, status: 'needs_development', gap: { for: need, kind: 'layer-change', summary: `${hit.capability.name} cannot do this yet: ${limit}`, related: [hit.capability.id] } };
+      return { need, status: 'needs_development', gap: { for: need, kind: 'layer-enhancement', summary: `${hit.capability.name} cannot do this yet: ${limit}`, related: [hit.capability.id] } };
     }
     const constraint = constraintFor(caps, need);
     if (constraint) return { need, status: 'unsupported', covered_by: { id: constraint.id, name: constraint.name } };
@@ -240,7 +241,7 @@ export function assessExperience(plan: ExperiencePlan, caps: Capability[], layer
   if (built) next.push(`build_experience writes the ${built} step${built === 1 ? '' : 's'} that exist${built === 1 ? 's' : ''}${plan.steps.length > 1 && plan.guided !== false ? ' and a guided sequence of them' : ''}; gaps are never written into site.json.`);
   if (setup.length) next.push('Bring in what setup lists (data files into the site, keys in the app\'s Sources and keys) before the session.');
   if (steps.some((s) => s.constraint)) next.push('A step runs into a constraint; rephrase it with the alternative given.');
-  if (gaps.length) next.push(`Show the person the ${gaps.length} gap${gaps.length === 1 ? '' : 's'}; with their yes, draft a development request for each (draft_module_request with the kind given).`);
+  if (gaps.length) next.push(`Show the person the ${gaps.length} gap${gaps.length === 1 ? '' : 's'}; with their yes, look for an existing issue (find_related_issues), then draft a development request for each (draft_development_request with the kind given).`);
   const summary = `${plan.title}: ${verdict.replace(/_/g, ' ')}. ${built} of ${plan.steps.length} steps exist${setup.length ? `, ${setup.length} setup item${setup.length === 1 ? '' : 's'}` : ''}${gaps.length ? `, ${gaps.length} gap${gaps.length === 1 ? '' : 's'}` : ''}.`;
   return { verdict, summary, steps, at_rest, needs, gaps, setup, next };
 }
