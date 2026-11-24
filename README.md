@@ -94,6 +94,7 @@ Custom layers made in the editor's layer builder (data, look, motion and interac
 
 - **A layer**: copy `packages/layers/sunlight`. A layer is `layer.json` (id, controls, tools) plus `src/index.ts`. The TV and phone controls are generated from the manifest. List the layer in a site's `site.json`. See [docs/contracts/layer.md](docs/contracts/layer.md).
 - **A kernel**: add `crates/mrs-engine/src/kernels/<id>/` with `kernel.wgsl`, `cpu.rs` and `mod.rs`, register it in `kernels/mod.rs`, and add `tests/<id>.rs` with physics tests on the CPU reference and a GPU/CPU parity test. See [docs/contracts/engine.md](docs/contracts/engine.md).
+- **A layer of your own site**: `mrstudio layer new <id> --site <site>`, then `mrstudio layer build`. It lives in the site's `layers/` folder and runs in the installed app, with no change to the core. See "Site layers" in [docs/contracts/layer.md](docs/contracts/layer.md#site-layers).
 - **A site**: `mrstudio new-site`, add data, `mrstudio validate`. See [docs/contracts/site.md](docs/contracts/site.md).
 - **A site, with an LLM**: connect the MCP server and use its `new_project` prompt. Ideas the core cannot serve become module requests to this repository. See [docs/MCP.md](docs/MCP.md).
 

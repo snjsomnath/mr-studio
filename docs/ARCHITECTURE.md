@@ -116,7 +116,7 @@ What a team installs:
 | MR Studio MCP server | One file inside the app, also npm `@mrstudio/mcp` | Building a site by talking to an LLM ([MCP.md](MCP.md)) |
 
 What a team owns: a site repository made from a template (`mrstudio new-site`, later a GitHub template repository).
-It holds `site.json`, data, custom layers and dashboards, and a `mrstudio` version range. It contains no core code.
+It holds `site.json`, data, custom layers and dashboards, its own code layers in `layers/` (built with `mrstudio layer build`, loaded by the app; see layer.md, Site layers), and a `mrstudio` version range. It contains no core code.
 The app opens that folder. Updating the core is installing a newer app; the site folder is not touched.
 
 Versioning. The app, CLI and SDK share one semantic version. What that version promises is the contracts, each of which carries its own number:

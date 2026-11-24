@@ -95,6 +95,11 @@ export interface LayerManifest {
   panels?: PanelSpec[];
   /** The layer is a sequence: its instances may have `steps.sequence` that show other layers (the slideshow). */
   sequence?: boolean;
+  /**
+   * For a site's own code layer (#277): the address its built module is imported from, set by the
+   * host when `layers/<name>/dist/index.js` exists. Absent for core layers, which are bundled.
+   */
+  module?: string;
   /** For a custom layer saved in the site: the recipe the runtime draws. Absent for a code layer. */
   custom?: CustomLayer;
   /** Rows of the layer's legend on the controller (docs/contracts/present.md). */

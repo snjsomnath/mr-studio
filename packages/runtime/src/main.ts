@@ -12,6 +12,7 @@ import { browserLanguage, keepOwnLanguage, language, offered, ownLanguage, setLa
 import type { Language } from './i18n.ts';
 import { joinPanel } from './join.ts';
 import { LayerManager } from './layer-manager.ts';
+import { loadSiteModules } from './registry.ts';
 import { phoneBadge, phoneCode, refusedScreen, rememberSeat, rememberedSeat } from './phone.ts';
 import { Store } from './store.ts';
 import './style.css';
@@ -96,6 +97,11 @@ async function main() {
   }
   const store = new Store(connection, welcome);
   const site = store.state.site;
+  // The site's own code layers (#277) load before anything asks for a layer's code. Phones need none.
+  if (!phone) {
+    await loadSiteModules(store.manifests);
+    store.onCatalog(() => void loadSiteModules(store.manifests));
+  }
   if (guiding) {
     document.title = `Guide · ${site.name}`;
     app.append(guideScreen(store, connection));

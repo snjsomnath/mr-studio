@@ -7,7 +7,7 @@ mod calibration;
 mod engine_bridge;
 pub mod health;
 mod hub;
-mod layers;
+pub mod layers;
 mod model;
 pub mod relay;
 pub mod sources;
