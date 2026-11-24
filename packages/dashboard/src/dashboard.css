@@ -668,3 +668,120 @@
 .mrs-balance-chip {
   justify-content: flex-start;
 }
+
+/* Control (#354): one of the layer's controls on a panel. Sized from the unit, like the rest. */
+.mrs-control {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: calc(1 * var(--mrs-u));
+}
+.mrs-control-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--mrs-gap);
+}
+.mrs-control-label {
+  font-size: var(--mrs-type-body);
+  color: var(--mrs-text);
+}
+.mrs-control-value {
+  font-family: var(--mrs-font-number);
+  font-size: var(--mrs-type-body);
+  color: var(--mrs-muted);
+}
+.mrs-control button,
+.mrs-control select {
+  font: inherit;
+  font-size: var(--mrs-type-body);
+  color: var(--mrs-text);
+  cursor: pointer;
+}
+.mrs-control button:disabled,
+.mrs-control select:disabled,
+.mrs-control input:disabled {
+  cursor: default;
+}
+.mrs-control-button {
+  width: 100%;
+  min-height: calc(6 * var(--mrs-u));
+  border: none;
+  border-radius: var(--mrs-radius);
+  background: var(--mrs-accent);
+  color: var(--mrs-accent-ink) !important;
+  font-weight: 600;
+}
+.mrs-control-toggle {
+  display: flex;
+  align-items: center;
+  gap: calc(1.2 * var(--mrs-u));
+  border: none;
+  background: none;
+  padding: 0;
+  text-align: left;
+}
+.mrs-control-knob {
+  flex: none;
+  position: relative;
+  width: calc(6 * var(--mrs-u));
+  height: calc(3.4 * var(--mrs-u));
+  border-radius: calc(1.7 * var(--mrs-u));
+  background: var(--mrs-line);
+  transition: background 0.2s;
+}
+.mrs-control-knob::after {
+  content: '';
+  position: absolute;
+  top: calc(0.4 * var(--mrs-u));
+  left: calc(0.4 * var(--mrs-u));
+  width: calc(2.6 * var(--mrs-u));
+  height: calc(2.6 * var(--mrs-u));
+  border-radius: 50%;
+  background: var(--mrs-text);
+  transition: transform 0.2s;
+}
+.mrs-control-toggle[aria-checked='true'] .mrs-control-knob {
+  background: var(--mrs-accent);
+}
+.mrs-control-toggle[aria-checked='true'] .mrs-control-knob::after {
+  transform: translateX(calc(2.6 * var(--mrs-u)));
+  background: var(--mrs-accent-ink);
+}
+.mrs-control-slider {
+  width: 100%;
+  accent-color: var(--mrs-accent);
+  height: calc(4 * var(--mrs-u));
+}
+.mrs-control-choices {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  border: var(--mrs-stroke) solid var(--mrs-line);
+  border-radius: var(--mrs-radius);
+  overflow: hidden;
+}
+.mrs-control-choice {
+  border: none;
+  background: none;
+  padding: calc(1 * var(--mrs-u)) calc(0.6 * var(--mrs-u));
+  min-height: calc(5 * var(--mrs-u));
+}
+.mrs-control-choice[aria-checked='true'] {
+  background: var(--mrs-accent);
+  color: var(--mrs-accent-ink) !important;
+  font-weight: 600;
+}
+.mrs-control-select {
+  width: 100%;
+  min-height: calc(5 * var(--mrs-u));
+  background: var(--mrs-panel);
+  border: var(--mrs-stroke) solid var(--mrs-line);
+  border-radius: var(--mrs-radius);
+}
+.mrs-control-chip .mrs-control-head,
+.mrs-control-chip .mrs-control-value {
+  display: none;
+}

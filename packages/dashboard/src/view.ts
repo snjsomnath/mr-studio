@@ -1,7 +1,7 @@
 // The dashboard canvas: mounts panels on the grid, keeps them in step with the
 // state, and turns pages. Nothing here knows about a particular layer or site.
 
-import type { PanelSpec } from '@mrstudio/sdk';
+import type { PanelControls, PanelSpec } from '@mrstudio/sdk';
 
 import { resolveProps } from './bind.ts';
 import type { BindSource } from './bind.ts';
@@ -26,6 +26,8 @@ export interface PanelInput {
   active?(): boolean;
   /** For `custom` panels: the layer's own drawing function. */
   custom?: (el: HTMLElement) => { update?(): void } | void;
+  /** For input widgets (#354): the panel's layer's controls. */
+  controls?: PanelControls;
   /** Called when the panel leaves the canvas. */
   onRemove?(): void;
   /** For a site's hand-made pages: the page it is on. Requires `spec.at`. */
@@ -219,7 +221,7 @@ export class DashboardView {
     const body = h('div', 'mrs-panel-body');
     el.append(title, body);
     try {
-      const handle = widget.mount(body, { size: input.spec.size, custom: input.custom });
+      const handle = widget.mount(body, { size: input.spec.size, custom: input.custom, controls: input.controls });
       const mounted = { input, widget, el, title, handle };
       this.mounted.set(input.key, mounted);
       return mounted;

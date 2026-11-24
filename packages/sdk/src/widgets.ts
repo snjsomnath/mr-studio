@@ -41,8 +41,28 @@ export interface WidgetHandle {
 /** What a widget gets when it is mounted. */
 export interface WidgetEnv {
   size: PanelSize;
+  /**
+   * For input widgets (#354): the layer's controls and named actions, to read and to change. Absent
+   * for a panel with no layer (a site page panel without `layer`). Where a panel can't be touched
+   * (the table's ribbon) `touch` is false: an input widget then shows the value and does nothing.
+   */
+  controls?: PanelControls;
   /** For `custom` only: hands the element to the layer's `panel` function. */
   custom?: (el: HTMLElement) => { update?(): void } | void;
+}
+
+/** A layer's controls as a panel reaches them: the host checks every change as it does the controller's. */
+export interface PanelControls {
+  /** False where the panel can't be touched, such as the table's ribbon. */
+  touch: boolean;
+  /** A control of the layer (layer.json `controls`) or a named action (`actions`), by id. */
+  find(id: string): import('./types.ts').Control | { type: 'action'; id: string; label?: string } | undefined;
+  /** A control's value now. */
+  value(id: string): unknown;
+  /** Changes a control's value, as its controller control would. */
+  set(id: string, value: unknown): void;
+  /** Presses an action control or a named action. */
+  press(id: string): void;
 }
 
 export interface WidgetDefinition {

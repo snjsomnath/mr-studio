@@ -8,7 +8,7 @@ The reasoning and the full tables of rules are in [../DASHBOARD.md](../DASHBOARD
 ```ts
 interface PanelSpec {
   id: string;                      // lower-case letters, digits, dashes; unique in its layer or page
-  widget: string;                  // stat | bars | compare | balance | series | ramp | timeline | text | custom
+  widget: string;                  // stat | bars | compare | balance | control | series | ramp | timeline | text | custom, or a team's <layer>/<type>
   size: PanelSize;                 // chip | tile | wide | tall | block | hero | band | strip
   title: string;                   // required, at most 28 characters
   props?: Record<string, unknown>; // per the widget's schema; literals or bindings
@@ -93,6 +93,23 @@ view.sync();                   // after any state change
 ```
 
 `validate*`, `panelReads`, `pack` and `themeVariables` use no DOM, so they run in Node.
+
+### Controls on panels (#354)
+
+A `control` panel puts one of its layer's controls (or a named action) on the dashboard, a TV page or a
+custom controller view, so a view can be built from panels alone. It reads the control's label,
+range, unit and choices from layer.json, so they are written once:
+
+```jsonc
+{ "id": "share", "widget": "control", "size": "wide", "title": "Try a share", "layer": "model-runs",
+  "props": { "control": "share" } }          // a range: a slider; a toggle; a select: choices; an action: a button
+```
+
+It changes the layer exactly as the controller's own control does (`layer.set`, `layer.action`), and the
+host checks it the same way. On the table's ribbon it only shows the value. A panel that names a
+control the layer doesn't have draws the name and is reported in the window's console. Widgets get
+the layer's controls in `env.controls` (`find`, `value`, `set`, `press`, and `touch`, false where the
+panel can't be touched), so a team widget (below) can be an input too.
 
 ### Adding a widget
 

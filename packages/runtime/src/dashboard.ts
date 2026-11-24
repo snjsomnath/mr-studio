@@ -1,9 +1,9 @@
-import { DashboardView, validateLayerPanels, validatePage } from '@mrstudio/dashboard';
+import { controlProblems, DashboardView, validateLayerPanels, validatePage } from '@mrstudio/dashboard';
 import type { PanelInput } from '@mrstudio/dashboard';
-import type { Connection, LayerManifest, PanelContext, PanelSpec } from '@mrstudio/sdk';
+import type { Connection, LayerManifest, PanelContext, PanelControls, PanelSpec } from '@mrstudio/sdk';
 
 import { say, t } from './i18n.ts';
-import { baseContext } from './layer-manager.ts';
+import { baseContext, paramSender } from './layer-manager.ts';
 import { layerModule, widgets, withTeamWidgets } from './registry.ts';
 import type { Store } from './store.ts';
 
@@ -42,7 +42,10 @@ export function mountDashboard(root: HTMLElement, store: Store, connection: Conn
         const manifest = store.manifest(store.state.layers[id]?.layer ?? '');
         if (!manifest) continue;
         const panels = layerPanels(manifest);
-        if (!checked.has(manifest.id)) report(manifest.id, validateLayerPanels(panels, registry));
+        if (!checked.has(manifest.id)) {
+          report(manifest.id, validateLayerPanels(panels, registry));
+          for (const problem of controlProblems(panels, controlIds(manifest))) console.warn(`[${manifest.id}] ${problem}`);
+        }
         checked.add(manifest.id);
         for (const spec of panels) {
           const key = `${id}/${spec.id}`;
@@ -72,11 +75,12 @@ export function mountDashboard(root: HTMLElement, store: Store, connection: Conn
 
 // `layer` is the id of a layer in the scene (an instance), which may come and go while the TV is up.
 /** A panel of a layer in the scene, for the TV or the table's ribbon (#78). */
-export function panelInput(store: Store, connection: Connection, layer: string | undefined, spec: PanelSpec, key: string, page?: number): PanelInput {
+export function panelInput(store: Store, connection: Connection, layer: string | undefined, spec: PanelSpec, key: string, page?: number, touch = true): PanelInput {
   const id = layer ?? '';
   const state = () => store.state.layers[id];
   let cleanups: (() => void)[] = [];
   return {
+    controls: layer === undefined ? undefined : panelControls(store, connection, id, touch),
     key,
     spec,
     page,
@@ -102,6 +106,28 @@ export function panelInput(store: Store, connection: Connection, layer: string |
       for (const cleanup of cleanups) cleanup();
       cleanups = [];
     },
+  };
+}
+
+/** The ids a control panel may name: the layer's controls and named actions. */
+function controlIds(manifest: LayerManifest | undefined): string[] {
+  return [...(manifest?.controls ?? []).map((c) => c.id), ...(manifest?.actions ?? []).map((a) => a.id)];
+}
+
+/** A layer's controls and named actions as an input widget reaches them (#354). */
+function panelControls(store: Store, connection: Connection, layer: string, touch: boolean): PanelControls {
+  const manifest = () => store.manifest(store.state.layers[layer]?.layer ?? '');
+  const send = paramSender(connection, layer);
+  return {
+    touch,
+    find(id) {
+      const m = manifest();
+      const named = m?.actions?.find((a) => a.id === id);
+      return m?.controls?.find((c) => c.id === id) ?? (named ? { type: 'action' as const, id: named.id, label: named.label } : undefined);
+    },
+    value: (id) => store.state.layers[layer]?.params?.[id],
+    set: (id, value) => send({ [id]: value }),
+    press: (id) => void connection.request('layer.action', { layer, action: id }).catch((error: Error) => console.warn(`[${layer}] ${error.message}`)),
   };
 }
 

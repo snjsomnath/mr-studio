@@ -217,3 +217,13 @@ export function validatePage(page: { id: string; panels: PanelSpec[] }, registry
   if (reads > SCREEN.reads) issues.push({ path: root, rule: 'screen', message: `asks for ${reads} reads, one screen holds ${SCREEN.reads}. Move panels to another page` });
   return issues;
 }
+
+/**
+ * Control panels (#354) that name a control or action their layer doesn't have. `ids` are the
+ * layer's control ids and named action ids. The panel still draws, saying what it names.
+ */
+export function controlProblems(panels: readonly PanelSpec[], ids: readonly string[]): string[] {
+  return panels
+    .filter((p) => p.widget === 'control' && typeof p.props?.control === 'string' && !ids.includes(p.props.control as string))
+    .map((p) => `panel '${p.id}' names control '${p.props!.control}', which the layer does not have`);
+}

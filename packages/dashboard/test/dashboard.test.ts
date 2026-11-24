@@ -8,7 +8,7 @@ import { clip, formatValue, resolveProps } from '../src/bind.ts';
 import { pack } from '../src/pack.ts';
 import { GRID, SCREEN, SIZES } from '../src/rules.ts';
 import { contrast, STYLE_TOKENS, themeVariables, validateTheme } from '../src/theme.ts';
-import { panelReads, validateLayerPanels, validatePage, validatePanel, validateRibbon } from '../src/validate.ts';
+import { controlProblems, panelReads, validateLayerPanels, validatePage, validatePanel, validateRibbon } from '../src/validate.ts';
 import { defineWidget } from '../src/registry.ts';
 import { coreWidgets } from '../src/widgets/index.ts';
 
@@ -174,7 +174,7 @@ test('a site can restyle but not break the rules', () => {
 
 test('the registry is plain data an editor can read', () => {
   const described = registry.describe();
-  assert.deepEqual(described.map((w) => w.type), ['stat', 'bars', 'compare', 'balance', 'series', 'ramp', 'timeline', 'text', 'custom']);
+  assert.deepEqual(described.map((w) => w.type), ['stat', 'bars', 'compare', 'balance', 'control', 'series', 'ramp', 'timeline', 'text', 'custom']);
   assert.deepEqual(JSON.parse(JSON.stringify(described)), described);
   for (const widget of described) for (const prop of Object.values(widget.props)) assert.ok(prop.label, `${widget.type} props need labels`);
 });
@@ -251,4 +251,15 @@ test('a layer package brings its own widgets, held to the core contract (#353)',
   assert.equal(registry.get('energy/meter')?.name, 'Meter 2');
   assert.equal(registry.describe().find((w) => w.type === 'energy/meter')?.owner, 'energy');
   assert.deepEqual(registry.registerTeam('energy', undefined), []);
+});
+
+test('a control panel names one of its layer\'s controls and costs what it shows (#354)', () => {
+  const registry = coreWidgets();
+  const widget = registry.get('control')!;
+  assert.deepEqual(widget.sizes, ['chip', 'tile', 'wide']);
+  assert.equal(widget.reads({ control: 'share' }, 'chip'), 1);
+  assert.equal(widget.reads({ control: 'share' }, 'wide'), 2);
+  assert.deepEqual(validateLayerPanels([{ id: 'c', widget: 'control', size: 'wide', title: 'Share', props: { control: 'share' } }], registry), []);
+  assert.ok(validateLayerPanels([{ id: 'c', widget: 'control', size: 'wide', title: 'Share', props: {} }], registry).length > 0);
+  assert.deepEqual(controlProblems([{ id: 'c', widget: 'control', size: 'tile', props: { control: 'go' } }, { id: 'd', widget: 'control', size: 'tile', props: { control: 'nope' } }, { id: 's', widget: 'stat', size: 'tile', props: {} }], ['go']), ["panel 'd' names control 'nope', which the layer does not have"]);
 });

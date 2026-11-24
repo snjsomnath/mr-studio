@@ -307,7 +307,7 @@ export const BLOCKS: BlockDef[] = [
   // TV
   {
     id: 'tv-panels', group: 'tv', name: 'TV panels',
-    description: 'Declarative dashboard panels (stat, bars, compare for scenarios side by side, balance for where a quantity comes from and goes to, series, ramp, timeline, text) on a 12 by 6 grid with a density budget; chip and wide panels also go in the table ribbon.',
+    description: 'Declarative dashboard panels (stat, bars, compare for scenarios side by side, balance for where a quantity comes from and goes to, control for one of the layer sliders, toggles, choices or buttons on a panel, series, ramp, timeline, text) on a 12 by 6 grid with a density budget; chip and wide panels also go in the table ribbon.',
     usage: "layer.json 'panels' or site.json 'tv.pages' (docs/contracts/dashboard.md)",
     detect: 'interface PanelSpec',
   },
