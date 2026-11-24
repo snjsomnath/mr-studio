@@ -691,6 +691,64 @@ button.ed-saved:hover {
   color: #8a909c;
 }
 
+.ed-row.is-trouble .ed-row-icon {
+  position: relative;
+}
+
+/* A layer that is on but not running (#259): a red dot on its icon, why in the tooltip. */
+.ed-row.is-trouble .ed-row-icon::after {
+  content: '';
+  position: absolute;
+  right: -3px;
+  top: -3px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #d93a3a;
+  box-shadow: 0 0 0 2px var(--ed-panel);
+}
+
+.ed-trouble {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 0 12px 12px;
+  padding: 10px 12px;
+  border: 1px solid #f0c4c4;
+  border-radius: 8px;
+  background: #fdf1f1;
+  color: #8f1f1f;
+}
+
+.ed-trouble[hidden] {
+  display: none;
+}
+
+.ed-trouble > svg {
+  flex: none;
+  margin-top: 2px;
+}
+
+.ed-trouble-words {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.ed-trouble-text {
+  margin: 0;
+  color: #6b2a2a;
+  overflow-wrap: anywhere;
+}
+
+.ed-trouble .ed-button {
+  flex: none;
+}
+
 .ed-row-icon {
   flex: none;
   display: grid;
@@ -3219,4 +3277,25 @@ body[data-role='edit'] .ed-surface .table-frame {
   border-radius: 4px;
   background: #fff;
   padding: 2px;
+}
+
+/* Help > Copy diagnostics (#260): the report as it was copied, to read before pasting it anywhere. */
+.ed-diagnostics {
+  width: min(720px, calc(100vw - 48px));
+}
+
+.ed-diagnostics-text {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  height: min(50vh, 420px);
+  margin: 0 0 12px;
+  padding: 10px;
+  border: 1px solid var(--ed-line);
+  border-radius: 6px;
+  background: var(--ed-window);
+  color: var(--ed-text);
+  font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  resize: vertical;
+  white-space: pre;
 }

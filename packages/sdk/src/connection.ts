@@ -114,6 +114,15 @@ export class Connection {
     });
   }
 
+  /**
+   * Tells the host about an error in this window (#260), for the app's log. Dropped while
+   * disconnected. The runtime sends these; a layer just throws, or logs with `console.error`.
+   */
+  report(error: { message: string; stack?: string; layer?: string; window?: string }): void {
+    const socket = this.socket;
+    if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ t: 'error', ...error }));
+  }
+
   /** Says this window of the desktop app is alive and drawing at `fps` (#79). Dropped while disconnected. */
   alive(window: string, fps: number): void {
     const socket = this.socket;
