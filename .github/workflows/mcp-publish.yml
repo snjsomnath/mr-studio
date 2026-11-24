@@ -1,0 +1,94 @@
+# Publishes the MCP server of a release (docs/RELEASING.md, "Publishing the MCP server"):
+#
+#   stage     builds @mrstudio/mcp from the release tag and stages it on npm. Nothing is public
+#             until a maintainer approves it on npmjs.com (Staged Packages, Approve) with 2FA.
+#   registry  lists the approved version in the MCP Registry as io.github.snjsomnath/mr-studio,
+#             with the release's Claude Desktop extension. Waits until the version is live on npm.
+#
+# The Desktop app workflow calls this after every release (stage, then registry, which
+# finds the version not yet approved and says so). After approving, run it by hand with the
+# tag and "registry".
+name: MCP publish
+
+on:
+  workflow_call:
+    inputs:
+      tag: { type: string, required: true }
+      step: { type: string, default: both }
+  workflow_dispatch:
+    inputs:
+      tag: { description: 'Release tag, e.g. v0.14.0', type: string, required: true }
+      step: { description: 'stage, registry or both', type: choice, options: [both, stage, registry], default: both }
+
+permissions:
+  contents: read
+  id-token: write # npm trusted publishing and the MCP Registry's GitHub sign-in
+
+jobs:
+  stage:
+    if: ${{ inputs.step != 'registry' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+      # Staged publishing needs npm 11.15 or newer.
+      - run: npm install -g npm@12
+      - name: Build the MCP server
+        run: pnpm install --frozen-lockfile && pnpm --filter @mrstudio/mcp build
+      - name: Stage on npm
+        working-directory: packages/mcp
+        env:
+          # Until a trusted publisher is set up on npmjs.com, a token stages the version;
+          # after that, npm signs in with this workflow's GitHub identity and the token is unused.
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          version=$(node -p "require('./package.json').version")
+          if npm view "@mrstudio/mcp@$version" version >/dev/null 2>&1; then
+            echo "@mrstudio/mcp@$version is already on npm."
+          else
+            npm stage publish --access public
+            echo "::notice::@mrstudio/mcp@$version is staged. Approve it on npmjs.com (Staged Packages), then run the MCP publish workflow with tag ${{ inputs.tag }} and step 'registry'."
+          fi
+
+  registry:
+    needs: [stage]
+    if: ${{ !cancelled() && inputs.step != 'stage' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+      - name: Is the version live on npm?
+        id: live
+        working-directory: packages/mcp
+        run: |
+          version=$(node -p "require('./package.json').version")
+          if npm view "@mrstudio/mcp@$version" version >/dev/null 2>&1; then echo "live=true" >> "$GITHUB_OUTPUT"
+          else echo "::notice::@mrstudio/mcp@$version is not approved on npm yet. Approve it on npmjs.com, then run this workflow with step 'registry'."; echo "live=false" >> "$GITHUB_OUTPUT"; fi
+      # The entry names the npm package and the release's own .mcpb with its checksum.
+      - name: List in the MCP Registry
+        if: steps.live.outputs.live == 'true'
+        working-directory: packages/mcp
+        env:
+          REPO: ${{ github.repository }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          curl -fsSL -o mr-studio.mcpb "https://github.com/$REPO/releases/download/$TAG/mr-studio.mcpb"
+          node -e '
+            const fs = require("fs"), crypto = require("crypto");
+            const { version } = JSON.parse(fs.readFileSync("package.json", "utf8"));
+            const entry = JSON.parse(fs.readFileSync("server.json", "utf8"));
+            entry.version = version;
+            for (const p of entry.packages) p.version = version;
+            entry.packages.push({ registryType: "mcpb", identifier: `https://github.com/${process.env.REPO}/releases/download/${process.env.TAG}/mr-studio.mcpb`, version, fileSha256: crypto.createHash("sha256").update(fs.readFileSync("mr-studio.mcpb")).digest("hex"), transport: { type: "stdio" } });
+            fs.writeFileSync("server.json", JSON.stringify(entry, null, 2));'
+          curl -fsSL "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_linux_amd64.tar.gz" | tar xz mcp-publisher
+          ./mcp-publisher login github-oidc
+          ./mcp-publisher publish
