@@ -154,6 +154,8 @@ known sizes, `reads`, `mount`, and a label on every prop). The layer's own panel
 `type` alone; core widgets win a clash. It is styled with the `--mrs-*` tokens, so it follows the theme.
 When two teams have each written the same widget, it moves into core.
 
+A widget may carry `example`: made-up props, plain values with no bindings, that the Developer window's widget gallery shows it with at every size (#358). Every core widget has one.
+
 ## Style tokens
 
 `color.background`, `color.panel`, `color.line`, `color.text`, `color.muted`, `color.accent`, `color.accent-ink`, `color.good`, `color.warn`, `color.bad`, `data.1` to `data.6`, `font.text`, `font.number`, `shape.radius` (`none`, `small`, `medium`, `large`), `panel.style` (`filled`, `outlined`, `glass`, `plain`), `rail.look` (`tiles`, `bare`: how the controller draws layer buttons) and `density` (`comfortable`, `minimal`: minimal drops surfaces, dividers and group labels).

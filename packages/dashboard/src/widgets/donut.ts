@@ -21,6 +21,7 @@ export const donut = defineWidget({
   name: 'Donut',
   description: 'Shares of a whole as a ring of up to five parts, with a headline in the middle and a key.',
   sizes: ['tile', 'wide', 'block'],
+  example: { items: [{ label: 'Used here', value: 46 }, { label: 'Shared', value: 27 }, { label: 'Stored', value: 17 }, { label: 'Sold', value: 10 }], format: 'percent' },
   props: {
     items: {
       kind: 'list',

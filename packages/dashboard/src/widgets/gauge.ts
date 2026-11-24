@@ -29,6 +29,7 @@ export const gauge = defineWidget({
   name: 'Gauge',
   description: 'One value against its range, as a half circle that fills, with an optional tick for a target.',
   sizes: ['chip', 'tile'],
+  example: { value: 0.62, max: 1, target: 0.5, format: 'percent' },
   props: {
     value: { kind: 'value', label: 'Value', required: true, bindable: true },
     min: { kind: 'number', label: 'Lowest', default: 0 },

@@ -297,3 +297,16 @@ test('gauge, list, donut, picture and legend widgets hold to the budget (#356)',
   // A legend with no rows of its own reads the layer's.
   assert.deepEqual(validateLayerPanels([{ id: 'k', widget: 'legend', size: 'tall', title: 'Key', props: {} }], registry), []);
 });
+
+test('every core widget has an example that passes the rules at every size it takes (#358)', async () => {
+  const { coreWidgets } = await import('../src/widgets/index.ts');
+  const { examplePanel } = await import('../src/validate.ts');
+  const registry = coreWidgets();
+  for (const widget of registry.list()) {
+    assert.ok(widget.example, `${widget.type} has an example`);
+    for (const size of widget.sizes) {
+      const issues = validatePanel(examplePanel(widget, size), registry, `${widget.type}.${size}`);
+      assert.deepEqual(issues, [], `${widget.type} at ${size}`);
+    }
+  }
+});

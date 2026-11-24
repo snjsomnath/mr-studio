@@ -12,6 +12,19 @@ export interface Welcome {
 
 type Listener = (payload: any) => void;
 
+/** One message seen on the connection, for the Developer window's action log (#358). */
+export interface ConnectionTrace {
+  kind: 'request' | 'event';
+  method: string;
+  payload: unknown;
+  /** When it was sent or arrived (performance.now()). */
+  at: number;
+  /** A request's round trip, once answered. */
+  ms?: number;
+  ok?: boolean;
+  error?: string;
+}
+
 interface Pending {
   resolve: (value: any) => void;
   reject: (error: Error) => void;
@@ -27,6 +40,7 @@ export class Connection {
   private pending = new Map<number, Pending>();
   private listeners = new Map<string, Set<Listener>>();
   private frameListeners = new Set<(frame: FieldFrame) => void>();
+  private tracers = new Set<(trace: ConnectionTrace) => void>();
   private retry = 0;
   private closed = false;
   private readonly url: string;
@@ -87,6 +101,7 @@ export class Connection {
               break;
             }
             case 'ev':
+              if (this.tracers.size) this.traced({ kind: 'event', method: message.m, payload: message.p, at: now() });
               this.emit(message.m, message.p);
               break;
           }
@@ -109,7 +124,14 @@ export class Connection {
     if (!socket || socket.readyState !== WebSocket.OPEN) return Promise.reject(new Error('not connected'));
     const id = this.nextId++;
     return new Promise<T>((resolve, reject) => {
-      this.pending.set(id, { resolve, reject });
+      if (this.tracers.size) {
+        const at = now();
+        const done = (ok: boolean, error?: string) => this.traced({ kind: 'request', method, payload: params ?? {}, at, ms: now() - at, ok, error });
+        this.pending.set(id, {
+          resolve: (value) => (done(true), resolve(value)),
+          reject: (error) => (done(false, error.message), reject(error)),
+        });
+      } else this.pending.set(id, { resolve, reject });
       socket.send(JSON.stringify({ t: 'req', id, m: method, p: params ?? {} }));
     });
   }
@@ -128,6 +150,22 @@ export class Connection {
     return () => set.delete(listener);
   }
 
+  /** Sees every request this window makes (once answered) and every event it gets. Returns the function that stops it. */
+  trace(listener: (trace: ConnectionTrace) => void): () => void {
+    this.tracers.add(listener);
+    return () => this.tracers.delete(listener);
+  }
+
+  private traced(trace: ConnectionTrace): void {
+    for (const tracer of this.tracers) {
+      try {
+        tracer(trace);
+      } catch {
+        // A tracer never breaks the connection.
+      }
+    }
+  }
+
   onFrame(listener: (frame: FieldFrame) => void): () => void {
     this.frameListeners.add(listener);
     return () => this.frameListeners.delete(listener);
@@ -142,3 +180,5 @@ export class Connection {
     for (const listener of this.listeners.get(event) ?? []) listener(payload);
   }
 }
+
+const now = (): number => (typeof performance !== 'undefined' ? performance.now() : Date.now());

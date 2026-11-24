@@ -83,6 +83,7 @@ export const map = defineWidget({
   name: 'Map',
   description: "The site's map: chosen datasets, the table's outline, shapes a layer publishes, and taps that pick a layer's entity or send a point to its tool.",
   sizes: ['wide', 'tall', 'block', 'hero'],
+  example: { data: [{ name: 'roads', slot: 2 }], hint: 'Tap a building' },
   props: {
     data: { kind: 'list', max: 4, label: 'Datasets', item: { name: { kind: 'text', max: 40, label: 'Dataset', required: true }, slot: { kind: 'slot', label: 'Colour' } } },
     shapes: { kind: 'geojson', label: 'Shapes on top (bind to what the layer publishes)', bindable: true },

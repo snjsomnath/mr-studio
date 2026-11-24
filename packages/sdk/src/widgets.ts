@@ -95,6 +95,11 @@ export interface WidgetDefinition {
   mount(el: HTMLElement, env: WidgetEnv): WidgetHandle;
   /** Set by the runtime on a team widget: the layer package it came from. */
   owner?: string;
+  /**
+   * Made-up props for the Developer window's widget gallery (#358): plain values, no bindings.
+   * A widget without one is shown with no props.
+   */
+  example?: Record<string, unknown>;
 }
 
 /** Declares a widget. */
@@ -125,5 +130,6 @@ export function checkWidget(widget: unknown): string[] {
   else for (const [key, spec] of Object.entries(w.props)) {
     if (!spec || typeof (spec as PropSpec).label !== 'string' || !(spec as PropSpec).label.trim()) problems.push(`widget '${name}': prop '${key}' needs a label, for the editor's form`);
   }
+  if (w.example !== undefined && (typeof w.example !== 'object' || w.example === null || Array.isArray(w.example))) problems.push(`widget '${name}': example is an object of props`);
   return problems;
 }

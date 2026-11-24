@@ -525,5 +525,13 @@ not offer is a module request (MCP `draft_module_request`), not a copy of core c
 `mrstudio dev --site sites/sample` serves the runtime with the layer loaded against the sample site.
 `pnpm dev` runs the host and the web dev server together.
 `/dev` shows the table view with the generated controls beside it and a small preview of the TV dashboard under it, in a normal browser, with hot reload.
+`/dev` opens with the workbench beside the live table; the **Workbench** button at its foot closes and reopens it beside the live table (#358). It is the same page the editor opens with **Open in a window > Developer**:
+
+- **Widgets:** every widget, core and the site's team widgets, at every size it takes with its made-up `example` props, what each size costs in reads against its budget, and the name to put in `"widget"`. The map and control widgets are shown on a layer that is on.
+- **Live values:** each layer's `shared` values and `params` as they change. A click copies the binding (`{"bind":"shared.import_kw"}`) for a panel.
+- **Controller:** the controller as the 46-inch screen shows it (1920 by 1080), scaled to fit, so a tap there and its answer on the table are both in view. It shows a stage of panels or a custom one alike.
+- **Action log:** this window's requests with their round trip, and what the host sent: actions, tool inputs, param and entity edits from any controller or phone.
+- **Problems:** panels the rules refused, bindings to values a layer has not published, and what layers and widgets complained about.
+
 `/compose` shows the palette, the table and the scene's stack: drag layers in, reorder them and edit their settings.
 No table, projector or calibration is needed.

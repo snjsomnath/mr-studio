@@ -8,6 +8,7 @@ export const timeline = defineWidget({
   name: 'Timeline',
   description: 'A span of hours with a marker on the hour being shown, the part already played, and daylight shaded.',
   sizes: ['band'],
+  example: { now: 14.5, dayFrom: 4.2, dayTo: 21.9 },
   props: {
     now: { kind: 'number', label: 'Hour shown', required: true, bindable: true },
     start: { kind: 'number', label: 'First hour', default: 0, bindable: true },

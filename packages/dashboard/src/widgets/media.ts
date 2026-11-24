@@ -17,6 +17,7 @@ export const media = defineWidget({
   name: 'Picture or video',
   description: 'A picture or a silent looping video from the table folder, which can change with a value a layer publishes.',
   sizes: ['tile', 'wide', 'tall', 'block', 'hero'],
+  example: { path: '/site/media/street.jpg', caption: 'The street today' },
   props: {
     path: { kind: 'text', max: 200, label: 'File in the table folder (media/…)', required: true, bindable: true },
     fit: { kind: 'enum', options: ['cover', 'contain'], label: 'Fit', default: 'cover' },

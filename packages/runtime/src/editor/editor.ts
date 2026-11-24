@@ -1180,7 +1180,7 @@ export class Editor {
 
     const windows = this.group(
       'Open in a window',
-      ...this.column([open('Map', 'table', 'table', 'The map projected on the table'), open('Controller', 'tv', 'tv', 'The screen beside the table'), open('Developer', 'code', 'dev', 'Map, dashboard and every control on one page')]),
+      ...this.column([open('Map', 'table', 'table', 'The map projected on the table'), open('Controller', 'tv', 'tv', 'The screen beside the table'), open('Developer', 'code', 'dev', 'The workbench: map, controls, widget gallery, live values, action log and problems')]),
     );
     windows.classList.add('is-last');
     groups.push(windows);

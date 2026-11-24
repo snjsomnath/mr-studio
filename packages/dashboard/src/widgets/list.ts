@@ -9,6 +9,7 @@ export const list = defineWidget({
   name: 'List',
   description: 'A short ranked list of names and numbers, such as the busiest streets or the buildings drawing most.',
   sizes: ['tile', 'wide', 'tall'],
+  example: { items: [{ label: 'Block A', value: 92 }, { label: 'School', value: 71 }, { label: 'Library', value: 44 }, { label: 'Depot', value: 20 }], unit: 'kWh' },
   props: {
     items: {
       kind: 'list',

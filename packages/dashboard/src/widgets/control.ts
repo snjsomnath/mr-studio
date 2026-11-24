@@ -14,6 +14,7 @@ export const control = defineWidget({
   name: 'Control',
   description: "One of the layer's controls or named actions, as a slider, toggle, choice or button taken from its definition in layer.json.",
   sizes: ['chip', 'tile', 'wide'],
+  example: { control: 'share', label: 'Shared solar' },
   props: {
     control: { kind: 'text', max: 40, label: 'Control or action id', required: true },
     label: { kind: 'text', max: TEXT.caption, label: 'Label (default: the control’s own)' },

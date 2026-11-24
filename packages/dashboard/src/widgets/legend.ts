@@ -15,6 +15,7 @@ export const legend = defineWidget({
   name: 'Legend',
   description: "A layer's legend: what the colours on the table mean. By default what the layer publishes as its legend, else its legend in layer.json.",
   sizes: ['tile', 'wide', 'tall', 'band'],
+  example: { items: [{ label: 'In the sun', color: '#ffc845', shape: 'fill' }, { label: 'Shade', color: '#3a4a7a', shape: 'fill' }, { label: 'Cool route', color: '#4cc3d9', shape: 'line' }] },
   props: {
     items: {
       kind: 'list',
