@@ -1,0 +1,22 @@
+{
+  "api": 1,
+  "id": "street-life",
+  "name": "Street life",
+  "description": "Walkers on the footways and paths, cyclists on the cycleways and warm streetlights along the main streets",
+  "icon": "footprints",
+  "category": "ambient",
+  "requires": { "data": ["roads"] },
+  "controls": [
+    { "id": "walkers", "type": "range", "label": "Walkers per kilometre of path", "min": 0, "max": 30, "step": 1, "default": 6, "phone": true },
+    { "id": "bikes", "type": "range", "label": "Cyclists per kilometre of cycleway", "min": 0, "max": 20, "step": 1, "default": 3 },
+    { "id": "pace", "type": "range", "label": "Pace", "min": 0, "max": 5, "step": 0.25, "default": 2.5, "unit": "× real" },
+    { "id": "streetlights", "type": "toggle", "label": "Streetlights", "default": true },
+    { "id": "sideStreets", "type": "toggle", "label": "Streetlights on side streets too", "default": false, "tier": "more" },
+    { "id": "lightSpacing", "type": "range", "label": "Streetlight spacing", "min": 20, "max": 150, "step": 5, "default": 60, "unit": "m", "tier": "more" },
+    { "id": "lightRadius", "type": "range", "label": "Streetlight glow", "min": 5, "max": 60, "step": 1, "default": 30, "unit": "m", "tier": "more" },
+    { "id": "lightColor", "type": "color", "label": "Streetlight colour", "default": "#ffd296", "tier": "more" },
+    { "id": "size", "type": "range", "label": "Size", "min": 0.5, "max": 4, "step": 0.25, "default": 2, "tier": "more" },
+    { "id": "opacity", "type": "range", "label": "Opacity", "min": 0.1, "max": 1, "step": 0.05, "default": 1, "tier": "more" }
+  ],
+  "tools": []
+}

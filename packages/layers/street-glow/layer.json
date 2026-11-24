@@ -1,0 +1,19 @@
+{
+  "api": 1,
+  "id": "street-glow",
+  "name": "Street glow",
+  "description": "Streets glowing in a colour for each kind of street, pulsing, with light flowing along them",
+  "icon": "route",
+  "category": "ambient",
+  "requires": { "data": ["roads"] },
+  "controls": [
+    { "id": "brightness", "type": "range", "label": "Brightness", "min": 0.1, "max": 1, "step": 0.05, "default": 0.6, "phone": true },
+    { "id": "pulse", "type": "range", "label": "Pulse", "min": 0, "max": 1, "step": 0.05, "default": 0.4 },
+    { "id": "particles", "type": "range", "label": "Lights flowing, per kilometre", "min": 0, "max": 30, "step": 1, "default": 8 },
+    { "id": "width", "type": "range", "label": "Line width", "min": 0.5, "max": 6, "step": 0.25, "default": 1.6, "unit": "m", "tier": "more" },
+    { "id": "glow", "type": "range", "label": "Glow width", "min": 0, "max": 20, "step": 0.5, "default": 7, "unit": "m", "tier": "more" },
+    { "id": "reveal", "type": "toggle", "label": "Reveal one kind of street at a time when it opens", "default": true, "tier": "more" },
+    { "id": "opacity", "type": "range", "label": "Opacity", "min": 0.1, "max": 1, "step": 0.05, "default": 1, "tier": "more" }
+  ],
+  "tools": []
+}

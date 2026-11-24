@@ -214,7 +214,7 @@ What the composer needs, and where it stands:
 | Items that come and go with a layer, sequences, custom layers | In format 3: `items`, `steps`, `custom`; the host keeps items with their layer (`scene.add { parent }`, `scene.move { parent }`) |
 | TV dashboards built from widgets | Done: `tv` (theme, pages) and layer `panels`; see [dashboard.md](dashboard.md) |
 
-Ambient layers (`cars`, `building-lights`, `transit`, `trees`) animate on the table surface from site data or generated paths. They need no kernel; the layer rule "no solver code" still holds.
+Ambient layers (`cars`, `building-lights`, `street-life`, `street-glow`, `transit`, `trees`) animate on the table surface from site data or generated paths. They need no kernel; the layer rule "no solver code" still holds.
 `basemap` is the dark base map and `slideshow` shows a site's media. `sites/sample` has the data for all of them and is the dummy scene to start from.
 A layer whose data a site lacks still runs where it can: traffic and transit fall back to a generated street grid, and the palette says which data is missing.
 

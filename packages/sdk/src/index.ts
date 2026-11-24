@@ -24,3 +24,4 @@ export * from './audio.ts';
 export * from './isovist.ts';
 export * from './schemes.ts';
 export * from './hero.ts';
+export * from './street-network.ts';
