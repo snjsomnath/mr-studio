@@ -661,7 +661,7 @@ async function main() {
     await editor.getByLabel('Description').blur();
     await editor.getByRole('radiogroup', { name: 'Side of the controller' }).getByText('Right').click();
     await editor.getByRole('radiogroup', { name: 'Icon' }).getByLabel('tram').click();
-    await editor.locator('.ed-tree .ed-row[data-layer="mobility"] .ed-row-side', { hasText: 'Right' }).waitFor();
+    await editor.locator('.ed-tree .ed-rail[data-side="right"] .ed-row[data-layer="mobility"]').waitFor();
     await editor.locator('.ed-canvas-head strong', { hasText: 'Getting here' }).waitFor();
     const named = { name: 'Getting here', description: 'How people reach the square', side: 'right', icon: 'tram' };
     await editor.waitForFunction(() => document.querySelector('.ed-icon-choice[aria-label="tram"]')?.getAttribute('aria-checked') === 'true');

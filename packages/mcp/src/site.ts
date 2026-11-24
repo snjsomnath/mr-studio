@@ -36,7 +36,7 @@ const FALLBACK_SCHEMA: SiteSchema = {
   basemap: { fields: ['background', 'style'], required: [] },
   branding: { fields: ['title', 'logo', 'welcome'], required: [] },
   'layers[]': { fields: ['use', 'id', 'active', 'params', 'button', 'hide', 'items', 'steps'], required: ['use', 'id'] },
-  'layers[].button': { fields: ['name', 'description', 'icon', 'side', 'group', 'order'], required: [] },
+  'layers[].button': { fields: ['name', 'description', 'icon', 'side', 'group', 'order', 'hidden'], required: [] },
   'layers[].items[]': { fields: ['use', 'id', 'active', 'params', 'hide'], required: ['use', 'id'] },
   'layers[].steps': { fields: ['mode', 'loop', 'reveal', 'transition', 'transition_s', 'sequence'], required: [] },
   'layers[].steps.sequence[]': { fields: ['layer', 'params', 'duration_s', 'transition', 'transition_s', 'next', 'title', 'description', 'source', 'notes'], required: ['layer'] },

@@ -1657,6 +1657,32 @@ impl Hub {
                 let to = insert_position(&scene, parent.as_deref(), Some(index))?;
                 scene.splice(to..to, moving);
             }
+            "scene.arrange" => {
+                // The controller's rails as the editor's layer list was dragged into (#58): every button
+                // named gets its side and its place, in one save, so one undo puts them all back.
+                let rails = p["rails"].as_object().ok_or("rails is { left: [layer ids], right: [layer ids] }")?;
+                for (side, ids) in rails {
+                    let side = match side.as_str() {
+                        "left" => mrs_site::ButtonSide::Left,
+                        "right" => mrs_site::ButtonSide::Right,
+                        other => return Err(format!("a rail is 'left' or 'right', not '{other}'")),
+                    };
+                    let ids = ids.as_array().ok_or("each rail is a list of layer ids")?;
+                    for (at, id) in ids.iter().enumerate() {
+                        let id = id.as_str().ok_or("each rail is a list of layer ids")?;
+                        let instance = scene.iter_mut().find(|i| i.id == id).ok_or_else(|| format!("there is no layer '{id}'"))?;
+                        if instance.parent.is_some() {
+                            return Err(format!("'{id}' is an item of a layer, so it has no button"));
+                        }
+                        let mut button = instance.saved.button.clone();
+                        button.side = Some(side);
+                        button.order = Some((at + 1) as f64);
+                        instance.state.button = button.clone();
+                        instance.saved.button = button;
+                    }
+                }
+                summary = "Rearranged the controller's buttons".to_string();
+            }
             "scene.set" => {
                 let index = inner.position(p["layer"].as_str().ok_or("missing layer")?)?;
                 let name = self.label(&scene[index]);
@@ -2217,6 +2243,14 @@ fn button_patch(mut button: LayerButton, patch: &Value) -> Result<LayerButton, S
                 Value::Null => None,
                 Value::Number(n) => n.as_f64(),
                 _ => return Err("button.order must be a number or null".into()),
+            };
+            continue;
+        }
+        if key == "hidden" {
+            button.hidden = match value {
+                Value::Null => false,
+                Value::Bool(hidden) => *hidden,
+                _ => return Err("button.hidden must be true, false or null".into()),
             };
             continue;
         }

@@ -479,6 +479,8 @@ export interface LayerButton {
   group?: string;
   /** Its place in the rail; lower first. */
   order?: number;
+  /** Kept off the controller and phones, without taking the layer out of the table (#58). */
+  hidden?: boolean;
 }
 
 export interface Participant {

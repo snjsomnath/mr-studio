@@ -284,6 +284,11 @@ export class HistoryControls {
     }
   }
 
+  /** A notice at the bottom of the editor with Undo, for a change made in one key press (Delete) that is easy to miss. */
+  undoable(message: string, detail?: string): void {
+    this.announce(message, detail, false, true);
+  }
+
   /** A notice at the bottom of the editor, without Undo: for something done outside the table, such as an export. */
   notify(message: string, detail?: string): void {
     this.announce(message, detail, false, false);

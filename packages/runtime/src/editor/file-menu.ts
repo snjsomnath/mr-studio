@@ -7,7 +7,7 @@ import { el } from '../controls.ts';
 
 export type FileAction = 'new' | 'open' | 'save' | 'save_as' | 'export' | 'reveal' | 'close' | 'home';
 
-const mac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
+export const mac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 
 /** A shortcut as the platform writes it: ⇧⌘S on a Mac, Ctrl+Shift+S elsewhere. */
 export function keys(key: string, shift = false): string {

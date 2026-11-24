@@ -22,6 +22,7 @@ const PATHS: Record<string, string> = {
   layers: 'M12 3 3 8l9 5 9-5-9-5ZM3 12l9 5 9-5M3 16l9 5 9-5',
   home: 'M4 11l8-7 8 7M6 10v10h12V10M10 20v-6h4v6',
   plus: 'M12 5v14M5 12h14',
+  minus: 'M5 12h14',
   grid: 'M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z',
   moon: 'M20 14.500A8 8 0 1 1 9.500 4a6.500 6.500 0 0 0 10.500 10.500Z',
   map: 'M9 4 3 6v14l6-2 6 2 6-2V4l-6 2-6-2ZM9 4v14M15 6v14',

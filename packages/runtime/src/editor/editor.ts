@@ -1,7 +1,7 @@
 import { isVisible } from '@mrstudio/sdk';
 import type { Connection, LayerManifest, LayerState, MediaKind } from '@mrstudio/sdk';
 
-import { defaultSideOf, el, isAmbient, isAtRest, isOffered, layerButton, visibleControls, widget } from '../controls.ts';
+import { defaultSideOf, el, isAmbient, isAtRest, isOffered, layerButton, railButtons, visibleControls, widget } from '../controls.ts';
 import type { Widget } from '../controls.ts';
 import { paramSender } from '../layer-manager.ts';
 import type { Store } from '../store.ts';
@@ -15,7 +15,10 @@ import type { BuilderHost } from './builder.ts';
 import { LAYER_ICONS, icon } from './icons.ts';
 import { HistoryControls } from './history.ts';
 import { Importer, targetFor } from './importer.ts';
-import { confirmLeave, actionFor, fileButton } from './file-menu.ts';
+import { confirmLeave, actionFor, fileButton, keys as shortcut, mac } from './file-menu.ts';
+import { contextMenu, renameInline, typing } from './tree-tools.ts';
+import { CanvasTools } from './canvas-tools.ts';
+import type { MenuItem } from './tree-tools.ts';
 import type { FileAction } from './file-menu.ts';
 import { slidesSection } from './slides.ts';
 import { tableSettings } from './table-settings.ts';
@@ -135,6 +138,8 @@ export class Editor {
   private readonly tree = el('nav', 'ed-tree');
   private readonly canvasHead = el('header', 'ed-canvas-head');
   private readonly surfaces = el('div', 'ed-surfaces');
+  /** Map, controller or both in the middle, the map's zoom and its outline (#60). */
+  private readonly canvasTools: CanvasTools;
   private readonly notice = el('div', 'ed-notice');
   /** The one thing this table still lacks, with the way to it. */
   private readonly next = el('div', 'ed-next');
@@ -199,6 +204,11 @@ export class Editor {
     };
     this.surfaces.append(surface('map', 'Map', 'Projected on the table. Visual only.', this.canvas), surface('controller', 'Controller', 'The screen beside the table. Buttons, words and controls.', this.preview));
     centre.append(this.canvasHead, this.next, this.surfaces, this.notice);
+    this.canvasTools = new CanvasTools({
+      site: () => store.state.site,
+      surfaces: this.surfaces,
+      canvas: this.canvas,
+    });
     this.mediaTab = new MediaTab({
       store,
       addMedia: (kinds) => this.addMedia(kinds),
@@ -253,6 +263,13 @@ export class Editor {
       this.follow(id, state);
     });
 
+    // Back and Forward move between what was being edited (#47).
+    window.addEventListener('popstate', () => {
+      if (this.wizard) this.closeWizard();
+      if (!this.goTo(location.hash)) this.go({ kind: 'home' }, null, false);
+    });
+    this.listenForKeys();
+
     // A new table opens in the setup guide, and so does one with nothing on it yet.
     const query = new URLSearchParams(location.search);
     const created = query.has('welcome') || query.has('setup');
@@ -275,6 +292,8 @@ export class Editor {
         // As above.
       }
       if (tab === 'place' || tab === 'rest' || tab === 'design' || tab === 'media') this.setRibbonTab(tab);
+      // A reload comes back to what was being edited.
+      else if (location.hash) this.goTo(location.hash);
     }
     connection.on('site.changed', () => {
       if (this.held) {
@@ -701,6 +720,45 @@ export class Editor {
     (window as { mrsBeforeLeave?: () => void }).mrsBeforeLeave = () => void this.keepPicture();
   }
 
+  /**
+   * The editor's own keys (#58, #65): Delete removes what is selected, with Undo on the notice;
+   * Cmd/Ctrl+D duplicates it; F2 renames a layer's button; Escape closes the guide or selects
+   * nothing; the arrow keys move through the list on the left when it has the focus.
+   */
+  private listenForKeys(): void {
+    window.addEventListener('keydown', (event) => {
+      if (typing(event) || event.defaultPrevented || document.querySelector('dialog[open]')) return;
+      const mod = mac ? event.metaKey : event.ctrlKey;
+      const target = this.wizard ? null : this.target();
+      if ((event.key === 'Delete' || event.key === 'Backspace') && !mod && target) {
+        event.preventDefault();
+        void this.removeLayer(target);
+      } else if (mod && !event.shiftKey && !event.altKey && event.key.toLowerCase() === 'd' && target) {
+        event.preventDefault();
+        void this.duplicate(target);
+      } else if (event.key === 'F2' && this.context.kind === 'layer' && !this.layerItem) {
+        event.preventDefault();
+        this.rename(this.context.id);
+      } else if (event.key === 'Escape' && !document.querySelector('.ed-context, .ed-add-menu, .ed-history')) {
+        if (this.wizard) this.closeWizard();
+        else if (this.context.kind !== 'home' || this.homeItem) {
+          this.homeItem = null;
+          this.go({ kind: 'home' });
+        }
+      } else if ((event.key === 'ArrowDown' || event.key === 'ArrowUp') && this.tree.contains(document.activeElement)) {
+        event.preventDefault();
+        const rows = [...this.tree.querySelectorAll<HTMLElement>('.ed-row')];
+        const at = rows.indexOf(document.activeElement as HTMLElement);
+        const next = rows[Math.max(0, Math.min(rows.length - 1, at + (event.key === 'ArrowDown' ? 1 : -1)))];
+        next?.focus();
+        next?.click();
+        // The list is drawn again on a change of selection: the focus follows the row.
+        const id = next?.dataset.layer ?? next?.dataset.context;
+        requestAnimationFrame(() => this.tree.querySelector<HTMLElement>(`.ed-row[data-layer="${id}"], .ed-row[data-context="${id}"]`)?.focus());
+      }
+    });
+  }
+
   /** Adds a layer to the table, or with `parent` into that layer as an item that comes and goes with it. */
   private async add(manifest: LayerManifest, parent?: string): Promise<void> {
     if (parent) {
@@ -843,15 +901,51 @@ export class Editor {
     return null;
   }
 
-  private go(context: Context, item: string | null = null): void {
+  private go(context: Context, item: string | null = null, remember = true): void {
     // Choosing something to edit brings back its settings, which a setup tab's panel and Media cover.
     if (isSetupTab(this.ribbonTab) || this.ribbonTab === 'media') this.setRibbonTab('edit');
     if (context.kind !== 'layer' || this.context.kind !== 'layer' || this.context.id !== context.id || item !== null) this.layerItem = item;
     this.context = context;
+    if (remember) this.remember();
     // Choosing a layer shows it on the map, the way pressing its button does; the home screen is the map at rest.
     if (context.kind === 'layer') this.show(context.id);
     if (context.kind === 'home') this.show(null);
     this.render();
+  }
+
+  /**
+   * What is being edited goes into the window's history (#47), so Back and Forward (the mouse's
+   * side buttons, Alt+arrows, a swipe) move between what was looked at instead of leaving the editor.
+   * The address keeps it too, so a reload comes back to the same place.
+   */
+  private remember(): void {
+    const where = this.where();
+    if (location.hash === where) return;
+    const url = new URL(location.href);
+    url.hash = where;
+    history.pushState({ editor: where }, '', url);
+  }
+
+  /** The address of what is being edited: #layer=wind, #item=trees-2, #controller... */
+  private where(): string {
+    const c = this.context;
+    if (c.kind === 'layer') return this.layerItem ? `#item=${this.layerItem}` : `#layer=${c.id}`;
+    if (c.kind === 'home') return this.homeItem ? `#rest=${this.homeItem}` : '#rest';
+    return `#${c.kind}`;
+  }
+
+  /** Goes to an address made by `where`, as Back and a reload do. False when it names nothing on the table. */
+  private goTo(hash: string): boolean {
+    const [kind, id] = hash.replace(/^#/, '').split('=');
+    const layers = this.store.state.layers;
+    if (kind === 'layer' && id && layers[id]) this.go({ kind: 'layer', id }, null, false);
+    else if (kind === 'item' && id && layers[id]?.parent) this.go({ kind: 'layer', id: layers[id].parent! }, id, false);
+    else if (kind === 'rest') {
+      this.homeItem = id && layers[id] ? id : null;
+      this.go({ kind: 'home' }, null, false);
+    } else if (kind === 'controller' || kind === 'phone' || kind === 'table') this.go({ kind }, null, false);
+    else return false;
+    return true;
   }
 
   // ---- Chrome ---------------------------------------------------------------
@@ -1382,7 +1476,15 @@ export class Editor {
     menu.querySelector<HTMLButtonElement>('.ed-add-item:not(:disabled)')?.focus();
   }
 
+  /** A change came in while a name was being typed in the list; the list is drawn once the name is done. */
+  private treeWaiting = false;
+
   private renderTree(instances: { id: string; manifest: LayerManifest; state: LayerState }[]): void {
+    if (this.tree.querySelector('.ed-rename')) {
+      this.treeWaiting = true;
+      return;
+    }
+    this.treeWaiting = false;
     const { context } = this;
     const ambient = instances.filter((i) => isAtRest(i.manifest, i.state) && !i.state.parent);
     const layers = instances.filter((i) => !isAtRest(i.manifest, i.state) && !i.state.parent);
@@ -1405,41 +1507,284 @@ export class Editor {
     title.append(plus);
     nodes.push(title);
     if (layers.length === 0) nodes.push(el('p', 'ed-empty', 'No layers yet. Each layer becomes a button on the controller. Add one with the + above, or under Add a layer in the ribbon.'));
-    for (const { id, manifest, state } of layers) {
-      const as = layerButton(id, manifest, state);
-      const row = this.treeRow(as.name, '', as.icon, context.kind === 'layer' && context.id === id, () => this.go({ kind: 'layer', id }));
-      row.dataset.layer = id;
-      const side = el('span', 'ed-row-side');
-      row.append(side);
-      this.sync.set(id, (next) => {
-        const button = layerButton(id, manifest, next, defaultSideOf(this.store, id));
-        row.querySelector('.ed-row-label')!.textContent = button.name;
-        row.querySelector('.ed-row-icon')!.replaceChildren(icon(button.icon));
-        side.textContent = button.side === 'right' ? 'Right' : 'Left';
-      });
-      nodes.push(row);
-      // Its items, indented under it: they show only while it is open.
-      for (const item of instances.filter((i) => i.state.parent === id)) {
-        const child = this.treeRow(item.manifest.name, '', item.manifest.icon, context.kind === 'layer' && context.id === id && this.layerItem === item.id, () =>
-          this.go({ kind: 'layer', id }, item.id),
-        );
-        child.classList.add('is-item');
-        child.dataset.layer = item.id;
-        child.title = `${item.manifest.name}: shows while ${as.name} is open`;
-        child.classList.toggle('is-off', !this.comesOn(item.id));
-        const previous = this.sync.get(item.id);
-        this.sync.set(item.id, (next) => {
-          previous?.(next);
-          child.classList.toggle('is-off', !this.comesOn(item.id));
-        });
-        nodes.push(child);
+    else {
+      // The list is the controller's two rails (#58): drag a row up or down, or across to the other side.
+      const rails = this.rails(layers);
+      for (const side of ['left', 'right'] as const) {
+        const zone = el('div', 'ed-rail');
+        zone.dataset.side = side;
+        zone.setAttribute('role', 'group');
+        zone.ariaLabel = side === 'left' ? 'Left of the controller' : 'Right of the controller';
+        zone.append(el('div', 'ed-rail-name', side === 'left' ? 'Left' : 'Right'));
+        for (const id of rails[side]) {
+          const layer = layers.find((i) => i.id === id)!;
+          zone.append(this.layerRow(layer.id, layer.manifest, layer.state, context.kind === 'layer' && context.id === id && this.layerItem === null));
+          const as = layerButton(id, layer.manifest, layer.state);
+          // Its items, indented under it: they show only while it is open.
+          for (const item of instances.filter((i) => i.state.parent === id)) {
+            const child = this.treeRow(item.manifest.name, '', item.manifest.icon, context.kind === 'layer' && context.id === id && this.layerItem === item.id, () =>
+              this.go({ kind: 'layer', id }, item.id),
+            );
+            child.classList.add('is-item');
+            child.dataset.layer = item.id;
+            child.title = `${item.manifest.name}: shows while ${as.name} is open`;
+            child.classList.toggle('is-off', !this.comesOn(item.id));
+            child.addEventListener('contextmenu', (event) => this.rowMenu(event, item.id));
+            const previous = this.sync.get(item.id);
+            this.sync.set(item.id, (next) => {
+              previous?.(next);
+              child.classList.toggle('is-off', !this.comesOn(item.id));
+            });
+            zone.append(child);
+          }
+        }
+        if (rails[side].length === 0) zone.append(el('p', 'ed-rail-empty', 'No buttons on this side. Drag a layer here.'));
+        this.dropZone(zone, side);
+        nodes.push(zone);
       }
     }
 
     nodes.push(el('h2', 'ed-tree-title', 'Around the table'));
-    nodes.push(this.treeRow('Controller', 'Buttons, controls and dashboard', 'tv', context.kind === 'controller', () => this.go({ kind: 'controller' })));
-    nodes.push(this.treeRow('Phones', 'Personal controllers', 'phone', context.kind === 'phone', () => this.go({ kind: 'phone' })));
+    const controller = this.treeRow('Controller', 'Buttons, controls and dashboard', 'tv', context.kind === 'controller', () => this.go({ kind: 'controller' }));
+    controller.dataset.context = 'controller';
+    const phones = this.treeRow('Phones', 'Personal controllers', 'phone', context.kind === 'phone', () => this.go({ kind: 'phone' }));
+    phones.dataset.context = 'phone';
+    nodes.push(controller, phones);
     this.tree.replaceChildren(...nodes);
+  }
+
+  // ---- The layer list (#58) ---------------------------------------------------
+
+  /** The layer buttons down each rail of the controller, as visitors see them, with hidden ones on their side too. */
+  private rails(layers: { id: string; manifest: LayerManifest; state: LayerState }[]): Record<'left' | 'right', string[]> {
+    const out: Record<'left' | 'right', string[]> = { left: [], right: [] };
+    for (const button of railButtons(this.store, true)) if (layers.some((l) => l.id === button.id)) out[button.side].push(button.id);
+    return out;
+  }
+
+  /**
+   * One layer in the list: its button's icon and name, and an eye that keeps the button off the
+   * controller. Click to open it, double-click or F2 to rename, right-click for the rest, drag to move.
+   */
+  private layerRow(id: string, manifest: LayerManifest, state: LayerState, selected: boolean): HTMLElement {
+    const row = el('div', 'ed-row is-layer');
+    row.tabIndex = 0;
+    row.setAttribute('role', 'treeitem');
+    row.setAttribute('aria-current', String(selected));
+    row.dataset.layer = id;
+    row.draggable = true;
+    const badge = el('span', 'ed-row-icon');
+    const text = el('span', 'ed-row-text');
+    const label = el('span', 'ed-row-label');
+    const detail = el('span', 'ed-row-detail');
+    text.append(label, detail);
+    const eye = el('button', 'ed-row-eye');
+    eye.type = 'button';
+    eye.setAttribute('role', 'switch');
+    // The side stays readable for tests and screen readers; the rail heading shows it.
+    const side = el('span', 'ed-row-side');
+    side.hidden = true;
+    row.append(badge, text, side, eye);
+    const open = (): void => this.go({ kind: 'layer', id });
+    row.addEventListener('click', (event) => {
+      if ((event.target as HTMLElement).closest('.ed-row-eye, .ed-rename')) return;
+      open();
+    });
+    row.addEventListener('keydown', (event) => {
+      if (event.target !== row) return;
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        open();
+      } else if (event.key === 'F2') {
+        event.preventDefault();
+        this.rename(id);
+      }
+    });
+    row.addEventListener('dblclick', (event) => {
+      if (!(event.target as HTMLElement).closest('.ed-row-eye')) this.rename(id);
+    });
+    row.addEventListener('contextmenu', (event) => this.rowMenu(event, id));
+    eye.addEventListener('click', (event) => {
+      event.stopPropagation();
+      const hidden = Boolean(this.store.state.layers[id]?.button?.hidden);
+      void this.send('scene.set', { layer: id, button: { hidden: hidden ? null : true } });
+    });
+    row.addEventListener('dragstart', (event) => {
+      this.dragging = id;
+      row.classList.add('is-dragging');
+      event.dataTransfer?.setData('text/plain', id);
+      if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
+    });
+    row.addEventListener('dragend', () => {
+      this.dragging = null;
+      row.classList.remove('is-dragging');
+      this.tree.querySelectorAll('.is-drop-before, .is-drop-after, .is-drop').forEach((n) => n.classList.remove('is-drop-before', 'is-drop-after', 'is-drop'));
+    });
+    this.sync.set(id, (next) => {
+      const button = layerButton(id, manifest, next, defaultSideOf(this.store, id));
+      label.textContent = button.name;
+      detail.textContent = next.button?.group ?? '';
+      detail.hidden = !next.button?.group;
+      badge.replaceChildren(icon(button.icon));
+      side.textContent = button.side === 'right' ? 'Right' : 'Left';
+      const hidden = Boolean(next.button?.hidden);
+      row.classList.toggle('is-hidden', hidden);
+      eye.replaceChildren(icon(hidden ? 'eye-off' : 'eye', 14));
+      eye.setAttribute('aria-checked', String(!hidden));
+      eye.ariaLabel = `${button.name} on the controller`;
+      eye.title = hidden ? 'Not on the controller or phones. The layer stays in the table. Click to show its button again.' : 'On the controller. Click to take its button off the controller and phones without removing the layer.';
+      row.title = `${button.name}: a button on the ${button.side} of the controller${hidden ? ', hidden' : ''}. Drag to move it, double-click to rename, right-click for more.`;
+    });
+    return row;
+  }
+
+  /** The layer being dragged in the list. */
+  private dragging: string | null = null;
+
+  /** A rail of the list takes dropped rows: before or after the row under the pointer, or at its end. */
+  private dropZone(zone: HTMLElement, side: 'left' | 'right'): void {
+    const clear = (): void => zone.querySelectorAll('.is-drop-before, .is-drop-after').forEach((n) => n.classList.remove('is-drop-before', 'is-drop-after'));
+    const where = (event: DragEvent): { before: string | null; row: HTMLElement | null; after: boolean } => {
+      const rows = [...zone.querySelectorAll<HTMLElement>('.ed-row.is-layer')].filter((r) => r.dataset.layer !== this.dragging);
+      for (const row of rows) {
+        const box = row.getBoundingClientRect();
+        if (event.clientY < box.top + box.height / 2) return { before: row.dataset.layer!, row, after: false };
+      }
+      return { before: null, row: rows.at(-1) ?? null, after: true };
+    };
+    zone.addEventListener('dragover', (event) => {
+      if (!this.dragging) return;
+      event.preventDefault();
+      if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+      clear();
+      zone.classList.add('is-drop');
+      const { row, after } = where(event);
+      row?.classList.add(after ? 'is-drop-after' : 'is-drop-before');
+    });
+    zone.addEventListener('dragleave', (event) => {
+      if (zone.contains(event.relatedTarget as Node)) return;
+      clear();
+      zone.classList.remove('is-drop');
+    });
+    zone.addEventListener('drop', (event) => {
+      const id = this.dragging;
+      if (!id) return;
+      event.preventDefault();
+      clear();
+      zone.classList.remove('is-drop');
+      const { before } = where(event);
+      this.place(id, side, before);
+    });
+  }
+
+  /** Puts a layer's button on a side, before another button (or last), as one change. */
+  private place(id: string, side: 'left' | 'right', before: string | null): void {
+    const layers = this.instances().filter((i) => !isAtRest(i.manifest, i.state) && !i.state.parent);
+    const rails = this.rails(layers);
+    const was = rails.left.includes(id) ? 'left' : 'right';
+    rails.left = rails.left.filter((other) => other !== id);
+    rails.right = rails.right.filter((other) => other !== id);
+    const list = rails[side];
+    const at = before ? list.indexOf(before) : -1;
+    list.splice(at < 0 ? list.length : at, 0, id);
+    // Only the rails that changed are sent, so a button the author never placed elsewhere keeps its side.
+    const send: Partial<Record<'left' | 'right', string[]>> = { [side]: list };
+    if (was !== side) send[was] = rails[was];
+    void this.send('scene.arrange', { rails: send });
+  }
+
+  /** Renames a layer's button in the list. */
+  private rename(id: string): void {
+    const row = this.tree.querySelector<HTMLElement>(`.ed-row.is-layer[data-layer="${CSS.escape(id)}"]`);
+    const state = this.store.state.layers[id];
+    const manifest = state && this.store.manifest(state.layer);
+    if (!row || !state || !manifest) return;
+    renameInline(
+      row,
+      layerButton(id, manifest, state).name,
+      (name) => void this.send('scene.set', { layer: id, button: { name: name === manifest.name ? null : name } }),
+      // A change that came in while typing redraws the list now.
+      () => this.treeWaiting && this.render(),
+    );
+  }
+
+  /** A copy of a layer, or of an item, just above it: its settings, its button and its items. */
+  private async duplicate(id: string): Promise<void> {
+    const state = this.store.state.layers[id];
+    const manifest = state && this.store.manifest(state.layer);
+    if (!state || !manifest) return;
+    const parent = state.parent ?? null;
+    const siblings = this.siblings(parent);
+    const name = layerButton(id, manifest, state).name;
+    const button = !parent && !isAmbient(manifest) ? { ...state.button, name: `${name} copy`.slice(0, 40), order: state.button?.order !== undefined ? state.button.order + 0.5 : undefined } : undefined;
+    const result = await this.send('scene.add', {
+      use: manifest.id,
+      ...(parent ? { parent } : {}),
+      // A layer's copy goes below it on its rail (just under it in the scene); a piece of map life or an item, on top of it.
+      index: siblings.indexOf(id) + (parent || isAmbient(manifest) ? 1 : 0),
+      params: state.params,
+      active: state.active,
+      ...(button ? { button } : {}),
+      ...(state.hide?.length ? { hide: state.hide } : {}),
+    });
+    if (!result?.id) return;
+    // Its items come along, in the same order.
+    for (const item of this.siblings(id)) {
+      const child = this.store.state.layers[item];
+      const childManifest = child && this.store.manifest(child.layer);
+      if (child && childManifest) await this.send('scene.add', { use: childManifest.id, parent: result.id, params: child.params, active: this.comesOn(item) });
+    }
+    this.added = result.id;
+    this.render();
+  }
+
+  /** Takes a layer or an item out, with Undo on the notice: Delete is one key press. */
+  private async removeLayer(id: string): Promise<void> {
+    const state = this.store.state.layers[id];
+    const manifest = state && this.store.manifest(state.layer);
+    if (!state || !manifest) return;
+    const name = layerButton(id, manifest, state).name;
+    const done = await this.send('scene.remove', { layer: id });
+    if (done) this.history.undoable(`Removed ${name}`, 'Undo puts it back with its settings.');
+  }
+
+  /** The right-click menu of a layer, an item or a piece of the map at rest. */
+  private rowMenu(event: MouseEvent, id: string): void {
+    event.preventDefault();
+    const state = this.store.state.layers[id];
+    const manifest = state && this.store.manifest(state.layer);
+    if (!state || !manifest) return;
+    const layer = !state.parent && !isAtRest(manifest, state);
+    const items: MenuItem[] = [];
+    if (layer) {
+      const side = layerButton(id, manifest, state, defaultSideOf(this.store, id)).side;
+      const hidden = Boolean(state.button?.hidden);
+      items.push(
+        { label: 'Open', icon: 'play', run: () => this.go({ kind: 'layer', id }) },
+        { label: 'Rename', icon: 'pencil', keys: 'F2', run: () => this.rename(id) },
+        { label: 'Duplicate', icon: 'layers', keys: shortcut('D'), run: () => void this.duplicate(id) },
+        'line',
+        { label: hidden ? 'Show on the controller' : 'Hide from the controller', icon: hidden ? 'eye' : 'eye-off', run: () => void this.send('scene.set', { layer: id, button: { hidden: hidden ? null : true } }) },
+        { label: side === 'left' ? 'Move to the right side' : 'Move to the left side', icon: side === 'left' ? 'next' : 'previous', run: () => this.place(id, side === 'left' ? 'right' : 'left', null) },
+      );
+    } else {
+      const on = state.parent ? this.comesOn(id) : state.active;
+      items.push(
+        { label: 'Settings', icon: 'settings', run: () => (state.parent ? this.go({ kind: 'layer', id: state.parent }, id) : ((this.homeItem = id), this.go({ kind: 'home' }))) },
+        { label: 'Duplicate', icon: 'layers', keys: shortcut('D'), run: () => void this.duplicate(id) },
+        'line',
+        {
+          label: on ? 'Turn off' : 'Turn on',
+          icon: on ? 'eye-off' : 'eye',
+          run: () => {
+            if (state.parent) this.itemOn.set(id, !on);
+            void this.send('scene.set', { layer: id, active: !on });
+          },
+        },
+      );
+    }
+    items.push('line', { label: 'Remove', icon: 'trash', keys: mac ? '⌫' : 'Del', danger: true, run: () => void this.removeLayer(id) });
+    contextMenu(items, { x: event.clientX, y: event.clientY }, this.shell, `${layerButton(id, manifest, state).name}`);
   }
 
   private renderCanvas(instances: { id: string; manifest: LayerManifest; state: LayerState }[]): void {
@@ -1479,11 +1824,13 @@ export class Editor {
       return;
     }
     const showsController = context.kind === 'controller' || context.kind === 'table';
-    this.showController(showsController);
+    this.showController(false);
+    this.canvasTools.force(showsController);
     if (showsController) notice = null;
     const badge = el('span', 'ed-row-icon');
     badge.append(icon(iconName));
-    this.canvasHead.replaceChildren(badge, el('strong', undefined, title), el('span', undefined, detail));
+    const words = el('span', 'ed-canvas-detail', detail);
+    this.canvasHead.replaceChildren(badge, el('strong', undefined, title), words, this.canvasTools.element);
     this.notice.hidden = notice === null;
     this.notice.textContent = notice ?? '';
   }
@@ -1707,6 +2054,7 @@ export class Editor {
           this.render();
         });
         row.dataset.layer = id;
+        row.addEventListener('contextmenu', (event) => this.rowMenu(event, id));
         row.classList.toggle('is-off', !state.active);
         this.sync.set(id, (next) => row.classList.toggle('is-off', !next.active));
         section.append(row);

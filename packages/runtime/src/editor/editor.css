@@ -3220,3 +3220,263 @@ body[data-role='edit'] .ed-surface .table-frame {
   background: #fff;
   padding: 2px;
 }
+
+/* ---- The layer list (#58): the controller's two rails, drag, rename, eye ---- */
+
+.ed-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0 -4px;
+  padding: 2px 4px 6px;
+  border-radius: 8px;
+}
+
+.ed-rail.is-drop {
+  background: var(--ed-accent-soft);
+}
+
+.ed-rail-name {
+  margin: 2px 4px 0;
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--ed-text-2);
+}
+
+.ed-rail-empty {
+  margin: 0 4px;
+  padding: 6px 8px;
+  border: 1px dashed var(--ed-line);
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ed-text-2);
+}
+
+.ed-row.is-layer {
+  position: relative;
+  cursor: default;
+  user-select: none;
+}
+
+.ed-row.is-layer:hover {
+  background: var(--ed-chrome);
+}
+
+.ed-row.is-layer[aria-current='true'] {
+  background: var(--ed-accent-soft);
+}
+
+.ed-row.is-layer .ed-row-text {
+  flex: 1;
+}
+
+.ed-row.is-dragging {
+  opacity: 0.4;
+}
+
+.ed-row.is-drop-before::after,
+.ed-row.is-drop-after::after {
+  content: '';
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--ed-accent);
+}
+
+.ed-row.is-drop-before::after {
+  top: -2px;
+}
+
+.ed-row.is-drop-after::after {
+  bottom: -2px;
+}
+
+.ed-row-eye {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--ed-text-2);
+  opacity: 0;
+}
+
+.ed-row.is-layer:hover .ed-row-eye,
+.ed-row.is-layer:focus-within .ed-row-eye,
+.ed-row.is-layer[aria-current='true'] .ed-row-eye,
+.ed-row.is-hidden .ed-row-eye {
+  opacity: 1;
+}
+
+.ed-row-eye:hover {
+  background: rgba(27, 31, 39, 0.08);
+  color: var(--ed-text);
+}
+
+.ed-row.is-hidden .ed-row-label,
+.ed-row.is-hidden .ed-row-icon {
+  color: #8a909c;
+  text-decoration: line-through;
+  text-decoration-color: rgba(138, 144, 156, 0.6);
+}
+
+.ed-rename {
+  flex: 1;
+  min-width: 0;
+  height: 22px;
+  padding: 0 6px;
+  border: 1px solid var(--ed-accent);
+  border-radius: 4px;
+  font: inherit;
+  background: #fff;
+  color: var(--ed-text);
+}
+
+.ed-context {
+  z-index: 60;
+  min-width: 220px;
+}
+
+.ed-context-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ed-file-item.is-danger:not(:disabled):hover,
+.ed-file-item.is-danger:focus-visible {
+  background: #c8372d;
+}
+
+/* ---- The canvas toolbar (#60): map, controller or both; zoom; the table outline ---- */
+
+.ed-canvas-head > .ed-canvas-detail {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ed-text-2);
+}
+
+.ed-canvas-tools {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-left: auto;
+}
+
+.ed-canvas-views {
+  display: flex;
+  padding: 2px;
+  border-radius: 6px;
+  background: var(--ed-chrome);
+}
+
+.ed-canvas-view {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  font-size: 12px;
+  color: var(--ed-text-2);
+}
+
+.ed-canvas-view[aria-checked='true'] {
+  background: var(--ed-panel);
+  color: var(--ed-text);
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.12);
+}
+
+.ed-canvas-group {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.ed-canvas-group[hidden] {
+  display: none;
+}
+
+.ed-canvas-tool {
+  width: 24px;
+  height: 24px;
+}
+
+.ed-canvas-tool.is-toggle[aria-pressed='true'] {
+  background: var(--ed-accent-soft);
+  color: var(--ed-accent);
+}
+
+.ed-zoom-label {
+  min-width: 52px;
+  height: 24px;
+  padding: 0 6px;
+  border: 1px solid var(--ed-line);
+  border-radius: 4px;
+  background: var(--ed-panel);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.ed-surfaces.is-map-only .ed-surface.is-controller {
+  display: none;
+}
+
+body[data-role='edit'] .table-frame.is-zoomed {
+  display: flex;
+  overflow: auto;
+  place-items: normal;
+}
+
+body[data-role='edit'] .table-frame.is-zoomed .table-surface {
+  flex: none;
+  margin: auto !important;
+  width: var(--zoom-width) !important;
+  max-width: none;
+  max-height: none;
+}
+
+.table-frame.is-zoomed .table-ribbon {
+  display: none;
+}
+
+.ed-canvas.is-panning {
+  cursor: grab;
+}
+
+.ed-canvas.is-grabbing {
+  cursor: grabbing;
+}
+
+.ed-outline {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.ed-outline .is-seam {
+  stroke: rgba(255, 255, 255, 0.45);
+  stroke-width: 1;
+  stroke-dasharray: 4 4;
+}
+
+.ed-outline .is-edge {
+  fill: none;
+  stroke: #f3ad3d;
+  stroke-width: 3;
+}

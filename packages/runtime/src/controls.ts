@@ -403,13 +403,14 @@ export interface RailButton {
  * others go to it. Otherwise they are shared out so both sides are used: a group at a time,
  * the left side fills to half of all the buttons, then the right.
  */
-export function railButtons(store: Store): RailButton[] {
+export function railButtons(store: Store, withHidden = false): RailButton[] {
   const { state } = store;
   const scene = [...state.scene].reverse();
   const ids = scene.filter((id) => {
     const manifest = store.manifest(state.layers[id]?.layer ?? '');
-    // A layer's items have no button: they come on with their layer.
-    return manifest !== undefined && !isAtRest(manifest, state.layers[id]) && !state.layers[id]?.parent;
+    // A layer's items have no button: they come on with their layer. A hidden button stays in the
+    // table, off the rails (#58); the editor's list still shows it where it would be.
+    return manifest !== undefined && !isAtRest(manifest, state.layers[id]) && !state.layers[id]?.parent && (withHidden || !state.layers[id]?.button?.hidden);
   });
   const order = (id: string) => state.layers[id]?.button?.order ?? Number.POSITIVE_INFINITY;
   const sorted = [...ids].sort((a, b) => order(a) - order(b) || scene.indexOf(a) - scene.indexOf(b));
@@ -1011,6 +1012,8 @@ export class Controller {
         const state = store.state.layers[id];
         const manifest = state && store.manifest(state.layer);
         if (!manifest) continue;
+        // A button the author hid is off phones too (#58); the developer page keeps everything.
+        if (this.role === 'phone' && state.button?.hidden) continue;
         elements.push(make(id, manifest, state).element);
       }
     }
