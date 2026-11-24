@@ -726,15 +726,17 @@ export class Editor {
       return;
     }
     // Ambient life belongs to the home screen, which lies under the layers: it goes above the last ambient layer, not on top.
+    // A base map goes under everything, above any other base map (#368): above the map life it covers it.
     let index: number | undefined;
     if (isAmbient(manifest)) {
+      const base = manifest.category === 'base';
       const tops = this.siblings(null);
       let last = -1;
       tops.forEach((id, at) => {
         const other = this.store.manifest(this.store.state.layers[id]?.layer ?? '');
-        if (other && isAmbient(other)) last = at;
+        if (other && (base ? other.category === 'base' : isAmbient(other))) last = at;
       });
-      if (last >= 0) index = last + 1;
+      if (last >= 0 || base) index = last + 1;
     }
     // A new button goes on the side of the controller with fewer, so neither side stands empty.
     let button: { side: 'left' | 'right' } | undefined;
