@@ -213,7 +213,7 @@ describe('server over stdio', () => {
 
   test('offers tools, prompts and docs', async () => {
     const tools = (await client.listTools()).tools.map((t) => t.name).sort();
-    for (const name of ['overview', 'read_doc', 'list_layers', 'describe_layer', 'list_building_blocks', 'find_capabilities', 'describe_capability', 'assess_experience', 'build_experience', 'create_site', 'get_site', 'update_site', 'add_layer', 'set_layer', 'move_layer', 'remove_layer', 'validate_site', 'preview_site', 'check_layer_idea', 'draft_module_request', 'submit_module_request', 'whats_new']) {
+    for (const name of ['overview', 'read_doc', 'list_layers', 'describe_layer', 'list_building_blocks', 'find_capabilities', 'describe_capability', 'assess_experience', 'build_experience', 'list_site_files', 'find_related_issues', 'draft_development_request', 'submit_development_request', 'create_site', 'get_site', 'update_site', 'add_layer', 'set_layer', 'move_layer', 'remove_layer', 'validate_site', 'preview_site', 'check_layer_idea', 'draft_module_request', 'submit_module_request', 'whats_new']) {
       assert.ok(tools.includes(name), `missing tool ${name}`);
     }
     const prompts = (await client.listPrompts()).prompts.map((p) => p.name).sort();
@@ -429,6 +429,20 @@ describe('server over stdio', () => {
     const legend = JSON.parse(readFileSync(join(dir, 'site.json'), 'utf8')).custom.zones.legend;
     assert.deepEqual(legend.map((r: any) => r.label).sort(), ['homes', 'park', 'shops']);
     assert.match(zones.structured.summary, /legend has 3 rows/);
+    // The files tool sees the dataset, its category column and who uses it (#320).
+    writeFileSync(join(dir, 'data', 'zones', 'spots.csv'), 'name,lon,lat,visitors\nPier,11.90,57.70,120\n"Old, dock",11.91,57.701,40\n');
+    const files = await call(client, 'list_site_files', { site: 'harbour' });
+    assert.equal(files.isError, false, files.text);
+    const use = files.structured.files.find((f: any) => f.path === 'data/zones/use.geojson');
+    assert.equal(use.features, 3);
+    assert.deepEqual(use.geometry, ['Polygon']);
+    assert.deepEqual(use.columns.find((c: any) => c.name === 'use').values, ['homes', 'park', 'shops']);
+    assert.deepEqual(use.used_by, ['custom.zones.data.z']);
+    const spots = files.structured.files.find((f: any) => f.path === 'data/zones/spots.csv');
+    assert.equal(spots.points, true);
+    assert.equal(spots.features, 2);
+    assert.deepEqual(spots.columns.find((c: any) => c.name === 'visitors').range, [40, 120]);
+    assert.deepEqual(spots.used_by, []);
     assert.equal((await call(client, 'save_custom_layer', { site: 'harbour', id: 'broken', recipe: { name: 'x', look: [{ id: 'a', block: 'lines', data: 'nope' }] } })).isError, true);
     const junk = await call(client, 'save_custom_layer', { site: 'harbour', id: 'junk', recipe: { name: 'Junk', data: [{ id: 'd', wms: { url: 'https://example.org/wms', layers: 'x' } }], look: [{ id: 'a', block: 'extrude', data: 'd', props: { wobble: 3 } }] } });
     assert.equal(junk.isError, true, 'unknown blocks are refused (#321)');

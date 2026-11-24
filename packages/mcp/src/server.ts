@@ -8,6 +8,7 @@ import { changelogVersions, loadCatalog, type Catalog, type CoreOptions } from '
 import { buildCapabilities, closestIds, parsePatterns, rank, withSite, type Capability } from './capabilities.ts';
 import { assessExperience, buildExperience, type BuildResult, type ExperiencePlan } from './experience.ts';
 import { DEV_KINDS, DUPLICATE_AT, KIND_ALIASES, searchIssues, submitDevDraft, writeDevDraft, type DevKind, type DevRequest, type SubmitOutcome } from './devrequests.ts';
+import { listSiteFiles } from './files.ts';
 import { checkIdea } from './ideas.ts';
 import { RECIPE_VOCABULARY, legendFor } from './recipe.ts';
 import { brainstormPrompt, buildFromDataPrompt, compareScenariosPrompt, designExperiencePrompt, planWorkshopPrompt, dashboardPrompt, newProjectPrompt, requestPrompt, serverInstructions } from './prompts.ts';
@@ -102,6 +103,7 @@ const ANNOTATIONS: Record<string, { readOnlyHint: boolean; destructiveHint?: boo
   describe_capability: { readOnlyHint: true, openWorldHint: false },
   assess_experience: { readOnlyHint: true, openWorldHint: false },
   find_related_issues: { readOnlyHint: true, openWorldHint: true },
+  list_site_files: { readOnlyHint: true, openWorldHint: false },
   draft_development_request: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
   submit_development_request: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
   build_experience: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
@@ -822,6 +824,32 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
         m.custom = { ...(m.custom ?? {}), [id]: saved };
         return { message: `Saved the custom layer '${id}'. Add it with add_layer use "${use}".${legendNote}` };
       }),
+  );
+
+  tool(
+    'list_site_files',
+    {
+      title: 'List the files in a site',
+      description:
+        'What is in the site\'s data/ folder: datasets (GeoJSON, CSV) with feature counts, geometry types, columns (numbers with their range, text with its values when there are few) and bounds; pictures, video and sounds; 3D models. Each file says which site.json keys use it, so unused files and the right column for a custom layer\'s "by" are plain. Use the paths as they are in params, scene, data and recipes.',
+      inputSchema: {
+        site: z.string(),
+        kind: z.enum(['geojson', 'csv', 'picture', 'video', 'sound', 'model', 'raster', 'other']).optional().describe('Only this kind'),
+      },
+    },
+    async ({ site, kind }) => {
+      const dir = at(site);
+      let manifest: SiteManifest;
+      try {
+        manifest = readSite(dir);
+      } catch (error) {
+        return fail((error as Error).message, undefined, { code: 'no_site', next: ['Give the site folder, or create one with create_site.'] });
+      }
+      const files = listSiteFiles(dir, manifest, kind);
+      const unused = files.filter((f) => !f.used_by.length).length;
+      const counts = Object.entries(files.reduce((a: Record<string, number>, f) => ((a[f.kind] = (a[f.kind] ?? 0) + 1), a), {})).map(([k, n]) => `${n} ${k}`);
+      return reply(`${files.length} file${files.length === 1 ? '' : 's'} in data/${counts.length ? ` (${counts.join(', ')})` : ''}${unused ? `; ${unused} not used by site.json` : ''}.`, { files });
+    },
   );
 
   tool(
