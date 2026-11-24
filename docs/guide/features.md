@@ -132,6 +132,10 @@ Set **When it opens** to *Its lines trace in* and give it a **Colour version**, 
 
 ![Masterplan tracing in](docs/screenshots/286-trace.png)
 
+Name the parts of each phase by what they are (Boundary, Main axis, Routes, Arrows, Points, Nodes, Green spaces) and number the phases (01_, 02_...), and each part moves the way it should: the boundary marches, the axis grows from its middle, points pop in, green spaces breathe. `samples/kit/drawing/masterplan-roles.svg` is a template.
+
+![A masterplan coming to life part by part](docs/screenshots/300-routes.png)
+
 ## Magnifier
 
 A glass people move over the table with the mouse, from the controller or from a phone. It shows what is under it larger, or, set to *The layers inside it (an X-ray)*, an X-ray of the layers placed inside it in the editor (pipes under the street, an old map, a plan), only inside the glass.

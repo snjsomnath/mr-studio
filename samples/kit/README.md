@@ -41,6 +41,7 @@ Every file below then lands on the table (the sample site `sites/sample` uses th
 | `overlay.png` + `overlay.json` | An image with west/south/east/north bounds | Add data (raster) | Image overlay on the table |
 | `masterplan.svg` | A 1000 by 600 plan drawing in six Inkscape layers: boundary, green spaces, routes, new buildings, activity nodes | Add data, a dataset of its own (such as `masterplan`) | Masterplan layer: phases revealed one at a time (#193) |
 | `drawing/viewpoints.svg` + `drawing/viewpoints-colour.svg` | White line work in a `Base` group with four viewpoints as layers (what can be seen from a spot), and the same district in colour. Made by `tools/make_drawing.py` | Add data as `viewpoints` and `viewpoints_colour` | Masterplan as an artwork: lines trace in, turn to colour, viewpoints grow one at a time (#286) |
+| `drawing/masterplan-roles.svg` | A masterplan drawn the standard way: four numbered phases whose parts are named by role (boundary, main axis, routes, arrows, points, nodes, green spaces) | Add data as `masterplan_roles`, then a Masterplan | Each part moves by what it is (#300) |
 | `drawing/underground.svg` | Made-up water mains, district heating and a metro tunnel | Add data as `underground`, then a Masterplan inside a Magnifier or Reveal line | X-ray of what is under the ground (#287, #288) |
 | `slideshow/` | Image, two GeoJSON slides and a WMS slide (disabled; needs a key, #42) | Site data `slideshow` | Slideshow layer, manual and timed (#43) |
 

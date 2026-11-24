@@ -5,7 +5,7 @@
 import { siteDataUrl } from '@mrstudio/sdk';
 import type { PanelContext, PanelHandlers } from '@mrstudio/sdk';
 
-import { datasetOf, loadImage, picture } from './drawing.ts';
+import { datasetOf, loadImage, orderedPhases, picture } from './drawing.ts';
 import type { Params } from './drawing.ts';
 
 const STYLE = `
@@ -67,14 +67,14 @@ export function planHero(ctx: PanelContext<Params>, el: HTMLElement): PanelHandl
     // Pictured at about the size it is shown at, on a sharp screen.
     const width = Math.round(Math.min(2400, Math.max(800, canvas.clientWidth * 2)));
     const height = Math.max(1, Math.round(width / nextAspect));
-    const groups = svg ? [...svg.querySelectorAll('[data-mrs-phase]')] : [];
-    const [nextBase, ...images] = svg ? await Promise.all([picture(svg, null, width, height), ...groups.map((group) => picture(svg!, group.getAttribute('data-mrs-phase'), width, height))]) : [null];
+    const groups = svg ? orderedPhases(svg) : [];
+    const [nextBase, ...images] = svg ? await Promise.all([picture(svg, null, width, height), ...groups.map(({ group }) => picture(svg!, group.getAttribute('data-mrs-phase'), width, height))]) : [null];
     const nextColour = await loadImage(ctx.params.colour ? siteDataUrl(ctx.site, ctx.params.colour) : null);
     if (mine !== loading) return;
     aspect = nextAspect;
     base = nextBase ?? null;
     colourImage = nextColour;
-    phases = groups.map((group, k) => ({ name: group.getAttribute('data-mrs-name') ?? `Part ${k + 1}`, image: images[k]!, shown: target().shown(k) }));
+    phases = groups.map(({ name }, k) => ({ name, image: images[k]!, shown: target().shown(k) }));
     colour = target().colour;
     request();
   }

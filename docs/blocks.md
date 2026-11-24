@@ -148,6 +148,12 @@ does now.
   `openingAt` times the trace and the turn to colour; `placement` and `parseCorners` put a drawing on
   the map by three corners; `stagedWeight` says how strongly each phase shows (earlier ones dimmed,
   later ones faint, a finale with all). The Masterplan layer (`packages/layers/plan`) uses all of them.
+- **`drawing-roles.ts`** (#300): drawings that animate by role. `roleOfName` reads what a part is from
+  its name (boundary, axis, route, arrow, point, node, area, label; English and Swedish, numbers and
+  punctuation ignored), `rolePieces` turns a phase group into vector pieces with their roles, `roleFrame`
+  says how a piece looks at a moment of its motion (traced, grown from its middle, popped in, breathing,
+  marching dashes) and `drawRolePiece` draws it. `phaseNumber` and `phaseTitle` read numbered phase names
+  ("01_PROJECT BOUNDARY"). The motions are the Chalmers demo's Campus Vision ones, for any drawing.
 
 ### What this unlocks
 

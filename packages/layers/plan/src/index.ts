@@ -9,22 +9,29 @@ import {
   HoverRegions,
   apply,
   defineLayer,
+  drawRolePiece,
   drawTrace,
+  elementName,
   growRadius,
   invert,
   multiply,
   openingAt,
   parseCorners,
   placement,
+  hasRoles,
+  roleFrame,
+  roleMoves,
+  roleOfName,
+  rolePieces,
   siteDataUrl,
   stagedWeight,
   tableFrame,
   traceDrawing,
 } from '@mrstudio/sdk';
-import type { Affine, HoverRegion, LayerManifest, PanelContext, TraceBatch } from '@mrstudio/sdk';
+import type { Affine, HoverRegion, LayerManifest, PanelContext, RolePiece, TraceBatch } from '@mrstudio/sdk';
 
 import manifest from '../layer.json';
-import { datasetOf, loadImage, picture } from './drawing.ts';
+import { datasetOf, loadImage, orderedPhases, picture } from './drawing.ts';
 import type { Params } from './drawing.ts';
 import { planHero } from './hero.ts';
 
@@ -42,6 +49,10 @@ interface Phase {
   middle: [number, number];
   /** Its paint at a low resolution, for pointing at it. */
   mask: ImageData | null;
+  /** Its parts with their roles when the drawing names them (#300), drawn moving instead of the picture. */
+  pieces: RolePiece[] | null;
+  /** Seconds its parts have been coming to life. */
+  motion: number;
 }
 
 /** Seconds a phase takes to come in, and to go. */
@@ -171,8 +182,8 @@ export default defineLayer<Params>({
       const budget = Math.sqrt((drawing.width * drawing.scale * drawing.height * drawing.scale) / Math.max(1e-6, across * down * drawing.scale * drawing.scale));
       const width = Math.max(1, Math.round(Math.min(4096, across * drawing.scale * Math.min(1, budget))));
       const height = Math.max(1, Math.round(Math.min(4096, down * drawing.scale * Math.min(1, budget))));
-      const groups = svg ? [...svg.querySelectorAll('[data-mrs-phase]')] : [];
-      const [nextBase, ...images] = svg ? await Promise.all([picture(svg, null, width, height), ...groups.map((g) => picture(svg!, g.getAttribute('data-mrs-phase'), width, height))]) : [null];
+      const groups = svg ? orderedPhases(svg) : [];
+      const [nextBase, ...images] = svg ? await Promise.all([picture(svg, null, width, height), ...groups.map(({ group }) => picture(svg!, group.getAttribute('data-mrs-phase'), width, height))]) : [null];
       const nextColour = await loadImage(ctx.params.colour ? siteDataUrl(ctx.site, ctx.params.colour) : null);
       // The lines to trace are those outside every phase, as the base picture has them.
       let nextTrace: TraceBatch[] = [];
@@ -183,6 +194,14 @@ export default defineLayer<Params>({
         const [vw, vh] = box.length === 4 && box.every(Number.isFinite) ? [box[2]!, box[3]!] : [width, height];
         nextTrace = traceDrawing(copy, multiply(nextPlace, [1 / (vw || 1), 0, 0, 1 / (vh || 1), 0, 0]));
       }
+      // Parts named by what they are (a boundary, routes, points) move by role (#300).
+      let pieces: (RolePiece[] | null)[] = groups.map(() => null);
+      if (svg && ctx.params.motion !== 'none' && hasRoles(svg.documentElement)) {
+        const box = (svg.documentElement.getAttribute('viewBox') ?? '').split(/[\s,]+/).map(Number);
+        const [vx, vy, vw, vh] = box.length === 4 && box.every(Number.isFinite) ? box : [0, 0, width, height];
+        const toTable = multiply(nextPlace, [1 / (vw || 1), 0, 0, 1 / (vh || 1), -(vx ?? 0) / (vw || 1), -(vy ?? 0) / (vh || 1)]);
+        pieces = groups.map(({ group }) => rolePieces(group, toTable, roleOfName(elementName(group)) ?? 'shape'));
+      }
       if (mine !== loading) return;
       place = nextPlace;
       diagonal = Math.hypot(across, down);
@@ -190,11 +209,11 @@ export default defineLayer<Params>({
       colourImage = nextColour;
       trace = nextTrace;
       const aspect = across / Math.max(1e-6, down);
-      phases = groups.map((group, k) => {
+      phases = groups.map(({ group, name }, k) => {
         const { box, mask } = measure(images[k]!, aspect);
         const bounds = box ? boundsOf(box) : null;
         const middle: [number, number] = bounds ? [(bounds[0] + bounds[2]) / 2, (bounds[1] + bounds[3]) / 2] : [drawing.width / 2, drawing.height / 2];
-        return { name: group.getAttribute('data-mrs-name') ?? `Part ${k + 1}`, colour: colourOf(group), image: images[k]!, shown: 0, target: 0, from: 0, bounds, middle, mask };
+        return { name, colour: colourOf(group), image: images[k]!, shown: 0, target: 0, from: 0, bounds, middle, mask, pieces: pieces[k] ?? null, motion: 0 };
       });
       const back = invert(place);
       regions = phases.flatMap((p, k) =>
@@ -243,7 +262,12 @@ export default defineLayer<Params>({
     function aim(land: boolean) {
       const revealed = ctx.params.reveal ? ctx.steps.revealed : 0;
       const weights = { overview: ctx.params.start === 'base' ? 'none' : 'all', earlier: ctx.params.earlier, later: ctx.params.later, finale: ctx.params.finale ? FINALE : null } as const;
-      phases.forEach((p, k) => (p.target = stagedWeight(k, revealed, phases.length, weights)));
+      phases.forEach((p, k) => {
+        const target = stagedWeight(k, revealed, phases.length, weights);
+        // A phase that comes on (or back from hidden) comes to life again.
+        if (target > 0 && p.target <= 0 && p.shown <= 0.01) p.motion = 0;
+        p.target = target;
+      });
       // The controller's picture of the drawing follows the table.
       ctx.publish({ shown: phases.map((p) => Math.round(p.target * 100) / 100) });
       // Turning the layer on, or turning the reveal off, shows what is there at once.
@@ -254,6 +278,7 @@ export default defineLayer<Params>({
         // Out of the overview, the phase is played in again from faint.
         if (p.shown >= 1) p.shown = Math.min(ctx.params.later, 0.5);
         p.from = p.shown;
+        p.motion = 0;
         glow = GLOW_S + IN_S;
       }
       dirty = true;
@@ -269,6 +294,13 @@ export default defineLayer<Params>({
       if (glow > 0) {
         glow = Math.max(0, glow - dt);
         dirty = true;
+      }
+      // Parts moving by role keep the drawing alive while their phase shows.
+      const living = ctx.params.opening === 'none' || clock >= ctx.params.opening_s;
+      for (const p of phases) {
+        if (!p.pieces || p.shown <= 0) continue;
+        if (living) p.motion += dt;
+        if (p.motion < ctx.params.role_s || p.pieces.some((piece) => roleMoves(piece.role))) dirty = true;
       }
       hover.tick(dt, performance.now() / 1000);
       if (hover.moving) dirty = true;
@@ -339,36 +371,44 @@ export default defineLayer<Params>({
         const from: [number, number] = ctx.params.grow === 'phase' ? p.middle : [w / 2, h / 2];
         const radius = ctx.params.grow === 'phase' && p.bounds ? growRadius(from, p.bounds) : reach;
         const lit = hover.level(`phase-${k}`);
-        g.save();
-        if (rising) {
-          // Coming in: the faint phase, and the full one inside a circle growing from its start.
-          placed(() => {
-            g.globalAlpha = p.from * fadeIn;
-            g.drawImage(p.image, 0, 0, 1, 1);
-          });
-          g.beginPath();
-          g.arc(from[0], from[1], ease(progress) * radius, 0, Math.PI * 2);
-          g.clip();
-          g.globalAlpha = fadeIn;
+        if (p.pieces) {
+          // Moving by role: its parts come to life over role_s, then keep their steady motion.
+          const progress = Math.min(1, p.motion / Math.max(0.1, ctx.params.role_s));
+          const weight = Math.min(1, (p.target >= 1 ? Math.max(p.shown, progress > 0 ? 1 : 0) : p.shown) + (1 - p.shown) * lit) * fadeIn;
+          const style = { weight, glowPx: drawing.width * drawing.scale * 0.01, minWidth: 0.8 / drawing.scale, dash: [diagonal * 0.011, diagonal * 0.008] as [number, number] };
+          for (const piece of p.pieces) drawRolePiece(g, piece, roleFrame(piece.role, progress, clock, piece.index, piece.count), style);
         } else {
-          g.globalAlpha = Math.min(1, (p.shown + (1 - p.shown) * lit) * fadeIn);
-        }
-        placed(() => g.drawImage(p.image, 0, 0, 1, 1));
-        g.restore();
-        if (rising) {
-          const r = ease(progress) * radius;
           g.save();
-          g.strokeStyle = 'rgb(255 255 255 / 0.55)';
-          g.lineWidth = 6 / drawing.scale;
-          g.shadowColor = '#fff';
-          g.shadowBlur = 24;
-          g.beginPath();
-          g.arc(from[0], from[1], r, 0, Math.PI * 2);
-          g.stroke();
+          if (rising) {
+            // Coming in: the faint phase, and the full one inside a circle growing from its start.
+            placed(() => {
+              g.globalAlpha = p.from * fadeIn;
+              g.drawImage(p.image, 0, 0, 1, 1);
+            });
+            g.beginPath();
+            g.arc(from[0], from[1], ease(progress) * radius, 0, Math.PI * 2);
+            g.clip();
+            g.globalAlpha = fadeIn;
+          } else {
+            g.globalAlpha = Math.min(1, (p.shown + (1 - p.shown) * lit) * fadeIn);
+          }
+          placed(() => g.drawImage(p.image, 0, 0, 1, 1));
           g.restore();
+          if (rising) {
+            const r = ease(progress) * radius;
+            g.save();
+            g.strokeStyle = 'rgb(255 255 255 / 0.55)';
+            g.lineWidth = 6 / drawing.scale;
+            g.shadowColor = '#fff';
+            g.shadowBlur = 24;
+            g.beginPath();
+            g.arc(from[0], from[1], r, 0, Math.PI * 2);
+            g.stroke();
+            g.restore();
+          }
         }
         // The newest phase glows once it has landed, and a phase pointed at glows while it is held.
-        const landed = k === newest && glow > 0 && glow < GLOW_S && p.target === 1 ? 0.45 * Math.sin((glow / GLOW_S) * Math.PI) : 0;
+        const landed = !p.pieces && k === newest && glow > 0 && glow < GLOW_S && p.target === 1 ? 0.45 * Math.sin((glow / GLOW_S) * Math.PI) : 0;
         const shine = Math.max(landed, 0.3 * lit);
         if (shine > 0) {
           g.save();

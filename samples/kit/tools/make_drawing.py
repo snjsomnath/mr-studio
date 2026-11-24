@@ -8,6 +8,9 @@ table, 1000 x 600 m), so they land on the sample table without corners:
                                  seen from a spot (a ray cast against the buildings) and a mark
   drawing/viewpoints-colour.svg  the same district in colour, for the turn to colour
   drawing/underground.svg        made-up pipes, a tunnel and a metro line, for an X-ray
+  drawing/masterplan-roles.svg   a masterplan drawn the standard way (#300): numbered phases whose
+                                 parts are named by role (boundary, main axis, routes, arrows,
+                                 points, nodes, green areas), so the Masterplan layer animates each
 
 Python standard library only:  python3 samples/kit/tools/make_drawing.py
 """
@@ -187,8 +190,63 @@ def underground():
     return out
 
 
+def roles():
+    """A masterplan in the standard structure: phases numbered in reveal order, parts named by role."""
+    out = []
+    # 01 The project boundary: a dashed line around the plan area.
+    edge = [(250, 110), (760, 90), (800, 300), (730, 500), (260, 480), (220, 300)]
+    out.append('<g id="boundary" inkscape:groupmode="layer" inkscape:label="01_Project boundary">')
+    out.append(f'<path d="{d(edge, True)}" fill="none" stroke="#b8c4d6" stroke-width="2" stroke-dasharray="8 8"/>')
+    out.append('</g>')
+    # 02 The main axis, with an arrow at each end.
+    a, b = (230, 440), (790, 150)
+    out.append('<g id="axis" inkscape:groupmode="layer" inkscape:label="02_Main axis">')
+    out.append(f'<g inkscape:label="Main axis"><path d="{d([a, b])}" fill="none" stroke="#ffd166" stroke-width="7" stroke-linecap="round"/></g>')
+    out.append('<g inkscape:label="Arrows">')
+    for (x, y), (px, py) in ((b, a), (a, b)):
+        ang = math.atan2(y - py, x - px)
+        tip = (x + 14 * math.cos(ang), y + 14 * math.sin(ang))
+        left = (x + 12 * math.cos(ang + 2.4), y + 12 * math.sin(ang + 2.4))
+        right = (x + 12 * math.cos(ang - 2.4), y + 12 * math.sin(ang - 2.4))
+        out.append(f'<path d="{d([tip, left, right], True)}" fill="#ffd166"/>')
+    out.append('</g></g>')
+    # 03 A living campus: routes, arrows where they lead on, points and activity nodes.
+    orange = '#f2762e'
+    out.append('<g id="living" inkscape:groupmode="layer" inkscape:label="03_Living campus">')
+    out.append('<g inkscape:label="Primary routes">')
+    routes = [[(300, 160), (380, 230), (470, 260), (560, 250), (680, 200)],
+              [(320, 420), (400, 360), (470, 330), (560, 340), (700, 420)],
+              [(470, 260), (470, 330)], [(560, 250), (590, 300), (560, 340)]]
+    for r in routes:
+        out.append(f'<path d="{d(r)}" fill="none" stroke="{orange}" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>')
+    out.append('</g><g inkscape:label="Secondary routes">')
+    for r in [[(380, 230), (360, 330), (400, 360)], [(680, 200), (700, 300), (700, 420)]]:
+        out.append(f'<path d="{d(r)}" fill="none" stroke="{orange}" stroke-width="2.5" stroke-dasharray="2 7" stroke-linecap="round"/>')
+    out.append('</g><g inkscape:label="Arrows">')
+    for (x, y), ang in (((680, 200), -0.4), ((700, 420), 0.5)):
+        tip = (x + 14 * math.cos(ang), y + 14 * math.sin(ang))
+        out.append(f'<path d="{d([tip, (x + 11 * math.cos(ang + 2.4), y + 11 * math.sin(ang + 2.4)), (x + 11 * math.cos(ang - 2.4), y + 11 * math.sin(ang - 2.4))], True)}" fill="{orange}"/>')
+    out.append('</g><g inkscape:label="Points">')
+    for x, y in [(340, 200), (420, 245), (515, 262), (620, 228), (360, 395), (440, 343), (520, 333), (640, 380)]:
+        out.append(f'<circle cx="{x}" cy="{y}" r="7" fill="#f6c343"/>')
+    out.append('</g><g inkscape:label="Nodes">')
+    for x, y in [(470, 260), (560, 340), (380, 230)]:
+        out.append('<g inkscape:label="Node">')
+        for k in range(4):
+            ang = k * math.pi / 4
+            out.append(f'<path d="M{x - 16 * math.cos(ang):.1f} {y - 16 * math.sin(ang):.1f}L{x + 16 * math.cos(ang):.1f} {y + 16 * math.sin(ang):.1f}" stroke="#a8321e" stroke-width="4"/>')
+        out.append('</g>')
+    out.append('</g></g>')
+    # 04 Green meeting spaces: soft areas that grow and breathe.
+    out.append('<g id="green" inkscape:groupmode="layer" inkscape:label="04_Green spaces">')
+    for cx, cy, rx, ry, rot in [(420, 300, 46, 18, -20), (610, 300, 52, 20, 25), (330, 300, 30, 14, 80), (700, 260, 34, 16, 70), (520, 420, 60, 18, -10)]:
+        out.append(f'<ellipse cx="{cx}" cy="{cy}" rx="{rx}" ry="{ry}" transform="rotate({rot} {cx} {cy})" fill="#8cba63" fill-opacity="0.8"/>')
+    out.append('</g>')
+    return out
+
+
 os.makedirs(OUT, exist_ok=True)
-for name, body in (('viewpoints.svg', line_work() + viewpoints()), ('viewpoints-colour.svg', colour()), ('underground.svg', underground())):
+for name, body in (('masterplan-roles.svg', roles()), ('viewpoints.svg', line_work() + viewpoints()), ('viewpoints-colour.svg', colour()), ('underground.svg', underground())):
     with open(os.path.join(OUT, name), 'w', encoding='utf-8') as f:
         f.write(HEAD + '\n'.join(body) + '\n</svg>\n')
     print('wrote', os.path.relpath(os.path.join(OUT, name), ROOT))

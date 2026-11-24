@@ -21,6 +21,28 @@ The Lindholmen artwork's three parts are settings of this layer, so another artw
 - **Pointing** (`hover`): in the overview and the finale, a pointer resting on a phase lights it on the table, its row in the controller's legend and the controller's picture. It uses the SDK's `HoverRegions`, so the camera's hands can do the same later.
 - **Placement** (`corners`): `lon,lat; lon,lat; lon,lat` of the drawing's top left, top right and bottom left puts it where it belongs on the map, rotated and of any shape; empty stretches it over the table.
 
+## Drawn the standard way: parts that move by what they are (#300)
+
+Name the parts of a phase by what they are and the layer animates each the way the Chalmers demo's Campus Vision did, with no code:
+
+| Name a group or shape | It |
+|---|---|
+| Boundary, Project boundary, Projektgräns | traces once, then its dashes march with a slow glow |
+| Main axis, Axel | grows from its middle out to both ends, then glows |
+| Route, Path, Street, Stråk (Primary path, Secondary routes...) | is drawn along its length, one after another, then pulses |
+| Arrow, Pil | appears as its routes end |
+| Points, Markers, Punkter | pop in one after another, then pulse |
+| Node, Asterix, Star, Nod | its rays grow out from its middle |
+| Area, Green spaces, Blob, Park, Yta | grows from its own middle, then breathes |
+| Label, Text | fades in |
+
+- A name can be an Inkscape or Illustrator layer name, a `<title>` inside the group (as Boxy SVG writes) or its id. `data-role="route"` says it outright. A part takes the role of the group it is in; a node gathers the shapes inside it.
+- Phases named with numbers (`01_Project boundary`, `02 Main axis`) are revealed in that order, and the numbers are left out of their names.
+- A phase comes to life over `role_s` seconds. Earlier phases dim to `earlier`, as the demo did.
+- `motion: none` shows the parts as they are, grown in by the circle as before. Drawings without role names (the Lindholmen artwork) are not affected.
+
+`samples/kit/drawing/masterplan-roles.svg` is a template drawing in this structure.
+
 The controller's hero shows the drawing as the table does: its phases, the one pointed at, and the turn to colour. Add a Magnifier for the glass.
 
-Params: `dataset` (the drawing's dataset name; empty takes the table's first SVG), `reveal`, `look`, `opening`, `opening_s`, `colour`, `colour_after_s`, `colour_s`, `start`, `grow`, `earlier`, `later`, `finale`, `hover`, `corners`, `opacity`.
+Params: `dataset` (the drawing's dataset name; empty takes the table's first SVG), `reveal`, `look`, `opening`, `opening_s`, `colour`, `colour_after_s`, `colour_s`, `start`, `grow`, `earlier`, `later`, `finale`, `hover`, `corners`, `motion`, `role_s`, `opacity`.

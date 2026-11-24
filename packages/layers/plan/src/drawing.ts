@@ -1,5 +1,6 @@
 // What the Masterplan's table and its controller hero share: the params, finding the drawing,
 // and turning it into pictures (the base, each phase, the colour version).
+import { phaseNumber, phaseTitle } from '@mrstudio/sdk';
 import type { SiteInfo } from '@mrstudio/sdk';
 
 export interface Params {
@@ -18,6 +19,8 @@ export interface Params {
   finale: boolean;
   hover: boolean;
   corners: string;
+  motion: 'roles' | 'none';
+  role_s: number;
   opacity: number;
 }
 
@@ -73,4 +76,24 @@ async function loadImage(url: string | null): Promise<HTMLImageElement | null> {
     console.warn(`[plan] '${url}' could not be shown`);
     return null;
   }
+}
+
+/** A phase group's own <title>, which drawings exported from Illustrator or Boxy carry. */
+function titleOf(group: Element): string | null {
+  for (const child of group.children) if (child.localName.toLowerCase() === 'title') return child.textContent?.trim() || null;
+  return null;
+}
+
+/**
+ * The drawing's phases in the order Next reveals them, with their names. Phases named with
+ * numbers ("01_PROJECT BOUNDARY", "02 Living campus") go in that order (#300); others in the
+ * drawing's own order.
+ */
+export function orderedPhases(svg: Document): { group: Element; name: string }[] {
+  const groups = [...svg.querySelectorAll('[data-mrs-phase]')].map((group, k) => {
+    const raw = titleOf(group) ?? group.getAttribute('data-mrs-name') ?? `Part ${k + 1}`;
+    return { group, name: phaseTitle(raw), number: phaseNumber(raw) ?? phaseNumber(group.getAttribute('data-mrs-name')), k };
+  });
+  if (groups.length > 1 && groups.every((g) => g.number !== null)) groups.sort((a, b) => a.number! - b.number! || a.k - b.k);
+  return groups.map(({ group, name }) => ({ group, name }));
 }

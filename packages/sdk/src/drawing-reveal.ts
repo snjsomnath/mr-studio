@@ -191,10 +191,10 @@ export interface TraceBatch {
   join: CanvasLineJoin;
 }
 
-const SKIP = new Set(['defs', 'clippath', 'mask', 'symbol', 'pattern', 'marker', 'style', 'script', 'lineargradient', 'radialgradient', 'filter', 'metadata', 'title', 'desc']);
+export const NOT_DRAWN = new Set(['defs', 'clippath', 'mask', 'symbol', 'pattern', 'marker', 'style', 'script', 'lineargradient', 'radialgradient', 'filter', 'metadata', 'title', 'desc']);
 
 /** An inherited presentation attribute: the element's own, its style, or its nearest ancestor's. */
-function inherited(el: Element, name: string): string | null {
+export function inherited(el: Element, name: string): string | null {
   for (let n: Element | null = el; n; n = n.parentElement) {
     const own = n.getAttribute(name);
     if (own !== null) return own;
@@ -217,7 +217,7 @@ export function traceDrawing(root: Element, toTarget: Affine, buckets = 24): Tra
   const batches = new Map<string, TraceBatch>();
   const walk = (el: Element, m: Affine) => {
     const tag = el.localName.toLowerCase();
-    if (SKIP.has(tag)) return;
+    if (NOT_DRAWN.has(tag)) return;
     if (inherited(el, 'display') === 'none' || inherited(el, 'visibility') === 'hidden') return;
     const here = multiply(m, parseTransform(el.getAttribute('transform')));
     const d = shapePath(tag, (name) => el.getAttribute(name));
@@ -231,7 +231,7 @@ export function traceDrawing(root: Element, toTarget: Affine, buckets = 24): Tra
           return;
         }
         // The stroke's width in viewBox units; times `unit` it is in the target's.
-        const width = (Number(inherited(el, 'stroke-width')) || 1) * Math.sqrt(Math.abs(here[0] * here[3] - here[1] * here[2]));
+        const width = (parseFloat(inherited(el, 'stroke-width') ?? '') || 1) * Math.sqrt(Math.abs(here[0] * here[3] - here[1] * here[2]));
         const alpha = (Number(inherited(el, 'stroke-opacity') ?? 1) || 1) * (Number(inherited(el, 'opacity') ?? 1) || 1);
         const cap = (inherited(el, 'stroke-linecap') ?? 'butt') as CanvasLineCap;
         const join = (inherited(el, 'stroke-linejoin') ?? 'miter') as CanvasLineJoin;
