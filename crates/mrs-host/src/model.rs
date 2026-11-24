@@ -36,6 +36,11 @@ pub struct ModelQuery {
     /// `0` when the model gives the buildings their shape, `1` to raise the footprints too.
     #[serde(default)]
     extrude: Option<String>,
+    /// The point of the file taken as its origin, for a model in map coordinates.
+    #[serde(default)]
+    offset_x: Option<f64>,
+    #[serde(default)]
+    offset_y: Option<f64>,
     /// `1` takes the model out of the scene.
     #[serde(default)]
     remove: Option<String>,
@@ -112,6 +117,7 @@ pub async fn post(
             base_m: query.base_m,
             up,
             mirror: flag(&query.mirror).unwrap_or(false),
+            offset: query.offset_x.zip(query.offset_y).map(|(x, y)| [x, y]),
             extrude: flag(&query.extrude),
         })
     };
@@ -124,4 +130,21 @@ pub async fn post(
         Ok(answer) => Json(answer).into_response(),
         Err(error) => (StatusCode::UNPROCESSABLE_ENTITY, Json(json!({ "error": error }))).into_response(),
     }
+}
+
+#[derive(serde::Deserialize)]
+pub struct LocateQuery {
+    x: f64,
+    y: f64,
+}
+
+/// `GET /api/data/model/locate?x=&y=`: whether a model's point (x, y), in its own units with
+/// Z up, is in map coordinates that land on this table, and how to place it there (#344).
+pub async fn locate(State(state): State<Arc<AppState>>, Query(query): Query<LocateQuery>) -> axum::response::Response {
+    let dir = state.site.dir.clone();
+    let found = tokio::task::spawn_blocking(move || Site::load(&dir).ok().and_then(|site| model::locate(&site, query.x, query.y)))
+        .await
+        .ok()
+        .flatten();
+    Json(json!({ "map": found })).into_response()
 }

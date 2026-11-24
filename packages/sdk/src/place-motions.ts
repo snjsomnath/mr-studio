@@ -45,18 +45,91 @@ export interface PlaceMotionDef {
 
 export interface PlaceEnv {
   data: PlaceData;
-  /** Knob values over their defaults, plus the shared `speed` and `glow`. */
+  /** Knob values over their defaults, plus the shared `speed`, `glow` and `scale`. */
   props: Record<string, number>;
   /** Metres per design unit (1.25 table mm). */
   u: number;
   palette: ResolvedPalette;
+  /**
+   * Where Next is, when the motion steps (#341): 0 before the first Next (nothing yet), 1 while
+   * the places appear one by one, 2 once the motion runs. `since` is the draw time it got there.
+   * Without it the motion simply runs.
+   */
+  stage?: () => PlaceStage;
 }
+
+export interface PlaceStage {
+  revealed: number;
+  since: number;
+}
+
+/** The sub-steps of a place motion that steps (#341), for the controller's strip. */
+export function placeStepTitles(motion: string): string[] {
+  return ['The places', placeMotion(motion)?.label ?? 'The motion'];
+}
+
+/** Seconds between one place appearing and the next, and how long the motion takes to fade in. */
+export const ARRIVAL_S = 0.6;
+const MOTION_IN_S = 1.5;
 
 /** Knobs every place motion has. */
 export const SHARED_KNOBS: PlaceKnob[] = [
   { key: 'speed', label: 'Speed', min: 0.2, max: 2.5, step: 0.05, value: 1, unit: '×' },
   { key: 'glow', label: 'Glow', min: 0, max: 2, step: 0.05, value: 1 },
+  { key: 'scale', label: 'Scale', min: 0.25, max: 4, step: 0.05, value: 1, unit: '×' },
 ];
+
+// ---- Fitting a motion to the table (#341) ------------------------------------------
+//
+// The motions were drawn for the preview district: seven places about 330 du apart. On a real
+// table the places can be far closer together (the twelve KultVis places on the 1 m Lindholmen
+// table are about 75 du apart), so pull, reach and brightness tuned for the preview flood the
+// map, and walkers the size of a preview's look like blobs. A motion is therefore drawn in its
+// own units scaled to the places' spacing: everything that is a distance on the map (reach,
+// pull, how far a pulse travels) follows the spacing, while marks (dots, line widths, glows)
+// shrink only by its square root, and never below about half, so they stay visible.
+
+/** How far apart the preview's places are, in du (see `placeSpacing`). */
+export const PREVIEW_SPACING_DU = 326;
+const FIT_MIN = 0.12;
+const FIT_MAX = 3;
+
+/** How a motion's units land on this table. */
+export interface Fit {
+  /** Metres per du for distances on the map. */
+  u: number;
+  /** Metres per du for the size of marks. */
+  mark: number;
+  /** The scale over the preview: `u` over the table's own du. */
+  scale: number;
+}
+
+/**
+ * A typical distance between places, in the units of `points`: the geometric mean of the median
+ * nearest neighbour (how close places sit) and the spread (the side of the share of the places'
+ * bounding box each one has). NaN for fewer than two places.
+ */
+export function placeSpacing(points: readonly (readonly [number, number])[]): number {
+  if (points.length < 2) return Number.NaN;
+  const nearest = points.map((a, i) => Math.min(...points.map((b, j) => (i === j ? Infinity : Math.hypot(a[0] - b[0], a[1] - b[1]))))).sort((a, b) => a - b);
+  const n = nearest.length;
+  const median = n % 2 ? nearest[(n - 1) / 2]! : (nearest[n / 2 - 1]! + nearest[n / 2]!) / 2;
+  const xs = points.map((p) => p[0]);
+  const ys = points.map((p) => p[1]);
+  const w = Math.max(...xs) - Math.min(...xs);
+  const h = Math.max(...ys) - Math.min(...ys);
+  // Places in a line have no area: their spread is along the line.
+  const spread = w * h > 0 ? Math.sqrt((w * h) / n) : Math.max(w, h) / n;
+  return median > 0 ? Math.sqrt(median * Math.max(spread, median)) : spread;
+}
+
+/** The fit of the places in `data` on a table of `u` metres per du, times the author's `scale`. */
+export function placeFit(data: Pick<PlaceData, 'places'>, u: number, scale = 1): Fit {
+  const spacing = placeSpacing(data.places.map((p) => p.point)) / u;
+  const auto = Number.isFinite(spacing) && spacing > 0 ? clamp(spacing / PREVIEW_SPACING_DU, FIT_MIN, FIT_MAX) : 1;
+  const s = clamp(auto * (Number.isFinite(scale) && scale > 0 ? scale : 1), FIT_MIN / 2, FIT_MAX * 2);
+  return { u: u * s, mark: u * clamp(Math.sqrt(s), 0.45, 1.3), scale: s };
+}
 
 const WHITE: Rgba = [255, 255, 255, 1];
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
@@ -102,25 +175,32 @@ function sprite(c: Rgba): Canvas | null {
 class Painter {
   readonly pen: Pen;
   readonly s: number;
+  /** Pixels per du of a mark (a dot, a line's width, a glow). */
+  readonly ms: number;
   readonly view: View;
   readonly u: number;
   readonly glowLevel: number;
-  constructor(view: View, u: number, glowLevel: number) {
+  constructor(view: View, fit: Fit, glowLevel: number) {
     this.view = view;
-    this.u = u;
+    this.u = fit.u;
     this.glowLevel = glowLevel;
     this.pen = view.pen;
-    this.s = u * view.scale;
+    this.s = fit.u * view.scale;
+    this.ms = fit.mark * view.scale;
   }
   x(xd: number, yd: number): [number, number] {
     return this.view.toPx([xd * this.u, yd * this.u]);
   }
-  /** du to pixels, for lengths. */
+  /** du to pixels, for distances on the map: reach, radius, how far something travels. */
   l(d: number): number {
     return d * this.s;
   }
+  /** du to pixels, for the size of a mark: a dot, a line's width, a glow. */
+  m(d: number): number {
+    return d * this.ms;
+  }
   glow(xd: number, yd: number, rd: number, c: Rgba, a: number): void {
-    const r = this.l(rd);
+    const r = this.m(rd);
     if (r <= 0.5 || a <= 0) return;
     const [x, y] = this.x(xd, yd);
     const level = Math.min(1, a * this.glowLevel);
@@ -145,13 +225,13 @@ class Painter {
     const [x, y] = this.x(xd, yd);
     this.pen.fillStyle = css(c, a);
     this.pen.beginPath();
-    this.pen.arc(x, y, Math.max(0.6, this.l(rd)), 0, TAU);
+    this.pen.arc(x, y, Math.max(0.6, this.m(rd)), 0, TAU);
     this.pen.fill();
   }
   ring(xd: number, yd: number, rd: number, c: Rgba, a: number, widthD: number): void {
     const [x, y] = this.x(xd, yd);
     this.pen.strokeStyle = css(c, a);
-    this.pen.lineWidth = Math.max(0.6, this.l(widthD));
+    this.pen.lineWidth = Math.max(0.6, this.m(widthD));
     this.pen.beginPath();
     this.pen.arc(x, y, Math.max(0.1, this.l(rd)), 0, TAU);
     this.pen.stroke();
@@ -160,7 +240,7 @@ class Painter {
     const [x0, y0] = this.x(ax, ay);
     const [x1, y1] = this.x(bx, by);
     this.pen.strokeStyle = css(c, a);
-    this.pen.lineWidth = Math.max(0.6, this.l(widthD));
+    this.pen.lineWidth = Math.max(0.6, this.m(widthD));
     this.pen.beginPath();
     this.pen.moveTo(x0, y0);
     this.pen.lineTo(x1, y1);
@@ -243,23 +323,52 @@ function sceneOf(data: PlaceData, u: number): Scene {
 
 /** Common setup: the scene, the props with defaults, and a painter per frame. */
 function setup(def: Pick<PlaceMotionDef, 'knobs'>, env: PlaceEnv) {
-  const scene = sceneOf(env.data, env.u);
   const k: Record<string, number> = {};
   for (const knob of [...SHARED_KNOBS, ...def.knobs]) k[knob.key] = Number.isFinite(env.props[knob.key]) ? env.props[knob.key]! : knob.value;
+  const fit = placeFit(env.data, env.u, k.scale);
+  const scene = sceneOf(env.data, fit.u);
   const frame = (view: View, time: number, alpha: number, body: (p: Painter, t: number) => void) => {
     if (scene.places.length === 0) return;
-    const p = new Painter(view, env.u, k.glow!);
+    const p = new Painter(view, fit, k.glow!);
     const pen = view.pen;
+    const stage = env.stage?.();
     pen.save();
     pen.globalAlpha = alpha;
     // Light adds up, as on the preview's dark ground.
     pen.globalCompositeOperation = 'lighter';
     pen.lineCap = 'round';
     pen.lineJoin = 'round';
-    body(p, time * k.speed!);
+    if (stage && stage.revealed < 2) {
+      // Stepping (#341): nothing before the first Next, then the places one by one.
+      if (stage.revealed === 1) arrivals(p, scene, time - stage.since);
+    } else {
+      if (stage) {
+        // The places stay lit while the motion comes in over them.
+        const comeIn = ease((time - stage.since) / MOTION_IN_S);
+        if (comeIn < 1) {
+          pen.globalAlpha = alpha * (1 - comeIn);
+          arrivals(p, scene, Infinity);
+        }
+        pen.globalAlpha = alpha * comeIn;
+      }
+      body(p, time * k.speed!);
+    }
     pen.restore();
   };
-  return { scene, k, frame, rnd: seeded(11) };
+  return { scene, k, frame, rnd: seeded(11), fit };
+}
+
+/** Places appearing one after another, `age` seconds after the first: a ring opens out and a glow stays. */
+function arrivals(p: Painter, scene: Scene, age: number): void {
+  scene.places.forEach((pl, i) => {
+    const a = age - i * ARRIVAL_S;
+    if (a < 0) return;
+    const ring = clamp(a / 1.2, 0, 1);
+    if (ring < 1) p.ring(pl.x, pl.y, ease(ring) * (60 + 60 * pl.w), pl.c, (1 - ring) * 0.9, 4);
+    const settle = ease(a / 0.5);
+    p.glow(pl.x, pl.y, 30 + 30 * pl.w, pl.c, 0.8 * settle);
+    p.dot(pl.x, pl.y, 4 + 2 * pl.w, WHITE, settle);
+  });
 }
 
 /** Event-driven mass: weight × an envelope that swells when something is on (activity). */
@@ -377,10 +486,12 @@ M.push({
                 const o = own[i]!;
                 const edge = (x < VW - 1 && own[i + 1] !== o) || (y < VH - 1 && own[i + VW] !== o) || (x > 0 && own[i - 1] !== o) || (y > 0 && own[i - VW] !== o);
                 const c = scene.places[o]!.c;
+                // Claims fade out far from every place, so empty parts of a real table stay dark.
+                const far = Math.hypot((x + 0.5) * cw - scene.places[o]!.x, (y + 0.5) * ch - scene.places[o]!.y) / (REACH_DU * ws[o]!);
                 D[i * 4] = c[0];
                 D[i * 4 + 1] = c[1];
                 D[i * 4 + 2] = c[2];
-                D[i * 4 + 3] = 255 * (edge ? k.border! : k.fill!);
+                D[i * 4 + 3] = 255 * (edge ? k.border! : k.fill!) * Math.exp(-far * far);
               }
             g.putImageData(img, 0, 0);
             p.raster(canvas, scene.W, scene.H);
@@ -603,7 +714,7 @@ M.push({
             p.glow(q.x, q.y, 16 * pop, P.c, a);
             p.dot(q.x, q.y, 4.5 * pop, WHITE, a);
           }
-          p.pen.setLineDash([p.l(10), p.l(12)]);
+          p.pen.setLineDash([p.m(10), p.m(12)]);
           p.ring(P.x, P.y, reach, P.c, 0.35 * fade, 2);
           p.pen.setLineDash([]);
           p.glow(P.x, P.y, 70, P.c, 0.9 * fade);
@@ -698,7 +809,7 @@ M.push({
             const lv = l / (L + 1);
             const c = rampColour(ramp, lv);
             p.pen.strokeStyle = css(c, 0.9 * fade);
-            p.pen.lineWidth = p.l(2 + l * 0.35);
+            p.pen.lineWidth = p.m(2 + l * 0.35);
             p.pen.beginPath();
             for (let y = 0; y < GH - 1; y++)
               for (let x = 0; x < GW - 1; x++) {
@@ -803,10 +914,10 @@ M.push({
               }
               p.pen.closePath();
               p.pen.strokeStyle = css(pl.c, 0.14);
-              p.pen.lineWidth = p.l(10);
+              p.pen.lineWidth = p.m(10);
               p.pen.stroke();
               p.pen.strokeStyle = css(L ? pl.c : WHITE, L ? Math.max(0.2, 0.75 - L * 0.15) : 0.85);
-              p.pen.lineWidth = Math.max(0.8, p.l(L ? 2 : 2.5));
+              p.pen.lineWidth = Math.max(0.8, p.m(L ? 2 : 2.5));
               p.pen.stroke();
             }
             p.glow(pl.x, pl.y, r0, pl.c, 0.4 * lvl);
@@ -909,6 +1020,18 @@ M.push({
 
 const GX = 'These react to the site’s own streets and buildings, so there is nothing extra to author. Events are optional: without activity.csv, each place swells slowly on its own.';
 
+/** How far, in du, a place's motion reaches: about a preview's place spacing and a half. */
+const REACH_DU = 480;
+
+/** The street edges within reach of a place, or all of them when none are. */
+function nearEdges(scene: Scene): [number, number, number][] {
+  const near = scene.edges.filter(([a]) => {
+    const n = scene.nodes[a]!;
+    return scene.places.some((p) => Math.hypot(p.x - n.x, p.y - n.y) < REACH_DU * 1.5);
+  });
+  return near.length ? near : scene.edges;
+}
+
 /** Pull of all places at a point: the strongest place, its pull and the sum. */
 function pullAt(scene: Scene, mass: (i: number, t: number) => number, x: number, y: number, t: number, strength = 1) {
   let best = 0, bv = 0, sum = 0;
@@ -951,8 +1074,11 @@ M.push({
             const [a, b] = warp(x, y, t);
             const { sum } = pullAt(scene, mass, x, y, t);
             const s = 1 - Math.min(k.shrink!, sum * 0.03);
+            // Only pulled blocks are drawn again: the base map already shows the rest, and light adds up.
+            const shown = Math.min(0.9, sum * 0.08);
+            if (shown < 0.03) return;
             // The footprint moves with its centre and shrinks around it.
-            p.footprint(scene.footprints[n]!, css(ground, 0.9), (vx, vy) => [a + (vx - x) * s, b + (vy - y) * s]);
+            p.footprint(scene.footprints[n]!, css(ground, shown), (vx, vy) => [a + (vx - x) * s, b + (vy - y) * s]);
           });
           for (const [a0, b0] of scene.edges) {
             const A = scene.nodes[a0]!, B = scene.nodes[b0]!;
@@ -979,8 +1105,10 @@ M.push({
   create(env) {
     const { scene, k, frame, rnd } = setup(this, env);
     const mass = massOf(env, scene);
-    const walkers = scene.edges.length ? Array.from({ length: Math.round(k.count!) }, () => {
-      const e = scene.edges[Math.floor(rnd() * scene.edges.length)]!;
+    // Walkers start and restart on the streets around the places, not out where nothing pulls.
+    const near = nearEdges(scene);
+    const walkers = near.length ? Array.from({ length: Math.round(k.count!) }, () => {
+      const e = near[Math.floor(rnd() * near.length)]!;
       return { a: e[0], b: e[1], u: rnd(), sp: (60 + rnd() * 50) * k.pace! };
     }) : [];
     const arrive = scene.places.map(() => 0);
@@ -1002,7 +1130,7 @@ M.push({
               const pi = nodePlace.get(w.b);
               if (pi !== undefined && rnd() < 0.7) {
                 arrive[pi] = 1;
-                const e = scene.edges[Math.floor(rnd() * scene.edges.length)]!;
+                const e = near[Math.floor(rnd() * near.length)]!;
                 [w.a, w.b, w.u] = [e[0], e[1], 0];
                 break;
               }
@@ -1063,7 +1191,15 @@ M.push({
   create(env) {
     const { scene, k, frame, rnd } = setup(this, env);
     const mass = massOf(env, scene);
-    const tracers = Array.from({ length: Math.round(k.count!) }, () => ({ x: rnd() * scene.W, y: rnd() * scene.H, tr: [] as [number, number][], age: rnd() * 4 }));
+    const spawn = (): [number, number] => {
+      // Dust rises within reach of the places (on a real table they may fill only part of it).
+      const pl = scene.places[Math.floor(rnd() * scene.places.length)]!;
+      const r = REACH_DU * 1.6 * Math.sqrt(rnd());
+      const a = rnd() * TAU;
+      return [clamp(pl.x + r * Math.cos(a), 0, scene.W), clamp(pl.y + r * Math.sin(a), 0, scene.H)];
+    };
+    const tracers = Array.from({ length: Math.round(k.count!) }, () => ({ x: 0, y: 0, tr: [] as [number, number][], age: rnd() * 4 }));
+    for (const q of tracers) [q.x, q.y] = spawn();
     let last: number | null = null;
     const field = (x: number, y: number, t: number): [number, number] => {
       let fx = 0, fy = 0;
@@ -1094,12 +1230,13 @@ M.push({
             const best = pullAt(scene, mass, q.x, q.y, t).best;
             const P = scene.places[best]!;
             if (Math.hypot(q.x - P.x, q.y - P.y) < 18 || q.age > 7) {
-              [q.x, q.y, q.tr, q.age] = [rnd() * scene.W, rnd() * scene.H, [], 0];
+              [q.x, q.y] = spawn();
+              [q.tr, q.age] = [[], 0];
               continue;
             }
             if (q.tr.length > 1) {
               p.pen.strokeStyle = css(P.c, 0.55);
-              p.pen.lineWidth = Math.max(0.8, p.l(2));
+              p.pen.lineWidth = Math.max(0.8, p.m(2));
               p.pen.beginPath();
               q.tr.forEach(([x, y], n) => {
                 const [px, py] = p.x(x, y);
@@ -1173,7 +1310,7 @@ M.push({
             const [cx, cy] = p.x((x + pl.x) / 2 + sag, (y + pl.y) / 2 + sag);
             const [x1, y1] = p.x(pl.x, pl.y);
             p.pen.strokeStyle = css(pl.c, Math.min(1, a));
-            p.pen.lineWidth = Math.max(0.6, p.l(1.4));
+            p.pen.lineWidth = Math.max(0.6, p.m(1.4));
             p.pen.beginPath();
             p.pen.moveTo(x0, y0);
             p.pen.quadraticCurveTo(cx, cy, x1, y1);

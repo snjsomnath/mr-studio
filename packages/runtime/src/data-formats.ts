@@ -89,6 +89,14 @@ export const DATA_FORMATS: DataFormat[] = [
     },
   },
   {
+    dataset: 'water',
+    name: 'Water',
+    files: 'GeoJSON or GeoTIFF',
+    example:
+      'GeoJSON areas where there is water: a river, a lake, a harbour, the sea. Thermal comfort counts it as cool, stormwater lets the rain run into it, and the base map draws it. A GeoTIFF mask works too (water cells 1, land 0) in site.json under scene.water.\n\n{ "type": "Feature",\n  "properties": { "natural": "water" },\n  "geometry": { "type": "Polygon", "coordinates": [[[11.970, 57.690], [11.975, 57.690], [11.975, 57.688], [11.970, 57.690]]] } }',
+    sample: (o) => geojson('example-water.geojson', [{ type: 'Feature', properties: { natural: 'water', water: 'river' }, geometry: { type: 'Polygon', coordinates: block(o, -80, -60, 160, 35) } }]),
+  },
+  {
     dataset: 'roads',
     name: 'Streets',
     files: 'GeoJSON',

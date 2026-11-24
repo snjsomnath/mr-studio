@@ -128,7 +128,7 @@ Layer `plan`, media.
 
 ![Masterplan](docs/screenshots/193-table-3.png)
 
-Set **When it opens** to *Its lines trace in* and give it a **Colour version**, and the drawing draws itself line by line, then turns to colour, as the Lindholmen artwork does. With **Before the first Next** on *Only what is outside the phases*, each Next grows one phase (a viewpoint, a stage of a plan) from its own middle. A group in the drawing named *Base* is always shown and never becomes a phase. **Place by its corners** puts a drawing that is not the table's shape where it belongs on the map. The controller shows the drawing too.
+Set **When it opens** to *Its lines trace in* and give it a **Colour version**, and the drawing draws itself line by line, then turns to colour, as the Lindholmen artwork does. With **Before the first Next** on *Only what is outside the phases*, each Next grows one phase (a viewpoint, a stage of a plan) from its own middle. A group in the drawing named *Base* is always shown and never becomes a phase. **Place by its corners** puts a drawing that is not the table's shape where it belongs on the map; with the Masterplan open in the editor, drag its frame on the map to move, scale and turn it by hand, and **Turn the drawing** shows a drawing drawn on its side the right way round. The controller shows the drawing too.
 
 ![Masterplan tracing in](docs/screenshots/286-trace.png)
 
