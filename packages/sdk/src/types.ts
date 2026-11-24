@@ -195,7 +195,7 @@ export interface PanelSpec {
   title?: string;
   /** The widget's props. Values may be literals or bindings, as the widget's schema allows. */
   props?: Record<string, unknown>;
-  /** Show only while the layer's params have these values. */
+  /** Show only while the layer's params have these values. A list means any of those values. */
   visibleWhen?: Record<string, unknown>;
   /** Higher is placed first by the automatic layout. Default 0. */
   priority?: number;

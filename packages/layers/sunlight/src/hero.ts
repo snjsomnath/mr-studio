@@ -132,6 +132,9 @@ export function sunlightHero(ctx: PanelContext<Params>, el: HTMLElement): PanelH
   };
 
   function draw() {
+    // Seasons show three days side by side instead (seasons.ts).
+    root.hidden = ctx.params.mode === 'seasons';
+    if (root.hidden) return;
     const spot = (ctx.shared.spot ?? null) as SpotDay | null;
     const { w, h, rem } = size();
     if (w === 0 || h === 0) return;

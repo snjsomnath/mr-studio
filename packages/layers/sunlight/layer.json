@@ -11,7 +11,8 @@
       "id": "mode", "type": "select", "label": "Show", "default": "instant", "tier": "primary",
       "options": [
         { "value": "instant", "label": "Shadows" },
-        { "value": "day", "label": "Sun hours" }
+        { "value": "day", "label": "Sun hours" },
+        { "value": "seasons", "label": "Seasons" }
       ]
     },
     { "id": "date", "type": "date", "label": "Day", "default": "2026-06-21", "phone": true, "tier": "primary",
@@ -23,7 +24,16 @@
       ] },
     { "id": "hour", "type": "range", "label": "Time of day", "min": 0, "max": 24, "step": 0.05, "unit": "h", "default": 12, "phone": true, "visibleWhen": { "mode": "instant" }, "tier": "more" },
     { "id": "play", "type": "toggle", "label": "Animate the day", "default": false, "visibleWhen": { "mode": "instant" }, "tier": "more" },
-    { "id": "threshold", "type": "range", "label": "Flag areas with less sun than", "min": 0, "max": 12, "step": 0.5, "unit": "h", "default": 0, "visibleWhen": { "mode": "day" } },
+    {
+      "id": "season", "type": "select", "label": "Season on the table", "default": "cycle", "visibleWhen": { "mode": "seasons" },
+      "options": [
+        { "value": "cycle", "label": "Each in turn" },
+        { "value": "mar", "label": "Equinox" },
+        { "value": "jun", "label": "Midsummer" },
+        { "value": "dec", "label": "Midwinter" }
+      ]
+    },
+    { "id": "threshold", "type": "range", "label": "Flag areas with less sun than", "min": 0, "max": 12, "step": 0.5, "unit": "h", "default": 0, "visibleWhen": { "mode": ["day", "seasons"] } },
     { "id": "path", "type": "toggle", "label": "Sun path on the table", "default": true, "tier": "more" },
     { "id": "relight", "type": "toggle", "label": "Light the 3D model", "default": false, "visibleWhen": { "mode": "instant" }, "tier": "more" },
     { "id": "trees", "type": "toggle", "label": "Trees cast shade", "default": true, "tier": "more" },
@@ -37,7 +47,7 @@
   "panels": [
     { "id": "daylight", "widget": "stat", "size": "tile", "title": "Daylight on this date", "visibleWhen": { "mode": "day" },
       "props": { "value": { "bind": "shared.daylightHours" }, "unit": "h", "decimals": 1, "caption": { "bind": "shared.dayStatus" } } },
-    { "id": "trees", "widget": "ramp", "size": "tile", "title": "Shade from trees", "visibleWhen": { "trees": true, "treeColor": true },
+    { "id": "trees", "widget": "ramp", "size": "tile", "title": "Shade from trees", "visibleWhen": { "trees": true, "treeColor": true, "mode": ["instant", "day"] },
       "props": { "colormap": { "bind": "shared.treeRamp" }, "low": { "bind": "shared.treeLow" }, "high": { "bind": "shared.treeHigh" } } },
     { "id": "key", "widget": "ramp", "size": "band", "title": "On the table",
       "props": { "colormap": { "bind": "shared.ramp" }, "low": { "bind": "shared.rampLow" }, "high": { "bind": "shared.rampHigh" } } },

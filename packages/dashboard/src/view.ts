@@ -59,7 +59,8 @@ interface Mounted {
 function visible(input: PanelInput, source: BindSource): boolean {
   if (input.active && !input.active()) return false;
   const when = input.spec.visibleWhen;
-  return !when || Object.entries(when).every(([key, value]) => source.params[key] === value);
+  // A list means any of those values, as for controls.
+  return !when || Object.entries(when).every(([key, value]) => (Array.isArray(value) ? value.includes(source.params[key]) : source.params[key] === value));
 }
 
 export class DashboardView {
