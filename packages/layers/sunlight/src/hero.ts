@@ -8,8 +8,9 @@ import type { PanelContext, PanelHandlers } from '@mrstudio/sdk';
 import { sunAt, sunDay } from './look.ts';
 import type { SunDay } from './look.ts';
 import type { SpotDay } from './spot.ts';
+import { nearestTrail, trailCss, trailHours } from './trails.ts';
 
-type Params = { mode: string; date: string; hour: number; play: boolean };
+type Params = { mode: string; date: string; hour: number; play: boolean; trails?: boolean };
 
 const SVG = 'http://www.w3.org/2000/svg';
 /** Height of the scrubber band, in rem, so it grows with the controller (#77). */
@@ -159,6 +160,17 @@ export function sunlightHero(ctx: PanelContext<Params>, el: HTMLElement): PanelH
     const up = instant && now.altitude > 0;
     // A sunrise or sunset label gives way to the sun when the sun sits on it.
     const clear = (hour: number) => !instant || Math.abs(x(hour) - sx) > 5 * rem || sy < horizon - 3.5 * rem;
+    // With shadow trails on, each hour that has a trail on the table is a dot on the arc, in the trail's colour.
+    const trailed = instant && ctx.params.trails ? trailHours((h) => sunAt(ctx.site, ctx.params.date, h).altitude) : [];
+    const hourly = trailed.map((h) => sunAt(ctx.site, ctx.params.date, h));
+    const nearest = nearestTrail(trailed, hour);
+    const dots = hourly
+      .map((s, k) => {
+        const share = k / Math.max(1, hourly.length - 1);
+        const current = nearest === s.hour;
+        return `<circle cx="${x(s.hour).toFixed(1)}" cy="${y(s.altitude).toFixed(1)}" r="${(current ? 0.55 : 0.36) * rem}" fill="${trailCss(share)}" stroke="rgb(10 13 20 / .5)" stroke-width="1.5"/>`;
+      })
+      .join('');
     svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
     svg.innerHTML = `
       <defs>
@@ -190,6 +202,7 @@ export function sunlightHero(ctx: PanelContext<Params>, el: HTMLElement): PanelH
         <path d="${line(lit)}" fill="none" stroke="rgb(255 255 255 / .7)" stroke-width="2.5" stroke-dasharray="1 9" stroke-linecap="round"/>
         ${instant && before.length > 1 ? `<path d="${line(before)}" fill="none" stroke="rgb(255 255 255 / .92)" stroke-width="3" stroke-linecap="round"/>` : ''}
       </g>
+      ${dots}
       ${day.sunrise !== null && clear(day.sunrise) ? `<text x="${x(day.sunrise)}" y="${horizon + 1.6 * rem}" fill="#fff" opacity=".9" font-size="${0.95 * rem}" text-anchor="middle">${ctx.say('Sunrise {time}', { time: formatHour(day.sunrise) })}</text>` : ''}
       ${day.sunset !== null && clear(day.sunset) ? `<text x="${x(day.sunset)}" y="${horizon + 1.6 * rem}" fill="#fff" opacity=".9" font-size="${0.95 * rem}" text-anchor="middle">${ctx.say('Sunset {time}', { time: formatHour(day.sunset) })}</text>` : ''}
       ${

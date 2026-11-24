@@ -8,6 +8,7 @@ import { SunPath } from './sun-path.ts';
 import { hasShade, isFlat } from './flat.ts';
 import { spotOnTable } from './spot.ts';
 import { SEASONS, seasonsHero, seasonsOnTable } from './seasons.ts';
+import { trailsOnTable } from './trails.ts';
 
 interface Params {
   mode: 'instant' | 'day' | 'seasons';
@@ -21,6 +22,7 @@ interface Params {
   relight: boolean;
   opacity: number;
   season: string;
+  trails: boolean;
 }
 
 /** Hours of the day that pass per second while animating. */
@@ -257,6 +259,7 @@ export default defineLayer<Params>({
     });
 
     const spot = spotOnTable(ctx);
+    const trails = trailsOnTable(ctx, spot.at);
 
     publishDay();
     await open();
@@ -274,6 +277,7 @@ export default defineLayer<Params>({
       },
       update(changed) {
         spot.update(changed);
+        trails.update(changed);
         if (changed.includes('date')) publishDay();
         if (changed.includes('mode')) void open();
         else if (ctx.params.mode === 'seasons') {

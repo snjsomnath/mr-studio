@@ -147,6 +147,8 @@ export function spotOnTable(ctx: TableContext<Params>) {
   ctx.publish({ spot: null });
 
   return {
+    /** The spot, if one is picked. */
+    at: () => at,
     tool(input: ToolInput) {
       const geometry = input.geometry as { type?: string; coordinates?: number[] };
       if (input.tool !== 'spot' || geometry.type !== 'Point' || !geometry.coordinates) return;
