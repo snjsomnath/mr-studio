@@ -16,7 +16,10 @@ use tauri::menu::{Menu, MenuBuilder, MenuItem, MenuItemBuilder, PredefinedMenuIt
 use tauri::{AppHandle, Manager, Runtime, Wry};
 
 /// The actions, as menu item ids and as the editor page names them.
-pub const ACTIONS: [&str; 9] = ["new", "open", "save", "save_as", "export", "reveal", "close", "home", "settings"];
+pub const ACTIONS: [&str; 10] = ["new", "open", "save", "save_as", "export", "share", "reveal", "close", "home", "settings"];
+
+/// MR Studio > Install command line tool… on macOS, File on Windows and Linux (#370).
+pub const INSTALL_CLI: &str = "install-cli";
 
 /// The File submenu.
 fn file_submenu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Submenu<R>> {
@@ -36,6 +39,8 @@ fn file_submenu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Submenu<R>> {
         .item(&item("save_as", "Save As…", Some("CmdOrCtrl+Shift+S"))?)
         // One .mrstable file to take to another computer (#85).
         .item(&item("export", "Export table…", None)?)
+        // The same file, attached to a new email in the computer's mail app (#372).
+        .item(&item("share", "Share by email…", None)?)
         .item(&item("reveal", reveal, None)?)
         .separator()
         // This table's own settings, in the editor (#73); app settings are MR Studio > Settings.
@@ -45,7 +50,11 @@ fn file_submenu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Submenu<R>> {
         .item(&item("home", "All tables", Some("CmdOrCtrl+Shift+H"))?);
     if !cfg!(target_os = "macos") {
         // On macOS these live in the app menu, where people look for them.
-        file = file.separator().item(&item("settings", "Settings…", Some("Ctrl+,"))?).item(&PredefinedMenuItem::quit(app, Some("Exit"))?);
+        file = file
+            .separator()
+            .item(&item("settings", "Settings…", Some("Ctrl+,"))?)
+            .item(&item(INSTALL_CLI, "Install command line tool…", None)?)
+            .item(&PredefinedMenuItem::quit(app, Some("Exit"))?);
     }
     file.build()
 }
@@ -60,6 +69,7 @@ pub fn app_menu(app: &AppHandle<Wry>) -> tauri::Result<Menu<Wry>> {
         .item(&PredefinedMenuItem::about(app, None, None)?)
         .separator()
         .item(&settings)
+        .item(&MenuItemBuilder::with_id(INSTALL_CLI, "Install command line tool…").build(app)?)
         .separator()
         .item(&PredefinedMenuItem::services(app, None)?)
         .separator()

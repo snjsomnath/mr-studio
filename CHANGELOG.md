@@ -4,6 +4,87 @@ Every merge to main that carries a release note becomes a version. The newest is
 The app shows these notes, with their pictures, on Home when a newer version is out.
 How notes are written: docs/RELEASING.md.
 
+## 0.25.0 (2026-11-24)
+
+### New
+
+#### A network's Time slider shows the hour the table is playing (#338)
+
+The Time slider of a network of flows used to read a share, "40 %". It now shows the step's own time, such as "19:00", as the table plays and as you scrub. Any range control can do the same with `"shows"`, naming a value its layer publishes. A slider among a layer's main choices is also longer, with its value in larger type.
+
+![The energy network open on the controller, its Time slider reading 01:00](docs/screenshots/338-network-time.png)
+
+#### A custom layer shows its map and places on the controller (#342)
+
+A custom layer, such as Cultural Places, used to leave the centre of the controller empty, still saying "Turn a layer on to see it here". Now it shows a small map of the layer's data in the table's colours, over the table's buildings, and, for a layer of named points, its places by name and category, the one the table is showing marked. The message only shows when no layer is open. A long row of choices, like the eleven animations, now wraps instead of running off the screen.
+
+![Cultural Places open on the controller: its map, its places and the animations](docs/screenshots/342-custom-hero.png)
+
+#### Share a table by email, and update it on the studio PC (#372)
+A **Share** button at the top right of the editor (also File, Share by email) packs the table into one `.mrstable` file and opens a new email in the computer's own mail app with the file attached: through Compose Email on a Mac, Simple MAPI on Windows (Outlook and other desktop mail apps). Big files are left to the mail app; Outlook offers to send them as a OneDrive link. When no mail app takes the file, it is shown in its folder beside a new email to drag it into. Keys never go in the file. On the studio PC, opening a file of a table it already has now asks: **Update it** replaces the content, keeps that computer's calibration, history and kept map pictures, and puts the earlier version in the Trash; **Keep both** opens a second copy as before.
+
+![The table attached to a new email](docs/screenshots/372-share.jpg)
+
+![The studio PC asks before it updates a table it already has](docs/screenshots/372-same-table.jpg)
+
+#### The layer builder's Interaction tab: tap to read, show only, visitors can change (#38)
+
+A custom layer can now be picked on the table, with its facts on the controller (Tap to read), filtered by a category or a number (Show only), and given sliders for its size, glow or strength (Visitors can change).
+
+![The Interaction tab](docs/screenshots/38-interaction-tab.png)
+
+![A zone picked: its facts and the Show only slider on the controller](docs/screenshots/38-controller.png)
+
+![The picked zone outlined on the table](docs/screenshots/38-table.png)
+
+#### The table's data in the editor's tree (#52)
+
+A Data group at the bottom of the tree lists every dataset. Each one can be made into a layer, replaced with another file, or taken out of the table; taking out is refused while a layer still uses it, naming that layer.
+
+![The Data group and its menu](docs/screenshots/52-data-menu.png)
+
+![Taking out data a layer still uses](docs/screenshots/52-in-use.png)
+
+#### A New layer gallery with a picture of each layer (#59)
+
+New layer (in the ribbon, or the + in the tree) opens a gallery: layers from your data, analysis, story, make your own and map life, each with a picture of it on the table and a search. A layer that needs data the table has not got says so, with a button to bring it in.
+
+![The New layer gallery's analysis section](docs/screenshots/59-gallery.png)
+
+#### The controller and TV in the table palette's colours (#93)
+
+A "Table palette" theme (Design tab), or "The controller in these colours too" in the palette dialog, gives the controller and TV the palette's accent and data colours, and follows the palette as it changes.
+
+![The palette dialog with the follow switch](docs/screenshots/93-palette-follow.png)
+
+![The controller in the Ember palette's colours](docs/screenshots/93-controller.png)
+
+#### Your own class edges and a middle value when colouring by data (#94)
+
+When data is brought in and coloured by a value, pick a ramp (including a diverging one), type your own class edges, and set the middle value a diverging ramp is centred on.
+
+![Own edges and a middle value at import](docs/screenshots/94-own-edges.png)
+
+#### Values that change through time, and the year on the controller (#95)
+
+The Through time motion can now colour a layer by values that change year to year (one column per year), not only reveal features. The controller shows "Now showing" with the year, and a Play switch with a slider to hold any moment.
+
+![Through time: values change, from the population columns](docs/screenshots/95-through-time.png)
+
+![Now showing 2020 and Play on the controller](docs/screenshots/95-controller.png)
+
+![The zones coloured for 2020 on the table](docs/screenshots/95-table.png)
+
+## 0.24.0 (2026-11-24)
+
+### New
+
+#### Install the mrstudio command for terminals (#370)
+
+The `mrstudio` command has come inside the app for a while, but a terminal could not find it. **Displays and settings** now has a **Command line** tab with **Install command line tool** (also in the MR Studio menu on a Mac, and the editor's File menu on Windows). On a Mac it links `/usr/local/bin/mrstudio` to the copy inside the app, asking for the password once, and the link follows the app through updates. On Windows it adds the MR Studio folder to your own PATH, with no administrator needed. **Remove** takes it away again. The tab says why you would want it: checking a table, bringing data in, building a layer of your own or packing a table from a terminal, a script or an AI assistant. `scripts/install-latest-mac.sh` makes the link too.
+
+![The Command line tab on a Mac, before installing](docs/screenshots/370-command-line-mac.png)
+
 ## 0.23.0 (2026-11-24)
 
 ### New

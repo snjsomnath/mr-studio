@@ -23,6 +23,7 @@ import {
   ICONS,
   POINT_SHAPES,
   timeColumns,
+  seriesColumns,
   PLACE_DATA_HELP,
   PLACE_MOTIONS,
   SHARED_KNOBS,
@@ -30,6 +31,8 @@ import {
   soundColumns,
   soundPath,
   columnCategories,
+  columnNumbers,
+  paintBreaks,
   schemeFor,
   CATEGORY_SCHEMES,
   paintScale,
@@ -37,12 +40,14 @@ import {
   TEST_DATA,
   makeTestData,
 } from '@mrstudio/sdk';
-import type { CustomLayer, GeometryKind, LayerManifest, Paint, RecipeBlock, ResolvedPalette, Shapes, SitePalette, Size, TestDataDef } from '@mrstudio/sdk';
+import type { CustomLayer, GeometryKind, LayerManifest, Paint, RecipeBlock, RecipeData, ResolvedPalette, Shapes, SitePalette, Size, TestDataDef } from '@mrstudio/sdk';
 
 import { el, layerButton } from '../controls.ts';
 import { dataUrl, loadData } from '../recipe-player.ts';
 import type { Store } from '../store.ts';
 import { icon } from './icons.ts';
+import { middleInput, stopsInput } from './number-inputs.ts';
+import { PALETTE_THEME, paletteThemeChoice } from './palette-theme.ts';
 import './builder.css';
 
 export interface BuilderHost {
@@ -261,6 +266,11 @@ export function colourPicker(value: string | null, palette: () => ResolvedPalett
   return wrap;
 }
 
+const round3 = (n: number): number => Number(n.toPrecision(3));
+
+/** A column name as words: `green_share` reads "Green share". */
+const tidy = (name: string): string => name.replace(/[-_]+/g, ' ').replace(/^./, (c) => c.toUpperCase());
+
 // ---- Data -----------------------------------------------------------------------
 
 /** The datasets of the site a custom layer can draw: vector files, by name. */
@@ -282,7 +292,17 @@ function shapesOf(store: Store, url: string): Promise<Shapes> {
   return shapes;
 }
 
-function describeShapes(shapes: Shapes): string {
+/** A dataset's shapes in table metres, read once per page; null when it has none or cannot be read. */
+export function datasetShapes(store: Store, name: string): Promise<Shapes | null> {
+  const path = vectorDatasets(store).find((d) => d.name === name)?.path;
+  if (!path) return Promise.resolve(null);
+  return shapesOf(store, `/site/${path}`).then(
+    (shapes) => (shapes.areas.length + shapes.paths.length + shapes.spots.length > 0 ? shapes : null),
+    () => null,
+  );
+}
+
+export function describeShapes(shapes: Shapes): string {
   const parts: string[] = [];
   if (shapes.spots.length) parts.push(`${shapes.spots.length} point${shapes.spots.length === 1 ? '' : 's'}`);
   if (shapes.paths.length) parts.push(`${shapes.paths.length} line${shapes.paths.length === 1 ? '' : 's'}`);
@@ -352,6 +372,21 @@ export async function layerFromImport(host: BuilderHost, layer: { dataset: strin
 }
 
 /**
+ * A custom layer of one of the table's datasets, started with the look that fits its geometry,
+ * saved, put on the table and opened in the builder. `kind` is read from the data when not given.
+ */
+export async function customFromDataset(host: BuilderHost, name: string, kind?: GeometryKind): Promise<void> {
+  if (!kind) {
+    const path = vectorDatasets(host.store).find((d) => d.name === name)?.path;
+    kind = path ? await shapesOf(host.store, `/site/${path}`).then(lookFor, () => 'points' as const) : 'points';
+  }
+  const title = name.replace(/[-_]+/g, ' ').replace(/^./, (c) => c.toUpperCase());
+  const id = freeId(host.store, title);
+  const saved = await host.send('custom.save', { id, recipe: startingRecipe(title, name, kind) });
+  if (saved) await host.addLayer(`custom:${id}`);
+}
+
+/**
  * New custom layer: pick what it shows from the table's data, and it is made, put on
  * the table and opened in the builder. The New layer gallery (#59) opens the same dialog
  * from its Custom card.
@@ -388,11 +423,8 @@ export function newCustomLayer(host: BuilderHost, shell: HTMLElement): void {
       () => (detail.textContent = 'Could not be read'),
     );
     card.addEventListener('click', async () => {
-      const title = name.replace(/[-_]+/g, ' ').replace(/^./, (c) => c.toUpperCase());
-      const id = freeId(host.store, title);
-      const saved = await host.send('custom.save', { id, recipe: startingRecipe(title, name, kind) });
       dialog.close();
-      if (saved) await host.addLayer(`custom:${id}`);
+      await customFromDataset(host, name, kind);
     });
     list.append(card);
   }
@@ -887,13 +919,25 @@ export function builderSection(host: BuilderHost, manifest: LayerManifest, butto
           ramps.append(b);
         }
         fields.push(field('Ramp', ramps));
-        fields.push(field('Classes', segmented([['continuous', 'Smooth'], ['equal', 'Equal'], ['quantile', 'Quantile'], ['natural', 'Natural']] as const, by.classes ?? 'continuous', (v) => {
+        fields.push(field('Classes', segmented([['continuous', 'Smooth'], ['equal', 'Equal'], ['quantile', 'Quantile'], ['natural', 'Natural'], ['custom', 'My own']] as const, by.classes ?? 'continuous', (v) => {
+          // "My own" starts from the edges on show, so the author nudges them rather than typing all.
+          if (v === 'custom' && !by.stops?.length) by.stops = paintBreaks({ ...by, classes: by.classes === 'continuous' || !by.classes ? 'equal' : by.classes }, columnNumbers(data, by.by)).map(round3);
           by.classes = v;
           onChange(by);
           draw();
         }, 'Classes')));
-        if (by.classes && by.classes !== 'continuous') fields.push(field('How many', slider(by.count ?? 5, 2, 7, 1, '', (v) => {
+        if (by.classes && by.classes !== 'continuous' && by.classes !== 'custom') fields.push(field('How many', slider(by.count ?? 5, 2, 7, 1, '', (v) => {
           by.count = v;
+          onChange(by);
+        })));
+        if (by.classes === 'custom') fields.push(field('Edges', stopsInput(by.stops ?? [], (stops) => {
+          by.stops = stops;
+          onChange(by);
+        })));
+        // The middle (#94): the value the ramp's middle colour stands for. Most use with a diverging ramp.
+        fields.push(field('Middle', middleInput(by.mid, (mid) => {
+          if (mid === undefined) delete by.mid;
+          else by.mid = mid;
           onChange(by);
         })));
       } else {
@@ -1008,7 +1052,7 @@ export function builderSection(host: BuilderHost, manifest: LayerManifest, butto
     particles: ['Particles', 'Lights travel along every line: traffic, flows, energy on its way.'],
     attract: ['Attract a crowd', 'Particles gather from all around and are pulled into each point. For pull and attention, not for people.'],
     gravity: ['Crowd on the streets', 'People walk to each point along the street network, more to the places that pull harder.'],
-    timeline: ['Through time', 'Plays the layer through a date or year column: each feature appears when its time comes, with a brief flare.'],
+    timeline: ['Through time', 'Plays the layer through time: features appear when their date comes, or their values change from one year to the next.'],
     sound: ['Sound', 'Points with a sound file (WAV, MP3, OGG) send out rings as they sound, like the bird-sounds demo. The table plays the sound.'],
     network: ['Network of flows', 'The points are nodes joined by links: flows run along them, as wide and quick as a time series says, rings show which nodes give and take, and gauges fill. Energy, heat, water or people.'],
     place: ['Place motion', 'Twenty-two ways to bring places alive, from ripples and orbiters to gravity wells that bend the streets. Pick one, then tune it.'],
@@ -1252,29 +1296,81 @@ export function builderSection(host: BuilderHost, manifest: LayerManifest, butto
             weight.addEventListener('change', () => set('weight', weight.value || null));
             rows.push(field('Pull by', weight));
           } else if (name === 'timeline') {
+            // Two ways through time (#95): features appear when their date comes, or their values
+            // change from one column to the next (pop_2000, pop_2010…) and the colour or size follows.
             const column = el('select');
+            const series = el('select');
+            const columnRow = field('Time from', column);
+            const seriesRow = field('Values from', series);
+            const seriesHint = el('p', 'lb-hint', 'The colour or size by one of these columns follows the time, blending from one to the next.');
+            const changes = Array.isArray(p.series) && p.series.length > 1;
+            // Rows that only a reveal has (Stay, Come and go), hidden while values change.
+            const revealOnly: HTMLElement[] = [];
+            let mode: 'appear' | 'change' = 'appear';
+            const showMode = (next: 'appear' | 'change') => {
+              mode = next;
+              columnRow.hidden = mode !== 'appear';
+              seriesRow.hidden = seriesHint.hidden = mode !== 'change';
+              for (const row of revealOnly) row.hidden = mode !== 'appear';
+            };
+            /** Colours the look by the first column of the series, unless it is coloured by one already. */
+            const paintBySeries = (columns: string[]) => {
+              const props = (look.props ??= {});
+              const by = (props.color as { by?: string } | undefined)?.by;
+              if (!by || !columns.includes(by)) props.color = { by: columns[0], kind: 'number', ramp: 'sun', classes: 'continuous' };
+            };
             void shapes(look).then((s) => {
               const features = look.block === 'points' ? s?.spots : look.block === 'lines' ? s?.paths : s?.areas;
-              const found = timeColumns((features ?? []).map((f) => f.properties ?? {}));
+              const props = (features ?? []).map((f) => f.properties ?? {});
+              const found = timeColumns(props);
               if (found.length === 0) column.append(Object.assign(el('option'), { value: '', textContent: 'No date or year column' }));
-              if (!p.column && found[0]) set('column', found[0]);
+              if (!p.column && found[0] && !changes) set('column', found[0]);
               for (const c of found) column.append(Object.assign(el('option'), { value: c, textContent: c, selected: c === p.column }));
+              const runs = seriesColumns(props);
+              if (runs.length === 0) series.append(Object.assign(el('option'), { value: '', textContent: 'No columns for successive times, such as pop_2000, pop_2010' }));
+              for (const run of runs) {
+                const key = run.join(',');
+                series.append(Object.assign(el('option'), { value: key, textContent: `${run[0]} \u2192 ${run.at(-1)} (${run.length})`, selected: changes && key === (p.series as string[]).join(',') }));
+              }
+              series.dataset.runs = String(runs.length);
             });
             column.addEventListener('change', () => set('column', column.value || null));
-            rows.push(field('Time from', column));
+            series.addEventListener('change', () => {
+              const columns = series.value ? series.value.split(',') : null;
+              if (columns) paintBySeries(columns);
+              set('series', columns);
+            });
+            rows.push(
+              field('Through time', segmented([['appear', 'Features appear'], ['change', 'Values change']] as const, changes ? 'change' : 'appear', (next) => {
+                showMode(next);
+                if (next === 'appear') return set('series', null);
+                const first = series.value || [...series.options].find((o) => o.value)?.value;
+                if (!first) return;
+                series.value = first;
+                paintBySeries(first.split(','));
+                set('series', first.split(','));
+              }, 'Through time')),
+              columnRow,
+              seriesRow,
+              seriesHint,
+            );
+            showMode(changes ? 'change' : 'appear');
             rows.push(field('Takes', slider(p.duration_s ?? 12, 4, 60, 1, ' s', (v) => set('duration_s', v))));
             rows.push(field('Hold at the end', slider(p.hold_s ?? 3, 0, 15, 0.5, ' s', (v) => set('hold_s', v))));
             const windowRow = el('div', 'lb-sub');
             const drawWindow = () => {
-              windowRow.hidden = p.keep ?? true;
+              windowRow.hidden = (p.keep ?? true) || mode !== 'appear';
               windowRow.replaceChildren(field('Stays for', slider(Math.round((p.window ?? 0.15) * 100), 2, 50, 1, ' %', (v) => set('window', v / 100))));
             };
-            drawWindow();
-            rows.push(field('Features', segmented([['keep', 'Stay'], ['window', 'Come and go']] as const, (p.keep ?? true) ? 'keep' : 'window', (v) => {
+            const keepRow = field('Features', segmented([['keep', 'Stay'], ['window', 'Come and go']] as const, (p.keep ?? true) ? 'keep' : 'window', (v) => {
               set('keep', v === 'keep');
               drawWindow();
-            }, 'Features')), windowRow);
-            rows.push(el('p', 'lb-hint', 'No date is written on the map. Showing the current date on the controller comes with the controller legend (#76).'));
+            }, 'Features'));
+            revealOnly.push(keepRow);
+            showMode(mode);
+            drawWindow();
+            rows.push(keepRow, windowRow);
+            rows.push(el('p', 'lb-hint', 'No date is written on the map. The controller shows the year or date on show, with Play and When to hold it at a moment.'));
           } else if (name === 'sound') {
             rows.push(...soundRows(look, p, set, () => draw()));
           } else if (name === 'place') {
@@ -1310,19 +1406,220 @@ export function builderSection(host: BuilderHost, manifest: LayerManifest, butto
     return nodes;
   };
 
-  // -- Interaction
-  const interactionTab = (): HTMLElement[] => [
-    el('p', 'lb-lead', 'What a visitor can do with this layer.'),
-    el('div', 'lb-card lb-soon'),
-  ].map((node, i) => {
-    if (i === 1) {
-      node.append(
-        el('strong', undefined, 'Coming in the next steps of the builder'),
-        el('span', undefined, 'Tap a feature to read it on the controller, step through categories with Next, sliders on the controller and phones, and a cue at the spot when something changes (#105).'),
-      );
+  // -- Interaction (#38): what a visitor can do with this layer. Everything here is plain recipe:
+  // a `tap-info` interaction block, and controls with a `bind` the player reads.
+  const interactionTab = (): HTMLElement[] => {
+    const nodes: HTMLElement[] = [el('p', 'lb-lead', 'What a visitor can do with this layer. It all shows on the controller, beside the table; the map itself stays free of words.')];
+    if (recipe.look!.length === 0) nodes.push(el('p', 'ed-empty', 'Give the layer a look first.'));
+    for (const block of recipe.look!) nodes.push(interactionCard(block));
+    recipe.interaction ??= [];
+    return nodes;
+  };
+
+  /** Controls of this layer that this look owns, by what they do. */
+  const controlsOf = (block: RecipeBlock, stage: 'filter' | 'look') => (recipe.controls ??= []).filter((c) => (c.bind ?? '').startsWith(`${stage}.${block.id}.`));
+  const dropControls = (keep: (c: NonNullable<CustomLayer['controls']>[number]) => boolean) => {
+    recipe.controls = (recipe.controls ?? []).filter(keep);
+    if (recipe.controls.length === 0) delete recipe.controls;
+  };
+
+  const interactionCard = (block: RecipeBlock): HTMLElement => {
+    const card = el('div', 'lb-card lb-interaction');
+    const data = recipe.data!.find((d) => d.id === block.data);
+    const head = el('header', 'lb-card-head');
+    head.append(icon(KIND_ICON[block.block as GeometryKind] ?? 'layers', 16), el('strong', undefined, data?.dataset ?? data?.path ?? block.id));
+    const content = el('div', 'lb-card-body');
+    content.append(el('p', 'lb-hint', 'Reading the data…'));
+    card.append(head, content);
+    void shapes(block).then((s) => {
+      const kind = block.block as GeometryKind;
+      const rows = s ? (kind === 'points' ? s.spots : kind === 'lines' ? s.paths : s.areas).map((x) => x.properties as Record<string, unknown>) : [];
+      const columns = profileColumns(rows);
+      content.replaceChildren(...tapPart(block, data, columns), ...onlyPart(block, columns, rows), ...changePart(block));
+    });
+    return card;
+  };
+
+  // Tap to read: a tap on a feature picks it, and the controller shows its name and facts.
+  const tapPart = (block: RecipeBlock, data: RecipeData | undefined, columns: { name: string; kind: 'number' | 'category' }[]): HTMLElement[] => {
+    const nodes: HTMLElement[] = [el('h4', undefined, 'Tap to read')];
+    if (!data?.dataset) {
+      nodes.push(el('p', 'lb-hint', 'Only a dataset of the table can be tapped. Bring this file in with Add data to use it.'));
+      return nodes;
     }
-    return node;
-  });
+    const tapId = `${block.id}-tap`;
+    let tap = recipe.interaction!.find((b) => b.block === 'tap-info' && b.data === block.data);
+    const body = el('div', 'lb-tap');
+    const draw = () => {
+      body.replaceChildren();
+      if (!tap) return;
+      const props = (tap.props ??= {});
+      const label = el('select');
+      label.append(Object.assign(el('option'), { value: '', textContent: 'Its number in the file' }));
+      for (const c of columns) label.append(Object.assign(el('option'), { value: c.name, textContent: c.name, selected: c.name === props.label }));
+      label.addEventListener('change', () => {
+        if (label.value) props.label = label.value;
+        else delete props.label;
+        save();
+      });
+      const called = el('input');
+      called.type = 'text';
+      called.placeholder = 'Item';
+      called.value = String(props.name ?? '');
+      called.addEventListener('change', () => {
+        if (called.value.trim()) props.name = called.value.trim();
+        else delete props.name;
+        save();
+      });
+      const facts = el('div', 'lb-facts');
+      const chosen = new Set<string>(Array.isArray(props.facts) ? (props.facts as string[]) : []);
+      for (const c of columns) {
+        const row = el('label', 'lb-fact');
+        const box = el('input');
+        box.type = 'checkbox';
+        box.checked = chosen.has(c.name);
+        box.addEventListener('change', () => {
+          if (box.checked) chosen.add(c.name);
+          else chosen.delete(c.name);
+          // Kept in the data's column order, at most eight: the controller is read from across the room.
+          props.facts = columns.map((x) => x.name).filter((n) => chosen.has(n)).slice(0, 8);
+          save();
+        });
+        row.append(box, el('span', undefined, c.name));
+        facts.append(row);
+      }
+      body.append(
+        field('Its name', label),
+        field('One is called', called),
+        el('span', 'lb-field-label', 'Facts on the controller'),
+        columns.length ? facts : el('p', 'lb-hint', 'This data has no columns to show.'),
+      );
+    };
+    const switchRow = el('label', 'lb-fact lb-switch-row');
+    nodes.push(switchRow, body);
+    switchRow.append(
+      toggle(Boolean(tap), (on) => {
+        recipe.interaction = recipe.interaction!.filter((b) => b !== tap);
+        tap = undefined;
+        if (on) {
+          const name = columns.find((c) => /^(name|namn|title|label)$/i.test(c.name))?.name;
+          tap = { id: tapId, block: 'tap-info', data: block.data, on: block.id, props: { ...(name ? { label: name } : {}), facts: columns.filter((c) => c.name !== name).slice(0, 4).map((c) => c.name) } };
+          recipe.interaction!.push(tap);
+        }
+        if (recipe.interaction!.length === 0) delete recipe.interaction;
+        draw();
+        save();
+      }, 'A tap on one shows it on the controller'),
+      el('span', undefined, 'A tap on one shows it on the controller'),
+    );
+    draw();
+    return nodes;
+  };
+
+  // Show only: one control on the controller that keeps the features of a category, or at least a value.
+  const onlyPart = (block: RecipeBlock, columns: { name: string; kind: 'number' | 'category'; distinct: number }[], rows: readonly Record<string, unknown>[]): HTMLElement[] => {
+    const nodes: HTMLElement[] = [el('h4', undefined, 'Show only…')];
+    const current = controlsOf(block, 'filter')[0];
+    const column = current?.bind?.split('.').slice(2).join('.') ?? '';
+    const select = el('select');
+    select.append(Object.assign(el('option'), { value: '', textContent: 'Everything, always' }));
+    for (const c of columns) {
+      if (c.kind === 'category' && c.distinct > 12) continue;
+      select.append(Object.assign(el('option'), { value: c.name, textContent: c.kind === 'number' ? `${c.name}: at least…` : `${c.name}: one at a time`, selected: c.name === column }));
+    }
+    const words = el('input');
+    words.type = 'text';
+    words.value = current?.label ?? '';
+    words.placeholder = 'Show';
+    const hint = el('p', 'lb-hint');
+    const make = () => {
+      dropControls((c) => !(c.bind ?? '').startsWith(`filter.${block.id}.`));
+      const name = select.value;
+      const c = columns.find((x) => x.name === name);
+      if (!c) {
+        hint.textContent = 'Visitors see every feature.';
+        save();
+        return;
+      }
+      const id = `${block.id}-only`;
+      const bind = `filter.${block.id}.${name}`;
+      if (c.kind === 'number') {
+        const values = columnNumbers(rows, name);
+        const min = Math.min(...values);
+        const max = Math.max(...values);
+        const span = max - min || 1;
+        const step = Number((10 ** Math.floor(Math.log10(span / 20))).toPrecision(1));
+        (recipe.controls ??= []).push({ id, type: 'range', label: words.value.trim() || `${tidy(name)} at least`, min, max: max > min ? max : min + 1, step, default: min, bind } as never);
+        hint.textContent = `A slider on the controller. Only features with ${name} at or above it stay on the table.`;
+      } else {
+        const values = columnCategories(rows, name).slice(0, 12);
+        (recipe.controls ??= []).push({
+          id,
+          type: 'select',
+          label: words.value.trim() || 'Show',
+          options: [{ value: '', label: 'All' }, ...values.map((v) => ({ value: v, label: v }))],
+          default: '',
+          tier: 'primary',
+          bind,
+        } as never);
+        hint.textContent = `Buttons on the controller: All, then each ${name}. A press shows only that one; a presentation can step through them.`;
+      }
+      save();
+    };
+    select.addEventListener('change', make);
+    words.addEventListener('change', () => {
+      const control = controlsOf(block, 'filter')[0];
+      if (!control) return;
+      control.label = words.value.trim() || (control.type === 'range' ? `${tidy(column)} at least` : 'Show');
+      save();
+    });
+    hint.textContent = current ? (current.type === 'range' ? `A slider on the controller. Only features with ${column} at or above it stay on the table.` : `Buttons on the controller: All, then each ${column}.`) : 'Visitors see every feature.';
+    nodes.push(field('By', select), field('Its words', words), hint);
+    return nodes;
+  };
+
+  // Sliders for the look: size, glow and how solid, each a control bound to the look's prop.
+  const LIVE: Record<GeometryKind, [string, string, number, number, number, string][]> = {
+    points: [
+      ['radius_mm', 'Size', 1, 12, 0.5, 'mm'],
+      ['glow', 'Glow', 0, 1, 0.05, ''],
+      ['opacity', 'Strength', 0.1, 1, 0.05, ''],
+    ],
+    lines: [
+      ['width_mm', 'Width', 0.3, 6, 0.1, 'mm'],
+      ['glow', 'Glow', 0, 1, 0.05, ''],
+      ['opacity', 'Strength', 0.1, 1, 0.05, ''],
+    ],
+    fill: [
+      ['opacity', 'Strength', 0.05, 1, 0.05, ''],
+      ['edge_glow', 'Edge glow', 0, 1, 0.05, ''],
+    ],
+  };
+  const changePart = (block: RecipeBlock): HTMLElement[] => {
+    const kind = block.block as GeometryKind;
+    const nodes: HTMLElement[] = [el('h4', undefined, 'Visitors can change')];
+    const list = el('div', 'lb-facts');
+    for (const [prop, label, min, max, step, unit] of LIVE[kind] ?? []) {
+      const bind = `look.${block.id}.${prop}`;
+      const row = el('label', 'lb-fact');
+      const box = el('input');
+      box.type = 'checkbox';
+      box.checked = (recipe.controls ?? []).some((c) => c.bind === bind);
+      box.addEventListener('change', () => {
+        dropControls((c) => c.bind !== bind);
+        if (box.checked) {
+          const now = Number(block.props?.[prop] ?? (LOOK_DEFAULTS[kind] as Record<string, unknown>)[prop]);
+          const value = Math.min(max, Math.max(min, Number.isFinite(now) ? now : min));
+          (recipe.controls ??= []).push({ id: `${block.id}-${prop.replace(/_/g, '-')}`, type: 'range', label, min, max, step, default: value, ...(unit ? { unit } : {}), bind } as never);
+        }
+        save();
+      });
+      row.append(box, el('span', undefined, label));
+      list.append(row);
+    }
+    nodes.push(list, el('p', 'lb-hint', 'Each becomes a slider in the centre of the controller while this layer is open. It starts where the look is now.'));
+    return nodes;
+  };
 
   section.append(tabs, body);
   show(lastTabs.get(id) ?? 'look');
@@ -1347,7 +1644,10 @@ export function paletteDialog(host: BuilderHost, shell: HTMLElement): void {
     if (timer) clearTimeout(timer);
     timer = setTimeout(() => {
       const empty = !palette.set && Object.keys(palette.slots ?? {}).length === 0;
-      void host.send('palette.set', { palette: empty ? null : palette });
+      void host.send('palette.set', { palette: empty ? null : palette }).then(() => {
+        // A controller in the table palette's theme follows it (#93).
+        if (host.store.state.site.tv?.theme_name === PALETTE_THEME) void host.send('site.tv', paletteThemeChoice(empty ? null : palette));
+      });
     }, 120);
   };
   const content = el('div', 'lb-palette-body');
@@ -1411,7 +1711,17 @@ export function paletteDialog(host: BuilderHost, shell: HTMLElement): void {
       r.title = name;
       ramps.append(r, el('span', 'lb-ramp-name', name));
     }
-    content.replaceChildren(el('h4', undefined, 'Start from'), sets, el('h4', undefined, 'Colours'), slots, el('h4', undefined, 'Ramps'), ramps);
+    // The controller in the same colours (#93): its theme follows the palette from now on.
+    const follow = el('label', 'lb-fact lb-follow');
+    const following = host.store.state.site.tv?.theme_name === PALETTE_THEME;
+    follow.append(
+      toggle(following, (on) => {
+        const empty = !palette.set && Object.keys(palette.slots ?? {}).length === 0;
+        void host.send('site.tv', on ? paletteThemeChoice(empty ? null : palette) : { tv: { theme: null, theme_name: null } });
+      }, 'The controller in these colours too'),
+      el('span', undefined, 'The controller in these colours too'),
+    );
+    content.replaceChildren(el('h4', undefined, 'Start from'), sets, el('h4', undefined, 'Colours'), slots, el('h4', undefined, 'Ramps'), ramps, el('h4', undefined, 'Controller'), follow);
   };
   draw();
   dialog.append(head, el('p', 'wz-lead', 'Layers use these colours by name, so changing one here recolours every custom layer and its legend at once. Colours marked ! are too dark to read on the projected table.'), content);

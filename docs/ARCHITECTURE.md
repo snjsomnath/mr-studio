@@ -112,7 +112,7 @@ What a team installs:
 | Thing | Form | For |
 | --- | --- | --- |
 | MR Studio app | Signed installer for Windows and macOS, with built-in update | Running a table. Contains the engine, host, runtime and core layers |
-| `mrstudio` CLI | Ships inside the app, also `cargo install` | Creating, validating and previewing sites and layers |
+| `mrstudio` CLI | Ships inside the app; **Install command line tool** in the app puts it on the PATH (#370); also `cargo install` | Creating, validating and previewing sites and layers |
 | `@mrstudio/sdk` | npm package | Writing custom layers and TV widgets |
 | MR Studio MCP server | One file inside the app, also npm `@mrstudio/mcp` | Building a site by talking to an LLM ([MCP.md](MCP.md)) |
 

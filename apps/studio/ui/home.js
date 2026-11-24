@@ -179,7 +179,15 @@ async function openTableFile(file) {
   let imported;
   try {
     document.body.style.cursor = 'progress';
-    imported = await invoke('import_table', { file: file ?? null });
+    imported = await invoke('import_table', { file: file ?? null, mode: null });
+    // This computer already has this table (#372): update it, or keep both.
+    if (imported?.kind === 'same_table') {
+      document.body.style.cursor = '';
+      const mode = await askSameTable(imported);
+      if (!mode) return;
+      document.body.style.cursor = 'progress';
+      imported = await invoke('import_table', { file: imported.file, mode });
+    }
   } catch (e) {
     showError(e);
     return;
@@ -192,8 +200,10 @@ async function openTableFile(file) {
     return;
   }
   const dialog = $('import-dialog');
-  $('import-title').textContent = `“${imported.name}” is here`;
-  $('import-where').textContent = `It is a new table in ${imported.path}.`;
+  $('import-title').textContent = imported.updated ? `“${imported.name}” is updated` : `“${imported.name}” is here`;
+  $('import-where').textContent = imported.updated
+    ? `The new version is in ${imported.path}. This computer's calibration is kept, and the earlier version is in the ${TRASH}.`
+    : `It is a new table in ${imported.path}.`;
   $('import-missing').hidden = imported.missing.length === 0;
   $('import-sources').replaceChildren(
     ...imported.missing.map((s) => el('li', {}, el('b', { textContent: s.name || s.id }), el('span', { textContent: `Used by ${s.layers.join(', ') || 'a layer'}` }))),
@@ -211,6 +221,26 @@ async function openTableFile(file) {
   await load().catch(() => {});
   dialog.showModal();
   $('import-open').focus();
+}
+
+/** Asks what to do with a table file of a table this computer already has (#372).
+ *  Resolves 'update', 'copy', or null when cancelled. */
+function askSameTable(same) {
+  const dialog = $('same-dialog');
+  $('same-title').textContent = `“${same.existing_name}” is already on this computer`;
+  $('same-when').textContent = same.edited ? `The one here was last changed ${new Date(same.edited).toLocaleString()}.` : '';
+    return new Promise((resolve) => {
+    const done = (mode) => {
+      dialog.close();
+      resolve(mode);
+    };
+    $('same-update').onclick = () => done('update');
+    $('same-copy').onclick = () => done('copy');
+    $('same-cancel').onclick = () => done(null);
+    dialog.oncancel = () => resolve(null);
+    dialog.showModal();
+    $('same-update').focus();
+  });
 }
 
 /** A table file the app was asked to open (a double click on one) while Home was coming up. */

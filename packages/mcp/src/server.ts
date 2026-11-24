@@ -807,7 +807,7 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
     {
       title: 'Save a custom layer',
       description:
-        'Save (or with recipe null, remove) a custom layer in the site: a recipe of blocks the runtime draws without code. A recipe has name, description, icon, category, data (each { id, and one of dataset | path | wms { url, layers, styles, format, source } | tiles }), look, motion and interaction (each a list of { id, block, data?, on?, props }), enter (cut or fade), controls (as in layer.json, with bind: "look.<block id>.<prop>"), legend and attract. Leave legend out and it is worked out from the looks and their data, as the editor does. The table is 2D only. Then add it to the scene with add_layer use "custom:<id>". The block names are in docs/blocks.md.',
+        'Save (or with recipe null, remove) a custom layer in the site: a recipe of blocks the runtime draws without code. A recipe has name, description, icon, category, data (each { id, and one of dataset | path | wms { url, layers, styles, format, source } | tiles }), look, motion and interaction (each a list of { id, block, data?, on?, props }), enter (cut or fade), controls (as in layer.json, with bind: "look.<block id>.<prop>", or "filter.<look id>.<column>" to show only matching features), interaction tap-info (props label, name, facts: the features become pickable, their facts on the controller), timeline motion series (columns in time order, coloured in turn, with time_play/time_at controls), legend and attract. Leave legend out and it is worked out from the looks and their data, as the editor does. The table is 2D only. Then add it to the scene with add_layer use "custom:<id>". The block names are in docs/blocks.md.',
       inputSchema: {
         site: z.string(),
         id: z.string().describe('Custom layer id: lowercase letters, digits and dashes'),
@@ -844,7 +844,7 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
   const noCli = () =>
     fail('The mrstudio command line is not on this computer, so data cannot be brought in from here.', undefined, {
       code: 'no_cli',
-      next: ['Install or update the MR Studio app (it ships the command line), or set MRSTUDIO_CLI to an mrstudio program.', "Or add the data in the editor's Your place or Add data, then call list_site_files."],
+      next: ['Install or update the MR Studio app (it ships the command line inside it), then in the app use Displays and settings, Command line, Install command line tool so terminals find mrstudio; or set MRSTUDIO_CLI to an mrstudio program.', "Or add the data in the editor's Your place or Add data, then call list_site_files."],
     });
   const TARGETS = 'buildings, trees, walkways, trips, terrain, or data:<name> for any other dataset (data:roads, data:zones)';
 
