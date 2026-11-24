@@ -1,5 +1,6 @@
 import { Connection } from '@mrstudio/sdk';
 import { reportErrors } from './diagnostics.ts';
+import { meter } from './perf.ts';
 import type { Role } from '@mrstudio/sdk';
 
 import { luminance, themeVariables } from '@mrstudio/dashboard';
@@ -92,6 +93,8 @@ async function main() {
   });
   // Errors in this window reach the app's log (#260), from the moment it is connected.
   reportErrors(connection, (window as { __MRS_WINDOW__?: string }).__MRS_WINDOW__);
+  // How fast this window draws, and what each layer costs (#262).
+  if (!phone) meter.start();
   if (phone) {
     connection.on('welcome', (message: { resume?: string }) => message.resume && rememberSeat(code!, message.resume));
     // Refused at the door, or later: the session ended, or this phone joined again in another tab.
@@ -156,10 +159,12 @@ async function main() {
   if (!editing) connection.on('site.changed', () => location.reload());
   // The engine failed and a new one took over (#79): its streams are gone, so the page starts again.
   if (!editing && !phone) connection.on('engine.restarted', () => location.reload());
-  // A table or controller window of the desktop app says it is alive, with its frame rate, so the
-  // app's watchdog can reload one that went blank or froze (#79).
+  // A table or controller says it is alive, with its frame rate and what its layers cost, so the
+  // desktop app's watchdog can reload one that went blank or froze (#79) and the editor can warn
+  // when the table cannot keep up (#262). Outside the app the window is named by its role.
   const windowName = (window as { __MRS_WINDOW__?: string }).__MRS_WINDOW__;
-  if (windowName && (role === 'table' || role === 'tv')) {
+  // The editor's live controller preview is a frame inside the editor, not a window of its own.
+  if ((role === 'table' || role === 'tv') && !editing && !composing && window.top === window) {
     let frames = 0;
     const count = () => {
       frames++;
@@ -169,10 +174,13 @@ async function main() {
     let since = performance.now();
     window.setInterval(() => {
       const now = performance.now();
-      connection.alive(windowName, (frames * 1000) / (now - since));
+      const budget = meter.report();
+      connection.alive(windowName ?? role, (frames * 1000) / (now - since), { worst_ms: budget.worst_ms, layers: budget.layers.slice(0, 5) });
       frames = 0;
       since = now;
     }, 2000);
+    // The frame meter on screen: Ctrl+Shift+P, or the editor's Show frame meter for the session.
+    void import('./perf-overlay.ts').then(({ frameOverlay }) => frameOverlay(store, connection));
   }
   // The controller's title, logo and welcome line changed (Table settings, #73): it draws them once, so it starts again.
   if (role === 'tv' && !editing) connection.on('site.settings', () => location.reload());

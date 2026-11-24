@@ -1,3 +1,4 @@
+import { SLOW_SHARE, TARGET_FPS } from '../perf.ts';
 import { isVisible } from '@mrstudio/sdk';
 import type { Connection, LayerManifest, LayerState, MediaKind } from '@mrstudio/sdk';
 
@@ -987,8 +988,41 @@ export class Editor {
         engine.textContent = info.adapter ? `Engine: ${info.adapter}` : `Engine: ${info.backend}, no graphics card`;
       })
       .catch(() => {});
-    bar.append(el('span', undefined, shell() ? 'Changes are saved as you make them. File > Save As makes a copy.' : 'Changes are saved as you make them'), el('span', 'ed-grow'), phones, engine, connected, el('span', undefined, `${Math.round(width_m)} × ${Math.round(height_m)} m`));
+    bar.append(this.slowTable(), el('span', undefined, shell() ? 'Changes are saved as you make them. File > Save As makes a copy.' : 'Changes are saved as you make them'), el('span', 'ed-grow'), phones, engine, connected, el('span', undefined, `${Math.round(width_m)} × ${Math.round(height_m)} m`));
     return bar;
+  }
+
+  /**
+   * A warning in the status bar while the table draws below 90 % of 60 frames a second (#262):
+   * how fast it draws, the layer whose own code costs most, and what to try. It asks the host
+   * every 5 s; the table and controller say how they are doing every 2 s.
+   */
+  private slowTable(): HTMLElement {
+    const note = el('button', 'ed-slow');
+    note.type = 'button';
+    note.hidden = true;
+    note.addEventListener('click', () => this.setRibbonTab('display'));
+    let slowFor = 0;
+    const check = async () => {
+      const report = (await fetch('/api/performance', { cache: 'no-store' })
+        .then((r) => (r.ok ? r.json() : null))
+        .catch(() => null)) as { windows: { role: string; age: number; fps: number; budget: { layers: { id: string; ms: number }[] } }[] } | null;
+      const table = report?.windows.filter((w) => w.role === 'table' && w.age < 10).sort((a, b) => a.fps - b.fps)[0];
+      // Slow on two checks in a row, so a moment of loading does not raise it.
+      slowFor = table && table.fps < TARGET_FPS * SLOW_SHARE ? slowFor + 1 : 0;
+      note.hidden = slowFor < 2;
+      if (note.hidden || !table) return;
+      const worst = table.budget.layers[0];
+      const layer = worst ? this.store.state.layers[worst.id] : undefined;
+      const name = worst ? (this.store.manifests.find((m) => m.id === layer?.layer)?.name ?? worst.id) : null;
+      note.textContent = `The table draws ${Math.round(table.fps)} frames a second`;
+      note.title =
+        `It should draw ${TARGET_FPS}.` +
+        (name && worst && worst.ms >= 1 ? ` ${name} costs most, ${worst.ms.toFixed(1)} ms a frame: try a lower Quality on the Display tab, or turn ${name} off.` : ' Try a lower Quality on the Display tab.') +
+        ' Help > Show frame meter shows what each layer costs.';
+    };
+    window.setInterval(() => void check(), 5000);
+    return note;
   }
 
   // ---- Render ---------------------------------------------------------------
@@ -1338,11 +1372,22 @@ export class Editor {
     const copy = button('ed-tool', 'Copy diagnostics', 'file');
     copy.title = 'Copy a report of how the table and this computer are doing, to paste into an issue. Keys are never in it.';
     copy.addEventListener('click', () => void this.copyDiagnostics());
-    if (!invoke) return [copy];
+    // The frame meter on the table and controller for this session (#262).
+    const meterOn = () => this.store.state.session.performance === true;
+    const frames = button('ed-tool', meterOn() ? 'Hide frame meter' : 'Show frame meter', 'eye');
+    frames.title = 'Show frames per second and what each layer costs in a corner of the table and controller. Ctrl+Shift+P shows it on one window.';
+    frames.setAttribute('aria-pressed', String(meterOn()));
+    frames.addEventListener('click', () => void this.connection.request('session.performance', { on: !meterOn() }).catch(() => {}));
+    this.connection.on('session.changed', () => {
+      frames.setAttribute('aria-pressed', String(meterOn()));
+      const label = frames.querySelector('span');
+      if (label) label.textContent = meterOn() ? 'Hide frame meter' : 'Show frame meter';
+    });
+    if (!invoke) return [copy, frames];
     const logs = button('ed-tool', 'Open log folder', 'folder');
     logs.title = "The app's log and the operator log, one file per day";
     logs.addEventListener('click', () => void invoke('open_operator_log').catch(() => {}));
-    return [copy, logs];
+    return [copy, frames, logs];
   }
 
   /**

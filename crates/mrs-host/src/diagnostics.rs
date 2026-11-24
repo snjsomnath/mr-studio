@@ -66,12 +66,22 @@ pub fn text(report: &Value) -> String {
     for w in windows {
         let _ = writeln!(
             out,
-            "  {} ({}): last heard {:.0} s ago, {:.0} fps",
+            "  {} ({}): last heard {:.0} s ago, {:.0} fps, worst frame {:.0} ms in the last 10 s",
             s(&w["window"]),
             s(&w["role"]),
             w["age"].as_f64().unwrap_or(0.0),
-            w["fps"].as_f64().unwrap_or(0.0)
+            w["fps"].as_f64().unwrap_or(0.0),
+            w["budget"]["worst_ms"].as_f64().unwrap_or(0.0)
         );
+        for layer in w["budget"]["layers"].as_array().into_iter().flatten() {
+            let _ = writeln!(
+                out,
+                "      {}: {:.1} ms a frame, worst {:.0} ms",
+                s(&layer["id"]),
+                layer["ms"].as_f64().unwrap_or(0.0),
+                layer["worst_ms"].as_f64().unwrap_or(0.0)
+            );
+        }
     }
 
     let _ = writeln!(out, "\nErrors in the windows");
@@ -201,7 +211,7 @@ mod tests {
                 { "id": "trees", "layer": "trees", "active": true, "health": { "status": "retrying", "reason": "couldn't read trees.geojson (HTTP 404)" } },
                 { "id": "sun", "layer": "sunlight", "active": false }
             ],
-            "windows": [{ "window": "surface-0-0-table", "role": "table", "age": 1.2, "fps": 59.9 }],
+            "windows": [{ "window": "surface-0-0-table", "role": "table", "age": 1.2, "fps": 59.9, "budget": { "worst_ms": 40.0, "layers": [{ "id": "cars", "ms": 2.46, "worst_ms": 9.0 }] } }],
             "errors": [{ "at": 3600, "role": "table", "layer": "trees", "message": "TypeError: x is undefined", "count": 3, "stack": "at a\nat b" }],
             "incidents": [{ "at": 7200, "message": "The engine restarted" }],
         });
@@ -211,6 +221,7 @@ mod tests {
         assert!(text.contains("sun (sunlight): off"));
         assert!(text.contains("[01:00:00 UTC] table window, layer 'trees': TypeError: x is undefined (x3)"));
         assert!(text.contains("[02:00:00 UTC] The engine restarted"));
-        assert!(text.contains("surface-0-0-table (table): last heard 1 s ago, 60 fps"));
+        assert!(text.contains("surface-0-0-table (table): last heard 1 s ago, 60 fps, worst frame 40 ms in the last 10 s"), "{text}");
+        assert!(text.contains("cars: 2.5 ms a frame, worst 9 ms"));
     }
 }

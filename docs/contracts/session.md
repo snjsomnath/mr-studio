@@ -298,7 +298,7 @@ Text frames are JSON. Binary frames are engine field frames (see engine.md).
 // surface to host
 { t: 'hello', protocol: 1, role: 'table' | 'tv' | 'phone' | 'guide' | 'dev', code?: string, resume?: string }
 { t: 'req', id: number, m: string, p?: object }
-{ t: 'alive', window: string, fps: number }  // table and tv windows of the desktop app, every 2 s (see Running unattended)
+{ t: 'alive', window: string, fps: number, worst_ms?: number, layers?: { id, ms, worst_ms }[] }  // table and tv, every 2 s (see Running unattended, Frame budget)
 { t: 'error', message: string, stack?: string, layer?: string, window?: string }  // an error in the window, for the app's log (see Layers in trouble)
 
 // host to surface
@@ -377,6 +377,8 @@ Events:
 
 `session.language` is the language the visitors' screens speak now, one of the site's `branding.languages` (English when it lists none). `session.language { language }` switches it, from the controller (`tv`), the editor (`dev`) or the guide; the host sends `session.changed` to every surface. The controller and the phones start again in the new language; the table only redraws its ribbons. A phone may keep a language of its own (the SV / EN buttons in its header, kept in the phone's browser): it no longer follows the controller. A phone turned away at the door speaks its own choice, else its browser's language.
 
+`session.performance` is whether the table and the controller show the frame meter (#262, Frame budget), false when a session starts. `session.performance { on }` switches it, from the editor or the controller, and the host sends `session.changed`.
+
 `session.sound` is whether the table plays sound, true when the session starts (#282). `session.sound { on }` switches it, from the controller (the **Sound** button under Map controls), the editor or the guide, and the host sends `session.changed`. While it is false the table plays nothing: no voice beds (layer.md, Sound voices) and no sounds on points; what follows the sound on the map carries on.
 
 `session.ribbon` is the layer whose ribbon the table shows, or null for Auto (the layer turned on last that has ribbon panels), null when the session starts (#231). `session.ribbon { layer }` sets it, from the controller (the **Ribbon** button under Map controls, shown when more than one open layer has ribbon panels), the dev page or the guide; the layer must be on the table. The host sends `session.changed`. The controller sets it back to null when that layer closes (present.md, Ribbon).
@@ -398,9 +400,10 @@ A table in an exhibition runs all day with nobody at the computer.
   table is started again. Every surface gets `engine.restarted { message, backend }`: the
   streams are gone, so the table and the controller reload. The incident goes to the
   operator log.
-- **Windows.** Each table and controller window of the desktop app sends
-  `{ t: 'alive', window, fps }` every 2 s. `window` is the label the app gave it, as
-  `window.__MRS_WINDOW__`. Phones' and the editor's beats are ignored.
+- **Windows.** Each table and controller sends `{ t: 'alive', window, fps, worst_ms, layers }`
+  every 2 s. `window` is the label the desktop app gave it, as `window.__MRS_WINDOW__`, or the
+  role (`table`, `tv`) in a browser. Phones' and the editor's beats are ignored. `worst_ms` and
+  `layers` are the frame budget (below).
 - **Watchdog.** The app's watchdog (apps/studio/src-tauri/src/watchdog.rs) checks every 2 s:
   - A window silent for 8 s is reloaded by navigation (a new or reloaded window gets 30 s to
     load first), which works even when the page's
@@ -444,6 +447,27 @@ A layer must never be silently missing from the table.
   log, shows it and copies it. Save diagnostics… writes it to a file; Open log folder shows the
   logs. Keys never pass through it, and anything in a log line that looks like a key or token
   is blanked.
+
+### Frame budget (#262)
+
+A table should draw 60 frames a second. Each table and controller measures itself
+(packages/runtime/src/perf.ts): frames per second, the longest frame of the last 10 s, the JS
+heap where the browser says, and for each layer the milliseconds its own code takes per frame
+(its frame callbacks and handlers, as the layer manager runs them, averaged over about 30
+frames, with the worst of the last 10 s). The map library's drawing belongs to no layer, so it
+shows in the frame time only.
+
+- **On screen.** Ctrl+Shift+P shows or hides the frame meter in the top right of one table or
+  controller window. Help › Show frame meter in the editor shows it on all of them for the
+  session (`session.performance { on }`, from the editor or the controller; off when a session
+  starts; `session.changed` carries it).
+- **In the editor.** `GET /api/performance` lists the windows' last beats with their budgets.
+  The editor asks every 5 s; when the table draws below 54 frames a second (90 % of 60) on two
+  checks in a row, the status bar says how fast it draws, and its tooltip names the costliest
+  layer and suggests a lower Quality on the Display tab or turning that layer off. A click
+  opens the Display tab.
+- **In diagnostics.** Each window's line gives its worst frame, followed by its costliest
+  layers and their milliseconds a frame.
 
 ### Settings: this computer or this table
 

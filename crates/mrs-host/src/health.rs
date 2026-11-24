@@ -95,6 +95,42 @@ struct Beat {
     role: String,
     at: Instant,
     fps: f64,
+    budget: Budget,
+}
+
+/// Where a window's frame time goes (#262): its worst frame of the last 10 s, and its
+/// costliest layers with their milliseconds per frame (their own code, not the map's drawing).
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct Budget {
+    pub worst_ms: f64,
+    pub layers: Vec<LayerCost>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct LayerCost {
+    pub id: String,
+    pub ms: f64,
+    pub worst_ms: f64,
+}
+
+impl Budget {
+    /// Reads it from a window's `alive` message, keeping it small and sane.
+    pub fn from_beat(message: &serde_json::Value) -> Self {
+        let ms = |v: &serde_json::Value| v.as_f64().filter(|v| v.is_finite()).map_or(0.0, |v| v.clamp(0.0, 60_000.0));
+        let layers = message["layers"]
+            .as_array()
+            .map(|list| {
+                list.iter()
+                    .take(8)
+                    .filter_map(|l| {
+                        let id = l["id"].as_str().filter(|id| !id.is_empty() && id.len() <= 80)?;
+                        Some(LayerCost { id: id.to_string(), ms: ms(&l["ms"]), worst_ms: ms(&l["worst_ms"]) })
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        Self { worst_ms: ms(&message["worst_ms"]), layers }
+    }
 }
 
 /// One window's last sign of life.
@@ -108,6 +144,8 @@ pub struct WindowBeat {
     pub age: Duration,
     /// Frames it drew per second over the last beat.
     pub fps: f64,
+    /// Its worst frame and costliest layers (#262).
+    pub budget: Budget,
 }
 
 fn seconds<S: serde::Serializer>(d: &Duration, s: S) -> Result<S::Ok, S::Error> {
@@ -134,12 +172,12 @@ impl Health {
     }
 
     /// A window said it is alive.
-    pub fn beat(&self, window: &str, role: &str, fps: f64) {
+    pub fn beat(&self, window: &str, role: &str, fps: f64, budget: Budget) {
         if window.is_empty() || window.len() > 120 {
             return;
         }
         let fps = if fps.is_finite() { fps.clamp(0.0, 1000.0) } else { 0.0 };
-        self.beats.lock().unwrap().insert(window.to_string(), Beat { role: role.to_string(), at: Instant::now(), fps });
+        self.beats.lock().unwrap().insert(window.to_string(), Beat { role: role.to_string(), at: Instant::now(), fps, budget });
     }
 
     /// Every window that has said it is alive, with how long ago.
@@ -150,7 +188,13 @@ impl Health {
             .lock()
             .unwrap()
             .iter()
-            .map(|(window, b)| WindowBeat { window: window.clone(), role: b.role.clone(), age: now.duration_since(b.at), fps: b.fps })
+            .map(|(window, b)| WindowBeat {
+                window: window.clone(),
+                role: b.role.clone(),
+                age: now.duration_since(b.at),
+                fps: b.fps,
+                budget: b.budget.clone(),
+            })
             .collect();
         list.sort_by(|a, b| a.window.cmp(&b.window));
         list
@@ -256,11 +300,21 @@ mod tests {
     #[test]
     fn a_window_beat_is_kept_with_its_age() {
         let health = Health::default();
-        health.beat("surface-0-0-table", "table", 59.8);
-        health.beat("", "tv", 60.0);
+        health.beat(
+            "surface-0-0-table",
+            "table",
+            59.8,
+            Budget::from_beat(
+                &serde_json::json!({ "worst_ms": 31.5, "layers": [{ "id": "cars", "ms": 2.5, "worst_ms": 9 }, { "id": "" }] }),
+            ),
+        );
+        health.beat("", "tv", 60.0, Budget::default());
         let windows = health.windows();
         assert_eq!(windows.len(), 1);
         assert_eq!((windows[0].role.as_str(), windows[0].fps), ("table", 59.8));
+        assert_eq!(windows[0].budget.worst_ms, 31.5);
+        assert_eq!(windows[0].budget.layers.len(), 1);
+        assert_eq!((windows[0].budget.layers[0].id.as_str(), windows[0].budget.layers[0].ms), ("cars", 2.5));
         assert!(windows[0].age < Duration::from_secs(1));
         health.forget(|_| false);
         assert!(health.windows().is_empty());

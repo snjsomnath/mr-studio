@@ -2716,3 +2716,64 @@ body[data-role='phone'] .control-presets > * {
   background: var(--colour);
   border-color: var(--text, #fff);
 }
+
+/* The frame meter (#262): Ctrl+Shift+P, or Show frame meter in the editor. */
+.frame-meter {
+  position: fixed;
+  top: 0.75rem;
+  right: 0.75rem;
+  z-index: 10000;
+  min-width: 14rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 8px;
+  background: rgb(10 14 20 / 82%);
+  color: #e8edf3;
+  font: 12px/1.4 ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  pointer-events: none;
+}
+.frame-meter[hidden] {
+  display: none;
+}
+.frame-meter-head {
+  display: flex;
+  gap: 0.75rem;
+  align-items: baseline;
+}
+.frame-meter-head b {
+  font-size: 20px;
+  color: #7be3a1;
+}
+.frame-meter.is-slow .frame-meter-head b {
+  color: #ff8a7a;
+}
+.frame-meter table {
+  width: 100%;
+  margin-top: 0.375rem;
+  border-collapse: collapse;
+}
+.frame-meter th {
+  font-weight: normal;
+  opacity: 0.6;
+  text-align: right;
+  padding-left: 0.75rem;
+}
+.frame-meter th:first-child,
+.frame-meter td:first-child {
+  text-align: left;
+}
+.frame-meter td {
+  text-align: right;
+  padding-left: 0.75rem;
+}
+.frame-meter th:first-child,
+.frame-meter td:first-child {
+  padding-left: 0;
+  max-width: 10rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.frame-meter p {
+  margin: 0.25rem 0 0;
+  opacity: 0.6;
+}

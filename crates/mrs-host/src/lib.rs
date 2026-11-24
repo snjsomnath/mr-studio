@@ -675,6 +675,7 @@ fn router(state: Arc<AppState>, web_dir: Option<PathBuf>) -> Router {
         .route("/api/phones/bridge", get(bridge::upgrade))
         .route("/api/info", get(info))
         .route("/api/diagnostics", get(diagnostics_page))
+        .route("/api/performance", get(performance_page))
         .route("/api/model", get(model))
         .route("/api/data/inspect", post(inspect_data))
         .route("/api/data/import", post(import_data))
@@ -965,6 +966,12 @@ struct DiagnosticsQuery {
 }
 
 /// How the running table is doing (#260): JSON, or plain text with `?format=text`.
+/// How fast the table and controller windows draw, and their costliest layers (#262), for the
+/// editor's slow-table warning.
+async fn performance_page(State(state): State<Arc<AppState>>) -> axum::response::Response {
+    ([(header::CACHE_CONTROL, "no-store")], Json(json!({ "windows": state.health.windows() }))).into_response()
+}
+
 async fn diagnostics_page(State(state): State<Arc<AppState>>, Query(query): Query<DiagnosticsQuery>) -> axum::response::Response {
     let report = diagnostics::report(&state).await;
     if query.format.as_deref() == Some("text") {

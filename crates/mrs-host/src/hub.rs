@@ -366,6 +366,9 @@ pub struct SessionInfo {
     /// The layer whose ribbon the table shows, chosen on the controller when more than one
     /// open layer has ribbon panels (#231). None is Auto: the layer turned on last.
     pub ribbon: Option<String>,
+    /// Whether the table and the controller show their frame meter (#262): frames per second,
+    /// the worst frame, and what each layer costs. Off when a session starts.
+    pub performance: bool,
 }
 
 /// A phone's place in the session. It outlives the connection by `resume_hold`.
@@ -529,6 +532,8 @@ pub struct Hub {
     language: RwLock<String>,
     /// The controller's sound switch (#282): false mutes every layer for the session.
     sound: RwLock<bool>,
+    /// The frame meter on the table and controller (#262).
+    performance: RwLock<bool>,
     /// The controller's ribbon choice (#231); None is Auto.
     ribbon: RwLock<Option<String>>,
     /// The code the guide's phone joins with (#98). Only the operator's screens are told it.
@@ -602,6 +607,7 @@ impl Hub {
             language: language.clone(),
             sound: true,
             ribbon: None,
+            performance: false,
         };
         // Six digits, never the phones' code.
         let guide_code = loop {
@@ -619,6 +625,7 @@ impl Hub {
             bridge_join: RwLock::new(None),
             language: RwLock::new(language),
             sound: RwLock::new(true),
+            performance: RwLock::new(false),
             ribbon: RwLock::new(None),
             guide_code,
             options,
@@ -893,6 +900,7 @@ impl Hub {
         session.language = self.language.read().unwrap().clone();
         session.sound = *self.sound.read().unwrap();
         session.ribbon = self.ribbon.read().unwrap().clone();
+        session.performance = *self.performance.read().unwrap();
         let relay = self.relay_join.read().unwrap().clone();
         if let Some(base) = relay.or_else(|| self.bridge_join.read().unwrap().clone()) {
             session.join_url = Some(format!("{}/phone?c={}", base.trim_end_matches('/'), session.code));
@@ -1163,6 +1171,15 @@ impl Hub {
             *self.sound.write().unwrap() = on;
             self.emit("session.changed", json!({ "session": self.session() }));
             return Ok(json!({ "sound": on }));
+        }
+        if method == "session.performance" {
+            if !matches!(role, Role::Tv | Role::Dev) {
+                return Err("only the operator shows or hides the frame meter".into());
+            }
+            let on = p["on"].as_bool().ok_or("say on: true or false")?;
+            *self.performance.write().unwrap() = on;
+            self.emit("session.changed", json!({ "session": self.session() }));
+            return Ok(json!({ "performance": on }));
         }
         if method == "participant.profile" {
             if role != Role::Phone {
@@ -3014,6 +3031,13 @@ mod tests {
         assert_eq!(hub.welcome(0)["state"]["session"]["sound"], false);
         hub.request(Role::Guide, 0, "session.sound", &json!({ "on": true })).unwrap();
         assert!(hub.session().sound);
+
+        // The frame meter (#262): off at the start, the operator's to show.
+        assert!(!hub.session().performance);
+        assert!(hub.request(Role::Phone, 0, "session.performance", &json!({ "on": true })).is_err());
+        assert!(hub.request(Role::Table, 0, "session.performance", &json!({ "on": true })).is_err());
+        hub.request(Role::Dev, 0, "session.performance", &json!({ "on": true })).unwrap();
+        assert_eq!(hub.welcome(0)["state"]["session"]["performance"], true);
     }
 
     #[test]
