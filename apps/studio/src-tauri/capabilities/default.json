@@ -41,6 +41,9 @@
     "allow-open-settings",
     "allow-new-table",
     "allow-table-details",
-    "allow-open-sources"
+    "allow-open-sources",
+    "allow-open-operator-log",
+    "allow-diagnostics-report",
+    "allow-save-diagnostics"
   ]
 }

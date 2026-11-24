@@ -175,6 +175,17 @@ impl Role {
         }
     }
 
+    /// The role's name, as a surface says it in its hello.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Table => "table",
+            Self::Tv => "tv",
+            Self::Phone => "phone",
+            Self::Dev => "dev",
+            Self::Guide => "guide",
+        }
+    }
+
     fn may_activate(self) -> bool {
         self != Self::Phone
     }
@@ -238,7 +249,26 @@ pub struct LayerState {
     /// The entity picked on the table or the controller (#279): `{ set, id }`. Cleared when the layer goes off.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub selection: Option<Value>,
+    /// Trouble the table reported while the layer is on (#259): it could not start or lost its
+    /// data, and is trying again. Absent while it runs as it should. Cleared when it goes off.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub health: Option<LayerHealth>,
 }
+
+/// A layer that is on but not running as it should (#259), as the table reported it.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct LayerHealth {
+    /// `retrying`: it failed and starts again by itself in `retry_in` seconds. `failed`: it
+    /// failed and waits for Retry.
+    pub status: String,
+    /// What went wrong, in words.
+    pub reason: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub retry_in: Option<f64>,
+}
+
+/// The longest reason a layer's trouble keeps.
+const MAX_HEALTH_REASON: usize = 300;
 
 /// Where Next is in a layer (`docs/contracts/present.md`, Steps). For a sequence, `index`
 /// and `count` count its steps and `sub` is the shown layer's sub-steps. For any other
@@ -665,6 +695,7 @@ impl Hub {
             shown_by: None,
             rest: false,
             selection: None,
+            health: None,
         };
         let mut instance = Instance { id, def, parent, saved, state };
         instance.sync_rest();
@@ -889,6 +920,16 @@ impl Hub {
 
     pub fn site(&self) -> SiteInfo {
         self.info.read().unwrap().clone()
+    }
+
+    /// Every layer instance with whether it is on and how it is doing (#259), for diagnostics.
+    pub fn layer_health(&self) -> Vec<Value> {
+        let inner = self.inner.lock().unwrap();
+        inner
+            .scene
+            .iter()
+            .map(|i| json!({ "id": i.id, "layer": i.state.layer, "active": i.state.active, "health": i.state.health }))
+            .collect()
     }
 
     /// Takes the site as it is after its data changed, and tells every surface.
@@ -1344,6 +1385,50 @@ impl Hub {
                 }
                 state.shared.extend(p["values"].as_object().ok_or("missing values")?.clone());
                 self.emit_layer(layer, state);
+            }
+            "layer.health" => {
+                // The table says how the layer is doing (#259): trouble, or running again.
+                if !role.may_publish() {
+                    return Err("only the table reports how a layer is doing".into());
+                }
+                let health = match p["status"].as_str().ok_or("missing status")? {
+                    "running" | "starting" => None,
+                    status @ ("retrying" | "failed") => Some(LayerHealth {
+                        status: status.to_string(),
+                        reason: p["reason"].as_str().unwrap_or("it could not start").chars().take(MAX_HEALTH_REASON).collect(),
+                        retry_in: p["retry_in"].as_f64().filter(|s| s.is_finite() && *s >= 0.0).map(|s| s.min(3600.0)),
+                    }),
+                    other => return Err(format!("'{other}' is not a layer status")),
+                };
+                // A layer that went off meanwhile has nothing to report.
+                if !state.active || state.health == health {
+                    return Ok(json!({}));
+                }
+                let name = state
+                    .button
+                    .name
+                    .clone()
+                    .filter(|n| !n.is_empty())
+                    .or_else(|| def.manifest["name"].as_str().map(String::from))
+                    .unwrap_or_else(|| layer.to_string());
+                // The operator log hears when trouble starts and when it ends, not every retry.
+                let incident = match (&state.health, &health) {
+                    (None, Some(h)) => Some(format!("The layer '{name}' is not running: {}. Trying again.", h.reason)),
+                    (Some(_), None) => Some(format!("The layer '{name}' is running again.")),
+                    _ => None,
+                };
+                state.health = health;
+                self.emit_layer(layer, state);
+                return Ok(json!({ "incident": incident }));
+            }
+            "layer.retry" => {
+                // Retry from the editor or the controller (#259): the table starts the layer again now.
+                if !matches!(role, Role::Tv | Role::Dev) {
+                    return Err("only the operator's screens retry a layer".into());
+                }
+                if state.health.is_some() {
+                    self.emit("layer.retry", json!({ "layer": layer }));
+                }
             }
             "layer.action" => {
                 let action = p["action"].as_str().ok_or("missing action")?;
@@ -1885,6 +1970,7 @@ impl Hub {
         if !active {
             scene[index].state.step = None;
             scene[index].state.selection = None;
+            scene[index].state.health = None;
         }
         scene[index].state.active = active;
         if sequence && !active {
@@ -2494,6 +2580,40 @@ mod tests {
         assert_eq!((sun["active"].clone(), sun["params"]["hour"].clone()), (json!(false), json!(15)));
         assert_eq!(layer(&hub, "trees")["active"], true, "the map at rest comes back");
         assert!(hub.request(Role::Phone, 0, "layers.reset", &json!({})).is_err(), "not from a phone");
+    }
+
+    #[test]
+    fn the_table_reports_a_layers_trouble_until_it_runs_again() {
+        let hub = scratch_hub("layer-health");
+        let table = |method: &str, p: Value| hub.request(Role::Table, 1, method, &p);
+        let dev = |method: &str, p: Value| hub.request(Role::Dev, 0, method, &p);
+        let mut events = hub.subscribe();
+        // Off: nothing to report.
+        table("layer.health", json!({ "layer": "wind", "status": "retrying", "reason": "x" })).unwrap();
+        assert!(layer(&hub, "wind").get("health").is_none());
+        dev("layer.activate", json!({ "layer": "wind", "active": true })).unwrap();
+        let r = table("layer.health", json!({ "layer": "wind", "status": "retrying", "reason": "couldn't read buildings.geojson (HTTP 404)", "retry_in": 5 })).unwrap();
+        assert!(r["incident"].as_str().unwrap().contains("is not running: couldn't read buildings.geojson"), "{r}");
+        assert_eq!(layer(&hub, "wind")["health"]["status"], "retrying");
+        assert_eq!(layer(&hub, "wind")["health"]["retry_in"], 5.0);
+        // A retry later with the same trouble is not a new incident.
+        let r = table("layer.health", json!({ "layer": "wind", "status": "retrying", "reason": "couldn't read buildings.geojson (HTTP 404)", "retry_in": 15 })).unwrap();
+        assert!(r["incident"].is_null());
+        // Phones can neither report nor retry; the controller and editor retry.
+        assert!(hub.request(Role::Phone, 3, "layer.health", &json!({ "layer": "wind", "status": "running" })).is_err());
+        assert!(hub.request(Role::Phone, 3, "layer.retry", &json!({ "layer": "wind" })).is_err());
+        while events.try_recv().is_ok() {}
+        dev("layer.retry", json!({ "layer": "wind" })).unwrap();
+        let retry: Value = serde_json::from_str(&events.try_recv().unwrap()).unwrap();
+        assert_eq!((retry["m"].as_str(), retry["p"]["layer"].as_str()), (Some("layer.retry"), Some("wind")), "{retry}");
+        let r = table("layer.health", json!({ "layer": "wind", "status": "running" })).unwrap();
+        assert!(r["incident"].as_str().unwrap().contains("running again"));
+        assert!(layer(&hub, "wind").get("health").is_none());
+        // Going off forgets any trouble.
+        table("layer.health", json!({ "layer": "wind", "status": "failed", "reason": "boom" })).unwrap();
+        dev("layer.activate", json!({ "layer": "wind", "active": false })).unwrap();
+        assert!(layer(&hub, "wind").get("health").is_none());
+        assert!(table("layer.health", json!({ "layer": "wind", "status": "sleeping" })).is_err());
     }
 
     #[test]

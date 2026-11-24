@@ -222,6 +222,35 @@ body[data-role='tv'] .layer-button {
   text-align: center;
 }
 
+/* A layer that is on but not running (#259): dimmed, with a short note; it recovers by itself. */
+.layer-button-card.is-trouble .layer-button {
+  opacity: 0.55;
+}
+
+.layer-trouble {
+  margin: 0.5rem 0 0;
+  padding: 0.625rem 0.875rem;
+  border-radius: 0.5rem;
+  background: color-mix(in srgb, #e0564f 18%, transparent);
+  color: var(--text);
+  font-size: 0.9375rem;
+}
+
+.layer-trouble[hidden] {
+  display: none;
+}
+
+.layer-button-note {
+  font-size: 0.6875rem;
+  font-weight: 500;
+  line-height: 1.2;
+  color: var(--muted);
+}
+
+.layer-button-note[hidden] {
+  display: none;
+}
+
 body[data-role='tv'] .layer-button-name {
   display: -webkit-box;
   max-width: 6.25rem;

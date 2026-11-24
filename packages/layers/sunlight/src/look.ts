@@ -152,3 +152,68 @@ export function windowParams(site: Pick<SiteInfo, 'timezone'>, date: string, win
   const hours = WINDOWS[window];
   return hours ? { from: zonedTimeToUtc(date, hours[0], site.timezone), until: zonedTimeToUtc(date, hours[1], site.timezone) } : { from: null, until: null };
 }
+
+/** The golden hour runs while the sun is this low (#363): from 6° up to 4° under the horizon, where the blue hour takes over. */
+export const GOLDEN_TOP = 6;
+export const GOLDEN_BOTTOM = -4;
+
+export interface GoldenWindow {
+  /** Wall-clock hours in the site's time zone; `from` is earlier than `to`. */
+  from: number;
+  to: number;
+}
+
+/**
+ * The day's golden hours: the morning one around sunrise and the evening one around sunset. In midwinter far north
+ * the sun never climbs past 6°, and one window spans the whole day; both are then the same.
+ */
+export function goldenWindows(day: SunDay): { morning: GoldenWindow | null; evening: GoldenWindow | null } {
+  const runs: GoldenWindow[] = [];
+  const inside = (alt: number) => alt <= GOLDEN_TOP && alt >= GOLDEN_BOTTOM;
+  // Where a sample pair crosses a level, by straight-line interpolation.
+  const cross = (a: SunSample, b: SunSample, level: number) => a.hour + ((level - a.altitude) / (b.altitude - a.altitude)) * (b.hour - a.hour);
+  let start: number | null = inside(day.samples[0]!.altitude) ? day.samples[0]!.hour : null;
+  for (let i = 1; i < day.samples.length; i++) {
+    const a = day.samples[i - 1]!;
+    const b = day.samples[i]!;
+    if (inside(a.altitude) === inside(b.altitude)) continue;
+    const level = (inside(a.altitude) ? b.altitude : a.altitude) > GOLDEN_TOP ? GOLDEN_TOP : GOLDEN_BOTTOM;
+    const at = cross(a, b, level);
+    if (inside(b.altitude)) start = at;
+    else if (start !== null) {
+      runs.push({ from: start, to: at });
+      start = null;
+    }
+  }
+  if (start !== null) runs.push({ from: start, to: day.samples[day.samples.length - 1]!.hour });
+  // A window that holds the sunrise is the morning's; one that holds the sunset is the evening's.
+  const holds = (w: GoldenWindow, hour: number | null) => hour !== null && hour >= w.from && hour <= w.to;
+  const morning = runs.find((w) => holds(w, day.sunrise)) ?? (day.sunrise === null && day.peak.altitude > GOLDEN_BOTTOM ? (runs[0] ?? null) : null);
+  const evening = [...runs].reverse().find((w) => holds(w, day.sunset)) ?? (day.sunset === null && day.peak.altitude > GOLDEN_BOTTOM ? (runs[runs.length - 1] ?? null) : null);
+  return { morning, evening };
+}
+
+const GOLD_LIGHT: Rgb = [255, 196, 102];
+const EMBER_LIGHT: Rgb = [255, 112, 64];
+const GOLD_SHADE: Rgb = [46, 30, 96];
+const EMBER_SHADE: Rgb = [58, 22, 82];
+const RIM: Rgb = [255, 92, 110];
+const BLUE_HOUR_LIGHT: Rgb = [74, 100, 196];
+const BLUE_HOUR_SHADE: Rgb = [22, 32, 88];
+
+/**
+ * Light and shade in golden hour mode (#363), warmer and deeper than `skyColormap`: honey light at 6° turning
+ * ember orange as the sun meets the horizon, violet shade, and a hot rose rim along each shadow's edge where the
+ * light rakes in. Under the horizon it cools into the blue hour.
+ */
+export function goldenColormap(altitude: number): Colormap {
+  // 0 at the top of the golden hour, 1 at sunset.
+  const ember = clamp01(1 - altitude / GOLDEN_TOP) ** 1.3;
+  // 0 at sunset, 1 by the bottom of the golden hour.
+  const blue = clamp01(-altitude / -GOLDEN_BOTTOM);
+  const light = mix(mix(GOLD_LIGHT, EMBER_LIGHT, ember), BLUE_HOUR_LIGHT, blue ** 0.8);
+  const shade = mix(mix(GOLD_SHADE, EMBER_SHADE, ember), BLUE_HOUR_SHADE, blue);
+  const rim = mix(mix(mix(shade, light, 0.55), RIM, 0.4 * (1 - blue)), shade, blue * 0.6);
+  const stop = (p: number, c: Rgb, a: number): Colormap['stops'][number] => [p, Math.round(c[0]), Math.round(c[1]), Math.round(c[2]), a];
+  return { stops: [stop(0, shade, 240), stop(0.42, mix(shade, rim, 0.5), 240), stop(0.55, rim, 240), stop(1, light, 240)] };
+}

@@ -1,8 +1,9 @@
-import { EngineClient, VoiceBed, entityChanges, entityValues, hearsSound, serviceClient, stepTransition, transitionGain } from '@mrstudio/sdk';
+import { EngineClient, VoiceBed, entityChanges, entityValues, hearsSound, onDataProblem, serviceClient, stepTransition, transitionGain } from '@mrstudio/sdk';
 import type { LayerView, RevealShape } from '@mrstudio/sdk';
-import type { Connection, EntityChange, LayerManifest, LayerModule, LayerState, PanelContext, StepTransitionKind, TableContext, TableHandlers, ToolInput } from '@mrstudio/sdk';
+import type { Connection, DataProblem, EntityChange, LayerHealth, LayerManifest, LayerModule, LayerState, PanelContext, StepTransitionKind, TableContext, TableHandlers, ToolInput } from '@mrstudio/sdk';
 
 import { Cues } from './cues.ts';
+import { describe, reportError } from './diagnostics.ts';
 import { entitiesOnTable } from './entities.ts';
 import { language, say } from './i18n.ts';
 import { recipeModule } from './recipe-player.ts';
@@ -50,6 +51,19 @@ interface Fade {
 
 /** How long a step going out waits for the next one to start before it goes anyway. */
 const WAIT_FOR_NEXT_MS = 4000;
+
+/** Seconds before each new try of a layer in trouble (#259); the last repeats while it is on. */
+export const RETRY_S = [1, 2, 5, 15, 60];
+
+/** A layer that could not start or lost its data, and when it tries again. */
+interface Trouble {
+  reason: string;
+  /** Tries made so far. */
+  attempt: number;
+  timer: ReturnType<typeof setTimeout> | undefined;
+  /** The try came while the layer was hidden (the map at rest under an open layer): it starts when shown again. */
+  paused?: boolean;
+}
 
 /**
  * Sends param changes for a layer, at most one request per animation frame, carrying the
@@ -214,6 +228,10 @@ export class LayerManager {
   private reveals = new Map<string, RevealShape | null>();
   /** Items a revealing layer gave a shape of their own (#349), by item instance id. */
   private itemReveals = new Map<string, RevealShape | null>();
+  /** Layers in trouble (#259), by instance: started again with a growing wait until they run. */
+  private trouble = new Map<string, Trouble>();
+  /** Layers starting now, with the first data problem heard while they did. */
+  private starting = new Map<string, string | null>();
 
   constructor(store: Store, connection: Connection, view: TableView) {
     this.store = store;
@@ -224,12 +242,16 @@ export class LayerManager {
     view.setOrder(store.state.scene);
     store.onLayer((id, state, previous) => this.sync(id, state, previous));
     store.onRemoved((id) => {
+      this.forget(id, false);
       this.stop(id);
       view.dropSlot(id);
     });
     store.onScene((scene) => view.setOrder(scene));
     for (const id of store.state.scene) this.sync(id, store.layer(id), undefined);
     connection.on('layer.action', (p: { layer: string; action: string }) => this.running.get(p.layer)?.handlers.action?.(p.action));
+    // Retry from the editor or the controller: a layer in trouble starts again now.
+    connection.on('layer.retry', (p: { layer: string }) => this.retryNow(p.layer));
+    onDataProblem((problem) => this.dataTrouble(problem));
     connection.on('tool.input', (p: ToolInput) => {
       const running = this.running.get(p.layer);
       if (!running) return;
@@ -303,6 +325,8 @@ export class LayerManager {
 
   private sync(id: string, state: LayerState, previous: LayerState | undefined): void {
     this.applyIntensity(id);
+    // Off: any trouble it had is over (the host forgets it too).
+    if (!state.active) this.forget(id, false);
     if (!this.atRest(id) && Boolean(state.active) !== Boolean(previous?.active)) {
       // The map at rest steps aside while a layer is open and comes back when it closes.
       for (const other of this.store.state.scene) if (other !== id && this.atRest(other)) this.sync(other, this.store.layer(other), this.store.layer(other));
@@ -317,7 +341,10 @@ export class LayerManager {
       this.gains.delete(id);
       this.applyIntensity(id);
     }
-    if (active && !running) {
+    // A layer in trouble starts again on its own timer, not with every change to its state.
+    const trouble = this.trouble.get(id);
+    if (active && !running && (!trouble || trouble.paused)) {
+      if (trouble) trouble.paused = false;
       if (state.shown_by) {
         // A step of a sequence comes in from nothing, then fades up once it has started.
         this.fades.set(id, { role: 'in', sequence: state.shown_by, waiting: true, since: performance.now(), kind: 'cut', seconds: 0, t: 0 });
@@ -448,7 +475,10 @@ export class LayerManager {
           )
         : undefined);
     if (!module?.table) {
-      if (!module) console.warn(`layer '${layer}' is not part of this build`);
+      if (!module) {
+        console.warn(`layer '${layer}' is not part of this build`);
+        this.failed(id, `the code for '${layer}' is not in this version of MR Studio`, false);
+      }
       this.entered(id);
       return;
     }
@@ -522,16 +552,29 @@ export class LayerManager {
     // The base context has live getters, so it is the prototype rather than a copy.
     const ctx: TableContext = Object.assign(Object.create(baseContext(store, this.connection, id)), extras);
     const before = { ...store.layer(id).params };
+    this.starting.set(id, null);
     try {
       running.handlers = (await module.table(ctx)) ?? {};
     } catch (error) {
-      if (!running.stopped) console.error(`[${id}] failed to start`, error);
+      const heard = this.starting.get(id);
+      this.starting.delete(id);
+      if (!running.stopped) {
+        console.error(`[${id}] failed to start`, error);
+        reportError(error, id);
+        // A data problem says more than the error it led to.
+        this.failed(id, heard ?? `it could not start: ${describe(error)}`);
+      }
       if (this.running.get(id) === running) this.stop(id);
       this.entered(id);
       return;
     }
+    const heard = this.starting.get(id);
+    this.starting.delete(id);
     if (running.stopped) return;
     running.ready = true;
+    // It runs, but without data it needed: it shows what it has and starts again later.
+    if (heard) this.failed(id, heard);
+    else this.recovered(id);
     // Entities (#279) are picked and marked by the runtime, above what the layer draws.
     if (manifest?.entities?.length) {
       entitiesOnTable({
@@ -580,13 +623,105 @@ export class LayerManager {
     for (const cleanup of running.cleanups.reverse()) this.guard(id, cleanup);
   }
 
-  /** A layer that throws must not take the table down with it. */
+  /** A layer that throws must not take the table down with it. Its error reaches the app's log (#260). */
   private guard(id: string, run: () => void): void {
     try {
       run();
     } catch (error) {
       console.error(`[${id}]`, error);
+      reportError(error, id);
     }
+  }
+
+  // ---- Trouble (#259) ---------------------------------------------------------
+
+  /** Whether instance `id` uses the site dataset `name`: it requires it, or a setting names it. */
+  private needs(id: string, name: string): boolean {
+    const state = this.store.state.layers[id];
+    if (!state) return false;
+    if (this.store.manifest(state.layer)?.requires?.data?.includes(name)) return true;
+    return Object.values(state.params).some((value) => value === name);
+  }
+
+  /** A site dataset could not be read: the layers that use it are in trouble. */
+  private dataTrouble(problem: DataProblem): void {
+    let claimed = false;
+    // The layers that name the dataset; failing that, the one layer starting now, which must have asked.
+    let users = [...new Set([...this.starting.keys(), ...this.running.keys()])].filter((id) => this.needs(id, problem.name));
+    if (users.length === 0 && this.starting.size === 1) users = [...this.starting.keys()];
+    for (const id of users) {
+      claimed = true;
+      if (this.starting.has(id)) {
+        if (!this.starting.get(id)) this.starting.set(id, problem.reason);
+      } else this.failed(id, problem.reason);
+    }
+    if (!claimed) reportError(`site data '${problem.name}': ${problem.reason}`);
+  }
+
+  /** Whether instance `id` should be on the table now. */
+  private shouldRun(id: string): boolean {
+    return Boolean(this.store.state.layers[id]?.active) && !this.hiddenAtRest(id);
+  }
+
+  /**
+   * Instance `id` could not start or lost its data: the host hears why, and it starts again after
+   * a wait that grows with each try (1 s, 2 s, 5 s, 15 s, then every minute). Without `retry` it
+   * waits for Retry.
+   */
+  private failed(id: string, reason: string, retry = true): void {
+    if (!this.shouldRun(id)) return;
+    const before = this.trouble.get(id);
+    // The same trouble heard twice in one try (its data, then the error it led to) counts once.
+    if (before?.timer && before.reason === reason) return;
+    if (before?.timer) clearTimeout(before.timer);
+    const attempt = before?.attempt ?? 0;
+    const wait = RETRY_S[Math.min(attempt, RETRY_S.length - 1)]!;
+    const timer = retry ? setTimeout(() => this.retry(id), wait * 1000) : undefined;
+    this.trouble.set(id, { reason, attempt: attempt + 1, timer });
+    this.report(id, retry ? { status: 'retrying', reason, retry_in: wait } : { status: 'failed', reason });
+  }
+
+  /** Instance `id` started with everything it needed: any trouble is over. */
+  private recovered(id: string): void {
+    if (this.trouble.has(id)) this.forget(id, true);
+  }
+
+  /** Forgets the trouble of instance `id`; with `tell`, tells the host it runs again. */
+  private forget(id: string, tell: boolean): void {
+    const trouble = this.trouble.get(id);
+    if (!trouble) return;
+    if (trouble.timer) clearTimeout(trouble.timer);
+    this.trouble.delete(id);
+    if (tell) this.report(id, null);
+  }
+
+  /** Starts a layer in trouble again. */
+  private retry(id: string): void {
+    const trouble = this.trouble.get(id);
+    if (!trouble) return;
+    trouble.timer = undefined;
+    if (!this.shouldRun(id)) {
+      // Hidden for now: it tries again as soon as it is shown.
+      trouble.paused = true;
+      this.report(id, { status: 'retrying', reason: trouble.reason });
+      return;
+    }
+    this.stop(id);
+    void this.start(id);
+  }
+
+  /** Retry, from the editor or the controller: the next try is now. */
+  private retryNow(id: string): void {
+    const trouble = this.trouble.get(id);
+    if (!trouble) return;
+    if (trouble.timer) clearTimeout(trouble.timer);
+    this.retry(id);
+  }
+
+  /** Tells the host how instance `id` is doing: in trouble, or (null) running. */
+  private report(id: string, health: LayerHealth | null): void {
+    const p = health ? { layer: id, ...health } : { layer: id, status: 'running' };
+    this.connection.request('layer.health', p).catch(() => {});
   }
 
   /** Moves every transition on by `dt` seconds. */

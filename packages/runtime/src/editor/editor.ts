@@ -77,6 +77,20 @@ function button(className: string, label: string, iconName?: string, size = 16):
   return node;
 }
 
+/** What a layer in trouble shows in words (#259). */
+export function troubleText(health: NonNullable<LayerState['health']>): string {
+  const again = health.status === 'retrying' ? (health.retry_in ? ` Trying again in ${Math.round(health.retry_in)} s.` : ' Trying again.') : '';
+  return `Not running: ${health.reason}.${again}`;
+}
+
+/** A red dot on a layer's row while it is in trouble, with why in its tooltip (#259). */
+function markTrouble(row: HTMLElement, state: LayerState | undefined): void {
+  const health = state?.health;
+  row.classList.toggle('is-trouble', Boolean(health));
+  if (health) row.title = troubleText(health);
+  else if (row.dataset.troubleTitle !== undefined) row.title = row.dataset.troubleTitle;
+}
+
 type SetupTab = 'place' | 'rest' | 'design';
 type RibbonTab = 'edit' | SetupTab | 'display' | 'media' | 'help';
 /** Each setup tab and the step of the guide it opens. */
@@ -696,6 +710,8 @@ export class Editor {
       if (detail.action === 'ask' && detail.then) void this.file(detail.then);
       if (detail.action === 'problem' && detail.message) this.setSaved(detail.message);
       if (detail.action === 'exported' && detail.message) this.history.notify(detail.message, detail.detail);
+      // Help > Copy diagnostics in the app's menu (#260).
+      if (detail.action === 'diagnostics') void this.copyDiagnostics();
     });
     // The window's own close button: the app waits a moment for this before it closes.
     (window as { mrsBeforeLeave?: () => void }).mrsBeforeLeave = () => void this.keepPicture();
@@ -710,15 +726,17 @@ export class Editor {
       return;
     }
     // Ambient life belongs to the home screen, which lies under the layers: it goes above the last ambient layer, not on top.
+    // A base map goes under everything, above any other base map (#368): above the map life it covers it.
     let index: number | undefined;
     if (isAmbient(manifest)) {
+      const base = manifest.category === 'base';
       const tops = this.siblings(null);
       let last = -1;
       tops.forEach((id, at) => {
         const other = this.store.manifest(this.store.state.layers[id]?.layer ?? '');
-        if (other && isAmbient(other)) last = at;
+        if (other && (base ? other.category === 'base' : isAmbient(other))) last = at;
       });
-      if (last >= 0) index = last + 1;
+      if (last >= 0 || base) index = last + 1;
     }
     // A new button goes on the side of the controller with fewer, so neither side stands empty.
     let button: { side: 'left' | 'right' } | undefined;
@@ -1300,12 +1318,94 @@ export class Editor {
       this.group('Guide', tool('Open the guide', 'info', guides[0]?.id ?? '', 'Every feature and step-by-step guides, in a window of their own', true)),
       this.group('Step by step', ...this.column(guides.map((g) => tool(g.title, 'route', g.id, g.summary)))),
       this.group('Features', tool('Everything on the table', 'layers', 'features', 'Every layer, what it shows and where to find it', true)),
-      this.group('Problems', tool('When something is wrong', 'alert', 'troubleshooting', 'The usual problems and how to fix them: projection, phones, empty layers, speed, updates', true)),
+      this.group(
+        'Problems',
+        tool('When something is wrong', 'alert', 'troubleshooting', 'The usual problems and how to fix them: projection, phones, empty layers, speed, updates', true),
+        ...this.column(this.diagnosticsTools()),
+      ),
     ];
     const news = this.group("What's new", tool(latest ? latest.title.replace('MR Studio ', 'Version ') : "What's new", 'sparkle', latest?.id ?? 'features', 'What the newest versions brought', true));
     news.classList.add('is-last');
     groups.push(news);
     this.ribbon.replaceChildren(...groups);
+  }
+
+  /**
+   * Copy diagnostics (#260): one report of how the table is doing, to paste into an issue. In the
+   * desktop app it also has the computer, its displays and the end of the app's log; Save and
+   * the log folder are there too.
+   */
+  private diagnosticsTools(): HTMLElement[] {
+    const invoke = desktop();
+    const copy = button('ed-tool', 'Copy diagnostics', 'file');
+    copy.title = 'Copy a report of how the table and this computer are doing, to paste into an issue. Keys are never in it.';
+    copy.addEventListener('click', () => void this.copyDiagnostics());
+    if (!invoke) return [copy];
+    const logs = button('ed-tool', 'Open log folder', 'folder');
+    logs.title = "The app's log and the operator log, one file per day";
+    logs.addEventListener('click', () => void invoke('open_operator_log').catch(() => {}));
+    return [copy, logs];
+  }
+
+  /**
+   * Gathers the diagnostics report, copies it and shows it (#260), so it can be read before it
+   * is pasted anywhere. Also from Help > Copy diagnostics in the app's menu, where the copy may
+   * need the dialog's own Copy button.
+   */
+  private async copyDiagnostics(): Promise<void> {
+    const invoke = desktop();
+    let report: string;
+    try {
+      report = invoke
+        ? ((await invoke('diagnostics_report')) as string)
+        : await fetch('/api/diagnostics?format=text', { cache: 'no-store' }).then((r) => (r.ok ? r.text() : Promise.reject(new Error(`HTTP ${r.status}`))));
+    } catch (error) {
+      this.setSaved(`The diagnostics could not be gathered: ${(error as Error).message}`);
+      return;
+    }
+    document.querySelector('.ed-diagnostics')?.remove();
+    const dialog = el('dialog', 'im-dialog ed-ask ed-diagnostics');
+    dialog.ariaLabel = 'Diagnostics';
+    const head = el('header', 'im-dialog-head');
+    const close = el('button', 'ed-icon-button', '\u00d7');
+    close.type = 'button';
+    close.ariaLabel = 'Close';
+    close.addEventListener('click', () => dialog.close());
+    head.append(el('h2', undefined, 'Diagnostics'), close);
+    const lead = el('p', 'wz-lead');
+    const text = el('textarea', 'ed-diagnostics-text');
+    text.readOnly = true;
+    text.spellcheck = false;
+    text.value = report;
+    const copied = async (): Promise<boolean> => {
+      try {
+        await navigator.clipboard.writeText(report);
+        return true;
+      } catch {
+        // Without a click (from the app's menu) the clipboard can refuse: copy what is selected instead.
+        text.focus();
+        text.select();
+        return document.execCommand('copy');
+      }
+    };
+    const say = (ok: boolean) =>
+      (lead.textContent = ok
+        ? 'Copied. Paste it into an issue or an email: it says how the table and this computer are doing. Keys are never in it.'
+        : 'Press Copy, then paste it into an issue or an email. Keys are never in it.');
+    const again = button('ed-button is-primary', 'Copy');
+    again.addEventListener('click', async () => say(await copied()));
+    const actions = el('div', 'ed-ask-actions');
+    if (invoke) {
+      const save = button('ed-button', 'Save as a file…');
+      save.addEventListener('click', () => void invoke('save_diagnostics').catch(() => {}));
+      actions.append(save);
+    }
+    actions.append(again);
+    dialog.append(head, lead, text, actions);
+    dialog.addEventListener('close', () => dialog.remove());
+    this.shell.append(dialog);
+    dialog.showModal();
+    say(await copied());
   }
 
   private treeRow(label: string, detail: string, iconName: string | undefined, selected: boolean, onClick: () => void): HTMLButtonElement {
@@ -1411,7 +1511,10 @@ export class Editor {
       row.dataset.layer = id;
       const side = el('span', 'ed-row-side');
       row.append(side);
+      row.dataset.troubleTitle = row.title;
+      markTrouble(row, state);
       this.sync.set(id, (next) => {
+        markTrouble(row, next);
         const button = layerButton(id, manifest, next, defaultSideOf(this.store, id));
         row.querySelector('.ed-row-label')!.textContent = button.name;
         row.querySelector('.ed-row-icon')!.replaceChildren(icon(button.icon));
@@ -1427,10 +1530,13 @@ export class Editor {
         child.dataset.layer = item.id;
         child.title = `${item.manifest.name}: shows while ${as.name} is open`;
         child.classList.toggle('is-off', !this.comesOn(item.id));
+        child.dataset.troubleTitle = child.title;
+        markTrouble(child, item.state);
         const previous = this.sync.get(item.id);
         this.sync.set(item.id, (next) => {
           previous?.(next);
           child.classList.toggle('is-off', !this.comesOn(item.id));
+          markTrouble(child, next);
         });
         nodes.push(child);
       }
@@ -1682,6 +1788,34 @@ export class Editor {
     return section;
   }
 
+  /**
+   * Why a layer is not running and a Retry button (#259), shown at the top of its settings while
+   * it is in trouble. Hidden otherwise; it follows the layer as the table reports.
+   */
+  private troubleBox(id: string): HTMLElement {
+    const box = el('section', 'ed-trouble');
+    box.setAttribute('role', 'status');
+    const text = el('p', 'ed-trouble-text');
+    const retry = button('ed-button', 'Retry', 'reset');
+    retry.title = 'Start the layer again now';
+    retry.addEventListener('click', () => void this.connection.request('layer.retry', { layer: id }).catch(() => {}));
+    const words = el('div', 'ed-trouble-words');
+    words.append(el('strong', undefined, 'This layer is not running'), text);
+    box.append(icon('alert', 16), words, retry);
+    const show = (state: LayerState | undefined) => {
+      const health = state?.health;
+      box.hidden = !health;
+      if (health) text.textContent = troubleText(health).replace(/^Not running: /, '').replace(/^./, (c) => c.toUpperCase());
+    };
+    show(this.store.state.layers[id]);
+    const previous = this.sync.get(id);
+    this.sync.set(id, (next) => {
+      previous?.(next);
+      show(next);
+    });
+    return box;
+  }
+
   private renderInspector(instances: { id: string; manifest: LayerManifest; state: LayerState }[]): void {
     if (this.ribbonTab === 'media' && !this.wizard) {
       this.inspector.replaceChildren(...this.mediaTab.inspector());
@@ -1708,12 +1842,17 @@ export class Editor {
         });
         row.dataset.layer = id;
         row.classList.toggle('is-off', !state.active);
-        this.sync.set(id, (next) => row.classList.toggle('is-off', !next.active));
+        row.dataset.troubleTitle = '';
+        markTrouble(row, state);
+        this.sync.set(id, (next) => {
+          row.classList.toggle('is-off', !next.active);
+          markTrouble(row, next);
+        });
         section.append(row);
       }
       nodes.push(section);
       const open = ambient.find((i) => i.id === this.homeItem);
-      if (open) nodes.push(this.settings(open.id, open.manifest));
+      if (open) nodes.push(this.troubleBox(open.id), this.settings(open.id, open.manifest));
     } else if (context.kind === 'table') {
       nodes.push(head('settings', 'Table settings', this.store.state.site.name));
       const invoke = desktop();
@@ -1729,6 +1868,7 @@ export class Editor {
       const layer = instances.find((i) => i.id === context.id)!;
       const as = layerButton(layer.id, layer.manifest, layer.state);
       nodes.push(head(as.icon, as.name, layer.manifest.custom ? 'Custom layer' : 'Layer'));
+      nodes.push(this.troubleBox(layer.id));
       // A custom layer is styled here: data, look, motion and interaction, with its button as the last tab.
       if (layer.manifest.custom) nodes.push(builderSection(this.builderHost(), layer.manifest, this.buttonSection(layer.id, layer.manifest)));
       else nodes.push(this.buttonSection(layer.id, layer.manifest));
