@@ -19,8 +19,8 @@ import type { View } from './blocks/view.ts';
 import type { Point } from './blocks/geo.ts';
 import { categorySlots, paletteColour, paletteHex, rampColour } from './palette.ts';
 import type { ResolvedPalette } from './palette.ts';
-import { TIMELINE_DEFAULTS, arrowMarks, fillArrow, fillIcon, timeReveal, traceShape } from './marks.ts';
-import type { Arrows, PointShape, TimeReveal, TimelineProps } from './marks.ts';
+import { SERIES_VALUE, TIMELINE_DEFAULTS, arrowMarks, fillArrow, fillIcon, seriesSweep, timeReveal, traceShape } from './marks.ts';
+import type { Arrows, PointShape, SeriesSweep, TimeReveal, TimelinePosition, TimelineProps } from './marks.ts';
 import { placeData } from './places.ts';
 import { pickScheme, schemeColour, schemeOrder } from './schemes.ts';
 import { SOUND_DEFAULTS, SoundStage, soundLabel, soundPath } from './audio.ts';
@@ -473,6 +473,22 @@ export interface CompiledLook {
   };
   /** For points with a network motion (#280): its steps and their times, and what is wrong with its data. */
   network?: { steps: number; labels: string[]; problems: string[] };
+  /** With a Through time motion (#95): the year or date on show now, for the controller. */
+  timeLabel?(time: number): string;
+}
+
+/** A colour or size by a series column follows the series (#95): it reads the value on show now. */
+function onSeries<T extends Paint | Size | undefined>(value: T, sweep: SeriesSweep | null): T {
+  if (!sweep || value === undefined || typeof value !== 'object' || !sweep.columns.includes(value.by)) return value;
+  if ('kind' in value && value.kind !== 'number') return value;
+  return { ...value, by: SERIES_VALUE } as T;
+}
+
+/** The time parts of a look: a reveal by a time column, or values that change through time. */
+function timeParts(rows: readonly Props[], timeline: LookMotion['timeline']): { reveal: TimeReveal | null; sweep: SeriesSweep | null } {
+  if (!timeline) return { reveal: null, sweep: null };
+  const sweep = timeline.series?.length ? seriesSweep(rows, timeline) : null;
+  return { sweep, reveal: sweep ? null : timeReveal(rows, timeline) };
 }
 
 /** A point's sound as the controller shows it. */
@@ -495,7 +511,8 @@ export interface LookMotion {
   attract?: Partial<AttractProps>;
   /** `streets` is the network dataset in table metres, loaded by whoever draws the recipe. */
   gravity?: Partial<GravityProps> & { streets?: Shapes };
-  timeline?: Partial<TimelineProps>;
+  /** `position` holds the sweep where the controller put it (a share of the span), or null to play. */
+  timeline?: Partial<TimelineProps> & { position?: TimelinePosition };
   /** A place motion (#161-163): `extras` and `tables` are its other files, loaded by whoever draws the recipe. */
   place?: Partial<PlaceProps> & { extras?: PlaceExtras; tables?: PlaceTables; frame?: { width: number; height: number } };
   /** Sound on points (#150). `stage` plays the sounds; whoever draws the recipe owns it and stops it. */
@@ -533,13 +550,15 @@ export function compileLook(block: RecipeBlock, shapes: Shapes, palette: Resolve
   if (kind === 'points') {
     const props = lookProps('points', block, overrides);
     const rows = shapes.spots.map((s) => s.properties);
-    const paint = paintScale(props.color, rows, palette);
-    const radius = sizeScale(props.radius_mm, rows, 4);
+    const { reveal, sweep } = timeParts(rows, motion.timeline);
+    const colour = onSeries(props.color, sweep);
+    const paint = paintScale(colour, colour !== props.color ? sweep!.flat : rows, palette);
+    const size = onSeries(props.radius_mm, sweep);
+    const radius = sizeScale(size, size !== props.radius_mm ? sweep!.flat : rows, 4);
     const stroke = props.stroke ? paletteColour(props.stroke, palette) : null;
     const pulse = motion.pulse ? { ...MOTION_DEFAULTS.pulse, ...motion.pulse } : null;
     const attract = motion.attract ? attractCrowd(shapes.spots, paint, { ...MOTION_DEFAULTS.attract, ...motion.attract }, mm) : null;
     const walkers = motion.gravity ? streetCrowd(shapes.spots, paint, { ...MOTION_DEFAULTS.gravity, ...motion.gravity }, motion.gravity.streets, mm) : null;
-    const reveal = motion.timeline ? timeReveal(rows, motion.timeline) : null;
     const place = motion.place ? placeLook(shapes, motion.place, palette, mm) : null;
     const sound = motion.sound ? soundLook(shapes, motion.sound, paint, radius, mm) : null;
     const network = motion.network ? networkLook(networkData(shapes.spots, motion.network.inputs ?? {}, motion.network), motion.network, palette, mm, (i) => paint.colour(shapes.spots[i]!.properties)) : null;
@@ -550,7 +569,9 @@ export function compileLook(block: RecipeBlock, shapes: Shapes, palette: Resolve
       legend: [...legendRows(block, paint, 'point', palette, props.color), ...(network?.legend ?? [])],
       ...(sound ? { sounds: { list: sound.list, cue: sound.cue } } : {}),
       ...(network ? { network: { steps: network.data.steps, labels: network.data.labels, problems: network.data.problems } } : {}),
+      ...(sweep || reveal ? { timeLabel: (time: number) => (sweep ?? reveal)!.label(time) } : {}),
       draw(view, time, alpha) {
+        sweep?.apply(rows, time);
         // Crowds, networks and place motions go under the points they belong to.
         network?.draw(view, time, alpha, motion.network?.position ? motion.network.position() : networkPosition(network.data.steps, time, stepSeconds));
         place?.draw(view, time, alpha);
@@ -564,17 +585,21 @@ export function compileLook(block: RecipeBlock, shapes: Shapes, palette: Resolve
   if (kind === 'lines') {
     const props = lookProps('lines', block, overrides);
     const rows = shapes.paths.map((p) => p.properties);
-    const paint = paintScale(props.color, rows, palette);
-    const width = sizeScale(props.width_mm, rows, 2);
+    const { reveal, sweep } = timeParts(rows, motion.timeline);
+    const colour = onSeries(props.color, sweep);
+    const paint = paintScale(colour, colour !== props.color ? sweep!.flat : rows, palette);
+    const size = onSeries(props.width_mm, sweep);
+    const width = sizeScale(size, size !== props.width_mm ? sweep!.flat : rows, 2);
     const drawIn = motion.drawIn ? { ...MOTION_DEFAULTS['draw-in'], ...motion.drawIn } : null;
     const flow = motion.flow ? { ...MOTION_DEFAULTS.flow, ...motion.flow } : null;
     const particles = motion.particles ? { ...MOTION_DEFAULTS.particles, ...motion.particles } : null;
-    const reveal = motion.timeline ? timeReveal(rows, motion.timeline) : null;
     return {
       id: block.id,
       kind,
       legend: legendRows(block, paint, 'line', palette, props.color),
+      ...(sweep || reveal ? { timeLabel: (time: number) => (sweep ?? reveal)!.label(time) } : {}),
       draw(view, time, alpha) {
+        sweep?.apply(rows, time);
         drawLines(view, shapes.paths, { paint, width, props, drawIn, flow, px: (m) => px(view, m), time, alpha, timeline: reveal });
         if (particles) {
           const heads = pathHeads(shapes.paths, time, { speed: Math.max(0.1, particles.speed_mm * mm), count: Math.max(1, Math.round(particles.per_line)) });
@@ -585,15 +610,18 @@ export function compileLook(block: RecipeBlock, shapes: Shapes, palette: Resolve
   }
   const props = lookProps('fill', block, overrides);
   const rows = shapes.areas.map((a) => a.properties);
-  const paint = paintScale(props.color, rows, palette);
+  const { reveal, sweep } = timeParts(rows, motion.timeline);
+  const colour = onSeries(props.color, sweep);
+  const paint = paintScale(colour, colour !== props.color ? sweep!.flat : rows, palette);
   const stroke = props.stroke ? paletteColour(props.stroke, palette) : null;
   const pulse = motion.pulse ? { ...MOTION_DEFAULTS.pulse, ...motion.pulse } : null;
-  const reveal = motion.timeline ? timeReveal(rows, motion.timeline) : null;
   return {
     id: block.id,
     kind,
     legend: legendRows(block, paint, 'fill', palette, props.color),
+    ...(sweep || reveal ? { timeLabel: (time: number) => (sweep ?? reveal)!.label(time) } : {}),
     draw(view, time, alpha) {
+      sweep?.apply(rows, time);
       drawFills(view, shapes.areas, { paint, props, stroke, pulse, px: (m) => px(view, m), time, alpha, timeline: reveal });
     },
   };

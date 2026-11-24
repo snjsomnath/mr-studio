@@ -718,3 +718,9 @@
 .lb-interaction .lb-hint {
   margin-left: 0;
 }
+
+.lb .ed-field[hidden],
+.lb .lb-hint[hidden],
+.lb-tap[hidden] {
+  display: none;
+}

@@ -479,6 +479,29 @@ fn custom_manifest(id: &str, recipe: &mrs_site::CustomLayer) -> Value {
     if !sets.is_empty() {
         manifest["entities"] = Value::Array(sets);
     }
+    // Through time (#95): the controller shows the year or date on show, and can pause the sweep
+    // and put it at a moment: `time_play`, and `time_at` as a share of the span in %.
+    if recipe.motion.iter().any(|m| m.block == "timeline") {
+        let taken = |id: &str| recipe.controls.iter().any(|c| c.get("id").and_then(Value::as_str) == Some(id));
+        if let Some(controls) = manifest["controls"].as_array_mut() {
+            if !taken("time_play") {
+                controls.push(serde_json::json!({ "id": "time_play", "type": "toggle", "label": "Play", "default": true, "tier": "primary" }));
+            }
+            if !taken("time_at") {
+                controls.push(serde_json::json!({
+                    "id": "time_at", "type": "range", "label": "When", "min": 0, "max": 100, "step": 1, "default": 100, "unit": "%",
+                    "tier": "primary", "visibleWhen": { "time_play": false }
+                }));
+            }
+        }
+        if manifest["panels"].is_null() {
+            let now = |id: &str, ribbon: bool| {
+                serde_json::json!({ "id": id, "widget": "stat", "size": "tile", "title": "Now showing", "ribbon": ribbon,
+                    "props": { "value": { "bind": "shared.time_label" } } })
+            };
+            manifest["panels"] = serde_json::json!([now("time", false), now("ribbon-time", true)]);
+        }
+    }
     // A network of flows (#280) plays its series on one shared play head that the controller
     // can pause and scrub: `network_play` and `network_at` (a share of the series, in %).
     if recipe.motion.iter().any(|m| m.block == "network") {
@@ -864,6 +887,23 @@ mod tests {
         let def = custom_def("dots", &silent).unwrap();
         assert!(def.tool("sound").is_none());
         assert!(def.validate(&patch(json!({ "play": "x" })), false).is_err());
+    }
+
+    #[test]
+    fn custom_layers_through_time_can_be_held_and_say_when() {
+        let recipe: mrs_site::CustomLayer = serde_json::from_value(json!({
+            "name": "Growth",
+            "data": [{ "id": "data", "dataset": "zones" }],
+            "look": [{ "id": "look", "block": "fill", "data": "data" }],
+            "motion": [{ "id": "look-timeline", "block": "timeline", "on": "look", "props": { "series": ["pop_2000", "pop_2020"] } }]
+        }))
+        .unwrap();
+        let def = custom_def("growth", &recipe).unwrap();
+        let checked = def.validate(&patch(json!({ "time_play": false, "time_at": 25 })), false).unwrap();
+        assert_eq!(checked["time_at"], json!(25.0));
+        assert_eq!(def.manifest["panels"][0]["props"]["value"]["bind"], json!("shared.time_label"));
+        let plain: mrs_site::CustomLayer = serde_json::from_value(json!({ "name": "Dots" })).unwrap();
+        assert!(custom_def("dots", &plain).unwrap().validate(&patch(json!({ "time_at": 1 })), false).is_err());
     }
 
     #[test]

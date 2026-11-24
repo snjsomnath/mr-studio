@@ -23,6 +23,7 @@ import {
   ICONS,
   POINT_SHAPES,
   timeColumns,
+  seriesColumns,
   PLACE_DATA_HELP,
   PLACE_MOTIONS,
   SHARED_KNOBS,
@@ -1050,7 +1051,7 @@ export function builderSection(host: BuilderHost, manifest: LayerManifest, butto
     particles: ['Particles', 'Lights travel along every line: traffic, flows, energy on its way.'],
     attract: ['Attract a crowd', 'Particles gather from all around and are pulled into each point. For pull and attention, not for people.'],
     gravity: ['Crowd on the streets', 'People walk to each point along the street network, more to the places that pull harder.'],
-    timeline: ['Through time', 'Plays the layer through a date or year column: each feature appears when its time comes, with a brief flare.'],
+    timeline: ['Through time', 'Plays the layer through time: features appear when their date comes, or their values change from one year to the next.'],
     sound: ['Sound', 'Points with a sound file (WAV, MP3, OGG) send out rings as they sound, like the bird-sounds demo. The table plays the sound.'],
     network: ['Network of flows', 'The points are nodes joined by links: flows run along them, as wide and quick as a time series says, rings show which nodes give and take, and gauges fill. Energy, heat, water or people.'],
     place: ['Place motion', 'Twenty-two ways to bring places alive, from ripples and orbiters to gravity wells that bend the streets. Pick one, then tune it.'],
@@ -1294,29 +1295,81 @@ export function builderSection(host: BuilderHost, manifest: LayerManifest, butto
             weight.addEventListener('change', () => set('weight', weight.value || null));
             rows.push(field('Pull by', weight));
           } else if (name === 'timeline') {
+            // Two ways through time (#95): features appear when their date comes, or their values
+            // change from one column to the next (pop_2000, pop_2010…) and the colour or size follows.
             const column = el('select');
+            const series = el('select');
+            const columnRow = field('Time from', column);
+            const seriesRow = field('Values from', series);
+            const seriesHint = el('p', 'lb-hint', 'The colour or size by one of these columns follows the time, blending from one to the next.');
+            const changes = Array.isArray(p.series) && p.series.length > 1;
+            // Rows that only a reveal has (Stay, Come and go), hidden while values change.
+            const revealOnly: HTMLElement[] = [];
+            let mode: 'appear' | 'change' = 'appear';
+            const showMode = (next: 'appear' | 'change') => {
+              mode = next;
+              columnRow.hidden = mode !== 'appear';
+              seriesRow.hidden = seriesHint.hidden = mode !== 'change';
+              for (const row of revealOnly) row.hidden = mode !== 'appear';
+            };
+            /** Colours the look by the first column of the series, unless it is coloured by one already. */
+            const paintBySeries = (columns: string[]) => {
+              const props = (look.props ??= {});
+              const by = (props.color as { by?: string } | undefined)?.by;
+              if (!by || !columns.includes(by)) props.color = { by: columns[0], kind: 'number', ramp: 'sun', classes: 'continuous' };
+            };
             void shapes(look).then((s) => {
               const features = look.block === 'points' ? s?.spots : look.block === 'lines' ? s?.paths : s?.areas;
-              const found = timeColumns((features ?? []).map((f) => f.properties ?? {}));
+              const props = (features ?? []).map((f) => f.properties ?? {});
+              const found = timeColumns(props);
               if (found.length === 0) column.append(Object.assign(el('option'), { value: '', textContent: 'No date or year column' }));
-              if (!p.column && found[0]) set('column', found[0]);
+              if (!p.column && found[0] && !changes) set('column', found[0]);
               for (const c of found) column.append(Object.assign(el('option'), { value: c, textContent: c, selected: c === p.column }));
+              const runs = seriesColumns(props);
+              if (runs.length === 0) series.append(Object.assign(el('option'), { value: '', textContent: 'No columns for successive times, such as pop_2000, pop_2010' }));
+              for (const run of runs) {
+                const key = run.join(',');
+                series.append(Object.assign(el('option'), { value: key, textContent: `${run[0]} \u2192 ${run.at(-1)} (${run.length})`, selected: changes && key === (p.series as string[]).join(',') }));
+              }
+              series.dataset.runs = String(runs.length);
             });
             column.addEventListener('change', () => set('column', column.value || null));
-            rows.push(field('Time from', column));
+            series.addEventListener('change', () => {
+              const columns = series.value ? series.value.split(',') : null;
+              if (columns) paintBySeries(columns);
+              set('series', columns);
+            });
+            rows.push(
+              field('Through time', segmented([['appear', 'Features appear'], ['change', 'Values change']] as const, changes ? 'change' : 'appear', (next) => {
+                showMode(next);
+                if (next === 'appear') return set('series', null);
+                const first = series.value || [...series.options].find((o) => o.value)?.value;
+                if (!first) return;
+                series.value = first;
+                paintBySeries(first.split(','));
+                set('series', first.split(','));
+              }, 'Through time')),
+              columnRow,
+              seriesRow,
+              seriesHint,
+            );
+            showMode(changes ? 'change' : 'appear');
             rows.push(field('Takes', slider(p.duration_s ?? 12, 4, 60, 1, ' s', (v) => set('duration_s', v))));
             rows.push(field('Hold at the end', slider(p.hold_s ?? 3, 0, 15, 0.5, ' s', (v) => set('hold_s', v))));
             const windowRow = el('div', 'lb-sub');
             const drawWindow = () => {
-              windowRow.hidden = p.keep ?? true;
+              windowRow.hidden = (p.keep ?? true) || mode !== 'appear';
               windowRow.replaceChildren(field('Stays for', slider(Math.round((p.window ?? 0.15) * 100), 2, 50, 1, ' %', (v) => set('window', v / 100))));
             };
-            drawWindow();
-            rows.push(field('Features', segmented([['keep', 'Stay'], ['window', 'Come and go']] as const, (p.keep ?? true) ? 'keep' : 'window', (v) => {
+            const keepRow = field('Features', segmented([['keep', 'Stay'], ['window', 'Come and go']] as const, (p.keep ?? true) ? 'keep' : 'window', (v) => {
               set('keep', v === 'keep');
               drawWindow();
-            }, 'Features')), windowRow);
-            rows.push(el('p', 'lb-hint', 'No date is written on the map. Showing the current date on the controller comes with the controller legend (#76).'));
+            }, 'Features'));
+            revealOnly.push(keepRow);
+            showMode(mode);
+            drawWindow();
+            rows.push(keepRow, windowRow);
+            rows.push(el('p', 'lb-hint', 'No date is written on the map. The controller shows the year or date on show, with Play and When to hold it at a moment.'));
           } else if (name === 'sound') {
             rows.push(...soundRows(look, p, set, () => draw()));
           } else if (name === 'place') {

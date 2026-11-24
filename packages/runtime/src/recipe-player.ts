@@ -233,6 +233,8 @@ export function recipeModule(current: () => LayerManifest | undefined, watch: (c
             const motion = motionFor(recipe, block.id, overrides.motion);
             if (motion.gravity) motion.gravity = { ...motion.gravity, streets: streets.get(String(motion.gravity.network ?? 'roads')) };
             if (motion.sound) motion.sound = { ...motion.sound, stage: sounds };
+            // Through time (#95): the controller's Play and When hold the sweep where it is put.
+            if (motion.timeline) motion.timeline = { ...motion.timeline, position: () => (ctx.params.time_play === false ? Number(ctx.params.time_at) / 100 : null) };
             if (motion.network) {
               const f = networkFiles(motion.network);
               motion.network = {
@@ -332,6 +334,7 @@ export function recipeModule(current: () => LayerManifest | undefined, watch: (c
       };
       if (Number(ctx.params.network_at) > 0) seek();
       let shownStep = -1;
+      let shownTime: string | null = null;
 
       ctx.onFrame((dt) => {
         time += dt;
@@ -343,6 +346,13 @@ export function recipeModule(current: () => LayerManifest | undefined, watch: (c
         if (step !== shownStep) {
           shownStep = step;
           ctx.publish({ network_time: network ? (network.labels[step] ?? '') || null : null, network_step: network ? step : null, network_steps: network ? network.steps : null });
+        }
+        // The year or date on show, for the controller's Now panel (#95).
+        const timed = looks.find((look) => look.timeLabel);
+        const label = timed ? timed.timeLabel!(time) : null;
+        if (label !== shownTime) {
+          shownTime = label;
+          ctx.publish({ time_label: label });
         }
         sounds.audible = hearsSound();
         const view = surface.begin(time);
