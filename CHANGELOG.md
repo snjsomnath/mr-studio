@@ -4,6 +4,85 @@ Every merge to main that carries a release note becomes a version. The newest is
 The app shows these notes, with their pictures, on Home when a newer version is out.
 How notes are written: docs/RELEASING.md.
 
+## 0.28.0 (2026-11-24)
+
+### New
+
+#### The editor says what it is doing, and when it lost the table (#68)
+
+If the table stops answering, the editor says "Lost connection to the table. Reconnecting…", greys out what cannot be changed until it is back, and comes back by itself where you were. "Saved" waits for the table to confirm and shows "Saving…" until it has. While a simulation settles or shadows are worked out, the status bar shows the engine at work, with a progress bar, and it names the engine plainly ("CPU, slower" when there is no graphics card). A layer button in the ribbon stays busy until its layer is in, so a second click does not add a second one.
+
+![Lost connection: the banner and the greyed-out panels](docs/screenshots/68-offline.png)
+![The engine at work in the status bar](docs/screenshots/68-status.png)
+
+#### See the map on its own, zoomed in, with the table's tiles
+
+A bar above the canvas picks what fills the middle of the editor: the Map, the Controller, or Both. The map can be zoomed: Fit shows the whole table, 100 % shows it at the projector's own pixels, and + and − (or ⌘/Ctrl and the scroll wheel) go further. Hold space and drag, or drag with the middle button, to move around. The grid button draws the table's edge and its tile seams over the map, so you see where they fall.
+
+![The map alone, with the table's edge and its 20 cm tiles](docs/screenshots/60-map-fit.png)
+![The same map at the projector's own pixels](docs/screenshots/60-map-100.png)
+
+#### Ready to present? One list of what to check (#63)
+
+A Checks button in the status bar counts what is left before the table is ready to show, and opens the whole list grouped as Must fix, Should fix and Nice to have. Each item has a button that goes to where it is fixed: bringing in the streets Traffic needs, the time zone, the projector's calibration, a one-sided controller, buttons all hidden, an empty map at rest. Present asks first when something must or should be fixed, with Present anyway. The blue Next line shows the first thing the table must have. The MCP server checks a table with the same rules, so Claude and the editor name the same problems.
+
+![The Checks list](docs/screenshots/63-checks.png)
+![Before presenting](docs/screenshots/63-present.png)
+
+#### Search every command with Cmd/Ctrl+K, and the keys on one sheet (#65)
+
+Press Cmd+K (Ctrl+K on Windows), or the Search box at the top, and type a few words: "wind" goes to the Wind layer, "add sun" adds Sunlight, "zoom 100" shows the map at the projector's own size, "present" starts presenting. Every layer, the places in the list, the ribbon's tools and tabs, the view of the map and the Help pages are there. Cmd/Ctrl+/ shows every keyboard shortcut on one sheet, and Cmd/Ctrl+Enter presents. In the app, the menu bar has View (search, Map, Controller, both, Fit, 100 %, table outline) and Help (the guide, keyboard shortcuts, report a problem).
+
+![Command search](docs/screenshots/65-commands.png)
+![Keyboard shortcuts](docs/screenshots/65-shortcuts.png)
+
+#### Every button says what it does, and Report a problem (#88)
+
+Every button in the editor now shows what it does when the pointer rests on it, the small icon-only ones too, and tooltips name the keyboard shortcut where there is one. The Help tab has Search commands, Keyboard shortcuts and Report a problem, which opens a new GitHub issue with the version, the computer and the table's layers filled in; nothing is sent until you send it.
+
+![The Help tab](docs/screenshots/88-help.png)
+
+#### Type exact values, reset a setting, and see the button you are making (#64)
+
+In a layer's settings, click a slider's number to type a value: "7,5" for the wind, "13:30" for a time of day. Times now read as a clock (12:00, not 12.00 h) on the controller too. A small arrow beside a changed setting puts it back to the layer's own value (or Alt/Option-click its name), and Reset puts the whole layer back, with Undo. Long layers fold their rarely used settings under More settings, as the controller does. The column that decides what visitors get says "On the controller" once, with its own icon, and every Sunlight, Wind and Traffic setting explains itself when you point at it. The Button section shows the button as visitors will see it while you type, and folds away.
+
+![Typing the wind's direction, with Reset beside the changed speed](docs/screenshots/64-inspector.png)
+![The button previewed as it is named](docs/screenshots/64-button-preview.png)
+
+#### Drag layers between the controller's sides, rename them in place (#58)
+
+The editor's list of layers is now the controller's two rails, Left and Right. Drag a layer up or down, or across to the other side, and its button moves on the controller. Double-click a layer (or press F2) to rename its button. Right-click for Open, Rename, Duplicate, Hide from the controller, Move to the other side and Remove. The eye on a row keeps a button off the controller and phones without taking the layer out of the table. Delete removes what is selected, with Undo on the notice, and Ctrl+D (⌘D on a Mac) duplicates it, settings and items included. Back and Forward move between what you were editing.
+
+![Right-click a layer for its menu; the hidden Isovist is struck through](docs/screenshots/58-layer-menu.png)
+![Dragging Cool paths to the right side, before Sunlight](docs/screenshots/58-drag.png)
+
+#### Rehearse: try the table as a visitor without the real displays (#97)
+
+Rehearse in the editor's title bar puts the map, a controller and a visitor's phone side by side on one screen. Press the controller and the phone as a visitor would, and the map follows. Nothing is saved and the projector and controller screens are not used. You can make the controller go home after 20 seconds untouched to try the idle reset. Finish (or Escape) puts every layer back as it was, and says how many layers you opened, which you did not try, and what is still to check before presenting.
+
+![Rehearsing](docs/screenshots/97-rehearse.png)
+![After a rehearsal](docs/screenshots/97-summary.png)
+
+#### The editor fits a 13-inch laptop (#66)
+
+On a smaller screen the ribbon folds its big buttons into columns of small ones, and a long group such as Add a layer keeps its first columns and puts the rest under More, instead of running off the edge. The selected layer's tools always stay in view. Below about 1100 pixels wide the settings become a drawer over the right of the map that opens when you pick something and closes with Escape or a click on the map. The status line stays on one line.
+
+![The ribbon at 1280 pixels](docs/screenshots/66-ribbon-1280.png)
+![More in Add a layer](docs/screenshots/66-more.png)
+![The settings drawer in a narrow window](docs/screenshots/66-drawer.png)
+
+#### Table settings: where visitors stand and the ribbons (#62)
+
+Table settings has a new part, The table itself: its size and tiles, the projector's calibration on this computer, the edge of the picture where visitors stand, and each side's ribbon (default, off, if room, or a width in cm). The projector moves the ribbons at once, without starting again. The controller's look links to the Design tab. With this, everything in a table's file that is not a layer can be changed from the editor.
+
+![The table itself](docs/screenshots/62-table-itself.png)
+
+#### Scrub through the day without changing the layer (#61)
+
+Sunlight, Cool paths and Mobility get a time bar under the canvas: drag along the day (night, twilight and day are shaded from the sun at your table), play it at 1×, 4× or 16×, and the map and controller follow. It is a preview only: the layer still starts where it did until you press Use as start. Leaving the layer puts the preview back. Layers name their time controls with `clock` in layer.json.
+
+![Sunlight scrubbed to 18:57, still starting at 15:00](docs/screenshots/61-time-bar.png)
+
 ## 0.27.1 (2026-11-24)
 
 ### Fixes
