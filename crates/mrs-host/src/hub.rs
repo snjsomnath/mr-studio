@@ -320,6 +320,9 @@ pub struct SessionInfo {
     /// Whether the table's layers may be heard (#282). The controller's sound switch turns it
     /// off for the session; a new session starts with sound on.
     pub sound: bool,
+    /// The layer whose ribbon the table shows, chosen on the controller when more than one
+    /// open layer has ribbon panels (#231). None is Auto: the layer turned on last.
+    pub ribbon: Option<String>,
 }
 
 /// A phone's place in the session. It outlives the connection by `resume_hold`.
@@ -483,6 +486,8 @@ pub struct Hub {
     language: RwLock<String>,
     /// The controller's sound switch (#282): false mutes every layer for the session.
     sound: RwLock<bool>,
+    /// The controller's ribbon choice (#231); None is Auto.
+    ribbon: RwLock<Option<String>>,
     /// The code the guide's phone joins with (#98). Only the operator's screens are told it.
     guide_code: String,
     options: SessionOptions,
@@ -536,7 +541,15 @@ impl Hub {
         let code = format!("{:04}", random_u64() % 10_000);
         let join_url = join_base.map(|base| format!("{}/phone?c={code}", base.trim_end_matches('/')));
         let language = offered(&site.manifest.branding)[0].clone();
-        let session = SessionInfo { id: format!("{:016x}", random_u64()), code, port, join_url, language: language.clone(), sound: true };
+        let session = SessionInfo {
+            id: format!("{:016x}", random_u64()),
+            code,
+            port,
+            join_url,
+            language: language.clone(),
+            sound: true,
+            ribbon: None,
+        };
         // Six digits, never the phones' code.
         let guide_code = loop {
             let guide = format!("{:06}", random_u64() % 1_000_000);
@@ -553,6 +566,7 @@ impl Hub {
             bridge_join: RwLock::new(None),
             language: RwLock::new(language),
             sound: RwLock::new(true),
+            ribbon: RwLock::new(None),
             guide_code,
             options,
             catalog: RwLock::new(Arc::new(catalog)),
@@ -824,6 +838,7 @@ impl Hub {
         let mut session = self.session.clone();
         session.language = self.language.read().unwrap().clone();
         session.sound = *self.sound.read().unwrap();
+        session.ribbon = self.ribbon.read().unwrap().clone();
         let relay = self.relay_join.read().unwrap().clone();
         if let Some(base) = relay.or_else(|| self.bridge_join.read().unwrap().clone()) {
             session.join_url = Some(format!("{}/phone?c={}", base.trim_end_matches('/'), session.code));
@@ -1071,6 +1086,24 @@ impl Hub {
             *self.sound.write().unwrap() = on;
             self.emit("session.changed", json!({ "session": self.session() }));
             return Ok(json!({ "sound": on }));
+        }
+        if method == "session.ribbon" {
+            if !matches!(role, Role::Tv | Role::Dev | Role::Guide) {
+                return Err("only the controller chooses the table's ribbon".into());
+            }
+            let layer = match &p["layer"] {
+                Value::Null => None,
+                Value::String(id) => {
+                    if !inner.scene.iter().any(|i| &i.id == id) {
+                        return Err(format!("no layer '{id}' on this table"));
+                    }
+                    Some(id.clone())
+                }
+                _ => return Err("say layer: an instance id, or null for Auto".into()),
+            };
+            *self.ribbon.write().unwrap() = layer.clone();
+            self.emit("session.changed", json!({ "session": self.session() }));
+            return Ok(json!({ "ribbon": layer }));
         }
         if method == "session.guide" {
             if !matches!(role, Role::Tv | Role::Dev) {
@@ -2280,11 +2313,22 @@ mod tests {
         // Changed on the controller, two at once for a group, checked like controls.
         dev("layer.entity", json!({ "layer": "members", "set": "buildings", "ids": ["3"], "values": { "pv": 42 } })).unwrap();
         dev("layer.entity", json!({ "layer": "members", "set": "buildings", "ids": ["3", "4"], "values": { "in": true } })).unwrap();
-        assert_eq!(layer(&hub, "members")["params"]["entities"], json!({ "buildings": { "3": { "pv": 40.0, "in": true }, "4": { "in": true } } }));
+        assert_eq!(
+            layer(&hub, "members")["params"]["entities"],
+            json!({ "buildings": { "3": { "pv": 40.0, "in": true }, "4": { "in": true } } })
+        );
         assert!(dev("layer.entity", json!({ "layer": "members", "set": "buildings", "ids": ["3"], "values": { "pv": "lots" } })).is_err());
         // A phone may change only what is marked for phones.
-        assert!(hub.request(Role::Phone, 7, "layer.entity", &json!({ "layer": "members", "set": "buildings", "id": "5", "values": { "pv": 10 } })).is_err());
-        hub.request(Role::Phone, 7, "layer.entity", &json!({ "layer": "members", "set": "buildings", "id": "5", "values": { "in": true } })).unwrap();
+        assert!(hub
+            .request(Role::Phone, 7, "layer.entity", &json!({ "layer": "members", "set": "buildings", "id": "5", "values": { "pv": 10 } }))
+            .is_err());
+        hub.request(
+            Role::Phone,
+            7,
+            "layer.entity",
+            &json!({ "layer": "members", "set": "buildings", "id": "5", "values": { "in": true } }),
+        )
+        .unwrap();
         // Reset puts one back; back to its defaults, it has no values of its own.
         dev("layer.entity", json!({ "layer": "members", "set": "buildings", "ids": ["4", "5"], "reset": true })).unwrap();
         dev("layer.entity", json!({ "layer": "members", "set": "buildings", "ids": ["3"], "values": { "in": false } })).unwrap();
@@ -2761,6 +2805,22 @@ mod tests {
         assert_eq!(hub.welcome(0)["state"]["session"]["sound"], false);
         hub.request(Role::Guide, 0, "session.sound", &json!({ "on": true })).unwrap();
         assert!(hub.session().sound);
+    }
+
+    #[test]
+    fn the_controller_picks_the_ribbon() {
+        let hub = scratch_hub("ribbon");
+        assert_eq!(hub.session().ribbon, None, "a session starts on Auto");
+        let some = hub.inner.lock().unwrap().scene.first().map(|i| i.id.clone()).expect("the scratch table has layers");
+        assert!(hub.request(Role::Phone, 0, "session.ribbon", &json!({ "layer": some })).is_err());
+        assert!(hub.request(Role::Table, 0, "session.ribbon", &json!({ "layer": some })).is_err());
+        assert!(hub.request(Role::Tv, 0, "session.ribbon", &json!({ "layer": "nowhere" })).is_err());
+        assert!(hub.request(Role::Tv, 0, "session.ribbon", &json!({ "layer": 3 })).is_err());
+        hub.request(Role::Tv, 0, "session.ribbon", &json!({ "layer": some })).unwrap();
+        assert_eq!(hub.session().ribbon.as_deref(), Some(some.as_str()));
+        assert_eq!(hub.welcome(0)["state"]["session"]["ribbon"], json!(some));
+        hub.request(Role::Guide, 0, "session.ribbon", &json!({ "layer": null })).unwrap();
+        assert_eq!(hub.session().ribbon, None);
     }
 
     #[test]

@@ -158,6 +158,7 @@ fn main() -> anyhow::Result<()> {
             add_site,
             remove_site,
             delete_table,
+            duplicate_table,
             identify,
             start,
             open_site,
@@ -1143,6 +1144,39 @@ fn remove_site(shell: State<'_, Shell>, path: PathBuf) -> Result<(), String> {
     let mut settings = shell.settings();
     settings.sites.retain(|p| p != &path && p.canonicalize().ok().as_ref() != Some(&path));
     settings.write(&shell.settings_path()).map_err(text)
+}
+
+/// Duplicate on a Home card (#99): copies the table, an example that comes with the app too,
+/// into the folder for tables as "<name> copy", with its own id and without its history.
+/// The original stays as it was. Answers the copy's folder; Home lists it.
+#[tauri::command]
+fn duplicate_table(shell: State<'_, Shell>, path: PathBuf) -> Result<PathBuf, String> {
+    let path = sites::canonical(path);
+    let site: serde_json::Value = std::fs::read_to_string(path.join("site.json"))
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .ok_or_else(|| format!("{} is not a table folder (it has no site.json).", path.display()))?;
+    let name = site["name"]
+        .as_str()
+        .filter(|n| !n.trim().is_empty())
+        .map(str::to_string)
+        .or_else(|| file_menu::name_from(&path))
+        .unwrap_or_else(|| "Table".into());
+    let folder = file_menu::default_folder(&path, &shell.sites_folders);
+    let copy = file_menu::copy_name(&folder, &name);
+    let target = folder.join(&copy);
+    file_menu::copy_table(&path, &target, &copy).map_err(text)?;
+    tracing::info!("duplicated '{name}' as '{copy}' in {}", target.display());
+    // A copy outside the sites folder is remembered, so Home lists it.
+    if !shell.sites_folders.iter().any(|f| f == &folder) {
+        let mut settings = shell.settings();
+        let target = sites::canonical(target.clone());
+        if !settings.sites.contains(&target) {
+            settings.sites.push(target);
+            settings.write(&shell.settings_path()).map_err(text)?;
+        }
+    }
+    Ok(target)
 }
 
 /// Deletes a table from Home (#184): its folder goes to the Trash (Mac, Linux) or the Recycle

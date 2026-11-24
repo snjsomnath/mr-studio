@@ -50,7 +50,8 @@ pub fn place(site: &Site, file: Option<(&str, &[u8])>, placement: &ModelPlacemen
     let previous = site.manifest.scene.mesh.as_ref();
     let (relative, triangles) = match file {
         Some((filename, bytes)) => {
-            let format = Format::of(filename).ok_or_else(|| invalid(format!("{filename} is not a 3D model MR Studio can read; use STL, OBJ or GLB")))?;
+            let format = Format::of(filename)
+                .ok_or_else(|| invalid(format!("{filename} is not a 3D model MR Studio can read; use STL, OBJ or GLB")))?;
             let triangles = mesh::parse(format, bytes).map_err(|e| invalid(format!("{filename} can't be read: {e}")))?;
             let relative = model_path(format);
             let target = site.dir.join(&relative);
@@ -167,7 +168,15 @@ mod tests {
     const BOX: &str = "solid b\n facet normal 0 0 1\n outer loop\n vertex 0 0 0.02\n vertex 0.1 0 0.02\n vertex 0.1 0.1 0.02\n endloop\n endfacet\n facet normal 0 0 1\n outer loop\n vertex 0 0 0.02\n vertex 0.1 0.1 0.02\n vertex 0 0.1 0.02\n endloop\n endfacet\nendsolid b\n";
 
     fn placement() -> ModelPlacement {
-        ModelPlacement { anchor: LonLat { lon: 11.97, lat: 57.69 }, unit_m: 100.0, bearing_deg: 0.0, base_m: 0.0, up: Up::Z, mirror: false, extrude: Some(false) }
+        ModelPlacement {
+            anchor: LonLat { lon: 11.97, lat: 57.69 },
+            unit_m: 100.0,
+            bearing_deg: 0.0,
+            base_m: 0.0,
+            up: Up::Z,
+            mirror: false,
+            extrude: Some(false),
+        }
     }
 
     #[test]

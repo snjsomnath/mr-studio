@@ -74,7 +74,7 @@ function confirmDelete(site, bytes) {
   $('delete-cancel').focus();
 }
 
-async function load() {
+async function load(fresh) {
   const state = await invoke('launcher_state');
   $('version').textContent = `Version ${state.version}`;
   showError(state.error);
@@ -91,8 +91,28 @@ async function load() {
         el('span', { className: 'tag' }, example ? 'Example' : ''),
       );
       open.addEventListener('click', () => openTable(site.path));
-      const row = el('li', { className: site.problem ? 'broken' : '' }, open);
+      const row = el('li', { className: site.problem ? 'broken' : fresh && site.path === fresh ? 'fresh' : '' }, open);
       const tools = el('span', { className: 'card-tools' });
+      // Duplicate (#99): a copy to change, the way to start from an example or from another table.
+      if (!site.problem) {
+        const copy = el(
+          'button',
+          { type: 'button', className: 'remove', title: example ? 'Make your own copy of this example to change' : 'Make a copy of this table, with its own name' },
+          'Duplicate',
+        );
+        copy.addEventListener('click', async () => {
+          copy.disabled = true;
+          showError();
+          try {
+            const made = await invoke('duplicate_table', { path: site.path });
+            await load(made);
+          } catch (e) {
+            showError(e);
+            copy.disabled = false;
+          }
+        });
+        tools.append(copy);
+      }
       if (site.source === 'added') {
         const remove = el('button', { type: 'button', className: 'remove', title: 'Take it off this list. The folder is not deleted.' }, 'Remove from list');
         remove.addEventListener('click', async () => {

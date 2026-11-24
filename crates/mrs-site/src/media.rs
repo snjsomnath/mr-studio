@@ -31,7 +31,11 @@ pub fn kind(bytes: &[u8]) -> Option<&'static str> {
 /// Saves a picture or video into the site and returns its path relative to the site folder.
 pub fn save(site_dir: &Path, name: &str, bytes: &[u8]) -> Result<String, String> {
     if bytes.len() > MAX_MEDIA_BYTES {
-        return Err(format!("This file is {} MB; a site takes pictures and video up to {} MB.", bytes.len() / 1_048_576, MAX_MEDIA_BYTES / 1_048_576));
+        return Err(format!(
+            "This file is {} MB; a site takes pictures and video up to {} MB.",
+            bytes.len() / 1_048_576,
+            MAX_MEDIA_BYTES / 1_048_576
+        ));
     }
     let extension =
         kind(bytes).ok_or("This file is not a picture or video MR Studio can show. Use PNG, JPEG, WebP or GIF, or MP4 or WebM video.")?;
@@ -51,7 +55,9 @@ pub fn list(site_dir: &Path) -> Vec<String> {
     let mut out: Vec<String> = entries
         .filter_map(|e| e.ok())
         .filter_map(|e| e.file_name().to_str().map(str::to_string))
-        .filter(|n| Path::new(n).extension().and_then(|e| e.to_str()).is_some_and(|e| EXTENSIONS.contains(&e.to_ascii_lowercase().as_str())))
+        .filter(|n| {
+            Path::new(n).extension().and_then(|e| e.to_str()).is_some_and(|e| EXTENSIONS.contains(&e.to_ascii_lowercase().as_str()))
+        })
         .map(|n| format!("{MEDIA_DIR}/{n}"))
         .collect();
     out.sort();

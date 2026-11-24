@@ -3,6 +3,31 @@ import type { GeometryKind, PaintBy, Paint, SiteInfo } from '@mrstudio/sdk';
 
 import { el } from '../controls.ts';
 import { icon } from './icons.ts';
+import { dataFormat } from '../data-formats.ts';
+
+/** What a good file looks like, from the one list the MCP server and the guide read too (#36). */
+function formatExample(dataset: string): string {
+  return dataFormat(dataset)?.example ?? '';
+}
+
+/**
+ * The "?" box: what a good file looks like, and a small example file to download, made around
+ * this table's centre so it shows on the table when it is brought back in (#36).
+ */
+export function exampleBox(dataset: string, site: SiteInfo): HTMLElement {
+  const box = el('div', 'im-help-box');
+  box.append(el('pre', 'im-example', formatExample(dataset)));
+  const sample = dataFormat(dataset)?.sample(site.origin);
+  if (sample) {
+    const link = el('a', 'im-download');
+    link.href = URL.createObjectURL(new Blob([sample.text], { type: sample.type }));
+    link.download = sample.name;
+    link.append(icon('file', 14), el('span', undefined, `Download an example (${sample.name})`));
+    link.title = 'A small file of this kind around this table, to open and see its shape, or bring back in to try';
+    box.append(link);
+  }
+  return box;
+}
 
 /**
  * One way into a table for every file: the wizard's "Your place" rows and the
@@ -52,8 +77,7 @@ export const TARGETS: ImportTarget[] = [
     about: 'Footprints with heights. They cast the shadows and shape the wind. GeoJSON.',
     accept: '.geojson,.json',
     osm: true,
-    example:
-      'GeoJSON polygons, one per building, with a height in metres (height, höjd) or a number of storeys (building:levels, våningar). WGS84 or SWEREF99 are both fine.\n\n{ "type": "Feature",\n  "properties": { "height": 18 },\n  "geometry": { "type": "Polygon", "coordinates": [[[11.970, 57.690], …]] } }',
+    example: formatExample('buildings'),
   },
   {
     target: 'terrain',
@@ -64,7 +88,7 @@ export const TARGETS: ImportTarget[] = [
     accept: '.tif,.tiff',
     osm: false,
     elevation: true,
-    example: 'A GeoTIFF of ground heights in metres, such as a Lantmäteriet elevation model. It may be larger than the table and on a national grid; if it does not say which, you will be asked for its EPSG code (3006 for SWEREF99 TM).',
+    example: formatExample('terrain'),
   },
   {
     target: 'trees',
@@ -74,7 +98,7 @@ export const TARGETS: ImportTarget[] = [
     about: 'Where the trees stand. GeoJSON points, or a CSV with coordinates.',
     accept: '.geojson,.json,.csv',
     osm: true,
-    example: 'GeoJSON points, or a CSV with a row per tree: lat and lon (or x and y, or latitud and longitud), and a height if you have one.\n\nlat;lon;höjd\n57,7001;11,9701;9,5',
+    example: formatExample('trees'),
   },
   {
     target: 'data:roads',
@@ -84,7 +108,7 @@ export const TARGETS: ImportTarget[] = [
     about: 'The street network, as lines. Traffic drives along it. GeoJSON.',
     accept: '.geojson,.json',
     osm: true,
-    example: 'GeoJSON lines along the middle of each street. An optional width in metres and a kind (street, primary…) help traffic look right.\n\n{ "type": "Feature",\n  "properties": { "width": 8 },\n  "geometry": { "type": "LineString", "coordinates": [[11.970, 57.690], [11.972, 57.691]] } }',
+    example: formatExample('roads'),
   },
   {
     target: 'walkways',
@@ -94,7 +118,7 @@ export const TARGETS: ImportTarget[] = [
     about: 'Lines people can walk along. Cool paths needs them. GeoJSON.',
     accept: '.geojson,.json',
     osm: true,
-    example: 'GeoJSON lines along footpaths, pavements and squares people cross. Cool paths finds the shadiest way along them.',
+    example: formatExample('walkways'),
   },
   {
     target: 'trips',
@@ -104,7 +128,7 @@ export const TARGETS: ImportTarget[] = [
     about: 'Journeys through the day. Mobility needs them. A trips.json file.',
     accept: '.json',
     osm: false,
-    example: 'The mobility layer\'s trips.json: a list of journeys, each a mode and a path of [lon, lat, seconds after midnight] points. See packages/layers/mobility/README.md.',
+    example: formatExample('trips'),
   },
 ];
 
@@ -402,7 +426,7 @@ export class Importer {
       words.append(off, actions);
       row.append(badge, words, state);
       nodes.push(row);
-      if (this.help) nodes.push(el('pre', 'im-example', item.example));
+      if (this.help) nodes.push(exampleBox(item.dataset, host.site()));
     } else {
       // Add data: what the file is, then where it comes from.
       const kind = el('div', 'im-kind');
@@ -427,7 +451,7 @@ export class Importer {
         kind.append(el('p', 'im-about', 'GeoJSON, or a CSV with lat and lon columns. A CSV without positions, such as activity through the day or flows and links between places, is kept as a table that place motions join to places by name or id. An SVG plan drawing covers the table, and its layers are revealed one phase at a time. A video (MP4, MOV or WebM) plays on the controller as a Video walk, with the walker moving along a path on the table.'));
       }
       nodes.push(kind);
-      if (item) nodes.push(el('p', 'im-about', item.about), el('pre', 'im-example', item.example));
+      if (item) nodes.push(el('p', 'im-about', item.about), exampleBox(item.dataset, this.host.site()));
       const buttons = el('div', 'wz-report-actions');
       buttons.append(...this.sourceButtons(item, false));
       nodes.push(buttons);

@@ -702,6 +702,20 @@ body[data-role='tv'] .dash {
   gap: 0.75rem;
 }
 
+.controller-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.controller-logo {
+  height: 2.25rem;
+  max-width: 6rem;
+  object-fit: contain;
+  flex: none;
+}
+
 .controller-header h1 {
   margin: 0;
   font-size: 1.1rem;
@@ -1896,6 +1910,16 @@ body[data-role='tv'][data-surface='glass'] .step-strip {
 .attract-words {
   position: relative;
   max-width: 46rem;
+}
+
+/* The site's logo above its title on the welcome screen (#156). */
+.attract-logo {
+  display: block;
+  height: 5rem;
+  max-width: 20rem;
+  margin-bottom: 1.25rem;
+  object-fit: contain;
+  object-position: left center;
 }
 
 .layer-welcome.attract h2 {

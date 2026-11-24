@@ -1825,6 +1825,24 @@ body[data-role='edit'] .ed-surface .table-frame {
   color: #3b4250;
 }
 
+.im-help-box .im-example {
+  margin-bottom: 4px;
+}
+
+.im-download {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 8px;
+  color: var(--ed-accent);
+  font-size: 12px;
+  text-decoration: none;
+}
+
+.im-download:hover {
+  text-decoration: underline;
+}
+
 .im-preview {
   margin: 8px 0;
   border-radius: 6px;
@@ -3183,4 +3201,22 @@ body[data-role='edit'] .ed-surface .table-frame {
 .ed .control-pick .control-label {
   align-self: flex-start;
   text-align: left;
+}
+
+/* Table settings: the logo, chosen from the table's pictures (#156). */
+.ed-logo {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.ed-logo-preview {
+  height: 2rem;
+  max-width: 5rem;
+  object-fit: contain;
+  border: 1px solid var(--ed-line, #e3e3e3);
+  border-radius: 4px;
+  background: #fff;
+  padding: 2px;
 }

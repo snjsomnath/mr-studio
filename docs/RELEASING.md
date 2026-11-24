@@ -40,7 +40,7 @@ The app asks GitHub for the published releases a few seconds after it starts (th
 - **Displays and settings, Updates** has the same notes, breaking changes first in a red box, and the build stamp: the version, the commit and the date it was built.
 - Drafts and pre-releases are never offered.
 
-Installing stays by hand: run the downloaded installer. The installers are not code-signed, so Windows SmartScreen asks once ("More info", "Run anyway"), and on macOS the first open is right click, Open.
+Installing stays by hand: run the downloaded installer. On a Mac, `bash scripts/install-latest-mac.sh` does it in one command: it downloads the latest release's dmg, quits MR Studio if it is running, replaces `/Applications/MR Studio.app` and clears the download quarantine, so the app opens without right click, Open. Give it a tag (`bash scripts/install-latest-mac.sh v0.15.0`) to install that release instead. Use it before a test session. Tables are not touched. The installers are not code-signed, so Windows SmartScreen asks once ("More info", "Run anyway"), and on macOS the first open is right click, Open.
 
 ## Publishing the MCP server
 

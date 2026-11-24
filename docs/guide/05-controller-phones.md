@@ -2,7 +2,7 @@
 
 *What visitors see on the screen beside the table and on their phones.*
 
-1. Click the table's name in the title bar (or **File, Table settings**). Set the controller's title, a logo and the **welcome line** under the title on the home screen.
+1. Click the table's name in the title bar (or **File, Table settings**). Set the controller's title, a logo (pick one of the table's pictures, or **Add a picture**; it shows above the title on the welcome screen and beside it on phones) and the **welcome line** under the title on the home screen.
 2. The controller's **theme** and **button style**, and each button's words and side, are on the ribbon's **Design** tab.
 3. While nobody touches it, the controller's home screen loops through the layers by itself and returns home after a quiet spell. Set how long under **Table settings**.
 4. **Languages for visitors**: tick English and Swedish to give the controller and phones a language switch. The first one is where the table starts. Translate the table's own words (title, welcome line, button names, slide titles) in the list below.
