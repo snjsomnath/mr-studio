@@ -3,6 +3,8 @@ import type { Connection, Control, LayerManifest, LegendRow, TextControl, LayerS
 
 import { AttractLoop, effectOf } from './attract.ts';
 import { icon } from './editor/icons.ts';
+import { LANGUAGE_NAMES, language, offered, say, t } from './i18n.ts';
+import type { Language } from './i18n.ts';
 import { baseContext, isAtRest, paramSender } from './layer-manager.ts';
 
 export { isAtRest };
@@ -166,7 +168,7 @@ export function widget(control: Control, send: (value: unknown) => void, act: ()
         group.setAttribute('aria-label', control.label);
         const input = el('input');
         Object.assign(input, { id, type: 'date', className: 'control-date-more' });
-        input.setAttribute('aria-label', `Another ${control.label.toLowerCase()}`);
+        input.setAttribute('aria-label', t('Another {thing}', { thing: control.label.toLowerCase() }));
         input.addEventListener('input', () => input.value && send(input.value));
         let shown = '';
         const dateOf = (preset: string) => {
@@ -237,8 +239,9 @@ export function layerButton(
 ): { name: string; description: string; icon: string | undefined; side: 'left' | 'right' } {
   const button = state?.button ?? {};
   return {
-    name: button.name ?? instanceTitle(id, manifest),
-    description: button.description ?? manifest.description ?? '',
+    // The site's own words are written in English and said in the visitors' language (#80).
+    name: button.name ? t(button.name) : instanceTitle(id, manifest),
+    description: button.description ? t(button.description) : (manifest.description ?? ''),
     icon: button.icon ?? manifest.icon,
     side: button.side ?? defaultSide,
   };
@@ -361,6 +364,27 @@ function fullScreen(): void {
   else void document.documentElement.requestFullscreen().catch(() => {});
 }
 
+/**
+ * The language switch (#80): the languages' codes side by side, flag-free, the current one pressed.
+ * Each says its own name to a screen reader.
+ */
+export function languageSwitch(languages: Language[], now: Language, pick: (language: Language) => void): HTMLElement {
+  const group = el('div', 'language-switch');
+  group.setAttribute('role', 'group');
+  group.setAttribute('aria-label', t('Language'));
+  for (const code of languages) {
+    const press = el('button', 'language-option', code.toUpperCase());
+    press.type = 'button';
+    press.lang = code;
+    press.title = LANGUAGE_NAMES[code];
+    press.setAttribute('aria-label', LANGUAGE_NAMES[code]);
+    press.setAttribute('aria-pressed', String(code === now));
+    press.addEventListener('click', () => code !== now && pick(code));
+    group.append(press);
+  }
+  return group;
+}
+
 /** The About page on the controller screen: the site's words and its credits. */
 function aboutPage(about: TvAbout, fallback: string, siteLogo: string | null): HTMLElement {
   const page = el('section', 'layer-card layer-open about-page');
@@ -378,15 +402,15 @@ function aboutPage(about: TvAbout, fallback: string, siteLogo: string | null): H
     }
     page.append(row);
   }
-  page.append(el('h2', 'layer-open-name', about.title ?? fallback));
-  if (about.text) page.append(el('p', 'layer-about', about.text));
+  page.append(el('h2', 'layer-open-name', about.title ? t(about.title) : fallback));
+  if (about.text) page.append(el('p', 'layer-about', t(about.text)));
   const credits = (about.credits ?? []).filter((c) => c && typeof c.name === 'string');
   if (credits.length > 0) {
     const list = el('dl', 'about-credits');
     for (const credit of credits) {
       const item = el('div', 'about-credit');
-      item.append(el('dt', undefined, credit.role ?? ''), el('dd', undefined, credit.name));
-      if (credit.note) item.append(el('dd', 'about-note', credit.note));
+      item.append(el('dt', undefined, credit.role ? t(credit.role) : ''), el('dd', undefined, credit.name));
+      if (credit.note) item.append(el('dd', 'about-note', t(credit.note)));
       list.append(item);
     }
     page.append(list);
@@ -416,12 +440,12 @@ function stepStrip(id: string, store: Store, connection: Connection): { element:
     return press;
   };
   const step = (to: string) => void connection.request('layer.step', { layer: id, to }).catch(() => {});
-  const previous = button('Previous step', 'previous', () => step('previous'));
-  const play = button('Play the steps', 'play', () => {
+  const previous = button(t('Previous step'), 'previous', () => step('previous'));
+  const play = button(t('Play the steps'), 'play', () => {
     const playing = store.state.layers[id]?.step?.playing ?? false;
     void connection.request('layer.play', { layer: id, playing: !playing }).catch(() => {});
   });
-  const next = button('Next step', 'next', () => step('next'));
+  const next = button(t('Next step'), 'next', () => step('next'));
   play.classList.add('is-play');
   const words = el('div', 'step-words');
   const count = el('div', 'step-count');
@@ -442,13 +466,15 @@ function stepStrip(id: string, store: Store, connection: Connection): { element:
       // The layer the slideshow shows now, for its name and its sub-steps' names.
       const shown = sequence ? shownBy(store, id) : undefined;
       const shownState = shown ? store.state.layers[shown] : undefined;
-      const shownName = shownState ? (shownState.button?.name ?? store.manifest(shownState.layer)?.name ?? '') : '';
-      count.textContent = sequence ? `${Math.min(at.index + 1, at.count)} of ${at.count}` : `${at.index} of ${at.count} shown`;
-      title.textContent = at.title ?? shownName;
+      const shownName = shownState ? (shownState.button?.name ? t(shownState.button.name) : (store.manifest(shownState.layer)?.name ?? '')) : '';
+      // A step's words come from the site (a slide's title) or from the layer (its own steps).
+      const words = store.manifest((sequence ? shownState?.layer : state.layer) ?? state.layer);
+      count.textContent = sequence ? t('{n} of {count}', { n: Math.min(at.index + 1, at.count), count: at.count }) : t('{n} of {count} shown', { n: at.index, count: at.count });
+      title.textContent = at.title ? say(at.title, words) : shownName;
       title.hidden = !title.textContent;
-      line.textContent = at.description ?? '';
+      line.textContent = say(at.description ?? '', words);
       line.hidden = !line.textContent;
-      source.textContent = at.source ? `Source: ${at.source}` : '';
+      source.textContent = at.source ? t('Source: {source}', { source: at.source }) : '';
       source.hidden = !at.source;
       // Sub-steps: the slideshow mirrors the shown layer's; any other layer has its own.
       const sub = sequence ? at.sub : { index: at.index, count: at.count };
@@ -456,7 +482,7 @@ function stepStrip(id: string, store: Store, connection: Connection): { element:
       subs.hidden = !sub || sub.count === 0 || (sequence === false && names.length === 0);
       if (sub && sub.count > 0) {
         const items = Array.from({ length: sub.count }, (_, i) => {
-          const item = el('li', 'step-sub', names[i] ?? String(i + 1));
+          const item = el('li', 'step-sub', names[i] ? say(names[i]!, store.manifest((shownState ?? state).layer)) : String(i + 1));
           item.classList.toggle('is-shown', i < sub.index);
           item.classList.toggle('is-current', i === sub.index - 1);
           return item;
@@ -468,7 +494,7 @@ function stepStrip(id: string, store: Store, connection: Connection): { element:
       if (playing !== at.playing) {
         playing = at.playing;
         play.replaceChildren(icon(at.playing ? 'pause' : 'play', 26));
-        play.title = at.playing ? 'Pause the steps' : 'Play the steps';
+        play.title = at.playing ? t('Pause the steps') : t('Play the steps');
         play.setAttribute('aria-label', play.title);
         play.setAttribute('aria-pressed', String(at.playing));
       }
@@ -489,7 +515,7 @@ function shownBy(store: Store, sequence: string): string | undefined {
  */
 function legendZone(id: string, store: Store): { element: HTMLElement; sync(state: LayerState): boolean } {
   const zone = el('ul', 'stage-legend');
-  zone.setAttribute('aria-label', 'Legend');
+  zone.setAttribute('aria-label', t('Legend'));
   zone.hidden = true;
   let drawn = '';
   return {
@@ -526,7 +552,7 @@ function legendZone(id: string, store: Store): { element: HTMLElement; sync(stat
           const swatch = el('i', 'legend-swatch');
           swatch.dataset.shape = row.shape ?? 'fill';
           if (row.color) swatch.style.setProperty('--swatch', row.color);
-          item.append(swatch, el('span', 'legend-label', row.label));
+          item.append(swatch, el('span', 'legend-label', say(row.label, from ? store.manifest(from.layer) : undefined)));
           return item;
         }),
       );
@@ -551,7 +577,7 @@ interface SoundRow {
  */
 function soundZone(id: string, store: Store, connection: Connection): { element: HTMLElement; sync(state: LayerState): void } {
   const zone = el('div', 'stage-sounds');
-  zone.setAttribute('aria-label', 'Sounds');
+  zone.setAttribute('aria-label', t('Sounds'));
   zone.hidden = true;
   let drawn = '';
   return {
@@ -574,7 +600,7 @@ function soundZone(id: string, store: Store, connection: Connection): { element:
           card.setAttribute('aria-pressed', String(Boolean(row.playing)));
           const dot = el('i', 'sound-dot');
           const words = el('span', 'sound-words');
-          words.append(el('b', undefined, row.label), el('small', undefined, row.playing ? 'Playing' : 'Tap to play'));
+          words.append(el('b', undefined, row.label), el('small', undefined, row.playing ? t('Playing') : t('Tap to play')));
           card.append(dot, words);
           card.addEventListener('click', () => {
             void connection.request('tool.input', { layer: source, tool: 'sound', geometry: { type: 'Point', coordinates: row.at } }).catch(() => {});
@@ -612,17 +638,19 @@ export class Controller {
     this.centre = centre;
     const { site } = store.state;
     this.store = store;
+    const heading = t(site.branding.title ?? site.name);
+    const welcome = site.branding.welcome ? t(site.branding.welcome) : undefined;
     if (centre) {
-      const credits = (site.tv?.about?.credits ?? []).map((c) => (c.role ? `${c.role}: ${c.name}` : c.name)).join('  ·  ');
-      this.attract = new AttractLoop(site.branding.title ?? site.name, () => this.attractStops(), { stepS: site.tv?.attract_s, credits: credits || undefined, welcome: site.branding.welcome ?? undefined });
+      const credits = (site.tv?.about?.credits ?? []).map((c) => (c.role ? `${t(c.role)}: ${c.name}` : c.name)).join('  ·  ');
+      this.attract = new AttractLoop(heading, () => this.attractStops(), { stepS: site.tv?.attract_s, credits: credits || undefined, welcome });
       this.welcome = this.attract.element;
     } else {
       this.welcome = el('div', 'layer-welcome');
-      this.welcome.append(el('h2', undefined, site.branding.title ?? site.name), el('p', undefined, site.branding.welcome ?? 'Choose a layer to bring it to the table.'));
+      this.welcome.append(el('h2', undefined, heading), el('p', undefined, welcome ?? t('Choose a layer to bring it to the table.')));
     }
     this.connection = connection;
     this.role = role;
-    this.about = centre && site.tv?.about ? aboutPage(site.tv.about, site.branding.title ?? site.name, site.branding.logo) : undefined;
+    this.about = centre && site.tv?.about ? aboutPage(site.tv.about, heading, site.branding.logo) : undefined;
     this.arrange();
     this.creditMaps();
     if (centre) {
@@ -787,7 +815,7 @@ export class Controller {
     const controls = el('div', 'controls');
     const more = el('details', 'controls-more');
     const moreRows = el('div', 'controls');
-    more.append(el('summary', undefined, 'More settings'), moreRows);
+    more.append(el('summary', undefined, t('More settings')), moreRows);
     primary.append(...widgets.filter((w) => tierOf(w) === 'primary').map((w) => w.row));
     controls.append(...widgets.filter((w) => tierOf(w) === 'secondary').map((w) => w.row));
     moreRows.append(...widgets.filter((w) => tierOf(w) === 'more').map((w) => w.row));
@@ -933,7 +961,7 @@ export class Controller {
       const source = layer?.active ? layer.shared?.source : undefined;
       if (typeof source === 'string' && source.trim()) credits.add(source.trim());
     }
-    line.textContent = credits.size > 0 ? `Maps and data: ${[...credits].join(' · ')}` : '';
+    line.textContent = credits.size > 0 ? t('Maps and data: {credits}', { credits: [...credits].join(' · ') }) : '';
     line.hidden = credits.size === 0;
   }
 
@@ -988,13 +1016,13 @@ export class Controller {
       box.append(press);
       return press;
     };
-    if (operator) box.append(el('div', 'rail-group', 'Map controls'));
-    action(operator ? 'Reset view' : 'Reset', 'reset', () => this.reset());
+    if (operator) box.append(el('div', 'rail-group', t('Map controls')));
+    action(operator ? t('Reset view') : t('Reset'), 'reset', () => this.reset());
     if (operator) {
-      action('Full screen', 'fullscreen', () => fullScreen());
+      action(t('Full screen'), 'fullscreen', () => fullScreen());
       // Calibrate opens the projector calibration on the table, and closes it again.
       let calibrating = false;
-      const calibrate = action('Calibrate', 'overscan', () => {
+      const calibrate = action(t('Calibrate'), 'overscan', () => {
         void this.connection.request('calibration.mode', { active: !calibrating }).catch(() => {});
       });
       calibrate.setAttribute('aria-pressed', 'false');
@@ -1004,14 +1032,17 @@ export class Controller {
       });
     }
     if (this.about) {
-      if (operator) box.append(el('div', 'rail-group', 'About'));
-      this.aboutButton = action('Credits', 'people', () => {
+      if (operator) box.append(el('div', 'rail-group', t('About')));
+      this.aboutButton = action(t('Credits'), 'people', () => {
         const show = !this.aboutOpen;
         if (show) this.closeLayers();
         this.showAbout(show);
       });
       this.aboutButton.setAttribute('aria-pressed', 'false');
     }
+    // SV / EN (#80): the table, the controller and the phones that have not chosen for themselves.
+    const languages = offered(this.store.state);
+    if (languages.length > 1) box.append(languageSwitch(languages, language(), (next) => void this.connection.request('session.language', { language: next }).catch(() => {})));
     return box;
   }
 
@@ -1029,7 +1060,7 @@ export class Controller {
     header.append(title);
 
     const power = el('input');
-    Object.assign(power, { type: 'checkbox', className: 'switch', ariaLabel: `Turn ${name} on or off` });
+    Object.assign(power, { type: 'checkbox', className: 'switch', ariaLabel: t('Turn {name} on or off', { name }) });
     power.addEventListener('change', () => {
       connection.request('layer.activate', { layer: id, active: power.checked }).catch(() => (power.checked = !power.checked));
     });

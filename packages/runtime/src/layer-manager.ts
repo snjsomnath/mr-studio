@@ -2,6 +2,7 @@ import { EngineClient } from '@mrstudio/sdk';
 import type { Connection, LayerManifest, LayerModule, LayerState, PanelContext, TableContext, TableHandlers, ToolInput } from '@mrstudio/sdk';
 
 import { Cues } from './cues.ts';
+import { language, say } from './i18n.ts';
 import { recipeModule } from './recipe-player.ts';
 import { layerModule } from './registry.ts';
 import { changedKeys } from './store.ts';
@@ -60,8 +61,12 @@ export function paramSender(
 }
 
 /** Shared read-only parts of a layer context, backed by the store. */
-export function baseContext(store: Store, connection: Connection, layer: string): Pick<PanelContext, 'site' | 'params' | 'shared' | 'setParams'> {
+export function baseContext(store: Store, connection: Connection, layer: string): Pick<PanelContext, 'site' | 'params' | 'shared' | 'setParams' | 'language' | 'say'> {
   return {
+    get language() {
+      return language();
+    },
+    say: (text, vars) => say(text, store.manifest(store.state.layers[layer]?.layer ?? ''), vars),
     get site() {
       return store.state.site;
     },
@@ -196,7 +201,7 @@ export class LayerManager {
     };
     const published: Record<string, unknown> = {};
     const { store, engine } = this;
-    const extras: Omit<TableContext, 'site' | 'params' | 'shared' | 'setParams'> = {
+    const extras: Omit<TableContext, 'site' | 'params' | 'shared' | 'setParams' | 'language' | 'say'> = {
       engine: {
         open: async (kernel, params, fields, options) => {
           const stream = await engine.open(kernel, params, fields, options);

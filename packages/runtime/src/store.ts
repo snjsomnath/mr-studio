@@ -7,6 +7,9 @@ export class Store {
   state: SessionState;
   manifests: LayerManifest[];
   surface: number;
+  /** Puts a manifest in the visitors' language (#80). Unset: as written, in English. */
+  private translate: ((manifest: LayerManifest) => LayerManifest) | null = null;
+  private translated = new WeakMap<LayerManifest, LayerManifest>();
   private layerListeners = new Set<LayerListener>();
   private participantListeners = new Set<(participants: Participant[]) => void>();
   private sceneListeners = new Set<(scene: string[]) => void>();
@@ -89,9 +92,19 @@ export class Store {
     return () => this.layerListeners.delete(listener);
   }
 
-  /** The catalogue entry for a layer package. */
+  /** Hands out manifests through `translate` from now on (#80); null for as written. */
+  useTranslation(translate: ((manifest: LayerManifest) => LayerManifest) | null): void {
+    this.translate = translate;
+    this.translated = new WeakMap();
+  }
+
+  /** The catalogue entry for a layer package, in the visitors' language on their screens. */
   manifest(layer: string): LayerManifest | undefined {
-    return this.manifests.find((manifest) => manifest.id === layer);
+    const manifest = this.manifests.find((manifest) => manifest.id === layer);
+    if (!manifest || !this.translate) return manifest;
+    let done = this.translated.get(manifest);
+    if (!done) this.translated.set(manifest, (done = this.translate(manifest)));
+    return done;
   }
 
   /**

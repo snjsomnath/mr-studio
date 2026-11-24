@@ -1,5 +1,6 @@
 import qrcode from 'qrcode-generator';
 
+import { t } from './i18n.ts';
 import type { Store } from './store.ts';
 
 function el(tag: string, className: string, text?: string): HTMLElement {
@@ -28,7 +29,7 @@ export function qrSvg(text: string): SVGSVGElement {
   svg.setAttribute('viewBox', `0 0 ${size} ${size}`);
   svg.setAttribute('shape-rendering', 'crispEdges');
   svg.setAttribute('role', 'img');
-  svg.setAttribute('aria-label', 'QR code to join from a phone');
+  svg.setAttribute('aria-label', t('QR code to join from a phone'));
   const background = document.createElementNS(NS, 'rect');
   background.setAttribute('width', String(size));
   background.setAttribute('height', String(size));
@@ -72,8 +73,10 @@ export function joinPanel(store: Store): HTMLElement {
     panel.prepend(qr);
     const address = el('p', 'join-address');
     const where = new URL(url);
-    address.append('or open ', el('b', '', `${where.host}${where.pathname}`), ' and enter ', el('b', 'join-code', code));
-    text.replaceChildren(el('h2', '', 'Join from your phone'), el('p', '', 'Scan with your camera,'), address);
+    // "or open <address> and enter <code>", with the address and the code in bold, in either language.
+    const [before, middle, after] = t('or open {address} and enter {code}').split(/\{address\}|\{code\}/);
+    address.append(before ?? '', el('b', '', `${where.host}${where.pathname}`), middle ?? '', el('b', 'join-code', code), after ?? '');
+    text.replaceChildren(el('h2', '', t('Join from your phone')), el('p', '', t('Scan with your camera,')), address);
   };
 
   const away = new Map<number, number>();
@@ -89,12 +92,12 @@ export function joinPanel(store: Store): HTMLElement {
         const dot = el('span', 'join-person', String(p.slot + 1));
         dot.style.background = p.colour;
         dot.classList.toggle('is-away', !p.connected);
-        dot.title = p.connected ? `Phone ${p.slot + 1}` : `Phone ${p.slot + 1}, reconnecting`;
+        dot.title = p.connected ? t('Phone {n}', { n: p.slot + 1 }) : t('Phone {n}, reconnecting', { n: p.slot + 1 });
         return dot;
       }),
     );
     const here = participants.filter((p) => p.connected).length;
-    count.textContent = here === 1 ? '1 phone' : `${here} phones`;
+    count.textContent = here === 1 ? t('1 phone') : t('{n} phones', { n: here });
   };
 
   panel.append(text);

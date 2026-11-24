@@ -5,9 +5,11 @@ import { luminance, themeVariables } from '@mrstudio/dashboard';
 import '@mrstudio/dashboard/src/dashboard.css';
 
 import { Composer } from './compose.ts';
-import { Controller } from './controls.ts';
+import { Controller, languageSwitch } from './controls.ts';
 import { mountDashboard } from './dashboard.ts';
 import { guideCode, guideDoor, guideScreen } from './guide.ts';
+import { browserLanguage, keepOwnLanguage, language, offered, ownLanguage, setLanguage, speak, t } from './i18n.ts';
+import type { Language } from './i18n.ts';
 import { joinPanel } from './join.ts';
 import { LayerManager } from './layer-manager.ts';
 import { phoneBadge, phoneCode, refusedScreen, rememberSeat, rememberedSeat } from './phone.ts';
@@ -48,6 +50,8 @@ async function main() {
   // The guide's phone (#98) has a code of its own, from the operator's screens.
   const guiding = role === 'guide';
   const code = phone ? phoneCode() : guiding ? guideCode() : undefined;
+  // A phone turned away at the door speaks the language it chose, or its browser's (#80).
+  if (phone) setLanguage(ownLanguage() ?? browserLanguage());
   if (phone && !code) {
     app.append(refusedScreen('no code'));
     return;
@@ -90,7 +94,27 @@ async function main() {
   }
   document.title = `${site.branding.title ?? 'MR Studio'} · ${site.name}`;
 
-  const status = el('div', 'connection', 'Reconnecting…');
+  // The visitors' screens speak the session's language (#80); a phone may keep one of its own.
+  // The controller and the phones draw their words once, so they start again in a new language;
+  // the table only redraws its ribbons.
+  const visitors = !editing && !composing && (role === 'tv' || role === 'phone' || role === 'table');
+  if (visitors) {
+    const wanted = (): Language => {
+      const languages = offered(store.state);
+      const pick = (phone ? ownLanguage() : null) ?? (store.state.session.language as Language | undefined) ?? languages[0]!;
+      return languages.includes(pick) ? pick : languages[0]!;
+    };
+    speak(store, wanted());
+    const follow = () => {
+      if (wanted() === language()) return;
+      if (role === 'table') speak(store, wanted());
+      else location.reload();
+    };
+    connection.on('session.changed', follow);
+    connection.on('site.settings', () => (role === 'table' ? speak(store, wanted()) : follow()));
+  }
+
+  const status = el('div', 'connection', t('Reconnecting…'));
   status.hidden = true;
   // New data was brought into the site: layers read their data once, so every surface starts again. The editor does this itself.
   if (!editing) connection.on('site.changed', () => location.reload());
@@ -225,9 +249,19 @@ async function main() {
     const side = el('aside', 'controller');
     const header = el('header', 'controller-header');
     const title = el('div', '');
-    title.append(el('h1', '', site.branding.title ?? 'MR Studio'), el('p', '', site.name));
+    title.append(el('h1', '', t(site.branding.title ?? 'MR Studio')), el('p', '', t(site.name)));
     header.append(title);
     if (phone) header.append(phoneBadge(store));
+    // A phone can speak another language than the table (#80): the visitor's own choice, kept on the phone.
+    const languages = offered(store.state);
+    if (phone && languages.length > 1) {
+      header.append(
+        languageSwitch(languages, language(), (next) => {
+          keepOwnLanguage(next);
+          location.reload();
+        }),
+      );
+    }
     side.append(header);
     const cards = el('div', 'cards');
     side.append(cards);

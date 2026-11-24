@@ -692,6 +692,8 @@ body[data-role='tv'] .dash {
   display: grid;
   gap: 0.75rem;
   align-content: start;
+  /* The column is the screen's width: a wide tool picker or map never pushes the cards off a phone. */
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .controller-footer {
@@ -741,11 +743,13 @@ body[data-role='tv'] .dash {
 
 .controls {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 0.875rem;
 }
 
 .control {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 0.375rem;
 }
 
@@ -807,6 +811,7 @@ select.control-source {
 
 .segmented button {
   flex: 1;
+  min-width: 0;
   min-height: 2.125rem;
   border: 0;
   border-radius: 0.4375rem;
@@ -2182,4 +2187,57 @@ body[data-role='guide'] {
   color: var(--muted);
   font: inherit;
   text-decoration: underline;
+}
+
+/* SV / EN (#80): flag-free, the language now pressed. On the controller's rail and in a phone's header. */
+.language-switch {
+  display: inline-flex;
+  padding: 3px;
+  gap: 2px;
+  border: 1px dashed var(--line);
+  border-radius: 999px;
+}
+.language-option {
+  min-width: 2.75rem;
+  min-height: 2.25rem;
+  padding: 0 0.6rem;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+}
+.language-option[aria-pressed='true'] {
+  background: var(--accent);
+  color: var(--accent-ink, #111);
+}
+body[data-role='tv'] .rail-actions .language-switch {
+  margin-top: 0.25rem;
+}
+/* With the switch the header holds three things: the title takes its own line above "You are 3" and SV / EN. */
+body[data-role='phone'] .controller-header:has(.language-switch) {
+  flex-wrap: wrap;
+}
+body[data-role='phone'] .controller-header:has(.language-switch) > div:first-child {
+  flex: 1 1 100%;
+}
+body[data-role='phone'] .controller-header .language-switch {
+  flex: none;
+  margin-left: auto;
+}
+
+/* On a phone the date's presets and its own date box take a line each, so neither runs off the screen. */
+body[data-role='phone'] .control-date:has(.control-presets) {
+  grid-template-columns: minmax(0, 1fr);
+}
+body[data-role='phone'] .control-presets {
+  flex-wrap: wrap;
+}
+body[data-role='phone'] .control-presets > * {
+  flex: 1 1 100%;
+  min-width: 0;
 }

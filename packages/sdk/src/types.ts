@@ -99,6 +99,11 @@ export interface LayerManifest {
   legend?: LegendItem[];
   /** The effect behind the layer on the controller's attract loop (docs/contracts/present.md). */
   attract?: { effect: string };
+  /**
+   * The layer's words in other languages (#80), from its package's `locales/<language>.json`:
+   * by language, then by the English text. Read by the visitors' screens; see docs/contracts/layer.md.
+   */
+  locales?: Record<string, Record<string, string>>;
 }
 
 // ---- Site format 3 (docs/contracts/site.md) --------------------------------
@@ -275,7 +280,15 @@ export interface SiteInfo {
   } | null;
   basemap: { background: string; style: string | null };
   /** Table settings (#73): the controller's title, logo and the welcome line under the title. */
-  branding: { title: string | null; logo: string | null; welcome?: string | null };
+  branding: {
+    title: string | null;
+    logo: string | null;
+    welcome?: string | null;
+    /** The languages visitors can switch between (#80), the first the table starts in. */
+    languages?: string[];
+    /** The site's own words in other languages, by language and then by the English text. */
+    translations?: Record<string, Record<string, string>>;
+  };
   /** The calibrated table view, when the site has a calibration.json. */
   calibration: {
     center: { lon: number; lat: number };
@@ -386,7 +399,7 @@ export interface Participant {
 export interface SessionState {
   protocol: number;
   /** `join_url` is what the TV's QR code points at; null when phones cannot reach the host. */
-  session: { id: string; code: string; port: number; join_url: string | null };
+  session: { id: string; code: string; port: number; join_url: string | null; /** The visitors' language now (#80). */ language?: string };
   site: SiteInfo;
   /** Layer instance ids in draw order, bottom first. */
   scene: string[];

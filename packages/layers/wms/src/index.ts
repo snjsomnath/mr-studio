@@ -48,11 +48,11 @@ export default defineLayer<Params>({
       canvas.commit();
       const map = wanted(ctx.params);
       if (!map) {
-        ctx.publish({ note: 'Choose a map, or give the service address (or a sign-in from Sources) and its layers' });
+        ctx.publish({ note: ctx.say('Choose a map, or give the service address (or a sign-in from Sources) and its layers') });
         return;
       }
       const { href, bbox, width, height } = request(ctx.site, map);
-      ctx.publish({ note: 'Loading the map…', source: map.source });
+      ctx.publish({ note: ctx.say('Loading the map…'), source: map.source });
       try {
         const response = await fetch(href);
         if (!response.ok) throw new Error(await response.text());
@@ -72,7 +72,7 @@ export default defineLayer<Params>({
         canvas.commit();
         ctx.publish({ note: '', source: map.source });
       } catch (error) {
-        if (mine === asked) ctx.publish({ note: `The map could not be loaded: ${(error as Error).message.slice(0, 200)}` });
+        if (mine === asked) ctx.publish({ note: ctx.say('The map could not be loaded: {reason}', { reason: (error as Error).message.slice(0, 200) }) });
       }
     }
 

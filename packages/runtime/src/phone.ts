@@ -1,3 +1,4 @@
+import { t } from './i18n.ts';
 import type { Store } from './store.ts';
 
 const SEAT_KEY = 'mrstudio.seat';
@@ -44,7 +45,7 @@ export function phoneBadge(store: Store): HTMLElement {
     if (!me) return;
     dot.style.background = me.colour;
     dot.textContent = String(me.slot + 1);
-    label.textContent = `You are ${me.slot + 1}`;
+    label.textContent = t('You are {n}', { n: me.slot + 1 });
   };
   show();
   store.onParticipants(show);
@@ -61,12 +62,12 @@ export function refusedScreen(reason: string): HTMLElement {
     return button;
   };
   if (reason === 'session full') {
-    door.append(el('h1', undefined, 'The table is full'), el('p', undefined, 'Every phone slot is taken. Try again when someone leaves.'), retry('Try again'));
+    door.append(el('h1', undefined, t('The table is full')), el('p', undefined, t('Every phone slot is taken. Try again when someone leaves.')), retry(t('Try again')));
   } else if (reason === 'wrong session code' || reason === 'no code') {
     const form = el('form');
     const input = el('input');
-    Object.assign(input, { name: 'c', inputMode: 'numeric', autocomplete: 'off', maxLength: 8, required: true, ariaLabel: 'Session code' });
-    const join = el('button', 'action primary', 'Join');
+    Object.assign(input, { name: 'c', inputMode: 'numeric', autocomplete: 'off', maxLength: 8, required: true, ariaLabel: t('Session code') });
+    const join = el('button', 'action primary', t('Join'));
     form.append(input, join);
     form.addEventListener('submit', (event) => {
       event.preventDefault();
@@ -74,14 +75,14 @@ export function refusedScreen(reason: string): HTMLElement {
     });
     const wrong = reason === 'wrong session code' && phoneCode() !== undefined;
     door.append(
-      el('h1', undefined, wrong ? 'That code did not work' : 'Enter the session code'),
-      el('p', undefined, wrong ? 'The session may have restarted. Scan the QR code on the TV again, or type the code it shows.' : 'It is shown on the TV next to the QR code.'),
+      el('h1', undefined, wrong ? t('That code did not work') : t('Enter the session code')),
+      el('p', undefined, wrong ? t('The session may have restarted. Scan the QR code on the TV again, or type the code it shows.') : t('It is shown on the TV next to the QR code.')),
       form,
     );
   } else if (reason.includes('joined again')) {
-    door.append(el('h1', undefined, 'Open in another tab'), el('p', undefined, 'This phone is now controlling the table from another tab or window.'), retry('Use this one instead'));
+    door.append(el('h1', undefined, t('Open in another tab')), el('p', undefined, t('This phone is now controlling the table from another tab or window.')), retry(t('Use this one instead')));
   } else {
-    door.append(el('h1', undefined, 'Could not join'), el('p', undefined, `${reason}.`), retry('Try again'));
+    door.append(el('h1', undefined, t('Could not join')), el('p', undefined, `${reason}.`), retry(t('Try again')));
   }
   return door;
 }

@@ -606,11 +606,11 @@ export default defineLayer<Params>({
           ${(['shortest', 'coolest'] as const)
             .map(
               (name) => `
-          <span class="coolpaths-name" data-route="${name}"><span class="coolpaths-swatch" style="background:${name === 'shortest' ? shortColour(ctx.site) : coolColour(ctx.site)}"></span>${name === 'shortest' ? 'Shortest' : 'Coolest'}</span>
+          <span class="coolpaths-name" data-route="${name}"><span class="coolpaths-swatch" style="background:${name === 'shortest' ? shortColour(ctx.site) : coolColour(ctx.site)}"></span>${name === 'shortest' ? ctx.say('Shortest') : ctx.say('Coolest')}</span>
           <span class="coolpaths-value" data-route="${name}" data-fact="length"></span>
           <span class="coolpaths-value" data-route="${name}" data-fact="pet"></span>
           <span class="coolpaths-value" data-route="${name}" data-fact="heat"></span>
-          <svg class="coolpaths-along" data-route="${name}" data-fact="along" viewBox="0 0 300 40" preserveAspectRatio="none" aria-label="PET along the ${name} walk"></svg>`,
+          <svg class="coolpaths-along" data-route="${name}" data-fact="along" viewBox="0 0 300 40" preserveAspectRatio="none" aria-label="${ctx.say(name === 'shortest' ? 'PET along the shortest walk' : 'PET along the coolest walk')}"></svg>`,
             )
             .join('')}
         </div>
@@ -642,7 +642,7 @@ export default defineLayer<Params>({
       // Mean PET and heat exposure (PET times metres), as the demo compares them.
       fact('pet').innerHTML = `${value.pet.toFixed(1)} °C <span class="coolpaths-unit">PET</span>`;
       fact('pet').style.color = petColour(value.pet);
-      fact('heat').innerHTML = `${(value.heat / 1000).toFixed(1)}k °C·m <span class="coolpaths-unit">heat</span>`;
+      fact('heat').innerHTML = `${(value.heat / 1000).toFixed(1)}k °C·m <span class="coolpaths-unit">${ctx.say('heat')}</span>`;
       along(el.querySelector<SVGSVGElement>(`svg[data-route="${name}"]`)!, value, name === 'shortest' ? shortColour(ctx.site) : coolColour(ctx.site), scale);
     }
 
@@ -660,22 +660,23 @@ export default defineLayer<Params>({
       show('shortest', false, scale);
       show('coolest', same === true, scale);
       let text: string;
-      if (!ready) text = 'working out the shade…';
-      else if (!shortest || !coolest) text = 'these two points are not connected';
-      else if (same || shortest.heat <= coolest.heat) text = sunUp === false ? 'the sun is down: the shortest walk is the coolest' : 'the shortest walk is already the coolest';
+      if (!ready) text = ctx.say('working out the shade…');
+      else if (!shortest || !coolest) text = ctx.say('these two points are not connected');
+      else if (same || shortest.heat <= coolest.heat)
+        text = sunUp === false ? ctx.say('the sun is down: the shortest walk is the coolest') : ctx.say('the shortest walk is already the coolest');
       else {
         const further = Math.round((coolest.length / shortest.length - 1) * 100);
         const less = Math.round((1 - coolest.heat / shortest.heat) * 100);
-        text = `${further > 0 ? `${further}% further` : 'no further'}, ${less}% less heat`;
+        text = further > 0 ? ctx.say('{further}% further, {less}% less heat', { further, less }) : ctx.say('no further, {less}% less heat', { less });
       }
       verdict.textContent = `${formatHour(ctx.params.hour)}: ${text}`;
       // How the shortest walk feels, on the PET scale, for whoever reads the controller up close.
-      verdict.title = shortest ? `The shortest walk feels ${petFeeling(shortest.pet)}` : '';
+      verdict.title = shortest ? ctx.say('The shortest walk feels {feeling}', { feeling: ctx.say(petFeeling(shortest.pet)) }) : '';
       const air = ctx.shared.air as number | undefined;
       source.textContent =
         ctx.shared.source === 'prepared'
-          ? 'prepared PET'
-          : `estimated PET, air ${air ?? '–'} °C`;
+          ? ctx.say('prepared PET')
+          : ctx.say('estimated PET, air {air} °C', { air: air ?? '–' });
     }
     update();
     return { update };

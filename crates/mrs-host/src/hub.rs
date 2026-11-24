@@ -62,6 +62,69 @@ pub enum Role {
     Guide,
 }
 
+/// The languages a table offers visitors (#80), the first it starts in: never empty.
+fn offered(branding: &mrs_site::Branding) -> Vec<String> {
+    let known: Vec<String> = branding.languages.iter().filter(|l| mrs_site::LANGUAGES.contains(&l.as_str())).cloned().collect();
+    if known.is_empty() {
+        vec!["en".to_string()]
+    } else {
+        known
+    }
+}
+
+/// `branding.languages` from Table settings: known languages, each once.
+fn languages(value: &Value) -> Result<Vec<String>, String> {
+    let list = match value {
+        Value::Null => return Ok(Vec::new()),
+        Value::Array(list) => list,
+        _ => return Err("languages must be a list such as [\"en\", \"sv\"]".into()),
+    };
+    let mut out: Vec<String> = Vec::new();
+    for item in list {
+        let code = item.as_str().ok_or("languages must be a list of language codes")?;
+        if !mrs_site::LANGUAGES.contains(&code) {
+            return Err(format!("'{code}' is not a language MR Studio speaks yet ({})", mrs_site::LANGUAGES.join(", ")));
+        }
+        if !out.iter().any(|l| l == code) {
+            out.push(code.to_string());
+        }
+    }
+    Ok(out)
+}
+
+/// `branding.translations` from Table settings: `{ sv: { "English": "Svenska" } }`.
+fn translations(value: &Value) -> Result<std::collections::BTreeMap<String, std::collections::BTreeMap<String, String>>, String> {
+    let map = match value {
+        Value::Null => return Ok(Default::default()),
+        Value::Object(map) => map,
+        _ => return Err("translations must be an object of languages".into()),
+    };
+    let mut out = std::collections::BTreeMap::new();
+    for (language, words) in map {
+        if !mrs_site::LANGUAGES.contains(&language.as_str()) {
+            return Err(format!("'{language}' is not a language MR Studio speaks yet"));
+        }
+        let words = words.as_object().ok_or("each language's translations map English text to its own")?;
+        if words.len() > 2000 {
+            return Err("at most 2000 translations per language".into());
+        }
+        let mut kept = std::collections::BTreeMap::new();
+        for (english, text) in words {
+            let text = text.as_str().ok_or("a translation must be text")?.trim();
+            if english.chars().count() > 2000 || text.chars().count() > 2000 {
+                return Err("a translation can be at most 2000 characters".into());
+            }
+            if !text.is_empty() {
+                kept.insert(english.clone(), text.to_string());
+            }
+        }
+        if !kept.is_empty() {
+            out.insert(language.clone(), kept);
+        }
+    }
+    Ok(out)
+}
+
 impl Role {
     pub fn parse(s: &str) -> Option<Self> {
         match s {
@@ -216,6 +279,9 @@ pub struct SessionInfo {
     pub port: u16,
     /// What the TV's QR code points at. None when phones cannot reach the host.
     pub join_url: Option<String>,
+    /// The language the visitors' screens speak now (#80): `en` or `sv`. The controller
+    /// switches it; a phone may keep its own.
+    pub language: String,
 }
 
 /// A phone's place in the session. It outlives the connection by `resume_hold`.
@@ -372,6 +438,8 @@ pub struct Hub {
     /// The address phones join at through the relay (#89), while the host is connected to one.
     /// It replaces the local network address in the QR code.
     relay_join: RwLock<Option<String>>,
+    /// The visitors' language now (#80), one of the site's `branding.languages`.
+    language: RwLock<String>,
     /// The code the guide's phone joins with (#98). Only the operator's screens are told it.
     guide_code: String,
     options: SessionOptions,
@@ -423,7 +491,8 @@ impl Hub {
         let scene = Self::build_scene(&catalog, &site.manifest.layers)?;
         let code = format!("{:04}", random_u64() % 10_000);
         let join_url = join_base.map(|base| format!("{}/phone?c={code}", base.trim_end_matches('/')));
-        let session = SessionInfo { id: format!("{:016x}", random_u64()), code, port, join_url };
+        let language = offered(&site.manifest.branding)[0].clone();
+        let session = SessionInfo { id: format!("{:016x}", random_u64()), code, port, join_url, language: language.clone() };
         // Six digits, never the phones' code.
         let guide_code = loop {
             let guide = format!("{:06}", random_u64() % 1_000_000);
@@ -437,6 +506,7 @@ impl Hub {
             info: RwLock::new(site.info()),
             session,
             relay_join: RwLock::new(None),
+            language: RwLock::new(language),
             guide_code,
             options,
             catalog: RwLock::new(Arc::new(catalog)),
@@ -688,6 +758,7 @@ impl Hub {
 
     pub fn session(&self) -> SessionInfo {
         let mut session = self.session.clone();
+        session.language = self.language.read().unwrap().clone();
         if let Some(base) = &*self.relay_join.read().unwrap() {
             session.join_url = Some(format!("{}/phone?c={}", base.trim_end_matches('/'), session.code));
         }
@@ -900,6 +971,19 @@ impl Hub {
                 return Err("this surface cannot edit the table".into());
             }
             return self.author(&mut inner, method, p, Who::of(role, surface));
+        }
+        if method == "session.language" {
+            if !matches!(role, Role::Tv | Role::Dev | Role::Guide) {
+                return Err("only the controller switches the table's language".into());
+            }
+            let language = p["language"].as_str().ok_or("say which language: en or sv")?;
+            let branding = self.info.read().unwrap().branding.clone();
+            if !offered(&branding).iter().any(|l| l == language) {
+                return Err(format!("this table does not offer '{language}'; turn it on in Table settings"));
+            }
+            *self.language.write().unwrap() = language.to_string();
+            self.emit("session.changed", json!({ "session": self.session() }));
+            return Ok(json!({ "language": language }));
         }
         if method == "session.guide" {
             if !matches!(role, Role::Tv | Role::Dev) {
@@ -1138,11 +1222,15 @@ impl Hub {
                             }
                             branding.logo = logo;
                         }
+                        "languages" => branding.languages = languages(value)?,
+                        "translations" => branding.translations = translations(value)?,
                         other => return Err(format!("'{other}' is not a branding setting")),
                     }
                     changed.push(match key.as_str() {
                         "title" => "title",
                         "welcome" => "welcome line",
+                        "languages" => "languages",
+                        "translations" => "translations",
                         _ => "logo",
                     });
                 }
@@ -1158,14 +1246,26 @@ impl Hub {
             _ => "Changed the table settings".to_string(),
         };
         self.saving(who, summary, || self.site.save_settings(&name, timezone.as_deref(), &branding))?;
-        {
+        let language = {
             let mut info = self.info.write().unwrap();
             info.name = name;
             info.timezone = timezone;
             info.branding = branding;
-        }
+            // A language no longer offered gives way to the first one.
+            let offered = offered(&info.branding);
+            let mut language = self.language.write().unwrap();
+            if !offered.contains(&language) {
+                *language = offered[0].clone();
+                true
+            } else {
+                false
+            }
+        };
         let settings = self.settings();
         self.emit("site.settings", settings.clone());
+        if language {
+            self.emit("session.changed", json!({ "session": self.session() }));
+        }
         Ok(settings)
     }
 
@@ -2352,6 +2452,33 @@ mod tests {
         assert!(dev("palette.set", json!({ "palette": { "slots": { "accent": "orange" } } })).is_err());
         dev("palette.set", json!({ "palette": null })).unwrap();
         assert!(Site::load(&hub.site.dir).unwrap().manifest.palette.is_none());
+    }
+
+    #[test]
+    fn the_controller_switches_the_visitors_language() {
+        let hub = scratch_hub("languages");
+        let dev = |method: &str, p: Value| hub.request(Role::Dev, 0, method, &p);
+        dev("site.table", json!({ "branding": { "languages": null } })).unwrap();
+        assert_eq!(hub.session().language, "en", "English until the table offers more");
+        assert!(dev("session.language", json!({ "language": "sv" })).is_err(), "Swedish is not offered yet");
+        dev("site.table", json!({ "branding": { "languages": ["sv", "en"], "translations": { "sv": { "Sample district": "Exempelstadsdelen", "Empty": " " } } } })).unwrap();
+        let saved = Site::load(&hub.site.dir).unwrap().manifest.branding;
+        assert_eq!(saved.languages, ["sv", "en"]);
+        assert_eq!(saved.translations["sv"].len(), 1, "an empty translation is dropped");
+        assert!(dev("site.table", json!({ "branding": { "languages": ["xx"] } })).is_err());
+
+        let mut events = hub.subscribe();
+        assert!(hub.request(Role::Phone, 0, "session.language", &json!({ "language": "en" })).is_err(), "a phone keeps its own language");
+        assert!(hub.request(Role::Table, 0, "session.language", &json!({ "language": "en" })).is_err());
+        hub.request(Role::Tv, 0, "session.language", &json!({ "language": "en" })).unwrap();
+        let event: Value = serde_json::from_str(&events.try_recv().unwrap()).unwrap();
+        assert_eq!((event["m"].as_str(), event["p"]["session"]["language"].as_str()), (Some("session.changed"), Some("en")));
+        assert_eq!(hub.welcome(0)["state"]["session"]["language"], "en");
+        hub.request(Role::Guide, 0, "session.language", &json!({ "language": "sv" })).unwrap();
+
+        // Taking a language away goes back to the first one left.
+        dev("site.table", json!({ "branding": { "languages": ["en"] } })).unwrap();
+        assert_eq!(hub.session().language, "en");
     }
 
     #[test]

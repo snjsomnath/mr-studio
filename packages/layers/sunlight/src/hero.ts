@@ -58,7 +58,7 @@ export function sunlightHero(ctx: PanelContext<Params>, el: HTMLElement): PanelH
   const root = document.createElement('div');
   root.className = 'sun-hero';
   root.setAttribute('role', 'slider');
-  root.setAttribute('aria-label', 'Time of day');
+  root.setAttribute('aria-label', ctx.say('Time of day'));
   root.tabIndex = 0;
   el.append(root);
   const svg = node('svg', {}, root);
@@ -67,7 +67,10 @@ export function sunlightHero(ctx: PanelContext<Params>, el: HTMLElement): PanelH
   clock.innerHTML = '<b></b><span></span>';
   const facts = document.createElement('div');
   facts.className = 'sun-hero-facts';
-  facts.innerHTML = '<div class="sun-hero-fact glass"><small>Sun height</small><b></b></div><div class="sun-hero-fact glass"><small>From the</small><b></b></div>';
+  facts.innerHTML = '<div class="sun-hero-fact glass"><small></small><b></b></div><div class="sun-hero-fact glass"><small></small><b></b></div>';
+  const [heightName, fromName] = [...facts.querySelectorAll('small')];
+  heightName!.textContent = ctx.say('Sun height');
+  fromName!.textContent = ctx.say('From the');
   const band = document.createElement('div');
   band.className = 'sun-hero-band';
   const play = document.createElement('button');
@@ -144,8 +147,8 @@ export function sunlightHero(ctx: PanelContext<Params>, el: HTMLElement): PanelH
         <path d="${line(lit)}" fill="none" stroke="rgb(255 255 255 / .7)" stroke-width="2.5" stroke-dasharray="1 9" stroke-linecap="round"/>
         ${instant && before.length > 1 ? `<path d="${line(before)}" fill="none" stroke="rgb(255 255 255 / .92)" stroke-width="3" stroke-linecap="round"/>` : ''}
       </g>
-      ${day.sunrise !== null && clear(day.sunrise) ? `<text x="${x(day.sunrise)}" y="${horizon + 1.6 * rem}" fill="#fff" opacity=".9" font-size="${0.95 * rem}" text-anchor="middle">Sunrise ${formatHour(day.sunrise)}</text>` : ''}
-      ${day.sunset !== null && clear(day.sunset) ? `<text x="${x(day.sunset)}" y="${horizon + 1.6 * rem}" fill="#fff" opacity=".9" font-size="${0.95 * rem}" text-anchor="middle">Sunset ${formatHour(day.sunset)}</text>` : ''}
+      ${day.sunrise !== null && clear(day.sunrise) ? `<text x="${x(day.sunrise)}" y="${horizon + 1.6 * rem}" fill="#fff" opacity=".9" font-size="${0.95 * rem}" text-anchor="middle">${ctx.say('Sunrise {time}', { time: formatHour(day.sunrise) })}</text>` : ''}
+      ${day.sunset !== null && clear(day.sunset) ? `<text x="${x(day.sunset)}" y="${horizon + 1.6 * rem}" fill="#fff" opacity=".9" font-size="${0.95 * rem}" text-anchor="middle">${ctx.say('Sunset {time}', { time: formatHour(day.sunset) })}</text>` : ''}
       ${
         instant
           ? `<line x1="${sx}" x2="${sx}" y1="${sy + 2.1 * rem}" y2="${h - bandH}" stroke="rgb(255 255 255 / .35)" stroke-width="1.5" stroke-dasharray="3 5"/>
@@ -170,16 +173,16 @@ export function sunlightHero(ctx: PanelContext<Params>, el: HTMLElement): PanelH
       ${instant ? `<circle cx="${sx}" cy="${track}" r="${1.05 * rem}" fill="#fff" stroke="rgb(255 200 87 / .55)" stroke-width="${0.5 * rem}"/>` : ''}`;
 
     const [time, when] = clock.children as unknown as [HTMLElement, HTMLElement];
-    const date = new Date(`${ctx.params.date}T12:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', timeZone: 'UTC' });
+    const date = new Date(`${ctx.params.date}T12:00:00Z`).toLocaleDateString(ctx.language === 'sv' ? 'sv-SE' : 'en-GB', { day: 'numeric', month: 'long', timeZone: 'UTC' });
     const daylight = rise !== null && set !== null ? set - rise : 0;
     time.textContent = instant ? formatHour(hour) : `${daylight.toFixed(1)} h`;
-    when.textContent = instant ? date : `of daylight on ${date}`;
+    when.textContent = instant ? date : ctx.say('of daylight on {date}', { date });
     const [height, from] = [...facts.querySelectorAll('b')] as [HTMLElement, HTMLElement];
     facts.hidden = !instant;
-    height.textContent = now.altitude > 0 ? `${Math.round(now.altitude)}°` : 'Below';
-    from.textContent = COMPASS[Math.round((((now.azimuth % 360) + 360) % 360) / 45) % 8]!;
+    height.textContent = now.altitude > 0 ? `${Math.round(now.altitude)}°` : ctx.say('Below');
+    from.textContent = ctx.say(COMPASS[Math.round((((now.azimuth % 360) + 360) % 360) / 45) % 8]!);
     play.hidden = !instant;
-    play.setAttribute('aria-label', ctx.params.play ? 'Pause the day' : 'Animate the day');
+    play.setAttribute('aria-label', ctx.params.play ? ctx.say('Pause the day') : ctx.say('Animate the day'));
     play.innerHTML = ctx.params.play
       ? '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z"/></svg>'
       : '<svg viewBox="0 0 24 24" fill="currentColor" style="margin-left:0.2rem"><path d="M7 5l12 7-12 7z"/></svg>';

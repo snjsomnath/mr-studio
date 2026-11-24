@@ -138,13 +138,13 @@ export default defineLayer<Params>({
       const { direction, scale } = ctx.params;
       const { settled, progress, peak } = ctx.shared;
       speed.textContent = `${ctx.params.speed} m/s`;
-      from.textContent = `from the ${COMPASS[Math.round(direction / 45) % 8]}`;
+      from.textContent = ctx.say('from the {direction}', { direction: ctx.say(COMPASS[Math.round(direction / 45) % 8]!) });
       // The arrow points the way the wind blows, as seen on the table.
       arrow.style.transform = `rotate(${direction + 180 - ctx.site.extent.rotation_deg}deg)`;
       middle!.textContent = `${Number(scale) / 2}`;
       top!.textContent = `${scale}+ m/s`;
-      const fastest = peak ? ` Fastest spot ${peak} m/s.` : '';
-      status.textContent = settled ? `Steady.${fastest}` : progress === undefined ? '' : `Settling, ${progress}%.${fastest}`;
+      const fastest = peak ? ` ${ctx.say('Fastest spot {speed} m/s.', { speed: peak })}` : '';
+      status.textContent = settled ? `${ctx.say('Steady.')}${fastest}` : progress === undefined ? '' : `${ctx.say('Settling, {progress}%.', { progress })}${fastest}`;
     }
     update();
     return { update };

@@ -68,6 +68,7 @@
     }
   ],
   "branding": {
-    "title": "ACE MR Studio"
+    "title": "ACE MR Studio",
+    "languages": ["en", "sv"]
   }
 }

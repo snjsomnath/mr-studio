@@ -51,17 +51,17 @@ const STYLE = `
 `;
 
 /** Where Street View stands, in words for the note over the drawing. */
-function note(state: Shared['streetview'], enabled: boolean, source: string): string | null {
+function note(state: Shared['streetview'], enabled: boolean, source: string, say: PanelContext['say']): string | null {
   if (!enabled) return null;
   switch (state) {
     case 'needs-key':
-      return 'Add a Google Street View key in Sources to see the street from here.';
+      return say('Add a Google Street View key in Sources to see the street from here.');
     case 'no-source':
-      return `There is no Street View source called "${source}". Add Google Street View in Sources.`;
+      return say('There is no Street View source called "{source}". Add Google Street View in Sources.', { source });
     case 'refused':
-      return 'Google did not give a picture. Check the Street View key in Sources.';
+      return say('Google did not give a picture. Check the Street View key in Sources.');
     case 'no-coverage':
-      return 'Street View has no picture near here.';
+      return say('Street View has no picture near here.');
     default:
       return null;
   }
@@ -150,13 +150,16 @@ export function isovistHero(ctx: PanelContext<Params>, el: HTMLElement): PanelHa
     const [big, line] = readout.children as unknown as [HTMLElement, HTMLElement];
     big.textContent = gvf === undefined ? '–' : String(gvf);
     const unit = document.createElement('small');
-    unit.textContent = '% green';
+    unit.textContent = ctx.say('% green');
     big.append(unit);
-    line.textContent = s.bearing === undefined ? 'Click the table to stand somewhere' : `${s.gvfWord ?? ''} green view, looking ${compassWord(s.bearing)}`;
+    line.textContent =
+      s.bearing === undefined
+        ? ctx.say('Click the table to stand somewhere')
+        : ctx.say('{word} green view, looking {direction}', { word: ctx.say(s.gvfWord ?? ''), direction: ctx.say(compassWord(s.bearing)) });
 
     const list: [string, string][] = [];
-    if (s.seenBuildings !== undefined) list.push(['In view', `${s.seenBuildings} buildings, ${s.seenTrees ?? 0} trees`]);
-    if (ctx.params.sound) list.push(['Sounds like', mixWord(s.mix)]);
+    if (s.seenBuildings !== undefined) list.push([ctx.say('In view'), ctx.say('{buildings} buildings, {trees} trees', { buildings: s.seenBuildings, trees: s.seenTrees ?? 0 })]);
+    if (ctx.params.sound) list.push([ctx.say('Sounds like'), ctx.say(mixWord(s.mix))]);
     facts.replaceChildren(
       ...list.map(([label, value]) => {
         const card = document.createElement('div');
@@ -183,13 +186,13 @@ export function isovistHero(ctx: PanelContext<Params>, el: HTMLElement): PanelHa
         .map((p) => {
           const k = document.createElement('span');
           k.style.setProperty('--c', p.colour);
-          k.textContent = `${p.label} ${Math.round(p.share * 100)}%`;
+          k.textContent = `${ctx.say(p.label)} ${Math.round(p.share * 100)}%`;
           return k;
         }),
     );
 
     const source = ctx.params.source || 'streetview';
-    const text = note(failed ?? s.streetview, ctx.params.streetview, source);
+    const text = note(failed ?? s.streetview, ctx.params.streetview, source, ctx.say);
     message.textContent = text ?? '';
     message.hidden = text === null || shownUrl !== '' && !failed;
 

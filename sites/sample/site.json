@@ -115,6 +115,8 @@
     }
   ],
   "branding": {
-    "title": "MR Studio"
+    "title": "MR Studio",
+    "languages": ["en", "sv"],
+    "translations": { "sv": { "Sample district": "Exempelstadsdelen" } }
   }
 }

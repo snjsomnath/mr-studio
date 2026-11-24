@@ -105,10 +105,10 @@ export default defineLayer<Params>({
       if (mine !== asked) return;
       if (!service) {
         canvas.commit();
-        ctx.publish({ source: '', note: 'Choose a map source, or set one up under Sources.' });
+        ctx.publish({ source: '', note: ctx.say('Choose a map source, or set one up under Sources.') });
         return;
       }
-      ctx.publish({ source: service.credit, note: 'Loading the map…' });
+      ctx.publish({ source: service.credit, note: ctx.say('Loading the map…') });
       const tiles = tilesFor(ctx.site, canvas.scale, service.template, service.maxzoom);
       const g = canvas.ctx;
       let failed = 0;
@@ -152,7 +152,7 @@ export default defineLayer<Params>({
       over?.();
       canvas.commit();
       const lost = failed === tiles.length && tiles.length > 0;
-      ctx.publish({ source: service.credit, note: lost ? (style === 'source' ? 'The map could not be loaded from this source. Check it under Sources.' : 'The map could not be loaded: no connection to the map service, and no copy kept from before.') : why });
+      ctx.publish({ source: service.credit, note: lost ? (style === 'source' ? ctx.say('The map could not be loaded from this source. Check it under Sources.') : ctx.say('The map could not be loaded: no connection to the map service, and no copy kept from before.')) : why });
     }
 
     let shapes: [ReturnType<typeof geojsonPolygons>, ReturnType<typeof geojsonLines>] = [[], []];

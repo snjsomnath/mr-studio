@@ -4,6 +4,8 @@
 // effects come from the Chalmers campus demo's welcome tour. Nothing on the rails lights up,
 // so the loop never looks like a layer someone opened.
 
+import { t } from './i18n.ts';
+
 /** The backgrounds a layer can ask for in `attract.effect` (docs/contracts/present.md, Button). */
 export const ATTRACT_EFFECTS = ['wind', 'rain', 'sun', 'sightlines', 'grid', 'waves', 'particles', 'default'] as const;
 export type AttractEffect = (typeof ATTRACT_EFFECTS)[number];
@@ -244,7 +246,7 @@ export class AttractLoop {
     heading.textContent = title;
     const hint = document.createElement('p');
     hint.className = 'attract-hint';
-    hint.textContent = options.welcome ?? 'Choose a layer to bring it to the table.';
+    hint.textContent = options.welcome ?? t('Choose a layer to bring it to the table.');
     this.tour.className = 'attract-tour';
     this.tour.setAttribute('aria-live', 'polite');
     this.name.className = 'attract-name';
