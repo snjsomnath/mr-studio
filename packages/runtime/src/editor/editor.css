@@ -3184,3 +3184,21 @@ body[data-role='edit'] .ed-surface .table-frame {
   align-self: flex-start;
   text-align: left;
 }
+
+/* Table settings: the logo, chosen from the table's pictures (#156). */
+.ed-logo {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.ed-logo-preview {
+  height: 2rem;
+  max-width: 5rem;
+  object-fit: contain;
+  border: 1px solid var(--ed-line, #e3e3e3);
+  border-radius: 4px;
+  background: #fff;
+  padding: 2px;
+}

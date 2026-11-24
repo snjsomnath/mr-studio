@@ -86,13 +86,13 @@ const TRANSITIONS: [StepTransitionKind, string][] = [
 ];
 
 /** The site's pictures and video, as paths inside the site (`data/media/x.png`). */
-async function siteMedia(): Promise<string[]> {
+export async function siteMedia(): Promise<string[]> {
   const answer = (await fetch('/api/data/media').then((r) => r.json()).catch(() => ({ media: [] }))) as { media?: string[] };
   return answer.media ?? [];
 }
 
 /** Keeps pictures or video in the table; answers their paths, or throws with the host's reason. */
-async function addMedia(files: Iterable<File>): Promise<string[]> {
+export async function addMedia(files: Iterable<File>): Promise<string[]> {
   const paths: string[] = [];
   for (const file of files) {
     const response = await fetch(`/api/data/media?name=${encodeURIComponent(file.name)}`, { method: 'POST', body: file });

@@ -233,7 +233,7 @@ export class AttractLoop {
   private readonly stops: () => AttractStop[];
   private readonly stepS: number;
 
-  constructor(title: string, stops: () => AttractStop[], options: { stepS?: number; credits?: string; welcome?: string } = {}) {
+  constructor(title: string, stops: () => AttractStop[], options: { stepS?: number; credits?: string; welcome?: string; logo?: string | null } = {}) {
     this.stops = stops;
     this.stepS = options.stepS ?? 4;
     this.element = document.createElement('div');
@@ -252,6 +252,15 @@ export class AttractLoop {
     this.name.className = 'attract-name';
     this.line.className = 'attract-line';
     this.tour.append(this.name, this.line);
+    // The site's logo above its title (#156).
+    if (options.logo) {
+      const logo = document.createElement('img');
+      logo.className = 'attract-logo';
+      logo.alt = '';
+      logo.src = `/site/${options.logo.replace(/^\/+/, '')}`;
+      logo.addEventListener('error', () => logo.remove());
+      words.append(logo);
+    }
     words.append(heading, hint, this.tour);
     this.element.append(this.canvas, words);
     if (options.credits) {

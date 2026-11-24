@@ -904,7 +904,7 @@ export class Controller {
     const welcome = site.branding.welcome ? t(site.branding.welcome) : undefined;
     if (centre) {
       const credits = (site.tv?.about?.credits ?? []).map((c) => (c.role ? `${t(c.role)}: ${c.name}` : c.name)).join('  ·  ');
-      this.attract = new AttractLoop(heading, () => this.attractStops(), { stepS: site.tv?.attract_s, credits: credits || undefined, welcome });
+      this.attract = new AttractLoop(heading, () => this.attractStops(), { stepS: site.tv?.attract_s, credits: credits || undefined, welcome, logo: site.branding.logo });
       this.welcome = this.attract.element;
     } else {
       this.welcome = el('div', 'layer-welcome');
