@@ -16,7 +16,7 @@ use tauri::menu::{Menu, MenuBuilder, MenuItem, MenuItemBuilder, PredefinedMenuIt
 use tauri::{AppHandle, Manager, Runtime, Wry};
 
 /// The actions, as menu item ids and as the editor page names them.
-pub const ACTIONS: [&str; 9] = ["new", "open", "save", "save_as", "export", "reveal", "close", "home", "settings"];
+pub const ACTIONS: [&str; 10] = ["new", "open", "save", "save_as", "export", "share", "reveal", "close", "home", "settings"];
 
 /// MR Studio > Install command line tool… on macOS, File on Windows and Linux (#370).
 pub const INSTALL_CLI: &str = "install-cli";
@@ -39,6 +39,8 @@ fn file_submenu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Submenu<R>> {
         .item(&item("save_as", "Save As…", Some("CmdOrCtrl+Shift+S"))?)
         // One .mrstable file to take to another computer (#85).
         .item(&item("export", "Export table…", None)?)
+        // The same file, attached to a new email in the computer's mail app (#372).
+        .item(&item("share", "Share by email…", None)?)
         .item(&item("reveal", reveal, None)?)
         .separator()
         // This table's own settings, in the editor (#73); app settings are MR Studio > Settings.

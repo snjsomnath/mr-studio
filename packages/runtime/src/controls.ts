@@ -11,6 +11,7 @@ import { loadEntities } from './entities.ts';
 export { isAtRest };
 import { mountStage } from './dashboard.ts';
 import { layerModule } from './registry.ts';
+import { customHero, hasCustomHero } from './custom-hero.ts';
 import { MEDIA_KINDS, canAddMedia, mediaItems, onMediaChanged, requestAddMedia, sizeOf, titleOf, valueOf } from './media.ts';
 import { Picker } from './picker.ts';
 import type { Choice, PickerAction } from './picker.ts';
@@ -29,7 +30,7 @@ export function el<K extends keyof HTMLElementTagNameMap>(tag: K, className?: st
 export interface Widget {
   control: Control;
   row: HTMLElement;
-  sync(value: unknown, params?: Record<string, unknown>): void;
+  sync(value: unknown, params?: Record<string, unknown>, shared?: Record<string, unknown>): void;
 }
 
 function formatNumber(value: number, control: Extract<Control, { type: 'range' }>): string {
@@ -223,7 +224,7 @@ export function widget(control: Control, send: (value: unknown) => void, act: ()
   const id = `c-${Math.random().toString(36).slice(2)}`;
   const label = el('label', 'control-label', control.label);
   label.htmlFor = id;
-  let sync: (value: unknown, params?: Record<string, unknown>) => void = () => {};
+  let sync: (value: unknown, params?: Record<string, unknown>, shared?: Record<string, unknown>) => void = () => {};
 
   switch (control.type) {
     case 'range': {
@@ -234,14 +235,19 @@ export function widget(control: Control, send: (value: unknown) => void, act: ()
       let held = false;
       input.addEventListener('pointerdown', () => (held = true));
       for (const type of ['pointerup', 'pointercancel', 'blur']) input.addEventListener(type, () => (held = false));
+      // `shows`: what the layer publishes for this value reads better than the number (#338).
+      let shown = '';
       input.addEventListener('input', () => {
-        readout.textContent = formatNumber(input.valueAsNumber, control);
+        if (!shown) readout.textContent = formatNumber(input.valueAsNumber, control);
         send(input.valueAsNumber);
       });
-      sync = (value) => {
+      sync = (value, _params, shared) => {
+        const published = control.shows ? shared?.[control.shows] : undefined;
+        shown = typeof published === 'string' || typeof published === 'number' ? String(published) : '';
+        if (shown) readout.textContent = shown;
         if (held || typeof value !== 'number') return;
         input.value = String(value);
-        readout.textContent = formatNumber(value, control);
+        if (!shown) readout.textContent = formatNumber(value, control);
       };
       const head = el('div', 'control-head');
       head.append(label, readout);
@@ -758,7 +764,11 @@ function entitySetPart(
   all.type = 'button';
   const count = el('span', 'entity-count');
   actions.append(reset, all, count);
-  part.append(head, controls, actions);
+  // Tap to read (#38): the picked one's facts, read only.
+  const facts = el('dl', 'entity-facts');
+  facts.hidden = true;
+  part.append(head, facts, controls, actions);
+  if (set.controls.length === 0) actions.hidden = true;
 
   let features: EntityFeature[] = [];
   let picked: string | null = null;
@@ -807,6 +817,9 @@ function entitySetPart(
     name.textContent = feature?.label ?? selection ?? '';
     name.hidden = selection === null;
     hint.hidden = selection !== null;
+    const rows = feature?.facts ?? [];
+    facts.hidden = rows.length === 0;
+    facts.replaceChildren(...rows.flatMap(([term, value]) => [el('dt', undefined, say(term, manifest)), el('dd', undefined, value)]));
     controls.hidden = selection === null;
     const values = selection !== null ? entityValues(set, state.params, selection) : {};
     for (const w of widgets) {
@@ -1096,13 +1109,17 @@ export class Controller {
     const heroCleanups: (() => void)[] = [];
     let heroHandlers: PanelHandlers | void = undefined;
     const module = layerModule(manifest.id);
-    if (module?.hero) {
+    // A custom layer has no code; its hero is a small map of its data and its places (#342).
+    const heroOf =
+      module?.hero ??
+      (!module && hasCustomHero(manifest.custom) ? (ctx: PanelContext, place: HTMLElement) => customHero(ctx, place, () => store.manifest(manifest.id)?.custom) : undefined);
+    if (heroOf) {
       const ctx: PanelContext = Object.assign(Object.create(baseContext(store, connection, id)), {
         panel: 'hero',
         onCleanup: (cleanup: () => void) => heroCleanups.push(cleanup),
       });
       try {
-        heroHandlers = module.hero(ctx, hero);
+        heroHandlers = heroOf(ctx, hero);
         hero.hidden = false;
       } catch (error) {
         console.error(`[${id}] hero`, error);
@@ -1206,7 +1223,7 @@ export class Controller {
         const stepped = Boolean(manifest.sequence && state.step);
         for (const w of widgets) {
           w.row.hidden = stepped || !isVisible(w.control, state.params) || Boolean(state.hide?.includes(w.control.id));
-          w.sync(state.params[w.control.id], state.params);
+          w.sync(state.params[w.control.id], state.params, state.shared);
         }
         more.hidden = ![...moreRows.children].some((row) => !(row as HTMLElement).hidden);
         // The stage's panels read the layer's values; one sync a frame is plenty (#357).
@@ -1533,7 +1550,7 @@ export class Controller {
         body.hidden = !state.active;
         for (const w of widgets) {
           w.row.hidden = !isVisible(w.control, state.params) || (phone && Boolean(state.hide?.includes(w.control.id)));
-          w.sync(state.params[w.control.id], state.params);
+          w.sync(state.params[w.control.id], state.params, state.shared);
         }
         tools?.sync(state.active);
       },

@@ -2678,7 +2678,7 @@ dependencies = [
 
 [[package]]
 name = "mr-studio-app"
-version = "0.24.0"
+version = "0.25.0"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -2686,6 +2686,9 @@ dependencies = [
  "mrs-engine",
  "mrs-host",
  "mrs-site",
+ "objc2",
+ "objc2-app-kit",
+ "objc2-foundation",
  "reqwest 0.12.28",
  "semver",
  "serde",
@@ -2706,7 +2709,7 @@ dependencies = [
 
 [[package]]
 name = "mrs-cli"
-version = "0.24.0"
+version = "0.25.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -2721,7 +2724,7 @@ dependencies = [
 
 [[package]]
 name = "mrs-engine"
-version = "0.24.0"
+version = "0.25.0"
 dependencies = [
  "bytemuck",
  "pollster",
@@ -2734,7 +2737,7 @@ dependencies = [
 
 [[package]]
 name = "mrs-host"
-version = "0.24.0"
+version = "0.25.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -2756,7 +2759,7 @@ dependencies = [
 
 [[package]]
 name = "mrs-relay"
-version = "0.24.0"
+version = "0.25.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -2773,7 +2776,7 @@ dependencies = [
 
 [[package]]
 name = "mrs-site"
-version = "0.24.0"
+version = "0.25.0"
 dependencies = [
  "mrs-engine",
  "png",

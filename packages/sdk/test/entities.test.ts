@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { entityChanges, entityFeatures, entityValues, pickEntity } from '../src/entities.ts';
+import { entityChanges, entityFeatures, entityValues, factsOf, pickEntity } from '../src/entities.ts';
 import type { EntitySet } from '../src/types.ts';
 
 const set: EntitySet = {
@@ -62,4 +62,15 @@ test('changes name the entities whose values differ', () => {
   assert.deepEqual(entityChanges(before, after), [{ set: 'members', ids: ['1', '3'] }]);
   assert.deepEqual(entityChanges(after, after), []);
   assert.deepEqual(entityChanges(after, {}), [{ set: 'members', ids: ['1', '2', '3'] }]);
+});
+
+test('tap to read: features by their place in the file, with their facts', () => {
+  const read = entityFeatures(collection, { key: '#', label: 'name', facts: ['owner', 'floor_area', 'name'] });
+  assert.deepEqual(read.map((f) => f.id), ['1', '2', '3', '4', '5']);
+  assert.equal(read[0]!.label, 'Kårhuset');
+  assert.equal(read[1]!.label, '2');
+  assert.deepEqual(read[0]!.facts, [['Owner', 'Chalmers']]);
+  assert.deepEqual(factsOf({ floor_area: 12345.678, ok: true }, ['floor_area', 'ok', 'missing']), [['Floor area', '12,345.68'], ['Ok', 'Yes']]);
+  // Without facts nothing extra is kept.
+  assert.equal(entityFeatures(collection, set)[0]!.facts, undefined);
 });
