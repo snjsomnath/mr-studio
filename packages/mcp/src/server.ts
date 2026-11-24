@@ -13,6 +13,7 @@ import { checkIdea } from './ideas.ts';
 import { RECIPE_VOCABULARY, legendFor } from './recipe.ts';
 import { brainstormPrompt, buildFromDataPrompt, compareScenariosPrompt, designExperiencePrompt, planWorkshopPrompt, dashboardPrompt, newProjectPrompt, requestPrompt, serverInstructions } from './prompts.ts';
 import { CORE_REPO, REQUEST_KINDS, submitDraft, writeDraft, type RequestKind } from './requests.ts';
+import { DATA_FORMATS } from '../../runtime/src/data-formats.ts';
 import {
   availableLayers,
   checkParams,
@@ -1259,6 +1260,15 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
       const p = patterns().find((x) => x.id === String(id));
       return { contents: [{ uri: uri.href, mimeType: 'text/markdown', text: p ? p.text : `No pattern ${id}. Patterns: ${patterns().map((x) => x.id).join(', ')}` }] };
     },
+  );
+
+  server.registerResource(
+    'data-formats',
+    'mrstudio://data-formats',
+    { title: 'Data formats', description: 'What a good file looks like for each kind of data a table takes (buildings, ground, trees, streets, walking paths, trips): the words the editor shows on each "?"', mimeType: 'text/markdown' },
+    async (uri) => ({
+      contents: [{ uri: uri.href, mimeType: 'text/markdown', text: DATA_FORMATS.map((f) => `## ${f.name} (\`${f.dataset}\`, ${f.files})\n\n${f.example}`).join('\n\n') }],
+    }),
   );
 
   server.registerResource(

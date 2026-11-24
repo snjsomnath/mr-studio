@@ -46,6 +46,7 @@ The server writes `site.json`, never layer code. When a project needs a new laye
 | --- | --- |
 | `mrstudio://concepts` | How to design an experience: the three surfaces, what goes where, the words and the constraints ([experience-design.md](experience-design.md)) |
 | `mrstudio://patterns/<id>` | Experience patterns (compare today and the proposal, map it together, a guided story…), each with the table, controller and phone roles and the capability ids it uses |
+| `mrstudio://data-formats` | What a good file looks like for each kind of data a table takes, in the words of the editor's "?" |
 | `mrstudio://capabilities`, `mrstudio://capabilities/<id>` | The capability catalogue, and one record in full |
 | `mrstudio://schema/site`, `mrstudio://schema/recipe` | The keys `site.json` accepts at each level, and a custom layer recipe's blocks, props, colours, ramps and icons |
 | `mrstudio://examples/<id>` | Real sites and samples in the core: their layers, steps and custom layers |
