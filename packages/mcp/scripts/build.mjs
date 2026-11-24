@@ -3,13 +3,14 @@
 // Windows, macOS and Linux with nothing else installed.
 
 import { build } from 'esbuild';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const pkg = resolve(here, '..');
 const root = resolve(pkg, '..', '..');
+const { version } = JSON.parse(readFileSync(join(pkg, 'package.json'), 'utf8'));
 
 // The catalog loader is TypeScript; Node 22.18+ runs it directly.
 const { loadLive } = await import(pathToFileURL(join(pkg, 'src', 'core.ts')).href);
@@ -25,9 +26,9 @@ await build({
   format: 'esm',
   target: 'node20',
   banner: { js: "import { createRequire as __cr } from 'node:module'; const require = __cr(import.meta.url);" },
-  define: { __MRSTUDIO_CATALOG__: JSON.stringify(JSON.stringify(snapshot)) },
+  define: { __MRSTUDIO_CATALOG__: JSON.stringify(JSON.stringify(snapshot)), __MRSTUDIO_SERVER_VERSION__: JSON.stringify(version) },
   minify: true,
   legalComments: 'none',
   logLevel: 'warning',
 });
-console.log(`built dist/mrstudio-mcp.mjs: core ${catalog.version}, ${catalog.layers.length} layers, ${Object.keys(catalog.docs).length} docs, ${catalog.blocks.filter((b) => b.status === 'built').length}/${catalog.blocks.length} blocks built`);
+console.log(`built dist/mrstudio-mcp.mjs ${version}: core ${catalog.version}, ${catalog.layers.length} layers, ${Object.keys(catalog.docs).length} docs, ${catalog.blocks.filter((b) => b.status === 'built').length}/${catalog.blocks.length} blocks built`);
