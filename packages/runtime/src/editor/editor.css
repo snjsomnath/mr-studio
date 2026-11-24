@@ -3888,3 +3888,331 @@ body[data-role='edit'] .table-frame.is-zoomed .table-surface {
 body[data-role='edit'] > .connection {
   display: none;
 }
+
+/* ---- Command search and the shortcut sheet (#65) ---------------------------- */
+
+.ed-commands {
+  width: min(560px, calc(100vw - 32px));
+  max-height: min(480px, calc(100vh - 120px));
+  margin: 12vh auto auto;
+  padding: 0;
+  border: 1px solid var(--ed-line);
+  border-radius: 10px;
+  background: var(--ed-panel);
+  color: var(--ed-text);
+  box-shadow: 0 18px 48px rgb(20 24 34 / 22%);
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.ed-commands[open] {
+  display: flex;
+}
+
+.ed-commands::backdrop {
+  background: rgb(20 24 34 / 18%);
+}
+
+.ed-commands-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--ed-line);
+  color: var(--ed-text-2);
+}
+
+.ed-commands-field {
+  flex: 1;
+  height: 44px;
+  border: 0;
+  outline: 0;
+  font: inherit;
+  font-size: 15px;
+  color: var(--ed-text);
+  background: transparent;
+}
+
+.ed-commands-list {
+  flex: 1;
+  margin: 0;
+  padding: 6px;
+  list-style: none;
+  overflow-y: auto;
+}
+
+.ed-command {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 32px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.ed-command[aria-selected='true'] {
+  background: var(--ed-accent-soft);
+}
+
+.ed-command[aria-disabled='true'] {
+  cursor: default;
+  color: var(--ed-text-2);
+}
+
+.ed-command-icon {
+  display: inline-flex;
+  width: 24px;
+  height: 24px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 5px;
+  background: var(--ed-chrome);
+  color: var(--ed-text-2);
+  flex: none;
+}
+
+.ed-command[aria-selected='true'] .ed-command-icon {
+  background: var(--ed-accent);
+  color: #fff;
+}
+
+.ed-command-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.ed-command-text small {
+  font-size: 11px;
+  color: var(--ed-text-2);
+}
+
+.ed-command-group {
+  font-size: 11px;
+  color: var(--ed-text-2);
+}
+
+.ed-command kbd,
+.ed-shortcuts dd {
+  font: 11px/16px ui-monospace, 'SF Mono', Consolas, monospace;
+  padding: 1px 6px;
+  border: 1px solid var(--ed-line);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: var(--ed-window);
+  color: var(--ed-text-2);
+  white-space: nowrap;
+}
+
+.ed-command-none {
+  padding: 16px 8px;
+  color: var(--ed-text-2);
+}
+
+.ed-commands-foot {
+  padding: 8px 14px;
+  border-top: 1px solid var(--ed-line);
+  font-size: 11px;
+  color: var(--ed-text-2);
+  background: var(--ed-window);
+}
+
+.ed-shortcuts {
+  width: min(720px, calc(100vw - 32px));
+}
+
+.ed-shortcuts-body {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 20px;
+  padding: 4px 20px 20px;
+}
+
+.ed-shortcuts h3 {
+  margin: 0 0 8px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ed-text-2);
+}
+
+.ed-shortcuts dl {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 6px 12px;
+  margin: 0;
+}
+
+.ed-shortcuts dt {
+  font-size: 12px;
+}
+
+.ed-shortcuts dd {
+  margin: 0;
+  justify-self: end;
+}
+
+.ed-search {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  min-width: 180px;
+  padding: 0 6px 0 10px;
+  border: 1px solid var(--ed-line);
+  border-radius: 6px;
+  background: var(--ed-panel);
+  color: var(--ed-text-2);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.ed-search span {
+  flex: 1;
+  text-align: left;
+}
+
+.ed-search kbd {
+  font: 11px/16px ui-monospace, 'SF Mono', Consolas, monospace;
+  padding: 0 5px;
+  border: 1px solid var(--ed-line);
+  border-radius: 4px;
+  background: var(--ed-window);
+}
+
+.ed-search:hover {
+  border-color: var(--ed-accent);
+  color: var(--ed-text);
+}
+
+/* ---- A 13-inch laptop and narrower (#66) ------------------------------------ */
+
+.ed-tool.is-compact svg {
+  width: 16px;
+  height: 16px;
+}
+
+.ed-group.is-folded .ed-group-tools {
+  gap: 0;
+}
+
+.ed-drawer-toggle {
+  display: none;
+}
+
+@media (max-width: 1365px) {
+  .ed-left {
+    width: 216px;
+  }
+
+  .ed-inspector {
+    width: 280px;
+  }
+}
+
+@media (max-width: 1199px) {
+  .ed-canvas-detail {
+    display: none;
+  }
+
+  .ed-canvas-view span {
+    display: none;
+  }
+
+  .ed-canvas-view {
+    padding: 0 8px;
+  }
+
+  .ed-search {
+    min-width: 0;
+  }
+
+  .ed-search span {
+    display: none;
+  }
+}
+
+@media (max-width: 1099px) {
+  .ed-body {
+    position: relative;
+  }
+
+  .ed-left {
+    width: 196px;
+  }
+
+  .ed-inspector {
+    position: absolute;
+    z-index: 30;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: min(320px, 85vw);
+    box-shadow: -12px 0 32px rgb(20 24 34 / 16%);
+    transform: translateX(100%);
+    visibility: hidden;
+    transition:
+      transform 0.18s ease,
+      visibility 0s 0.18s;
+  }
+
+  .ed.is-drawer-open .ed-inspector {
+    transform: none;
+    visibility: visible;
+    transition: transform 0.18s ease;
+  }
+
+  .ed-drawer-toggle {
+    display: inline-flex;
+  }
+
+  .ed-drawer-toggle[aria-expanded='true'] {
+    background: var(--ed-accent-soft);
+    border-color: var(--ed-accent);
+  }
+}
+
+.ed-tool.is-more {
+  color: var(--ed-accent);
+}
+
+.ed-ribbon.is-tight .ed-group {
+  padding: 0 6px;
+}
+
+.ed-ribbon.is-tight .ed-group:first-child {
+  padding-left: 0;
+}
+
+/* The status line stays one line: what is said first gives way first. */
+.ed-status {
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.ed-status > * {
+  flex: none;
+}
+
+.ed-status > :first-child {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ed .ed-commands-field:focus,
+.ed .ed-commands-field:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
+.ed .ed-commands-field {
+  border: 0;
+  background: transparent;
+  padding: 0;
+}

@@ -18,6 +18,9 @@ import { Importer, targetFor } from './importer.ts';
 import { confirmLeave, actionFor, fileButton, keys as shortcut, mac } from './file-menu.ts';
 import { contextMenu, renameInline, typing } from './tree-tools.ts';
 import { CanvasTools } from './canvas-tools.ts';
+import { fitRibbon } from './ribbon-fit.ts';
+import { commandSearch, shortcutSheet } from './commands.ts';
+import type { Command } from './commands.ts';
 import { TimeBar } from './time-bar.ts';
 import type { MenuItem } from './tree-tools.ts';
 import type { FileAction } from './file-menu.ts';
@@ -73,6 +76,30 @@ function openHelp(page: string): void {
   else fallback();
 }
 
+/**
+ * Every button says what it does when the pointer rests on it (#88): one with only an icon and
+ * an aria-label shows that label, so no control in the editor is a mystery.
+ */
+function tooltips(root: HTMLElement): void {
+  const fill = (node: Element): void => {
+    if (!(node instanceof HTMLButtonElement) || node.title) return;
+    const label = node.ariaLabel ?? node.getAttribute('aria-label');
+    if (label) node.title = label;
+  };
+  const all = (node: Node): void => {
+    if (!(node instanceof Element)) return;
+    fill(node);
+    node.querySelectorAll('button[aria-label]:not([title])').forEach(fill);
+  };
+  all(root);
+  new MutationObserver((changes) => {
+    for (const change of changes) {
+      if (change.type === 'attributes') fill(change.target as Element);
+      else change.addedNodes.forEach(all);
+    }
+  }).observe(root, { subtree: true, childList: true, attributes: true, attributeFilter: ['aria-label'] });
+}
+
 function button(className: string, label: string, iconName?: string, size = 16): HTMLButtonElement {
   const node = el('button', className);
   node.type = 'button';
@@ -86,6 +113,8 @@ type RibbonTab = 'edit' | SetupTab | 'display' | 'media' | 'help';
 /** Each setup tab and the step of the guide it opens. */
 const SETUP_STEP: Record<SetupTab, number> = { place: WHERE, rest: REST, design: BUTTONS };
 const isSetupTab = (tab: RibbonTab): tab is SetupTab => tab in SETUP_STEP;
+/** A window too narrow for the list, the map and the settings side by side (#66); the CSS uses the same width. */
+const NARROW = matchMedia('(max-width: 1099px)');
 /** The ribbon tab to come back to after the page reloads, as after moving the table. */
 const TAB_KEY = 'mrs-ribbon-tab';
 
@@ -163,6 +192,9 @@ export class Editor {
   /** While held, a change of site waits to reload the page; `true` once one came in. */
   private held = false;
   private reloadWaiting = false;
+  private lastAction: { action: string; at: number; from: string } | null = null;
+  /** In a narrow window the inspector is a drawer over the right of the map, opened from here (#66). */
+  private readonly drawerToggle = el('button', 'ed-button ed-drawer-toggle');
 
   constructor(root: HTMLElement, store: Store, connection: Connection) {
     this.store = store;
@@ -186,12 +218,8 @@ export class Editor {
       this.titleName.textContent = store.state.site.name;
       if (this.context.kind === 'table') this.render();
     });
-    window.addEventListener('mrs-edit', (event) => {
-      if ((event as CustomEvent<{ action: string }>).detail.action === 'table-settings') {
-        if (this.wizard) this.closeWizard();
-        this.go({ kind: 'table' });
-      }
-    });
+    // The app's native menu (src-tauri/src/file_menu.rs) asks for these by name.
+    window.addEventListener('mrs-edit', (event) => this.menuAction((event as CustomEvent<{ action: string }>).detail.action, 'menu'));
     name.append(tableName);
     left.append(name, this.tree);
 
@@ -278,6 +306,15 @@ export class Editor {
       if (!this.goTo(location.hash)) this.go({ kind: 'home' }, null, false);
     });
     this.listenForKeys();
+    tooltips(this.shell);
+    // A 13-inch laptop (#66): the ribbon folds its big tools, and a narrow window turns the settings into a drawer.
+    fitRibbon(this.ribbon);
+    this.drawerToggle.type = 'button';
+    this.drawerToggle.append(icon('settings', 14), el('span', undefined, 'Settings'));
+    this.drawerToggle.title = 'Show the settings of what is selected';
+    this.drawerToggle.addEventListener('click', () => this.setDrawer(!this.shell.classList.contains('is-drawer-open')));
+    this.surfaces.addEventListener('pointerdown', () => this.setDrawer(false));
+    NARROW.addEventListener('change', () => this.setDrawer(false));
 
     // A new table opens in the setup guide, and so does one with nothing on it yet.
     const query = new URLSearchParams(location.search);
@@ -747,8 +784,24 @@ export class Editor {
    */
   private listenForKeys(): void {
     window.addEventListener('keydown', (event) => {
-      if (typing(event) || event.defaultPrevented || document.querySelector('dialog[open]')) return;
       const mod = mac ? event.metaKey : event.ctrlKey;
+      // Command search and the shortcut sheet open from anywhere, a field included (#65).
+      if (mod && !event.altKey && !event.shiftKey && event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        this.menuAction('commands', 'key');
+        return;
+      }
+      if (mod && !event.altKey && (event.key === '/' || event.key === '?')) {
+        event.preventDefault();
+        this.menuAction('shortcuts', 'key');
+        return;
+      }
+      if (typing(event) || event.defaultPrevented || document.querySelector('dialog[open]')) return;
+      if (mod && !event.altKey && event.key === 'Enter') {
+        event.preventDefault();
+        this.presentButton.click();
+        return;
+      }
       const target = this.wizard ? null : this.target();
       if ((event.key === 'Delete' || event.key === 'Backspace') && !mod && target) {
         event.preventDefault();
@@ -760,7 +813,8 @@ export class Editor {
         event.preventDefault();
         this.rename(this.context.id);
       } else if (event.key === 'Escape' && !document.querySelector('.ed-context, .ed-add-menu, .ed-history')) {
-        if (this.wizard) this.closeWizard();
+        if (this.shell.classList.contains('is-drawer-open')) this.setDrawer(false);
+        else if (this.wizard) this.closeWizard();
         else if (this.context.kind !== 'home' || this.homeItem) {
           this.homeItem = null;
           this.go({ kind: 'home' });
@@ -777,6 +831,235 @@ export class Editor {
         requestAnimationFrame(() => this.tree.querySelector<HTMLElement>(`.ed-row[data-layer="${id}"], .ed-row[data-context="${id}"]`)?.focus());
       }
     });
+  }
+
+  private setDrawer(open: boolean): void {
+    const on = open && NARROW.matches;
+    this.shell.classList.toggle('is-drawer-open', on);
+    this.drawerToggle.setAttribute('aria-expanded', String(on));
+  }
+
+  /** What the native menus, the command search and the keys ask for by name (#65, #88). */
+  private menuAction(action: string, from: 'menu' | 'key' | 'page' = 'page'): void {
+    // The app's menu shortcut and the page's own key can both bring the same press: once is enough.
+    const now = performance.now();
+    const last = this.lastAction;
+    this.lastAction = { action, at: now, from };
+    if (last && last.action === action && last.from !== from && from !== 'page' && last.from !== 'page' && now - last.at < 400) return;
+    switch (action) {
+      case 'table-settings':
+        if (this.wizard) this.closeWizard();
+        this.go({ kind: 'table' });
+        break;
+      case 'commands':
+        commandSearch(() => this.commands(), this.shell);
+        break;
+      case 'shortcuts':
+        shortcutSheet(this.shortcutGroups(), this.shell);
+        break;
+      case 'report':
+        void this.reportProblem();
+        break;
+      case 'help':
+        openHelp('');
+        break;
+      case 'duplicate': {
+        const target = this.target();
+        if (target) void this.duplicate(target);
+        break;
+      }
+      case 'view-map':
+      case 'view-controller':
+      case 'view-both':
+        this.canvasTools.setView(action.slice(5) as 'map' | 'controller' | 'both');
+        break;
+      case 'zoom-in':
+        this.canvasTools.step(1);
+        break;
+      case 'zoom-out':
+        this.canvasTools.step(-1);
+        break;
+      case 'zoom-fit':
+        this.canvasTools.setZoom('fit');
+        break;
+      case 'zoom-100':
+        this.canvasTools.setZoom(1);
+        break;
+      case 'outline':
+        this.canvasTools.setOutline(!this.canvasTools.outlined);
+        break;
+    }
+  }
+
+  /** Every key the editor knows, for the sheet (Cmd/Ctrl+/) and the Help tab. */
+  private shortcutGroups(): { name: string; keys: [string, string][] }[] {
+    const k = (key: string, shift = false) => shortcut(key, shift);
+    return [
+      {
+        name: 'Anywhere',
+        keys: [
+          ['Search commands, layers and settings', k('K')],
+          ['Keyboard shortcuts', k('/')],
+          ['Present', k('Enter')],
+          ['Undo', k('Z')],
+          ['Redo', mac ? k('Z', true) : 'Ctrl+Y'],
+          ['Save', k('S')],
+          ['Close the guide, or select nothing', 'Esc'],
+        ],
+      },
+      {
+        name: 'The selected layer',
+        keys: [
+          ['Rename its button', 'F2'],
+          ['Duplicate', k('D')],
+          ['Remove (Undo puts it back)', mac ? '⌫' : 'Delete'],
+          ['Move through the list', '↑ ↓'],
+          ['Reset one setting', `${mac ? '⌥' : 'Alt'}+click its name`],
+          ['Type a value exactly', 'Click the number'],
+        ],
+      },
+      {
+        name: 'The map in the middle',
+        keys: [
+          ['Zoom in', k('+')],
+          ['Zoom out', k('-')],
+          ['Fit the map', k('0')],
+          ['100 %, as on the projector', k('1')],
+          ['Zoom around the pointer', `${mac ? '⌘' : 'Ctrl'}+scroll`],
+          ['Move around a zoomed map', 'Space+drag'],
+        ],
+      },
+    ];
+  }
+
+  /**
+   * The command search's list (#65): going to each layer and place, adding each layer, the
+   * ribbon's tools, the view of the map, and Help. Asked afresh each time it opens.
+   */
+  private commands(): Command[] {
+    const list: Command[] = [];
+    const k = (key: string, shift = false) => shortcut(key, shift);
+    const goTo = (context: Context, item: string | null = null) => () => {
+      if (this.wizard) this.closeWizard();
+      this.go(context, item);
+    };
+    for (const { id, manifest, state } of this.instances()) {
+      const name = layerButton(id, manifest, state, defaultSideOf(this.store, id)).name;
+      if (state.parent) {
+        const parent = this.store.state.layers[state.parent];
+        const parentManifest = parent && this.store.manifest(parent.layer);
+        const parentName = parent && parentManifest ? layerButton(state.parent, parentManifest, parent).name : '';
+        list.push({ id: `go:${id}`, label: `${manifest.name} in ${parentName}`, group: 'Go to', icon: manifest.icon, also: `open edit ${manifest.id}`, run: goTo({ kind: 'layer', id: state.parent }, id) });
+      } else if (isAmbient(manifest)) {
+        list.push({ id: `go:${id}`, label: `${manifest.name} at rest`, group: 'Go to', icon: manifest.icon, also: `open edit map life ${manifest.id}`, run: () => {
+          if (this.wizard) this.closeWizard();
+          this.homeItem = id;
+          this.go({ kind: 'home' });
+        } });
+      } else {
+        list.push({ id: `go:${id}`, label: name, group: 'Go to', icon: manifest.icon, also: `layer open edit ${manifest.name} ${manifest.id}`, run: goTo({ kind: 'layer', id }) });
+      }
+    }
+    list.push(
+      { id: 'go:home', label: AT_REST, group: 'Go to', icon: 'home', also: 'home map life', run: goTo({ kind: 'home' }) },
+      { id: 'go:controller', label: 'Controller', group: 'Go to', icon: 'tv', also: 'buttons screen dashboard', run: goTo({ kind: 'controller' }) },
+      { id: 'go:phone', label: 'Phones', group: 'Go to', icon: 'phone', also: 'visitors mobile', run: goTo({ kind: 'phone' }) },
+      { id: 'go:table', label: 'Table settings', group: 'Go to', icon: 'settings', also: 'name time zone place size projector', run: goTo({ kind: 'table' }) },
+    );
+    const target = this.wizard ? null : this.target();
+    const none = 'Select a layer first';
+    list.push(
+      { id: 'present', label: 'Present', group: 'Table', icon: 'tv', keys: k('Enter'), also: 'start show projector', run: () => this.presentButton.click() },
+      { id: 'preview', label: 'Preview the table in a window', group: 'Table', icon: 'play', also: 'open', run: () => openView('table') },
+      { id: 'guide', label: this.wizard ? 'Close the setup guide' : 'Setup guide', group: 'Table', icon: 'route', also: 'wizard start steps', run: () => (this.wizard ? this.closeWizard() : this.openWizard()) },
+      { id: 'undo', label: 'Undo', group: 'Edit', icon: 'undo', keys: k('Z'), run: () => void this.history.step('undo') },
+      { id: 'redo', label: 'Redo', group: 'Edit', icon: 'redo', keys: mac ? k('Z', true) : 'Ctrl+Y', run: () => void this.history.step('redo') },
+      { id: 'history', label: 'History of changes', group: 'Edit', icon: 'undo', also: 'revisions earlier versions', run: () => this.history.toggle(this.saved) },
+      { id: 'save', label: 'Save', group: 'File', icon: 'save', keys: k('S'), run: () => void this.file('save') },
+      { id: 'rename', label: 'Rename the button', group: 'Selection', icon: 'pencil', keys: 'F2', disabled: this.context.kind === 'layer' && !this.layerItem ? undefined : 'Select a layer with a button first', run: () => this.context.kind === 'layer' && this.rename(this.context.id) },
+      { id: 'duplicate', label: 'Duplicate', group: 'Selection', icon: 'layers', keys: k('D'), also: 'copy', disabled: target ? undefined : none, run: () => target && void this.duplicate(target) },
+      { id: 'reset', label: 'Reset settings', group: 'Selection', icon: 'reset', also: 'defaults', disabled: target ? undefined : none, run: () => target && void this.resetLayer(target) },
+      { id: 'remove', label: 'Remove', group: 'Selection', icon: 'trash', keys: mac ? '⌫' : 'Del', also: 'delete', disabled: target ? undefined : none, run: () => target && void this.removeLayer(target) },
+    );
+    for (const manifest of this.store.manifests.filter((m) => !isAmbient(m) && isOffered(m))) {
+      list.push({ id: `add:${manifest.id}`, label: `Add ${manifest.name}`, group: 'Add a layer', icon: manifest.icon, also: `new ${manifest.description ?? ''}`, run: () => {
+        if (this.wizard) this.closeWizard();
+        void this.addChecked(manifest);
+      } });
+    }
+    for (const manifest of this.store.manifests.filter((m) => isAmbient(m) && isOffered(m))) {
+      list.push({ id: `life:${manifest.id}`, label: `Add ${manifest.name} at rest`, group: 'Map life', icon: manifest.icon, also: 'ambient home', run: () => {
+        if (this.wizard) this.closeWizard();
+        void this.addChecked(manifest);
+      } });
+    }
+    list.push(
+      { id: 'data', label: 'Add data', group: 'Data', icon: 'map', also: 'import file openstreetmap osm buildings ground terrain trees streets roads walking paths trips geojson', run: () => this.addData() },
+      { id: 'media', label: 'Add media', group: 'Data', icon: 'images', also: 'picture video file', run: () => void this.addMedia(['image', 'video'] as MediaKind[]) },
+      { id: 'custom', label: 'Custom layer', group: 'Make your own', icon: 'brush', also: 'new build style', run: () => newCustomLayer(this.builderHost(), this.shell) },
+      { id: 'palette', label: 'Palette', group: 'Make your own', icon: 'palette', also: 'colours colors', run: () => paletteDialog(this.builderHost(), this.shell) },
+    );
+    const tabs: [RibbonTab, string, string][] = [
+      ['edit', 'Edit', 'ribbon'],
+      ['place', 'Name and place', 'location where'],
+      ['rest', AT_REST, 'home'],
+      ['design', 'Design', 'theme buttons controller look'],
+      ['display', 'Display', 'colour projector calibration'],
+      ['media', 'Media', 'files sources'],
+      ['help', 'Help', 'guide'],
+    ];
+    for (const [tab, label, also] of tabs) list.push({ id: `tab:${tab}`, label: `${label} tab`, group: 'Ribbon', icon: 'next', also, run: () => this.setRibbonTab(tab) });
+    list.push(
+      { id: 'view:map', label: 'Show the map only', group: 'View', icon: 'map', also: 'canvas', run: () => this.menuAction('view-map') },
+      { id: 'view:controller', label: 'Show the controller only', group: 'View', icon: 'tv', also: 'canvas', run: () => this.menuAction('view-controller') },
+      { id: 'view:both', label: 'Show the map and the controller', group: 'View', icon: 'grid', also: 'both canvas', run: () => this.menuAction('view-both') },
+      { id: 'zoom:fit', label: 'Fit the map', group: 'View', icon: 'search', keys: k('0'), also: 'zoom', run: () => this.menuAction('zoom-fit') },
+      { id: 'zoom:100', label: 'Zoom to 100 %', group: 'View', icon: 'search', keys: k('1'), also: 'actual size projector pixels', run: () => this.menuAction('zoom-100') },
+      { id: 'outline', label: this.canvasTools.outlined ? 'Hide the table outline' : 'Show the table outline', group: 'View', icon: 'grid', also: 'tiles seams edge', run: () => this.menuAction('outline') },
+      { id: 'shortcuts', label: 'Keyboard shortcuts', group: 'Help', icon: 'info', keys: k('/'), also: 'keys', run: () => this.menuAction('shortcuts') },
+      { id: 'report', label: 'Report a problem', group: 'Help', icon: 'alert', also: 'bug issue feedback', run: () => this.menuAction('report') },
+    );
+    for (const page of this.helpPages ?? []) list.push({ id: `help:${page.id}`, label: page.title, group: 'Help', icon: 'info', also: `guide ${page.summary}`, run: () => openHelp(page.id) });
+    return list;
+  }
+
+  /**
+   * Report a problem (#88): a GitHub issue, filled in with the version, the system and what is
+   * on the table, for the person to finish and send. Nothing leaves this computer until they do.
+   */
+  private async reportProblem(): Promise<void> {
+    const invoke = shell();
+    let version = '';
+    try {
+      version = invoke
+        ? ((await invoke('presenting_state')) as { version: string }).version
+        : ((await (await fetch('/help.json')).json()) as { version: string }).version;
+    } catch {
+      // The version is left for the person to fill in.
+    }
+    const layers = this.instances()
+      .filter((i) => !i.state.parent)
+      .map((i) => i.manifest.id)
+      .join(', ');
+    const body = [
+      '**What happened**',
+      '',
+      '',
+      '**What I expected**',
+      '',
+      '',
+      '**Steps to see it**',
+      '1. ',
+      '',
+      '---',
+      `- MR Studio: ${version || '(version)'}`,
+      `- System: ${navigator.userAgent}`,
+      `- Screen: ${screen.width}×${screen.height} at ${devicePixelRatio}×`,
+      `- Layers: ${layers || 'none'}`,
+    ].join('\n');
+    const url = `https://github.com/snjsomnath/mr-studio/issues/new?labels=bug&body=${encodeURIComponent(body)}`;
+    if (invoke) await invoke('open_link', { url }).catch(() => window.open(url, '_blank', 'noopener'));
+    else window.open(url, '_blank', 'noopener');
   }
 
   /** Adds a layer to the table, or with `parent` into that layer as an item that comes and goes with it. */
@@ -927,6 +1210,8 @@ export class Editor {
     if (context.kind !== 'layer' || this.context.kind !== 'layer' || this.context.id !== context.id || item !== null) this.layerItem = item;
     this.context = context;
     if (remember) this.remember();
+    // Choosing something in a narrow window brings its settings out; At rest and the surfaces open the same way.
+    if (remember && NARROW.matches) this.setDrawer(true);
     // Choosing a layer shows it on the map, the way pressing its button does; the home screen is the map at rest.
     if (context.kind === 'layer') this.show(context.id);
     if (context.kind === 'home') this.show(null);
@@ -989,6 +1274,12 @@ export class Editor {
     name.append(this.titleName, this.saved);
     const steps = el('div', 'ed-steps');
     steps.append(this.history.undoButton, this.history.redoButton);
+    // Command search, where it is seen (#65).
+    const search = el('button', 'ed-search');
+    search.type = 'button';
+    search.title = 'Find any command, layer or setting by a few words';
+    search.append(icon('search', 14), el('span', undefined, 'Search'), el('kbd', undefined, shortcut('K')));
+    search.addEventListener('click', () => this.menuAction('commands'));
 
     const actions = el('div', 'ed-actions');
     const preview = button('ed-button', 'Preview', 'play');
@@ -1009,8 +1300,8 @@ export class Editor {
       present.title = presenting
         ? 'Take the map off the projector and the controller off its screen'
         : invoke
-          ? 'Show the map on the projector and the controller on its screen. Ctrl+Shift+E on a full screen brings this editor back.'
-          : 'Open the map and the controller in two windows';
+          ? `Show the map on the projector and the controller on its screen (${shortcut('Enter')}). Ctrl+Shift+E on a full screen brings this editor back.`
+          : `Open the map and the controller in two windows (${shortcut('Enter')})`;
     };
     const refresh = async (): Promise<void> => {
       if (!invoke) return;
@@ -1050,7 +1341,7 @@ export class Editor {
       void refresh();
     }
     actions.append(preview, present);
-    bar.append(brand, ...(file ? [file] : []), steps, name, actions);
+    bar.append(brand, ...(file ? [file] : []), steps, name, search, actions);
     return bar;
   }
 
@@ -1347,7 +1638,10 @@ export class Editor {
       reset.title = !live ? none : resettable ? 'Put every setting of this back to its own value' : 'This has no settings to reset';
       reset.addEventListener('click', () => live && void this.resetLayer(live.id));
       const name = live ? `Selected: ${layerButton(live.id, live.manifest, live.state).name}` : 'Nothing selected';
-      groups.push(this.group(name, ...this.column([show, up, down]), ...this.column([remove, reset])));
+      const selection = this.group(name, ...this.column([show, up, down]), ...this.column([remove, reset]));
+      // On a small screen the selection's tools stay in view; other groups give way first (#66).
+      selection.classList.add('is-keep');
+      groups.push(selection);
     }
 
     const open = (label: string, iconName: string, role: 'table' | 'tv' | 'dev', tip: string) => {
@@ -1485,6 +1779,17 @@ export class Editor {
       this.group('Features', tool('Everything on the table', 'layers', 'features', 'Every layer, what it shows and where to find it', true)),
       this.group('Problems', tool('When something is wrong', 'alert', 'troubleshooting', 'The usual problems and how to fix them: projection, phones, empty layers, speed, updates', true)),
     ];
+    // The keys, and a way to tell us when something is wrong (#65, #88).
+    const keysTool = button('ed-tool', 'Keyboard shortcuts', 'info');
+    keysTool.title = `Every key the editor knows (${shortcut('/')})`;
+    keysTool.addEventListener('click', () => this.menuAction('shortcuts'));
+    const searchTool = button('ed-tool', 'Search commands', 'search');
+    searchTool.title = `Find any command, layer or setting by a few words (${shortcut('K')})`;
+    searchTool.addEventListener('click', () => this.menuAction('commands'));
+    const report = button('ed-tool', 'Report a problem', 'alert');
+    report.title = 'Opens a new GitHub issue with the version and this computer filled in. You see it before anything is sent.';
+    report.addEventListener('click', () => this.menuAction('report'));
+    groups.push(this.group('Keys and feedback', ...this.column([searchTool, keysTool, report])));
     const news = this.group("What's new", tool(latest ? latest.title.replace('MR Studio ', 'Version ') : "What's new", 'sparkle', latest?.id ?? 'features', 'What the newest versions brought', true));
     news.classList.add('is-last');
     groups.push(news);
@@ -1920,7 +2225,7 @@ export class Editor {
     const badge = el('span', 'ed-row-icon');
     badge.append(icon(iconName));
     const words = el('span', 'ed-canvas-detail', detail);
-    this.canvasHead.replaceChildren(badge, el('strong', undefined, title), words, this.canvasTools.element);
+    this.canvasHead.replaceChildren(badge, el('strong', undefined, title), words, this.canvasTools.element, this.drawerToggle);
     this.notice.hidden = notice === null;
     this.notice.textContent = notice ?? '';
   }

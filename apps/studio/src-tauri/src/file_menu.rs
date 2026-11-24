@@ -78,25 +78,55 @@ pub fn app_menu(app: &AppHandle<Wry>) -> tauri::Result<Menu<Wry>> {
         .paste()
         .select_all()
         .build()?;
-    let view = SubmenuBuilder::new(app, "View").item(&PredefinedMenuItem::fullscreen(app, None)?).build()?;
+    let view = view_submenu(app)?;
+    view.append(&PredefinedMenuItem::separator(app)?)?;
+    view.append(&PredefinedMenuItem::fullscreen(app, None)?)?;
     let window = SubmenuBuilder::new(app, "Window")
         .minimize()
         .maximize()
         .separator()
         .item(&PredefinedMenuItem::close_window(app, Some("Close window"))?)
         .build()?;
-    MenuBuilder::new(app).items(&[&app_menu, &file_submenu(app)?, &edit, &view, &window]).build()
+    MenuBuilder::new(app).items(&[&app_menu, &file_submenu(app)?, &edit, &view, &window, &help_submenu(app)?]).build()
 }
 
 /// The menu bar of the editor window on Windows and Linux.
 pub fn editor_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
     let edit = SubmenuBuilder::new(app, "Edit").item(&edit_item(app, "undo")?).item(&edit_item(app, "redo")?).build()?;
-    MenuBuilder::new(app).item(&file_submenu(app)?).item(&edit).build()
+    MenuBuilder::new(app).item(&file_submenu(app)?).item(&edit).item(&view_submenu(app)?).item(&help_submenu(app)?).build()
 }
 
-/// The Edit menu's own items (#57).
-/// Also "Table settings…" from the File menu, which the editor page opens.
-pub const EDIT_ACTIONS: [&str; 3] = ["undo", "redo", "table-settings"];
+/// The View menu (#65): what the middle of the editor shows, and command search. Only the
+/// search has a shortcut here; the page takes the zoom keys itself, so they stay with the map.
+fn view_submenu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Submenu<R>> {
+    let item = |id: &str, text: &str| MenuItemBuilder::with_id(id, text).build(app);
+    SubmenuBuilder::new(app, "View")
+        .item(&MenuItemBuilder::with_id("commands", "Search commands…").accelerator("CmdOrCtrl+K").build(app)?)
+        .separator()
+        .item(&item("view-map", "Map")?)
+        .item(&item("view-controller", "Controller")?)
+        .item(&item("view-both", "Map and controller")?)
+        .separator()
+        .item(&item("zoom-fit", "Fit the map")?)
+        .item(&item("zoom-100", "Map at 100 %")?)
+        .item(&item("outline", "Table outline")?)
+        .build()
+}
+
+/// The Help menu (#65, #88): the guide, the keys, and a way to report a problem.
+fn help_submenu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Submenu<R>> {
+    SubmenuBuilder::new(app, "Help")
+        .item(&MenuItemBuilder::with_id("help", "MR Studio Help").build(app)?)
+        .item(&MenuItemBuilder::with_id("shortcuts", "Keyboard shortcuts").accelerator("CmdOrCtrl+/").build(app)?)
+        .separator()
+        .item(&MenuItemBuilder::with_id("report", "Report a problem…").build(app)?)
+        .build()
+}
+
+/// The menu items the editor page carries out: Edit (#57), "Table settings…" from the File
+/// menu, and View and Help (#65, #88).
+pub const EDIT_ACTIONS: [&str; 13] =
+    ["undo", "redo", "table-settings", "commands", "view-map", "view-controller", "view-both", "zoom-fit", "zoom-100", "outline", "help", "shortcuts", "report"];
 
 /// Undo and Redo go to the editor page, which undoes the text being typed, or else the last
 /// change to the table through the host's revision history (#72). The system's own items

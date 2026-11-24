@@ -4,7 +4,7 @@
 import { el } from '../controls.ts';
 import { icon } from './icons.ts';
 
-export type MenuItem = { label: string; icon?: string; keys?: string; disabled?: boolean; danger?: boolean; run: () => void } | 'line';
+export type MenuItem = { label: string; icon?: string | Element; keys?: string; disabled?: boolean; danger?: boolean; run: () => void } | 'line';
 
 /**
  * A menu at a point, as a desktop app's right-click menu: arrow keys move, Enter runs, Escape or a
@@ -32,7 +32,7 @@ export function contextMenu(items: MenuItem[], at: { x: number; y: number }, roo
     row.type = 'button';
     row.setAttribute('role', 'menuitem');
     const name = el('span', 'ed-context-label');
-    if (item.icon) name.append(icon(item.icon, 14));
+    if (item.icon) name.append(typeof item.icon === 'string' ? icon(item.icon, 14) : item.icon.cloneNode(true));
     name.append(el('span', undefined, item.label));
     row.append(name, el('kbd', undefined, item.keys ?? ''));
     row.disabled = Boolean(item.disabled);

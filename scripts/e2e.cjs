@@ -163,7 +163,7 @@ async function main() {
     };
     await scrub(8.5);
     await tv.locator(clock, { hasText: '08:30' }).waitFor();
-    await sunlight(dev).locator('.control-value', { hasText: '8.50 h' }).waitFor();
+    await sunlight(dev).locator('.control-value', { hasText: '08:30' }).waitFor();
     // The sun comes from the east at half past eight on midsummer morning.
     await tv.locator('.sun-hero-fact b', { hasText: /^east$/ }).waitFor();
     await dev.waitForTimeout(500);

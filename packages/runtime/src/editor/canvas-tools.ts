@@ -117,7 +117,11 @@ export class CanvasTools {
     this.apply();
   }
 
-  private setOutline(on: boolean): void {
+  get outlined(): boolean {
+    return this.outline;
+  }
+
+  setOutline(on: boolean): void {
     this.outline = on;
     store(OUTLINE_KEY, on ? 'on' : 'off');
     this.drawOutline();
@@ -132,7 +136,7 @@ export class CanvasTools {
     return this.surface()?.getBoundingClientRect().width || this.projectorWidth() / 2;
   }
 
-  private step(direction: 1 | -1): void {
+  step(direction: 1 | -1): void {
     const now = this.zoom === 'fit' ? this.fitWidth() / this.projectorWidth() : this.zoom;
     const next = direction > 0 ? STEPS.find((s) => s > now * 1.01) : [...STEPS].reverse().find((s) => s < now * 0.99);
     if (next === undefined) return;
