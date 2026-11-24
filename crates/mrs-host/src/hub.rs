@@ -540,7 +540,15 @@ impl Hub {
         let code = format!("{:04}", random_u64() % 10_000);
         let join_url = join_base.map(|base| format!("{}/phone?c={code}", base.trim_end_matches('/')));
         let language = offered(&site.manifest.branding)[0].clone();
-        let session = SessionInfo { id: format!("{:016x}", random_u64()), code, port, join_url, language: language.clone(), sound: true, ribbon: None };
+        let session = SessionInfo {
+            id: format!("{:016x}", random_u64()),
+            code,
+            port,
+            join_url,
+            language: language.clone(),
+            sound: true,
+            ribbon: None,
+        };
         // Six digits, never the phones' code.
         let guide_code = loop {
             let guide = format!("{:06}", random_u64() % 1_000_000);
@@ -2275,11 +2283,22 @@ mod tests {
         // Changed on the controller, two at once for a group, checked like controls.
         dev("layer.entity", json!({ "layer": "members", "set": "buildings", "ids": ["3"], "values": { "pv": 42 } })).unwrap();
         dev("layer.entity", json!({ "layer": "members", "set": "buildings", "ids": ["3", "4"], "values": { "in": true } })).unwrap();
-        assert_eq!(layer(&hub, "members")["params"]["entities"], json!({ "buildings": { "3": { "pv": 40.0, "in": true }, "4": { "in": true } } }));
+        assert_eq!(
+            layer(&hub, "members")["params"]["entities"],
+            json!({ "buildings": { "3": { "pv": 40.0, "in": true }, "4": { "in": true } } })
+        );
         assert!(dev("layer.entity", json!({ "layer": "members", "set": "buildings", "ids": ["3"], "values": { "pv": "lots" } })).is_err());
         // A phone may change only what is marked for phones.
-        assert!(hub.request(Role::Phone, 7, "layer.entity", &json!({ "layer": "members", "set": "buildings", "id": "5", "values": { "pv": 10 } })).is_err());
-        hub.request(Role::Phone, 7, "layer.entity", &json!({ "layer": "members", "set": "buildings", "id": "5", "values": { "in": true } })).unwrap();
+        assert!(hub
+            .request(Role::Phone, 7, "layer.entity", &json!({ "layer": "members", "set": "buildings", "id": "5", "values": { "pv": 10 } }))
+            .is_err());
+        hub.request(
+            Role::Phone,
+            7,
+            "layer.entity",
+            &json!({ "layer": "members", "set": "buildings", "id": "5", "values": { "in": true } }),
+        )
+        .unwrap();
         // Reset puts one back; back to its defaults, it has no values of its own.
         dev("layer.entity", json!({ "layer": "members", "set": "buildings", "ids": ["4", "5"], "reset": true })).unwrap();
         dev("layer.entity", json!({ "layer": "members", "set": "buildings", "ids": ["3"], "values": { "in": false } })).unwrap();
