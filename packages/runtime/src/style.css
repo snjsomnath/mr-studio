@@ -437,6 +437,29 @@ body[data-role='tv'] .controller .join-address .join-code {
   font-size: 1rem;
 }
 
+/* Who changed the map from a phone (#335): a dot in that phone's colour and a few words. */
+.phone-cue {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.45rem 0.9rem;
+  border-radius: 999px;
+  background: rgba(127, 127, 127, 0.16);
+  font-size: 1rem;
+}
+
+.phone-cue[hidden] {
+  display: none;
+}
+
+.phone-cue-dot {
+  width: 0.8rem;
+  height: 0.8rem;
+  border-radius: 50%;
+  flex: none;
+}
+
 /* The open layer, in the centre of the controller screen. */
 .open-layers {
   flex: none;

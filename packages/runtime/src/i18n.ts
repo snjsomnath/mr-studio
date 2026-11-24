@@ -52,6 +52,8 @@ const SV: Record<string, string> = {
   'Source: {source}': 'Källa: {source}',
   'Maps and data: {credits}': 'Kartor och data: {credits}',
   'Turn {name} on or off': 'Slå på eller av {name}',
+  '{name} turned on from a phone': '{name} slogs på från en mobil',
+  '{name} turned off from a phone': '{name} slogs av från en mobil',
   'Another {thing}': 'En annan {thing}',
   'Turn a layer on to see it here': 'Slå på ett lager för att se det här',
   'Language': 'Språk',

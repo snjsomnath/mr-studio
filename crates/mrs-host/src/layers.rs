@@ -59,6 +59,9 @@ pub struct LayerDef {
     pub entity_sets: Vec<EntitySet>,
     /// Named actions without a button (#283), pressed from a layer's stage, hero or panels.
     pub actions: Vec<String>,
+    /// Visitors' phones may turn the layer on and off (#335). `phone_switch: false` in
+    /// layer.json holds a heavy or private layer back. Default true.
+    pub phone_switch: bool,
 }
 
 /// The most voices a layer's sound bed has (#282): a bed is a few slow layers, never a band.
@@ -204,7 +207,8 @@ impl LayerDef {
             };
             tools.push(Tool { id: tid, kind });
         }
-        Ok(Self { source: id.clone(), id, manifest, controls, tools, entity_sets, actions })
+        let phone_switch = manifest["phone_switch"].as_bool().unwrap_or(true);
+        Ok(Self { source: id.clone(), id, manifest, controls, tools, entity_sets, actions, phone_switch })
     }
 
     pub fn tool(&self, id: &str) -> Option<&Tool> {
@@ -320,7 +324,9 @@ impl Control {
             Some("action") => ControlKind::Action,
             other => bail!("control '{cid}' has unknown type {other:?}"),
         };
-        let mut control = Control { id: cid.clone(), kind, phone: c["phone"].as_bool().unwrap_or(false), default: Value::Null };
+        // Phones get a layer's primary controls unless the layer says otherwise (#335).
+        let phone = c["phone"].as_bool().unwrap_or(c["tier"] == "primary");
+        let mut control = Control { id: cid.clone(), kind, phone, default: Value::Null };
         if !matches!(control.kind, ControlKind::Action) {
             control.default = control.validate(&c["default"]).map_err(|e| anyhow!("control '{cid}' default: {e}"))?;
         }
@@ -599,6 +605,24 @@ mod tests {
             ]
         }))
         .unwrap()
+    }
+
+    #[test]
+    fn phones_get_primary_controls_unless_told_otherwise() {
+        let def = LayerDef::parse(json!({
+            "api": 1, "id": "t", "name": "T", "phone_switch": false,
+            "controls": [
+                { "id": "a", "type": "toggle", "label": "A", "default": false, "tier": "primary" },
+                { "id": "b", "type": "toggle", "label": "B", "default": false, "tier": "primary", "phone": false },
+                { "id": "c", "type": "toggle", "label": "C", "default": false, "tier": "more", "phone": true },
+                { "id": "d", "type": "toggle", "label": "D", "default": false }
+            ]
+        }))
+        .unwrap();
+        let phone: Vec<bool> = def.controls.iter().map(|c| c.phone).collect();
+        assert_eq!(phone, [true, false, true, false]);
+        assert!(!def.phone_switch);
+        assert!(super::LayerDef::parse(json!({ "api": 1, "id": "u", "name": "U" })).unwrap().phone_switch, "phones may switch it by default");
     }
 
     fn patch(v: Value) -> Map<String, Value> {

@@ -1,6 +1,6 @@
-// How the glass looks on the table, after the Lindholmen artwork's magnifier: the table quietened
-// around it, a warm halo that breathes, a fine rim with a highlight, and a soft shade at the edge
-// inside, so the glass reads as a lens and not a hole. In CSS pixels on a canvas over the table.
+// How the glass looks on the table, as the Lindholmen artwork's magnifier drew it: the table
+// quietened around it, a warm halo that breathes, a fine rim with a highlight along its top left
+// and a faint ring just inside. In CSS pixels on a canvas over the table.
 
 export interface GlassLook {
   centre: [number, number];
@@ -13,6 +13,10 @@ export interface GlassLook {
   pinned: boolean;
   /** Seconds, for the halo's breath. */
   time: number;
+  /** 0 to 1: how far the glass has arrived (it fades in over half a second). */
+  arrival: number;
+  /** Pixels per CSS pixel of line: thin on the table, as the old rim was one pixel wide. */
+  line: number;
   /** Draws what the glass shows, already clipped to it. Null leaves the inside to what is under it. */
   inside: ((g: CanvasRenderingContext2D) => void) | null;
 }
@@ -20,12 +24,14 @@ export interface GlassLook {
 export function drawGlass(g: CanvasRenderingContext2D, look: GlassLook): void {
   const [x, y] = look.centre;
   const r = Math.max(2, look.radius);
-  const breath = 0.88 + 0.12 * Math.sin((look.time * Math.PI) / 2);
+  const a = Math.max(0, Math.min(1, look.arrival));
+  const breath = 0.88 + 0.12 * Math.sin((look.time * Math.PI) / 4);
+  const line = look.line;
 
-  // Quiet the table outside the glass.
+  // Quiet the whole table outside the glass.
   if (look.dim > 0) {
     g.save();
-    g.fillStyle = `rgb(0 0 0 / ${look.dim})`;
+    g.fillStyle = `rgb(0 0 0 / ${look.dim * a})`;
     g.beginPath();
     g.rect(0, 0, look.width, look.height);
     g.arc(x, y, r, 0, Math.PI * 2);
@@ -42,42 +48,32 @@ export function drawGlass(g: CanvasRenderingContext2D, look: GlassLook): void {
     g.restore();
   }
 
-  // A soft shade just inside the rim.
-  const shade = g.createRadialGradient(x, y, r * 0.78, x, y, r);
-  shade.addColorStop(0, 'rgb(0 0 0 / 0)');
-  shade.addColorStop(1, 'rgb(0 0 0 / 0.38)');
-  g.fillStyle = shade;
-  g.beginPath();
-  g.arc(x, y, r, 0, Math.PI * 2);
-  g.fill();
-
-  // The warm halo outside.
-  const halo = g.createRadialGradient(x, y, r * 0.98, x, y, r * 1.6);
-  halo.addColorStop(0, `rgb(255 222 166 / ${0.22 * breath})`);
-  halo.addColorStop(0.35, 'rgb(235 191 114 / 0.07)');
+  // The warm halo, from just inside the rim outwards.
+  const halo = g.createRadialGradient(x, y, r * 0.82, x, y, r * 1.65);
+  halo.addColorStop(0, 'rgb(255 213 143 / 0)');
+  halo.addColorStop(0.23, `rgb(255 222 166 / ${0.18 * breath * a})`);
+  halo.addColorStop(0.5, `rgb(235 191 114 / ${0.065 * a})`);
   halo.addColorStop(1, 'rgb(235 191 114 / 0)');
   g.fillStyle = halo;
   g.beginPath();
-  g.arc(x, y, r * 1.6, 0, Math.PI * 2);
-  g.arc(x, y, r, 0, Math.PI * 2, true);
+  g.arc(x, y, r * 1.65, 0, Math.PI * 2);
   g.fill();
 
-  // The rim, brighter when pinned, and a highlight along its top left.
-  const line = Math.max(1, r / 120);
-  g.lineWidth = 1.5 * line;
-  g.strokeStyle = look.pinned ? 'rgb(255 223 167 / 0.95)' : 'rgb(255 241 210 / 0.75)';
+  // The rim, brighter when pinned; a highlight along its top left; a faint ring inside.
+  g.lineWidth = line;
+  g.strokeStyle = look.pinned ? 'rgb(255 223 167 / 0.9)' : 'rgb(255 241 210 / 0.7)';
   g.beginPath();
   g.arc(x, y, r, 0, Math.PI * 2);
   g.stroke();
-  g.lineWidth = 3 * line;
+  g.lineWidth = 2 * line;
   g.strokeStyle = `rgb(255 251 233 / ${0.6 * breath})`;
   g.lineCap = 'round';
   g.beginPath();
-  g.arc(x, y, r + 2.5 * line, Math.PI * 1.1, Math.PI * 1.62);
+  g.arc(x, y, r + 2 * line, Math.PI * 1.1, Math.PI * 1.65);
   g.stroke();
-  g.lineWidth = line;
-  g.strokeStyle = 'rgb(255 226 170 / 0.18)';
+  g.lineWidth = 0.75 * line;
+  g.strokeStyle = 'rgb(255 226 170 / 0.16)';
   g.beginPath();
-  g.arc(x, y, r - 4 * line, 0, Math.PI * 2);
+  g.arc(x, y, r - 3 * line, 0, Math.PI * 2);
   g.stroke();
 }

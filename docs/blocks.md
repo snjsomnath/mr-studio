@@ -141,7 +141,8 @@ does now.
 
 - **`reveal.ts`**: the shapes a revealing layer shows its items through (`RevealShape`: a circle, one
   side of a line, nowhere) and `revealPath`, `revealPolygon`, `revealContains`, `revealUniform` to draw,
-  clip and test with them. The runtime does the clipping (docs/contracts/layer.md, Reveals).
+  clip and test with them, and `otherSide` for the second map of a then-and-now line (#349). The
+  runtime does the clipping (docs/contracts/layer.md, Reveals).
 - **`table-pad.ts`**: `tablePad(ctx, el, { draw, onDrag })` puts the table's shape with its buildings
   on the controller, for a hero that moves something on the table (the glass, the line) by dragging.
 - **`drawing-reveal.ts`**: what the Lindholmen artwork's opening is made of, for any drawing.

@@ -42,7 +42,9 @@ Any open button layer pauses the map at rest's life on the table, keeping only t
 `requires.data` lists the site datasets the layer reads, by name (see `data` in site.md). A layer must still start when one is missing.
 
 Control types: `range`, `select`, `toggle`, `date`, `color`, `text`, `action` (a button, no stored value).
-Every control has `id`, `type`, `label` and `default`. `phone: true` lets phone participants change it.
+Every control has `id`, `type`, `label` and `default`. `phone: true` lets phone participants change it; a `primary` control is on phones unless it says `phone: false` (#335).
+
+`"phone_switch": false` at the top of layer.json keeps phones from turning the layer on or off, for a layer only the controller should open (the slideshow). Default true.
 `visibleWhen: { "mode": "day" }` hides a control unless another control has that value; a list, `{ "style": ["light", "dark"] }`, means any of them.
 
 A `text` control that names something is never a box to type in (#306); the editor offers a list to pick from, with type-ahead, and refuses a name that is not in it:
@@ -227,6 +229,7 @@ interface TableContext<P> {
   cue(at: ToolGeometry, options?: { colour?: string }): void;     // play the attention cue at a change (#105); tool inputs from other surfaces get one automatically
   readonly steps: LayerSteps;           // sub-steps that the controller's Next reveals one at a time
   readonly reveal: LayerReveal;         // where the layers inside this one show, for a layer with "reveals": true (see Reveals)
+  readonly view: LayerView;             // a picture for this layer's own controller: send(canvas) here, watch(cb) in its hero (#351)
   onFrame(cb: (dt: number) => void): void;   // every animation frame while the layer is on
   onCleanup(cb: () => void): void;      // extra teardown
 }
@@ -276,6 +279,8 @@ interface MapHandle {
   addShapes(id: string, style?: { opacity?: number }): ShapeOverlay;   // points, lines and areas
   addDrawing(id: string, options?: { opacity?: number; resolution?: number }): DrawingOverlay;
   addPicture(): TablePicture;       // a copy of what the table shows now, for a magnifier (#287)
+  addDetail(render: (g: CanvasRenderingContext2D, scale: number) => void): void;  // draw this layer again sharply for a magnifier, in table metres (#351)
+  detail(centre: [number, number], radius_m: number, size: number): HTMLCanvasElement | null;  // the other layers' sharp pictures of a square, size px across
 }
 
 // What the table shows, copied each frame after the map has drawn: the base map and every
@@ -425,7 +430,11 @@ type RevealShape =
   | { kind: 'side'; axis: 'x' | 'y'; at_m: number; keep: 'before' | 'after' }  // one side of a line
   | { kind: 'none' };                                                          // nowhere
 ctx.reveal.set(shape | null);   // null: everywhere, as without a revealer
+ctx.reveal.item(index, shape | null | undefined);  // one item (0 is the first) gets a shape of its own; undefined hands it back
 ```
+
+`otherSide(shape)` turns a side round, for a Reveal line with `split` on: its first item shows on one
+side and its second on the other, then and now (#349).
 
 Places are table metres. Until the layer sets a shape its items show nowhere. The runtime does the
 clipping, so the items need no code of their own: drawings (`addDrawing`) are composed through the
@@ -479,7 +488,9 @@ sites/lindholmen/layers/energy-flows/
 - A `.mrstable` export carries the packages with their `dist/`, without `node_modules`.
 
 The rules for layers above apply to site layers too. Anything a site layer needs from the core that the SDK does
-not offer is a module request (MCP `draft_module_request`), not a copy of core code.
+not offer is a development request (MCP `draft_development_request`, kind `sdk-runtime`), not a copy of core code.
+
+The MCP server walks a developer through this: `create_layer`, `sdk_reference` (the SDK's exports read from its source), `check_layer` (the rules in this document), `build_layer`, `preview_layer` and `add_service`, and the prompts `build_code_layer` and `build_controller_app` (docs/MCP.md).
 
 ## Dev mode
 
