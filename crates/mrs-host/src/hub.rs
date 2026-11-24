@@ -71,7 +71,14 @@ impl SessionOptions {
 impl Default for SessionOptions {
     fn default() -> Self {
         let (join_page, peer_options) = Self::join_page_from_env();
-        Self { max_phones: MAX_PHONES, resume_hold: Duration::from_secs(60), phone_requests_per_second: 20, public_url: None, join_page, peer_options }
+        Self {
+            max_phones: MAX_PHONES,
+            resume_hold: Duration::from_secs(60),
+            phone_requests_per_second: 20,
+            public_url: None,
+            join_page,
+            peer_options,
+        }
     }
 }
 

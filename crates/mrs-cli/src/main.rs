@@ -94,10 +94,64 @@ enum Command {
         #[command(subcommand)]
         action: LayerCommand,
     },
+    /// Bring data into a site, as the editor's Add data does (#320): a file, OpenStreetMap,
+    /// free elevation, a picture or video, a sound. Prints JSON with `--json`.
+    Data {
+        #[command(subcommand)]
+        action: DataCommand,
+    },
     /// Time a kernel on a site with each backend.
     Bench {
         #[arg(default_value = "sites/sample")]
         site: PathBuf,
+    },
+}
+
+#[derive(Subcommand)]
+enum DataCommand {
+    /// Read and check a dataset, and with `--write` save it into the site and wire it into
+    /// site.json. Targets: buildings, trees, walkways, trips, terrain or data:<name>.
+    Add {
+        site: PathBuf,
+        #[arg(long)]
+        target: String,
+        /// A GeoJSON, CSV, Shapefile (zipped) or GeoTIFF file. Leave out with --osm or --elevation.
+        #[arg(long)]
+        file: Option<PathBuf>,
+        /// Fetch it from OpenStreetMap for the table's area (buildings, trees, walkways, data:roads).
+        #[arg(long)]
+        osm: bool,
+        /// Fetch free elevation for the ground (terrain).
+        #[arg(long)]
+        elevation: bool,
+        /// Save it; without this only the report is printed and nothing changes.
+        #[arg(long)]
+        write: bool,
+        /// Leave out what lies well outside the table.
+        #[arg(long)]
+        crop: bool,
+        /// Read the first coordinate as latitude.
+        #[arg(long)]
+        swap: bool,
+        /// The coordinate system of a terrain GeoTIFF that does not say, such as EPSG:3006.
+        #[arg(long)]
+        crs: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Copy a picture (PNG, JPEG, WebP, GIF) or video (MP4, WebM) into data/media/.
+    Media {
+        site: PathBuf,
+        file: PathBuf,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Copy a sound (WAV, MP3, OGG, M4A) into data/sounds/.
+    Sound {
+        site: PathBuf,
+        file: PathBuf,
+        #[arg(long)]
+        json: bool,
     },
 }
 
@@ -127,7 +181,8 @@ enum LayerCommand {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    tracing_subscriber::fmt().with_target(false).init();
+    // Logs go to stderr, so `--json` output on stdout stays machine-readable.
+    tracing_subscriber::fmt().with_target(false).with_writer(std::io::stderr).init();
     match Cli::parse().command {
         Command::Dev { site, layers, web, port, lan, public_url, backend, relay } => {
             let backend = Backend::parse(&backend).context("backend must be auto, gpu or cpu")?;
@@ -169,6 +224,7 @@ async fn main() -> anyhow::Result<()> {
             Ok(())
         }
         Command::Layer { action: LayerCommand::Build { id, site, watch } } => layer::build(&site, id.as_deref(), watch),
+        Command::Data { action } => data(action).await,
     }
 }
 
@@ -369,4 +425,92 @@ fn bench(dir: &Path) -> anyhow::Result<()> {
         engine.drop_job(job);
     }
     Ok(())
+}
+
+/// `mrstudio data …`: the editor's Add data from the command line (#320). A refusal is printed
+/// as the report (or `{ "error" }`) and exits with status 1; nothing is written then.
+async fn data(action: DataCommand) -> anyhow::Result<()> {
+    use mrs_site::import::{Options, Target};
+    let print = |json: bool, value: serde_json::Value, words: String| {
+        if json {
+            println!("{value}");
+        } else {
+            println!("{words}");
+        }
+    };
+    let refuse = |json: bool, value: serde_json::Value, words: String| -> anyhow::Result<()> {
+        print(json, value, words);
+        std::process::exit(1);
+    };
+    match action {
+        DataCommand::Add { site, target, file, osm, elevation, write, crop, swap, crs, json } => {
+            let parsed = Target::parse(&target).map_err(anyhow::Error::msg)?;
+            let crs = match crs.as_deref().map(|c| c.trim().trim_start_matches("EPSG:").trim_start_matches("epsg:").parse::<u32>()) {
+                None => None,
+                Some(Ok(code)) => Some(code),
+                Some(Err(_)) => bail!("--crs must look like EPSG:3006"),
+            };
+            let (bytes, filename) = match (file, osm, elevation) {
+                (Some(path), false, false) => {
+                    let bytes = std::fs::read(&path).with_context(|| format!("reading {}", path.display()))?;
+                    if bytes.len() > mrs_host::MAX_IMPORT_BYTES {
+                        bail!("{} is larger than {} MB", path.display(), mrs_host::MAX_IMPORT_BYTES / 1_048_576);
+                    }
+                    (bytes, path.file_name().and_then(|n| n.to_str()).unwrap_or("data").to_string())
+                }
+                (None, true, false) => match mrs_host::data::osm_for(&site, &parsed).await {
+                    Ok(bytes) => (bytes, "openstreetmap.geojson".to_string()),
+                    Err(report) => return refuse(json, serde_json::to_value(&report)?, report.summary.clone()),
+                },
+                (None, false, true) => match mrs_host::data::elevation_for(&site, &parsed).await {
+                    Ok(bytes) => (bytes, "free-elevation.tif".to_string()),
+                    Err(report) => return refuse(json, serde_json::to_value(&report)?, report.summary.clone()),
+                },
+                _ => bail!("give one of --file, --osm or --elevation"),
+            };
+            let site_dir = site.clone();
+            let mut report = tokio::task::spawn_blocking(move || {
+                mrs_host::data::import_file(&site_dir, &target, &filename, &bytes, Options { crop, swap, crs }, write)
+            })
+            .await?
+            .map_err(anyhow::Error::msg)?;
+            if elevation {
+                mrs_host::data::elevation_note(&mut report);
+            }
+            let words = format!("{}{}", report.summary, if report.ok && !write { " (checked only; add --write to save it)" } else { "" });
+            if !report.ok {
+                return refuse(json, serde_json::to_value(&report)?, words);
+            }
+            print(json, serde_json::to_value(&report)?, words);
+            Ok(())
+        }
+        DataCommand::Media { site, file, json } => keep(&site, &file, json, mrs_site::media::save),
+        DataCommand::Sound { site, file, json } => keep(&site, &file, json, mrs_site::sound::save),
+    }
+}
+
+/// Copies a picture, video or sound into the site with the same checks as the editor.
+fn keep(site: &Path, file: &Path, json: bool, save: fn(&Path, &str, &[u8]) -> Result<String, String>) -> anyhow::Result<()> {
+    if !site.join("site.json").exists() {
+        bail!("{} has no site.json", site.display());
+    }
+    let bytes = std::fs::read(file).with_context(|| format!("reading {}", file.display()))?;
+    let name = file.file_name().and_then(|n| n.to_str()).unwrap_or("file");
+    match save(site, name, &bytes) {
+        Ok(path) => {
+            if json {
+                println!("{}", json!({ "path": path }));
+            } else {
+                println!("Saved {path}");
+            }
+            Ok(())
+        }
+        Err(error) => {
+            if json {
+                println!("{}", json!({ "error": error }));
+                std::process::exit(1);
+            }
+            bail!(error)
+        }
+    }
 }

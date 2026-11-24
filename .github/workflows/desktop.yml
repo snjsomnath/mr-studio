@@ -83,6 +83,7 @@ jobs:
             os: macos-latest
             targets: aarch64-apple-darwin,x86_64-apple-darwin
             args: --target universal-apple-darwin --bundles app,dmg
+            cli_target: universal-apple-darwin
             artifact: mr-studio-macos
             bundle: target/universal-apple-darwin/release/bundle
     runs-on: ${{ matrix.os }}
@@ -132,6 +133,9 @@ jobs:
               echo "::warning::No updater key is set, so this release cannot be installed from inside the app. See docs/RELEASING.md."
             fi
           fi
+          # The mrstudio command line goes inside the app, beside its program (#320).
+          node scripts/stage-cli.mjs ${{ matrix.cli_target }}
+          args="$args --config src-tauri/tauri.cli.conf.json"
           # Making the dmg sometimes fails on the runner with "hdiutil: Resource busy". A second
           # try only repeats the packaging, because the compiled app is already there.
           pnpm app:build $args || { echo "::warning::The build failed once; trying again in 30 seconds."; sleep 30; pnpm app:build $args; }
