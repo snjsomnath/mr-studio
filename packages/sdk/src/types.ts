@@ -497,6 +497,12 @@ export interface Participant {
   colour: string;
   /** False while the slot is held for a phone that dropped. */
   connected: boolean;
+  /** The phone's animal (#339): fox, octopus, owl, frog, turtle, penguin, butterfly, unicorn, otter, hedgehog, whale or bee. */
+  avatar?: string;
+  /** With the animal, the fun name: `sunny` and `fox` make "Sunny Fox". */
+  mood?: string;
+  /** The name the visitor gave themselves, if any. */
+  name?: string | null;
 }
 
 export interface SessionState {

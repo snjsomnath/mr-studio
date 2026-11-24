@@ -22,6 +22,12 @@ pub const MAX_PHONES: usize = 8;
 /// More layers than this in one scene is a mistake, not a design.
 pub const MAX_SCENE_LAYERS: usize = 64;
 const SLOT_COLOURS: [&str; 8] = ["#ff6b6b", "#4dabf7", "#51cf66", "#fcc419", "#cc5de8", "#ff922b", "#20c997", "#f06595"];
+/// The animals a phone can be (#339). Each phone gets one nobody else has, and may pick another.
+pub const AVATARS: [&str; 12] = ["fox", "octopus", "owl", "frog", "turtle", "penguin", "butterfly", "unicorn", "otter", "hedgehog", "whale", "bee"];
+/// The first half of a phone's fun name, "Sunny Fox" (#339). The pages say it in the visitor's language.
+pub const MOODS: [&str; 8] = ["curious", "cosmic", "sunny", "merry", "brave", "gentle", "lucky", "swift"];
+/// The longest name a visitor may give their phone, in characters.
+const NAME_CHARS: usize = 32;
 /// The most positions one tool input may carry.
 const MAX_VERTICES: usize = 256;
 /// How long a sequence step stays in timed mode when it gives no `duration_s`.
@@ -305,6 +311,12 @@ pub struct Participant {
     pub colour: &'static str,
     /// False while the slot is held for a phone that dropped.
     pub connected: bool,
+    /// One of `AVATARS` (#339).
+    pub avatar: &'static str,
+    /// One of `MOODS`: with the avatar, the fun name the pages show ("Sunny Fox").
+    pub mood: &'static str,
+    /// The name the visitor gave themselves, instead of the fun name.
+    pub name: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -528,6 +540,16 @@ fn tv_words(key: &str) -> &str {
         "phone_switch" => "phones switching layers",
         other => other,
     }
+}
+
+/// A visitor's name for their phone: trimmed, without control characters, at most
+/// `NAME_CHARS` long. An empty name means the fun name again.
+fn clean_name(name: &str) -> Result<Option<String>, String> {
+    let name: String = name.chars().filter(|c| !c.is_control()).collect::<String>().split_whitespace().collect::<Vec<_>>().join(" ");
+    if name.chars().count() > NAME_CHARS {
+        return Err(format!("a name is at most {NAME_CHARS} characters"));
+    }
+    Ok((!name.is_empty()).then_some(name))
 }
 
 fn random_u64() -> u64 {
@@ -927,8 +949,12 @@ impl Hub {
         } else {
             let limit = self.options.max_phones;
             let slot = (0..limit).find(|slot| inner.seats.iter().all(|s| s.participant.slot != *slot)).ok_or("session full")?;
+            // An animal nobody here has, and a mood, picked at random.
+            let free: Vec<&'static str> = AVATARS.iter().copied().filter(|a| inner.seats.iter().all(|s| s.participant.avatar != *a)).collect();
+            let avatar = free[random_u64() as usize % free.len().max(1)];
+            let mood = MOODS[random_u64() as usize % MOODS.len()];
             inner.seats.push(Seat {
-                participant: Participant { surface, slot, colour: SLOT_COLOURS[slot % SLOT_COLOURS.len()], connected: true },
+                participant: Participant { surface, slot, colour: SLOT_COLOURS[slot % SLOT_COLOURS.len()], connected: true, avatar, mood, name: None },
                 token: format!("{:016x}{:016x}", random_u64(), random_u64()),
                 epoch: 0,
                 held_since: None,
@@ -1087,6 +1113,26 @@ impl Hub {
             self.emit("session.changed", json!({ "session": self.session() }));
             return Ok(json!({ "sound": on }));
         }
+        if method == "participant.profile" {
+            if role != Role::Phone {
+                return Err("only a phone has a name and an animal".into());
+            }
+            let seat = inner.seats.iter_mut().find(|s| s.participant.surface == surface).ok_or("this phone has no seat")?;
+            if let Some(avatar) = p.get("avatar").filter(|v| !v.is_null()) {
+                let avatar = avatar.as_str().and_then(|a| AVATARS.iter().find(|x| **x == a)).ok_or("pick one of the animals offered")?;
+                seat.participant.avatar = avatar;
+            }
+            if let Some(name) = p.get("name") {
+                seat.participant.name = match name {
+                    Value::Null => None,
+                    Value::String(name) => clean_name(name)?,
+                    _ => return Err("a name is text".into()),
+                };
+            }
+            let me = seat.participant.clone();
+            self.emit("state.participants", json!({ "participants": inner.participants() }));
+            return Ok(json!({ "participant": me }));
+        }
         if method == "session.ribbon" {
             if !matches!(role, Role::Tv | Role::Dev | Role::Guide) {
                 return Err("only the controller chooses the table's ribbon".into());
@@ -1142,7 +1188,7 @@ impl Hub {
             if role == Role::Phone && p["cue"].as_bool() != Some(false) {
                 let mut event = json!({ "layer": layer, "active": active });
                 if let Some(seat) = inner.seats.iter().find(|s| s.participant.surface == surface) {
-                    event["participant"] = json!({ "slot": seat.participant.slot, "colour": seat.participant.colour });
+                    event["participant"] = json!({ "slot": seat.participant.slot, "colour": seat.participant.colour, "avatar": seat.participant.avatar, "mood": seat.participant.mood, "name": seat.participant.name });
                 }
                 self.emit("phone.switched", event);
             }
@@ -1321,7 +1367,7 @@ impl Hub {
                 }
                 let mut event = json!({ "layer": layer, "tool": id, "geometry": geometry, "from": surface });
                 if let Some(seat) = inner.seats.iter().find(|s| s.participant.surface == surface) {
-                    event["participant"] = json!({ "slot": seat.participant.slot, "colour": seat.participant.colour });
+                    event["participant"] = json!({ "slot": seat.participant.slot, "colour": seat.participant.colour, "avatar": seat.participant.avatar, "mood": seat.participant.mood, "name": seat.participant.name });
                 }
                 self.emit("tool.input", event);
             }
@@ -2665,6 +2711,27 @@ mod tests {
         let code = hub.session().code.clone();
         assert_eq!(code.len(), 4);
         assert_eq!(hub.session().join_url.as_deref(), Some(format!("http://10.0.0.5:4170/phone?c={code}").as_str()));
+    }
+
+    #[test]
+    fn every_phone_is_a_different_animal_and_may_rename_itself() {
+        let hub = hub(SessionOptions::default());
+        let code = hub.session().code.clone();
+        let phones: Vec<u64> = (0..8).map(|_| hub.join(Role::Phone, Some(&code), None).unwrap().surface).collect();
+        let people = hub.inner.lock().unwrap().participants();
+        let animals: std::collections::HashSet<_> = people.iter().map(|p| p.avatar).collect();
+        assert_eq!(animals.len(), 8, "no two phones share an animal");
+        assert!(people.iter().all(|p| MOODS.contains(&p.mood) && p.name.is_none()));
+
+        let me = phones[0];
+        let set = |p: Value| hub.request(Role::Phone, me, "participant.profile", &p);
+        let back = set(json!({ "avatar": "whale", "name": "  Ada\n  Lovelace " })).unwrap();
+        assert_eq!((back["participant"]["avatar"].clone(), back["participant"]["name"].clone()), (json!("whale"), json!("Ada Lovelace")));
+        assert!(set(json!({ "avatar": "dragon" })).is_err(), "only the animals offered");
+        assert!(set(json!({ "name": "x".repeat(33) })).is_err(), "names are short");
+        set(json!({ "name": "" })).unwrap();
+        assert_eq!(hub.inner.lock().unwrap().participants()[0].name, None, "an empty name brings the fun name back");
+        assert!(hub.request(Role::Tv, 0, "participant.profile", &json!({ "name": "TV" })).is_err());
     }
 
     #[test]

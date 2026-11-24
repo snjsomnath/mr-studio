@@ -241,12 +241,20 @@ async function main() {
     // A phone that scanned the code sees phone controls, and switches layers (#335).
     const phone = await open(scanned.slice(base.length), { width: 390, height: 800 });
     await sunlight(phone).getByLabel('Time of day').waitFor();
-    await phone.getByText('You are 1').waitFor();
+    // The phone is an animal with a fun name (#339); its visitor names it and picks the whale.
+    await phone.locator('.phone-badge').waitFor();
+    await phone.getByRole('button', { name: 'Change your name or animal' }).click();
+    await phone.getByRole('radio', { name: 'Whale' }).click();
+    await phone.getByLabel('Your name', { exact: true }).fill('Ada');
+    if (shots) await phone.screenshot({ path: path.join(shots, 'phone-profile.png') });
+    await phone.getByRole('button', { name: 'Done' }).click();
+    await phone.locator('.phone-badge', { hasText: 'Ada' }).waitFor();
+    await tv.locator('.join-person[title="Ada"]', { hasText: '🐳' }).waitFor();
     assert.equal(await phone.getByText('Opacity').count(), 0);
     const windCard = phone.locator('.layer-card', { hasText: 'Wind' });
     await windCard.getByLabel('Turn Wind on or off').check();
     // The controller follows, and says a phone did it; the open Sunlight makes way.
-    await tv.getByText('Wind turned on from a phone').waitFor();
+    await tv.getByText('Ada turned on Wind').waitFor();
     await sunlight(phone).getByLabel('Turn Sunlight on or off').waitFor();
     await sunlight(phone).locator('input.switch:not(:checked)').waitFor();
     // The rail's buttons fade between pressed and not.
@@ -254,7 +262,7 @@ async function main() {
     if (shots) await tv.screenshot({ path: path.join(shots, 'tv-phone-cue.png') });
     if (shots) await phone.screenshot({ path: path.join(shots, 'phone-switch.png') });
     await sunlight(phone).getByLabel('Turn Sunlight on or off').check();
-    await tv.getByText('Sunlight turned on from a phone').waitFor();
+    await tv.getByText('Ada turned on Sunlight').waitFor();
     await windCard.locator('input.switch:not(:checked)').waitFor();
     await tv.getByText('1 phone', { exact: true }).waitFor();
     await sunlight(phone).getByLabel('Time of day').fill('18');
@@ -305,12 +313,12 @@ async function main() {
     const typist = await open('/phone', { width: 390, height: 800 });
     await typist.getByLabel('Session code').fill(code);
     await typist.getByRole('button', { name: 'Join' }).click();
-    await typist.getByText('You are 2').waitFor();
+    await typist.locator('.phone-badge').waitFor();
     await tv.getByText('2 phones').waitFor();
 
     // A reload brings the first phone back to its own slot instead of a third one.
     await phone.reload();
-    await phone.getByText('You are 1').waitFor();
+    await phone.locator('.phone-badge', { hasText: 'Ada' }).waitFor();
     await tv.getByText('2 phones').waitFor();
     assert.equal(await tv.locator('.join-person').count(), 2);
     if (shots) await tv.screenshot({ path: path.join(shots, 'tv.png') });
