@@ -42,6 +42,12 @@
       "props": { "value": { "bind": "shared.rainMm" }, "unit": "mm", "decimals": 1, "caption": { "bind": "shared.rainCaption" } } },
     { "id": "water", "widget": "stat", "size": "tile", "title": "Water on the ground",
       "props": { "value": { "bind": "shared.waterM3" }, "unit": "m³", "decimals": 0, "caption": { "bind": "shared.waterCaption" } } },
+    { "id": "ribbon-time", "widget": "stat", "size": "tile", "ribbon": true, "title": "Into the storm",
+      "props": { "value": { "bind": "shared.minutes" }, "unit": "min", "decimals": 0, "caption": { "bind": "shared.status" } } },
+    { "id": "ribbon-fallen", "widget": "stat", "size": "tile", "ribbon": true, "title": "Rain so far",
+      "props": { "value": { "bind": "shared.rainMm" }, "unit": "mm", "decimals": 1, "caption": { "bind": "shared.rainCaption" } } },
+    { "id": "ribbon-water", "widget": "stat", "size": "tile", "ribbon": true, "title": "Water on the ground",
+      "props": { "value": { "bind": "shared.waterM3" }, "unit": "m³", "decimals": 0, "caption": { "bind": "shared.waterCaption" } } },
     { "id": "key", "widget": "ramp", "size": "band", "title": "Pools, by depth",
       "props": { "colormap": { "bind": "shared.ramp" }, "low": "0", "high": "1 m" } }
   ]

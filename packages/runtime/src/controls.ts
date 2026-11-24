@@ -1259,6 +1259,47 @@ export class Controller {
     line.hidden = credits.size === 0;
   }
 
+  /**
+   * Ribbon (#231): when more than one open layer has ribbon panels, the operator picks which
+   * one the table's ribbon shows. Each press moves on: Auto (the layer turned on last), then
+   * each of those layers in rail order. The choice holds until that layer closes.
+   */
+  private ribbonChoice(action: (label: string, iconName: string, run: () => void) => HTMLButtonElement): void {
+    const { store } = this;
+    const candidates = (): string[] =>
+      railButtons(store)
+        .map((b) => b.id)
+        .filter((id) => {
+          const state = store.state.layers[id];
+          const manifest = state && store.manifest(state.layer);
+          return Boolean(state?.active && manifest && !isAmbient(manifest) && manifest.panels?.some((p) => p.ribbon));
+        });
+    const chosen = () => store.state.session?.ribbon ?? null;
+    const choose = (layer: string | null) => void this.connection.request('session.ribbon', { layer }).catch(() => {});
+    const button = action(t('Ribbon'), 'ribbon', () => {
+      const list = candidates();
+      const at = chosen() ? list.indexOf(chosen()!) : -1;
+      choose(at + 1 < list.length ? list[at + 1]! : null);
+    });
+    const show = () => {
+      const list = candidates();
+      const current = chosen();
+      // The chosen layer closed: back to Auto for everyone.
+      if (current && !list.includes(current) && !store.state.layers[current]?.active) choose(null);
+      button.style.display = list.length < 2 ? 'none' : '';
+      const state = current && list.includes(current) ? store.state.layers[current] : undefined;
+      const manifest = state && store.manifest(state.layer);
+      const name = state && manifest ? layerButton(current!, manifest, state).name : t('Auto');
+      button.setAttribute('aria-pressed', String(Boolean(state)));
+      button.title = t('Ribbon: {name}', { name });
+      button.querySelector('.layer-button-name')!.textContent = t('Ribbon: {name}', { name });
+    };
+    show();
+    store.onLayer(() => show());
+    store.onScene(() => show());
+    store.onParticipants(() => show());
+  }
+
   private soundOn(): boolean {
     return this.store.state.session?.sound !== false;
   }
@@ -1342,6 +1383,7 @@ export class Controller {
       };
       showSound();
       this.store.onParticipants(() => showSound());
+      this.ribbonChoice(action);
     }
     if (this.about) {
       if (operator) box.append(el('div', 'rail-group', t('About')));

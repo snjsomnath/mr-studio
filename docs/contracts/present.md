@@ -96,11 +96,11 @@ A layer that has steps declares how it moves through them:
 - `"auto"` takes 9 cm (the Chalmers demo's default) or less, and only if at least 4 cm is free. `{ "cm": n }` takes n cm, cut to the free space. 0.5 cm is kept clear between the model's edge and the ribbon. Sides are filled in the order front, the two beside it, the far side.
 - A ribbon runs along the model's edge and is turned to read from its own edge, so the front one faces the front viewer and a side one faces whoever stands at that side. Every ribbon shows the same content.
 - What a ribbon shows comes from the layer: `panels` entries marked `"ribbon": true` (`chip`, `tile` or `wide`; at most 4 panels and 10 reads), drawn with the dashboard widgets and the site's theme in a strip. A ribbon panel is on the table only, never on the TV. Sunlight's are the example: time, sun height or daylight, and the colour key.
-- One ribbon is shown at a time: that of the layer turned on last that has ribbon panels. While the controller is at home (no layer open but the map at rest and tools kept alongside, as for the home screen, #74), the core **join QR** ribbon shows if phones can join: the QR and the session code.
+- One ribbon is shown at a time: that of the layer turned on last that has ribbon panels (Auto). When more than one open layer has ribbon panels, the controller shows a **Ribbon** button under Map controls; each press moves on from Auto to each of those layers and back (#231). The choice is the session's `ribbon` (host request `session.ribbon {layer}`, null for Auto, from the controller, the dev page or the guide's phone) and goes back to Auto when that layer closes. While the controller is at home (no layer open but the map at rest and tools kept alongside, as for the home screen, #74), the core **join QR** ribbon shows if phones can join: the QR and the session code.
 - The editor and `/dev` keep room beside the map for the ribbons and preview them there at their size, with the front edge marked in amber.
 - **The front edge comes first** (learned on the table, 2026-11-23, [visualisation.md](../visualisation.md) S5). A viewer at one end of a table-height model cannot see a ribbon on the far edge, because the model hides it.
 - Ribbons are outside the model, so they don't break the "clean map" rule. Keep them glanceable (numbers, small charts, a QR), never paragraphs.
-- Not built yet: choosing between ribbons on the controller when more than one layer has one, and editing `front` and `ribbons` in Table settings (#73).
+- Not built yet: editing `front` and `ribbons` in Table settings (#73).
 
 ## Settings (per #73)
 
