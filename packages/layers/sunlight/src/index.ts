@@ -167,13 +167,18 @@ export default defineLayer<Params>({
       // The panel shows progress from the first moment, not the previous job's.
       percent = 0;
       ctx.publish({ progress: 0 });
-      const opened = await ctx.engine.open('sunlight', kernelParams(ctx), [field, treeField]);
+      const asked = kernelParams(ctx);
+      const opened = await ctx.engine.open('sunlight', asked, [field, treeField]);
       if (mine !== generation) {
         // The mode changed again, or the layer was turned off, while this was opening.
         opened.close();
         return;
       }
       stream = opened;
+      // The time or day may have changed while the job was opening, which can take seconds while the
+      // engine is still busy with a stopped day's sums (#121). Those changes had no stream to go to.
+      const now = kernelParams(ctx);
+      if (JSON.stringify(now) !== JSON.stringify(asked)) opened.set(now);
       dress();
       // With a shadow map, the engine's cells only fill in until the first mask is ready.
       opened.on(field, (frame) => {
