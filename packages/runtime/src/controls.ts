@@ -10,6 +10,7 @@ import { loadEntities } from './entities.ts';
 
 export { isAtRest };
 import { layerModule } from './registry.ts';
+import { customHero, hasCustomHero } from './custom-hero.ts';
 import { MEDIA_KINDS, canAddMedia, mediaItems, onMediaChanged, requestAddMedia, sizeOf, titleOf, valueOf } from './media.ts';
 import { Picker } from './picker.ts';
 import type { Choice, PickerAction } from './picker.ts';
@@ -1084,13 +1085,17 @@ export class Controller {
     const heroCleanups: (() => void)[] = [];
     let heroHandlers: PanelHandlers | void = undefined;
     const module = layerModule(manifest.id);
-    if (module?.hero) {
+    // A custom layer has no code; its hero is a small map of its data and its places (#342).
+    const heroOf =
+      module?.hero ??
+      (!module && hasCustomHero(manifest.custom) ? (ctx: PanelContext, place: HTMLElement) => customHero(ctx, place, () => store.manifest(manifest.id)?.custom) : undefined);
+    if (heroOf) {
       const ctx: PanelContext = Object.assign(Object.create(baseContext(store, connection, id)), {
         panel: 'hero',
         onCleanup: (cleanup: () => void) => heroCleanups.push(cleanup),
       });
       try {
-        heroHandlers = module.hero(ctx, hero);
+        heroHandlers = heroOf(ctx, hero);
         hero.hidden = false;
       } catch (error) {
         console.error(`[${id}] hero`, error);

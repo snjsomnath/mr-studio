@@ -127,6 +127,12 @@ export class DashboardView {
   }
 
   /** Applies a site's theme. Tokens that break a rule are refused and reported. */
+  /** What the canvas says while it has no panels; empty says nothing (a layer is open, but has no panels). */
+  setEmpty(text: string): void {
+    this.empty.textContent = text;
+    this.empty.hidden = this.pages.length > 0 || !text;
+  }
+
   setTheme(theme: Record<string, unknown> | null | undefined): void {
     const { variables, issues } = themeVariables(theme);
     for (const [name, value] of Object.entries(variables)) {
@@ -198,7 +204,7 @@ export class DashboardView {
     });
     for (const key of [...this.mounted.keys()]) if (!keep.has(key)) this.unmount(key);
 
-    this.empty.hidden = this.pages.length > 0;
+    this.empty.hidden = this.pages.length > 0 || !this.empty.textContent;
     this.turn(Math.min(this.current, Math.max(0, this.pages.length - 1)));
     this.report();
   }

@@ -3,7 +3,7 @@ import type { PanelInput } from '@mrstudio/dashboard';
 import type { Connection, LayerManifest, PanelContext, PanelSpec } from '@mrstudio/sdk';
 
 import { say, t } from './i18n.ts';
-import { baseContext } from './layer-manager.ts';
+import { baseContext, isAtRest } from './layer-manager.ts';
 import { layerModule } from './registry.ts';
 import type { Store } from './store.ts';
 
@@ -56,6 +56,19 @@ export function mountDashboard(root: HTMLElement, store: Store, connection: Conn
     fromScene();
     store.onScene(fromScene);
   }
+
+  // "Turn a layer on" only while none is open: an open layer without panels (a custom layer, #342)
+  // leaves the canvas quiet instead of asking for a layer.
+  const anyOpen = () =>
+    store.state.scene.some((id) => {
+      const state = store.state.layers[id];
+      const manifest = state && store.manifest(state.layer);
+      return Boolean(state?.active && !state.parent && manifest && manifest.category !== 'ambient' && manifest.category !== 'base' && !isAtRest(manifest, state));
+    });
+  const empty = () => view.setEmpty(anyOpen() ? '' : t('Turn a layer on to see it here'));
+  empty();
+  store.onLayer(empty);
+  store.onScene(empty);
 
   // Many changes can land in one frame (a slider being dragged); one sync covers them.
   let queued = false;
