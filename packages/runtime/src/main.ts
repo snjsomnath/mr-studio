@@ -20,23 +20,16 @@ import { Store } from './store.ts';
 import { collectProblems, Workbench } from './workbench.ts';
 import './style.css';
 
-// Code and stylesheets loaded later (the map with the table, the editor's panels) can fail to load
-// while the host restarts or is busy; WebKit then failed the import and the table stayed blank
-// (#261's smoke). A stylesheet is let go: the code still runs, and the next reload brings it. Failed
-// code reloads the page, at most once a minute, as the watchdog would (#79).
+// A stylesheet that comes with code loaded later (the map's, with the table) can fail to load
+// while the page reloads or the host restarts; WebKit then failed the whole import and the table
+// stayed blank (#261's smoke). The code still runs, so the page carries on without it until the
+// next reload brings it. Failed code still fails, and is reported (#260).
 window.addEventListener('vite:preloadError', (event) => {
   const message = String((event as Event & { payload?: Error }).payload?.message ?? '');
-  event.preventDefault();
-  console.warn(`could not load part of the page: ${message}`);
-  if (/preload CSS/i.test(message)) return;
-  let last = 0;
-  try {
-    last = Number(sessionStorage.getItem('mrs-reloaded-for-code') ?? 0);
-    sessionStorage.setItem('mrs-reloaded-for-code', String(Date.now()));
-  } catch {
-    // No session storage: reload anyway.
+  if (/preload CSS/i.test(message)) {
+    event.preventDefault();
+    console.warn(message);
   }
-  if (Date.now() - last > 60_000) location.reload();
 });
 
 const ROLES: Role[] = ['table', 'tv', 'phone', 'dev', 'guide'];
