@@ -193,7 +193,8 @@ impl LayerDef {
             Value::String(s) if s == "custom" => {}
             // A layout of panels (#357): the dashboard checks each panel as it does a TV page's.
             Value::Object(layout) => {
-                let panels = layout.get("panels").and_then(Value::as_array).ok_or_else(|| anyhow!("a stage layout has a list of panels"))?;
+                let panels =
+                    layout.get("panels").and_then(Value::as_array).ok_or_else(|| anyhow!("a stage layout has a list of panels"))?;
                 if panels.is_empty() {
                     bail!("a stage layout has at least one panel");
                 }

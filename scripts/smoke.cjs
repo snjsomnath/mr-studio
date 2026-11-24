@@ -1,6 +1,6 @@
 // Engine smoke (#261): the table, the controller and the editor in one browser engine, with
 // every core layer turned on and off and the display colour pass on, as the desktop app would
-// show them. It fails on any error a page throws, and on a frame that takes over 2 s, which is
+// show them. It fails on any error a page throws, and on a frame that takes over 5 s, which is
 // how an engine-only hang shows (PR 220: SVG filters froze WebKit on the Mac).
 //
 //   pnpm build && cargo build -p mrs-cli && node scripts/smoke.cjs [chromium|webkit|msedge] [screenshot-dir]
@@ -19,8 +19,11 @@ const engine = process.argv[2] || 'chromium';
 const shots = process.argv[3];
 const port = 4198;
 const base = `http://127.0.0.1:${port}`;
-/** A frame slower than this fails the run. */
-const LONGEST_FRAME_MS = 2000;
+/**
+ * A frame slower than this fails the run. CI runners draw without a graphics card, where turning
+ * a layer off or on can take 2 to 3 s; the WebKit freeze this guards against held for good.
+ */
+const LONGEST_FRAME_MS = 5000;
 /** Long enough for a layer to load its data and draw a few seconds. */
 const LAYER_MS = 2500;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -136,6 +139,7 @@ function launch() {
       for (const [name, page] of Object.entries(pages)) {
         const longest = await page.evaluate(() => window.__mrsFrames.longest());
         if (longest > LONGEST_FRAME_MS) problems.push(`${name}: a frame took ${Math.round(longest)} ms ${what}`);
+        else if (longest > 1000) console.log(`  ${name}: slowest frame ${Math.round(longest)} ms ${what}`);
         await page.evaluate(() => window.__mrsFrames.reset());
       }
     };
