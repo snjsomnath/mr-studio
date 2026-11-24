@@ -8,6 +8,7 @@ export * from './series.ts';
 export * from './readouts.ts';
 export * from './view.ts';
 export * from './draw.ts';
+export * from './cue.ts';
 export * from './motion.ts';
 export * from './fields.ts';
 export * from './story.ts';
