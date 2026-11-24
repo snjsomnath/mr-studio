@@ -205,49 +205,15 @@ jobs:
             release/mrstudio-mcp.mjs
             release/mr-studio.mcpb
 
-  # Publishes the same MCP server to npm (@mrstudio/mcp, what `npx -y @mrstudio/mcp` runs) and
-  # lists it in the MCP Registry (io.github.snjsomnath/mr-studio). Off until the repository
-  # variable MCP_PUBLISH is "true" and the secret NPM_TOKEN is set (docs/RELEASING.md).
+  # Stages the same MCP server on npm and lists it in the MCP Registry once approved
+  # (.github/workflows/mcp-publish.yml). Off until the repository variable MCP_PUBLISH is "true".
   publish-mcp:
     needs: [version, release]
     if: ${{ !cancelled() && needs.release.result == 'success' && vars.MCP_PUBLISH == 'true' }}
-    runs-on: ubuntu-latest
     permissions:
       contents: read
-      id-token: write # npm provenance and the MCP Registry's GitHub sign-in
-    env:
-      TAG: ${{ needs.version.outputs.tag || github.ref_name }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ env.TAG }}
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-          registry-url: https://registry.npmjs.org
-      - name: Build the MCP server
-        run: pnpm install --frozen-lockfile && pnpm --filter @mrstudio/mcp bundle
-      - name: Publish to npm
-        working-directory: packages/mcp
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: |
-          version=$(node -p "require('./package.json').version")
-          if npm view "@mrstudio/mcp@$version" version >/dev/null 2>&1; then echo "@mrstudio/mcp@$version is already on npm"; else npm publish; fi
-      # The registry entry names the npm package and the release's Claude Desktop extension.
-      - name: List in the MCP Registry
-        working-directory: packages/mcp
-        run: |
-          node -e '
-            const fs = require("fs"), crypto = require("crypto");
-            const entry = JSON.parse(fs.readFileSync("dist/server.json", "utf8"));
-            const file = fs.readFileSync("dist/mr-studio.mcpb");
-            entry.packages.push({ registryType: "mcpb", identifier: `https://github.com/${process.env.REPO}/releases/download/${process.env.TAG}/mr-studio.mcpb`, version: entry.version, fileSha256: crypto.createHash("sha256").update(file).digest("hex"), transport: { type: "stdio" } });
-            fs.writeFileSync("dist/server.json", JSON.stringify(entry, null, 2));'
-          curl -fsSL "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_linux_amd64.tar.gz" | tar xz mcp-publisher
-          ./mcp-publisher login github-oidc
-          cp dist/server.json server.json && ./mcp-publisher publish
-        env:
-          REPO: ${{ github.repository }}
+      id-token: write
+    uses: ./.github/workflows/mcp-publish.yml
+    with:
+      tag: ${{ needs.version.outputs.tag || github.ref_name }}
+    secrets: inherit

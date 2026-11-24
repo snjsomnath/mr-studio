@@ -44,13 +44,22 @@ Installing stays by hand: run the downloaded installer. The installers are not c
 
 ## Publishing the MCP server
 
-After each release, the `publish-mcp` job puts the same server on npm as `@mrstudio/mcp` (what `npx -y @mrstudio/mcp` runs, with provenance) and lists it in the [MCP Registry](https://registry.modelcontextprotocol.io) as `io.github.snjsomnath/mr-studio`, with the npm package and the release's Claude Desktop extension. A version already on npm is skipped, so re-running is safe. It is off until these are set:
+After each release, the `publish-mcp` job (`.github/workflows/mcp-publish.yml`) builds `@mrstudio/mcp` from the release tag and **stages** it on npm. A staged version is not public: a maintainer approves it, with two-factor authentication, before anyone can install it. Once it is approved, the same workflow lists it in the [MCP Registry](https://registry.modelcontextprotocol.io) as `io.github.snjsomnath/mr-studio`, with the npm package and the release's Claude Desktop extension. The `.mcpb` on the GitHub release does not wait for any of this.
 
-1. On [npmjs.com](https://www.npmjs.com), create the free organisation `mrstudio` (the `@mrstudio` scope) and a granular access token that can publish to it.
-2. In the repository's settings, under Secrets and variables, Actions, add the secret `NPM_TOKEN` (the token) and the variable `MCP_PUBLISH` set to `true`.
-3. The registry needs no key: it signs in with the workflow's GitHub identity, which owns the `io.github.snjsomnath/` names.
+**After each release**
 
-To publish the version already released, run the "Desktop app" workflow by hand on its tag. To stop, set `MCP_PUBLISH` to anything else; versions already on npm stay there (npm only lets a version be withdrawn in its first 72 hours).
+1. On [npmjs.com](https://www.npmjs.com), click your avatar, then **Packages**, **@mrstudio/mcp**, and the **Staged Packages** tab (or run `npm stage list @mrstudio/mcp`).
+2. Check the version matches the release, then **Approve** and enter your 2FA code (or `npm stage approve <stage-id>`).
+3. On GitHub, **Actions**, **MCP publish**, **Run workflow**: the release tag (for example `v0.14.0`) and step `registry`. It lists that version in the MCP Registry.
+
+**Setting it up (once)**
+
+1. On npmjs.com, create the free organisation `mrstudio` (the `@mrstudio` scope). Turn on two-factor authentication for your account.
+2. Make a granular access token with read and write access to the `mrstudio` organisation (no 2FA bypass needed: staging does not ask for 2FA). In the repository's settings, under Secrets and variables, Actions, add it as the secret `NPM_TOKEN`, and add the variable `MCP_PUBLISH` set to `true`.
+3. After the first version exists, replace the token with a trusted publisher, so no long-lived token is needed: **@mrstudio/mcp**, **Settings**, **Trusted publishing**, **GitHub Actions**. Organization or user `snjsomnath`, repository `mr-studio`, workflow filename `desktop.yml`, and allow only stage publish. Add a second one with workflow filename `mcp-publish.yml`, for runs started by hand. Then delete the `NPM_TOKEN` secret, and under **Settings**, **Publishing access**, choose "Require two-factor authentication and disallow tokens".
+4. The MCP Registry needs no key: it signs in with the workflow's GitHub identity, which owns the `io.github.snjsomnath/` names.
+
+To stage a release that is already out, run **MCP publish** by hand with its tag and step `both` (or `stage`). A version already on npm is skipped, so re-running is safe. To stop, set `MCP_PUBLISH` to anything else.
 
 ## Installing in place (optional, not set up)
 
