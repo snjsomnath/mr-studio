@@ -308,6 +308,15 @@ export class Editor {
         await layerFromImport(this.builderHost(), layer);
         dialog.close();
       },
+      // A plan drawing (#193): a Masterplan layer that reveals it phase by phase.
+      showPlan: async (dataset) => {
+        const manifest = this.store.manifests.find((m) => m.id === 'plan');
+        if (manifest) {
+          await this.add(manifest);
+          if (this.added) await this.send('layer.set', { layer: this.added, params: { dataset } });
+        }
+        dialog.close();
+      },
     });
     dialog.append(head, el('p', 'wz-lead', 'Bring a file into the table, or fetch it from OpenStreetMap. It is copied into the table and stays on this computer.'), importer.element);
     dialog.addEventListener('close', () => dialog.remove());

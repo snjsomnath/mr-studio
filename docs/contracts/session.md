@@ -199,8 +199,11 @@ POST /api/data/import?target=<target>[&crop=1][&swap=1][&crs=EPSG:<code>]    the
 | `trips` | The mobility layer's `trips.json` | `data/trips.json` | `data.trips` |
 | `terrain` | A GeoTIFF of ground heights | `data/terrain.tif` | `scene.terrain` (`crs` only when the file does not name it) |
 | `data:<name>` | GeoJSON, or CSV with position columns | `data/<name>.geojson` | `data.<name>` |
+| `data:<name>` | An SVG plan drawing (#193) | `data/<name>.svg` | `data.<name>` |
 
 Settings already in `scene.buildings` or `scene.trees` are kept. Coordinates that are not WGS84 are recognised when the file names its system or when SWEREF99 TM, a SWEREF99 local zone or the site's UTM zone puts them on the table, and are converted. Buildings with only `building:levels` (or `levels`, `floors`, `våningar`) get a height of 3 m a storey. A terrain GeoTIFF that only cites its grid is tried as SWEREF99 TM, the local zones, the site's UTM zone and WGS84, and the first that covers the table is kept and written as `crs`; `crs=EPSG:<code>` names it outright. Its report says how much of the table it covers and the range of ground heights. `crop=1` leaves out what lies more than a tenth of the table's size outside it; `swap=1` reads the first coordinate as latitude.
+
+An SVG (by its `.svg` name or its first element) is read as a plan drawing in `crates/mrs-site/src/plan.rs`: it covers the table's frame, its top-level groups (or the groups inside a single wrapping group) are its phases, and it is made safe to show, with scripts, embedded pages, event handlers and links to other files taken out. Each phase group is marked `data-mrs-phase` (from 0) and `data-mrs-name`. The summary names the phases; `plan.shape` warns when the drawing is another shape than the table, `plan.cleaned` lists what was taken out, and the Masterplan layer (`packages/layers/plan`) shows it.
 
 Both answer with a report: 200 when it can be imported, 422 when a blocker stops it (nothing is written), 400 for a bad request such as an unknown target.
 

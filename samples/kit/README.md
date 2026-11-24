@@ -39,6 +39,7 @@ Every file below then lands on the table (the sample site `sites/sample` uses th
 | `tables/links.csv` | Relations between places: `from,to` | Add data as dataset `links` | Constellations |
 | `tables/building-energy.csv` | Energy per building, keyed by `building_id` = `id` in buildings | Add data, joined to buildings | Colour buildings by a column |
 | `overlay.png` + `overlay.json` | An image with west/south/east/north bounds | Add data (raster) | Image overlay on the table |
+| `masterplan.svg` | A 1000 by 600 plan drawing in six Inkscape layers: boundary, green spaces, routes, new buildings, activity nodes | Add data, a dataset of its own (such as `masterplan`) | Masterplan layer: phases revealed one at a time (#193) |
 | `slideshow/` | Image, two GeoJSON slides and a WMS slide (disabled; needs a key, #42) | Site data `slideshow` | Slideshow layer, manual and timed (#43) |
 
 ### Coordinate systems (`crs/`)

@@ -4,6 +4,7 @@
  * this set does not have fall back to `layers`.
  */
 const PATHS: Record<string, string> = {
+  plan: 'M4 4h16v16H4zM4 11h6v9M10 15h10M14 4v6h6',
   layers: 'M12 3 3 8l9 5 9-5-9-5ZM3 12l9 5 9-5M3 16l9 5 9-5',
   home: 'M4 11l8-7 8 7M6 10v10h12V10M10 20v-6h4v6',
   plus: 'M12 5v14M5 12h14',
