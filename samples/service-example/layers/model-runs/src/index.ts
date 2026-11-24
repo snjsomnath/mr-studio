@@ -96,7 +96,6 @@ export default defineLayer<Params>({
         if (best.state === 'done' && best.import_kw === undefined) best.import_kw = Math.round(total);
         ctx.publish({
           busy: null,
-          import_kw: Math.round(total),
           source: answer.cached ? ctx.say('Last answer, model offline') : ctx.say('From the model'),
           ...summary(list),
         });
