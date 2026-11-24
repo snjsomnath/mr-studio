@@ -3,6 +3,7 @@
   "id": "stormwater",
   "name": "Stormwater",
   "description": "Rain running off roofs and slopes, gathering in streams and pooling, live as the storm goes on",
+  "about": {"purpose": "Shows where rain runs off and pools during a storm, live, so people see flood risk and where water could be kept.", "questions": ["Where does water gather in a cloudburst?", "Where could green or blue space hold it?"], "pairs_with": ["trees", "plan", "sketch"], "limits": ["Uses the site's terrain and buildings; better with a terrain file"]},
   "icon": "droplet",
   "category": "analysis",
   "attract": { "effect": "rain" },

@@ -3,6 +3,7 @@
   "id": "wind",
   "name": "Wind",
   "description": "How the wind moves between buildings and through trees",
+  "about": {"purpose": "Shows how wind moves between buildings and trees, so people find draughty corners and sheltered spots.", "questions": ["Where is it windy or sheltered?", "Does the proposal create a wind tunnel?"], "pairs_with": ["plan", "swipe", "coolpaths"], "limits": ["A 2D simulation at street level", "Uses the site's buildings and trees"]},
   "icon": "wind",
   "attract": { "effect": "wind" },
   "requires": { "kernels": ["wind"] },

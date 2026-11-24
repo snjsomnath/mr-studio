@@ -3,6 +3,7 @@
   "id": "grid",
   "name": "Table grid",
   "description": "A glowing grid on the model's tile seams, to check that the projection lines up",
+  "about": {"purpose": "Checks that the projection lines up with the physical model's tiles.", "questions": ["Is the table calibrated?"], "pairs_with": [], "limits": ["A setup aid, not a story layer"]},
   "icon": "grid",
   "category": "analysis",
   "attract": { "effect": "grid" },

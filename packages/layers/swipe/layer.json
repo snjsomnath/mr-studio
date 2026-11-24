@@ -3,6 +3,7 @@
   "id": "swipe",
   "name": "Reveal line",
   "description": "A line people move across the table: on one side of it the layers placed inside it show, such as what lies under the ground",
+  "about": {"purpose": "Compares two states with a line people drag across the table: layers inside it show on one side.", "questions": ["What changes between today and the proposal?", "What lies under the ground here?"], "pairs_with": ["plan", "media", "sunlight", "lens"], "limits": ["Shows layers placed inside it; it does not compute anything itself"]},
   "icon": "swipe",
   "category": "analysis",
   "reveals": true,

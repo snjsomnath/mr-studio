@@ -16,12 +16,14 @@ The server writes `site.json`, never layer code. When a project needs a new laye
 | `read_doc` | Architecture, roadmap, the changelog and every contract, verbatim |
 | `whats_new` | What changed in the core, newest version first, from `CHANGELOG.md`, plus notes merged but not yet released; `since` limits it to versions newer than a team's |
 | `list_layers`, `describe_layer` | Core (and site) layers with their controls, tools, data needs and panels; planned roadmap layers |
-| `list_building_blocks` | Visual, data, interaction and TV primitives, each marked built or planned from the code itself |
+| `find_capabilities` | Everything MR Studio can and cannot do for a goal in plain words: layers, building blocks, kernels, site features, planned work and constraints, ranked, each with why it matched, its status from the code (`available`, `needs_setup`, `planned`, `unsupported`), what it needs, what the table, controller and phones do, what it pairs with and the files that prove it. With `site`, requirements say whether that site meets them |
+| `describe_capability` | One capability in full: purpose, questions it answers, requirements, surfaces, limits, example sites, evidence, related issues, and a layer's controls |
+| `list_building_blocks` | Visual, data, interaction and TV primitives, each marked built or planned from the code itself (`find_capabilities` with `kind` gives the same with evidence) |
 | `create_site` | A new site package: `site.json`, `data/`, `requests/`, README, `.gitignore` |
 | `get_site`, `update_site` | Read a site with effective params; change settings (place, table, scene sources, basemap, branding, tv) |
 | `add_layer`, `set_layer`, `move_layer`, `remove_layer` | Compose the scene by instance id: layers, items inside a layer (`parent`), and buttons with groups; params are checked against the layer's controls with the host's rules |
 | `set_steps` | How Next moves through a layer, and a slideshow's sequence of layers, with presenter `notes` per step for the guide's phone |
-| `save_custom_layer` | Save or remove a custom layer: a recipe of data, look, motion and interaction blocks, used as `custom:<id>`. Blocks, props, colours, ramps, pictograms and icons are checked against the recipe player in `packages/sdk` |
+| `save_custom_layer` | Save or remove a custom layer: a recipe of data, look, motion and interaction blocks, used as `custom:<id>`. Blocks, props, colours, ramps, pictograms and icons are checked against the recipe player in `packages/sdk`, and the controller's legend is worked out from the looks and their data, as the editor does |
 | `validate_site` | The site and layer contracts, plus `mrstudio validate` when the CLI is installed |
 | `preview_site` | How to see the site on this computer: open it in the installed app, or a `mrstudio dev` command on a free port (never the app's 4170) with the app's own surfaces; URLs of the editor, table, controller, guide's phone, phone and dev view |
 | `check_layer_idea` | Says whether an idea is an existing layer to configure, a new core layer from existing blocks, or needs new blocks or kernels |
@@ -30,7 +32,16 @@ The server writes `site.json`, never layer code. When a project needs a new laye
 
 **Prompts**: `new_project` (story, place, scene, data, branding and welcome, TV, validation), `brainstorm_layer`, `design_dashboard`, `request_module`.
 
-**Resources**: `mrstudio://docs/<name>` and `mrstudio://layers/<id>`.
+**Resources**:
+
+| Resource | Holds |
+| --- | --- |
+| `mrstudio://concepts` | How to design an experience: the three surfaces, what goes where, the words and the constraints ([experience-design.md](experience-design.md)) |
+| `mrstudio://patterns/<id>` | Experience patterns (compare today and the proposal, map it together, a guided story…), each with the table, controller and phone roles and the capability ids it uses |
+| `mrstudio://capabilities`, `mrstudio://capabilities/<id>` | The capability catalogue, and one record in full |
+| `mrstudio://schema/site`, `mrstudio://schema/recipe` | The keys `site.json` accepts at each level, and a custom layer recipe's blocks, props, colours, ramps and icons |
+| `mrstudio://examples/<id>` | Real sites and samples in the core: their layers, steps and custom layers |
+| `mrstudio://docs/<name>`, `mrstudio://layers/<id>` | Every doc verbatim, and each layer's `layer.json` |
 
 **Results.** Every tool declares an output schema and returns `structuredContent` (with a text copy for older clients): `ok`, a one-line `summary`, and the tool's own fields. A refusal has `ok: false` and `error: { code, message, recoverable, next }`, for example `would_invalidate`, `unknown_layer`, `unknown_setting`, `site_invalid` or `not_submitted`; nothing is written when a tool refuses. Every tool carries MCP annotations (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`); only `submit_module_request` reaches outside the computer.
 
@@ -44,7 +55,7 @@ The server describes one core version. It looks, in order, for:
 2. A checkout above the project folder, the working folder or the server file itself (so running it from this repository is always current).
 3. The snapshot built into `dist/mrstudio-mcp.mjs`: the layers, docs and block status of the commit it was built from.
 
-Layers are read from `packages/layers/*/layer.json`, docs from `docs/`, the changelog from `CHANGELOG.md` and `changes/`, site settings from the structs in `crates/mrs-site/src/manifest.rs`, kernels from `crates/mrs-engine/src/kernels/`, and a block counts as built only when its API appears in the SDK, runtime or dashboard source. A new core layer, doc or site setting shows up without touching the server.
+Layers are read from `packages/layers/*/layer.json`, docs from `docs/`, the changelog from `CHANGELOG.md` and `changes/`, site settings from the structs in `crates/mrs-site/src/manifest.rs`, kernels from `crates/mrs-engine/src/kernels/`, a block counts as built only when its API appears in the SDK, runtime or dashboard source, and what each layer is for (purpose, questions it answers, what it pairs with, limits) from the `about` in its `layer.json`. The capability catalogue is built from all of these; a roadmap row counts as planned only while nothing in the code covers it. A new core layer, doc or site setting shows up without touching the server.
 
 ### Keeping it current
 
