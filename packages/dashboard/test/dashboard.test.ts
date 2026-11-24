@@ -173,7 +173,7 @@ test('a site can restyle but not break the rules', () => {
 
 test('the registry is plain data an editor can read', () => {
   const described = registry.describe();
-  assert.deepEqual(described.map((w) => w.type), ['stat', 'bars', 'series', 'ramp', 'timeline', 'text', 'custom']);
+  assert.deepEqual(described.map((w) => w.type), ['stat', 'bars', 'compare', 'balance', 'series', 'ramp', 'timeline', 'text', 'custom']);
   assert.deepEqual(JSON.parse(JSON.stringify(described)), described);
   for (const widget of described) for (const prop of Object.values(widget.props)) assert.ok(prop.label, `${widget.type} props need labels`);
 });
@@ -187,4 +187,40 @@ test('a ribbon holds a few small panels (#78)', () => {
   const busy = (id: string) => stat({ id, ribbon: true }, { caption: 'Now', delta: 1 });
   assert.deepEqual(validateRibbon(['a', 'b', 'c', 'd'].map(busy), registry).map((i) => i.rule), ['budget'], '12 reads is more than a ribbon holds');
   assert.ok(validateLayerPanels([ribbon('a', 'block')], registry).some((i) => i.path === 'panels.a.size'));
+});
+
+test('compare and balance panels fit their sizes, in a ribbon too, and are counted (#281)', async () => {
+  const { scenarioChange, selfSufficiency } = await import('../src/widgets/index.ts');
+  const scenarios = [
+    { label: 'As today', value: { bind: 'shared.today' }, state: 'done' },
+    { label: 'Each alone', value: { bind: 'shared.alone' }, state: { bind: 'shared.alone_state' } },
+    { label: 'Community', value: { bind: 'shared.community' }, state: { bind: 'shared.community_state' } },
+  ];
+  const compare = (size: PanelSpec['size'], list = scenarios): PanelSpec => ({ id: 'c', widget: 'compare', size, title: 'Yearly cost', props: { scenarios: list, unit: 'kkr' } });
+  assert.deepEqual(rules(compare('wide')), []);
+  assert.deepEqual(rules(compare('chip')), []);
+  assert.deepEqual(rules(compare('tall')), ['size']);
+  assert.equal(panelReads(compare('wide'), registry.get('compare')!), 4);
+  assert.equal(panelReads(compare('chip'), registry.get('compare')!), 1);
+  assert.deepEqual(rules({ ...compare('wide'), props: { scenarios: [{ label: 'X', state: 'later' }] } }), ['schema']);
+  const parts = (n: number) => Array.from({ length: n }, (_, i) => ({ label: `P${i}`, value: i + 1 }));
+  const balance = (size: PanelSpec['size'], n = 3): PanelSpec => ({ id: 'b', widget: 'balance', size, title: 'Energy today', props: { sources: parts(n), uses: parts(n), unit: 'kWh' } });
+  assert.deepEqual(rules(balance('wide')), []);
+  assert.equal(panelReads(balance('wide'), registry.get('balance')!), 3);
+  assert.deepEqual(rules(balance('block')), []);
+  assert.equal(panelReads(balance('block'), registry.get('balance')!), 7);
+  assert.equal(panelReads(balance('chip'), registry.get('balance')!), 1);
+  // A ribbon takes the chip and wide forms.
+  assert.deepEqual(validateRibbon([{ ...compare('chip'), ribbon: true }, { ...balance('wide'), id: 'b2', ribbon: true }] as PanelSpec[], registry), []);
+  // Bindings: a scenario not worked out yet keeps its state; values are numbers or nothing.
+  const props = resolveProps(registry.get('compare')!, compare('wide').props, 'wide', { params: {}, shared: { today: 120, alone: 100, alone_state: 'done', community: 'n/a', community_state: 'running' }, site: {} });
+  assert.deepEqual(props.scenarios, [
+    { label: 'As today', value: 120, state: 'done' },
+    { label: 'Each alone', value: 100, state: 'done' },
+    { label: 'Community', state: 'running' },
+  ]);
+  assert.equal(scenarioChange(120, 90), -0.25);
+  assert.equal(scenarioChange(undefined, 90), null);
+  assert.equal(selfSufficiency([{ label: 'Solar', value: 60 }, { label: 'Grid', value: 40 }], 'Grid'), 0.6);
+  assert.equal(selfSufficiency([], 'Grid'), null);
 });

@@ -101,6 +101,8 @@ A widget is a kind of panel content. Each has a schema for its props, the sizes 
 | --- | --- | --- | --- |
 | `stat` | One headline number with a unit, optionally a line of context and a change | chip, tile, wide | 1, +1 for context, +1 for a change |
 | `bars` | Up to six labelled bars on one scale | wide, tall, block | 1 per bar |
+| `compare` | Two or three scenarios side by side, one figure each and the change from the first; a card not worked out yet says so (#281) | chip (the last change only), wide, block | 1 per scenario, +1 for the change; chip 1 |
+| `balance` | Where something came from and went to, as two bands split by share, with one headline such as self-sufficiency (#281) | chip (the headline only), wide, block | wide: 1 + 1 per band; block: 1 + 1 per part; chip 1 |
 | `series` | Up to three lines over time on one scale, optional marker for now | wide, block, hero, strip | 1 per line, +1 for the scale |
 | `ramp` | The colour key of the field on the table and what its ends mean | tile, band | 2 |
 | `timeline` | A span of hours, the part played, daylight shaded, a marker on now | band | 2 |

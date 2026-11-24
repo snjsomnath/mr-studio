@@ -20,8 +20,11 @@ interface Params {
 }
 
 interface Result {
-  buildings: { id: string; import_kw: number }[];
+  buildings: { id: string; in: boolean; use_kw: number; own_kw: number; shared_kw: number; import_kw: number }[];
 }
+
+type State = 'idle' | 'running' | 'done';
+const sum = (list: Result['buildings'], key: 'use_kw' | 'own_kw' | 'shared_kw' | 'import_kw') => list.reduce((total, b) => total + b[key], 0);
 
 /** The middle of a building: the average of its outer ring's corners. */
 function middle(feature: EntityFeature): Position {
@@ -41,11 +44,37 @@ export default defineLayer<Params>({
     let result: Result | undefined;
     let asked = 0;
     let running: { cancel(): void } | undefined;
+    // The third scenario is the optimiser's best share: not run until the button is pressed (#281).
+    let best: { state: State; import_kw?: number } = { state: 'idle' };
 
     // The buildings the visitor changes, as layer.json's entity set names them.
     const set = (manifest as LayerManifest).entities![0]!;
     const buildings = entityFeatures(await loadSiteData(ctx.site, set.dataset), set);
     const at = new Map(buildings.map((b) => [b.id, middle(b)] as const));
+
+    // What the compare and balance panels bind to: three scenarios of grid import, and where the power came from and went.
+    const summary = (list: Result['buildings']) => {
+      const use = sum(list, 'use_kw');
+      const scenarios = [
+        { label: ctx.say('As today'), value: Math.round(use), state: 'done' as State },
+        { label: ctx.say('This plan'), value: Math.round(sum(list, 'import_kw')), state: 'done' as State },
+        { label: ctx.say('Best share'), value: best.import_kw, state: best.state },
+      ];
+      const inside = list.filter((b) => b.in);
+      return {
+        scenarios,
+        sources: [
+          { label: ctx.say('Own solar'), value: Math.round(sum(list, 'own_kw')), slot: 1 },
+          { label: ctx.say('Shared solar'), value: Math.round(sum(list, 'shared_kw')), slot: 2 },
+          { label: ctx.say('Grid'), value: Math.round(sum(list, 'import_kw')), slot: 4 },
+        ],
+        uses: [
+          { label: ctx.say('In the community'), value: Math.round(sum(inside, 'use_kw')), slot: 3 },
+          { label: ctx.say('Outside it'), value: Math.round(use - sum(inside, 'use_kw')), slot: 5 },
+        ],
+        self_sufficiency: use > 0 ? 1 - sum(list, 'import_kw') / use : null,
+      };
+    };
 
     const ask = async () => {
       const mine = ++asked;
@@ -57,11 +86,14 @@ export default defineLayer<Params>({
         });
         if (mine !== asked) return;
         result = answer.value;
-        const total = result.buildings.reduce((sum, b) => sum + b.import_kw, 0);
+        const list = result.buildings;
+        const total = sum(list, 'import_kw');
+        if (best.state === 'done' && best.import_kw === undefined) best.import_kw = Math.round(total);
         ctx.publish({
           busy: null,
           import_kw: Math.round(total),
           source: answer.cached ? ctx.say('Last answer, model offline') : ctx.say('From the model'),
+          ...summary(list),
         });
       } catch {
         if (mine === asked) ctx.publish({ busy: null, source: ctx.say('The model is not answering') });
@@ -102,17 +134,24 @@ export default defineLayer<Params>({
       action(id) {
         if (id !== 'optimise' || running) return;
         const days = Number(ctx.params.days);
-        ctx.publish({ busy: { label: ctx.say('Optimising {days} days', { days }), progress: 0 } });
+        best = { state: 'running' };
+        if (result) ctx.publish({ busy: { label: ctx.say('Optimising {days} days', { days }), progress: 0 }, ...summary(result.buildings) });
+        else ctx.publish({ busy: { label: ctx.say('Optimising {days} days', { days }), progress: 0 } });
         const job = model.job<{ best_share: number; saving_sek: number }>('optimise', { days }, {
           onProgress: (p) => ctx.publish({ busy: { label: p.message ?? ctx.say('Optimising'), progress: p.progress } }),
         });
         running = job;
         job.result
           .then((answer) => {
+            // The best share's import is known once the model has run at it, after the share moves.
+            best = { state: 'done' };
             ctx.publish({ busy: null, saving: answer.value.saving_sek, best: ctx.say('Best share {share} %', { share: Math.round(answer.value.best_share * 100) }) });
             ctx.setParams({ share: answer.value.best_share });
           })
-          .catch(() => ctx.publish({ busy: null, best: ctx.say('The optimiser did not finish') }))
+          .catch(() => {
+            best = { state: 'idle' };
+            ctx.publish({ busy: null, best: ctx.say('The optimiser did not finish'), ...(result ? summary(result.buildings) : {}) });
+          })
           .finally(() => (running = undefined));
       },
     };
