@@ -55,5 +55,10 @@
   "{hours} h lost to trees": "träden tar {hours} h",
   "sun {from} to {to}": "sol {from}–{to}",
   "no direct sun": "ingen direkt sol",
-  "Trees": "Träd"
+  "Trees": "Träd",
+  "Seasons": "Årstider",
+  "Season on the table": "Årstid på bordet",
+  "Each in turn": "Var och en i tur",
+  "Sun, on average": "Sol i snitt",
+  "At least {hours} h": "Minst {hours} h"
 }
