@@ -1,8 +1,9 @@
-import { classBreaks, columnNumbers, paintScale, profileColumns, rampColour, siteDataUrl, STRAY_REACH, tablePalette, tableReach, tableSpace } from '@mrstudio/sdk';
+import { columnNumbers, paintBreaks, paintScale, profileColumns, rampColour, rampShare, siteDataUrl, STRAY_REACH, tablePalette, tableReach, tableSpace } from '@mrstudio/sdk';
 import type { GeometryKind, PaintBy, Paint, SiteInfo } from '@mrstudio/sdk';
 
 import { el } from '../controls.ts';
 import { icon } from './icons.ts';
+import { middleInput, stopsInput } from './number-inputs.ts';
 import { dataFormat } from '../data-formats.ts';
 
 /** What a good file looks like, from the one list the MCP server and the guide read too (#36). */
@@ -155,7 +156,9 @@ export interface ImporterHost {
 }
 
 /** How the author wants an imported dataset shown: no layer, one colour, or coloured by a column. */
-type ShowAs = { column: null | ''; classes?: undefined } | { column: string; classes: NonNullable<PaintBy['classes']> };
+type ShowAs =
+  | { column: null | ''; classes?: undefined; ramp?: undefined; stops?: undefined; mid?: undefined }
+  | { column: string; classes: NonNullable<PaintBy['classes']>; ramp?: string; stops?: number[]; mid?: number };
 
 type Source = { kind: 'file'; file: File } | { kind: 'osm' } | { kind: 'elevation' };
 
@@ -715,7 +718,20 @@ export class Importer {
     const palette = tablePalette(this.host.site());
     if (this.showAs.column && !columns.some((c) => c.name === this.showAs.column)) this.showAs = { column: '' };
     const chosen = this.showAs.column ? columns.find((c) => c.name === this.showAs.column)! : null;
-    const paint: Paint = chosen ? (chosen.kind === 'number' ? { by: chosen.name, kind: 'number', ramp: 'sun', classes: this.showAs.classes ?? 'natural', count: 5 } : { by: chosen.name, kind: 'category' }) : '@accent';
+    const shown = this.showAs;
+    const paint: Paint = chosen
+      ? chosen.kind === 'number'
+        ? {
+            by: chosen.name,
+            kind: 'number',
+            ramp: shown.ramp ?? 'sun',
+            classes: shown.classes ?? 'natural',
+            count: 5,
+            ...(shown.classes === 'custom' ? { stops: shown.stops ?? [] } : {}),
+            ...(shown.mid !== undefined ? { mid: shown.mid } : {}),
+          }
+        : { by: chosen.name, kind: 'category' }
+      : '@accent';
     const scale = paintScale(paint, rows, palette);
     const hex = ([r, g, b, a]: readonly number[]) => `rgb(${Math.round(r!)} ${Math.round(g!)} ${Math.round(b!)}${a !== undefined && a < 1 ? ` / ${a}` : ''})`;
     const colourOf = this.showAs.column === null ? undefined : (p: Record<string, unknown>) => hex(scale.colour(p));
@@ -735,21 +751,51 @@ export class Importer {
     const field = el('label', 'wz-field');
     field.append(el('span', undefined, 'Colour'), select);
     box.append(field);
-    if (chosen?.kind === 'number') {
+    if (chosen?.kind === 'number' && shown.column) {
+      const on = shown as Extract<ShowAs, { classes: string }>;
+      const values = columnNumbers(rows, chosen.name);
+      // The ramp: sequential for "how much", diverging for "above or below a middle" (#94).
+      const ramps = el('div', 'im-classes im-ramps');
+      ramps.setAttribute('role', 'radiogroup');
+      ramps.ariaLabel = 'Ramp';
+      for (const [name, colours] of Object.entries(palette.ramps)) {
+        const b = el('button', 'im-ramp');
+        b.type = 'button';
+        b.title = name === 'diverging' ? 'Diverging: two colours either side of a calm middle' : name;
+        b.ariaLabel = `Ramp ${name}`;
+        b.style.background = `linear-gradient(to right, ${colours.join(', ')})`;
+        b.setAttribute('aria-pressed', String((shown.ramp ?? 'sun') === name));
+        b.addEventListener('click', () => {
+          this.showAs = { ...on, ramp: name };
+          this.render();
+        });
+        ramps.append(b);
+      }
       const classes = el('div', 'im-classes');
       classes.setAttribute('role', 'radiogroup');
       classes.ariaLabel = 'Classes';
-      for (const [value, label] of [['natural', 'Natural breaks'], ['quantile', 'Quantile'], ['equal', 'Equal'], ['continuous', 'Smooth']] as const) {
+      for (const [value, label] of [['natural', 'Natural breaks'], ['quantile', 'Quantile'], ['equal', 'Equal'], ['continuous', 'Smooth'], ['custom', 'My own']] as const) {
         const b = el('button', 'ed-button', label);
         b.type = 'button';
-        b.setAttribute('aria-pressed', String((this.showAs.classes ?? 'natural') === value));
+        b.setAttribute('aria-pressed', String((shown.classes ?? 'natural') === value));
         b.addEventListener('click', () => {
-          this.showAs = { column: chosen.name, classes: value };
+          // My own starts from the edges on show, to nudge rather than type from nothing.
+          const from = shown.classes === 'continuous' || shown.classes === 'custom' ? 'natural' : shown.classes;
+          const stops = value === 'custom' ? (shown.stops?.length ? shown.stops : paintBreaks({ classes: from, count: 5 }, values).map((v) => Number(v.toPrecision(3)))) : shown.stops;
+          this.showAs = { ...on, classes: value, stops };
           this.render();
         });
         classes.append(b);
       }
-      box.append(classes, histogram(columnNumbers(rows, chosen.name), this.showAs.classes ?? 'natural', palette.ramps.sun ?? []));
+      const row = (label: string, input: HTMLElement) => {
+        const node = el('label', 'wz-field im-field');
+        node.append(el('span', undefined, label), input);
+        return node;
+      };
+      box.append(ramps, classes);
+      if (shown.classes === 'custom') box.append(row('Edges', stopsInput(shown.stops ?? [], (stops) => ((this.showAs = { ...on, stops }), this.render()))));
+      box.append(row('Middle', middleInput(shown.mid, (mid) => ((this.showAs = { ...on, mid }), this.render()))));
+      box.append(histogram(values, paint as PaintBy, palette.ramps[shown.ramp ?? 'sun'] ?? palette.ramps.sun ?? []));
     }
     if (scale.legend.length) {
       const legend = el('ul', 'im-legend');
@@ -826,7 +872,8 @@ export class Importer {
  * A histogram of a column's values with its class edges marked (#94, as in kepler.gl), so an
  * author sees where natural breaks or quantiles cut the data.
  */
-function histogram(values: number[], classes: NonNullable<PaintBy['classes']>, ramp: readonly string[]): SVGSVGElement {
+function histogram(values: number[], paint: PaintBy, ramp: readonly string[]): SVGSVGElement {
+  const classes = paint.classes ?? 'continuous';
   const W = 300;
   const H = 64;
   const chart = svg('svg', { viewBox: `0 0 ${W} ${H + 14}`, class: 'im-histogram', role: 'img', 'aria-label': 'How the values spread, with the class edges' });
@@ -838,20 +885,33 @@ function histogram(values: number[], classes: NonNullable<PaintBy['classes']>, r
   const binOf = (v: number) => (hi > lo ? Math.min(bins - 1, Math.floor(((v - lo) / (hi - lo)) * bins)) : 0);
   for (const v of values) counts[binOf(v)]!++;
   const most = Math.max(...counts);
-  const breaks = classes === 'continuous' ? [] : classBreaks(values, classes, 5);
+  const breaks = paintBreaks(paint, values);
   const share = (v: number) => (hi > lo ? (v - lo) / (hi - lo) : 0);
   const classOf = (v: number) => breaks.filter((b) => v >= b).length;
+  const middle = paint.mid !== undefined && paint.mid > lo && paint.mid < hi ? paint.mid : undefined;
+  // The same colours as on the table: a class takes the ramp at its middle when there is a middle value.
+  const bounds = [Math.min(lo, breaks[0] ?? lo), ...breaks, Math.max(hi, breaks.at(-1) ?? hi)];
   counts.forEach((count, i) => {
     const mid = lo + ((i + 0.5) / bins) * (hi - lo);
-    const t = classes === 'continuous' ? share(mid) : breaks.length ? classOf(mid) / breaks.length : 0;
+    const c = classOf(mid);
+    const t =
+      classes === 'continuous'
+        ? rampShare(mid, lo, hi, middle)
+        : middle !== undefined
+          ? rampShare((bounds[c]! + bounds[c + 1]!) / 2, lo, hi, middle)
+          : breaks.length
+            ? c / breaks.length
+            : 0;
     const [r, g, b] = rampColour(ramp, t);
     const h = most ? (count / most) * H : 0;
     chart.append(svg('rect', { x: (i * W) / bins + 0.5, y: H - h, width: W / bins - 1, height: h, fill: `rgb(${Math.round(r)} ${Math.round(g)} ${Math.round(b)})` }));
   });
   for (const edge of breaks) {
+    if (edge <= lo || edge >= hi) continue;
     const x = share(edge) * W;
     chart.append(svg('line', { x1: x, x2: x, y1: 0, y2: H, class: 'im-histogram-edge' }));
   }
+  if (middle !== undefined) chart.append(svg('line', { x1: share(middle) * W, x2: share(middle) * W, y1: 0, y2: H, class: 'im-histogram-edge is-middle' }));
   const format = (v: number) => (Math.abs(v) >= 100 ? Math.round(v).toLocaleString() : Number(v.toPrecision(3)).toString());
   const left = svg('text', { x: 0, y: H + 12, class: 'im-histogram-label' });
   left.textContent = format(lo);

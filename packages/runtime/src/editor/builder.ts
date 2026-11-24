@@ -31,6 +31,7 @@ import {
   soundPath,
   columnCategories,
   columnNumbers,
+  paintBreaks,
   schemeFor,
   CATEGORY_SCHEMES,
   paintScale,
@@ -44,6 +45,7 @@ import { el, layerButton } from '../controls.ts';
 import { dataUrl, loadData } from '../recipe-player.ts';
 import type { Store } from '../store.ts';
 import { icon } from './icons.ts';
+import { middleInput, stopsInput } from './number-inputs.ts';
 import './builder.css';
 
 export interface BuilderHost {
@@ -261,6 +263,8 @@ export function colourPicker(value: string | null, palette: () => ResolvedPalett
   wrap.append(swatch, pop);
   return wrap;
 }
+
+const round3 = (n: number): number => Number(n.toPrecision(3));
 
 /** A column name as words: `green_share` reads "Green share". */
 const tidy = (name: string): string => name.replace(/[-_]+/g, ' ').replace(/^./, (c) => c.toUpperCase());
@@ -913,13 +917,25 @@ export function builderSection(host: BuilderHost, manifest: LayerManifest, butto
           ramps.append(b);
         }
         fields.push(field('Ramp', ramps));
-        fields.push(field('Classes', segmented([['continuous', 'Smooth'], ['equal', 'Equal'], ['quantile', 'Quantile'], ['natural', 'Natural']] as const, by.classes ?? 'continuous', (v) => {
+        fields.push(field('Classes', segmented([['continuous', 'Smooth'], ['equal', 'Equal'], ['quantile', 'Quantile'], ['natural', 'Natural'], ['custom', 'My own']] as const, by.classes ?? 'continuous', (v) => {
+          // "My own" starts from the edges on show, so the author nudges them rather than typing all.
+          if (v === 'custom' && !by.stops?.length) by.stops = paintBreaks({ ...by, classes: by.classes === 'continuous' || !by.classes ? 'equal' : by.classes }, columnNumbers(data, by.by)).map(round3);
           by.classes = v;
           onChange(by);
           draw();
         }, 'Classes')));
-        if (by.classes && by.classes !== 'continuous') fields.push(field('How many', slider(by.count ?? 5, 2, 7, 1, '', (v) => {
+        if (by.classes && by.classes !== 'continuous' && by.classes !== 'custom') fields.push(field('How many', slider(by.count ?? 5, 2, 7, 1, '', (v) => {
           by.count = v;
+          onChange(by);
+        })));
+        if (by.classes === 'custom') fields.push(field('Edges', stopsInput(by.stops ?? [], (stops) => {
+          by.stops = stops;
+          onChange(by);
+        })));
+        // The middle (#94): the value the ramp's middle colour stands for. Most use with a diverging ramp.
+        fields.push(field('Middle', middleInput(by.mid, (mid) => {
+          if (mid === undefined) delete by.mid;
+          else by.mid = mid;
           onChange(by);
         })));
       } else {

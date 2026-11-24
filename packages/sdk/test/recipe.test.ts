@@ -11,7 +11,9 @@ import {
   lookFor,
   metresPerTableMm,
   motionFor,
+  paintBreaks,
   paintScale,
+  rampShare,
   paletteColour,
   profileColumns,
   projectionWarning,
@@ -194,4 +196,20 @@ test('show only (#38): controls bound to filter.<look>.<column> keep the feature
   const shapes = { areas: [area('park', 10), area('park', 50), area('home', 80)], paths: [], spots: [] };
   assert.equal(filterShapes(shapes, undefined), shapes);
   assert.deepEqual(filterShapes(shapes, boundFilters(recipe, { only: 'park', least: 20 }).zones).areas.map((a) => a.id), ['park50']);
+});
+
+test('own class edges and a middle value (#94)', () => {
+  const palette = resolvePalette(undefined);
+  const rows = [-40, -10, 0, 5, 30, 60].map((v) => ({ change: v }));
+  assert.deepEqual(paintBreaks({ classes: 'custom', stops: [20, -20, 0, 20] }, []), [-20, 0, 20]);
+  const own = paintScale({ by: 'change', kind: 'number', ramp: 'diverging', classes: 'custom', stops: [-20, 0, 20] }, rows, palette);
+  assert.deepEqual(own.legend.map((l) => l.label), ['-40 – -20', '-20 – 0', '0 – 20', '20 – 60']);
+  // A middle at 0 gives 0 the ramp's middle colour, however lopsided the data.
+  assert.equal(rampShare(0, -40, 60, 0), 0.5);
+  assert.equal(rampShare(60, -40, 60, 0), 1);
+  assert.equal(rampShare(-40, -40, 60, 0), 0);
+  assert.equal(rampShare(10, 0, 20), 0.5);
+  const smooth = paintScale({ by: 'change', kind: 'number', ramp: 'diverging', mid: 0 }, rows, palette);
+  assert.deepEqual(smooth.legend.map((l) => l.label), ['-40', '0', '60']);
+  assert.equal(smooth.legend[1]!.color.toLowerCase(), palette.ramps.diverging![2]!.toLowerCase());
 });

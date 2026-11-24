@@ -45,10 +45,37 @@ export interface PaintBy {
   scheme?: string;
   /** For numbers: the ramp's name in the palette. Default `sun`. */
   ramp?: string;
-  /** For numbers: a smooth ramp, or classes of equal width, equal count, or natural breaks (Jenks). Default `continuous`. */
-  classes?: 'continuous' | 'equal' | 'quantile' | 'natural';
+  /**
+   * For numbers: a smooth ramp, or classes of equal width, equal count, natural breaks (Jenks),
+   * or the author's own edges (`custom`, in `stops`). Default `continuous`.
+   */
+  classes?: 'continuous' | 'equal' | 'quantile' | 'natural' | 'custom';
   /** How many classes, 2 to 7. Default 5. */
   count?: number;
+  /** With `classes: custom`: the edges between classes, low to high, at most six (#94). */
+  stops?: number[];
+  /**
+   * The value the ramp's middle colour stands for (#94). With a diverging ramp it is the calm
+   * middle, such as 0 or an average, and the two ends spread from it. Default: halfway.
+   */
+  mid?: number;
+}
+
+/** The class edges a numeric paint draws with: the author's own, or worked out from the values. */
+export function paintBreaks(paint: Pick<PaintBy, 'classes' | 'count' | 'stops'>, values: readonly number[]): number[] {
+  const classes = paint.classes ?? 'continuous';
+  if (classes === 'continuous') return [];
+  if (classes === 'custom') return [...new Set((paint.stops ?? []).filter(Number.isFinite))].sort((a, b) => a - b).slice(0, 6);
+  return classBreaks(values, classes, paint.count ?? 5);
+}
+
+/**
+ * Where a value sits on the ramp, 0 to 1. With a middle the two halves stretch apart, so the
+ * middle colour lands on `mid` however lopsided the data is.
+ */
+export function rampShare(n: number, lo: number, hi: number, mid?: number): number {
+  if (mid === undefined || !Number.isFinite(mid) || mid <= lo || mid >= hi) return hi > lo ? Math.min(1, Math.max(0, (n - lo) / (hi - lo))) : 1;
+  return n <= mid ? 0.5 * Math.max(0, (n - lo) / (mid - lo)) : 0.5 + 0.5 * Math.min(1, (n - mid) / (hi - mid));
 }
 
 /** A size in table millimetres: fixed, or spread over a range by a numeric column. */
@@ -364,20 +391,25 @@ export function paintScale(paint: Paint | undefined, rows: readonly Props[], pal
   };
   const format = (n: number) => (Math.abs(n) >= 100 ? Math.round(n).toLocaleString('en') : String(Math.round(n * 10) / 10));
   const classes = paint.classes ?? 'continuous';
+  const mid = paint.mid !== undefined && paint.mid > lo && paint.mid < hi ? paint.mid : undefined;
   if (classes === 'continuous') {
-    const steps = [0, 0.5, 1];
+    const stops = [lo, mid ?? lo + (hi - lo) / 2, hi];
     return {
       colour: (p) => {
         const n = number(p);
-        return n === null ? missing : rampColour(ramp, hi > lo ? (n - lo) / (hi - lo) : 1);
+        return n === null ? missing : rampColour(ramp, rampShare(n, lo, hi, mid));
       },
-      legend: steps.map((t) => ({ label: format(lo + (hi - lo) * t), color: hexOf(rampColour(ramp, t)) })),
+      legend: stops.map((v) => ({ label: format(v), color: hexOf(rampColour(ramp, rampShare(v, lo, hi, mid))) })),
     };
   }
-  const breaks = classBreaks(values, classes, paint.count ?? 5);
+  // The author's own edges may lie outside the data: those classes are kept, so the legend is the same across files.
+  const breaks = paintBreaks(paint, values);
   const count = breaks.length + 1;
-  const colours = Array.from({ length: count }, (_, i) => rampColour(ramp, count === 1 ? 1 : i / (count - 1)));
-  const bounds = [lo, ...breaks, hi];
+  const bounds = [Math.min(lo, breaks[0] ?? lo), ...breaks, Math.max(hi, breaks.at(-1) ?? hi)];
+  // Each class takes the ramp's colour at its middle when there is a middle value; else they spread evenly.
+  const colours = Array.from({ length: count }, (_, i) =>
+    rampColour(ramp, mid !== undefined ? rampShare((bounds[i]! + bounds[i + 1]!) / 2, lo, hi, mid) : count === 1 ? 1 : i / (count - 1)),
+  );
   return {
     colour: (p) => {
       const n = number(p);
