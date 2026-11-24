@@ -620,6 +620,7 @@ export class Editor {
       store: this.store,
       send: (method, params) => this.send(method, params),
       addData: () => this.addData(),
+      hold: (on) => this.hold(on),
       addLayer: async (use) => {
         const id = use.replace(/^custom:/, '');
         // The new layer reaches this surface with the host's catalogue event; wait for it briefly.
