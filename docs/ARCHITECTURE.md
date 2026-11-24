@@ -89,6 +89,7 @@ docs/contracts/   the interface contracts below
 | Mobile controller | [contracts/mobile.md](contracts/mobile.md) | `@mrstudio/runtime` |
 | TV dashboard: panels, widgets, density budget, themes | [contracts/dashboard.md](contracts/dashboard.md), design in [DASHBOARD.md](DASHBOARD.md) | `@mrstudio/dashboard` |
 | Visualisation philosophy: what goes on which surface, encodings, colour, motion, learnings from the table | design in [visualisation.md](visualisation.md) (living document) | all layers |
+| Editor UI: layout, ribbon tabs, one home per setting, right-click, help, wizard | rules in [editor-ui.md](editor-ui.md) (agreed 2026-11-24) | `@mrstudio/runtime` editor |
 
 ## Key decisions
 
