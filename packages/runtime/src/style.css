@@ -2759,6 +2759,65 @@ body[data-role='phone'] .control-presets > * {
   display: none;
 }
 
+/* A map stage (#374): the map fills the centre; up to four small panels float along its bottom edge. */
+/* Tall enough for the map, short enough to sit under a picked entity's controls at 1080p. */
+.layer-stage.stage-map-layout {
+  height: clamp(22rem, 54vh, 48rem);
+}
+
+.stage-map {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  /* A fixed unit, as on the ribbon: the panels' own containers would otherwise shrink it. */
+  --mrs-u: clamp(5px, 0.6vh, 10px);
+}
+
+.stage-map-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+.stage-map-panel {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  padding: var(--mrs-pad);
+  background: transparent;
+  border: 0;
+}
+
+.stage-map-panel > .mrs-panel-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+/* Beside the map's bottom edge, not over it: the numbers stay next to the map. */
+.stage-map-strip {
+  flex: none;
+  display: flex;
+  justify-content: center;
+  gap: var(--mrs-gap);
+  padding: 0 var(--mrs-margin) var(--mrs-margin);
+}
+
+.stage-map-float {
+  flex: 0 1 calc(40 * var(--mrs-u));
+  min-width: 0;
+  height: calc(22 * var(--mrs-u));
+  display: flex;
+  flex-direction: column;
+}
+
+.stage-map-float.mrs-size-chip {
+  flex-basis: calc(26 * var(--mrs-u));
+  height: calc(12 * var(--mrs-u));
+}
+
 /* ---- The Developer window's workbench (#358) ---- */
 
 .workbench {
@@ -3640,4 +3699,15 @@ body[data-role='phone'] .tools > .segmented {
 body[data-role='phone'] .segmented button {
   padding: 0 0.125rem;
   font-size: 0.8125rem;
+}
+
+/* No table window open (#412): no layer runs, so its legend and live values wait for one. */
+.stage-no-table {
+  margin: 0 0 1rem;
+  color: var(--muted);
+  font-size: 1rem;
+}
+
+.stage-no-table[hidden] {
+  display: none;
 }

@@ -195,10 +195,22 @@ impl LayerDef {
             Value::String(s) if s == "custom" => {}
             // A layout of panels (#357): the dashboard checks each panel as it does a TV page's.
             Value::Object(layout) => {
-                let panels =
-                    layout.get("panels").and_then(Value::as_array).ok_or_else(|| anyhow!("a stage layout has a list of panels"))?;
-                if panels.is_empty() {
+                // A map stage (#374) fills the centre with a map; its panels sit along its edge.
+                let map = match layout.get("map") {
+                    None => false,
+                    Some(Value::Object(_)) => true,
+                    Some(_) => bail!("a stage map is an object of map props"),
+                };
+                let empty = Vec::new();
+                let panels = match layout.get("panels") {
+                    None if map => &empty,
+                    other => other.and_then(Value::as_array).ok_or_else(|| anyhow!("a stage layout has a list of panels"))?,
+                };
+                if panels.is_empty() && !map {
                     bail!("a stage layout has at least one panel");
+                }
+                if map && panels.len() > 4 {
+                    bail!("a map stage holds at most 4 panels");
                 }
                 let mut ids = std::collections::HashSet::new();
                 for panel in panels {
@@ -862,6 +874,10 @@ mod tests {
         // A layout of panels (#357).
         assert!(layer(json!({ "stage": { "panels": [{ "id": "map", "widget": "map", "size": "block" }] } })).is_ok());
         assert!(layer(json!({ "stage": { "panels": [] } })).is_err());
+        assert!(layer(json!({ "stage": { "map": { "entities": "zones" } } })).is_ok());
+        assert!(layer(json!({ "stage": { "map": "yes" } })).is_err());
+        let five: Vec<Value> = (0..5).map(|i| json!({ "id": format!("p{i}"), "widget": "stat", "size": "chip" })).collect();
+        assert!(layer(json!({ "stage": { "map": {}, "panels": five } })).is_err());
         assert!(layer(json!({ "stage": { "panels": [{ "id": "a", "widget": "map" }, { "id": "a", "widget": "stat" }] } })).is_err());
         assert!(layer(json!({ "stage": { "panels": [{ "id": "a" }] } })).is_err());
         assert!(layer(json!({ "stage": { "panels": [{ "id": "a", "widget": "map" }], "controls": "yes" } })).is_err());

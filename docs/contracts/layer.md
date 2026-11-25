@@ -207,6 +207,31 @@ widgets. No module code is needed.
 - The entity inspector, the step strip and the rails stay. The TV's own panels keep the strip under
   the stage; if the stage leaves too little room for them, that strip stays blank.
 
+### A map stage, with no code (#374)
+
+`stage` can be a map that fills the centre under the layer's name, with a few panels along its
+bottom edge:
+
+```jsonc
+"stage": {
+  "map": {
+    "entities": "buildings",
+    "fill_by": { "entity": "use", "categories": { "housing": 1, "offices": 2, "shops": 3 } },
+    "hint": "Tap a building to change its use"
+  },
+  "panels": [
+    { "id": "target", "widget": "control", "size": "tile", "title": "Homes goal", "props": { "control": "target" } }
+  ]
+}
+```
+
+- `map` takes the map panel's props (dashboard.md, A map on a panel): datasets, an entity set or
+  a tool or a named action for taps, shapes, a hint, `fill_by`, `stroke_by` and `labels`. Drag and
+  pinch zoom it (`"zoom": false` turns that off); Reset frames the table again.
+- `panels` are optional here: at most 4, chip or tile only, in a strip along the map's bottom edge.
+  As with panels, `controls: true` adds the generated control rows under the stage.
+- `samples/map-stage-example` colours buildings by the use visitors give them.
+
 `samples/controller-map-example` is a route planner: two taps on the controller's map make a
 route along the streets on the table, and a button sends a light along it.
 

@@ -477,7 +477,9 @@ export class LayerManager {
           )
         : undefined);
     if (!module?.table) {
-      if (!module) {
+      // A layer made only of a controller stage (a map or panels in layer.json, #357, #374) has nothing to draw here.
+      const stageOnly = typeof manifest?.stage === 'object' && manifest.stage !== null;
+      if (!module && !stageOnly) {
         console.warn(`layer '${layer}' is not part of this build`);
         this.failed(id, `the code for '${layer}' is not in this version of MR Studio`, false);
       }

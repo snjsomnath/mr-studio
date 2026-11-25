@@ -217,7 +217,14 @@ export interface LayerManifest {
  * without are laid out in order.
  */
 export interface StageLayout {
-  panels: PanelSpec[];
+  /**
+   * A map that fills the centre under the layer's name (#374), with the map widget's props
+   * (`data`, `entities`, `tool`, `tap_action`, `shapes`, `hint`, `fill_by`, `stroke_by`, `labels`).
+   * It zooms with drag and pinch. `panels` then sit along its bottom edge: up to 4, chip or tile.
+   */
+  map?: Record<string, unknown>;
+  /** The stage's panels; with a `map`, the ones along its edge. Without a map, at least one. */
+  panels?: PanelSpec[];
   /** Also show the layer's generated control rows under the panels. Default false: the panels are the view. */
   controls?: boolean;
 }
@@ -548,7 +555,7 @@ export interface Participant {
 export interface SessionState {
   protocol: number;
   /** `join_url` is what the TV's QR code points at; null when phones cannot reach the host. */
-  session: { id: string; code: string; port: number; join_url: string | null; /** The visitors' language now (#80). */ language?: string; /** False while the controller's sound switch mutes the table (#282). */ sound?: boolean; /** The layer whose ribbon the controller chose (#231); absent or null is Auto. */ ribbon?: string | null; /** The frame meter shows on the table and controller (#262). */ performance?: boolean; /** The operator paused the phones (#335): they look but change nothing. */ phones_paused?: boolean };
+  session: { id: string; code: string; port: number; join_url: string | null; /** The visitors' language now (#80). */ language?: string; /** False while the controller's sound switch mutes the table (#282). */ sound?: boolean; /** The layer whose ribbon the controller chose (#231); absent or null is Auto. */ ribbon?: string | null; /** The frame meter shows on the table and controller (#262). */ performance?: boolean; /** The operator paused the phones (#335): they look but change nothing. */ phones_paused?: boolean; /** How many views draw the table and run its layers (#412); 0 means no live values. */ tables?: number };
   site: SiteInfo;
   /** Layer instance ids in draw order, bottom first. */
   scene: string[];

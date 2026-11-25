@@ -719,7 +719,34 @@ fn show_view(app: &AppHandle, role: &str) -> anyhow::Result<()> {
             };
             // Help (#271) is about the app, not the table, so its title does not name the table.
             let title = if role == "help" { "MR Studio Help".to_string() } else { format!("MR Studio · {} · {role}", running.name) };
-            WebviewWindowBuilder::new(app, &label, WebviewUrl::External(url)).title(title).inner_size(width, height).build()?
+            // The page's Full screen control (#198) reaches the shell here: WKWebView on macOS has no
+            // requestFullscreen (#420). It fills the table's window while presenting, else this one.
+            let handle = app.clone();
+            let me = label.clone();
+            WebviewWindowBuilder::new(app, &label, WebviewUrl::External(url))
+                .title(title)
+                .inner_size(width, height)
+                .initialization_script("window.__MRS_SHELL__ = true;")
+                .on_navigation(move |url| match url.path().strip_prefix("/__shell/") {
+                    Some("fullscreen") => {
+                        let handle = handle.clone();
+                        let me = me.clone();
+                        drop(tauri::async_runtime::spawn(async move {
+                            report(if table_window(&handle).is_some() {
+                                toggle_table_fullscreen(&handle)
+                            } else {
+                                toggle_view_fullscreen(&handle, &me)
+                            })
+                        }));
+                        false
+                    }
+                    Some(action) => {
+                        shell_action(&handle, action);
+                        false
+                    }
+                    None => true,
+                })
+                .build()?
         }
     };
     window.unminimize()?;
@@ -1084,6 +1111,25 @@ fn toggle_table_fullscreen(app: &AppHandle) -> anyhow::Result<()> {
         }
     }
     shell.table_fullscreen.store(full, Ordering::Relaxed);
+    Ok(())
+}
+
+/// A window opened from the editor's "Open in a window" in or out of full screen (#420).
+fn toggle_view_fullscreen(app: &AppHandle, label: &str) -> anyhow::Result<()> {
+    // macOS's simple full screen cannot be asked about, so the shell remembers which views it filled.
+    static FULL: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+    let Some(window) = app.get_webview_window(label) else { return Ok(()) };
+    let mut full = FULL.lock().unwrap();
+    let on = !full.iter().any(|l| l == label);
+    #[cfg(target_os = "macos")]
+    window.set_simple_fullscreen(on)?;
+    #[cfg(not(target_os = "macos"))]
+    window.set_fullscreen(on)?;
+    if on {
+        full.push(label.to_string());
+    } else {
+        full.retain(|l| l != label);
+    }
     Ok(())
 }
 

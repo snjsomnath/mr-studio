@@ -799,6 +799,25 @@
   min-height: 0;
   position: relative;
 }
+.mrs-map {
+  position: relative;
+}
+/* Back to the table's frame after a pan or zoom (#374). */
+.mrs-map-reset {
+  position: absolute;
+  top: calc(1 * var(--mrs-u));
+  right: calc(1 * var(--mrs-u));
+  z-index: 2;
+  min-height: 44px;
+  padding: 0 calc(2 * var(--mrs-u));
+  border: 1px solid var(--mrs-line);
+  border-radius: 999px;
+  background: var(--mrs-panel);
+  color: var(--mrs-text);
+  font: inherit;
+  font-size: var(--mrs-type-label);
+  cursor: pointer;
+}
 
 /* Gauge (#356): a half circle that fills, the number under it. */
 .mrs-gauge {
