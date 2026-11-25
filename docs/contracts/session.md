@@ -194,6 +194,12 @@ GET /api/wms/layers?url=<address>[&service=wms|arcgis][&source=<id>]
 
 `/api/media` lists everything the table has to show (#306), as `{ items: [{ kind, name?, path, bytes?, missing? }] }`: the scene's `buildings`, `terrain` and `trees`, every dataset of `data` (by `name`), then the pictures and video under `data/media/`, the sounds under `data/sounds/` and the 3D model (by `path` only). `kind` is `map` (GeoJSON), `table` (CSV), `raster` (GeoTIFF or a folder of them), `drawing` (SVG), `picture`, `video`, `sound`, `model` or `data` (anything else, such as trips). `missing` is true for a file `site.json` names that is not in the folder. The editor's Media tab shows the list, and every setting with `media` in its control (layer.md) picks from it. Online sources are `GET /api/sources`.
 
+```
+GET /api/starter?features=table,tiles,buildings,streets,projection,glance&apps=qgis,illustrator,photoshop,powerpoint&canvas=table&ppc=20&as=json|zip
+```
+
+`/api/starter` makes a starter pack (#450, `mrs_site::starter`) from the table's folder as it is now, from this computer only. `as=zip` answers the pack (a zip named after the table); otherwise `{ svg, notes, table_cm, canvas, picture, projection, features }` for the editor's preview: the pack's layered SVG, things to know, the canvas as `[left, top, width, height]` in table cm, the picture size, where the projection area came from (`projector`, `table` or `estimate`) and how many shapes each feature has. Every parameter is optional; the defaults are the table outline, tiles, buildings and streets for all four programs on the table canvas at 20 px per cm.
+
 `/api/wms/layers` asks a WMS service for its GetCapabilities, or an ArcGIS map service for its `?f=json`, and answers `{ layers: [{ name, title }] }` (an ArcGIS layer's `name` is its id). `source` signs the request with a source of the Sources manager, and stands in for `url` when that is empty. From this computer only. A WMS layer's Layers setting picks from it.
 
 ## Bringing data into a site

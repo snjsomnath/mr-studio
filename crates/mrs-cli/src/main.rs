@@ -61,6 +61,30 @@ enum Command {
         #[arg(long, default_value = "packages/layers")]
         layers: PathBuf,
     },
+    /// Make a starter pack (#450): the table's outline, tiles, buildings, streets, projection
+    /// area and at-a-glance boxes as files for QGIS, Illustrator, Photoshop and PowerPoint, with
+    /// instructions, in one zip.
+    StarterPack {
+        site: PathBuf,
+        /// The zip to write, for example "Lindholmen starter pack.zip".
+        #[arg(long)]
+        out: PathBuf,
+        /// Comma-separated: table, tiles, buildings, streets, projection, glance. Default: the first four.
+        #[arg(long, value_delimiter = ',')]
+        features: Vec<String>,
+        /// Comma-separated: qgis, illustrator, photoshop, powerpoint. Default: all.
+        #[arg(long, value_delimiter = ',')]
+        apps: Vec<String>,
+        /// table (exactly the table's frame, comes back in place) or projection (with the margins).
+        #[arg(long, default_value = "table")]
+        canvas: String,
+        /// Picture resolution, pixels per centimetre of table.
+        #[arg(long, default_value_t = 20.0)]
+        px_per_cm: f64,
+        /// Print what was written as JSON.
+        #[arg(long)]
+        json: bool,
+    },
     /// Open a .mrstable file as a new table folder in a sites folder.
     Import {
         file: PathBuf,
@@ -215,6 +239,9 @@ async fn main() -> anyhow::Result<()> {
         Command::Migrate { site } => migrate(&site),
         Command::Export { site, out, layers } => export(site, &out, layers).await,
         Command::Import { file, into } => import(&file, &into),
+        Command::StarterPack { site, out, features, apps, canvas, px_per_cm, json } => {
+            starter_pack(&site, &out, &features, &apps, &canvas, px_per_cm, json)
+        }
         Command::Validate { site } => validate(&site).map(|_| ()),
         Command::Prepare { site } => prepare(&site),
         Command::NewSite { dir, name, lon, lat, width_m, height_m, rotation_deg } => {
@@ -522,4 +549,41 @@ fn keep(site: &Path, file: &Path, json: bool, save: fn(&Path, &str, &[u8]) -> Re
             bail!(error)
         }
     }
+}
+
+/// `mrstudio starter-pack` (#450).
+fn starter_pack(
+    site: &Path,
+    out: &Path,
+    features: &[String],
+    apps: &[String],
+    canvas: &str,
+    px_per_cm: f64,
+    json: bool,
+) -> anyhow::Result<()> {
+    use mrs_site::starter::{self, Options};
+    let mut options = Options { px_per_cm, ..Options::default() };
+    let words = |list: &[String]| serde_json::Value::from(list.iter().map(|s| s.trim().to_ascii_lowercase()).collect::<Vec<_>>());
+    if !features.is_empty() {
+        options.features = serde_json::from_value(words(features)).map_err(|e| anyhow::anyhow!("--features: {e}"))?;
+    }
+    if !apps.is_empty() {
+        options.apps = serde_json::from_value(words(apps)).map_err(|e| anyhow::anyhow!("--apps: {e}"))?;
+    }
+    options.canvas =
+        serde_json::from_value(serde_json::Value::from(canvas.to_ascii_lowercase())).map_err(|e| anyhow::anyhow!("--canvas: {e}"))?;
+    let result =
+        mrs_site::Site::load(site).map_err(anyhow::Error::from).and_then(|s| starter::write(&s, &options, out).map_err(anyhow::Error::msg));
+    match (result, json) {
+        (Ok(written), true) => println!("{}", serde_json::to_string(&serde_json::json!({ "ok": true, "path": out, "written": written }))?),
+        (Ok(written), false) => {
+            println!("Wrote {} ({} files, {} KB).", out.display(), written.files.len(), written.bytes.div_ceil(1024));
+            for note in written.notes {
+                println!("  {note}");
+            }
+        }
+        (Err(e), true) => println!("{}", serde_json::to_string(&serde_json::json!({ "ok": false, "error": format!("{e:#}") }))?),
+        (Err(e), false) => return Err(e),
+    }
+    Ok(())
 }

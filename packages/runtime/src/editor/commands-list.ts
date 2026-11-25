@@ -42,6 +42,7 @@ export const COMMANDS = {
   'media.picture': { label: 'Picture', icon: 'images', tip: 'Add a picture to the table’s media, for slides and the controller', group: 'Add', also: 'image photo png jpg' },
   'media.video': { label: 'Video', icon: 'play', tip: 'Add a video to the table’s media, for slides and video walks', group: 'Add', also: 'film mp4' },
   'media.sound': { label: 'Sound', icon: 'sound', tip: 'Add a sound to the table’s media', group: 'Add', also: 'audio mp3' },
+  'dialog.starter': { label: 'Starter pack…', icon: 'pencil', tip: 'The table’s outline, tiles, buildings and streets to draw on in QGIS, Illustrator, Photoshop or PowerPoint, with how to bring the result back', group: 'Add', also: 'export template guides svg png geojson pptx qgis illustrator photoshop powerpoint draw outside assets' },
   'media.model': { label: '3D model', icon: 'cube', tip: 'Set a 3D model on the ground, fitted to the buildings', group: 'Add', also: 'mesh obj stl glb' },
 
   // ---- How it looks (Design) ----

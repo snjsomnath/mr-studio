@@ -110,6 +110,7 @@ const ANNOTATIONS: Record<string, { readOnlyHint: boolean; destructiveHint?: boo
   list_site_files: { readOnlyHint: true, openWorldHint: false },
   import_data: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
   add_media: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+  export_starter_pack: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   add_sound: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   sdk_reference: { readOnlyHint: true, openWorldHint: false },
   create_layer: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
@@ -917,6 +918,37 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
       inputSchema: { site: z.string(), file: z.string().describe('Path of the file on this computer') },
     },
     keepFile('sound'),
+  );
+
+  tool(
+    'export_starter_pack',
+    {
+      title: 'Export a starter pack for outside tools',
+      description:
+        "Make a starter pack (#450): the table's outline, tile grid, building footprints, street network, projection area and at-a-glance boxes as files to draw on in other programs, in one zip with a README of steps per program and how to bring the result back. QGIS gets GeoJSON (WGS84) and a picture placed by a world file; Illustrator a layered SVG at the table's real size (its \"MR Studio guides\" group is dropped when the drawing comes back as a Masterplan); Photoshop one transparent PNG per feature; PowerPoint a one-slide .pptx the table's shape. The table canvas is exactly the table's frame, so a picture (Picture or video layer, fit stretch), a drawing (Masterplan) or data made on it comes back in place; the projection canvas adds the projector's margins. Use it when a team wants to make a layer's art or data outside MR Studio. Same as the editor's File, Export starter pack. Needs the MR Studio app or the mrstudio command line.",
+      inputSchema: {
+        site: z.string(),
+        out: z.string().describe('The zip to write, for example "Lindholmen starter pack.zip"'),
+        features: z.array(z.enum(['table', 'tiles', 'buildings', 'streets', 'projection', 'glance'])).optional().describe('Default table, tiles, buildings, streets'),
+        apps: z.array(z.enum(['qgis', 'illustrator', 'photoshop', 'powerpoint'])).optional().describe('Default all four'),
+        canvas: z.enum(['table', 'projection']).optional().describe('table (default): comes back in place; projection: with the margins'),
+        px_per_cm: z.number().min(2).max(100).optional().describe('Picture detail, default 20'),
+      },
+    },
+    async ({ site, out, features, apps, canvas, px_per_cm }) => {
+      const cli = findCli(catalog);
+      if (!cli) return noCli();
+      const args = ['starter-pack', at(site), '--out', at(out), '--json'];
+      if (features?.length) args.push('--features', features.join(','));
+      if (apps?.length) args.push('--apps', apps.join(','));
+      if (canvas) args.push('--canvas', canvas);
+      if (px_per_cm) args.push('--px-per-cm', String(px_per_cm));
+      const run = await runCliJson(cli, args);
+      const result = run.json;
+      if (!result?.ok) return fail(result?.error ?? `The command line failed: ${run.output.slice(-400)}`, undefined, { code: 'starter_pack_failed', next: ['Check that the site loads (validate_site) and that at least one chosen feature exists.'] });
+      const w = result.written;
+      return reply(`Wrote ${result.path}: ${w.files.length} files for ${(apps ?? ['qgis', 'illustrator', 'photoshop', 'powerpoint']).join(', ')}, pictures ${w.picture[0]} x ${w.picture[1]} px. Open README.md inside first.${w.notes.length ? ` Notes: ${w.notes.join(' ')}` : ''}`, { path: result.path, ...w });
+    },
   );
 
   tool(
