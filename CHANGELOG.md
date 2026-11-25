@@ -4,6 +4,30 @@ Every merge to main that carries a release note becomes a version. The newest is
 The app shows these notes, with their pictures, on Home when a newer version is out.
 How notes are written: docs/RELEASING.md.
 
+## 0.42.0 (2026-11-25)
+
+### New
+
+#### Add data says what each column holds, and pictures can be placed on the map (#52)
+
+Bringing in a dataset of your own now shows what MR Studio reads each column as: the column that names each row, values, kinds, when and where. A picture brought in with its side file (such as `overlay.png` with `overlay.json`, which gives its west, south, east and north edges) becomes a Picture layer placed on the map by those edges. Any Picture layer can be placed this way under More settings › Place on the map by its edges. Layers added from the media library or Add data now keep the file they were given after a reload.
+
+![What the columns hold](docs/screenshots/52-columns.png)
+
+#### A button's side is set in its Format pane (#58)
+
+The side of the controller a layer's button sits on is now set in one place: the Side switch in the layer's Format pane. Rows in the layer list can no longer be dragged, and right-click › Move to the other side is gone, since almost nothing else in the editor is dragged. The list still shows the Left and Right groups, and Move up and Move down change the order.
+
+![Side in the Format pane](docs/screenshots/58-side-format.png)
+
+### Fixes
+
+#### The New layer gallery shows a picture of more layers (#409)
+
+Base map, Sight lines, Picture or video and Sketch now show a picture of what they draw in the New layer gallery, next to the Masterplan, Slideshow and Reveal line pictures from the last release. `scripts/layer-previews.cjs` puts a stand point and sketch marks on the preview site through the layers' own tools. Web map, Video walk, Field walk and the Magnifier still show their icon, because they need a service, a video, a walk or a hand to draw anything.
+
+![Story layers in the gallery](docs/screenshots/409-gallery.png)
+
 ## 0.41.0 (2026-11-25)
 
 ### New
