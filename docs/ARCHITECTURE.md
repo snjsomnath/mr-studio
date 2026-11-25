@@ -117,7 +117,7 @@ What a team installs:
 | `@mrstudio/sdk` | npm package | Writing custom layers and TV widgets |
 | MR Studio MCP server | One file inside the app, also npm `@mrstudio/mcp` | Building a site by talking to an LLM ([MCP.md](MCP.md)) |
 
-What a team owns: a site repository made from a template (`mrstudio new-site`, later a GitHub template repository).
+What a team owns: a site repository made from the site template (`templates/site` in this repository, #86; `mrstudio new-site` makes the same `site.json`).
 It holds `site.json`, data, custom layers and dashboards, its own code layers in `layers/` (built with `mrstudio layer build`, loaded by the app; see layer.md, Site layers), and a `mrstudio` version range. It contains no core code.
 The app opens that folder. Updating the core is installing a newer app; the site folder is not touched.
 

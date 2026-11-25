@@ -2,7 +2,7 @@
 // the 3D model import's "Snap to buildings" does (#56). The drawing's lines are compared with
 // the footprints' outlines: the frame is moved, turned (a few degrees) and scaled (±15 %) until
 // as many points of the outlines as it can land on the drawing's lines.
-import { geojsonPolygons, readSiteData, siteDataUrl, tableSpace } from '@mrstudio/sdk';
+import { readSiteGeometry, siteDataUrl } from '@mrstudio/sdk';
 import type { SiteInfo } from '@mrstudio/sdk';
 
 type Point = [number, number];
@@ -169,6 +169,6 @@ export async function loadInk(site: SiteInfo, dataset: string, turn: number, wid
 
 /** The table's footprint outlines in table metres. */
 export async function loadOutlines(site: SiteInfo): Promise<Point[][]> {
-  const polygons = geojsonPolygons(await readSiteData(site, 'buildings'), tableSpace(site));
+  const polygons = (await readSiteGeometry(site, 'buildings'))?.polygons ?? [];
   return polygons.flatMap((p) => p.geometry as Point[][]);
 }

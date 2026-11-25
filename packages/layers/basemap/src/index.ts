@@ -1,4 +1,4 @@
-import { defineLayer, geojsonLines, hasSiteData, loadSiteField, sample, geojsonPolygons, readSiteData, STRAY_REACH, tableReach, tableSpace, traceLine, tracePolygon, withAlpha } from '@mrstudio/sdk';
+import { readSiteGeometry, defineLayer, geojsonLines, hasSiteData, loadSiteField, sample, geojsonPolygons, readSiteData, STRAY_REACH, tableReach, tableSpace, traceLine, tracePolygon, withAlpha } from '@mrstudio/sdk';
 import type { LayerManifest } from '@mrstudio/sdk';
 
 import manifest from '../layer.json';
@@ -228,8 +228,8 @@ export default defineLayer<Params>({
 
     ctx.onCleanup(() => void asked++);
     draw();
-    const [buildings, roads] = await Promise.all([readSiteData(ctx.site, 'buildings'), readSiteData(ctx.site, 'roads')]);
-    shapes = [geojsonPolygons(buildings, space), geojsonLines(roads, space)];
+    const [buildings, roads] = await Promise.all([readSiteGeometry(ctx.site, 'buildings'), readSiteGeometry(ctx.site, 'roads')]);
+    shapes = [buildings?.polygons ?? [], roads?.lines ?? []];
     water = await readWater().catch((error) => {
       console.warn('[basemap] water not read', error);
       return null;

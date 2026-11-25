@@ -42,10 +42,10 @@ function fileName(path: string): string {
  * server error: a host that is starting (the desktop app switching tables) briefly answers
  * nothing (#222). A missing file (404) and other answers come back at once.
  */
-export async function fetchFromHost(url: string, signal?: AbortSignal, attempts = 5): Promise<Response> {
+export async function fetchFromHost(url: string, signal?: AbortSignal, attempts = 5, init: RequestInit = {}): Promise<Response> {
   for (let attempt = 0; ; attempt++) {
     try {
-      const response = await fetch(url, { signal });
+      const response = await fetch(url, { ...init, signal });
       if (response.status < 500 || attempt >= attempts - 1) return response;
     } catch (error) {
       if (signal?.aborted || attempt >= attempts - 1) throw error;

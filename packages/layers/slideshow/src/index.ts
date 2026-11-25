@@ -1,5 +1,5 @@
-import { defineLayer, geojsonLines, geojsonPoints, geojsonPolygons, readSiteData, siteDataUrl, tableSpace, traceLine, tracePolygon, withAlpha } from '@mrstudio/sdk';
-import type { DrawingOverlay, LayerManifest, Placed, TableSpace, XY } from '@mrstudio/sdk';
+import { packInWorker, unpackGeometry, defineLayer, readSiteData, siteDataUrl, traceLine, tracePolygon, withAlpha } from '@mrstudio/sdk';
+import type { DrawingOverlay, LayerManifest, Placed, SiteInfo, XY } from '@mrstudio/sdk';
 
 import manifest from '../layer.json';
 
@@ -37,11 +37,13 @@ const FADE_S = 0.7;
 const DEFAULT_COLOUR = '#4dabf7';
 const HEX = /^#[0-9a-f]{6}$/i;
 
-function load(slide: Slide, url: string, space: TableSpace): Promise<Loaded> {
+function load(slide: Slide, url: string, site: SiteInfo): Promise<Loaded> {
   if (slide.type === 'geojson') {
     return fetch(url)
-      .then((response) => (response.ok ? response.json() : Promise.reject(new Error(`HTTP ${response.status}`))))
-      .then((geojson) => ({ kind: 'shapes', polygons: geojsonPolygons(geojson, space), lines: geojsonLines(geojson, space), points: geojsonPoints(geojson, space) }));
+      .then((response) => (response.ok ? response.arrayBuffer() : Promise.reject(new Error(`HTTP ${response.status}`))))
+      // Parsed in the SDK's data worker (#263), so a big slide doesn't stall the slide before it.
+      .then((bytes) => packInWorker(bytes, site))
+      .then((packed) => ({ kind: 'shapes', ...unpackGeometry(packed) }));
   }
   return new Promise((resolve, reject) => {
     if (slide.type === 'video') {
@@ -126,7 +128,6 @@ export default defineLayer<Params>({
       return {};
     }
     const canvas = ctx.map.addDrawing('slides', { opacity: ctx.params.opacity });
-    const space = tableSpace(ctx.site);
     const configUrl = siteDataUrl(ctx.site, 'slideshow');
     const config = await readSiteData<{ slides?: Slide[] }>(ctx.site, 'slideshow');
     const all = (config?.slides ?? []).filter((slide) => slide.enabled !== false);
@@ -139,7 +140,7 @@ export default defineLayer<Params>({
       let pending = cache.get(i);
       if (!pending) {
         const url = new URL(slides[i]!.media!, new URL(configUrl!, location.href)).href;
-        cache.set(i, (pending = load(slides[i]!, url, space)));
+        cache.set(i, (pending = load(slides[i]!, url, ctx.site)));
       }
       return pending;
     };

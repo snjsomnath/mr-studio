@@ -287,6 +287,10 @@ async function main() {
       const ribbons = new Ribbons(surface, store, connection, () => ({ footprint: view.footprint(), surface: { width: surface.clientWidth, height: surface.clientHeight } }));
       view.onViewChange(() => ribbons.layout());
       tableChanged = () => ribbons.layout();
+      // The ambient glow in the same blank space (#476), under the ribbons. It reads the site's
+      // setting every frame, so a change from the editor shows at once.
+      const { AmbientGlow } = await import('./ambient-glow.ts');
+      new AmbientGlow(surface, view, () => ({ footprint: view.footprint(), surface: { width: surface.clientWidth, height: surface.clientHeight } }), () => store.state.site.table);
     } else if (site.table) {
       const reserve = (): void => {
         if (!store.state.site.table) return;
@@ -306,6 +310,19 @@ async function main() {
         return r.width > 0 ? { footprint, surface: { width: f.width, height: f.height } } : null;
       }, true);
       new ResizeObserver(() => ribbons.layout()).observe(frame);
+      // The ambient glow previewed in the same room beside the map (#476).
+      const { AmbientGlow } = await import('./ambient-glow.ts');
+      new AmbientGlow(frame, view, () => {
+        const f = frame.getBoundingClientRect();
+        const r = surface.getBoundingClientRect();
+        const footprint: [number, number][] = [
+          [r.left - f.left, r.top - f.top],
+          [r.right - f.left, r.top - f.top],
+          [r.right - f.left, r.bottom - f.top],
+          [r.left - f.left, r.bottom - f.top],
+        ];
+        return r.width > 0 ? { footprint, surface: { width: f.width, height: f.height }, view: { left: r.left - f.left, top: r.top - f.top, width: r.width } } : null;
+      }, () => store.state.site.table);
       tableChanged = () => {
         reserve();
         requestAnimationFrame(() => ribbons.layout());

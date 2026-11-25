@@ -249,6 +249,11 @@ impl Site {
         }
         out.extend(self.scene_problems());
         if let Some(table) = &m.table {
+            if let Some(glow) = table.glow {
+                if !(0.0..=1.0).contains(&glow.strength) {
+                    out.push("table.glow.strength: a number from 0 to 1".into());
+                }
+            }
             for (side, ribbon) in table.ribbons.sides() {
                 if let Some(Ribbon::Size(RibbonSize { cm })) = ribbon {
                     if !(cm.is_finite() && cm > 0.0) {
@@ -773,6 +778,14 @@ mod tests {
 
     fn problems_with(site: &Site, needle: &str) -> bool {
         site.problems().iter().any(|p| p.contains(needle))
+    }
+
+    #[test]
+    fn the_site_template_is_a_valid_table() {
+        // A team's repository starts from templates/site (#86): it must open and validate as it is.
+        let site = Site::load(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../templates/site")).unwrap();
+        assert!(site.problems().is_empty(), "{:?}", site.problems());
+        assert_eq!(site.manifest.format, FORMAT, "raise the template's format with the core's");
     }
 
     #[test]

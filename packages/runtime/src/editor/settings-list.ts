@@ -49,6 +49,7 @@ export const SETTINGS = {
   'table.timezone': { label: 'Time zone', owner: 'table', home: 'dialog:place' },
   'table.front': { label: 'Side visitors stand at', owner: 'table', home: 'dialog:place' },
   'table.ribbons': { label: 'Ribbons beside the model', owner: 'table', home: 'dialog:place' },
+  'table.glow': { label: 'Ambient glow around the model', owner: 'table', home: 'dialog:place' },
   'controller.title': { label: 'Controller title', owner: 'table', home: 'dialog:welcome' },
   'controller.welcome': { label: 'Welcome line', owner: 'table', home: 'dialog:welcome' },
   'controller.logo': { label: 'Logo', owner: 'table', home: 'dialog:welcome' },

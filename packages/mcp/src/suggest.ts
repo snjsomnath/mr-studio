@@ -33,6 +33,7 @@ export interface SiteSignals {
   logo: boolean;
   palette: boolean;
   ribbons: boolean;
+  glow: boolean;
   /** Where the model leaves the projection free, from the table's and the area's shapes. */
   margin: { sides: string; share: number } | null;
 }
@@ -70,6 +71,7 @@ export function readSignals(m: SiteManifest, info: LayerInfo = () => ({ data: []
     logo: Boolean(m.branding?.logo),
     palette: Boolean(m.palette),
     ribbons: Boolean(m.table?.ribbons),
+    glow: Boolean(m.table?.glow && m.table.glow.on !== false),
     margin,
   };
 }
@@ -102,12 +104,12 @@ const ANALYSIS_WITH_RIBBON = ['sunlight', 'stormwater'];
 /** Table and app features. Layers get their cards from layer.json (layerCards). */
 export const FEATURE_CARDS: FeatureCard[] = [
   {
-    id: 'feature:ambient-glow', name: 'Ambient glow in the margin', status: 'planned', issue: 476, covers: [],
+    id: 'feature:ambient-glow', name: 'Ambient glow in the margin', status: 'available', issue: 476, covers: ['table.glow'],
     what: "A soft glow in the projection's free margin, taken from the model's own colours, so the model sits in light instead of a black frame.",
     when: ['an exhibition or lobby table that should look finished', 'atmosphere', 'beautiful', 'frame the model'],
     needs: ['A projector that lights more than the model'],
-    enable: { how: 'Not built yet: #476. Offer it as coming, never as something to switch on.' },
-    on: () => false,
+    enable: { tool: 'update_site', arguments: { site: SITE, set: { table: { glow: { on: true, strength: 0.5, colours: 'edges' } } } } },
+    on: (s) => s.glow,
     fits: (s) => (s.margin ? `the model leaves the ${s.margin.sides} of the projection free (about ${s.margin.share}%), which would glow instead of staying black` : null),
   },
   {
