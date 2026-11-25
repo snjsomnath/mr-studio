@@ -11,8 +11,8 @@
     {
       "id": "show", "type": "select", "label": "The glass shows", "default": "zoom", "tier": "more",
       "options": [
-        { "value": "zoom", "label": "The table, larger on the controller" },
-        { "value": "under", "label": "The layers inside it (an X-ray)" }
+        { "value": "zoom", "label": "Magnify: the table, larger on the controller" },
+        { "value": "under", "label": "X-ray: the layers inside it" }
       ]
     },
     { "id": "zoom", "type": "range", "label": "Magnification", "min": 1.5, "max": 6, "step": 0.25, "default": 3, "unit": "×", "phone": true, "tier": "primary", "visibleWhen": { "show": "zoom" } },

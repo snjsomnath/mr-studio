@@ -222,6 +222,41 @@ async function main() {
       });
     }
 
+    await run('the tour points at the parts of the window, and Help replays it (#451)', async () => {
+      // Under automation the tour does not open by itself; Help › Tour of the editor runs it.
+      await page.goto(`${base}/edit`);
+      await page.locator('.ed-tab[data-tab="help"]').click();
+      await page.locator('.ed-ribbon [data-command="help.tour"]').click();
+      const card = page.locator('.ed-tour-card');
+      await card.locator('strong', { hasText: 'The ribbon' }).waitFor();
+      await shot('451-tour');
+      assert.equal(await card.getByLabel('Show this tour when the editor opens').isChecked(), true);
+      // Its tick box is the one home of the startup choice: off, it stays off.
+      await card.getByLabel('Show this tour when the editor opens').uncheck();
+      assert.equal(await page.evaluate(() => localStorage.getItem('mrs-editor-tour')), 'off');
+      for (let i = 0; i < 10 && (await card.getByRole('button', { name: 'Next' }).count()); i++) await card.getByRole('button', { name: 'Next' }).click();
+      await card.locator('strong', { hasText: 'Help, and this tour again' }).waitFor();
+      await card.getByRole('button', { name: 'Done' }).click();
+      await page.locator('.ed-tour').waitFor({ state: 'detached' });
+    });
+
+    await run('Add inside puts a layer inside the selected one, and X-ray glass is in the gallery (#453)', async () => {
+      await page.goto(`${base}/edit#layer=wind`);
+      await row('wind').waitFor();
+      await page.locator('.ed-tab[data-tab="insert"]').click();
+      await page.locator('.ed-ribbon [data-command="dialog.inside"]').click();
+      const gallery = page.locator('dialog.lg-gallery[data-into="wind"]');
+      await gallery.locator('h2', { hasText: 'Add inside Wind' }).waitFor();
+      await gallery.locator('.lg-card[data-layer="trees"] .lg-pick').click();
+      await until(async () => (savedLayer('wind')?.items ?? []).some((i) => i.use === 'trees'), 'trees inside wind');
+      // The gallery offers the Magnifier's X-ray by name; picked, it opens empty, with the way in.
+      await page.locator('.ed-ribbon [data-command="layer.new"]').click();
+      await page.locator('dialog.lg-gallery .lg-card[data-layer="lens:xray"] .lg-pick').click();
+      await until(async () => saved().layers.some((l) => l.use === 'lens' && l.params?.show === 'under'), 'an X-ray glass');
+      await page.locator('section[data-items] [data-command="dialog.inside"]').waitFor();
+      await shot('453-xray-empty');
+    });
+
     await run('the controller carries no operator text (#50)', async () => {
       const tv = await browser.newPage({ viewport: { width: 1600, height: 900 } });
       await tv.goto(`${base}/tv`);

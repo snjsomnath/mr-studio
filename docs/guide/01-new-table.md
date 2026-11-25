@@ -5,18 +5,16 @@
 1. On **Home**, choose **New table**.
 2. **Name and place.** Give the table a name and find its place: search for an address, or drag the map. The rectangle is the area the table shows; turn it to match how the physical model sits.
 3. **Size.** Enter the table's width and height in centimetres, and the tile size if the model is made of tiles. The area on the map follows the table's shape.
-4. When you finish these steps, the editor opens with the guide on the left. It walks through the rest; **Close guide** leaves it at any time. The guide only starts a table: after that, everything is in the editor, and **Present, Ready to present?** says what is left.
-5. **Your place.** Bring in the buildings, terrain and trees. **Fetch everything from open data**, at the top, gets buildings, streets, walking paths and trees from OpenStreetMap and the ground from free elevation in one go, with a line for each that says how it went and **Try again** on any that failed. Or fetch them one at a time, or import your own files (GeoJSON, GeoTIFF, a 3D model).
-6. **At rest.** Choose what the table shows when nobody has pressed anything: a base map and some life on the streets (traffic, public transport, street life, building lights).
-7. **Layers.** Add the layers that tell your story: sunlight, wind, stormwater, cool paths and the rest. Each layer gets a button on the controller.
-8. **Buttons.** Name the buttons in your visitors' words, give them icons and put them on the left or right of the controller.
-9. **Ready.** Press **Present**: the map goes to the projector and the controller to the screen beside the table.
+4. When you finish these steps, the editor opens with the guide on the left, at its second step. The guide only starts a table: after that, everything is in the editor, and **Present, Ready to present?** says what is left.
+5. **Data.** Bring in the buildings, terrain and trees. **Fetch everything from open data**, at the top, gets buildings, streets, walking paths and trees from OpenStreetMap and the ground from free elevation in one go, with a line for each that says how it went and **Try again** on any that failed. Or fetch them one at a time, or import your own files (GeoJSON, GeoTIFF, a 3D model).
+6. **Start from….** Pick a starter table: *Climate* (Sunlight, Wind and Cool paths, trees at rest), *Movement* (Mobility, with traffic, public transport and street life at rest), *Story* (a Slideshow, building lights at rest) or *Blank*. Each sets the layers, the map life at rest and a controller theme; pick another to swap. **Open the editor** finishes.
+7. In the editor, name the buttons in your visitors' words in each layer's settings, add layers from **Insert**, and press **Present**: the map goes to the projector and the controller to the screen beside the table. The first time, a short tour shows where everything is; **Help, Tour of the editor** shows it again.
 
-![The setup guide in the editor](docs/screenshots/110-114-name-and-place.png)
+![Start from…](docs/screenshots/390-start-from.png)
 
 ## Start from a copy
 
-Rather than start blank, start from a table that already works. Point at a card under **Your tables** on Home and choose **Duplicate**: the example that comes with MR Studio, or one of your own tables. The copy is called "… copy", gets its own name and id, and appears on Home outlined; the original is not touched. Open it, then use **Name and place** and **Your place** to move it to your own place and bring in your own data.
+Rather than start blank, start from a table that already works. Point at a card under **Your tables** on Home and choose **Duplicate**: the example that comes with MR Studio, or one of your own tables. The copy is called "… copy", gets its own name and id, and appears on Home outlined; the original is not touched. Open it, then use **Design, Table size and place…** and **Insert, Open data** or **Data file** to move it to your own place and bring in your own data.
 
 ![Duplicate on a Home card](docs/screenshots/99-duplicate.png)
 

@@ -13,7 +13,6 @@
   "attract": { "effect": "waves" },
   "category": "media",
   "phone_switch": false,
-  "alongside": true,
   "controls": [
     { "id": "trails", "type": "toggle", "label": "Join each walker's spots", "default": true, "help": "A faint line through each person's spots in the order they were taken." },
     { "id": "opacity", "type": "range", "label": "Opacity", "min": 0.2, "max": 1, "step": 0.05, "default": 1, "tier": "more" },

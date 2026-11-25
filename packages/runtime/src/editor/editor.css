@@ -4665,7 +4665,9 @@ body[data-role='edit'] > .connection {
 .ed-dialog {
   display: flex;
   flex-direction: column;
-  width: min(640px, calc(100vw - 32px));
+  /* One size for every dialog (#457): wide enough for a form beside its notes, never a sliver. */
+  width: min(800px, calc(100vw - 32px));
+  min-height: min(420px, calc(100vh - 48px));
   max-height: calc(100vh - 48px);
   padding: 0;
   border: 1px solid #d5d9e0;
@@ -4723,13 +4725,24 @@ body[data-role='edit'] > .connection {
   padding: 0;
 }
 
-/* Screens and calibration: a strip under the ribbon, so the map stays in view for the colour preview. */
+/* Screens and calibration: a dialog of the usual size (#457); colour is set in File › Settings (#393). */
 .ed-dialog.is-screens {
-  position: fixed;
-  inset: 180px 16px auto 16px;
-  width: auto;
-  margin: 0;
-  z-index: 40;
+  min-height: 0;
+}
+
+/* Lists of sources and files get the large size (#457). */
+.ed-dialog.is-open-data,
+.ed-dialog.is-model {
+  width: min(1000px, calc(100vw - 32px));
+}
+
+.ed-dialog.is-open-data {
+  min-height: min(600px, calc(100vh - 48px));
+}
+
+/* The model importer grows with its preview once a file is chosen. */
+.ed-dialog.is-model {
+  min-height: 0;
 }
 
 .ed-dialog-ribbon {
@@ -4956,6 +4969,7 @@ body[data-role='edit'] > .connection {
     border-right: 0;
     border-bottom: 1px solid var(--ed-line, #dcdfe5);
   }
+}
 
 /* Start from… (#390): the starter tables, like PowerPoint's templates. */
 .wz-starters {
@@ -5020,4 +5034,68 @@ body[data-role='edit'] > .connection {
 .wz-starter .wz-theme-swatch {
   height: 34px;
   margin-top: auto;
+}
+
+/* The editor tour (#451): a spotlight on one region and a card beside it. */
+.ed-tour {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+}
+
+.ed-tour-spot {
+  position: fixed;
+  border: 2px solid var(--ed-accent);
+  border-radius: 8px;
+  box-shadow: 0 0 0 9999px rgb(20 24 33 / 45%);
+  transition: all 0.2s ease;
+  pointer-events: none;
+}
+
+.ed-tour-card {
+  position: fixed;
+  width: 320px;
+  padding: 14px 16px 12px;
+  border-radius: 10px;
+  background: var(--ed-panel);
+  box-shadow: 0 10px 30px rgb(0 0 0 / 25%);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.ed-tour-card header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 14px;
+}
+
+.ed-tour-count {
+  color: var(--ed-text-2);
+  font-size: 12px;
+}
+
+.ed-tour-card p {
+  margin: 6px 0 10px;
+}
+
+.ed-tour-start {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ed-text-2);
+  font-size: 12px;
+}
+
+.ed-tour-card footer {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.ed-tour-card footer .ed-link {
+  margin-right: auto;
 }

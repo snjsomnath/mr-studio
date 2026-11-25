@@ -606,7 +606,7 @@ body[data-role='tv'] .controller .join-address .join-code {
 }
 
 /* An alongside tool with a viewer of its own (the field walk) leads while no other layer is open. */
-.layer-open.is-alongside.is-lead {
+.layer-open.is-alongside.is-lead:not([hidden]) {
   display: block;
 }
 
