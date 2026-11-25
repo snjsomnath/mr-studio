@@ -4798,6 +4798,165 @@ body[data-role='edit'] > .connection {
   display: none;
 }
 
+/* Export starter pack (#450): choices on the left, the pack's drawing on the right. */
+.ed-starter {
+  width: min(1040px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  padding: 0;
+  border: 1px solid var(--ed-line, #dcdfe5);
+  border-radius: 10px;
+  color: var(--ed-text, #1b1f27);
+  background: var(--ed-panel, #ffffff);
+  font: 13px/1.4 Inter, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  box-shadow: 0 16px 40px rgba(16, 24, 40, 0.2);
+}
+
+.ed-starter[open] {
+  display: flex;
+  flex-direction: column;
+}
+
+.ed-starter::backdrop {
+  background: rgba(16, 24, 40, 0.25);
+}
+
+.ed-starter-head {
+  padding: 16px 20px 10px;
+  border-bottom: 1px solid var(--ed-line, #dcdfe5);
+}
+
+.ed-starter-head h2 {
+  margin: 0 0 4px;
+  font-size: 15px;
+}
+
+.ed-starter-head p {
+  margin: 0;
+  color: var(--ed-text-2, #565d6a);
+}
+
+.ed-starter-body {
+  display: grid;
+  grid-template-columns: 270px minmax(0, 1fr);
+  min-height: 0;
+  overflow: auto;
+}
+
+.ed-starter-side {
+  padding: 12px 16px;
+  border-right: 1px solid var(--ed-line, #dcdfe5);
+  background: var(--ed-window, #f6f7f9);
+}
+
+.ed-starter-group {
+  margin: 0 0 12px;
+  padding: 0;
+  border: 0;
+}
+
+.ed-starter-group legend {
+  margin-bottom: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--ed-text-2, #565d6a);
+}
+
+.ed-starter-check,
+.ed-starter-radio {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 3px 0;
+  cursor: pointer;
+}
+
+.ed-starter-check input,
+.ed-starter-radio input {
+  margin: 2px 0 0;
+}
+
+.ed-starter-check > span:not(.ed-starter-count),
+.ed-starter-radio > span {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.ed-starter-check small,
+.ed-starter-radio small {
+  color: var(--ed-text-2, #565d6a);
+}
+
+.ed-starter-count {
+  color: var(--ed-text-2, #565d6a);
+  font-variant-numeric: tabular-nums;
+}
+
+.ed-starter-select {
+  width: 100%;
+}
+
+.ed-starter-view {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px;
+  min-width: 0;
+}
+
+.ed-starter-frame {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 300px;
+  padding: 12px;
+  border: 1px solid var(--ed-line, #dcdfe5);
+  border-radius: 6px;
+  background: #fff;
+}
+
+.ed-starter-frame svg {
+  width: 100%;
+  height: auto;
+  max-height: 56vh;
+}
+
+.ed-starter-facts {
+  margin: 0;
+  color: var(--ed-text-2, #565d6a);
+}
+
+.ed-starter-notes {
+  margin: 0;
+  padding-left: 18px;
+  color: #9a5b00;
+}
+
+.ed-starter-foot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 20px;
+  border-top: 1px solid var(--ed-line, #dcdfe5);
+}
+
+.ed-starter-status {
+  flex: 1;
+  color: var(--ed-text-2, #565d6a);
+}
+
+@media (max-width: 720px) {
+  .ed-starter-body {
+    grid-template-columns: 1fr;
+  }
+  .ed-starter-side {
+    border-right: 0;
+    border-bottom: 1px solid var(--ed-line, #dcdfe5);
+  }
+
 /* Start from… (#390): the starter tables, like PowerPoint's templates. */
 .wz-starters {
   display: grid;

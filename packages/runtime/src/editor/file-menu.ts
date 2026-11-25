@@ -5,7 +5,7 @@
  */
 import { el } from '../controls.ts';
 
-export type FileAction = 'new' | 'open' | 'save' | 'save_as' | 'export' | 'share' | 'reveal' | 'close' | 'home' | 'settings';
+export type FileAction = 'new' | 'open' | 'save' | 'save_as' | 'export' | 'share' | 'starter' | 'reveal' | 'close' | 'home' | 'settings';
 
 export const mac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 
@@ -41,6 +41,7 @@ const ITEMS: (Item | 'line')[] = [
   { action: 'save_as', label: 'Save As…', shortcut: keys('S', true), app: true },
   { action: 'export', label: 'Export table…', app: true },
   { action: 'share', label: 'Share by email…', app: true },
+  { action: 'starter', label: 'Export starter pack…' },
   { action: 'reveal', label: mac ? 'Show in Finder' : 'Show in Explorer', app: true },
   'line',
   { action: 'close', label: 'Close table', shortcut: keys('W'), app: true },

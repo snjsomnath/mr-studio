@@ -49,7 +49,7 @@ Six regions. Their places never change, whatever tab is open or whatever is sele
 | Tab | Groups and commands | PowerPoint's |
 | --- | --- | --- |
 | Home | Layer: New layer ▾, Duplicate, Remove · Selection: Hide, Move up/down, Rename, Reset settings · Find a command (⌘K, #65) | Home |
-| Insert | Layers: layer gallery ▾ (#59), Custom layer · Your data: Data file, Open data (OpenStreetMap, elevation) · Media: Picture, Video, Sound, 3D model | Insert |
+| Insert | Layers: layer gallery ▾ (#59), Custom layer · Your data: Data file, Open data (OpenStreetMap, elevation) · Media: Picture, Video, Sound, 3D model · Draw elsewhere: Starter pack… (#450, the table's basics for QGIS, Illustrator, Photoshop, PowerPoint; also File › Export starter pack) | Insert |
 | Design | Controller theme gallery · Buttons: Icons / Icons and names · Map: Base map style ▾, Palette · Table: Table size and place…, Welcome and languages… | Design |
 | Present | Check: Ready to present? (#63) · Start: Rehearse, Present · Set up: Screens and calibration… · Send: Share by email (#372), Export | Slide Show |
 | View | Map / Controller / Both, Phone (#389), zoom, table outline · Media library… (a dialog) · Open in a window | View |

@@ -20,6 +20,7 @@ pub mod package;
 pub mod plan;
 mod projection;
 pub mod sound;
+pub mod starter;
 mod twin;
 pub mod video;
 
