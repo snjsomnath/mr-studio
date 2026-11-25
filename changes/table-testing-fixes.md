@@ -1,5 +1,7 @@
+---
 bump: patch
 issues: 424, 411, 414, 422
+---
 
 ### Open data that arrives, layers that line up, phones that stay
 
