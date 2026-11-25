@@ -55,6 +55,7 @@ export const SETTINGS = {
   'controller.idle': { label: 'Back home after', owner: 'table', home: 'dialog:welcome' },
   'controller.loop': { label: 'Welcome loop', owner: 'table', home: 'dialog:welcome' },
   'controller.phones': { label: 'Phones can switch layers', owner: 'table', home: 'dialog:welcome' },
+  'controller.two': { label: 'Two layers at once', owner: 'table', home: 'dialog:welcome' },
   'controller.languages': { label: 'Languages for visitors', owner: 'table', home: 'dialog:welcome' },
   'controller.translations': { label: 'The table’s words in Swedish', owner: 'table', home: 'dialog:welcome' },
   'controller.theme': { label: 'Controller theme', owner: 'table', home: 'ribbon:design' },

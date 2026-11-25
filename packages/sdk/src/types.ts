@@ -167,6 +167,8 @@ export interface LayerManifest {
   hidesAtRest?: boolean;
   /** Phones may turn the layer on and off (#335). Default true; false for a layer only the controller should open. */
   phone_switch?: boolean;
+  /** The layer may share the table with a second open layer (#473). Default true; false for one that fills the table, such as the slideshow. */
+  combine?: boolean;
   requires?: { kernels?: string[]; data?: string[]; services?: string[] };
   controls?: Control[];
   tools?: ToolSpec[];
@@ -370,6 +372,11 @@ export interface TvConfig {
    * slideshow or tour is showing, whatever this says.
    */
   phone_switch?: boolean;
+  /**
+   * A second layer can join the open one (#473): hold its button, or Shift-click it. At most two;
+   * the controller shows the newest one's controls. Default true.
+   */
+  two_layers?: boolean;
 }
 
 /** The site's About page on the controller: a title, a few lines, and who made it. */
