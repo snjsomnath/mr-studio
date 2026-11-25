@@ -8,6 +8,7 @@
 //   (docs/guide/features.md), by id or name, and has its own Help page (docs/guide/layers/<id>.md);
 // - every engine kernel (crates/mrs-engine/src/kernels/*) is in docs/contracts/engine.md;
 // - every site.json setting (the SiteManifest, Table and Branding structs in mrs-site) is in docs/contracts/site.md;
+// - every site.json setting is on a feature card the MCP server suggests, or in NOT_SUGGESTED (packages/mcp/src/suggest.ts);
 // - every MCP tool (packages/mcp/src/server.ts) is in docs/MCP.md;
 // - every SDK module (packages/sdk/src/*.ts) is named in packages/mcp/src/blocks.ts or docs/blocks.md,
 //   so the MCP server can offer it as a building block.
@@ -69,6 +70,15 @@ for (const [struct, prefix] of [['SiteManifest', ''], ['Table', 'table.'], ['Bra
   if (!list.length) problems.push(`scripts/check-docs.mjs could not read "pub struct ${struct}" in crates/mrs-site/src/manifest.rs; update the check.`);
   for (const f of list) {
     if (!mentions(site, `\`${f}\``, `"${f}"`, `\`${prefix}${f}\``)) problems.push(`docs/contracts/site.md does not describe the site setting "${prefix}${f}".`);
+  }
+}
+
+// Feature cards (#477): every site setting is either a card the MCP server can suggest, or set up and listed in NOT_SUGGESTED.
+const suggestTs = read('packages', 'mcp', 'src', 'suggest.ts');
+const covered = new Set([...suggestTs.matchAll(/(?:covers: |NOT_SUGGESTED = )\[([^\]]*)\]/g)].flatMap((m) => [...m[1].matchAll(/'([^']+)'/g)].map((x) => x[1])));
+for (const [struct, prefix] of [['SiteManifest', ''], ['Table', 'table.'], ['Branding', 'branding.']]) {
+  for (const f of fields(struct)) {
+    if (!covered.has(`${prefix}${f}`)) problems.push(`packages/mcp/src/suggest.ts has no feature card that covers the site setting "${prefix}${f}". Add a card to FEATURE_CARDS (what, when it helps, needs, enable), or add it to NOT_SUGGESTED if nobody would want it suggested.`);
   }
 }
 
