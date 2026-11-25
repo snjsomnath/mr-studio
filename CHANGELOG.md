@@ -4,6 +4,16 @@ Every merge to main that carries a release note becomes a version. The newest is
 The app shows these notes, with their pictures, on Home when a newer version is out.
 How notes are written: docs/RELEASING.md.
 
+## 0.45.2 (2026-11-25)
+
+### Fixes
+
+#### CoolPaths starts smoothly on a city-sized table (#492)
+
+CoolPaths now works out its walks in the background and draws its map of roofs and water once per file. On a city-sized table you can keep using it while it searches. On the Universeum table, its longest pause at start fell from about 2.5 seconds to about 1.2 seconds, and the total time the table stops while starting it halved.
+
+![Pauses before and after](docs/screenshots/492-coolpaths-start.png)
+
 ## 0.45.1 (2026-11-25)
 
 ### Fixes
