@@ -28,6 +28,7 @@
       <h1>Start a table</h1>
       <p class="lead">Make a new interactive table in a few steps, or pick up where you left off.</p>
       <p id="error" class="error" role="alert" hidden></p>
+      <p id="waiting" class="waiting" role="status" hidden></p>
 
       <div class="cards">
         <button type="button" class="card primary" id="card-new">
@@ -90,6 +91,15 @@
           <button type="button" id="same-cancel">Cancel</button>
           <button type="button" id="same-copy">Keep both</button>
           <button type="button" id="same-update" class="primary">Update it</button>
+        </div>
+      </dialog>
+      <dialog id="busy-dialog" class="confirm" aria-labelledby="busy-title">
+        <h2 id="busy-title">This table is open</h2>
+        <p id="busy-text">It is on the screens now. The new version can wait until the show stops, then go in place by itself.</p>
+        <div class="actions">
+          <button type="button" id="busy-cancel">Cancel</button>
+          <button type="button" id="busy-now">Stop and update now</button>
+          <button type="button" id="busy-later" class="primary">Update when the show stops</button>
         </div>
       </dialog>
       <dialog id="import-dialog" class="confirm" aria-labelledby="import-title">

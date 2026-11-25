@@ -10,7 +10,7 @@ The phone UI is a surface like any other. It is served by the studio's own host 
 4. The `welcome` carries a `resume` token. The page keeps it (local storage, per session code) and sends it in every later `hello`.
 5. When a phone's connection ends, its slot is held for 60 seconds and shown as away (`connected: false`). A `hello` with the token inside that time returns the phone to the same slot and colour. After 60 seconds the slot is released and the token is worthless.
 
-The host limits the number of phones (default 8) and answers further joins with a "session full" error the page shows. Held slots count as taken.
+The host limits the number of phones (default 8). Held slots count as taken. A phone that joins when every seat is taken watches (#462): its `welcome` has `watching: true`, it looks at the layers and the map but its `layer.activate`, `layer.set`, `layer.action`, `tool.input`, `layer.entity`, `layer.select` and `layer.step` are refused, and a line says it gets a seat when one frees up. When the number of phones in the session falls, it joins again for the seat.
 A phone that goes silent without closing (asleep, out of range) is noticed within 30 seconds, and its hold starts then.
 One token is one phone: a second tab with the same token takes the slot over and the first tab is told to stop.
 

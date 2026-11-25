@@ -78,6 +78,10 @@ async function load(fresh) {
   const state = await invoke('launcher_state');
   $('version').textContent = `Version ${state.version}`;
   showError(state.error);
+  // Newer versions waiting for their show to stop (#401).
+  const waits = state.waiting ?? [];
+  $('waiting').hidden = waits.length === 0;
+  $('waiting').textContent = waits.map((name) => `${name}: a new version waits for the show to stop.`).join(' ');
   $('tables').replaceChildren(
     ...state.sites.map((site) => {
       const example = site.source === 'built in';
@@ -188,6 +192,18 @@ async function openTableFile(file) {
       document.body.style.cursor = 'progress';
       imported = await invoke('import_table', { file: imported.file, mode });
     }
+    // The table is open or on the screens (#401): wait for the show to stop, or stop it now.
+    if (imported?.kind === 'busy') {
+      document.body.style.cursor = '';
+      const mode = await askBusy(imported);
+      if (!mode) return;
+      document.body.style.cursor = 'progress';
+      imported = await invoke('import_table', { file: imported.file, mode });
+    }
+    if (imported?.kind === 'waiting') {
+      await load().catch(() => {});
+      return;
+    }
   } catch (e) {
     showError(e);
     return;
@@ -240,6 +256,28 @@ function askSameTable(same) {
     dialog.oncancel = () => resolve(null);
     dialog.showModal();
     $('same-update').focus();
+  });
+}
+
+/** Asks what to do with a newer version of the table that is open or presenting (#401).
+ *  Resolves 'later', 'now', or null when cancelled. */
+function askBusy(open) {
+  const dialog = $('busy-dialog');
+  $('busy-title').textContent = `“${open.name}” is open`;
+  $('busy-text').textContent = open.presenting
+    ? 'It is on the screens now. The new version can wait until the show stops, then go in place by itself.'
+    : 'It is open in the editor. The new version can wait until the table next starts (Stop presenting, the nightly restart or opening another table), or go in place now.';
+  return new Promise((resolve) => {
+    const done = (mode) => {
+      dialog.close();
+      resolve(mode);
+    };
+    $('busy-later').onclick = () => done('later');
+    $('busy-now').onclick = () => done('now');
+    $('busy-cancel').onclick = () => done(null);
+    dialog.oncancel = () => resolve(null);
+    dialog.showModal();
+    $('busy-later').focus();
   });
 }
 

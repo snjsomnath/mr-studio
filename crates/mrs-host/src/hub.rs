@@ -519,10 +519,20 @@ fn insert_position(scene: &[Instance], parent: Option<&str>, index: Option<u64>)
     }
 }
 
+/// A phone that only watches (#462): no seat, but a request allowance like a seated one.
+struct Watcher {
+    surface: u64,
+    allowance: f64,
+    refilled: Instant,
+}
+
 struct Inner {
     /// Bottom first.
     scene: Vec<Instance>,
     seats: Vec<Seat>,
+    /// Phones that joined when every seat was taken (#462): they look, change nothing, and
+    /// join again for a seat when one frees up.
+    watching: Vec<Watcher>,
     next_surface: u64,
 }
 
@@ -674,7 +684,7 @@ impl Hub {
             guide_code,
             options,
             catalog: RwLock::new(Arc::new(catalog)),
-            inner: Mutex::new(Inner { scene, seats: Vec::new(), next_surface: 1 }),
+            inner: Mutex::new(Inner { scene, seats: Vec::new(), watching: Vec::new(), next_surface: 1 }),
             events,
             history: Arc::new(Mutex::new(History::open(&site.dir))),
             recorded: Mutex::new(Vec::new()),
@@ -1053,7 +1063,12 @@ impl Hub {
             seat.kick = kick.clone();
         } else {
             let limit = self.options.max_phones;
-            let slot = (0..limit).find(|slot| inner.seats.iter().all(|s| s.participant.slot != *slot)).ok_or("session full")?;
+            let Some(slot) = (0..limit).find(|slot| inner.seats.iter().all(|s| s.participant.slot != *slot)) else {
+                // Every seat is taken: the phone may still look around (#462), in no seat.
+                inner.watching.push(Watcher { surface, allowance: self.options.phone_requests_per_second as f64, refilled: now });
+                inner.next_surface += 1;
+                return Ok(Joined { surface, kick: None });
+            };
             // An animal nobody here has, and a mood, picked at random.
             let free: Vec<&'static str> =
                 AVATARS.iter().copied().filter(|a| inner.seats.iter().all(|s| s.participant.avatar != *a)).collect();
@@ -1100,6 +1115,7 @@ impl Hub {
         if drew {
             self.emit("session.changed", json!({ "session": self.session() }));
         }
+        inner.watching.retain(|w| w.surface != surface);
         // A seat that was taken over belongs to another surface by now, so this finds nothing.
         let seat = inner.seats.iter_mut().find(|s| s.participant.surface == surface && s.participant.connected)?;
         seat.participant.connected = false;
@@ -1174,13 +1190,20 @@ impl Hub {
     fn allow_at(&self, surface: u64, now: Instant) -> bool {
         let rate = self.options.phone_requests_per_second as f64;
         let mut inner = self.inner.lock().unwrap();
-        let Some(seat) = inner.seats.iter_mut().find(|s| s.participant.surface == surface) else { return false };
-        seat.allowance = (seat.allowance + now.duration_since(seat.refilled).as_secs_f64() * rate).min(rate);
-        seat.refilled = now;
-        if seat.allowance < 1.0 {
+        let inner = &mut *inner;
+        let (allowance, refilled) = match inner.seats.iter_mut().find(|s| s.participant.surface == surface) {
+            Some(seat) => (&mut seat.allowance, &mut seat.refilled),
+            None => match inner.watching.iter_mut().find(|w| w.surface == surface) {
+                Some(watcher) => (&mut watcher.allowance, &mut watcher.refilled),
+                None => return false,
+            },
+        };
+        *allowance = (*allowance + now.duration_since(*refilled).as_secs_f64() * rate).min(rate);
+        *refilled = now;
+        if *allowance < 1.0 {
             return false;
         }
-        seat.allowance -= 1.0;
+        *allowance -= 1.0;
         true
     }
 
@@ -1202,6 +1225,9 @@ impl Hub {
         });
         if let Some(seat) = inner.seats.iter().find(|s| s.participant.surface == surface) {
             welcome["resume"] = json!(seat.token);
+        }
+        if inner.watching.iter().any(|w| w.surface == surface) {
+            welcome["watching"] = json!(true);
         }
         welcome
     }
@@ -1325,7 +1351,17 @@ impl Hub {
                 _ => json!({ "log": self.phone_log.lock().unwrap().iter().collect::<Vec<_>>() }),
             });
         }
-        // Paused by the operator (#335), a phone can look at layers but change nothing on the table.
+        // Paused by the operator (#335), or watching while the table is full (#462), a phone can
+        // look at layers but change nothing on the table.
+        let watching = role == Role::Phone && inner.watching.iter().any(|w| w.surface == surface);
+        if watching
+            && matches!(
+                method,
+                "layer.activate" | "layer.set" | "layer.action" | "tool.input" | "layer.entity" | "layer.select" | "layer.step"
+            )
+        {
+            return Err("watching: every seat at the table is taken".into());
+        }
         if role == Role::Phone
             && *self.phones_paused.read().unwrap()
             && matches!(
@@ -1645,7 +1681,18 @@ impl Hub {
                 if let Some(sender) = &sender {
                     event["participant"] = sender.clone();
                 }
-                noted = Some(("pressed", json!({ "layer": layer, "action": action })));
+                // A few words typed with the press (#462), for an action that asks for them.
+                if let Some(max) = control.and_then(|c| c.words) {
+                    let words = p["words"].as_str().map(|w| w.split_whitespace().collect::<Vec<_>>().join(" ")).unwrap_or_default();
+                    if words.is_empty() {
+                        return Err("type a few words first".into());
+                    }
+                    if words.chars().count() > max {
+                        return Err(format!("at most {max} characters"));
+                    }
+                    event["words"] = json!(words);
+                }
+                noted = Some(("pressed", json!({ "layer": layer, "action": action, "words": event.get("words") })));
                 self.emit("layer.action", event);
             }
             "tool.input" => {
@@ -3416,8 +3463,15 @@ mod tests {
         let ticket = token(&hub, first.surface);
         let hold = hub.leave_at(first.surface, t0).unwrap();
 
-        // While it is held the session is full for everyone else.
-        assert_eq!(hub.join_at(Role::Phone, Some(&code), None, t0 + Duration::from_secs(30)).err().unwrap(), "session full");
+        // While it is held the session is full for everyone else: a new phone only watches (#462).
+        let watcher = hub.join_at(Role::Phone, Some(&code), None, t0 + Duration::from_secs(30)).unwrap();
+        assert!(watcher.kick.is_none());
+        assert_eq!(hub.welcome(watcher.surface)["watching"], json!(true));
+        assert!(hub
+            .request(Role::Phone, watcher.surface, "layer.set", &json!({ "layer": "sunlight", "params": {} }))
+            .unwrap_err()
+            .contains("every seat"));
+        hub.leave(watcher.surface);
         // After 60 s the seat is free even if the timer has not fired, and the old token is just a new join.
         let late = hub.join_at(Role::Phone, Some(&code), Some(&ticket), t0 + Duration::from_secs(61)).unwrap();
         assert_ne!(token(&hub, late.surface), ticket);

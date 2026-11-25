@@ -15,7 +15,7 @@ import { customHero, hasCustomHero } from './custom-hero.ts';
 import { MEDIA_KINDS, canAddMedia, mediaItems, onMediaChanged, requestAddMedia, sizeOf, titleOf, valueOf } from './media.ts';
 import { Picker } from './picker.ts';
 import type { Choice, PickerAction } from './picker.ts';
-import { PHONE_SEND_INTERVAL, toolSection } from './phone-tools.ts';
+import { PHONE_SEND_INTERVAL, toolSection, wordsField } from './phone-tools.ts';
 import type { Store } from './store.ts';
 import { avatarOf, nameOf } from './avatars.ts';
 import { canJoin, chosenLayers, joinLayer } from './two-layers.ts';
@@ -246,7 +246,7 @@ export function visibleControls(controls: readonly Control[] | undefined): Contr
  * One control. `exact` (the editor, #64) lets a range's value be typed: click the number,
  * type, press Enter.
  */
-export function widget(control: Control, send: (value: unknown) => void, act: () => void, options: { exact?: boolean } = {}): Widget {
+export function widget(control: Control, send: (value: unknown) => void, act: (words?: string) => void, options: { exact?: boolean } = {}): Widget {
   const row = el('div', `control control-${control.type}`);
   const id = `c-${Math.random().toString(36).slice(2)}`;
   const label = el('label', 'control-label', control.label);
@@ -425,8 +425,23 @@ export function widget(control: Control, send: (value: unknown) => void, act: ()
     case 'action': {
       const button = el('button', 'action', control.label);
       button.type = 'button';
-      button.addEventListener('click', act);
-      row.append(button);
+      if (control.words) {
+        // Pressed with a few words (#462): the field, then the button that sends them.
+        const words = wordsField(control.words);
+        const form = el('form', 'action-words');
+        form.addEventListener('submit', (event) => {
+          event.preventDefault();
+          if (!words.value.trim()) return;
+          act(words.value);
+          words.value = '';
+        });
+        button.type = 'submit';
+        form.append(words, button);
+        row.append(form);
+      } else {
+        button.addEventListener('click', () => act());
+        row.append(button);
+      }
       break;
     }
   }
@@ -1248,7 +1263,7 @@ export class Controller {
       widget(
         control,
         (value) => send({ [control.id]: value }),
-        () => void connection.request('layer.action', { layer: id, action: control.id }).catch(() => {}),
+        (words) => void connection.request('layer.action', { layer: id, action: control.id, ...(words ? { words } : {}) }).catch(() => {}),
       ),
     );
     // The layer's hero, its one large way in, sits under its name (#137).
@@ -1794,7 +1809,7 @@ export class Controller {
         widget(
           control,
           (value) => send({ [control.id]: value }),
-          () => void connection.request('layer.action', { layer: id, action: control.id }).catch(() => {}),
+          (words) => void connection.request('layer.action', { layer: id, action: control.id, ...(words ? { words } : {}) }).catch(() => {}),
         ),
       );
     const controls = el('div', 'controls');

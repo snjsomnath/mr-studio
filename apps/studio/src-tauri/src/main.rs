@@ -19,6 +19,7 @@ mod models;
 mod operator;
 mod sites;
 mod updates;
+mod waiting;
 mod watchdog;
 
 use std::collections::BTreeMap;
@@ -119,6 +120,11 @@ struct Running {
 }
 
 impl Shell {
+    /// Newer versions of tables that wait for their show to stop (#401).
+    fn waiting_dir(&self) -> PathBuf {
+        self.config_dir.join("waiting")
+    }
+
     fn displays_path(&self) -> PathBuf {
         self.config_dir.join("displays.json")
     }
@@ -347,6 +353,11 @@ enum ImportOutcome {
     /// This computer already has this table (#372): Home asks whether to update it or keep
     /// both, and calls again with `mode`.
     SameTable { file: PathBuf, name: String, existing: PathBuf, existing_name: String, edited: Option<u64> },
+    /// "Update it" on the table that is open or presenting (#401): Home asks whether to update
+    /// when the show stops (`mode` "later") or to stop and update now (`mode` "now").
+    Busy { file: PathBuf, name: String, presenting: bool },
+    /// The file waits until the show stops; Home says so.
+    Waiting { name: String },
 }
 
 /// Opens a `.mrstable` file (#85): asks for one when `file` is not given, unpacks it as a new
@@ -396,10 +407,29 @@ async fn import_table(
                 edited: same.edited,
             }));
         }
-        (Some(same), Some("update")) => {
+        (Some(same), Some(mode @ ("update" | "later" | "now"))) => {
             let open = shell.running.lock().unwrap().as_ref().is_some_and(|r| sites::canonical(r.site.clone()) == same.path);
             if open {
-                return Err(format!("{} is open on this computer. Close it (and stop presenting), then open the file again.", same.name));
+                match mode {
+                    "update" => return Ok(Some(ImportOutcome::Busy { file, name: same.name, presenting: is_presenting(&app) })),
+                    "later" => {
+                        let dir = shell.waiting_dir();
+                        let (path, name) = (same.path.clone(), same.name.clone());
+                        tokio::task::spawn_blocking(move || waiting::keep(&dir, &file, &path, &name)).await.map_err(text)?.map_err(text)?;
+                        shell.operator.note(format!("A new version of '{}' waits for the show to stop.", same.name));
+                        return Ok(Some(ImportOutcome::Waiting { name: same.name }));
+                    }
+                    // Stop and update now: off the displays and stopped, so the folder is free.
+                    _ => {
+                        close_surfaces(&app).map_err(text)?;
+                        shell.editor_stale.store(true, Ordering::Relaxed);
+                        let mut host = shell.host.lock().await;
+                        *shell.running.lock().unwrap() = None;
+                        if let Some(old) = host.take() {
+                            old.stop(Duration::from_secs(2)).await;
+                        }
+                    }
+                }
             }
             let existing = same.path.clone();
             let updated =
@@ -617,6 +647,8 @@ async fn launch(app: &AppHandle, site: PathBuf, lan: bool) -> anyhow::Result<()>
     if let Some(old) = host.take() {
         old.stop(Duration::from_secs(2)).await;
     }
+    // Nothing runs now: a newer version that waited for the show to stop goes in place (#401).
+    apply_waiting(&shell).await;
 
     // A site saved by an older version is brought up to this version's format, on disk,
     // with the original kept beside it. A site from a newer version is refused with advice.
@@ -656,6 +688,29 @@ async fn launch(app: &AppHandle, site: PathBuf, lan: bool) -> anyhow::Result<()>
     *host = Some(started);
     *shell.running.lock().unwrap() = Some(running);
     Ok(())
+}
+
+/// Puts every table file that waited for its show to stop (#401) in place, while no table runs.
+/// A file that cannot be applied is noted for the team and forgotten, so it is not tried daily.
+async fn apply_waiting(shell: &Shell) {
+    let dir = shell.waiting_dir();
+    for waiting in tokio::task::spawn_blocking(move || waiting::list(&dir)).await.unwrap_or_default() {
+        let (file, table) = (waiting.file.clone(), waiting.table.clone());
+        let done = tokio::task::spawn_blocking(move || mrs_site::package::update(&file, &table)).await;
+        match done {
+            Ok(Ok(updated)) => {
+                if let Some(old) = &updated.replaced {
+                    if let Err(e) = sites::move_to_trash(old) {
+                        tracing::warn!("the earlier version stays in {}: {e:#}", old.display());
+                    }
+                }
+                shell.operator.note(format!("'{}' is updated to the version that waited for the show to stop.", waiting.name));
+            }
+            Ok(Err(e)) => shell.operator.note(format!("The new version of '{}' could not be put in place: {e}", waiting.name)),
+            Err(e) => shell.operator.note(format!("The new version of '{}' could not be put in place: {e}", waiting.name)),
+        }
+        waiting::forget(&waiting);
+    }
 }
 
 /// Runs `site` unless it is what is running already, with the same network choice.
@@ -1187,6 +1242,8 @@ struct LauncherState {
     running: Option<Running>,
     /// The running site is on the displays, not only open in the editor.
     presenting: bool,
+    /// Tables whose newer version waits for the show to stop (#401), by name.
+    waiting: Vec<String>,
     error: Option<String>,
 }
 
@@ -1247,6 +1304,7 @@ fn launcher_state(app: AppHandle, shell: State<'_, Shell>) -> Result<LauncherSta
         nightly_restart: settings.nightly_restart.clone(),
         running,
         presenting: is_presenting(&app),
+        waiting: waiting::list(&shell.waiting_dir()).into_iter().map(|w| w.name).collect(),
         error,
     })
 }
@@ -1688,8 +1746,21 @@ async fn present(app: AppHandle, shell: State<'_, Shell>, windows: Option<Vec<As
 /// Takes the site off the displays. It stays open in the editor.
 #[tauri::command]
 async fn stop_presenting(app: AppHandle) -> Result<(), String> {
-    app.state::<Shell>().operator.note("Stopped presenting.");
-    close_surfaces(&app).map_err(text)
+    let shell = app.state::<Shell>();
+    shell.operator.note("Stopped presenting.");
+    close_surfaces(&app).map_err(text)?;
+    // A newer version waited for the show to stop (#401): the table starts again with it, and
+    // the editor, if open, reloads it.
+    let running = shell.running.lock().unwrap().clone();
+    let Some(running) = running else { return Ok(()) };
+    let waits = waiting::list(&shell.waiting_dir()).iter().any(|w| sites::canonical(w.table.clone()) == running.site);
+    if waits {
+        launch(&app, running.site.clone(), running.lan).await.map_err(text)?;
+        if app.get_webview_window(EDITOR).is_some() {
+            open_editor(&app, "edit").map_err(text)?;
+        }
+    }
+    Ok(())
 }
 
 /// Shows the Home page: recent tables and New table.

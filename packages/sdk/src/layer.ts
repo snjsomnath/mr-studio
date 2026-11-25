@@ -288,7 +288,8 @@ export interface TableHandlers {
   /** Params changed. `changed` lists the keys; `ctx.params` holds the new values. Must be cheap. */
   update?(changed: string[]): void;
   /** An action control was pressed; `by` is the phone that pressed it, if a phone did (#335). */
-  action?(action: string, by?: Sender): void;
+  /** `words`: what was typed with the press, for an action that asks for words (#462). */
+  action?(action: string, by?: Sender, words?: string): void;
   /** A spatial input arrived. */
   tool?(input: ToolInput): void;
   /** Next or Previous changed how many sub-steps are revealed (`ctx.steps.revealed`). */

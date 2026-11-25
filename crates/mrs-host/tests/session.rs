@@ -259,7 +259,11 @@ async fn phones_need_the_code_and_are_limited() {
     for _ in 0..7 {
         phones.push(Surface::join(&host, "phone", Some(&code)).await.unwrap());
     }
-    assert_eq!(Surface::join(&host, "phone", Some(&code)).await.err().unwrap(), "session full");
+    // A ninth phone may still look (#462): it has no seat and changes nothing.
+    let mut watcher = Surface::join(&host, "phone", Some(&code)).await.unwrap();
+    assert_eq!(watcher.welcome["watching"], true);
+    let refused = watcher.request("layer.activate", json!({ "layer": "sunlight", "active": true })).await.unwrap_err();
+    assert!(refused.contains("every seat"), "{refused}");
     host.shutdown().await;
 }
 

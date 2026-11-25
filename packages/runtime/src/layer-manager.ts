@@ -258,7 +258,9 @@ export class LayerManager {
     });
     store.onScene((scene) => view.setOrder(stackOrder(store, scene)));
     for (const id of store.state.scene) this.sync(id, store.layer(id), undefined);
-    connection.on('layer.action', (p: { layer: string; action: string; participant?: Sender }) => this.running.get(p.layer)?.handlers.action?.(p.action, p.participant));
+    connection.on('layer.action', (p: { layer: string; action: string; participant?: Sender; words?: string }) =>
+      this.running.get(p.layer)?.handlers.action?.(p.action, p.participant, p.words),
+    );
     // Retry from the editor or the controller: a layer in trouble starts again now.
     connection.on('layer.retry', (p: { layer: string }) => this.retryNow(p.layer));
     onDataProblem((problem) => this.dataTrouble(problem));
