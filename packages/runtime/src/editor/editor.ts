@@ -2948,12 +2948,30 @@ export class Editor {
     section.append(fold);
 
     const previous = this.sync.get(id);
+    const seen: Record<'name' | 'description' | 'group', string> = { name: '', description: '', group: '' };
     this.sync.set(id, (state) => {
       previous?.(state);
       const button = layerButton(id, manifest, state, defaultSideOf(this.store, id));
-      if (document.activeElement !== name) name.value = state.button?.name ?? '';
-      if (document.activeElement !== description) description.value = state.button?.description ?? '';
-      if (document.activeElement !== group) group.value = state.button?.group ?? '';
+      // A field being typed in is never overwritten (#396): a change from elsewhere is offered instead.
+      for (const [input, key, label] of [
+        [name, 'name', 'name'],
+        [description, 'description', 'description'],
+        [group, 'group', 'group'],
+      ] as const) {
+        const theirs = state.button?.[key] ?? '';
+        if (document.activeElement !== input) {
+          input.value = theirs;
+          input.dataset.synced = theirs;
+        }
+        else if (theirs !== seen[key] && theirs !== input.value) {
+          this.history.offer(`The button’s ${label} was changed elsewhere to “${theirs || 'nothing'}” while you were typing.`, 'Yours is kept when you finish.', 'Use theirs', () => {
+            input.value = theirs;
+            input.dispatchEvent(new Event('change'));
+          });
+        }
+        seen[key] = theirs;
+        input.dataset.synced = theirs;
+      }
       for (const [value, option] of sides) option.setAttribute('aria-checked', String(value === button.side));
       for (const [value, option] of choices) option.setAttribute('aria-checked', String(value === button.icon));
       previewIcon.replaceChildren(icon(button.icon, 18));
@@ -3283,6 +3301,56 @@ export class Editor {
       const note = el('p', 'ed-inspector-many', `${this.also.size + 1} layers selected. Show, Hide and Remove act on all of them; the settings below are ${first}’s.`);
       nodes.splice(1, 0, note);
     }
+    const kept = this.keepTyping();
     this.inspector.replaceChildren(...nodes);
+    kept();
+  }
+
+  /**
+   * The field being typed in survives a rebuild of the pane (#396): a change from elsewhere redraws
+   * the Format pane, and the author's field is carried into the new one, with its text, focus and
+   * caret. When the change was to that very field, the other value is offered instead.
+   */
+  private keepTyping(): () => void {
+    const focused = document.activeElement;
+    if (!(focused instanceof HTMLInputElement || focused instanceof HTMLTextAreaElement) || !this.inspector.contains(focused)) return () => {};
+    const fields = () => [...this.inspector.querySelectorAll<HTMLElement>('input, textarea, select')];
+    const index = fields().indexOf(focused);
+    const label = (node: Element) => node.closest('label')?.firstElementChild?.textContent ?? '';
+    const name = label(focused);
+    const [start, end] = [focused.selectionStart, focused.selectionEnd];
+    // Taking a focused field out of the page blurs it, and a blur sends its change: not yet.
+    let held = false;
+    const hold = (event: Event) => {
+      held ||= event.type === 'change';
+      event.stopImmediatePropagation();
+    };
+    focused.addEventListener('change', hold, true);
+    focused.addEventListener('blur', hold, true);
+    return () => {
+      queueMicrotask(() => {
+        focused.removeEventListener('change', hold, true);
+        focused.removeEventListener('blur', hold, true);
+        // The browser counts the held change as sent: send it when the author really leaves the field.
+        if (held) focused.addEventListener('blur', () => focused.dispatchEvent(new Event('change')), { once: true });
+      });
+      const fresh = fields()[index];
+      if (!fresh || fresh.tagName !== focused.tagName || label(fresh) !== name) return;
+      const before = focused.dataset.synced;
+      fresh.replaceWith(focused);
+      focused.focus();
+      if (start !== null && end !== null) focused.setSelectionRange(start, end);
+      // The new field is filled by the sync that follows the rebuild: compare after it.
+      queueMicrotask(() => {
+        const theirs = (fresh as HTMLInputElement).value;
+        if (before !== undefined && theirs !== before && theirs !== focused.value) {
+          this.history.offer(`${name || 'This field'} was changed elsewhere to “${theirs || 'nothing'}” while you were typing.`, 'Yours is kept when you finish.', 'Use theirs', () => {
+            focused.value = theirs;
+            focused.dispatchEvent(new Event('change'));
+          });
+        }
+        focused.dataset.synced = theirs;
+      });
+    };
   }
 }

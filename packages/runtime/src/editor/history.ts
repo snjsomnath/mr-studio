@@ -334,7 +334,27 @@ export class HistoryControls {
   }
 
   /** A notice at the bottom of the editor, with Undo, that goes away by itself. */
+  /** A change from elsewhere to the field being typed in (#396): the author's text stays, theirs is one click away. */
+  offer(message: string, detail: string, label: string, take: () => void): void {
+    this.notice?.remove();
+    this.announce(message, detail, false, false);
+    const notice = this.notice;
+    if (!notice) return;
+    notice.dataset.offer = 'true';
+    const use = document.createElement('button');
+    use.type = 'button';
+    use.className = 'ed-toast-button';
+    use.textContent = label;
+    use.addEventListener('click', () => {
+      notice.remove();
+      take();
+    });
+    notice.querySelector('.ed-toast-close')?.before(use);
+  }
+
   private announce(message: string, detail?: string, problem = false, offerUndo = true): void {
+    // An offer of the other value for the field being typed in says more than "someone changed it" (#396).
+    if (this.notice?.isConnected && this.notice.dataset.offer && !problem) return;
     this.notice?.remove();
     window.clearTimeout(this.noticeTimer);
     const notice = el('div', `ed-toast${problem ? ' is-problem' : ''}`);

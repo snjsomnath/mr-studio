@@ -288,6 +288,32 @@ async function main() {
       await page.keyboard.press('Escape');
     });
 
+    await run('a change from another editor updates in place and never overwrites what is being typed (#396)', async () => {
+      await page.goto(`${base}/edit#layer=wind`);
+      await row('wind').waitFor();
+      // The other author has a window of their own, so this one keeps its focus.
+      const otherContext = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+      const other = await otherContext.newPage();
+      await other.route(/basemaps\.cartocdn\.com|tile\.openstreetmap\.org|api\.mapbox\.com/, (r) => r.abort());
+      await other.goto(`${base}/edit#layer=wind`);
+      const fields = (p) => p.locator('.ed-inspector');
+      await fields(other).getByLabel('Description').waitFor();
+      // The other editor changes the description: here it updates in place.
+      await fields(other).getByLabel('Description').fill('Air between the houses');
+      await fields(other).getByLabel('Description').press('Tab');
+      await until(async () => (await fields(page).getByLabel('Description').inputValue()) === 'Air between the houses', 'the description updated in place');
+      // Typing a name here while the other editor renames: what is typed stays, theirs is offered.
+      await fields(page).getByLabel('Name').fill('Our wind');
+      await fields(other).getByLabel('Name').fill('Their wind');
+      await fields(other).getByLabel('Name').press('Tab');
+      await page.locator('.ed-toast', { hasText: 'while you were typing' }).getByRole('button', { name: 'Use theirs' }).waitFor();
+      assert.equal(await fields(page).getByLabel('Name').inputValue(), 'Our wind');
+      await shot('396-two-authors');
+      await fields(page).getByLabel('Name').press('Tab');
+      await until(async () => savedLayer('wind')?.button?.name === 'Our wind', 'the name being typed wins when it is finished');
+      await otherContext.close();
+    });
+
     await run('the controller docks small and enlarges again (#388)', async () => {
       await page.goto(`${base}/edit#layer=wind`);
       await row('wind').waitFor();
