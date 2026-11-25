@@ -153,6 +153,16 @@ const DIALOG_KEY = 'mrs-dialog';
  * host as a `scene.*` request, which also writes it to site.json, so there is no
  * separate save: File > Save makes sure nothing is still on its way and says so (#130).
  */
+/** A picture's side file (#52): the picture's name and its edges on the map. Null for anything else. */
+function sideFile(text: string): { image?: unknown; bounds?: Record<string, unknown> } | null {
+  try {
+    const parsed: unknown = JSON.parse(text);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as { image?: unknown; bounds?: Record<string, unknown> }) : null;
+  } catch {
+    return null;
+  }
+}
+
 export class Editor {
   /** Where the live table goes. */
   readonly canvas = el('div', 'ed-canvas');
@@ -569,8 +579,9 @@ export class Editor {
     const manifest = this.store.manifests.find((m) => m.id === use);
     if (!manifest) return;
     this.closeDialog();
-    await this.add(manifest);
-    if (this.added) await this.send('layer.set', { layer: this.added, params });
+    // Saved with the scene (scene.set), not only shown (layer.set), so the file stays after a reload.
+    const id = await this.add(manifest);
+    if (id) await this.send('scene.set', { layer: id, params });
   }
 
   /**
@@ -587,7 +598,9 @@ export class Editor {
       if (kinds?.includes('video')) routes.add('media');
       const accept = [...routes].flatMap((r) => ACCEPT[r as keyof typeof ACCEPT]);
       const input = el('input');
-      Object.assign(input, { type: 'file', accept: accept.join(','), multiple: !routes.has('dataset') && !routes.has('model') });
+      // A picture can come with its side file (overlay.png and overlay.json), which places it on the map (#52).
+      if (routes.has('media') && !accept.includes('.json')) accept.push('.json');
+      Object.assign(input, { type: 'file', accept: accept.join(','), multiple: !routes.has('model') });
       input.addEventListener('cancel', () => resolve(null));
       input.addEventListener('change', () => {
         const files = [...(input.files ?? [])];
@@ -604,6 +617,20 @@ export class Editor {
   /** Brings files in, one after another; answers the last one added. */
   private async takeMedia(files: File[]): Promise<MediaItem | null> {
     let last: MediaItem | null = null;
+    // A side file that says where a picture lies (`{"image": "overlay.png", "bounds": {...}}`, #52)
+    // is not a dataset: the picture is placed on the map by it, as a Picture layer.
+    const placing = new Map<File, string>();
+    for (const side of files.filter((f) => /\.json$/i.test(f.name))) {
+      const text = await side.text().catch(() => '');
+      const parsed = sideFile(text);
+      const b = parsed?.bounds;
+      if (!b || ![b.west, b.south, b.east, b.north].every((v) => Number.isFinite(Number(v)))) continue;
+      const pictures = files.filter((f) => routeOf(f.name) === 'media' && kindOf(f.name) === 'picture');
+      const picture = pictures.find((f) => f.name === parsed?.image) ?? (pictures.length === 1 ? pictures[0] : undefined);
+      if (!picture) continue;
+      placing.set(picture, [b.west, b.south, b.east, b.north].map(Number).join(', '));
+      files = files.filter((f) => f !== side);
+    }
     for (const file of files) {
       const route = routeOf(file.name);
       if (route === 'dataset') {
@@ -622,7 +649,13 @@ export class Editor {
       if (!answer.ok || !page.path) throw new Error(page.error ?? `${file.name} could not be added.`);
       mediaChanged();
       last = (await mediaItems()).find((i) => i.path === page.path) ?? { kind: kindOf(page.path), path: page.path };
-      this.history.notify(`Added ${file.name}`, 'It is in View › Media library, and every list of the editor offers it.');
+      const bounds = placing.get(file);
+      const media = bounds ? this.store.manifests.find((m) => m.id === 'media') : undefined;
+      if (bounds && media) {
+        const id = await this.add(media);
+        if (id) await this.send('scene.set', { layer: id, params: { file: page.path, bounds } });
+        this.history.notify(`Placed ${file.name} on the map`, 'By the edges in its side file. Change them under the layer’s More settings.');
+      } else this.history.notify(`Added ${file.name}`, 'It is in View › Media library, and every list of the editor offers it.');
     }
     return last;
   }
@@ -641,8 +674,8 @@ export class Editor {
     const showWith = async (id: string, params: Record<string, unknown>) => {
       const manifest = this.store.manifests.find((m) => m.id === id);
       if (manifest) {
-        await this.add(manifest);
-        if (this.added) await this.send('layer.set', { layer: this.added, params });
+        const added = await this.add(manifest);
+        if (added) await this.send('scene.set', { layer: added, params });
       }
       dialog.close();
     };

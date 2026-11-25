@@ -400,7 +400,13 @@ async function main() {
       await until(async () => (await clickAt(0.2, 0.8)) === '#rest=building-lights', 'the lit buildings picked', 10000);
       await page.locator('.ed-row.is-rest[data-layer="building-lights"][aria-current="true"]').waitFor();
       await shot('425-map-pick');
-      await until(async () => (await clickAt(0.7, 0.6)) === '#rest=basemap', 'the base map picked', 10000);
+      // Lit windows come and go, so a few places are tried until one has only the base map under it.
+      const spots = [[0.7, 0.6], [0.55, 0.15], [0.85, 0.35], [0.4, 0.9], [0.62, 0.72]];
+      let tries = 0;
+      await until(async () => {
+        const [fx, fy] = spots[tries++ % spots.length];
+        return (await clickAt(fx, fy)) === '#rest=basemap';
+      }, 'the base map picked', 15000);
       // A drag is not a pick.
       const box = await surface.boundingBox();
       await page.mouse.move(box.x + box.width * 0.2, box.y + box.height * 0.8);
@@ -479,6 +485,32 @@ async function main() {
       await tv.waitForTimeout(400);
       if (shots) await tv.screenshot({ path: path.join(shots, '408-when-year.png') });
       await tv.close();
+    });
+
+    await run('Add data says what each column holds, and a picture with its side file is placed on the map (#52)', async () => {
+      await page.goto(`${base}/edit`);
+      await page.locator('.ed-tab[data-tab="insert"]').click();
+      await page.locator('.ed-ribbon [data-command="data.file"]').click();
+      const dialog = page.locator('dialog.im-dialog');
+      await dialog.locator('select').first().selectOption('own');
+      await dialog.getByLabel('Name of the dataset').fill('districts');
+      let chooser = page.waitForEvent('filechooser');
+      await dialog.getByRole('button', { name: 'Choose a file' }).first().click();
+      await (await chooser).setFiles(path.join(kit, 'zones.geojson'));
+      const columns = page.locator('.im-columns');
+      await columns.locator('.im-column[data-column="zone"][data-role="id"]').waitFor();
+      await columns.locator('.im-column[data-column="population"][data-role="value"]').waitFor();
+      await shot('52-columns');
+      await page.keyboard.press('Escape');
+      // overlay.png with overlay.json: a Picture layer placed by the edges the side file gives.
+      await page.goto(`${base}/edit`);
+      await page.locator('.ed-tab[data-tab="insert"]').click();
+      chooser = page.waitForEvent('filechooser');
+      await page.locator('.ed-ribbon [data-command="media.picture"]').click();
+      await (await chooser).setFiles([path.join(kit, 'overlay.png'), path.join(kit, 'overlay.json')]);
+      await until(() => saved().layers.some((l) => l.use === 'media' && /^11\.96/.test(String(l.params?.bounds ?? ''))), 'a placed Picture layer', 15000);
+      await page.waitForTimeout(1500);
+      await shot('52-placed-picture');
     });
 
     await run('the controller carries no operator text (#50)', async () => {
