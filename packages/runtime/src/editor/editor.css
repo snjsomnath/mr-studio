@@ -4731,14 +4731,22 @@ body[data-role='edit'] > .connection {
   min-height: 0;
 }
 
-/* Lists of sources and files get the large size (#457). */
+/* Lists of sources and files get the large size (#457), and so do the welcome and its translations (#468). */
 .ed-dialog.is-open-data,
-.ed-dialog.is-model {
+.ed-dialog.is-model,
+.ed-dialog.is-welcome {
   width: min(1000px, calc(100vw - 32px));
 }
 
-.ed-dialog.is-open-data {
+.ed-dialog.is-open-data,
+.ed-dialog.is-welcome {
   min-height: min(600px, calc(100vh - 48px));
+}
+
+/* A tick box sits at the start of its column, like every other field (#468). */
+.ed-dialog.is-welcome input[type='checkbox'] {
+  justify-self: start;
+  margin-left: 0;
 }
 
 /* The model importer grows with its preview once a file is chosen. */
