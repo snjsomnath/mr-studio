@@ -257,6 +257,14 @@ export class Editor {
     this.store = store;
     this.connection = connection;
     this.history = new HistoryControls(connection, () => store.surface, (problem) => this.setSaved(problem));
+    // The panel names layers and settings as the editor does (#395).
+    this.history.names = {
+      layer: (use) => store.manifests.find((m) => m.id === use)?.name,
+      control: (use, id) => {
+        const control = store.manifests.find((m) => m.id === use)?.controls?.find((c) => c.id === id);
+        return control ? { label: control.label, unit: 'unit' in control ? (control.unit as string | undefined) : undefined, default: 'default' in control ? control.default : undefined } : undefined;
+      },
+    };
     this.saved.type = 'button';
     this.saved.addEventListener('click', () => this.history.toggle(this.saved));
     this.handlers = this.commandHandlers();
@@ -1023,6 +1031,10 @@ export class Editor {
       openStarterPack(invoke, this.store.state.site.name);
       return;
     }
+    if (action === 'history') {
+      this.history.open(this.saved);
+      return;
+    }
     if (action === 'save') {
       if (this.pending > 0) this.setSaved('Still saving. Is the table connected?');
       else if (this.problem) this.setSaved(this.problem);
@@ -1157,6 +1169,9 @@ export class Editor {
         break;
       case 'starter-pack':
         void this.file('starter');
+        break;
+      case 'version-history':
+        void this.file('history');
         break;
       case 'commands':
         commandSearch(() => this.commands(), this.shell);

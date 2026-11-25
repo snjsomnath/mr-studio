@@ -289,8 +289,8 @@ button.ed-saved:hover {
   z-index: 60;
   display: flex;
   flex-direction: column;
-  width: 380px;
-  max-height: min(520px, 70vh);
+  width: 420px;
+  max-height: min(600px, 75vh);
   border: 1px solid var(--ed-line);
   border-radius: 10px;
   background: var(--ed-panel);
@@ -5280,4 +5280,29 @@ body[data-role='edit'] > .connection {
 .ed-drawing-frame.is-moved .ed-df-bar > span:empty,
 .ed-drawing-frame.is-moved .ed-df-hint-howto {
   display: none;
+}
+
+/* What one version changed (#395). */
+.ed-history .ed-history-what {
+  align-self: flex-start;
+  margin-top: 2px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ed-accent);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.ed-history .ed-history-what:hover {
+  text-decoration: underline;
+}
+
+.ed-history-detail {
+  margin: 4px 0 2px;
+  padding-left: 16px;
+  color: var(--ed-text-2);
+  font-size: 12px;
+  line-height: 1.5;
 }

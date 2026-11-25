@@ -25,8 +25,10 @@ import {
   findLayer,
   freeId,
   instanceIds,
+  listVersions,
   previewPlan,
   readSite,
+  restoreVersion,
   runCli,
   runCliJson,
   SITE_FORMAT,
@@ -124,6 +126,8 @@ const ANNOTATIONS: Record<string, { readOnlyHint: boolean; destructiveHint?: boo
   create_site: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   get_site: { readOnlyHint: true, openWorldHint: false },
   update_site: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+  list_versions: { readOnlyHint: true, openWorldHint: false },
+  restore_version: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
   add_layer: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   set_layer: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
   move_layer: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
@@ -574,6 +578,37 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
       if (added.length) return fail('Not saved: the change would make the site invalid.', { issues: added }, { code: 'would_invalidate', next: ['Fix the values listed and call update_site again; nothing was written.'] });
       writeSite(dir, next, `Changed ${Object.keys(set).join(', ')}`);
       return reply(`Saved (${counts(issues)}).`, { issues, changed: Object.keys(set) });
+    },
+  );
+
+  tool(
+    'list_versions',
+    {
+      title: 'List saved versions of a table',
+      description: 'The versions of site.json the MR Studio app keeps on this computer (its Version history, the last 200 changes), newest first: who made each (editor, controller, mcp, import, outside, history) and what it changed. Empty for a table the app has not opened on this computer.',
+      inputSchema: { site: z.string().describe('Site folder'), limit: z.number().int().positive().optional().describe('How many (default 20)') },
+    },
+    async ({ site, limit }) => {
+      const versions = listVersions(at(site)).slice(0, limit ?? 20);
+      if (!versions.length) return reply('No versions are kept for this table on this computer. The app keeps them once it has opened the table.', { versions });
+      return reply(`${versions.length} version${versions.length === 1 ? '' : 's'}, newest first.`, { versions: versions.map((v) => ({ ...v, when: new Date(v.at * 1000).toISOString() })) });
+    },
+  );
+
+  tool(
+    'restore_version',
+    {
+      title: 'Go back to a saved version',
+      description: 'Puts back a version from list_versions. The app records it as a new version on top ("Went back to: …"), so nothing is lost and Undo in the editor takes it back. Ask the person first: it replaces the current layers and settings.',
+      inputSchema: { site: z.string().describe('Site folder'), revision: z.number().int().positive().describe('The rev from list_versions') },
+    },
+    async ({ site, revision }) => {
+      try {
+        const back = restoreVersion(at(site), revision);
+        return reply(`Went back to version ${revision}: ${back.summary}.`, { revision, summary: back.summary });
+      } catch (error) {
+        return fail((error as Error).message, undefined, { code: 'unknown_version', next: ['Call list_versions to see the versions kept.'] });
+      }
     },
   );
 

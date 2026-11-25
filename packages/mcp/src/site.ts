@@ -4,7 +4,7 @@
 // and is run as well when the CLI can be found.
 
 import { execFile } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { delimiter, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 
@@ -112,6 +112,56 @@ export function writeSite(dir: string, manifest: SiteManifest, summary?: string)
     }
   }
   writeFileSync(sitePath(dir), JSON.stringify(manifest, null, 2) + '\n');
+}
+
+/** One kept version of site.json, as the app's revision history (#72) stores it. */
+export interface SiteVersion {
+  rev: number;
+  at: number;
+  by: string;
+  summary: string;
+  keys: string[];
+}
+
+/** The versions of site.json the app keeps on this computer (#395), newest first; empty when it keeps none. */
+export function listVersions(dir: string): SiteVersion[] {
+  const store = join(dir, '.mrstudio', 'history');
+  let files: string[];
+  try {
+    files = readdirSync(store).filter((f) => /^r\d+\.json$/.test(f));
+  } catch {
+    return [];
+  }
+  const versions: SiteVersion[] = [];
+  for (const file of files) {
+    try {
+      const { revision } = JSON.parse(readFileSync(join(store, file), 'utf8')) as { revision: SiteVersion };
+      versions.push({ rev: revision.rev, at: revision.at, by: revision.by, summary: revision.summary, keys: revision.keys ?? [] });
+    } catch {
+      // A file being written: left out.
+    }
+  }
+  return versions.sort((a, b) => b.rev - a.rev);
+}
+
+/**
+ * Puts back a kept version of site.json (#395). The app records it as a new version on top,
+ * named by the note, so nothing is lost and its undo can take the restore back.
+ */
+export function restoreVersion(dir: string, rev: number): SiteVersion {
+  const file = join(dir, '.mrstudio', 'history', `r${String(rev).padStart(8, '0')}.json`);
+  let stored: { revision: SiteVersion; text: string };
+  try {
+    stored = JSON.parse(readFileSync(file, 'utf8'));
+  } catch {
+    throw new Error(`version ${rev} is not kept on this computer`);
+  }
+  JSON.parse(stored.text);
+  mkdirSync(join(dir, '.mrstudio'), { recursive: true });
+  const note = { by: 'mcp', summary: `Went back to: ${stored.revision.summary}`.slice(0, 120), at: Math.floor(Date.now() / 1000) };
+  writeFileSync(join(dir, '.mrstudio', 'next-change.json'), JSON.stringify(note) + '\n');
+  writeFileSync(sitePath(dir), stored.text);
+  return stored.revision;
 }
 
 /** True when `path` stays inside `dir`. */

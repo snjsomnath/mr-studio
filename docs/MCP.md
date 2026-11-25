@@ -23,6 +23,7 @@ The server writes `site.json`, never layer code. When a project needs a new laye
 | `list_building_blocks` | Older name, kept for this release only: visual, data, interaction and TV primitives, each marked built or planned from the code itself (`find_capabilities` with `kind` gives the same with evidence) |
 | `create_site` | A new site package: `site.json`, `data/`, `requests/`, README, `.gitignore` |
 | `get_site`, `update_site` | Read a site with effective params; change settings (place, table, scene sources, basemap, branding, tv) |
+| `list_versions`, `restore_version` | The versions of site.json the app keeps on this computer (#395), and going back to one as a new version on top |
 | `add_layer`, `set_layer`, `move_layer`, `remove_layer` | Compose the scene by instance id: layers, items inside a layer (`parent`), and buttons with groups; params are checked against the layer's controls with the host's rules |
 | `set_steps` | How Next moves through a layer, and a slideshow's sequence of layers, with presenter `notes` per step for the guide's phone |
 | `save_custom_layer` | Save or remove a custom layer: a recipe of data, look, motion and interaction blocks, used as `custom:<id>`. Blocks, props, colours, ramps, pictograms and icons are checked against the recipe player in `packages/sdk`, and the controller's legend is worked out from the looks and their data, as the editor does |

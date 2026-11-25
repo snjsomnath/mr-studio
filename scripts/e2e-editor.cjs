@@ -265,6 +265,29 @@ async function main() {
       await shot('453-xray-empty');
     });
 
+    await run('File › Version history… says what a version changed (#395)', async () => {
+      await page.goto(`${base}/edit#layer=wind`);
+      await row('wind').waitFor();
+      // A change to remember: the wind's speed.
+      const speed = savedLayer('wind')?.params?.speed ?? 5;
+      const readout = page.locator('.ed-inspector .control', { hasText: 'Wind speed' }).locator('.control-value');
+      const more = page.locator('.ed-inspector details.ed-more');
+      if (!(await more.evaluate((d) => d.open))) await more.locator('summary').click();
+      await readout.click();
+      await page.keyboard.press(`${mod}+a`);
+      await page.keyboard.type(String(speed + 3));
+      await page.keyboard.press('Enter');
+      await until(async () => savedLayer('wind')?.params?.speed === speed + 3, 'the new speed saved');
+      await page.locator('.ed-file-button, [data-file-menu]').first().click();
+      await page.getByRole('menuitem', { name: 'Version history…' }).click();
+      const panel = page.locator('.ed-history[aria-label="Version history"]');
+      await panel.waitFor();
+      await panel.locator('.ed-history-row').first().locator('.ed-history-what').click();
+      await panel.locator('.ed-history-detail li', { hasText: `wind speed ${speed} → ${speed + 3} m/s` }).waitFor();
+      await shot('395-version-history');
+      await page.keyboard.press('Escape');
+    });
+
     await run('the controller docks small and enlarges again (#388)', async () => {
       await page.goto(`${base}/edit#layer=wind`);
       await row('wind').waitFor();

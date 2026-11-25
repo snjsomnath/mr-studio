@@ -360,7 +360,7 @@ impl AppState {
 const LIVE_KEYS: [&str; 8] = ["layers", "custom", "palette", "tv", "display", "name", "timezone", "branding"];
 
 impl AppState {
-    /// `history.list`, `history.undo`, `history.redo` and `history.restore { revision }` (#72).
+    /// `history.list`, `history.get { revision }` (#395), `history.undo`, `history.redo` and `history.restore { revision }` (#72).
     /// Undo and redo walk the history; restore brings back any kept revision as a new one.
     /// A `field.*` request (#445): spots from phones, removed by the controller. A change to the
     /// list of spots reaches every Field walk layer as its `revision`, so its views fetch it again.
@@ -401,6 +401,13 @@ impl AppState {
         }
         if method == "history.list" {
             return Ok(self.hub.history_list());
+        }
+        if method == "history.get" {
+            // A kept version and the one before it (#395): the editor shows what the change did.
+            let rev = p["revision"].as_u64().ok_or("missing revision")?;
+            let (before, after) = self.hub.history().lock().unwrap().texts(rev).ok_or("that revision is no longer kept")?;
+            let parse = |t: &str| serde_json::from_str::<Value>(t).unwrap_or(Value::Null);
+            return Ok(json!({ "revision": rev, "before": before.as_deref().map_or(Value::Null, parse), "after": parse(&after) }));
         }
         if !role.may_compose() {
             return Err("this surface cannot change the table".into());

@@ -38,6 +38,8 @@ fn file_submenu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Submenu<R>> {
         .separator()
         .item(&item("save", "Save", Some("CmdOrCtrl+S"))?)
         .item(&item("save_as", "Save As…", Some("CmdOrCtrl+Shift+S"))?)
+        // Every saved version, what it changed, and going back (#395): the editor's panel.
+        .item(&item("version-history", "Version history…", None)?)
         // One .mrstable file to take to another computer (#85).
         .item(&item("export", "Export table…", None)?)
         // The same file, attached to a new email in the computer's mail app (#372).
@@ -141,13 +143,14 @@ fn help_submenu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Submenu<R>> {
         .build()
 }
 
-/// The menu items the editor page carries out: Edit (#57), "Table settings…" and "Export
-/// starter pack…" (#450) from the File menu, and View and Help (#65, #88).
-pub const EDIT_ACTIONS: [&str; 14] = [
+/// The menu items the editor page carries out: Edit (#57), "Table settings…", "Export
+/// starter pack…" (#450) and "Version history…" (#395) from the File menu, and View and Help (#65, #88).
+pub const EDIT_ACTIONS: [&str; 15] = [
     "undo",
     "redo",
     "table-settings",
     "starter-pack",
+    "version-history",
     "commands",
     "view-map",
     "view-controller",
