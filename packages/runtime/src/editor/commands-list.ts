@@ -35,6 +35,7 @@ export const COMMANDS = {
   'commands.search': { label: 'Search commands', icon: 'search', tip: 'Find any command, layer or setting by a few words', group: 'Help', also: 'find' },
 
   // ---- Adding things (Insert) ----
+  'dialog.inside': { label: 'Add inside…', icon: 'plus', tip: 'Put a layer inside the selected one: it comes on with it. The Magnifier and the Reveal line show what is inside them, like an X-ray.', group: 'Insert', also: 'inside item child xray x-ray magnifier reveal add to this layer' },
   'layer.custom': { label: 'Custom layer', icon: 'brush', tip: 'Make a layer from your own data: choose the data, then style it, move it and save it as a button', group: 'Add', also: 'new build style own' },
   'layer.forget': { label: 'Delete custom', icon: 'trash', tip: 'Delete custom layers this table no longer needs, wherever they are used', group: 'Add', also: 'forget' },
   'data.file': { label: 'Data file', icon: 'map', tip: 'Bring in a file: GeoJSON, CSV, GeoTIFF or a plan drawing. MR Studio works out what it is.', group: 'Add', also: 'import add data geojson csv tif buildings ground trees streets' },
@@ -74,6 +75,7 @@ export const COMMANDS = {
   'window.dev': { label: 'Developer', icon: 'code', tip: 'The workbench: map, controls, widget gallery, live values, action log and problems', group: 'View', also: 'open workbench' },
 
   // ---- Help ----
+  'help.tour': { label: 'Tour of the editor', icon: 'pointer', tip: 'A short tour of the window: the ribbon, the list, the map and controller, the Format pane, Present and Help. Its tick box decides whether it opens with the editor.', group: 'Help', also: 'tour introduction start welcome orientation' },
   'help.features': { label: 'Everything on the table', icon: 'layers', tip: 'Every layer, what it shows and where to find it', group: 'Help', also: 'guide features' },
   'help.troubleshooting': { label: 'When something is wrong', icon: 'alert', tip: 'The usual problems and how to fix them: projection, phones, empty layers, speed, updates', group: 'Help', also: 'troubleshooting' },
   'help.shortcuts': { label: 'Keyboard shortcuts', icon: 'info', tip: 'Every key the editor knows', group: 'Help', also: 'keys' },

@@ -27,7 +27,7 @@ OpenStreetMap's servers are shared and sometimes busy. MR Studio waits, tries ag
 
 ## A terminal says "mrstudio: command not found"
 
-The `mrstudio` command comes inside the app, but a terminal only finds it once it is installed for terminals. Open **Displays and settings**, the **Command line** tab, and press **Install command line tool** (on a Mac it is also in the **MR Studio** menu, on Windows in the editor's **File** menu). A Mac asks for your password once. Then open a **new** terminal window: ones that were already open do not see it.
+The `mrstudio` command comes inside the app, but a terminal only finds it once it is installed for terminals. Open **File, Settings…**, the **Command line** page, and press **Install command line tool** (on a Mac it is also in the **MR Studio** menu, on Windows in the editor's **File** menu). A Mac asks for your password once. Then open a **new** terminal window: ones that were already open do not see it.
 
 ## The map pictures or the Help pictures are missing
 
@@ -53,7 +53,7 @@ The aerial photo, ready-made map styles, web maps and the pictures in this Help 
 
 ## A window went blank or froze
 
-MR Studio watches its windows while presenting and reloads one that stops drawing. It writes what happened in the **operator log**: Home, **Displays and settings**, **Show the operator log**. While presenting, Ctrl+Shift+E brings the editor back.
+MR Studio watches its windows while presenting and reloads one that stops drawing. It writes what happened in the **operator log**: Home, **Settings**, **Show the operator log**. While presenting, Ctrl+Shift+E brings the editor back.
 
 ## The app will not open the first time
 

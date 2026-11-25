@@ -649,17 +649,25 @@ async function main() {
     await compose.close();
     const editor = await open('/edit', { width: 1440, height: 900 });
     const treeLayers = () => editor.locator('.ed-tree .ed-row.is-layer[data-layer] .ed-row-label').allTextContents();
+    // New layer is Insert's (#460); the rest of these steps work from Home.
+    const newLayer = async (pick, back = true) => {
+      await editor.locator('.ed-tab[data-tab="insert"]').click();
+      await editor.locator('.ed-ribbon [data-command="layer.new"]').click();
+      await editor.locator(`.lg-gallery .lg-card[data-layer="${pick}"] .lg-pick`).click();
+      await editor.locator('.lg-gallery').waitFor({ state: 'detached' });
+      if (back) await editor.locator('.ed-tab[data-tab="home"]').click();
+    };
     await editor.locator('.ed-row[data-context="home"]').waitFor();
     assert.deepEqual(await treeLayers(), ['Building uses', 'Wind', 'Mobility', 'Isovist', 'Cool paths', 'Sketch', 'Slideshow', 'Sunlight']);
     // The home screen holds the base map and the ambient life, and offers more of it.
     // Map life is listed under At rest, each with its eye (#382).
     assert.deepEqual(await editor.locator('.ed-tree .ed-row.is-rest .ed-row-label').allTextContents(), ['Trees', 'Public transport', 'Traffic', 'Building lights', 'Base map']);
-    await editor.locator('.ed-ribbon [data-command="layer.new"]').click();
-    await editor.locator('.lg-gallery .lg-card[data-layer="trees"] .lg-pick').click();
+    await newLayer('trees', false);
     // Trees are already at rest, so the editor asks before adding a second one (#183).
     await editor.locator('.ed-ask h2', { hasText: 'Trees is already on the map at rest' }).waitFor();
     await editor.locator('.ed-ask [data-choice="add"]').click();
     await editor.locator('.ed-tree .ed-row[data-layer="trees-2"][aria-current="true"]').waitFor();
+    await editor.locator('.ed-tab[data-tab="home"]').click();
     // Ambient life joins the home screen, under the layers.
     assert.equal(savedLayers()[6].id, 'trees-2');
     // Its settings open in the inspector and are saved.
@@ -687,8 +695,7 @@ async function main() {
       await restRow(id).click();
       await editor.locator('.ed-ribbon [data-command="layer.remove"]').click();
       await restRow(id).waitFor({ state: 'detached' });
-      await editor.locator('.ed-ribbon [data-command="layer.new"]').click();
-      await editor.locator(`.lg-gallery .lg-card[data-layer="${id}"] .lg-pick`).click();
+      await newLayer(id);
       await restRow(id).waitFor();
       assert.equal(savedLayers()[0].id ?? savedLayers()[0].use, 'basemap', id === 'basemap' ? 'the base map goes back to the bottom' : 'map life goes back above the base map');
     }
@@ -696,8 +703,7 @@ async function main() {
     await press('Sketch', true);
     // Inside a layer the gallery's ambient life adds into that layer: an item that shows only while it is open (#69).
     await editor.locator('.ed-tree .ed-row[data-layer="mobility"]').click();
-    await editor.locator('.ed-ribbon [data-command="layer.new"]').click();
-    await editor.locator('.lg-gallery .lg-card[data-layer="trees"] .lg-pick').click();
+    await newLayer('trees');
     await editor.locator('.ed-tree .ed-row.is-item[data-layer="trees-2"][aria-current="true"]').waitFor();
     await editor.locator('.ed-inspector [data-items="mobility"] .ed-row[data-layer="trees-2"]').waitFor();
     assert.deepEqual(savedLayers().find((l) => l.id === 'mobility').items, [{ use: 'trees', id: 'trees-2' }]);
@@ -706,7 +712,6 @@ async function main() {
     await editor.locator('.ed-ribbon').getByText('Remove').click();
     await editor.locator('.ed-tree .ed-row[data-layer="trees-2"]').waitFor({ state: 'detached' });
     assert.equal(savedLayers().find((l) => l.id === 'mobility').items, undefined);
-    await editor.locator('.ed-ribbon [data-command="layer.new"]').waitFor();
     await editor.locator('.ed-inspector').getByText('Show trips').waitFor();
     // The eye beside a setting takes that control off the controller, and it is saved. The editor keeps it.
     await editor.getByRole('switch', { name: 'Show Show trips on the controller' }).click();

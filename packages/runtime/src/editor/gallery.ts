@@ -71,6 +71,10 @@ export interface GalleryHost {
   add(manifest: LayerManifest, parent?: string): Promise<void>;
   /** Where map life goes: the layer that is open, or the map at rest (undefined). */
   lifeInto(): { id?: string; name: string };
+  /** Add inside… (#453): every pick goes inside this layer, and comes on with it. */
+  into?: { id: string; name: string };
+  /** Adds a core layer already set up (X-ray glass: the Magnifier showing what is inside it). */
+  addPreset?(use: string, params: Record<string, unknown>): Promise<void>;
   /** Opens Your place at the row that brings in `target`. */
   bringIn(target: string): void;
   addData(): void;
@@ -178,10 +182,12 @@ interface Card {
 export function openGallery(host: GalleryHost, start?: GallerySection): void {
   document.querySelector('.lg-gallery')?.remove();
   const { store } = host;
+  const { into } = host;
   const dialog = el('dialog', 'im-dialog lg-gallery');
-  dialog.ariaLabel = 'New layer';
+  dialog.ariaLabel = into ? `Add inside ${into.name}` : 'New layer';
+  if (into) dialog.dataset.into = into.id;
   const head = el('header', 'im-dialog-head lg-head');
-  const title = el('h2', undefined, 'New layer');
+  const title = el('h2', undefined, into ? `Add inside ${into.name}` : 'New layer');
   const search = el('input', 'lg-search');
   search.type = 'search';
   search.placeholder = 'Find a layer';
@@ -278,7 +284,8 @@ export function openGallery(host: GalleryHost, start?: GallerySection): void {
   // ---- From your data: a file first, then the core layers that show data (added below), then
   // a layer from each dataset of the table, drawn as it lies.
   const data = lists.get('data')!;
-  data.append(
+  // Inside a layer (#453) only layers go: a file or a dataset makes a layer of its own first.
+  if (!into) data.append(
     card({
       section: 'data',
       title: 'Bring in a file',
@@ -288,7 +295,7 @@ export function openGallery(host: GalleryHost, start?: GallerySection): void {
       onPick: () => host.addData(),
     }),
   );
-  const datasets = host.datasets();
+  const datasets = into ? [] : host.datasets();
   const own = el('div', 'lg-cards is-small');
   if (datasets.length > 0) {
     const part = sectionNodes.get('data')!;
@@ -332,7 +339,7 @@ export function openGallery(host: GalleryHost, start?: GallerySection): void {
   });
   const life = host.lifeInto();
   // Make your own starts with the builder, before the layers already made with it.
-  lists.get('own')!.append(
+  if (!into) lists.get('own')!.append(
     card({
       section: 'own',
       title: 'Custom layer',
@@ -345,11 +352,11 @@ export function openGallery(host: GalleryHost, start?: GallerySection): void {
   );
   for (const manifest of offered) {
     // A base map is offered only to a table without one: it is where a removed one comes back (#382).
-    if (manifest.category === 'base' && Object.values(store.state.layers).some((l) => l.layer === manifest.id)) continue;
+    if (manifest.category === 'base' && (into || Object.values(store.state.layers).some((l) => l.layer === manifest.id))) continue;
     const section = sectionOf(manifest);
     const missing = missingData(store, manifest);
     const needs = missing.names.length > 0;
-    const parent = section === 'life' ? life.id : undefined;
+    const parent = into ? into.id : section === 'life' ? life.id : undefined;
     lists.get(section)!.append(
       card({
         section,
@@ -368,8 +375,24 @@ export function openGallery(host: GalleryHost, start?: GallerySection): void {
         onPick: needs ? (missing.target ? () => host.bringIn(missing.target!) : undefined) : () => host.add(manifest, parent),
       }),
     );
+    // The Magnifier's X-ray, findable by name (#453): the same layer, set to show what is inside it.
+    if (manifest.id === 'lens' && !into && host.addPreset) {
+      const preset = host.addPreset;
+      lists.get(section)!.append(
+        card({
+          section,
+          layer: 'lens:xray',
+          title: 'X-ray glass',
+          about: 'The Magnifier set to look through: put a plan, a picture or a map inside it, and the glass shows it where visitors move it.',
+          preview: 'lens',
+          iconName: manifest.icon,
+          tag: 'Magnifier',
+          onPick: () => preset('lens', { show: 'under' }),
+        }),
+      );
+    }
   }
-  sectionNodes.get('life')!.querySelector('.lg-section-about')!.textContent = `Always on, with no button. These go into ${life.name}.`;
+  sectionNodes.get('life')!.querySelector('.lg-section-about')!.textContent = `Always on, with no button. These go into ${into?.name ?? life.name}.`;
 
   const empty = el('p', 'ed-empty lg-none', 'No layer matches. Try another word, or make your own.');
   empty.hidden = true;
