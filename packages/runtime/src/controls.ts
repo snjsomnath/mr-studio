@@ -1392,10 +1392,12 @@ export class Controller {
     const chosen = this.openLayers().filter((id) => !this.store.manifest(this.store.state.layers[id]!.layer)?.alongside);
     // One with a viewer of its own (the field walk's photos) leads while nothing else is open, as a layer would.
     let leads = false;
-    for (const id of this.openLayers()) {
-      const body = this.cards.get(id)?.body;
+    const open = new Set(this.openLayers());
+    for (const [id, card] of this.cards) {
+      const body = card.body;
       if (!body?.classList.contains('is-alongside')) continue;
-      const lead = chosen.length === 0 && Boolean(body.querySelector(':scope > .layer-hero:not([hidden])'));
+      // Cleared when it closes too, or its full-width look would keep a closed one on screen.
+      const lead = open.has(id) && chosen.length === 0 && Boolean(body.querySelector(':scope > .layer-hero:not([hidden])'));
       body.classList.toggle('is-lead', lead);
       leads ||= lead;
     }

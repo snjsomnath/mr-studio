@@ -22,9 +22,7 @@ Bringing what a group saw and heard outside back into the room, so people talk a
 
 ## With other layers
 
-Field walk stays open when you open another layer, as Sketch does, so the spots stay on top of a Reveal line, a Magnifier's X-ray, a sun study or anything else. While another layer is open the controller keeps one line for the walk; close that layer to get the walk's viewer back. A tap on a dot still picks it, and a drag belongs to the other layer (moving the line or the glass).
-
-![Spots over a Reveal line](docs/screenshots/445-with-reveal-line.png)
+Field walk is a layer like any other: picking another layer closes it. To see the spots under a Reveal line or a Magnifier's X-ray, add Field walk inside that layer in the editor; it then opens with it.
 
 ## Tips
 
