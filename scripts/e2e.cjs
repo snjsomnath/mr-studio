@@ -549,8 +549,12 @@ async function main() {
     await tv.keyboard.press('PageDown');
     await dev.getByText('from the south').waitFor(slow);
     // A tap on the dial turns it there: tapped at the dial's top, the wind comes from the table's top.
-    await windHero.locator('.wind-hero-ring').waitFor();
-    const dial = await windHero.locator('.wind-hero-ring').boundingBox();
+    // The dial is drawn anew on every update, so its box is read in one step: a box asked for
+    // after the wait can find the ring already replaced (null).
+    const dial = await windHero.locator('.wind-hero-ring').evaluate((ring) => {
+      const { x, y, width, height } = ring.getBoundingClientRect();
+      return { x, y, width, height };
+    });
     await tv.mouse.click(dial.x + dial.width / 2, dial.y + 2);
     await windHero.locator('.wind-hero-dial[aria-valuenow="0"]').waitFor();
     await dev.getByText('from the north').waitFor(slow);
