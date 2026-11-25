@@ -133,9 +133,22 @@ export interface EntitySet {
    * Feature properties the controller shows for the picked entity, read only (#38: a custom
    * layer's "tap to read"). A set may have facts and no controls.
    */
-  facts?: string[];
+  facts?: (string | EntityFact)[];
   /** Milliseconds of quiet before the table's `entities` handler runs, for layers that call a model on change. Default 0. */
   debounce_ms?: number;
+}
+
+/**
+ * A fact read on the controller with its own words (#410): "Noise 48 dB" rather than "Noise db 48".
+ * `scale` multiplies a number first (0.31 with scale 100 and unit % reads "31 %").
+ */
+export interface EntityFact {
+  column: string;
+  label?: string;
+  unit?: string;
+  scale?: number;
+  /** Decimals for a number. Default: none for whole numbers, else up to two. */
+  decimals?: number;
 }
 
 /** An entity that is picked on the table and the controller: `state.selection`. */

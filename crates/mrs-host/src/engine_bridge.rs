@@ -239,6 +239,37 @@ fn supervise(
     }
 }
 
+/// Drops a stream's settings that a later one in the same batch replaces: one that sets every
+/// key the earlier one did. The dropped one is answered as done, as its values are about to be.
+fn coalesce(batch: Vec<Command>) -> Vec<Command> {
+    let keys = |params: &Value| params.as_object().map(|o| o.keys().cloned().collect::<Vec<_>>());
+    let replaced: Vec<bool> = batch
+        .iter()
+        .enumerate()
+        .map(|(i, command)| {
+            let Command::Set { conn, stream, params, .. } = command else { return false };
+            let Some(mine) = keys(params) else { return false };
+            batch[i + 1..].iter().any(|later| match later {
+                Command::Set { conn: c, stream: s, params: p, .. } if c == conn && s == stream => {
+                    p.as_object().is_some_and(|o| mine.iter().all(|k| o.contains_key(k)))
+                }
+                _ => false,
+            })
+        })
+        .collect();
+    batch
+        .into_iter()
+        .zip(replaced)
+        .filter_map(|(command, replaced)| match command {
+            Command::Set { reply, .. } if replaced => {
+                let _ = reply.send(Ok(()));
+                None
+            }
+            command => Some(command),
+        })
+        .collect()
+}
+
 fn run(mut engine: Engine, current: &mut (SceneData, LonLat), rx: &mpsc::Receiver<Command>) -> Exit {
     let mut origin = current.1;
     let mut streams: HashMap<u32, Stream> = HashMap::new();
@@ -259,8 +290,14 @@ fn run(mut engine: Engine, current: &mut (SceneData, LonLat), rx: &mpsc::Receive
                 Err(RecvTimeoutError::Disconnected) => return Exit::Closed,
             }
         };
-        let mut pending = first;
-        while let Some(command) = pending {
+        // Everything waiting is taken at once, so a backlog of a stream's settings (a played clock's
+        // `hour` every tenth of a second on a slow host) reaches the kernel as its newest only (#403).
+        let mut batch: Vec<Command> = first.into_iter().collect();
+        while let Ok(command) = rx.try_recv() {
+            batch.push(command);
+        }
+        let batch = coalesce(batch);
+        for command in batch {
             match command {
                 Command::Info(reply) => {
                     let _ = reply.send(engine.info());
@@ -308,7 +345,6 @@ fn run(mut engine: Engine, current: &mut (SceneData, LonLat), rx: &mpsc::Receive
                     });
                 }
             }
-            pending = rx.try_recv().ok();
         }
         if engine.lost() {
             return Exit::Lost;
@@ -445,4 +481,29 @@ fn send_frames(engine: &mut Engine, id: u32, stream: &Stream, status: &mrs_engin
         }
     }
     true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn set(stream: u32, params: Value) -> (Command, oneshot::Receiver<Result<(), String>>) {
+        let (reply, rx) = oneshot::channel();
+        (Command::Set { conn: 1, stream, params, reply }, rx)
+    }
+
+    #[test]
+    fn a_backlog_of_settings_reaches_the_kernel_as_its_newest() {
+        let (a, mut a_rx) = set(1, json!({ "hour": 21.0, "date": "06-21" }));
+        let (b, _) = set(2, json!({ "hour": 9.0 }));
+        let (c, _) = set(1, json!({ "hour": 21.25, "date": "06-21" }));
+        let (d, _) = set(1, json!({ "trees": true }));
+        let kept = coalesce(vec![a, b, c, d]);
+        let hours: Vec<Value> =
+            kept.iter().map(|k| if let Command::Set { params, .. } = k { params.clone() } else { Value::Null }).collect();
+        // The first is replaced by the third; the other stream and a partial setting stay.
+        assert_eq!(hours, vec![json!({ "hour": 9.0 }), json!({ "hour": 21.25, "date": "06-21" }), json!({ "trees": true })]);
+        assert_eq!(a_rx.try_recv().unwrap(), Ok(()));
+    }
 }

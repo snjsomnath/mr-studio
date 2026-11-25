@@ -71,6 +71,15 @@ test('tap to read: features by their place in the file, with their facts', () =>
   assert.equal(read[1]!.label, '2');
   assert.deepEqual(read[0]!.facts, [['Owner', 'Chalmers']]);
   assert.deepEqual(factsOf({ floor_area: 12345.678, ok: true }, ['floor_area', 'ok', 'missing']), [['Floor area', '12,345.68'], ['Ok', 'Yes']]);
+  // A fact with its own words (#410): a label, a unit and a scale.
+  assert.deepEqual(
+    factsOf({ noise_db: 48.04, green_share: 0.31, kind: 'park' }, [
+      { column: 'noise_db', label: 'Noise', unit: 'dB', decimals: 0 },
+      { column: 'green_share', label: 'Green', unit: '%', scale: 100 },
+      { column: 'kind', label: '' },
+    ]).map(([k, v]) => [k, v.replace(/\s/g, ' ')]),
+    [['Noise', '48 dB'], ['Green', '31 %'], ['Kind', 'park']],
+  );
   // Without facts nothing extra is kept.
   assert.equal(entityFeatures(collection, set)[0]!.facts, undefined);
 });

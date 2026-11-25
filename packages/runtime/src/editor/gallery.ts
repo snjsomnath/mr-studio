@@ -3,6 +3,7 @@
 // from your data, analysis, story, your own, and map life. The ribbon's New layer, the tree's +
 // and an empty layer list all open it.
 
+import { paletteHex, resolvePalette } from '@mrstudio/sdk';
 import type { LayerManifest, Shapes } from '@mrstudio/sdk';
 
 import { el, isAmbient, isOffered } from '../controls.ts';
@@ -143,6 +144,36 @@ export function shapesThumbnail(shapes: Shapes, extent: { width: number; height:
   }
   if (dots) path(dots, 'is-dot');
   return svg;
+}
+
+/**
+ * A custom layer's picture (#409): its looks' data drawn as it lies on the table, in each look's
+ * colour, so a saved layer is recognised by its shape rather than an icon.
+ */
+function recipeDrawing(manifest: LayerManifest, host: GalleryHost, store: Store): Promise<SVGSVGElement | null> | undefined {
+  const recipe = manifest.custom;
+  const sources = new Map((recipe?.data ?? []).map((d) => [d.id, d.dataset]));
+  const looks = (recipe?.look ?? []).filter((look) => look.data && sources.get(look.data)).slice(0, 3);
+  if (looks.length === 0) return undefined;
+  const palette = resolvePalette(store.state.site.palette);
+  return Promise.all(looks.map((look) => host.shapes(sources.get(look.data!)!))).then((all) => {
+    let picture: SVGSVGElement | null = null;
+    all.forEach((shapes, i) => {
+      if (!shapes) return;
+      const svg = shapesThumbnail(shapes, host.extent());
+      const colour = looks[i]!.props?.color;
+      if (typeof colour === 'string') svg.style.color = paletteHex(colour, palette);
+      if (!picture) picture = svg;
+      else {
+        // A later look goes on top, in a group that keeps its own colour.
+        const group = document.createElementNS(SVG, 'g');
+        group.setAttribute('style', svg.getAttribute('style') ?? '');
+        group.append(...svg.childNodes);
+        picture.append(group);
+      }
+    });
+    return picture;
+  });
 }
 
 /** The picture on a card: the layer's preview (made by scripts/layer-previews.cjs), or its icon on a soft tile. */
@@ -364,6 +395,7 @@ export function openGallery(host: GalleryHost, start?: GallerySection): void {
         title: manifest.name,
         about: manifest.description ?? '',
         preview: manifest.custom ? null : manifest.id,
+        drawing: manifest.custom ? recipeDrawing(manifest, host, store) : undefined,
         iconName: manifest.icon,
         tag: manifest.custom ? 'Yours' : undefined,
         need: needs

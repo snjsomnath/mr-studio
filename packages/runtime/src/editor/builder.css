@@ -715,6 +715,35 @@
   white-space: nowrap;
 }
 
+.lb-fact-words {
+  display: grid;
+  gap: 4px;
+  margin: 4px 0 6px;
+}
+
+.lb-fact-words[hidden] {
+  display: none;
+}
+
+.lb-fact-word {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.2fr) 4.5em auto;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.lb-fact-word input[type='text'] {
+  min-width: 0;
+}
+
+.lb-fact-column {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ed-muted, #667);
+}
+
 .lb-interaction .lb-hint {
   margin-left: 0;
 }
