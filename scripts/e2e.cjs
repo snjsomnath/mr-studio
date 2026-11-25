@@ -722,12 +722,16 @@ async function main() {
     await editor.locator('.ed-row[data-context="home"][aria-current="true"]').waitFor();
     await editor.locator('.ed-tree .ed-row[data-layer="mobility"]').click();
     if (shots) await editor.screenshot({ path: path.join(shots, 'editor.png') });
-    await editor.getByLabel('Name').fill('');
-    await editor.getByLabel('Name').blur();
-    await editor.getByLabel('Description').fill('');
-    await editor.getByLabel('Description').blur();
-    await editor.getByLabel('Group').fill('');
-    await editor.getByLabel('Group').blur();
+    // Each field saves when it loses the focus; the Format pane is drawn again with the new words, so the
+    // focus is let go from the page rather than from a field that may already have been replaced.
+    const clear = async (label) => {
+      await editor.getByLabel(label).fill('');
+      await editor.evaluate(() => document.activeElement?.blur());
+    };
+    await clear('Name');
+    await editor.waitForFunction(() => document.querySelector('.ed-inspector-head strong')?.textContent === 'Mobility');
+    await clear('Description');
+    await clear('Group');
     // The operator's own rail headings (Map controls, About) stay; the layer group heading goes.
     await tv.locator('.rail-group', { hasNotText: /^(Map controls|About)$/ }).first().waitFor({ state: 'detached' });
     await editor.locator('.ed-tree .ed-row[data-layer="mobility"] .ed-row-label', { hasText: 'Mobility' }).waitFor();
