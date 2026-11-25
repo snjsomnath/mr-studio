@@ -20,6 +20,12 @@ Bringing what a group saw and heard outside back into the room, so people talk a
 4. Spots are kept on the phone and sent whenever the table can be reached, so walking out of Wi-Fi range or the screen going dark loses nothing. Keep the page open until the list says **On the table**.
 5. Back at the table, open **Field walk** on the controller. Pick a spot from the strip, with ‹ and ›, or click its dot on the table. A sound plays on the controller's speakers.
 
+## With other layers
+
+Field walk stays open when you open another layer, as Sketch does, so the spots stay on top of a Reveal line, a Magnifier's X-ray, a sun study or anything else. While another layer is open the controller keeps one line for the walk; close that layer to get the walk's viewer back. A tap on a dot still picks it, and a drag belongs to the other layer (moving the line or the glass).
+
+![Spots over a Reveal line](docs/screenshots/445-with-reveal-line.png)
+
 ## Tips
 
 - GPS and recording need the phone page over HTTPS: the join page (the default QR code) or a relay. On plain local Wi-Fi, phones tap the map and pick a recording from the phone instead.

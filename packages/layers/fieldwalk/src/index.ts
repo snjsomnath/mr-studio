@@ -26,6 +26,9 @@ const DOT_M = 6;
 const MIN_DOT_PX = 9;
 /** A tap within this many metres of a spot picks it. */
 const REACH_M = 18;
+/** A press that moves less than this, and lifts within this many seconds, is a tap. */
+const TAP_M = 4;
+const TAP_S = 0.6;
 /** Seconds a new spot takes to arrive on the table. */
 const ARRIVE_S = 0.9;
 
@@ -61,9 +64,15 @@ export default defineLayer<Params>({
     }
     await load();
 
-    // A tap on a spot puts it on show on the controller.
+    // A tap on a spot puts it on show on the controller. Only a tap: a drag belongs to whatever
+    // else is open with the walk, such as a reveal line or a magnifier moved across a spot.
+    const downs = new Map<string, { point: [number, number]; time: number }>();
     ctx.pointer.on((sample) => {
-      if (sample.phase !== 'down') return;
+      if (sample.phase === 'down') downs.set(sample.id, { point: sample.point, time: sample.time });
+      if (sample.phase !== 'up') return;
+      const down = downs.get(sample.id);
+      downs.delete(sample.id);
+      if (!down || Math.hypot(sample.point[0] - down.point[0], sample.point[1] - down.point[1]) > TAP_M || sample.time - down.time > TAP_S) return;
       const hit = nearest(spots, sample.point, REACH_M, (s) => frame.toTable([s.lon, s.lat]) as [number, number]);
       if (hit) ctx.setParams({ shown: hit.id });
     });
