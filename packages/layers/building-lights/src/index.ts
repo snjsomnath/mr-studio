@@ -98,14 +98,31 @@ export default defineLayer<Params>({
       if (since < FRAME_S) return;
       const step = Math.min(since, 0.25);
       since = 0;
-      const { lit, color, pace } = ctx.params;
-      const g = canvas.ctx;
-      canvas.clear();
+      const { lit, pace } = ctx.params;
       // Now and then a whole building goes dark for a moment, as in the interactive map.
       for (const building of buildings) {
         if (building.dark > 0) building.dark -= step * pace;
         else if (random() < 0.004 * pace) building.dark = 0.3 + random() * 1.4;
       }
+      // The windows come on and go off.
+      for (const light of lights) {
+        light.wait -= step * pace;
+        if (light.wait <= 0) {
+          // Most windows follow the control; a few are switched the other way for a while, which is the twinkle.
+          const on = light.threshold < lit;
+          light.target = random() < 0.12 ? (on ? 0.15 : lit > 0 ? 0.7 : 0) : on ? 0.55 + random() * 0.45 : 0;
+          light.wait = 2 + random() * 14;
+        }
+        light.level += (light.target - light.level) * Math.min(1, step * 2.5);
+      }
+      canvas.clear();
+      paint(canvas.ctx);
+      canvas.commit();
+    });
+
+    /** Draws the lit facades as they are now into `g`, in table metres: the table, and a magnifier's sharp picture (#413). */
+    function paint(g: CanvasRenderingContext2D) {
+      const { lit, color } = ctx.params;
       g.save();
       g.globalCompositeOperation = 'lighter';
       g.lineCap = 'round';
@@ -126,14 +143,6 @@ export default defineLayer<Params>({
       // The windows themselves: dashes along the facade that come on and go off.
       g.lineWidth = LINE_M;
       for (const light of lights) {
-        light.wait -= step * pace;
-        if (light.wait <= 0) {
-          // Most windows follow the control; a few are switched the other way for a while, which is the twinkle.
-          const on = light.threshold < lit;
-          light.target = random() < 0.12 ? (on ? 0.15 : lit > 0 ? 0.7 : 0) : on ? 0.55 + random() * 0.45 : 0;
-          light.wait = 2 + random() * 14;
-        }
-        light.level += (light.target - light.level) * Math.min(1, step * 2.5);
         const building = buildings[light.building]!;
         if (light.level < 0.02 || building.dark > 0) continue;
         g.strokeStyle = building.white ? WHITE : color;
@@ -144,7 +153,10 @@ export default defineLayer<Params>({
         g.stroke();
       }
       g.restore();
-      canvas.commit();
+    }
+    ctx.map.addDetail((g) => {
+      g.globalAlpha = ctx.params.opacity;
+      paint(g);
     });
 
     return {

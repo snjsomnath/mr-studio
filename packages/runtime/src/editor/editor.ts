@@ -204,6 +204,10 @@ export class Editor {
       const id = this.framedDrawing;
       if (id) void this.send('scene.set', { layer: id, params: { corners } });
     },
+    drawing: () => {
+      const params = this.framedDrawing ? this.store.state.layers[this.framedDrawing]?.params : undefined;
+      return params ? { dataset: String(params.dataset ?? ''), turn: Number(params.turn ?? 0) || 0 } : null;
+    },
   });
   /** The Masterplan whose frame is shown. */
   private framedDrawing: string | null = null;

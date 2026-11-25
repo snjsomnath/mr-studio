@@ -76,11 +76,16 @@ export default defineLayer<Params>({
       }
       if (!dirty) return;
       dirty = false;
+      canvas.clear();
+      paint(canvas.ctx);
+      canvas.commit();
+    });
+
+    /** Draws the shapes as they are now into `g`, in table metres: the table's drawing, and a magnifier's sharp picture (#413). */
+    function paint(g: CanvasRenderingContext2D) {
       const revealed = ctx.params.reveal ? ctx.steps.revealed : 0;
       const newest = revealed - 1;
       const glow = pulse > 0 ? Math.sin((pulse / PULSE_S) * Math.PI) : 0;
-      const g = canvas.ctx;
-      canvas.clear();
       g.lineJoin = 'round';
       g.lineCap = 'round';
       const style = (properties: Record<string, unknown>) => {
@@ -114,7 +119,10 @@ export default defineLayer<Params>({
         g.fillStyle = withAlpha(c, alpha);
         g.fill();
       }
-      canvas.commit();
+    }
+    ctx.map.addDetail((g) => {
+      g.globalAlpha = ctx.params.opacity;
+      paint(g);
     });
 
     await load();

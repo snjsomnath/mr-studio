@@ -109,9 +109,30 @@ export default defineLayer<Params>({
       // A soft glow does not need every frame.
       if ((wait -= dt) > 0) return;
       wait = FRAME_S;
-      const { brightness, pulse, width, glow, reveal } = ctx.params;
-      const g = canvas.ctx;
+      // Lights flowing along the streets move on.
+      for (let p = 0; p < particles.length; p++) {
+        const particle = particles[p]!;
+        const network = kinds[particle.kind]!.network;
+        if (network.edges.length === 0) continue;
+        particle.s += particle.speed * FRAME_S;
+        if (particle.s >= network.edges[particle.edge]!.length) {
+          const next = network.next(particle.edge, random, 0.7);
+          if (next === null) {
+            particles[p] = spawn();
+            continue;
+          }
+          particle.s = 0;
+          particle.edge = next;
+        }
+      }
       canvas.clear();
+      paint(canvas.ctx);
+      canvas.commit();
+    });
+
+    /** Draws the streets and their lights as they are now into `g`, in table metres: the table, and a magnifier's sharp picture (#413). */
+    function paint(g: CanvasRenderingContext2D) {
+      const { brightness, pulse, width, glow, reveal } = ctx.params;
       g.lineCap = 'round';
       g.lineJoin = 'round';
       // The whole network breathes slowly, and each kind of street pulses a little out of step.
@@ -136,22 +157,11 @@ export default defineLayer<Params>({
 
       // Lights flowing along the streets, each in its street's colour with a white-hot centre.
       g.globalCompositeOperation = 'lighter';
-      for (let p = 0; p < particles.length; p++) {
-        let particle = particles[p]!;
+      for (const particle of particles) {
         const kind = kinds[particle.kind]!;
         const network = kind.network;
-        if (network.edges.length === 0) continue;
+        if (network.edges.length === 0 || particle.s >= network.edges[particle.edge]!.length) continue;
         const shown = reveal ? Math.max(0, Math.min(1, clock / REVEAL_S - particle.kind)) : 1;
-        particle.s += particle.speed * FRAME_S;
-        if (particle.s >= network.edges[particle.edge]!.length) {
-          const next = network.next(particle.edge, random, 0.7);
-          if (next === null) {
-            particle = particles[p] = spawn();
-            continue;
-          }
-          particle.s = 0;
-          particle.edge = next;
-        }
         if (shown <= 0) continue;
         const [x, y] = network.at(particle.edge, particle.s);
         const twinkle = 0.6 + 0.4 * Math.sin(clock * 4 + particle.phase);
@@ -166,7 +176,10 @@ export default defineLayer<Params>({
         g.fill();
       }
       g.globalCompositeOperation = 'source-over';
-      canvas.commit();
+    }
+    ctx.map.addDetail((g) => {
+      g.globalAlpha = ctx.params.opacity;
+      paint(g);
     });
 
     return {
