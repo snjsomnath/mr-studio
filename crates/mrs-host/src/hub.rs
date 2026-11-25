@@ -2430,6 +2430,36 @@ impl Hub {
         Ok(Some(steps))
     }
 
+    /// The layer package an instance of the scene runs, and its params.
+    pub fn instance_params(&self, instance: &str) -> Option<(String, Map<String, Value>)> {
+        let inner = self.inner.lock().unwrap();
+        inner.scene.iter().find(|i| i.id == instance).map(|i| (i.state.layer.clone(), i.state.params.clone()))
+    }
+
+    /// Whether the scene has an instance of this layer package (the field walk takes spots only then, #445).
+    pub fn has_package(&self, package: &str) -> bool {
+        self.inner.lock().unwrap().scene.iter().any(|i| i.state.layer == package)
+    }
+
+    /// The phone in this surface as the pages show it: colour, animal, fun name parts and name.
+    pub fn participant_of(&self, surface: u64) -> Option<Value> {
+        let inner = self.inner.lock().unwrap();
+        let seat = inner.seats.iter().find(|s| s.participant.surface == surface)?;
+        let p = &seat.participant;
+        Some(json!({ "colour": p.colour, "avatar": p.avatar, "mood": p.mood, "name": p.name }))
+    }
+
+    /// Writes a value into a state param of every instance of a layer package and tells the
+    /// surfaces, so the layer's table and controller hear of a change made outside the layer:
+    /// the field walk's spots (#445) bump `revision`.
+    pub fn poke(&self, package: &str, key: &str, value: Value) {
+        let mut inner = self.inner.lock().unwrap();
+        for instance in inner.scene.iter_mut().filter(|i| i.state.layer == package) {
+            instance.state.params.insert(key.to_string(), value.clone());
+            self.emit_layer(&instance.id, &instance.state);
+        }
+    }
+
     /// Called under the lock, so events are broadcast in the order changes were applied.
     fn emit_layer(&self, layer: &str, state: &LayerState) {
         self.emit("state.layer", json!({ "layer": layer, "state": state }));

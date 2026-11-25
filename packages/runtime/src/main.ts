@@ -15,6 +15,7 @@ import type { Language } from './i18n.ts';
 import { joinPanel } from './join.ts';
 import { LayerManager } from './layer-manager.ts';
 import { loadSiteModules } from './registry.ts';
+import { fieldCard } from './field-phone.ts';
 import { phoneBadge, phoneCode, refusedScreen, rememberSeat, rememberedSeat } from './phone.ts';
 import { Store } from './store.ts';
 import { collectProblems, Workbench } from './workbench.ts';
@@ -357,7 +358,13 @@ async function main() {
     }
     side.append(header);
     const cards = el('div', 'cards');
-    side.append(cards);
+    if (phone) {
+      // A field walk (#445) sits above the layers, outside the cards the controller redraws.
+      const scroller = el('div', 'cards');
+      cards.className = 'cards cards-inner';
+      scroller.append(fieldCard(store, connection), cards);
+      side.append(scroller);
+    } else side.append(cards);
 
     // The controller screen has the layer buttons down both sides of the dashboard.
     const second = role === 'tv' ? el('aside', 'controller controller-right') : null;

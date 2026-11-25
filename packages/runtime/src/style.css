@@ -3130,3 +3130,197 @@ body[data-role='phone'] .control-presets > * {
   margin: 0.25rem 0 0;
   opacity: 0.6;
 }
+
+/* ---- Field walk on a phone (#445) ---- */
+.cards-inner {
+  padding: 0;
+  overflow: visible;
+}
+
+.field-card[hidden] {
+  display: none;
+}
+
+.field-body {
+  display: grid;
+  gap: 0.6rem;
+  padding: 0 1rem 1rem;
+}
+
+.field-mark {
+  min-height: 3.25rem;
+  font-size: 1.05rem;
+}
+
+.field-status {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.field-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.4rem;
+}
+
+.field-list:empty {
+  display: none;
+}
+
+.field-row {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.4rem;
+  border-radius: 0.6rem;
+  background: var(--panel);
+}
+
+.field-thumb {
+  flex: none;
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: 0.45rem;
+  display: grid;
+  place-items: center;
+  background: var(--line) center / cover no-repeat;
+  font-size: 1.2rem;
+}
+
+.field-words {
+  min-width: 0;
+  flex: 1;
+  display: grid;
+  font-size: 0.85rem;
+}
+
+.field-words span {
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.field-words .is-sent {
+  color: #69db7c;
+}
+
+.field-words .is-refused {
+  color: #ff8787;
+}
+
+.field-drop {
+  flex: none;
+  width: 2.25rem;
+  height: 2.25rem;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+  font-size: 1.3rem;
+}
+
+.field-sheet-card {
+  display: grid;
+  gap: 0.65rem;
+  max-height: 92vh;
+  overflow-y: auto;
+}
+
+.field-sheet-title {
+  margin: 0;
+  font-size: 1.15rem;
+}
+
+.field-map {
+  max-height: 38vh;
+  margin: 0 auto;
+}
+
+.field-dot {
+  fill: var(--accent);
+  stroke: #000;
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+}
+
+.field-halo {
+  fill: color-mix(in srgb, var(--accent) 22%, transparent);
+  stroke: color-mix(in srgb, var(--accent) 60%, transparent);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.field-choose,
+.field-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+}
+
+.field-kind {
+  min-height: 3.5rem;
+  font-size: 1.05rem;
+}
+
+.field-preview:empty {
+  display: none;
+}
+
+.field-photo {
+  display: block;
+  width: 100%;
+  max-height: 30vh;
+  object-fit: contain;
+  border-radius: 0.5rem;
+  background: #000;
+}
+
+.field-audio {
+  width: 100%;
+}
+
+.field-recording {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.7rem 0.9rem;
+  border-radius: 0.6rem;
+  background: var(--panel);
+  font-size: 0.9rem;
+}
+
+.field-recording i {
+  width: 0.8rem;
+  height: 0.8rem;
+  border-radius: 50%;
+  background: #fa5252;
+  animation: field-blink 1s infinite;
+}
+
+.field-recording b {
+  font-variant-numeric: tabular-nums;
+}
+
+.field-recording span {
+  color: var(--muted);
+}
+
+@keyframes field-blink {
+  50% {
+    opacity: 0.3;
+  }
+}
+
+.field-note {
+  width: 100%;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+}

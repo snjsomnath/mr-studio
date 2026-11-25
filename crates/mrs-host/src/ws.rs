@@ -200,11 +200,18 @@ async fn request(state: &AppState, role: Role, surface: u64, message: &Value, ou
         }
         return state.calibration_request(method, p);
     }
+    if method.starts_with("field.") {
+        return state.field_request(role, surface, method, p);
+    }
     if method.starts_with("history.") {
         return state.history_request(role, surface, method, p).await;
     }
     if !method.starts_with("engine.") {
         let result = state.hub.request(role, surface, method, p);
+        // The field walk's Remove and Clear (#445) are named actions of its controller stage.
+        if method == "layer.action" && result.is_ok() {
+            state.field_action(role, p)?;
+        }
         // A layer's trouble starting or ending goes to the operator log (#259).
         if method == "layer.health" {
             if let Some(incident) = result.as_ref().ok().and_then(|r| r["incident"].as_str()) {
