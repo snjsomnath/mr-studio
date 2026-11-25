@@ -115,8 +115,11 @@ function launch() {
       await dev.request('scene.add', { use: id, active: false }).catch((e) => console.warn(`  could not add ${id}: ${e.message}`));
     }
 
-    const open = async (url, viewport) => {
+    const open = async (url, viewport, init) => {
       const page = await browser.newPage({ viewport });
+      // Scripts the shell injects go in before the first load: reloading to add them cancelled the
+      // page's own module imports half way, which WebKit reports as "Importing a module script failed".
+      if (init) await page.addInitScript(init);
       // Map tiles come from the internet, which a test may not reach.
       await page.route(/basemaps\.cartocdn\.com|tile\.openstreetmap\.org|arcgisonline|api\.mapbox\.com/, (route) => route.fulfill({ status: 204 }));
       await page.addInitScript(FRAME_METER);
@@ -128,10 +131,8 @@ function launch() {
       await page.goto(base + url);
       return page;
     };
-    const table = await open('/table', { width: 1500, height: 800 });
     // The desktop app's colour pass, exactly as the shell injects it on a surface.
-    await table.addInitScript({ path: path.join(root, 'apps/studio/src-tauri/src/colour.js') });
-    await table.reload();
+    const table = await open('/table', { width: 1500, height: 800 }, { path: path.join(root, 'apps/studio/src-tauri/src/colour.js') });
     await table.evaluate((s) => window.__mrsColour(s), COLOUR);
     const tv = await open('/tv', { width: 1920, height: 1080 });
     const editor = await open('/edit', { width: 1440, height: 900 });
