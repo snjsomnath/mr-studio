@@ -37,7 +37,7 @@ Six regions. Their places never change, whatever tab is open or whatever is sele
 4. **Select, then format.** Select something (in the list or on the canvas) and edit it in the Format pane. The ribbon acts on the selection; it never carries its own copy of the selection's settings.
 5. **Table-wide settings are dialogs.** Settings of the whole table open as a dialog from the ribbon (like Slide Size): Table size and place, Welcome and languages, Screens and calibration. A dialog closes back to where you were.
 6. **This computer is not the table.** Screens, calibration, colour and phones joining on this network belong to the computer (#73): they live in File › Settings › This computer (#393), never in the table's settings.
-7. **Two orders, two homes.** The left list is the map's drawing order. The controller's button order and sides are arranged only on the controller preview, by dragging (right-click › Move to the other side is the shortcut). The layer's Format pane shows its side read-only.
+7. **Sides in the Format pane, order by Move up and Move down.** A button's side of the controller is set in one place: the Side switch in its layer's Format pane. Nothing in the editor is dragged (Sanjay, 2026-11-25: almost nothing else in the UI is draggable, so dragging is not found). The left list shows the Left and Right groups as they are, and Move up and Move down (Home › Selection, the right-click menu) change the order.
 8. **Rehearse in place.** Trying the table as a visitor happens on the canvas, one key away, and stops back where you were. Windows are for real displays (Present).
 9. **The wizard only starts a table.** Like PowerPoint's start screen. Once the table exists, it is edited in the editor.
 10. **Add things from Insert.** Layers, data, pictures, video, sound and models enter through Insert, file first: pick or drop a file and MR Studio works out what it is.
@@ -55,7 +55,7 @@ Six regions. Their places never change, whatever tab is open or whatever is sele
 | View | Map / Controller / Both, Phone (#389), zoom, table outline · Media library… (a dialog) · Open in a window | View |
 | Help | Guides, features, Copy diagnostics (#88, #260) | Help |
 
-In no tab: button names and words (Format pane of the button's layer), button sides and order (drag on the controller preview), map life switches (the eye on each At rest row), table name and place (the dialog). The controller theme lives only on the Design ribbon; the Controller row's Format pane shows the welcome screen and links there.
+In no tab: button names and words (Format pane of the button's layer), button sides (Format pane of the button's layer) and order (Move up and Move down), map life switches (the eye on each At rest row), table name and place (the dialog). The controller theme lives only on the Design ribbon; the Controller row's Format pane shows the welcome screen and links there.
 
 ## Where every setting lives
 
@@ -69,8 +69,9 @@ In no tab: button names and words (Format pane of the button's layer), button si
 | Base map style | Format pane of the Base map row | 2 |
 | A layer's settings (wind speed, hour…) | Format pane of the layer | 1 |
 | A button's name, words, icon | Format pane of the layer, Button section | 4 |
-| A button's side and order | Drag on the controller preview | 4 |
-| Drawing order on the map | Drag in the left list | 2 |
+| A button's side | Format pane › Side | 2 |
+| A button's order | Select the row, then Move up or Move down | 2 |
+| Drawing order on the map | Select the row, then Move up or Move down | 2 |
 | Add a layer | Insert › layer gallery | 4 |
 | Bring in a file | Insert (file first) | 4, two behaviours |
 | Check before presenting | Present › Ready to present? | 0 (#63) |
@@ -91,7 +92,7 @@ Right-click is a shortcut, never a home. A command may run from several places (
 | --- | --- |
 | A layer row in the list | Open, Rename, Duplicate, Hide, Reset settings, Remove, Settings… |
 | An At rest row | Show/Hide, Move up/down, Remove, Settings… |
-| A button on the controller preview | Rename, Move to the other side, Hide from the controller, Settings… |
+| A button on the controller preview | Rename, Hide from the controller, Settings… |
 | Something drawn on the map | Select the layer that drew it, then that layer's menu (needs layers to report what they drew, #60) |
 | Empty map | Add a layer…, Base map style, Settings… for At rest |
 | A file in the media library | Show on the table, Used by…, Replace, Remove |
