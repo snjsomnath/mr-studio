@@ -1,6 +1,6 @@
 import { EngineClient, VoiceBed, entityChanges, entityValues, hearsSound, onDataProblem, serviceClient, stepTransition, transitionGain } from '@mrstudio/sdk';
 import type { LayerView, RevealShape } from '@mrstudio/sdk';
-import type { Connection, DataProblem, EntityChange, LayerHealth, LayerManifest, LayerModule, LayerState, PanelContext, StepTransitionKind, TableContext, TableHandlers, ToolInput } from '@mrstudio/sdk';
+import type { Connection, DataProblem, EntityChange, LayerHealth, LayerManifest, LayerModule, LayerState, PanelContext, Sender, StepTransitionKind, TableContext, TableHandlers, ToolInput } from '@mrstudio/sdk';
 
 import { Cues } from './cues.ts';
 import { describe, reportError } from './diagnostics.ts';
@@ -249,7 +249,7 @@ export class LayerManager {
     });
     store.onScene((scene) => view.setOrder(scene));
     for (const id of store.state.scene) this.sync(id, store.layer(id), undefined);
-    connection.on('layer.action', (p: { layer: string; action: string }) => this.running.get(p.layer)?.handlers.action?.(p.action));
+    connection.on('layer.action', (p: { layer: string; action: string; participant?: Sender }) => this.running.get(p.layer)?.handlers.action?.(p.action, p.participant));
     // Retry from the editor or the controller: a layer in trouble starts again now.
     connection.on('layer.retry', (p: { layer: string }) => this.retryNow(p.layer));
     onDataProblem((problem) => this.dataTrouble(problem));
@@ -258,7 +258,7 @@ export class LayerManager {
       if (!running) return;
       // Something placed from a phone or the controller: pull eyes back to where it landed (#105).
       // A pick made on this table's own view needs no cue: people are already looking at it.
-      if (p.from !== store.surface && this.cueFor(p)) this.cues.play(p.geometry, p.participant?.colour);
+      if (p.from !== store.surface && this.cueFor(p)) this.cues.play(p.geometry, p.participant?.colour, p.participant?.avatar);
       running.handlers.tool?.(p);
     });
     requestAnimationFrame(this.frame);

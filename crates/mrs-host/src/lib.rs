@@ -853,12 +853,13 @@ async fn basemap_tile(
     ConnectInfo(from): ConnectInfo<SocketAddr>,
     axum::extract::Path((service, z, x, y)): axum::extract::Path<(String, u32, u32, String)>,
 ) -> axum::response::Response {
-    if !from.ip().is_loopback() {
-        return (StatusCode::FORBIDDEN, Json(json!({ "error": "the base map is drawn on this computer only" }))).into_response();
-    }
     let Ok(y) = y.split('.').next().unwrap_or("").parse::<u32>() else {
         return (StatusCode::BAD_REQUEST, Json(json!({ "error": "no such tile" }))).into_response();
     };
+    // Phones get the tiles around the table for their map (#335), and nothing further afield.
+    if !from.ip().is_loopback() && !basemap::near(&state.hub.site().corners, z, x, y) {
+        return (StatusCode::FORBIDDEN, Json(json!({ "error": "phones get the base map around the table only" }))).into_response();
+    }
     match basemap::tile(&state.site.dir, &service, z, x, y).await {
         Ok(bytes) => {
             let kind = basemap::content_type(&bytes);

@@ -17,6 +17,7 @@ const PATHS: Record<string, string> = {
   table2: 'M4 5h16v14H4zM4 10h16M4 15h16M10 5v14',
   file: 'M6 3h8l4 4v14H6zM14 3v4h4',
   chevron: 'M6 9l6 6 6-6',
+  back: 'M15 6l-6 6 6 6',
   plan: 'M4 4h16v16H4zM4 11h6v9M10 15h10M14 4v6h6',
   magnifier: 'M10.500 4a6.500 6.500 0 1 0 0 13 6.500 6.500 0 0 0 0-13ZM15.300 15.300 20 20M7.500 9a3.500 3.500 0 0 1 3-2',
   swipe: 'M4 5h16v14H4zM12 3v18M8 12l-2 0M7 10.500 5.500 12 7 13.500M16 12h2M17 10.500l1.500 1.500-1.500 1.500',

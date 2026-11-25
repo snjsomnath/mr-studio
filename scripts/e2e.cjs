@@ -87,7 +87,7 @@ async function main() {
     const errors = [];
     // Base map tiles come from the internet, which a test does not reach: every tile is a plain light square.
     const tile = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAQAAAAEACAIAAADTED8xAAAB/0lEQVR42u3TsQkAAAgEsd9/XMXe2hkMZIKDS/XAW5EAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwAAYQAUMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA2AAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAOogAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAADAAGAAOAAcAAYAAwABgADAAGAAOAAcAAYAAwABgADAAGAAOAAcAAYAAwABgADAAGAAOAAcAAYAAwABgADAAGAAOAAcAAYAAwABgADAAGAAOAAcAAYAAwABgArgUn3irHh0b72wAAAABJRU5ErkJggg==', 'base64');
-    const mockTiles = (page) => page.route(/basemaps\.cartocdn\.com|tile\.openstreetmap\.org/, (route) => route.fulfill({ contentType: 'image/png', headers: { 'access-control-allow-origin': '*' }, body: tile }));
+    const mockTiles = (page) => page.route(/basemaps\.cartocdn\.com|tile\.openstreetmap\.org|\/api\/basemap\//, (route) => route.fulfill({ contentType: 'image/png', headers: { 'access-control-allow-origin': '*' }, body: tile }));
     const open = async (url, viewport) => {
       const page = await browser.newPage({ viewport });
       await mockTiles(page);
@@ -238,9 +238,17 @@ async function main() {
     const stranger = await open(`/phone?c=${code === '0000' ? '1111' : '0000'}`, { width: 390, height: 800 });
     await stranger.getByText('That code did not work').waitFor();
 
-    // A phone that scanned the code sees phone controls, and switches layers (#335).
+    // A phone that scanned the code sees every layer as a list, opens one to see its controls, and switches layers (#335).
     const phone = await open(scanned.slice(base.length), { width: 390, height: 800 });
+    const openApp = async (name) => {
+      if (await phone.locator('.layer-card.is-open').count()) await phone.getByRole('button', { name: 'Back to all layers' }).click();
+      await phone.getByRole('button', { name: `Open ${name}` }).click();
+      await phone.locator('.layer-card.is-open', { hasText: name }).waitFor();
+    };
+    const appList = () => phone.getByRole('button', { name: 'Back to all layers' }).click();
+    await openApp('Sunlight');
     await sunlight(phone).getByLabel('Time of day').waitFor();
+    await appList();
     // The phone is an animal with a fun name (#339); its visitor names it and picks the whale.
     await phone.locator('.phone-badge').waitFor();
     await phone.getByRole('button', { name: 'Change your name or animal' }).click();
@@ -265,12 +273,14 @@ async function main() {
     await tv.getByText('Ada turned on Sunlight').waitFor();
     await windCard.locator('input.switch:not(:checked)').waitFor();
     await tv.getByText('1 phone', { exact: true }).waitFor();
+    await openApp('Sunlight');
     await sunlight(phone).getByLabel('Time of day').fill('18');
     await tv.locator(clock, { hasText: '18:00' }).waitFor();
     // The controller's sky follows the phone: at six in the evening the sun is in the west.
     await tv.locator('.sun-hero-fact b', { hasText: /^west$/ }).waitFor();
 
-    // Phone tools: a point, a line and an area drawn on the small map arrive on the table.
+    // Phone tools: a point, a line and an area drawn on the sketch's map arrive on the table.
+    await openApp('Sketch');
     const pad = phone.locator('.layer-card', { hasText: 'Sketch' }).locator('.tool-map');
     // The sketch card is above Sunlight's, so the pad is found again for each tap: the page may have scrolled.
     const tap = async (u, v) => {
@@ -304,6 +314,19 @@ async function main() {
     await tap(0.85, 0.9);
     if (shots) await phone.screenshot({ path: path.join(shots, 'phone.png') });
     await phone.getByRole('button', { name: 'Send area' }).click();
+    await marks(3);
+    // The pen draws with one stroke and sends when the finger lifts; the phone takes its own mark back (#335).
+    await phone.getByRole('radio', { name: 'Pen' }).click();
+    {
+      await pad.scrollIntoViewIfNeeded();
+      const box = await pad.boundingBox();
+      await phone.mouse.move(box.x + 0.2 * box.width, box.y + 0.2 * box.height);
+      await phone.mouse.down();
+      for (const [u, v] of [[0.3, 0.3], [0.4, 0.25], [0.5, 0.35]]) await phone.mouse.move(box.x + u * box.width, box.y + v * box.height, { steps: 5 });
+      await phone.mouse.up();
+    }
+    await marks(4);
+    await phone.getByRole('button', { name: 'Take back my last mark' }).click();
     await marks(3);
     await dev.waitForTimeout(500);
     assert.notDeepEqual(await table.screenshot(), marked, 'the line and the area should be drawn too');
@@ -407,6 +430,9 @@ async function main() {
     assert.equal(await cool.locator('.controls-primary button.action', { hasText: 'Try another walk' }).count(), 1);
     if (shots) await tv.screenshot({ path: path.join(shots, 'tv-coolpaths.png') });
     // A phone may ask for another walk, and the table answers with a different one.
+    // Its button sits under the map, beside the walk it changes.
+    await openApp('Cool paths');
+    await phone.getByRole('tab', { name: 'Map' }).click();
     await phone.getByRole('button', { name: 'Try another walk' }).click();
     await dev.waitForTimeout(800);
     assert.notDeepEqual(await table.screenshot(), walk, 'another walk should be drawn');
@@ -542,6 +568,14 @@ async function main() {
 
     // ---- The scene composer ----
     // The pages that are done with are closed first: every open table costs rendering time.
+    // The operator looks after the phones from the Developer window (#335): a pause, then letting one go.
+    const phones = dev.locator('.phones-panel');
+    await phones.locator('input.switch').check();
+    await phone.locator('.phones-paused:not([hidden])').waitFor();
+    await phones.locator('input.switch').uncheck();
+    await phone.locator('.phones-paused[hidden]').waitFor({ state: 'attached' });
+    await phones.locator('li', { hasText: 'Ada' }).getByRole('button', { name: 'Let Ada go' }).click();
+    await phone.getByText('Thanks for joining').waitFor();
     for (const page of [stranger, phone, typist, projected]) await page.close();
     // Tall enough that the whole stack is on screen while one layer's settings are open.
     const compose = await open('/compose', { width: 1700, height: 1700 });

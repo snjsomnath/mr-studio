@@ -104,6 +104,8 @@ export interface ToolSpec {
   label?: string;
   /** False: inputs from other surfaces play no attention cue on the table (#105). Default true. */
   cue?: boolean;
+  /** A line drawn with one stroke of the finger instead of tapped corners (#335): a pen. */
+  freehand?: boolean;
 }
 
 /**
@@ -546,7 +548,7 @@ export interface Participant {
 export interface SessionState {
   protocol: number;
   /** `join_url` is what the TV's QR code points at; null when phones cannot reach the host. */
-  session: { id: string; code: string; port: number; join_url: string | null; /** The visitors' language now (#80). */ language?: string; /** False while the controller's sound switch mutes the table (#282). */ sound?: boolean; /** The layer whose ribbon the controller chose (#231); absent or null is Auto. */ ribbon?: string | null; /** The frame meter shows on the table and controller (#262). */ performance?: boolean };
+  session: { id: string; code: string; port: number; join_url: string | null; /** The visitors' language now (#80). */ language?: string; /** False while the controller's sound switch mutes the table (#282). */ sound?: boolean; /** The layer whose ribbon the controller chose (#231); absent or null is Auto. */ ribbon?: string | null; /** The frame meter shows on the table and controller (#262). */ performance?: boolean; /** The operator paused the phones (#335): they look but change nothing. */ phones_paused?: boolean };
   site: SiteInfo;
   /** Layer instance ids in draw order, bottom first. */
   scene: string[];
@@ -571,8 +573,17 @@ export interface ToolInput {
   geometry: ToolGeometry;
   /** The surface that sent it. */
   from: number;
-  /** Present when it came from a phone. */
-  participant?: { slot: number; colour: string };
+  /** Present when it came from a phone, with its animal (#423). */
+  participant?: Sender;
+}
+
+/** The phone that sent a tool input or pressed an action. */
+export interface Sender {
+  slot: number;
+  colour: string;
+  /** The phone's animal (#339), an id from the runtime's animal list. */
+  avatar?: string;
+  name?: string | null;
 }
 
 // ---- Engine ---------------------------------------------------------------

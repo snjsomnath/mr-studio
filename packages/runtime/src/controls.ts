@@ -973,6 +973,7 @@ function soundZone(id: string, store: Store, connection: Connection): { element:
 
 export class Controller {
   private cards = new Map<string, Card>();
+  private backListened = false;
   /** The side each button was last placed on. */
   private sides = new Map<string, string>();
   private readonly right: HTMLElement | undefined;
@@ -1559,18 +1560,67 @@ export class Controller {
     return box;
   }
 
+  /**
+   * On a phone (#335) the layers are an Apps list: each row opens the layer's own page, with a
+   * back button, its switch, and Controls and Map tabs. Opening a page changes nothing on the
+   * table; the switch does. The phone's Back button closes the page too.
+   */
+  private phoneOpen: string | null = null;
+  private openApp(id: string | null, fromHistory = false): void {
+    if (this.phoneOpen === id) return;
+    const was = this.phoneOpen;
+    this.phoneOpen = id;
+    this.root.classList.toggle('has-open', id !== null);
+    document.body.classList.toggle('has-open-app', id !== null);
+    if (was) this.cards.get(was)?.sync(this.store.state.layers[was]!);
+    if (id) this.cards.get(id)?.sync(this.store.state.layers[id]!);
+    this.root.closest('.cards:not(.cards-inner)')?.scrollTo({ top: 0 });
+    if (fromHistory) return;
+    try {
+      if (id && !was) history.pushState({ app: id }, '');
+      else if (!id && was && history.state?.app) history.back();
+      else if (id) history.replaceState({ app: id }, '');
+    } catch {
+      // History is a convenience for the phone's own Back button.
+    }
+  }
+
+  private listenForBack(): void {
+    addEventListener('popstate', () => this.openApp(null, true));
+  }
+
   private card(id: string, manifest: LayerManifest): Card {
     const { store, connection, role } = this;
     const phone = role === 'phone';
+    if (phone && !this.backListened) {
+      this.backListened = true;
+      this.listenForBack();
+    }
     const name = instanceTitle(id, manifest);
     const card = el('section', 'layer-card');
+    card.dataset.layer = id;
     const header = el('header');
     const title = el('div', 'layer-title');
     const heading = el('h2', undefined, name);
     const about = el('p', undefined, manifest.description ?? '');
     about.hidden = !manifest.description;
     title.append(heading, about);
-    header.append(title);
+    const back = el('button', 'app-back');
+    if (phone) {
+      // The row opens the layer's page; on the page, the arrow goes back to the list.
+      const badge = el('span', 'app-icon');
+      if (manifest.icon) badge.append(icon(manifest.icon, 22));
+      const open = el('button', 'app-open');
+      open.type = 'button';
+      open.setAttribute('aria-label', t('Open {name}', { name }));
+      open.addEventListener('click', () => this.openApp(this.phoneOpen === id ? null : id));
+      back.type = 'button';
+      back.setAttribute('aria-label', t('Back to all layers'));
+      back.append(icon('back', 22));
+      back.addEventListener('click', () => this.openApp(null));
+      open.append(badge, title);
+      header.append(back, open);
+    } else header.append(title);
 
     const power = el('input');
     Object.assign(power, { type: 'checkbox', className: 'switch', ariaLabel: t('Turn {name} on or off', { name }) });
@@ -1588,8 +1638,11 @@ export class Controller {
 
     const body = el('div', 'layer-body');
     const send = paramSender(connection, id, { minInterval: phone ? PHONE_SEND_INTERVAL : 0 });
+    // On a phone, the layer's tools: a map of the table to tap and draw on, with the buttons that act on it.
+    const tools = phone && manifest.tools?.length ? toolSection(id, manifest, store, connection) : null;
     const widgets = visibleControls(manifest.controls)
       .filter((control) => !phone || phoneControl(control))
+      .filter((control) => !tools?.presses.includes(control.id))
       .map((control) =>
         widget(
           control,
@@ -1600,10 +1653,34 @@ export class Controller {
     const controls = el('div', 'controls');
     controls.append(...widgets.map((w) => w.row));
 
-    // On a phone, the layer's tools: a small map of the table to tap and draw on.
-    const tools = phone && manifest.tools?.length ? toolSection(id, manifest, store, connection) : null;
+    // A phone's page has Controls and Map tabs when the layer has both; the map comes first for a
+    // layer that is mostly drawing, such as the sketch.
+    let tab: 'controls' | 'map' = tools && (widgets.length === 0 || manifest.alongside) ? 'map' : 'controls';
+    const tabs = el('div', 'segmented phone-tabs');
+    tabs.setAttribute('role', 'tablist');
+    const tabButtons = (['controls', 'map'] as const).map((which) => {
+      const button = el('button', undefined, which === 'map' ? t('Map') : t('Controls'));
+      button.type = 'button';
+      button.setAttribute('role', 'tab');
+      button.addEventListener('click', () => {
+        tab = which;
+        showTab();
+      });
+      tabs.append(button);
+      return [which, button] as const;
+    });
+    const showTab = () => {
+      for (const [which, button] of tabButtons) button.setAttribute('aria-selected', String(which === tab));
+      if (tools) tools.element.hidden = tab !== 'map' && widgets.length > 0;
+      controls.hidden = tab !== 'controls' && Boolean(tools);
+    };
+    const off = el('p', 'phone-off', t('Turn it on to see it on the table and use it here.'));
+    off.hidden = true;
+    if (phone && tools && widgets.length > 0) body.append(tabs);
     if (tools) body.append(tools.element);
     if (widgets.length > 0) body.append(controls);
+    if (phone) body.append(off);
+    showTab();
     card.append(body);
     // A layer with nothing a phone can use, not even its switch, is left off the phone.
     const nothingElse = phone && !tools && widgets.length === 0;
@@ -1622,6 +1699,7 @@ export class Controller {
         tools?.sync(false);
         stopTv();
         stopLayers();
+        if (this.phoneOpen === id) this.openApp(null);
       },
       sync: (state) => {
         // The site's author may have renamed the layer's button.
@@ -1631,12 +1709,20 @@ export class Controller {
         about.hidden = !button.description;
         power.checked = state.active;
         card.classList.toggle('is-active', state.active);
-        body.hidden = !state.active;
+        if (phone) {
+          const open = this.phoneOpen === id;
+          card.classList.toggle('is-open', open);
+          back.hidden = !open;
+          body.hidden = !open;
+          off.hidden = state.active;
+          off.textContent = power.hidden ? t('This layer is turned on from the controller.') : t('Turn it on to see it on the table and use it here.');
+          for (const part of [tabs, controls, ...(tools ? [tools.element] : [])]) part.classList.toggle('is-off', !state.active);
+        } else body.hidden = !state.active;
         for (const w of widgets) {
           w.row.hidden = !isVisible(w.control, state.params) || (phone && Boolean(state.hide?.includes(w.control.id)));
           w.sync(state.params[w.control.id], state.params, state.shared);
         }
-        tools?.sync(state.active);
+        tools?.sync(state.active && (!phone || this.phoneOpen === id));
       },
     };
   }

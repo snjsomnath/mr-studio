@@ -1,5 +1,5 @@
-import { defineLayer } from '@mrstudio/sdk';
-import type { LayerManifest, Shape } from '@mrstudio/sdk';
+import { defineLayer, lonLatToTable, tableToLonLat } from '@mrstudio/sdk';
+import type { LayerManifest, Position, Shape, SiteInfo, ToolGeometry } from '@mrstudio/sdk';
 
 import manifest from '../layer.json';
 
@@ -7,12 +7,50 @@ interface Params {
   opacity: number;
 }
 
+/** A mark on the table and the phone that made it, if one did. */
+interface Mark {
+  shapes: Shape[];
+  slot?: number;
+}
+
 /** The oldest marks are dropped beyond this many, so a long session stays light. */
 const MOST = 200;
 
 /**
- * Marks from phones, drawn on the table in each phone's colour. It is also the
- * reference for a layer with tools: declare them in layer.json, handle `tool`.
+ * The head of an arrow drawn along `line` (#335): a filled triangle at its end, pointing the
+ * way the last part of the stroke went, about 4% of the table's width long.
+ */
+export function arrowHead(site: Pick<SiteInfo, 'corners' | 'extent'>, line: Position[]): ToolGeometry | null {
+  const metres = line.map(([lon, lat]) => {
+    const [u, v] = lonLatToTable(site, lon!, lat!);
+    return [u * site.extent.width_m, v * site.extent.height_m] as const;
+  });
+  const tip = metres[metres.length - 1];
+  if (!tip) return null;
+  const length = site.extent.width_m * 0.04;
+  // The direction from a point a head's length back along the stroke, so a wobble at the end does not turn it.
+  let back = metres[0]!;
+  for (let i = metres.length - 2; i >= 0; i--) {
+    back = metres[i]!;
+    if (Math.hypot(tip[0] - back[0], tip[1] - back[1]) >= length) break;
+  }
+  const [dx, dy] = [tip[0] - back[0], tip[1] - back[1]];
+  const d = Math.hypot(dx, dy);
+  if (d < 1e-6) return null;
+  const [ux, uy] = [dx / d, dy / d];
+  const at = (along: number, side: number): Position => {
+    const x = tip[0] - ux * along - uy * side;
+    const y = tip[1] - uy * along + ux * side;
+    return tableToLonLat(site, x / site.extent.width_m, y / site.extent.height_m);
+  };
+  const a = at(0, 0);
+  return { type: 'Polygon', coordinates: [[a, at(length, length * 0.55), at(length, -length * 0.55), a]] };
+}
+
+/**
+ * Marks from phones, drawn on the table in each phone's colour: places, pen strokes, arrows,
+ * routes and areas. A phone takes back its own last mark; the controller takes back the last.
+ * It is also the reference for a layer with tools: declare them in layer.json, handle `tool`.
  */
 export default defineLayer<Params>({
   manifest: manifest as LayerManifest,
@@ -21,9 +59,9 @@ export default defineLayer<Params>({
     const overlay = ctx.map.addShapes('marks', { opacity: ctx.params.opacity });
     /** A phone's place, keyed by its slot: dragging moves the mark instead of leaving a trail. */
     const places = new Map<number, Shape>();
-    let marks: Shape[] = [];
+    let marks: Mark[] = [];
     const show = () => {
-      overlay.set([...marks, ...places.values()]);
+      overlay.set([...marks.flatMap((mark) => mark.shapes), ...places.values()]);
       ctx.publish({ count: marks.length + places.size });
     };
     show();
@@ -32,16 +70,33 @@ export default defineLayer<Params>({
       update(changed) {
         if (changed.includes('opacity')) overlay.setOpacity(ctx.params.opacity);
       },
-      action(action) {
-        if (action !== 'clear') return;
-        marks = [];
-        places.clear();
+      action(action, by) {
+        if (action === 'clear') {
+          marks = [];
+          places.clear();
+        } else if (action === 'undo') {
+          // A phone takes back its own last mark, or its place when it has no other.
+          let index = marks.length - 1;
+          while (by && index >= 0 && marks[index]!.slot !== by.slot) index--;
+          if (index >= 0) marks.splice(index, 1);
+          else if (by) places.delete(by.slot);
+        } else return;
         show();
       },
       tool(input) {
-        const shape: Shape = { geometry: input.geometry, colour: input.participant?.colour };
-        if (input.tool === 'place' && input.participant) places.set(input.participant.slot, shape);
-        else marks = [...marks, shape].slice(-MOST);
+        const colour = input.participant?.colour;
+        const slot = input.participant?.slot;
+        const shape: Shape = { geometry: input.geometry, colour };
+        if (input.tool === 'place' && slot !== undefined) {
+          places.set(slot, shape);
+        } else {
+          const shapes = [shape];
+          if (input.tool === 'arrow' && input.geometry.type === 'LineString') {
+            const head = arrowHead(ctx.site, input.geometry.coordinates);
+            if (head) shapes.push({ geometry: head, colour });
+          }
+          marks = [...marks, { shapes, slot }].slice(-MOST);
+        }
         show();
       },
     };

@@ -133,6 +133,9 @@ export function refusedScreen(reason: string): HTMLElement {
       el('p', undefined, wrong ? t('The session may have restarted. Scan the QR code on the TV again, or type the code it shows.') : t('It is shown on the TV next to the QR code.')),
       form,
     );
+  } else if (reason.includes('ended this phone')) {
+    // The operator let this phone go, or ended the round (#335).
+    door.append(el('h1', undefined, t('Thanks for joining')), el('p', undefined, t('Your turn at the table has ended.')), retry(t('Join again')));
   } else if (reason.includes('joined again')) {
     door.append(el('h1', undefined, t('Open in another tab')), el('p', undefined, t('This phone is now controlling the table from another tab or window.')), retry(t('Use this one instead')));
   } else {
