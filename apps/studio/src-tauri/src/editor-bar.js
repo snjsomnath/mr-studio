@@ -61,7 +61,7 @@
     const home = document.createElement('button');
     home.type = 'button';
     home.textContent = 'Home';
-    home.title = 'Other tables and a new table. Displays and settings are there too.';
+    home.title = 'Other tables and a new table. Settings are there too.';
     const go = document.createElement('button');
     go.type = 'button';
     bar.append(note, home, go);

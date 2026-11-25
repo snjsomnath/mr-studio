@@ -1,7 +1,7 @@
 import { setting } from './settings-list.ts';
 import { THEMES } from '@mrstudio/dashboard';
-import type { LayerManifest, LayerState, SelectControl } from '@mrstudio/sdk';
-import { defaultSideOf, el, isAmbient, isOffered, layerButton } from '../controls.ts';
+import type { LayerManifest, LayerState } from '@mrstudio/sdk';
+import { el } from '../controls.ts';
 import type { Store } from '../store.ts';
 import { icon } from './icons.ts';
 import { FetchAll } from './fetch-all.ts';
@@ -11,6 +11,8 @@ import { ScaleFields } from './place-scale.ts';
 import { PlaceMap } from './place-map.ts';
 import type { Placement } from './place-map.ts';
 import { parsePlace } from './place.ts';
+import { STARTERS } from './starters.ts';
+import type { Starter } from './starters.ts';
 
 /** What the wizard needs from the editor around it. */
 export interface WizardHost {
@@ -18,7 +20,7 @@ export interface WizardHost {
   /** A request to the host; resolves to null when it is refused. */
   send(method: string, params: object): Promise<any>;
   /** Adds a layer to the scene, in the place its kind belongs. */
-  add(manifest: LayerManifest): Promise<void>;
+  add(manifest: LayerManifest): Promise<string | null>;
   /** Shows one layer on the map and closes the others; null shows the map at rest. */
   show(id: string | null): void;
   /** Puts the live controller in the middle of the window instead of the map. */
@@ -36,12 +38,11 @@ export interface WizardHost {
 /** One name for the table when no layer is open, used everywhere in the editor and the guide. */
 export const AT_REST = 'At rest';
 
-export const WIZARD_STEPS = ['Name and place', 'Your place', AT_REST, 'Layers', 'Buttons', 'Ready'] as const;
+/** Three steps to a working table (#390), like PowerPoint's new-presentation screen. Then the editor. */
+export const WIZARD_STEPS = ['Name and place', 'Data', 'Start from…'] as const;
 export const WHERE = 0;
 const PLACE = 1;
-export const REST = 2;
-const LAYERS = 3;
-export const BUTTONS = 4;
+const START = 2;
 
 /** Degrees as a bearing from 0 up to 360, so -93 and 267 are the same turn. */
 const turn = (degrees: number) => ((degrees % 360) + 360) % 360;
@@ -153,8 +154,7 @@ export class Wizard {
       this.shown = false;
     }
     host.store.onScene(() => this.render());
-    host.store.onLayer(() => this.shown && (this.step === BUTTONS || this.step === REST) && this.syncButtons());
-    host.store.onTv(() => this.shown && this.step === BUTTONS && this.syncLook());
+    host.store.onTv(() => this.shown && this.step === START && this.render());
     this.render();
   }
 
@@ -222,58 +222,6 @@ export class Wizard {
     return list;
   }
 
-  /**
-   * The controller's look (#126): a built-in theme, shown as swatch cards, and the rail style.
-   * A pick is saved to site.json and every screen, the live preview too, restyles at once.
-   */
-  private lookPicker(): HTMLElement {
-    const { host } = this;
-    const box = el('section', 'wz-look');
-    box.append(el('h3', undefined, 'Look'));
-    const themes = el('div', 'wz-themes');
-    themes.setAttribute('role', 'radiogroup');
-    themes.setAttribute('aria-label', 'Controller theme');
-    const cards = THEMES.map((theme, index) => {
-      const card = el('button', 'wz-theme');
-      card.type = 'button';
-      card.setAttribute('role', 'radio');
-      card.title = theme.description;
-      card.append(themeSwatch(theme), el('span', 'wz-theme-name', theme.name));
-      card.addEventListener('click', () => void host.send('site.tv', themeChoice(index)));
-      themes.append(card);
-      return [theme.id, card] as const;
-    });
-    const style = el('div', 'segmented');
-    style.setAttribute('role', 'radiogroup');
-    style.setAttribute('aria-label', 'Button style');
-    const styles = (['icons', 'labelled'] as const).map((value) => {
-      const option = el('button', undefined, value === 'icons' ? 'Icons' : 'Icons and names');
-      option.type = 'button';
-      option.setAttribute('role', 'radio');
-      option.addEventListener('click', () => void host.send('site.tv', { tv: { rail_style: value === 'icons' ? null : value } }));
-      style.append(option);
-      return [value, option] as const;
-    });
-    const row = el('div', 'wz-look-row');
-    row.append(el('span', 'wz-hint', 'Buttons'), style);
-    box.append(themes, row);
-    const sync = () => {
-      const tv = host.store.state.site.tv;
-      // A theme written by hand, not one of these, leaves every card unticked.
-      const chosen = chosenTheme(tv);
-      for (const [id, card] of cards) card.setAttribute('aria-checked', String(id === chosen));
-      for (const [value, option] of styles) option.setAttribute('aria-checked', String(value === (tv?.rail_style ?? 'icons')));
-    };
-    sync();
-    this.syncLook = sync;
-    return box;
-  }
-
-  private syncLook: () => void = () => {};
-
-  private syncButtons: () => void = () => {};
-  /** The layer package just switched on, shown on the map as soon as the scene has it. */
-  private fresh: string | null = null;
 
   private render(opening = false): void {
     if (!this.shown) return;
@@ -282,11 +230,6 @@ export class Wizard {
     const real = { show: (id: string | null) => void ((!this.panel || opening) && host.show(id)) };
     const body = el('div', 'wz-body');
     const title = (text: string, lead: string) => body.append(el('h2', undefined, text), el('p', 'wz-lead', lead));
-    const instances = this.instances();
-    const layers = instances.filter((i) => !isAmbient(i.manifest));
-    this.syncButtons = () => {};
-    if (!this.panel) host.controller(this.step === BUTTONS);
-
     if (this.step === WHERE) {
       real.show(null);
       title('Name and place', 'What the table is called, where it is and how much ground it covers. Moving the table keeps the data you brought in; whatever lies inside the new outline is shown.');
@@ -294,7 +237,7 @@ export class Wizard {
       if (this.panel) body.append(this.moveNotes());
     } else if (this.step === PLACE) {
       host.show(null);
-      title('Your place', 'Bring in the files your table is made from. They are copied into the table and stay on this computer. Buildings matter most; the rest can come later.');
+      title('Data', 'What the table is made of. Fetch the open data for the whole place in one go, or bring in your own files: they are copied into the table and stay on this computer. Buildings matter most; the rest can come later.');
       if (!this.fetchAll) this.fetchAll = new FetchAll({ site: () => this.host.store.state.site, hold: (on) => this.host.hold(on) });
       else this.fetchAll.render();
       body.append(this.fetchAll.element);
@@ -317,106 +260,10 @@ export class Wizard {
         wanted.classList.add('is-wanted');
         requestAnimationFrame(() => wanted.scrollIntoView({ block: 'nearest' }));
       }
-    } else if (this.step === REST) {
-      real.show(null);
-      title(AT_REST, 'What the map shows when no layer is open, and nobody is using the table. Pick a base map and some life to make it feel like a place.');
-      body.append(this.choices(host.store.manifests.filter((m) => isAmbient(m) && isOffered(m)), instances, false));
-      this.syncButtons();
-    } else if (this.step === LAYERS) {
-      title('Layers', 'Each layer answers one question, such as where the sun falls. Every layer you pick becomes a button on the controller.');
-      body.append(this.choices(host.store.manifests.filter((m) => !isAmbient(m) && (isOffered(m) || instances.some((i) => i.manifest.id === m.id))), instances, true));
-      const added = layers.find((i) => i.manifest.id === this.fresh);
-      if (added) {
-        this.fresh = null;
-        host.show(added.id);
-      }
-      if (layers.length === 0) body.append(el('p', 'wz-hint', 'Pick at least one layer to give the table something to show.'));
-    } else if (this.step === BUTTONS) {
-      real.show(layers[0]?.id ?? null);
-      if (this.panel) title('Buttons', 'Give each button words a visitor understands, and choose its side. The theme and button style are on the ribbon above; the controller beside the map is live.');
-      else {
-        title('Buttons', 'Pick how the controller looks, give each button words a visitor understands, and choose its side. The controller on the right is live.');
-        body.append(this.lookPicker());
-      }
-      if (layers.length === 0) body.append(el('p', 'wz-hint', 'There are no layers yet. Go back a step and pick one.'));
-      const syncs: (() => void)[] = [];
-      for (const { id, manifest } of layers) {
-        const card = el('div', 'wz-button');
-        const set = (button: object) => void host.send('scene.set', { layer: id, button });
-        const badge = el('span', 'wz-badge');
-        const name = el('input');
-        Object.assign(name, { type: 'text', maxLength: 40, placeholder: manifest.name, ariaLabel: `Name of ${manifest.name}` });
-        name.addEventListener('change', () => set({ name: name.value.trim() || null }));
-        name.addEventListener('focus', () => host.show(id));
-        const description = el('input');
-        Object.assign(description, { type: 'text', maxLength: 200, placeholder: manifest.description ?? 'One line about what it shows', ariaLabel: `Description of ${manifest.name}` });
-        description.addEventListener('change', () => set({ description: description.value.trim() || null }));
-        description.addEventListener('focus', () => host.show(id));
-        const side = el('div', 'segmented');
-        side.setAttribute('role', 'radiogroup');
-        side.setAttribute('aria-label', `Side of ${manifest.name}`);
-        const sides = (['left', 'right'] as const).map((value) => {
-          const option = el('button', undefined, value === 'left' ? 'Left' : 'Right');
-          option.type = 'button';
-          option.setAttribute('role', 'radio');
-          option.addEventListener('click', () => set({ side: value }));
-          side.append(option);
-          return [value, option] as const;
-        });
-        const fields = el('div', 'wz-button-fields');
-        fields.append(name, description);
-        card.append(badge, fields, side);
-        body.append(card);
-        let shown: string | undefined | null = null;
-        syncs.push(() => {
-          const state = host.store.state.layers[id];
-          if (!state) return;
-          const button = layerButton(id, manifest, state, defaultSideOf(host.store, id));
-          if (shown !== button.icon) badge.replaceChildren(icon(button.icon, 20));
-          shown = button.icon;
-          if (document.activeElement !== name) name.value = state.button?.name ?? '';
-          if (document.activeElement !== description) description.value = state.button?.description ?? '';
-          for (const [value, option] of sides) option.setAttribute('aria-checked', String(value === button.side));
-        });
-      }
-      this.syncButtons = () => syncs.forEach((sync) => sync());
-      this.syncButtons();
     } else {
-      host.show(null);
-      title('Ready', 'The table is set up. Present puts the map on the projector and the controller on its screen.');
-      // The three surfaces, as a visitor meets them.
-      const surfaces: [string, string, string][] = [
-        ['table', 'The map', 'Projected on the table. Light and movement, almost no words.'],
-        ['tv', 'The controller', 'The screen beside the table. A button for each layer, with its words and controls.'],
-        ['phone', 'Phones', 'Visitors join with a code and get their own controls.'],
-      ];
-      const cards = el('div', 'wz-surfaces');
-      for (const [iconName, name, text] of surfaces) {
-        const card = el('div', 'wz-surface');
-        const badge = el('span', 'wz-badge');
-        badge.append(icon(iconName, 20));
-        const words = el('div');
-        words.append(el('strong', undefined, name), el('p', undefined, text));
-        card.append(badge, words);
-        cards.append(card);
-      }
-      body.append(cards);
-      const facts = el('ul', 'wz-facts');
-      const ambient = instances.length - layers.length;
-      facts.append(
-        el('li', undefined, `${ambient} ${ambient === 1 ? 'thing' : 'things'} on the map at rest`),
-        el('li', undefined, `${layers.length} ${layers.length === 1 ? 'layer' : 'layers'}, each a button on the controller`),
-        el('li', undefined, `Phones join with the code ${host.store.state.session.code}`),
-      );
-      body.append(facts);
-      const present = el('button', 'ed-button is-primary wz-big');
-      present.type = 'button';
-      present.append(icon('tv', 16), el('span', undefined, 'Present'));
-      present.addEventListener('click', () => host.present());
-      const tune = el('button', 'ed-button wz-big', 'Fine-tune in the editor');
-      tune.type = 'button';
-      tune.addEventListener('click', () => host.close());
-      body.append(present, tune, el('p', 'wz-hint', 'In the editor you can change every setting of a layer, reorder things and add more. This guide stays one click away, under Setup guide.'));
+      real.show(null);
+      title('Start from…', 'Pick a starting point. Each one adds its layers, a little life on the map at rest and a controller theme. Everything can be changed in the editor afterwards.');
+      body.append(this.starters());
     }
 
     if (this.panel) {
@@ -454,6 +301,13 @@ export class Wizard {
       next.disabled = this.moving;
       next.addEventListener('click', () => this.go(this.step + 1));
       foot.append(next);
+    } else {
+      // The last step hands over to the editor, where Present › Ready to present? says what is left.
+      const done = el('button', 'ed-button is-primary', 'Open the editor');
+      done.type = 'button';
+      done.disabled = this.starting;
+      done.addEventListener('click', () => host.close());
+      foot.append(done);
     }
 
     const head = el('header', 'wz-head');
@@ -707,85 +561,71 @@ export class Wizard {
     }
   }
 
-  /** A layer's style as a dropdown, with the credit its map asks for; the map beside shows it live. */
-  private stylePicker(id: string, control: SelectControl): HTMLElement {
-    const { host } = this;
-    const box = el('div', 'wz-style');
-    const select = el('select');
-    select.name = `${id}-style`;
-    for (const option of control.options) select.append(new Option(option.label, option.value));
-    const credit = el('p', 'wz-hint wz-credit');
-    const note = el('p', 'wz-hint');
-    const field = el('label', 'wz-field');
-    field.append(el('span', undefined, control.label), select);
-    box.append(field, credit, note);
-    select.addEventListener('change', () => void host.send('scene.set', { layer: id, params: { [control.id]: select.value } }));
-    const sync = (): void => {
-      const state = host.store.state.layers[id];
-      if (!state) return;
-      const value = String(state.params[control.id] ?? control.default);
-      if (document.activeElement !== select) select.value = value;
-      const source = typeof state.shared.source === 'string' ? state.shared.source : '';
-      credit.textContent = source ? `Map: ${source}` : '';
-      note.textContent = typeof state.shared.note === 'string' ? state.shared.note : '';
-    };
-    const before = this.syncButtons;
-    this.syncButtons = () => {
-      before();
-      sync();
-    };
-    return box;
-  }
 
-  /** One row per layer package with a switch: on means the table has it. */
-  private choices(manifests: LayerManifest[], instances: { id: string; manifest: LayerManifest }[], preview: boolean): HTMLElement {
+  /** The starter picked in this guide, and the layers it added, so another pick replaces them. */
+  private chosen: string | null = null;
+  private addedByStarter: string[] = [];
+  private starting = false;
+
+  /** Start from… (#390): a card per starter table. Picking one sets its layers, map life and theme. */
+  private starters(): HTMLElement {
     const { host } = this;
-    const list = el('div', 'wz-choices');
+    const list = el('div', 'wz-starters');
+    list.setAttribute('role', 'radiogroup');
+    list.setAttribute('aria-label', 'Start from');
     const data = host.store.state.site.data ?? {};
-    for (const manifest of manifests) {
-      const mine = instances.filter((i) => i.manifest.id === manifest.id);
-      const missing = (manifest.requires?.data ?? []).filter((name) => !(name in data));
-      const row = el('label', 'wz-choice');
+    for (const starter of STARTERS) {
+      const card = el('button', 'wz-starter');
+      card.type = 'button';
+      card.dataset.starter = starter.id;
+      card.setAttribute('role', 'radio');
+      card.setAttribute('aria-checked', String(this.chosen === starter.id));
+      card.disabled = this.starting;
+      const theme = THEMES.find((t) => t.id === starter.theme) ?? THEMES[0]!;
       const badge = el('span', 'wz-badge');
-      badge.append(icon(manifest.icon, 20));
-      const words = el('div');
-      words.append(el('strong', undefined, manifest.name));
-      // Switched on without its data, a layer shows nothing; it says so, and offers the data, either way.
-      const lacking = missing.length > 0;
-      const needs = missing.map(dataName).join(' and ');
-      const about = !lacking ? (manifest.description ?? '') : mine.length > 0 ? `Shows nothing until this table has ${needs}.` : `Needs ${needs}, which this table does not have yet.`;
-      if (about) words.append(el('p', undefined, about));
-      // A layer that needs data offers the way to it, and the guide comes back here afterwards.
-      const source = lacking ? targetFor(missing[0]!) : undefined;
-      if (source) {
-        const bring = el('button', 'ed-button wz-bring', `Bring in ${source.name.toLowerCase()}`);
-        bring.type = 'button';
-        bring.addEventListener('click', (event) => {
-          event.preventDefault();
-          if (this.panel && host.bringIn) host.bringIn(source.target);
-          else this.bringIn(source.target, this.step);
-        });
-        words.append(bring);
-      }
-      const power = el('input');
-      Object.assign(power, { type: 'checkbox', className: 'switch', checked: mine.length > 0, disabled: missing.length > 0 && mine.length === 0 });
-      power.dataset.layer = manifest.id;
-      row.classList.toggle('is-unavailable', power.disabled);
-      power.addEventListener('change', async () => {
-        power.disabled = true;
-        if (power.checked) {
-          this.fresh = manifest.id;
-          await host.add(manifest);
-        }
-        else for (const { id } of mine) await host.send('scene.remove', { layer: id });
-      });
-      if (preview && mine[0]) row.addEventListener('pointerenter', () => host.show(mine[0]!.id));
-      row.append(badge, words, power);
-      list.append(row);
-      // A layer with a style to pick (the base map) offers it right under its row, at rest.
-      const style = manifest.controls?.find((c): c is SelectControl => c.id === 'style' && c.type === 'select');
-      if (!preview && style && mine[0]) list.append(this.stylePicker(mine[0].id, style));
+      badge.append(icon(starter.icon, 20));
+      const head = el('span', 'wz-starter-head');
+      head.append(badge, el('strong', undefined, starter.name));
+      const names = (ids: string[]) => ids.map((id) => host.store.manifest(id)?.name).filter((n): n is string => Boolean(n));
+      const parts = el('ul', 'wz-starter-parts');
+      const buttons = names(starter.layers);
+      const life = names(starter.rest);
+      parts.append(el('li', undefined, buttons.length ? `Buttons: ${buttons.join(', ')}` : 'No buttons yet'));
+      if (life.length) parts.append(el('li', undefined, `At rest: ${life.join(', ')}`));
+      parts.append(el('li', undefined, `Theme: ${theme.name}`));
+      // A layer without its data shows little or nothing; the card says so before it is picked.
+      const lacking = [...starter.rest, ...starter.layers].flatMap((id) => host.store.manifest(id)?.requires?.data ?? []).filter((d, i, all) => !(d in data) && all.indexOf(d) === i);
+      if (lacking.length) parts.append(el('li', 'wz-starter-lacking', `Needs ${lacking.map(dataName).join(', ')} to show everything`));
+      card.append(head, el('p', undefined, starter.about), parts, themeSwatch(theme));
+      card.addEventListener('click', () => void this.start(starter));
+      list.append(card);
     }
     return list;
   }
+
+  /** Puts a starter on the table: what an earlier pick added goes, the author's own layers stay. */
+  private async start(starter: Starter): Promise<void> {
+    if (this.starting || this.chosen === starter.id) return;
+    const { host } = this;
+    this.starting = true;
+    this.render();
+    try {
+      for (const id of this.addedByStarter) await host.send('scene.remove', { layer: id });
+      this.addedByStarter = [];
+      const have = new Set(this.instances().map((i) => i.manifest.id));
+      for (const pkg of [...starter.rest, ...starter.layers]) {
+        const manifest = host.store.manifest(pkg);
+        if (!manifest || have.has(pkg)) continue;
+        const id = await host.add(manifest);
+        if (id) this.addedByStarter.push(id);
+      }
+      const index = THEMES.findIndex((t) => t.id === starter.theme);
+      await host.send('site.tv', themeChoice(Math.max(0, index)));
+      this.chosen = starter.id;
+    } finally {
+      this.starting = false;
+      this.render();
+    }
+  }
+
 }

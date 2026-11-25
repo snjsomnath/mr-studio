@@ -516,14 +516,30 @@ fn open_home_window(app: &AppHandle) -> anyhow::Result<()> {
 }
 
 fn open_launcher(app: &AppHandle) -> anyhow::Result<()> {
+    open_launcher_at(app, None)
+}
+
+/// File › Settings (#393), opened at one of its pages (`setup`, `calibration`, `colour`, ...) when named.
+fn open_launcher_at(app: &AppHandle, page: Option<&str>) -> anyhow::Result<()> {
+    let page = page.filter(|p| p.chars().all(|c| c.is_ascii_lowercase()));
     let window = match app.get_webview_window(LAUNCHER) {
-        Some(window) => window,
-        None => WebviewWindowBuilder::new(app, LAUNCHER, WebviewUrl::App("index.html".into()))
-            .title("MR Studio · Displays and settings")
-            .inner_size(1080.0, 720.0)
-            .min_inner_size(820.0, 560.0)
-            .center()
-            .build()?,
+        Some(window) => {
+            // An open window goes to the page asked for, the way its address would.
+            if let Some(page) = page {
+                window.eval(format!("document.querySelector('[role=tab][data-tab=\"{page}\"]')?.click()"))?;
+            }
+            window
+        }
+        None => WebviewWindowBuilder::new(
+            app,
+            LAUNCHER,
+            WebviewUrl::App(page.map_or_else(|| String::from("index.html"), |p| format!("index.html#{p}")).into()),
+        )
+        .title("MR Studio · Settings")
+        .inner_size(1080.0, 720.0)
+        .min_inner_size(820.0, 560.0)
+        .center()
+        .build()?,
     };
     // A fullscreen surface may cover the display the launcher is on.
     window.set_always_on_top(is_presenting(app))?;
@@ -1644,10 +1660,11 @@ async fn open_view(app: AppHandle, role: String) -> Result<(), String> {
     show_view(&app, &role).map_err(text)
 }
 
-/// Shows the displays and settings window: displays, colour, calibration and updates.
+/// Shows File › Settings (#393): this computer's screens, colour, calibration and phones, then
+/// the app's updates, command line and sources. `page` opens it at one page.
 #[tauri::command]
-async fn open_settings(app: AppHandle) -> Result<(), String> {
-    open_launcher(&app).map_err(text)
+async fn open_settings(app: AppHandle, page: Option<String>) -> Result<(), String> {
+    open_launcher_at(&app, page.as_deref()).map_err(text)
 }
 
 /// The Command line page in settings (#370): is `mrstudio` on this computer's PATH.

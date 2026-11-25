@@ -343,7 +343,7 @@ export class Editor {
 
     body.append(left, centre, this.inspector);
     const invoke = desktop();
-    this.displayTab = new DisplayTab(invoke, connection, this.canvas, () => void invoke?.('open_settings'));
+    this.displayTab = new DisplayTab(invoke, connection, this.canvas, () => void invoke?.('open_settings', { page: 'setup' }));
     this.displayTab.setQuality(this.store.state.site.display?.quality ?? 'good');
     this.store.onDisplay((quality) => this.displayTab.setQuality(quality));
     this.tabs.setAttribute('role', 'tablist');
@@ -402,7 +402,7 @@ export class Editor {
     this.surfaces.addEventListener('pointerdown', () => this.setDrawer(false));
     NARROW.addEventListener('change', () => this.setDrawer(false));
 
-    // A new table opens in the setup guide, and so does one with nothing on it yet.
+    // A new table opens in the guide (#390). The guide only starts a table: an empty one shows Insert a layer instead.
     const query = new URLSearchParams(location.search);
     const created = query.has('welcome') || query.has('setup');
     // After data is brought in the page reloads; the guide comes back at the step it was on.
@@ -414,7 +414,7 @@ export class Editor {
     } catch {
       // No session storage: the guide starts over.
     }
-    if (resume !== undefined || created || this.instances().every((i) => isAmbient(i.manifest))) this.openWizard(created, resume);
+    if (resume !== undefined || created) this.openWizard(created, resume);
     else {
       // After a reload (moving the table, bringing data in), the editor comes back on the tab and the dialog it was on.
       let tab: string | null = null;
@@ -1196,12 +1196,12 @@ export class Editor {
   }
 
   /** Adds a layer to the table, or with `parent` into that layer as an item that comes and goes with it. */
-  private async add(manifest: LayerManifest, parent?: string): Promise<void> {
+  private async add(manifest: LayerManifest, parent?: string): Promise<string | null> {
     if (parent) {
       const result = await this.send('scene.add', { use: manifest.id, parent });
       if (result?.id) this.added = result.id;
       this.render();
-      return;
+      return result?.id ?? null;
     }
     // Ambient life belongs to the home screen, which lies under the layers: it goes above the last ambient layer, not on top.
     // A base map goes under everything, above any other base map (#368): above the map life it covers it.
@@ -1227,6 +1227,7 @@ export class Editor {
     // The reply can arrive before the scene event that brings the new layer; it is selected when it does.
     if (result?.id) this.added = result.id;
     this.render();
+    return result?.id ?? null;
   }
 
   /**
@@ -1238,7 +1239,7 @@ export class Editor {
     const same = this.instances().find(
       (i) => i.manifest.id === manifest.id && (i.state.parent ?? undefined) === parent && (parent !== undefined || isAmbient(i.manifest) === ambient),
     );
-    if (!same) return this.add(manifest, parent);
+    if (!same) return void (await this.add(manifest, parent));
     const name = layerButton(same.id, same.manifest, same.state, defaultSideOf(this.store, same.id));
     const parentState = parent ? this.store.state.layers[parent] : undefined;
     const parentManifest = parentState && this.store.manifest(parentState.layer);
@@ -1252,7 +1253,7 @@ export class Editor {
       { id: 'show', label: 'Show the one I have' },
       { id: 'add', label: 'Add another', primary: true },
     ]);
-    if (choice === 'add') return this.add(manifest, parent);
+    if (choice === 'add') return void (await this.add(manifest, parent));
     if (choice === 'show') {
       if (parent) this.go({ kind: 'layer', id: parent }, same.id);
       else if (ambient) {
@@ -1421,13 +1422,13 @@ export class Editor {
   private titleBar(): HTMLElement {
     const bar = el('header', 'ed-title');
     const invoke = shell();
-    // The brand is the way home, as a logo is (#130). It checks that everything is saved first.
+    // The brand is File › Open (#130, #393): the list of tables. It checks that everything is saved first.
     const brand = el(invoke ? 'button' : 'div', 'ed-brand');
     brand.append(icon('layers', 18), el('span', undefined, 'MR Studio'));
     if (brand instanceof HTMLButtonElement) {
       brand.type = 'button';
-      brand.title = 'All tables. Everything here is already saved.';
-      brand.addEventListener('click', () => void this.file('home'));
+      brand.title = 'Open another table, or start a new one (File › Open…). Everything here is already saved.';
+      brand.addEventListener('click', () => void this.file('open'));
     }
     // In the app the File menu is native (the Mac menu bar, the editor window's menu bar on
     // Windows), so the button would repeat it (#148). A browser has no menu: it gets the button.
@@ -1494,12 +1495,6 @@ export class Editor {
     });
     draw();
     if (invoke) {
-      // Inside the desktop app: the way back to the list of sites and the displays.
-      // "Home" is the button visitors press on the controller; this one leaves the table.
-      const sites = button('ed-button', 'All tables', 'grid');
-      sites.title = 'Back to your tables: open another one or start a new one. Everything here is already saved.';
-      sites.addEventListener('click', () => void this.file('home'));
-      actions.append(sites);
       window.addEventListener('focus', () => void refresh());
       void refresh();
     }
@@ -1584,7 +1579,7 @@ export class Editor {
       phones.textContent = url ? `Phones join with ${code}` : 'Phones cannot join';
       phones.title = url
         ? `Visitors join at ${url}`
-        : 'Phones on this network cannot join yet. Turn on "Let phones on this network join" in Displays and settings, or start with --lan from the command line.';
+        : 'Phones on this network cannot join yet. Turn on "Let phones on this network join" in File › Settings › Phones and startup, or start with --lan from the command line.';
       phones.classList.toggle('is-off', !url);
     };
     showPhones();

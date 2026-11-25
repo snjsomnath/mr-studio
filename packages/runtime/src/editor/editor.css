@@ -4797,3 +4797,68 @@ body[data-role='edit'] > .connection {
 .ed-dialog.is-place .wz-body > h2 + .wz-lead {
   display: none;
 }
+
+/* Start from… (#390): the starter tables, like PowerPoint's templates. */
+.wz-starters {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.wz-starter {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--ed-line);
+  border-radius: 10px;
+  background: var(--ed-panel);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.wz-starter:hover:not(:disabled) {
+  border-color: #b9c0cd;
+}
+
+.wz-starter[aria-checked='true'] {
+  border-color: var(--ed-accent);
+  box-shadow: 0 0 0 1px var(--ed-accent);
+}
+
+.wz-starter:disabled {
+  cursor: progress;
+  opacity: 0.7;
+}
+
+.wz-starter-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+}
+
+.wz-starter p {
+  margin: 0;
+  color: var(--ed-text-2);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.wz-starter-parts {
+  margin: 0;
+  padding-left: 16px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.wz-starter-lacking {
+  color: #9a5b00;
+}
+
+.wz-starter .wz-theme-swatch {
+  height: 34px;
+  margin-top: auto;
+}

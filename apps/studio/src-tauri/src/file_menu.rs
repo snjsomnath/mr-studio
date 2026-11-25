@@ -1,4 +1,5 @@
-//! The File menu: New, Open, Save, Save As, Show in folder, Close table, All tables (#130).
+//! The File menu: New, Open, Save, Save As, Show in folder, Close table (#130). Open… is the
+//! list of tables (#393: All tables and the logo were the same thing under other names).
 //!
 //! A table is saved as it is edited (every change is a request to the host that rewrites
 //! `site.json`), so Save confirms that rather than writing anything. Save As copies the
@@ -43,11 +44,10 @@ fn file_submenu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Submenu<R>> {
         .item(&item("share", "Share by email…", None)?)
         .item(&item("reveal", reveal, None)?)
         .separator()
-        // This table's own settings, in the editor (#73); app settings are MR Studio > Settings.
-        .item(&item("table-settings", "Table settings…", None)?)
+        // The same command as Design › Table size and place… (#382), by the same name; app settings are Settings… (#393).
+        .item(&item("table-settings", "Table size and place…", None)?)
         .separator()
-        .item(&item("close", "Close table", Some("CmdOrCtrl+W"))?)
-        .item(&item("home", "All tables", Some("CmdOrCtrl+Shift+H"))?);
+        .item(&item("close", "Close table", Some("CmdOrCtrl+W"))?);
     if !cfg!(target_os = "macos") {
         // On macOS these live in the app menu, where people look for them.
         file = file

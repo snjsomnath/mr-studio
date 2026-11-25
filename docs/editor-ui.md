@@ -36,7 +36,7 @@ Six regions. Their places never change, whatever tab is open or whatever is sele
 3. **Tabs hold commands, not places.** Opening a tab changes the ribbon only. It never changes the canvas, the left list, the selection or what the map shows.
 4. **Select, then format.** Select something (in the list or on the canvas) and edit it in the Format pane. The ribbon acts on the selection; it never carries its own copy of the selection's settings.
 5. **Table-wide settings are dialogs.** Settings of the whole table open as a dialog from the ribbon (like Slide Size): Table size and place, Welcome and languages, Screens and calibration. A dialog closes back to where you were.
-6. **This computer is not the table.** Screens, calibration, colour, quality and phones joining on this network belong to the computer (#73): they live in Screens and calibration, never in the table's settings.
+6. **This computer is not the table.** Screens, calibration, colour and phones joining on this network belong to the computer (#73): they live in File › Settings › This computer (#393), never in the table's settings.
 7. **Two orders, two homes.** The left list is the map's drawing order. The controller's button order and sides are arranged only on the controller preview, by dragging (right-click › Move to the other side is the shortcut). The layer's Format pane shows its side read-only.
 8. **Rehearse in place.** Trying the table as a visitor happens on the canvas, one key away, and stops back where you were. Windows are for real displays (Present).
 9. **The wizard only starts a table.** Like PowerPoint's start screen. Once the table exists, it is edited in the editor.
@@ -75,8 +75,13 @@ In no tab: button names and words (Format pane of the button's layer), button si
 | Bring in a file | Insert (file first) | 4, two behaviours |
 | Check before presenting | Present › Ready to present? | 0 (#63) |
 | Try it as a visitor | Present › Rehearse (on the canvas) | 3 windows |
-| Screens, calibration, colour, quality | Present › Screens and calibration… | 3 |
+| Screens, calibration, colour | File › Settings › This computer (#393); Present › Screens and calibration… opens it, and holds them itself in a browser | 3 |
+| Drawing quality | Present › Screens and calibration… | 1 |
+| Sources and keys, updates, command line | File › Settings | 2 windows |
+| Back to the list of tables | File › Open… (the logo runs it) | 3 |
 | Share with the studio PC | Share (title bar) | 0 (#372) |
+
+The same audit, task by task with the shortcuts to each command, is kept in [docs/design/journey/task-audit.md](design/journey/task-audit.md) (#384). Add a row there when a feature adds a task.
 
 ## Right-click
 
@@ -107,6 +112,10 @@ Three depths, each in one place, like Office's ScreenTips, the info button and t
 - No help text in panel code. A tooltip with no text in the manifest or help.json fails `scripts/check-docs.mjs` (#269).
 - No hints on the canvas: the map and the controller preview show what visitors see, nothing more.
 
+## File and Settings
+
+Like Office's File screen and Options (#393). **File** holds the table's file actions: New, Open…, Save As, Export, Share, Show in folder, Close, then **Settings…**. Open… is the list of tables; the MR Studio logo runs it. **Settings** is one window for the app, in two groups: *This computer* (Screens, Calibration, Colour, Phones and startup) and *MR Studio* (Updates, Command line, Sources and keys). Present › Screens and calibration… opens its This computer pages in the app; in a browser, where there is no Settings window, it lines up the projector itself.
+
 ## The wizard
 
 PowerPoint's new-presentation screen: three steps to a working table, then the editor (#390).
@@ -125,7 +134,6 @@ After that, **Present › Ready to present?** (#63) is the guide: each missing i
 - **Empty states**: a table with no layers shows "Insert a layer" on the canvas.
 - **Selecting several things** at once (hide, remove), as Office does: to decide.
 - **Mac and Windows**: shortcuts, menus and dialog button order follow each platform.
-- **File and Settings** (#393): File holds the table's file actions (New, Open, Recent, Save As, Share, Export, Close). File › Settings holds the app: sources and keys, updates, the command-line tool, language, and This computer (screens, projector, colour, quality, phones). Present › Screens and calibration… opens that page. The separate Displays and settings window goes.
 - **The operator**: running a table at an exhibition (Present controls, a lock so visitors can't reach the editor, idle reset) is a different person from the author, and not designed yet.
 - **One place for messages**: saved state, live data sources, performance warnings (#262) and readiness report in the status bar; a change that can be undone shows one notice with Undo.
 - **Version history** (#72): File › Version history… lists saved versions of the table (from the host's revision history) and restores one. Undo stays for this session's changes; Version history is for going back further.
@@ -169,7 +177,7 @@ Every editor pull request answers these in its description:
 | Name and place tab | Design › Table size and place… dialog | #382 (was #313) |
 | At rest tab | At rest rows in the list, each with an eye; Base map style in its Format pane | #382 (was #312) |
 | Design tab | Design (themes, button style); button words only in the Format pane | #382 (was #311), #384 |
-| Display tab | Present › Screens and calibration… dialog | #382, #73 |
+| Display tab | Present › Screens and calibration…, which opens File › Settings › This computer in the app | #382, #73, #393 |
 | Media tab | View › Media library… dialog; adding through Insert | #382, #52, #306 |
 | Help tab | Help tab, and the ? button | #88 |
 | Table settings (gear) | The two Design dialogs | #382, #62 |
