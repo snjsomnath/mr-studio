@@ -17,6 +17,8 @@ export type Home =
   | 'dialog:place'
   /** Design › Welcome and languages… */
   | 'dialog:welcome'
+  /** Design › Controller pages… (#155) */
+  | 'dialog:pages'
   /** Present › Screens and calibration… (this computer, #73) */
   | 'dialog:screens'
   /** File › Settings › This computer, the app's own window outside the editor (#393) */
@@ -59,6 +61,8 @@ export const SETTINGS = {
   'controller.two': { label: 'Two layers at once', owner: 'table', home: 'dialog:welcome' },
   'controller.languages': { label: 'Languages for visitors', owner: 'table', home: 'dialog:welcome' },
   'controller.translations': { label: 'The table’s words in Swedish', owner: 'table', home: 'dialog:welcome' },
+  'controller.pages': { label: 'Hand-made controller pages', owner: 'table', home: 'dialog:pages' },
+  'controller.rotate': { label: 'Time each controller page shows', owner: 'table', home: 'dialog:pages' },
   'controller.theme': { label: 'Controller theme', owner: 'table', home: 'ribbon:design' },
   'controller.buttons': { label: 'Button style', owner: 'table', home: 'ribbon:design' },
   'table.palette': { label: 'Palette', owner: 'table', home: 'dialog:palette' },

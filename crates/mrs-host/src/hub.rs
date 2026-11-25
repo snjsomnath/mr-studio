@@ -612,8 +612,37 @@ fn tv_words(key: &str) -> &str {
         "attract_s" => "welcome loop",
         "phone_switch" => "phones switching layers",
         "two_layers" => "two layers at once",
+        "pages" => "pages",
+        "rotate_s" => "page time",
         other => other,
     }
+}
+
+/// The controller's hand-made pages (#155): up to 12, each `{ id, title?, panels }` with at most 8
+/// panels that name a widget, a size and a place, in at most 64 KB. The grid, the sizes and the
+/// density budget are the dashboard's rules, checked by the editor and again by the controller.
+fn valid_pages(value: &Value) -> bool {
+    let Some(pages) = value.as_array() else { return false };
+    let id = |v: &Value| {
+        v.as_str()
+            .is_some_and(|s| !s.is_empty() && s.len() <= 40 && s.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-'))
+    };
+    pages.len() <= 12
+        && value.to_string().len() <= 64_000
+        && pages.iter().all(|page| {
+            id(&page["id"])
+                && (page["title"].is_null() || page["title"].as_str().is_some_and(|t| t.chars().count() <= 28))
+                && page["panels"].as_array().is_some_and(|panels| {
+                    panels.len() <= 8
+                        && panels.iter().all(|p| {
+                            id(&p["id"])
+                                && p["widget"].as_str().is_some_and(|w| !w.is_empty() && w.len() <= 80)
+                                && p["size"].is_string()
+                                && p["at"]["col"].is_u64()
+                                && p["at"]["row"].is_u64()
+                        })
+                })
+        })
 }
 
 /// A visitor's name for their phone: trimmed, without control characters, at most
@@ -1690,6 +1719,10 @@ impl Hub {
                 "idle_reset_s" => value.as_f64().is_some_and(|s| (0.0..=3600.0).contains(&s)),
                 "attract_s" => value.as_f64().is_some_and(|s| (2.0..=30.0).contains(&s)),
                 "phone_switch" | "two_layers" => value.is_boolean(),
+                // Hand-made pages (#155): the editor checks the grid and the budget with the
+                // dashboard's own rules; the host keeps the shape and the size in bounds.
+                "pages" => valid_pages(value),
+                "rotate_s" => value.as_f64().is_some_and(|s| (6.0..=60.0).contains(&s)),
                 _ => return Err(format!("'{key}' is not a controller setting that can be changed here")),
             };
             if value.is_null() {
@@ -3324,6 +3357,27 @@ mod tests {
         assert!(dev("site.tv", json!({ "tv": { "idle_reset_s": 0 } })).is_ok(), "0 is never");
         assert!(dev("site.tv", json!({ "tv": { "idle_reset_s": -1 } })).is_err());
         assert!(dev("site.tv", json!({ "tv": { "attract_s": 1 } })).is_err(), "too quick to read");
+    }
+
+    #[test]
+    fn hand_made_pages_and_their_time_are_controller_settings() {
+        let hub = scratch_hub("pages");
+        let dev = |method: &str, p: Value| hub.request(Role::Dev, 0, method, &p);
+        let page = json!([{ "id": "energy", "title": "Energy", "panels": [
+            { "id": "now", "widget": "stat", "size": "tile", "title": "Now", "props": { "value": 3 }, "at": { "col": 1, "row": 1 } }
+        ] }]);
+        let tv = dev("site.tv", json!({ "tv": { "pages": page, "rotate_s": 20 } })).unwrap();
+        assert_eq!(tv["tv"]["pages"][0]["panels"][0]["widget"], "stat");
+        assert_eq!(tv["tv"]["rotate_s"], 20);
+        assert!(dev("site.tv", json!({ "tv": { "rotate_s": 2 } })).is_err(), "too quick to read");
+        assert!(dev("site.tv", json!({ "tv": { "pages": [{ "id": "Bad Id", "panels": [] }] } })).is_err());
+        assert!(
+            dev("site.tv", json!({ "tv": { "pages": [{ "id": "p", "panels": [{ "id": "a", "widget": "stat", "size": "tile" }] }] } }))
+                .is_err(),
+            "a panel needs its place"
+        );
+        // No pages: the controller lays out the open layers' panels again.
+        assert!(dev("site.tv", json!({ "tv": { "pages": null } })).unwrap()["tv"]["pages"].is_null());
     }
 
     #[test]

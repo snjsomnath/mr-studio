@@ -58,6 +58,12 @@ A layer that has a `panel` function but no `panels` gets one `custom` tile.
 On a site page every panel needs `at`. A panel with `layer` is up only while that layer is on.
 The host passes `tv` to surfaces unchanged in `SiteInfo.tv`; the TV validates it.
 
+The editor makes pages in **Design › Controller pages…** (#155) and saves them with
+`site.tv { tv: { pages, rotate_s } }`. The host keeps the shape in bounds (12 pages, 8 panels each,
+an id, widget, size and `at` on every panel, 64 KB); the grid, the sizes and the budget are checked
+by the editor and again by the controller, with `validatePage`. A controller starts again when its
+pages or their time change.
+
 ## Rules
 
 | Rule | Check |
