@@ -33,6 +33,8 @@ packages/layers/sunlight/        (or sites/<id>/layers/<name>/)
 `id` is lowercase letters, digits and dashes, and is the folder name for a core layer.
 `category` puts the layer in a group of the composer's palette: `base`, `ambient`, `analysis` (the default) or `media`.
 On the controller screen a layer of category `analysis` or `media` is a button, and pressing it opens that layer and closes the others. `base` and `ambient` layers are the map at rest and have no button there.
+`sub_steps: "drawing"` says the layer's sub-steps are the phase groups of its drawing (the `dataset` param, else the table's first SVG): the host counts them as the layer turns on, plus one when `finale` is on, unless `reveal` is off. Next, phones and the MCP can then step the layer before any table window has called `ctx.steps.define`; the table's later report with the same count only adds the names (#421). Used by the Masterplan.
+
 `alongside: true` keeps the layer open when another layer's button is pressed, and lets it open without closing the others. Use it for a tool people keep while they look at something else, such as the sketch layer. Default false.
 Any open button layer pauses the map at rest's life on the table, keeping only the base map (#303). `hidesAtRest: true` turns the whole map at rest off while the layer is open, the base map included: every top-level `base` and `ambient` layer stops, and starts again when the layer closes. The host's state does not change, so the controller and editor still show them as on. The slideshow does this, so slides are seen on their own (#205). Default false.
 
