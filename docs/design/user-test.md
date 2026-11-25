@@ -22,7 +22,7 @@ Read one at a time. Don't use the words on the buttons.
 | 1 | Change the table's name to "Harbour test". | Design › Table size and place… | Name changed, dialog closed |
 | 2 | Show the wind on the map, blowing from the south. | Insert › layer gallery, then Format pane | Wind layer added, direction 180° |
 | 3 | The button for wind should say "Breeze" for visitors. | Format pane › Button | Button reads Breeze |
-| 4 | Move the Breeze button to the other side of the screen. | Drag on the controller preview | Button on the other side |
+| 4 | Move the Breeze button to the other side of the screen. | Format pane › Side | Button on the other side |
 | 5 | Hide the traffic that moves on the map when nobody is using the table. | Eye on the Traffic row under At rest | Traffic off |
 | 6 | Add this file of tree positions (trees.geojson on the desktop). | Insert › Data file (or drop it) | File in, used by a layer |
 | 7 | Make the controller look darker. | Design › controller theme gallery | Dark theme picked |

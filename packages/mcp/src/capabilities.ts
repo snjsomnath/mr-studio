@@ -72,11 +72,6 @@ const CONSTRAINTS: Omit<Capability, 'questions' | 'interactions' | 'requires' | 
     summary: 'MR Studio 2.0 has no hand tracking. People act through the controller, their phones, and the mouse or pointer on the table.',
     limitations: ['Use phone tools or the table pointer instead'], evidence: ['docs/ARCHITECTURE.md'],
   },
-  {
-    id: 'constraint:two-layers-at-once', kind: 'constraint', name: 'Two analysis layers open side by side', status: 'unsupported',
-    summary: 'One button layer is open at a time (plus alongside tools such as Sketch). Compare with a reveal line, a magnifier, items inside a layer, or a sequence.',
-    limitations: ['Put one layer inside another as an item, or use swipe or lens'], evidence: ['docs/contracts/layer.md'],
-  },
 ];
 
 /** Site features a designer reaches for, each proven by a key in the site.json structs. */
@@ -86,6 +81,7 @@ const SITE_FEATURES: { id: string; path: string; name: string; summary: string; 
   { id: 'site:ribbons', path: 'table.ribbons', name: 'Table ribbons', summary: 'At-a-glance strips in the blank margins of the projection, on any side of the model, filled by the open layer\'s ribbon panels (Sunlight, Stormwater…).', surfaces: { table: 'strips beside the model', controller: 'a Ribbon button picks whose ribbon shows when more than one open layer has one' } },
   { id: 'site:glow', path: 'table.glow', name: 'Ambient glow', summary: 'The blank margins of the projection glow softly in the model\'s own colours, like the lights behind some televisions. On or off, strength 0 to 1, colours along each edge or one dominant colour; a layer can turn it off or fix its colour with ctx.map.setGlow.', surfaces: { table: 'a soft glow around the model, under the ribbons' } },
   { id: 'site:branding', path: 'branding', name: 'Title, welcome line and logo', summary: 'The table\'s title and welcome line on the controller\'s home screen, and a logo from the table\'s pictures above the title and beside it on phones.', surfaces: { controller: 'title, welcome line and logo on the home screen', phone: 'the logo beside the title' } },
+  { id: 'site:two-layers', path: 'layers[].button', name: 'Two layers at once', summary: 'Visitors hold a second layer button until its ring closes (or Shift-click it) to lay it over the open one, such as Wind over Sunlight. At most two; a third replaces the older (#473).', surfaces: { table: 'both layers together', controller: "the newest layer's controls, with a chip to swap to the other" }, interactions: ['hold a second layer button to add it'] },
   { id: 'site:items', path: 'layers[].items[]', name: 'Layers inside a layer', summary: 'A layer shown only while another is open, such as trams inside a sun study.', surfaces: { table: 'both together while the outer layer is open' } },
   { id: 'site:buttons', path: 'layers[].button', name: 'Controller buttons and groups', summary: 'Each layer\'s button: name, icon, side and group (Simulations, Stories…).', surfaces: { controller: 'buttons down the left and right' } },
   { id: 'site:custom-layers', path: 'custom', name: 'Custom layers (recipes)', summary: 'Layers made from data, look and motion blocks without code, saved in the site.', surfaces: { table: 'the recipe\'s looks and motions; tap-info makes features pickable, filter controls show only matching ones', controller: 'its legend, bound controls, a palette theme, and a map of its places where visitors pick a feature to read its facts (the palette theme also colours the TV)' } },
@@ -134,7 +130,10 @@ function layerCapability(l: LayerEntry, catalog: Catalog, roadmap: RoadmapRow[])
   if (m.category === 'analysis' || m.category === 'media' || !m.category) {
     surfaces.controller = `a button; ${controls.filter((c) => c.tier !== 'more' && c.type !== 'action').length} controls${panels.length ? ` and ${panels.length} panel${panels.length > 1 ? 's' : ''} (${panels.map((p) => p.title ?? p.id).join(', ')})` : ''}`;
   } else surfaces.controller = 'no button: part of the map at rest; settings in the editor';
-  if (phone.length || tools.length) surfaces.phone = [phone.length ? `controls: ${phone.join(', ')}` : '', tools.length ? `tools: ${toolWords.join(', ')}` : ''].filter(Boolean).join('; ');
+  // Phones list every layer with a button, each on its own page with its switch, controls and a map to look around (#335).
+  if (surfaces.controller !== 'no button: part of the map at rest; settings in the editor' || phone.length || tools.length) {
+    surfaces.phone = ['its own page: switch, controls and a map', phone.length ? `controls visitors change: ${phone.join(', ')}` : '', tools.length ? `tools: ${toolWords.join(', ')}` : ''].filter(Boolean).join('; ');
+  }
 
   const built = roadmap.find((r) => r.package === l.id);
   const evidence = l.origin === 'core' ? [`packages/layers/${l.id}/layer.json`, `packages/layers/${l.id}/src/index.ts`] : [`${l.use}/layer.json`];

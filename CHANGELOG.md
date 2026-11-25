@@ -4,6 +4,43 @@ Every merge to main that carries a release note becomes a version. The newest is
 The app shows these notes, with their pictures, on Home when a newer version is out.
 How notes are written: docs/RELEASING.md.
 
+## 0.42.0 (2026-11-25)
+
+### New
+
+#### Add data says what each column holds, and pictures can be placed on the map (#52)
+
+Bringing in a dataset of your own now shows what MR Studio reads each column as: the column that names each row, values, kinds, when and where. A picture brought in with its side file (such as `overlay.png` with `overlay.json`, which gives its west, south, east and north edges) becomes a Picture layer placed on the map by those edges. Any Picture layer can be placed this way under More settings › Place on the map by its edges. Layers added from the media library or Add data now keep the file they were given after a reload.
+
+![What the columns hold](docs/screenshots/52-columns.png)
+
+#### A button's side is set in its Format pane (#58)
+
+The side of the controller a layer's button sits on is now set in one place: the Side switch in the layer's Format pane. Rows in the layer list can no longer be dragged, and right-click › Move to the other side is gone, since almost nothing else in the editor is dragged. The list still shows the Left and Right groups, and Move up and Move down change the order.
+
+![Side in the Format pane](docs/screenshots/58-side-format.png)
+
+### Fixes
+
+#### The New layer gallery shows a picture of more layers (#409)
+
+Base map, Sight lines, Picture or video and Sketch now show a picture of what they draw in the New layer gallery, next to the Masterplan, Slideshow and Reveal line pictures from the last release. `scripts/layer-previews.cjs` puts a stand point and sketch marks on the preview site through the layers' own tools. Web map, Video walk, Field walk and the Magnifier still show their icon, because they need a service, a video, a walk or a hand to draw anything.
+
+![Story layers in the gallery](docs/screenshots/409-gallery.png)
+
+## 0.41.0 (2026-11-25)
+
+### New
+
+#### Facts that read well, a When slider that says the year (#407, #408, #410)
+
+A tap-to-read layer's facts can have their own name and unit, and a 0 to 1 share can read as a percentage: "Green 31 %" instead of "Green share 0.31". The Interaction tab has a name, a unit and ×100 for each fact. The When slider of a layer through time says the year it lands on, and with a series of columns it steps from one to the next. The gallery has pictures for the Slideshow, Masterplan and Reveal line, and your own layers show their data. The model-runs example speaks Swedish throughout, and a slow table PC no longer lets the sun's clock run on after a pause.
+
+![Facts with their own names and units on the controller](docs/screenshots/410-controller-facts.png)
+![Each fact's name, unit and ×100 in the Interaction tab](docs/screenshots/410-builder-facts.png)
+![The When slider reads 2020](docs/screenshots/408-when-slider.png)
+![Story layers in the gallery with pictures](docs/screenshots/409-gallery-story.png)
+
 ## 0.40.0 (2026-11-25)
 
 ### New

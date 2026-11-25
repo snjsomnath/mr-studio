@@ -1475,27 +1475,81 @@ export function builderSection(host: BuilderHost, manifest: LayerManifest, butto
         save();
       });
       const facts = el('div', 'lb-facts');
-      const chosen = new Set<string>(Array.isArray(props.facts) ? (props.facts as string[]) : []);
+      // A fact is a column, or a column with its own words (#410): { column, label, unit, scale }.
+      type Fact = { column: string; label?: string; unit?: string; scale?: number };
+      const given = new Map<string, Fact>(
+        (Array.isArray(props.facts) ? (props.facts as (string | Fact)[]) : []).map((f) => (typeof f === 'string' ? [f, { column: f }] : [f.column, f])),
+      );
+      const tidy = (name: string) => name.replace(/[-_]+/g, ' ').replace(/^./, (c) => c.toUpperCase());
+      const words = el('div', 'lb-fact-words');
+      const store = () => {
+        // Kept in the data's column order, at most eight: the controller is read from across the room.
+        props.facts = columns
+          .map((x) => given.get(x.name))
+          .filter((f): f is Fact => Boolean(f))
+          .slice(0, 8)
+          .map((f) => (f.label || f.unit || f.scale ? Object.fromEntries(Object.entries(f).filter(([, v]) => v !== undefined && v !== '')) : f.column));
+        save();
+      };
+      const drawWords = () => {
+        const rows = columns.filter((c) => given.has(c.name)).slice(0, 8);
+        words.hidden = rows.length === 0;
+        words.replaceChildren(
+          ...(rows.length ? [el('span', 'lb-field-label', 'How each fact reads')] : []),
+          ...rows.map((c) => {
+            const fact = given.get(c.name)!;
+            const row = el('div', 'lb-fact-word');
+            row.title = c.name;
+            const name = el('input');
+            Object.assign(name, { type: 'text', value: fact.label ?? '', placeholder: tidy(c.name), maxLength: 24 });
+            name.setAttribute('aria-label', `Name for ${c.name}`);
+            name.addEventListener('change', () => {
+              fact.label = name.value.trim() || undefined;
+              store();
+            });
+            const unit = el('input');
+            Object.assign(unit, { type: 'text', value: fact.unit ?? '', placeholder: 'unit', maxLength: 8 });
+            unit.setAttribute('aria-label', `Unit for ${c.name}`);
+            unit.addEventListener('change', () => {
+              fact.unit = unit.value.trim() || undefined;
+              store();
+            });
+            // A share stored as 0 to 1 reads as a percentage.
+            const percent = el('label', 'lb-fact');
+            const box = el('input');
+            Object.assign(box, { type: 'checkbox', checked: fact.scale === 100 });
+            box.addEventListener('change', () => {
+              fact.scale = box.checked ? 100 : undefined;
+              if (box.checked && !fact.unit) fact.unit = unit.value = '%';
+              store();
+            });
+            percent.append(box, el('span', undefined, '×100'));
+            row.append(el('span', 'lb-fact-column', c.name), name, unit, percent);
+            return row;
+          }),
+        );
+      };
       for (const c of columns) {
         const row = el('label', 'lb-fact');
         const box = el('input');
         box.type = 'checkbox';
-        box.checked = chosen.has(c.name);
+        box.checked = given.has(c.name);
         box.addEventListener('change', () => {
-          if (box.checked) chosen.add(c.name);
-          else chosen.delete(c.name);
-          // Kept in the data's column order, at most eight: the controller is read from across the room.
-          props.facts = columns.map((x) => x.name).filter((n) => chosen.has(n)).slice(0, 8);
-          save();
+          if (box.checked) given.set(c.name, { column: c.name });
+          else given.delete(c.name);
+          store();
+          drawWords();
         });
         row.append(box, el('span', undefined, c.name));
         facts.append(row);
       }
+      drawWords();
       body.append(
         field('Its name', label),
         field('One is called', called),
         el('span', 'lb-field-label', 'Facts on the controller'),
         columns.length ? facts : el('p', 'lb-hint', 'This data has no columns to show.'),
+        words,
       );
     };
     const switchRow = el('label', 'lb-fact lb-switch-row');

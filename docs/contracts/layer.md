@@ -137,7 +137,11 @@ picking on the table and the controls on the controller, so the layer writes no 
 - `controls` are layer controls without actions. They are checked by the host like the layer's own.
 - `facts` (#38) lists properties shown on the controller for the picked entity, as a short list
   of names and values. A set needs `controls`, `facts` or both. `key` may be `#`: the feature's
-  place in the file, for data with no id column.
+  place in the file, for data with no id column. A fact is a property name, read with its name
+  tidied (`floor_area` reads "Floor area"), or an object `{ column, label?, unit?, scale?,
+  decimals? }` (#410): `label` is its own name, `unit` is written after the number (`dB`, `%`),
+  `scale` multiplies it first (100 turns a 0 to 1 share into a percentage) and `decimals` fixes
+  how many show (default: up to two). Numbers follow the visitors' language.
 - **On the table**, a tap on an entity picks it for every surface; the picked one is outlined
   and breathes, and entities with changed values get a dashed outline.
 - **On the controller**, the layer's stage shows the picked entity's name and controls above the

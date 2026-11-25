@@ -3,7 +3,8 @@
 // entities and find the one under a point. The runtime uses them for the table's picking and the
 // controller's inspector; a layer uses `entityValues` to read what was set.
 
-import type { EntityChange, EntitySet, Params, Position, ToolGeometry } from './types.ts';
+import { formatDecimal, formatUnit } from './format.ts';
+import type { EntityChange, EntityFact, EntitySet, Params, Position, ToolGeometry } from './types.ts';
 
 /** `params.entities` as the host keeps it: set, then entity, then control. Only changed values are there. */
 export type EntityOverrides = Record<string, Record<string, Record<string, unknown>>>;
@@ -67,29 +68,49 @@ export function entityFeatures(collection: Collection, set: Pick<EntitySet, 'key
       label: typeof label === 'string' || typeof label === 'number' ? String(label) : id,
       group: typeof group === 'string' || typeof group === 'number' ? String(group) : undefined,
       // The name is on show already, so it is not repeated among the facts.
-      ...(set.facts?.length ? { facts: factsOf(feature.properties ?? {}, set.facts.filter((c) => c !== set.label)) } : {}),
+      ...(set.facts?.length ? { facts: factsOf(feature.properties ?? {}, set.facts.filter((c) => factColumn(c) !== set.label)) } : {}),
       geometry: feature.geometry as EntityFeature['geometry'],
     });
   }
   return out;
 }
 
-/** A number as a person reads it: thousands grouped, at most two decimals. */
-function readable(value: unknown): string | null {
+/** The column a fact reads. */
+export function factColumn(fact: string | EntityFact): string {
+  return typeof fact === 'string' ? fact : fact.column;
+}
+
+/** A number as a person reads it, in the visitors' language (#397): thousands grouped, at most two decimals. */
+function readable(value: unknown, fact?: EntityFact): string | null {
   if (value === null || value === undefined || value === '') return null;
-  if (typeof value === 'number') return Number.isInteger(value) ? value.toLocaleString('en-GB') : value.toLocaleString('en-GB', { maximumFractionDigits: 2 });
+  if (typeof value === 'number') {
+    const v = value * (fact?.scale ?? 1);
+    let decimals = fact?.decimals;
+    if (decimals === undefined) {
+      // Up to two decimals, and no trailing zeros: 0.5 reads "0.5".
+      decimals = String(Number(v.toFixed(2))).split('.')[1]?.length ?? 0;
+    }
+    return fact?.unit ? formatUnit(v, fact.unit, decimals) : formatDecimal(v, decimals);
+  }
   if (typeof value === 'boolean') return value ? 'Yes' : 'No';
   if (typeof value === 'object') return null;
   return String(value);
 }
 
-/** The facts of one feature, in the set's order; empty values are left out. Names are tidied: `floor_area` reads "Floor area". */
-export function factsOf(properties: Record<string, unknown>, columns: readonly string[]): [string, string][] {
+/**
+ * The facts of one feature, in the set's order; empty values are left out. A fact given as a
+ * column has its name tidied (`floor_area` reads "Floor area"); one given as an object reads its
+ * own label and unit (#410).
+ */
+export function factsOf(properties: Record<string, unknown>, facts: readonly (string | EntityFact)[]): [string, string][] {
   const out: [string, string][] = [];
-  for (const column of columns) {
-    if (column === '#') continue;
-    const value = readable(properties[column]);
-    if (value !== null) out.push([column.replace(/[-_]+/g, ' ').replace(/^./, (c) => c.toUpperCase()), value]);
+  for (const fact of facts) {
+    const column = factColumn(fact);
+    if (!column || column === '#') continue;
+    const detail = typeof fact === 'string' ? undefined : fact;
+    const value = readable(properties[column], detail);
+    const label = detail?.label?.trim() || column.replace(/[-_]+/g, ' ').replace(/^./, (c) => c.toUpperCase());
+    if (value !== null) out.push([label, value]);
   }
   return out;
 }

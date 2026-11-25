@@ -3303,10 +3303,6 @@ body[data-role='edit'] .ed-surface .table-frame {
   border-radius: 8px;
 }
 
-.ed-rail.is-drop {
-  background: var(--ed-accent-soft);
-}
-
 .ed-rail-name {
   margin: 2px 4px 0;
   font-size: 11px;
@@ -3340,29 +3336,6 @@ body[data-role='edit'] .ed-surface .table-frame {
 
 .ed-row.is-layer .ed-row-text {
   flex: 1;
-}
-
-.ed-row.is-dragging {
-  opacity: 0.4;
-}
-
-.ed-row.is-drop-before::after,
-.ed-row.is-drop-after::after {
-  content: '';
-  position: absolute;
-  left: 4px;
-  right: 4px;
-  height: 2px;
-  border-radius: 1px;
-  background: var(--ed-accent);
-}
-
-.ed-row.is-drop-before::after {
-  top: -2px;
-}
-
-.ed-row.is-drop-after::after {
-  bottom: -2px;
 }
 
 .ed-row-eye {
@@ -5316,3 +5289,14 @@ body[data-role='edit'] > .connection {
   font-size: 12px;
   line-height: 1.5;
 }
+
+/* What the columns of a file hold (#52), in the import report. */
+.im-columns { display: grid; gap: 6px; margin: 4px 0 2px; }
+.im-columns-title { margin: 0; font-size: 12px; font-weight: 600; color: var(--ed-text-2, #5b6472); }
+.im-columns-list { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.im-column { display: inline-flex; align-items: baseline; gap: 6px; padding: 2px 8px; border: 1px solid var(--ed-line, #dde1e7); border-radius: 999px; font-size: 12px; line-height: 18px; background: var(--ed-surface, #fff); }
+.im-column strong { font-weight: 600; }
+.im-column span { color: var(--ed-text-2, #5b6472); }
+.im-column.is-id { border-color: #9fb3e8; }
+.im-column.is-time { border-color: #e3b46b; }
+.im-column.is-place { border-color: #8ccaa3; }

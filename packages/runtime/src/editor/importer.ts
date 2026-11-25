@@ -3,6 +3,7 @@ import { columnNumbers, packInWorker, unpackGeometry, paintBreaks, paintScale, p
 import type { GeometryKind, PaintBy, Paint, SiteInfo } from '@mrstudio/sdk';
 
 import { el } from '../controls.ts';
+import { ROLE_WORDS, columnRoles } from './column-roles.ts';
 import { icon } from './icons.ts';
 import { middleInput, stopsInput } from './number-inputs.ts';
 import { dataFormat } from '../data-formats.ts';
@@ -647,6 +648,9 @@ export class Importer {
         report.append(line);
       }
     }
+    // What each column holds (#52), so the author sees how the table will read the file.
+    const columns = this.report?.ok && !this.busy && !this.failed && this.chosen === 'own' ? this.columnList(this.report) : null;
+    if (columns) report.append(columns);
     const colouring = this.report && !this.busy && !this.failed ? this.colouring(this.report) : null;
     if (colouring) report.append(colouring.element);
     // A plan drawing (#193) is shown as a Masterplan layer as it comes in.
@@ -713,6 +717,25 @@ export class Importer {
     if (done) this.source = null;
     this.render();
     return done;
+  }
+
+  /** The columns of the file, each with what MR Studio reads it as: the row's name, a value, kinds, when, where. */
+  private columnList(report: ImportReport): HTMLElement | null {
+    const read = columnRoles((report.preview?.features ?? []).map((f) => f.properties ?? {}));
+    if (read.length === 0) return null;
+    const box = el('div', 'im-columns');
+    box.append(el('p', 'im-columns-title', 'What the columns hold'));
+    const list = el('ul', 'im-columns-list');
+    for (const { name, role } of read.slice(0, 24)) {
+      const item = el('li', `im-column is-${role}`);
+      item.dataset.column = name;
+      item.dataset.role = role;
+      item.append(el('strong', undefined, name), el('span', undefined, ROLE_WORDS[role]));
+      list.append(item);
+    }
+    if (read.length > 24) list.append(el('li', 'im-column is-more', `and ${read.length - 24} more`));
+    box.append(list);
+    return box;
   }
 
   /**
