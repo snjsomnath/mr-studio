@@ -1,3 +1,4 @@
+import { setting } from './settings-list.ts';
 import { THEMES } from '@mrstudio/dashboard';
 import type { LayerManifest, LayerState, SelectControl } from '@mrstudio/sdk';
 import { defaultSideOf, el, isAmbient, isOffered, layerButton } from '../controls.ts';
@@ -587,13 +588,14 @@ export class Wizard {
       field('Width, metres', input('width', { type: 'number', min: '100', max: '20000', step: '50' })),
       field('Height, metres', input('height', { type: 'number', min: '100', max: '20000', step: '50' })),
     );
+    // The same form is the guide's first step and Design › Table size and place… (rule 9): one home for these settings.
     form.append(
-      field('Name', input('name', { type: 'text', maxLength: 60 })),
-      field('Centre of the table', input('centre', { type: 'text', placeholder: '57.6898, 11.9742' }), 'Paste coordinates, or a link copied from Google Maps or OpenStreetMap.'),
-      mapSlot,
-      this.scaleFields.element,
-      size,
-      field('Turned', input('rotation', { type: 'number', min: '-180', max: '360', step: '1' }), 'Turns the map under the table, in degrees clockwise from north. 0 puts north at the top. The table itself stays as it stands.'),
+      field('Name', setting('table.name', 'dialog:place', input('name', { type: 'text', maxLength: 60 }))),
+      field('Centre of the table', setting('table.place', 'dialog:place', input('centre', { type: 'text', placeholder: '57.6898, 11.9742' })), 'Paste coordinates, or a link copied from Google Maps or OpenStreetMap.'),
+      setting('table.place', 'dialog:place', mapSlot),
+      setting('table.size', 'dialog:place', this.scaleFields.element),
+      setting('table.place', 'dialog:place', size),
+      field('Turned', setting('table.place', 'dialog:place', input('rotation', { type: 'number', min: '-180', max: '360', step: '1' })), 'Turns the map under the table, in degrees clockwise from north. 0 puts north at the top. The table itself stays as it stands.'),
     );
     // The table on a map: click or drag to move it, drag the corner to scale it, the top handle to turn it.
     if (!this.placeMap) {

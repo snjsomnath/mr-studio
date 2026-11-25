@@ -161,10 +161,11 @@ function launch() {
     }
     now.close();
 
-    // The Display tab, as an author opens it to correct the colour.
-    await editor.getByRole('tab', { name: 'Display' }).click().catch(() => editor.locator('.ed-tab', { hasText: 'Display' }).first().click());
+    // Present › Screens and calibration… (#382), as an author opens it to correct the colour.
+    await editor.locator('.ed-tab[data-tab="present"]').click();
+    await editor.locator('.ed-ribbon [data-command="dialog.screens"]').click();
     await sleep(LAYER_MS);
-    await frames('on the Display tab');
+    await frames('in Screens and calibration');
 
     // Known engine traps, each found the hard way.
     // 1. SVG filters over the animated map: WebKit drew them in software and froze (PR 220, #181).

@@ -1,6 +1,6 @@
 # Everything on the table
 
-*Every core layer, what it shows and where to find it. Add one from the Edit tab, under Add a layer.*
+*Every core layer, what it shows and where to find it. Add one from the Insert tab, under New layer.*
 
 ## Base map
 
@@ -198,6 +198,6 @@ Layer `blocks-demo`.
 
 ## Your own layers
 
-The layer builder (Edit tab, Make your own) combines data, look, motion and interaction into a custom layer saved in the table: points, lines and zones coloured by your data, place motions such as pulses and circular waves, particles and flows along streets.
+The layer builder (Insert tab, Custom layer) combines data, look, motion and interaction into a custom layer saved in the table: points, lines and zones coloured by your data, place motions such as pulses and circular waves, particles and flows along streets.
 
 ![Place motions](docs/screenshots/161-place-motions.png)

@@ -12,7 +12,7 @@ Making the table feel inhabited when nobody is using it, especially together wit
 
 ## Set it up
 
-1. The table needs its streets, including footways and cycleways: Edit tab, **Add data**, **Streets**, **From OpenStreetMap**.
+1. The table needs its streets, including footways and cycleways: Insert tab, **Data file**, **Streets**, **From OpenStreetMap**.
 2. Add **Street life** from **Add a layer**. It goes under **Map**.
 3. Set **Walkers per kilometre of path** and **Cyclists per kilometre of cycleway**.
 

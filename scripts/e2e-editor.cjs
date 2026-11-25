@@ -145,13 +145,15 @@ async function main() {
       assert.notEqual(start, 13.5);
     });
 
-    await run('Table settings saves where visitors stand (#62)', async () => {
+    await run('Table size and place saves where visitors stand (#62, #382)', async () => {
       await page.goto(`${base}/edit#table`);
-      await page.locator('.ed-inspector h3', { hasText: 'The table itself' }).waitFor();
-      await page.locator('.ed-inspector label', { hasText: 'Visitors stand at' }).locator('select').selectOption('left');
+      const dialog = page.locator('dialog.is-place');
+      await dialog.locator('[data-setting="table.front"]').selectOption('left');
       await until(() => saved().table?.front === 'left', 'table.front in site.json');
-      await page.locator('.ed-inspector').getByLabel('Left ribbon').selectOption('12');
+      await dialog.getByLabel('Left ribbon').selectOption('12');
       await until(() => saved().table?.ribbons?.left?.cm === 12, 'the left ribbon in site.json');
+      await shot('table-size-and-place');
+      await page.keyboard.press('Escape');
     });
 
     await run('the Checks button counts what is left (#63)', async () => {
@@ -166,7 +168,8 @@ async function main() {
 
     await run('Rehearse shows a controller and a phone, and puts the layers back (#97)', async () => {
       await page.goto(`${base}/edit#layer=sunlight`);
-      await page.locator('.ed-title').getByRole('button', { name: 'Rehearse' }).click();
+      await page.locator('.ed-tab[data-tab="present"]').click();
+      await page.locator('.ed-ribbon [data-command="present.rehearse"]').click();
       const tv = page.frameLocator('.ed-rehearse-controller iframe');
       await tv.locator('button', { hasText: 'Mobility' }).first().click();
       await page.locator('.ed-rehearse-phone iframe').waitFor();
@@ -177,15 +180,21 @@ async function main() {
       assert.equal(await page.locator('.ed.is-rehearse').count(), 0);
     });
 
-    await run('the ribbon fits a 13-inch screen without running off the edge (#66)', async () => {
-      await page.setViewportSize({ width: 1280, height: 800 });
-      await page.goto(`${base}/edit#layer=sunlight`);
-      await page.locator('.ed-ribbon .ed-group').first().waitFor();
-      await page.waitForTimeout(300);
-      const [scroll, width] = await page.locator('.ed-ribbon').evaluate((r) => [r.scrollWidth, r.clientWidth]);
-      assert.ok(scroll <= width + 1, `the ribbon is ${scroll} px wide in ${width}`);
-      await shot('ribbon-1280');
-      await page.setViewportSize({ width: 1440, height: 900 });
+    await run('every tab of the ribbon fits 1280 and 1440 px without running off the edge (#66, #382)', async () => {
+      for (const [width, height] of [[1280, 800], [1440, 900]]) {
+        await page.setViewportSize({ width, height });
+        await page.goto(`${base}/edit#layer=sunlight`);
+        await page.locator('.ed-ribbon .ed-group').first().waitFor();
+        for (const tab of await page.locator('.ed-tab').evaluateAll((tabs) => tabs.map((t) => t.dataset.tab))) {
+          await page.locator(`.ed-tab[data-tab="${tab}"]`).click();
+          await page.waitForTimeout(200);
+          const [scroll, inside] = await page.locator('.ed-ribbon').evaluate((r) => [r.scrollWidth, r.clientWidth]);
+          assert.ok(scroll <= inside + 1, `${tab} is ${scroll} px wide in ${inside} at ${width} px`);
+          // Opening a tab leaves the selection as it was (#385).
+          await page.locator('.ed-row[data-layer="sunlight"][aria-current="true"]').waitFor();
+        }
+        await shot(`ribbon-${width}`);
+      }
     });
 
     // Each file of the sample data kit's broken/ folder says what is wrong with it (samples/kit/README.md).
@@ -203,7 +212,7 @@ async function main() {
         await page.locator('.ed-tree .ed-row').first().waitFor();
         await page.keyboard.press(`${mod}+k`);
         await page.locator('.ed-commands[open]').waitFor();
-        await page.keyboard.type('add data');
+        await page.keyboard.type('data file');
         await page.keyboard.press('Enter');
         const dialog = page.locator('dialog[open]');
         await dialog.locator('select').first().selectOption({ label: kind });

@@ -6,13 +6,13 @@
 
 1. Add the **Table grid** layer and look at the model: the lines should sit on the seams between the tiles.
 2. If they do not, open the **Display** tab and press **Calibrate**. Drag each marker onto the matching corner of the physical model.
-3. If the map is turned or mirrored, check the table's place and turn (Table settings, **Place**), and how the projector is mounted.
+3. If the map is turned or mirrored, check the table's place and turn (Design tab, **Table size and place…**), and how the projector is mounted.
 
 ## The map or the controller opens on the wrong screen
 
 1. Open the **Display** tab and press **Identify**. Every screen shows its number.
 2. Under **Screens**, choose which number is the table (the projector) and which is the controller.
-3. If a screen is missing, check that the computer sees it in its own display settings, then open the Display tab again.
+3. If a screen is missing, check that the computer sees it in its own display settings, then open Present, **Screens and calibration…** again.
 
 ## A layer stays empty
 

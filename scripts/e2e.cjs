@@ -614,48 +614,55 @@ async function main() {
     // ---- The editor ----
     await compose.close();
     const editor = await open('/edit', { width: 1440, height: 900 });
-    const treeLayers = () => editor.locator('.ed-tree .ed-row[data-layer] .ed-row-label').allTextContents();
+    const treeLayers = () => editor.locator('.ed-tree .ed-row.is-layer[data-layer] .ed-row-label').allTextContents();
     await editor.locator('.ed-row[data-context="home"]').waitFor();
     assert.deepEqual(await treeLayers(), ['Building uses', 'Wind', 'Mobility', 'Isovist', 'Cool paths', 'Sketch', 'Slideshow', 'Sunlight']);
     // The home screen holds the base map and the ambient life, and offers more of it.
-    assert.deepEqual(await editor.locator('.ed-inspector .ed-row .ed-row-label').allTextContents(), ['Trees', 'Public transport', 'Traffic', 'Building lights', 'Base map']);
-    await editor.locator('.ed-ribbon [data-gallery]').click();
+    // Map life is listed under At rest, each with its eye (#382).
+    assert.deepEqual(await editor.locator('.ed-tree .ed-row.is-rest .ed-row-label').allTextContents(), ['Trees', 'Public transport', 'Traffic', 'Building lights', 'Base map']);
+    await editor.locator('.ed-ribbon [data-command="layer.new"]').click();
     await editor.locator('.lg-gallery .lg-card[data-layer="trees"] .lg-pick').click();
     // Trees are already at rest, so the editor asks before adding a second one (#183).
     await editor.locator('.ed-ask h2', { hasText: 'Trees is already on the map at rest' }).waitFor();
     await editor.locator('.ed-ask [data-choice="add"]').click();
-    await editor.locator('.ed-inspector .ed-row[data-layer="trees-2"][aria-current="true"]').waitFor();
+    await editor.locator('.ed-tree .ed-row[data-layer="trees-2"][aria-current="true"]').waitFor();
     // Ambient life joins the home screen, under the layers.
     assert.equal(savedLayers()[6].id, 'trees-2');
     // Its settings open in the inspector and are saved.
-    await editor.getByLabel('Shown on the map').uncheck();
-    await editor.waitForFunction(() => document.querySelector('.ed-inspector .ed-row[data-layer="trees-2"]')?.classList.contains('is-off'));
+    await editor.locator('.ed-tree .ed-row[data-layer="trees-2"] [data-setting="maplife.shown"]').click();
+    await editor.waitForFunction(() => document.querySelector('.ed-tree .ed-row[data-layer="trees-2"]')?.classList.contains('is-off'));
     assert.equal(savedLayers()[6].active, false);
     // The ribbon's tools act on what is selected.
     await editor.locator('.ed-ribbon').getByText('Move down').click();
-    await editor.waitForFunction(() => document.querySelectorAll('.ed-inspector .ed-row[data-layer]')[1]?.getAttribute('data-layer') === 'trees-2');
+    await editor.waitForFunction(() => document.querySelectorAll('.ed-tree .ed-row.is-rest[data-layer]')[1]?.getAttribute('data-layer') === 'trees-2');
     assert.equal(savedLayers()[5].id, 'trees-2');
     await editor.locator('.ed-ribbon').getByText('Remove').click();
-    await editor.locator('.ed-inspector .ed-row[data-layer="trees-2"]').waitFor({ state: 'detached' });
+    await editor.locator('.ed-tree .ed-row[data-layer="trees-2"]').waitFor({ state: 'detached' });
     // The ribbon stays the same whatever is selected (#182): nothing selected greys the selection tools out.
     assert.equal(await editor.locator('.ed-ribbon').getByRole('button', { name: 'Remove', exact: true }).isDisabled(), true);
-    // The At rest tab switches map life off and on; the base map comes back under it, not on top covering it (#368).
-    await editor.locator('.ed-tab[data-tab="rest"]').click();
-    const restTool = (id, pressed) => editor.locator(`.ed-ribbon .ed-tool[data-layer="${id}"][aria-pressed="${pressed}"]:not([disabled])`);
-    await restTool('basemap', true).click();
-    await restTool('basemap', false).click();
-    await restTool('basemap', true).waitFor();
-    assert.equal(savedLayers()[0].id ?? savedLayers()[0].use, 'basemap', 'the base map goes back to the bottom');
-    await restTool('trees', true).click();
-    await restTool('trees', false).click();
-    await restTool('trees', true).waitFor();
-    assert.equal(savedLayers()[0].id ?? savedLayers()[0].use, 'basemap', 'map life goes back above the base map');
-    await editor.locator('.ed-tab[data-tab="edit"]').click();
-    // Opening the At rest tab shows the map at rest, which puts the sketch tool away; it comes back for what follows.
+    // Opening a tab changes the ribbon only: not the selection, nor what the map shows (#385).
+    await editor.locator('.ed-tree .ed-row[data-layer="mobility"]').click();
+    for (const tab of ['insert', 'design', 'present', 'view', 'help', 'home']) {
+      await editor.locator(`.ed-tab[data-tab="${tab}"]`).click();
+      await editor.locator('.ed-tree .ed-row[data-layer="mobility"][aria-current="true"]').waitFor();
+      assert.equal(await editor.locator('.ed-inspector-head strong').textContent(), 'Mobility');
+    }
+    // Map life is taken out from Home and put back from the gallery; the base map comes back under it, not on top covering it (#368).
+    const restRow = (id) => editor.locator(`.ed-tree .ed-row.is-rest[data-layer="${id}"]`);
+    for (const id of ['basemap', 'trees']) {
+      await restRow(id).click();
+      await editor.locator('.ed-ribbon [data-command="layer.remove"]').click();
+      await restRow(id).waitFor({ state: 'detached' });
+      await editor.locator('.ed-ribbon [data-command="layer.new"]').click();
+      await editor.locator(`.lg-gallery .lg-card[data-layer="${id}"] .lg-pick`).click();
+      await restRow(id).waitFor();
+      assert.equal(savedLayers()[0].id ?? savedLayers()[0].use, 'basemap', id === 'basemap' ? 'the base map goes back to the bottom' : 'map life goes back above the base map');
+    }
+    // Selecting map life shows the map at rest, which puts the sketch tool away; it comes back for what follows.
     await press('Sketch', true);
     // Inside a layer the gallery's ambient life adds into that layer: an item that shows only while it is open (#69).
     await editor.locator('.ed-tree .ed-row[data-layer="mobility"]').click();
-    await editor.locator('.ed-ribbon [data-gallery]').click();
+    await editor.locator('.ed-ribbon [data-command="layer.new"]').click();
     await editor.locator('.lg-gallery .lg-card[data-layer="trees"] .lg-pick').click();
     await editor.locator('.ed-tree .ed-row.is-item[data-layer="trees-2"][aria-current="true"]').waitFor();
     await editor.locator('.ed-inspector [data-items="mobility"] .ed-row[data-layer="trees-2"]').waitFor();
@@ -665,7 +672,7 @@ async function main() {
     await editor.locator('.ed-ribbon').getByText('Remove').click();
     await editor.locator('.ed-tree .ed-row[data-layer="trees-2"]').waitFor({ state: 'detached' });
     assert.equal(savedLayers().find((l) => l.id === 'mobility').items, undefined);
-    await editor.locator('.ed-ribbon [data-gallery]').waitFor();
+    await editor.locator('.ed-ribbon [data-command="layer.new"]').waitFor();
     await editor.locator('.ed-inspector').getByText('Show trips').waitFor();
     // The eye beside a setting takes that control off the controller, and it is saved. The editor keeps it.
     await editor.getByRole('switch', { name: 'Show Show trips on the controller' }).click();
@@ -715,12 +722,16 @@ async function main() {
     await editor.locator('.ed-row[data-context="home"][aria-current="true"]').waitFor();
     await editor.locator('.ed-tree .ed-row[data-layer="mobility"]').click();
     if (shots) await editor.screenshot({ path: path.join(shots, 'editor.png') });
-    await editor.getByLabel('Name').fill('');
-    await editor.getByLabel('Name').blur();
-    await editor.getByLabel('Description').fill('');
-    await editor.getByLabel('Description').blur();
-    await editor.getByLabel('Group').fill('');
-    await editor.getByLabel('Group').blur();
+    // Each field saves when it loses the focus; the Format pane is drawn again with the new words, so the
+    // focus is let go from the page rather than from a field that may already have been replaced.
+    const clear = async (label) => {
+      await editor.getByLabel(label).fill('');
+      await editor.evaluate(() => document.activeElement?.blur());
+    };
+    await clear('Name');
+    await editor.waitForFunction(() => document.querySelector('.ed-inspector-head strong')?.textContent === 'Mobility');
+    await clear('Description');
+    await clear('Group');
     // The operator's own rail headings (Map controls, About) stay; the layer group heading goes.
     await tv.locator('.rail-group', { hasNotText: /^(Map controls|About)$/ }).first().waitFor({ state: 'detached' });
     await editor.locator('.ed-tree .ed-row[data-layer="mobility"] .ed-row-label', { hasText: 'Mobility' }).waitFor();
@@ -848,16 +859,23 @@ async function main() {
     assert.equal(await guide.locator('.wz').count(), 0);
     // A reload stays in the editor, and the guide's button says it is closed.
     assert.equal(await guide.evaluate(() => location.search.includes('welcome')), false);
-    await guide.getByRole('button', { name: 'Setup guide' }).waitFor();
+    // The guide only starts a table (#382): once in the editor, it does not come back as a second editor.
+    assert.equal(await guide.getByRole('button', { name: 'Setup guide' }).count(), 0);
     // A table with its place, its map at rest and its layers has nothing left to ask for.
     assert.equal(await guide.locator('.ed-next').isVisible(), false);
-    await guide.getByRole('button', { name: 'Setup guide' }).click();
-    await guide.locator('.wz h2', { hasText: 'Name and place' }).waitFor();
+    // Its first step is Design › Table size and place… (#382).
+    await guide.locator('.ed-tab[data-tab="design"]').click();
+    await guide.locator('[data-command="dialog.place"]').click();
+    await guide.locator('dialog.is-place [data-setting="table.name"]').waitFor();
+    assert.equal(await guide.locator('dialog.is-place [data-setting="table.timezone"]').count(), 1);
+    await guide.keyboard.press('Escape');
+    await guide.locator('dialog.is-place').waitFor({ state: 'detached' });
     await guide.close();
 
     // ---- Add data: the same importer as Your place, with the kind of data left to the author ----
     const adder = await open('/edit', { width: 1440, height: 900 });
-    await adder.locator('.ed-ribbon').getByText('Add data').click();
+    await adder.locator('.ed-tab[data-tab="insert"]').click();
+    await adder.locator('.ed-ribbon [data-command="data.file"]').click();
     const dialog = adder.locator('dialog.im-dialog');
     // Each kind explains what its file should look like.
     await dialog.locator('.im-example', { hasText: 'GeoJSON polygons' }).waitFor();
@@ -872,7 +890,7 @@ async function main() {
     await adder.locator('.ed-tree .ed-row[data-context="home"]').waitFor();
     assert.equal(JSON.parse(fs.readFileSync(path.join(site, 'site.json'), 'utf8')).data.places, 'data/places.geojson');
     // In Your place each row has its "?" and, where OpenStreetMap has the data, a fetch beside the file.
-    await adder.getByRole('button', { name: 'Setup guide' }).click();
+    await adder.goto(base + '/edit?setup=1');
     await adder.locator('.wz-step button', { hasText: 'Your place' }).click();
     const streets = adder.locator('.wz-place[data-target="data:roads"]');
     await streets.getByRole('button', { name: 'What a streets file looks like' }).click();
@@ -974,24 +992,25 @@ async function main() {
     // Preview and "Open in a window" ask the app for a window, rather than window.open, which macOS drops (#51).
     let popups = 0;
     shelled.on('popup', () => popups++);
-    await shelled.getByRole('button', { name: 'Preview', exact: true }).click();
-    for (const name of ['Map', 'Controller', 'Developer']) await shelled.locator('.ed-ribbon').getByRole('button', { name, exact: true }).click();
-    // The Display tab (#151): the colour pass of each display, previewed on the editor's map while it is open.
-    await shelled.getByRole('tab', { name: 'Display' }).click();
+    await shelled.getByRole('tab', { name: 'View' }).click();
+    for (const id of ['table', 'tv', 'dev']) await shelled.locator(`.ed-ribbon [data-command="window.${id}"]`).click();
+    // Screens and calibration (#151, #382): the colour pass of each display, previewed on the editor's map while it is open.
+    await shelled.getByRole('tab', { name: 'Present' }).click();
+    await shelled.locator('.ed-ribbon [data-command="dialog.screens"]').click();
     await shelled.locator('.dt-slider').first().waitFor();
     await shelled.waitForFunction(() => document.querySelector('.ed-canvas .table-surface').style.filter.includes('saturate(1.4'));
     // Midtones and white balance are blended layers, never an SVG filter, which froze WebKit on the Mac (#181).
     assert.deepEqual(await shelled.$$eval('.ed-canvas .dt-colour-layer', (nodes) => nodes.map((n) => getComputedStyle(n).mixBlendMode)), ['soft-light', 'multiply']);
     assert.equal(await shelled.evaluate(() => document.querySelectorAll('svg filter').length), 0);
-    await shelled.getByRole('tab', { name: 'Edit' }).click();
-    assert.equal(await shelled.$eval('.ed-canvas .table-surface', (n) => n.style.filter), '', 'the preview goes with the tab');
+    await shelled.locator('dialog.is-screens').getByRole('button', { name: 'Close' }).click();
+    assert.equal(await shelled.$eval('.ed-canvas .table-surface', (n) => n.style.filter), '', 'the preview goes with the dialog');
     assert.equal(await shelled.$$eval('.ed-canvas .dt-colour-layer', (nodes) => nodes.length), 0);
     await shelled.getByRole('button', { name: 'All tables', exact: true }).click();
     assert.equal(await shelled.evaluate(() => window.mrsShellControls), true);
     // "All tables" goes through the File menu's action (#130): it keeps a picture of the map first, then asks the app.
     await shelled.waitForFunction(() => window.shellCalls.includes('file_action home'));
     assert.deepEqual(await shelled.evaluate(() => window.shellCalls.filter((c) => c !== 'presenting_state')), [
-      'present', 'stop_presenting', 'open_view table', 'open_view table', 'open_view tv', 'open_view dev', 'colour_state', 'file_action home',
+      'present', 'stop_presenting', 'open_view table', 'open_view tv', 'open_view dev', 'colour_state', 'file_action home',
     ]);
     assert.equal(popups, 0, 'no browser window is opened inside the app');
     await shelled.close();

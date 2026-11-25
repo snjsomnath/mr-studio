@@ -344,7 +344,8 @@ export function openGallery(host: GalleryHost, start?: GallerySection): void {
     }),
   );
   for (const manifest of offered) {
-    if (manifest.category === 'base') continue;
+    // A base map is offered only to a table without one: it is where a removed one comes back (#382).
+    if (manifest.category === 'base' && Object.values(store.state.layers).some((l) => l.layer === manifest.id)) continue;
     const section = sectionOf(manifest);
     const missing = missingData(store, manifest);
     const needs = missing.names.length > 0;

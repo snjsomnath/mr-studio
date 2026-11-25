@@ -12,7 +12,7 @@ Walking visitors through a map piece by piece: "here is the housing, here are th
 
 ## Set it up
 
-1. Bring the dataset in: Edit tab, **Add data**, choose a GeoJSON file (or a shapefile converted to GeoJSON).
+1. Bring the dataset in: Insert tab, **Data file**, choose a GeoJSON file (or a shapefile converted to GeoJSON).
 2. Add **Map data** from **Add a layer**, or put it in a slideshow as a slide.
 3. Under **Dataset**, choose your data. Under **Colour by**, choose the column that holds the categories, for example `kind`.
 4. Choose **Category colours**: the data's own colours, the table palette, or energy classes A to G.

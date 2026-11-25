@@ -4575,6 +4575,7 @@ body[data-role='edit'] > .connection {
   font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   resize: vertical;
   white-space: pre;
+}
 
 /* ---- Placing a drawing by hand (#301) ---- */
 
@@ -4654,5 +4655,143 @@ body[data-role='edit'] > .connection {
 }
 
 .ed-df-bar .ed-button[hidden] {
+  display: none;
+}
+
+/* ---- Dialogs of whole-table and this-computer settings (#382, rule 5 of docs/editor-ui.md) ---- */
+
+.ed-dialog {
+  display: flex;
+  flex-direction: column;
+  width: min(640px, calc(100vw - 32px));
+  max-height: calc(100vh - 48px);
+  padding: 0;
+  border: 1px solid #d5d9e0;
+  border-radius: 12px;
+  background: var(--ed-window);
+  color: var(--ed-text);
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.25);
+}
+
+.ed-dialog:not([open]) {
+  display: none;
+}
+
+.ed-dialog::backdrop {
+  background: rgba(15, 23, 42, 0.3);
+}
+
+.ed-dialog-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 18px 10px;
+  border-bottom: 1px solid var(--ed-line);
+}
+
+.ed-dialog-head h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.ed-dialog-head .wz-lead {
+  margin: 2px 0 0;
+}
+
+.ed-dialog-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 4px 18px 18px;
+}
+
+/* Table size and place: the guide's place form and its map, then the table in the room. */
+.ed-dialog.is-place {
+  width: min(760px, calc(100vw - 32px));
+}
+
+.ed-dialog.is-place .wz.is-panel {
+  width: auto;
+  border: 0;
+  order: initial;
+}
+
+.ed-dialog.is-place .wz-body {
+  padding: 0;
+}
+
+/* Screens and calibration: a strip under the ribbon, so the map stays in view for the colour preview. */
+.ed-dialog.is-screens {
+  position: fixed;
+  inset: 180px 16px auto 16px;
+  width: auto;
+  margin: 0;
+  z-index: 40;
+}
+
+.ed-dialog-ribbon {
+  border: 0;
+  padding: 0;
+  background: transparent;
+}
+
+/* The media library: tools, the list and the selected file. */
+.ed-dialog.is-media {
+  width: min(1200px, calc(100vw - 32px));
+  height: calc(100vh - 64px);
+}
+
+.ed-dialog.is-media .ed-dialog-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 340px);
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 0 12px;
+  overflow: hidden;
+  padding: 0;
+}
+
+.ed-dialog.is-media .ed-dialog-ribbon {
+  grid-column: 1 / -1;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--ed-line);
+}
+
+.ed-dialog.is-media .ed-media {
+  display: block;
+  overflow-y: auto;
+  padding: 4px 16px 24px;
+}
+
+.ed-dialog.is-media .ed-media-inspector {
+  display: block;
+  width: auto;
+  overflow-y: auto;
+  border-left: 1px solid var(--ed-line);
+}
+
+/* Map life under At rest in the list (#382): the eye is the switch, and stays in view when it is off. */
+.ed-rest .ed-row.is-rest .ed-row-eye {
+  opacity: 1;
+  color: var(--ed-text-3, #8a909c);
+}
+
+.ed-rest .ed-row.is-rest.is-off .ed-row-label,
+.ed-rest .ed-row.is-rest.is-off .ed-row-icon {
+  color: #8a909c;
+}
+
+.ed-rest .ed-row.is-rest .ed-row-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.ed-actions .ed-button[hidden] {
+  display: none;
+}
+
+/* The dialog names itself: the guide step's own heading and lead are left out. */
+.ed-dialog.is-place .wz-body > h2,
+.ed-dialog.is-place .wz-body > h2 + .wz-lead {
   display: none;
 }
