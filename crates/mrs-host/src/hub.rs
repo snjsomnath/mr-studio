@@ -1230,6 +1230,8 @@ impl Hub {
                 return Err("phones cannot turn layers on or off".into());
             }
             self.reset(&mut inner.scene);
+            // The table plays its opening zoom again (#446).
+            self.emit("table.intro", json!({}));
             return Ok(json!({}));
         }
         let layer = p["layer"].as_str().ok_or("missing layer")?;

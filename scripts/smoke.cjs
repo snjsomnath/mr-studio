@@ -128,7 +128,7 @@ function launch() {
       await page.goto(base + url);
       return page;
     };
-    const table = await open('/table', { width: 1500, height: 800 });
+    const table = await open('/table?intro=0', { width: 1500, height: 800 });
     // The desktop app's colour pass, exactly as the shell injects it on a surface.
     await table.addInitScript({ path: path.join(root, 'apps/studio/src-tauri/src/colour.js') });
     await table.reload();
