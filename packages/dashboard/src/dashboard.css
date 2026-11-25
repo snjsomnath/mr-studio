@@ -854,8 +854,12 @@
   gap: var(--mrs-gap);
 }
 .mrs-gauge-chip .mrs-gauge-arc {
+  /* Its own shape, as tall as the chip allows, so the half circle reads beside the number (#491). */
+  flex: 0 0 auto;
   height: 100%;
   width: auto;
+  aspect-ratio: 100 / 56;
+  overflow: visible;
 }
 .mrs-gauge-chip .mrs-number {
   font-size: var(--mrs-type-number-s);

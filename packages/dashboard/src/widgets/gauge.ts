@@ -11,11 +11,17 @@ const svg = (tag: string, attrs: Record<string, string>) => {
 };
 /** A point on the gauge's half circle, for a share from 0 (left) to 1 (right). */
 const at = (share: number, r = 40): [number, number] => [50 - r * Math.cos(Math.PI * share), 50 - r * Math.sin(Math.PI * share)];
-const arc = (from: number, to: number) => {
+/**
+ * The path along the half circle from one share to another. It never turns more than half a circle,
+ * so the large-arc flag is always 0: a 1 took the long way round, under the track, for any share over
+ * a half (#491).
+ */
+export const gaugeArc = (from: number, to: number): string => {
   const [x0, y0] = at(from);
   const [x1, y1] = at(to);
-  return `M ${x0} ${y0} A 40 40 0 ${to - from > 0.5 ? 1 : 0} 1 ${x1} ${y1}`;
+  return `M ${x0} ${y0} A 40 40 0 0 1 ${x1} ${y1}`;
 };
+const arc = gaugeArc;
 
 /** Where a value sits on a range, 0 to 1. */
 export function gaugeShare(value: unknown, min = 0, max = 1): number | null {

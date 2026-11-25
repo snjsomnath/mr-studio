@@ -11,7 +11,7 @@ import { contrast, STYLE_TOKENS, themeVariables, validateTheme } from '../src/th
 import { controlProblems, panelReads, validateLayerPanels, validatePage, validatePanel, validateRibbon } from '../src/validate.ts';
 import { defineWidget } from '../src/registry.ts';
 import { colourFeatures, rampColour, valueOf } from '../src/widgets/map.ts';
-import { coreWidgets, donutParts, entityAt, gaugeShare, mediaUrl } from '../src/widgets/index.ts';
+import { coreWidgets, donutParts, entityAt, gaugeArc, gaugeShare, mediaUrl } from '../src/widgets/index.ts';
 
 const json = (path: string) => JSON.parse(readFileSync(new URL(path, import.meta.url), 'utf8'));
 const registry = coreWidgets();
@@ -356,4 +356,14 @@ test('a whole list binds, its items checked as they arrive; bound yes/no and num
   assert.deepEqual(read('true', '12.5'), { on: true, n: 12.5 });
   assert.deepEqual(read('false', 3), { on: false, n: 3 });
   assert.deepEqual(read('maybe', 'many'), {});
+});
+
+test('a gauge over half full fills along its track, never the long way round (#491)', () => {
+  for (const share of [0.25, 0.5, 0.62, 0.99, 1]) {
+    const flags = /A 40 40 0 (\d) 1/.exec(gaugeArc(0, share));
+    assert.equal(flags?.[1], '0', `share ${share}`);
+  }
+  // It ends on the half circle above the centre, never below it.
+  const end = gaugeArc(0, 0.62).split(' ').slice(-2).map(Number);
+  assert.ok(end[1]! < 50, 'the end of the fill is on the upper half');
 });
