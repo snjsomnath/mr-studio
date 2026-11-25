@@ -1,0 +1,49 @@
+{
+  "api": 1,
+  "id": "building-uses",
+  "name": "Use plan",
+  "description": "Plan what each building becomes: tap it on the controller's map and choose",
+  "icon": "building",
+  "category": "analysis",
+  "requires": { "data": ["buildings"] },
+  "entities": [
+    {
+      "id": "buildings", "dataset": "buildings", "key": "id", "name": "Building", "facts": ["height"],
+      "controls": [
+        {
+          "id": "use", "type": "select", "label": "Plan it as", "default": "today",
+          "options": [
+            { "value": "today", "label": "As it is today" },
+            { "value": "housing", "label": "Homes" },
+            { "value": "offices", "label": "Offices" },
+            { "value": "shops", "label": "Shops" },
+            { "value": "park", "label": "Park" }
+          ]
+        }
+      ]
+    }
+  ],
+  "controls": [
+    { "id": "target", "type": "range", "label": "Homes goal", "min": 0, "max": 100, "step": 5, "default": 60, "unit": "%" }
+  ],
+  "stage": {
+    "map": {
+      "entities": "buildings",
+      "fill_by": { "entity": "use", "categories": { "housing": 1, "offices": 2, "shops": 3, "park": 4 } },
+      "hint": "Tap a building to plan its use"
+    },
+    "panels": [
+      {
+        "id": "key", "widget": "legend", "size": "tile", "title": "Uses",
+        "props": {
+          "items": [
+            { "label": "Homes", "color": "var(--mrs-data-1)", "shape": "fill" },
+            { "label": "Offices", "color": "var(--mrs-data-2)", "shape": "fill" },
+            { "label": "Shops", "color": "var(--mrs-data-3)", "shape": "fill" }
+          ]
+        }
+      },
+      { "id": "target", "widget": "control", "size": "tile", "title": "Homes goal", "props": { "control": "target" } }
+    ]
+  }
+}

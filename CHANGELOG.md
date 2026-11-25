@@ -4,6 +4,40 @@ Every merge to main that carries a release note becomes a version. The newest is
 The app shows these notes, with their pictures, on Home when a newer version is out.
 How notes are written: docs/RELEASING.md.
 
+## 0.36.0 (2026-11-25)
+
+### New
+
+#### Starter packs: draw a layer in QGIS, Illustrator, Photoshop or PowerPoint (#450)
+
+**Insert, Starter pack…** (also **File, Export starter pack…**) makes a zip of the table's basics to draw on in another program: the table outline, tile grid, building footprints, street network, projection area and at-a-glance boxes. Tick what goes in and which programs it is for, see it on the right, then **Save…** or **Email…** it. QGIS gets GeoJSON and a picture that lands in place, Illustrator a layered SVG at the table's real size, Photoshop one PNG layer per feature and PowerPoint a slide the table's shape, with a README of steps for each and how to bring the result back. On the table canvas, a picture, a drawing or data made on it comes back exactly over the table. The command line (`mrstudio starter-pack`) and the MCP server (`export_starter_pack`) make the same pack.
+
+![Choosing what goes in the pack](docs/screenshots/450-dialog.png)
+
+![A pack's guides with the projection area and an at-a-glance box](docs/screenshots/450-pack-preview.png)
+
+## 0.35.0 (2026-11-25)
+
+### New
+
+#### A new table in three steps, and one Settings window (#390, #393, #384)
+
+The new-table guide now has three steps, like PowerPoint's start screen: **Name and place**, **Data** (fetch open data or bring in files) and **Start from…**, a starter table. *Climate*, *Movement*, *Story* or *Blank* each sets the layers, a little life on the map at rest and a controller theme; another pick takes back what the first added. **Open the editor** finishes, and Present › Ready to present? says what is left. An empty table no longer reopens the guide.
+
+![Start from…](docs/screenshots/390-start-from.png)
+
+**Displays and settings** is now **Settings** (File › Settings…, ⌘, or Ctrl+,), in two groups: *This computer* (Screens, Calibration, Colour, Phones and startup) and *MR Studio* (Updates, Command line, Sources and keys). In the app, Present › Screens and calibration… opens it, so screens and colour are set in one place. **All tables** is File › Open…, and the MR Studio logo runs it.
+
+![Settings](docs/screenshots/393-settings.png)
+
+### Fixes
+
+#### The field walk shows on the controller (#458)
+
+Opening Field walk now shows its photos and sounds on the controller. Before, the viewer was always hidden. While no other layer is open it takes the centre like any layer. With a Reveal line or Magnifier open it keeps one line, and it comes back when that layer closes.
+
+![Field walk on the controller](docs/screenshots/458-controller-viewer.png)
+
 ## 0.34.0 (2026-11-25)
 
 ### New

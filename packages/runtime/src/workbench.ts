@@ -306,7 +306,7 @@ export class Workbench {
       const state = this.store.state.layers[id];
       const manifest = state ? this.store.manifest(state.layer) : undefined;
       if (!state?.active || !manifest) continue;
-      const stage = typeof manifest.stage === 'object' ? manifest.stage.panels : [];
+      const stage = typeof manifest.stage === 'object' ? (manifest.stage.panels ?? []) : [];
       for (const spec of [...(manifest.panels ?? []), ...stage]) {
         for (const path of bindings(spec.props)) {
           const [kind, key] = [path.split('.')[0], path.split('.')[1]];

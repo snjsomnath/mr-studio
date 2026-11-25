@@ -45,6 +45,25 @@ const SHAPES: &[&str] = &["path", "rect", "circle", "ellipse", "line", "polyline
 /// line work of an artwork whose viewpoints are the phases. Compared without case.
 const BASE_NAMES: &[&str] = &["base", "background", "underlay", "basis", "bakgrund", "underlag"];
 
+/// A top-level group of guides to draw over (#450), such as a starter pack's "MR Studio guides":
+/// left out with everything in it. Illustrator writes the name as `MR_Studio_guides`.
+pub fn is_guide_name(name: Option<&str>) -> bool {
+    name.is_some_and(|n| n.replace("_x20_", " ").replace(['_', '-'], " ").trim().to_ascii_lowercase().starts_with("mr studio guide"))
+}
+
+/// The name a group goes by: its Inkscape or Illustrator label, else its id.
+fn group_name(e: &BytesStart) -> Option<String> {
+    let mut id = None;
+    for a in e.attributes().flatten() {
+        match local(a.key.as_ref()).as_str() {
+            "inkscape:label" | "data-name" => return Some(value_of(&a)),
+            "id" => id = Some(value_of(&a)),
+            _ => {}
+        }
+    }
+    id
+}
+
 fn is_base_name(name: Option<&str>) -> bool {
     name.is_some_and(|n| BASE_NAMES.contains(&n.trim().to_ascii_lowercase().as_str()))
 }
@@ -95,10 +114,11 @@ fn top_groups(text: &str) -> Result<usize, String> {
                 depth += 1;
                 if depth == 1 {
                     root = name == "svg";
-                } else if depth == 2 && skip == 0 && name == "g" {
+                } else if depth == 2 && skip == 0 && name == "g" && !is_guide_name(group_name(&e).as_deref()) {
                     groups += 1;
                 }
-                if skip > 0 || (depth >= 2 && (is_unsafe(&name) || NOT_DRAWN.contains(&name.as_str()))) {
+                let guides = name == "g" && is_guide_name(group_name(&e).as_deref());
+                if skip > 0 || (depth >= 2 && (is_unsafe(&name) || guides || NOT_DRAWN.contains(&name.as_str()))) {
                     skip += 1;
                 }
             }
@@ -240,6 +260,13 @@ fn rewrite(text: &str, phase_depth: usize) -> Result<Rewritten, String> {
             if skip > 0 {
                 if !empty {
                     skip += 1;
+                }
+                continue;
+            }
+            if name == "g" && is_guide_name(group_name(&e).as_deref()) {
+                note("the MR Studio guides".into());
+                if !empty {
+                    skip = 1;
                 }
                 continue;
             }

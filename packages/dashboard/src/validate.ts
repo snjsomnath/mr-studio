@@ -63,6 +63,14 @@ function checkProp(path: string, spec: PropSpec, value: unknown, limit: number |
       if (!Array.isArray(value) || value.some((v) => typeof v !== 'number' || !Number.isFinite(v))) fail('schema', 'must be a list of numbers');
       else if (value.length > spec.maxLength) fail('budget', `has ${value.length} points, the limit is ${spec.maxLength}`);
       break;
+    case 'colourBy': {
+      const by = value as Record<string, unknown> | null;
+      const sources = by && typeof by === 'object' ? ['property', 'entity', 'shared'].filter((k) => typeof by[k] === 'string' && (by[k] as string).length > 0) : [];
+      if (sources.length !== 1) fail('schema', 'must name one of property, entity or shared');
+      else if (by!.ramp !== undefined && typeof by!.ramp !== 'string' && !(Array.isArray(by!.ramp) && by!.ramp.length >= 2 && by!.ramp.every((c) => typeof c === 'string'))) fail('schema', 'ramp must be a ramp name or two or more colours');
+      else if (by!.categories !== undefined && (typeof by!.categories !== 'object' || by!.categories === null || Array.isArray(by!.categories))) fail('schema', 'categories must map values to colours');
+      break;
+    }
     case 'geojson': {
       const type = (value as { type?: unknown } | null)?.type;
       if (typeof type !== 'string') fail('schema', 'must be GeoJSON: a FeatureCollection, a Feature or a geometry');

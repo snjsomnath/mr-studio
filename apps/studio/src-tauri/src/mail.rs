@@ -33,6 +33,19 @@ pub fn letter(name: &str) -> Letter {
     }
 }
 
+/// What goes with a starter pack (#450): what it is and where to start.
+pub fn starter_letter(name: &str) -> Letter {
+    Letter {
+        subject: format!("MR Studio starter pack: {name}"),
+        body: format!(
+            "Here is a starter pack for the MR Studio table \u{201c}{name}\u{201d}: its outline, tiles, buildings and streets, \
+             ready to draw on in QGIS, Illustrator, Photoshop or PowerPoint.\n\n\
+             Unzip it and open README.md first. It says how to use the files in each program, and how to bring what you make back into the table.\n\n\
+             MR Studio: https://github.com/snjsomnath/mr-studio/releases\n"
+        ),
+    }
+}
+
 /// A `mailto:` link with the subject and text filled in, for when nothing can attach the file.
 pub fn mailto(letter: &Letter) -> String {
     format!("mailto:?subject={}&body={}", encode(&letter.subject), encode(&letter.body))

@@ -39,6 +39,7 @@ import type { MenuItem } from './tree-tools.ts';
 import type { FileAction } from './file-menu.ts';
 import { slidesSection } from './slides.ts';
 import { placeSettings, welcomeSettings } from './table-settings.ts';
+import { openStarterPack } from './starter-pack.ts';
 import { runTour, tourOnStart } from './tour.ts';
 import { AT_REST, WHERE, Wizard, chosenTheme, themeChoice, themeSwatch } from './wizard.ts';
 import { THEMES } from '@mrstudio/dashboard';
@@ -914,6 +915,10 @@ export class Editor {
     this.lastFile = { action, at: now };
     const invoke = shell();
     await this.settled();
+    if (action === 'starter') {
+      openStarterPack(invoke, this.store.state.site.name);
+      return;
+    }
     if (action === 'save') {
       if (this.pending > 0) this.setSaved('Still saving. Is the table connected?');
       else if (this.problem) this.setSaved(this.problem);
@@ -1045,6 +1050,9 @@ export class Editor {
     switch (action) {
       case 'table-settings':
         this.openDialog('place');
+        break;
+      case 'starter-pack':
+        void this.file('starter');
         break;
       case 'commands':
         commandSearch(() => this.commands(), this.shell);
@@ -1972,6 +1980,7 @@ export class Editor {
       'dialog.screens': { run: () => this.openDialog('screens') },
       'file.share': { disabled: () => (shell() ? undefined : app), run: () => this.file('share') },
       'file.export': { disabled: () => (shell() ? undefined : app), run: () => this.file('export') },
+      'dialog.starter': { run: () => this.file('starter') },
       'view.map': view('map'),
       'view.controller': view('controller'),
       'view.both': view('both'),

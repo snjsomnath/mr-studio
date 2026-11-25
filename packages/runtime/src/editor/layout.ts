@@ -55,6 +55,7 @@ export const RIBBON: LayoutTab[] = [
       { name: 'Layers', items: [large('layer.new'), large('layer.custom'), 'dialog.inside', 'layer.forget'] },
       { name: 'Your data', items: [large('data.file'), large('data.open')] },
       { name: 'Media', items: ['media.picture', 'media.video', 'media.sound', 'media.model'] },
+      { name: 'Draw elsewhere', items: [large('dialog.starter')] },
     ],
   },
   {

@@ -371,6 +371,9 @@ pub struct SessionInfo {
     pub performance: bool,
     /// Whether the operator paused the phones (#335): they can look but not change the table.
     pub phones_paused: bool,
+    /// How many views draw the table and run its layers now (#412). With none, no layer
+    /// publishes its live values and the controller says so.
+    pub tables: usize,
 }
 
 /// A phone's place in the session. It outlives the connection by `resume_hold`.
@@ -555,6 +558,8 @@ pub struct Hub {
     phone_log: Mutex<std::collections::VecDeque<Value>>,
     /// Phones the operator let go (#335): their connection is told why when it closes.
     released: Mutex<Vec<u64>>,
+    /// The surfaces that draw the table and run its layers (table and dev views, #412).
+    drawing: Mutex<Vec<u64>>,
     /// The controller's ribbon choice (#231); None is Auto.
     ribbon: RwLock<Option<String>>,
     /// The code the guide's phone joins with (#98). Only the operator's screens are told it.
@@ -630,6 +635,7 @@ impl Hub {
             ribbon: None,
             performance: false,
             phones_paused: false,
+            tables: 0,
         };
         // Six digits, never the phones' code.
         let guide_code = loop {
@@ -651,6 +657,7 @@ impl Hub {
             phones_paused: RwLock::new(false),
             phone_log: Mutex::new(std::collections::VecDeque::new()),
             released: Mutex::new(Vec::new()),
+            drawing: Mutex::new(Vec::new()),
             ribbon: RwLock::new(None),
             guide_code,
             options,
@@ -927,6 +934,7 @@ impl Hub {
         session.ribbon = self.ribbon.read().unwrap().clone();
         session.performance = *self.performance.read().unwrap();
         session.phones_paused = *self.phones_paused.read().unwrap();
+        session.tables = self.drawing.lock().unwrap().len();
         let relay = self.relay_join.read().unwrap().clone();
         if let Some(base) = relay.or_else(|| self.bridge_join.read().unwrap().clone()) {
             session.join_url = Some(format!("{}/phone?c={}", base.trim_end_matches('/'), session.code));
@@ -1001,6 +1009,10 @@ impl Hub {
         if role != Role::Phone {
             let surface = inner.next_surface;
             inner.next_surface += 1;
+            if matches!(role, Role::Table | Role::Dev) {
+                self.drawing.lock().unwrap().push(surface);
+                self.emit("session.changed", json!({ "session": self.session() }));
+            }
             return Ok(Joined { surface, kick: None });
         }
         if code != Some(self.session.code.as_str()) {
@@ -1062,6 +1074,15 @@ impl Hub {
 
     fn leave_at(&self, surface: u64, now: Instant) -> Option<Hold> {
         let mut inner = self.inner.lock().unwrap();
+        let drew = {
+            let mut drawing = self.drawing.lock().unwrap();
+            let before = drawing.len();
+            drawing.retain(|s| *s != surface);
+            drawing.len() != before
+        };
+        if drew {
+            self.emit("session.changed", json!({ "session": self.session() }));
+        }
         // A seat that was taken over belongs to another surface by now, so this finds nothing.
         let seat = inner.seats.iter_mut().find(|s| s.participant.surface == surface && s.participant.connected)?;
         seat.participant.connected = false;
@@ -3052,6 +3073,19 @@ mod tests {
         dev("layer.activate", json!({ "layer": "slideshow", "active": true })).unwrap();
         let refused = phone("layer.activate", json!({ "layer": "wind", "active": true })).unwrap_err();
         assert!(refused.contains("slideshow"), "{refused}");
+    }
+
+    #[test]
+    fn the_session_counts_the_views_that_draw_the_table() {
+        let hub = scratch_hub("tables");
+        assert_eq!(hub.session().tables, 0);
+        let tv = hub.join(Role::Tv, None, None).unwrap();
+        assert_eq!(hub.session().tables, 0, "a controller does not run the layers");
+        let table = hub.join(Role::Table, None, None).unwrap();
+        assert_eq!(hub.session().tables, 1);
+        hub.leave(table.surface);
+        hub.leave(tv.surface);
+        assert_eq!(hub.session().tables, 0);
     }
 
     #[test]

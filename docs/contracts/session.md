@@ -194,6 +194,12 @@ GET /api/wms/layers?url=<address>[&service=wms|arcgis][&source=<id>]
 
 `/api/media` lists everything the table has to show (#306), as `{ items: [{ kind, name?, path, bytes?, missing? }] }`: the scene's `buildings`, `terrain` and `trees`, every dataset of `data` (by `name`), then the pictures and video under `data/media/`, the sounds under `data/sounds/` and the 3D model (by `path` only). `kind` is `map` (GeoJSON), `table` (CSV), `raster` (GeoTIFF or a folder of them), `drawing` (SVG), `picture`, `video`, `sound`, `model` or `data` (anything else, such as trips). `missing` is true for a file `site.json` names that is not in the folder. The editor's Media tab shows the list, and every setting with `media` in its control (layer.md) picks from it. Online sources are `GET /api/sources`.
 
+```
+GET /api/starter?features=table,tiles,buildings,streets,projection,glance&apps=qgis,illustrator,photoshop,powerpoint&canvas=table&ppc=20&as=json|zip
+```
+
+`/api/starter` makes a starter pack (#450, `mrs_site::starter`) from the table's folder as it is now, from this computer only. `as=zip` answers the pack (a zip named after the table); otherwise `{ svg, notes, table_cm, canvas, picture, projection, features }` for the editor's preview: the pack's layered SVG, things to know, the canvas as `[left, top, width, height]` in table cm, the picture size, where the projection area came from (`projector`, `table` or `estimate`) and how many shapes each feature has. Every parameter is optional; the defaults are the table outline, tiles, buildings and streets for all four programs on the table canvas at 20 px per cm.
+
 `/api/wms/layers` asks a WMS service for its GetCapabilities, or an ArcGIS map service for its `?f=json`, and answers `{ layers: [{ name, title }] }` (an ArcGIS layer's `name` is its id). `source` signs the request with a source of the Sources manager, and stands in for `url` when that is empty. From this computer only. A WMS layer's Layers setting picks from it.
 
 ## Bringing data into a site
@@ -388,6 +394,8 @@ Events:
 `session.language` is the language the visitors' screens speak now, one of the site's `branding.languages` (English when it lists none). `session.language { language }` switches it, from the controller (`tv`), the editor (`dev`) or the guide; the host sends `session.changed` to every surface. The controller and the phones start again in the new language; the table only redraws its ribbons. A phone may keep a language of its own (the SV / EN buttons in its header, kept in the phone's browser): it no longer follows the controller. A phone turned away at the door speaks its own choice, else its browser's language.
 
 `session.performance` is whether the table and the controller show the frame meter (#262, Frame budget), false when a session starts. `session.performance { on }` switches it, from the editor or the controller, and the host sends `session.changed`.
+
+`session.tables` is how many views draw the table and run its layers now (`table` and `dev` surfaces, #412). Layers publish their legend and live values only from such a view, so with none the controller says "Open the table to see live values here." The host sends `session.changed` when it changes. `session.phones_paused` is true while the operator has paused the phones (#335).
 
 `session.sound` is whether the table plays sound, true when the session starts (#282). `session.sound { on }` switches it, from the controller (the **Sound** button under Map controls), the editor or the guide, and the host sends `session.changed`. While it is false the table plays nothing: no voice beds (layer.md, Sound voices) and no sounds on points; what follows the sound on the map carries on.
 

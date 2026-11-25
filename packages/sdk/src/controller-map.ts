@@ -34,6 +34,10 @@ export interface ControllerMapOptions {
   onDraw?(geometry: ToolGeometry): void;
   /** Draws the layer's own visual over the data, in CSS pixels; use `map.toScreen` and `map.project`. Called on every redraw. */
   draw?(g: CanvasRenderingContext2D, map: ControllerMap): void;
+  /** Drag and pinch (or the wheel) move and zoom the map (#374); `resetView()` frames the table again. Default false. */
+  zoom?: boolean;
+  /** Told when the view moves away from the table's frame or back, to show a Reset button. */
+  onView?(moved: boolean): void;
 }
 
 export interface ControllerMap {
@@ -55,6 +59,8 @@ export interface ControllerMap {
   cancel(): void;
   /** Draws again on the next frame, after the layer's own state changed. */
   redraw(): void;
+  /** Frames the whole table again after a pan or zoom. */
+  resetView(): void;
   remove(): void;
 }
 
@@ -80,6 +86,10 @@ export function controllerMap(el: HTMLElement, ctx: Pick<PanelContext, 'site' | 
   let drawing: Position[] = [];
   let scale = 1;
   let offset: XY = [0, 0];
+  // The view (#374): a zoom on the fitted table and a pan in CSS pixels.
+  let zoomK = 1;
+  let pan: XY = [0, 0];
+  let moved = false;
   let cssWidth = 0;
   let cssHeight = 0;
   let queued = false;
@@ -124,8 +134,8 @@ export function controllerMap(el: HTMLElement, ctx: Pick<PanelContext, 'site' | 
     }
     // The table fits with a margin, upright as it stands.
     const margin = 16;
-    scale = Math.min((cssWidth - 2 * margin) / space.width, (cssHeight - 2 * margin) / space.height);
-    offset = [(cssWidth - space.width * scale) / 2, (cssHeight - space.height * scale) / 2];
+    scale = Math.min((cssWidth - 2 * margin) / space.width, (cssHeight - 2 * margin) / space.height) * zoomK;
+    offset = [(cssWidth - space.width * scale) / 2 + pan[0], (cssHeight - space.height * scale) / 2 + pan[1]];
     const colours = theme();
     g.setTransform(ratio, 0, 0, ratio, 0, 0);
     g.clearRect(0, 0, cssWidth, cssHeight);
@@ -218,6 +228,12 @@ export function controllerMap(el: HTMLElement, ctx: Pick<PanelContext, 'site' | 
       queued = true;
       requestAnimationFrame(paint);
     },
+    resetView() {
+      zoomK = 1;
+      pan = [0, 0];
+      setMoved();
+      map.redraw();
+    },
     remove() {
       removed = true;
       observer.disconnect();
@@ -225,14 +241,83 @@ export function controllerMap(el: HTMLElement, ctx: Pick<PanelContext, 'site' | 
     },
   };
 
+  function setMoved() {
+    const now = zoomK !== 1 || pan[0] !== 0 || pan[1] !== 0;
+    if (now !== moved) {
+      moved = now;
+      options.onView?.(moved);
+    }
+  }
+  /** Zooms by `factor` keeping the canvas point (x, y) where it is. */
+  const zoomAt = (x: number, y: number, factor: number) => {
+    const next = Math.min(12, Math.max(1, zoomK * factor));
+    const k = next / zoomK;
+    if (k === 1) return;
+    // The fitted table's centre moves with the pan; keep (x, y) on the same table point.
+    const cx = cssWidth / 2 + pan[0];
+    const cy = cssHeight / 2 + pan[1];
+    pan = [pan[0] + (x - cx) * (1 - k), pan[1] + (y - cy) * (1 - k)];
+    zoomK = next;
+    if (zoomK === 1) pan = [0, 0];
+    setMoved();
+    map.redraw();
+  };
+  const touches = new Map<number, XY>();
+  let pinch: { distance: number; mid: XY } | null = null;
   let press: { x: number; y: number; time: number } | null = null;
   canvas.addEventListener('pointerdown', (event) => {
-    press = { x: event.offsetX, y: event.offsetY, time: performance.now() };
+    press = touches.size === 0 ? { x: event.offsetX, y: event.offsetY, time: performance.now() } : null;
+    if (!options.zoom) return;
+    touches.set(event.pointerId, [event.offsetX, event.offsetY]);
+    canvas.setPointerCapture?.(event.pointerId);
+    if (touches.size === 2) {
+      const [a, b] = [...touches.values()] as [XY, XY];
+      pinch = { distance: Math.hypot(a[0] - b[0], a[1] - b[1]), mid: [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2] };
+    }
   });
+  canvas.addEventListener('pointermove', (event) => {
+    if (!options.zoom || !touches.has(event.pointerId)) return;
+    const last = touches.get(event.pointerId)!;
+    touches.set(event.pointerId, [event.offsetX, event.offsetY]);
+    if (touches.size >= 2 && pinch) {
+      const [a, b] = [...touches.values()] as [XY, XY];
+      const distance = Math.hypot(a[0] - b[0], a[1] - b[1]);
+      const mid: XY = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+      pan = [pan[0] + mid[0] - pinch.mid[0], pan[1] + mid[1] - pinch.mid[1]];
+      if (pinch.distance > 0) zoomAt(mid[0], mid[1], distance / pinch.distance);
+      pinch = { distance, mid };
+      setMoved();
+      map.redraw();
+      return;
+    }
+    // One finger drags once it has moved further than a tap, and only when zoomed in.
+    if (press && Math.hypot(event.offsetX - press.x, event.offsetY - press.y) <= TAP_PX) return;
+    if (zoomK === 1) return;
+    press = null;
+    pan = [pan[0] + event.offsetX - last[0], pan[1] + event.offsetY - last[1]];
+    setMoved();
+    map.redraw();
+  });
+  const lift = (event: PointerEvent) => {
+    touches.delete(event.pointerId);
+    if (touches.size < 2) pinch = null;
+  };
+  canvas.addEventListener('pointercancel', lift);
+  canvas.addEventListener(
+    'wheel',
+    (event) => {
+      if (!options.zoom) return;
+      event.preventDefault();
+      zoomAt(event.offsetX, event.offsetY, Math.exp(-event.deltaY / 400));
+    },
+    { passive: false },
+  );
   canvas.addEventListener('pointerup', (event) => {
+    const many = touches.size > 1;
+    lift(event);
     const start = press;
     press = null;
-    if (!start || performance.now() - start.time > TAP_MS || Math.hypot(event.offsetX - start.x, event.offsetY - start.y) > TAP_PX) return;
+    if (many || !start || performance.now() - start.time > TAP_MS || Math.hypot(event.offsetX - start.x, event.offsetY - start.y) > TAP_PX) return;
     const xy = fromScreen(event.offsetX, event.offsetY);
     if (xy[0] < 0 || xy[1] < 0 || xy[0] > space.width || xy[1] > space.height) return;
     const at = toLonLat(xy);

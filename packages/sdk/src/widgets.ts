@@ -25,6 +25,8 @@ export type PropSpec = (
   | { kind: 'list'; max: number; item: Record<string, PropSpec> }
   /** GeoJSON: a FeatureCollection, a Feature or a geometry, usually bound to what a layer publishes. */
   | { kind: 'geojson' }
+  /** How a map colours its features by data (#374): see `ColourBy`. */
+  | { kind: 'colourBy' }
 ) & {
   /** Shown in the editor. */
   label: string;
@@ -78,6 +80,10 @@ export interface PanelLayer extends Pick<import('./layer.ts').PanelContext, 'sit
   readonly touch: boolean;
   /** The layer's manifest, in the visitors' language: its entity sets, tools and controls. */
   readonly manifest: import('./types.ts').LayerManifest | undefined;
+  /** The layer's params now, entity values among them (#374: a map coloured by an entity value). */
+  readonly params?: import('./types.ts').Params;
+  /** What the layer published (#374: a map coloured by a shared value). */
+  readonly shared?: Record<string, unknown>;
 }
 
 export interface WidgetDefinition {
@@ -133,3 +139,23 @@ export function checkWidget(widget: unknown): string[] {
   if (w.example !== undefined && (typeof w.example !== 'object' || w.example === null || Array.isArray(w.example))) problems.push(`widget '${name}': example is an object of props`);
   return problems;
 }
+
+/**
+ * How a map colours its features by data (#374): by a feature's property, an entity's value or
+ * a value the layer publishes for each feature (`shared[key][id]`). Numbers follow `ramp` between
+ * `min` and `max` (the data's own range when left out); anything else follows `categories`, a
+ * value to a CSS colour or a data colour slot (1 to 6), or the data slots in turn.
+ */
+export interface ColourBy {
+  property?: string;
+  entity?: string;
+  shared?: string;
+  /** The dataset to colour when the map has no entity set: default its first dataset. */
+  dataset?: string;
+  /** A colour ramp's name from `colormaps`, or two or more CSS colours. Default dark blue to yellow. */
+  ramp?: string | string[];
+  categories?: Record<string, string | number>;
+  min?: number;
+  max?: number;
+}
+

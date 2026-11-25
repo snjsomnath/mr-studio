@@ -42,6 +42,8 @@ fn file_submenu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Submenu<R>> {
         .item(&item("export", "Export table…", None)?)
         // The same file, attached to a new email in the computer's mail app (#372).
         .item(&item("share", "Share by email…", None)?)
+        // The table's outline and features to draw on in QGIS, Illustrator, Photoshop or PowerPoint (#450).
+        .item(&item("starter-pack", "Export starter pack…", None)?)
         .item(&item("reveal", reveal, None)?)
         .separator()
         // The same command as Design › Table size and place… (#382), by the same name; app settings are Settings… (#393).
@@ -139,12 +141,13 @@ fn help_submenu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Submenu<R>> {
         .build()
 }
 
-/// The menu items the editor page carries out: Edit (#57), "Table settings…" from the File
-/// menu, and View and Help (#65, #88).
-pub const EDIT_ACTIONS: [&str; 13] = [
+/// The menu items the editor page carries out: Edit (#57), "Table settings…" and "Export
+/// starter pack…" (#450) from the File menu, and View and Help (#65, #88).
+pub const EDIT_ACTIONS: [&str; 14] = [
     "undo",
     "redo",
     "table-settings",
+    "starter-pack",
     "commands",
     "view-map",
     "view-controller",

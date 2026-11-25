@@ -114,6 +114,7 @@ const SV: Record<string, string> = {
   'Tap to add points along the line, then send. Two fingers move the map.': 'Tryck för att lägga till punkter längs linjen och skicka sedan. Två fingrar flyttar kartan.',
   'Tap the corners of the area, then send. Two fingers move the map.': 'Tryck på områdets hörn och skicka sedan. Två fingrar flyttar kartan.',
   'Draw with one finger; it goes to the table when you lift it. Two fingers move the map.': 'Rita med ett finger; det skickas till bordet när du lyfter det. Två fingrar flyttar kartan.',
+  'Open the table to see live values here.': 'Öppna bordet för att se levande värden här.',
   // A phone's layers and map (#335)
   'Open {name}': 'Öppna {name}',
   'Back to all layers': 'Tillbaka till alla lager',

@@ -743,6 +743,7 @@ fn router(state: Arc<AppState>, web_dir: Option<PathBuf>) -> Router {
         .route("/api/field", get(field_list))
         .route("/api/field/{file}", get(field_file))
         .route("/api/media", get(list_library))
+        .route("/api/starter", get(starter_pack))
         .route("/api/site/place", post(place_site))
         .route("/api/site/thumbnail", post(save_thumbnail))
         .route("/api/layers/{id}/view", get(layer_view).put(save_layer_view))
@@ -1302,6 +1303,93 @@ async fn data_field(State(state): State<Arc<AppState>>, Query(query): Query<Fiel
 struct SoundQuery {
     /// The file's own name; the saved name is made safe from it.
     name: String,
+}
+
+#[derive(serde::Deserialize)]
+struct StarterQuery {
+    /// Comma-separated features and apps, as `mrs_site::starter` names them.
+    #[serde(default)]
+    features: Option<String>,
+    #[serde(default)]
+    apps: Option<String>,
+    #[serde(default)]
+    canvas: Option<String>,
+    #[serde(default)]
+    ppc: Option<f64>,
+    /// `json` (the default): the preview drawing and what the pack would hold; `zip`: the pack.
+    #[serde(default, rename = "as")]
+    answer: Option<String>,
+}
+
+impl StarterQuery {
+    fn options(&self) -> Result<mrs_site::starter::Options, String> {
+        let mut options = mrs_site::starter::Options::default();
+        let list = |text: &str| Value::from(text.split(',').map(str::trim).filter(|s| !s.is_empty()).collect::<Vec<_>>());
+        if let Some(f) = &self.features {
+            options.features = serde_json::from_value(list(f)).map_err(|e| format!("features: {e}"))?;
+        }
+        if let Some(a) = &self.apps {
+            options.apps = serde_json::from_value(list(a)).map_err(|e| format!("apps: {e}"))?;
+        }
+        if let Some(c) = &self.canvas {
+            options.canvas = serde_json::from_value(Value::from(c.as_str())).map_err(|e| format!("canvas: {e}"))?;
+        }
+        if let Some(p) = self.ppc.filter(|p| p.is_finite()) {
+            options.px_per_cm = p;
+        }
+        Ok(options)
+    }
+}
+
+/// `GET /api/starter` (#450): a starter pack of the table, read fresh from its folder. With
+/// `as=zip` the pack itself, otherwise `{ svg, notes, picture, canvas, projection, files }`
+/// for the editor's preview. From this computer only.
+async fn starter_pack(
+    State(state): State<Arc<AppState>>,
+    ConnectInfo(from): ConnectInfo<SocketAddr>,
+    Query(query): Query<StarterQuery>,
+) -> axum::response::Response {
+    if !from.ip().is_loopback() {
+        return (StatusCode::FORBIDDEN, Json(json!({ "error": "starter packs are made on this computer only" }))).into_response();
+    }
+    let options = match query.options() {
+        Ok(o) => o,
+        Err(e) => return (StatusCode::BAD_REQUEST, Json(json!({ "error": e }))).into_response(),
+    };
+    let dir = state.site.dir.clone();
+    let zip = query.answer.as_deref() == Some("zip");
+    let made = tokio::task::spawn_blocking(move || -> Result<axum::response::Response, String> {
+        let site = Site::load(&dir).map_err(|e| e.to_string())?;
+        use mrs_site::starter;
+        if zip {
+            let out = std::env::temp_dir().join(format!("mrs-starter-{}-{}.zip", std::process::id(), site.manifest.id));
+            starter::write(&site, &options, &out)?;
+            let bytes = std::fs::read(&out).map_err(|e| e.to_string())?;
+            let _ = std::fs::remove_file(&out);
+            let name = format!("{} starter pack.zip", mrs_site::package::folder_name(&site.manifest.name));
+            let disposition = format!("attachment; filename=\"{}\"", name.replace('"', ""));
+            return Ok(([(header::CONTENT_TYPE, "application/zip".to_string()), (header::CONTENT_DISPOSITION, disposition)], bytes)
+                .into_response());
+        }
+        let sheet = starter::sheet(&site, &options);
+        let (pw, ph, ppc) = starter::picture_size(&sheet, options.px_per_cm);
+        Ok(Json(json!({
+            "svg": starter::svg(&sheet),
+            "notes": sheet.notes,
+            "table_cm": [sheet.table_cm.0, sheet.table_cm.1],
+            "canvas": sheet.canvas,
+            "picture": { "width_px": pw, "height_px": ph, "px_per_cm": ppc },
+            "projection": sheet.projection,
+            "features": sheet.groups.iter().map(|g| json!({ "id": g.feature.id(), "count": g.shapes.len() })).collect::<Vec<_>>(),
+        }))
+        .into_response())
+    })
+    .await;
+    match made {
+        Ok(Ok(response)) => response,
+        Ok(Err(error)) => (StatusCode::UNPROCESSABLE_ENTITY, Json(json!({ "error": error }))).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e.to_string() }))).into_response(),
+    }
 }
 
 /// `GET /api/data/sounds`: the site's sound files (#150), as `{ sounds: ["data/sounds/x.mp3"] }`.

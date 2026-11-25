@@ -192,6 +192,7 @@ fn main() -> anyhow::Result<()> {
             dismiss_whats_new,
             open_link,
             file_action,
+            starter_pack,
             table_details,
             open_sources,
             sources_page,
@@ -718,7 +719,34 @@ fn show_view(app: &AppHandle, role: &str) -> anyhow::Result<()> {
             };
             // Help (#271) is about the app, not the table, so its title does not name the table.
             let title = if role == "help" { "MR Studio Help".to_string() } else { format!("MR Studio · {} · {role}", running.name) };
-            WebviewWindowBuilder::new(app, &label, WebviewUrl::External(url)).title(title).inner_size(width, height).build()?
+            // The page's Full screen control (#198) reaches the shell here: WKWebView on macOS has no
+            // requestFullscreen (#420). It fills the table's window while presenting, else this one.
+            let handle = app.clone();
+            let me = label.clone();
+            WebviewWindowBuilder::new(app, &label, WebviewUrl::External(url))
+                .title(title)
+                .inner_size(width, height)
+                .initialization_script("window.__MRS_SHELL__ = true;")
+                .on_navigation(move |url| match url.path().strip_prefix("/__shell/") {
+                    Some("fullscreen") => {
+                        let handle = handle.clone();
+                        let me = me.clone();
+                        drop(tauri::async_runtime::spawn(async move {
+                            report(if table_window(&handle).is_some() {
+                                toggle_table_fullscreen(&handle)
+                            } else {
+                                toggle_view_fullscreen(&handle, &me)
+                            })
+                        }));
+                        false
+                    }
+                    Some(action) => {
+                        shell_action(&handle, action);
+                        false
+                    }
+                    None => true,
+                })
+                .build()?
         }
     };
     window.unminimize()?;
@@ -1083,6 +1111,25 @@ fn toggle_table_fullscreen(app: &AppHandle) -> anyhow::Result<()> {
         }
     }
     shell.table_fullscreen.store(full, Ordering::Relaxed);
+    Ok(())
+}
+
+/// A window opened from the editor's "Open in a window" in or out of full screen (#420).
+fn toggle_view_fullscreen(app: &AppHandle, label: &str) -> anyhow::Result<()> {
+    // macOS's simple full screen cannot be asked about, so the shell remembers which views it filled.
+    static FULL: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+    let Some(window) = app.get_webview_window(label) else { return Ok(()) };
+    let mut full = FULL.lock().unwrap();
+    let on = !full.iter().any(|l| l == label);
+    #[cfg(target_os = "macos")]
+    window.set_simple_fullscreen(on)?;
+    #[cfg(not(target_os = "macos"))]
+    window.set_fullscreen(on)?;
+    if on {
+        full.push(label.to_string());
+    } else {
+        full.retain(|l| l != label);
+    }
     Ok(())
 }
 
@@ -1930,31 +1977,45 @@ async fn share_table(app: &AppHandle) -> anyhow::Result<()> {
     let out = target.clone();
     let exported = tokio::task::spawn_blocking(move || state.export_table(&out, &version)).await?.map_err(anyhow::Error::msg)?;
     tracing::info!("shared '{}' as {} ({} bytes)", running.name, target.display(), exported.bytes);
-    let letter = mail::letter(&running.name);
+    let size = megabytes(exported.bytes);
+    let message = mail_with(app, &target, mail::letter(&running.name), &running.name, &size).await?;
+    file_menu::tell_editor(app, EDITOR, message);
+    Ok(())
+}
+
+/// Opens a new message with `target` attached in the computer's mail app, or shows the file
+/// and opens a plain new message to drag it into. Answers the editor's notice.
+async fn mail_with(
+    app: &AppHandle,
+    target: &std::path::Path,
+    letter: mail::Letter,
+    what: &str,
+    size: &str,
+) -> anyhow::Result<serde_json::Value> {
+    let fallback = mail::mailto(&letter);
     let (send, receive) = tokio::sync::oneshot::channel();
-    let (file, compose_letter) = (target.clone(), mail::letter(&running.name));
+    let file = target.to_path_buf();
     // The macOS share service wants the main thread; MAPI waits while its window is open, so
     // the reply comes back over a channel rather than holding up the event loop.
     let compose = move || {
-        let _ = send.send(mail::compose(&file, &compose_letter));
+        let _ = send.send(mail::compose(&file, &letter));
     };
     if cfg!(target_os = "macos") {
         app.run_on_main_thread(compose)?;
     } else {
         std::thread::spawn(compose);
     }
-    let size = megabytes(exported.bytes);
-    let message = match receive.await.unwrap_or_else(|_| Err("the mail app did not answer".into())) {
+    Ok(match receive.await.unwrap_or_else(|_| Err("the mail app did not answer".into())) {
         Ok(()) => json!({
             "action": "exported",
-            "message": format!("{} is attached to a new email ({size})", running.name),
+            "message": format!("{what} is attached to a new email ({size})"),
             "detail": "Add who it goes to and send it. If your mail app offers to send a big file as a link, that works too.",
             "path": target,
         }),
         Err(why) => {
-            tracing::warn!("Share by email: {why}; showing the file instead");
-            app.opener().reveal_item_in_dir(&target)?;
-            app.opener().open_url(mail::mailto(&letter), None::<&str>)?;
+            tracing::warn!("email: {why}; showing the file instead");
+            app.opener().reveal_item_in_dir(target)?;
+            app.opener().open_url(fallback, None::<&str>)?;
             json!({
                 "action": "exported",
                 "message": format!("Drag {} into the new email ({size})", target.file_name().unwrap_or_default().to_string_lossy()),
@@ -1962,8 +2023,61 @@ async fn share_table(app: &AppHandle) -> anyhow::Result<()> {
                 "path": target,
             })
         }
+    })
+}
+
+/// Export starter pack (#450): the editor's dialog chose what goes in; `how` is `save` (a save
+/// dialog) or `email` (into `Documents/MR Studio/Shared`, attached to a new email). The pack
+/// is made from the table's folder as it is now. An error goes back to the dialog.
+#[tauri::command]
+async fn starter_pack(app: AppHandle, options: mrs_site::starter::Options, how: String) -> Result<(), String> {
+    let running = app.state::<Shell>().running.lock().unwrap().clone().ok_or("No table is open.")?;
+    let file_name = format!("{} starter pack.zip", mrs_site::package::folder_name(&running.name));
+    let target = if how == "email" {
+        let folder = app.path().document_dir().map_err(|e| e.to_string())?.join("MR Studio").join("Shared");
+        std::fs::create_dir_all(&folder).map_err(|e| format!("could not make {}: {e}", folder.display()))?;
+        folder.join(&file_name)
+    } else {
+        let (send, receive) = tokio::sync::oneshot::channel();
+        let mut dialog = app.dialog().file().set_title("Export starter pack").set_file_name(&file_name).add_filter("Zip archive", &["zip"]);
+        if let Ok(documents) = app.path().document_dir() {
+            dialog = dialog.set_directory(documents);
+        }
+        if let Some(window) = app.get_webview_window(EDITOR) {
+            dialog = dialog.set_parent(&window);
+        }
+        dialog.save_file(move |path| {
+            let _ = send.send(path);
+        });
+        let Some(chosen) = receive.await.ok().flatten() else { return Ok(()) };
+        let mut chosen = chosen.into_path().map_err(|_| "the chosen place is not a folder on this computer".to_string())?;
+        if !chosen.extension().is_some_and(|e| e.eq_ignore_ascii_case("zip")) {
+            chosen.set_extension("zip");
+        }
+        chosen
     };
-    file_menu::tell_editor(app, EDITOR, message);
+    let (site, out) = (running.site.clone(), target.clone());
+    let written = tokio::task::spawn_blocking(move || {
+        let site = mrs_site::Site::load(&site).map_err(|e| e.to_string())?;
+        mrs_site::starter::write(&site, &options, &out)
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+    tracing::info!("starter pack of '{}' to {} ({} bytes)", running.name, target.display(), written.bytes);
+    let size = megabytes(written.bytes);
+    let message = if how == "email" {
+        mail_with(&app, &target, mail::starter_letter(&running.name), &format!("The {} starter pack", running.name), &size)
+            .await
+            .map_err(|e| format!("{e:#}"))?
+    } else {
+        json!({
+            "action": "exported",
+            "message": format!("Saved {} ({size})", target.file_name().unwrap_or_default().to_string_lossy()),
+            "detail": "Its README says how to use it in each program and how to bring the result back.",
+            "path": target,
+        })
+    };
+    file_menu::tell_editor(&app, EDITOR, message);
     Ok(())
 }
 
