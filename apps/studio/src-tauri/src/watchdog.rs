@@ -158,6 +158,12 @@ async fn nightly(app: &AppHandle, watch: &mut Watch, running: &Running, presenti
     }
     watch.nightly = Some(now.date_naive());
     shell.operator.note(format!("Nightly restart of '{}'.", running.name));
+    // A newer version waiting for the show to stop (#401) goes in now: it starts the table again.
+    let waits =
+        crate::waiting::read(&shell.config_dir.join("waiting")).is_some_and(|w| w.table == crate::sites::canonical(running.site.clone()));
+    if waits && crate::apply_waiting(app, true).await {
+        return;
+    }
     restart(app, running, true).await;
 }
 
