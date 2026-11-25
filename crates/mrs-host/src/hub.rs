@@ -611,6 +611,7 @@ fn tv_words(key: &str) -> &str {
         "idle_reset_s" => "idle reset",
         "attract_s" => "welcome loop",
         "phone_switch" => "phones switching layers",
+        "two_layers" => "two layers at once",
         other => other,
     }
 }
@@ -1688,7 +1689,7 @@ impl Hub {
                 "about" => value.is_object() && value.to_string().len() <= 8_000,
                 "idle_reset_s" => value.as_f64().is_some_and(|s| (0.0..=3600.0).contains(&s)),
                 "attract_s" => value.as_f64().is_some_and(|s| (2.0..=30.0).contains(&s)),
-                "phone_switch" => value.is_boolean(),
+                "phone_switch" | "two_layers" => value.is_boolean(),
                 _ => return Err(format!("'{key}' is not a controller setting that can be changed here")),
             };
             if value.is_null() {

@@ -261,17 +261,18 @@ async function main() {
     assert.equal(await phone.getByText('Opacity').count(), 0);
     const windCard = phone.locator('.layer-card', { hasText: 'Wind' });
     await windCard.getByLabel('Turn Wind on or off').check();
-    // The controller follows, and says a phone did it; the open Sunlight makes way.
+    // The controller follows, and says a phone did it; the open Sunlight stays, as the two share the table (#473).
     await tv.getByText('Ada turned on Wind').waitFor();
     await sunlight(phone).getByLabel('Turn Sunlight on or off').waitFor();
-    await sunlight(phone).locator('input.switch:not(:checked)').waitFor();
+    await sunlight(phone).locator('input.switch:checked').waitFor();
     // The rail's buttons fade between pressed and not.
     if (shots) await tv.waitForTimeout(800);
     if (shots) await tv.screenshot({ path: path.join(shots, 'tv-phone-cue.png') });
     if (shots) await phone.screenshot({ path: path.join(shots, 'phone-switch.png') });
-    await sunlight(phone).getByLabel('Turn Sunlight on or off').check();
-    await tv.getByText('Ada turned on Sunlight').waitFor();
+    // The phone turns Wind off again; Sunlight stays.
+    await windCard.getByLabel('Turn Wind on or off').uncheck();
     await windCard.locator('input.switch:not(:checked)').waitFor();
+    await sunlight(phone).locator('input.switch:checked').waitFor();
     await tv.getByText('1 phone', { exact: true }).waitFor();
     await openApp('Sunlight');
     await sunlight(phone).getByLabel('Time of day').fill('18');
@@ -548,9 +549,11 @@ async function main() {
     await tv.keyboard.press('PageDown');
     await dev.getByText('from the south').waitFor(slow);
     // A tap on the dial turns it there: tapped at the dial's top, the wind comes from the table's top.
-    await windHero.locator('.wind-hero-ring').waitFor();
-    const dial = await windHero.locator('.wind-hero-ring').boundingBox();
-    await tv.mouse.click(dial.x + dial.width / 2, dial.y + 2);
+    // The dial is drawn anew on every update, so the click goes through the locator, which finds
+    // the ring as it is at that moment, rather than through a box read earlier.
+    const ring = windHero.locator('.wind-hero-ring');
+    const { width } = await ring.evaluate((r) => r.getBoundingClientRect());
+    await ring.click({ position: { x: width / 2, y: 2 }, force: true });
     await windHero.locator('.wind-hero-dial[aria-valuenow="0"]').waitFor();
     await dev.getByText('from the north').waitFor(slow);
     if (shots) await tv.screenshot({ path: path.join(shots, 'tv-wind.png') });
@@ -564,6 +567,49 @@ async function main() {
     assert.notDeepEqual(await table.screenshot(), still, 'ribbons should come back');
     if (shots) await dev.screenshot({ path: path.join(shots, 'dev-wind-ribbons.png') });
     await press('Wind', false);
+
+    // Two layers at once (#473): Shift-click adds Wind to Sunlight; the centre shows Wind and a chip for Sunlight.
+    const lit = (name, on) => tv.locator(`.layer-button[aria-pressed="${on}"]`, { hasText: name }).waitFor();
+    await press('Sunlight', true);
+    await tv.locator('.layer-button', { hasText: 'Wind' }).click({ modifiers: ['Shift'] });
+    await lit('Wind', true);
+    await lit('Sunlight', true);
+    const pair = tv.locator('.layer-pair');
+    await pair.locator('.layer-pair-name', { hasText: 'Sunlight' }).waitFor();
+    await tv.locator('.layer-open[data-layer="wind"]:not([hidden])').waitFor();
+    assert.ok(await tv.locator('.layer-open[data-layer="sunlight"]').isHidden(), 'only the newest layer shows its controls');
+    if (shots) await tv.screenshot({ path: path.join(shots, 'tv-two-layers.png') });
+    // The chip swaps them.
+    await pair.locator('.layer-pair-swap').click();
+    await tv.locator('.layer-open[data-layer="sunlight"]:not([hidden])').waitFor();
+    await pair.locator('.layer-pair-name', { hasText: 'Wind' }).waitFor();
+    // Holding a third button until its ring closes adds it, and the older of the two goes.
+    const hold = async (name, ms) => {
+      const box = await tv.locator('.layer-button', { hasText: name }).boundingBox();
+      await tv.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+      await tv.mouse.down();
+      await tv.waitForTimeout(ms);
+      await tv.mouse.up();
+    };
+    await hold('Mobility', 1100);
+    await lit('Mobility', true);
+    await lit('Sunlight', false);
+    await lit('Wind', true);
+    // Letting go before the ring closes adds nothing, and doesn't open the layer either.
+    await hold('Sunlight', 450);
+    await tv.waitForTimeout(800);
+    assert.equal(await tv.locator('.layer-button[aria-pressed="true"]', { hasText: 'Sunlight' }).count(), 0, 'a hold let go early adds nothing');
+    // A plain press opens one layer alone.
+    await tv.locator('.layer-button', { hasText: 'Sunlight' }).click();
+    await lit('Sunlight', true);
+    await lit('Wind', false);
+    await lit('Mobility', false);
+    assert.ok(await pair.isHidden());
+    // The slideshow never shares the table: Shift-click opens it alone.
+    await tv.locator('.layer-button', { hasText: 'Slideshow' }).click({ modifiers: ['Shift'] });
+    await lit('Slideshow', true);
+    await lit('Sunlight', false);
+    await press('Slideshow', false);
 
 
     // ---- The scene composer ----

@@ -80,6 +80,7 @@ const PATHS: Record<string, string> = {
   save: 'M5 4h11l3 3v13H5zM8 4v5h7V4M8 20v-6h8v6',
   undo: 'M9 14 4 9l5-5M4 9h10.500a5.500 5.500 0 0 1 0 11H11',
   redo: 'M15 14l5-5-5-5M20 9H9.500a5.500 5.500 0 0 0 0 11H13',
+  close: 'M6 6l12 12M18 6 6 18',
 };
 
 /** Every icon this set draws; any other name is drawn as `layers`. */
