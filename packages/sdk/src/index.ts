@@ -33,6 +33,8 @@ export * from './schemes.ts';
 export * from './hero.ts';
 export * from './transition.ts';
 export * from './street-network.ts';
+export { buildWalkNetwork, packWalkNetwork, unpackWalkNetwork } from './walk-network.ts';
+export type { PackedWalkNetwork, WalkEdge, WalkNetwork } from './walk-network.ts';
 export * from './service.ts';
 export * from './entities.ts';
 export * from './controller-map.ts';

@@ -4,6 +4,8 @@
 // PET (°C) times its length (m). Each edge also has an exposure from 0 (shade) to 1 (sun). The
 // coolest route has the least heat among routes no more than `detour` longer than the shortest one.
 
+import { buildWalkNetwork } from '@mrstudio/sdk';
+
 export type LonLat = [lon: number, lat: number];
 
 export interface Edge {
@@ -42,58 +44,13 @@ export interface RoutePair {
 
 type Distance = (a: readonly number[], b: readonly number[]) => number;
 
-interface LineFeature {
-  geometry?: { type?: string; coordinates?: unknown } | null;
-}
-
 /**
- * Builds the network from GeoJSON lines. Lines meet where they share a vertex,
- * which is how street data is drawn; a node is made at every line end and every
- * shared vertex, so a long street becomes one edge per block.
+ * Builds the network from GeoJSON lines (the SDK's walking network, with sun and PET on every
+ * edge). The table reads it with `readWalkNetwork`, which builds it in the data worker (#484).
  */
-export function buildNetwork(geojson: { features?: LineFeature[] }, distance: Distance): Network {
-  const lines: LonLat[][] = [];
-  for (const feature of geojson.features ?? []) {
-    const geometry = feature.geometry;
-    const parts = geometry?.type === 'LineString' ? [geometry.coordinates] : geometry?.type === 'MultiLineString' ? (geometry.coordinates as unknown[]) : [];
-    for (const part of parts) {
-      const line = (part as number[][]).filter((p) => Number.isFinite(p[0]) && Number.isFinite(p[1])).map((p): LonLat => [p[0]!, p[1]!]);
-      if (line.length >= 2) lines.push(line);
-    }
-  }
-  // About 0.1 m: vertices closer than that are the same place.
-  const key = (p: LonLat) => `${p[0].toFixed(6)},${p[1].toFixed(6)}`;
-  const uses = new Map<string, number>();
-  for (const line of lines) {
-    line.forEach((p, i) => uses.set(key(p), (uses.get(key(p)) ?? 0) + (i === 0 || i === line.length - 1 ? 2 : 1)));
-  }
-  const network: Network = { nodes: [], edges: [], adjacency: [] };
-  const ids = new Map<string, number>();
-  const node = (p: LonLat) => {
-    let id = ids.get(key(p));
-    if (id === undefined) {
-      id = network.nodes.push(p) - 1;
-      ids.set(key(p), id);
-      network.adjacency.push([]);
-    }
-    return id;
-  };
-  for (const line of lines) {
-    let start = 0;
-    for (let i = 1; i < line.length; i++) {
-      if (uses.get(key(line[i]!))! < 2) continue;
-      const coordinates = line.slice(start, i + 1);
-      start = i;
-      let length = 0;
-      for (let k = 1; k < coordinates.length; k++) length += distance(coordinates[k - 1]!, coordinates[k]!);
-      const [u, v] = [node(coordinates[0]!), node(coordinates[coordinates.length - 1]!)];
-      if (u === v || !(length > 0)) continue;
-      const edge = network.edges.push({ u, v, length, coordinates, exposure: 0, pet: 0 }) - 1;
-      network.adjacency[u]!.push(edge);
-      network.adjacency[v]!.push(edge);
-    }
-  }
-  return network;
+export function buildNetwork(geojson: Parameters<typeof buildWalkNetwork>[0], distance: Distance): Network {
+  const network = buildWalkNetwork(geojson, distance);
+  return { ...network, edges: network.edges.map((e) => ({ ...e, exposure: 0, pet: 0 })) };
 }
 
 /**
