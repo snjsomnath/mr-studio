@@ -378,6 +378,37 @@ async function main() {
       await until(async () => plan()?.params?.corners !== dragged, 'the nudged frame saved');
     });
 
+    await run('a click on the map selects the layer that drew there (#425)', async () => {
+      const surface = page.locator('.ed-canvas .table-surface');
+      const clickAt = async (fx, fy) => {
+        const box = await surface.boundingBox();
+        await page.mouse.click(box.x + box.width * fx, box.y + box.height * fy);
+        await page.waitForTimeout(300);
+        return page.evaluate(() => location.hash);
+      };
+      // At rest the map life under the pointer is picked: the lit buildings in one place, the base map in another.
+      await page.goto(`${base}/edit#rest`);
+      await surface.waitFor();
+      await page.waitForTimeout(2500);
+      // Map life draws a moment after the page opens, so the click is tried again until it lands.
+      await until(async () => (await clickAt(0.2, 0.8)) === '#rest=building-lights', 'the lit buildings picked', 10000);
+      await page.locator('.ed-row.is-rest[data-layer="building-lights"][aria-current="true"]').waitFor();
+      await shot('425-map-pick');
+      await until(async () => (await clickAt(0.7, 0.6)) === '#rest=basemap', 'the base map picked', 10000);
+      // A drag is not a pick.
+      const box = await surface.boundingBox();
+      await page.mouse.move(box.x + box.width * 0.2, box.y + box.height * 0.8);
+      await page.mouse.down();
+      await page.mouse.move(box.x + box.width * 0.3, box.y + box.height * 0.7, { steps: 4 });
+      await page.mouse.up();
+      assert.equal(await page.evaluate(() => location.hash), '#rest=basemap');
+      // Sunlight reads clicks itself (its spot), so they stay with it while it is open.
+      await page.goto(`${base}/edit#layer=sunlight`);
+      await surface.waitFor();
+      await page.waitForTimeout(2500);
+      assert.equal(await clickAt(0.2, 0.8), '#layer=sunlight');
+    });
+
     await run('Design › Starter tables… opens the guide at Start from…, and a dialog opened over it keeps it (#469)', async () => {
       await page.goto(`${base}/edit`);
       await page.locator('.ed-tab[data-tab="design"]').click();

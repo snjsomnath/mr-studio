@@ -25,7 +25,7 @@ Six regions. Their places never change, whatever tab is open or whatever is sele
 | Title bar | File, Undo/Redo, the table's name and saved state, Help (?), Share, Present | Settings, tool buttons |
 | Ribbon | Commands, grouped by tab. Galleries (themes, layers). Buttons that open dialogs, with a trailing … | Fields you type into, toggles that duplicate a list row, panels |
 | Left list | The map's stack: At rest (the base map and map life) above the layers, in drawing order. Below it, its own group: Controller and Phones | Button order or sides, files, settings |
-| Canvas | What the visitor sees: the map, the controller, or both (View tab), live. In Both, Shrink controller on the controller's header docks it as a small live thumbnail (#388). Rehearse runs here. | Forms, galleries, file lists, hints |
+| Canvas | What the visitor sees: the map, the controller, or both (View tab), live. In Both, Shrink controller on the controller's header docks it as a small live thumbnail (#388). A click on the map selects the layer that drew there, topmost first; a layer that reads clicks itself (CoolPaths, Sunlight) keeps them while it is open (#425). Rehearse runs here. | Forms, galleries, file lists, hints |
 | Format pane (right) | The settings of what is selected, and the only place they are edited | Anything about something not selected |
 | Status bar | Saved, connection, engine, "N things to check before presenting" | Actions that change the table |
 

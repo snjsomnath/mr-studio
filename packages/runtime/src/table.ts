@@ -1,4 +1,4 @@
-import { revealPath, revealPolygon, sameReveal, tableFrame } from '@mrstudio/sdk';
+import { fitTable, revealPath, revealPolygon, sameReveal, tableFrame } from '@mrstudio/sdk';
 import type { CanvasOverlay, DrawingOverlay, Colormap, FieldOverlay, FieldOverlayStyle, FlowOverlay, FlowOverlayStyle, MapHandle, ModelHandle, PixelRect, RevealShape, Shape, ShapeOverlay, SiteInfo, TablePicture, TablePointer, DisplayQuality } from '@mrstudio/sdk';
 import maplibregl from 'maplibre-gl';
 
@@ -44,6 +44,8 @@ export class TableView {
   /** Layers that draw a sharp picture for a magnifier (#351), and the scene's order to stack them in. */
   private details = new Map<string, DetailRenderer>();
   private order: string[] = [];
+  /** How many pointer listeners each layer has, so a click meant for a layer's own tool is left to it. */
+  private listening = new Map<string, number>();
   private detailCanvas: HTMLCanvasElement | null = null;
   /** While the opening zoom plays: where the model will be when it lands, and the timer that starts it. */
   private intro: { footprint: [number, number][]; timer: number; resized: boolean } | null = null;
@@ -153,6 +155,8 @@ export class TableView {
           drawn.compose.set(id, compose);
           track(() => drawn.compose.delete(id));
         }
+        drawn.pictures.set(shown, scale);
+        track(() => drawn.pictures.delete(shown));
         // The canvas is uploaded only on commit, so a static layer costs nothing per frame.
         map.addSource(id, { type: 'canvas', canvas: shown, coordinates: this.site.corners, animate: false });
         // The layer's own opacity, which its intensity scales.
@@ -213,9 +217,11 @@ export class TableView {
         overlay.setGain(drawn.intensity);
         drawn.overlays.add(overlay);
         drawn.clipped.add(overlay.element);
+        drawn.surfaces.add(overlay.element);
         this.clipElement(instance, overlay.element);
         track(() => {
           drawn.overlays.delete(overlay);
+          drawn.surfaces.delete(overlay.element);
           drawn.clipped.delete(overlay.element);
           overlay.remove();
         });
@@ -226,8 +232,10 @@ export class TableView {
         add(`flow:${instance}:${id}`, overlay);
         overlay.setGain(drawn.intensity);
         drawn.overlays.add(overlay);
+        drawn.flows.add(overlay);
         track(() => {
           drawn.overlays.delete(overlay);
+          drawn.flows.delete(overlay);
           overlay.remove();
           forget(`flow:${instance}:${id}`);
         });
@@ -328,8 +336,67 @@ export class TableView {
     return new MapCanvasOverlay(this.map, this.container, id, this.site);
   }
 
-  pointer(track: (cleanup: () => void) => void): TablePointer {
-    return tablePointer(this.container, this.site, track);
+  pointer(track: (cleanup: () => void) => void, instance?: string): TablePointer {
+    const pointer = tablePointer(this.container, this.site, track);
+    if (!instance) return pointer;
+    return {
+      on: (callback) => {
+        this.listening.set(instance, (this.listening.get(instance) ?? 0) + 1);
+        track(() => {
+          const left = (this.listening.get(instance) ?? 1) - 1;
+          if (left > 0) this.listening.set(instance, left);
+          else this.listening.delete(instance);
+        });
+        pointer.on(callback);
+      },
+    };
+  }
+
+  /** Whether a layer reads mouse clicks on the map itself (CoolPaths' ends, Sunlight's spot), so a click there is its input. */
+  listens(instance: string): boolean {
+    return this.listening.has(instance);
+  }
+
+  /**
+   * The layers that drew something under a point of the page (#425), topmost first: a mark on a
+   * canvas or drawing, a shape, a map feature, or a field. Within `slop` CSS pixels, so a thin
+   * line is easy to hit. Decorations (`addElement`) and the 3D model are not counted.
+   */
+  hits(clientX: number, clientY: number, slop = 4): string[] {
+    const rect = this.container.getBoundingClientRect();
+    const x = clientX - rect.left;
+    const y = clientY - rect.top;
+    if (x < 0 || y < 0 || x > rect.width || y > rect.height) return [];
+    const frame = tableFrame(this.site);
+    const fit = fitTable(frame, rect.width, rect.height);
+    const metres: [number, number] = [(x - fit.x) / fit.scale, (y - fit.y) / fit.scale];
+    const out: string[] = [];
+    const box: [maplibregl.PointLike, maplibregl.PointLike] = [
+      [x - slop, y - slop],
+      [x + slop, y + slop],
+    ];
+    for (const instance of [...this.order].reverse()) {
+      const drawn = this.drawn.get(instance);
+      if (!drawn || drawn.intensity <= 0 || this.clips.get(instance)?.kind === 'none') continue;
+      let hit = false;
+      for (const canvas of drawn.surfaces) {
+        if (hit) break;
+        const ratio = canvas.width / Math.max(1, canvas.clientWidth || rect.width);
+        hit = inked(canvas, x * ratio, y * ratio, slop * ratio);
+      }
+      for (const [canvas, scale] of drawn.pictures) {
+        if (hit) break;
+        hit = inked(canvas, metres[0] * scale, metres[1] * scale, (slop / fit.scale) * scale);
+      }
+      if (!hit) {
+        const vector = (this.owned.get(instance) ?? []).filter((id) => VECTOR.has(this.map.getLayer(id)?.type ?? ''));
+        hit = vector.length > 0 && this.map.queryRenderedFeatures(box, { layers: vector }).length > 0;
+      }
+      // A field or a flow covers the table, so it counts for the layer only where nothing above it was hit.
+      if (!hit && drawn.fields.size + drawn.flows.size > 0 && metres[0] >= 0 && metres[1] >= 0 && metres[0] <= this.site.extent.width_m && metres[1] <= this.site.extent.height_m) hit = true;
+      if (hit) out.push(instance);
+    }
+    return out;
   }
 
   /** Applies a layer's intensity (0 to 2) to everything it has drawn and will draw. */
@@ -344,7 +411,7 @@ export class TableView {
 
   private drawnBy(instance: string) {
     let drawn = this.drawn.get(instance);
-    if (!drawn) this.drawn.set(instance, (drawn = { overlays: new Set(), elements: new Set(), canvases: new Map(), intensity: 1, clipped: new Set(), fields: new Set(), reclip: new Set(), compose: new Map() }));
+    if (!drawn) this.drawn.set(instance, (drawn = { overlays: new Set(), pictures: new Map(), surfaces: new Set(), elements: new Set(), canvases: new Map(), intensity: 1, clipped: new Set(), fields: new Set(), flows: new Set(), reclip: new Set(), compose: new Map() }));
     return drawn;
   }
 
@@ -739,16 +806,40 @@ const easeInOutCubic = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2
 
 interface Drawn {
   overlays: Set<{ setGain(gain: number): void }>;
+  /** Pixels a click on the map can land on (#425): drawings in table metres, canvases in CSS pixels. */
+  pictures: Map<HTMLCanvasElement, number>;
+  surfaces: Set<HTMLCanvasElement>;
   elements: Set<HTMLElement>;
   canvases: Map<string, number>;
   intensity: number;
   /** Page elements a reveal clips: decorations and canvases. */
   clipped: Set<HTMLElement>;
   fields: Set<MapFieldOverlay>;
+  flows: Set<MapFlowOverlay>;
   /** Makes each clipped drawing again after the shape changed. */
   reclip: Set<() => void>;
   /** By drawing: makes its clipped copy, before a commit. */
   compose: Map<string, () => void>;
+}
+
+/** Map layers whose features a click can find. */
+const VECTOR = new Set(['fill', 'line', 'circle', 'symbol', 'fill-extrusion', 'heatmap']);
+
+/** Whether a canvas has a visible pixel within `radius` of `(x, y)`, in its own pixels. */
+function inked(canvas: HTMLCanvasElement, x: number, y: number, radius: number): boolean {
+  const r = Math.max(1, Math.ceil(radius));
+  const left = Math.max(0, Math.floor(x) - r);
+  const top = Math.max(0, Math.floor(y) - r);
+  const width = Math.min(canvas.width, Math.floor(x) + r + 1) - left;
+  const height = Math.min(canvas.height, Math.floor(y) + r + 1) - top;
+  if (width <= 0 || height <= 0) return false;
+  try {
+    const data = canvas.getContext('2d')!.getImageData(left, top, width, height).data;
+    for (let i = 3; i < data.length; i += 4) if (data[i]! > 24) return true;
+  } catch {
+    // A canvas holding a picture from elsewhere cannot be read; it does not count.
+  }
+  return false;
 }
 
 /** Below 1 a decoration fades; above 1 it brightens. The filter is on the layer's own element, never the root. */

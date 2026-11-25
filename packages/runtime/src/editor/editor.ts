@@ -158,6 +158,8 @@ export class Editor {
   readonly canvas = el('div', 'ed-canvas');
   /** Takes a picture of the table, once the table is up; kept for Home when the table is left (#131). */
   snapshot: (() => Promise<Blob | null>) | null = null;
+  /** What drew under a point of the map, topmost first, and which layers read clicks themselves; set once the table is up (#425). */
+  picker: { hits(clientX: number, clientY: number): string[]; listens(id: string): boolean } | null = null;
   /** Changes sent to the host and not yet answered. */
   private pending = 0;
   /** Why the last change could not be saved, until one is. */
@@ -326,6 +328,7 @@ export class Editor {
       surfaces: this.surfaces,
       canvas: this.canvas,
     });
+    this.clickToSelect();
     this.mediaTab = new MediaTab({
       store,
       addMedia: (kinds) => this.addMedia(kinds),
@@ -945,6 +948,51 @@ export class Editor {
     }
     // The map and the controller are on show together; `only` gives the controller the whole space.
     this.surfaces.classList.toggle('is-controller-only', only);
+  }
+
+  /**
+   * A click on the map selects what drew there (#425), as in a drawing program: the topmost
+   * layer with a mark, shape, feature or field under the pointer. An item selects its layer with
+   * the item open; map life at rest selects its row under At rest. A layer that reads clicks
+   * itself (CoolPaths' ends, Sunlight's spot) keeps them while it is open, and a drag, a pan or a
+   * click on the drawing frame or the ribbons is not a pick.
+   */
+  private clickToSelect(): void {
+    let down: { x: number; y: number; time: number } | null = null;
+    this.canvas.addEventListener('pointerdown', (event) => {
+      const target = event.target as HTMLElement;
+      const onMap = target.closest('.table-surface') && !target.closest('.ed-drawing-frame, .ed-canvas-empty, button, input');
+      down = event.button === 0 && !this.canvas.classList.contains('is-panning') && onMap ? { x: event.clientX, y: event.clientY, time: event.timeStamp } : null;
+    });
+    this.canvas.addEventListener('pointerup', (event) => {
+      const start = down;
+      down = null;
+      if (!start || !this.picker || this.wizard || this.dialog) return;
+      if (Math.hypot(event.clientX - start.x, event.clientY - start.y) > 4 || event.timeStamp - start.time > 600) return;
+      const open = this.context.kind === 'layer' ? this.context.id : null;
+      if (open && this.picker.listens(open)) return;
+      const hit = this.picker.hits(event.clientX, event.clientY).find((id) => this.store.state.layers[id]);
+      if (!hit) return;
+      this.pickOnMap(hit);
+    });
+  }
+
+  /** Selects a layer, an item or a piece of map life the map was clicked on. */
+  private pickOnMap(id: string): void {
+    const state = this.store.state.layers[id]!;
+    const manifest = this.store.manifest(state.layer);
+    if (this.also.size) this.also.clear();
+    if (state.parent) {
+      if (this.context.kind === 'layer' && this.context.id === state.parent && this.layerItem === id) return;
+      this.go({ kind: 'layer', id: state.parent }, id);
+    } else if (manifest && isAtRest(manifest, state)) {
+      if (this.context.kind === 'home' && this.homeItem === id) return;
+      this.homeItem = id;
+      this.go({ kind: 'home' });
+    } else {
+      if (this.context.kind === 'layer' && this.context.id === id && !this.layerItem) return;
+      this.go({ kind: 'layer', id });
+    }
   }
 
   /** A press on the live controller selects that layer here, so the two stay in step. */

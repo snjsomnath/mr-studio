@@ -268,6 +268,8 @@ async function main() {
     store.onDisplay((quality) => view.setQuality(quality));
     // The editor keeps a picture of the table for Home when it is left (#131).
     if (editor) editor.snapshot = () => view.snapshot();
+    // A click on the map selects the layer that drew there (#425).
+    if (editor) editor.picker = { hits: (x, y) => view.hits(x, y), listens: (id) => view.listens(id) };
     const { installModel } = await import('./model/index.ts');
     await installModel(view, connection, role, { remoteCalibration: !editing });
     new LayerManager(store, connection, view);
