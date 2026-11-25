@@ -22,7 +22,7 @@ const out = path.join(__dirname, '..', 'packages', 'runtime', 'public', 'preview
 const SETTINGS = {
   mapdata: { dataset: 'buildings' },
   // These need a file of the site: the preview site gets the sample kit's masterplan.svg and overlay.png (#409).
-  plan: { dataset: 'masterplan' },
+  plan: { dataset: 'masterplan', opening: 'none' },
   media: { file: 'data/media/overlay.png' },
 };
 /** Marks put on a layer through its tools, as a phone or a click would, for layers that start empty (#409). On the sample site. */
@@ -36,10 +36,19 @@ const TOOLS = {
     { tool: 'place', geometry: { type: 'Point', coordinates: at(0.4, -0.1) } },
   ],
 };
+/** Layers that show another layer inside them (#453) get the plan drawing in theirs. */
+const INSIDE = {
+  swipe: { use: 'plan', params: { dataset: 'masterplan', opening: 'none' } },
+};
+/** Files from the sample data kit (samples/kit) brought in first, for layers that show a drawing. */
+const KIT = [{ target: 'data:masterplan', file: 'masterplan.svg' }];
 /** Seconds a layer runs before its picture is taken: long enough for motion to fill the table. */
 const SETTLE = { mobility: 8, wind: 8, stormwater: 14, transit: 8, cars: 8, 'street-life': 8, coolpaths: 6 };
-/** Layers that have no picture of their own: they need media or a service the sample has not got. */
-const SKIP = new Set(['basemap', 'isovist', 'blocks-demo', 'media', 'wms', 'walkthrough', 'plan', 'slideshow', 'sketch', 'swipe', 'lens']);
+/**
+ * Layers that have no picture of their own: they need a service, a video or a walk the sample
+ * has not got, or they show only where a hand is (the magnifier).
+ */
+const SKIP = new Set(['blocks-demo', 'wms', 'walkthrough', 'fieldwalk', 'lens']);
 
 function connect() {
   return new Promise((resolve, reject) => {
@@ -76,6 +85,17 @@ function connect() {
   const layers = await fetch(`${base}/api/info`).then((r) => r.json()).catch(() => null);
   const catalogue = (host.welcome.manifests ?? layers?.manifests ?? []).filter((m) => !m.custom);
   const wanted = args.length ? args : catalogue.map((m) => m.id).filter((id) => !SKIP.has(id));
+  const kit = path.join(__dirname, '..', 'samples', 'kit');
+  for (const { target, file } of KIT) {
+    const known = host.welcome.state?.site?.data?.[target.slice(5)];
+    if (known) continue;
+    const response = await fetch(`${base}/api/data/import?target=${encodeURIComponent(target)}`, {
+      method: 'POST',
+      headers: { 'X-Filename': encodeURIComponent(file) },
+      body: fs.readFileSync(path.join(kit, file)),
+    });
+    if (response.status !== 200) console.warn(`${file}: not brought in (${response.status})`);
+  }
   const browser = await chromium.launch();
   const table = await browser.newPage({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 });
   await table.goto(`${base}/table?intro=0`);
@@ -92,6 +112,10 @@ function connect() {
       added = await host.request('scene.add', { use: id });
       const layer = added?.id ?? id;
       if (SETTINGS[id]) await host.request('layer.set', { layer, params: SETTINGS[id] }).catch(() => {});
+      if (INSIDE[id]) {
+        const child = await host.request('scene.add', { use: INSIDE[id].use, parent: layer });
+        await host.request('layer.set', { layer: child?.id, params: INSIDE[id].params }).catch(() => {});
+      }
       if (ambient) await host.request('scene.set', { layer, active: true });
       else await host.request('layer.activate', { layer, active: true });
       for (const input of TOOLS[id] ?? []) await host.request('tool.input', { layer, ...input }).catch((error) => console.warn(`${id} ${input.tool}: ${error.message}`));
