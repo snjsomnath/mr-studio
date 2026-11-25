@@ -56,7 +56,8 @@ test('every setting is declared and edited in its one home only (rule 1)', () =>
 
 test('every declared setting has a place where it is edited', () => {
   const placed = new Set(placements.map((p) => p.id));
-  for (const id of Object.keys(SETTINGS)) assert.ok(placed.has(id), `${id} is edited somewhere`);
+  // Settings at home in the app's Settings window (#393) are edited outside the editor, in apps/studio/ui.
+  for (const [id, info] of Object.entries(SETTINGS)) if (info.home !== 'app:settings') assert.ok(placed.has(id), `${id} is edited somewhere`);
 });
 
 test('the old setup tabs and the Table settings panel are gone (#382)', () => {

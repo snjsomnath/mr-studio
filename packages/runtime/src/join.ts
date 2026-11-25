@@ -1,5 +1,7 @@
 import qrcode from 'qrcode-generator';
 
+import type { Connection } from '@mrstudio/sdk';
+
 import { t } from './i18n.ts';
 import { avatarOf, nameOf } from './avatars.ts';
 import type { Store } from './store.ts';
@@ -118,4 +120,86 @@ export function joinPanel(store: Store): HTMLElement {
     show();
   });
   return panel;
+}
+
+/**
+ * Looking after the phones (#335), on the operator's Developer window: pause them, let one go,
+ * end the round (every phone goes and every sketch is cleared), and download what they did.
+ */
+export function phonesPanel(store: Store, connection: Connection): HTMLElement {
+  const panel = el('section', 'phones-panel');
+  panel.append(el('h2', '', t('Phones')));
+  const pause = el('label', 'phones-pause');
+  const box = document.createElement('input');
+  box.type = 'checkbox';
+  box.className = 'switch';
+  box.addEventListener('change', () => void connection.request('phones.pause', { paused: box.checked }).catch(() => (box.checked = !box.checked)));
+  pause.append(box, el('span', '', t('Pause the phones')));
+  const list = el('ul', 'phones-list');
+  const tools = el('div', 'phones-tools');
+  const end = el('button', 'action', t('End the round')) as HTMLButtonElement;
+  end.type = 'button';
+  // Ending a round is pressed twice, so a slip does not send everyone away.
+  let armed = 0;
+  end.addEventListener('click', () => {
+    if (!armed) {
+      end.textContent = t('Press again to end the round');
+      armed = window.setTimeout(() => {
+        armed = 0;
+        end.textContent = t('End the round');
+      }, 4000);
+      return;
+    }
+    clearTimeout(armed);
+    armed = 0;
+    end.textContent = t('End the round');
+    void connection.request('phones.release', {}).catch(() => {});
+    for (const id of store.state.scene) {
+      if (store.state.layers[id]?.layer === 'sketch' && store.state.layers[id]?.active) void connection.request('layer.action', { layer: id, action: 'clear' }).catch(() => {});
+    }
+  });
+  const log = el('button', 'action', t('Download the session log')) as HTMLButtonElement;
+  log.type = 'button';
+  log.addEventListener('click', async () => {
+    const answer = await connection.request<{ log: unknown[] }>('phones.log').catch(() => ({ log: [] }));
+    const file = new Blob([JSON.stringify({ session: store.state.session.id, site: store.state.site.name, log: answer.log }, null, 2)], { type: 'application/json' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(file);
+    link.download = `phones-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-')}.json`;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+  });
+  tools.append(end, log);
+  const show = () => {
+    box.checked = store.state.session.phones_paused === true;
+    const here = store.state.participants;
+    list.replaceChildren(
+      ...here.map((p) => {
+        const row = el('li', p.connected ? '' : 'is-away');
+        const dot = el('span', 'join-person', avatarOf(p));
+        dot.style.background = p.colour;
+        const go = el('button', 'action', t('Let go')) as HTMLButtonElement;
+        go.type = 'button';
+        go.setAttribute('aria-label', t('Let {who} go', { who: nameOf(p) }));
+        go.addEventListener('click', () => void connection.request('phones.release', { slot: p.slot }).catch(() => {}));
+        row.append(dot, el('span', '', nameOf(p)), go);
+        return row;
+      }),
+    );
+    if (here.length === 0) list.append(el('li', 'phones-none', t('No phones have joined.')));
+  };
+  show();
+  store.onParticipants(show);
+  panel.append(pause, list, tools);
+  return panel;
+}
+
+/** A line across the top of a phone while the operator has paused the phones (#335). */
+export function pausedBanner(store: Store): HTMLElement {
+  const banner = el('p', 'phones-paused', t('The table is paused for a moment. You can look around; changes wait until it goes on.'));
+  banner.setAttribute('role', 'status');
+  const show = () => (banner.hidden = store.state.session.phones_paused !== true);
+  show();
+  store.onParticipants(show);
+  return banner;
 }

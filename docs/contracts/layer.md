@@ -92,7 +92,7 @@ A panel that breaks a rule is not shown.
 
 ## Tools
 
-Tools are spatial inputs a layer accepts: `point`, `line`, `polygon`. Each is `{ "id", "type", "label" }`. The input system (touch, phone) delivers them as `ToolInput` with coordinates in WGS84:
+Tools are spatial inputs a layer accepts: `point`, `line`, `polygon`. Each is `{ "id", "type", "label" }`. A `line` with `"freehand": true` is drawn with one stroke of the finger and sent when it lifts, like a pen (#335). The input system (touch, phone) delivers them as `ToolInput` with coordinates in WGS84:
 
 ```ts
 interface ToolInput {
@@ -100,11 +100,11 @@ interface ToolInput {
   tool: string;                                   // the tool's id
   geometry: ToolGeometry;                         // GeoJSON Point, LineString or Polygon, checked by the host
   from: number;                                   // the sending surface
-  participant?: { slot: number; colour: string }; // when it came from a phone
+  participant?: { slot: number; colour: string; avatar?: string; name?: string | null }; // when it came from a phone
 }
 ```
 
-A phone shows a layer's tools on a small map as soon as the manifest declares them; the layer writes no phone code.
+A phone shows a layer's tools on its map as soon as the manifest declares them; the layer writes no phone code. The map has a light base map, the buildings and the table's edge; two fingers pan and zoom, Fit table goes back to the whole table, and it opens full screen (#335). A layer's action controls marked `"phone": true` sit under the map. On the table the attention cue shows the phone's animal in its colour (#423).
 `packages/layers/sketch` is the reference for a layer with tools.
 
 ## Entities
@@ -226,7 +226,7 @@ export default defineLayer({
     stream.on('shadow', (frame) => overlay.set(frame));
     return {
       update(changed) { stream.set(kernelParams(ctx)); },  // params changed
-      action(id) {},                                        // an action control was pressed
+      action(id, by) {},                                    // an action control was pressed; by: the phone that pressed it (#335)
       tool(input) {},                                       // a spatial input arrived
     };
   },

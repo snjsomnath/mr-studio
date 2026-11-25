@@ -1,6 +1,8 @@
 import { formatCorners, parseCorners, tableFrame } from '@mrstudio/sdk';
 import type { SiteInfo } from '@mrstudio/sdk';
 
+import { fitFrame, loadInk, loadOutlines, outlinePoints } from './drawing-snap.ts';
+
 /**
  * Placing a drawing by hand (#301): with a Masterplan open in the editor, its frame is drawn over
  * the table with handles. Drag inside it to move it, a corner to scale it about its middle, the
@@ -96,6 +98,8 @@ export interface DrawingFrameHost {
   site(): SiteInfo;
   /** Saves the corners ('' fills the table again). */
   place(corners: string): void;
+  /** The framed drawing's dataset ('' for the table's first) and its turn in degrees, for Snap to buildings (#379). */
+  drawing(): { dataset: string; turn: number } | null;
 }
 
 export class DrawingFrame {
@@ -107,6 +111,9 @@ export class DrawingFrame {
   private readonly corners = [0, 1, 2, 3].map(() => svg('rect', { width: 12, height: 12, class: 'ed-df-corner' }));
   private readonly top = svg('text', { class: 'ed-df-top', 'text-anchor': 'middle' });
   private readonly fill = Object.assign(document.createElement('button'), { type: 'button', className: 'ed-button', textContent: 'Fill the table again' });
+  private readonly snap = Object.assign(document.createElement('button'), { type: 'button', className: 'ed-button', textContent: 'Snap to buildings' });
+  private readonly hint = Object.assign(document.createElement('span'), { textContent: 'Drag to move the drawing, a corner to scale it, the round handle to turn it.' });
+  private snapping = false;
   private surface: HTMLElement | null = null;
   private frame: Frame | null = null;
   private resize = new ResizeObserver(() => this.draw());
@@ -126,8 +133,10 @@ export class DrawingFrame {
     this.drawing.append(this.body, this.stem, this.knob, ...this.corners, this.top);
     const bar = document.createElement('div');
     bar.className = 'ed-df-bar';
-    bar.append(Object.assign(document.createElement('span'), { textContent: 'Drag to move the drawing, a corner to scale it, the round handle to turn it.' }), this.fill);
+    this.snap.title = 'Move, turn and scale the drawing a little so its lines lie on the table\'s building footprints.';
+    bar.append(this.hint, this.snap, this.fill);
     this.fill.addEventListener('click', () => this.host.place(''));
+    this.snap.addEventListener('click', () => void this.snapToBuildings());
     this.root.append(this.drawing, bar);
   }
 
@@ -137,6 +146,7 @@ export class DrawingFrame {
     const map = tableFrame(this.host.site());
     const parsed = parseCorners(corners);
     this.fill.hidden = !parsed;
+    this.snap.disabled = this.snapping || !this.host.site().data?.buildings;
     this.frame = parsed ? (parsed.map((c) => map.toTable(c)) as Frame) : [[0, 0], [map.width, 0], [0, map.height]];
     // Drawn in the surface's parent, so the handles may reach past the table's edge.
     const holder = surface.parentElement!;
@@ -154,6 +164,42 @@ export class DrawingFrame {
     this.root.remove();
     this.resize.disconnect();
     this.surface = null;
+  }
+
+  /** Fits the frame to the footprints (#379) and saves it when the fit is better, saying how well it matches. */
+  private async snapToBuildings(): Promise<void> {
+    const frame = this.frame;
+    const drawing = this.host.drawing();
+    if (!frame || !drawing || this.snapping) return;
+    this.snapping = true;
+    this.snap.disabled = true;
+    this.hint.textContent = 'Fitting the drawing to the footprints…';
+    try {
+      const site = this.host.site();
+      const [ink, rings] = await Promise.all([loadInk(site, drawing.dataset, drawing.turn), loadOutlines(site)]);
+      if (rings.length === 0) throw new Error('the table has no building footprints');
+      const spacing = Math.max(0.5, Math.hypot(site.extent.width_m, site.extent.height_m) / 2500);
+      const fit = fitFrame(ink, frame, outlinePoints(rings, spacing));
+      const [before, after] = [Math.round(fit.before * 100), Math.round(fit.after * 100)];
+      if (fit.after < 0.15 || fit.after <= fit.before + 0.005) {
+        this.hint.textContent =
+          fit.after <= fit.before + 0.005
+            ? `It already fits as well as it can (${before} % of the footprint edges on its lines).`
+            : `No good fit nearby (${after} %). Drag the drawing close to where it belongs and try again.`;
+      } else {
+        const map = tableFrame(site);
+        this.frame = fit.frame;
+        this.draw();
+        this.fill.hidden = false;
+        this.host.place(formatCorners(fit.frame.map((p) => map.toLonLat(p))));
+        this.hint.textContent = `Snapped: ${after} % of the footprint edges now lie on its lines (from ${before} %).`;
+      }
+    } catch (error) {
+      this.hint.textContent = `Could not snap: ${(error as Error).message}.`;
+    } finally {
+      this.snapping = false;
+      this.snap.disabled = !this.host.site().data?.buildings;
+    }
   }
 
   private toTable(event: PointerEvent): Point {

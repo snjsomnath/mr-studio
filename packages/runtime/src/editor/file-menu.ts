@@ -5,7 +5,7 @@
  */
 import { el } from '../controls.ts';
 
-export type FileAction = 'new' | 'open' | 'save' | 'save_as' | 'export' | 'share' | 'starter' | 'reveal' | 'close' | 'home';
+export type FileAction = 'new' | 'open' | 'save' | 'save_as' | 'export' | 'share' | 'starter' | 'reveal' | 'close' | 'home' | 'settings';
 
 export const mac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 
@@ -20,8 +20,8 @@ export function actionFor(event: KeyboardEvent, inApp: boolean): FileAction | nu
   const key = event.key.toLowerCase();
   if (key === 's') return event.shiftKey ? (inApp ? 'save_as' : 'save') : 'save';
   if (!inApp) return null;
-  if (event.shiftKey) return key === 'h' ? 'home' : null;
-  return ({ n: 'new', o: 'open', w: 'close' } as Record<string, FileAction>)[key] ?? null;
+  if (event.shiftKey) return null;
+  return ({ n: 'new', o: 'open', w: 'close', ',': 'settings' } as Record<string, FileAction>)[key] ?? null;
 }
 
 interface Item {
@@ -45,7 +45,9 @@ const ITEMS: (Item | 'line')[] = [
   { action: 'reveal', label: mac ? 'Show in Finder' : 'Show in Explorer', app: true },
   'line',
   { action: 'close', label: 'Close table', shortcut: keys('W'), app: true },
-  { action: 'home', label: 'All tables', shortcut: keys('H', true), app: true },
+  'line',
+  // Office's Options (#393): the app and this computer, not the table. All tables is Open… now.
+  { action: 'settings', label: 'Settings…', shortcut: mac ? '⌘,' : 'Ctrl+,', app: true },
 ];
 
 /** The File button. `run` is called with the chosen action. */

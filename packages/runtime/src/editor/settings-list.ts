@@ -19,6 +19,8 @@ export type Home =
   | 'dialog:welcome'
   /** Present › Screens and calibration… (this computer, #73) */
   | 'dialog:screens'
+  /** File › Settings › This computer, the app's own window outside the editor (#393) */
+  | 'app:settings'
   /** Design › Palette */
   | 'dialog:palette'
   /** A gallery or toggle on the Design ribbon */
@@ -66,9 +68,9 @@ export const SETTINGS = {
   'button.icon': { label: 'A button’s icon', owner: 'button', home: 'format:button' },
   'button.side': { label: 'A button’s side of the controller', owner: 'button', home: 'format:button' },
   'button.hidden': { label: 'A button on the controller or not', owner: 'button', home: 'list:eye' },
-  'computer.screens': { label: 'Which screen shows what', owner: 'computer', home: 'dialog:screens' },
+  'computer.screens': { label: 'Which screen shows what', owner: 'computer', home: 'app:settings' },
   'computer.calibration': { label: 'Projector calibration', owner: 'computer', home: 'dialog:screens' },
-  'computer.colour': { label: 'Colour of each display', owner: 'computer', home: 'dialog:screens' },
+  'computer.colour': { label: 'Colour of each display', owner: 'computer', home: 'app:settings' },
   'computer.quality': { label: 'Drawing quality', owner: 'computer', home: 'dialog:screens' },
 } as const satisfies Record<string, SettingInfo>;
 

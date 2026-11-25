@@ -2,13 +2,14 @@
   "api": 1,
   "id": "sketch",
   "name": "Sketch",
-  "description": "Mark places, routes and areas on the table from a phone",
+  "description": "Mark places, draw and point out routes and areas on the table from a phone",
   "about": {"purpose": "Lets everyone contribute: people mark places, routes and areas on the table from their phones.", "questions": ["Where do you go, and what would you change?", "Which places feel unsafe, loved or missing?"], "pairs_with": ["isovist", "coolpaths", "plan"], "limits": ["There is no voting or commenting on each other's marks yet"]},
   "icon": "pencil",
   "attract": { "effect": "waves" },
   "alongside": true,
   "controls": [
     { "id": "opacity", "type": "range", "label": "Opacity", "min": 0.2, "max": 1, "step": 0.05, "default": 1, "tier": "more" },
+    { "id": "undo", "type": "action", "label": "Take back my last mark", "phone": true, "tier": "more", "help": "From a phone, takes back that phone's last mark; from the controller, the last mark anyone made." },
     { "id": "clear", "type": "action", "label": "Clear the sketch", "tier": "more" }
   ],
   "panels": [
@@ -16,6 +17,8 @@
   ],
   "tools": [
     { "id": "place", "type": "point", "label": "Place" },
+    { "id": "pen", "type": "line", "label": "Pen", "freehand": true },
+    { "id": "arrow", "type": "line", "label": "Arrow", "freehand": true },
     { "id": "route", "type": "line", "label": "Route" },
     { "id": "area", "type": "polygon", "label": "Area" }
   ]

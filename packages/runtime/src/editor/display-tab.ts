@@ -1,9 +1,8 @@
-// The editor's Display ribbon tab (#151, #153): the final colour pass per display, its
-// presets and test card, how strongly each layer is drawn, and the projector calibration.
-// These are app settings (#73), kept per display by the desktop app in `colour.json`; this
-// tab is the editor's way to them, the same commands as the Colour tab of Displays and
-// settings (apps/studio/ui/colour.js). In a browser only the calibration is offered.
-// Quality (#134) is the exception: it belongs to the table, saved in site.json, so it shows everywhere.
+// Present › Screens and calibration… (#151, #153, #382, #393). In the desktop app this computer's
+// screens, calibration and colour have one home, File › Settings › This computer
+// (apps/studio/ui), and this dialog is the way there. In a browser, where there is no Settings
+// window, the projector is lined up here. Quality (#134) belongs to the table, saved in
+// site.json, so it shows in both.
 
 import { setting } from './settings-list.ts';
 import type { Connection, DisplayQuality, ProjectorCalibration } from '@mrstudio/sdk';
@@ -23,23 +22,6 @@ export interface Colour {
   tint: number;
 }
 
-interface DisplayColour {
-  display: number;
-  name: string;
-  role: string | null;
-  colour: Colour;
-}
-interface Preset {
-  name: string;
-  built_in: boolean;
-  colour: Colour;
-}
-interface LayerIntensity {
-  id: string;
-  name: string;
-  active: boolean;
-  intensity: number;
-}
 /** A connected display, as the desktop app lists it (#188). */
 interface Screen {
   index: number;
@@ -50,16 +32,6 @@ interface Screen {
   height: number;
   primary: boolean;
 }
-interface Assigned {
-  display: number;
-  role: string;
-  fullscreen: boolean;
-}
-interface Screens {
-  displays: Screen[];
-  windows: Assigned[];
-  configured: boolean;
-}
 
 /** How a display is listed in the Table and Controller pickers. */
 export function screenLabel(d: Screen): string {
@@ -67,11 +39,6 @@ export function screenLabel(d: Screen): string {
   return `${d.index + 1} · ${d.model ?? d.name ?? 'Display'}${kind}`;
 }
 
-interface ColourState {
-  displays: DisplayColour[];
-  presets: Preset[];
-  layers: LayerIntensity[];
-}
 
 /** The sliders, in the order the colour pass applies them, with their ranges (colour.rs). */
 const SLIDERS: [keyof Colour, string, number, number, number][] = [
@@ -83,7 +50,6 @@ const SLIDERS: [keyof Colour, string, number, number, number][] = [
   ['tint', 'Green · magenta', -1, 1, 0],
 ];
 const NEUTRAL: Colour = { saturation: 1, contrast: 1, brightness: 1, gamma: 1, temperature: 0, tint: 0 };
-const REMEMBER = 'mrs-editor-colour-display';
 
 /** What went wrong, in words: a shell error is a string, ours an Error. */
 const text = (error: unknown) => (error instanceof Error ? error.message : String(error));
@@ -162,52 +128,7 @@ function column(...children: HTMLElement[]): HTMLElement {
   return node;
 }
 
-/** One compact slider: a label, the range and its value. Double-click puts it back to neutral. */
-function slider(label: string, min: number, max: number, neutral: number, onInput: (value: number) => void): { row: HTMLElement; set: (value: number | null) => void } {
-  const row = el('label', 'dt-slider');
-  const range = el('input');
-  Object.assign(range, { type: 'range', min: String(min), max: String(max), step: '0.01' });
-  range.ariaLabel = label;
-  const output = el('output');
-  row.append(el('span', 'dt-slider-label', label), range, output);
-  const change = (value: number) => {
-    output.textContent = value.toFixed(2);
-    onInput(value);
-  };
-  range.addEventListener('input', () => change(Number(range.value)));
-  range.addEventListener('dblclick', () => {
-    range.value = String(neutral);
-    change(neutral);
-  });
-  row.title = 'Double-click to put it back';
-  return {
-    row,
-    set: (value) => {
-      range.disabled = value === null;
-      range.value = String(value ?? neutral);
-      output.textContent = value === null ? '' : value.toFixed(2);
-    },
-  };
-}
 
-/** Sends only the latest value, once the one before has been answered: sliders fire faster than the shell needs. */
-function latest<T>(send: (value: T) => Promise<unknown>, onError: (error: unknown) => void): (value: T) => void {
-  let next: { value: T } | null = null;
-  let busy = false;
-  return (value) => {
-    next = { value };
-    if (busy) return;
-    busy = true;
-    void (async () => {
-      while (next) {
-        const { value: now } = next;
-        next = null;
-        await send(now).catch(onError);
-      }
-      busy = false;
-    })();
-  };
-}
 
 export class DisplayTab {
   /** The ribbon groups, made once and kept, so a slider being dragged is never rebuilt under the pointer. */
@@ -216,35 +137,14 @@ export class DisplayTab {
   private readonly connection: Connection;
   private readonly preview: HTMLElement;
   private readonly openSettings: () => void;
-  private state: ColourState | null = null;
-  private display: number | null = null;
-  private open = false;
-  private previewOn = true;
-  private testCardOn = false;
   private calibrating = false;
   private calibrated = false;
 
-  private readonly tableSelect = el('select', 'dt-select');
-  private readonly controllerSelect = el('select', 'dt-select');
-  private readonly identifyButton = tool('Identify', 'info');
-  private readonly autoButton = tool('Automatic', 'sparkle');
-  private screens: Screens | null = null;
-  private readonly displaySelect = el('select', 'dt-select');
-  private readonly presetSelect = el('select', 'dt-select');
-  private readonly presetName = el('input', 'dt-input');
-  private readonly saveButton = tool('Save', 'save');
-  private readonly deleteButton = tool('Delete', 'trash');
-  private readonly resetButton = tool('Neutral', 'reset');
-  private readonly testCardButton = tool('Test card', 'bars');
-  private readonly previewButton = tool('Preview here', 'eye');
-  private readonly layersButton = tool('Layer strength', 'layers', true);
   private readonly calibrateButton = tool('Calibrate', 'crosshair', true);
   private readonly clearButton = tool('Clear', 'trash');
   private readonly calibrationStatus = el('span', 'dt-status');
   private readonly qualityButtons = new Map<DisplayQuality, HTMLButtonElement>();
   private readonly problem = el('span', 'dt-status is-error');
-  private readonly sliders = new Map<keyof Colour, ReturnType<typeof slider>>();
-  private popover: HTMLElement | null = null;
   /** The calibration guide, while it is open (#181). */
   private guide: HTMLElement | null = null;
   private guideTimer: number | null = null;
@@ -252,9 +152,6 @@ export class DisplayTab {
   private tableShown: boolean | null = null;
   /** Saved while the guide was open, to tick its last step. */
   private savedNow = false;
-  private stopAway: (() => void) | null = null;
-  private readonly sendColour: (value: { display: number; colour: Colour }) => void;
-  private readonly sendLayer: (value: { layer: string; intensity: number }) => void;
 
   /** `preview` is the editor's map, which shows the chosen display's colour while this tab is open. */
   constructor(invoke: Invoke | undefined, connection: Connection, preview: HTMLElement, openSettings: () => void) {
@@ -262,28 +159,25 @@ export class DisplayTab {
     this.connection = connection;
     this.preview = preview;
     this.openSettings = openSettings;
-    const fail = (error: unknown) => this.say(text(error));
-    this.sendColour = latest((value) => this.call('set_colour', value), fail);
-    this.sendLayer = latest((value) => this.call('set_layer_intensity', value), fail);
 
     // In the order a table is set up: which screen is which, line the map up, then colour.
     const groups: HTMLElement[] = [];
-    // Each part is this computer's own setting, edited only here (settings-list.ts, #392).
-    if (invoke) groups.push(setting('computer.screens', 'dialog:screens', this.screensGroup()));
-    groups.push(setting('computer.calibration', 'dialog:screens', this.projectorGroup()));
-    if (invoke) groups.push(...this.colourGroups().map((g) => setting('computer.colour', 'dialog:screens', g)));
-    else {
+    if (invoke) {
+      // In the app this computer's screens, calibration and colour have one home, File › Settings
+      // (#393), which works with no table open too. Here is the way to it, and the table's quality.
+      const open = tool('Screens, calibration and colour', 'settings', true);
+      open.dataset.command = 'settings.computer';
+      open.title = 'File › Settings › This computer: which display shows the table and the controller, lining the map up with the model, and the colour of each display';
+      open.addEventListener('click', () => this.openSettings());
+      const note = el('p', 'dt-note', 'They belong to this computer, so they are in File › Settings, the same for every table.');
+      groups.push(group('This computer', open, note));
+      groups.push(setting('computer.quality', 'dialog:screens', this.qualityGroup()));
+    } else {
+      // In a browser there is no Settings window: the projector is lined up here (settings-list.ts, #392).
+      groups.push(setting('computer.calibration', 'dialog:screens', this.projectorGroup()));
       const note = el('p', 'dt-note', 'The colour of each display is set in the MR Studio desktop app, where the table is projected.');
       groups.push(group('Colour', note));
-    }
-    groups.push(setting('computer.quality', 'dialog:screens', this.qualityGroup()));
-    if (invoke) {
-      const more = tool('Displays and settings', 'settings', true);
-      more.title = 'Which display shows the table and the controller, updates, and every display setting';
-      more.addEventListener('click', () => this.openSettings());
-      const last = group('More', more);
-      last.classList.add('is-last');
-      groups.push(last);
+      groups.push(setting('computer.quality', 'dialog:screens', this.qualityGroup()));
     }
     this.groups = groups;
 
@@ -310,190 +204,10 @@ export class DisplayTab {
     if (this.guide) this.fillGuide(this.guide);
   }
 
-  private current(): DisplayColour | undefined {
-    return this.state?.displays.find((d) => d.display === this.display);
-  }
 
-  /** Which display shows the table and which the controller (#188). */
-  private screensGroup(): HTMLElement {
-    const picker = (label: string, select: HTMLSelectElement, tip: string) => {
-      const row = el('label', 'dt-slider dt-picker');
-      row.title = tip;
-      select.ariaLabel = label;
-      row.append(el('span', 'dt-slider-label', label), select);
-      return row;
-    };
-    this.tableSelect.addEventListener('change', () => this.chooseScreen('table'));
-    this.controllerSelect.addEventListener('change', () => this.chooseScreen('tv'));
-    this.identifyButton.title = 'Show each display’s number on it for a moment';
-    this.identifyButton.addEventListener('click', () => void this.call('identify').catch((error) => this.say(text(error))));
-    this.autoButton.addEventListener('click', () => {
-      if (this.screens?.configured) void this.saveScreens([]);
-    });
-    const actions = el('div', 'dt-row');
-    actions.append(this.identifyButton, this.autoButton);
-    return group(
-      'Screens',
-      column(
-        picker('Table', this.tableSelect, 'The display that projects the map onto the table, usually the projector'),
-        picker('Controller', this.controllerSelect, 'The display with the controls, usually the TV beside the table'),
-        actions,
-      ),
-    );
-  }
 
-  private async loadScreens(): Promise<void> {
-    try {
-      const state = (await this.call('presenting_state')) as Partial<Screens> | null;
-      // An older desktop app sends neither list.
-      this.screens = {
-        displays: state?.displays ?? [],
-        windows: state?.windows ?? [],
-        configured: Boolean(state?.configured),
-      };
-    } catch (error) {
-      this.say(text(error));
-      return;
-    }
-    this.drawScreens();
-  }
 
-  private drawScreens(): void {
-    const screens = this.screens;
-    if (!screens) return;
-    const on = (role: string) => screens.windows.find((w) => w.role === role)?.display;
-    const fill = (select: HTMLSelectElement, value: number | undefined, none: string | null) => {
-      const options = screens.displays.map((d) => {
-        const option = el('option', undefined, screenLabel(d));
-        option.value = String(d.index);
-        option.title = `${d.width}×${d.height} pixels`;
-        return option;
-      });
-      if (none !== null) {
-        const option = el('option', undefined, none);
-        option.value = '';
-        options.push(option);
-      }
-      select.replaceChildren(...options);
-      select.value = value === undefined ? '' : String(value);
-      select.disabled = screens.displays.length === 0;
-    };
-    fill(this.tableSelect, on('table'), null);
-    fill(this.controllerSelect, on('tv'), 'None: use the preview here');
-    // Automatic is on while the choice is MR Studio's guess; picking by hand turns it off.
-    this.autoButton.classList.toggle('is-on', !screens.configured);
-    this.autoButton.setAttribute('aria-pressed', String(!screens.configured));
-    this.autoButton.title = screens.configured
-      ? 'Chosen by hand. Click to let MR Studio choose again: the table on a projector and the controller on a TV, by their makers'
-      : screens.displays.length < 2
-        ? 'One display: the table goes on it, and the controller is the preview here'
-        : 'Chosen automatically: the table on a projector and the controller on a TV, by their makers';
-  }
 
-  /** A picker changed. When both would share a display, the other role takes the one this left. */
-  private chooseScreen(role: 'table' | 'tv'): void {
-    const screens = this.screens;
-    if (!screens) return;
-    const was = (r: string) => screens.windows.find((w) => w.role === r)?.display ?? null;
-    const read = (select: HTMLSelectElement) => (select.value === '' ? null : Number(select.value));
-    let table = read(this.tableSelect);
-    let tv = read(this.controllerSelect);
-    if (table !== null && table === tv) {
-      if (role === 'table') tv = was('table');
-      else {
-        const other = was('tv') ?? screens.displays.find((d) => d.index !== tv)?.index ?? null;
-        // With one display the table keeps it, and the controller stays in the preview.
-        if (other === null) tv = null;
-        else table = other;
-      }
-    }
-    if (tv === table) tv = null;
-    const windows: Assigned[] = [];
-    if (table !== null) windows.push({ display: table, role: 'table', fullscreen: true });
-    if (tv !== null) windows.push({ display: tv, role: 'tv', fullscreen: true });
-    // A dev window set up in Displays and settings stays.
-    windows.push(...screens.windows.filter((w) => w.role === 'dev' && !windows.some((o) => o.display === w.display)));
-    void this.saveScreens(windows);
-  }
-
-  private async saveScreens(windows: Assigned[]): Promise<void> {
-    try {
-      await this.call('save_displays', { windows });
-      this.say(null);
-    } catch (error) {
-      this.say(text(error));
-    }
-    await this.loadScreens();
-    // The colour list names each display's role.
-    try {
-      this.state = (await this.call('colour_state')) as ColourState;
-      this.draw();
-    } catch {
-      // Shown by the next refresh.
-    }
-  }
-
-  private colourGroups(): HTMLElement[] {
-    this.displaySelect.ariaLabel = 'Display';
-    this.displaySelect.addEventListener('change', () => {
-      this.setTestCard(false);
-      this.display = Number(this.displaySelect.value);
-      try {
-        localStorage.setItem(REMEMBER, this.current()?.name ?? '');
-      } catch {
-        // No storage: the choice is not remembered.
-      }
-      this.draw();
-    });
-    this.testCardButton.title = 'Colour bars and grey steps on that display, to judge the settings on the real surface';
-    this.testCardButton.addEventListener('click', () => this.setTestCard(!this.testCardOn));
-    this.previewButton.title = 'Show this display’s colour on the map here, while this tab is open';
-    this.previewButton.addEventListener('click', () => {
-      this.previewOn = !this.previewOn;
-      this.drawPreview();
-    });
-    const display = group('Display', column(this.displaySelect, this.testCardButton, this.previewButton));
-
-    this.presetSelect.ariaLabel = 'Preset';
-    this.presetSelect.addEventListener('change', () => {
-      const preset = this.state?.presets.find((p) => p.name === this.presetSelect.value);
-      if (preset) this.setColour({ ...preset.colour });
-    });
-    Object.assign(this.presetName, { type: 'text', placeholder: 'New preset name', maxLength: 40 });
-    this.presetName.ariaLabel = 'New preset name';
-    this.saveButton.title = 'Keep these settings as a preset on this computer';
-    this.saveButton.addEventListener('click', () => void this.savePreset());
-    this.presetName.addEventListener('keydown', (event) => event.key === 'Enter' && void this.savePreset());
-    this.deleteButton.title = 'Forget this saved preset';
-    this.deleteButton.addEventListener('click', () => void this.deletePreset());
-    this.resetButton.title = 'Back to neutral: the colours as they are drawn';
-    this.resetButton.addEventListener('click', () => this.setColour({ ...NEUTRAL }));
-    const actions = el('div', 'dt-row');
-    actions.append(this.saveButton, this.deleteButton, this.resetButton);
-    const presets = group('Preset', column(this.presetSelect, this.presetName, actions));
-
-    const columns = [column(), column()];
-    SLIDERS.forEach(([key, label, min, max, neutral], i) => {
-      const s = slider(label, min, max, neutral, (value) => {
-        const now = this.current();
-        if (!now) return;
-        now.colour[key] = value;
-        this.drawPresets();
-        this.drawPreview();
-        this.sendColour({ display: now.display, colour: { ...now.colour } });
-      });
-      this.sliders.set(key, s);
-      columns[i < 3 ? 0 : 1]!.append(s.row);
-    });
-    const colour = group('Colour and post-processing', ...columns);
-    colour.append(this.problem);
-    this.problem.hidden = true;
-
-    this.layersButton.title = 'How strongly each layer is drawn on the table, from faint to twice as bright';
-    this.layersButton.addEventListener('click', () => this.toggleLayers());
-    const layers = group('Layers', this.layersButton);
-    return [display, presets, colour, layers];
-  }
 
   /** Draft, Good or Best for this table (#134): pixel density on the table and the sun shadows' detail. */
   private qualityGroup(): HTMLElement {
@@ -532,9 +246,8 @@ export class DisplayTab {
     return group('Projector', this.calibrateButton, column(this.calibrationStatus, this.clearButton));
   }
 
-  /** The tab is on show: fetch what the desktop app knows, and preview the colour. */
+  /** The dialog is on show: how the projector is lined up, here or in Settings. */
   async show(): Promise<void> {
-    this.open = true;
     this.say(null);
     this.connection
       .request<{ projector: ProjectorCalibration | null }>('calibration.get')
@@ -544,101 +257,18 @@ export class DisplayTab {
       })
       .catch(() => {});
     this.drawCalibration();
-    if (!this.invoke) return;
-    void this.loadScreens();
-    try {
-      this.state = (await this.call('colour_state')) as ColourState;
-    } catch (error) {
-      this.say(text(error));
-      return;
-    }
-    if (!this.current()) {
-      let remembered: string | null = null;
-      try {
-        remembered = localStorage.getItem(REMEMBER);
-      } catch {
-        // No storage.
-      }
-      const displays = this.state.displays;
-      // The table's display is the one worth tuning; then the one chosen last time.
-      const preferred = displays.find((d) => d.role === 'table') ?? displays.find((d) => d.name === remembered) ?? displays.find((d) => d.role) ?? displays[0];
-      this.display = preferred?.display ?? null;
-    }
-    this.draw();
   }
 
-  /** The tab is put away: no preview, no test card, no calibration tool left open by it. */
+  /** The dialog is put away: no calibration tool left open by it. */
   hide(): void {
-    this.open = false;
     this.closeGuide();
-    this.setTestCard(false);
-    this.closeLayers();
-    this.drawPreview();
   }
 
-  /** The scene changed: the list of layers may have. */
-  refresh(): void {
-    if (this.open && this.invoke && this.popover) {
-      this.call('colour_state')
-        .then((state) => {
-          this.state = state as ColourState;
-          if (this.popover) this.fillLayers(this.popover);
-        })
-        .catch(() => {});
-    }
-  }
+  /** The scene changed. Nothing here follows the layers any more (layer strength is in Settings › Colour). */
+  refresh(): void {}
 
-  private draw(): void {
-    const state = this.state;
-    if (!state) return;
-    this.displaySelect.replaceChildren(
-      ...state.displays.map((d) => {
-        const option = el('option', undefined, `${d.display + 1} · ${d.name}${d.role ? ` · ${d.role === 'tv' ? 'controller' : d.role}` : ''}`);
-        option.value = String(d.display);
-        return option;
-      }),
-    );
-    if (this.display !== null) this.displaySelect.value = String(this.display);
-    this.displaySelect.disabled = state.displays.length === 0;
-    const colour = this.current()?.colour;
-    for (const [key, s] of this.sliders) s.set(colour ? colour[key] : null);
-    this.testCardButton.disabled = !colour;
-    this.drawPresets();
-    this.drawPreview();
-  }
 
-  private drawPresets(): void {
-    const state = this.state;
-    if (!state) return;
-    const colour = this.current()?.colour;
-    const match = colour && state.presets.find((p) => same(p.colour, colour));
-    const custom = el('option', undefined, 'Custom');
-    custom.value = '';
-    custom.disabled = true;
-    custom.hidden = Boolean(match);
-    this.presetSelect.replaceChildren(
-      custom,
-      ...state.presets.map((p) => {
-        const option = el('option', undefined, p.name);
-        option.value = p.name;
-        return option;
-      }),
-    );
-    this.presetSelect.value = match?.name ?? '';
-    this.presetSelect.disabled = !colour;
-    this.saveButton.disabled = !colour;
-    this.resetButton.disabled = !colour || same(colour, NEUTRAL);
-    this.deleteButton.disabled = !match || match.built_in;
-  }
 
-  private drawPreview(): void {
-    const colour = this.current()?.colour;
-    this.previewButton.setAttribute('aria-pressed', String(this.previewOn));
-    this.previewButton.classList.toggle('is-on', this.previewOn);
-    // On the table itself, not the grey around it.
-    const surface = this.preview.querySelector<HTMLElement>('.table-surface') ?? this.preview;
-    previewColour(surface, this.open && this.previewOn && colour ? colour : null);
-  }
 
   private drawCalibration(): void {
     this.calibrateButton.classList.toggle('is-on', this.guide !== null || this.calibrating);
@@ -650,7 +280,6 @@ export class DisplayTab {
   // ---- The calibration guide (#181) ---------------------------------------------------
 
   private openGuide(): void {
-    this.closeLayers();
     const guide = el('section', 'dt-guide');
     guide.setAttribute('role', 'dialog');
     guide.ariaLabel = 'Calibrate the projector';
@@ -794,45 +423,9 @@ export class DisplayTab {
     guide.replaceChildren(head, lead, steps, problem, foot);
   }
 
-  private setColour(colour: Colour): void {
-    const now = this.current();
-    if (!now) return;
-    now.colour = colour;
-    this.draw();
-    this.sendColour({ display: now.display, colour: { ...colour } });
-  }
 
-  private setTestCard(on: boolean): void {
-    if (!this.invoke || (on === this.testCardOn && !on)) return;
-    this.testCardOn = on;
-    this.testCardButton.setAttribute('aria-pressed', String(on));
-    this.testCardButton.classList.toggle('is-on', on);
-    if (this.display !== null) void this.call('test_card', { display: this.display, on }).catch(() => {});
-  }
 
-  private async savePreset(): Promise<void> {
-    const now = this.current();
-    if (!now || !this.state) return;
-    this.say(null);
-    try {
-      await this.call('save_preset', { name: this.presetName.value, colour: now.colour });
-      this.presetName.value = '';
-      this.state = (await this.call('colour_state')) as ColourState;
-      this.draw();
-    } catch (error) {
-      this.say(text(error));
-    }
-  }
 
-  private async deletePreset(): Promise<void> {
-    try {
-      await this.call('delete_preset', { name: this.presetSelect.value });
-      this.state = (await this.call('colour_state')) as ColourState;
-      this.draw();
-    } catch (error) {
-      this.say(text(error));
-    }
-  }
 
   private async calibrate(active: boolean): Promise<void> {
     this.say(null);
@@ -852,56 +445,6 @@ export class DisplayTab {
     this.drawCalibration();
   }
 
-  private toggleLayers(): void {
-    if (this.popover) {
-      this.closeLayers();
-      return;
-    }
-    const popover = el('div', 'dt-popover');
-    this.fillLayers(popover);
-    const box = this.layersButton.getBoundingClientRect();
-    popover.style.left = `${Math.max(8, Math.min(box.left, window.innerWidth - 336))}px`;
-    popover.style.top = `${box.bottom + 6}px`;
-    (this.preview.closest('.ed') ?? document.body).append(popover);
-    this.popover = popover;
-    this.layersButton.classList.add('is-on');
-    // A press anywhere else puts it away, even on the map, which keeps its clicks to itself.
-    const away = (event: PointerEvent) => {
-      if (popover.contains(event.target as Node) || this.layersButton.contains(event.target as Node)) return;
-      this.closeLayers();
-    };
-    // A press in the controller preview's frame never reaches this page, but takes the focus from it.
-    const blur = () => this.closeLayers();
-    document.addEventListener('pointerdown', away, true);
-    window.addEventListener('blur', blur);
-    this.stopAway = () => {
-      document.removeEventListener('pointerdown', away, true);
-      window.removeEventListener('blur', blur);
-    };
-  }
 
-  private fillLayers(popover: HTMLElement): void {
-    const layers = this.state?.layers ?? [];
-    const rows = layers.map((layer) => {
-      const s = slider(layer.active ? layer.name : `${layer.name} (off)`, 0, 2, 1, (value) => {
-        layer.intensity = value;
-        this.sendLayer({ layer: layer.id, intensity: value });
-      });
-      s.set(layer.intensity);
-      return s.row;
-    });
-    popover.replaceChildren(
-      el('strong', undefined, 'Layer strength'),
-      el('p', undefined, 'How strongly each layer is drawn on the table. 1 is as made; double-click a slider to put it back.'),
-      ...(rows.length > 0 ? rows : [el('p', undefined, 'There are no layers on this table yet.')]),
-    );
-  }
 
-  private closeLayers(): void {
-    this.stopAway?.();
-    this.stopAway = null;
-    this.popover?.remove();
-    this.popover = null;
-    this.layersButton.classList.remove('is-on');
-  }
 }

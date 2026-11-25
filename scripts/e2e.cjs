@@ -87,7 +87,7 @@ async function main() {
     const errors = [];
     // Base map tiles come from the internet, which a test does not reach: every tile is a plain light square.
     const tile = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAQAAAAEACAIAAADTED8xAAAB/0lEQVR42u3TsQkAAAgEsd9/XMXe2hkMZIKDS/XAW5EAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwAAYQAUMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA2AAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAOogAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAADAAGAAOAAcAAYAAwABgADAAGAAOAAcAAYAAwABgADAAGAAOAAcAAYAAwABgADAAGAAOAAcAAYAAwABgADAAGAAOAAcAAYAAwABgADAAGAAOAAcAAYAAwABgArgUn3irHh0b72wAAAABJRU5ErkJggg==', 'base64');
-    const mockTiles = (page) => page.route(/basemaps\.cartocdn\.com|tile\.openstreetmap\.org/, (route) => route.fulfill({ contentType: 'image/png', headers: { 'access-control-allow-origin': '*' }, body: tile }));
+    const mockTiles = (page) => page.route(/basemaps\.cartocdn\.com|tile\.openstreetmap\.org|\/api\/basemap\//, (route) => route.fulfill({ contentType: 'image/png', headers: { 'access-control-allow-origin': '*' }, body: tile }));
     const open = async (url, viewport) => {
       const page = await browser.newPage({ viewport });
       await mockTiles(page);
@@ -238,9 +238,17 @@ async function main() {
     const stranger = await open(`/phone?c=${code === '0000' ? '1111' : '0000'}`, { width: 390, height: 800 });
     await stranger.getByText('That code did not work').waitFor();
 
-    // A phone that scanned the code sees phone controls, and switches layers (#335).
+    // A phone that scanned the code sees every layer as a list, opens one to see its controls, and switches layers (#335).
     const phone = await open(scanned.slice(base.length), { width: 390, height: 800 });
+    const openApp = async (name) => {
+      if (await phone.locator('.layer-card.is-open').count()) await phone.getByRole('button', { name: 'Back to all layers' }).click();
+      await phone.getByRole('button', { name: `Open ${name}` }).click();
+      await phone.locator('.layer-card.is-open', { hasText: name }).waitFor();
+    };
+    const appList = () => phone.getByRole('button', { name: 'Back to all layers' }).click();
+    await openApp('Sunlight');
     await sunlight(phone).getByLabel('Time of day').waitFor();
+    await appList();
     // The phone is an animal with a fun name (#339); its visitor names it and picks the whale.
     await phone.locator('.phone-badge').waitFor();
     await phone.getByRole('button', { name: 'Change your name or animal' }).click();
@@ -265,12 +273,14 @@ async function main() {
     await tv.getByText('Ada turned on Sunlight').waitFor();
     await windCard.locator('input.switch:not(:checked)').waitFor();
     await tv.getByText('1 phone', { exact: true }).waitFor();
+    await openApp('Sunlight');
     await sunlight(phone).getByLabel('Time of day').fill('18');
     await tv.locator(clock, { hasText: '18:00' }).waitFor();
     // The controller's sky follows the phone: at six in the evening the sun is in the west.
     await tv.locator('.sun-hero-fact b', { hasText: /^west$/ }).waitFor();
 
-    // Phone tools: a point, a line and an area drawn on the small map arrive on the table.
+    // Phone tools: a point, a line and an area drawn on the sketch's map arrive on the table.
+    await openApp('Sketch');
     const pad = phone.locator('.layer-card', { hasText: 'Sketch' }).locator('.tool-map');
     // The sketch card is above Sunlight's, so the pad is found again for each tap: the page may have scrolled.
     const tap = async (u, v) => {
@@ -304,6 +314,19 @@ async function main() {
     await tap(0.85, 0.9);
     if (shots) await phone.screenshot({ path: path.join(shots, 'phone.png') });
     await phone.getByRole('button', { name: 'Send area' }).click();
+    await marks(3);
+    // The pen draws with one stroke and sends when the finger lifts; the phone takes its own mark back (#335).
+    await phone.getByRole('radio', { name: 'Pen' }).click();
+    {
+      await pad.scrollIntoViewIfNeeded();
+      const box = await pad.boundingBox();
+      await phone.mouse.move(box.x + 0.2 * box.width, box.y + 0.2 * box.height);
+      await phone.mouse.down();
+      for (const [u, v] of [[0.3, 0.3], [0.4, 0.25], [0.5, 0.35]]) await phone.mouse.move(box.x + u * box.width, box.y + v * box.height, { steps: 5 });
+      await phone.mouse.up();
+    }
+    await marks(4);
+    await phone.getByRole('button', { name: 'Take back my last mark' }).click();
     await marks(3);
     await dev.waitForTimeout(500);
     assert.notDeepEqual(await table.screenshot(), marked, 'the line and the area should be drawn too');
@@ -407,6 +430,9 @@ async function main() {
     assert.equal(await cool.locator('.controls-primary button.action', { hasText: 'Try another walk' }).count(), 1);
     if (shots) await tv.screenshot({ path: path.join(shots, 'tv-coolpaths.png') });
     // A phone may ask for another walk, and the table answers with a different one.
+    // Its button sits under the map, beside the walk it changes.
+    await openApp('Cool paths');
+    await phone.getByRole('tab', { name: 'Map' }).click();
     await phone.getByRole('button', { name: 'Try another walk' }).click();
     await dev.waitForTimeout(800);
     assert.notDeepEqual(await table.screenshot(), walk, 'another walk should be drawn');
@@ -542,6 +568,14 @@ async function main() {
 
     // ---- The scene composer ----
     // The pages that are done with are closed first: every open table costs rendering time.
+    // The operator looks after the phones from the Developer window (#335): a pause, then letting one go.
+    const phones = dev.locator('.phones-panel');
+    await phones.locator('input.switch').check();
+    await phone.locator('.phones-paused:not([hidden])').waitFor();
+    await phones.locator('input.switch').uncheck();
+    await phone.locator('.phones-paused[hidden]').waitFor({ state: 'attached' });
+    await phones.locator('li', { hasText: 'Ada' }).getByRole('button', { name: 'Let Ada go' }).click();
+    await phone.getByText('Thanks for joining').waitFor();
     for (const page of [stranger, phone, typist, projected]) await page.close();
     // Tall enough that the whole stack is on screen while one layer's settings are open.
     const compose = await open('/compose', { width: 1700, height: 1700 });
@@ -744,8 +778,9 @@ async function main() {
     // ---- The setup wizard ----
     // A new table opens in the guide; here it runs on the sample, whose name and place are already set.
     const guide = await open('/edit?welcome=1', { width: 1440, height: 900 });
-    // It starts with the place itself: the files the table is made from. The host checks a file, then brings it in.
-    await guide.locator('.wz h2', { hasText: 'Your place' }).waitFor();
+    // Three steps (#390): Name and place, Data, Start from…. A table just made starts at its data.
+    await guide.locator('.wz h2', { hasText: 'Data' }).waitFor();
+    assert.deepEqual(await guide.locator('.wz-step span:not(.wz-dot)').allInnerTexts(), ['Name and place', 'Data', 'Start from…']);
     await guide.getByRole('button', { name: 'Close guide' }).waitFor();
     // Back reaches the table's name and place, which can be changed: the table moves and every surface starts again.
     await guide.getByRole('button', { name: 'Back' }).click();
@@ -753,7 +788,7 @@ async function main() {
     assert.equal(await guide.getByRole('button', { name: 'Back' }).isDisabled(), true);
     assert.equal(await guide.getByLabel('Name').inputValue(), 'Sample district');
     await guide.getByRole('button', { name: 'Next' }).click();
-    await guide.locator('.wz h2', { hasText: 'Your place' }).waitFor();
+    await guide.locator('.wz h2', { hasText: 'Data' }).waitFor();
     await guide.locator('.wz-step button', { hasText: 'Name and place' }).click();
     await guide.getByLabel('Name').fill('Sample square');
     // The sample's ground is a raw height grid made for its extent, so it cannot move; the guide says why and stays.
@@ -764,7 +799,7 @@ async function main() {
     // A new name alone is fine.
     await guide.getByLabel('Width, metres').fill('1000');
     await guide.getByRole('button', { name: 'Move the table' }).click();
-    await guide.waitForFunction(() => document.querySelector('.wz h2')?.textContent === 'Your place' && document.querySelector('.ed-name strong')?.textContent === 'Sample square');
+    await guide.waitForFunction(() => document.querySelector('.wz h2')?.textContent === 'Data' && document.querySelector('.ed-name strong')?.textContent === 'Sample square');
     assert.equal(JSON.parse(fs.readFileSync(path.join(site, 'site.json'), 'utf8')).name, 'Sample square');
     // The controller screen has no header in its rails any more; it carries the site's name in its title.
     await tv.waitForFunction(() => document.title.endsWith('· Sample square'));
@@ -775,7 +810,7 @@ async function main() {
     const written = fs.statSync(path.join(site, 'data', 'trees.geojson')).mtimeMs;
     await guide.getByRole('button', { name: 'Add to the table' }).click();
     // Every surface starts again with the new data, and the guide comes back where it was.
-    await guide.waitForFunction(() => !document.querySelector('.wz-report') && document.querySelector('.wz h2')?.textContent === 'Your place');
+    await guide.waitForFunction(() => !document.querySelector('.wz-report') && document.querySelector('.wz h2')?.textContent === 'Data');
     await guide.locator('.wz-place[data-target="trees"] .wz-state', { hasText: 'On the table' }).waitFor();
     assert.ok(fs.statSync(path.join(site, 'data', 'trees.geojson')).mtimeMs > written, 'the file is written into the table');
     // A file that is not what was asked for is refused with a reason, and nothing is written.
@@ -795,66 +830,32 @@ async function main() {
     assert.equal(await ground.getByRole('button', { name: 'Add to the table' }).isDisabled(), true);
     await ground.getByRole('button', { name: 'Cancel' }).click();
     await guide.getByRole('button', { name: 'Next' }).click();
-    await guide.locator('.wz h2', { hasText: 'At rest' }).waitFor();
-    assert.equal(await guide.locator('.wz input[data-layer="trees"]').isChecked(), true);
-    // The base map's style is picked right under its row, with its map's credit, and saved (#127).
-    await guide.getByLabel('Style').selectOption('light');
-    await guide.locator('.wz-style .wz-credit', { hasText: 'Map: © OpenStreetMap contributors' }).waitFor();
-    assert.equal(savedLayers().find((l) => l.use === 'basemap').params.style, 'light');
-    if (shots) await guide.screenshot({ path: path.join(shots, 'at-rest-light.png') });
-    await guide.getByLabel('Style').selectOption('dark');
-    await guide.waitForFunction(() => document.querySelector('.wz-style .wz-credit')?.textContent === '');
-    await guide.getByRole('button', { name: 'Next' }).click();
-    // The building blocks demo is for developers, not offered to authors.
-    assert.equal(await guide.locator('.wz input[data-layer="blocks-demo"]').count(), 0);
-    // A layer switched off leaves the scene and is saved; switched on it is back, its button on the emptier side.
-    await guide.locator('.wz-choice', { hasText: 'Sketch' }).click();
-    await guide.waitForFunction(() => document.querySelector('.wz input[data-layer="sketch"]')?.checked === false);
-    assert.equal(savedLayers().some((l) => l.use === 'sketch'), false);
-    await guide.locator('.wz-choice', { hasText: 'Sketch' }).click();
-    await guide.waitForFunction(() => document.querySelector('.wz input[data-layer="sketch"]')?.checked === true);
-    assert.equal(savedLayers().at(-1).use, 'sketch');
-    assert.ok(['left', 'right'].includes(savedLayers().at(-1).button.side));
-    await guide.getByRole('button', { name: 'Next' }).click();
-    // Buttons are named beside the live controller.
-    const live = guide.frameLocator('.ed-preview iframe');
-    await live.locator('.layer-button', { hasText: 'Wind' }).waitFor();
-    // A theme picked here restyles the live controller at once and is saved (#126). Midnight, the default, clears it.
+    // Start from… (#390): a starter sets the layers, the map life at rest and the controller theme.
+    await guide.locator('.wz h2', { hasText: 'Start from…' }).waitFor();
+    assert.deepEqual(await guide.locator('.wz-starter').evaluateAll((cards) => cards.map((c) => c.dataset.starter)), ['climate', 'movement', 'story', 'blank']);
     const savedTv = () => JSON.parse(fs.readFileSync(path.join(site, 'site.json'), 'utf8')).tv;
-    await guide.locator('.wz-theme', { hasText: 'Ocean' }).click();
-    await guide.locator('.wz-theme[aria-checked="true"]', { hasText: 'Ocean' }).waitFor();
-    await live.locator('html[style*="--bg: #06121f"]').waitFor();
-    assert.equal(savedTv().theme_name, 'ocean');
-    // A look is more than colours (#126): Minimal dark takes the tiles and panels away on the controller.
-    await guide.locator('.wz-theme', { hasText: 'Minimal dark' }).click();
-    await live.locator('body[data-density="minimal"][data-rail-look="bare"][data-surface="plain"]').waitFor();
-    assert.equal(savedTv().theme_name, 'minimal-dark');
-    if (shots) await guide.screenshot({ path: path.join(shots, 'guide-minimal-dark.png') });
-    await guide.locator('.wz-theme', { hasText: 'Glass' }).click();
-    await live.locator('body[data-surface="glass"][data-density="comfortable"]').waitFor();
-    await guide.locator('.wz-theme', { hasText: 'Ocean' }).click();
-    await live.locator('html[style*="--bg: #06121f"]').waitFor();
-    await guide.locator('.wz-look [role="radio"]', { hasText: 'Icons and names' }).click();
-    await live.locator('body[data-rail-style="labelled"]').waitFor();
-    assert.equal(savedTv().rail_style, 'labelled');
-    await guide.locator('.wz-theme', { hasText: 'Midnight' }).click();
-    await guide.locator('.wz-look [role="radio"]', { hasText: /^Icons$/ }).click();
-    await live.locator('body[data-rail-style="icons"]').waitFor();
-    await guide.waitForFunction(() => document.querySelector('.wz-theme[aria-checked="true"]')?.textContent?.includes('Midnight'));
-    // Only the test's own home settings are left: the default look leaves none of its own behind.
-    assert.deepEqual(savedTv(), { attract_s: 2, idle_reset_s: 0 }, 'the default look leaves no tv settings behind');
-    await guide.getByLabel('Name of Wind').fill('Windy corners');
-    await guide.getByLabel('Name of Wind').blur();
-    await live.locator('.layer-button', { hasText: 'Windy corners' }).waitFor();
-    assert.equal(savedLayers().find((l) => l.use === 'wind').button.name, 'Windy corners');
-    await guide.getByLabel('Name of Wind').fill('');
-    await guide.getByLabel('Name of Wind').blur();
-    await live.locator('.layer-button', { hasText: 'Wind' }).waitFor();
-    await guide.getByRole('button', { name: 'Next' }).click();
-    await guide.getByText('8 layers, each a button on the controller').waitFor();
+    // The host writes site.json a moment after a change.
+    const saved = async (check, what) => {
+      for (let i = 0; i < 50 && !check(); i++) await sleep(100);
+      assert.ok(check(), what);
+    };
+    // The sample has most layers already; Movement adds the one it lacks, Street life, at rest.
+    await guide.locator('.wz-starter[data-starter="movement"]').click();
+    await guide.locator('.wz-starter[data-starter="movement"][aria-checked="true"]').waitFor();
+    await saved(() => savedLayers().some((l) => l.use === 'street-life'), 'Movement adds Street life');
+    // Another pick takes back what the first added, and keeps the table's own layers.
+    await guide.locator('.wz-starter[data-starter="story"]').click();
+    await guide.locator('.wz-starter[data-starter="story"][aria-checked="true"]').waitFor();
+    await saved(() => !savedLayers().some((l) => l.use === 'street-life') && savedTv().theme_name === 'paper', 'Story takes Street life back and sets its theme');
+    assert.ok(savedLayers().some((l) => l.use === 'wind'), 'the table keeps its own layers');
     if (shots) await guide.screenshot({ path: path.join(shots, 'wizard.png') });
-    // Leaving the guide lands in the editor, and the guide stays one click away.
-    await guide.getByRole('button', { name: 'Fine-tune in the editor' }).click();
+    await guide.locator('.wz-starter[data-starter="blank"]').click();
+    await guide.locator('.wz-starter[data-starter="blank"][aria-checked="true"]').waitFor();
+    // Blank keeps the default look, which leaves no tv settings of its own behind.
+    await saved(() => !savedTv().theme_name, 'Blank goes back to the default theme');
+    assert.deepEqual(savedTv(), { attract_s: 2, idle_reset_s: 0 }, 'the default look leaves no tv settings behind');
+    // The last step hands over to the editor.
+    await guide.getByRole('button', { name: 'Open the editor' }).click();
     await guide.locator('.ed-tree .ed-row[data-context="home"]').waitFor();
     assert.equal(await guide.locator('.wz').count(), 0);
     // A reload stays in the editor, and the guide's button says it is closed.
@@ -891,7 +892,7 @@ async function main() {
     assert.equal(JSON.parse(fs.readFileSync(path.join(site, 'site.json'), 'utf8')).data.places, 'data/places.geojson');
     // In Your place each row has its "?" and, where OpenStreetMap has the data, a fetch beside the file.
     await adder.goto(base + '/edit?setup=1');
-    await adder.locator('.wz-step button', { hasText: 'Your place' }).click();
+    await adder.locator('.wz-step button', { hasText: 'Data' }).click();
     const streets = adder.locator('.wz-place[data-target="data:roads"]');
     await streets.getByRole('button', { name: 'What a streets file looks like' }).click();
     await streets.locator('.im-example', { hasText: 'LineString' }).waitFor();
@@ -994,23 +995,23 @@ async function main() {
     shelled.on('popup', () => popups++);
     await shelled.getByRole('tab', { name: 'View' }).click();
     for (const id of ['table', 'tv', 'dev']) await shelled.locator(`.ed-ribbon [data-command="window.${id}"]`).click();
-    // Screens and calibration (#151, #382): the colour pass of each display, previewed on the editor's map while it is open.
+    // Screens and calibration (#382, #393): in the app this computer's screens, calibration and colour
+    // have one home, File › Settings. The dialog keeps the table's quality and the way there.
     await shelled.getByRole('tab', { name: 'Present' }).click();
     await shelled.locator('.ed-ribbon [data-command="dialog.screens"]').click();
-    await shelled.locator('.dt-slider').first().waitFor();
-    await shelled.waitForFunction(() => document.querySelector('.ed-canvas .table-surface').style.filter.includes('saturate(1.4'));
-    // Midtones and white balance are blended layers, never an SVG filter, which froze WebKit on the Mac (#181).
-    assert.deepEqual(await shelled.$$eval('.ed-canvas .dt-colour-layer', (nodes) => nodes.map((n) => getComputedStyle(n).mixBlendMode)), ['soft-light', 'multiply']);
-    assert.equal(await shelled.evaluate(() => document.querySelectorAll('svg filter').length), 0);
+    await shelled.locator('dialog.is-screens [data-setting="computer.quality"]').waitFor();
+    assert.equal(await shelled.locator('dialog.is-screens [data-setting="computer.colour"]').count(), 0, 'colour is set in Settings only');
+    if (shots) await shelled.screenshot({ path: path.join(shots, 'screens-dialog-app.png') });
+    await shelled.locator('dialog.is-screens [data-command="settings.computer"]').click();
+    await shelled.waitForFunction(() => window.shellCalls.includes('open_settings'));
     await shelled.locator('dialog.is-screens').getByRole('button', { name: 'Close' }).click();
-    assert.equal(await shelled.$eval('.ed-canvas .table-surface', (n) => n.style.filter), '', 'the preview goes with the dialog');
-    assert.equal(await shelled.$$eval('.ed-canvas .dt-colour-layer', (nodes) => nodes.length), 0);
-    await shelled.getByRole('button', { name: 'All tables', exact: true }).click();
+    // The logo is File › Open (#393): it keeps a picture of the map first, then asks the app for the list of tables.
+    assert.equal(await shelled.getByRole('button', { name: 'All tables', exact: true }).count(), 0);
+    await shelled.locator('button.ed-brand').click();
     assert.equal(await shelled.evaluate(() => window.mrsShellControls), true);
-    // "All tables" goes through the File menu's action (#130): it keeps a picture of the map first, then asks the app.
-    await shelled.waitForFunction(() => window.shellCalls.includes('file_action home'));
+    await shelled.waitForFunction(() => window.shellCalls.includes('file_action open'));
     assert.deepEqual(await shelled.evaluate(() => window.shellCalls.filter((c) => c !== 'presenting_state')), [
-      'present', 'stop_presenting', 'open_view table', 'open_view tv', 'open_view dev', 'colour_state', 'file_action home',
+      'present', 'stop_presenting', 'open_view table', 'open_view tv', 'open_view dev', 'open_settings', 'file_action open',
     ]);
     assert.equal(popups, 0, 'no browser window is opened inside the app');
     await shelled.close();
