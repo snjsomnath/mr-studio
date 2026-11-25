@@ -348,7 +348,7 @@ async function main() {
     await tv.getByLabel('Light the 3D model').check();
 
     // The projected table takes up a projector calibration the moment the host has one.
-    const projected = await open('/table', { width: 1500, height: 800 });
+    const projected = await open('/table?intro=0', { width: 1500, height: 800 });
     await projected.locator('canvas.table-model').waitFor();
     await projected.waitForTimeout(1500);
     const flat = await projected.screenshot();

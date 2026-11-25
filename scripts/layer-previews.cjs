@@ -63,7 +63,7 @@ function connect() {
   const wanted = args.length ? args : catalogue.map((m) => m.id).filter((id) => !SKIP.has(id));
   const browser = await chromium.launch();
   const table = await browser.newPage({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 });
-  await table.goto(`${base}/table`);
+  await table.goto(`${base}/table?intro=0`);
   await table.waitForTimeout(3000);
   // Every layer at rest goes off first, so each picture shows its own layer on the bare map.
   const scene = host.welcome.state?.scene ?? [];
