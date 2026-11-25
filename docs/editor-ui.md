@@ -35,7 +35,7 @@ Six regions. Their places never change, whatever tab is open or whatever is sele
 2. **Mirrors are read-only and link home.** A setting may be shown elsewhere ("Button: Wind, left side"), only as text with a link to its home.
 3. **Tabs hold commands, not places.** Opening a tab changes the ribbon only. It never changes the canvas, the left list, the selection or what the map shows.
 4. **Select, then format.** Select something (in the list or on the canvas) and edit it in the Format pane. The ribbon acts on the selection; it never carries its own copy of the selection's settings.
-5. **Table-wide settings are dialogs.** Settings of the whole table open as a dialog from the ribbon (like Slide Size): Table size and place, Welcome and languages, Screens and calibration. A dialog closes back to where you were.
+5. **Table-wide settings are dialogs.** Settings of the whole table open as a dialog from the ribbon (like Slide Size): Table size and place, Welcome and languages, Controller pages, Screens and calibration. A dialog closes back to where you were.
 6. **This computer is not the table.** Screens, calibration, colour and phones joining on this network belong to the computer (#73): they live in File › Settings › This computer (#393), never in the table's settings.
 7. **Sides in the Format pane, order by Move up and Move down.** A button's side of the controller is set in one place: the Side switch in its layer's Format pane. Nothing in the editor is dragged (Sanjay, 2026-11-25: almost nothing else in the UI is draggable, so dragging is not found). The left list shows the Left and Right groups as they are, and Move up and Move down (Home › Selection, the right-click menu) change the order.
 8. **Rehearse in place.** Trying the table as a visitor happens on the canvas, one key away, and stops back where you were. Windows are for real displays (Present).
@@ -50,7 +50,7 @@ Six regions. Their places never change, whatever tab is open or whatever is sele
 | --- | --- | --- |
 | Home | Layer: Duplicate, Remove · Selection: Hide, Move up/down, Rename, Reset settings · Find a command (⌘K, #65) | Home |
 | Insert | Layers: layer gallery ▾ (#59), Add inside… (#453), Custom layer · Your data: Data file, Open data (OpenStreetMap, elevation) · Media: Picture, Video, Sound, 3D model · Draw elsewhere: Starter pack… (#450, the table's basics for QGIS, Illustrator, Photoshop, PowerPoint; also File › Export starter pack) | Insert |
-| Design | Controller theme gallery · Buttons: Icons / Icons and names · Map: Base map style ▾, Palette · Table: Table size and place…, Welcome and languages…, Starter tables… (#469) | Design |
+| Design | Controller theme gallery · Controller: Icons / Icons and names, Controller pages… (#155) · Map: Base map style ▾, Palette · Table: Table size and place…, Welcome and languages…, Starter tables… (#469) | Design |
 | Present | Check: Ready to present? (#63) · Start: Rehearse, Present · Set up: Screens and calibration… · Send: Share by email (#372), Export | Slide Show |
 | View | Map / Controller / Both, Phone (#389), zoom, table outline · Media library… (a dialog) · Open in a window | View |
 | Help | Guides, features, Copy diagnostics (#88, #260) | Help |
@@ -65,6 +65,7 @@ In no tab: button names and words (Format pane of the button's layer), button si
 | Time zone | Design › Table size and place… | 1 |
 | Controller title, welcome line, logo, languages | Design › Welcome and languages… | 1 (in Table settings) |
 | Controller theme and button style | Design ribbon | 2 |
+| Hand-made controller pages, their panels and page time | Design › Controller pages… (#155) | 0 (site.json only) |
 | Turn a piece of map life on or off | Eye on its At rest row | 4 |
 | Base map style | Format pane of the Base map row | 2 |
 | A layer's settings (wind speed, hour…) | Format pane of the layer | 1 |

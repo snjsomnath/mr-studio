@@ -5300,3 +5300,207 @@ body[data-role='edit'] > .connection {
 .im-column.is-id { border-color: #9fb3e8; }
 .im-column.is-time { border-color: #e3b46b; }
 .im-column.is-place { border-color: #8ccaa3; }
+
+/* Design › Controller pages… (#155): pages, the grid, the panel's settings. Nothing is dragged. */
+.ed-dialog.is-pages {
+  width: min(1280px, calc(100vw - 32px));
+  min-height: min(640px, calc(100vh - 48px));
+}
+
+.pe {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr) 280px;
+  gap: 20px;
+  align-items: start;
+}
+
+.pe h3 {
+  margin: 0 0 8px;
+  font-size: 13px;
+}
+
+.pe-pages,
+.pe-inspector {
+  display: grid;
+  gap: 10px;
+}
+
+.pe-page-list {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pe-page {
+  width: 100%;
+  padding: 6px 10px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: none;
+  color: var(--ed-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.pe-page:hover {
+  background: var(--ed-chrome);
+}
+
+.pe-page.is-current {
+  border-color: var(--ed-accent);
+  background: var(--ed-accent-soft);
+  font-weight: 600;
+}
+
+.pe-empty,
+.pe-start {
+  color: var(--ed-text-2);
+}
+
+.pe-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.pe-middle {
+  display: grid;
+  gap: 10px;
+}
+
+.pe-budget {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--ed-text-2);
+}
+
+.pe-budget b {
+  color: var(--ed-text);
+  white-space: nowrap;
+}
+
+.pe-bar {
+  flex: 1;
+  height: 6px;
+  border-radius: 3px;
+  background: linear-gradient(90deg, var(--ed-accent) calc(var(--used) * 100%), var(--ed-chrome) 0);
+}
+
+.pe-budget.is-over .pe-bar {
+  background: linear-gradient(90deg, #c4320a calc(var(--used) * 100%), var(--ed-chrome) 0);
+}
+
+/* The controller's 12 by 6 canvas, at its own 16:9. */
+.pe-grid {
+  display: grid;
+  grid-template-columns: repeat(var(--cols), minmax(0, 1fr));
+  grid-template-rows: repeat(var(--rows), minmax(0, 1fr));
+  gap: 4px;
+  aspect-ratio: 16 / 8;
+  padding: 6px;
+  border: 1px solid var(--ed-line);
+  border-radius: 8px;
+  background: #11151f;
+}
+
+.pe-cell {
+  border: 1px dashed #2b3345;
+  border-radius: 4px;
+  background: none;
+  cursor: default;
+}
+
+.pe-cell.can-take {
+  border-color: #6f8ef0;
+  background: rgba(111, 142, 240, 0.12);
+  cursor: pointer;
+}
+
+.pe-cell.can-take:hover {
+  background: rgba(111, 142, 240, 0.3);
+}
+
+.pe-panel {
+  z-index: 1;
+  display: grid;
+  align-content: start;
+  gap: 2px;
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid #344058;
+  border-radius: 6px;
+  background: #1c2333;
+  color: #e9edf5;
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.pe-panel b,
+.pe-panel span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pe-panel span {
+  color: #9aa6bd;
+}
+
+.pe-panel.is-selected {
+  border-color: #f3ad3d;
+  box-shadow: 0 0 0 2px #f3ad3d;
+}
+
+.pe-add {
+  display: flex;
+  gap: 8px;
+}
+
+.pe-note {
+  margin: 0;
+  color: #b54708;
+}
+
+.pe-problems {
+  margin: 0;
+  padding-left: 18px;
+  color: #b42318;
+}
+
+.pe-prop {
+  display: grid;
+  gap: 4px;
+}
+
+.pe-prop textarea {
+  width: 100%;
+  font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.pe-bind {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ed-text-2);
+  font-size: 12px;
+}
+
+.pe-nudge .ed-button {
+  min-width: 32px;
+  justify-content: center;
+}
+
+.pe-inspector .ed-field {
+  grid-template-columns: 1fr;
+}
+
+.pe-panel b {
+  color: #ffffff;
+}

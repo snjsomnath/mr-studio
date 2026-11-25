@@ -513,6 +513,51 @@ async function main() {
       await shot('52-placed-picture');
     });
 
+    await run('Controller pages are made in the editor, placed by clicking, within the budget (#155)', async () => {
+      await page.goto(`${base}/edit`);
+      await page.locator('.ed-tab[data-tab="design"]').click();
+      await page.locator('.ed-ribbon [data-command="dialog.pages"]').click();
+      const dialog = page.locator('dialog.ed-dialog.is-pages');
+      await dialog.locator('.pe-start').first().waitFor();
+      await dialog.locator('[data-command="pages.add"]').click();
+      const pick = dialog.locator('.pe-add select');
+      const add = dialog.locator('[data-command="pages.panel"]');
+      for (const widget of ['stat', 'bars', 'list']) {
+        await pick.selectOption(widget);
+        await add.click();
+        await dialog.locator(`.pe-panel[data-panel="${widget}"]`).waitFor();
+      }
+      // The stat goes on the left, the bars next to it; the list takes the first free place.
+      await until(() => (saved().tv?.pages?.[0]?.panels ?? []).length === 3, 'three panels saved');
+      const at = (id) => saved().tv.pages[0].panels.find((p) => p.id === id).at;
+      assert.deepEqual(at('stat'), { col: 1, row: 1 });
+      // Selected, the list moves a cell with the arrow keys, or to a highlighted cell when clicked.
+      await dialog.locator('.pe-panel[data-panel="list"]').click();
+      const before = at('list');
+      await page.keyboard.press('ArrowDown');
+      await until(() => at('list').row === before.row + 1, 'the list moved down');
+      await dialog.locator('.pe-cell.can-take[data-cell="7,4"]').click();
+      await until(() => at('list').col === 7 && at('list').row === 4, 'the list put at 7,4');
+      // Its title and a value bound to a layer.
+      await dialog.locator('.pe-inspector').getByLabel('Title').fill('Busiest roofs');
+      await dialog.locator('.pe-inspector').getByLabel('Title').press('Tab');
+      await until(() => saved().tv.pages[0].panels.find((p) => p.id === 'list').title === 'Busiest roofs', 'the title saved');
+      assert.match(await dialog.locator('.pe-budget').textContent(), /of 24 reads/);
+      assert.equal(await dialog.locator('.pe-problems li').count(), 0, 'the page passes the rules');
+      if (shots) await dialog.screenshot({ path: path.join(shots, '155-pages-editor.png') });
+      // The controller shows the page.
+      const tv = await browser.newPage({ viewport: { width: 1600, height: 900 } });
+      await tv.goto(`${base}/tv?idle=0`);
+      await tv.locator('[data-panel="page/stat"], [data-panel$="/stat"]').first().waitFor();
+      await tv.waitForTimeout(800);
+      if (shots) await tv.screenshot({ path: path.join(shots, '155-controller-page.png') });
+      await tv.close();
+      // Removing the page gives the controller back to the layers' own panels.
+      await dialog.locator('[data-command="pages.remove"]').click();
+      await until(() => !saved().tv?.pages, 'no pages left');
+      await dialog.getByRole('button', { name: 'Close' }).click();
+    });
+
     await run('the controller carries no operator text (#50)', async () => {
       const tv = await browser.newPage({ viewport: { width: 1600, height: 900 } });
       await tv.goto(`${base}/tv`);

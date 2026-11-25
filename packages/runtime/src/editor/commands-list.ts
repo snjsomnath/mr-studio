@@ -53,6 +53,7 @@ export const COMMANDS = {
   'map.palette': { label: 'Palette', icon: 'palette', tip: 'The colours every custom layer uses. Change one and the whole table follows.', group: 'Design', also: 'colours colors' },
   'dialog.place': { label: 'Table size and place…', icon: 'route', tip: 'The table’s name, where it is, how much ground it covers, its time zone and where visitors stand', group: 'Design', also: 'name move resize time zone front ribbons glow ambient location where table settings' },
   'dialog.welcome': { label: 'Welcome and languages…', icon: 'tv', tip: 'What the controller says when nobody is using the table, its logo, and the languages visitors read', group: 'Design', also: 'title logo idle loop swedish english phones table settings' },
+  'dialog.pages': { label: 'Controller pages…', icon: 'grid', tip: 'Pages of panels on the controller made by hand: numbers, charts, keys and maps from what layers publish, on the dashboard grid', group: 'Design', also: 'dashboard widgets panels tv screen page rotation budget' },
   'dialog.starters': { label: 'Starter tables…', icon: 'layers', tip: 'Climate, Movement, Story or Blank: adds a starter table’s layers, map life and controller theme', group: 'Design', also: 'starter template wizard guide setup climate movement story blank theme' },
 
   // ---- Showing it (Present) ----

@@ -209,6 +209,15 @@ async function main() {
   }
   // The controller's title, logo and welcome line changed (Table settings, #73): it draws them once, so it starts again.
   if (role === 'tv' && !editing) connection.on('site.settings', () => location.reload());
+  // Hand-made pages or their time changed (#155): the dashboard lays out its pages once, so it starts again.
+  if ((role === 'tv' || role === 'dev') && !editing) {
+    const pagesOf = (tv: typeof site.tv) => JSON.stringify([tv?.pages ?? null, tv?.rotate_s ?? null]);
+    let pages = pagesOf(site.tv);
+    store.onTv((tv) => {
+      if (pagesOf(tv) !== pages) location.reload();
+      pages = pagesOf(tv);
+    });
+  }
   store.onSettings(() => (document.title = `${store.state.site.branding.title ?? 'MR Studio'} · ${store.state.site.name}`));
   // A reconnect that lands on a restarted host (another table opened, the app relaunched) starts the page again:
   // layers read their data once, and reads made while the host was down came back empty (#222).

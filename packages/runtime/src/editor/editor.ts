@@ -39,6 +39,7 @@ import type { MenuItem } from './tree-tools.ts';
 import type { FileAction } from './file-menu.ts';
 import { slidesSection } from './slides.ts';
 import { placeSettings, welcomeSettings } from './table-settings.ts';
+import { pagesEditor } from './pages-editor.ts';
 import { openStarterPack } from './starter-pack.ts';
 import { runTour, tourOnStart } from './tour.ts';
 import { AT_REST, START, WHERE, Wizard, chosenTheme, themeChoice, themeSwatch } from './wizard.ts';
@@ -140,7 +141,7 @@ function markTrouble(row: HTMLElement, state: LayerState | undefined): void {
 /** A tab of the ribbon, as layout.ts names it. Not part of what is being edited: opening one changes the ribbon only (#385). */
 type RibbonTab = string;
 /** The dialogs of whole-table and this-computer settings (docs/editor-ui.md, rule 5). */
-type DialogId = 'place' | 'welcome' | 'screens' | 'media' | 'open-data' | 'model';
+type DialogId = 'place' | 'welcome' | 'pages' | 'screens' | 'media' | 'open-data' | 'model';
 /** A window too narrow for the list, the map and the settings side by side (#66); the CSS uses the same width. */
 const NARROW = matchMedia('(max-width: 1099px)');
 /** The ribbon tab to come back to after the page reloads, as after moving the table. */
@@ -718,6 +719,7 @@ export class Editor {
   private static readonly DIALOGS: Record<DialogId, { title: string; lead: string; modal: boolean }> = {
     place: { title: 'Table size and place', lead: 'What the table is called, where it is, how much ground it covers and how it stands in the room.', modal: true },
     welcome: { title: 'Welcome and languages', lead: 'What the controller says when nobody is using the table, and the languages visitors read.', modal: true },
+    pages: { title: 'Controller pages', lead: 'Pages of panels made by hand: numbers, charts, keys and maps that read what layers publish. Without pages, the controller shows the open layers’ own panels.', modal: true },
     screens: { title: 'Screens and calibration', lead: 'This computer’s screens, projector, colour and quality. They are the same for every table on this computer.', modal: true },
     media: { title: 'Media library', lead: 'Every file and online source of this table, where each is used, and the files it still needs.', modal: true },
     model: { title: '3D model', lead: 'A model of the buildings, from Rhino, SketchUp or a scan. It is set on the ground and fitted to the buildings, and gives them their heights.', modal: true },
@@ -753,6 +755,8 @@ export class Editor {
       this.placeForm().setShown(true);
     } else if (id === 'welcome') {
       body.append(...welcomeSettings({ store: this.store, send: (method, params) => this.send(method, params) }));
+    } else if (id === 'pages') {
+      body.append(pagesEditor({ store: this.store, send: (method, params) => this.send(method, params) }));
     } else if (id === 'screens') {
       const strip = el('div', 'ed-ribbon ed-dialog-ribbon');
       strip.append(...this.displayTab.groups);
@@ -2186,6 +2190,7 @@ export class Editor {
       'map.palette': { run: () => paletteDialog(this.builderHost(), this.shell) },
       'dialog.place': { run: () => this.openDialog('place') },
       'dialog.welcome': { run: () => this.openDialog('welcome') },
+      'dialog.pages': { run: () => this.openDialog('pages') },
       // The starter tables have a home outside the guide (#469): the guide opens at Start from….
       'dialog.starters': { run: () => (this.wizard ? undefined : this.openWizard(false, START)) },
       'present.check': { run: () => this.showChecks() },
@@ -2304,7 +2309,7 @@ export class Editor {
     const tab = RIBBON.find((t) => t.id === this.ribbonTab) ?? RIBBON[0]!;
     const groups = drawTab(tab, this.handlers, this.widgets());
     // The button style is a setting of the table, edited only here (docs/editor-ui.md).
-    const buttons = groups.find((g) => g.dataset.group === 'Buttons');
+    const buttons = groups.find((g) => g.dataset.group === 'Controller');
     if (buttons) setting('controller.buttons', 'ribbon:design', buttons);
     this.ribbon.replaceChildren(...groups);
   }

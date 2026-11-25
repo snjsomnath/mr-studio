@@ -64,7 +64,7 @@ export const RIBBON: LayoutTab[] = [
     tip: 'How the controller looks, the map’s colours, and the table’s size, place and welcome',
     groups: [
       { name: 'Controller theme', items: [{ widget: 'themes' }] },
-      { name: 'Buttons', items: ['buttons.icons', 'buttons.labelled'] },
+      { name: 'Controller', items: ['buttons.icons', 'buttons.labelled', 'dialog.pages'] },
       { name: 'Map', items: [large('map.basemap'), large('map.palette')] },
       { name: 'Table', items: ['dialog.place', 'dialog.welcome', 'dialog.starters'], keep: true },
     ],
