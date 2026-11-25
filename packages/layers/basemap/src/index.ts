@@ -51,11 +51,10 @@ export default defineLayer<Params>({
     let asked = 0;
 
     /** Your own streets and buildings, drawn dark; or plain ground under them. */
-    function drawOwn(buildings: ReturnType<typeof geojsonPolygons>, roads: ReturnType<typeof geojsonLines>, ground = true) {
-      const g = canvas.ctx;
+    function drawOwn(buildings: ReturnType<typeof geojsonPolygons>, roads: ReturnType<typeof geojsonLines>, ground = true, g = canvas.ctx) {
       const p = ctx.params;
       if (ground) {
-        canvas.clear();
+        if (g === canvas.ctx) canvas.clear();
         g.fillStyle = p.ground;
         g.fillRect(0, 0, canvas.width, canvas.height);
       }
@@ -216,6 +215,16 @@ export default defineLayer<Params>({
       g.putImageData(image, 0, 0);
       return { areas: [], mask };
     }
+
+    // A magnifier's sharp picture (#413): the table's own streets and buildings drawn again at its
+    // size. Tiled styles stay the screen's copy, except for the buildings drawn over the stand-in map.
+    ctx.map.addDetail((g) => {
+      if (!loaded || (ctx.params.style ?? 'dark') !== 'dark') return;
+      g.globalAlpha = ctx.params.opacity;
+      const stray = shapes[1].length > 0 && tableReach(shapes[1].map((l) => l.geometry), space) < STRAY_REACH;
+      if (shapes[1].length === 0 || stray) drawOwn(shapes[0], [], false, g);
+      else drawOwn(shapes[0], shapes[1], true, g);
+    });
 
     ctx.onCleanup(() => void asked++);
     draw();

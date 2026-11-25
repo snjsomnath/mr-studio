@@ -411,11 +411,21 @@ export default defineLayer<Params>({
       }
     }
 
+    /** The vehicles last drawn, for a magnifier's sharp picture. */
+    let shown: Vehicle[] = [];
+
     function draw(vehicles: Vehicle[]) {
-      const g = canvas.ctx;
+      for (const v of vehicles) record(v);
+      shown = vehicles;
+      canvas.clear();
+      paint(canvas.ctx, vehicles);
+      canvas.commit();
+    }
+
+    /** Draws the lines, stops, trails and vehicles into `g`, in table metres: the table, and a magnifier's sharp picture (#413). */
+    function paint(g: CanvasRenderingContext2D, vehicles: Vehicle[]) {
       const { size, labels, trails } = ctx.params;
       const k = size / 2;
-      canvas.clear();
       g.lineCap = 'round';
       g.lineJoin = 'round';
       // Made-up lines are only for simulated vehicles. Under live vehicles they would be streets no real line runs on.
@@ -445,7 +455,6 @@ export default defineLayer<Params>({
       }
       // Every trail and wake first, then every vehicle, so no trail crosses a vehicle.
       for (const v of vehicles) {
-        record(v);
         if (!trails) continue;
         if (v.mode === 'ferry') drawWake(g, v);
         else drawTrail(g, v, k);
@@ -454,8 +463,11 @@ export default defineLayer<Params>({
         const { image, half } = sprite(v, k, labels);
         g.drawImage(image, v.x - half, v.y - half, half * 2, half * 2);
       }
-      canvas.commit();
     }
+    ctx.map.addDetail((g) => {
+      g.globalAlpha = ctx.params.opacity;
+      paint(g, shown);
+    });
 
     ctx.onFrame((dt) => {
       clock += dt;
