@@ -1613,6 +1613,13 @@ async fn present(app: AppHandle, shell: State<'_, Shell>, windows: Option<Vec<As
         }
         None => usual_displays(&app).map_err(text)?,
     };
+    // A show starts at rest (#419): the layer the editor had open to work on closes, as the
+    // controller's Reset does, and the table plays its opening.
+    if let Some(host) = shell.host.lock().await.as_ref() {
+        if let Err(e) = host.state.hub.request(Role::Tv, 0, "layers.reset", &json!({})) {
+            tracing::warn!("present: reset to rest: {e}");
+        }
+    }
     show(&app, &displays).map_err(text)
 }
 

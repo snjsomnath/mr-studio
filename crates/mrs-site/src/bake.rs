@@ -78,8 +78,11 @@ pub fn bake(site: &Site) -> Result<(SceneData, BakeStats), SiteError> {
             }
             // A surface model's buildings bleed a metre or two past their footprints (pixel size, resampling).
             let reach = (2.0 / grid.cell_m).ceil().max(1.0) as usize;
-            stats.terrain_flattened_cells =
-                flatten(&mut scene.dtm, &dilate(&mask, grid.width as usize, grid.height as usize, reach), grid.width as usize);
+            let (width, rows) = (grid.width as usize, grid.height as usize);
+            let mut grown = dilate(&mask, width, rows, reach);
+            // Courtyards keep roof height that bleeds into them (#404): mask those too.
+            courtyards(&mut grown, &scene.dtm, width, rows, f64::from(grid.cell_m));
+            stats.terrain_flattened_cells = flatten(&mut scene.dtm, &grown, width);
         }
     }
     scene.dsm.copy_from_slice(&scene.dtm);
@@ -292,6 +295,78 @@ fn dilate(mask: &[bool], width: usize, rows: usize, reach: usize) -> Vec<bool> {
     out
 }
 
+/// Courtyards narrower than this (metres across) are taken out whole: a surface model's roofs fill them.
+const NARROW_COURT_M: f64 = 8.0;
+/// Wider courtyards up to this size (square metres) are flattened where they stand higher than
+/// their own ground by more than `COURT_RISE_M`; larger enclosed ground is left as it is.
+const COURT_MAX_M2: f64 = 10_000.0;
+const COURT_RISE_M: f32 = 1.0;
+
+/// Grows `mask` (the footprints and their margin) into the courtyards a surface model raised
+/// (#404). A courtyard is unmasked ground the mask encloses (not reaching the grid's edge). One
+/// narrower than `NARROW_COURT_M` is masked whole, so it takes the ground outside the building;
+/// in a wider one only the cells standing above its own low ground (its 20th percentile) are.
+fn courtyards(mask: &mut [bool], dtm: &[f32], width: usize, rows: usize, cell_m: f64) {
+    let n = mask.len();
+    // Cells that are within half the narrow width of the mask: a courtyard made only of these is narrow.
+    let half = ((NARROW_COURT_M / 2.0) / cell_m).floor().max(1.0) as usize;
+    let near = dilate(mask, width, rows, half);
+    let mut seen = vec![false; n];
+    for start in 0..n {
+        if mask[start] || seen[start] {
+            continue;
+        }
+        // One piece of unmasked ground, four neighbours at a time.
+        let mut cells = vec![start];
+        seen[start] = true;
+        let mut edge = false;
+        let mut k = 0;
+        while k < cells.len() {
+            let i = cells[k];
+            k += 1;
+            let (col, row) = (i % width, i / width);
+            if col == 0 || row == 0 || col + 1 == width || row + 1 == rows {
+                edge = true;
+            }
+            let mut visit = |j: usize| {
+                if !mask[j] && !seen[j] {
+                    seen[j] = true;
+                    cells.push(j);
+                }
+            };
+            if col > 0 {
+                visit(i - 1);
+            }
+            if col + 1 < width {
+                visit(i + 1);
+            }
+            if row > 0 {
+                visit(i - width);
+            }
+            if row + 1 < rows {
+                visit(i + width);
+            }
+        }
+        if edge || cells.len() as f64 * cell_m * cell_m > COURT_MAX_M2 {
+            continue;
+        }
+        if cells.iter().all(|&i| near[i]) {
+            for &i in &cells {
+                mask[i] = true;
+            }
+            continue;
+        }
+        let mut heights: Vec<f32> = cells.iter().map(|&i| dtm[i]).collect();
+        heights.sort_by(f32::total_cmp);
+        let ground = heights[heights.len() / 5];
+        for &i in &cells {
+            if dtm[i] > ground + COURT_RISE_M {
+                mask[i] = true;
+            }
+        }
+    }
+}
+
 /// Sets every masked cell to the nearest unmasked ground (spreading out from the edges of the
 /// masked areas, four neighbours at a time). Answers how many cells it changed.
 fn flatten(dtm: &mut [f32], mask: &[bool], width: usize) -> usize {
@@ -416,6 +491,47 @@ mod tests {
         }
         assert_eq!(flatten(&mut dtm, &dilate(&footprint, 10, 10, 1), 10), 16);
         assert!(dtm.iter().all(|h| *h == 2.0));
+    }
+
+    #[test]
+    fn courtyards_in_a_surface_model_flatten_too() {
+        // 40 x 20 cells at 1 m on 2 m ground. Two buildings with a 15 m roof, each a ring:
+        // on the left a 3 m courtyard the roof bled into (6 m), on the right a 12 m one whose
+        // edge cells kept 4 m and whose middle is ground.
+        let (w, h) = (40usize, 20usize);
+        let mut dtm = vec![2.0f32; w * h];
+        let mut footprint = vec![false; w * h];
+        let mut ring = |x0: usize, y0: usize, x1: usize, y1: usize, court: (usize, usize, usize, usize)| {
+            for y in y0..y1 {
+                for x in x0..x1 {
+                    let inside = x >= court.0 && x < court.2 && y >= court.1 && y < court.3;
+                    if !inside {
+                        footprint[y * w + x] = true;
+                        dtm[y * w + x] = 15.0;
+                    }
+                }
+            }
+        };
+        ring(2, 2, 13, 13, (6, 6, 9, 9));
+        ring(16, 1, 38, 19, (20, 4, 32, 16));
+        for y in 6..9 {
+            for x in 6..9 {
+                dtm[y * w + x] = 6.0;
+            }
+        }
+        for y in 4..16 {
+            for x in 20..32 {
+                if x == 20 || x == 31 || y == 4 || y == 15 {
+                    dtm[y * w + x] = 4.0;
+                }
+            }
+        }
+        let mut grown = footprint.clone();
+        courtyards(&mut grown, &dtm, w, h, 1.0);
+        assert!((6..9).all(|y| (6..9).all(|x| grown[y * w + x])), "the narrow courtyard is masked whole");
+        assert!(grown[4 * w + 25] && !grown[10 * w + 25], "the wide one only where it is raised");
+        flatten(&mut dtm, &grown, w);
+        assert!(dtm.iter().all(|v| *v == 2.0), "{:?}", dtm.iter().copied().fold(0.0f32, f32::max));
     }
 
     #[test]
