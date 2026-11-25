@@ -96,7 +96,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-echo "Downloading $VERSION…"
+echo "Downloading ${VERSION}…"
 curl -fL --progress-bar -o "$WORK/MR-Studio.dmg" "$URL"
 
 mkdir -p "$MOUNT"
@@ -117,7 +117,7 @@ if pgrep -x "mr-studio" >/dev/null 2>&1 || pgrep -f "$APP/Contents/MacOS" >/dev/
   pkill -f "$APP/Contents/MacOS" >/dev/null 2>&1 || true
 fi
 
-echo "Installing to $APP…"
+echo "Installing to ${APP}…"
 rm -rf "$APP"
 ditto "$SOURCE" "$APP"
 xattr -dr com.apple.quarantine "$APP" >/dev/null 2>&1 || true
