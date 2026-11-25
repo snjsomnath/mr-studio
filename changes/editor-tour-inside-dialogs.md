@@ -15,3 +15,5 @@ The first time the editor opens, a short tour points at the ribbon, the list, th
 Dialogs are larger, and Open data gets the most room. **Insert › 3D model** opens the model importer itself instead of the Media library. **New layer** is on Insert only; Home works on what is already on the table.
 
 ![Open data](docs/screenshots/457-open-data.png)
+
+Fixed: the starter tables in the setup wizard and the editor's newest dialogs had lost their layout, because one stylesheet left a block open. A test now checks every stylesheet closes what it opens.

@@ -4969,6 +4969,7 @@ body[data-role='edit'] > .connection {
     border-right: 0;
     border-bottom: 1px solid var(--ed-line, #dcdfe5);
   }
+}
 
 /* Start from… (#390): the starter tables, like PowerPoint's templates. */
 .wz-starters {
