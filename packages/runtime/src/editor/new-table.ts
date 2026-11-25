@@ -1,3 +1,4 @@
+import { okCancel } from './platform.ts';
 import { el } from '../controls.ts';
 import { icon } from './icons.ts';
 import { PlaceMap } from './place-map.ts';
@@ -90,7 +91,7 @@ export function newTable(root: HTMLElement): void {
   cancel.addEventListener('click', () => void invoke?.('open_home').catch(() => {}));
   const create = el('button', 'ed-button is-primary', 'Create the table');
   create.type = 'button';
-  foot.append(cancel, el('span', 'ed-grow'), create);
+  foot.append(el('span', 'ed-grow'), ...okCancel(create, cancel));
   panel.append(head, body, foot);
 
   // The other half of the window is a map with the table on it: click to place it, drag to scale and turn it.

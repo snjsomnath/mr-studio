@@ -5099,3 +5099,161 @@ body[data-role='edit'] > .connection {
 .ed-tour-card footer .ed-link {
   margin-right: auto;
 }
+
+/* Shrink controller (#388): in Both, the controller docks as a small live picture in the corner. */
+.ed-surfaces {
+  position: relative;
+}
+
+.ed-surface-shrink {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  padding: 2px 8px;
+  border: 1px solid var(--ed-line);
+  border-radius: 6px;
+  background: var(--ed-panel);
+  color: var(--ed-text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.ed-surface-shrink:hover {
+  border-color: #b9c0cd;
+}
+
+.ed-surface-enlarge {
+  display: none;
+}
+
+.ed-surfaces.is-map-only .ed-surface-shrink,
+.ed-surfaces.is-controller-only .ed-surface-shrink {
+  display: none;
+}
+
+.ed-surfaces.is-controller-small:not(.is-map-only, .is-controller-only) .ed-surface.is-controller {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  z-index: 5;
+  flex: none;
+  width: max(240px, 24%);
+  aspect-ratio: 16 / 10.4;
+  border: 1px solid var(--ed-line);
+  border-radius: 10px;
+  background: var(--ed-panel);
+  box-shadow: 0 10px 28px rgb(15 23 42 / 18%);
+  overflow: hidden;
+}
+
+.ed-surfaces.is-controller-small:not(.is-map-only, .is-controller-only) .ed-surface.is-controller .ed-surface-caption {
+  padding: 6px 8px;
+}
+
+.ed-surfaces.is-controller-small:not(.is-map-only, .is-controller-only) .ed-surface.is-controller .ed-surface-caption > span {
+  display: none;
+}
+
+.ed-surfaces.is-controller-small:not(.is-map-only, .is-controller-only) .ed-surface-enlarge {
+  display: block;
+  position: absolute;
+  inset: 34px 0 0;
+  border: 0;
+  background: transparent;
+  cursor: zoom-in;
+}
+
+/* View › Phone (#389): a visitor's phone in a column at the right of the canvas. */
+.ed-surface.is-phone {
+  display: none;
+}
+
+.ed-surfaces.has-phone {
+  padding-right: 220px;
+}
+
+.ed-surfaces.has-phone .ed-surface.is-phone {
+  display: flex;
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 220px;
+  padding-bottom: 16px;
+}
+
+.ed-surfaces.has-phone.is-controller-small:not(.is-map-only, .is-controller-only) .ed-surface.is-controller {
+  right: 236px;
+}
+
+.ed-phone-screen {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  overflow: hidden;
+  margin: 8px 16px 0 0;
+}
+
+.ed-phone-screen iframe {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  width: 390px;
+  height: 800px;
+  transform-origin: top center;
+  border: 8px solid #1b1f27;
+  border-radius: 22px;
+  background: #0e1218;
+}
+
+/* Several rows selected (#399). */
+.ed-row.is-also {
+  background: #e8edfb;
+  box-shadow: inset 2px 0 0 var(--ed-accent);
+}
+
+/* An empty table (#399): one card on the map with the way to its first layer. */
+.ed-surface.is-map {
+  position: relative;
+}
+
+.ed-canvas-empty {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 18px 24px;
+  border: 1px solid var(--ed-line);
+  border-radius: 12px;
+  background: var(--ed-panel);
+  box-shadow: 0 10px 28px rgb(15 23 42 / 14%);
+  font-size: 13px;
+  text-align: center;
+}
+
+.ed-canvas-empty[hidden] {
+  display: none;
+}
+
+.ed-canvas-empty > span {
+  color: var(--ed-text-2);
+}
+
+.ed-canvas-empty .ed-button {
+  margin-top: 6px;
+}
+
+.ed-inspector-many {
+  margin: 8px 12px 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #e8edfb;
+  font-size: 12px;
+  line-height: 1.45;
+}

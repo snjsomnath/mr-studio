@@ -1,3 +1,4 @@
+import { okCancel } from './platform.ts';
 import type { SiteInfo, SiteMesh } from '@mrstudio/sdk';
 
 import { el } from '../controls.ts';
@@ -719,7 +720,7 @@ export class ModelImporter {
     const cancel = el('button', 'ed-button', 'Cancel');
     cancel.type = 'button';
     cancel.addEventListener('click', () => this.reset());
-    actions.append(add, cancel);
+    actions.append(...okCancel(add, cancel));
     if (site.mesh && this.loaded?.file === null) {
       const remove = el('button', 'ed-button mi-remove', 'Remove the model');
       remove.type = 'button';

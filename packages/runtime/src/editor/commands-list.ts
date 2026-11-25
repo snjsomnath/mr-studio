@@ -65,6 +65,7 @@ export const COMMANDS = {
   // ---- What is on screen (View) ----
   'view.map': { label: 'Map', icon: 'map', tip: 'Show the map only in the middle', group: 'View', also: 'canvas' },
   'view.controller': { label: 'Controller', icon: 'tv', tip: 'Show the controller only in the middle', group: 'View', also: 'canvas' },
+  'view.phone': { label: 'Phone', icon: 'phone', tip: 'Show a visitor’s phone beside the map, live. Its settings are on the Phones row.', group: 'View', also: 'mobile phone preview app' },
   'view.both': { label: 'Both', icon: 'grid', tip: 'Show the map and the controller side by side', group: 'View', also: 'canvas' },
   'zoom.fit': { label: 'Fit', icon: 'search', tip: 'Fit the map in the window', group: 'View', also: 'zoom' },
   'zoom.100': { label: '100 %', icon: 'search', tip: 'One pixel here for one on the projector', group: 'View', also: 'zoom actual size' },

@@ -257,6 +257,43 @@ async function main() {
       await shot('453-xray-empty');
     });
 
+    await run('the controller docks small and enlarges again (#388)', async () => {
+      await page.goto(`${base}/edit#layer=wind`);
+      await row('wind').waitFor();
+      const area = (b) => Math.round(b.width * b.height);
+      const half = area(await page.locator('.ed-surface.is-map').boundingBox());
+      await page.locator('.ed-surface-shrink').click();
+      await page.locator('.ed-surfaces.is-controller-small').waitFor();
+      const map = await page.locator('.ed-surface.is-map').boundingBox();
+      assert.ok(area(map) > half * 1.5, `the map has the canvas (${half}px², now ${area(map)}px²)`);
+      assert.equal(await page.evaluate(() => localStorage.getItem('mrs-controller-small')), '1');
+      await shot('388-controller-small');
+      await page.locator('.ed-surface-enlarge').click();
+      await page.locator('.ed-surfaces:not(.is-controller-small)').waitFor();
+    });
+
+    await run('View › Phone shows a live phone beside the map (#389)', async () => {
+      await page.locator('.ed-tab[data-tab="view"]').click();
+      await page.locator('.ed-ribbon [data-command="view.phone"]').click();
+      await page.locator('.ed-surfaces.has-phone .ed-phone-screen iframe').waitFor();
+      await page.waitForTimeout(1500);
+      await shot('389-phone');
+      await page.locator('.ed-ribbon [data-command="view.phone"]').click();
+      await page.locator('.ed-surfaces:not(.has-phone)').waitFor();
+    });
+
+    await run('Ctrl or ⌘ click selects several rows, and Delete removes them together (#399)', async () => {
+      await page.locator('.ed-tab[data-tab="home"]').click();
+      await row('wind').click();
+      await row('isovist').click({ modifiers: [mod] });
+      await page.locator('.ed-row.is-also[data-layer="isovist"]').waitFor();
+      await shot('399-multi');
+      const before = layerIds().length;
+      await page.locator('.ed-ribbon [data-command="layer.remove"]').click();
+      await until(async () => !layerIds().includes('wind') && !layerIds().includes('isovist'), 'both rows removed');
+      assert.equal(layerIds().length, before - 2);
+    });
+
     await run('the controller carries no operator text (#50)', async () => {
       const tv = await browser.newPage({ viewport: { width: 1600, height: 900 } });
       await tv.goto(`${base}/tv`);

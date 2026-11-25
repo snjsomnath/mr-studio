@@ -291,7 +291,22 @@ export class Editor {
       box.append(caption, content);
       return box;
     };
-    this.surfaces.append(surface('map', 'Map', 'Projected on the table. Visual only.', this.canvas), surface('controller', 'Controller', 'The screen beside the table. Buttons, words and controls.', this.preview));
+    const controllerBox = surface('controller', 'Controller', 'The screen beside the table. Buttons, words and controls.', this.preview);
+    const mapBox = surface('map', 'Map', 'Projected on the table. Visual only.', this.canvas);
+    // An empty table (#399): the one hint the canvas carries, and the way to its first layer.
+    const go = button('ed-button is-primary', 'Insert a layer', 'plus');
+    go.dataset.command = 'layer.new';
+    go.addEventListener('click', () => this.gallery());
+    this.emptyCanvas.append(el('strong', undefined, 'No layers yet'), el('span', undefined, 'Each layer becomes a button on the controller.'), go);
+    mapBox.append(this.emptyCanvas);
+    this.surfaces.append(mapBox, controllerBox);
+    this.shrinkControls(controllerBox);
+    this.surfaces.append(this.phoneBox);
+    try {
+      this.phoneShown = localStorage.getItem('mrs-phone-preview') === '1';
+    } catch {
+      // No storage: the phone starts hidden.
+    }
     this.timeBar = new TimeBar({
       site: () => store.state.site,
       connection,
@@ -770,6 +785,95 @@ export class Editor {
       { step: WHERE, panel: true },
     );
     return this.placePanel;
+  }
+
+  /** View › Phone (#389): a visitor's phone beside the map, live. Remembered on this computer. */
+  private phoneShown = false;
+  private readonly phoneBox = el('section', 'ed-surface is-phone');
+
+  private setPhone(on: boolean): void {
+    this.phoneShown = on;
+    try {
+      if (on) localStorage.setItem('mrs-phone-preview', '1');
+      else localStorage.removeItem('mrs-phone-preview');
+    } catch {
+      // As above.
+    }
+    this.drawPhone();
+    this.renderRibbon(this.instances());
+  }
+
+  /**
+   * The phone frame: shown when View › Phone is on, or while the Phones row is selected. A preview,
+   * never a second place to edit: phone settings are in the Phones row's Format pane.
+   */
+  private drawPhone(): void {
+    const on = this.phoneShown || this.context.kind === 'phone';
+    this.surfaces.classList.toggle('has-phone', on);
+    const box = this.phoneBox;
+    if (!on) {
+      box.replaceChildren();
+      return;
+    }
+    if (box.childElementCount > 0) return;
+    const caption = el('h3', 'ed-surface-caption');
+    caption.append(el('strong', undefined, 'Phone'), el('span', undefined, 'What a visitor’s phone shows'));
+    const { code, join_url } = this.store.state.session;
+    if (!join_url && !code) {
+      box.append(caption, el('p', 'ed-empty', 'Phones cannot join this table yet.'));
+      return;
+    }
+    const screen = el('div', 'ed-phone-screen');
+    const frame = el('iframe');
+    frame.title = 'A visitor’s phone';
+    frame.src = `/phone?c=${encodeURIComponent(code)}`;
+    screen.append(frame);
+    // A phone is laid out for its own width; it is scaled down to fit its column, as in Rehearse.
+    new ResizeObserver(() => {
+      const scale = Math.min(screen.clientWidth / 406, screen.clientHeight / 816);
+      frame.style.transform = `translateX(-50%) scale(${Math.max(0.1, scale)})`;
+    }).observe(screen);
+    box.append(caption, screen);
+  }
+
+  /**
+   * Shrink controller (#388): in Both, the controller docks as a small live picture in the corner
+   * of the canvas and the map takes the rest. Its own header has the button; clicking the small
+   * picture enlarges it again. Remembered on this computer, never saved in the table.
+   */
+  private shrinkControls(box: HTMLElement): void {
+    const key = 'mrs-controller-small';
+    const toggle = el('button', 'ed-surface-shrink');
+    toggle.type = 'button';
+    const enlarge = el('button', 'ed-surface-enlarge');
+    enlarge.type = 'button';
+    enlarge.ariaLabel = 'Enlarge controller';
+    enlarge.title = 'Enlarge controller';
+    const set = (small: boolean, keep = true) => {
+      this.surfaces.classList.toggle('is-controller-small', small);
+      toggle.replaceChildren(icon(small ? 'fullscreen' : 'minus', 14), el('span', undefined, small ? 'Enlarge controller' : 'Shrink controller'));
+      toggle.title = small ? 'Give the controller its half of the canvas again' : 'Dock the controller as a small live picture, so the map gets the canvas';
+      toggle.setAttribute('aria-pressed', String(small));
+      if (keep) {
+        try {
+          if (small) localStorage.setItem(key, '1');
+          else localStorage.removeItem(key);
+        } catch {
+          // No storage: the choice lasts until the editor closes.
+        }
+      }
+    };
+    let small = false;
+    try {
+      small = localStorage.getItem(key) === '1';
+    } catch {
+      // As above.
+    }
+    set(small, false);
+    toggle.addEventListener('click', () => set(!this.surfaces.classList.contains('is-controller-small')));
+    enlarge.addEventListener('click', () => set(false));
+    box.querySelector('.ed-surface-caption')!.append(toggle);
+    box.append(enlarge);
   }
 
   private closeWizard(): void {
@@ -1696,7 +1800,14 @@ export class Editor {
     this.sync.clear();
     this.renderRibbon(instances);
     this.renderTree(instances);
+    for (const id of [...this.also]) {
+      const row = this.tree.querySelector<HTMLElement>(`.ed-row[data-layer="${id}"]`);
+      if (row) row.classList.add('is-also');
+      else this.also.delete(id);
+    }
     this.renderCanvas(instances);
+    this.emptyCanvas.hidden = this.wizard !== null || instances.some((i) => !isAmbient(i.manifest) && !i.state.parent);
+    this.drawPhone();
     this.renderInspector(instances);
     this.renderNext();
     // The time bar follows the open layer, in the editor proper (not the guide, not Media).
@@ -1904,7 +2015,14 @@ export class Editor {
         },
       },
       'layer.duplicate': { keys: k('D'), disabled: needs, run: (t) => this.withSelected(t, (id) => this.duplicate(id)) },
-      'layer.remove': { keys: mac ? '⌫' : 'Del', disabled: needs, run: (t) => this.withSelected(t, (id) => this.removeLayer(id)) },
+      'layer.remove': {
+        keys: mac ? '⌫' : 'Del',
+        disabled: needs,
+        run: async (t) => {
+          for (const id of this.selection(t)) await this.removeLayer(id);
+          this.also.clear();
+        },
+      },
       'layer.toggle': {
         label: (t) => (this.facts(t).on ? 'Hide' : 'Show'),
         icon: (t) => (this.facts(t).on ? 'eye-off' : 'eye'),
@@ -1915,8 +2033,13 @@ export class Editor {
         run: (t) => {
           const f = this.facts(t);
           if (!f.live || !f.canShow) return;
-          if (f.parent) this.itemOn.set(f.live.id, !f.on);
-          void this.send('scene.set', { layer: f.live.id, active: !f.on });
+          // With several rows selected, each follows the first: all hidden, or all shown.
+          for (const id of this.selection(t)) {
+            const each = id === f.live.id ? f : this.facts(id);
+            if (!each.live || !each.canShow) continue;
+            if (each.parent) this.itemOn.set(each.live.id, !f.on);
+            void this.send('scene.set', { layer: each.live.id, active: !f.on });
+          }
         },
       },
       'layer.up': {
@@ -1984,6 +2107,7 @@ export class Editor {
       'view.map': view('map'),
       'view.controller': view('controller'),
       'view.both': view('both'),
+      'view.phone': { pressed: () => this.phoneShown, run: () => this.setPhone(!this.phoneShown) },
       'zoom.fit': { keys: k('0'), run: () => this.menuAction('zoom-fit') },
       'zoom.100': { keys: k('1'), run: () => this.menuAction('zoom-100') },
       'view.outline': { pressed: () => this.canvasTools.outlined, run: () => this.menuAction('outline') },
@@ -2187,8 +2311,25 @@ export class Editor {
     text.append(el('span', 'ed-row-label', label));
     if (detail) text.append(el('span', 'ed-row-detail', detail));
     row.append(badge, text);
-    row.addEventListener('click', onClick);
+    row.addEventListener('click', () => {
+      if (this.also.size) this.also.clear();
+      onClick();
+    });
     return row;
+  }
+
+  /** The empty table's card on the map (#399). */
+  private readonly emptyCanvas = el('div', 'ed-canvas-empty');
+
+  /** Rows added to the selection with Ctrl, ⌘ or Shift (#399), besides the one being edited. */
+  private readonly also = new Set<string>();
+
+  /** What Hide and Remove act on: the selection, and the rows added to it. */
+  private selection(target?: string): string[] {
+    const first = target ?? (this.wizard ? null : this.target());
+    if (!first) return [];
+    if (target) return [target];
+    return [first, ...[...this.also].filter((id) => id !== first && this.store.state.layers[id])];
   }
 
   /**
@@ -2450,6 +2591,16 @@ export class Editor {
     const open = (): void => this.go({ kind: 'layer', id });
     row.addEventListener('click', (event) => {
       if ((event.target as HTMLElement).closest('.ed-row-eye, .ed-rename')) return;
+      // Ctrl, ⌘ or Shift adds a row to the selection, as in Office (#399): Hide and Remove act on them all.
+      if (event.metaKey || event.ctrlKey || event.shiftKey) {
+        event.preventDefault();
+        if (id === this.target()) return;
+        if (this.also.has(id)) this.also.delete(id);
+        else this.also.add(id);
+        this.render();
+        return;
+      }
+      if (this.also.size) this.also.clear();
       open();
     });
     row.addEventListener('keydown', (event) => {
@@ -3110,6 +3261,12 @@ export class Editor {
             : `Visitors join with the code ${this.store.state.session.code}. Choosing what phones may control comes later.`,
         ),
       );
+    }
+    // Several rows selected (#399): say so, and which of them the settings below belong to.
+    if (this.also.size && context.kind === 'layer') {
+      const first = layerButton(context.id, this.store.manifest(this.store.state.layers[context.id]!.layer)!, this.store.state.layers[context.id]).name;
+      const note = el('p', 'ed-inspector-many', `${this.also.size + 1} layers selected. Show, Hide and Remove act on all of them; the settings below are ${first}’s.`);
+      nodes.splice(1, 0, note);
     }
     this.inspector.replaceChildren(...nodes);
   }

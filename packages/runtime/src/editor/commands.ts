@@ -6,43 +6,9 @@
 import { el } from '../controls.ts';
 import { icon } from './icons.ts';
 
-export interface Command {
-  id: string;
-  label: string;
-  /** Where it belongs, shown on the right: Layer, Add, Data, View... */
-  group: string;
-  icon?: string;
-  keys?: string;
-  /** More words it answers to. */
-  also?: string;
-  disabled?: string;
-  run: () => void;
-}
+import { rank, type Command } from './command-rank.ts';
 
-const words = (text: string): string[] =>
-  text
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .split(/[^a-z0-9%]+/)
-    .filter(Boolean);
-
-/** How well a command answers a search: every word must start a word of it; earlier and fuller matches rank higher. */
-export function score(command: Command, query: string): number {
-  const wanted = words(query);
-  if (wanted.length === 0) return 1;
-  const label = words(command.label);
-  const all = [...label, ...words(`${command.group} ${command.also ?? ''}`)];
-  let total = 0;
-  for (const word of wanted) {
-    const at = label.findIndex((w) => w.startsWith(word));
-    if (at >= 0) total += 10 - Math.min(at, 8) + (label[at] === word ? 2 : 0);
-    else if (all.some((w) => w.startsWith(word))) total += 3;
-    else if (label.join(' ').includes(word)) total += 1;
-    else return 0;
-  }
-  return total;
-}
+export { score, rank, type Command } from './command-rank.ts';
 
 let open: HTMLDialogElement | null = null;
 
@@ -79,12 +45,7 @@ export function commandSearch(list: () => Command[], root: HTMLElement): void {
   };
   const draw = (): void => {
     const query = field.value;
-    shown = commands
-      .map((c, i) => ({ c, s: score(c, query), i }))
-      .filter((x) => x.s > 0)
-      .sort((a, b) => b.s - a.s || a.i - b.i)
-      .slice(0, 40)
-      .map((x) => x.c);
+    shown = rank(commands, query);
     active = Math.min(active, Math.max(0, shown.length - 1));
     results.replaceChildren(
       ...shown.map((command, n) => {

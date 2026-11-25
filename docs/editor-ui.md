@@ -126,14 +126,18 @@ PowerPoint's new-presentation screen: three steps to a working table, then the e
 
 After that, **Present › Ready to present?** (#63) is the guide: each missing item links to its one home. There is no Setup guide button; New table on Home starts the wizard.
 
+## Settled in #388, #389, #399
+
+- **Empty table**: the map shows one card, "No layers yet" with **Insert a layer**. The map and controller carry no other hints.
+- **Several layers**: Ctrl-click (⌘-click on a Mac) or Shift-click adds a row to the selection. Show, Hide and Remove act on all of them; the Format pane says how many are selected and shows the settings of the first.
+- **Mac and Windows**: shortcuts use ⌘ on a Mac and Ctrl elsewhere; dialogs put the confirming button last on a Mac and first on Windows (`editor/platform.ts`).
+- **Room for the map**: *Shrink controller* on the controller's caption docks it as a small live picture in the corner; click it to enlarge. **View › Phone** shows a visitor's phone beside the map, live. Both are remembered on this computer, not in the table.
+
 ## Still to design
 
 - **Custom layer builder**: becomes sections of the Format pane (Data, Look, Motion, Interaction); its button is handled like any layer's.
 - **Slides and layer items**: children under their layer in the list; select one, format it in the pane.
 - **Controller panels and widgets** (#155, #357): select a panel on the controller preview, edit it in the Format pane.
-- **Empty states**: a table with no layers shows "Insert a layer" on the canvas.
-- **Selecting several things** at once (hide, remove), as Office does: to decide.
-- **Mac and Windows**: shortcuts, menus and dialog button order follow each platform.
 - **The operator**: running a table at an exhibition (Present controls, a lock so visitors can't reach the editor, idle reset) is a different person from the author, and not designed yet.
 - **One place for messages**: saved state, live data sources, performance warnings (#262) and readiness report in the status bar; a change that can be undone shows one notice with Undo.
 - **Version history** (#72): File › Version history… lists saved versions of the table (from the host's revision history) and restores one. Undo stays for this session's changes; Version history is for going back further.
