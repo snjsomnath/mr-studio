@@ -31,12 +31,25 @@ export function lensHero(ctx: PanelContext<Params>, el: HTMLElement): PanelHandl
   let pad: { redraw(): void } | null = null;
   let mode = '';
 
+  // The caustic light (#415): on unless the layer turns it off or the viewer asks for less motion.
+  const still = globalThis.matchMedia?.('(prefers-reduced-motion: reduce)');
+  const lit = () => ctx.params.caustic !== false && !still?.matches && !!view?.animates;
+  let frame = 0;
+  const started = performance.now();
+
   const drawGlass = () => {
     if (!view || !glassBox || !latest) return;
     const size = Math.round(glassBox.clientWidth * Math.min(2, globalThis.devicePixelRatio || 1));
     if (size < 2) return;
-    view.draw(latest, size, !!ctx.params.pinned);
+    view.draw(latest, size, !!ctx.params.pinned, lit() ? 1 : 0, (performance.now() - started) / 1000);
     if (waiting) waiting.style.display = 'none';
+    // The light keeps moving between the table's pictures.
+    if (lit() && !frame) {
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        drawGlass();
+      });
+    }
   };
 
   const build = () => {
@@ -98,6 +111,9 @@ export function lensHero(ctx: PanelContext<Params>, el: HTMLElement): PanelHandl
   resize.observe(el);
   ctx.onCleanup(() => {
     resize.disconnect();
+    cancelAnimationFrame(frame);
+    frame = 0;
+    view = null;
     stopWatching?.();
     latest?.close();
   });

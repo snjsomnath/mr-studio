@@ -20,6 +20,7 @@
     { "id": "pinned", "type": "toggle", "label": "Keep the glass where it is", "default": false, "phone": true },
     { "id": "dim", "type": "range", "label": "Darken the table around the glass", "min": 0, "max": 0.9, "step": 0.05, "default": 0.8, "tier": "more" },
     { "id": "cover", "type": "toggle", "label": "Hide the map inside the glass", "default": true, "tier": "more", "visibleWhen": { "show": "under" } },
+    { "id": "caustic", "type": "toggle", "label": "Slow light over the lines in the glass", "default": true, "tier": "more", "visibleWhen": { "show": "zoom" } },
     { "id": "follow", "type": "toggle", "label": "The glass follows the mouse on the table", "default": true, "tier": "more" },
     { "id": "x", "type": "range", "label": "Across", "min": 0, "max": 1, "step": 0.001, "default": 0.5, "tier": "state" },
     { "id": "y", "type": "range", "label": "Down", "min": 0, "max": 1, "step": 0.001, "default": 0.5, "tier": "state" }

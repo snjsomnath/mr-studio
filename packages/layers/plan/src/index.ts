@@ -63,6 +63,10 @@ const OUT_S = 0.5;
 const GLOW_S = 1.4;
 /** How strongly every phase shows in the finale, before one is pointed at. */
 const FINALE = 0.8;
+/** The finale's marks (#416): seconds between one phase's mark and the next landing, how long one takes to land, and a pulse's period. */
+const MARK_STAGGER_S = 0.18;
+const MARK_IN_S = 0.9;
+const MARK_PULSE_S = 2.6;
 /** Width of the low-resolution copy of each phase used for pointing at it. */
 const MASK_W = 256;
 /** Seconds a look change (lines, colour) takes from the controller. */
@@ -290,8 +294,19 @@ export default defineLayer<Params>({
       dirty = true;
     }
 
+    /** Seconds since the finale began, while it shows; null otherwise. */
+    let finaleClock: number | null = null;
+    const inFinale = () => ctx.params.finale && ctx.params.reveal && phases.length > 0 && ctx.steps.revealed > phases.length;
+
     ctx.onFrame((dt) => {
       clock += dt;
+      if (inFinale() && ctx.params.marks) {
+        finaleClock = (finaleClock ?? 0) + dt;
+        dirty = true;
+      } else if (finaleClock !== null) {
+        finaleClock = null;
+        dirty = true;
+      }
       for (const p of phases) {
         if (p.shown === p.target) continue;
         p.shown = p.target > p.shown ? Math.min(p.target, p.shown + dt / IN_S) : Math.max(p.target, p.shown - dt / OUT_S);
@@ -435,6 +450,48 @@ export default defineLayer<Params>({
         g.restore();
       }
     });
+    if (finaleClock !== null) drawMarks(g, scale, finaleClock);
+    }
+
+    /**
+     * The finale's marks (#416): every phase's middle gets a dot and a ring in its colour,
+     * landing one after another, then a ring pulsing outward now and then, like the old
+     * artwork's "all locations" overlay. Sized from the drawing so any plan gets them.
+     */
+    function drawMarks(g: CanvasRenderingContext2D, scale: number, t: number): void {
+      const size = Math.max(diagonal * 0.012, 6 / scale);
+      phases.forEach((p, k) => {
+        if (!p.bounds) return;
+        const local = t - k * MARK_STAGGER_S;
+        if (local <= 0) return;
+        const land = ease(local / MARK_IN_S);
+        const [x, y] = p.middle;
+        g.save();
+        g.fillStyle = p.colour;
+        g.strokeStyle = p.colour;
+        g.shadowColor = p.colour;
+        g.shadowBlur = 18;
+        // A dot and a steady ring, overshooting a little as they land.
+        const r = size * (land < 1 ? 1 + 0.35 * Math.sin(land * Math.PI) : 1);
+        g.globalAlpha = land;
+        g.beginPath();
+        g.arc(x, y, r * 0.42, 0, Math.PI * 2);
+        g.fill();
+        g.lineWidth = Math.max(size * 0.16, 1.5 / scale);
+        g.beginPath();
+        g.arc(x, y, r, 0, Math.PI * 2);
+        g.stroke();
+        // A ring that spreads and fades, each phase out of step with the next.
+        if (land >= 1) {
+          const phase = ((local - MARK_IN_S) / MARK_PULSE_S + k * 0.37) % 1;
+          g.globalAlpha = 0.7 * (1 - phase) * (1 - phase);
+          g.lineWidth = Math.max(size * 0.1, 1 / scale);
+          g.beginPath();
+          g.arc(x, y, size * (1 + 2.6 * ease(phase)), 0, Math.PI * 2);
+          g.stroke();
+        }
+        g.restore();
+      });
     }
 
     ctx.map.addDetail((g, scale) => paint(g, scale, true));

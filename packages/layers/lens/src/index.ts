@@ -20,6 +20,8 @@ export interface Params {
   dim: number;
   cover: boolean;
   follow: boolean;
+  /** Slow caustic light over the lines in the controller's glass (#415). */
+  caustic: boolean;
   x: number;
   y: number;
 }

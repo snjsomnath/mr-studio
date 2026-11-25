@@ -7,6 +7,6 @@ A glass people move over the table (#287, #351): with the mouse on the table, by
 
 With `follow` the circle follows the mouse and a click keeps it where it is (`pinned`); without it a press or drag places it. Where it is lives in the host (`x`, `y`, fractions of the table), so the projector, the editor and the controller agree.
 
-Params: `show`, `zoom`, `size` (the glass's width as a share of the table's shorter side; the circle on the table is `size / zoom`), `pinned`, `dim`, `cover`, `follow`, `x`, `y`. Tool: `move` (a point).
+Params: `show`, `zoom`, `size` (the glass's width as a share of the table's shorter side; the circle on the table is `size / zoom`), `pinned`, `dim`, `cover`, `caustic` (slow rings of light over the lines in the controller's glass, every 8 s; on by default, off when the viewer asks for less motion, #415), `follow`, `x`, `y`. Tool: `move` (a point).
 
 Not yet: clipping of shapes and flows inside an X-ray, and the old caustic light over the drawing's lines.

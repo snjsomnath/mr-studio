@@ -17,6 +17,8 @@ export interface Params {
   earlier: number;
   later: number;
   finale: boolean;
+  /** In the finale, a pulsing ring marks every phase's middle (#416). */
+  marks: boolean;
   hover: boolean;
   corners: string;
   /** Quarter turns the drawing is shown at, in degrees clockwise: "0", "90", "180" or "270". */

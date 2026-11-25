@@ -455,6 +455,19 @@ fn saved_layers(scene: &[Instance]) -> Vec<LayerRef> {
 
 /// The positions of a layer and its items: the layer at `at`, then everything with it as parent.
 /// The layer the sequence `id` is showing as its current step.
+/// How many phase groups a drawing has: distinct `data-mrs-phase` marks, which the import
+/// puts on each one (crates/mrs-site/src/plan.rs).
+fn count_phases(svg: &str) -> usize {
+    let mut seen = std::collections::BTreeSet::new();
+    for part in svg.split("data-mrs-phase=").skip(1) {
+        let value: String = part.chars().skip(1).take_while(|c| c.is_ascii_digit()).collect();
+        if !value.is_empty() {
+            seen.insert(value);
+        }
+    }
+    seen.len()
+}
+
 fn shown(scene: &[Instance], id: &str) -> Option<usize> {
     scene.iter().position(|i| i.state.shown_by.as_deref() == Some(id))
 }
@@ -1310,6 +1323,14 @@ impl Hub {
                 if scene[index].state.step.as_ref().is_some_and(|s| s.count == count && s.titles == titles) {
                     return Ok(json!({}));
                 }
+                // The same number with names now (the host counted a drawing's phases before the
+                // table read their names, #421): keep the reveal, take the names.
+                if let Some(step) = scene[index].state.step.as_mut().filter(|s| s.count == count && s.titles.is_empty()) {
+                    step.titles = titles;
+                    self.emit_layer(&scene[index].id, &scene[index].state);
+                    self.mirror(scene, index, Instant::now());
+                    return Ok(json!({}));
+                }
                 let timed = scene[index].saved.steps.as_ref().and_then(|s| s.mode) == Some(StepMode::Timed);
                 scene[index].state.step = (count > 0).then_some(StepState {
                     index: 0,
@@ -2149,6 +2170,12 @@ impl Hub {
                 self.release(scene, shown, true);
             }
         }
+        // A layer whose steps are the phases of its drawing (the Masterplan) has them from the
+        // moment it turns on, so Next, phones and the MCP can step it before any table window
+        // reports them, and without one (#421).
+        if !sequence && active && scene[index].state.step.is_none() {
+            scene[index].state.step = self.drawing_steps(&scene[index]);
+        }
         // A sequence opens on its first step, so every surface sees its steps as it turns on.
         if sequence && active && scene[index].state.step.is_none() {
             self.show_step(scene, index, 0, Instant::now());
@@ -2170,6 +2197,46 @@ impl Hub {
                 }
             }
         }
+    }
+
+    /// The sub-steps of a layer whose layer.json says `"sub_steps": "drawing"`: one per phase
+    /// group of its drawing (`data-mrs-phase`, as the import marked them), and one more for the
+    /// finale when `finale` is on. None when `reveal` is off or the drawing can't be read.
+    fn drawing_steps(&self, instance: &Instance) -> Option<StepState> {
+        if self.catalog()[instance.def].manifest["sub_steps"] != "drawing" {
+            return None;
+        }
+        let params = &instance.state.params;
+        if params.get("reveal").and_then(Value::as_bool) == Some(false) {
+            return None;
+        }
+        let info = self.info.read().unwrap();
+        let named = params.get("dataset").and_then(Value::as_str).unwrap_or_default();
+        let path = if named.is_empty() {
+            info.data.values().find(|p| p.to_lowercase().ends_with(".svg"))?.clone()
+        } else {
+            info.data.get(named)?.clone()
+        };
+        drop(info);
+        let text = std::fs::read_to_string(self.site.dir.join(path)).ok()?;
+        let phases = count_phases(&text);
+        if phases == 0 {
+            return None;
+        }
+        let finale = params.get("finale").and_then(Value::as_bool) == Some(true);
+        let count = (phases + usize::from(finale)).min(MAX_SUB_STEPS);
+        let timed = instance.saved.steps.as_ref().and_then(|s| s.mode) == Some(StepMode::Timed);
+        Some(StepState {
+            index: 0,
+            count,
+            sub: None,
+            playing: timed,
+            title: None,
+            description: None,
+            source: None,
+            titles: Vec::new(),
+            due: None,
+        })
     }
 
     /// Puts the table back the way site.json starts it (the controller's Reset view, #198):
@@ -2601,6 +2668,11 @@ mod tests {
 
     /// A hub on a private copy of the sample site, for tests that edit the scene.
     fn scratch_hub(name: &str) -> Hub {
+        scratch_hub_with(name, |_| {})
+    }
+
+    /// A scratch hub whose copy of the sample site `edit` changes first.
+    fn scratch_hub_with(name: &str, edit: impl FnOnce(&std::path::Path)) -> Hub {
         fn copy(from: &std::path::Path, to: &std::path::Path) {
             std::fs::create_dir_all(to).unwrap();
             for entry in std::fs::read_dir(from).unwrap() {
@@ -2620,6 +2692,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("mrs-hub-test-{}-{name}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         copy(&root.join("sites/sample"), &dir);
+        edit(&dir);
         let site = Site::load(&dir).unwrap();
         let catalog = crate::layers::load_catalog(&site, &root.join("packages/layers")).unwrap();
         Hub::new(&site, catalog, 4170, None, SessionOptions::default()).unwrap()
@@ -2875,6 +2948,39 @@ mod tests {
         // An item comes on with its layer, never at rest.
         dev("scene.add", json!({ "use": "trees", "parent": "slideshow", "id": "slide-trees" })).unwrap();
         assert_eq!(layer(&hub, "slide-trees")["rest"], Value::Null);
+    }
+
+    #[test]
+    fn a_masterplan_steps_through_its_phases_without_a_table_window() {
+        let hub = scratch_hub_with("plan-steps", |dir| {
+            let svg = r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><g data-mrs-phase="0" data-mrs-name="Roads"><path d="M0 0L1 1"/></g><g data-mrs-phase="1" data-mrs-name="Parks"><path d="M0 0L2 2"/></g><g data-mrs-phase="2" data-mrs-name="Homes"><path d="M0 0L3 3"/></g></svg>"#;
+            std::fs::write(dir.join("data/plan.svg"), svg).unwrap();
+            let path = dir.join("site.json");
+            let mut site: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+            site["data"]["plan"] = json!("data/plan.svg");
+            std::fs::write(&path, serde_json::to_string_pretty(&site).unwrap()).unwrap();
+        });
+        let dev = |method: &str, p: Value| hub.request(Role::Dev, 0, method, &p);
+        let tv = |method: &str, p: Value| hub.request(Role::Tv, 0, method, &p);
+        dev("scene.add", json!({ "use": "plan", "id": "vision", "button": { "name": "Vision" } })).unwrap();
+        assert!(tv("layer.step", json!({ "layer": "vision", "to": "next" })).is_err(), "off: no steps yet");
+        // On, and with no table window open, the phases are already steps (#421).
+        tv("layer.activate", json!({ "layer": "vision", "active": true })).unwrap();
+        assert_eq!(layer(&hub, "vision")["step"]["count"], 3);
+        tv("layer.step", json!({ "layer": "vision", "to": "next" })).unwrap();
+        assert_eq!(layer(&hub, "vision")["step"]["index"], 1);
+        // A table window then reports the same phases with names: the reveal stays.
+        dev("layer.substeps", json!({ "layer": "vision", "count": 3, "titles": ["Roads", "Parks", "Homes"] })).unwrap();
+        assert_eq!(layer(&hub, "vision")["step"]["index"], 1);
+        assert_eq!(layer(&hub, "vision")["step"]["titles"], json!(["Roads", "Parks", "Homes"]));
+        tv("layer.step", json!({ "layer": "vision", "to": "all" })).unwrap();
+        assert_eq!(layer(&hub, "vision")["step"]["index"], 3);
+        // The finale is one more step.
+        tv("layer.activate", json!({ "layer": "vision", "active": false })).unwrap();
+        dev("layer.set", json!({ "layer": "vision", "params": { "finale": true } })).unwrap();
+        tv("layer.activate", json!({ "layer": "vision", "active": true })).unwrap();
+        assert_eq!(layer(&hub, "vision")["step"]["count"], 4);
+        assert_eq!(count_phases(r#"<g data-mrs-phase="0"></g><g data-mrs-phase='1'><g data-mrs-phase="1"></g></g>"#), 2);
     }
 
     #[test]

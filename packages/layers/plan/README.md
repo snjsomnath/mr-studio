@@ -17,7 +17,7 @@ The Lindholmen artwork's three parts are settings of this layer, so another artw
 
 - **Opening** (`opening`, `opening_s`): `trace` draws the lines outside the phases in, spreading from the middle of the drawing with a bright pen; `fade` fades it in.
 - **Turn to colour** (`colour`, `colour_after_s`, `colour_s`): a colour version (an SVG or a picture of the same frame) the drawing turns into after its lines are in. `look` switches between lines and colour from the controller or a phone at any time.
-- **Viewpoints** (`start: base`, `grow: phase`, `earlier`, `later`, `finale`): the overview shows only the base; each Next grows the next phase from its own middle, those before it stay at `earlier`, those to come at `later`, and with `finale` a last step shows them all.
+- **Viewpoints** (`start: base`, `grow: phase`, `earlier`, `later`, `finale`): the overview shows only the base; each Next grows the next phase from its own middle, those before it stay at `earlier`, those to come at `later`, and with `finale` a last step shows them all, each phase's middle marked with a pulsing ring in its colour (`marks`, on by default, #416).
 - **Pointing** (`hover`): in the overview and the finale, a pointer resting on a phase lights it on the table, its row in the controller's legend and the controller's picture. It uses the SDK's `HoverRegions`, so the camera's hands can do the same later.
 - **Placement** (`corners`): `lon,lat; lon,lat; lon,lat` of the drawing's top left, top right and bottom left puts it where it belongs on the map, rotated and of any shape; empty stretches it over the table.
 
@@ -51,4 +51,4 @@ Name the parts of a phase by what they are and the layer animates each the way t
 
 The controller's hero shows the drawing as the table does: its phases, the one pointed at, and the turn to colour. Add a Magnifier for the glass.
 
-Params: `dataset` (the drawing's dataset name; empty takes the table's first SVG), `reveal`, `look`, `opening`, `opening_s`, `colour`, `colour_after_s`, `colour_s`, `start`, `grow`, `earlier`, `later`, `finale`, `hover`, `turn`, `corners`, `motion`, `role_s`, `opacity`.
+Params: `dataset` (the drawing's dataset name; empty takes the table's first SVG), `reveal`, `look`, `opening`, `opening_s`, `colour`, `colour_after_s`, `colour_s`, `start`, `grow`, `earlier`, `later`, `finale`, `marks`, `hover`, `turn`, `corners`, `motion`, `role_s`, `opacity`.
