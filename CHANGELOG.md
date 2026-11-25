@@ -4,6 +4,44 @@ Every merge to main that carries a release note becomes a version. The newest is
 The app shows these notes, with their pictures, on Home when a newer version is out.
 How notes are written: docs/RELEASING.md.
 
+## 0.44.0 (2026-11-25)
+
+### New
+
+#### An ambient glow around the model (#476, #263, #427, #86)
+
+The projector's blank space around the model can glow softly in the model's own colours, like the lights behind some televisions. Turn it on under Design › Table size and place, beside the ribbons: choose how strong it is, and whether each edge glows in the colours along it or the whole margin takes the model's one dominant colour. Colours ease over about a second, the ribbons stay on top, and a layer can turn the glow off or give it a colour of its own while it is on.
+
+![The glow around Sunlight and Wind](docs/screenshots/476-ambient-glow.png)
+
+![The setting in Table size and place](docs/screenshots/476-glow-setting.png)
+
+#### Big data files no longer freeze the table
+
+A large map file is now read in the background, and every layer that needs the same file shares one read. A layer with tens of thousands of shapes draws them a few at a time, so the table keeps moving. On a 50 MB file of 64,000 buildings, the table no longer stops for 0.7 s while the file is read and 1.9 s while it is drawn. The Mac's WebKit check is back to blocking a pull request when it fails, and a team's own table repository can start from the new site template in `templates/site`.
+
+![The longest pause on the table, before and after](docs/screenshots/263-worker-pauses.png)
+
+#### Layers read nested data, lists of flows and bound yes/no values (#373)
+
+Several things a code layer needed workarounds for now work as they are:
+
+- An entity set's `key`, `label`, `group` and facts can name a nested property by a dotted path, such as `ecom.name`.
+- A widget's list prop can be bound as a whole, with its items checked as they arrive.
+- A bound yes/no or number that a layer published as text is read correctly.
+- A team widget can say its own words in the visitors' language with `env.say`.
+- A network link can hold its whole day of flows as one list (`flow_hourly`), so the `network` motion plays it with no series table.
+
+The shared play head is still to come.
+
+![A network playing the flows held on each link](docs/screenshots/373-network-lists.png)
+
+#### A new version of a presenting table waits for the show to stop (#401)
+
+Opening a table file of the table that is on the screens no longer refuses. Home offers **Update when the show stops** or **Stop and update now**. A waiting version is kept by the app and goes in when someone stops presenting, at the nightly restart or the next time the app starts, and Home says it waits until then. A table that is open only in the editor updates and opens again.
+
+![Update when the show stops](docs/screenshots/401-same-table-presenting.png)
+
 ## 0.43.0 (2026-11-25)
 
 ### New
