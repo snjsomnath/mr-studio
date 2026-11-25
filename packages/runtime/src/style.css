@@ -3533,3 +3533,103 @@ body[data-role='phone'] .segmented button {
 .stage-no-table[hidden] {
   display: none;
 }
+
+/* ---- Two layers at once (#473) ---- */
+
+/* Holding a layer button: a ring grows round its icon; the layer joins the open one when it closes. */
+@property --mrs-hold {
+  syntax: '<angle>';
+  inherits: false;
+  initial-value: 0deg;
+}
+
+.layer-button .layer-button-icon {
+  position: relative;
+}
+
+.layer-button.is-holding .layer-button-icon::after {
+  content: '';
+  position: absolute;
+  inset: -7px;
+  padding: 3px;
+  border-radius: 0.75rem;
+  background: conic-gradient(var(--accent) var(--mrs-hold), transparent 0);
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box exclude,
+    linear-gradient(#000 0 0);
+  animation: mrs-hold 570ms linear forwards;
+  pointer-events: none;
+}
+
+@keyframes mrs-hold {
+  to {
+    --mrs-hold: 360deg;
+  }
+}
+
+/* The older of two open layers: still lit, with a smaller mark. */
+body[data-role='tv'] .layer-button-card.is-second .layer-button[aria-pressed='true'] .layer-button-icon {
+  background: color-mix(in srgb, var(--accent) 30%, var(--card));
+  color: var(--text);
+  box-shadow: none;
+}
+
+/* The other open layer, above the front one's controls: press to swap, × to close it. */
+.layer-pair {
+  flex: none;
+  display: flex;
+  align-items: stretch;
+  align-self: flex-start;
+  gap: 0;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--card);
+  overflow: hidden;
+}
+
+.layer-pair[hidden] {
+  display: none;
+}
+
+.layer-pair button {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 3rem;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.layer-pair-swap {
+  padding: 0 0.75rem 0 1.1rem;
+}
+
+.layer-pair-plus {
+  color: var(--accent);
+  font-size: 1.25rem;
+}
+
+.layer-pair-icon {
+  display: grid;
+  color: var(--muted);
+}
+
+.layer-pair-close {
+  padding: 0 1rem 0 0.75rem;
+  border-left: 1px solid var(--line) !important;
+  color: var(--muted) !important;
+}
+
+.layer-pair button:hover,
+.layer-pair button:focus-visible {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}

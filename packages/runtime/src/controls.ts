@@ -18,6 +18,7 @@ import type { Choice, PickerAction } from './picker.ts';
 import { PHONE_SEND_INTERVAL, toolSection } from './phone-tools.ts';
 import type { Store } from './store.ts';
 import { avatarOf, nameOf } from './avatars.ts';
+import { canJoin, chosenLayers, joinLayer } from './two-layers.ts';
 
 export function el<K extends keyof HTMLElementTagNameMap>(tag: K, className?: string, text?: string): HTMLElementTagNameMap[K] {
   const node = document.createElement(tag);
@@ -1000,6 +1001,12 @@ export class Controller {
   /** The site's About page in the centre, when `tv.about` gives it words. */
   private readonly about: HTMLElement | undefined;
   private aboutButton: HTMLButtonElement | undefined;
+  /** With two layers open (#473): the one whose controls the centre shows, when the visitor swapped to it. */
+  private focus: string | undefined;
+  /** The newest open layer when the centre was last drawn: a layer opened since puts its controls in front. */
+  private newest: string | undefined;
+  /** The chip for the other open layer: press it to swap, × to close it. */
+  private pair: { element: HTMLElement; swap: HTMLButtonElement; name: HTMLElement; mark: HTMLElement; close: HTMLButtonElement } | undefined;
   private readonly root: HTMLElement;
   private readonly store: Store;
   private readonly connection: Connection;
@@ -1024,6 +1031,7 @@ export class Controller {
     this.connection = connection;
     this.role = role;
     this.about = centre && site.tv?.about ? aboutPage(site.tv.about, heading, site.branding.logo) : undefined;
+    if (centre) this.pair = this.pairChip();
     this.arrange();
     this.creditMaps();
     if (centre) {
@@ -1139,7 +1147,7 @@ export class Controller {
       const ids = [...store.state.scene].reverse();
       const kept = (id: string) => Boolean(store.manifest(store.state.layers[id]?.layer ?? '')?.alongside);
       const bodies = [...ids.filter((id) => !kept(id)), ...ids.filter(kept)].flatMap((id) => this.cards.get(id)?.body ?? []);
-      this.centre.replaceChildren(...(this.cue ? [this.cue] : []), this.welcome, ...(this.about ? [this.about] : []), ...bodies);
+      this.centre.replaceChildren(...(this.cue ? [this.cue] : []), this.welcome, ...(this.about ? [this.about] : []), ...(this.pair ? [this.pair.element] : []), ...bodies);
       this.rest();
     }
   }
@@ -1171,7 +1179,49 @@ export class Controller {
     const note = el('span', 'layer-button-note', t('Not available right now'));
     note.hidden = true;
     press.append(badge, name, note);
-    press.addEventListener('click', () => {
+    // Hold the button (or Shift-click it) to add the layer to the open one (#473). A ring grows
+    // round the icon; letting go or leaving the button before it closes adds nothing.
+    let hold: { timer: number; started: number } | undefined;
+    let swallow = false;
+    const HOLD_SHOWS_MS = 180;
+    const HOLD_MS = 750;
+    const stopHold = (cancelled: boolean) => {
+      if (!hold) return;
+      clearTimeout(hold.timer);
+      if (cancelled && performance.now() - hold.started >= HOLD_SHOWS_MS) swallow = true;
+      hold = undefined;
+      press.classList.remove('is-holding');
+    };
+    press.addEventListener('pointerdown', (event) => {
+      if (event.button !== 0 || !canJoin(store, id)) return;
+      swallow = false;
+      const started = performance.now();
+      const show = window.setTimeout(() => {
+        if (hold?.started === started) press.classList.add('is-holding');
+      }, HOLD_SHOWS_MS);
+      hold = {
+        started,
+        timer: window.setTimeout(() => {
+          clearTimeout(show);
+          hold = undefined;
+          press.classList.remove('is-holding');
+          swallow = true;
+          void joinLayer(store, connection, id).catch(() => {});
+        }, HOLD_MS),
+      };
+    });
+    for (const type of ['pointerup', 'pointerleave', 'pointercancel'] as const) press.addEventListener(type, () => stopHold(true));
+    // A long press on a touch screen would open the browser's menu.
+    press.addEventListener('contextmenu', (event) => event.preventDefault());
+    press.addEventListener('click', (event) => {
+      if (swallow) {
+        swallow = false;
+        return;
+      }
+      if (event.shiftKey && canJoin(store, id)) {
+        void joinLayer(store, connection, id).catch(() => {});
+        return;
+      }
       const state = store.state.layers[id];
       // A layer a slideshow is showing is opened from its own button: it leaves the slideshow and stays.
       if (state?.active && !state.shown_by) void connection.request('layer.activate', { layer: id, active: false }).catch(() => {});
@@ -1403,6 +1453,74 @@ export class Controller {
     }
     this.welcome.hidden = this.aboutOpen || chosen.length > 0 || leads;
     if (this.attract) this.attract.active = !this.welcome.hidden;
+    this.showPair();
+  }
+
+  /** The two open layers (#473), as [the one in front, the other]: the newest, unless the visitor swapped. */
+  private pairOf(): [string | undefined, string | undefined] {
+    const open = chosenLayers(this.store);
+    if (open.at(-1) !== this.newest) this.focus = undefined;
+    this.newest = open.at(-1);
+    if (this.focus && !open.includes(this.focus)) this.focus = undefined;
+    const front = this.focus ?? open.at(-1);
+    return [front, open.filter((id) => id !== front).at(-1)];
+  }
+
+  /** With two layers open, the centre shows the front one's controls and a chip for the other. */
+  private showPair(): void {
+    const [front, other] = this.pairOf();
+    for (const id of chosenLayers(this.store)) {
+      const card = this.cards.get(id);
+      if (!card) continue;
+      if (card.body && id !== front) card.body.hidden = true;
+      card.element.classList.toggle('is-second', id === other);
+    }
+    if (front) {
+      const body = this.cards.get(front)?.body;
+      const state = this.store.state.layers[front];
+      if (body && state?.active && !state.shown_by) body.hidden = false;
+    }
+    if (!this.pair) return;
+    const { element, swap, name, mark, close } = this.pair;
+    element.hidden = !other || this.aboutOpen;
+    if (!other) return;
+    const state = this.store.state.layers[other]!;
+    const manifest = this.store.manifest(state.layer)!;
+    const button = layerButton(other, manifest, state, defaultSideOf(this.store, other));
+    name.textContent = button.name;
+    mark.replaceChildren(icon(button.icon, 18));
+    swap.setAttribute('aria-label', t('Show the controls of {name}', { name: button.name }));
+    close.setAttribute('aria-label', t('Close {name}', { name: button.name }));
+    swap.dataset.layer = other;
+    // The front one goes after the other in the centre, so the chip sits right above it.
+    if (front) {
+      const body = this.cards.get(front)?.body;
+      if (body && element.nextElementSibling !== body) body.before(element);
+    }
+  }
+
+  private pairChip(): NonNullable<Controller['pair']> {
+    const element = el('div', 'layer-pair');
+    element.hidden = true;
+    const swap = el('button', 'layer-pair-swap') as HTMLButtonElement;
+    swap.type = 'button';
+    const plus = el('span', 'layer-pair-plus', '+');
+    const mark = el('span', 'layer-pair-icon');
+    const name = el('span', 'layer-pair-name');
+    swap.append(plus, mark, name);
+    const close = el('button', 'layer-pair-close') as HTMLButtonElement;
+    close.type = 'button';
+    close.append(icon('close', 16));
+    swap.addEventListener('click', () => {
+      this.focus = swap.dataset.layer;
+      this.rest();
+    });
+    close.addEventListener('click', () => {
+      const other = swap.dataset.layer;
+      if (other) void this.connection.request('layer.activate', { layer: other, active: false }).catch(() => {});
+    });
+    element.append(swap, close);
+    return { element, swap, name, mark, close };
   }
 
   /** The layers the attract loop shows, in the order of the rails. */
@@ -1656,11 +1774,10 @@ export class Controller {
     Object.assign(power, { type: 'checkbox', className: 'switch', ariaLabel: t('Turn {name} on or off', { name }) });
     power.addEventListener('change', () => {
       const on = power.checked;
-      connection
-        .request('layer.activate', { layer: id, active: on })
-        // A phone opens a layer the way the controller's button does: the open layer makes way (#335).
-        .then(() => phone && on && !manifest.alongside && closeOthers(store, connection, id))
-        .catch(() => (power.checked = !on));
+      // A phone opens a layer the way the controller does (#335): it joins the open one when the two
+      // can share the table, else the open one makes way (#473).
+      const turned = phone && on && !manifest.alongside ? joinLayer(store, connection, id) : connection.request('layer.activate', { layer: id, active: on });
+      turned.catch(() => (power.checked = !on));
     });
     // Phones turn layers on and off too (#335), unless the table, the layer or a tour holds them back.
     header.append(power);

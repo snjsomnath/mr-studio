@@ -1,6 +1,7 @@
 {
   "api": 1,
   "id": "walkthrough",
+  "combine": false,
   "name": "Video walk",
   "description": "A video on the controller, with the walker who filmed it moving along their path on the table",
   "about": {"purpose": "Pairs a filmed walk on the controller with the walker moving on the table, so people connect street level with the plan view.", "questions": ["What is it like to walk here?"], "pairs_with": ["isovist", "sketch"], "limits": ["Needs a video and the path it was filmed along"]},

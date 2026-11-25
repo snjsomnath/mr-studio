@@ -47,6 +47,12 @@ Control types: `range`, `select`, `toggle`, `date`, `color`, `text`, `action` (a
 Every control has `id`, `type`, `label` and `default`. `phone: true` lets phone participants change it; a `primary` control is on phones unless it says `phone: false` (#335).
 
 `"phone_switch": false` at the top of layer.json keeps phones from turning the layer on or off, for a layer only the controller should open (the slideshow). Default true.
+
+`"combine": false` keeps the layer from sharing the table with a second open layer (#473): it
+always opens alone, and nothing joins it. The slideshow, Picture or video and the video walk say
+so, since each fills the table. Default true: hold a layer's button (or Shift-click it) to add it
+to the open one, such as Wind over Sunlight. At most two are open; a third replaces the older,
+and the controller shows the newest one's controls with a chip to swap to the other.
 `help` is one or two sentences on what a control does; the editor shows it as the control's tooltip (#64).
 
 `clock` hands a control to the editor's time bar (#61), which previews any moment without changing the saved value: `"hour"` (a range in hours, 0 to 24), `"date"` (the day), `"progress"` (a range from 0 to 100 through a run, such as Mobility's trips) and `"play"` (the layer's own play switch, paused while the bar scrubs).

@@ -202,7 +202,7 @@ async function main() {
     await tv.getByRole('radio', { name: 'Sun hours' }).click();
     await dev.getByText('whole day added up').waitFor({ timeout: 120_000 });
     // The hero follows the mode: it counts the day's daylight and has no time to set; the daylight panel arrives.
-    await tv.locator(clock, { hasText: /\sh$/ }).waitFor();
+    await tv.locator(clock, { hasText: / h$/ }).waitFor();
     assert.equal(await tv.locator('.sun-hero-play').isVisible(), false);
     await tv.locator('[data-panel="sunlight/daylight"]').waitFor();
     if (shots) await tv.screenshot({ path: path.join(shots, 'tv-sun-hours.png') });
@@ -261,17 +261,18 @@ async function main() {
     assert.equal(await phone.getByText('Opacity').count(), 0);
     const windCard = phone.locator('.layer-card', { hasText: 'Wind' });
     await windCard.getByLabel('Turn Wind on or off').check();
-    // The controller follows, and says a phone did it; the open Sunlight makes way.
+    // The controller follows, and says a phone did it; the open Sunlight stays, as the two share the table (#473).
     await tv.getByText('Ada turned on Wind').waitFor();
     await sunlight(phone).getByLabel('Turn Sunlight on or off').waitFor();
-    await sunlight(phone).locator('input.switch:not(:checked)').waitFor();
+    await sunlight(phone).locator('input.switch:checked').waitFor();
     // The rail's buttons fade between pressed and not.
     if (shots) await tv.waitForTimeout(800);
     if (shots) await tv.screenshot({ path: path.join(shots, 'tv-phone-cue.png') });
     if (shots) await phone.screenshot({ path: path.join(shots, 'phone-switch.png') });
-    await sunlight(phone).getByLabel('Turn Sunlight on or off').check();
-    await tv.getByText('Ada turned on Sunlight').waitFor();
+    // The phone turns Wind off again; Sunlight stays.
+    await windCard.getByLabel('Turn Wind on or off').uncheck();
     await windCard.locator('input.switch:not(:checked)').waitFor();
+    await sunlight(phone).locator('input.switch:checked').waitFor();
     await tv.getByText('1 phone', { exact: true }).waitFor();
     await openApp('Sunlight');
     await sunlight(phone).getByLabel('Time of day').fill('18');
@@ -419,9 +420,9 @@ async function main() {
     await dev.waitForTimeout(500);
     const walk = await table.screenshot();
     assert.notDeepEqual(walk, off, 'the network and routes should be drawn');
-    assert.match(await coolPanel.locator('[data-route="shortest"][data-fact="length"]').textContent(), /^\d+\sm$/);
+    assert.match(await coolPanel.locator('[data-route="shortest"][data-fact="length"]').textContent(), /^\d+ m$/);
     // The demo's comparison: mean PET and heat exposure for each walk.
-    assert.match(await coolPanel.locator('[data-route="shortest"][data-fact="pet"]').textContent(), /^\d+\.\d\s°C PET$/);
+    assert.match(await coolPanel.locator('[data-route="shortest"][data-fact="pet"]').textContent(), /^\d+\.\d °C PET$/);
     assert.match(await coolPanel.locator('[data-route="shortest"][data-fact="heat"]').textContent(), /^\d+\.\dk °C·m heat$/);
     if (shots) await dev.screenshot({ path: path.join(shots, 'dev-coolpaths.png') });
     // Its hero is the time of day, and says what the coolest walk saves (#76).
@@ -548,12 +549,11 @@ async function main() {
     await tv.keyboard.press('PageDown');
     await dev.getByText('from the south').waitFor(slow);
     // A tap on the dial turns it there: tapped at the dial's top, the wind comes from the table's top.
-    // The hero draws again as the last turn arrives, so the ring is measured in one step, whichever one is on screen.
-    const dial = await windHero.locator('.wind-hero-ring').evaluate((ring) => {
-      const r = ring.getBoundingClientRect();
-      return { x: r.x, y: r.y, width: r.width };
-    });
-    await tv.mouse.click(dial.x + dial.width / 2, dial.y + 2);
+    // The dial is drawn anew on every update, so the click goes through the locator, which finds
+    // the ring as it is at that moment, rather than through a box read earlier.
+    const ring = windHero.locator('.wind-hero-ring');
+    const { width } = await ring.evaluate((r) => r.getBoundingClientRect());
+    await ring.click({ position: { x: width / 2, y: 2 }, force: true });
     await windHero.locator('.wind-hero-dial[aria-valuenow="0"]').waitFor();
     await dev.getByText('from the north').waitFor(slow);
     if (shots) await tv.screenshot({ path: path.join(shots, 'tv-wind.png') });
@@ -568,8 +568,51 @@ async function main() {
     if (shots) await dev.screenshot({ path: path.join(shots, 'dev-wind-ribbons.png') });
     await press('Wind', false);
 
+    // Two layers at once (#473): Shift-click adds Wind to Sunlight; the centre shows Wind and a chip for Sunlight.
+    const lit = (name, on) => tv.locator(`.layer-button[aria-pressed="${on}"]`, { hasText: name }).waitFor();
+    await press('Sunlight', true);
+    await tv.locator('.layer-button', { hasText: 'Wind' }).click({ modifiers: ['Shift'] });
+    await lit('Wind', true);
+    await lit('Sunlight', true);
+    const pair = tv.locator('.layer-pair');
+    await pair.locator('.layer-pair-name', { hasText: 'Sunlight' }).waitFor();
+    await tv.locator('.layer-open[data-layer="wind"]:not([hidden])').waitFor();
+    assert.ok(await tv.locator('.layer-open[data-layer="sunlight"]').isHidden(), 'only the newest layer shows its controls');
+    if (shots) await tv.screenshot({ path: path.join(shots, 'tv-two-layers.png') });
+    // The chip swaps them.
+    await pair.locator('.layer-pair-swap').click();
+    await tv.locator('.layer-open[data-layer="sunlight"]:not([hidden])').waitFor();
+    await pair.locator('.layer-pair-name', { hasText: 'Wind' }).waitFor();
+    // Holding a third button until its ring closes adds it, and the older of the two goes.
+    const hold = async (name, ms) => {
+      const box = await tv.locator('.layer-button', { hasText: name }).boundingBox();
+      await tv.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+      await tv.mouse.down();
+      await tv.waitForTimeout(ms);
+      await tv.mouse.up();
+    };
+    await hold('Mobility', 1100);
+    await lit('Mobility', true);
+    await lit('Sunlight', false);
+    await lit('Wind', true);
+    // Letting go before the ring closes adds nothing, and doesn't open the layer either.
+    await hold('Sunlight', 450);
+    await tv.waitForTimeout(800);
+    assert.equal(await tv.locator('.layer-button[aria-pressed="true"]', { hasText: 'Sunlight' }).count(), 0, 'a hold let go early adds nothing');
+    // A plain press opens one layer alone.
+    await tv.locator('.layer-button', { hasText: 'Sunlight' }).click();
+    await lit('Sunlight', true);
+    await lit('Wind', false);
+    await lit('Mobility', false);
+    assert.ok(await pair.isHidden());
+    // The slideshow never shares the table: Shift-click opens it alone.
+    await tv.locator('.layer-button', { hasText: 'Slideshow' }).click({ modifiers: ['Shift'] });
+    await lit('Slideshow', true);
+    await lit('Sunlight', false);
+    await press('Slideshow', false);
 
-    // ---- The operator's phones ----
+
+    // ---- The scene composer ----
     // The pages that are done with are closed first: every open table costs rendering time.
     // The operator looks after the phones from the Developer window (#335): a pause, then letting one go.
     const phones = dev.locator('.phones-panel');
@@ -580,13 +623,75 @@ async function main() {
     await phones.locator('li', { hasText: 'Ada' }).getByRole('button', { name: 'Let Ada go' }).click();
     await phone.getByText('Thanks for joining').waitFor();
     for (const page of [stranger, phone, typist, projected]) await page.close();
-    // The old scene composer is retired (#87): its address opens the editor.
-    const compose = await open('/compose', { width: 1440, height: 900 });
-    await compose.waitForURL(/\/edit/);
-    await compose.locator('.ed-ribbon').waitFor();
-    await compose.close();
+    // Tall enough that the whole stack is on screen while one layer's settings are open.
+    const compose = await open('/compose', { width: 1700, height: 1700 });
+    const stage = compose.locator('.table-surface');
+    const rows = () => compose.locator('.stack-row strong').allTextContents();
+    await compose.locator('.palette-group', { hasText: 'Analysis' }).getByText('Sunlight').waitFor();
+    assert.deepEqual(await rows(), ['Map data (uses)', 'Wind', 'Mobility', 'Isovist', 'Cool paths', 'Sketch', 'Slideshow', 'Trees', 'Public transport', 'Traffic', 'Building lights', 'Sunlight', 'Base map']);
+    const drag = async (from, to, where = 0.5) => {
+      const a = await from.boundingBox();
+      const b = await to.boundingBox();
+      await compose.mouse.move(a.x + 12, a.y + a.height / 2);
+      await compose.mouse.down();
+      await compose.mouse.move(a.x + 40, a.y + a.height / 2 + 10, { steps: 3 });
+      await compose.mouse.move(b.x + b.width / 2, b.y + b.height * where, { steps: 8 });
+      await compose.mouse.up();
+    };
+    const row = (name) => compose.locator('.stack-row', { has: compose.getByText(name, { exact: true }) });
+
+    // Pressing + adds a second copy of a layer on top, under its own id, and saves it.
+    await compose.getByLabel('Add Traffic').click();
+    await row('Traffic (cars-2)').waitFor();
+    assert.deepEqual(savedLayers().at(-1), { use: 'cars', id: 'cars-2', active: true });
+
+    // Its settings form is generated from the manifest, and what it changes is saved.
+    await compose.getByLabel('Cars per kilometre of street').fill('25');
+    await compose.waitForFunction(() => true);
+    await assert.doesNotReject(async () => {
+      for (let i = 0; savedLayers().at(-1).params?.density !== 25; i++) {
+        if (i > 50) throw new Error('density was not saved');
+        await compose.waitForTimeout(100);
+      }
+    });
+
+    // Dragging from the palette into the stack adds a layer at that place.
+    await drag(compose.locator('.palette-item[data-layer="trees"]'), row('Base map'), 0.9);
+    await row('Trees (trees-2)').waitFor();
+    assert.equal(savedLayers()[0].id, 'trees-2', 'dropped below the base map, so first in site.json');
+
+    // Draw order follows the list, except that a base map always lies at the bottom (#471):
+    // listed on top, it still leaves the moving layers showing.
+    await compose.getByLabel('Show Slideshow').waitFor();
+    await drag(row('Base map').locator('.stack-head'), row('Traffic (cars-2)'), 0.05);
+    await compose.waitForFunction(() => document.querySelector('.stack-row strong')?.textContent === 'Base map');
+    assert.equal(savedLayers().at(-1).use, 'basemap');
+    await compose.waitForTimeout(600);
+    // The outermost pixels are left out: a quad's edge is blended with what is under it.
+    const inner = async () => {
+      const box = await stage.boundingBox();
+      return compose.screenshot({ clip: { x: box.x + 4, y: box.y + 4, width: box.width - 8, height: box.height - 8 } });
+    };
+    const first = await inner();
+    await compose.waitForTimeout(400);
+    assert.ok(!first.equals(await inner()), 'a base map listed on top stays under the moving layers');
+    await drag(row('Base map').locator('.stack-head'), row('Trees (trees-2)'), 0.9);
+    await compose.waitForFunction(() => [...document.querySelectorAll('.stack-row strong')].at(-1)?.textContent === 'Base map');
+    assert.equal(savedLayers()[0].use, 'basemap');
+
+    // The eye switch and the remove button.
+    await compose.getByLabel('Show Slideshow').check();
+    // The slideshow here is made of layers (its steps), so the controller shows its first step.
+    await tv.locator('.step-title', { hasText: 'Morning shadows' }).waitFor();
+    if (shots) await compose.screenshot({ path: path.join(shots, 'compose.png') });
+    await compose.getByLabel('Show Slideshow').uncheck();
+    await compose.getByLabel('Remove Traffic (cars-2)').click();
+    await compose.getByLabel('Remove Trees (trees-2)').click();
+    await row('Trees (trees-2)').waitFor({ state: 'detached' });
+    assert.deepEqual(savedLayers().map((l) => l.id ?? l.use), ['basemap', 'sunlight', 'building-lights', 'cars', 'transit', 'trees', 'slideshow', 'sketch', 'coolpaths', 'isovist', 'mobility', 'wind', 'uses']);
 
     // ---- The editor ----
+    await compose.close();
     const editor = await open('/edit', { width: 1440, height: 900 });
     const treeLayers = () => editor.locator('.ed-tree .ed-row.is-layer[data-layer] .ed-row-label').allTextContents();
     // New layer is Insert's (#460); the rest of these steps work from Home.

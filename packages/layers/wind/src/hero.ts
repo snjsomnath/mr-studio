@@ -229,6 +229,8 @@ export function windHero(ctx: PanelContext<Params>, el: HTMLElement): PanelHandl
     const target = event.target as Element;
     dragging = target.closest('.wind-hero-band') ? 'band' : target.closest('.wind-hero-dial') ? 'dial' : null;
     if (!dragging) return;
+    // A drag takes over from keys pressed before it: their value must not come back once it ends.
+    keyed = {};
     root.setPointerCapture(event.pointerId);
     apply(event);
   });

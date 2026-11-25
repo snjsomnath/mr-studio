@@ -240,6 +240,10 @@ export function welcomeSettings(host: TableSettingsHost): HTMLElement[] {
   const phones = setting('controller.phones', 'dialog:welcome', el('input'));
   Object.assign(phones, { type: 'checkbox', checked: site.tv?.phone_switch !== false });
   phones.addEventListener('change', () => tv({ phone_switch: phones.checked ? null : false }));
+  // A second layer can join the open one (#473).
+  const two = setting('controller.two', 'dialog:welcome', el('input'));
+  Object.assign(two, { type: 'checkbox', checked: site.tv?.two_layers !== false });
+  two.addEventListener('change', () => tv({ two_layers: two.checked ? null : false }));
   look.append(
     el('h3', undefined, 'On the controller'),
     field('Title', title),
@@ -248,6 +252,7 @@ export function welcomeSettings(host: TableSettingsHost): HTMLElement[] {
     field('Back home after', idle),
     field('Welcome loop', loop),
     field('Phones can switch layers', phones, 'Visitors turn layers on and off from their phones. Never while a slideshow is showing.'),
+    field('Two layers at once', two, 'Hold a layer button, or Shift-click it, to add it to the open one, such as Wind over Sunlight.'),
   );
 
   // ---- Languages for visitors (#80) ----
