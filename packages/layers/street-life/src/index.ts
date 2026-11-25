@@ -1,4 +1,4 @@
-import { StreetGraph, byHighway, defineLayer, pointsAlong, seededRandom, streetLines, withAlpha } from '@mrstudio/sdk';
+import { StreetGraph, byHighway, defineLayer, readStreetGraph, pointsAlong, seededRandom, streetLines, withAlpha } from '@mrstudio/sdk';
 import type { LayerManifest, Placed, XY } from '@mrstudio/sdk';
 
 import manifest from '../layer.json';
@@ -65,9 +65,11 @@ export default defineLayer<Params>({
     const lines = await streetLines(ctx.site);
     const random = seededRandom(31);
 
-    const onPath = byHighway(PATHS, false);
-    const walks = new StreetGraph(lines, { include: byHighway(WALK), major: onPath, majorShare: 0.75, shortestPieceM: 40 });
-    const rides = new StreetGraph(lines, { include: byHighway(CYCLE), major: byHighway(['cycleway'], false), majorShare: 0.5, shortestPieceM: 80 });
+    // Built in the data worker and kept per file (#484).
+    const [walks, rides] = await Promise.all([
+      readStreetGraph(ctx.site, { include: { highway: WALK }, major: { highway: [...PATHS], unclassed: false }, majorShare: 0.75, shortestPieceM: 40 }),
+      readStreetGraph(ctx.site, { include: { highway: CYCLE }, major: { highway: ['cycleway'], unclassed: false }, majorShare: 0.5, shortestPieceM: 80 }),
+    ]).then((graphs) => graphs.map((g) => g ?? new StreetGraph([])) as [StreetGraph, StreetGraph]);
     const walkers: Mover[] = [];
     const bikes: Mover[] = [];
     function spawnWalker(): Mover {

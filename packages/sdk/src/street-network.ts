@@ -22,6 +22,47 @@ export interface StreetGraphOptions {
   shortestPieceM?: number;
 }
 
+/** A rule by OpenStreetMap `highway` class that can be sent to the data worker: see `byHighway`. */
+export interface HighwayRule {
+  highway: string[];
+  /** Whether lines without a class pass. Default true. */
+  unclassed?: boolean;
+}
+
+/** `StreetGraphOptions` as plain data, so the graph can be built in the SDK's data worker and kept (#484). */
+export interface StreetGraphSpec {
+  include?: HighwayRule;
+  major?: HighwayRule;
+  majorShare?: number;
+  shortestPieceM?: number;
+}
+
+/** The options a spec stands for. */
+export function specOptions(spec: StreetGraphSpec): StreetGraphOptions {
+  return {
+    include: spec.include ? byHighway(spec.include.highway, spec.include.unclassed ?? true) : undefined,
+    major: spec.major ? byHighway(spec.major.highway, spec.major.unclassed ?? true) : undefined,
+    majorShare: spec.majorShare,
+    shortestPieceM: spec.shortestPieceM,
+  };
+}
+
+/** A street graph as typed arrays, to move between the data worker and the page. */
+export interface PackedStreetGraph {
+  nodes: Float64Array;
+  from: Uint32Array;
+  to: Uint32Array;
+  length: Float64Array;
+  angle: Float64Array;
+  major: Uint8Array;
+  total: number;
+  majorShare: number;
+}
+
+export function packedGraphBuffers(packed: PackedStreetGraph): ArrayBuffer[] {
+  return [packed.nodes, packed.from, packed.to, packed.length, packed.angle, packed.major].map((a) => a.buffer as ArrayBuffer);
+}
+
 /** The OpenStreetMap `highway` class of a street, or undefined when the data has none. */
 export function highwayClass(properties: Record<string, unknown>): string | undefined {
   const highway = properties.highway;
@@ -83,6 +124,51 @@ export class StreetGraph {
       this.edge(a, b, length, Math.atan2(by - ay, bx - ax), major);
       this.edge(b, a, length, Math.atan2(ay - by, ax - bx), major);
     }
+    this.prepareStarts();
+  }
+
+  /** The graph as typed arrays, for `fromPacked` on the other side of a worker. */
+  toPacked(): PackedStreetGraph {
+    const n = this.edges.length;
+    const packed: PackedStreetGraph = {
+      nodes: new Float64Array(this.nodes.length * 2),
+      from: new Uint32Array(n),
+      to: new Uint32Array(n),
+      length: new Float64Array(n),
+      angle: new Float64Array(n),
+      major: new Uint8Array(n),
+      total: this.length,
+      majorShare: this.majorShare,
+    };
+    this.nodes.forEach(([x, y], i) => {
+      packed.nodes[i * 2] = x;
+      packed.nodes[i * 2 + 1] = y;
+    });
+    this.edges.forEach((e, i) => {
+      packed.from[i] = e.from;
+      packed.to[i] = e.to;
+      packed.length[i] = e.length;
+      packed.angle[i] = e.angle;
+      packed.major[i] = e.major ? 1 : 0;
+    });
+    return packed;
+  }
+
+  /** A graph made by `toPacked`, without building it again. */
+  static fromPacked(packed: PackedStreetGraph): StreetGraph {
+    const graph = new StreetGraph([], { majorShare: packed.majorShare });
+    for (let i = 0; i < packed.nodes.length; i += 2) {
+      graph.nodes.push([packed.nodes[i]!, packed.nodes[i + 1]!]);
+      graph.out.push([]);
+    }
+    for (let i = 0; i < packed.from.length; i++) graph.edge(packed.from[i]!, packed.to[i]!, packed.length[i]!, packed.angle[i]!, packed.major[i] === 1);
+    graph.length = packed.total;
+    graph.prepareStarts();
+    return graph;
+  }
+
+  private prepareStarts(): void {
+    this.starts = [];
     for (const keep of [() => true, (e: StreetEdge) => e.major]) {
       const edges: number[] = [];
       const sums: number[] = [];

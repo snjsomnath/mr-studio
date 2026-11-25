@@ -13,6 +13,7 @@ import {
   petColour,
   petFeeling,
   quantisePet,
+  readWalkNetwork,
   sample,
   siteProjection,
   sunPosition,
@@ -25,7 +26,7 @@ import type { CanvasOverlay, FieldFrame, LayerManifest, PointerSample, TableCont
 
 import manifest from '../layer.json';
 import { coolpathsHero } from './hero.ts';
-import { buildNetwork, exampleWalk, pointAlongRoute, route, setExposure, setPet, snap } from './network.ts';
+import { exampleWalk, pointAlongRoute, route, setExposure, setPet, snap } from './network.ts';
 import type { LonLat, Network, Route, RoutePair } from './network.ts';
 
 interface Params {
@@ -129,7 +130,10 @@ export default defineLayer<Params>({
     const paths = ctx.map.addCanvas('paths');
     const walk = ctx.map.addCanvas('walk');
 
-    const network: Network = buildNetwork(await loadSiteData(ctx.site, 'walkways'), distance);
+    // Built in the data worker and kept per file (#484); each start gets its own copy to mark.
+    const read: Network | null = await readWalkNetwork(ctx.site, 'walkways', () => ({ exposure: 0, pet: 0 }));
+    if (!read) throw new Error("the 'walkways' dataset could not be read");
+    const network = read;
     if (network.edges.length === 0) throw new Error("the 'walkways' dataset has no lines");
 
     let frame: FieldFrame | null = null;

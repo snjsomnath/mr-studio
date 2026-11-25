@@ -1,4 +1,4 @@
-import { StreetGraph, defineLayer, highwayClass, seededRandom, streetLines } from '@mrstudio/sdk';
+import { StreetGraph, defineLayer, highwayClass, readStreetGraph, seededRandom, streetLines } from '@mrstudio/sdk';
 import type { LayerManifest, XY } from '@mrstudio/sdk';
 
 import manifest from '../layer.json';
@@ -74,15 +74,20 @@ export default defineLayer<Params>({
       byKind.get(name)!.push(line.geometry);
       forKind.get(name)!.push(line);
     }
-    const kinds: Kind[] = [...byKind.entries()]
-      .sort((a, b) => b[1].length - a[1].length)
-      .map(([name, polylines]) => {
-        const path = new Path2D();
-        for (const line of polylines) {
-          line.forEach(([x, y], i) => (i === 0 ? path.moveTo(x, y) : path.lineTo(x, y)));
-        }
-        return { name, rgb: colourOf(name), path, network: new StreetGraph(forKind.get(name)!, { shortestPieceM: 0 }) };
-      });
+    // Each kind's graph is built in the data worker and kept per file (#484); lines with no class are 'street'.
+    const kinds: Kind[] = await Promise.all(
+      [...byKind.entries()]
+        .sort((a, b) => b[1].length - a[1].length)
+        .map(async ([name, polylines]) => {
+          const path = new Path2D();
+          for (const line of polylines) {
+            line.forEach(([x, y], i) => (i === 0 ? path.moveTo(x, y) : path.lineTo(x, y)));
+          }
+          const network =
+            (await readStreetGraph(ctx.site, { include: { highway: [name], unclassed: name === 'street' }, shortestPieceM: 0 })) ?? new StreetGraph(forKind.get(name)!, { shortestPieceM: 0 });
+          return { name, rgb: colourOf(name), path, network };
+        }),
+    );
     const total = kinds.reduce((sum, k) => sum + k.network.length, 0);
 
     const particles: Particle[] = [];

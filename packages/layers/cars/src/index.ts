@@ -1,8 +1,8 @@
-import { defineLayer, seededRandom, streetLines } from '@mrstudio/sdk';
-import type { LayerManifest, StreetGraph } from '@mrstudio/sdk';
+import { StreetGraph, defineLayer, seededRandom } from '@mrstudio/sdk';
+import type { LayerManifest } from '@mrstudio/sdk';
 
 import manifest from '../layer.json';
-import { busNetwork, carNetwork } from './network.ts';
+import { carNetworks } from './network.ts';
 
 interface Params {
   density: number;
@@ -60,9 +60,9 @@ export default defineLayer<Params>({
   async table(ctx) {
     const canvas = ctx.map.addDrawing('cars', { opacity: ctx.params.opacity });
     // No streets, no cars: the editor offers to bring streets in (requires.data).
-    const lines = await streetLines(ctx.site);
-    const roads = carNetwork(lines);
-    const busRoads = busNetwork(lines);
+    const networks = await carNetworks(ctx.site);
+    const roads = networks?.cars ?? new StreetGraph([]);
+    const busRoads = networks?.buses ?? new StreetGraph([]);
     const random = seededRandom(5);
     const traffic: Vehicle[] = [];
     const buses: Vehicle[] = [];

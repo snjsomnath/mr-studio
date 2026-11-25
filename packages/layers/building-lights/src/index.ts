@@ -1,4 +1,4 @@
-import { readSiteGeometry, defineLayer, seededRandom, tableSpace } from '@mrstudio/sdk';
+import { drainSteps, inSlices, readSiteGeometry, defineLayer, seededRandom, tableSpace } from '@mrstudio/sdk';
 import type { LayerManifest } from '@mrstudio/sdk';
 
 import manifest from '../layer.json';
@@ -35,7 +35,17 @@ interface Building {
   brightness: number;
   /** Seconds left in a blackout, when the whole building goes dark for a moment. */
   dark: number;
+  /** Its outline, made once (#483). */
+  outline: Path2D | null;
 }
+
+/** Window and glow brightness is drawn in this many steps, so each frame is a few strokes, not one per window (#483). */
+const LEVELS = 16;
+/** Buildings looked at before setup lets the page breathe, on a site with tens of thousands. */
+const SETUP_PAUSE = 2000;
+/** Buildings whose glow is laid down in one frame. */
+const GLOW_CHUNK = 4000;
+const breathe = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 /** Windows along the facades, as in the interactive map: lit dashes on the footprint outline, seen from above. */
 const WINDOW_M = 3;
@@ -58,13 +68,15 @@ export default defineLayer<Params>({
     const footprints = (await readSiteGeometry(ctx.site, 'buildings'))?.polygons ?? [];
 
     const buildings: Building[] = [];
+    let seen = 0;
     for (const { geometry: rings } of footprints) {
+      if (++seen % SETUP_PAUSE === 0) await breathe();
       const outer = rings[0] ?? [];
       const xs = outer.map((p) => p[0]);
       const ys = outer.map((p) => p[1]);
       if (Math.max(...xs) < 0 || Math.max(...ys) < 0 || Math.min(...xs) > space.width || Math.min(...ys) > space.height) continue;
       const index = buildings.length;
-      buildings.push({ rings, white: (index * 7) % 5 === 0, brightness: 0.55 + (((index * 7) % 13) / 13) * 0.45, dark: 0 });
+      buildings.push({ rings, white: (index * 7) % 5 === 0, brightness: 0.55 + (((index * 7) % 13) / 13) * 0.45, dark: 0, outline: null });
     }
 
     // Windows walk each facade, courtyards included, from a random start so rows do not line up.
@@ -72,7 +84,9 @@ export default defineLayer<Params>({
     for (let scale = 1; ; scale *= 1.4) {
       lights.length = 0;
       const step = (WINDOW_M + GAP_M) * scale;
-      buildings.forEach((building, b) => {
+      for (let b = 0; b < buildings.length; b++) {
+        if (b > 0 && b % SETUP_PAUSE === 0) await breathe();
+        const building = buildings[b]!;
         for (const ring of building.rings) {
           let carry = random() * step;
           for (let i = 0; i + 1 < ring.length; i++) {
@@ -88,7 +102,7 @@ export default defineLayer<Params>({
             carry = Math.max(0, carry + Math.ceil(Math.max(0, length - carry) / step) * step - length);
           }
         }
-      });
+      }
       if (lights.length <= MAX_LIGHTS) break;
     }
 
@@ -116,42 +130,97 @@ export default defineLayer<Params>({
         light.level += (light.target - light.level) * Math.min(1, step * 2.5);
       }
       canvas.clear();
-      paint(canvas.ctx);
+      paint(canvas.ctx, true);
       canvas.commit();
     });
 
-    /** Draws the lit facades as they are now into `g`, in table metres: the table, and a magnifier's sharp picture (#413). */
-    function paint(g: CanvasRenderingContext2D) {
-      const { lit, color } = ctx.params;
+    const outline = (building: Building): Path2D => {
+      if (building.outline) return building.outline;
+      const path = new Path2D();
+      for (const ring of building.rings) {
+        ring.forEach(([x, y], i) => (i === 0 ? path.moveTo(x, y) : path.lineTo(x, y)));
+        path.closePath();
+      }
+      return (building.outline = path);
+    };
+    /** One path per colour and brightness step: index `white * LEVELS + level`. */
+    const buckets = () => Array.from({ length: LEVELS * 2 }, () => null as Path2D | null);
+    const level = (alpha: number) => Math.min(LEVELS - 1, Math.round(alpha * (LEVELS - 1)));
+    const stroke = (g: CanvasRenderingContext2D, paths: (Path2D | null)[], alpha: (step: number) => number) => {
+      paths.forEach((path, i) => {
+        if (!path) return;
+        g.strokeStyle = i >= LEVELS ? WHITE : ctx.params.color;
+        g.globalAlpha = alpha(i % LEVELS);
+        g.stroke(path);
+      });
+    };
+
+    /** Every lit building's soft outline glow, for a level and colour: the same picture every frame, so it is drawn once (#483). */
+    function* glowSteps(g: CanvasRenderingContext2D, skipDark: boolean): Generator<void, void> {
+      // In chunks, so a city's glow is laid down over a few frames rather than in one long pause.
+      for (let from = 0; from < buildings.length; from += GLOW_CHUNK) {
+        const glows = buckets();
+        for (const building of buildings.slice(from, from + GLOW_CHUNK)) {
+          if (skipDark && building.dark > 0) continue;
+          const i = (building.white ? LEVELS : 0) + level(building.brightness);
+          (glows[i] ??= new Path2D()).addPath(outline(building));
+        }
+        g.lineWidth = GLOW_M;
+        stroke(g, glows, (step) => 0.12 * (step / (LEVELS - 1)) * Math.min(1, ctx.params.lit * 2));
+        yield;
+      }
+    }
+    let glowCache: { key: string; picture: OffscreenCanvas; stop: () => void } | null = null;
+    ctx.onCleanup(() => glowCache?.stop());
+    function cachedGlow(g: CanvasRenderingContext2D): OffscreenCanvas | null {
+      if (typeof OffscreenCanvas === 'undefined') return null;
+      const key = `${ctx.params.lit}|${ctx.params.color}|${g.canvas.width}x${g.canvas.height}`;
+      if (glowCache?.key === key) return glowCache.picture;
+      const picture = new OffscreenCanvas(g.canvas.width, g.canvas.height);
+      const pg = picture.getContext('2d') as unknown as CanvasRenderingContext2D | null;
+      if (!pg) return null;
+      pg.setTransform(g.getTransform());
+      pg.lineCap = 'round';
+      pg.lineJoin = 'round';
+      glowCache?.stop();
+      // One chunk a frame: each is rasterised when the frame's picture is made.
+      glowCache = { key, picture, stop: inSlices(glowSteps(pg, false), () => {}, 0) };
+      return picture;
+    }
+
+    /**
+     * Draws the lit facades as they are now into `g`, in table metres: the table (`table`, whose glow
+     * is drawn once and reused), and a magnifier's sharp picture (#413). Windows of the same colour and
+     * brightness go in one stroke (#483).
+     */
+    function paint(g: CanvasRenderingContext2D, table = false) {
+      const { lit } = ctx.params;
       g.save();
       g.globalCompositeOperation = 'lighter';
       g.lineCap = 'round';
-      // A soft glow along every lit building's outline, so the facades read as lit from within.
-      g.lineWidth = GLOW_M;
       g.lineJoin = 'round';
-      buildings.forEach((building) => {
-        if (building.dark > 0 || lit <= 0) return;
-        g.strokeStyle = building.white ? WHITE : color;
-        g.globalAlpha = 0.12 * building.brightness * Math.min(1, lit * 2);
-        g.beginPath();
-        for (const ring of building.rings) {
-          ring.forEach(([x, y], i) => (i === 0 ? g.moveTo(x, y) : g.lineTo(x, y)));
-          g.closePath();
-        }
-        g.stroke();
-      });
+      // A soft glow along every lit building's outline, so the facades read as lit from within.
+      if (lit > 0) {
+        const picture = table ? cachedGlow(g) : null;
+        if (picture) {
+          g.save();
+          g.setTransform(1, 0, 0, 1, 0, 0);
+          g.globalAlpha = 1;
+          g.drawImage(picture, 0, 0);
+          g.restore();
+        } else drainSteps(glowSteps(g, true));
+      }
       // The windows themselves: dashes along the facade that come on and go off.
-      g.lineWidth = LINE_M;
+      const windows = buckets();
       for (const light of lights) {
         const building = buildings[light.building]!;
         if (light.level < 0.02 || building.dark > 0) continue;
-        g.strokeStyle = building.white ? WHITE : color;
-        g.globalAlpha = light.level * building.brightness;
-        g.beginPath();
-        g.moveTo(light.x0, light.y0);
-        g.lineTo(light.x1, light.y1);
-        g.stroke();
+        const path = (windows[(building.white ? LEVELS : 0) + level(light.level * building.brightness)] ??= new Path2D());
+        path.moveTo(light.x0, light.y0);
+        path.lineTo(light.x1, light.y1);
       }
+      g.lineWidth = LINE_M;
+      stroke(g, windows, (step) => step / (LEVELS - 1));
       g.restore();
     }
     ctx.map.addDetail((g) => {

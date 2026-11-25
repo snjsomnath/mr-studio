@@ -232,15 +232,6 @@ export function nearestAlong(t: Track, x: number, y: number): number {
   return bestAt;
 }
 
-/**
- * The site's streets as lines in table metres, from its `roads` dataset. A site without
- * one has no streets: nothing is made up, because a made-up grid on a real place would
- * put traffic through its buildings. Layers that need streets say so in `requires.data`.
- */
-export async function streetLines(site: SiteInfo): Promise<Placed<XY[]>[]> {
-  return geojsonLines(await readSiteData(site, 'roads'), tableSpace(site));
-}
-
 // ---- Random ---------------------------------------------------------------
 
 /** A small seeded generator (mulberry32), so every table shows the same "random" scene. */
