@@ -523,9 +523,19 @@ fn custom_manifest(id: &str, recipe: &mrs_site::CustomLayer) -> Value {
                     .push(serde_json::json!({ "id": "time_play", "type": "toggle", "label": "Play", "default": true, "tier": "primary" }));
             }
             if !taken("time_at") {
+                // A series of columns (pop_1990 … pop_2030) snaps to each column (#408); the slider
+                // reads the year or date on show rather than a percent.
+                let columns = recipe
+                    .motion
+                    .iter()
+                    .filter(|m| m.block == "timeline")
+                    .filter_map(|m| m.props.get("series").and_then(Value::as_array).map(Vec::len))
+                    .max()
+                    .unwrap_or(0);
+                let step = if columns >= 2 { 100.0 / (columns - 1) as f64 } else { 1.0 };
                 controls.push(serde_json::json!({
-                    "id": "time_at", "type": "range", "label": "When", "min": 0, "max": 100, "step": 1, "default": 100, "unit": "%",
-                    "tier": "primary", "visibleWhen": { "time_play": false }
+                    "id": "time_at", "type": "range", "label": "When", "min": 0, "max": 100, "step": step, "default": 100, "unit": "%",
+                    "shows": "time_label", "tier": "primary", "visibleWhen": { "time_play": false }
                 }));
             }
         }
@@ -943,13 +953,16 @@ mod tests {
             "name": "Growth",
             "data": [{ "id": "data", "dataset": "zones" }],
             "look": [{ "id": "look", "block": "fill", "data": "data" }],
-            "motion": [{ "id": "look-timeline", "block": "timeline", "on": "look", "props": { "series": ["pop_2000", "pop_2020"] } }]
+            "motion": [{ "id": "look-timeline", "block": "timeline", "on": "look", "props": { "series": ["pop_2000", "pop_2005", "pop_2010", "pop_2015", "pop_2020"] } }]
         }))
         .unwrap();
         let def = custom_def("growth", &recipe).unwrap();
         let checked = def.validate(&patch(json!({ "time_play": false, "time_at": 25 })), false).unwrap();
         assert_eq!(checked["time_at"], json!(25.0));
         assert_eq!(def.manifest["panels"][0]["props"]["value"]["bind"], json!("shared.time_label"));
+        // The When slider reads the year on show and snaps to each of the five columns (#408).
+        let when = def.manifest["controls"].as_array().unwrap().iter().find(|c| c["id"] == "time_at").unwrap();
+        assert_eq!((when["shows"].clone(), when["step"].clone()), (json!("time_label"), json!(25.0)));
         let plain: mrs_site::CustomLayer = serde_json::from_value(json!({ "name": "Dots" })).unwrap();
         assert!(custom_def("dots", &plain).unwrap().validate(&patch(json!({ "time_at": 1 })), false).is_err());
     }

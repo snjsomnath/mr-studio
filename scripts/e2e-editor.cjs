@@ -24,6 +24,11 @@ async function main() {
   fs.copyFileSync(path.join(kit, 'masterplan.svg'), path.join(site, 'data/masterplan.svg'));
   const json = JSON.parse(fs.readFileSync(path.join(site, 'site.json'), 'utf8'));
   json.data.masterplan = 'data/masterplan.svg';
+  // A series of columns through time (#408): the sample zones with a population for each fifth year.
+  const zones = JSON.parse(fs.readFileSync(path.join(kit, 'zones.geojson'), 'utf8'));
+  for (const [i, f] of zones.features.entries()) for (const [k, year] of [2000, 2005, 2010, 2015, 2020].entries()) f.properties[`pop_${year}`] = 1000 + ((i * 7 + k * 13) % 9) * 300;
+  fs.writeFileSync(path.join(site, 'data/growth.geojson'), JSON.stringify(zones));
+  json.data.growth = 'data/growth.geojson';
   fs.writeFileSync(path.join(site, 'site.json'), JSON.stringify(json, null, 2));
   const saved = () => JSON.parse(fs.readFileSync(path.join(site, 'site.json'), 'utf8'));
   const layerIds = () => saved().layers.map((l) => l.id ?? l.use);
@@ -121,28 +126,14 @@ async function main() {
       await until(() => savedLayer(copy)?.button?.name === 'Viewshed', 'the new name in site.json');
     });
 
-    await run('dragging a layer to the other rail moves its button (#58)', async () => {
-      // A drag on a cold page can start before the list is ready to take it (#426): try once more.
-      const right = () => savedLayer('wind')?.button?.side === 'right';
-      // The rename is saved before the editor hears it back and draws the list again; a drag
-      // that starts on a row about to be replaced is lost, so the list is let settle first.
-      await page.evaluate(() => new Promise((done) => {
-        const tree = document.querySelector('.ed-tree');
-        let timer = setTimeout(finish, 500);
-        const o = new MutationObserver(() => {
-          clearTimeout(timer);
-          timer = setTimeout(finish, 500);
-        });
-        function finish() {
-          o.disconnect();
-          done();
-        }
-        o.observe(tree, { childList: true });
-      }));
-      await row('wind').dragTo(page.locator('.ed-rail[data-side="right"]'));
-      await until(right, 'Wind on the right', 2500).catch(() => row('wind').dragTo(page.locator('.ed-rail[data-side="right"]')));
-      await until(right, 'Wind on the right in site.json');
+    await run('a button changes side in its Format pane, the one place for it; rows are not dragged (#58)', async () => {
+      await page.goto(`${base}/edit#layer=wind`);
+      await row('wind').waitFor();
+      assert.equal(await page.locator('.ed-tree [draggable="true"]').count(), 0, 'no row in the list can be dragged');
+      await page.locator('[data-setting="button.side"] [role="radio"]', { hasText: 'Right' }).click();
+      await until(() => savedLayer('wind')?.button?.side === 'right', 'Wind on the right in site.json');
       await page.locator('.ed-rail[data-side="right"] .ed-row[data-layer="wind"]').waitFor();
+      await shot('58-side-format');
     });
 
     await run('a time is typed as a clock and kept apart from the saved start (#64, #61)', async () => {
@@ -440,6 +431,54 @@ async function main() {
       await dialog.getByRole('button', { name: 'Close' }).click();
       await dialog.waitFor({ state: 'detached' });
       await page.locator('.wz h2', { hasText: 'Start from' }).waitFor();
+    });
+
+    await run('a Through time slider reads the year on show and snaps to each column (#408)', async () => {
+      const ask = (m, p) =>
+        page.evaluate(
+          ({ url, m, p }) =>
+            new Promise((resolve, reject) => {
+              const ws = new WebSocket(url);
+              ws.onopen = () => {
+                ws.send(JSON.stringify({ t: 'hello', protocol: 1, role: 'dev' }));
+                ws.send(JSON.stringify({ t: 'req', id: 1, m, p }));
+              };
+              ws.onmessage = (e) => {
+                const msg = JSON.parse(e.data);
+                if (msg.t !== 'res') return;
+                ws.close();
+                msg.ok ? resolve(msg.r) : reject(new Error(msg.e));
+              };
+            }),
+          { url: base.replace('http', 'ws') + '/ws', m, p },
+        );
+      const series = [2000, 2005, 2010, 2015, 2020].map((y) => `pop_${y}`);
+      await ask('custom.save', {
+        id: 'growth',
+        recipe: {
+          name: 'Growth',
+          data: [{ id: 'zones', dataset: 'growth' }],
+          look: [{ id: 'look', block: 'fill', data: 'zones', props: { colour: { by: 'pop_2000', kind: 'number' } } }],
+          motion: [{ id: 'look-time', block: 'timeline', on: 'look', props: { series } }],
+        },
+      });
+      // With a button, so it is a layer of the controller rather than map life at rest.
+      await ask('scene.add', { use: 'custom:growth', button: { name: 'Growth', side: 'left' } });
+      const tv = await browser.newPage({ viewport: { width: 1600, height: 900 } });
+      await tv.goto(`${base}/tv?idle=0`);
+      await tv.locator('.layer-button', { hasText: 'Growth' }).click();
+      const open = tv.locator('.layer-open[data-layer="growth"]');
+      await open.getByRole('checkbox', { name: 'Play' }).uncheck();
+      const when = open.getByRole('slider', { name: 'When' });
+      await when.waitFor();
+      assert.equal(await when.getAttribute('step'), '25', 'one step per column');
+      await when.focus();
+      await tv.keyboard.press('Home');
+      for (let i = 0; i < 2; i++) await tv.keyboard.press('ArrowRight');
+      await open.locator('.control', { hasText: 'When' }).locator('.control-value', { hasText: '2010' }).waitFor();
+      await tv.waitForTimeout(400);
+      if (shots) await tv.screenshot({ path: path.join(shots, '408-when-year.png') });
+      await tv.close();
     });
 
     await run('the controller carries no operator text (#50)', async () => {

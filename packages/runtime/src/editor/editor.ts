@@ -329,7 +329,6 @@ export class Editor {
       canvas: this.canvas,
     });
     this.clickToSelect();
-    this.holdTree();
     this.mediaTab = new MediaTab({
       store,
       addMedia: (kinds) => this.addMedia(kinds),
@@ -2492,13 +2491,11 @@ export class Editor {
     }
   }
 
-  /** A change came in while a name was being typed or a row held in the list; the list is drawn once that is done. */
+  /** A change came in while a name was being typed in the list; the list is drawn once the name is done. */
   private treeWaiting = false;
-  /** A row is pressed and may be about to be dragged: drawing the list now would take the row from under the pointer. */
-  private treePressed = false;
 
   private renderTree(instances: { id: string; manifest: LayerManifest; state: LayerState }[]): void {
-    if (this.tree.querySelector('.ed-rename') || this.treePressed || this.dragging) {
+    if (this.tree.querySelector('.ed-rename')) {
       this.treeWaiting = true;
       return;
     }
@@ -2540,10 +2537,11 @@ export class Editor {
       empty.append(el('p', undefined, 'No layers yet. Each layer becomes a button on the controller.'), start);
       nodes.push(empty);
     } else {
-      // The list is the controller's two rails (#58): drag a row up or down, or across to the other side.
+      // The list shows the controller's two rails (#58). Move up and Move down change the order; a
+      // button's side is set in its Format pane, the one place for it (rule 7).
       const rails = this.rails(layers);
       for (const side of ['left', 'right'] as const) {
-        const zone = setting('layer.order', 'list:drag', el('div', 'ed-rail'));
+        const zone = setting('layer.order', 'list:move', el('div', 'ed-rail'));
         zone.dataset.side = side;
         zone.setAttribute('role', 'group');
         zone.ariaLabel = side === 'left' ? 'Left of the controller' : 'Right of the controller';
@@ -2573,8 +2571,7 @@ export class Editor {
             zone.append(child);
           }
         }
-        if (rails[side].length === 0) zone.append(el('p', 'ed-rail-empty', 'No buttons on this side. Drag a layer here.'));
-        this.dropZone(zone, side);
+        if (rails[side].length === 0) zone.append(el('p', 'ed-rail-empty', 'No buttons on this side. A layer’s Format pane sets its side.'));
         nodes.push(zone);
       }
     }
@@ -2642,7 +2639,6 @@ export class Editor {
     row.setAttribute('role', 'treeitem');
     row.setAttribute('aria-current', String(selected));
     row.dataset.layer = id;
-    row.draggable = true;
     const badge = el('span', 'ed-row-icon');
     const text = el('span', 'ed-row-text');
     const label = el('span', 'ed-row-label');
@@ -2689,19 +2685,6 @@ export class Editor {
       const hidden = Boolean(this.store.state.layers[id]?.button?.hidden);
       void this.send('scene.set', { layer: id, button: { hidden: hidden ? null : true } });
     });
-    row.addEventListener('dragstart', (event) => {
-      this.dragging = id;
-      this.treePressed = false;
-      row.classList.add('is-dragging');
-      event.dataTransfer?.setData('text/plain', id);
-      if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
-    });
-    row.addEventListener('dragend', () => {
-      this.dragging = null;
-      row.classList.remove('is-dragging');
-      this.tree.querySelectorAll('.is-drop-before, .is-drop-after, .is-drop').forEach((n) => n.classList.remove('is-drop-before', 'is-drop-after', 'is-drop'));
-      this.releaseTree();
-    });
     this.sync.set(id, (next) => {
       const button = layerButton(id, manifest, next, defaultSideOf(this.store, id));
       label.textContent = button.name;
@@ -2715,83 +2698,12 @@ export class Editor {
       eye.setAttribute('aria-checked', String(!hidden));
       eye.ariaLabel = `${button.name} on the controller`;
       eye.title = hidden ? 'Not on the controller or phones. The layer stays in the table. Click to show its button again.' : 'On the controller. Click to take its button off the controller and phones without removing the layer.';
-      row.title = `${button.name}: a button on the ${button.side} of the controller${hidden ? ', hidden' : ''}. Drag to move it, double-click to rename, right-click for more.`;
+      row.title = `${button.name}: a button on the ${button.side} of the controller${hidden ? ', hidden' : ''}. Set its side in the Format pane, double-click to rename, right-click for more.`;
       // A layer in trouble shows a red dot and says why (#259).
       row.dataset.troubleTitle = row.title;
       markTrouble(row, next);
     });
     return row;
-  }
-
-  /** The layer being dragged in the list. */
-  private dragging: string | null = null;
-
-  /**
-   * A press on a row holds the list as it is until the press or the drag ends, so a change from
-   * elsewhere (the host, another author, a layer's state) cannot redraw the row being dragged.
-   */
-  private holdTree(): void {
-    this.tree.addEventListener('pointerdown', (event) => {
-      if (event.button === 0 && (event.target as HTMLElement).closest('.ed-row[draggable="true"]')) this.treePressed = true;
-    });
-    for (const type of ['pointerup', 'pointercancel'] as const) document.addEventListener(type, () => this.releaseTree(), true);
-  }
-
-  private releaseTree(): void {
-    this.treePressed = false;
-    if (this.treeWaiting && !this.dragging) requestAnimationFrame(() => this.treeWaiting && !this.treePressed && !this.dragging && this.render());
-  }
-
-  /** A rail of the list takes dropped rows: before or after the row under the pointer, or at its end. */
-  private dropZone(zone: HTMLElement, side: 'left' | 'right'): void {
-    const clear = (): void => zone.querySelectorAll('.is-drop-before, .is-drop-after').forEach((n) => n.classList.remove('is-drop-before', 'is-drop-after'));
-    const where = (event: DragEvent): { before: string | null; row: HTMLElement | null; after: boolean } => {
-      const rows = [...zone.querySelectorAll<HTMLElement>('.ed-row.is-layer')].filter((r) => r.dataset.layer !== this.dragging);
-      for (const row of rows) {
-        const box = row.getBoundingClientRect();
-        if (event.clientY < box.top + box.height / 2) return { before: row.dataset.layer!, row, after: false };
-      }
-      return { before: null, row: rows.at(-1) ?? null, after: true };
-    };
-    zone.addEventListener('dragover', (event) => {
-      if (!this.dragging) return;
-      event.preventDefault();
-      if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
-      clear();
-      zone.classList.add('is-drop');
-      const { row, after } = where(event);
-      row?.classList.add(after ? 'is-drop-after' : 'is-drop-before');
-    });
-    zone.addEventListener('dragleave', (event) => {
-      if (zone.contains(event.relatedTarget as Node)) return;
-      clear();
-      zone.classList.remove('is-drop');
-    });
-    zone.addEventListener('drop', (event) => {
-      const id = this.dragging;
-      if (!id) return;
-      event.preventDefault();
-      clear();
-      zone.classList.remove('is-drop');
-      const { before } = where(event);
-      this.place(id, side, before);
-    });
-  }
-
-  /** Puts a layer's button on a side, before another button (or last), as one change. */
-  private place(id: string, side: 'left' | 'right', before: string | null): void {
-    const layers = this.instances().filter((i) => !isAtRest(i.manifest, i.state) && !i.state.parent);
-    const rails = this.rails(layers);
-    const was = rails.left.includes(id) ? 'left' : 'right';
-    rails.left = rails.left.filter((other) => other !== id);
-    rails.right = rails.right.filter((other) => other !== id);
-    const list = rails[side];
-    const at = before ? list.indexOf(before) : -1;
-    list.splice(at < 0 ? list.length : at, 0, id);
-    // Only the rails that changed are sent, so a button the author never placed elsewhere keeps its side.
-    const send: Partial<Record<'left' | 'right', string[]>> = { [side]: list };
-    if (was !== side) send[was] = rails[was];
-    void this.send('scene.arrange', { rails: send });
   }
 
   /** Renames a layer's button in the list. */
@@ -2861,7 +2773,6 @@ export class Editor {
     const settings: MenuItem = { label: 'Settings…', icon: 'settings', run: () => (state.parent ? this.go({ kind: 'layer', id: state.parent }, id) : layer ? this.go({ kind: 'layer', id }) : ((this.homeItem = id), this.go({ kind: 'home' }))) };
     const items: MenuItem[] = [];
     if (layer) {
-      const side = layerButton(id, manifest, state, defaultSideOf(this.store, id)).side;
       const hidden = Boolean(state.button?.hidden);
       items.push(
         menuItem('layer.rename', h, id),
@@ -2869,7 +2780,6 @@ export class Editor {
         menuItem('dialog.inside', h, id),
         'line',
         { label: hidden ? 'Show on the controller' : 'Hide from the controller', icon: hidden ? 'eye' : 'eye-off', run: () => void this.send('scene.set', { layer: id, button: { hidden: hidden ? null : true } }) },
-        { label: side === 'left' ? 'Move to the right side' : 'Move to the left side', icon: side === 'left' ? 'next' : 'previous', run: () => this.place(id, side === 'left' ? 'right' : 'left', null) },
       );
     } else items.push(menuItem('layer.toggle', h, id), menuItem('layer.up', h, id), menuItem('layer.down', h, id), menuItem('layer.duplicate', h, id));
     items.push(menuItem('layer.reset', h, id), 'line', menuItem('layer.remove', h, id, { danger: true }), 'line', settings);

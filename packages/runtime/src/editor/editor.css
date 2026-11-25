@@ -3303,10 +3303,6 @@ body[data-role='edit'] .ed-surface .table-frame {
   border-radius: 8px;
 }
 
-.ed-rail.is-drop {
-  background: var(--ed-accent-soft);
-}
-
 .ed-rail-name {
   margin: 2px 4px 0;
   font-size: 11px;
@@ -3340,29 +3336,6 @@ body[data-role='edit'] .ed-surface .table-frame {
 
 .ed-row.is-layer .ed-row-text {
   flex: 1;
-}
-
-.ed-row.is-dragging {
-  opacity: 0.4;
-}
-
-.ed-row.is-drop-before::after,
-.ed-row.is-drop-after::after {
-  content: '';
-  position: absolute;
-  left: 4px;
-  right: 4px;
-  height: 2px;
-  border-radius: 1px;
-  background: var(--ed-accent);
-}
-
-.ed-row.is-drop-before::after {
-  top: -2px;
-}
-
-.ed-row.is-drop-after::after {
-  bottom: -2px;
 }
 
 .ed-row-eye {
