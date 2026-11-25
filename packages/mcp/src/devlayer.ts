@@ -166,8 +166,13 @@ export function checkLayerPackage(dir: string, site: { manifest: any; kernels: s
   // Panels within the dashboard's density budget: the TV's, and a stage made of panels (#357).
   const stage = manifest.stage && typeof manifest.stage === 'object' ? manifest.stage : null;
   const stagePanels: any[] = Array.isArray(stage?.panels) ? stage.panels : [];
-  if (manifest.stage !== undefined && manifest.stage !== 'custom' && !stage) add('error', 'stage', `stage must be "custom" or a layout { panels: [...] }`, 'layer.json');
-  if (stage && !stagePanels.length) add('error', 'stage', 'the stage layout has no panels', 'layer.json');
+  if (manifest.stage !== undefined && manifest.stage !== 'custom' && !stage) add('error', 'stage', `stage must be "custom" or a layout { map?, panels: [...] }`, 'layer.json');
+  const stageMap = stage?.map && typeof stage.map === 'object' ? stage.map : null;
+  if (stage && !stagePanels.length && !stageMap) add('error', 'stage', 'the stage layout has no panels and no map', 'layer.json');
+  // A map stage (#374): at most 4 panels, chip or tile, along the map's bottom edge.
+  if (stageMap && stagePanels.length > 4) add('error', 'stage', `a map stage holds at most 4 panels along its edge; it has ${stagePanels.length}`, 'layer.json');
+  if (stageMap) for (const p of stagePanels) if (p?.size && !['chip', 'tile'].includes(p.size)) add('error', 'stage', `panel '${p.id}' on a map stage must be chip or tile, not ${p.size}`, 'layer.json');
+  if (stageMap?.tool !== undefined && !tools.some((t) => t?.id === stageMap.tool)) add('error', 'stage', `the stage map's tool '${stageMap.tool}' is not one of the layer's tools`, 'layer.json');
   const toolIds = new Set(tools.map((t) => t?.id));
   const controlIds = new Set(controls.map((c) => c?.id));
   const checkPanel = (p: any, where: string) => {
@@ -205,7 +210,9 @@ export function checkLayerPackage(dir: string, site: { manifest: any; kernels: s
 
   // The code.
   const src = walk(join(dir, 'src'), /\.(ts|tsx|js|mjs)$/);
-  if (!src.length) add('error', 'code', 'no src/index.ts', 'src/index.ts');
+  // A layer can be layer.json alone when its controller stage is a map or panels (#374): nothing to build.
+  const declarative = Boolean(stageMap || stagePanels.length) && !src.length;
+  if (!src.length && !declarative) add('error', 'code', 'no src/index.ts', 'src/index.ts');
   const COORD = /(?<![\w.])(-?\d{1,3}\.\d{4,})\s*,\s*(-?\d{1,3}\.\d{4,})(?![\w.])/;
   const SURFACE = /\bnew\s+(WebSocket|BroadcastChannel|EventSource)\s*\(|\.postMessage\s*\(|['"`]\/(ws|api\/(session|layers|site))\b/;
   for (const file of src) {
@@ -240,7 +247,9 @@ export function checkLayerPackage(dir: string, site: { manifest: any; kernels: s
 
   // The build.
   const dist = join(dir, 'dist', 'index.js');
-  if (!existsSync(dist)) add('warning', 'build', 'not built yet: dist/index.js is missing, so the table lists the layer but draws nothing; run build_layer', 'dist/index.js');
+  if (declarative) {
+    // layer.json alone: nothing to build.
+  } else if (!existsSync(dist)) add('warning', 'build', 'not built yet: dist/index.js is missing, so the table lists the layer but draws nothing; run build_layer', 'dist/index.js');
   else {
     const built = statSync(dist).mtimeMs;
     const newer = [...src, join(dir, 'layer.json')].filter((f) => statSync(f).mtimeMs > built + 1000);

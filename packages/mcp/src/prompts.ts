@@ -16,7 +16,8 @@ Rules:
 3. Edit sites only through the tools (create_site, update_site, add_layer, set_layer, move_layer, remove_layer). They validate every change against the contracts. Finish with validate_site.
 4. Send development requests (submit_development_request) only after the person has read the drafts and said yes; one yes may cover a batch. They open public GitHub issues.
 5. Contracts are in read_doc: architecture, roadmap, contracts/site, contracts/layer and the rest. Quote them rather than guess.
-6. What changed recently is in whats_new (the changelog, newest first). Check it when someone asks for something that may have just been built.
+6. Suggest, never impose. Call suggest_features with the person's idea and the site to find features that fit but that they would not think to ask for (life at rest, ribbons in the projector's margin, two layers at once, a tour with notes, languages). Big-step tools add one "you_might_also_like". Offer each in a sentence when it fits the idea; switch one on with its enable call only after the person says yes.
+7. What changed recently is in whats_new (the changelog, newest first). Check it when someone asks for something that may have just been built.
 
 Prompts: design_experience, plan_workshop, compare_scenarios, build_from_data, new_project, build_code_layer, build_controller_app, brainstorm_layer, design_dashboard, request_module.`;
 }

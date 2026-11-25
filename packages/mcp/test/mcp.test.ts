@@ -830,3 +830,84 @@ describe('saved versions (#395)', () => {
     }
   });
 });
+
+describe('suggesting features that fit an idea (#477)', () => {
+  let work: string;
+  let client: Client;
+  before(async () => {
+    work = mkdtempSync(join(tmpdir(), 'mrstudio-suggest-'));
+    client = await connect(bundle, work, ['--project', work]);
+  });
+  after(async () => {
+    await client?.close();
+    rmSync(work, { recursive: true, force: true });
+  });
+
+  test('suggests from the idea and the table, explains each, and gives the call that switches it on', async () => {
+    // A wide area on a squarer table: the model leaves bands of the projection free.
+    const created = await call(client, 'create_site', { dir: 'tram', name: 'Tram line', lon: 11.97, lat: 57.70, width_m: 1600, height_m: 600, timezone: 'Europe/Stockholm', table_width_cm: 120 });
+    assert.equal(created.isError, false, created.text);
+    const site = JSON.parse(readFileSync(join(work, 'tram', 'site.json'), 'utf8'));
+    site.table.height_cm = 80;
+    writeFileSync(join(work, 'tram', 'site.json'), JSON.stringify(site, null, 2));
+    // A big step carries one quiet hint.
+    assert.ok(created.structured.you_might_also_like?.reason, created.text);
+
+    const s = await call(client, 'suggest_features', { goal: 'an exhibition for residents about the new tram line, with a guide', site: 'tram' });
+    assert.equal(s.isError, false, s.text);
+    const ids = s.structured.suggestions.map((x: any) => x.id);
+    assert.ok(ids.length >= 3 && ids.length <= 5, ids.join(', '));
+    assert.ok(ids.includes('site:languages'), ids.join(', '));
+    assert.ok(!ids.includes('layer:sunlight'), 'a layer already on is not suggested');
+    for (const x of s.structured.suggestions) {
+      assert.ok(x.reason.length > 10, `${x.id} has a reason`);
+      assert.ok('tool' in x.enable || 'how' in x.enable, `${x.id} says how to switch it on`);
+      if (x.enable.tool) assert.equal(x.enable.arguments.site, 'tram', 'the call names the site');
+    }
+    // Ambient glow is not built: it comes back as coming, with its issue, because the table has margins.
+    const glow = s.structured.coming.find((x: any) => x.id === 'feature:ambient-glow');
+    assert.ok(glow && glow.issue === 476 && /free/.test(glow.reason), JSON.stringify(s.structured.coming));
+    assert.ok(!ids.includes('feature:ambient-glow'));
+
+    // Without words, the table alone gives the reasons, and layers that fit for the same reason show once.
+    const quiet = await call(client, 'suggest_features', { site: 'tram' });
+    const layerReasons = quiet.structured.suggestions.filter((x: any) => x.id.startsWith('layer:')).map((x: any) => x.reason.split(' ').slice(0, 3).join(' '));
+    assert.equal(new Set(layerReasons).size, layerReasons.length, quiet.text);
+    assert.ok(quiet.structured.suggestions.some((x: any) => x.id === 'site:ribbons' && /free/.test(x.reason)), quiet.text);
+
+    // Once languages are on, they are not suggested again.
+    await call(client, 'update_site', { site: 'tram', set: { branding: { languages: ['en', 'sv'] } } });
+    const again = await call(client, 'suggest_features', { goal: 'residents and visitors', site: 'tram' });
+    assert.ok(!again.structured.suggestions.some((x: any) => x.id === 'site:languages'));
+
+    // Hints after big steps never repeat one already given.
+    const seen = new Set<string>(s.structured.suggestions.map((x: any) => x.id));
+    for (const use of ['trees', 'cars', 'wind']) {
+      const r = await call(client, 'add_layer', { site: 'tram', use });
+      assert.equal(r.isError, false, r.text);
+      const h = r.structured.you_might_also_like;
+      if (!h) continue;
+      assert.ok(!seen.has(h.id), `hint ${h.id} repeated`);
+      seen.add(h.id);
+      assert.match(r.text, /You might also like/);
+    }
+
+    assert.equal((await call(client, 'suggest_features', {})).isError, true);
+  });
+});
+
+test('a layer.json-only layer with a map stage passes check_layer, and the map stage rules hold (#374)', async () => {
+  const { checkLayerPackage } = await import('../src/devlayer.ts');
+  const dir = join(pkg, '..', '..', 'samples', 'map-stage-example', 'layers', 'building-uses');
+  const site = { manifest: { scene: { buildings: { path: 'data/buildings.geojson' } }, layers: [] }, kernels: [] };
+  const ok = checkLayerPackage(dir, site);
+  assert.deepEqual(ok.issues.filter((i) => i.rule === 'code' || i.rule === 'build' || i.rule === 'stage'), [], JSON.stringify(ok.issues));
+  const work = mkdtempSync(join(tmpdir(), 'mrstudio-stage-'));
+  const m = JSON.parse(readFileSync(join(dir, 'layer.json'), 'utf8'));
+  m.stage.panels = Array.from({ length: 5 }, (_, i) => ({ id: `p${i}`, widget: 'stat', size: i ? 'tile' : 'wide', title: `P${i}` }));
+  writeFileSync(join(work, 'layer.json'), JSON.stringify(m));
+  const bad = checkLayerPackage(work, site).issues.filter((i) => i.rule === 'stage').map((i) => i.message).join(' ');
+  assert.match(bad, /at most 4 panels/);
+  assert.match(bad, /must be chip or tile/);
+  rmSync(work, { recursive: true, force: true });
+});
