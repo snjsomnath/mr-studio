@@ -41,7 +41,7 @@ import { slidesSection } from './slides.ts';
 import { placeSettings, welcomeSettings } from './table-settings.ts';
 import { openStarterPack } from './starter-pack.ts';
 import { runTour, tourOnStart } from './tour.ts';
-import { AT_REST, WHERE, Wizard, chosenTheme, themeChoice, themeSwatch } from './wizard.ts';
+import { AT_REST, START, WHERE, Wizard, chosenTheme, themeChoice, themeSwatch } from './wizard.ts';
 import { THEMES } from '@mrstudio/dashboard';
 import './editor.css';
 
@@ -698,7 +698,6 @@ export class Editor {
       return;
     }
     if (this.dialog && this.dialog.id !== id) this.closeDialog();
-    if (this.wizard) this.closeWizard();
     const spec = Editor.DIALOGS[id];
     const reuse = this.dialog?.id === id ? this.dialog.element : null;
     const dialog = reuse ?? el('dialog', `ed-dialog is-${id}`);
@@ -2106,6 +2105,8 @@ export class Editor {
       'map.palette': { run: () => paletteDialog(this.builderHost(), this.shell) },
       'dialog.place': { run: () => this.openDialog('place') },
       'dialog.welcome': { run: () => this.openDialog('welcome') },
+      // The starter tables have a home outside the guide (#469): the guide opens at Start from….
+      'dialog.starters': { run: () => (this.wizard ? undefined : this.openWizard(false, START)) },
       'present.check': { run: () => this.showChecks() },
       'present.rehearse': {
         label: () => (this.rehearsal.on ? 'Finish rehearsal' : 'Rehearse'),

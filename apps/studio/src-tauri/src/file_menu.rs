@@ -52,7 +52,10 @@ fn file_submenu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Submenu<R>> {
         .item(&item("table-settings", "Table size and place…", None)?)
         .separator()
         .item(&item("close", "Close table", Some("CmdOrCtrl+W"))?);
-    if !cfg!(target_os = "macos") {
+    if cfg!(target_os = "macos") {
+        // Also here on a Mac (#470): people look under File first. ⌘, stays with the app menu's.
+        file = file.separator().item(&item("settings", "Settings…", None)?);
+    } else {
         // On macOS these live in the app menu, where people look for them.
         file = file
             .separator()

@@ -378,6 +378,24 @@ async function main() {
       await until(async () => plan()?.params?.corners !== dragged, 'the nudged frame saved');
     });
 
+    await run('Design › Starter tables… opens the guide at Start from…, and a dialog opened over it keeps it (#469)', async () => {
+      await page.goto(`${base}/edit`);
+      await page.locator('.ed-tab[data-tab="design"]').click();
+      await page.locator('.ed-ribbon [data-command="dialog.starters"]').click();
+      await page.locator('.wz h2', { hasText: 'Start from' }).waitFor();
+      await page.locator('.wz-starter[data-starter]').first().waitFor();
+      await shot('469-starters');
+      // A fix such as Write a welcome opens its dialog over the guide; closing it comes back.
+      await page.keyboard.press(`${mod}+k`);
+      await page.locator('.ed-commands-field').fill('welcome and languages');
+      await page.keyboard.press('Enter');
+      const dialog = page.locator('dialog.ed-dialog.is-welcome');
+      await dialog.waitFor();
+      await dialog.getByRole('button', { name: 'Close' }).click();
+      await dialog.waitFor({ state: 'detached' });
+      await page.locator('.wz h2', { hasText: 'Start from' }).waitFor();
+    });
+
     await run('the controller carries no operator text (#50)', async () => {
       const tv = await browser.newPage({ viewport: { width: 1600, height: 900 } });
       await tv.goto(`${base}/tv`);

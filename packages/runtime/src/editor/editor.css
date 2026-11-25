@@ -4713,7 +4713,9 @@ body[data-role='edit'] > .connection {
 
 /* Table size and place: the guide's place form and its map, then the table in the room. */
 .ed-dialog.is-place {
-  width: min(760px, calc(100vw - 32px));
+  /* Room for the map and the fields side by side (#470). */
+  width: min(1000px, calc(100vw - 32px));
+  min-height: min(640px, calc(100vh - 48px));
 }
 
 .ed-dialog.is-place .wz.is-panel {
