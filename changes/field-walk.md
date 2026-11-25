@@ -1,3 +1,4 @@
+---
 bump: minor
 issues: 445
 ---
