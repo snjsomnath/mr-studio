@@ -864,10 +864,11 @@ describe('suggesting features that fit an idea (#477)', () => {
       assert.ok('tool' in x.enable || 'how' in x.enable, `${x.id} says how to switch it on`);
       if (x.enable.tool) assert.equal(x.enable.arguments.site, 'tram', 'the call names the site');
     }
-    // Ambient glow is not built: it comes back as coming, with its issue, because the table has margins.
-    const glow = s.structured.coming.find((x: any) => x.id === 'feature:ambient-glow');
-    assert.ok(glow && glow.issue === 476 && /free/.test(glow.reason), JSON.stringify(s.structured.coming));
-    assert.ok(!ids.includes('feature:ambient-glow'));
+    // Ambient glow is built (#476): never offered as coming, and a call that switches it on when it fits.
+    assert.ok(!s.structured.coming.some((x: any) => x.id === 'feature:ambient-glow'), JSON.stringify(s.structured.coming));
+    const look = await call(client, 'suggest_features', { goal: 'a beautiful lobby table that frames the model', site: 'tram' });
+    const glow = look.structured.suggestions.find((x: any) => x.id === 'feature:ambient-glow');
+    assert.ok(glow && /free/.test(glow.reason) && glow.enable.arguments.set.table.glow.on === true, look.text);
 
     // Without words, the table alone gives the reasons, and layers that fit for the same reason show once.
     const quiet = await call(client, 'suggest_features', { site: 'tram' });
