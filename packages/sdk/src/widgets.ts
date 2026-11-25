@@ -31,7 +31,10 @@ export type PropSpec = (
   /** Shown in the editor. */
   label: string;
   required?: boolean;
-  /** May be `{ "bind": "shared.x" }` instead of a literal. */
+  /**
+   * May be `{ "bind": "shared.x" }` instead of a literal. A `list` may always be bound as a whole
+   * (#373): its items are checked against `item` as they arrive.
+   */
   bindable?: boolean;
   default?: unknown;
 };
@@ -59,6 +62,11 @@ export interface WidgetEnv {
   layer?: PanelLayer;
   /** For `custom` only: hands the element to the layer's `panel` function. */
   custom?: (el: HTMLElement) => { update?(): void } | void;
+  /**
+   * A widget's own words in the visitors' language (#373): the layer's `locales`, then the site's,
+   * then the runtime's; `{name}` is filled from `vars`. Absent outside the runtime: say the text as it is.
+   */
+  say?: (text: string, vars?: Record<string, string | number>) => string;
 }
 
 /** A layer's controls as a panel reaches them: the host checks every change as it does the controller's. */

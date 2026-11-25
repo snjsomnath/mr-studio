@@ -1,4 +1,4 @@
-import { colormaps, controllerMap, entityFeatures, entityValues, loadSiteData } from '@mrstudio/sdk';
+import { colormaps, controllerMap, entityFeatures, entityValues, loadSiteData, propertyAt } from '@mrstudio/sdk';
 import type { ColourBy, ControllerMap, EntityFeature, EntitySet, Params, Position } from '@mrstudio/sdk';
 
 import { defineWidget } from '../registry.ts';
@@ -60,7 +60,7 @@ interface Coloured {
 
 /** The value a colour rule reads for one feature. */
 export function valueOf(by: ColourBy, f: Coloured, set: EntitySet | undefined, params: Params | undefined, shared: Record<string, unknown> | undefined): unknown {
-  if (by.property) return f.props[by.property];
+  if (by.property) return propertyAt(f.props, by.property);
   if (by.entity) return set ? entityValues(set, params, f.id)[by.entity] : undefined;
   if (by.shared) {
     const map = shared?.[by.shared];
@@ -298,7 +298,7 @@ export const map = defineWidget({
           coloured = list.flatMap((f, index) => {
             if (!f.geometry) return [];
             const props = f.properties ?? {};
-            const key = set ? (set.key === '#' ? index + 1 : props[set.key]) : (props.id ?? f.id ?? index + 1);
+            const key = set ? (set.key === '#' ? index + 1 : propertyAt(props, set.key)) : (props.id ?? f.id ?? index + 1);
             return typeof key === 'string' || typeof key === 'number' ? [{ id: String(key), props, geometry: f.geometry }] : [];
           });
           recolour(true);

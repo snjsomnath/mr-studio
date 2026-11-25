@@ -37,8 +37,17 @@ function resolve(spec: PropSpec, raw: unknown, source: BindSource, limit?: numbe
   switch (spec.kind) {
     case 'text':
       return clip(String(value), spec.max);
-    case 'number':
-      return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+    case 'number': {
+      // A number a layer published as text ("12.5") still reads as a number (#373).
+      const number = typeof value === 'string' && value.trim() !== '' ? Number(value) : value;
+      return typeof number === 'number' && Number.isFinite(number) ? number : undefined;
+    }
+    case 'boolean':
+      // A bound yes/no may arrive as text or a number (#373): "true", "false", 1, 0.
+      if (typeof value === 'boolean') return value;
+      if (value === 'true' || value === 1 || value === '1') return true;
+      if (value === 'false' || value === 0 || value === '0') return false;
+      return undefined;
     case 'value':
       if (typeof value === 'number') return Number.isFinite(value) ? value : undefined;
       return clip(String(value), TEXT.value);

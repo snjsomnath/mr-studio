@@ -88,3 +88,19 @@ test('the energy network test data plays a day without problems, and draws', () 
   look!.draw(view, 0.1, 1);
   assert.ok(calls.filter((c) => c === 'stroke').length > 20);
 });
+
+test('a link that holds its own list of flows plays it, one step each, without a series table (#373)', () => {
+  const rows = [
+    { from: 'grid', to: 'home', flow_hourly: '[1, 2, 3, 4]' },
+    { from: 'battery', to: 'home', flow_hourly: 5 },
+  ];
+  const data = networkData(nodes, { linkRows: rows }, { flow: 'flow_hourly' });
+  assert.equal(data.steps, 4);
+  assert.deepEqual(data.labels, ['0', '1', '2', '3']);
+  assert.deepEqual(data.links[0]!.values, [1, 2, 3, 4]);
+  assert.deepEqual(data.links[1]!.values, [5, 5, 5, 5]);
+  assert.equal(data.peak, 5);
+  // Lines carry arrays as they are.
+  const shapes: Shapes = { areas: [], spots: [], paths: [{ id: 'l', properties: { from: 'grid', to: 'battery', flow_hourly: [0, -2] }, ...measured([[0, 0], [100, 0]]) }] };
+  assert.deepEqual(networkData(nodes, { linkShapes: shapes }, { flow: 'flow_hourly' }).links[0]!.values, [0, -2]);
+});

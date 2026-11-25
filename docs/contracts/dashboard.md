@@ -64,7 +64,7 @@ The host passes `tv` to surfaces unchanged in `SiteInfo.tv`; the TV validates it
 | --- | --- |
 | `size` | The size exists and the widget comes in it |
 | `schema` | Props match the widget's schema; no unknown fields |
-| `binding` | Only bindable props are bound, to `params.`, `shared.` or `site.` paths |
+| `binding` | Only bindable props are bound, to `params.`, `shared.` or `site.` paths. A `list` prop may always be bound as a whole: its items are held to the item schema and the list limit as they arrive (#373) |
 | `text` | Titles, labels, captions, units and values within their character limits; theme contrast |
 | `budget` | The panel's reads fit its size; lists within their limits. A bound list is charged in full |
 | `grid` | Site pages: inside 12 by 6, no overlap, a position for every panel. Layers: no position |
@@ -112,6 +112,11 @@ host checks it the same way. On the table's ribbon it only shows the value. A pa
 control the layer doesn't have draws the name and is reported in the window's console. Widgets get
 the layer's controls in `env.controls` (`find`, `value`, `set`, `press`, and `touch`, false where the
 panel can't be touched), so a team widget (below) can be an input too.
+
+A bound value arrives as the layer published it, then is read for the prop's kind (#373): a
+`boolean` takes `true`/`false` (or the text `"true"`/`"false"`, `1`/`0`), and a `number` takes a
+number or a number written as text. A widget says its own words in the visitors' language with
+`env.say(text, vars?)`: the layer's `locales`, then the site's, then the runtime's.
 
 ### A map on a panel (#355)
 

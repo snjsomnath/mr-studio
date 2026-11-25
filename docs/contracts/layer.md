@@ -133,7 +133,8 @@ picking on the table and the controls on the controller, so the layer writes no 
 
 - `dataset` is a dataset of the site (the scene's `buildings` counts); each feature is one entity,
   named by its `key` property. `label` is the property shown as its name (default `key`), `group`
-  a property for changing many at once, `name` what one is called on the controller.
+  a property for changing many at once, `name` what one is called on the controller. `key`,
+  `label`, `group` and `facts` may name a nested property by a dotted path, `ecom.name` (#373).
 - `controls` are layer controls without actions. They are checked by the host like the layer's own.
 - `facts` (#38) lists properties shown on the controller for the picked entity, as a short list
   of names and values. A set needs `controls`, `facts` or both. `key` may be `#`: the feature's

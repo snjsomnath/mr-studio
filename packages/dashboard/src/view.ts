@@ -30,6 +30,8 @@ export interface PanelInput {
   controls?: PanelControls;
   /** For widgets that work with the site and the table (#355): the panel's layer. */
   layer?: PanelLayer;
+  /** A widget's own words in the visitors' language (#373). */
+  say?: (text: string, vars?: Record<string, string | number>) => string;
   /** Called when the panel leaves the canvas. */
   onRemove?(): void;
   /** For a site's hand-made pages: the page it is on. Requires `spec.at`. */
@@ -233,7 +235,7 @@ export class DashboardView {
     const body = h('div', 'mrs-panel-body');
     el.append(title, body);
     try {
-      const handle = widget.mount(body, { size: input.spec.size, custom: input.custom, controls: input.controls, layer: input.layer });
+      const handle = widget.mount(body, { size: input.spec.size, custom: input.custom, controls: input.controls, layer: input.layer, say: input.say });
       const mounted = { input, widget, el, title, handle };
       this.mounted.set(input.key, mounted);
       return mounted;

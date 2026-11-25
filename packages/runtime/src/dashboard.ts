@@ -160,7 +160,7 @@ function mountMapStage(el: HTMLElement, store: Store, connection: Connection, id
     panel.append(inner);
     into.append(panel);
     try {
-      mounted.push({ input, widget, el: panel, handle: widget.mount(inner, { size: spec.size, custom: input.custom, controls: input.controls, layer: input.layer }) });
+      mounted.push({ input, widget, el: panel, handle: widget.mount(inner, { size: spec.size, custom: input.custom, controls: input.controls, layer: input.layer, say: input.say }) });
     } catch (error) {
       console.error(`[${input.key}] stage panel failed to mount`, error);
       panel.remove();
@@ -219,6 +219,8 @@ export function panelInput(store: Store, connection: Connection, layer: string |
     key,
     spec,
     page,
+    // A team widget's own words (#373), from the layer's locales first.
+    say: (text, vars) => say(text, store.manifest(state()?.layer ?? ''), vars),
     source: () => ({
       params: state()?.params ?? {},
       // The words a layer publishes (a caption, a status) in the visitors' language (#80).

@@ -51,18 +51,33 @@ interface Collection {
   features?: { properties?: Record<string, unknown> | null; geometry?: { type: string; coordinates: unknown } | null }[];
 }
 
+/**
+ * A feature property by name, or by a dotted path into nested properties (#373): `ecom.name`
+ * reads `properties.ecom.name`. A property whose own name has a dot (`"ecom.name"`) wins.
+ */
+export function propertyAt(properties: Record<string, unknown> | null | undefined, path: string): unknown {
+  if (!properties) return undefined;
+  if (path in properties || !path.includes('.')) return properties[path];
+  let value: unknown = properties;
+  for (const part of path.split('.')) {
+    if (typeof value !== 'object' || value === null) return undefined;
+    value = (value as Record<string, unknown>)[part];
+  }
+  return value;
+}
+
 /** The entities of a set in its dataset, in the dataset's order. Features without a key are left out. */
 export function entityFeatures(collection: Collection, set: Pick<EntitySet, 'key' | 'label' | 'group' | 'facts'>): EntityFeature[] {
   const out: EntityFeature[] = [];
   const seen = new Set<string>();
   for (const [index, feature] of (collection.features ?? []).entries()) {
-    const key = set.key === '#' ? index + 1 : feature.properties?.[set.key];
+    const key = set.key === '#' ? index + 1 : propertyAt(feature.properties, set.key);
     if ((typeof key !== 'string' && typeof key !== 'number') || !feature.geometry) continue;
     const id = String(key);
     if (seen.has(id)) continue;
     seen.add(id);
-    const label = set.label === '#' ? undefined : feature.properties?.[set.label ?? set.key];
-    const group = set.group ? feature.properties?.[set.group] : undefined;
+    const label = set.label === '#' ? undefined : propertyAt(feature.properties, set.label ?? set.key);
+    const group = set.group ? propertyAt(feature.properties, set.group) : undefined;
     out.push({
       id,
       label: typeof label === 'string' || typeof label === 'number' ? String(label) : id,
@@ -108,8 +123,8 @@ export function factsOf(properties: Record<string, unknown>, facts: readonly (st
     const column = factColumn(fact);
     if (!column || column === '#') continue;
     const detail = typeof fact === 'string' ? undefined : fact;
-    const value = readable(properties[column], detail);
-    const label = detail?.label?.trim() || column.replace(/[-_]+/g, ' ').replace(/^./, (c) => c.toUpperCase());
+    const value = readable(propertyAt(properties, column), detail);
+    const label = detail?.label?.trim() || (column.split('.').pop() ?? column).replace(/[-_]+/g, ' ').replace(/^./, (c) => c.toUpperCase());
     if (value !== null) out.push([label, value]);
   }
   return out;
