@@ -1,5 +1,7 @@
+---
 bump: patch
 issues: 441
+---
 
 ### Command search shows its results on the Mac
 
