@@ -13,10 +13,6 @@ const STYLE = `
 .fw [hidden] { display: none !important; }
 .fw-frame { position: relative; height: clamp(16rem, 46vh, 34rem); border-radius: 1.125rem; overflow: hidden; background: #0b0d17;
   box-shadow: 0 1.25rem 3.75rem rgb(0 0 0 / 0.35), inset 0 0 0 1px rgb(255 255 255 / 0.06); }
-/* Kept open alongside another layer (an X-ray over the walk): the spots stay on the table and the
-   controller keeps one line for the walk; its viewer comes back when the other layer closes. */
-.layer-open:not(.is-alongside):not([hidden]) ~ .is-alongside .fw { display: none; }
-.is-alongside .fw { flex: 1 1 100%; }
 .fw-blur { position: absolute; inset: -2rem; background-size: cover; background-position: center; filter: blur(2rem) brightness(0.55); }
 .fw-photo { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
 .fw-sound { position: absolute; inset: 0; display: grid; place-items: center; }

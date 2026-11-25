@@ -4,6 +4,27 @@ Every merge to main that carries a release note becomes a version. The newest is
 The app shows these notes, with their pictures, on Home when a newer version is out.
 How notes are written: docs/RELEASING.md.
 
+## 0.38.2 (2026-11-25)
+
+### Fixes
+
+#### Tables start, reset and present at rest, with the base map at the bottom (#419, #471)
+
+- **No layer opens by itself (#419).** A layer with a button on the controller now starts closed when the table opens, and closes on Reset and Present, even if the table had saved it on. Layers added in the editor are no longer saved on. Before, every layer added from the gallery was saved on, so the Chalmers table opened Trees, Reveal line, Roads and Field walk at start, on Reset and on Present.
+- **The base map stays at the bottom (#471).** A base map lies under the rest of the map at rest wherever the scene lists it, so it can no longer cover the street glow, lights, trees and traffic.
+
+![Base map moved to the end of the scene: before and after](docs/screenshots/471-base-map-bottom.png)
+
+## 0.38.1 (2026-11-25)
+
+### Fixes
+
+#### Field walk closes like a layer (#466)
+
+Field walk now closes when you close it or pick another layer, like any layer. Before, its viewer stayed on the controller. To keep the spots under a Reveal line or a Magnifier, add Field walk inside that layer in the editor.
+
+![Controller after closing Field walk](docs/screenshots/466-closed.png)
+
 ## 0.38.0 (2026-11-25)
 
 ### New
