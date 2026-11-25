@@ -41,7 +41,8 @@ export const RIBBON: LayoutTab[] = [
     label: 'Home',
     tip: 'Work on what is selected: hide it, move it, rename, duplicate or remove it',
     groups: [
-      { name: 'Layer', items: [large('layer.new'), 'layer.duplicate', 'layer.remove'] },
+      // Adding is Insert's (rule 10, #460): Home works on what is already there.
+      { name: 'Layer', items: ['layer.duplicate', 'layer.remove'] },
       { name: 'Selection', items: ['layer.toggle', 'layer.up', 'layer.down', 'layer.rename', 'layer.reset'], keep: true },
       { name: 'Find', items: [large('commands.search')] },
     ],
@@ -51,7 +52,7 @@ export const RIBBON: LayoutTab[] = [
     label: 'Insert',
     tip: 'Add layers, data, pictures, video, sound and 3D models',
     groups: [
-      { name: 'Layers', items: [large('layer.new'), large('layer.custom'), 'layer.forget'] },
+      { name: 'Layers', items: [large('layer.new'), large('layer.custom'), 'dialog.inside', 'layer.forget'] },
       { name: 'Your data', items: [large('data.file'), large('data.open')] },
       { name: 'Media', items: ['media.picture', 'media.video', 'media.sound', 'media.model'] },
     ],
@@ -94,6 +95,7 @@ export const RIBBON: LayoutTab[] = [
     label: 'Help',
     tip: 'Every feature and step-by-step guides, in a window of their own',
     groups: [
+      { name: 'Start', items: [large('help.tour')] },
       { name: 'Guide', items: [{ widget: 'help.guides' }] },
       { name: 'Features', items: [large('help.features')] },
       { name: 'Problems', items: [large('help.troubleshooting'), { widget: 'help.diagnostics' }] },

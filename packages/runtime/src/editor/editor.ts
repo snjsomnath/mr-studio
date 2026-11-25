@@ -13,7 +13,7 @@ import type { GallerySection } from './gallery.ts';
 import './gallery.css';
 import { DisplayTab } from './display-tab.ts';
 import { MediaTab } from './media-tab.ts';
-import { MODEL_ROW } from './model-import.ts';
+import { ModelImporter } from './model-import.ts';
 import { DrawingFrame, returnCorners } from './drawing-frame.ts';
 import { ACCEPT, kindOf, mediaChanged, mediaItems, routeOf } from '../media.ts';
 import type { MediaItem } from '../media.ts';
@@ -39,6 +39,7 @@ import type { MenuItem } from './tree-tools.ts';
 import type { FileAction } from './file-menu.ts';
 import { slidesSection } from './slides.ts';
 import { placeSettings, welcomeSettings } from './table-settings.ts';
+import { runTour, tourOnStart } from './tour.ts';
 import { AT_REST, WHERE, Wizard, chosenTheme, themeChoice, themeSwatch } from './wizard.ts';
 import { THEMES } from '@mrstudio/dashboard';
 import './editor.css';
@@ -138,7 +139,7 @@ function markTrouble(row: HTMLElement, state: LayerState | undefined): void {
 /** A tab of the ribbon, as layout.ts names it. Not part of what is being edited: opening one changes the ribbon only (#385). */
 type RibbonTab = string;
 /** The dialogs of whole-table and this-computer settings (docs/editor-ui.md, rule 5). */
-type DialogId = 'place' | 'welcome' | 'screens' | 'media' | 'open-data';
+type DialogId = 'place' | 'welcome' | 'screens' | 'media' | 'open-data' | 'model';
 /** A window too narrow for the list, the map and the settings side by side (#66); the CSS uses the same width. */
 const NARROW = matchMedia('(max-width: 1099px)');
 /** The ribbon tab to come back to after the page reloads, as after moving the table. */
@@ -189,6 +190,7 @@ export class Editor {
   private dialog: { id: DialogId; element: HTMLDialogElement } | null = null;
   /** Table size and place (#382, was the Name and place tab): the guide's first step, made once so a half-typed place survives. */
   private placePanel: Wizard | null = null;
+  private modelImporter: ModelImporter | null = null;
   /** Open data, made once so a fetch under way survives closing its dialog (#310). */
   private fetchAll: FetchAll | null = null;
   /** The Help tab's list of guides, from help.json (#271); fetched the first time the tab opens. */
@@ -416,6 +418,7 @@ export class Editor {
     }
     if (resume !== undefined || created) this.openWizard(created, resume);
     else {
+      this.startTour();
       // After a reload (moving the table, bringing data in), the editor comes back on the tab and the dialog it was on.
       let tab: string | null = null;
       let dialog: string | null = null;
@@ -429,7 +432,7 @@ export class Editor {
       if (tab && RIBBON.some((t) => t.id === tab)) this.setRibbonTab(tab);
       // A reload comes back to what was being edited.
       if (location.hash) this.goTo(location.hash);
-      if (dialog === 'place' || dialog === 'media') this.openDialog(dialog);
+      if (dialog === 'place' || dialog === 'media' || dialog === 'model') this.openDialog(dialog);
     }
     connection.on('site.changed', (p: { site?: { table?: unknown }; table_only?: boolean }) => {
       // The table's front edge or ribbons (#62): taken in place, the projector redraws on its own.
@@ -581,9 +584,9 @@ export class Editor {
         return null;
       }
       if (route === 'model') {
-        // A model is set on the ground and fitted to the buildings: Your place's 3D model row, in the media library.
-        this.bringIn(MODEL_ROW);
-        this.history.notify('Place the 3D model', 'Choose its file in the 3D model panel on the right: it is set on the ground and fitted to the buildings.');
+        // A model is set on the ground and fitted to the buildings: Insert › 3D model's dialog.
+        this.openDialog('model');
+        this.history.notify('Place the 3D model', 'Choose its file again here: it is set on the ground and fitted to the buildings.');
         return null;
       }
       if (!route) throw new Error(`${file.name} is not a kind of file MR Studio takes.`);
@@ -655,8 +658,9 @@ export class Editor {
   private static readonly DIALOGS: Record<DialogId, { title: string; lead: string; modal: boolean }> = {
     place: { title: 'Table size and place', lead: 'What the table is called, where it is, how much ground it covers and how it stands in the room.', modal: true },
     welcome: { title: 'Welcome and languages', lead: 'What the controller says when nobody is using the table, and the languages visitors read.', modal: true },
-    screens: { title: 'Screens and calibration', lead: 'This computer’s screens, projector, colour and quality. They are the same for every table on this computer.', modal: false },
+    screens: { title: 'Screens and calibration', lead: 'This computer’s screens, projector, colour and quality. They are the same for every table on this computer.', modal: true },
     media: { title: 'Media library', lead: 'Every file and online source of this table, where each is used, and the files it still needs.', modal: true },
+    model: { title: '3D model', lead: 'A model of the buildings, from Rhino, SketchUp or a scan. It is set on the ground and fitted to the buildings, and gives them their heights.', modal: true },
     'open-data': { title: 'Open data', lead: 'Fetch what this place has in OpenStreetMap and open elevation data, in one go. It is copied into the table and stays on this computer.', modal: true },
   };
 
@@ -695,6 +699,11 @@ export class Editor {
       strip.append(...this.displayTab.groups);
       body.append(strip);
       void this.displayTab.show();
+    } else if (id === 'model') {
+      // Insert › 3D model opens the model importer itself, not the media library (#459).
+      this.modelImporter ??= new ModelImporter({ site: () => this.store.state.site });
+      this.modelImporter.render();
+      body.append(this.modelImporter.element);
     } else if (id === 'media') {
       body.append(el('div', 'ed-dialog-ribbon ed-ribbon'), this.mediaTab.view, el('aside', 'ed-inspector ed-media-inspector'));
       void this.mediaTab.load();
@@ -777,6 +786,19 @@ export class Editor {
     this.context = { kind: 'home' };
     this.show(null);
     this.render();
+    this.startTour();
+  }
+
+  /**
+   * The tour (#451) opens with the editor until the author turns it off on the tour itself.
+   * Not under automation (navigator.webdriver), so end-to-end tests are not covered by it;
+   * they replay it from Help.
+   */
+  private startTour(): void {
+    if (!tourOnStart() || navigator.webdriver || this.wizard) return;
+    setTimeout(() => {
+      if (!this.wizard && !this.dialog) void runTour(this.shell);
+    }, 600);
   }
 
   /** Opens one layer on the map and closes the rest, as its button on the controller does. Null leaves the map at rest. */
@@ -1297,12 +1319,19 @@ export class Editor {
   }
 
   /** The New layer gallery (#59), the one place a layer is made. */
-  private gallery(start?: GallerySection): void {
+  private gallery(start?: GallerySection, into?: { id: string; name: string }): void {
     const host = this.builderHost();
     openGallery(
       {
         store: this.store,
         shell: this.shell,
+        into,
+        addPreset: async (use, params) => {
+          // Saved with the table, as the Format pane saves a layer's settings.
+          const manifest = this.store.manifest(use);
+          const id = manifest ? await this.add(manifest) : null;
+          if (id) await this.send('scene.set', { layer: id, params });
+        },
         add: (manifest, parent) => this.addChecked(manifest, parent),
         lifeInto: () => {
           const { kind } = this.context;
@@ -1452,6 +1481,7 @@ export class Editor {
     guide.addEventListener('click', () => this.closeWizard());
     actions.append(guide);
     const present = button('ed-button is-primary', 'Present', 'tv');
+    present.dataset.present = '';
     this.presentButton = present;
     // Tells the desktop shell that this page has its own Present control.
     present.dataset.shellPresent = '';
@@ -1841,6 +1871,13 @@ export class Editor {
       }
       return this.context.kind === 'layer' && !this.layerItem && !this.wizard ? this.context.id : null;
     };
+    /** The layer Add inside… puts things into (#453): a layer with a button, not a slideshow (its slides are its items). */
+    const insideOf = (target?: string): string | null => {
+      const id = buttonOf(target);
+      const state = id ? this.store.state.layers[id] : undefined;
+      const manifest = state && this.store.manifest(state.layer);
+      return id && manifest && !manifest.sequence ? id : null;
+    };
     const basemap = (): string | undefined => this.instances().find((i) => i.manifest.id === 'basemap' && !i.state.parent)?.id;
     const view = (v: 'map' | 'controller' | 'both') => ({ pressed: () => this.canvasTools.view === v, run: () => this.menuAction(`view-${v}`) });
     const style = (value: 'icons' | 'labelled') => ({
@@ -1849,6 +1886,15 @@ export class Editor {
     });
     return {
       'layer.new': { run: () => this.gallery() },
+      'dialog.inside': {
+        disabled: (t) => (insideOf(t) ? undefined : 'Select a layer first: what you add goes inside it and comes on with it'),
+        run: (t) => {
+          const id = insideOf(t);
+          const state = id ? this.store.state.layers[id] : undefined;
+          const manifest = state && this.store.manifest(state.layer);
+          if (id && state && manifest) this.gallery(undefined, { id, name: layerButton(id, manifest, state).name });
+        },
+      },
       'layer.duplicate': { keys: k('D'), disabled: needs, run: (t) => this.withSelected(t, (id) => this.duplicate(id)) },
       'layer.remove': { keys: mac ? '⌫' : 'Del', disabled: needs, run: (t) => this.withSelected(t, (id) => this.removeLayer(id)) },
       'layer.toggle': {
@@ -1898,7 +1944,7 @@ export class Editor {
       'media.picture': { run: () => void this.addMedia(['picture']) },
       'media.video': { run: () => void this.addMedia(['video']) },
       'media.sound': { run: () => void this.addMedia(['sound']) },
-      'media.model': { run: () => this.bringIn(MODEL_ROW) },
+      'media.model': { run: () => this.openDialog('model') },
       'buttons.icons': style('icons'),
       'buttons.labelled': style('labelled'),
       'map.basemap': {
@@ -1936,6 +1982,7 @@ export class Editor {
       'window.table': { run: () => openView('table') },
       'window.tv': { run: () => openView('tv') },
       'window.dev': { run: () => openView('dev') },
+      'help.tour': { run: () => void runTour(this.shell) },
       'help.features': { run: () => openHelp('features') },
       'help.troubleshooting': { run: () => openHelp('troubleshooting') },
       'help.shortcuts': { keys: k('/'), run: () => this.menuAction('shortcuts') },
@@ -2574,6 +2621,7 @@ export class Editor {
       items.push(
         menuItem('layer.rename', h, id),
         menuItem('layer.duplicate', h, id),
+        menuItem('dialog.inside', h, id),
         'line',
         { label: hidden ? 'Show on the controller' : 'Hide from the controller', icon: hidden ? 'eye' : 'eye-off', run: () => void this.send('scene.set', { layer: id, button: { hidden: hidden ? null : true } }) },
         { label: side === 'left' ? 'Move to the right side' : 'Move to the left side', icon: side === 'left' ? 'next' : 'previous', run: () => this.place(id, side === 'left' ? 'right' : 'left', null) },
@@ -2920,7 +2968,18 @@ export class Editor {
     section.dataset.items = layer;
     section.append(el('h3', undefined, 'In this layer'));
     const items = instances.filter((i) => i.state.parent === layer);
-    if (items.length === 0) section.append(el('p', 'ed-empty', `Nothing yet. Public transport, traffic, trees or lights added from "Add to this layer" above show only while ${name} is open.`));
+    // Add inside… (#453) is the way in; the empty state says what goes inside this kind of layer.
+    const kind = this.store.state.layers[layer]?.layer;
+    const what =
+      kind === 'lens'
+        ? `What the X-ray glass shows. Put a plan, a picture or a map inside, and set The glass shows to X-ray.`
+        : kind === 'swipe'
+          ? `What shows on one side of the line. Put a plan, a picture or a map inside.`
+          : `Layers inside ${name} come on with it and go with it: traffic, trees or lights, a plan, a picture.`;
+    if (items.length === 0) section.append(el('p', 'ed-empty', `Nothing yet. ${what}`));
+    const addInside = button('ed-button', 'Add inside…', 'plus');
+    addInside.dataset.command = 'dialog.inside';
+    addInside.addEventListener('click', () => void this.handlers['dialog.inside'].run(layer));
     for (const { id, manifest } of items) {
       const row = this.treeRow(manifest.name, '', manifest.icon, this.layerItem === id, () => {
         this.layerItem = this.layerItem === id ? null : id;
@@ -2935,6 +2994,7 @@ export class Editor {
       });
       section.append(row);
     }
+    section.append(addInside);
     return section;
   }
 

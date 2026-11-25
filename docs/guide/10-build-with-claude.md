@@ -47,7 +47,7 @@ Cursor, VS Code with GitHub Copilot, Windsurf, Gemini CLI, Zed and LM Studio wor
 
 MR Studio also comes with a command for terminals, `mrstudio`. You do not need it to talk to Claude: the MR Studio tools find it inside the app by themselves. It helps when you, a script, or an AI that runs commands (Claude Code, Codex) want to check a table (`mrstudio validate`), bring data in, build a layer of your own or pack a table for another computer from a terminal.
 
-Install it once with **Displays and settings**, **Command line**, **Install command line tool**, then open a new terminal and type `mrstudio --help`. A Mac asks for your password once, and the command follows the app through updates.
+Install it once with **File, Settings…**, **Command line**, **Install command line tool**, then open a new terminal and type `mrstudio --help`. A Mac asks for your password once, and the command follows the app through updates.
 
 ## Make a table
 

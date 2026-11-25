@@ -16,7 +16,7 @@ Looking closely at one part of a detailed drawing, and revealing what lies under
 
 1. Add **Magnifier** from **Add a layer**.
 2. For a magnifier, leave **The glass shows** on *The table, larger* and set **Magnification**.
-3. For an X-ray, set **The glass shows** to *The layers inside it (an X-ray)*, then add the layers to show inside the Magnifier in the layer list (for example a Masterplan with an underground drawing).
+3. For an X-ray, pick **X-ray glass** in Insert › New layer, or set **The glass shows** to *X-ray: the layers inside it*. Then, with the Magnifier selected, choose **Insert › Add inside…** (also on its right-click menu and under *In this layer* in its settings) and pick the layers to show inside the glass, for example a Masterplan with an underground drawing.
 4. On the table the circle follows the mouse; a click keeps it where it is. On the controller, drag the circle on the small table picture beside the glass. Phones get a Move the glass tool.
 
 ## Tips
