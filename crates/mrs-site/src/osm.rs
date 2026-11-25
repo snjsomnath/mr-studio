@@ -115,6 +115,55 @@ pub fn query_all(layers: &[OsmLayer], bounds: [f64; 4]) -> String {
     format!("[out:json][timeout:180];({parts});out geom;")
 }
 
+/// The widest side of one Overpass query, in metres (#424). A whole table at once made the main
+/// server answer 502 for buildings; tiles this size come back in seconds and a failed one is
+/// asked again on its own.
+pub const TILE_M: f64 = 1200.0;
+
+/// `bounds` (south, west, north, east) cut into a grid of tiles no wider than `side_m`.
+pub fn tiles(bounds: [f64; 4], side_m: f64) -> Vec<[f64; 4]> {
+    let [s, w, n, e] = bounds;
+    let metres_lat = 111_320.0;
+    let metres_lon = metres_lat * ((s + n) / 2.0).to_radians().cos().max(0.01);
+    let rows = (((n - s) * metres_lat) / side_m).ceil().max(1.0) as usize;
+    let cols = (((e - w) * metres_lon) / side_m).ceil().max(1.0) as usize;
+    let (dy, dx) = ((n - s) / rows as f64, (e - w) / cols as f64);
+    // The last row and column end exactly on the bounds.
+    let lat = |i: usize| if i == rows { n } else { s + dy * i as f64 };
+    let lon = |i: usize| if i == cols { e } else { w + dx * i as f64 };
+    let mut out = Vec::with_capacity(rows * cols);
+    for r in 0..rows {
+        for c in 0..cols {
+            out.push([lat(r), lon(c), lat(r + 1), lon(c + 1)]);
+        }
+    }
+    out
+}
+
+/// Overpass answers for neighbouring tiles as one answer: an element that crosses a tile edge
+/// comes back from both tiles and is kept once.
+#[derive(Default)]
+pub struct Merge {
+    seen: std::collections::HashSet<(String, i64)>,
+    elements: Vec<Value>,
+}
+
+impl Merge {
+    pub fn add(&mut self, answer: Value) {
+        let Value::Array(elements) = answer.get("elements").cloned().unwrap_or(Value::Null) else { return };
+        for element in elements {
+            let key = (element["type"].as_str().unwrap_or("?").to_string(), element["id"].as_i64().unwrap_or(-1));
+            if key.1 < 0 || self.seen.insert(key) {
+                self.elements.push(element);
+            }
+        }
+    }
+
+    pub fn answer(self) -> Value {
+        json!({ "elements": self.elements })
+    }
+}
+
 /// Whether an Overpass element belongs to `layer`, by its kind and tags.
 fn belongs(layer: OsmLayer, element: &Value) -> bool {
     let tags = &element["tags"];
@@ -343,6 +392,20 @@ mod tests {
         assert_eq!(ids(OsmLayer::Trees), ["node/2"]);
         assert_eq!(ids(OsmLayer::Streets), ["way/3", "way/5"]);
         assert_eq!(ids(OsmLayer::Walkways), ["way/3", "way/4"]);
+    }
+
+    #[test]
+    fn big_tables_are_asked_in_tiles_and_merged() {
+        // About 2.2 km by 2.4 km: four tiles that cover the bounds exactly.
+        let b = [57.69, 11.96, 57.71, 12.0];
+        let t = tiles(b, TILE_M);
+        assert_eq!(t.len(), 2 * 2, "{t:?}");
+        assert_eq!((t[0][0], t[0][1], t[3][2], t[3][3]), (57.69, 11.96, 57.71, 12.0));
+        assert_eq!(tiles([57.70, 11.97, 57.701, 11.971], TILE_M).len(), 1);
+        let mut m = Merge::default();
+        m.add(json!({ "elements": [{ "type": "way", "id": 1 }, { "type": "node", "id": 1 }] }));
+        m.add(json!({ "elements": [{ "type": "way", "id": 1 }, { "type": "way", "id": 2 }] }));
+        assert_eq!(m.answer()["elements"].as_array().unwrap().len(), 3);
     }
 
     #[test]

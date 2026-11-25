@@ -7,6 +7,11 @@
  * answers the relay: as from the network, GET and HEAD only, phones' sockets only.
  *
  * Each phone numbers its own streams; the bridge renumbers them so they never collide.
+ *
+ * Handing over (#422): the host gives every bridge the same peer id, so when this window closes,
+ * sleeps or steps aside, the next surface to carry phones (the table) takes the same peer and the
+ * phones' join pages dial it again by themselves. A hidden window steps aside when another one
+ * waits, and the tab's title warns while phones depend on a hidden window.
  */
 import type { DataConnection, PeerOptions } from 'peerjs';
 
@@ -39,9 +44,21 @@ interface Phone {
   sending: boolean;
 }
 
+/** How often a surface asks again while another carries the phones: the hand-over takes this long at most. */
+const BUSY_RETRY_MS = 4000;
+
 export function startBridge(): void {
   let retry = 0;
   const again = (ms: number) => window.setTimeout(link, ms);
+  /** This window stepped aside for another: it does not ask again soon. */
+  let yielded = false;
+  /** Stops this window's bridge now (closing, frozen, stepping aside). */
+  let release: (() => void) | null = null;
+  // The tab closes or the browser freezes it (Memory Saver, a sleeping laptop): let go at once,
+  // so the signalling server frees the peer id and the table takes it.
+  document.addEventListener('freeze', () => release?.());
+  window.addEventListener('pagehide', () => release?.());
+  const title = document.title;
 
   function link() {
     const scheme = location.protocol === 'https:' ? 'wss' : 'ws';
@@ -53,6 +70,17 @@ export function startBridge(): void {
     // The bridge's stream number to its phone and the phone's own number.
     const routes = new Map<number, { phone: Phone; stream: number }>();
     let next = 1;
+    /** The host said another surface carries the phones. */
+    let busy = false;
+
+    const warn = () => {
+      document.title = document.hidden && phones.size > 0 && !stopped ? `⚠ Phones join through this window · ${title}` : title;
+    };
+    document.addEventListener('visibilitychange', warn);
+    release = () => {
+      stop();
+      if (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING) socket.close();
+    };
 
     const toHost = (bytes: Uint8Array) => {
       if (socket.readyState === WebSocket.OPEN) socket.send(bytes);
@@ -87,6 +115,7 @@ export function startBridge(): void {
     };
     const forget = (phone: Phone) => {
       if (!phones.delete(phone)) return;
+      warn();
       for (const [local, ours] of phone.streams) {
         if (phone.sockets.has(local)) toHost(frame(WS_CLOSE, ours));
         routes.delete(ours);
@@ -98,6 +127,7 @@ export function startBridge(): void {
       const joiner = new Joiner();
       conn.on('open', () => {
         phones.add(phone);
+        warn();
         toPhone(phone, textFrame(LINK_HELLO, 0, JSON.stringify({ v: LINK_VERSION })));
       });
       conn.on('data', async (data) => {
@@ -140,20 +170,38 @@ export function startBridge(): void {
       }
       peer?.destroy();
       peer = null;
+      warn();
+      document.removeEventListener('visibilitychange', warn);
     };
 
     socket.onmessage = async (event) => {
       if (typeof event.data === 'string') {
         const said = JSON.parse(event.data);
         if (said.t === 'off') return stop();
-        if (said.t === 'busy') return stop();
+        if (said.t === 'busy') {
+          busy = true;
+          return stop();
+        }
+        // Another surface waits to carry the phones: a hidden window lets it (#422).
+        if (said.t === 'waiting') {
+          if (document.hidden) {
+            yielded = true;
+            release?.();
+          }
+          return;
+        }
         if (said.t === 'bridge') {
           retry = 0;
+          yielded = false;
           const { Peer } = await import('peerjs');
           const options: PeerOptions = { debug: 0, ...(said.peer ?? {}) };
+          // The host's peer id, the same for every bridge, so phones find the next one (#422).
+          const shared = typeof said.id === 'string' && /^[A-Za-z0-9-]{8,64}$/.test(said.id) ? (said.id as string) : null;
+          let taken = 0;
           const open = () => {
             if (stopped) return;
-            const id = `mrs-${randomId()}`;
+            // The window before may still hold the id for a few seconds: ask for it again, then give up on it.
+            const id = shared && taken < 10 ? shared : `mrs-${randomId()}`;
             const made = new Peer(id, options);
             peer = made;
             made.on('open', (id) => {
@@ -169,7 +217,8 @@ export function startBridge(): void {
               if (type === 'unavailable-id' || type === 'server-error' || type === 'socket-error' || type === 'network') {
                 if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ t: 'peer', id: null }));
                 made.destroy();
-                window.setTimeout(open, type === 'unavailable-id' ? 0 : 10_000);
+                if (type === 'unavailable-id') taken++;
+                window.setTimeout(open, type === 'unavailable-id' ? (shared && taken < 10 ? 3000 : 0) : 10_000);
               }
             });
           };
@@ -196,8 +245,9 @@ export function startBridge(): void {
     socket.onclose = () => {
       const quiet = stopped;
       stop();
-      // Off or busy: look again now and then, in case the other surface closed.
-      again(quiet ? 30_000 : Math.min(30_000, 1000 * 2 ** retry++));
+      // Busy: ask again soon, to take the phones over when the other surface goes. Off, or
+      // stepped aside: now and then. Lost: back off.
+      again(yielded ? 30_000 : busy ? BUSY_RETRY_MS : quiet ? 30_000 : Math.min(30_000, 1000 * 2 ** retry++));
     };
   }
 

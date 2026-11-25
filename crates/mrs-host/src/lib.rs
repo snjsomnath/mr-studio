@@ -79,6 +79,9 @@ pub struct AppState {
     /// Recent OpenStreetMap answers, one per layer and place, so Import brings in what the
     /// preview (or a fetch of everything, #310) got without asking again.
     osm_cache: std::sync::Mutex<std::collections::HashMap<String, OsmFetch>>,
+    /// What an OpenStreetMap fetch is doing now, in words ("Asking overpass-api.de, part 2 of 4"), for
+    /// `GET /api/data/osm/status` (#424). Empty when nothing is being asked.
+    osm_status: std::sync::Mutex<String>,
     /// The join page's WebRTC bridge (#275): at most one surface carries phones at a time.
     bridge: bridge::BridgeSlot,
     /// The host's own router, for answering phones that come through a relay or the bridge.
@@ -171,7 +174,7 @@ impl AppState {
         if let Some(bytes) = self.osm_cached(&key) {
             return Ok(bytes);
         }
-        let answer = self.ask_overpass(&osm::query(layer, bounds)).await.map_err(|detail| data::osm_offline(target, detail))?;
+        let answer = self.ask_overpass(&|b| osm::query(layer, b), bounds).await.map_err(|detail| data::osm_offline(target, detail))?;
         self.osm_keep(target, layer, key, &answer)
     }
 
@@ -211,7 +214,7 @@ impl AppState {
         }
         if let (false, Some(bounds)) = (wanted.is_empty(), bounds) {
             let layers: Vec<OsmLayer> = wanted.iter().map(|(_, layer, _)| *layer).collect();
-            match self.ask_overpass(&osm::query_all(&layers, bounds)).await {
+            match self.ask_overpass(&|b| osm::query_all(&layers, b), bounds).await {
                 Ok(answer) => {
                     for (target, layer, key) in wanted {
                         let kept = self.osm_keep(&target, layer, key, &answer);
@@ -254,9 +257,17 @@ impl AppState {
         Ok(bytes)
     }
 
-    /// Sends one Overpass query (`data::ask_overpass`).
-    async fn ask_overpass(&self, query: &str) -> Result<Value, String> {
-        data::ask_overpass(query).await
+    /// Asks Overpass in tiles (`data::ask_overpass`), keeping what it is doing for the status endpoint.
+    async fn ask_overpass(&self, query_for: &(dyn Fn([f64; 4]) -> String + Sync), bounds: [f64; 4]) -> Result<Value, String> {
+        let say = |words: String| *self.osm_status.lock().unwrap() = words;
+        let answer = data::ask_overpass(query_for, bounds, &say).await;
+        self.osm_status.lock().unwrap().clear();
+        answer
+    }
+
+    /// What an OpenStreetMap fetch is doing now, or "" (#424).
+    pub fn osm_status(&self) -> String {
+        self.osm_status.lock().unwrap().clone()
     }
 
     /// Fetches free elevation around the table as a GeoTIFF (`data::elevation_for`).
@@ -571,6 +582,7 @@ pub async fn start(config: HostConfig) -> anyhow::Result<RunningHost> {
         transit: Default::default(),
         imports: Default::default(),
         osm_cache: Default::default(),
+        osm_status: Default::default(),
         health: Default::default(),
         bridge: Default::default(),
         views: Default::default(),
@@ -681,6 +693,10 @@ fn router(state: Arc<AppState>, web_dir: Option<PathBuf>) -> Router {
         .route("/api/data/inspect", post(inspect_data))
         .route("/api/data/import", post(import_data))
         .route("/api/data/osm", post(fetch_osm_all))
+        .route(
+            "/api/data/osm/status",
+            get(|State(state): State<Arc<AppState>>| async move { Json(json!({ "words": state.osm_status() })) }),
+        )
         .route("/api/data/model", post(model::post))
         .route("/api/data/model/locate", get(model::locate))
         .route("/api/data/sounds", get(list_sounds).post(save_sound))

@@ -2946,6 +2946,11 @@ body[data-role='edit'] .ed-surface .table-frame {
   color: #a4281b;
 }
 
+.fa .wz-report-actions > .ed-button {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
 .fa-clock {
   align-self: center;
   color: var(--ed-text-2);

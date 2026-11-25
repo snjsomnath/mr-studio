@@ -11,16 +11,21 @@ use mrs_site::osm::{self, OsmLayer};
 use mrs_site::Site;
 use serde_json::Value;
 
-/// Where OpenStreetMap is asked, in order: the main Overpass server, then public mirrors.
-/// `MRS_OVERPASS_URL` replaces the list with one server (a mirror of your own, or a test).
-const OVERPASS_URLS: [&str; 3] = [
-    "https://overpass-api.de/api/interpreter",
-    "https://overpass.kumi.systems/api/interpreter",
-    "https://overpass.private.coffee/api/interpreter",
-];
+/// Where OpenStreetMap is asked, in turn: the main Overpass server, then a public mirror, each
+/// host once (#424: `overpass.kumi.systems` now redirects to `overpass.private.coffee`, so
+/// listing both asked one silent server twice). `MRS_OVERPASS_URL` replaces the list with one
+/// server (a mirror of your own, or a test); several can be given, separated by commas.
+const OVERPASS_URLS: [&str; 2] = ["https://overpass-api.de/api/interpreter", "https://overpass.private.coffee/api/interpreter"];
 
-/// Tries in all before a fetch gives up, waiting 1, 2, then 4 seconds between them.
-const OVERPASS_TRIES: u32 = 4;
+/// Tries for each part before a fetch gives up, waiting 1 then 2 seconds between them.
+const OVERPASS_TRIES: u32 = 3;
+/// How long a server may take to accept the connection, and then to start its answer. Overpass
+/// starts its JSON at once and streams the rest, so a server that is silent this long is not
+/// going to answer: move on in seconds, not minutes (#424).
+const OVERPASS_CONNECT: std::time::Duration = std::time::Duration::from_secs(10);
+const OVERPASS_FIRST_BYTE: std::time::Duration = std::time::Duration::from_secs(20);
+/// How long the rest of the answer may take once it has started (the query's own limit is 180 s).
+const OVERPASS_BODY: std::time::Duration = std::time::Duration::from_secs(190);
 /// Each elevation tile is asked for this many times before the fetch gives up.
 const ELEVATION_TRIES: u32 = 3;
 
@@ -30,7 +35,7 @@ pub fn osm_offline(target: &Target, detail: String) -> Report {
     Report::refused(
         target,
         "osm.offline",
-        "We can't reach OpenStreetMap right now. Check the internet connection and try again in a minute.",
+        format!("No OpenStreetMap server answered (last: {detail}). Check the internet connection and try again in a minute."),
         "OpenStreetMap did not answer.",
     )
 }
@@ -57,35 +62,99 @@ pub fn site_bounds(site_dir: &Path, target: &Target) -> Result<[f64; 4], Report>
 pub async fn osm_for(site_dir: &Path, target: &Target) -> Result<Vec<u8>, Report> {
     let layer = OsmLayer::for_target(target).map_err(|why| Report::refused(target, "osm.unavailable", why.clone(), why))?;
     let bounds = site_bounds(site_dir, target)?;
-    let answer = ask_overpass(&osm::query(layer, bounds)).await.map_err(|detail| osm_offline(target, detail))?;
+    let say = |words: String| tracing::info!("{words}");
+    let answer = ask_overpass(&|b| osm::query(layer, b), bounds, &say).await.map_err(|detail| osm_offline(target, detail))?;
     osm_collection(target, layer, &answer)
 }
 
-/// Sends one Overpass query, trying again after a pause on the next mirror when a server is busy.
-pub async fn ask_overpass(query: &str) -> Result<Value, String> {
-    let urls: Vec<String> = match std::env::var("MRS_OVERPASS_URL") {
-        Ok(url) => vec![url],
+/// The Overpass servers to ask, each host once.
+fn overpass_urls() -> Vec<String> {
+    let listed: Vec<String> = match std::env::var("MRS_OVERPASS_URL") {
+        Ok(urls) => urls.split(',').map(|u| u.trim().to_string()).filter(|u| !u.is_empty()).collect(),
         Err(_) => OVERPASS_URLS.iter().map(|u| u.to_string()).collect(),
     };
-    let client = reqwest::Client::builder()
-        .user_agent("MR Studio")
-        .timeout(std::time::Duration::from_secs(200))
-        .build()
-        .map_err(|e| e.to_string())?;
-    // Overpass is often busy (429, 502, 504): try again after a pause, on the next mirror.
+    let mut hosts = Vec::new();
+    let mut urls = Vec::new();
+    for url in listed {
+        let host = server_name(&url);
+        if !hosts.contains(&host) {
+            hosts.push(host);
+            urls.push(url);
+        }
+    }
+    urls
+}
+
+/// The name a person knows a server by: its host, with the port when it is not the usual one.
+fn server_name(url: &str) -> String {
+    let Ok(parsed) = reqwest::Url::parse(url) else { return url.to_string() };
+    match (parsed.host_str(), parsed.port()) {
+        (Some(host), Some(port)) => format!("{host}:{port}"),
+        (Some(host), None) => host.to_string(),
+        _ => url.to_string(),
+    }
+}
+
+/// Asks OpenStreetMap for everything `query_for` asks within `bounds`, in tiles no wider than
+/// `osm::TILE_M` (#424) so the main server does not refuse a whole table, and merges the
+/// answers. Each tile is tried on the next server when one is busy or silent. `say` hears
+/// which part is being asked and where, in words for the import dialog.
+pub async fn ask_overpass(
+    query_for: &(dyn Fn([f64; 4]) -> String + Sync),
+    bounds: [f64; 4],
+    say: &(dyn Fn(String) + Send + Sync),
+) -> Result<Value, String> {
+    let urls = overpass_urls();
+    if urls.is_empty() {
+        return Err("no Overpass server is set".into());
+    }
+    let client = reqwest::Client::builder().user_agent("MR Studio").connect_timeout(OVERPASS_CONNECT).build().map_err(|e| e.to_string())?;
+    let tiles = osm::tiles(bounds, osm::TILE_M);
+    let mut merged = osm::Merge::default();
+    // The next part starts on the server that answered the last one, so a silent one costs once.
+    let mut first = 0;
+    for (i, tile) in tiles.iter().enumerate() {
+        let part = if tiles.len() > 1 { format!(", part {} of {}", i + 1, tiles.len()) } else { String::new() };
+        let (answer, used) = ask_one(&client, &urls, first, &query_for(*tile), &|server, attempt| {
+            let again = if attempt > 0 { format!(", try {} of {OVERPASS_TRIES}", attempt + 1) } else { String::new() };
+            say(format!("Asking {server}{part}{again}"));
+        })
+        .await?;
+        first = used;
+        merged.add(answer);
+    }
+    Ok(merged.answer())
+}
+
+/// One Overpass query, tried on each server in turn (from `urls[first]`) after a short pause. A
+/// server that does not start answering within `OVERPASS_FIRST_BYTE` counts as busy. Returns the
+/// answer and which server gave it.
+async fn ask_one(
+    client: &reqwest::Client,
+    urls: &[String],
+    first: usize,
+    query: &str,
+    trying: &(dyn Fn(&str, u32) + Send + Sync),
+) -> Result<(Value, usize), String> {
     let mut last = String::new();
     for attempt in 0..OVERPASS_TRIES {
         if attempt > 0 {
             tokio::time::sleep(std::time::Duration::from_secs(1 << (attempt - 1))).await;
         }
-        let url = &urls[attempt as usize % urls.len()];
-        match client.post(url).form(&[("data", query)]).send().await {
-            Ok(response) if response.status().is_success() => match response.json::<Value>().await {
-                Ok(value) => return Ok(value),
-                Err(e) => last = format!("{url}: {e}"),
+        let index = (first + attempt as usize) % urls.len();
+        let url = &urls[index];
+        let server = server_name(url);
+        trying(&server, attempt);
+        match tokio::time::timeout(OVERPASS_FIRST_BYTE, client.post(url).form(&[("data", query)]).send()).await {
+            Err(_) => last = format!("{server} did not answer within {} s", OVERPASS_FIRST_BYTE.as_secs()),
+            Ok(Err(e)) => last = format!("{server}: {e}"),
+            Ok(Ok(response)) if response.status().is_success() => match tokio::time::timeout(OVERPASS_BODY, response.json::<Value>()).await
+            {
+                Ok(Ok(value)) => return Ok((value, index)),
+                Ok(Err(e)) => last = format!("{server}: {e}"),
+                Err(_) => last = format!("{server} stopped part-way through its answer"),
             },
-            Ok(response) => last = format!("{url} answered {}", response.status()),
-            Err(e) => last = format!("{url}: {e}"),
+            Ok(Ok(response)) => last = format!("{server} answered {}", response.status()),
         }
         tracing::info!("OpenStreetMap try {} of {OVERPASS_TRIES} failed: {last}", attempt + 1);
     }
