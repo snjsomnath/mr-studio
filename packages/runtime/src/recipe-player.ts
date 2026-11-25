@@ -9,7 +9,7 @@ import {
   boundFilters,
   boundOverrides,
   filterShapes,
-  canvasSurface,
+  mapSurface,
   compileLook,
   ease,
   metresPerTableMm,
@@ -116,7 +116,7 @@ export function recipeModule(current: () => LayerManifest | undefined, watch: (c
     manifest: current()!,
     async table(ctx: TableContext) {
       const frame = tableFrame(ctx.site);
-      const surface = canvasSurface(ctx.map.addElement(), frame);
+      const surface = mapSurface(ctx.map.addCanvas('drawing'), frame);
       let recipe: CustomLayer = current()?.custom ?? { name: '' };
       let shapes = new Map<string, Shapes>();
       /** Street networks that crowds walk on, by dataset name. */

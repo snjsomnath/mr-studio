@@ -187,10 +187,19 @@ export class FetchAll {
   private clock(): HTMLElement {
     const line = el('span', 'fa-clock');
     line.setAttribute('role', 'status');
+    // Which server and part the host is asking now (#424), e.g. "Asking overpass-api.de, part 2 of 4".
+    let asking = '';
     const say = () => {
       const seconds = Math.floor((Date.now() - this.since) / 1000);
-      const slow = seconds >= 15 && this.rows.some((r) => r.status === 'fetching' && r.from === 'osm');
-      line.textContent = slow ? `OpenStreetMap is busy, so this can take a minute. It tries again, on other servers if it has to… ${seconds} s` : seconds >= 2 ? `${seconds} s` : '';
+      const osm = this.rows.some((r) => r.status === 'fetching' && r.from === 'osm');
+      if (osm) {
+        void fetch('/api/data/osm/status')
+          .then((r) => (r.ok ? r.json() : null))
+          .then((s: { words?: string } | null) => (asking = s?.words ?? ''))
+          .catch(() => undefined);
+      }
+      const slow = osm && seconds >= 15 ? 'OpenStreetMap is busy, so this can take a minute. It tries the next server if one does not answer. ' : '';
+      line.textContent = osm && asking ? `${slow}${asking}… ${seconds} s` : slow ? `${slow}${seconds} s` : seconds >= 2 ? `${seconds} s` : '';
     };
     say();
     const timer = setInterval(() => (line.isConnected && this.busy ? say() : clearInterval(timer)), 1000);

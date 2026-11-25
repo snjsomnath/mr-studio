@@ -421,7 +421,14 @@ pub fn inspect(site: &Site, target: &Target, filename: &str, bytes: &[u8], optio
     let mut summary = format!("{} {}", count, if count == 1 { singular } else { plural });
     match target {
         Target::Buildings => {
-            let (property, known, estimated) = building_heights(&mut features);
+            let (property, known, renamed, estimated) = building_heights(&mut features);
+            if renamed > 0 {
+                issues.push(Issue::new(
+                    "height.renamed",
+                    Severity::Note,
+                    format!("{renamed} {plural} had their height under another name than \"{property}\"; it was copied over."),
+                ));
+            }
             if estimated > 0 {
                 issues.push(Issue::new(
                     "height.estimated",
@@ -1494,9 +1501,11 @@ fn property_names(features: &[Value], names: &[&str]) -> Vec<String> {
     names.iter().flat_map(|name| keys.iter().filter(|k| k.to_lowercase() == *name).cloned().collect::<Vec<_>>()).collect()
 }
 
-/// Finds the property that holds building heights; fills in `height` from storeys where
-/// only those are known. Returns the property, how many had a height and how many were estimated.
-fn building_heights(features: &mut [Value]) -> (String, usize, usize) {
+/// Finds the property that holds building heights; a building that has its height under
+/// another name (`höjd` where most use `height`, #411) gets it copied to that property, and
+/// one with only storeys gets `height` from those. Returns the property, how many had a
+/// height, how many of those came from another name, and how many were estimated.
+fn building_heights(features: &mut [Value]) -> (String, usize, usize, usize) {
     let has = |f: &Value, p: &str| number(&f["properties"][p]).is_some_and(|h| h > 0.0);
     let heights = property_names(features, &["height", "height_m", "building:height", "höjd", "hojd", "höjd_m", "hojd_m"]);
     let property =
@@ -1506,18 +1515,22 @@ fn building_heights(features: &mut [Value]) -> (String, usize, usize) {
         features,
         &["building:levels", "levels", "floors", "storeys", "vaningar", "våningar", "antal_vaningar", "antal_våningar"],
     );
-    let known = features.iter().filter(|f| has(f, &property)).count();
-    let mut estimated = 0;
+    let (mut known, mut renamed, mut estimated) = (0, 0, 0);
     for feature in features.iter_mut() {
         if has(feature, &property) {
+            known += 1;
             continue;
         }
-        if let Some(levels) = storeys.iter().find_map(|p| number(&feature["properties"][p.as_str()]).filter(|l| *l > 0.0)) {
+        if let Some(h) = heights.iter().find_map(|p| number(&feature["properties"][p.as_str()]).filter(|h| *h > 0.0)) {
+            feature["properties"][&property] = json!(h);
+            known += 1;
+            renamed += 1;
+        } else if let Some(levels) = storeys.iter().find_map(|p| number(&feature["properties"][p.as_str()]).filter(|l| *l > 0.0)) {
             feature["properties"][&property] = json!(levels * METRES_PER_STOREY);
             estimated += 1;
         }
     }
-    (property, known, estimated)
+    (property, known, renamed, estimated)
 }
 
 /// A number, or a string that holds one (OSM keeps heights as text: "12 m", "12,5").
@@ -1706,9 +1719,40 @@ mod tests {
         assert!(!codes(&r).contains(&"height.missing"));
 
         let mut features = vec![json!({ "properties": { "Antal_Våningar": "4" } }), json!({ "properties": { "HÖJD": 12 } })];
-        let (property, known, estimated) = building_heights(&mut features);
-        assert_eq!((property.as_str(), known, estimated), ("HÖJD", 1, 1));
+        let (property, known, renamed, estimated) = building_heights(&mut features);
+        assert_eq!((property.as_str(), known, renamed, estimated), ("HÖJD", 1, 0, 1));
         assert_eq!(features[0]["properties"]["HÖJD"], json!(4.0 * METRES_PER_STOREY));
+        std::fs::remove_dir_all(&site.dir).unwrap();
+    }
+
+    #[test]
+    fn buildings_that_mix_height_names_keep_every_height() {
+        // #411: most use `height`, one only has `höjd`, one only storeys.
+        let mut features = vec![
+            json!({ "properties": { "height": 20 } }),
+            json!({ "properties": { "height": "15 m" } }),
+            json!({ "properties": { "höjd": 9 } }),
+            json!({ "properties": { "building:levels": 2 } }),
+            json!({ "properties": {} }),
+        ];
+        let (property, known, renamed, estimated) = building_heights(&mut features);
+        assert_eq!((property.as_str(), known, renamed, estimated), ("height", 3, 1, 1));
+        assert_eq!(features[2]["properties"]["height"], json!(9.0));
+        assert!(features[4]["properties"]["height"].is_null());
+
+        let site = scratch("mixed-heights");
+        let square = |x: f64| json!([[[11.97 + x, 57.70], [11.9702 + x, 57.70], [11.9702 + x, 57.7002], [11.97 + x, 57.70]]]);
+        let file = json!({ "type": "FeatureCollection", "features": [
+            { "type": "Feature", "properties": { "height": 20 }, "geometry": { "type": "Polygon", "coordinates": square(0.0) } },
+            { "type": "Feature", "properties": { "height": 18 }, "geometry": { "type": "Polygon", "coordinates": square(0.0004) } },
+            { "type": "Feature", "properties": { "höjd": 9 }, "geometry": { "type": "Polygon", "coordinates": square(0.0008) } },
+        ]});
+        let bytes = serde_json::to_vec(&file).unwrap();
+        let r = inspect(&site, &Target::Buildings, "mixed.geojson", &bytes, Options::default()).report;
+        assert!(r.ok, "{:?}", r.issues);
+        assert_eq!(r.height_property.as_deref(), Some("height"));
+        assert!(r.summary.contains("3 with a height"), "{}", r.summary);
+        assert!(codes(&r).contains(&"height.renamed") && !codes(&r).contains(&"height.missing"), "{:?}", r.issues);
         std::fs::remove_dir_all(&site.dir).unwrap();
     }
 

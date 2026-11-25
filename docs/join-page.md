@@ -55,6 +55,6 @@ Open `http://127.0.0.1:4199/tv`, then the QR link in another browser. `/bridge` 
 
 ## Limits
 
-- The controller (or table) window must stay open and in front: it carries the phones. Its page handles their requests between frames. In the app that is the controller window on the TV. In a browser tab it is fragile: a closed tab, or a browser putting a background tab to sleep, drops every phone (seen in the first real-phone test).
+- The controller (or table) window carries the phones: its page handles their requests between frames. The phone link survives that window going away (#422): the host gives every bridge the same peer id, so when the controller closes, is frozen by the browser, or is hidden while the table waits to take over, the table becomes the bridge within about 4 s and each phone's join page dials the same peer again by itself, without scanning. A hidden window that carries phones says so in its tab title ("⚠ Phones join through this window"). Phones on the local address are not affected. Not done: running the bridge in the host itself (a WebRTC stack in Rust), so no window is needed at all.
 - Each phone loads the phone page (about 0.5 MB) through the link when it joins.
 - Tried on a real phone on mobile data (2026-11-24): it worked. Eduroam is not tried yet (#89).

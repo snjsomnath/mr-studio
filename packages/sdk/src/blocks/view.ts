@@ -3,6 +3,7 @@
 // `View`, which is the one place table metres become pixels. The same block therefore
 // draws on the table, inside a magnifier at another scale, and in a test.
 
+import type { CanvasOverlay } from '../layer.ts';
 import type { Point, TableFrame } from './geo.ts';
 
 /** The subset of `CanvasRenderingContext2D` the blocks use. */
@@ -88,6 +89,41 @@ export function canvasSurface(container: HTMLElement, frame: TableFrame): Canvas
       context.clearRect(0, 0, width, height);
       const view = tableView(context, frame, width, time, height);
       return { ...view, detail: ratio };
+    },
+  };
+}
+
+/**
+ * Views onto a map canvas (`ctx.map.addCanvas(id)`), for layers that draw blocks on the table
+ * (#414). The canvas follows the map, so drawings land on the base buildings wherever the map
+ * puts the table: inside margins, calibrated or turned. Each `begin` clears the canvas and clips
+ * to the table, so nothing spills past its edge. Prefer this to `canvasSurface(ctx.map.addElement())`,
+ * which fits the table to the whole window and comes out too large when the map has margins.
+ */
+export function mapSurface(overlay: CanvasOverlay, frame: TableFrame): CanvasSurface {
+  const context = overlay.context;
+  let saved = false;
+  return {
+    canvas: context.canvas,
+    begin(time) {
+      if (saved) context.restore();
+      overlay.clear();
+      // Table metres to canvas pixels as one affine map from three corners: exact for the
+      // map's flat projection at table scale, and cheap per point.
+      const o = overlay.project(frame.toLonLat([0, 0]));
+      const r = overlay.project(frame.toLonLat([frame.width, 0]));
+      const d = overlay.project(frame.toLonLat([0, frame.height]));
+      const ex = [(r[0] - o[0]) / frame.width, (r[1] - o[1]) / frame.width];
+      const ey = [(d[0] - o[0]) / frame.height, (d[1] - o[1]) / frame.height];
+      const toPx = ([x, y]: Point): [number, number] => [o[0] + x * ex[0]! + y * ey[0]!, o[1] + x * ex[1]! + y * ey[1]!];
+      context.save();
+      saved = true;
+      context.beginPath();
+      const corners: Point[] = [[0, 0], [frame.width, 0], [frame.width, frame.height], [0, frame.height]];
+      corners.forEach((c, i) => (i ? context.lineTo(...toPx(c)) : context.moveTo(...toPx(c))));
+      context.closePath();
+      context.clip();
+      return { pen: context, scale: Math.hypot(ex[0]!, ex[1]!), time, detail: 1, toPx };
     },
   };
 }

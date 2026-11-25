@@ -79,11 +79,23 @@ async fn a_phone_joins_through_the_join_page_and_nothing_else_gets_in() {
     assert!(host.state.hub.session().join_url.is_none(), "a host on this computer only has no address for phones");
 
     let (mut socket, first) = bridge(&host).await;
-    assert_eq!(first, json!({ "t": "bridge", "page": PAGE, "peer": null }));
+    let id = first["id"].as_str().unwrap().to_string();
+    assert_eq!(first, json!({ "t": "bridge", "page": PAGE, "peer": null, "id": id }));
 
-    // Only one surface carries phones at a time.
+    // Only one surface carries phones at a time; the one carrying them hears that another waits (#422).
     let (_, second) = bridge(&host).await;
     assert_eq!(second["t"], "busy");
+    let waiting = tokio::time::timeout(Duration::from_secs(5), async {
+        while let Some(Ok(message)) = socket.next().await {
+            if let Message::Text(text) = message {
+                return serde_json::from_str::<Value>(&text).unwrap();
+            }
+        }
+        Value::Null
+    })
+    .await
+    .unwrap();
+    assert_eq!(waiting, json!({ "t": "waiting" }));
 
     // Once the bridge's peer is up, the QR code points at the join page.
     socket.send(Message::Text(json!({ "t": "peer", "id": "mrs-abcdefgh2345" }).to_string().into())).await.unwrap();
@@ -127,13 +139,19 @@ async fn a_phone_joins_through_the_join_page_and_nothing_else_gets_in() {
 
     // The bridge goes: the QR code no longer points at it.
     drop(socket);
+    let mut gone = false;
     for _ in 0..100 {
         if host.state.hub.session().join_url.is_none() {
-            return;
+            gone = true;
+            break;
         }
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
-    panic!("the join link outlived its bridge");
+    assert!(gone, "the join link outlived its bridge");
+
+    // The next surface to carry phones takes the same peer, so joined phones find it again (#422).
+    let (_, next) = bridge(&host).await;
+    assert_eq!((next["t"].as_str(), next["id"].as_str()), (Some("bridge"), Some(id.as_str())));
 }
 
 #[tokio::test]

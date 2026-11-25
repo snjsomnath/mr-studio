@@ -13,7 +13,7 @@ import {
   Swarm,
   aroundRing,
   bars,
-  canvasSurface,
+  mapSurface,
   categoryScale,
   colour,
   csvSource,
@@ -224,7 +224,7 @@ export default defineLayer<Params>({
   async table(ctx) {
     const frame = tableFrame(ctx.site);
     const loaded = await load(frame, ctx.site.data.buildings ?? null);
-    const surface = canvasSurface(ctx.map.addElement(), frame);
+    const surface = mapSurface(ctx.map.addCanvas('drawing'), frame);
 
     const sequence = new Sequence([{ id: 'idle' }, { id: 'reveal', seconds: 4 }, { id: 'revealed' }, { id: 'ramp', seconds: 3 }, { id: 'full' }]);
     const clock = new Clock({ span: 24, rate: 0.8, position: ctx.params.hour, playing: ctx.params.play });

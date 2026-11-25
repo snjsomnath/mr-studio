@@ -66,6 +66,7 @@ import {
   stagger,
   stat,
   tableFrame,
+  mapSurface,
   tableView,
   timeline,
   trend,
@@ -593,4 +594,27 @@ test('a change off the table is pointed at from the nearest edge', () => {
   const away = offTable([[1200, 300]], frame)!;
   assert.deepEqual(away.at, [1000, 300]);
   assert.deepEqual(away.towards, [1, 0]);
+});
+
+test('a map surface draws where the map puts the table, margins and all (#414)', () => {
+  // The map shows the table 1000 m wide in 800 px, starting 100 px in from the left of a 1000 × 600 window.
+  const toPx = (lonLat: readonly number[]): [number, number] => {
+    const t = frame.toTable(lonLat as [number, number]);
+    return [100 + t[0] * 0.8, 20 + t[1] * 0.8];
+  };
+  const calls: string[] = [];
+  const context = new Proxy({ canvas: {} } as Record<string, unknown>, {
+    get: (target, key) => (key in target ? target[key as string] : (...args: unknown[]) => calls.push(`${String(key)}(${args.join(',')})`)),
+  }) as unknown as CanvasRenderingContext2D;
+  const overlay = { context, width: 1000, height: 600, pixelsPerMetre: 0.8, revision: 1, project: toPx, clear: () => calls.push('clear'), setOpacity() {}, remove() {} };
+  const surface = mapSurface(overlay, frame);
+  const view = surface.begin(0);
+  near(view.scale, 0.8, 1e-3);
+  const [x, y] = view.toPx([500, 300]);
+  near(x, 500, 0.05);
+  near(y, 260, 0.05);
+  // Cleared and clipped to the table every frame, the clip of the frame before undone first.
+  assert.ok(calls.includes('clear') && calls.includes('clip()'), calls.join(' '));
+  surface.begin(1);
+  assert.equal(calls.filter((c) => c === 'restore()').length, 1);
 });

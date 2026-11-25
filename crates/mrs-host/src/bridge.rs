@@ -9,14 +9,19 @@
 //! more than a relay is.
 //!
 //! The socket's own messages, as text:
-//! - host to bridge, first: `{"t":"bridge","page":<join page>,"peer":<PeerJS options>}`, or
-//!   `{"t":"off"}` when the join page is turned off, or `{"t":"busy"}` while another surface
-//!   is already the bridge. The host closes the socket after `off` and `busy`.
+//! - host to bridge, first: `{"t":"bridge","page":<join page>,"peer":<PeerJS options>,"id":<peer id>}`,
+//!   or `{"t":"off"}` when the join page is turned off, or `{"t":"busy"}` while another surface
+//!   is already the bridge. The host closes the socket after `off` and `busy`. `id` is the same
+//!   for as long as the host runs (#422): whichever surface carries phones next takes the same
+//!   peer, so phones that joined through the controller find the table's bridge by themselves
+//!   when the controller closes or sleeps, without scanning again.
+//! - host to bridge, later: `{"t":"waiting"}` when another surface asked to be the bridge. A
+//!   controller window that is hidden then steps aside, so the table carries the phones.
 //! - bridge to host: `{"t":"peer","id":<peer id or null>}` when its peer is (or stops being)
 //!   reachable. While it is, the QR code points at the join page.
 
 use std::net::SocketAddr;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
@@ -35,8 +40,42 @@ use crate::AppState;
 pub const LINK_VERSION: u32 = 1;
 
 /// One bridge at a time: a second surface is told the host is busy.
-#[derive(Default)]
-pub struct BridgeSlot(AtomicBool);
+pub struct BridgeSlot {
+    taken: AtomicBool,
+    /// The join page's peer id for as long as the host runs (#422).
+    id: String,
+    /// When a surface last found the slot taken, in ms since the host started (0: never).
+    waiting: AtomicU64,
+    started: std::time::Instant,
+}
+
+impl Default for BridgeSlot {
+    fn default() -> Self {
+        Self { taken: AtomicBool::new(false), id: peer_id(), waiting: AtomicU64::new(0), started: std::time::Instant::now() }
+    }
+}
+
+impl BridgeSlot {
+    fn now(&self) -> u64 {
+        self.started.elapsed().as_millis() as u64 + 1
+    }
+}
+
+/// A PeerJS id nobody else will pick: `mrs-` and 14 letters and digits.
+fn peer_id() -> String {
+    use std::hash::{BuildHasher, Hasher};
+    const ALPHABET: &[u8] = b"abcdefghijkmnpqrstuvwxyz23456789";
+    let mut id = String::from("mrs-");
+    let mut bits = 0u64;
+    for i in 0..14 {
+        if i % 6 == 0 {
+            bits = std::collections::hash_map::RandomState::new().build_hasher().finish();
+        }
+        id.push(ALPHABET[(bits % 32) as usize] as char);
+        bits /= 32;
+    }
+    id
+}
 
 pub async fn upgrade(ws: WebSocketUpgrade, ConnectInfo(from): ConnectInfo<SocketAddr>, State(state): State<Arc<AppState>>) -> Response {
     // Only a surface on this computer may carry phones in.
@@ -77,7 +116,8 @@ async fn bridge(socket: WebSocket, state: Arc<AppState>) {
         let _ = sink.send(Message::Text(json!({ "t": "off" }).to_string().into())).await;
         return;
     };
-    if state.bridge.0.swap(true, Ordering::SeqCst) {
+    if state.bridge.taken.swap(true, Ordering::SeqCst) {
+        state.bridge.waiting.store(state.bridge.now(), Ordering::SeqCst);
         let _ = sink.send(Message::Text(json!({ "t": "busy" }).to_string().into())).await;
         return;
     }
@@ -85,11 +125,13 @@ async fn bridge(socket: WebSocket, state: Arc<AppState>) {
     impl Drop for Release {
         fn drop(&mut self) {
             self.0.hub.set_bridge(None);
-            self.0.bridge.0.store(false, Ordering::SeqCst);
+            self.0.bridge.taken.store(false, Ordering::SeqCst);
         }
     }
     let _release = Release(state.clone());
-    if sink.send(Message::Text(json!({ "t": "bridge", "page": page, "peer": options }).to_string().into())).await.is_err() {
+    state.bridge.waiting.store(0, Ordering::SeqCst);
+    let hello = json!({ "t": "bridge", "page": page, "peer": options, "id": state.bridge.id });
+    if sink.send(Message::Text(hello.to_string().into())).await.is_err() {
         return;
     }
     let Some(app) = state.links.get().cloned() else { return };
@@ -97,8 +139,17 @@ async fn bridge(socket: WebSocket, state: Arc<AppState>) {
     let (frames, incoming) = mpsc::unbounded_channel::<Vec<u8>>();
     let (out, mut outbox) = mpsc::unbounded_channel::<Vec<u8>>();
     let carrying = tokio::spawn(crate::relay::carry(incoming, out, app, port));
+    let mut check = tokio::time::interval(std::time::Duration::from_secs(2));
+    let mut told = false;
     loop {
         tokio::select! {
+            _ = check.tick() => {
+                // Another surface asked in the last 10 s: say so once, and the bridge may step aside.
+                let asked = state.bridge.waiting.load(Ordering::SeqCst);
+                let recent = asked > 0 && state.bridge.now().saturating_sub(asked) < 10_000;
+                if recent && !told && sink.send(Message::Text(json!({ "t": "waiting" }).to_string().into())).await.is_err() { break }
+                told = recent;
+            }
             frame = outbox.recv() => {
                 let Some(frame) = frame else { break };
                 if sink.send(Message::Binary(frame.into())).await.is_err() { break }
@@ -158,5 +209,7 @@ mod tests {
         );
         assert!(crate::hub::DEFAULT_JOIN_PAGE.ends_with(&format!("/v{LINK_VERSION}/")));
         assert!(valid_peer("mrs-abc123def") && !valid_peer("short") && !valid_peer("mrs-abc123def#x"));
+        let id = peer_id();
+        assert!(valid_peer(&id) && id.len() == 18 && id != peer_id(), "{id}");
     }
 }
