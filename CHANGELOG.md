@@ -4,6 +4,14 @@ Every merge to main that carries a release note becomes a version. The newest is
 The app shows these notes, with their pictures, on Home when a newer version is out.
 How notes are written: docs/RELEASING.md.
 
+## 0.32.1 (2026-11-25)
+
+### Fixes
+
+#### The Mac install script runs again (#443)
+
+`bash scripts/install-latest-mac.sh` stopped with "VERSION…: unbound variable" on the bash that ships with macOS. It now downloads and installs the release as before.
+
 ## 0.32.0 (2026-11-25)
 
 ### New
