@@ -1,7 +1,7 @@
 {
   "name": "mr-studio",
   "private": true,
-  "version": "0.45.0",
+  "version": "0.45.1",
   "packageManager": "pnpm@10.0.0",
   "scripts": {
     "dev": "node scripts/dev.mjs",

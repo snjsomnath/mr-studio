@@ -4,6 +4,20 @@ Every merge to main that carries a release note becomes a version. The newest is
 The app shows these notes, with their pictures, on Home when a newer version is out.
 How notes are written: docs/RELEASING.md.
 
+## 0.45.1 (2026-11-25)
+
+### Fixes
+
+#### Big tables draw without stopping (#483)
+
+The base map now draws a city's buildings and streets a few milliseconds per frame, and Building lights draws its glow around the buildings once and reuses it. A table with tens of thousands of buildings no longer stops for seconds while the map is drawn, and the lights don't hold up every frame. On a test file with 64,397 buildings, the base map's longest pause fell from 2.4 s to under 0.1 s, and a Building lights frame from 2.3 s to about 0.1 s. When a building briefly goes dark, its windows go out but its soft outline glow now stays.
+
+![Pauses before and after](docs/screenshots/483-sliced-drawing.png)
+
+#### Street networks are built once, off the table's thread (#484)
+
+Traffic, street life, street glow and CoolPaths build their street networks in the background now, and keep them until the streets file changes. A second layer on the same streets, or the same layer turned off and on, starts straight away. On the Universeum table (87,761 street segments), this takes about a second of street parsing and graph building off the table at start, and close to another second off every CoolPaths start.
+
 ## 0.45.0 (2026-11-25)
 
 ### New
