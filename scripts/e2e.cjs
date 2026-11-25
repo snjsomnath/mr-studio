@@ -614,7 +614,8 @@ async function main() {
     await row('Trees (trees-2)').waitFor();
     assert.equal(savedLayers()[0].id, 'trees-2', 'dropped below the base map, so first in site.json');
 
-    // Draw order follows the list: with the opaque base map on top, nothing below shows through.
+    // Draw order follows the list, except that a base map always lies at the bottom (#471):
+    // listed on top, it still leaves the moving layers showing.
     await compose.getByLabel('Show Slideshow').waitFor();
     await drag(row('Base map').locator('.stack-head'), row('Traffic (cars-2)'), 0.05);
     await compose.waitForFunction(() => document.querySelector('.stack-row strong')?.textContent === 'Base map');
@@ -625,14 +626,12 @@ async function main() {
       const box = await stage.boundingBox();
       return compose.screenshot({ clip: { x: box.x + 4, y: box.y + 4, width: box.width - 8, height: box.height - 8 } });
     };
-    const covered = await inner();
+    const first = await inner();
     await compose.waitForTimeout(400);
-    assert.ok(covered.equals(await inner()), 'the base map on top should hide the moving layers');
+    assert.ok(!first.equals(await inner()), 'a base map listed on top stays under the moving layers');
     await drag(row('Base map').locator('.stack-head'), row('Trees (trees-2)'), 0.9);
     await compose.waitForFunction(() => [...document.querySelectorAll('.stack-row strong')].at(-1)?.textContent === 'Base map');
     assert.equal(savedLayers()[0].use, 'basemap');
-    await compose.waitForTimeout(600);
-    assert.ok(!covered.equals(await inner()), 'with the base map at the bottom the scene shows again');
 
     // The eye switch and the remove button.
     await compose.getByLabel('Show Slideshow').check();

@@ -473,6 +473,17 @@ fn count_phases(svg: &str) -> usize {
     seen.len()
 }
 
+/// A base or ambient package: part of the map at rest whatever its button says.
+fn is_map_life(layer: &LayerDef) -> bool {
+    matches!(layer.manifest["category"].as_str(), Some("base" | "ambient"))
+}
+
+/// Whether a layer of the scene is on at rest: saved on, and map life or with no button (#204).
+/// A layer with a button on the controller is never open at rest (#419).
+fn at_rest(layer: &LayerDef, instance: &Instance) -> bool {
+    instance.saved.active && (instance.state.rest || is_map_life(layer))
+}
+
 fn shown(scene: &[Instance], id: &str) -> Option<usize> {
     scene.iter().position(|i| i.state.shown_by.as_deref() == Some(id))
 }
@@ -739,6 +750,11 @@ impl Hub {
         };
         let mut instance = Instance { id, def, parent, saved, state };
         instance.sync_rest();
+        // A table starts at rest (#419): a layer with a button on the controller starts closed,
+        // even when site.json saved it on. Only the map at rest and items follow `active`.
+        if instance.parent.is_none() && !at_rest(layer, &instance) {
+            instance.state.active = false;
+        }
         Ok(instance)
     }
 
@@ -1965,7 +1981,11 @@ impl Hub {
                 let saved = LayerRef {
                     r#use: self.catalog()[def].source.clone(),
                     id: id.clone(),
-                    active: p["active"].as_bool().unwrap_or(true),
+                    // A new layer with a button is offered on the controller, not saved on (#419);
+                    // map life and items come on.
+                    active: p["active"].as_bool().unwrap_or(
+                        parent.is_some() || p["button"].as_object().is_none_or(|b| b.is_empty()) || is_map_life(&self.catalog()[def]),
+                    ),
                     params: match &p["params"] {
                         Value::Null => Map::new(),
                         Value::Object(params) => self.catalog()[def].validate(params, false)?,
@@ -2385,8 +2405,10 @@ impl Hub {
     /// layers that were opened go off, the map at rest comes back on, and every layer has
     /// its saved params again. Live changes made in the editor are not saved, so they go too.
     fn reset(&self, scene: &mut [Instance]) {
+        // Every layer with a button closes, even one site.json saved on (#419): Reset and
+        // Present start at the map at rest.
         for at in 0..scene.len() {
-            if scene[at].parent.is_none() && scene[at].state.active && !scene[at].saved.active {
+            if scene[at].parent.is_none() && scene[at].state.active && !at_rest(&self.catalog()[scene[at].def], &scene[at]) {
                 self.switch(scene, at, false);
             }
         }
@@ -2404,7 +2426,7 @@ impl Hub {
             }
         }
         for at in 0..scene.len() {
-            if scene[at].parent.is_none() && !scene[at].state.active && scene[at].saved.active {
+            if scene[at].parent.is_none() && !scene[at].state.active && at_rest(&self.catalog()[scene[at].def], &scene[at]) {
                 self.switch(scene, at, true);
             }
         }
@@ -3136,6 +3158,26 @@ mod tests {
         // An item comes on with its layer, never at rest.
         dev("scene.add", json!({ "use": "trees", "parent": "slideshow", "id": "slide-trees" })).unwrap();
         assert_eq!(layer(&hub, "slide-trees")["rest"], Value::Null);
+    }
+
+    #[test]
+    fn a_table_starts_and_resets_with_no_button_layer_open() {
+        let hub = scratch_hub("rest-419");
+        let dev = |method: &str, p: Value| hub.request(Role::Dev, 0, method, &p);
+        // Saved on, with a button: offered on the controller, not opened (#419).
+        dev("scene.add", json!({ "use": "wind", "id": "gust", "button": { "name": "Gust" }, "active": true })).unwrap();
+        assert_eq!(layer(&hub, "gust")["active"], false);
+        // Added from the editor with a button: not saved on.
+        dev("scene.add", json!({ "use": "mapdata", "id": "roads-map", "button": { "side": "right" } })).unwrap();
+        let saved: Value = serde_json::from_str(&std::fs::read_to_string(hub.site.dir.join("site.json")).unwrap()).unwrap();
+        let entry = saved["layers"].as_array().unwrap().iter().find(|l| l["id"] == "roads-map").unwrap().clone();
+        assert_eq!(entry["active"], false, "{entry}");
+        // Opened, then Reset (or Present): closed again; the map at rest stays.
+        dev("layer.activate", json!({ "layer": "gust", "active": true })).unwrap();
+        dev("layers.reset", json!({})).unwrap();
+        assert_eq!(layer(&hub, "gust")["active"], false);
+        assert_eq!(layer(&hub, "basemap")["active"], true);
+        assert_eq!(layer(&hub, "sketch")["active"], true, "on at start with no button: map at rest");
     }
 
     #[test]
