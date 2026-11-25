@@ -4,6 +4,26 @@ Every merge to main that carries a release note becomes a version. The newest is
 The app shows these notes, with their pictures, on Home when a newer version is out.
 How notes are written: docs/RELEASING.md.
 
+## 0.31.0 (2026-11-25)
+
+### New
+
+#### The table opens with a slow zoom-in (#446)
+
+When the table starts, the map at rest begins zoomed out over the city around it, holds a moment, then slowly and smoothly zooms in to the table, as the Lindholmen table did. Reset on the controller plays it again; switching layers does not.
+
+![The opening zoom on the Chalmers table: zoomed out at the start, on the way in, and landed](docs/screenshots/446-intro.png)
+
+## 0.30.1 (2026-11-25)
+
+### Fixes
+
+#### Command search shows its results on the Mac (#441)
+
+Cmd+K command search keeps a steady height, so its list of results shows on the Mac too. Before, WebKit squashed it to one cut-off row between the field and the footer.
+
+![Command search with its results](docs/screenshots/441-command-search.png)
+
 ## 0.30.0 (2026-11-25)
 
 ### New

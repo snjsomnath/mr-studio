@@ -271,6 +271,12 @@ async function main() {
     const { installModel } = await import('./model/index.ts');
     await installModel(view, connection, role, { remoteCalibration: !editing });
     new LayerManager(store, connection, view);
+    // The projected table opens zoomed out over its surroundings and slowly zooms in (#446); the
+    // controller's Reset plays it again. `?intro=0` leaves it out, for scripted screenshots.
+    if (role === 'table' && new URLSearchParams(location.search).get('intro') !== '0') {
+      view.playIntro();
+      connection.on('table.intro', () => view.playIntro());
+    }
     // The ribbons in the projector's blank space around the model (#78). The projected table draws
     // them where the free space is; the editor and dev keep room beside the map and preview them there.
     const { Ribbons } = await import('./ribbon.ts');

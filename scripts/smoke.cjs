@@ -132,7 +132,7 @@ function launch() {
       return page;
     };
     // The desktop app's colour pass, exactly as the shell injects it on a surface.
-    const table = await open('/table', { width: 1500, height: 800 }, { path: path.join(root, 'apps/studio/src-tauri/src/colour.js') });
+    const table = await open('/table?intro=0', { width: 1500, height: 800 }, { path: path.join(root, 'apps/studio/src-tauri/src/colour.js') });
     await table.evaluate((s) => window.__mrsColour(s), COLOUR);
     const tv = await open('/tv', { width: 1920, height: 1080 });
     const editor = await open('/edit', { width: 1440, height: 900 });

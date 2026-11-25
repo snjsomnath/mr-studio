@@ -45,6 +45,8 @@ export class TableView {
   private details = new Map<string, DetailRenderer>();
   private order: string[] = [];
   private detailCanvas: HTMLCanvasElement | null = null;
+  /** While the opening zoom plays: where the model will be when it lands, and the timer that starts it. */
+  private intro: { footprint: [number, number][]; timer: number; resized: boolean } | null = null;
 
   /** `calibrated` applies the site's table calibration, when it has one. */
   constructor(container: HTMLElement, site: SiteInfo, calibrated = false) {
@@ -557,6 +559,8 @@ export class TableView {
    * the flat map draws it. The table's ribbons go in the space around it (#78).
    */
   footprint(): [number, number][] {
+    // During the opening zoom the ribbons stay where the model lands, not where it is on the way.
+    if (this.intro) return this.intro.footprint;
     return this.model?.footprint() ?? this.site.corners.map((corner) => {
       const point = this.map.project(corner);
       return [point.x, point.y];
@@ -568,9 +572,11 @@ export class TableView {
     const observer = new ResizeObserver(() => listener());
     observer.observe(this.container);
     this.map.on('moveend', listener);
+    this.viewListeners.add(listener);
     const off = this.model?.onCalibrationChange(listener);
     return () => {
       observer.disconnect();
+      this.viewListeners.delete(listener);
       this.map.off('moveend', listener);
       off?.();
     };
@@ -639,9 +645,97 @@ export class TableView {
 
   private fit(): void {
     this.map.resize();
-    this.map.jumpTo(this.view());
+    // A resize during the opening zoom waits for it to land, so the zoom is not cut short.
+    if (this.intro) this.intro.resized = true;
+    else this.map.jumpTo(this.view());
+  }
+
+  /**
+   * The opening zoom (#446): the table starts zoomed out over the city around it, holds a
+   * moment, then slowly and smoothly zooms in to its own view, as the Lindholmen table did. It
+   * plays when the table starts and when the controller's Reset puts the table back.
+   *
+   * On a flat or lit table the map itself zooms out (four times the ground, so the streets around
+   * the model show) and eases back in. Through a projector calibration the map is draped on the
+   * model and a map zoom would not show, so the model's picture grows into place instead.
+   */
+  playIntro(): void {
+    this.endIntro();
+    const footprint = this.footprint();
+    const target = this.view();
+    const projected = this.model?.calibrated ? this.model.canvas : null;
+    const intro = { footprint, timer: 0, resized: false };
+    this.intro = intro;
+    // Decorations (the sun's path, for one) are page elements laid over the table at its own
+    // view, so during the zoom they are scaled with it.
+    const decorations = () => [...this.container.querySelectorAll<HTMLElement>(':scope > .table-decoration')];
+    const follow = () => {
+      const scale = 2 ** (this.map.getZoom() - target.zoom);
+      for (const element of decorations()) element.style.transform = scale === 1 ? '' : `scale(${scale})`;
+    };
+    const land = () => {
+      if (this.intro !== intro) return;
+      this.intro = null;
+      this.map.off('move', follow);
+      for (const element of decorations()) element.style.transform = '';
+      if (intro.resized) this.map.jumpTo(this.view());
+      // The ribbons find their place again now the zoom has landed.
+      for (const listener of this.viewListeners) listener();
+    };
+    if (projected) {
+      const xs = footprint.map(([x]) => x);
+      const ys = footprint.map(([, y]) => y);
+      const origin = `${(Math.min(...xs) + Math.max(...xs)) / 2}px ${(Math.min(...ys) + Math.max(...ys)) / 2}px`;
+      const animations = [projected, ...decorations()].map((element) => {
+        element.style.transformOrigin = origin;
+        return element.animate([{ transform: `scale(${2 ** -INTRO_ZOOM_OUT})` }, { transform: 'scale(1)' }], {
+          duration: INTRO_MS,
+          delay: INTRO_HOLD_MS,
+          easing: 'cubic-bezier(0.65, 0, 0.35, 1)',
+          fill: 'backwards',
+        });
+      });
+      animations[0]!.onfinish = land;
+      animations[0]!.oncancel = land;
+      this.cancelIntro = () => animations.forEach((animation) => animation.cancel());
+      return;
+    }
+    this.map.on('move', follow);
+    this.map.jumpTo({ ...target, zoom: target.zoom - INTRO_ZOOM_OUT });
+    intro.timer = window.setTimeout(() => {
+      if (this.intro !== intro) return;
+      follow();
+      this.map.easeTo({ ...target, duration: INTRO_MS, easing: easeInOutCubic, essential: true });
+      void this.map.once('moveend', land);
+    }, INTRO_HOLD_MS);
+    this.cancelIntro = () => {
+      clearTimeout(intro.timer);
+      this.map.stop();
+      land();
+    };
+  }
+
+  private cancelIntro: (() => void) | null = null;
+  private viewListeners = new Set<() => void>();
+
+  /** Lands an opening zoom that is still playing, at once. */
+  private endIntro(): void {
+    const cancel = this.cancelIntro;
+    this.cancelIntro = null;
+    cancel?.();
+    if (this.intro) {
+      this.intro = null;
+      this.map.jumpTo(this.view());
+    }
   }
 }
+
+/** How far out the opening zoom starts, in map zoom steps: 2 shows four times the ground across. */
+const INTRO_ZOOM_OUT = 2;
+/** How long the table holds zoomed out before it zooms in, and how long the zoom takes. */
+const INTRO_HOLD_MS = 900;
+const INTRO_MS = 6500;
+const easeInOutCubic = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2);
 
 interface Drawn {
   overlays: Set<{ setGain(gain: number): void }>;
