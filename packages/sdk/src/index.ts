@@ -13,6 +13,7 @@ export * from './solar.ts';
 export * from './comfort.ts';
 export * from './table-space.ts';
 export * from './site-geometry.ts';
+export * from './slices.ts';
 export { packGeojson, unpackGeometry } from './geo-pack.ts';
 export type { PackedGeometry, PackedShapes, SitePlacement } from './geo-pack.ts';
 export * from './data.ts';

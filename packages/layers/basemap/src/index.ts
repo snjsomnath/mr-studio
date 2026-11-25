@@ -1,4 +1,4 @@
-import { readSiteGeometry, defineLayer, geojsonLines, hasSiteData, loadSiteField, sample, geojsonPolygons, readSiteData, STRAY_REACH, tableReach, tableSpace, traceLine, tracePolygon, withAlpha } from '@mrstudio/sdk';
+import { drainSteps, inSlices, pauseEvery, SLICE_FROM, readSiteGeometry, defineLayer, geojsonLines, hasSiteData, loadSiteField, sample, geojsonPolygons, readSiteData, STRAY_REACH, tableReach, tableSpace, traceLine, tracePolygon, withAlpha } from '@mrstudio/sdk';
 import type { LayerManifest } from '@mrstudio/sdk';
 
 import manifest from '../layer.json';
@@ -52,6 +52,12 @@ export default defineLayer<Params>({
 
     /** Your own streets and buildings, drawn dark; or plain ground under them. */
     function drawOwn(buildings: ReturnType<typeof geojsonPolygons>, roads: ReturnType<typeof geojsonLines>, ground = true, g = canvas.ctx) {
+      drainSteps(ownSteps(buildings, roads, ground, g));
+    }
+
+    /** `drawOwn`, pausing every few dozen shapes, so a city's buildings can be drawn over several frames (#483). */
+    function* ownSteps(buildings: ReturnType<typeof geojsonPolygons>, roads: ReturnType<typeof geojsonLines>, ground = true, g = canvas.ctx): Generator<void, void> {
+      const pause = pauseEvery(60);
       const p = ctx.params;
       if (ground) {
         if (g === canvas.ctx) canvas.clear();
@@ -82,6 +88,7 @@ export default defineLayer<Params>({
           g.beginPath();
           traceLine(g, road.geometry);
           g.stroke();
+          if (pause()) yield;
         }
       }
       g.fillStyle = p.buildingColor;
@@ -92,7 +99,19 @@ export default defineLayer<Params>({
         tracePolygon(g, building.geometry);
         g.fill('evenodd');
         if (p.outlines) g.stroke();
+        if (pause()) yield;
       }
+    }
+
+    // A drawing being spread over frames; a new one stops it.
+    let stopSlices = (): void => {};
+    /** Draws `steps` into the canvas, then `then`: at once for a small table, a few milliseconds a frame for a big one. */
+    function paintThen(steps: Iterator<void>, count: number, then: () => void) {
+      stopSlices();
+      if (count <= SLICE_FROM) {
+        drainSteps(steps);
+        then();
+      } else stopSlices = inSlices(steps, then);
     }
 
     /** What a tiled style draws from: a key-free service through the host's tile store, or a source. */
@@ -112,7 +131,7 @@ export default defineLayer<Params>({
     }
 
     /** A tiled map laid on the table tile by tile. `over` draws on top once the tiles are in, such as the table's own buildings. */
-    async function drawTiles(style: TileStyle | 'source', why = '', over?: () => void) {
+    async function drawTiles(style: TileStyle | 'source', why = '', over?: () => Iterator<void>) {
       const mine = ++asked;
       const service = await serviceFor(style);
       if (mine !== asked) return;
@@ -162,18 +181,25 @@ export default defineLayer<Params>({
         }
         g.putImageData(pixels, 0, 0);
       }
-      over?.();
-      canvas.commit();
       const lost = failed === tiles.length && tiles.length > 0;
-      ctx.publish({ source: service.credit, note: lost ? (style === 'source' ? ctx.say('The map could not be loaded from this source. Check it under Sources.') : ctx.say('The map could not be loaded: no connection to the map service, and no copy kept from before.')) : why });
+      const finish = () => {
+        canvas.commit();
+        ctx.publish({ source: service.credit, note: lost ? (style === 'source' ? ctx.say('The map could not be loaded from this source. Check it under Sources.') : ctx.say('The map could not be loaded: no connection to the map service, and no copy kept from before.')) : why });
+      };
+      if (over) paintThen(over(), shapes[0].length, finish);
+      else finish();
     }
 
     let shapes: [ReturnType<typeof geojsonPolygons>, ReturnType<typeof geojsonLines>] = [[], []];
     let loaded = false;
     let water: { areas: ReturnType<typeof geojsonPolygons>; mask: OffscreenCanvas | null } | null = null;
     function draw() {
+      paintThen(ownSteps(...shapes), shapes[0].length + shapes[1].length, drawn);
+    }
+
+    /** After the table's own streets and buildings are drawn: done, or a tiled map to lay under or instead of them. */
+    function drawn() {
       const style = ctx.params.style ?? 'dark';
-      drawOwn(...shapes);
       // Without streets of its own, the table would show buildings floating on bare ground: a dark map from
       // OpenStreetMap goes under them (#146), and the table's own buildings are drawn on top.
       // Streets that lie mostly beside the table, such as ones left from another place, count as none (#180).
@@ -185,7 +211,7 @@ export default defineLayer<Params>({
           : shapes[0].length
             ? 'This table has no streets of its own yet, so a dark map from OpenStreetMap shows them under your buildings.'
             : 'This table has no streets or buildings of its own yet, so a dark map from OpenStreetMap stands in for them.';
-        void drawTiles('darkmap', why, () => drawOwn(shapes[0], [], false));
+        void drawTiles('darkmap', why, () => ownSteps(shapes[0], [], false));
         return;
       }
       if (style === 'dark' || style === 'plain') {
@@ -226,7 +252,10 @@ export default defineLayer<Params>({
       else drawOwn(shapes[0], shapes[1], true, g);
     });
 
-    ctx.onCleanup(() => void asked++);
+    ctx.onCleanup(() => {
+      asked++;
+      stopSlices();
+    });
     draw();
     const [buildings, roads] = await Promise.all([readSiteGeometry(ctx.site, 'buildings'), readSiteGeometry(ctx.site, 'roads')]);
     shapes = [buildings?.polygons ?? [], roads?.lines ?? []];
