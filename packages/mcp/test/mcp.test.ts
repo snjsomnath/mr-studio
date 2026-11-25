@@ -807,3 +807,26 @@ describe('for layer developers (#284)', () => {
     }
   });
 });
+
+describe('saved versions (#395)', () => {
+  test('lists the app\'s kept versions and puts one back with a note for the history', async () => {
+    const { listVersions, restoreVersion } = await import('../src/site.ts');
+    const dir = mkdtempSync(join(tmpdir(), 'mrs-versions-'));
+    try {
+      writeFileSync(join(dir, 'site.json'), '{"name":"Now","layers":[]}\n');
+      assert.deepEqual(listVersions(dir), []);
+      mkdirSync(join(dir, '.mrstudio', 'history'), { recursive: true });
+      const keep = (rev: number, name: string, summary: string) =>
+        writeFileSync(join(dir, '.mrstudio', 'history', `r${String(rev).padStart(8, '0')}.json`), JSON.stringify({ revision: { rev, at: 1700000000 + rev, by: 'editor', summary, keys: ['name'] }, text: `{"name":"${name}","layers":[]}\n` }));
+      keep(1, 'Then', 'Opened');
+      keep(2, 'Now', 'Renamed to Now');
+      assert.deepEqual(listVersions(dir).map((v) => v.rev), [2, 1]);
+      restoreVersion(dir, 1);
+      assert.equal(JSON.parse(readFileSync(join(dir, 'site.json'), 'utf8')).name, 'Then');
+      assert.equal(JSON.parse(readFileSync(join(dir, '.mrstudio', 'next-change.json'), 'utf8')).summary, 'Went back to: Opened');
+      assert.throws(() => restoreVersion(dir, 9), /not kept/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});

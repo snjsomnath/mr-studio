@@ -515,7 +515,7 @@ export class LayerManager {
       } as EngineClient,
       map: this.view.handle(id, track),
       model: this.view.modelHandle(id, track),
-      pointer: this.view.pointer(track),
+      pointer: this.view.pointer(track, id),
       cue: (at, options) => {
         if (!running.stopped) this.cues.play(at, options?.colour);
       },
@@ -596,7 +596,7 @@ export class LayerManager {
         store,
         connection: this.connection,
         map: this.view.handle(id, track),
-        pointer: this.view.pointer(track),
+        pointer: this.view.pointer(track, id),
         onFrame: (callback) => running.frames.push(callback),
       });
     }

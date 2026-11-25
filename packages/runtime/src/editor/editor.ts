@@ -41,7 +41,7 @@ import { slidesSection } from './slides.ts';
 import { placeSettings, welcomeSettings } from './table-settings.ts';
 import { openStarterPack } from './starter-pack.ts';
 import { runTour, tourOnStart } from './tour.ts';
-import { AT_REST, WHERE, Wizard, chosenTheme, themeChoice, themeSwatch } from './wizard.ts';
+import { AT_REST, START, WHERE, Wizard, chosenTheme, themeChoice, themeSwatch } from './wizard.ts';
 import { THEMES } from '@mrstudio/dashboard';
 import './editor.css';
 
@@ -158,6 +158,8 @@ export class Editor {
   readonly canvas = el('div', 'ed-canvas');
   /** Takes a picture of the table, once the table is up; kept for Home when the table is left (#131). */
   snapshot: (() => Promise<Blob | null>) | null = null;
+  /** What drew under a point of the map, topmost first, and which layers read clicks themselves; set once the table is up (#425). */
+  picker: { hits(clientX: number, clientY: number): string[]; listens(id: string): boolean } | null = null;
   /** Changes sent to the host and not yet answered. */
   private pending = 0;
   /** Why the last change could not be saved, until one is. */
@@ -257,6 +259,14 @@ export class Editor {
     this.store = store;
     this.connection = connection;
     this.history = new HistoryControls(connection, () => store.surface, (problem) => this.setSaved(problem));
+    // The panel names layers and settings as the editor does (#395).
+    this.history.names = {
+      layer: (use) => store.manifests.find((m) => m.id === use)?.name,
+      control: (use, id) => {
+        const control = store.manifests.find((m) => m.id === use)?.controls?.find((c) => c.id === id);
+        return control ? { label: control.label, unit: 'unit' in control ? (control.unit as string | undefined) : undefined, default: 'default' in control ? control.default : undefined } : undefined;
+      },
+    };
     this.saved.type = 'button';
     this.saved.addEventListener('click', () => this.history.toggle(this.saved));
     this.handlers = this.commandHandlers();
@@ -291,7 +301,22 @@ export class Editor {
       box.append(caption, content);
       return box;
     };
-    this.surfaces.append(surface('map', 'Map', 'Projected on the table. Visual only.', this.canvas), surface('controller', 'Controller', 'The screen beside the table. Buttons, words and controls.', this.preview));
+    const controllerBox = surface('controller', 'Controller', 'The screen beside the table. Buttons, words and controls.', this.preview);
+    const mapBox = surface('map', 'Map', 'Projected on the table. Visual only.', this.canvas);
+    // An empty table (#399): the one hint the canvas carries, and the way to its first layer.
+    const go = button('ed-button is-primary', 'Insert a layer', 'plus');
+    go.dataset.command = 'layer.new';
+    go.addEventListener('click', () => this.gallery());
+    this.emptyCanvas.append(el('strong', undefined, 'No layers yet'), el('span', undefined, 'Each layer becomes a button on the controller.'), go);
+    mapBox.append(this.emptyCanvas);
+    this.surfaces.append(mapBox, controllerBox);
+    this.shrinkControls(controllerBox);
+    this.surfaces.append(this.phoneBox);
+    try {
+      this.phoneShown = localStorage.getItem('mrs-phone-preview') === '1';
+    } catch {
+      // No storage: the phone starts hidden.
+    }
     this.timeBar = new TimeBar({
       site: () => store.state.site,
       connection,
@@ -303,6 +328,8 @@ export class Editor {
       surfaces: this.surfaces,
       canvas: this.canvas,
     });
+    this.clickToSelect();
+    this.holdTree();
     this.mediaTab = new MediaTab({
       store,
       addMedia: (kinds) => this.addMedia(kinds),
@@ -675,7 +702,6 @@ export class Editor {
       return;
     }
     if (this.dialog && this.dialog.id !== id) this.closeDialog();
-    if (this.wizard) this.closeWizard();
     const spec = Editor.DIALOGS[id];
     const reuse = this.dialog?.id === id ? this.dialog.element : null;
     const dialog = reuse ?? el('dialog', `ed-dialog is-${id}`);
@@ -772,6 +798,95 @@ export class Editor {
     return this.placePanel;
   }
 
+  /** View › Phone (#389): a visitor's phone beside the map, live. Remembered on this computer. */
+  private phoneShown = false;
+  private readonly phoneBox = el('section', 'ed-surface is-phone');
+
+  private setPhone(on: boolean): void {
+    this.phoneShown = on;
+    try {
+      if (on) localStorage.setItem('mrs-phone-preview', '1');
+      else localStorage.removeItem('mrs-phone-preview');
+    } catch {
+      // As above.
+    }
+    this.drawPhone();
+    this.renderRibbon(this.instances());
+  }
+
+  /**
+   * The phone frame: shown when View › Phone is on, or while the Phones row is selected. A preview,
+   * never a second place to edit: phone settings are in the Phones row's Format pane.
+   */
+  private drawPhone(): void {
+    const on = this.phoneShown || this.context.kind === 'phone';
+    this.surfaces.classList.toggle('has-phone', on);
+    const box = this.phoneBox;
+    if (!on) {
+      box.replaceChildren();
+      return;
+    }
+    if (box.childElementCount > 0) return;
+    const caption = el('h3', 'ed-surface-caption');
+    caption.append(el('strong', undefined, 'Phone'), el('span', undefined, 'What a visitor’s phone shows'));
+    const { code, join_url } = this.store.state.session;
+    if (!join_url && !code) {
+      box.append(caption, el('p', 'ed-empty', 'Phones cannot join this table yet.'));
+      return;
+    }
+    const screen = el('div', 'ed-phone-screen');
+    const frame = el('iframe');
+    frame.title = 'A visitor’s phone';
+    frame.src = `/phone?c=${encodeURIComponent(code)}`;
+    screen.append(frame);
+    // A phone is laid out for its own width; it is scaled down to fit its column, as in Rehearse.
+    new ResizeObserver(() => {
+      const scale = Math.min(screen.clientWidth / 406, screen.clientHeight / 816);
+      frame.style.transform = `translateX(-50%) scale(${Math.max(0.1, scale)})`;
+    }).observe(screen);
+    box.append(caption, screen);
+  }
+
+  /**
+   * Shrink controller (#388): in Both, the controller docks as a small live picture in the corner
+   * of the canvas and the map takes the rest. Its own header has the button; clicking the small
+   * picture enlarges it again. Remembered on this computer, never saved in the table.
+   */
+  private shrinkControls(box: HTMLElement): void {
+    const key = 'mrs-controller-small';
+    const toggle = el('button', 'ed-surface-shrink');
+    toggle.type = 'button';
+    const enlarge = el('button', 'ed-surface-enlarge');
+    enlarge.type = 'button';
+    enlarge.ariaLabel = 'Enlarge controller';
+    enlarge.title = 'Enlarge controller';
+    const set = (small: boolean, keep = true) => {
+      this.surfaces.classList.toggle('is-controller-small', small);
+      toggle.replaceChildren(icon(small ? 'fullscreen' : 'minus', 14), el('span', undefined, small ? 'Enlarge controller' : 'Shrink controller'));
+      toggle.title = small ? 'Give the controller its half of the canvas again' : 'Dock the controller as a small live picture, so the map gets the canvas';
+      toggle.setAttribute('aria-pressed', String(small));
+      if (keep) {
+        try {
+          if (small) localStorage.setItem(key, '1');
+          else localStorage.removeItem(key);
+        } catch {
+          // No storage: the choice lasts until the editor closes.
+        }
+      }
+    };
+    let small = false;
+    try {
+      small = localStorage.getItem(key) === '1';
+    } catch {
+      // As above.
+    }
+    set(small, false);
+    toggle.addEventListener('click', () => set(!this.surfaces.classList.contains('is-controller-small')));
+    enlarge.addEventListener('click', () => set(false));
+    box.querySelector('.ed-surface-caption')!.append(toggle);
+    box.append(enlarge);
+  }
+
   private closeWizard(): void {
     // A reload must not open the guide again once the author has left it.
     const url = new URL(location.href);
@@ -834,6 +949,51 @@ export class Editor {
     }
     // The map and the controller are on show together; `only` gives the controller the whole space.
     this.surfaces.classList.toggle('is-controller-only', only);
+  }
+
+  /**
+   * A click on the map selects what drew there (#425), as in a drawing program: the topmost
+   * layer with a mark, shape, feature or field under the pointer. An item selects its layer with
+   * the item open; map life at rest selects its row under At rest. A layer that reads clicks
+   * itself (CoolPaths' ends, Sunlight's spot) keeps them while it is open, and a drag, a pan or a
+   * click on the drawing frame or the ribbons is not a pick.
+   */
+  private clickToSelect(): void {
+    let down: { x: number; y: number; time: number } | null = null;
+    this.canvas.addEventListener('pointerdown', (event) => {
+      const target = event.target as HTMLElement;
+      const onMap = target.closest('.table-surface') && !target.closest('.ed-drawing-frame, .ed-canvas-empty, button, input');
+      down = event.button === 0 && !this.canvas.classList.contains('is-panning') && onMap ? { x: event.clientX, y: event.clientY, time: event.timeStamp } : null;
+    });
+    this.canvas.addEventListener('pointerup', (event) => {
+      const start = down;
+      down = null;
+      if (!start || !this.picker || this.wizard || this.dialog) return;
+      if (Math.hypot(event.clientX - start.x, event.clientY - start.y) > 4 || event.timeStamp - start.time > 600) return;
+      const open = this.context.kind === 'layer' ? this.context.id : null;
+      if (open && this.picker.listens(open)) return;
+      const hit = this.picker.hits(event.clientX, event.clientY).find((id) => this.store.state.layers[id]);
+      if (!hit) return;
+      this.pickOnMap(hit);
+    });
+  }
+
+  /** Selects a layer, an item or a piece of map life the map was clicked on. */
+  private pickOnMap(id: string): void {
+    const state = this.store.state.layers[id]!;
+    const manifest = this.store.manifest(state.layer);
+    if (this.also.size) this.also.clear();
+    if (state.parent) {
+      if (this.context.kind === 'layer' && this.context.id === state.parent && this.layerItem === id) return;
+      this.go({ kind: 'layer', id: state.parent }, id);
+    } else if (manifest && isAtRest(manifest, state)) {
+      if (this.context.kind === 'home' && this.homeItem === id) return;
+      this.homeItem = id;
+      this.go({ kind: 'home' });
+    } else {
+      if (this.context.kind === 'layer' && this.context.id === id && !this.layerItem) return;
+      this.go({ kind: 'layer', id });
+    }
   }
 
   /** A press on the live controller selects that layer here, so the two stay in step. */
@@ -917,6 +1077,10 @@ export class Editor {
     await this.settled();
     if (action === 'starter') {
       openStarterPack(invoke, this.store.state.site.name);
+      return;
+    }
+    if (action === 'history') {
+      this.history.open(this.saved);
       return;
     }
     if (action === 'save') {
@@ -1053,6 +1217,9 @@ export class Editor {
         break;
       case 'starter-pack':
         void this.file('starter');
+        break;
+      case 'version-history':
+        void this.file('history');
         break;
       case 'commands':
         commandSearch(() => this.commands(), this.shell);
@@ -1696,7 +1863,14 @@ export class Editor {
     this.sync.clear();
     this.renderRibbon(instances);
     this.renderTree(instances);
+    for (const id of [...this.also]) {
+      const row = this.tree.querySelector<HTMLElement>(`.ed-row[data-layer="${id}"]`);
+      if (row) row.classList.add('is-also');
+      else this.also.delete(id);
+    }
     this.renderCanvas(instances);
+    this.emptyCanvas.hidden = this.wizard !== null || instances.some((i) => !isAmbient(i.manifest) && !i.state.parent);
+    this.drawPhone();
     this.renderInspector(instances);
     this.renderNext();
     // The time bar follows the open layer, in the editor proper (not the guide, not Media).
@@ -1904,7 +2078,14 @@ export class Editor {
         },
       },
       'layer.duplicate': { keys: k('D'), disabled: needs, run: (t) => this.withSelected(t, (id) => this.duplicate(id)) },
-      'layer.remove': { keys: mac ? '⌫' : 'Del', disabled: needs, run: (t) => this.withSelected(t, (id) => this.removeLayer(id)) },
+      'layer.remove': {
+        keys: mac ? '⌫' : 'Del',
+        disabled: needs,
+        run: async (t) => {
+          for (const id of this.selection(t)) await this.removeLayer(id);
+          this.also.clear();
+        },
+      },
       'layer.toggle': {
         label: (t) => (this.facts(t).on ? 'Hide' : 'Show'),
         icon: (t) => (this.facts(t).on ? 'eye-off' : 'eye'),
@@ -1915,8 +2096,13 @@ export class Editor {
         run: (t) => {
           const f = this.facts(t);
           if (!f.live || !f.canShow) return;
-          if (f.parent) this.itemOn.set(f.live.id, !f.on);
-          void this.send('scene.set', { layer: f.live.id, active: !f.on });
+          // With several rows selected, each follows the first: all hidden, or all shown.
+          for (const id of this.selection(t)) {
+            const each = id === f.live.id ? f : this.facts(id);
+            if (!each.live || !each.canShow) continue;
+            if (each.parent) this.itemOn.set(each.live.id, !f.on);
+            void this.send('scene.set', { layer: each.live.id, active: !f.on });
+          }
         },
       },
       'layer.up': {
@@ -1968,6 +2154,8 @@ export class Editor {
       'map.palette': { run: () => paletteDialog(this.builderHost(), this.shell) },
       'dialog.place': { run: () => this.openDialog('place') },
       'dialog.welcome': { run: () => this.openDialog('welcome') },
+      // The starter tables have a home outside the guide (#469): the guide opens at Start from….
+      'dialog.starters': { run: () => (this.wizard ? undefined : this.openWizard(false, START)) },
       'present.check': { run: () => this.showChecks() },
       'present.rehearse': {
         label: () => (this.rehearsal.on ? 'Finish rehearsal' : 'Rehearse'),
@@ -1984,6 +2172,7 @@ export class Editor {
       'view.map': view('map'),
       'view.controller': view('controller'),
       'view.both': view('both'),
+      'view.phone': { pressed: () => this.phoneShown, run: () => this.setPhone(!this.phoneShown) },
       'zoom.fit': { keys: k('0'), run: () => this.menuAction('zoom-fit') },
       'zoom.100': { keys: k('1'), run: () => this.menuAction('zoom-100') },
       'view.outline': { pressed: () => this.canvasTools.outlined, run: () => this.menuAction('outline') },
@@ -2187,8 +2376,25 @@ export class Editor {
     text.append(el('span', 'ed-row-label', label));
     if (detail) text.append(el('span', 'ed-row-detail', detail));
     row.append(badge, text);
-    row.addEventListener('click', onClick);
+    row.addEventListener('click', () => {
+      if (this.also.size) this.also.clear();
+      onClick();
+    });
     return row;
+  }
+
+  /** The empty table's card on the map (#399). */
+  private readonly emptyCanvas = el('div', 'ed-canvas-empty');
+
+  /** Rows added to the selection with Ctrl, ⌘ or Shift (#399), besides the one being edited. */
+  private readonly also = new Set<string>();
+
+  /** What Hide and Remove act on: the selection, and the rows added to it. */
+  private selection(target?: string): string[] {
+    const first = target ?? (this.wizard ? null : this.target());
+    if (!first) return [];
+    if (target) return [target];
+    return [first, ...[...this.also].filter((id) => id !== first && this.store.state.layers[id])];
   }
 
   /**
@@ -2286,11 +2492,13 @@ export class Editor {
     }
   }
 
-  /** A change came in while a name was being typed in the list; the list is drawn once the name is done. */
+  /** A change came in while a name was being typed or a row held in the list; the list is drawn once that is done. */
   private treeWaiting = false;
+  /** A row is pressed and may be about to be dragged: drawing the list now would take the row from under the pointer. */
+  private treePressed = false;
 
   private renderTree(instances: { id: string; manifest: LayerManifest; state: LayerState }[]): void {
-    if (this.tree.querySelector('.ed-rename')) {
+    if (this.tree.querySelector('.ed-rename') || this.treePressed || this.dragging) {
       this.treeWaiting = true;
       return;
     }
@@ -2450,6 +2658,16 @@ export class Editor {
     const open = (): void => this.go({ kind: 'layer', id });
     row.addEventListener('click', (event) => {
       if ((event.target as HTMLElement).closest('.ed-row-eye, .ed-rename')) return;
+      // Ctrl, ⌘ or Shift adds a row to the selection, as in Office (#399): Hide and Remove act on them all.
+      if (event.metaKey || event.ctrlKey || event.shiftKey) {
+        event.preventDefault();
+        if (id === this.target()) return;
+        if (this.also.has(id)) this.also.delete(id);
+        else this.also.add(id);
+        this.render();
+        return;
+      }
+      if (this.also.size) this.also.clear();
       open();
     });
     row.addEventListener('keydown', (event) => {
@@ -2473,6 +2691,7 @@ export class Editor {
     });
     row.addEventListener('dragstart', (event) => {
       this.dragging = id;
+      this.treePressed = false;
       row.classList.add('is-dragging');
       event.dataTransfer?.setData('text/plain', id);
       if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
@@ -2481,6 +2700,7 @@ export class Editor {
       this.dragging = null;
       row.classList.remove('is-dragging');
       this.tree.querySelectorAll('.is-drop-before, .is-drop-after, .is-drop').forEach((n) => n.classList.remove('is-drop-before', 'is-drop-after', 'is-drop'));
+      this.releaseTree();
     });
     this.sync.set(id, (next) => {
       const button = layerButton(id, manifest, next, defaultSideOf(this.store, id));
@@ -2505,6 +2725,22 @@ export class Editor {
 
   /** The layer being dragged in the list. */
   private dragging: string | null = null;
+
+  /**
+   * A press on a row holds the list as it is until the press or the drag ends, so a change from
+   * elsewhere (the host, another author, a layer's state) cannot redraw the row being dragged.
+   */
+  private holdTree(): void {
+    this.tree.addEventListener('pointerdown', (event) => {
+      if (event.button === 0 && (event.target as HTMLElement).closest('.ed-row[draggable="true"]')) this.treePressed = true;
+    });
+    for (const type of ['pointerup', 'pointercancel'] as const) document.addEventListener(type, () => this.releaseTree(), true);
+  }
+
+  private releaseTree(): void {
+    this.treePressed = false;
+    if (this.treeWaiting && !this.dragging) requestAnimationFrame(() => this.treeWaiting && !this.treePressed && !this.dragging && this.render());
+  }
 
   /** A rail of the list takes dropped rows: before or after the row under the pointer, or at its end. */
   private dropZone(zone: HTMLElement, side: 'left' | 'right'): void {
@@ -2782,12 +3018,30 @@ export class Editor {
     section.append(fold);
 
     const previous = this.sync.get(id);
+    const seen: Record<'name' | 'description' | 'group', string> = { name: '', description: '', group: '' };
     this.sync.set(id, (state) => {
       previous?.(state);
       const button = layerButton(id, manifest, state, defaultSideOf(this.store, id));
-      if (document.activeElement !== name) name.value = state.button?.name ?? '';
-      if (document.activeElement !== description) description.value = state.button?.description ?? '';
-      if (document.activeElement !== group) group.value = state.button?.group ?? '';
+      // A field being typed in is never overwritten (#396): a change from elsewhere is offered instead.
+      for (const [input, key, label] of [
+        [name, 'name', 'name'],
+        [description, 'description', 'description'],
+        [group, 'group', 'group'],
+      ] as const) {
+        const theirs = state.button?.[key] ?? '';
+        if (document.activeElement !== input) {
+          input.value = theirs;
+          input.dataset.synced = theirs;
+        }
+        else if (theirs !== seen[key] && theirs !== input.value) {
+          this.history.offer(`The button’s ${label} was changed elsewhere to “${theirs || 'nothing'}” while you were typing.`, 'Yours is kept when you finish.', 'Use theirs', () => {
+            input.value = theirs;
+            input.dispatchEvent(new Event('change'));
+          });
+        }
+        seen[key] = theirs;
+        input.dataset.synced = theirs;
+      }
       for (const [value, option] of sides) option.setAttribute('aria-checked', String(value === button.side));
       for (const [value, option] of choices) option.setAttribute('aria-checked', String(value === button.icon));
       previewIcon.replaceChildren(icon(button.icon, 18));
@@ -3111,6 +3365,62 @@ export class Editor {
         ),
       );
     }
+    // Several rows selected (#399): say so, and which of them the settings below belong to.
+    if (this.also.size && context.kind === 'layer') {
+      const first = layerButton(context.id, this.store.manifest(this.store.state.layers[context.id]!.layer)!, this.store.state.layers[context.id]).name;
+      const note = el('p', 'ed-inspector-many', `${this.also.size + 1} layers selected. Show, Hide and Remove act on all of them; the settings below are ${first}’s.`);
+      nodes.splice(1, 0, note);
+    }
+    const kept = this.keepTyping();
     this.inspector.replaceChildren(...nodes);
+    kept();
+  }
+
+  /**
+   * The field being typed in survives a rebuild of the pane (#396): a change from elsewhere redraws
+   * the Format pane, and the author's field is carried into the new one, with its text, focus and
+   * caret. When the change was to that very field, the other value is offered instead.
+   */
+  private keepTyping(): () => void {
+    const focused = document.activeElement;
+    if (!(focused instanceof HTMLInputElement || focused instanceof HTMLTextAreaElement) || !this.inspector.contains(focused)) return () => {};
+    const fields = () => [...this.inspector.querySelectorAll<HTMLElement>('input, textarea, select')];
+    const index = fields().indexOf(focused);
+    const label = (node: Element) => node.closest('label')?.firstElementChild?.textContent ?? '';
+    const name = label(focused);
+    const [start, end] = [focused.selectionStart, focused.selectionEnd];
+    // Taking a focused field out of the page blurs it, and a blur sends its change: not yet.
+    let held = false;
+    const hold = (event: Event) => {
+      held ||= event.type === 'change';
+      event.stopImmediatePropagation();
+    };
+    focused.addEventListener('change', hold, true);
+    focused.addEventListener('blur', hold, true);
+    return () => {
+      queueMicrotask(() => {
+        focused.removeEventListener('change', hold, true);
+        focused.removeEventListener('blur', hold, true);
+        // The browser counts the held change as sent: send it when the author really leaves the field.
+        if (held) focused.addEventListener('blur', () => focused.dispatchEvent(new Event('change')), { once: true });
+      });
+      const fresh = fields()[index];
+      if (!fresh || fresh.tagName !== focused.tagName || label(fresh) !== name) return;
+      const before = focused.dataset.synced;
+      fresh.replaceWith(focused);
+      focused.focus();
+      if (start !== null && end !== null) focused.setSelectionRange(start, end);
+      // The new field is filled by the sync that follows the rebuild: compare after it.
+      queueMicrotask(() => {
+        const theirs = (fresh as HTMLInputElement).value;
+        if (before !== undefined && theirs !== before && theirs !== focused.value) {
+          this.history.offer(`${name || 'This field'} was changed elsewhere to “${theirs || 'nothing'}” while you were typing.`, 'Yours is kept when you finish.', 'Use theirs', () => {
+            focused.value = theirs;
+            focused.dispatchEvent(new Event('change'));
+          });
+        }
+        focused.dataset.synced = theirs;
+      });
+    };
   }
 }

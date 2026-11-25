@@ -1,4 +1,4 @@
-import { entityOverrides, entityValues, isVisible, profileColumns } from '@mrstudio/sdk';
+import { entityOverrides, entityValues, formatClock, formatUnit, isVisible, parseNumber, profileColumns } from '@mrstudio/sdk';
 import type { Connection, Control, Participant, EntityFeature, EntitySet, LayerManifest, LegendRow, TextControl, LayerState, PanelContext, PanelHandlers, Role, TvAbout } from '@mrstudio/sdk';
 
 import { AttractLoop, effectOf } from './attract.ts';
@@ -36,15 +36,14 @@ export interface Widget {
 
 /** A time of day in hours as a clock reads it: 12.5 is 12:30, 24 is 24:00. */
 export function clock(hours: number): string {
-  const minutes = Math.round(hours * 60);
-  return `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
+  return formatClock(hours);
 }
 
 function formatNumber(value: number, control: Extract<Control, { type: 'range' }>): string {
   // Hours read as a clock (#64), not as a decimal.
-  if (control.unit === 'h' && control.max <= 24) return clock(value);
   const decimals = control.step && control.step < 1 ? Math.min(3, String(control.step).split('.')[1]?.length ?? 0) : 0;
-  return `${value.toFixed(decimals)}${control.unit ? ` ${control.unit}` : ''}`;
+  // One formatter (#397): the session's decimal mark, and 270° but 5 m/s.
+  return formatUnit(value, control.unit, decimals, { clock: control.max <= 24 });
 }
 
 /**
@@ -52,10 +51,11 @@ function formatNumber(value: number, control: Extract<Control, { type: 'range' }
  * of day for hours ("13:30", "9"). Kept inside the range and on its steps; null when it is not a number.
  */
 export function parseValue(text: string, control: Extract<Control, { type: 'range' }>): number | null {
-  const clean = text.trim().replace(',', '.');
-  const time = /^(\d{1,2})[:.h](\d{2})$/.exec(clean);
-  let value = control.unit === 'h' && time ? Number(time[1]) + Number(time[2]) / 60 : Number.parseFloat(clean);
-  if (!Number.isFinite(value)) return null;
+  const clean = text.trim();
+  const time = /^(\d{1,2})[:.,h](\d{2})$/.exec(clean);
+  // A typed number reads with a point or a comma, and its unit after it is ignored (#397).
+  let value = control.unit === 'h' && time ? Number(time[1]) + Number(time[2]) / 60 : parseNumber(clean.replace(/[^\d.,\s\u00a0−-]+$/, ''));
+  if (value === null || !Number.isFinite(value)) return null;
   value = Math.min(control.max, Math.max(control.min, value));
   if (control.step) value = control.min + Math.round((value - control.min) / control.step) * control.step;
   return Number(value.toFixed(6));

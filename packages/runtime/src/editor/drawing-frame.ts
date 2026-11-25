@@ -1,4 +1,4 @@
-import { formatCorners, parseCorners, tableFrame } from '@mrstudio/sdk';
+import { formatCorners, parseCorners, siteDataUrl, tableFrame } from '@mrstudio/sdk';
 import type { SiteInfo } from '@mrstudio/sdk';
 
 import { fitFrame, loadInk, loadOutlines, outlinePoints } from './drawing-snap.ts';
@@ -112,7 +112,14 @@ export class DrawingFrame {
   private readonly top = svg('text', { class: 'ed-df-top', 'text-anchor': 'middle' });
   private readonly fill = Object.assign(document.createElement('button'), { type: 'button', className: 'ed-button', textContent: 'Fill the table again' });
   private readonly snap = Object.assign(document.createElement('button'), { type: 'button', className: 'ed-button', textContent: 'Snap to buildings' });
-  private readonly hint = Object.assign(document.createElement('span'), { textContent: 'Drag to move the drawing, a corner to scale it, the round handle to turn it.' });
+  private readonly hint = Object.assign(document.createElement('span'), { className: 'ed-df-hint-howto', textContent: 'Drag to move the drawing, a corner to scale it, the round handle to turn it. Arrow keys nudge it.' });
+  /** The drawing itself, drawn into the frame while it moves (#405), so it follows the hand before the table redraws. */
+  private readonly ghost = svg('g', { class: 'ed-df-ghost' });
+  private readonly ghostImage = svg('image', { width: 1, height: 1, preserveAspectRatio: 'none' });
+  private ghostFrom = '';
+  private ghostBlob = '';
+  /** Keys pressed since the last save: saved together a moment after the last one. */
+  private keySave = 0;
   private snapping = false;
   private surface: HTMLElement | null = null;
   private frame: Frame | null = null;
@@ -123,6 +130,7 @@ export class DrawingFrame {
   constructor(host: DrawingFrameHost) {
     this.host = host;
     this.root.className = 'ed-drawing-frame';
+    this.body.addEventListener('focus', () => this.ghostSource());
     const tip = (node: SVGElement, text: string) => node.append(Object.assign(svg('title'), { textContent: text }));
     tip(this.knob, 'Turn the drawing (Shift: in steps of 15°)');
     for (const corner of this.corners) tip(corner, 'Scale the drawing');
@@ -130,7 +138,13 @@ export class DrawingFrame {
     this.body.addEventListener('pointerdown', (e) => this.drag(e, 'move'));
     this.knob.addEventListener('pointerdown', (e) => this.drag(e, 'turn'));
     for (const corner of this.corners) corner.addEventListener('pointerdown', (e) => this.drag(e, 'scale'));
-    this.drawing.append(this.body, this.stem, this.knob, ...this.corners, this.top);
+    this.ghost.append(this.ghostImage);
+    this.drawing.append(this.ghost, this.body, this.stem, this.knob, ...this.corners, this.top);
+    // The keyboard (#405): arrows nudge, Shift for larger steps; [ and ] turn; + and − scale.
+    this.body.setAttribute('tabindex', '0');
+    this.body.setAttribute('role', 'application');
+    this.body.setAttribute('aria-label', 'The drawing: arrow keys move it, [ and ] turn it, + and − scale it');
+    this.body.addEventListener('keydown', (e) => this.key(e));
     const bar = document.createElement('div');
     bar.className = 'ed-df-bar';
     this.snap.title = 'Move, turn and scale the drawing a little so its lines lie on the table\'s building footprints.';
@@ -173,6 +187,7 @@ export class DrawingFrame {
     if (!frame || !drawing || this.snapping) return;
     this.snapping = true;
     this.snap.disabled = true;
+    this.hint.className = '';
     this.hint.textContent = 'Fitting the drawing to the footprints…';
     try {
       const site = this.host.site();
@@ -208,6 +223,59 @@ export class DrawingFrame {
     return [((event.clientX - box.left) / box.width) * width_m, ((event.clientY - box.top) / box.height) * height_m];
   }
 
+  private key(event: KeyboardEvent): void {
+    if (!this.frame) return;
+    const { width_m } = this.host.site().extent;
+    const step = width_m * (event.shiftKey ? 0.02 : 0.002);
+    const moves: Record<string, Point> = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] };
+    let next: Frame | null = null;
+    if (moves[event.key]) next = moveFrame(this.frame, moves[event.key]!);
+    else if (event.key === '[' || event.key === ']') next = turnFrame(this.frame, (event.key === '[' ? -1 : 1) * (event.shiftKey ? 15 : 0.5));
+    else if (event.key === '+' || event.key === '=' || event.key === '-' || event.key === '−') next = scaleFrame(this.frame, event.key === '-' || event.key === '−' ? 1 / 1.01 : 1.01);
+    if (!next) return;
+    event.preventDefault();
+    event.stopPropagation();
+    this.frame = next;
+    this.root.classList.add('is-dragging', 'is-moved');
+    this.draw();
+    clearTimeout(this.keySave);
+    this.keySave = window.setTimeout(() => {
+      this.root.classList.remove('is-dragging');
+      this.save();
+    }, 500);
+  }
+
+  private save(): void {
+    if (!this.frame) return;
+    const map = tableFrame(this.host.site());
+    this.fill.hidden = false;
+    this.host.place(formatCorners(this.frame.map((p) => map.toLonLat(p))));
+  }
+
+  /** Points the ghost at the framed drawing's picture; it shows only while the frame moves. */
+  private ghostSource(): void {
+    const drawing = this.host.drawing();
+    const site = this.host.site();
+    const name = drawing && (drawing.dataset || Object.entries(site.data ?? {}).find(([, path]) => String(path).toLowerCase().endsWith('.svg'))?.[0]);
+    const url = name ? siteDataUrl(site, name) : null;
+    // Read as a typed picture: the host may serve the file without an SVG content type.
+    if (url && this.ghostFrom !== url) {
+      this.ghostFrom = url;
+      void fetch(url)
+        .then((r) => r.text())
+        .then((text) => {
+          if (this.ghostFrom !== url) return;
+          if (this.ghostBlob) URL.revokeObjectURL(this.ghostBlob);
+          this.ghostBlob = URL.createObjectURL(new Blob([text], { type: 'image/svg+xml' }));
+          this.ghostImage.setAttribute('href', this.ghostBlob);
+        })
+        .catch(() => {});
+    }
+    // The picture turns inside the frame by whole quarters, as the layer turns it.
+    const quarters = ((Math.round((drawing?.turn ?? 0) / 90) % 4) + 4) % 4;
+    this.ghostImage.setAttribute('transform', `rotate(${quarters * 90} 0.5 0.5)`);
+  }
+
   private draw(): void {
     const frame = this.frame;
     if (!frame || !this.surface) return;
@@ -225,6 +293,9 @@ export class DrawingFrame {
       for (const [key, value] of Object.entries(attributes)) node.setAttribute(key, String(value));
     };
     set(this.body, { points: corners.map((p) => p.join(',')).join(' ') });
+    // The unit square onto the frame: (0,0) top left, (1,0) top right, (0,1) bottom left.
+    const [tl, tr, , bl] = corners as [Point, Point, Point, Point];
+    set(this.ghost, { transform: `matrix(${tr[0] - tl[0]} ${tr[1] - tl[1]} ${bl[0] - tl[0]} ${bl[1] - tl[1]} ${tl[0]} ${tl[1]})` });
     set(this.stem, { x1: top[0], y1: top[1], x2: knob[0], y2: knob[1] });
     set(this.knob, { cx: knob[0], cy: knob[1] });
     corners.forEach((corner, i) => set(this.corners[i]!, { x: corner[0] - 6, y: corner[1] - 6 }));
@@ -244,7 +315,8 @@ export class DrawingFrame {
     const middle = frameMiddle(before);
     const reach = Math.hypot(from[0] - middle[0], from[1] - middle[1]) || 1;
     const angle = Math.atan2(from[1] - middle[1], from[0] - middle[0]);
-    this.root.classList.add('is-dragging');
+    this.ghostSource();
+    this.root.classList.add('is-dragging', 'is-moved');
     const move = (e: Event): void => {
       const event = e as PointerEvent;
       const at = this.toTable(event);
@@ -262,9 +334,7 @@ export class DrawingFrame {
       target.removeEventListener('pointercancel', end);
       this.root.classList.remove('is-dragging');
       if (!this.frame || this.frame === before) return;
-      const map = tableFrame(this.host.site());
-      this.fill.hidden = false;
-      this.host.place(formatCorners(this.frame.map((p) => map.toLonLat(p))));
+      this.save();
     };
     target.addEventListener('pointermove', move);
     target.addEventListener('pointerup', end);

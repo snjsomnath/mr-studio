@@ -5,7 +5,7 @@
  */
 import { el } from '../controls.ts';
 
-export type FileAction = 'new' | 'open' | 'save' | 'save_as' | 'export' | 'share' | 'starter' | 'reveal' | 'close' | 'home' | 'settings';
+export type FileAction = 'new' | 'open' | 'save' | 'save_as' | 'history' | 'export' | 'share' | 'starter' | 'reveal' | 'close' | 'home' | 'settings';
 
 export const mac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 
@@ -39,6 +39,8 @@ const ITEMS: (Item | 'line')[] = [
   'line',
   { action: 'save', label: 'Save', shortcut: keys('S') },
   { action: 'save_as', label: 'Save As…', shortcut: keys('S', true), app: true },
+  // Office's Version History (#395): every saved version, what it changed, and going back.
+  { action: 'history', label: 'Version history…' },
   { action: 'export', label: 'Export table…', app: true },
   { action: 'share', label: 'Share by email…', app: true },
   { action: 'starter', label: 'Export starter pack…' },

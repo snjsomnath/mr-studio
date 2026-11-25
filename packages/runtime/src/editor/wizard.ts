@@ -42,7 +42,7 @@ export const AT_REST = 'At rest';
 export const WIZARD_STEPS = ['Name and place', 'Data', 'Start from…'] as const;
 export const WHERE = 0;
 const PLACE = 1;
-const START = 2;
+export const START = 2;
 
 /** Degrees as a bearing from 0 up to 360, so -93 and 267 are the same turn. */
 const turn = (degrees: number) => ((degrees % 360) + 360) % 360;

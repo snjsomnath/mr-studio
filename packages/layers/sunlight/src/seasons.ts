@@ -2,7 +2,7 @@
 // equinox, midsummer and midwinter of the chosen year at once. The table has one model, so it
 // shows one season at a time, all on one scale of hours, and moves through them; the controller's
 // hero lays the three side by side as small maps on that same scale.
-import { lut, zonedTimeToUtc } from '@mrstudio/sdk';
+import { formatDecimal, lut, zonedTimeToUtc } from '@mrstudio/sdk';
 import type { Colormap, FieldFrame, FieldOverlay, FieldStream, PanelContext, PanelHandlers, TableContext } from '@mrstudio/sdk';
 
 import { sunDay, sunHoursColormap, windowParams } from './look.ts';
@@ -289,8 +289,8 @@ export function seasonsHero(ctx: PanelContext<Params>, el: HTMLElement): PanelHa
         facts[n]!.querySelector('small')!.textContent = label;
         facts[n]!.querySelector('b')!.innerHTML = `${value}<small>${unit}</small>`;
       };
-      fact(0, ctx.say('Daylight'), info?.progress ? info.daylight.toFixed(1) : '–', 'h');
-      fact(1, ctx.say('Sun, on average'), info?.progress ? info.mean.toFixed(1) : '–', 'h');
+      fact(0, ctx.say('Daylight'), info?.progress ? formatDecimal(info.daylight, 1) : '–', 'h');
+      fact(1, ctx.say('Sun, on average'), info?.progress ? formatDecimal(info.mean, 1) : '–', 'h');
       const pass = info?.pass ?? null;
       facts[2]!.hidden = pass === null;
       if (pass !== null) fact(2, ctx.say('At least {hours} h', { hours: ctx.params.threshold }), String(Math.round(pass * 100)), '%');

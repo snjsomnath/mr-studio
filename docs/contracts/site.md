@@ -259,7 +259,7 @@ In a layer, `ctx.service(id)` has `get(path)`, `post(path, body)` and `job(path,
 
 A table scene is the ordered `layers` list and nothing else: the first entry is drawn at the bottom, the last on top, and a layer's items right on top of it.
 Everything a person sees on the table, from the dark base map to moving cars, building lights, public transport, trees and analysis layers such as sunlight or isovist, is a layer package added to that list with its params.
-This is what the composer at `/compose` edits. It reads each layer's `layer.json` to offer it in a palette and to generate its settings form, and the host writes `site.json` after every change, so a scene made by drag and drop and one written by hand are the same file.
+This is what the editor at `/edit` edits. It reads each layer's `layer.json` to offer it in the layer gallery and to generate its settings form, and the host writes `site.json` after every change, so a scene made in the editor and one written by hand are the same file.
 The host replaces only the `layers` list and leaves every other key as written. The file is reformatted (two-space indent) the first time it is saved.
 
 What the composer needs, and where it stands:

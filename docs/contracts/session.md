@@ -120,8 +120,8 @@ Surface URLs served by the host:
 | `/phone` | Phone controller |
 | `/guide` | The guide's phone (#98): `?g=<guide code>`. Starts a slideshow, shows each step's notes and moves it with Next and Previous |
 | `/dev` | Table view with controls side by side, for layer development |
-| `/compose` | Scene composer: layer palette, table view and the scene's stack. Joins with the `dev` role |
-| `/edit` | The editor: the authoring window around the live table. The home screen holds layers of category `base` and `ambient`; every other layer is a layer of its own. Joins with the `dev` role. With `?welcome=1` or `?setup=1`, or when the table has no layers yet, it opens in the setup guide |
+| `/compose` | Retired (#87): opens `/edit` |
+| `/edit` | The editor: the authoring window around the live table. The home screen holds layers of category `base` and `ambient`; every other layer is a layer of its own. Joins with the `dev` role. With `?welcome=1` or `?setup=1` it opens in the setup guide |
 | `/new` | The first step of the setup wizard, for a table that does not exist yet: name, place and size. It joins no session. Inside the desktop app it calls `create_site { site: { name, lat, lon, width_m, height_m, rotation_deg? } }`, then `open_site { path, welcome: true }`; Cancel calls `open_home` |
 | `/features.json` | What this build of the surfaces offers the shell: `{ "new_table_wizard": true }` |
 | `/site/*` | Files from the active site package (read only) |
@@ -350,6 +350,7 @@ Requests:
 | `site.table` | `{ name?, timezone?, branding?: { title?, logo?, welcome? }, table?: { front?, ribbons?: { top?, bottom?, left?, right? } } }` | tv, dev | Changes the table settings that are not its place (see "Settings" below). A field left out stays, `null` clears an optional one. `name` 1 to 60 characters, `timezone` an IANA zone such as `Europe/Stockholm`, `title` up to 80, `welcome` up to 160, `logo` a picture inside the site folder. `table.front` is `top`, `bottom`, `left` or `right`; each ribbon side is `"off"`, `"auto"` or `{ "cm": 2..40 }`, and `null` puts it back to the automatic choice (#62, #78). Every surface gets `site.settings`, and `site.changed` with `table_only: true` when `table` changed, which the editor takes in place. Moving or resizing goes through `POST /api/site/place` |
 | `site.sources` | `{}` | table, tv, dev | Which outside sources (Sources manager, #41) this table's layers use: `{ sources: [{ source, layers: [{ id, name }] }] }`, read from the layer controls that name a source (`"sources"` in layer.json) |
 | `history.list` | `{}` | table, tv, dev | The table's revision history (see "Revision history" below): `{ revisions, head, can_undo, can_redo }`, newest first |
+| `history.get` | `{ revision }` | table, tv, dev | A kept revision's site.json and the one before it (#395): `{ revision, before, after }`, `before` null for the first. The editor's Version history says from them what the change did |
 | `history.undo` | `{}` | tv, dev | Puts back the version of site.json before the current one, whoever made the change. Answers like `history.list` |
 | `history.redo` | `{}` | tv, dev | Puts back the version undo last took away. A new change drops what could be redone |
 | `history.restore` | `{ revision }` | tv, dev | Brings back any kept revision as a new revision on top, so nothing is lost |

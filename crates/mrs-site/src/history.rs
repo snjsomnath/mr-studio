@@ -183,6 +183,14 @@ impl History {
         self.revisions.iter().map(|(r, _)| r.clone()).collect()
     }
 
+    /// The text of site.json at a kept revision and at the one before it (#395), so a reader can
+    /// show what that change did. The first kept revision has nothing before it.
+    pub fn texts(&self, rev: u64) -> Option<(Option<String>, String)> {
+        let at = self.revisions.iter().position(|(r, _)| r.rev == rev)?;
+        let before = at.checked_sub(1).map(|i| self.revisions[i].1.clone());
+        Some((before, self.revisions[at].1.clone()))
+    }
+
     /// The revision `site.json` holds now.
     pub fn head(&self) -> &Revision {
         &self.revisions[self.head].0
@@ -473,6 +481,23 @@ mod tests {
         let h = History::open(&dir);
         assert_eq!(h.head().by, By::Outside);
         assert!(h.head().summary.contains("while MR Studio was closed"));
+    }
+
+    #[test]
+    fn a_revision_can_be_read_with_the_one_before_it() {
+        let dir = scratch("texts");
+        let mut h = History::open(&dir);
+        h.write(By::Editor, "Renamed to G", None, || -> Result<(), ()> {
+            edit(&dir, r#"{"name":"G","layers":[]}"#);
+            Ok(())
+        })
+        .unwrap();
+        let rev = h.head().rev;
+        let (before, after) = h.texts(rev).unwrap();
+        assert!(after.contains("\"G\""));
+        assert!(before.is_some_and(|b| !b.contains("\"G\"")));
+        assert!(h.texts(h.list()[0].rev).unwrap().0.is_none());
+        assert!(h.texts(9999).is_none());
     }
 
     #[test]

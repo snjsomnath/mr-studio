@@ -16,9 +16,7 @@ pnpm dev
 
 Open <http://localhost:5173/dev>. That is the layer dev mode: the table view of the sample site with the generated controls beside it, with hot reload.
 
-Open <http://localhost:5173/edit> for the editor, the authoring window around the live table. It is the first step of the main authoring tool and will replace the composer.
-
-Open <http://localhost:5173/compose> to assemble a scene: drag layers from the palette into the stack, reorder them and edit their settings. The sample site starts as a dark base map with traffic, public transport, building lights and trees. Every change is saved to the site's `site.json`.
+Open <http://localhost:5173/edit> for the editor, the authoring window around the live table: add layers, reorder them and edit their settings. The sample site starts as a dark base map with traffic, public transport, building lights and trees. Every change is saved to the site's `site.json`.
 `/table`, `/tv` and `/phone?c=<session code>` are the real surfaces; the session code is printed when the host starts.
 To join from a real phone, run `pnpm dev -- --lan` and scan the QR code shown on `/tv` or `/dev`.
 

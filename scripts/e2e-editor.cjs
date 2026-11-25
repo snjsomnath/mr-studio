@@ -20,6 +20,11 @@ const mod = process.platform === 'darwin' ? 'Meta' : 'Control';
 async function main() {
   const site = fs.mkdtempSync(path.join(os.tmpdir(), 'mrs-editor-'));
   fs.cpSync(path.join(root, 'sites/sample'), site, { recursive: true });
+  // A drawing for the Masterplan frame (#405).
+  fs.copyFileSync(path.join(kit, 'masterplan.svg'), path.join(site, 'data/masterplan.svg'));
+  const json = JSON.parse(fs.readFileSync(path.join(site, 'site.json'), 'utf8'));
+  json.data.masterplan = 'data/masterplan.svg';
+  fs.writeFileSync(path.join(site, 'site.json'), JSON.stringify(json, null, 2));
   const saved = () => JSON.parse(fs.readFileSync(path.join(site, 'site.json'), 'utf8'));
   const layerIds = () => saved().layers.map((l) => l.id ?? l.use);
   const savedLayer = (id) => saved().layers.find((l) => (l.id ?? l.use) === id);
@@ -117,8 +122,26 @@ async function main() {
     });
 
     await run('dragging a layer to the other rail moves its button (#58)', async () => {
+      // A drag on a cold page can start before the list is ready to take it (#426): try once more.
+      const right = () => savedLayer('wind')?.button?.side === 'right';
+      // The rename is saved before the editor hears it back and draws the list again; a drag
+      // that starts on a row about to be replaced is lost, so the list is let settle first.
+      await page.evaluate(() => new Promise((done) => {
+        const tree = document.querySelector('.ed-tree');
+        let timer = setTimeout(finish, 500);
+        const o = new MutationObserver(() => {
+          clearTimeout(timer);
+          timer = setTimeout(finish, 500);
+        });
+        function finish() {
+          o.disconnect();
+          done();
+        }
+        o.observe(tree, { childList: true });
+      }));
       await row('wind').dragTo(page.locator('.ed-rail[data-side="right"]'));
-      await until(() => savedLayer('wind')?.button?.side === 'right', 'Wind on the right in site.json');
+      await until(right, 'Wind on the right', 2500).catch(() => row('wind').dragTo(page.locator('.ed-rail[data-side="right"]')));
+      await until(right, 'Wind on the right in site.json');
       await page.locator('.ed-rail[data-side="right"] .ed-row[data-layer="wind"]').waitFor();
     });
 
@@ -255,6 +278,168 @@ async function main() {
       await until(async () => saved().layers.some((l) => l.use === 'lens' && l.params?.show === 'under'), 'an X-ray glass');
       await page.locator('section[data-items] [data-command="dialog.inside"]').waitFor();
       await shot('453-xray-empty');
+    });
+
+    await run('File › Version history… says what a version changed (#395)', async () => {
+      await page.goto(`${base}/edit#layer=wind`);
+      await row('wind').waitFor();
+      // A change to remember: the wind's speed.
+      const speed = savedLayer('wind')?.params?.speed ?? 5;
+      const readout = page.locator('.ed-inspector .control', { hasText: 'Wind speed' }).locator('.control-value');
+      const more = page.locator('.ed-inspector details.ed-more');
+      if (!(await more.evaluate((d) => d.open))) await more.locator('summary').click();
+      await readout.click();
+      await page.keyboard.press(`${mod}+a`);
+      await page.keyboard.type(String(speed + 3));
+      await page.keyboard.press('Enter');
+      await until(async () => savedLayer('wind')?.params?.speed === speed + 3, 'the new speed saved');
+      await page.locator('.ed-file-button, [data-file-menu]').first().click();
+      await page.getByRole('menuitem', { name: 'Version history…' }).click();
+      const panel = page.locator('.ed-history[aria-label="Version history"]');
+      await panel.waitFor();
+      await panel.locator('.ed-history-row').first().locator('.ed-history-what').click();
+      await panel.locator('.ed-history-detail li', { hasText: `wind speed ${speed} → ${speed + 3} m/s` }).waitFor();
+      await shot('395-version-history');
+      await page.keyboard.press('Escape');
+    });
+
+    await run('a change from another editor updates in place and never overwrites what is being typed (#396)', async () => {
+      await page.goto(`${base}/edit#layer=wind`);
+      await row('wind').waitFor();
+      // The other author has a window of their own, so this one keeps its focus.
+      const otherContext = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+      const other = await otherContext.newPage();
+      await other.route(/basemaps\.cartocdn\.com|tile\.openstreetmap\.org|api\.mapbox\.com/, (r) => r.abort());
+      await other.goto(`${base}/edit#layer=wind`);
+      const fields = (p) => p.locator('.ed-inspector');
+      await fields(other).getByLabel('Description').waitFor();
+      // The other editor changes the description: here it updates in place.
+      await fields(other).getByLabel('Description').fill('Air between the houses');
+      await fields(other).getByLabel('Description').press('Tab');
+      await until(async () => (await fields(page).getByLabel('Description').inputValue()) === 'Air between the houses', 'the description updated in place');
+      // Typing a name here while the other editor renames: what is typed stays, theirs is offered.
+      await fields(page).getByLabel('Name').fill('Our wind');
+      await fields(other).getByLabel('Name').fill('Their wind');
+      await fields(other).getByLabel('Name').press('Tab');
+      await page.locator('.ed-toast', { hasText: 'while you were typing' }).getByRole('button', { name: 'Use theirs' }).waitFor();
+      assert.equal(await fields(page).getByLabel('Name').inputValue(), 'Our wind');
+      await shot('396-two-authors');
+      await fields(page).getByLabel('Name').press('Tab');
+      await until(async () => savedLayer('wind')?.button?.name === 'Our wind', 'the name being typed wins when it is finished');
+      await otherContext.close();
+    });
+
+    await run('the controller docks small and enlarges again (#388)', async () => {
+      await page.goto(`${base}/edit#layer=wind`);
+      await row('wind').waitFor();
+      const area = (b) => Math.round(b.width * b.height);
+      const half = area(await page.locator('.ed-surface.is-map').boundingBox());
+      await page.locator('.ed-surface-shrink').click();
+      await page.locator('.ed-surfaces.is-controller-small').waitFor();
+      const map = await page.locator('.ed-surface.is-map').boundingBox();
+      assert.ok(area(map) > half * 1.5, `the map has the canvas (${half}px², now ${area(map)}px²)`);
+      assert.equal(await page.evaluate(() => localStorage.getItem('mrs-controller-small')), '1');
+      await shot('388-controller-small');
+      await page.locator('.ed-surface-enlarge').click();
+      await page.locator('.ed-surfaces:not(.is-controller-small)').waitFor();
+    });
+
+    await run('View › Phone shows a live phone beside the map (#389)', async () => {
+      await page.locator('.ed-tab[data-tab="view"]').click();
+      await page.locator('.ed-ribbon [data-command="view.phone"]').click();
+      await page.locator('.ed-surfaces.has-phone .ed-phone-screen iframe').waitFor();
+      await page.waitForTimeout(1500);
+      await shot('389-phone');
+      await page.locator('.ed-ribbon [data-command="view.phone"]').click();
+      await page.locator('.ed-surfaces:not(.has-phone)').waitFor();
+    });
+
+    await run('Ctrl or ⌘ click selects several rows, and Delete removes them together (#399)', async () => {
+      await page.locator('.ed-tab[data-tab="home"]').click();
+      await row('wind').click();
+      await row('isovist').click({ modifiers: [mod] });
+      await page.locator('.ed-row.is-also[data-layer="isovist"]').waitFor();
+      await shot('399-multi');
+      const before = layerIds().length;
+      await page.locator('.ed-ribbon [data-command="layer.remove"]').click();
+      await until(async () => !layerIds().includes('wind') && !layerIds().includes('isovist'), 'both rows removed');
+      assert.equal(layerIds().length, before - 2);
+    });
+
+    await run('the drawing follows its frame while it moves, and arrow keys nudge it (#405)', async () => {
+      await page.locator('.ed-tab[data-tab="insert"]').click();
+      await page.locator('.ed-ribbon [data-command="layer.new"]').click();
+      await page.locator('dialog.lg-gallery .lg-card[data-layer="plan"] .lg-pick').click();
+      const body = page.locator('.ed-drawing-frame .ed-df-body');
+      await body.waitFor();
+      const plan = () => saved().layers.find((l) => l.use === 'plan');
+      await until(async () => Boolean(plan()), 'a Masterplan');
+      // Mid-drag the drawing itself is shown in the frame.
+      const box = await body.boundingBox();
+      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(box.x + box.width / 2 - 60, box.y + box.height / 2 - 30, { steps: 6 });
+      const ghost = page.locator('.ed-drawing-frame.is-dragging .ed-df-ghost image[href^="blob:"]');
+      await ghost.waitFor();
+      await ghost.evaluate((image) => image.decode?.().catch(() => {}));
+      await page.mouse.move(box.x + box.width / 2 - 64, box.y + box.height / 2 - 32);
+      await page.waitForTimeout(300);
+      await shot('405-drawing-drag');
+      await page.mouse.up();
+      await until(async () => Boolean(plan()?.params?.corners), 'the dragged frame saved');
+      const dragged = plan().params.corners;
+      await body.focus();
+      for (let i = 0; i < 3; i++) await page.keyboard.press('Shift+ArrowRight');
+      await until(async () => plan()?.params?.corners !== dragged, 'the nudged frame saved');
+    });
+
+    await run('a click on the map selects the layer that drew there (#425)', async () => {
+      const surface = page.locator('.ed-canvas .table-surface');
+      const clickAt = async (fx, fy) => {
+        const box = await surface.boundingBox();
+        await page.mouse.click(box.x + box.width * fx, box.y + box.height * fy);
+        await page.waitForTimeout(300);
+        return page.evaluate(() => location.hash);
+      };
+      // At rest the map life under the pointer is picked: the lit buildings in one place, the base map in another.
+      await page.goto(`${base}/edit#rest`);
+      await surface.waitFor();
+      await page.waitForTimeout(2500);
+      // Map life draws a moment after the page opens, so the click is tried again until it lands.
+      await until(async () => (await clickAt(0.2, 0.8)) === '#rest=building-lights', 'the lit buildings picked', 10000);
+      await page.locator('.ed-row.is-rest[data-layer="building-lights"][aria-current="true"]').waitFor();
+      await shot('425-map-pick');
+      await until(async () => (await clickAt(0.7, 0.6)) === '#rest=basemap', 'the base map picked', 10000);
+      // A drag is not a pick.
+      const box = await surface.boundingBox();
+      await page.mouse.move(box.x + box.width * 0.2, box.y + box.height * 0.8);
+      await page.mouse.down();
+      await page.mouse.move(box.x + box.width * 0.3, box.y + box.height * 0.7, { steps: 4 });
+      await page.mouse.up();
+      assert.equal(await page.evaluate(() => location.hash), '#rest=basemap');
+      // Sunlight reads clicks itself (its spot), so they stay with it while it is open.
+      await page.goto(`${base}/edit#layer=sunlight`);
+      await surface.waitFor();
+      await page.waitForTimeout(2500);
+      assert.equal(await clickAt(0.2, 0.8), '#layer=sunlight');
+    });
+
+    await run('Design › Starter tables… opens the guide at Start from…, and a dialog opened over it keeps it (#469)', async () => {
+      await page.goto(`${base}/edit`);
+      await page.locator('.ed-tab[data-tab="design"]').click();
+      await page.locator('.ed-ribbon [data-command="dialog.starters"]').click();
+      await page.locator('.wz h2', { hasText: 'Start from' }).waitFor();
+      await page.locator('.wz-starter[data-starter]').first().waitFor();
+      await shot('469-starters');
+      // A fix such as Write a welcome opens its dialog over the guide; closing it comes back.
+      await page.keyboard.press(`${mod}+k`);
+      await page.locator('.ed-commands-field').fill('welcome and languages');
+      await page.keyboard.press('Enter');
+      const dialog = page.locator('dialog.ed-dialog.is-welcome');
+      await dialog.waitFor();
+      await dialog.getByRole('button', { name: 'Close' }).click();
+      await dialog.waitFor({ state: 'detached' });
+      await page.locator('.wz h2', { hasText: 'Start from' }).waitFor();
     });
 
     await run('the controller carries no operator text (#50)', async () => {

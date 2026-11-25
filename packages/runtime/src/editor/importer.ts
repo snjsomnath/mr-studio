@@ -1,3 +1,4 @@
+import { okCancel } from './platform.ts';
 import { columnNumbers, paintBreaks, paintScale, profileColumns, rampColour, rampShare, siteDataUrl, STRAY_REACH, tablePalette, tableReach, tableSpace } from '@mrstudio/sdk';
 import type { GeometryKind, PaintBy, Paint, SiteInfo } from '@mrstudio/sdk';
 
@@ -665,7 +666,7 @@ export class Importer {
       this.reset();
       this.host.cancel?.();
     });
-    actions.append(add, cancel);
+    actions.append(...okCancel(add, cancel));
     report.append(actions);
     if (this.report?.issues.some((i) => i.code === 'source.osm')) report.append(el('p', 'im-credit', '© OpenStreetMap contributors. The credit is kept with the data and shown with the table.'));
     return report;

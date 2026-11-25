@@ -66,7 +66,7 @@ export const RIBBON: LayoutTab[] = [
       { name: 'Controller theme', items: [{ widget: 'themes' }] },
       { name: 'Buttons', items: ['buttons.icons', 'buttons.labelled'] },
       { name: 'Map', items: [large('map.basemap'), large('map.palette')] },
-      { name: 'Table', items: ['dialog.place', 'dialog.welcome'], keep: true },
+      { name: 'Table', items: ['dialog.place', 'dialog.welcome', 'dialog.starters'], keep: true },
     ],
   },
   {
@@ -85,7 +85,7 @@ export const RIBBON: LayoutTab[] = [
     label: 'View',
     tip: 'Map, controller or both in the middle, the zoom, the media library and windows',
     groups: [
-      { name: 'Show', items: ['view.map', 'view.controller', 'view.both'] },
+      { name: 'Show', items: ['view.map', 'view.controller', 'view.both', 'view.phone'] },
       { name: 'Zoom', items: ['zoom.fit', 'zoom.100', 'view.outline'] },
       { name: 'Library', items: [large('dialog.media')] },
       { name: 'Open in a window', items: ['window.table', 'window.tv', 'window.dev'] },

@@ -9,6 +9,7 @@
 import type { Connection } from '@mrstudio/sdk';
 
 import { el } from '../controls.ts';
+import { describeChange, type DiffNames } from './history-diff.ts';
 import { icon } from './icons.ts';
 
 export type By = 'editor' | 'controller' | 'mcp' | 'import' | 'history' | 'outside' | 'start';
@@ -91,6 +92,11 @@ export class HistoryControls {
   private noticeTimer = 0;
   private busy = false;
   private keyed: { what: string; at: number } | null = null;
+  /** The names the editor knows, for the lines that say what a version changed (#395). */
+  names: DiffNames = { layer: () => undefined, control: () => undefined };
+  /** What each version changed, once asked for: it never changes. */
+  private readonly details = new Map<number, string[]>();
+  private readonly shown = new Set<number>();
 
   private readonly connection: Connection;
   /** This editor's surface, so its own changes are not announced back to it. */
@@ -154,6 +160,11 @@ export class HistoryControls {
     }
   }
 
+  /** File › Version history… (#395): opens the panel, or leaves it open. */
+  open(anchor: HTMLElement): void {
+    if (!this.panel) this.toggle(anchor);
+  }
+
   /** Opens or closes the History panel under `anchor` (the "Saved" status). */
   toggle(anchor: HTMLElement): void {
     if (this.panel) {
@@ -162,12 +173,12 @@ export class HistoryControls {
     }
     const panel = el('section', 'ed-history');
     panel.setAttribute('role', 'dialog');
-    panel.ariaLabel = 'History';
+    panel.ariaLabel = 'Version history';
     this.panel = panel;
     this.drawPanel();
     const box = anchor.getBoundingClientRect();
     panel.style.top = `${box.bottom + 8}px`;
-    panel.style.left = `${Math.max(12, Math.min(window.innerWidth - 392, box.left + box.width / 2 - 190))}px`;
+    panel.style.left = `${Math.max(12, Math.min(window.innerWidth - 432, box.left + box.width / 2 - 210))}px`;
     this.host().append(panel);
     void this.refresh();
   }
@@ -237,7 +248,7 @@ export class HistoryControls {
     const panel = this.panel;
     if (!panel) return;
     const head = el('header', 'ed-history-head');
-    head.append(el('strong', undefined, 'History'), el('span', undefined, 'Every change is saved. Pick one to go back to it.'));
+    head.append(el('strong', undefined, 'Version history'), el('span', undefined, 'Every change is saved. See what one did, or go back to it.'));
     const list = el('ol', 'ed-history-list');
     const revisions = this.list?.revisions ?? [];
     const headIndex = revisions.findIndex((r) => r.rev === this.list?.head);
@@ -252,6 +263,20 @@ export class HistoryControls {
       const by = revision.surface !== undefined && revision.surface === this.surface() ? 'You' : (WHO[revision.by] ?? revision.by);
       text.append(el('span', 'ed-history-summary', revision.summary), el('span', 'ed-history-meta', `${by} · ${ago(revision.at)}${undone ? ' · undone' : ''}`));
       row.append(badge, text);
+      // What it changed (#395): asked of the host once, then kept.
+      const what = document.createElement('button');
+      what.type = 'button';
+      what.className = 'ed-history-what';
+      what.textContent = this.shown.has(revision.rev) ? 'Hide' : 'What changed';
+      what.setAttribute('aria-expanded', String(this.shown.has(revision.rev)));
+      what.addEventListener('click', () => void this.toggleDetail(revision.rev));
+      text.append(what);
+      if (this.shown.has(revision.rev)) {
+        const lines = this.details.get(revision.rev);
+        const list = el('ul', 'ed-history-detail');
+        for (const line of lines ?? ['…']) list.append(el('li', undefined, line));
+        text.append(list);
+      }
       if (current) row.append(el('span', 'ed-history-now', 'Now'));
       else {
         const back = document.createElement('button');
@@ -266,6 +291,20 @@ export class HistoryControls {
     });
     const foot = el('footer', 'ed-history-foot', 'Kept on this computer: the last 200 changes to this table.');
     panel.replaceChildren(head, list, foot);
+  }
+
+  private async toggleDetail(rev: number): Promise<void> {
+    if (this.shown.delete(rev)) return this.drawPanel();
+    this.shown.add(rev);
+    this.drawPanel();
+    if (this.details.has(rev)) return;
+    try {
+      const got = await this.connection.request<{ before: Record<string, unknown> | null; after: Record<string, unknown> }>('history.get', { revision: rev });
+      this.details.set(rev, describeChange(got.before, got.after, this.names));
+    } catch (error) {
+      this.details.set(rev, [`Could not read it: ${(error as Error).message}`]);
+    }
+    this.drawPanel();
   }
 
   private async restore(revision: Revision, undone: boolean): Promise<void> {
@@ -295,7 +334,27 @@ export class HistoryControls {
   }
 
   /** A notice at the bottom of the editor, with Undo, that goes away by itself. */
+  /** A change from elsewhere to the field being typed in (#396): the author's text stays, theirs is one click away. */
+  offer(message: string, detail: string, label: string, take: () => void): void {
+    this.notice?.remove();
+    this.announce(message, detail, false, false);
+    const notice = this.notice;
+    if (!notice) return;
+    notice.dataset.offer = 'true';
+    const use = document.createElement('button');
+    use.type = 'button';
+    use.className = 'ed-toast-button';
+    use.textContent = label;
+    use.addEventListener('click', () => {
+      notice.remove();
+      take();
+    });
+    notice.querySelector('.ed-toast-close')?.before(use);
+  }
+
   private announce(message: string, detail?: string, problem = false, offerUndo = true): void {
+    // An offer of the other value for the field being typed in says more than "someone changed it" (#396).
+    if (this.notice?.isConnected && this.notice.dataset.offer && !problem) return;
     this.notice?.remove();
     window.clearTimeout(this.noticeTimer);
     const notice = el('div', `ed-toast${problem ? ' is-problem' : ''}`);

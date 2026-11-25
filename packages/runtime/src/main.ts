@@ -6,7 +6,6 @@ import type { Role, SiteInfo } from '@mrstudio/sdk';
 import { luminance, themeVariables } from '@mrstudio/dashboard';
 import '@mrstudio/dashboard/src/dashboard.css';
 
-import { Composer } from './compose.ts';
 import { Controller, languageSwitch } from './controls.ts';
 import { mountDashboard } from './dashboard.ts';
 import { guideCode, guideDoor, guideScreen } from './guide.ts';
@@ -74,8 +73,11 @@ async function main() {
     startBridge();
     return;
   }
-  // The scene composer is an operator's tool: it joins with the dev role and has its own layout.
-  const composing = segment === 'compose';
+  // The old scene composer is retired (#87): the editor is the one authoring page.
+  if (segment === 'compose') {
+    location.replace(`/edit${location.search}${location.hash}`);
+    return;
+  }
   // The editor is the authoring window around the live table. It joins with the dev role too.
   const editing = segment === 'edit';
   const role: Role = ROLES.includes(segment as Role) ? (segment as Role) : 'dev';
@@ -83,7 +85,7 @@ async function main() {
   if (role === 'dev') collectProblems();
   // The editor has its own Present, Stop and Sites controls, so the desktop app adds no bar of its own.
   if (editing) (window as { mrsShellControls?: boolean }).mrsShellControls = true;
-  document.body.dataset.role = editing ? 'edit' : composing ? 'compose' : role;
+  document.body.dataset.role = editing ? 'edit' : role;
 
   const phone = role === 'phone';
   // The guide's phone (#98) has a code of its own, from the operator's screens.
@@ -133,7 +135,7 @@ async function main() {
   // Pages (#275), for venues where they cannot reach this computer. The host takes one bridge
   // and decides whether it is on. The controller goes first: it draws less than the table, so
   // phones' requests wait less for its page.
-  if ((role === 'tv' || role === 'table') && !editing && !composing) {
+  if ((role === 'tv' || role === 'table') && !editing) {
     window.setTimeout(() => void import('./bridge.ts').then(({ startBridge }) => startBridge()), role === 'tv' ? 0 : 5000);
   }
   const site = store.state.site;
@@ -152,7 +154,7 @@ async function main() {
   // The visitors' screens speak the session's language (#80); a phone may keep one of its own.
   // The controller and the phones draw their words once, so they start again in a new language;
   // the table only redraws its ribbons.
-  const visitors = !editing && !composing && (role === 'tv' || role === 'phone' || role === 'table');
+  const visitors = !editing && (role === 'tv' || role === 'phone' || role === 'table');
   if (visitors) {
     const wanted = (): Language => {
       const languages = offered(store.state);
@@ -187,7 +189,7 @@ async function main() {
   // when the table cannot keep up (#262). Outside the app the window is named by its role.
   const windowName = (window as { __MRS_WINDOW__?: string }).__MRS_WINDOW__;
   // The editor's live controller preview is a frame inside the editor, not a window of its own.
-  if ((role === 'table' || role === 'tv') && !editing && !composing && window.top === window) {
+  if ((role === 'table' || role === 'tv') && !editing && window.top === window) {
     let frames = 0;
     const count = () => {
       frames++;
@@ -241,8 +243,6 @@ async function main() {
 
   // The table (and the table half of dev) renders layers. Dev shows the TV's dashboard under it.
   const stage = el('div', 'stage');
-  const palette = el('aside', 'controller palette');
-  if (composing) app.append(palette);
   if (role === 'table' || role === 'dev') {
     let editor: import('./editor/editor.ts').Editor | null = null;
     const frame = el('div', 'table-frame');
@@ -268,6 +268,8 @@ async function main() {
     store.onDisplay((quality) => view.setQuality(quality));
     // The editor keeps a picture of the table for Home when it is left (#131).
     if (editor) editor.snapshot = () => view.snapshot();
+    // A click on the map selects the layer that drew there (#425).
+    if (editor) editor.picker = { hits: (x, y) => view.hits(x, y), listens: (id) => view.listens(id) };
     const { installModel } = await import('./model/index.ts');
     await installModel(view, connection, role, { remoteCalibration: !editing });
     new LayerManager(store, connection, view);
@@ -285,7 +287,7 @@ async function main() {
       const ribbons = new Ribbons(surface, store, connection, () => ({ footprint: view.footprint(), surface: { width: surface.clientWidth, height: surface.clientHeight } }));
       view.onViewChange(() => ribbons.layout());
       tableChanged = () => ribbons.layout();
-    } else if (!composing && site.table) {
+    } else if (site.table) {
       const reserve = (): void => {
         if (!store.state.site.table) return;
         for (const [side, fraction] of Object.entries(previewReserve(store.state.site.table))) surface.style.setProperty(`--ribbon-${side}`, String(fraction));
@@ -310,12 +312,6 @@ async function main() {
       };
     }
     if (editing) return;
-    if (composing) {
-      const stack = el('aside', 'controller stack');
-      app.append(stack);
-      new Composer(palette, stack, surface, store, connection);
-      return;
-    }
   }
   let bench: import('@mrstudio/dashboard').DashboardView | undefined;
   if (role === 'tv' || role === 'dev') {

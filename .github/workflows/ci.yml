@@ -112,6 +112,8 @@ jobs:
       - run: cargo build -p mrs-cli
       # The host, engine, every surface, the core layers, the editor and a phone (#261).
       - run: node scripts/e2e.cjs e2e-screenshots
+      # The editor's flows (#67, #426): navigation, the list, the Format pane, dialogs, the tour.
+      - run: node scripts/e2e-editor.cjs e2e-screenshots/editor
       - run: node scripts/smoke.cjs chromium e2e-screenshots
       - uses: actions/upload-artifact@v4
         if: always()

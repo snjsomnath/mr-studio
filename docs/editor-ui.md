@@ -25,7 +25,7 @@ Six regions. Their places never change, whatever tab is open or whatever is sele
 | Title bar | File, Undo/Redo, the table's name and saved state, Help (?), Share, Present | Settings, tool buttons |
 | Ribbon | Commands, grouped by tab. Galleries (themes, layers). Buttons that open dialogs, with a trailing … | Fields you type into, toggles that duplicate a list row, panels |
 | Left list | The map's stack: At rest (the base map and map life) above the layers, in drawing order. Below it, its own group: Controller and Phones | Button order or sides, files, settings |
-| Canvas | What the visitor sees: the map, the controller, or both (View tab), live. In Both, Shrink controller on the controller's header docks it as a small live thumbnail (#388). Rehearse runs here. | Forms, galleries, file lists, hints |
+| Canvas | What the visitor sees: the map, the controller, or both (View tab), live. In Both, Shrink controller on the controller's header docks it as a small live thumbnail (#388). A click on the map selects the layer that drew there, topmost first; a layer that reads clicks itself (CoolPaths, Sunlight) keeps them while it is open (#425). Rehearse runs here. | Forms, galleries, file lists, hints |
 | Format pane (right) | The settings of what is selected, and the only place they are edited | Anything about something not selected |
 | Status bar | Saved, connection, engine, "N things to check before presenting" | Actions that change the table |
 
@@ -50,7 +50,7 @@ Six regions. Their places never change, whatever tab is open or whatever is sele
 | --- | --- | --- |
 | Home | Layer: Duplicate, Remove · Selection: Hide, Move up/down, Rename, Reset settings · Find a command (⌘K, #65) | Home |
 | Insert | Layers: layer gallery ▾ (#59), Add inside… (#453), Custom layer · Your data: Data file, Open data (OpenStreetMap, elevation) · Media: Picture, Video, Sound, 3D model · Draw elsewhere: Starter pack… (#450, the table's basics for QGIS, Illustrator, Photoshop, PowerPoint; also File › Export starter pack) | Insert |
-| Design | Controller theme gallery · Buttons: Icons / Icons and names · Map: Base map style ▾, Palette · Table: Table size and place…, Welcome and languages… | Design |
+| Design | Controller theme gallery · Buttons: Icons / Icons and names · Map: Base map style ▾, Palette · Table: Table size and place…, Welcome and languages…, Starter tables… (#469) | Design |
 | Present | Check: Ready to present? (#63) · Start: Rehearse, Present · Set up: Screens and calibration… · Send: Share by email (#372), Export | Slide Show |
 | View | Map / Controller / Both, Phone (#389), zoom, table outline · Media library… (a dialog) · Open in a window | View |
 | Help | Guides, features, Copy diagnostics (#88, #260) | Help |
@@ -126,19 +126,23 @@ PowerPoint's new-presentation screen: three steps to a working table, then the e
 
 After that, **Present › Ready to present?** (#63) is the guide: each missing item links to its one home. There is no Setup guide button; New table on Home starts the wizard.
 
+## Settled in #388, #389, #395, #396, #397, #399
+
+- **Empty table**: the map shows one card, "No layers yet" with **Insert a layer**. The map and controller carry no other hints.
+- **Several layers**: Ctrl-click (⌘-click on a Mac) or Shift-click adds a row to the selection. Show, Hide and Remove act on all of them; the Format pane says how many are selected and shows the settings of the first.
+- **Mac and Windows**: shortcuts use ⌘ on a Mac and Ctrl elsewhere; dialogs put the confirming button last on a Mac and first on Windows (`editor/platform.ts`).
+- **Units and formats** (#397): one formatter in the SDK (`formatUnit`, `formatDecimal`, `formatClock`, `formatDate`, `parseNumber`). Visitors' screens follow their language (5,0 m/s in Swedish); the editor stays in English. Typed numbers read with a point or a comma.
+- **Version history** (#395): File › Version history… (also the Saved status) lists every kept version, who made it and when; *What changed* says what it did ("Wind: wind speed 5 → 8 m/s"), and *Go back* restores it as a new version on top. The MCP server has `list_versions` and `restore_version`.
+- **Two authors at once** (#396): a change from the MCP server, another editor or the controller updates the list, canvas and Format pane in place, with a notice and Undo. The field being typed in is never replaced: the other value is offered (*Use theirs*), and the author's wins when they finish.
+- **Room for the map**: *Shrink controller* on the controller's caption docks it as a small live picture in the corner; click it to enlarge. **View › Phone** shows a visitor's phone beside the map, live. Both are remembered on this computer, not in the table.
+
 ## Still to design
 
 - **Custom layer builder**: becomes sections of the Format pane (Data, Look, Motion, Interaction); its button is handled like any layer's.
 - **Slides and layer items**: children under their layer in the list; select one, format it in the pane.
 - **Controller panels and widgets** (#155, #357): select a panel on the controller preview, edit it in the Format pane.
-- **Empty states**: a table with no layers shows "Insert a layer" on the canvas.
-- **Selecting several things** at once (hide, remove), as Office does: to decide.
-- **Mac and Windows**: shortcuts, menus and dialog button order follow each platform.
 - **The operator**: running a table at an exhibition (Present controls, a lock so visitors can't reach the editor, idle reset) is a different person from the author, and not designed yet.
 - **One place for messages**: saved state, live data sources, performance warnings (#262) and readiness report in the status bar; a change that can be undone shows one notice with Undo.
-- **Version history** (#72): File › Version history… lists saved versions of the table (from the host's revision history) and restores one. Undo stays for this session's changes; Version history is for going back further.
-- **Two authors at once**: the MCP server, a second editor window or a colleague can change the same table. A setting changed elsewhere updates in place with a short notice in the status bar; it never silently overwrites what the author is typing.
-- **Units and formats**: metres and kilometres, the 24-hour clock, and dates and decimals in the editor's language (decimal comma in Swedish). One formatter, used by the Format pane, the dialogs, the table and the phones.
 
 ## The user test
 

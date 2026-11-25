@@ -53,6 +53,7 @@ export const COMMANDS = {
   'map.palette': { label: 'Palette', icon: 'palette', tip: 'The colours every custom layer uses. Change one and the whole table follows.', group: 'Design', also: 'colours colors' },
   'dialog.place': { label: 'Table size and place…', icon: 'route', tip: 'The table’s name, where it is, how much ground it covers, its time zone and where visitors stand', group: 'Design', also: 'name move resize time zone front ribbons location where table settings' },
   'dialog.welcome': { label: 'Welcome and languages…', icon: 'tv', tip: 'What the controller says when nobody is using the table, its logo, and the languages visitors read', group: 'Design', also: 'title logo idle loop swedish english phones table settings' },
+  'dialog.starters': { label: 'Starter tables…', icon: 'layers', tip: 'Climate, Movement, Story or Blank: adds a starter table’s layers, map life and controller theme', group: 'Design', also: 'starter template wizard guide setup climate movement story blank theme' },
 
   // ---- Showing it (Present) ----
   'present.check': { label: 'Ready to present?', icon: 'check', tip: 'What to check before presenting, and the way to fix each', group: 'Present', also: 'checks problems missing' },
@@ -65,6 +66,7 @@ export const COMMANDS = {
   // ---- What is on screen (View) ----
   'view.map': { label: 'Map', icon: 'map', tip: 'Show the map only in the middle', group: 'View', also: 'canvas' },
   'view.controller': { label: 'Controller', icon: 'tv', tip: 'Show the controller only in the middle', group: 'View', also: 'canvas' },
+  'view.phone': { label: 'Phone', icon: 'phone', tip: 'Show a visitor’s phone beside the map, live. Its settings are on the Phones row.', group: 'View', also: 'mobile phone preview app' },
   'view.both': { label: 'Both', icon: 'grid', tip: 'Show the map and the controller side by side', group: 'View', also: 'canvas' },
   'zoom.fit': { label: 'Fit', icon: 'search', tip: 'Fit the map in the window', group: 'View', also: 'zoom' },
   'zoom.100': { label: '100 %', icon: 'search', tip: 'One pixel here for one on the projector', group: 'View', also: 'zoom actual size' },

@@ -583,5 +583,5 @@ The MCP server walks a developer through this: `create_layer`, `sdk_reference` (
 - **Action log:** this window's requests with their round trip, and what the host sent: actions, tool inputs, param and entity edits from any controller or phone.
 - **Problems:** panels the rules refused, bindings to values a layer has not published, and what layers and widgets complained about.
 
-`/compose` shows the palette, the table and the scene's stack: drag layers in, reorder them and edit their settings.
+`/edit` (the editor) adds the layer from Insert › New layer, shows it on the map and the controller, and generates its settings in the Format pane.
 No table, projector or calibration is needed.

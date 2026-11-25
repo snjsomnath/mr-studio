@@ -5,6 +5,8 @@ import {
   formatHour,
   hasSiteData,
   loadSiteData,
+  formatDecimal,
+  formatUnit,
   loadSiteField,
   paletteHex,
   petColormap,
@@ -678,11 +680,11 @@ export default defineLayer<Params>({
       el.querySelectorAll<HTMLElement | SVGElement>(`[data-route="${name}"]`).forEach((cell) => cell.toggleAttribute('hidden', hidden || !value));
       if (!value) return;
       const fact = (id: string) => el.querySelector<HTMLElement>(`[data-route="${name}"][data-fact="${id}"]`)!;
-      fact('length').textContent = `${value.length} m`;
+      fact('length').textContent = formatUnit(value.length, 'm');
       // Mean PET and heat exposure (PET times metres), as the demo compares them.
-      fact('pet').innerHTML = `${value.pet.toFixed(1)} °C <span class="coolpaths-unit">PET</span>`;
+      fact('pet').innerHTML = `${formatUnit(value.pet, '°C', 1)} <span class="coolpaths-unit">PET</span>`;
       fact('pet').style.color = petColour(value.pet);
-      fact('heat').innerHTML = `${(value.heat / 1000).toFixed(1)}k °C·m <span class="coolpaths-unit">${ctx.say('heat')}</span>`;
+      fact('heat').innerHTML = `${formatDecimal(value.heat / 1000, 1)}k °C·m <span class="coolpaths-unit">${ctx.say('heat')}</span>`;
       along(el.querySelector<SVGSVGElement>(`svg[data-route="${name}"]`)!, value, name === 'shortest' ? shortColour(ctx.site) : coolColour(ctx.site), scale);
     }
 

@@ -56,6 +56,7 @@ with the engine's projection and rotation.
 | Colours | `rampScale`, `twoColourScale`, `binScale`, `categoryScale`, `colour`, `mix`, `css` | Continuous, stepped and named classes |
 | Legends | `binLegend`, `categoryLegend` | Built from the same definition that colours the table |
 | Readouts | `stat`, `bars`, `timeline`, `trend`, `shares`, `formatNumber` | Plain JSON in the shapes the dashboard widgets bind to. A layer passes them to `ctx.publish`; the TV widgets belong to `packages/dashboard` |
+| Numbers and units | `formatDecimal`, `formatUnit`, `formatDistance`, `formatClock`, `formatDate`, `formatCompact`, `parseNumber`, `setNumberLanguage`, `numberLanguage` | One formatter (#397) for every screen: a decimal comma in Swedish and a point in English, following the visitors' language; 270° but 5 m/s; metres to kilometres; the 24-hour clock. Typed numbers read with either mark |
 
 ### Visuals
 
