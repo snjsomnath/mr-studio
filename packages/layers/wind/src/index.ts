@@ -1,4 +1,4 @@
-import { colormaps, cssGradient, defineLayer, geojsonPolygons, readSiteData, stretch, tableSpace } from '@mrstudio/sdk';
+import { readSiteGeometry, colormaps, cssGradient, defineLayer, stretch } from '@mrstudio/sdk';
 import type { FieldFrame, FlowOverlay, LayerManifest, TableContext } from '@mrstudio/sdk';
 
 import { windHero } from './hero.ts';
@@ -51,7 +51,7 @@ export default defineLayer<Params>({
     const speed = ctx.map.addField('speed', { colormap: ramp(), opacity: mapOpacity() });
     let flow: FlowOverlay | null = null;
     // Building outlines for the facade glow, in table metres; none on a site without buildings.
-    const buildings = geojsonPolygons(await readSiteData(ctx.site, 'buildings'), tableSpace(ctx.site)).map((p) => p.geometry as [number, number][][]);
+    const buildings = ((await readSiteGeometry(ctx.site, 'buildings'))?.polygons ?? []).map((p) => p.geometry as [number, number][][]);
     let u: FieldFrame | null = null;
     let v: FieldFrame | null = null;
     const restyle = () => {

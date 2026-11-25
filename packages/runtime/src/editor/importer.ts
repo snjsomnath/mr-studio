@@ -1,5 +1,5 @@
 import { okCancel } from './platform.ts';
-import { columnNumbers, paintBreaks, paintScale, profileColumns, rampColour, rampShare, siteDataUrl, STRAY_REACH, tablePalette, tableReach, tableSpace } from '@mrstudio/sdk';
+import { columnNumbers, packInWorker, unpackGeometry, paintBreaks, paintScale, profileColumns, rampColour, rampShare, siteDataUrl, STRAY_REACH, tablePalette, tableReach, tableSpace } from '@mrstudio/sdk';
 import type { GeometryKind, PaintBy, Paint, SiteInfo } from '@mrstudio/sdk';
 
 import { el } from '../controls.ts';
@@ -217,17 +217,15 @@ export function reach(site: SiteInfo, dataset: string): Promise<number | null> {
       try {
         const response = await fetch(url, { cache: 'no-cache' });
         if (!response.ok) return null;
-        const document = await response.json();
-        const space = tableSpace(site);
-        const lines: [number, number][][] = [];
-        for (const feature of document?.features ?? []) {
-          const geometry = feature?.geometry;
-          // Lines are followed along their length; every other shape counts by its corners.
-          const parts = geometry?.type === 'LineString' ? [geometry.coordinates] : geometry?.type === 'MultiLineString' ? geometry.coordinates : null;
-          if (parts) for (const part of parts) lines.push(positions(part).map(([lon, lat]) => space.toTable(lon, lat)));
-          else for (const [lon, lat] of positions(geometry?.coordinates)) lines.push([space.toTable(lon, lat)]);
-        }
-        return lines.length ? tableReach(lines, space) : null;
+        // Read in the SDK's data worker (#263), so a big file doesn't stall the editor.
+        const shapes = unpackGeometry(await packInWorker(await response.arrayBuffer(), site));
+        // Lines are followed along their length; every other shape counts by its corners.
+        const lines: [number, number][][] = [
+          ...shapes.lines.map((l) => l.geometry),
+          ...shapes.polygons.flatMap((p) => p.geometry.flatMap((ring) => ring.map((corner) => [corner]))),
+          ...shapes.points.map((p) => [p.geometry]),
+        ];
+        return lines.length ? tableReach(lines, tableSpace(site)) : null;
       } catch {
         return null;
       }

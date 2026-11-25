@@ -51,7 +51,7 @@ export const COMMANDS = {
   'buttons.labelled': { label: 'Icons and names', icon: 'bars', tip: 'Each button shows its icon and its name', group: 'Design', also: 'button style labels' },
   'map.basemap': { label: 'Base map', icon: 'map', tip: 'Select the base map under At rest, to choose its style in the settings on the right', group: 'Design', also: 'style streets satellite' },
   'map.palette': { label: 'Palette', icon: 'palette', tip: 'The colours every custom layer uses. Change one and the whole table follows.', group: 'Design', also: 'colours colors' },
-  'dialog.place': { label: 'Table size and place…', icon: 'route', tip: 'The table’s name, where it is, how much ground it covers, its time zone and where visitors stand', group: 'Design', also: 'name move resize time zone front ribbons location where table settings' },
+  'dialog.place': { label: 'Table size and place…', icon: 'route', tip: 'The table’s name, where it is, how much ground it covers, its time zone and where visitors stand', group: 'Design', also: 'name move resize time zone front ribbons glow ambient location where table settings' },
   'dialog.welcome': { label: 'Welcome and languages…', icon: 'tv', tip: 'What the controller says when nobody is using the table, its logo, and the languages visitors read', group: 'Design', also: 'title logo idle loop swedish english phones table settings' },
   'dialog.starters': { label: 'Starter tables…', icon: 'layers', tip: 'Climate, Movement, Story or Blank: adds a starter table’s layers, map life and controller theme', group: 'Design', also: 'starter template wizard guide setup climate movement story blank theme' },
 

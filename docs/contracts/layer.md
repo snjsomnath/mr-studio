@@ -358,6 +358,7 @@ interface MapHandle {
   addDrawing(id: string, options?: { opacity?: number; resolution?: number }): DrawingOverlay;
   addPicture(): TablePicture;       // a copy of what the table shows now, for a magnifier (#287)
   addDetail(render: (g: CanvasRenderingContext2D, scale: number) => void): void;  // draw this layer again sharply for a magnifier, in table metres (#351)
+  setGlow(glow: 'off' | string | null): void;  // the ambient glow while this layer is on: off, a fixed '#rrggbb', or null for the model's own colours (#476)
   detail(centre: [number, number], radius_m: number, size: number): HTMLCanvasElement | null;  // the other layers' sharp pictures of a square, size px across
 }
 
