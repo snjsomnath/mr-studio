@@ -3,6 +3,8 @@
 //
 //   pnpm build && cargo build -p mrs-cli
 //   cp -r sites/sample /tmp/preview-site
+//   cp samples/kit/masterplan.svg /tmp/preview-site/data/   (and "masterplan": "data/masterplan.svg" under data in site.json)
+//   mkdir -p /tmp/preview-site/data/media && cp samples/kit/overlay.png /tmp/preview-site/data/media/
 //   target/debug/mrstudio dev --site /tmp/preview-site --web packages/runtime/dist &
 //   node scripts/layer-previews.cjs [http://localhost:4170] [layer ...]
 //
@@ -19,7 +21,20 @@ const out = path.join(__dirname, '..', 'packages', 'runtime', 'public', 'preview
 /** Settings that make a layer draw something on the sample site. */
 const SETTINGS = {
   mapdata: { dataset: 'buildings' },
-  plan: {},
+  // These need a file of the site: the preview site gets the sample kit's masterplan.svg and overlay.png (#409).
+  plan: { dataset: 'masterplan' },
+  media: { file: 'data/media/overlay.png' },
+};
+/** Marks put on a layer through its tools, as a phone or a click would, for layers that start empty (#409). On the sample site. */
+const at = (dx, dy) => [11.97 + dx * 0.0084, 57.7 + dy * 0.0027];
+const TOOLS = {
+  isovist: [{ tool: 'stand', geometry: { type: 'Point', coordinates: at(-0.1, -0.05) } }],
+  sketch: [
+    { tool: 'area', geometry: { type: 'Polygon', coordinates: [[at(-0.7, 0.5), at(-0.2, 0.6), at(-0.1, 0.1), at(-0.6, 0), at(-0.7, 0.5)]] } },
+    { tool: 'route', geometry: { type: 'LineString', coordinates: [at(-0.8, -0.6), at(-0.3, -0.3), at(0.2, -0.4), at(0.7, 0.1)] } },
+    { tool: 'arrow', geometry: { type: 'LineString', coordinates: [at(0.1, 0.6), at(0.35, 0.45), at(0.55, 0.5)] } },
+    { tool: 'place', geometry: { type: 'Point', coordinates: at(0.4, -0.1) } },
+  ],
 };
 /** Seconds a layer runs before its picture is taken: long enough for motion to fill the table. */
 const SETTLE = { mobility: 8, wind: 8, stormwater: 14, transit: 8, cars: 8, 'street-life': 8, coolpaths: 6 };
@@ -79,6 +94,7 @@ function connect() {
       if (SETTINGS[id]) await host.request('layer.set', { layer, params: SETTINGS[id] }).catch(() => {});
       if (ambient) await host.request('scene.set', { layer, active: true });
       else await host.request('layer.activate', { layer, active: true });
+      for (const input of TOOLS[id] ?? []) await host.request('tool.input', { layer, ...input }).catch((error) => console.warn(`${id} ${input.tool}: ${error.message}`));
       await table.waitForTimeout((SETTLE[id] ?? 4) * 1000);
       const png = await table.screenshot({ type: 'png' });
       // Chromium writes the WebP: 480 wide, cropped to 16:9 around the middle of the table.
