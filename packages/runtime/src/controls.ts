@@ -1153,7 +1153,7 @@ export class Controller {
     const fromShow = Boolean(store.state.layers[id]?.shown_by);
     const activate = connection.request('layer.activate', { layer: id, active: true }).catch(() => {});
     if (fromShow) await activate;
-    if (!mine?.alongside) closeOthers(store, connection, id);
+    if (!mine?.alongside || mine.alongsideOf) closeOthers(store, connection, id);
   }
 
   /**
@@ -1659,7 +1659,7 @@ export class Controller {
       connection
         .request('layer.activate', { layer: id, active: on })
         // A phone opens a layer the way the controller's button does: the open layer makes way (#335).
-        .then(() => phone && on && !manifest.alongside && closeOthers(store, connection, id))
+        .then(() => phone && on && (!manifest.alongside || manifest.alongsideOf) && closeOthers(store, connection, id))
         .catch(() => (power.checked = !on));
     });
     // Phones turn layers on and off too (#335), unless the table, the layer or a tour holds them back.
@@ -1775,10 +1775,15 @@ export function phoneMaySwitch(store: Store, manifest: LayerManifest): boolean {
 
 /** Closes the open layers other than `id`, as opening a layer from its button does. Tools kept alongside, the map at rest and a slideshow's layers (the host takes those off with it) stay. */
 function closeOthers(store: Store, connection: Connection, id: string): void {
+  const opened = store.state.layers[id];
+  const openedManifest = opened && store.manifest(opened.layer);
   for (const other of store.state.scene) {
     const state = store.state.layers[other];
     const manifest = state && store.manifest(state.layer);
-    if (other === id || !state?.active || state.parent || state.shown_by || !manifest || isAtRest(manifest, state) || manifest.alongside) continue;
+    if (other === id || !state?.active || state.parent || state.shown_by || !manifest || isAtRest(manifest, state)) continue;
+    // A tool kept alongside stays, unless it names the layers it stays beside (the field walk under an X-ray, #466).
+    if (manifest.alongside && (!manifest.alongsideOf || (opened !== undefined && manifest.alongsideOf.includes(opened.layer)))) continue;
+    if (openedManifest?.alongsideOf?.includes(state.layer)) continue;
     void connection.request('layer.activate', { layer: other, active: false, cue: false }).catch(() => {});
   }
 }

@@ -163,6 +163,8 @@ export interface LayerManifest {
   category?: LayerCategory;
   /** The layer stays open when another layer's button is pressed on the controller. Default false. */
   alongside?: boolean;
+  /** With `alongside`: the layer stays open only beside these layers (package ids, such as `swipe` and `lens`). Any other layer's button closes it, and opening it closes the others, as for a layer without `alongside`. */
+  alongsideOf?: string[];
   /** While the layer is open, the map at rest (its `base` and `ambient` layers) is turned off on the table, and comes back when it closes. The slideshow does this (#205). Default false. */
   hidesAtRest?: boolean;
   /** Phones may turn the layer on and off (#335). Default true; false for a layer only the controller should open. */
