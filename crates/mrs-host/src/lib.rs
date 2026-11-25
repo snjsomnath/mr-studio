@@ -8,6 +8,7 @@ mod calibration;
 pub mod data;
 pub mod diagnostics;
 mod engine_bridge;
+pub mod field;
 pub mod health;
 mod hub;
 pub mod layers;
@@ -90,6 +91,8 @@ pub struct AppState {
     pub services: services::Services,
     /// The latest picture each layer's table sent for its controller (`ctx.view`, #351), by layer instance.
     views: std::sync::Mutex<std::collections::HashMap<String, LayerView>>,
+    /// The field walk's spots, photos and sounds from visitors' phones (#445).
+    pub field: field::Field,
 }
 
 /// A picture a layer's table sent for the controller: the Magnifier's view under its glass.
@@ -359,6 +362,39 @@ const LIVE_KEYS: [&str; 8] = ["layers", "custom", "palette", "tv", "display", "n
 impl AppState {
     /// `history.list`, `history.undo`, `history.redo` and `history.restore { revision }` (#72).
     /// Undo and redo walk the history; restore brings back any kept revision as a new one.
+    /// A `field.*` request (#445): spots from phones, removed by the controller. A change to the
+    /// list of spots reaches every Field walk layer as its `revision`, so its views fetch it again.
+    pub fn field_request(&self, role: hub::Role, surface: u64, method: &str, p: &Value) -> Result<Value, String> {
+        if method == "field.add" && !self.hub.has_package(field::PACKAGE) {
+            return Err("this table has no field walk".into());
+        }
+        let seat = if role == hub::Role::Phone { self.hub.participant_of(surface) } else { None };
+        let (answer, revision) = self.field.request(role, method, p, seat)?;
+        if let Some(revision) = revision {
+            self.hub.poke(field::PACKAGE, "revision", json!(revision));
+        }
+        Ok(answer)
+    }
+
+    /// `layer.action` on a Field walk: `remove` deletes the spot it shows, `clear` the whole walk.
+    pub fn field_action(&self, role: hub::Role, p: &Value) -> Result<(), String> {
+        let Some((package, params)) = p["layer"].as_str().and_then(|l| self.hub.instance_params(l)) else { return Ok(()) };
+        if package != field::PACKAGE {
+            return Ok(());
+        }
+        let (method, what) = match p["action"].as_str() {
+            Some("remove") => ("field.remove", json!({ "id": params.get("shown").cloned().unwrap_or(Value::Null) })),
+            Some("clear") => ("field.clear", json!({})),
+            _ => return Ok(()),
+        };
+        let (_, revision) = self.field.request(role, method, &what, None)?;
+        self.hub.poke(field::PACKAGE, "shown", json!(""));
+        if let Some(revision) = revision {
+            self.hub.poke(field::PACKAGE, "revision", json!(revision));
+        }
+        Ok(())
+    }
+
     pub async fn history_request(&self, role: Role, surface: u64, method: &str, p: &Value) -> Result<Value, String> {
         if role.from_a_phone() {
             return Err("phones cannot see the table's history".into());
@@ -564,6 +600,7 @@ pub async fn start(config: HostConfig) -> anyhow::Result<RunningHost> {
         Some(base) => tracing::info!("phones join at {base}/phone"),
         None => tracing::info!("listening on this computer only; phones cannot join"),
     }
+    let field = field::Field::open(&site.dir, (site.manifest.origin.lon, site.manifest.origin.lat));
     let hub = Hub::new(&site, catalog, addr.port(), join_base, config.session.clone())?;
     // The site's services start now and come up in the background; their incidents go to the operator log.
     let (service_incidents, mut service_incident_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
@@ -587,6 +624,7 @@ pub async fn start(config: HostConfig) -> anyhow::Result<RunningHost> {
         bridge: Default::default(),
         views: Default::default(),
         links: Default::default(),
+        field,
     });
     // An engine that recovered from a failure (#79): noted for the operator log, and the
     // surfaces open their streams again on the new engine.
@@ -702,6 +740,8 @@ fn router(state: Arc<AppState>, web_dir: Option<PathBuf>) -> Router {
         .route("/api/data/sounds", get(list_sounds).post(save_sound))
         .route("/api/data/media", get(list_media).post(save_media))
         .route("/api/data/field", get(data_field))
+        .route("/api/field", get(field_list))
+        .route("/api/field/{file}", get(field_file))
         .route("/api/media", get(list_library))
         .route("/api/site/place", post(place_site))
         .route("/api/site/thumbnail", post(save_thumbnail))
@@ -744,7 +784,47 @@ fn router(state: Arc<AppState>, web_dir: Option<PathBuf>) -> Router {
         )),
         None => app.fallback(|| async { "MR Studio host is running. Surfaces are not built; run the web dev server or pass --web." }),
     };
+    // The field walk (#445) is visitors' photos and sounds: this computer reads them through
+    // /api/field, and no phone reaches them through /site, however the path is spelt.
+    app = app.layer(axum::middleware::from_fn(guard_field));
     app.with_state(state)
+}
+
+async fn guard_field(request: axum::extract::Request, next: axum::middleware::Next) -> axum::response::Response {
+    let path = request.uri().path();
+    if path.len() > 5 && path[..5].eq_ignore_ascii_case("/site") && field::is_field_path(&path[5..]) {
+        let local = request.extensions().get::<ConnectInfo<SocketAddr>>().is_some_and(|c| c.0.ip().is_loopback());
+        if !local {
+            return (StatusCode::NOT_FOUND, "not found").into_response();
+        }
+    }
+    next.run(request).await
+}
+
+/// `GET /api/field`: the field walk's spots (#445), for the table and the controller on this computer.
+async fn field_list(State(state): State<Arc<AppState>>, ConnectInfo(from): ConnectInfo<SocketAddr>) -> axum::response::Response {
+    if !from.ip().is_loopback() {
+        return (StatusCode::FORBIDDEN, Json(json!({ "error": "the field walk is shown on this computer only" }))).into_response();
+    }
+    ([(header::CACHE_CONTROL, "no-store")], Json(state.field.list())).into_response()
+}
+
+/// `GET /api/field/<file>`: one spot's photo or sound.
+async fn field_file(
+    State(state): State<Arc<AppState>>,
+    ConnectInfo(from): ConnectInfo<SocketAddr>,
+    axum::extract::Path(file): axum::extract::Path<String>,
+) -> axum::response::Response {
+    if !from.ip().is_loopback() {
+        return (StatusCode::FORBIDDEN, Json(json!({ "error": "the field walk is shown on this computer only" }))).into_response();
+    }
+    let Some(path) = state.field.file(&file) else { return StatusCode::NOT_FOUND.into_response() };
+    match tokio::fs::read(path).await {
+        Ok(bytes) => {
+            ([(header::CONTENT_TYPE, field::content_type(&file)), (header::CACHE_CONTROL, "max-age=86400")], bytes).into_response()
+        }
+        Err(_) => StatusCode::NOT_FOUND.into_response(),
+    }
 }
 
 /// Only this computer may use a source, and a page from another site in the same browser

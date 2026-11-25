@@ -85,6 +85,7 @@ changes              release notes waiting for the next version (docs/RELEASING.
 | Magnifier | A glass people move over the table: a larger view of what is under it, or an X-ray of the layers placed inside it | `lens` |
 | Reveal line | A line people move across the table: on one side the layers placed inside it show, such as pipes and tunnels | `swipe` |
 | Video walk | A video on the controller, its walker moving along the path on the table | `walkthrough` |
+| Field walk | Spots visitors marked on a walk with their phones, each with a photo or a sound; the controller shows or plays it | `fieldwalk` |
 | Slideshow | Images, video, map data and layers one after another; with presenter notes it is a guided tour on the guide's phone | `slideshow` |
 | Picture or video | A picture or video of the site over the whole table: a simulation, an old photo, a film of a sun study | `media` |
 | Web map (WMS) | A map from a WMS or ArcGIS service laid over the table | `wms` |

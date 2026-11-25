@@ -134,6 +134,7 @@ The core layers in `packages/layers`, with the issue that made each one:
 | Magnifier | `lens` | none | a magnifier or an X-ray glass, from the mouse, the controller and phones (#287) |
 | Reveal line | `swipe` | none | a line that reveals the layers inside it on one side (#288) |
 | Video walk | `walkthrough` | none | a video and its walker on the table (#194) |
+| Field walk | `fieldwalk` | none | spots with photos and sounds from visitors' phones, walk by walker; shown or played on the controller (#445) |
 | Slideshow | `slideshow` | none | a sequence of layers and media; guided tours with presenter notes (#43, #98) |
 | Picture or video | `media` | none | a picture or video over the whole table; slides with transitions (#197) |
 | Web map (WMS) | `wms` | none | WMS and ArcGIS maps (#42) |

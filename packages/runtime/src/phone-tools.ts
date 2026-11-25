@@ -37,7 +37,7 @@ function svg<K extends keyof SVGElementTagNameMap>(tag: K, attributes: Record<st
 
 /** The site's building footprints as rings in table coordinates. Fetched once per page. */
 let footprints: Promise<[number, number][][]> | null = null;
-function loadFootprints(site: SiteInfo): Promise<[number, number][][]> {
+export function loadFootprints(site: SiteInfo): Promise<[number, number][][]> {
   if (!site.data.buildings) return Promise.resolve([]);
   footprints ??= fetch(`/site/${site.data.buildings}`)
     .then((response) => response.json())

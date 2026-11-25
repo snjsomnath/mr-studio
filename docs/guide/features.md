@@ -160,6 +160,14 @@ Layer `walkthrough`, media.
 
 ![Video walk](docs/screenshots/194-tv-playing.png)
 
+## Field walk
+
+Visitors walk around the place with their phones and mark spots, each with a photo or a sound. Back at the table every spot shows in its walker's colour, and the controller shows the photo or plays the sound of the spot picked.
+
+Layer `fieldwalk`, media.
+
+![Field walk on the controller](docs/screenshots/445-controller-photo.png)
+
 ## Slideshow
 
 Images, video and map data shown on the table one after another.

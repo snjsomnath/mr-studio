@@ -1,0 +1,24 @@
+{
+  "api": 1,
+  "id": "fieldwalk",
+  "name": "Field walk",
+  "description": "What visitors marked on their walk, with a photo or a sound at each spot",
+  "about": {
+    "purpose": "Brings what a group noticed on a walk around the place back to the table: each person's spots, with their photos and sounds, so the group can talk about them together.",
+    "questions": ["What did you notice out there, and where?", "Where does the place sound loud, calm or alive?", "Which spots did several people choose?"],
+    "pairs_with": ["sketch", "walkthrough", "sunlight"],
+    "limits": ["Phones need the join page (HTTPS) for GPS and recording sound; on plain Wi-Fi visitors tap where they are and pick a sound file", "Photos and sounds stay on the studio computer until the controller clears the walk"]
+  },
+  "icon": "map-pin",
+  "attract": { "effect": "waves" },
+  "category": "media",
+  "phone_switch": false,
+  "controls": [
+    { "id": "trails", "type": "toggle", "label": "Join each walker's spots", "default": true, "help": "A faint line through each person's spots in the order they were taken." },
+    { "id": "opacity", "type": "range", "label": "Opacity", "min": 0.2, "max": 1, "step": 0.05, "default": 1, "tier": "more" },
+    { "id": "shown", "type": "text", "label": "Spot on show", "default": "", "tier": "state" },
+    { "id": "revision", "type": "range", "label": "Spots received", "min": 0, "max": 1000000000, "step": 1, "default": 0, "tier": "state" }
+  ],
+  "actions": [{ "id": "remove", "label": "Remove this spot" }, { "id": "clear", "label": "Clear the walk" }],
+  "tools": []
+}
