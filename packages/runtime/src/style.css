@@ -605,6 +605,11 @@ body[data-role='tv'] .controller .join-address .join-code {
   flex-basis: 100%;
 }
 
+/* An alongside tool with a viewer of its own (the field walk) leads while no other layer is open. */
+.layer-open.is-alongside.is-lead {
+  display: block;
+}
+
 /*
  * On the controller the dashboard's text never gets smaller than the controls beside it
  * (the unit is at least 0.8% of the screen's height, the demo's scale for a 46-inch TV),

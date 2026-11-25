@@ -1372,7 +1372,16 @@ export class Controller {
     if (!this.centre) return;
     // A tool kept alongside (the phones' sketch) is not a layer the visitor chose.
     const chosen = this.openLayers().filter((id) => !this.store.manifest(this.store.state.layers[id]!.layer)?.alongside);
-    this.welcome.hidden = this.aboutOpen || chosen.length > 0;
+    // One with a viewer of its own (the field walk's photos) leads while nothing else is open, as a layer would.
+    let leads = false;
+    for (const id of this.openLayers()) {
+      const body = this.cards.get(id)?.body;
+      if (!body?.classList.contains('is-alongside')) continue;
+      const lead = chosen.length === 0 && Boolean(body.querySelector(':scope > .layer-hero:not([hidden])'));
+      body.classList.toggle('is-lead', lead);
+      leads ||= lead;
+    }
+    this.welcome.hidden = this.aboutOpen || chosen.length > 0 || leads;
     if (this.attract) this.attract.active = !this.welcome.hidden;
   }
 
