@@ -19,6 +19,7 @@ mod models;
 mod operator;
 mod sites;
 mod updates;
+mod waiting;
 mod watchdog;
 
 use std::collections::BTreeMap;
@@ -168,6 +169,7 @@ fn main() -> anyhow::Result<()> {
             create_site,
             present,
             stop_presenting,
+            update_waiting_now,
             presenting_state,
             save_displays,
             save_settings,
@@ -346,7 +348,19 @@ enum ImportOutcome {
     Done(ImportedTable),
     /// This computer already has this table (#372): Home asks whether to update it or keep
     /// both, and calls again with `mode`.
-    SameTable { file: PathBuf, name: String, existing: PathBuf, existing_name: String, edited: Option<u64> },
+    SameTable {
+        file: PathBuf,
+        name: String,
+        existing: PathBuf,
+        existing_name: String,
+        edited: Option<u64>,
+        /// That table is open here, in the editor or on the screens (#401).
+        open: bool,
+        /// It is on the screens: Home offers to update when the show stops.
+        presenting: bool,
+    },
+    /// The file waits until the show stops (#401).
+    Waiting { name: String },
 }
 
 /// Opens a `.mrstable` file (#85): asks for one when `file` is not given, unpacks it as a new
@@ -356,7 +370,9 @@ enum ImportOutcome {
 /// When this computer already has the same table (same id), it first answers `SameTable`.
 /// `mode` "update" then replaces that table's content and keeps this computer's calibration,
 /// history and kept answers, putting the earlier version in the Trash; "copy" opens it as a
-/// second table, as before.
+/// second table, as before. When that table is open, "update" stops it, updates it and opens
+/// it again (on the screens if it was presenting), and "wait" keeps the file until the show
+/// stops (#401).
 #[tauri::command]
 async fn import_table(
     app: AppHandle,
@@ -386,31 +402,31 @@ async fn import_table(
     let same = (!id.is_empty())
         .then(|| sites::discover(&settings.sites, &shell.sites_folders, &shell.resources.join("sites")))
         .and_then(|found| found.into_iter().find(|s| s.id == id && s.problem.is_none() && s.source != "built in"));
+    let open = |same: &SiteEntry| shell.running.lock().unwrap().as_ref().is_some_and(|r| sites::canonical(r.site.clone()) == same.path);
     let imported = match (same, mode.as_deref()) {
         (Some(same), None) => {
+            let open = open(&same);
             return Ok(Some(ImportOutcome::SameTable {
                 file,
                 name: same.name.clone(),
                 existing: same.path,
                 existing_name: same.name,
                 edited: same.edited,
+                open,
+                presenting: open && is_presenting(&app),
             }));
         }
+        (Some(same), Some("wait")) => {
+            let waiting = waiting::hold(&shell.config_dir.join("waiting"), &file, &same.path, &same.name).map_err(text)?;
+            shell.operator.note(format!("A new version of '{}' waits for the show to stop.", waiting.name));
+            return Ok(Some(ImportOutcome::Waiting { name: waiting.name }));
+        }
         (Some(same), Some("update")) => {
-            let open = shell.running.lock().unwrap().as_ref().is_some_and(|r| sites::canonical(r.site.clone()) == same.path);
-            if open {
-                return Err(format!("{} is open on this computer. Close it (and stop presenting), then open the file again.", same.name));
+            let present = open(&same) && is_presenting(&app);
+            if present {
+                shell.operator.note(format!("Stopped presenting '{}' to update it.", same.name));
             }
-            let existing = same.path.clone();
-            let updated =
-                tokio::task::spawn_blocking(move || mrs_site::package::update(&file, &existing)).await.map_err(text)?.map_err(opened)?;
-            if let Some(old) = &updated.replaced {
-                if let Err(e) = sites::move_to_trash(old) {
-                    tracing::warn!("the earlier version stays in {}: {e:#}", old.display());
-                }
-            }
-            tracing::info!("updated {} from a table file", same.path.display());
-            updated
+            update_table(&app, file, same.path.clone(), present).await.map_err(text)?
         }
         _ => {
             let into = shell.sites_folders.first().cloned().ok_or("This computer has no folder for tables.")?;
@@ -450,6 +466,8 @@ fn init_logging(log_dir: Option<&Path>) {
 ///   the Home page opens if not.
 async fn startup(app: AppHandle) {
     let shell = app.state::<Shell>();
+    // A newer version that waited for a show that ended with the app (#401) is applied first.
+    apply_waiting(&app, false).await;
     let args: Vec<String> = std::env::args().skip(1).collect();
     let setup = args.iter().any(|a| a == "--setup");
     let explicit = args.iter().find(|a| !a.starts_with('-')).cloned().or_else(|| std::env::var("MRS_SITE").ok()).map(PathBuf::from);
@@ -604,19 +622,7 @@ async fn launch(app: &AppHandle, site: PathBuf, lan: bool) -> anyhow::Result<()>
     let shell = app.state::<Shell>();
     // One start at a time.
     let mut host = shell.host.lock().await;
-    close_surfaces(app)?;
-    // The editor window stays: it may be the only window, and an app without windows quits.
-    // It shows the site that is about to stop, so it is marked for a reload.
-    shell.editor_stale.store(true, Ordering::Relaxed);
-    for (label, window) in app.webview_windows() {
-        if label.starts_with("view-") {
-            window.destroy()?;
-        }
-    }
-    *shell.running.lock().unwrap() = None;
-    if let Some(old) = host.take() {
-        old.stop(Duration::from_secs(2)).await;
-    }
+    stop_locked(app, &mut host).await?;
 
     // A site saved by an older version is brought up to this version's format, on disk,
     // with the original kept beside it. A site from a newer version is refused with advice.
@@ -656,6 +662,73 @@ async fn launch(app: &AppHandle, site: PathBuf, lan: bool) -> anyhow::Result<()>
     *host = Some(started);
     *shell.running.lock().unwrap() = Some(running);
     Ok(())
+}
+
+/// Stops the running table, with the host's lock held: its screens and views close, and the
+/// editor window, which stays, is marked for a reload.
+async fn stop_locked(app: &AppHandle, host: &mut Option<RunningHost>) -> anyhow::Result<()> {
+    let shell = app.state::<Shell>();
+    close_surfaces(app)?;
+    // The editor window stays: it may be the only window, and an app without windows quits.
+    // It shows the site that is about to stop, so it is marked for a reload.
+    shell.editor_stale.store(true, Ordering::Relaxed);
+    for (label, window) in app.webview_windows() {
+        if label.starts_with("view-") {
+            window.destroy()?;
+        }
+    }
+    *shell.running.lock().unwrap() = None;
+    if let Some(old) = host.take() {
+        old.stop(Duration::from_secs(2)).await;
+    }
+    Ok(())
+}
+
+/// Puts the table file `file` in place of the table in `table` (#372), keeping this computer's
+/// calibration. When that table is running it stops first and starts again on the new version,
+/// back on the screens when `present` and in the editor when the editor is open (#401).
+async fn update_table(app: &AppHandle, file: PathBuf, table: PathBuf, present: bool) -> anyhow::Result<mrs_site::package::Imported> {
+    let shell = app.state::<Shell>();
+    let was = shell.running.lock().unwrap().clone().filter(|r| sites::canonical(r.site.clone()) == table);
+    if was.is_some() {
+        let mut host = shell.host.lock().await;
+        stop_locked(app, &mut host).await?;
+    }
+    let existing = table.clone();
+    let updated = tokio::task::spawn_blocking(move || mrs_site::package::update(&file, &existing))
+        .await?
+        .map_err(|e| anyhow::anyhow!("That table file could not be opened: {e}"))?;
+    if let Some(old) = &updated.replaced {
+        if let Err(e) = sites::move_to_trash(old) {
+            tracing::warn!("the earlier version stays in {}: {e:#}", old.display());
+        }
+    }
+    tracing::info!("updated {} from a table file", table.display());
+    if let Some(was) = was {
+        launch(app, was.site.clone(), was.lan).await?;
+        if present {
+            show(app, &usual_displays(app)?)?;
+        }
+        if app.get_webview_window(EDITOR).is_some() {
+            open_editor(app, "edit")?;
+        }
+    }
+    Ok(updated)
+}
+
+/// Applies the version waiting for the show to stop (#401), if there is one. The table starts
+/// again if it was running, on the screens when `present`. True when a version was applied.
+async fn apply_waiting(app: &AppHandle, present: bool) -> bool {
+    let shell = app.state::<Shell>();
+    let dir = shell.config_dir.join("waiting");
+    let Some(waiting) = waiting::read(&dir) else { return false };
+    let result = update_table(app, waiting.file.clone(), waiting.table.clone(), present).await;
+    waiting::clear(&dir);
+    match result {
+        Ok(_) => shell.operator.note(format!("'{}' is updated to the version that waited for the show to stop.", waiting.name)),
+        Err(e) => shell.operator.note(format!("The version of '{}' that waited could not be applied: {e:#}", waiting.name)),
+    }
+    true
 }
 
 /// Runs `site` unless it is what is running already, with the same network choice.
@@ -1187,6 +1260,8 @@ struct LauncherState {
     running: Option<Running>,
     /// The running site is on the displays, not only open in the editor.
     presenting: bool,
+    /// The name of a table whose newer version waits for the show to stop (#401).
+    waiting: Option<String>,
     error: Option<String>,
 }
 
@@ -1247,6 +1322,7 @@ fn launcher_state(app: AppHandle, shell: State<'_, Shell>) -> Result<LauncherSta
         nightly_restart: settings.nightly_restart.clone(),
         running,
         presenting: is_presenting(&app),
+        waiting: waiting::read(&shell.config_dir.join("waiting")).map(|w| w.name),
         error,
     })
 }
@@ -1689,7 +1765,19 @@ async fn present(app: AppHandle, shell: State<'_, Shell>, windows: Option<Vec<As
 #[tauri::command]
 async fn stop_presenting(app: AppHandle) -> Result<(), String> {
     app.state::<Shell>().operator.note("Stopped presenting.");
-    close_surfaces(&app).map_err(text)
+    close_surfaces(&app).map_err(text)?;
+    // A newer version of the table waited for the show to stop (#401).
+    apply_waiting(&app, false).await;
+    Ok(())
+}
+
+/// Home's "Update now" for the version waiting for the show to stop (#401): the show stops,
+/// the table updates and goes back on the screens.
+#[tauri::command]
+async fn update_waiting_now(app: AppHandle) -> Result<(), String> {
+    let present = is_presenting(&app);
+    apply_waiting(&app, present).await;
+    Ok(())
 }
 
 /// Shows the Home page: recent tables and New table.

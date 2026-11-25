@@ -29,7 +29,8 @@ export function listLimit(widget: WidgetDefinition, prop: string, spec: Extract<
 function checkProp(path: string, spec: PropSpec, value: unknown, limit: number | undefined, issues: Issue[]): void {
   const fail = (rule: Issue['rule'], message: string) => issues.push({ path, rule, message });
   if (isBinding(value)) {
-    if (!spec.bindable) fail('binding', 'cannot be bound to a live value');
+    // A whole list may be bound: its items are held to the item schema as they arrive (#373).
+    if (!spec.bindable && spec.kind !== 'list') fail('binding', 'cannot be bound to a live value');
     else if (!BIND_PATH.test(value.bind)) fail('binding', `'${value.bind}' is not params.<id>, shared.<key> or site.<field>`);
     return;
   }

@@ -8,7 +8,9 @@
 //   links      a CSV with from,to (and optional id, value), or lines with from/to properties.
 //              A link without a line of its own is routed along the streets, or drawn straight.
 //   series     optional, long format: id (a node or link id; or from,to for a link), a time
-//              column (time, hour, step, date), and one column per named series (flow, level)
+//              column (time, hour, step, date), and one column per named series (flow, level).
+//              Without it, a link whose `flow` property is a list of numbers ([3, 5, 2, …], or
+//              that list written as text in a CSV) plays that list, one step each (#373).
 //
 // One shared play head walks the series: an hour every `step_s` seconds, looping. Visitors
 // can scrub and pause it from the controller (the layer's `network_at` and `network_play`).
@@ -38,7 +40,10 @@ export interface NetworkProps {
   series: string | null;
   /** A dataset of lines that links without a line of their own follow; null draws them straight. */
   streets: string | null;
-  /** The series column a link's flow comes from. Positive flows from `from` to `to`. */
+  /**
+   * The series column a link's flow comes from. Positive flows from `from` to `to`. On a link
+   * itself the property may hold a whole list, one value per step (#373), such as `flow_hourly`.
+   */
   flow: string;
   /** The series column a node's gauge comes from (0 to 1, or rescaled to its own top). */
   gauge: string;
@@ -142,6 +147,20 @@ const number = (v: unknown) => {
   const n = typeof v === 'number' ? v : typeof v === 'string' && v.trim() !== '' ? Number(v) : NaN;
   return Number.isFinite(n) ? n : null;
 };
+/** A list of numbers held on a link (#373): an array, or one written as text ("[3, 5, 2]"). Null otherwise. */
+function numberList(v: unknown): number[] | null {
+  let list = v;
+  if (typeof v === 'string' && v.trim().startsWith('[')) {
+    try {
+      list = JSON.parse(v);
+    } catch {
+      return null;
+    }
+  }
+  if (!Array.isArray(list) || list.length < 2) return null;
+  const values = list.map(number);
+  return values.every((x) => x !== null) ? (values as number[]) : null;
+}
 
 /** A step's time for ordering: a number, a date, or a clock time (07:30) in minutes. */
 function stepTime(value: string): number {
@@ -177,7 +196,7 @@ export function networkData(spots: readonly Spot[], inputs: NetworkInputs, props
   });
 
   // ---- Links ----
-  type Raw = { id: string; from: string; to: string; line: MeasuredPath | null; value: number | null };
+  type Raw = { id: string; from: string; to: string; line: MeasuredPath | null; value: number | null; values: number[] | null };
   const raw: Raw[] = [];
   for (const path of inputs.linkShapes?.paths ?? []) {
     const p = (path.properties ?? {}) as Row;
@@ -186,7 +205,8 @@ export function networkData(spots: readonly Spot[], inputs: NetworkInputs, props
     const idKey = findKey(p, ['id', 'link', 'name']);
     const valueKey = findKey(p, [o.flow.toLowerCase(), 'value', 'volume']);
     if (!fromKey || !toKey) continue;
-    raw.push({ id: idKey ? text(p[idKey]) : '', from: text(p[fromKey]), to: text(p[toKey]), line: path.points.length >= 2 ? measurePath(path.points) : null, value: valueKey ? number(p[valueKey]) : null });
+    const values = valueKey ? numberList(p[valueKey]) : null;
+    raw.push({ id: idKey ? text(p[idKey]) : '', from: text(p[fromKey]), to: text(p[toKey]), line: path.points.length >= 2 ? measurePath(path.points) : null, value: valueKey && !values ? number(p[valueKey]) : null, values });
   }
   const linkRows = inputs.linkRows ?? [];
   const head = linkRows[0];
@@ -196,7 +216,10 @@ export function networkData(spots: readonly Spot[], inputs: NetworkInputs, props
   if (fromKey && toKey) {
     const idKey = findKey(head, ['id', 'link', 'name']);
     const valueKey = findKey(head, [o.flow.toLowerCase(), 'value', 'volume']);
-    for (const row of linkRows) raw.push({ id: idKey ? text(row[idKey]) : '', from: text(row[fromKey]), to: text(row[toKey]), line: null, value: valueKey ? number(row[valueKey]) : null });
+    for (const row of linkRows) {
+      const values = valueKey ? numberList(row[valueKey]) : null;
+      raw.push({ id: idKey ? text(row[idKey]) : '', from: text(row[fromKey]), to: text(row[toKey]), line: null, value: valueKey && !values ? number(row[valueKey]) : null, values });
+    }
   }
   let streets: StreetNetwork | null = null;
   const streetLines = (inputs.streets?.paths ?? []).map((p) => p.points);
@@ -230,13 +253,23 @@ export function networkData(spots: readonly Spot[], inputs: NetworkInputs, props
     const id = r.id || `${r.from}>${r.to}`;
     linkIndex.set(id, links.length);
     linkIndex.set(`${r.from}>${r.to}`, links.length);
-    links.push({ id, from, to, path, route, values: [r.value ?? 1] });
+    links.push({ id, from, to, path, route, values: r.values ?? [r.value ?? 1] });
   }
   if (missing.size > 0) problems.push(`Links name nodes that are not there: ${[...missing].slice(0, 5).join(', ')}${missing.size > 5 ? '…' : ''}.`);
 
   // ---- Series ----
   let steps = 1;
   let labels: string[] = [''];
+  // Links that carry their own lists (#373) set the steps when there is no series table: step 0, 1, 2…
+  const listed = Math.max(0, ...links.map((link) => (link.values.length > 1 ? link.values.length : 0)));
+  if (listed > 1) {
+    steps = listed;
+    labels = Array.from({ length: listed }, (_, i) => String(i));
+    for (const link of links) {
+      const own = link.values;
+      link.values = Array.from({ length: listed }, (_, i) => (own.length > 1 ? own[i % own.length]! : own[0] ?? 1));
+    }
+  }
   const series = inputs.series ?? [];
   if (series.length > 0) {
     // Columns from the first rows together, so a row that leaves a column out still counts.

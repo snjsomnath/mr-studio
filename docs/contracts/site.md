@@ -365,8 +365,12 @@ with `mrstable.json` at the top. `crates/mrs-site/src/package.rs` writes and rea
 - **Updating (#372):** when the receiving computer already has a table with the same `id`, the
   app asks first. "Update it" (`package::update`) unpacks beside it, carries over what belongs
   to that computer (`calibration.json`, `.mrstudio/`, `.cache/`), swaps the folders and moves
-  the earlier version to the Trash. It refuses a package of another table, and the app refuses
-  while that table is open. "Keep both" opens it as a second copy, as above.
+  the earlier version to the Trash. It refuses a package of another table. When that table
+  is open the app stops it, updates it and opens it again (#401). When it is presenting, the
+  app also offers "Update when the show stops": the file is copied to the app's
+  `waiting/` folder and applied by Stop presenting, the nightly restart or the next start of
+  the app, and Home says a version waits, with "Stop and update now". "Keep both" opens it as a
+  second copy, as above.
 
 The app has File › Export table…, Share (top right of the editor, and File › Share by email…,
 which attaches the file to a new email in the default mail app: the macOS Compose Email

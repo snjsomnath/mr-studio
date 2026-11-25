@@ -78,6 +78,9 @@ async function load(fresh) {
   const state = await invoke('launcher_state');
   $('version').textContent = `Version ${state.version}`;
   showError(state.error);
+  // A newer version of a table waits for the show to stop (#401).
+  $('waiting').hidden = !state.waiting;
+  $('waiting-text').textContent = state.waiting ? `“${state.waiting}”: a new version waits for the show to stop. Stop presenting and it goes in, or update now.` : '';
   $('tables').replaceChildren(
     ...state.sites.map((site) => {
       const example = site.source === 'built in';
@@ -180,13 +183,18 @@ async function openTableFile(file) {
   try {
     document.body.style.cursor = 'progress';
     imported = await invoke('import_table', { file: file ?? null, mode: null });
-    // This computer already has this table (#372): update it, or keep both.
+    // This computer already has this table (#372): update it, or keep both. When it is on the
+    // screens, the update can wait for the show to stop (#401).
     if (imported?.kind === 'same_table') {
       document.body.style.cursor = '';
       const mode = await askSameTable(imported);
       if (!mode) return;
       document.body.style.cursor = 'progress';
       imported = await invoke('import_table', { file: imported.file, mode });
+    }
+    if (imported?.kind === 'waiting') {
+      await load();
+      return;
     }
   } catch (e) {
     showError(e);
@@ -229,17 +237,28 @@ function askSameTable(same) {
   const dialog = $('same-dialog');
   $('same-title').textContent = `“${same.existing_name}” is already on this computer`;
   $('same-when').textContent = same.edited ? `The one here was last changed ${new Date(same.edited).toLocaleString()}.` : '';
+  // Open here (#401): on the screens it can wait for the show to stop; in the editor it opens again updated.
+  $('same-what').textContent = same.presenting
+    ? 'The file is another version of it, and it is on the screens now. It can go in when the show stops, or the show stops now and starts again with it. This computer\'s calibration stays as it is.'
+    : same.open
+      ? `The file is another version of it, and it is open now. Updating opens it again with what the file has; this computer's calibration stays as it is, and the version here goes to the ${TRASH}.`
+      : `The file is another version of it. Update it to show what the file has; this computer's calibration stays as it is, and the version here goes to the ${TRASH}.`;
+  $('same-wait').hidden = !same.presenting;
+  dialog.classList.toggle('is-showing', !!same.presenting);
+  $('same-update').textContent = same.presenting ? 'Stop and update now' : 'Update it';
+  $('same-update').classList.toggle('primary', !same.presenting);
     return new Promise((resolve) => {
     const done = (mode) => {
       dialog.close();
       resolve(mode);
     };
     $('same-update').onclick = () => done('update');
+    $('same-wait').onclick = () => done('wait');
     $('same-copy').onclick = () => done('copy');
     $('same-cancel').onclick = () => done(null);
     dialog.oncancel = () => resolve(null);
     dialog.showModal();
-    $('same-update').focus();
+    $(same.presenting ? 'same-wait' : 'same-update').focus();
   });
 }
 
@@ -277,6 +296,15 @@ for (const id of ['nav-file', 'card-file']) $(id).addEventListener('click', () =
 window.addEventListener('mrs-opened-file', () => void openWaitingFile());
 $('nav-settings').addEventListener('click', () => invoke('open_settings').catch(showError));
 $('nav-quit').addEventListener('click', () => invoke('quit'));
+$('waiting-now').addEventListener('click', async () => {
+  showError();
+  try {
+    await invoke('update_waiting_now');
+  } catch (e) {
+    showError(e);
+  }
+  await load().catch(() => {});
+});
 $('new-back').addEventListener('click', () => show('home'));
 window.addEventListener('focus', () => !busy && $('view-new').hidden && load().catch(showError));
 

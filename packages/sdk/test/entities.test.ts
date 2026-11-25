@@ -83,3 +83,16 @@ test('tap to read: features by their place in the file, with their facts', () =>
   // Without facts nothing extra is kept.
   assert.equal(entityFeatures(collection, set)[0]!.facts, undefined);
 });
+
+test('a set reads nested properties by a dotted path (#373)', () => {
+  const collection = {
+    features: [
+      { properties: { ecom: { id: 'b1', name: 'Library', role: 'consumer', area: 1200 } }, geometry: { type: 'Point', coordinates: [0, 0] } },
+      { properties: { 'ecom.id': 'b2', ecom: { id: 'ignored', name: 'Kårhuset' } }, geometry: { type: 'Point', coordinates: [1, 1] } },
+    ],
+  };
+  const list = entityFeatures(collection, { key: 'ecom.id', label: 'ecom.name', group: 'ecom.role', facts: ['ecom.area'] });
+  assert.deepEqual(list.map((e) => [e.id, e.label, e.group]), [['b1', 'Library', 'consumer'], ['b2', 'Kårhuset', undefined]]);
+  // The fact is named by the last part of its path.
+  assert.deepEqual(list[0]!.facts, [['Area', '1,200']]);
+});

@@ -338,3 +338,22 @@ test('a colour rule names one source (#374)', () => {
   assert.ok(map({ entity: 'use', property: 'kind' }).length > 0);
   assert.ok(map({ property: 'h', ramp: ['#000'] }).length > 0);
 });
+
+test('a whole list binds, its items checked as they arrive; bound yes/no and numbers arrive as text (#373)', () => {
+  const series = { id: 'day', widget: 'series', size: 'wide', title: 'Today', props: { series: { bind: 'shared.day' }, unit: 'kW' } } as PanelSpec;
+  assert.deepEqual(validatePanel(series, registry), []);
+  const source = { params: {}, shared: { day: [{ label: 'Solar', values: [1, 2, 3] }, { label: 'Demand' }, { label: 'Third', values: [3] }, { label: 'Fourth', values: [4] }] }, site: {} };
+  const lines = resolveProps(registry.get('series')!, series.props, 'wide', source).series as { label: string; values?: number[] }[];
+  assert.equal(lines.length, 2, 'held to the list limit: a wide panel draws two lines');
+  assert.deepEqual(lines[0], { label: 'Solar', values: [1, 2, 3] });
+  assert.equal(lines[1]!.values, undefined, 'an item missing a part leaves it out');
+  // A yes/no and a number a layer published as text.
+  const flags = defineWidget({
+    type: 'flagged', name: 'Flagged', description: 'A test widget', sizes: ['tile'], reads: () => 1, mount: () => ({ update() {} }),
+    props: { on: { kind: 'boolean', label: 'On', bindable: true }, n: { kind: 'number', label: 'N', bindable: true } },
+  });
+  const read = (on: unknown, n: unknown) => resolveProps(flags, { on: { bind: 'shared.on' }, n: { bind: 'shared.n' } }, 'tile', { params: {}, shared: { on, n }, site: {} });
+  assert.deepEqual(read('true', '12.5'), { on: true, n: 12.5 });
+  assert.deepEqual(read('false', 3), { on: false, n: 3 });
+  assert.deepEqual(read('maybe', 'many'), {});
+});
