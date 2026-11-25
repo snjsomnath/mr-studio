@@ -12,7 +12,7 @@ import { mountDashboard } from './dashboard.ts';
 import { guideCode, guideDoor, guideScreen } from './guide.ts';
 import { browserLanguage, keepOwnLanguage, language, offered, ownLanguage, setLanguage, speak, t } from './i18n.ts';
 import type { Language } from './i18n.ts';
-import { joinPanel } from './join.ts';
+import { joinPanel, pausedBanner, phonesPanel } from './join.ts';
 import { LayerManager } from './layer-manager.ts';
 import { loadSiteModules } from './registry.ts';
 import { fieldCard } from './field-phone.ts';
@@ -357,6 +357,7 @@ async function main() {
       );
     }
     side.append(header);
+    if (phone) side.append(pausedBanner(store));
     const cards = el('div', 'cards');
     if (phone) {
       // A field walk (#445) sits above the layers, outside the cards the controller redraws.
@@ -378,6 +379,8 @@ async function main() {
       foot.append(joinPanel(store));
       // The session and the engine are for whoever runs the table: the developer page has them, the visitors' controller does not.
       if (role === 'dev') {
+        // Looking after the phones (#335): pause, let one go, end the round, the session log.
+        foot.append(phonesPanel(store, connection));
         const footer = el('footer', 'controller-footer');
         const info = await connection.request<{ backend: string; adapter: string | null }>('engine.info').catch(() => null);
         footer.append(el('span', '', `Session ${store.state.session.code}`), el('span', '', info ? `Engine: ${info.adapter ?? `${info.backend} reference`}` : ''));

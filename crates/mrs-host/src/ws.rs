@@ -145,8 +145,10 @@ async fn connection(socket: WebSocket, state: Arc<AppState>) {
                 }
             }
             // The same phone joined again (a reload, or a second tab) and now has this seat.
+            // Or the operator let it go (#335): its turn is over.
             _ = replaced(&joined.kick) => {
-                let _ = sink.send(Message::Text(json!({ "t": "refused", "e": "this phone joined again somewhere else" }).to_string().into())).await;
+                let why = if state.hub.was_released(surface) { "the operator ended this phone's turn" } else { "this phone joined again somewhere else" };
+                let _ = sink.send(Message::Text(json!({ "t": "refused", "e": why }).to_string().into())).await;
                 break;
             }
         }

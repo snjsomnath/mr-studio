@@ -32,6 +32,24 @@ pub fn tile_url(service: &str, z: u32, x: u32, y: u32) -> Option<String> {
     Some(template.replace("{z}", &z.to_string()).replace("{x}", &x.to_string()).replace("{y}", &y.to_string()))
 }
 
+/// Whether a tile lies around the table (#335): zoom 12 to 19, touching the table's corners
+/// widened by the table's own size on every side. Phones may ask for these tiles only.
+pub fn near(corners: &[[f64; 2]; 4], z: u32, x: u32, y: u32) -> bool {
+    if !(12..=19).contains(&z) || x >= 1 << z || y >= 1 << z {
+        return false;
+    }
+    let (mut w, mut s, mut e, mut n) = (f64::MAX, f64::MAX, f64::MIN, f64::MIN);
+    for [lon, lat] in corners {
+        (w, s, e, n) = (w.min(*lon), s.min(*lat), e.max(*lon), n.max(*lat));
+    }
+    let (dx, dy) = (e - w, n - s);
+    let (w, s, e, n) = (w - dx, s - dy, e + dx, n + dy);
+    let size = f64::from(1u32 << z);
+    let lon = |x: u32| f64::from(x) / size * 360.0 - 180.0;
+    let lat = |y: u32| (std::f64::consts::PI * (1.0 - 2.0 * f64::from(y) / size)).sinh().atan().to_degrees();
+    lon(x + 1) >= w && lon(x) <= e && lat(y) >= s && lat(y + 1) <= n
+}
+
 /// Where a tile is kept in the site folder.
 pub fn cache_path(site: &Path, service: &str, z: u32, x: u32, y: u32) -> PathBuf {
     site.join(CACHE_DIR).join(service).join(z.to_string()).join(x.to_string()).join(y.to_string())
@@ -110,6 +128,24 @@ mod tests {
         assert!(tile_url("http://example.com", 1, 0, 0).is_none());
         assert!(tile_url("osm", 2, 4, 0).is_none(), "x past the edge of the world");
         assert!(tile_url("osm", 21, 0, 0).is_none());
+    }
+
+    #[test]
+    fn phones_get_tiles_near_the_table_only() {
+        // A 1000 x 600 m table at 57.700, 11.970.
+        let corners = [[11.9618, 57.7027], [11.9782, 57.7027], [11.9782, 57.6973], [11.9618, 57.6973]];
+        let tile = |z: u32, lon: f64, lat: f64| {
+            let n = f64::from(1u32 << z);
+            let x = ((lon + 180.0) / 360.0 * n) as u32;
+            let y = ((1.0 - lat.to_radians().tan().asinh() / std::f64::consts::PI) / 2.0 * n) as u32;
+            (z, x, y)
+        };
+        let (z, x, y) = tile(16, 11.970, 57.700);
+        assert!(near(&corners, z, x, y), "the table's own tile");
+        let (z, x, y) = tile(16, 12.005, 57.700);
+        assert!(!near(&corners, z, x, y), "two kilometres east is too far");
+        let (z, x, y) = tile(10, 11.970, 57.700);
+        assert!(!near(&corners, z, x, y), "a tile that covers the whole region");
     }
 
     #[tokio::test]

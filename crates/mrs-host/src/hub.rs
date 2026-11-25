@@ -369,6 +369,8 @@ pub struct SessionInfo {
     /// Whether the table and the controller show their frame meter (#262): frames per second,
     /// the worst frame, and what each layer costs. Off when a session starts.
     pub performance: bool,
+    /// Whether the operator paused the phones (#335): they can look but not change the table.
+    pub phones_paused: bool,
 }
 
 /// A phone's place in the session. It outlives the connection by `resume_hold`.
@@ -534,6 +536,12 @@ pub struct Hub {
     sound: RwLock<bool>,
     /// The frame meter on the table and controller (#262).
     performance: RwLock<bool>,
+    /// The operator paused the phones (#335): they look, but change nothing until resumed.
+    phones_paused: RwLock<bool>,
+    /// What the phones did this session (#335), newest last, for the operator's session log.
+    phone_log: Mutex<std::collections::VecDeque<Value>>,
+    /// Phones the operator let go (#335): their connection is told why when it closes.
+    released: Mutex<Vec<u64>>,
     /// The controller's ribbon choice (#231); None is Auto.
     ribbon: RwLock<Option<String>>,
     /// The code the guide's phone joins with (#98). Only the operator's screens are told it.
@@ -608,6 +616,7 @@ impl Hub {
             sound: true,
             ribbon: None,
             performance: false,
+            phones_paused: false,
         };
         // Six digits, never the phones' code.
         let guide_code = loop {
@@ -626,6 +635,9 @@ impl Hub {
             language: RwLock::new(language),
             sound: RwLock::new(true),
             performance: RwLock::new(false),
+            phones_paused: RwLock::new(false),
+            phone_log: Mutex::new(std::collections::VecDeque::new()),
+            released: Mutex::new(Vec::new()),
             ribbon: RwLock::new(None),
             guide_code,
             options,
@@ -901,6 +913,7 @@ impl Hub {
         session.sound = *self.sound.read().unwrap();
         session.ribbon = self.ribbon.read().unwrap().clone();
         session.performance = *self.performance.read().unwrap();
+        session.phones_paused = *self.phones_paused.read().unwrap();
         let relay = self.relay_join.read().unwrap().clone();
         if let Some(base) = relay.or_else(|| self.bridge_join.read().unwrap().clone()) {
             session.join_url = Some(format!("{}/phone?c={}", base.trim_end_matches('/'), session.code));
@@ -1023,6 +1036,7 @@ impl Hub {
             });
         }
         inner.next_surface += 1;
+        self.note_phone(&inner.seats, surface, "joined", json!({}));
         self.emit("state.participants", json!({ "participants": inner.participants() }));
         Ok(Joined { surface, kick: Some(kick) })
     }
@@ -1041,6 +1055,7 @@ impl Hub {
         seat.held_since = Some(now);
         seat.epoch += 1;
         let hold = Hold { slot: seat.participant.slot, epoch: seat.epoch };
+        self.note_phone(&inner.seats, surface, "left", json!({}));
         self.emit("state.participants", json!({ "participants": inner.participants() }));
         Some(hold)
     }
@@ -1053,6 +1068,46 @@ impl Hub {
         if inner.seats.len() != before {
             self.emit("state.participants", json!({ "participants": inner.participants() }));
         }
+    }
+
+    /// Notes what a phone did in the session log (#335): when, which phone, what. The operator
+    /// downloads it from the Developer window. The oldest entries go beyond 2000.
+    fn note_phone(&self, seats: &[Seat], surface: u64, what: &str, detail: Value) {
+        let Some(seat) = seats.iter().find(|s| s.participant.surface == surface) else { return };
+        let at = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis() as u64);
+        let p = &seat.participant;
+        let mut entry = json!({ "at": at, "slot": p.slot, "avatar": p.avatar, "name": p.name, "what": what });
+        if let (Value::Object(entry), Value::Object(detail)) = (&mut entry, detail) {
+            entry.extend(detail);
+        }
+        let mut log = self.phone_log.lock().unwrap();
+        // A dragged slider is one entry, its last value: the same phone setting the same controls again.
+        if let Some(last) = log.back_mut() {
+            let same = |e: &Value| {
+                (
+                    e["slot"].clone(),
+                    e["what"].clone(),
+                    e["layer"].clone(),
+                    e["params"].as_object().map(|p| p.keys().cloned().collect::<Vec<_>>()),
+                )
+            };
+            if what == "set" && same(last) == same(&entry) {
+                *last = entry;
+                return;
+            }
+        }
+        log.push_back(entry);
+        while log.len() > 2000 {
+            log.pop_front();
+        }
+    }
+
+    /// Whether the operator let this phone go (#335), so its connection can say so. Asked once.
+    pub fn was_released(&self, surface: u64) -> bool {
+        let mut released = self.released.lock().unwrap();
+        let before = released.len();
+        released.retain(|s| *s != surface);
+        released.len() != before
     }
 
     pub fn resume_hold(&self) -> Duration {
@@ -1181,6 +1236,54 @@ impl Hub {
             self.emit("session.changed", json!({ "session": self.session() }));
             return Ok(json!({ "performance": on }));
         }
+        if method == "phones.pause" || method == "phones.release" || method == "phones.log" {
+            if !matches!(role, Role::Tv | Role::Dev) {
+                return Err("only the operator looks after the phones".into());
+            }
+            return Ok(match method {
+                "phones.pause" => {
+                    let paused = p["paused"].as_bool().ok_or("say paused: true or false")?;
+                    *self.phones_paused.write().unwrap() = paused;
+                    self.emit("session.changed", json!({ "session": self.session() }));
+                    json!({ "paused": paused })
+                }
+                "phones.release" => {
+                    // One phone by its slot, or every phone: the end of a round.
+                    let slot = match &p["slot"] {
+                        Value::Null => None,
+                        value => Some(value.as_u64().ok_or("slot is a number")? as usize),
+                    };
+                    let mut gone = Vec::new();
+                    for seat in inner.seats.iter().filter(|s| slot.is_none_or(|slot| s.participant.slot == slot)) {
+                        gone.push(seat.participant.surface);
+                    }
+                    if slot.is_some() && gone.is_empty() {
+                        return Err("no phone in that slot".into());
+                    }
+                    for surface in &gone {
+                        self.note_phone(&inner.seats, *surface, "released", json!({}));
+                    }
+                    self.released.lock().unwrap().extend(gone.iter().copied());
+                    for seat in inner.seats.iter().filter(|s| gone.contains(&s.participant.surface)) {
+                        seat.kick.notify_one();
+                    }
+                    inner.seats.retain(|s| !gone.contains(&s.participant.surface));
+                    self.emit("state.participants", json!({ "participants": inner.participants() }));
+                    json!({ "released": gone.len() })
+                }
+                _ => json!({ "log": self.phone_log.lock().unwrap().iter().collect::<Vec<_>>() }),
+            });
+        }
+        // Paused by the operator (#335), a phone can look at layers but change nothing on the table.
+        if role == Role::Phone
+            && *self.phones_paused.read().unwrap()
+            && matches!(
+                method,
+                "layer.activate" | "layer.set" | "layer.action" | "tool.input" | "layer.entity" | "layer.select" | "layer.step"
+            )
+        {
+            return Err("the phones are paused for a moment".into());
+        }
         if method == "participant.profile" {
             if role != Role::Phone {
                 return Err("only a phone has a name and an animal".into());
@@ -1260,6 +1363,7 @@ impl Hub {
                 if let Some(seat) = inner.seats.iter().find(|s| s.participant.surface == surface) {
                     event["participant"] = json!({ "slot": seat.participant.slot, "colour": seat.participant.colour, "avatar": seat.participant.avatar, "mood": seat.participant.mood, "name": seat.participant.name });
                 }
+                self.note_phone(&inner.seats, surface, if active { "turned on" } else { "turned off" }, json!({ "layer": layer }));
                 self.emit("phone.switched", event);
             }
             return Ok(json!({}));
@@ -1331,6 +1435,12 @@ impl Hub {
             _ => {}
         }
         let def = &self.catalog()[inner.scene[index].def];
+        // Who sent it, when a phone did: tool inputs and actions carry it to the table (#335, #423).
+        let sender = inner.seats.iter().find(|s| s.participant.surface == surface).map(|seat| {
+            json!({ "slot": seat.participant.slot, "colour": seat.participant.colour, "avatar": seat.participant.avatar, "mood": seat.participant.mood, "name": seat.participant.name })
+        });
+        // What goes in the phones' session log (#335) once the request is done.
+        let mut noted: Option<(&str, Value)> = None;
         let state = &mut inner.scene[index].state;
         match method {
             "layer.intensity" => {
@@ -1342,7 +1452,9 @@ impl Hub {
             }
             "layer.set" => {
                 let patch = p["params"].as_object().ok_or("missing params")?;
-                state.params.extend(def.validate(patch, role == Role::Phone)?);
+                let checked = def.validate(patch, role == Role::Phone)?;
+                noted = Some(("set", json!({ "layer": layer, "params": checked })));
+                state.params.extend(checked);
                 self.emit_layer(layer, state);
             }
             "layer.entity" => {
@@ -1470,7 +1582,12 @@ impl Hub {
                 if role == Role::Phone && !control.is_some_and(|c| c.phone) {
                     return Err(format!("'{action}' cannot be used from a phone"));
                 }
-                self.emit("layer.action", json!({ "layer": layer, "action": action, "from": surface }));
+                let mut event = json!({ "layer": layer, "action": action, "from": surface });
+                if let Some(sender) = &sender {
+                    event["participant"] = sender.clone();
+                }
+                noted = Some(("pressed", json!({ "layer": layer, "action": action })));
+                self.emit("layer.action", event);
             }
             "tool.input" => {
                 let id = p["tool"].as_str().ok_or("missing tool")?;
@@ -1480,12 +1597,16 @@ impl Hub {
                     return Err(format!("layer '{layer}' is off"));
                 }
                 let mut event = json!({ "layer": layer, "tool": id, "geometry": geometry, "from": surface });
-                if let Some(seat) = inner.seats.iter().find(|s| s.participant.surface == surface) {
-                    event["participant"] = json!({ "slot": seat.participant.slot, "colour": seat.participant.colour, "avatar": seat.participant.avatar, "mood": seat.participant.mood, "name": seat.participant.name });
+                if let Some(sender) = &sender {
+                    event["participant"] = sender.clone();
                 }
+                noted = Some(("drew", json!({ "layer": layer, "tool": id, "geometry": geometry })));
                 self.emit("tool.input", event);
             }
             other => return Err(format!("unknown method '{other}'")),
+        }
+        if let (Role::Phone, Some((what, detail))) = (role, noted) {
+            self.note_phone(&inner.seats, surface, what, detail);
         }
         Ok(json!({}))
     }
@@ -2858,6 +2979,39 @@ mod tests {
         dev("layer.activate", json!({ "layer": "slideshow", "active": true })).unwrap();
         let refused = phone("layer.activate", json!({ "layer": "wind", "active": true })).unwrap_err();
         assert!(refused.contains("slideshow"), "{refused}");
+    }
+
+    #[test]
+    fn the_operator_pauses_lets_go_and_logs_the_phones() {
+        let hub = scratch_hub("phones-operator");
+        let code = hub.session().code;
+        let me = hub.join(Role::Phone, Some(&code), None).unwrap();
+        let phone = |method: &str, p: Value| hub.request(Role::Phone, me.surface, method, &p);
+        let tv = |method: &str, p: Value| hub.request(Role::Tv, 0, method, &p);
+        phone("layer.activate", json!({ "layer": "wind", "active": true })).unwrap();
+        // Paused (#335): a phone looks but changes nothing, and only the operator pauses.
+        assert!(phone("phones.pause", json!({ "paused": true })).is_err());
+        tv("phones.pause", json!({ "paused": true })).unwrap();
+        assert!(hub.session().phones_paused);
+        let refused = phone("layer.set", json!({ "layer": "wind", "params": { "style": "particles" } })).unwrap_err();
+        assert!(refused.contains("paused"), "{refused}");
+        phone("participant.profile", json!({ "name": "Ada" })).unwrap();
+        tv("phones.pause", json!({ "paused": false })).unwrap();
+        // A dragged slider is one entry in the log, its last value.
+        for style in ["ribbons", "map", "particles"] {
+            phone("layer.set", json!({ "layer": "wind", "params": { "style": style } })).unwrap();
+        }
+        let log = tv("phones.log", json!({})).unwrap()["log"].as_array().unwrap().clone();
+        let what: Vec<&str> = log.iter().map(|e| e["what"].as_str().unwrap()).collect();
+        assert_eq!(what, ["joined", "turned on", "set"]);
+        assert_eq!(log[2]["params"]["style"], "particles");
+        assert_eq!(log[2]["name"], "Ada");
+        // Let go: the seat is free at once and the connection is told why.
+        assert!(tv("phones.release", json!({ "slot": 5 })).is_err(), "nobody in that slot");
+        tv("phones.release", json!({ "slot": 0 })).unwrap();
+        assert!(hub.welcome(0)["state"]["participants"].as_array().unwrap().is_empty());
+        assert!(hub.was_released(me.surface));
+        assert!(!hub.was_released(me.surface), "asked once");
     }
 
     #[test]
