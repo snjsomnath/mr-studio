@@ -1,5 +1,5 @@
-// Displays and settings (#40): which display shows the table and which the controller,
-// phones and startup. Colour, Calibration and Updates have scripts of their own.
+// File › Settings (#40, #393): this computer (which display shows the table and which the controller,
+// phones and startup), then the app's own pages. Colour, Calibration and Updates have scripts of their own.
 // It talks to the shell through the commands in src-tauri/src/main.rs.
 const { invoke } = window.__TAURI__.core;
 const $ = (id) => document.getElementById(id);

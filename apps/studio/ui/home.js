@@ -276,7 +276,6 @@ for (const id of ['nav-open', 'card-open']) $(id).addEventListener('click', open
 for (const id of ['nav-file', 'card-file']) $(id).addEventListener('click', () => openTableFile());
 window.addEventListener('mrs-opened-file', () => void openWaitingFile());
 $('nav-settings').addEventListener('click', () => invoke('open_settings').catch(showError));
-$('nav-sources').addEventListener('click', () => invoke('open_sources').catch(showError));
 $('nav-quit').addEventListener('click', () => invoke('quit'));
 $('new-back').addEventListener('click', () => show('home'));
 window.addEventListener('focus', () => !busy && $('view-new').hidden && load().catch(showError));
