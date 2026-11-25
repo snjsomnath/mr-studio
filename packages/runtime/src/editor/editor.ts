@@ -329,6 +329,7 @@ export class Editor {
       canvas: this.canvas,
     });
     this.clickToSelect();
+    this.holdTree();
     this.mediaTab = new MediaTab({
       store,
       addMedia: (kinds) => this.addMedia(kinds),
@@ -2491,11 +2492,13 @@ export class Editor {
     }
   }
 
-  /** A change came in while a name was being typed in the list; the list is drawn once the name is done. */
+  /** A change came in while a name was being typed or a row held in the list; the list is drawn once that is done. */
   private treeWaiting = false;
+  /** A row is pressed and may be about to be dragged: drawing the list now would take the row from under the pointer. */
+  private treePressed = false;
 
   private renderTree(instances: { id: string; manifest: LayerManifest; state: LayerState }[]): void {
-    if (this.tree.querySelector('.ed-rename')) {
+    if (this.tree.querySelector('.ed-rename') || this.treePressed || this.dragging) {
       this.treeWaiting = true;
       return;
     }
@@ -2688,6 +2691,7 @@ export class Editor {
     });
     row.addEventListener('dragstart', (event) => {
       this.dragging = id;
+      this.treePressed = false;
       row.classList.add('is-dragging');
       event.dataTransfer?.setData('text/plain', id);
       if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
@@ -2696,6 +2700,7 @@ export class Editor {
       this.dragging = null;
       row.classList.remove('is-dragging');
       this.tree.querySelectorAll('.is-drop-before, .is-drop-after, .is-drop').forEach((n) => n.classList.remove('is-drop-before', 'is-drop-after', 'is-drop'));
+      this.releaseTree();
     });
     this.sync.set(id, (next) => {
       const button = layerButton(id, manifest, next, defaultSideOf(this.store, id));
@@ -2720,6 +2725,22 @@ export class Editor {
 
   /** The layer being dragged in the list. */
   private dragging: string | null = null;
+
+  /**
+   * A press on a row holds the list as it is until the press or the drag ends, so a change from
+   * elsewhere (the host, another author, a layer's state) cannot redraw the row being dragged.
+   */
+  private holdTree(): void {
+    this.tree.addEventListener('pointerdown', (event) => {
+      if (event.button === 0 && (event.target as HTMLElement).closest('.ed-row[draggable="true"]')) this.treePressed = true;
+    });
+    for (const type of ['pointerup', 'pointercancel'] as const) document.addEventListener(type, () => this.releaseTree(), true);
+  }
+
+  private releaseTree(): void {
+    this.treePressed = false;
+    if (this.treeWaiting && !this.dragging) requestAnimationFrame(() => this.treeWaiting && !this.treePressed && !this.dragging && this.render());
+  }
 
   /** A rail of the list takes dropped rows: before or after the row under the pointer, or at its end. */
   private dropZone(zone: HTMLElement, side: 'left' | 'right'): void {

@@ -124,6 +124,21 @@ async function main() {
     await run('dragging a layer to the other rail moves its button (#58)', async () => {
       // A drag on a cold page can start before the list is ready to take it (#426): try once more.
       const right = () => savedLayer('wind')?.button?.side === 'right';
+      // The rename is saved before the editor hears it back and draws the list again; a drag
+      // that starts on a row about to be replaced is lost, so the list is let settle first.
+      await page.evaluate(() => new Promise((done) => {
+        const tree = document.querySelector('.ed-tree');
+        let timer = setTimeout(finish, 500);
+        const o = new MutationObserver(() => {
+          clearTimeout(timer);
+          timer = setTimeout(finish, 500);
+        });
+        function finish() {
+          o.disconnect();
+          done();
+        }
+        o.observe(tree, { childList: true });
+      }));
       await row('wind').dragTo(page.locator('.ed-rail[data-side="right"]'));
       await until(right, 'Wind on the right', 2500).catch(() => row('wind').dragTo(page.locator('.ed-rail[data-side="right"]')));
       await until(right, 'Wind on the right in site.json');
