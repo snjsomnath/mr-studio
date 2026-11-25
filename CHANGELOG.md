@@ -4,6 +4,24 @@ Every merge to main that carries a release note becomes a version. The newest is
 The app shows these notes, with their pictures, on Home when a newer version is out.
 How notes are written: docs/RELEASING.md.
 
+## 0.32.0 (2026-11-25)
+
+### New
+
+#### Field walk: photos and sounds from a walk around the place (#445)
+
+Visitors walk the place with their phones and mark spots, each with a photo or a sound. Spots are kept on the phone and sent whenever the table can be reached. At the table every walker's spots show in their colour, and the controller shows the photo or plays the sound of the spot picked, from a strip, with ‹ ›, or by clicking its dot on the table.
+
+![A spot's photo on the controller](docs/screenshots/445-controller-photo.png)
+
+![Marking a spot on a phone](docs/screenshots/445-phone-mark.png)
+
+![Two walks on the table](docs/screenshots/445-table.png)
+
+The walk stays open alongside other layers, so its spots sit on top of a Reveal line or a Magnifier's X-ray.
+
+![Spots over a Reveal line](docs/screenshots/445-with-reveal-line.png)
+
 ## 0.31.0 (2026-11-25)
 
 ### New
