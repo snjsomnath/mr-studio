@@ -156,7 +156,13 @@ function launch() {
       await dev.request('layer.activate', { layer: id, active: !was });
       await sleep(LAYER_MS);
       await frames(`with '${id}' ${was ? 'off' : 'on'}`);
-      if (shots && !was) await table.screenshot({ path: path.join(shots, `${engine}-${id}.png`) });
+      // A page too busy to draw a frame names its layer, rather than failing the run with no name.
+      if (shots && !was) {
+        await table.screenshot({ path: path.join(shots, `${engine}-${id}.png`), timeout: 20000 }).catch((e) => {
+          problems.push(`table: no frame to screenshot with '${id}' on (${e.message.split('\n')[0]})`);
+          console.warn(`  table: no frame to screenshot with '${id}' on`);
+        });
+      }
       await dev.request('layer.activate', { layer: id, active: was });
       await sleep(500);
     }

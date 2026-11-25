@@ -4,6 +4,7 @@
 import { packedBuffers, packGeojson, unpackGeometry } from './geo-pack.ts';
 import type { PackedGeometry, SitePlacement } from './geo-pack.ts';
 import { siteProjection } from './geo.ts';
+import { rasteriseMask } from './mask.ts';
 import { StreetGraph, packedGraphBuffers, specOptions } from './street-network.ts';
 import type { StreetGraphSpec } from './street-network.ts';
 import { buildWalkNetwork, packWalkNetwork, walkNetworkBuffers } from './walk-network.ts';
@@ -11,7 +12,8 @@ import { buildWalkNetwork, packWalkNetwork, walkNetworkBuffers } from './walk-ne
 type Job =
   | { id: number; kind?: 'pack'; bytes: ArrayBuffer; place: SitePlacement; keep?: string }
   | { id: number; kind: 'graph'; keep: string; spec: StreetGraphSpec }
-  | { id: number; kind: 'walk'; bytes: ArrayBuffer; origin: { lon: number; lat: number } };
+  | { id: number; kind: 'walk'; bytes: ArrayBuffer; origin: { lon: number; lat: number } }
+  | { id: number; kind: 'mask'; keep: string; grid: { width: number; height: number }; extent: { width_m: number; height_m: number } };
 
 /** Packed files kept here for the graphs built from them, by the page's key for the file. */
 const kept = new Map<string, PackedGeometry>();
@@ -29,6 +31,11 @@ scope.onmessage = ({ data: job }) => {
       if (!packed) throw new Error('not kept');
       const graph = new StreetGraph(unpackGeometry(packed).lines, specOptions(job.spec)).toPacked();
       scope.postMessage({ id: job.id, result: graph }, packedGraphBuffers(graph));
+    } else if (job.kind === 'mask') {
+      const packed = kept.get(job.keep);
+      if (!packed || typeof OffscreenCanvas === 'undefined') throw new Error('not kept');
+      const mask = rasteriseMask(packed, job.grid, job.extent);
+      scope.postMessage({ id: job.id, result: mask }, [mask.buffer]);
     } else if (job.kind === 'walk') {
       const geojson = JSON.parse(new TextDecoder().decode(job.bytes));
       const distance = siteProjection({ origin: job.origin, grid: { width: 1, height: 1, cell_m: 1, rotation_deg: 0 } }).distance;

@@ -4,7 +4,6 @@ import {
   defineLayer,
   formatHour,
   hasSiteData,
-  loadSiteData,
   formatDecimal,
   formatUnit,
   loadSiteField,
@@ -13,7 +12,9 @@ import {
   petColour,
   petFeeling,
   quantisePet,
+  readSiteMask,
   readWalkNetwork,
+  readWalkNetworkPacked,
   sample,
   siteProjection,
   sunPosition,
@@ -26,7 +27,8 @@ import type { CanvasOverlay, FieldFrame, LayerManifest, PointerSample, TableCont
 
 import manifest from '../layer.json';
 import { coolpathsHero } from './hero.ts';
-import { exampleWalk, pointAlongRoute, route, setExposure, setPet, snap } from './network.ts';
+import { pointAlongRoute, setExposure, setPet, snap } from './network.ts';
+import { startRouter } from './route-client.ts';
 import type { LonLat, Network, Route, RoutePair } from './network.ts';
 
 interface Params {
@@ -131,9 +133,15 @@ export default defineLayer<Params>({
     const walk = ctx.map.addCanvas('walk');
 
     // Built in the data worker and kept per file (#484); each start gets its own copy to mark.
-    const read: Network | null = await readWalkNetwork(ctx.site, 'walkways', () => ({ exposure: 0, pet: 0 }));
+    const [read, packedNetwork] = await Promise.all([
+      readWalkNetwork(ctx.site, 'walkways', () => ({ exposure: 0, pet: 0 })) as Promise<Network | null>,
+      readWalkNetworkPacked(ctx.site, 'walkways'),
+    ]);
     if (!read) throw new Error("the 'walkways' dataset could not be read");
     const network = read;
+    // The searches across the network run in a worker (#492).
+    const router = startRouter(network, packedNetwork);
+    ctx.onCleanup(() => router.stop());
     if (network.edges.length === 0) throw new Error("the 'walkways' dataset has no lines");
 
     let frame: FieldFrame | null = null;
@@ -187,6 +195,7 @@ export default defineLayer<Params>({
       if (!frame) return;
       setExposure(network, lit, ctx.site.grid.cell_m, distance);
       setPet(network, (edge) => estimate(edge.exposure), prepared ? preparedAt : null, ctx.site.grid.cell_m, distance);
+      router.heat();
       const source = prepared ?? frame;
       const cells = source.width * source.height;
       if (heatCells?.length !== cells) heatCells = new Uint8Array(cells);
@@ -217,36 +226,12 @@ export default defineLayer<Params>({
       shade.set({ stream: 0, field: 0, width: source.width, height: source.height, revision: ++revision, min: 0, max: 1, progress: 1, data: heatCells });
     }
 
-    /** Rasterises the footprints onto the site grid. */
-    function rasterise(geojson: { features?: { geometry?: { type?: string; coordinates?: unknown } | null }[] }): Uint8Array {
-      const { width, height } = ctx.site.grid;
-      const canvas = new OffscreenCanvas(width, height);
-      const g = canvas.getContext('2d')!;
-      g.beginPath();
-      for (const feature of geojson.features ?? []) {
-        const geometry = feature.geometry;
-        const polygons = geometry?.type === 'Polygon' ? [geometry.coordinates] : geometry?.type === 'MultiPolygon' ? (geometry.coordinates as unknown[]) : [];
-        for (const rings of polygons as number[][][][]) {
-          for (const ring of rings) {
-            ring.forEach((p, i) => {
-              const [col, row] = projection.toGrid([p[0]!, p[1]!]);
-              if (i === 0) g.moveTo(col, row);
-              else g.lineTo(col, row);
-            });
-            g.closePath();
-          }
-        }
-      }
-      g.fill('evenodd');
-      const pixels = g.getImageData(0, 0, width, height).data;
-      const mask = new Uint8Array(width * height);
-      for (let i = 0; i < mask.length; i++) mask[i] = pixels[i * 4 + 3]! > 127 ? 1 : 0;
-      return mask;
-    }
-    if (hasSiteData(ctx.site, 'buildings') && typeof OffscreenCanvas !== 'undefined') {
-      loadSiteData<Parameters<typeof rasterise>[0]>(ctx.site, 'buildings')
-        .then((geojson) => {
-          roofs = rasterise(geojson);
+    // Roofs: the footprints on the site grid, drawn in the data worker and kept per file (#492).
+    if (hasSiteData(ctx.site, 'buildings')) {
+      readSiteMask(ctx.site, 'buildings')
+        .then((mask) => {
+          if (!mask) return;
+          roofs = mask;
           assess();
         })
         .catch((error) => console.warn('[coolpaths] footprints not read', error));
@@ -267,9 +252,7 @@ export default defineLayer<Params>({
             }
             return mask;
           })
-        : typeof OffscreenCanvas !== 'undefined'
-          ? loadSiteData<Parameters<typeof rasterise>[0]>(ctx.site, 'water').then(rasterise)
-          : Promise.resolve(null);
+        : readSiteMask(ctx.site, 'water');
       read
         .then((mask) => {
           water = mask;
@@ -300,8 +283,18 @@ export default defineLayer<Params>({
       });
     }
 
+    // Answers from the worker can come back out of order: only the latest counts.
+    let asked = 0;
     function reroute(): void {
-      pair = route(network, from, to, ctx.params.detour / 100);
+      const mine = ++asked;
+      void router.route(from, to, ctx.params.detour / 100).then((answer) => {
+        if (mine !== asked) return;
+        pair = answer;
+        rerouted();
+      });
+    }
+
+    function rerouted(): void {
       pathsDirty = true;
       const summary = (r: Route): WalkSummary => ({
         length: round(r.length),
@@ -323,6 +316,7 @@ export default defineLayer<Params>({
       });
     }
 
+    let picking = 0;
     function pickExample(): void {
       const { width_m, height_m } = ctx.site.extent;
       const span = Math.hypot(width_m, height_m);
@@ -332,10 +326,13 @@ export default defineLayer<Params>({
         const [x, y] = table2d.toTable(network.nodes[node] as [number, number]);
         return x >= 0 && y >= 0 && x <= width_m && y <= height_m;
       };
-      const picked = exampleWalk(network, seed++, span * 0.35, span * 0.8, ctx.params.detour / 100, onTable);
-      if (picked) [from, to] = picked;
-      clock = 0;
-      reroute();
+      const mine = ++picking;
+      void router.example(seed++, span * 0.35, span * 0.8, ctx.params.detour / 100, onTable).then((picked) => {
+        if (mine !== picking) return;
+        if (picked) [from, to] = picked;
+        clock = 0;
+        reroute();
+      });
     }
 
     const stream = await ctx.engine.open('sunlight', kernelParams(ctx), ['shadow']);
@@ -497,6 +494,8 @@ export default defineLayer<Params>({
       const node = snap(network, lonLat, distance, SNAP_M);
       if (node < 0) return false;
       if ((end === 'from' ? from : to) !== node) {
+        // A walk picked by hand wins over an example still being worked out.
+        picking++;
         if (end === 'from') from = node;
         else to = node;
         clock = 0;

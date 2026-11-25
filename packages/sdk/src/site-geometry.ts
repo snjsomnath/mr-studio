@@ -12,6 +12,7 @@ import { StreetGraph, specOptions } from './street-network.ts';
 import type { PackedStreetGraph, StreetGraphSpec } from './street-network.ts';
 import { siteDataUrl } from './table-space.ts';
 import type { Placed, XY } from './table-space.ts';
+import { rasteriseMask } from './mask.ts';
 import { buildWalkNetwork, packWalkNetwork, unpackWalkNetwork } from './walk-network.ts';
 import type { PackedWalkNetwork, WalkEdge, WalkNetwork } from './walk-network.ts';
 import type { SiteInfo } from './types.ts';
@@ -210,6 +211,12 @@ const walks = new Map<string, { stamp: string; packed: Promise<PackedWalkNetwork
  * hasn't got the dataset or it can't be read.
  */
 export async function readWalkNetwork<X extends object = Record<never, never>>(site: SiteInfo, name: string, extra?: () => X): Promise<WalkNetwork<WalkEdge & X> | null> {
+  const packed = await readWalkNetworkPacked(site, name);
+  return packed ? unpackWalkNetwork(packed, extra) : null;
+}
+
+/** The walking network as `readWalkNetwork` keeps it, packed: shared, so read it, don't change it (copy it to send it to a worker). */
+export async function readWalkNetworkPacked(site: SiteInfo, name: string): Promise<PackedWalkNetwork | null> {
   const url = siteDataUrl(site, name);
   if (!url) return null;
   const file = url.split('/').pop() || url;
@@ -258,11 +265,45 @@ export async function readWalkNetwork<X extends object = Record<never, never>>(s
     walks.set(key, entry);
   }
   const packed = await entry.packed;
-  if (!packed) {
-    walks.delete(key);
-    return null;
+  if (!packed) walks.delete(key);
+  return packed;
+}
+
+// ---- Masks on the site grid (#492) -------------------------------------------
+
+const masks = new WeakMap<PackedGeometry, Map<string, Promise<Uint8Array>>>();
+
+/**
+ * A site dataset's polygons as a mask on the site grid (row by row, 1 inside): the buildings'
+ * roofs, the water. Drawn in the SDK's data worker and kept until the file changes. Null when
+ * the site hasn't got the dataset.
+ */
+export async function readSiteMask(site: SiteInfo, name: string): Promise<Uint8Array | null> {
+  const packed = await readPacked(site, name);
+  if (!packed) return null;
+  let byGrid = masks.get(packed);
+  if (!byGrid) masks.set(packed, (byGrid = new Map()));
+  const grid = { width: site.grid.width, height: site.grid.height };
+  const extent = { width_m: site.extent.width_m, height_m: site.extent.height_m };
+  const gridKey = `${grid.width}x${grid.height}`;
+  let mask = byGrid.get(gridKey);
+  if (!mask) {
+    const url = siteDataUrl(site, name);
+    const keep = url ? packedKeys.get(geometryKey(site, url)) : undefined;
+    mask = (async () => {
+      const job = keep ? inWorker<Uint8Array>({ kind: 'mask', keep, grid, extent }) : null;
+      if (job) {
+        try {
+          return await job;
+        } catch {
+          // Not kept there, or no canvas in the worker: draw it here.
+        }
+      }
+      return rasteriseMask(packed, grid, extent);
+    })();
+    byGrid.set(gridKey, mask);
   }
-  return unpackWalkNetwork(packed, extra);
+  return mask;
 }
 
 /** Forgets every kept dataset (tests, and a table that was switched). */
