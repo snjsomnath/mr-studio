@@ -208,6 +208,33 @@ export function placeSettings(host: TableSettingsHost): HTMLElement[] {
     ribbons.append(row);
   }
   physical.append(field('Ribbons', ribbons, 'The strips of the projected picture beside the model that show the open layer at a glance. Default puts one at the visitors’ side when there is room; If room tries this side too.'));
+
+  // The ambient glow in the same blank space (#476): on or off, how strong, and which colours.
+  const glow = setting('table.glow', 'dialog:place', el('div', 'ed-glow'));
+  const g = t.glow;
+  const on = Object.assign(el('input'), { type: 'checkbox', checked: !!g && g.on !== false });
+  on.ariaLabel = 'Ambient glow';
+  const strength = Object.assign(el('input'), { type: 'range', min: '0.1', max: '1', step: '0.05', value: String(g?.strength ?? 0.5) });
+  strength.ariaLabel = 'Glow strength';
+  const colours = el('select');
+  colours.ariaLabel = 'Glow colours';
+  for (const [v, text] of [
+    ['edges', 'Colours along each edge'],
+    ['one', 'One dominant colour'],
+  ]) colours.append(Object.assign(el('option'), { value: v, textContent: text }));
+  colours.value = g?.colours ?? 'edges';
+  const enable = () => {
+    strength.disabled = colours.disabled = !on.checked;
+  };
+  enable();
+  on.addEventListener('change', () => {
+    enable();
+    table({ table: { glow: { on: on.checked } } });
+  });
+  strength.addEventListener('change', () => table({ table: { glow: { strength: Number(strength.value) } } }));
+  colours.addEventListener('change', () => table({ table: { glow: { colours: colours.value } } }));
+  glow.append(on, strength, colours);
+  physical.append(field('Ambient glow', glow, 'The blank space around the model glows softly in the model’s own colours, like the lights behind some televisions. The ribbons stay on top, and a layer can turn it off or give it a colour.'));
   return [about, physical];
 }
 

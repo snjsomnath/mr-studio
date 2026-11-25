@@ -1867,6 +1867,34 @@ impl Hub {
                             }
                             changed.push("ribbons");
                         }
+                        // The ambient glow in the blank space (#476): null takes it away, otherwise
+                        // the fields given change and the rest stay.
+                        "glow" => {
+                            t.glow = if value.is_null() {
+                                None
+                            } else {
+                                let mut merged = serde_json::to_value(t.glow.unwrap_or(mrs_site::Glow {
+                                    on: true,
+                                    strength: mrs_site::Glow::default_strength(),
+                                    colours: Default::default(),
+                                }))
+                                .map_err(|e| e.to_string())?;
+                                let Value::Object(fields) = value else {
+                                    return Err("glow must be an object: on, strength, colours".into());
+                                };
+                                for (k, v) in fields {
+                                    merged[k] = v.clone();
+                                }
+                                let glow: mrs_site::Glow = serde_json::from_value(merged).map_err(|_| {
+                                    "glow is { on: true or false, strength: 0 to 1, colours: \"edges\" or \"one\" }".to_string()
+                                })?;
+                                if !(0.0..=1.0).contains(&glow.strength) {
+                                    return Err("the glow's strength is 0 to 1".into());
+                                }
+                                Some(glow)
+                            };
+                            changed.push("ambient glow");
+                        }
                         other => return Err(format!("'{other}' is not a table setting here; the size and tiles change with the place")),
                     }
                 }
@@ -3702,6 +3730,24 @@ mod tests {
         // The history says what it was.
         let list = hub.history_list();
         assert_eq!(list["revisions"][1]["summary"], "Changed the table settings");
+    }
+
+    #[test]
+    fn the_ambient_glow_is_a_table_setting() {
+        let hub = scratch_hub("table-glow");
+        let dev = |method: &str, p: Value| hub.request(Role::Dev, 0, method, &p);
+        dev("site.table", json!({ "table": { "glow": { "strength": 0.7 } } })).unwrap();
+        let glow = hub.site().table.unwrap().glow.unwrap();
+        assert!(glow.on, "giving the glow a setting turns it on");
+        assert_eq!((glow.strength, glow.colours), (0.7, mrs_site::GlowColours::Edges));
+        // A field left out stays.
+        dev("site.table", json!({ "table": { "glow": { "colours": "one", "on": false } } })).unwrap();
+        let glow = Site::load(&hub.site.dir).unwrap().manifest.table.unwrap().glow.unwrap();
+        assert_eq!((glow.on, glow.strength, glow.colours), (false, 0.7, mrs_site::GlowColours::One));
+        assert!(dev("site.table", json!({ "table": { "glow": { "strength": 3 } } })).is_err());
+        assert!(dev("site.table", json!({ "table": { "glow": { "colours": "rainbow" } } })).is_err());
+        dev("site.table", json!({ "table": { "glow": null } })).unwrap();
+        assert!(hub.site().table.unwrap().glow.is_none());
     }
 
     #[test]

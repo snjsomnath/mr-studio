@@ -102,6 +102,21 @@ A layer that has steps declares how it moves through them:
 - Ribbons are outside the model, so they don't break the "clean map" rule. Keep them glanceable (numbers, small charts, a QR), never paragraphs.
 - Not built yet: editing `front` and `ribbons` in Table settings (#73).
 
+## Ambient glow
+
+**Built (#476).** The projector's blank space around the model can glow softly in the model's own colours, as the lights behind some televisions do.
+
+```jsonc
+"table": { "width_cm": 100, "height_cm": 60, "glow": { "on": true, "strength": 0.5, "colours": "edges" } }
+```
+
+- `table.glow` is off when it is missing or `on` is false. `strength` (0 to 1, default 0.5) is how bright it is at the model's edge. `colours` is `"edges"` (each edge glows in the colours along it, the default) or `"one"` (the whole margin in the model's dominant colour). It is set in the editor under Design › Table size and place, beside the ribbons.
+- Four times a second the table copies its own picture at 96 pixels across and reads the colours just inside each edge, in 10 steps. Vivid and bright colours count most, so a yellow layer over a dark base map gives a yellow glow; a dim colour is lifted towards full brightness, keeping its hue, while a nearly black edge stays dim.
+- The glow is painted on a canvas a tenth of the surface's size, which the browser stretches smooth: each pixel outside the model takes the colour of the nearest point on its edge and fades with distance, to about a tenth 14 cm out. There is no blur filter (WebKit draws those slowly, #181). Colours ease to new ones over about a second, and the glow fades in and out the same way.
+- It fills the whole blank space; the ribbons stay on top of it. Over the model nothing is painted.
+- A layer can change it while it is on with `ctx.map.setGlow('off' | '#rrggbb' | null)`: off, a fixed colour, or back to the model's own. The layer turned on most recently that asked wins.
+- The editor previews it in the room it keeps beside the map for the ribbons.
+
 ## Settings (per #73)
 
 - **Table settings** (`site.json`): rail style, groups, welcome title, logos, credits, idle reset (the time with no input before the controller goes home, default 3 minutes), the attract order and step length, and ribbons.

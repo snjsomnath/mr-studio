@@ -42,6 +42,7 @@ with the engine's projection and rotation.
 | --- | --- | --- |
 | Sources | `geojsonSource`, `csvSource`, `liveSource`, `staticSource`, `mapSource` | One interface, `load()` and `watch()`, whether data is a site file, a CSV export or a polled service. A live source keeps the last good value and backs off when the service is down |
 | Shapes | `readShapes` → `Area`, `Path`, `Spot` | GeoJSON to shapes in table metres, sorted by geometry type |
+| Big site files | `readSiteGeometry`, `packInWorker`, `packGeojson`, `packedBuffers`, `unpackGeometry`, `forgetSiteGeometry` | A site dataset's polygons, lines and points in table metres, parsed in the SDK's data worker so a large file doesn't stall the table, and kept until the file changes, so every layer that reads the buildings shares one read (#263) |
 | Tables | `parseCsv`, `columns`, `joinRows`, `foldKey` | Attach rows to shapes by a key, tolerant of accents and case, and report what did not match |
 | Series | `sampleSeries`, `seriesPeak`, `sharedPeak`, `sumSeries`, `cumulative` | One value per step, sampled at a decimal position |
 | Clock | `Clock` | Play, pause, scrub and loop over a span. No timers; tick it from `ctx.onFrame` |

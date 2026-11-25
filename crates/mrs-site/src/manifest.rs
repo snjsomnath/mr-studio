@@ -34,6 +34,38 @@ pub struct Table {
     /// What the projector's blank space around the model shows, per side (present.md, Ribbon).
     #[serde(default, skip_serializing_if = "Ribbons::is_empty")]
     pub ribbons: Ribbons,
+    /// A soft glow in the projector's blank space in the model's own colours (#476, present.md, Ambient glow).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub glow: Option<Glow>,
+}
+
+/// The ambient glow around the model: the colours along the model's edges, or one colour for all of it.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Glow {
+    #[serde(default = "yes")]
+    pub on: bool,
+    /// 0 to 1: how bright the glow is at the model's edge.
+    #[serde(default = "Glow::default_strength")]
+    pub strength: f64,
+    #[serde(default)]
+    pub colours: GlowColours,
+}
+
+impl Glow {
+    pub const fn default_strength() -> f64 {
+        0.5
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum GlowColours {
+    /// Each edge glows in the colours along it.
+    #[default]
+    Edges,
+    /// The whole margin glows in the model's dominant colour.
+    One,
 }
 
 /// A side of the projected image.

@@ -11,6 +11,7 @@
   "A quarter turn clockwise": "Ett kvarts varv medurs",
   "Upside down": "Upp och ner",
   "A quarter turn anticlockwise": "Ett kvarts varv moturs",
+  "Place on the map by its edges (west, south, east, north in degrees), empty to fit the table": "Placera på kartan efter kanterna (väst, syd, öst, nord i grader), tomt för att fylla bordet",
   "Video plays again from the start": "Videon börjar om från början",
   "Opacity": "Opacitet"
 }

@@ -140,6 +140,12 @@ export interface MapHandle {
    */
   addDetail(render: (g: CanvasRenderingContext2D, scale: number) => void): void;
   /**
+   * What the ambient glow in the projector's blank space does while this layer is on (#476):
+   * `'off'` turns it off, a colour such as `'#ffb347'` fixes it, `null` gives it back the model's
+   * own colours. The most recent layer to ask wins. Nothing happens on a table without the glow.
+   */
+  setGlow(glow: 'off' | string | null): void;
+  /**
    * A sharp picture of the square of side `2 * radius_m` around `centre` (table metres), `size`
    * pixels across, from every other layer that draws one (`addDetail`), in the scene's order.
    * Null when no layer on the table draws one.

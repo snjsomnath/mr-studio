@@ -432,6 +432,8 @@ export interface SiteInfo {
     front?: 'top' | 'bottom' | 'left' | 'right';
     /** What the projector's blank space shows per side: off, auto, or a size in cm (docs/contracts/present.md). */
     ribbons?: Partial<Record<'top' | 'bottom' | 'left' | 'right', 'off' | 'auto' | { cm: number }>>;
+    /** The ambient glow in the projector's blank space, in the model's own colours (#476). */
+    glow?: { on?: boolean; strength?: number; colours?: 'edges' | 'one' };
   } | null;
   basemap: { background: string; style: string | null };
   /** Table settings (#73): the controller's title, logo and the welcome line under the title. */

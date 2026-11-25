@@ -1,4 +1,4 @@
-import { defineLayer, geojsonPolygons, readSiteData, seededRandom, tableSpace } from '@mrstudio/sdk';
+import { readSiteGeometry, defineLayer, seededRandom, tableSpace } from '@mrstudio/sdk';
 import type { LayerManifest } from '@mrstudio/sdk';
 
 import manifest from '../layer.json';
@@ -55,7 +55,7 @@ export default defineLayer<Params>({
     const canvas = ctx.map.addDrawing('windows', { opacity: ctx.params.opacity });
     const space = tableSpace(ctx.site);
     const random = seededRandom(23);
-    const footprints = geojsonPolygons(await readSiteData(ctx.site, 'buildings'), space);
+    const footprints = (await readSiteGeometry(ctx.site, 'buildings'))?.polygons ?? [];
 
     const buildings: Building[] = [];
     for (const { geometry: rings } of footprints) {

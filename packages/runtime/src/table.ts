@@ -43,6 +43,8 @@ export class TableView {
   private clips = new Map<string, RevealShape>();
   /** Layers that draw a sharp picture for a magnifier (#351), and the scene's order to stack them in. */
   private details = new Map<string, DetailRenderer>();
+  /** What layers ask of the ambient glow (#476), in the order they asked, the most recent last. */
+  private glowWishes = new Map<string, 'off' | string>();
   private order: string[] = [];
   /** How many pointer listeners each layer has, so a click meant for a layer's own tool is left to it. */
   private listening = new Map<string, number>();
@@ -253,6 +255,10 @@ export class TableView {
         });
       },
       detail: (centre: [number, number], radius_m: number, size: number) => this.detail(instance, centre, radius_m, size),
+      setGlow: (glow: 'off' | string | null): void => {
+        this.glowWishes.delete(instance);
+        if (glow) this.glowWishes.set(instance, glow);
+      },
       addShapes: (name: string, style?: { opacity?: number }): ShapeOverlay => {
         const overlay = this.shapes(`shapes:${instance}:${name}`, style?.opacity ?? 1, add, forget, drawn.intensity);
         drawn.overlays.add(overlay);
@@ -655,6 +661,54 @@ export class TableView {
    * whose picture is only readable during a frame, so it is taken as the map renders.
    * Null when there is nothing to take (the map never rendered).
    */
+  /** What the open layers ask of the ambient glow, the most recent first (#476). */
+  glowWish(): 'off' | string | null {
+    let last: 'off' | string | null = null;
+    for (const [instance, wish] of this.glowWishes) if (this.drawn.has(instance)) last = wish;
+    return last;
+  }
+
+  /**
+   * The table copied `width` pixels wide, for the ambient glow (#476): the map and every canvas
+   * over it, taken as the map renders. Null when the map doesn't render within a second.
+   */
+  sample(width: number): Promise<ImageData | null> {
+    const { map, container } = this;
+    const out = (this.sampleCanvas ??= document.createElement('canvas'));
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => resolve(null), 1000);
+      void map.once('render', () => {
+        clearTimeout(timer);
+        try {
+          const box = container.getBoundingClientRect();
+          if (box.width < 1 || box.height < 1) return resolve(null);
+          const scale = width / box.width;
+          const height = Math.max(1, Math.round(box.height * scale));
+          if (out.width !== width || out.height !== height) [out.width, out.height] = [width, height];
+          const g = out.getContext('2d', { willReadFrequently: true })!;
+          g.fillStyle = this.site.basemap.background;
+          g.fillRect(0, 0, width, height);
+          for (const canvas of container.querySelectorAll('canvas')) {
+            if (canvas.classList.contains('table-glow') || canvas.closest('.table-ribbon')) continue;
+            const r = canvas.getBoundingClientRect();
+            if (r.width < 1 || r.height < 1 || canvas.width < 1) continue;
+            const style = getComputedStyle(canvas);
+            if (style.visibility === 'hidden' || style.display === 'none') continue;
+            g.globalAlpha = Number(style.opacity) || 1;
+            g.drawImage(canvas, (r.left - box.left) * scale, (r.top - box.top) * scale, r.width * scale, r.height * scale);
+          }
+          g.globalAlpha = 1;
+          resolve(g.getImageData(0, 0, width, height));
+        } catch (error) {
+          console.warn('[glow] no copy of the table', error);
+          resolve(null);
+        }
+      });
+      map.triggerRepaint();
+    });
+  }
+  private sampleCanvas: HTMLCanvasElement | null = null;
+
   snapshot(width = 640): Promise<Blob | null> {
     const { map, container } = this;
     return new Promise((resolve) => {

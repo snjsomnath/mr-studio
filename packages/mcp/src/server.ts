@@ -12,6 +12,7 @@ import { DEV_KINDS, DUPLICATE_AT, KIND_ALIASES, searchIssues, submitDevDraft, wr
 import { checkLayerPackage, searchSdk } from './devlayer.ts';
 import { listSiteFiles } from './files.ts';
 import { checkIdea } from './ideas.ts';
+import { FEATURE_CARDS, layerCards, readSignals, suggest } from './suggest.ts';
 import { RECIPE_VOCABULARY, legendFor } from './recipe.ts';
 import { brainstormPrompt, buildCodeLayerPrompt, buildControllerAppPrompt, buildFromDataPrompt, compareScenariosPrompt, designExperiencePrompt, planWorkshopPrompt, dashboardPrompt, newProjectPrompt, requestPrompt, serverInstructions } from './prompts.ts';
 import { CORE_REPO, REQUEST_KINDS, submitDraft, writeDraft, type RequestKind } from './requests.ts';
@@ -107,6 +108,7 @@ const ANNOTATIONS: Record<string, { readOnlyHint: boolean; destructiveHint?: boo
   list_building_blocks: { readOnlyHint: true, openWorldHint: false },
   find_capabilities: { readOnlyHint: true, openWorldHint: false },
   describe_capability: { readOnlyHint: true, openWorldHint: false },
+  suggest_features: { readOnlyHint: true, openWorldHint: false },
   assess_experience: { readOnlyHint: true, openWorldHint: false },
   find_related_issues: { readOnlyHint: true, openWorldHint: true },
   list_site_files: { readOnlyHint: true, openWorldHint: false },
@@ -176,8 +178,43 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
   const tool: typeof server.registerTool = (name, config, cb) => {
     const annotations = ANNOTATIONS[name];
     if (!annotations) throw new Error(`Tool '${name}' has no entry in ANNOTATIONS`);
-    return server.registerTool(name, { ...config, outputSchema: (config.outputSchema ?? RESULT) as any, annotations: { title: config.title, ...annotations } }, cb);
+    const run = HINT_AFTER.has(name) ? withHint(cb as any) : cb;
+    return server.registerTool(name, { ...config, outputSchema: (config.outputSchema ?? RESULT) as any, annotations: { title: config.title, ...annotations } }, run as typeof cb);
   };
+
+  // ---- Suggestions (#477) ----
+  // After a big step, one quiet "you might also like", never the same one twice in a session.
+  const HINT_AFTER = new Set(['create_site', 'import_data', 'add_layer', 'update_site', 'build_experience']);
+  const hinted = new Set<string>();
+  const signalsFor = (dir: string | null) => {
+    if (!dir) return null;
+    try {
+      const m = readSite(dir);
+      return readSignals(m, (use) => {
+        const l = findLayer(catalog, dir, use, m)?.manifest;
+        return { data: l?.requires?.data ?? [], category: l?.category };
+      });
+    } catch {
+      return null;
+    }
+  };
+  const cardsFor = (site?: string) => [...FEATURE_CARDS, ...layerCards(capabilitiesFor(site))];
+  function withHint(cb: (args: any, extra: any) => Promise<Content>) {
+    return async (args: any, extra: any): Promise<Content> => {
+      const out = await cb(args, extra);
+      const sc = out.structuredContent as Record<string, unknown> | undefined;
+      const site: string | undefined = args?.site ?? args?.dir;
+      if (!sc?.ok || !site) return out;
+      const signals = signalsFor(at(site));
+      if (!signals) return out;
+      const pick = suggest(cardsFor(site), String(args?.goal ?? ''), signals, site, 12).suggestions.find((x) => !hinted.has(x.id));
+      if (!pick) return out;
+      hinted.add(pick.id);
+      sc.you_might_also_like = pick;
+      (out.content[0] as { text: string }).text += `\nYou might also like: ${pick.name}. ${pick.reason}. Offer it if it fits their idea; do not switch it on unasked (suggest_features gives more).`;
+      return out;
+    };
+  }
 
   // ---- Knowledge ----
 
@@ -396,6 +433,30 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
     },
   );
 
+  tool(
+    'suggest_features',
+    {
+      title: 'Suggest features that fit an idea',
+      description:
+        "Suggest 3 to 5 existing features that would help this idea and this table, including ones people would never search for (life on the map at rest, strips in the projector's margin, a second layer over the first, a guided tour with notes, a starter pack for designers). Give the person's goal in their words and the site: the table's shape, data, layers, languages and tour are read from site.json, and features already on are left out. Each suggestion has a one-line reason tied to the idea or the table, what it needs, and enable: the exact tool call that switches it on (or how, when nothing needs setting). Planned features that would fit come back as coming, with their issue. Offer suggestions to the person in a sentence each; never apply one they have not agreed to.",
+      inputSchema: {
+        goal: z.string().optional().describe('The idea in the person\'s words, e.g. "an exhibition about the new tram line for residents"'),
+        site: z.string().optional().describe('Site folder: read what the table already has'),
+        limit: z.number().int().min(1).max(8).optional().describe('How many (default 5)'),
+      },
+    },
+    async ({ goal, site, limit }) => {
+      if (!goal?.trim() && !site) return fail('Give a goal, a site, or both.', undefined, { code: 'nothing_to_go_on', next: ['Call again with the person\'s idea in their words, the site folder, or both.'] });
+      const signals = site ? signalsFor(at(site)) : null;
+      if (site && !signals) return fail(`No site at ${at(site)}.`, undefined, { code: 'no_site', next: ['Check the folder, or call with only a goal.'] });
+      const { suggestions, coming } = suggest(cardsFor(site), goal ?? '', signals, site ?? null, limit ?? 5);
+      if (!suggestions.length) return reply('Nothing else stands out for this idea and table. find_capabilities searches everything.', { suggestions, coming });
+      for (const x of suggestions) hinted.add(x.id);
+      const lines = suggestions.map((x, i) => `${i + 1}. ${x.name}: ${x.reason}.`);
+      return reply(`${suggestions.length} feature${suggestions.length === 1 ? '' : 's'} that could help:\n${lines.join('\n')}${coming.length ? `\nComing: ${coming.map((c) => `${c.name} (#${c.issue})`).join(', ')}.` : ''}\nOffer these; switch one on only when the person says yes, with its enable call.`, { suggestions, coming });
+    },
+  );
+
   // ---- Experiences (#327) ----
 
   const STEP = z.object({
@@ -541,7 +602,7 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
     {
       title: 'Update site settings',
       description:
-        `Change site settings other than the scene. Settable in this core: ${editable.join(', ')}. Among them: table (size, tile_cm, front, ribbons), scene sources (buildings, terrain, trees, cell_m), basemap (style, black and white, brightness), branding (title, logo, welcome line, languages, translations), palette, display (quality) and tv. Objects are merged one level deep; null removes a key. The change is refused if it makes the site invalid. Use the layer tools for the scene.`,
+        `Change site settings other than the scene. Settable in this core: ${editable.join(', ')}. Among them: table (size, tile_cm, front, ribbons, glow: the ambient glow around the model), scene sources (buildings, terrain, trees, cell_m), basemap (style, black and white, brightness), branding (title, logo, welcome line, languages, translations), palette, display (quality) and tv. Objects are merged one level deep; null removes a key. The change is refused if it makes the site invalid. Use the layer tools for the scene.`,
       inputSchema: {
         site: z.string().describe('Site folder'),
         set: z.record(z.string(), z.unknown()).describe('e.g. { "branding": { "title": "Harbour 2040" }, "basemap": { "background": "#101418" } }'),
@@ -1130,7 +1191,7 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
     {
       title: 'Check a site code layer against the rules',
       description:
-        "Checks a site layer before it goes on a table: layer.json (api, id, controls, TV panels and a stage made of panels within the density budget, control and map panels naming real controls and tools, team widgets declared, text lengths), every word people see in locales/sv.json, the code (no longitudes and latitudes of a place, no talking to surfaces or the host behind ctx's back, only '@mrstudio/sdk' from the core), what it needs of the site (datasets, services, kernels), and whether dist/index.js is newer than its source. Writes nothing.",
+        "Checks a site layer before it goes on a table: layer.json (api, id, controls, TV panels and a stage made of panels within the density budget or a map stage with at most 4 chip or tile panels, control and map panels naming real controls and tools, team widgets declared, text lengths), every word people see in locales/sv.json, the code (no longitudes and latitudes of a place, no talking to surfaces or the host behind ctx's back, only '@mrstudio/sdk' from the core), what it needs of the site (datasets, services, kernels), and whether dist/index.js is newer than its source. A layer whose stage is a map or panels may be layer.json alone, with no code to build. Writes nothing.",
       inputSchema: { site: z.string(), id: z.string() },
     },
     async ({ site, id }) => {

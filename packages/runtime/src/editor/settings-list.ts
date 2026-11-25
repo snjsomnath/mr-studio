@@ -31,8 +31,8 @@ export type Home =
   | 'format:button'
   /** The eye on a row of the left list */
   | 'list:eye'
-  /** Dragging rows in the left list */
-  | 'list:drag';
+  /** A row selected in the left list, moved with Move up and Move down */
+  | 'list:move';
 
 export type Owner = 'table' | 'layer' | 'button' | 'computer';
 
@@ -49,6 +49,7 @@ export const SETTINGS = {
   'table.timezone': { label: 'Time zone', owner: 'table', home: 'dialog:place' },
   'table.front': { label: 'Side visitors stand at', owner: 'table', home: 'dialog:place' },
   'table.ribbons': { label: 'Ribbons beside the model', owner: 'table', home: 'dialog:place' },
+  'table.glow': { label: 'Ambient glow around the model', owner: 'table', home: 'dialog:place' },
   'controller.title': { label: 'Controller title', owner: 'table', home: 'dialog:welcome' },
   'controller.welcome': { label: 'Welcome line', owner: 'table', home: 'dialog:welcome' },
   'controller.logo': { label: 'Logo', owner: 'table', home: 'dialog:welcome' },
@@ -64,7 +65,7 @@ export const SETTINGS = {
   'maplife.shown': { label: 'Map life on or off', owner: 'layer', home: 'list:eye' },
   'item.on': { label: 'An item comes on with its layer', owner: 'layer', home: 'format:layer' },
   'layer.settings': { label: 'A layer’s own settings', owner: 'layer', home: 'format:layer' },
-  'layer.order': { label: 'Drawing order and button order', owner: 'layer', home: 'list:drag' },
+  'layer.order': { label: 'Drawing order and button order', owner: 'layer', home: 'list:move' },
   'button.words': { label: 'A button’s name, description and group', owner: 'button', home: 'format:button' },
   'button.icon': { label: 'A button’s icon', owner: 'button', home: 'format:button' },
   'button.side': { label: 'A button’s side of the controller', owner: 'button', home: 'format:button' },

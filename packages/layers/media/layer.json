@@ -4,7 +4,7 @@
   "combine": false,
   "name": "Picture or video",
   "description": "A picture or a video of the site laid over the whole table, such as a simulation, an old photo or a film of a sun study",
-  "about": {"purpose": "Lays a picture or video over the whole table: a simulation, an old photo, a rendering of a proposal.", "questions": ["What did this look like before?", "What does the proposal or a simulation show here?"], "pairs_with": ["slideshow", "swipe", "lens"], "limits": ["The file must be in the site's media", "Covers the whole table; no interaction of its own"]},
+  "about": {"purpose": "Lays a picture or video over the whole table: a simulation, an old photo, a rendering of a proposal.", "questions": ["What did this look like before?", "What does the proposal or a simulation show here?"], "pairs_with": ["slideshow", "swipe", "lens"], "limits": ["The file must be in the site's media", "Covers the whole table unless placed by its edges; no interaction of its own"]},
   "icon": "images",
   "attract": { "effect": "grid" },
   "category": "media",
@@ -28,6 +28,7 @@
         { "value": "270", "label": "A quarter turn anticlockwise" }
       ]
     },
+    { "id": "bounds", "type": "text", "label": "Place on the map by its edges (west, south, east, north in degrees), empty to fit the table", "default": "", "tier": "more" },
     { "id": "loop", "type": "toggle", "label": "Video plays again from the start", "default": true, "tier": "more" },
     { "id": "opacity", "type": "range", "label": "Opacity", "min": 0.1, "max": 1, "step": 0.05, "default": 1, "tier": "more" }
   ],
