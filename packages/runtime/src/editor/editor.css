@@ -3964,7 +3964,8 @@ body[data-role='edit'] > .connection {
 
 .ed-commands {
   width: min(560px, calc(100vw - 32px));
-  max-height: min(480px, calc(100vh - 120px));
+  /* A steady height (#441): sized by its content, WebKit gave the list (flex basis 0) no room. */
+  height: min(480px, calc(100vh - 120px));
   margin: 12vh auto auto;
   padding: 0;
   border: 1px solid var(--ed-line);
@@ -4005,7 +4006,8 @@ body[data-role='edit'] > .connection {
 }
 
 .ed-commands-list {
-  flex: 1;
+  flex: 1 1 auto;
+  min-height: 0;
   margin: 0;
   padding: 6px;
   list-style: none;
