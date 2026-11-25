@@ -13,7 +13,7 @@ Re-run on 2026-11-25 on main 0.32 plus #390 and #393.
 | Time zone | 1 | 1 | Design › Table size and place… | |
 | Turn a piece of map life on or off | 4 | 1 | The eye on its At rest row | Home › Hide and right-click › Hide run the same toggle |
 | Base map style | 2 | 1 | Format pane of the Base map row | Design › Base map style ▾ selects that row |
-| Add a layer | 4 | 1 | Insert › layer gallery | Home › New layer (same gallery), Media library › Show on the table (adds a Map data layer for that file) |
+| Add a layer | 4 | 1 | Insert › layer gallery | Media library › Show on the table (adds a Map data layer for that file); the + in the list opens the same gallery. Home no longer repeats New layer (#460) |
 | A button's name, words, icon | 4 | 1 | Format pane of the layer, Button section | F2 in the list renames (same field) |
 | A button's side and order | 4 | 1 field | Format pane of the layer (Side) | Drag on the controller rails in the list, right-click › Move to the other side. See note 1 |
 | Controller title and welcome line | 1, wrong home | 1 | Design › Welcome and languages… | |
