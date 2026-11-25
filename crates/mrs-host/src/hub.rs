@@ -623,7 +623,10 @@ fn tv_words(key: &str) -> &str {
 /// density budget are the dashboard's rules, checked by the editor and again by the controller.
 fn valid_pages(value: &Value) -> bool {
     let Some(pages) = value.as_array() else { return false };
-    let id = |v: &Value| v.as_str().is_some_and(|s| !s.is_empty() && s.len() <= 40 && s.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-'));
+    let id = |v: &Value| {
+        v.as_str()
+            .is_some_and(|s| !s.is_empty() && s.len() <= 40 && s.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-'))
+    };
     pages.len() <= 12
         && value.to_string().len() <= 64_000
         && pages.iter().all(|page| {
@@ -3368,7 +3371,11 @@ mod tests {
         assert_eq!(tv["tv"]["rotate_s"], 20);
         assert!(dev("site.tv", json!({ "tv": { "rotate_s": 2 } })).is_err(), "too quick to read");
         assert!(dev("site.tv", json!({ "tv": { "pages": [{ "id": "Bad Id", "panels": [] }] } })).is_err());
-        assert!(dev("site.tv", json!({ "tv": { "pages": [{ "id": "p", "panels": [{ "id": "a", "widget": "stat", "size": "tile" }] }] } })).is_err(), "a panel needs its place");
+        assert!(
+            dev("site.tv", json!({ "tv": { "pages": [{ "id": "p", "panels": [{ "id": "a", "widget": "stat", "size": "tile" }] }] } }))
+                .is_err(),
+            "a panel needs its place"
+        );
         // No pages: the controller lays out the open layers' panels again.
         assert!(dev("site.tv", json!({ "tv": { "pages": null } })).unwrap()["tv"]["pages"].is_null());
     }
