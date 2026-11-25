@@ -1,10 +1,10 @@
 ---
-bump: minor
+bump: patch
 issues: 466
 ---
 
 ### Field walk closes like a layer
 
-Closing Field walk now takes its viewer off the controller. Before, it stayed above "Turn a layer on to see it here". Picking another layer now closes Field walk too, except Reveal line and Magnifier, which still open over the walk with the spots on top. A layer sets this with `alongsideOf` in layer.json.
+Field walk now closes when you close it or pick another layer, like any layer. Before, its viewer stayed on the controller. To keep the spots under a Reveal line or a Magnifier, add Field walk inside that layer in the editor.
 
 ![Controller after closing Field walk](docs/screenshots/466-closed.png)
