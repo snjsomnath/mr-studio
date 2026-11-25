@@ -6,6 +6,7 @@
 // words in `branding.translations.sv`, and the runtime's own words below. What is not found
 // stays in English, so a half-translated table still reads.
 
+import { setNumberLanguage } from '@mrstudio/sdk';
 import type { Control, LayerManifest, SessionState } from '@mrstudio/sdk';
 
 import type { Store } from './store.ts';
@@ -249,6 +250,8 @@ export function speak(store: Store, language: Language): void {
 export function setLanguage(language: Language): void {
   current = language;
   document.documentElement.lang = language;
+  // Numbers follow (#397): a decimal comma in Swedish.
+  setNumberLanguage(language);
 }
 
 /** The language a phone's browser asks for, when MR Studio speaks it. */

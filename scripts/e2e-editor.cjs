@@ -20,6 +20,11 @@ const mod = process.platform === 'darwin' ? 'Meta' : 'Control';
 async function main() {
   const site = fs.mkdtempSync(path.join(os.tmpdir(), 'mrs-editor-'));
   fs.cpSync(path.join(root, 'sites/sample'), site, { recursive: true });
+  // A drawing for the Masterplan frame (#405).
+  fs.copyFileSync(path.join(kit, 'masterplan.svg'), path.join(site, 'data/masterplan.svg'));
+  const json = JSON.parse(fs.readFileSync(path.join(site, 'site.json'), 'utf8'));
+  json.data.masterplan = 'data/masterplan.svg';
+  fs.writeFileSync(path.join(site, 'site.json'), JSON.stringify(json, null, 2));
   const saved = () => JSON.parse(fs.readFileSync(path.join(site, 'site.json'), 'utf8'));
   const layerIds = () => saved().layers.map((l) => l.id ?? l.use);
   const savedLayer = (id) => saved().layers.find((l) => (l.id ?? l.use) === id);
@@ -117,8 +122,11 @@ async function main() {
     });
 
     await run('dragging a layer to the other rail moves its button (#58)', async () => {
+      // A drag on a cold page can start before the list is ready to take it (#426): try once more.
+      const right = () => savedLayer('wind')?.button?.side === 'right';
       await row('wind').dragTo(page.locator('.ed-rail[data-side="right"]'));
-      await until(() => savedLayer('wind')?.button?.side === 'right', 'Wind on the right in site.json');
+      await until(right, 'Wind on the right', 2500).catch(() => row('wind').dragTo(page.locator('.ed-rail[data-side="right"]')));
+      await until(right, 'Wind on the right in site.json');
       await page.locator('.ed-rail[data-side="right"] .ed-row[data-layer="wind"]').waitFor();
     });
 
@@ -292,6 +300,33 @@ async function main() {
       await page.locator('.ed-ribbon [data-command="layer.remove"]').click();
       await until(async () => !layerIds().includes('wind') && !layerIds().includes('isovist'), 'both rows removed');
       assert.equal(layerIds().length, before - 2);
+    });
+
+    await run('the drawing follows its frame while it moves, and arrow keys nudge it (#405)', async () => {
+      await page.locator('.ed-tab[data-tab="insert"]').click();
+      await page.locator('.ed-ribbon [data-command="layer.new"]').click();
+      await page.locator('dialog.lg-gallery .lg-card[data-layer="plan"] .lg-pick').click();
+      const body = page.locator('.ed-drawing-frame .ed-df-body');
+      await body.waitFor();
+      const plan = () => saved().layers.find((l) => l.use === 'plan');
+      await until(async () => Boolean(plan()), 'a Masterplan');
+      // Mid-drag the drawing itself is shown in the frame.
+      const box = await body.boundingBox();
+      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(box.x + box.width / 2 - 60, box.y + box.height / 2 - 30, { steps: 6 });
+      const ghost = page.locator('.ed-drawing-frame.is-dragging .ed-df-ghost image[href^="blob:"]');
+      await ghost.waitFor();
+      await ghost.evaluate((image) => image.decode?.().catch(() => {}));
+      await page.mouse.move(box.x + box.width / 2 - 64, box.y + box.height / 2 - 32);
+      await page.waitForTimeout(300);
+      await shot('405-drawing-drag');
+      await page.mouse.up();
+      await until(async () => Boolean(plan()?.params?.corners), 'the dragged frame saved');
+      const dragged = plan().params.corners;
+      await body.focus();
+      for (let i = 0; i < 3; i++) await page.keyboard.press('Shift+ArrowRight');
+      await until(async () => plan()?.params?.corners !== dragged, 'the nudged frame saved');
     });
 
     await run('the controller carries no operator text (#50)', async () => {

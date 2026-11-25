@@ -202,7 +202,7 @@ async function main() {
     await tv.getByRole('radio', { name: 'Sun hours' }).click();
     await dev.getByText('whole day added up').waitFor({ timeout: 120_000 });
     // The hero follows the mode: it counts the day's daylight and has no time to set; the daylight panel arrives.
-    await tv.locator(clock, { hasText: / h$/ }).waitFor();
+    await tv.locator(clock, { hasText: /\sh$/ }).waitFor();
     assert.equal(await tv.locator('.sun-hero-play').isVisible(), false);
     await tv.locator('[data-panel="sunlight/daylight"]').waitFor();
     if (shots) await tv.screenshot({ path: path.join(shots, 'tv-sun-hours.png') });
@@ -419,9 +419,9 @@ async function main() {
     await dev.waitForTimeout(500);
     const walk = await table.screenshot();
     assert.notDeepEqual(walk, off, 'the network and routes should be drawn');
-    assert.match(await coolPanel.locator('[data-route="shortest"][data-fact="length"]').textContent(), /^\d+ m$/);
+    assert.match(await coolPanel.locator('[data-route="shortest"][data-fact="length"]').textContent(), /^\d+\sm$/);
     // The demo's comparison: mean PET and heat exposure for each walk.
-    assert.match(await coolPanel.locator('[data-route="shortest"][data-fact="pet"]').textContent(), /^\d+\.\d °C PET$/);
+    assert.match(await coolPanel.locator('[data-route="shortest"][data-fact="pet"]').textContent(), /^\d+\.\d\s°C PET$/);
     assert.match(await coolPanel.locator('[data-route="shortest"][data-fact="heat"]').textContent(), /^\d+\.\dk °C·m heat$/);
     if (shots) await dev.screenshot({ path: path.join(shots, 'dev-coolpaths.png') });
     // Its hero is the time of day, and says what the coolest walk saves (#76).
@@ -566,7 +566,7 @@ async function main() {
     await press('Wind', false);
 
 
-    // ---- The scene composer ----
+    // ---- The operator's phones ----
     // The pages that are done with are closed first: every open table costs rendering time.
     // The operator looks after the phones from the Developer window (#335): a pause, then letting one go.
     const phones = dev.locator('.phones-panel');
@@ -577,76 +577,13 @@ async function main() {
     await phones.locator('li', { hasText: 'Ada' }).getByRole('button', { name: 'Let Ada go' }).click();
     await phone.getByText('Thanks for joining').waitFor();
     for (const page of [stranger, phone, typist, projected]) await page.close();
-    // Tall enough that the whole stack is on screen while one layer's settings are open.
-    const compose = await open('/compose', { width: 1700, height: 1700 });
-    const stage = compose.locator('.table-surface');
-    const rows = () => compose.locator('.stack-row strong').allTextContents();
-    await compose.locator('.palette-group', { hasText: 'Analysis' }).getByText('Sunlight').waitFor();
-    assert.deepEqual(await rows(), ['Map data (uses)', 'Wind', 'Mobility', 'Isovist', 'Cool paths', 'Sketch', 'Slideshow', 'Trees', 'Public transport', 'Traffic', 'Building lights', 'Sunlight', 'Base map']);
-    const drag = async (from, to, where = 0.5) => {
-      const a = await from.boundingBox();
-      const b = await to.boundingBox();
-      await compose.mouse.move(a.x + 12, a.y + a.height / 2);
-      await compose.mouse.down();
-      await compose.mouse.move(a.x + 40, a.y + a.height / 2 + 10, { steps: 3 });
-      await compose.mouse.move(b.x + b.width / 2, b.y + b.height * where, { steps: 8 });
-      await compose.mouse.up();
-    };
-    const row = (name) => compose.locator('.stack-row', { has: compose.getByText(name, { exact: true }) });
-
-    // Pressing + adds a second copy of a layer on top, under its own id, and saves it.
-    await compose.getByLabel('Add Traffic').click();
-    await row('Traffic (cars-2)').waitFor();
-    assert.deepEqual(savedLayers().at(-1), { use: 'cars', id: 'cars-2', active: true });
-
-    // Its settings form is generated from the manifest, and what it changes is saved.
-    await compose.getByLabel('Cars per kilometre of street').fill('25');
-    await compose.waitForFunction(() => true);
-    await assert.doesNotReject(async () => {
-      for (let i = 0; savedLayers().at(-1).params?.density !== 25; i++) {
-        if (i > 50) throw new Error('density was not saved');
-        await compose.waitForTimeout(100);
-      }
-    });
-
-    // Dragging from the palette into the stack adds a layer at that place.
-    await drag(compose.locator('.palette-item[data-layer="trees"]'), row('Base map'), 0.9);
-    await row('Trees (trees-2)').waitFor();
-    assert.equal(savedLayers()[0].id, 'trees-2', 'dropped below the base map, so first in site.json');
-
-    // Draw order follows the list: with the opaque base map on top, nothing below shows through.
-    await compose.getByLabel('Show Slideshow').waitFor();
-    await drag(row('Base map').locator('.stack-head'), row('Traffic (cars-2)'), 0.05);
-    await compose.waitForFunction(() => document.querySelector('.stack-row strong')?.textContent === 'Base map');
-    assert.equal(savedLayers().at(-1).use, 'basemap');
-    await compose.waitForTimeout(600);
-    // The outermost pixels are left out: a quad's edge is blended with what is under it.
-    const inner = async () => {
-      const box = await stage.boundingBox();
-      return compose.screenshot({ clip: { x: box.x + 4, y: box.y + 4, width: box.width - 8, height: box.height - 8 } });
-    };
-    const covered = await inner();
-    await compose.waitForTimeout(400);
-    assert.ok(covered.equals(await inner()), 'the base map on top should hide the moving layers');
-    await drag(row('Base map').locator('.stack-head'), row('Trees (trees-2)'), 0.9);
-    await compose.waitForFunction(() => [...document.querySelectorAll('.stack-row strong')].at(-1)?.textContent === 'Base map');
-    assert.equal(savedLayers()[0].use, 'basemap');
-    await compose.waitForTimeout(600);
-    assert.ok(!covered.equals(await inner()), 'with the base map at the bottom the scene shows again');
-
-    // The eye switch and the remove button.
-    await compose.getByLabel('Show Slideshow').check();
-    // The slideshow here is made of layers (its steps), so the controller shows its first step.
-    await tv.locator('.step-title', { hasText: 'Morning shadows' }).waitFor();
-    if (shots) await compose.screenshot({ path: path.join(shots, 'compose.png') });
-    await compose.getByLabel('Show Slideshow').uncheck();
-    await compose.getByLabel('Remove Traffic (cars-2)').click();
-    await compose.getByLabel('Remove Trees (trees-2)').click();
-    await row('Trees (trees-2)').waitFor({ state: 'detached' });
-    assert.deepEqual(savedLayers().map((l) => l.id ?? l.use), ['basemap', 'sunlight', 'building-lights', 'cars', 'transit', 'trees', 'slideshow', 'sketch', 'coolpaths', 'isovist', 'mobility', 'wind', 'uses']);
+    // The old scene composer is retired (#87): its address opens the editor.
+    const compose = await open('/compose', { width: 1440, height: 900 });
+    await compose.waitForURL(/\/edit/);
+    await compose.locator('.ed-ribbon').waitFor();
+    await compose.close();
 
     // ---- The editor ----
-    await compose.close();
     const editor = await open('/edit', { width: 1440, height: 900 });
     const treeLayers = () => editor.locator('.ed-tree .ed-row.is-layer[data-layer] .ed-row-label').allTextContents();
     // New layer is Insert's (#460); the rest of these steps work from Home.

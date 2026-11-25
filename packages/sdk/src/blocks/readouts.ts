@@ -3,6 +3,7 @@
 // `trend`). A layer builds them from its data and hands them to `ctx.publish`.
 // Colours are theme slots 1..6, never hex, so a dashboard stays in one palette.
 
+import { numberLanguage } from '../format.ts';
 import type { Clock } from './series.ts';
 
 export interface FormatOptions {
@@ -12,8 +13,13 @@ export interface FormatOptions {
   compact?: boolean;
 }
 
-/** A number as short text for a tile: "1.29 k", "247", "0.04". Never longer than 8 characters. */
+/** A number as short text for a tile: "1.29 k", "247", "0.04" ("1,29 k" in Swedish, #397). Never longer than 8 characters. */
 export function formatNumber(value: number, options: FormatOptions = {}): string {
+  const text = shortNumber(value, options);
+  return numberLanguage() === 'sv' ? text.replace('.', ',') : text;
+}
+
+function shortNumber(value: number, options: FormatOptions): string {
   if (!Number.isFinite(value)) return '—';
   const digits = options.digits ?? 3;
   const abs = Math.abs(value);

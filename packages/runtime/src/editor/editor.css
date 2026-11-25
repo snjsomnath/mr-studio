@@ -4639,7 +4639,8 @@ body[data-role='edit'] > .connection {
 .ed-df-bar {
   position: absolute;
   left: 50%;
-  bottom: 0.5rem;
+  /* Below the table (#405), so it never covers the frame's lower handles. */
+  top: calc(100% + 0.5rem);
   transform: translateX(-50%);
   display: flex;
   gap: 0.5rem;
@@ -5256,4 +5257,27 @@ body[data-role='edit'] > .connection {
   background: #e8edfb;
   font-size: 12px;
   line-height: 1.45;
+}
+
+/* The drawing follows the frame while it moves (#405); the table redraws it when it is let go. */
+.ed-df-ghost {
+  display: none;
+  opacity: 0.85;
+  pointer-events: none;
+}
+
+.ed-drawing-frame.is-dragging .ed-df-ghost {
+  display: inline;
+}
+
+.ed-df-body:focus-visible {
+  outline: none;
+  stroke-width: 2.5;
+  stroke-dasharray: none;
+}
+
+/* Once the drawing has been moved, the how-to line gives way. */
+.ed-drawing-frame.is-moved .ed-df-bar > span:empty,
+.ed-drawing-frame.is-moved .ed-df-hint-howto {
+  display: none;
 }

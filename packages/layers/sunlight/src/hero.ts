@@ -2,7 +2,7 @@
 // path over the chosen day at the site, the sun sits on it at the chosen time, and the
 // scrubber under it uses the same time scale, so the sun is always straight above the thumb.
 // Dragging anywhere on the hero sets the time; ▶ animates the day.
-import { formatHour } from '@mrstudio/sdk';
+import { formatHour, formatUnit } from '@mrstudio/sdk';
 import type { PanelContext, PanelHandlers } from '@mrstudio/sdk';
 
 import { goldenWindows, sunAt, sunDay } from './look.ts';
@@ -251,7 +251,7 @@ export function sunlightHero(ctx: PanelContext<Params>, el: HTMLElement): PanelH
     const [time, when] = clock.children as unknown as [HTMLElement, HTMLElement];
     const date = new Date(`${ctx.params.date}T12:00:00Z`).toLocaleDateString(ctx.language === 'sv' ? 'sv-SE' : 'en-GB', { day: 'numeric', month: 'long', timeZone: 'UTC' });
     const daylight = rise !== null && set !== null ? set - rise : 0;
-    time.textContent = instant ? formatHour(hour) : `${daylight.toFixed(1)} h`;
+    time.textContent = instant ? formatHour(hour) : formatUnit(daylight, 'h', 1);
     when.textContent = golden
       ? goldNow
         ? ctx.say('golden hour {from} to {to}', { from: formatHour(goldNow.from), to: formatHour(goldNow.to) })
@@ -264,7 +264,7 @@ export function sunlightHero(ctx: PanelContext<Params>, el: HTMLElement): PanelH
     facts.hidden = !instant && !spot;
     spotFact.hidden = !spot;
     if (spot) {
-      here.textContent = `${spot.sunHours.toFixed(1)} h`;
+      here.textContent = formatUnit(spot.sunHours, 'h', 1);
       const note = spotFact.querySelector<HTMLElement>(':scope > span')!;
       const now = instant ? (spot.light[Math.min(spot.light.length - 1, Math.max(0, Math.round((hour - spot.start) / spot.step)))] ?? 0) : null;
       note.textContent =

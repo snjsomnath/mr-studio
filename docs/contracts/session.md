@@ -120,8 +120,8 @@ Surface URLs served by the host:
 | `/phone` | Phone controller |
 | `/guide` | The guide's phone (#98): `?g=<guide code>`. Starts a slideshow, shows each step's notes and moves it with Next and Previous |
 | `/dev` | Table view with controls side by side, for layer development |
-| `/compose` | Scene composer: layer palette, table view and the scene's stack. Joins with the `dev` role |
-| `/edit` | The editor: the authoring window around the live table. The home screen holds layers of category `base` and `ambient`; every other layer is a layer of its own. Joins with the `dev` role. With `?welcome=1` or `?setup=1`, or when the table has no layers yet, it opens in the setup guide |
+| `/compose` | Retired (#87): opens `/edit` |
+| `/edit` | The editor: the authoring window around the live table. The home screen holds layers of category `base` and `ambient`; every other layer is a layer of its own. Joins with the `dev` role. With `?welcome=1` or `?setup=1` it opens in the setup guide |
 | `/new` | The first step of the setup wizard, for a table that does not exist yet: name, place and size. It joins no session. Inside the desktop app it calls `create_site { site: { name, lat, lon, width_m, height_m, rotation_deg? } }`, then `open_site { path, welcome: true }`; Cancel calls `open_home` |
 | `/features.json` | What this build of the surfaces offers the shell: `{ "new_table_wizard": true }` |
 | `/site/*` | Files from the active site package (read only) |

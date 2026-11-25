@@ -126,11 +126,12 @@ PowerPoint's new-presentation screen: three steps to a working table, then the e
 
 After that, **Present › Ready to present?** (#63) is the guide: each missing item links to its one home. There is no Setup guide button; New table on Home starts the wizard.
 
-## Settled in #388, #389, #399
+## Settled in #388, #389, #397, #399
 
 - **Empty table**: the map shows one card, "No layers yet" with **Insert a layer**. The map and controller carry no other hints.
 - **Several layers**: Ctrl-click (⌘-click on a Mac) or Shift-click adds a row to the selection. Show, Hide and Remove act on all of them; the Format pane says how many are selected and shows the settings of the first.
 - **Mac and Windows**: shortcuts use ⌘ on a Mac and Ctrl elsewhere; dialogs put the confirming button last on a Mac and first on Windows (`editor/platform.ts`).
+- **Units and formats** (#397): one formatter in the SDK (`formatUnit`, `formatDecimal`, `formatClock`, `formatDate`, `parseNumber`). Visitors' screens follow their language (5,0 m/s in Swedish); the editor stays in English. Typed numbers read with a point or a comma.
 - **Room for the map**: *Shrink controller* on the controller's caption docks it as a small live picture in the corner; click it to enlarge. **View › Phone** shows a visitor's phone beside the map, live. Both are remembered on this computer, not in the table.
 
 ## Still to design
@@ -142,7 +143,6 @@ After that, **Present › Ready to present?** (#63) is the guide: each missing i
 - **One place for messages**: saved state, live data sources, performance warnings (#262) and readiness report in the status bar; a change that can be undone shows one notice with Undo.
 - **Version history** (#72): File › Version history… lists saved versions of the table (from the host's revision history) and restores one. Undo stays for this session's changes; Version history is for going back further.
 - **Two authors at once**: the MCP server, a second editor window or a colleague can change the same table. A setting changed elsewhere updates in place with a short notice in the status bar; it never silently overwrites what the author is typing.
-- **Units and formats**: metres and kilometres, the 24-hour clock, and dates and decimals in the editor's language (decimal comma in Swedish). One formatter, used by the Format pane, the dialogs, the table and the phones.
 
 ## The user test
 

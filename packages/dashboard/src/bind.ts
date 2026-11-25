@@ -2,7 +2,7 @@
 // layer's state, and live values are held to the same limits as literals. A
 // value that is too long is cut, and a list that is too long loses its tail.
 
-import { formatHour } from '@mrstudio/sdk';
+import { formatCompact, formatDecimal, formatHour } from '@mrstudio/sdk';
 import type { PanelSize } from '@mrstudio/sdk';
 
 import type { PropSpec, WidgetDefinition } from './registry.ts';
@@ -81,9 +81,9 @@ export function formatValue(value: unknown, options: { format?: ValueFormat; dec
   if (options.format === 'hour') return formatHour(value);
   if (options.format === 'percent') return `${Math.round(value * 100)}%`;
   const magnitude = Math.abs(value);
-  if (magnitude >= 10_000) return new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 }).format(value);
+  if (magnitude >= 10_000) return formatCompact(value);
   const decimals = Math.min(2, Math.max(0, Math.round(options.decimals ?? (Number.isInteger(value) ? 0 : 1))));
   // Decimals give way before the integer part does.
   const fit = magnitude >= 1000 ? 0 : magnitude >= 100 ? Math.min(decimals, 1) : decimals;
-  return new Intl.NumberFormat('en', { minimumFractionDigits: fit, maximumFractionDigits: fit }).format(value);
+  return formatDecimal(value, fit);
 }
