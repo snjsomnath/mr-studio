@@ -5,6 +5,7 @@
 // settings (apps/studio/ui/colour.js). In a browser only the calibration is offered.
 // Quality (#134) is the exception: it belongs to the table, saved in site.json, so it shows everywhere.
 
+import { setting } from './settings-list.ts';
 import type { Connection, DisplayQuality, ProjectorCalibration } from '@mrstudio/sdk';
 
 import { el } from '../controls.ts';
@@ -267,14 +268,15 @@ export class DisplayTab {
 
     // In the order a table is set up: which screen is which, line the map up, then colour.
     const groups: HTMLElement[] = [];
-    if (invoke) groups.push(this.screensGroup());
-    groups.push(this.projectorGroup());
-    if (invoke) groups.push(...this.colourGroups());
+    // Each part is this computer's own setting, edited only here (settings-list.ts, #392).
+    if (invoke) groups.push(setting('computer.screens', 'dialog:screens', this.screensGroup()));
+    groups.push(setting('computer.calibration', 'dialog:screens', this.projectorGroup()));
+    if (invoke) groups.push(...this.colourGroups().map((g) => setting('computer.colour', 'dialog:screens', g)));
     else {
       const note = el('p', 'dt-note', 'The colour of each display is set in the MR Studio desktop app, where the table is projected.');
       groups.push(group('Colour', note));
     }
-    groups.push(this.qualityGroup());
+    groups.push(setting('computer.quality', 'dialog:screens', this.qualityGroup()));
     if (invoke) {
       const more = tool('Displays and settings', 'settings', true);
       more.title = 'Which display shows the table and the controller, updates, and every display setting';

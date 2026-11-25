@@ -104,7 +104,7 @@ A widget is a kind of panel content. Each has a schema for its props, the sizes 
 | `gauge` | One value against its range as a half circle that fills, with a tick for a target (#356) | chip, tile | 1, +1 for a target |
 | `list` | A short ranked list of names and numbers, highest first, lowest first or as given (#356) | tile (3 rows), wide (4), tall (6) | 1 per row |
 | `donut` | Shares of a whole as a ring of up to five parts, a headline in the middle and a key with each share (#356) | tile (3 parts), wide (4), block (5) | 1 per part, +1 for the middle |
-| `media` | A picture or a silent looping video from the table folder (the Media tab), which can change with a published value (#356) | tile, wide, tall, block, hero | 1, +1 for a caption |
+| `media` | A picture or a silent looping video from the table folder (View › Media library), which can change with a published value (#356) | tile, wide, tall, block, hero | 1, +1 for a caption |
 | `legend` | A layer's legend: what the colours on the table mean, from what the layer publishes, else its layer.json legend, else rows given here (#356) | tile (3 rows), wide, tall, band (5 in a row) | 1 per row |
 | `compare` | Two or three scenarios side by side, one figure each and the change from the first; a card not worked out yet says so (#281) | chip (the last change only), wide, block | 1 per scenario, +1 for the change; chip 1 |
 | `balance` | Where something came from and went to, as two bands split by share, with one headline such as self-sufficiency (#281) | chip (the headline only), wide, block | wide: 1 + 1 per band; block: 1 + 1 per part; chip 1 |

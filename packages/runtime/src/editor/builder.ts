@@ -4,6 +4,7 @@
 // of a custom layer: every change is saved at once (`custom.save`), and the table, the
 // editor's map and the projector all restyle live, so there is no separate preview.
 
+import { setting } from './settings-list.ts';
 import {
   LOOK_DEFAULTS,
   MOTIONS_FOR,
@@ -1632,7 +1633,7 @@ export function builderSection(host: BuilderHost, manifest: LayerManifest, butto
 
 /** The table's palette (#93): pick a set, then change any slot. Every layer that uses slots recolours at once. */
 export function paletteDialog(host: BuilderHost, shell: HTMLElement): void {
-  const dialog = el('dialog', 'im-dialog lb-palette');
+  const dialog = setting('table.palette', 'dialog:palette', el('dialog', 'im-dialog lb-palette'));
   dialog.ariaLabel = 'Palette';
   const head = el('header', 'im-dialog-head');
   const close = el('button', 'ed-icon-button', '×');

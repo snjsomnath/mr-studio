@@ -12,9 +12,9 @@ Checking that the projection lands exactly on the physical model, and as an eye-
 
 ## Set it up
 
-1. Make sure the table's tile size is set (Table settings, **Size**), or set **Tile size** in the layer.
+1. Make sure the table's tile size is set (Design tab, **Table size and place…**), or set **Tile size** in the layer.
 2. Add **Table grid** from **Add a layer**.
-3. Look at the model: every line should sit on a seam. If it does not, calibrate (Display tab, **Calibrate**).
+3. Look at the model: every line should sit on a seam. If it does not, calibrate (Present tab, **Screens and calibration…**, **Calibrate**).
 
 ## Tips
 

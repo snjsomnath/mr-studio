@@ -140,6 +140,17 @@ The rulebook is a hypothesis until people use it. Before #382 is built, and agai
 
 The layout is data, so a future change of philosophy is a layout change, not a rebuild (#392). Commands and settings are each declared once (name, icon, help, when greyed out, owner, home). The ribbon, right-click, ⌘K, the Format pane, dialogs, the wizard and the MCP all read those declarations. Which tab and group a command sits in is a layout file. A test checks that each setting has exactly one editable placement, and end-to-end tests address command and setting ids, not screen text.
 
+Where it lives in the code (`packages/runtime/src/editor/`):
+
+| File | Holds | Change it to |
+| --- | --- | --- |
+| `layout.ts` | The tabs, their groups and which command sits in each | Move a command, add a tab, try another layout |
+| `commands-list.ts` | Every command once: name, icon, tooltip, search words | Add a command (then give it a handler in `editor.ts`; TypeScript says if one is missing) |
+| `settings-list.ts` | Every setting once: owner and its one home | Add a setting. Fields are tagged `setting(id, home, field)`; the type only accepts the setting's own home |
+| `ribbon-layout.ts` | Draws a command wherever it appears: ribbon, right-click, ⌘K | Change how commands look or behave everywhere |
+
+`packages/runtime/test/editor-layout.test.ts` checks the layout against the declarations and that no setting is edited outside its home. Ribbon buttons carry `data-command`, fields `data-setting`, so tests address them by id.
+
 ## How to check a change
 
 Every editor pull request answers these in its description:

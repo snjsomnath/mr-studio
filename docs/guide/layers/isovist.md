@@ -12,7 +12,7 @@ Views and sightlines, how open or closed a square feels, and how much greenery p
 
 ## Set it up
 
-1. The table needs its buildings (and trees, if they should block the view): Edit tab, **Add data**.
+1. The table needs its buildings (and trees, if they should block the view): Insert tab, **Data file**.
 2. Add **Isovist** from **Add a layer**.
 3. Click on the table to stand somewhere. The viewer looks towards the pointer and walks after it. On a phone, use **Where you stand** and **Where you look**.
 4. Choose a **Field of view**: a person's 120°, or all round.

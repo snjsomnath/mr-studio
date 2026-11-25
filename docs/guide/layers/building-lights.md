@@ -12,7 +12,7 @@ A calm, living look when the table is at rest.
 
 ## Set it up
 
-1. The table needs its buildings: Edit tab, **Add data**, **Buildings**.
+1. The table needs its buildings: Insert tab, **Data file**, **Buildings**.
 2. Add **Building lights** from **Add a layer**. It goes under **Map**.
 3. Set how many **Windows lit**, from none to all.
 

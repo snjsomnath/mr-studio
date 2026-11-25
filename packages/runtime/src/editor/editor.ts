@@ -25,6 +25,12 @@ import { confirmLeave, actionFor, fileButton, keys as shortcut, mac } from './fi
 import { contextMenu, renameInline, typing } from './tree-tools.ts';
 import { CanvasTools } from './canvas-tools.ts';
 import { fitRibbon } from './ribbon-fit.ts';
+import { FIRST_TAB, RIBBON } from './layout.ts';
+import type { WidgetId } from './layout.ts';
+import { columns, drawTab, menuItem, ribbonGroup, searchable } from './ribbon-layout.ts';
+import type { CommandHandlers } from './ribbon-layout.ts';
+import { setting } from './settings-list.ts';
+import { FetchAll } from './fetch-all.ts';
 import { commandSearch, shortcutSheet } from './commands.ts';
 import type { Command } from './commands.ts';
 import { TimeBar } from './time-bar.ts';
@@ -32,8 +38,8 @@ import { Rehearsal } from './rehearse.ts';
 import type { MenuItem } from './tree-tools.ts';
 import type { FileAction } from './file-menu.ts';
 import { slidesSection } from './slides.ts';
-import { tableSettings } from './table-settings.ts';
-import { AT_REST, BUTTONS, REST, WHERE, Wizard, chosenTheme, themeChoice, themeSwatch } from './wizard.ts';
+import { placeSettings, welcomeSettings } from './table-settings.ts';
+import { AT_REST, WHERE, Wizard, chosenTheme, themeChoice, themeSwatch } from './wizard.ts';
 import { THEMES } from '@mrstudio/dashboard';
 import './editor.css';
 
@@ -43,7 +49,7 @@ import './editor.css';
  * the table, which is visual and carries almost no text; the controller, the screen
  * beside it with the layer buttons, controls, legend and dashboard; and phones.
  */
-type Context = { kind: 'home' } | { kind: 'layer'; id: string } | { kind: 'controller' } | { kind: 'phone' } | { kind: 'table' };
+type Context = { kind: 'home' } | { kind: 'layer'; id: string } | { kind: 'controller' } | { kind: 'phone' };
 
 
 type Invoke = (command: string, args?: object) => Promise<unknown>;
@@ -129,15 +135,16 @@ function markTrouble(row: HTMLElement, state: LayerState | undefined): void {
   else if (row.dataset.troubleTitle !== undefined) row.title = row.dataset.troubleTitle;
 }
 
-type SetupTab = 'place' | 'rest' | 'design';
-type RibbonTab = 'edit' | SetupTab | 'display' | 'media' | 'help';
-/** Each setup tab and the step of the guide it opens. */
-const SETUP_STEP: Record<SetupTab, number> = { place: WHERE, rest: REST, design: BUTTONS };
-const isSetupTab = (tab: RibbonTab): tab is SetupTab => tab in SETUP_STEP;
+/** A tab of the ribbon, as layout.ts names it. Not part of what is being edited: opening one changes the ribbon only (#385). */
+type RibbonTab = string;
+/** The dialogs of whole-table and this-computer settings (docs/editor-ui.md, rule 5). */
+type DialogId = 'place' | 'welcome' | 'screens' | 'media' | 'open-data';
 /** A window too narrow for the list, the map and the settings side by side (#66); the CSS uses the same width. */
 const NARROW = matchMedia('(max-width: 1099px)');
 /** The ribbon tab to come back to after the page reloads, as after moving the table. */
 const TAB_KEY = 'mrs-ribbon-tab';
+/** The dialog to open again after that reload. */
+const DIALOG_KEY = 'mrs-dialog';
 
 /**
  * The editor: the authoring window around the live table. Every change goes to the
@@ -171,20 +178,24 @@ export class Editor {
   private readonly connection: Connection;
   private readonly ribbon = el('div', 'ed-ribbon');
   /**
-   * The ribbon's two tabs (#151): Edit, the one ribbon that follows the selection (#21),
-   * and Display, the colour pass and projector of this computer's displays (app settings, #73).
+   * The ribbon's tabs, from the layout file (layout.ts, #392). They hold commands only: the
+   * selection, the canvas and the map are the editor's state, and no tab changes them (#382, #385).
    */
   private readonly tabs = el('div', 'ed-tabs');
-  private ribbonTab: RibbonTab = 'edit';
-  /**
-   * The setup tabs (#311, #312, #313): each opens its step of the guide as a panel beside the map,
-   * made once and kept, so a half-typed place survives a change of tab.
-   */
-  private readonly panels = new Map<SetupTab, Wizard>();
+  private ribbonTab: RibbonTab = FIRST_TAB;
+  /** What every command does, by its id in commands-list.ts (#392). */
+  private readonly handlers: CommandHandlers;
+  /** The open dialog of whole-table or this-computer settings, if any. */
+  private dialog: { id: DialogId; element: HTMLDialogElement } | null = null;
+  /** Table size and place (#382, was the Name and place tab): the guide's first step, made once so a half-typed place survives. */
+  private placePanel: Wizard | null = null;
+  /** Open data, made once so a fetch under way survives closing its dialog (#310). */
+  private fetchAll: FetchAll | null = null;
   /** The Help tab's list of guides, from help.json (#271); fetched the first time the tab opens. */
   private helpPages: { id: string; kind: string; title: string; summary: string }[] | null = null;
+  /** Screens and calibration (#382, was the Display tab): this computer's displays, in a dialog. */
   private readonly displayTab: DisplayTab;
-  /** The Media tab (#306): everything the table has, and Add media. */
+  /** The media library (#306, #382): everything the table has, in a dialog from View. */
   private readonly mediaTab: MediaTab;
   /** A Masterplan's frame on the map, to place its drawing by hand (#301). */
   private readonly drawingFrame = new DrawingFrame({
@@ -230,7 +241,6 @@ export class Editor {
   private lastAction: { action: string; at: number; from: string } | null = null;
   /** Rehearse (#97): the table as a visitor sees it, from here, with nothing saved. */
   private rehearsal!: Rehearsal;
-  private rehearseButton!: HTMLButtonElement;
   /** Ready to present? (#63): the count of what is left to check, and the list behind it. */
   private readonly checksButton = el('button', 'ed-checks');
   /** In a narrow window the inspector is a drawer over the right of the map, opened from here (#66). */
@@ -242,21 +252,22 @@ export class Editor {
     this.history = new HistoryControls(connection, () => store.surface, (problem) => this.setSaved(problem));
     this.saved.type = 'button';
     this.saved.addEventListener('click', () => this.history.toggle(this.saved));
+    this.handlers = this.commandHandlers();
 
     const { shell, body } = this;
     const left = el('aside', 'ed-left');
     const name = el('header', 'ed-left-head');
-    // The table's name opens its settings (#62, #73).
+    // The table's name opens Table size and place (#62, #382), as Design does.
     const tableName = el('button', 'ed-table-name');
     tableName.type = 'button';
-    tableName.title = 'Table settings: name, time zone, place, and what the controller says';
+    tableName.title = 'Table size and place: its name, where it is, its size and time zone';
     const drawName = (): void => tableName.replaceChildren(el('strong', undefined, store.state.site.name), icon('settings', 14));
     drawName();
-    tableName.addEventListener('click', () => this.go({ kind: 'table' }));
+    tableName.addEventListener('click', () => this.openDialog('place'));
     store.onSettings(() => {
       drawName();
       this.titleName.textContent = store.state.site.name;
-      if (this.context.kind === 'table') this.render();
+      if (this.dialog?.id === 'welcome') this.openDialog('welcome', true);
     });
     // The app's native menu (src-tauri/src/file_menu.rs) asks for these by name.
     window.addEventListener('mrs-edit', (event) => this.menuAction((event as CustomEvent<{ action: string }>).detail.action, 'menu'));
@@ -290,7 +301,7 @@ export class Editor {
       addMedia: (kinds) => this.addMedia(kinds),
       addLayer: (use, params) => this.addWith(use, params),
       openLayer: (id) => {
-        this.setRibbonTab('edit');
+        this.closeDialog();
         const state = store.state.layers[id];
         if (state?.parent) this.go({ kind: 'layer', id: state.parent }, id);
         else if (state && isAtRest(store.manifest(state.layer)!, state)) this.go({ kind: 'home' });
@@ -299,7 +310,7 @@ export class Editor {
       openSources: desktop() ? () => void desktop()?.('open_sources') : undefined,
       hold: (on) => this.hold(on),
       changed: () => {
-        if (this.ribbonTab === 'media') this.render();
+        if (this.dialog?.id === 'media') this.drawMedia();
       },
     });
     centre.append(this.mediaTab.view);
@@ -321,7 +332,7 @@ export class Editor {
       changed: (on) => {
         if (on && this.wizard) this.closeWizard();
         this.setDrawer(false);
-        this.drawRehearseButton();
+        this.renderRibbon(this.instances());
         if (!on) this.render();
       },
     });
@@ -348,11 +359,10 @@ export class Editor {
 
     this.setSaved();
     this.drawGuideButton();
-    this.drawRehearseButton();
     this.render();
     store.onScene(() => this.render());
     // A new theme or button style shows as chosen on the Design tab.
-    store.onTv(() => this.ribbonTab === 'design' && this.renderRibbon(this.instances()));
+    store.onTv(() => this.renderRibbon(this.instances()));
     // A custom layer was saved or removed: it is offered on the ribbon (the builder in the inspector keeps its own copy).
     store.onCatalog(() => {
       if (!this.wizard) this.renderRibbon(this.instances());
@@ -402,16 +412,20 @@ export class Editor {
     }
     if (resume !== undefined || created || this.instances().every((i) => isAmbient(i.manifest))) this.openWizard(created, resume);
     else {
-      // After a reload (moving the table, bringing data in), the editor comes back on the tab it was on.
+      // After a reload (moving the table, bringing data in), the editor comes back on the tab and the dialog it was on.
       let tab: string | null = null;
+      let dialog: string | null = null;
       try {
         tab = sessionStorage.getItem(TAB_KEY);
+        dialog = sessionStorage.getItem(DIALOG_KEY);
+        sessionStorage.removeItem(DIALOG_KEY);
       } catch {
         // As above.
       }
-      if (tab === 'place' || tab === 'rest' || tab === 'design' || tab === 'media') this.setRibbonTab(tab);
+      if (tab && RIBBON.some((t) => t.id === tab)) this.setRibbonTab(tab);
       // A reload comes back to what was being edited.
-      else if (location.hash) this.goTo(location.hash);
+      if (location.hash) this.goTo(location.hash);
+      if (dialog === 'place' || dialog === 'media') this.openDialog(dialog);
     }
     connection.on('site.changed', (p: { site?: { table?: unknown }; table_only?: boolean }) => {
       // The table's front edge or ribbons (#62): taken in place, the projector redraws on its own.
@@ -439,6 +453,8 @@ export class Editor {
     try {
       const step = this.resumeStep ?? this.wizard?.step;
       if (step !== undefined) sessionStorage.setItem('mrs-setup-step', String(step));
+      // Moving the table or bringing a file in reloads the page: it comes back in the same dialog.
+      if (this.dialog) sessionStorage.setItem(DIALOG_KEY, this.dialog.id);
     } catch {
       // As above.
     }
@@ -463,70 +479,62 @@ export class Editor {
       },
       { created, step },
     );
-    this.setRibbonTab('edit');
+    this.closeDialog();
     this.shell.classList.add('is-setup');
     this.body.prepend(this.wizard.element);
     this.drawGuideButton();
     this.render();
   }
 
-  /** The guide's button says which way it goes: into the guide, or out of it into the editor. */
+  /**
+   * The guide only starts a table (rule 9 of docs/editor-ui.md, #382): its button shows while it
+   * is open, as the way out into the editor, and is gone once the table is being edited.
+   */
   private drawGuideButton(): void {
     const open = this.wizard !== null;
     const guide = this.guideButton;
-    guide.replaceChildren(icon(open ? 'check' : 'route', 16), el('span', undefined, open ? 'Close guide' : 'Setup guide'));
-    guide.setAttribute('aria-pressed', String(open));
-    guide.classList.toggle('is-pressed', open);
-    guide.title = open ? 'Leave the guide and work in the full editor. The guide stays one click away.' : 'Walk through setting up this table, step by step';
+    guide.hidden = !open;
+    guide.replaceChildren(icon('check', 16), el('span', undefined, 'Close guide'));
+    guide.title = 'Leave the guide and work in the editor. Present › Ready to present? says what is left.';
   }
 
-  /** The ribbon's tabs. Display is the colour and post-processing of each display, and the projector. */
+  /** The ribbon's tabs, as the layout file has them (#392). */
   private drawTabs(): void {
-    const tab = (id: RibbonTab, label: string, tip: string) => {
-      const node = el('button', 'ed-tab', label);
-      node.type = 'button';
-      node.setAttribute('role', 'tab');
-      node.setAttribute('aria-selected', String(this.ribbonTab === id));
-      node.dataset.tab = id;
-      node.title = tip;
-      node.addEventListener('click', () => this.setRibbonTab(id));
-      return node;
-    };
     this.tabs.replaceChildren(
-      tab('edit', 'Edit', 'Add layers and data, and work on what is selected'),
-      tab('place', 'Name and place', 'What the table is called, where it is and how much ground it covers'),
-      tab('rest', AT_REST, 'What the map shows when no layer is open'),
-      tab('design', 'Design', 'How the controller looks, and the words and side of each button'),
-      tab('display', 'Display', 'Colour and post-processing for each display, layer strength and projector calibration'),
-      tab('media', 'Media', 'Every file and online source of this table, in one place, and Add media'),
-      tab('help', 'Help', 'Every feature and step-by-step guides, in a window of their own'),
+      ...RIBBON.map(({ id, label, tip }) => {
+        const node = el('button', 'ed-tab', label);
+        node.type = 'button';
+        node.setAttribute('role', 'tab');
+        node.setAttribute('aria-selected', String(this.ribbonTab === id));
+        node.dataset.tab = id;
+        node.title = tip;
+        node.addEventListener('click', () => this.setRibbonTab(id));
+        return node;
+      }),
     );
   }
 
+  /**
+   * Opens a tab of the ribbon. It changes the ribbon and nothing else: not the selection, the
+   * canvas, the list or what the map shows (rule 3 of docs/editor-ui.md, #385).
+   */
   private setRibbonTab(id: RibbonTab): void {
-    if (id === this.ribbonTab) return;
+    if (id === this.ribbonTab || !RIBBON.some((t) => t.id === id)) return;
     this.ribbonTab = id;
-    if (id === 'display') void this.displayTab.show();
-    else this.displayTab.hide();
-    this.shell.classList.toggle('is-media', id === 'media');
-    // The tab comes back after the reload that bringing data in causes.
     try {
-      if (id === 'media') sessionStorage.setItem('mrs-ribbon-tab', id);
-      else sessionStorage.removeItem('mrs-ribbon-tab');
+      sessionStorage.setItem(TAB_KEY, id);
     } catch {
-      // No session storage: the editor opens at Edit.
+      // No session storage: the editor opens at the first tab.
     }
     this.drawTabs();
-    this.showPanel();
-    if (id === 'media') void this.mediaTab.load();
-    this.render();
+    this.renderRibbon(this.instances());
   }
 
   /** Adds the layer `use`, set to these params, and opens it (Media's Show on the table). */
   private async addWith(use: string, params: Record<string, unknown>): Promise<void> {
     const manifest = this.store.manifests.find((m) => m.id === use);
     if (!manifest) return;
-    this.setRibbonTab('edit');
+    this.closeDialog();
     await this.add(manifest);
     if (this.added) await this.send('layer.set', { layer: this.added, params });
   }
@@ -569,9 +577,8 @@ export class Editor {
         return null;
       }
       if (route === 'model') {
-        // A model is set on the ground and fitted to the buildings: Your place's 3D model row, here in Media.
-        if (this.ribbonTab !== 'media') this.setRibbonTab('media');
-        this.mediaTab.bringIn(MODEL_ROW);
+        // A model is set on the ground and fitted to the buildings: Your place's 3D model row, in the media library.
+        this.bringIn(MODEL_ROW);
         this.history.notify('Place the 3D model', 'Choose its file in the 3D model panel on the right: it is set on the ground and fitted to the buildings.');
         return null;
       }
@@ -581,57 +588,9 @@ export class Editor {
       if (!answer.ok || !page.path) throw new Error(page.error ?? `${file.name} could not be added.`);
       mediaChanged();
       last = (await mediaItems()).find((i) => i.path === page.path) ?? { kind: kindOf(page.path), path: page.path };
-      this.history.notify(`Added ${file.name}`, 'It is in the Media tab, and every list of the editor offers it.');
+      this.history.notify(`Added ${file.name}`, 'It is in View › Media library, and every list of the editor offers it.');
     }
     return last;
-  }
-
-  /** The panel of a setup tab, made the first time the tab opens. */
-  private panel(tab: SetupTab): Wizard {
-    let panel = this.panels.get(tab);
-    if (!panel) {
-      panel = new Wizard(
-        {
-          store: this.store,
-          send: (method, params) => this.send(method, params),
-          add: (manifest) => this.add(manifest),
-          show: (id) => this.show(id),
-          controller: () => {},
-          present: () => this.presentButton.click(),
-          close: () => this.setRibbonTab('edit'),
-          // Moving the table reloads every surface; the editor comes back on this tab.
-          resumeAt: (step) => {
-            try {
-              if (step < 0) sessionStorage.removeItem(TAB_KEY);
-              else sessionStorage.setItem(TAB_KEY, tab);
-            } catch {
-              // No session storage: the editor comes back on Edit.
-            }
-          },
-          hold: (on) => this.hold(on),
-          bringIn: (target) => this.bringIn(target),
-        },
-        { step: SETUP_STEP[tab], panel: true },
-      );
-      panel.onPending = () => this.ribbonTab === 'place' && this.renderRibbon(this.instances());
-      this.panels.set(tab, panel);
-    }
-    return panel;
-  }
-
-  /** Puts the open setup tab's panel beside the map, where the inspector is, and closes the others. */
-  private showPanel(): void {
-    const tab = this.ribbonTab;
-    for (const [id, panel] of this.panels) {
-      if (id === tab) continue;
-      panel.setShown(false);
-      panel.element.remove();
-    }
-    this.shell.classList.toggle('is-panel', isSetupTab(tab));
-    if (!isSetupTab(tab)) return;
-    const panel = this.panel(tab);
-    if (!panel.element.isConnected) this.body.append(panel.element);
-    panel.setShown(true);
   }
 
   /** The Add data dialog: the same importer as "Your place", with the kind of data left to the author. */
@@ -677,10 +636,126 @@ export class Editor {
     dialog.showModal();
   }
 
-  /** Opens the guide at "Your place", at the row for `target`. */
+  /** Brings in the file for `target` (buildings, ground, a 3D model…): its row of Your place, in the media library. */
   private bringIn(target: string): void {
-    this.openWizard(false, 1);
-    this.wizard?.bringIn(target);
+    if (this.wizard) {
+      this.wizard.bringIn(target);
+      return;
+    }
+    this.openDialog('media');
+    this.mediaTab.bringIn(target);
+  }
+
+  // ---- Dialogs: whole-table and this-computer settings (rule 5 of docs/editor-ui.md, #382) ----
+
+  private static readonly DIALOGS: Record<DialogId, { title: string; lead: string; modal: boolean }> = {
+    place: { title: 'Table size and place', lead: 'What the table is called, where it is, how much ground it covers and how it stands in the room.', modal: true },
+    welcome: { title: 'Welcome and languages', lead: 'What the controller says when nobody is using the table, and the languages visitors read.', modal: true },
+    screens: { title: 'Screens and calibration', lead: 'This computer’s screens, projector, colour and quality. They are the same for every table on this computer.', modal: false },
+    media: { title: 'Media library', lead: 'Every file and online source of this table, where each is used, and the files it still needs.', modal: true },
+    'open-data': { title: 'Open data', lead: 'Fetch what this place has in OpenStreetMap and open elevation data, in one go. It is copied into the table and stays on this computer.', modal: true },
+  };
+
+  /**
+   * Opens one of the dialogs, over the editor as it is; closing it comes back to where the
+   * author was. `again` draws an open one afresh, when its settings changed elsewhere.
+   */
+  private openDialog(id: DialogId, again = false): void {
+    if (this.dialog?.id === id && !again) {
+      this.dialog.element.focus();
+      return;
+    }
+    if (this.dialog && this.dialog.id !== id) this.closeDialog();
+    if (this.wizard) this.closeWizard();
+    const spec = Editor.DIALOGS[id];
+    const reuse = this.dialog?.id === id ? this.dialog.element : null;
+    const dialog = reuse ?? el('dialog', `ed-dialog is-${id}`);
+    dialog.ariaLabel = spec.title;
+    const head = el('header', 'ed-dialog-head');
+    const close = el('button', 'ed-icon-button', '\u00d7');
+    close.type = 'button';
+    close.ariaLabel = 'Close';
+    close.addEventListener('click', () => this.closeDialog());
+    const words = el('div');
+    words.append(el('h2', undefined, spec.title), el('p', 'wz-lead', spec.lead));
+    head.append(words, close);
+    const body = el('div', 'ed-dialog-body');
+    body.dataset.home = `dialog:${id}`;
+    if (id === 'place') {
+      body.append(this.placeForm().element, ...placeSettings({ store: this.store, send: (method, params) => this.send(method, params) }));
+      this.placeForm().setShown(true);
+    } else if (id === 'welcome') {
+      body.append(...welcomeSettings({ store: this.store, send: (method, params) => this.send(method, params) }));
+    } else if (id === 'screens') {
+      const strip = el('div', 'ed-ribbon ed-dialog-ribbon');
+      strip.append(...this.displayTab.groups);
+      body.append(strip);
+      void this.displayTab.show();
+    } else if (id === 'media') {
+      body.append(el('div', 'ed-dialog-ribbon ed-ribbon'), this.mediaTab.view, el('aside', 'ed-inspector ed-media-inspector'));
+      void this.mediaTab.load();
+    } else {
+      this.fetchAll ??= new FetchAll({ site: () => this.store.state.site, hold: (on) => this.hold(on) });
+      this.fetchAll.render();
+      body.append(this.fetchAll.element);
+    }
+    dialog.replaceChildren(head, body);
+    this.dialog = { id, element: dialog };
+    if (id === 'media') this.drawMedia();
+    if (reuse) return;
+    dialog.addEventListener('cancel', (event) => {
+      event.preventDefault();
+      this.closeDialog();
+    });
+    this.shell.append(dialog);
+    if (spec.modal) dialog.showModal();
+    else {
+      // Under the ribbon, over the top of the map, which stays in view for the colour preview.
+      dialog.style.top = `${Math.round(this.ribbon.getBoundingClientRect().bottom) + 6}px`;
+      dialog.show();
+    }
+  }
+
+  private closeDialog(): void {
+    const open = this.dialog;
+    if (!open) return;
+    this.dialog = null;
+    if (open.id === 'screens') this.displayTab.hide();
+    if (open.id === 'place') this.placePanel?.setShown(false);
+    open.element.close();
+    open.element.remove();
+    this.renderRibbon(this.instances());
+  }
+
+  /** The media library's tools, list and the selected file, drawn again as they change. */
+  private drawMedia(): void {
+    const box = this.dialog?.id === 'media' ? this.dialog.element : null;
+    if (!box) return;
+    const tool = (label: string, iconName: string, large = false) => button(large ? 'ed-tool is-large' : 'ed-tool', label, iconName, large ? 20 : 16);
+    box.querySelector('.ed-dialog-ribbon')?.replaceChildren(...this.mediaTab.ribbon(tool, ribbonGroup, columns));
+    box.querySelector('.ed-media-inspector')?.replaceChildren(...this.mediaTab.inspector());
+    this.mediaTab.drawView();
+  }
+
+  /** Table size and place: the guide's first step on its own (rule 9), made once. */
+  private placeForm(): Wizard {
+    this.placePanel ??= new Wizard(
+      {
+        store: this.store,
+        send: (method, params) => this.send(method, params),
+        add: (manifest) => this.add(manifest),
+        // The dialog has its own map of the place; the table's map stays as it is.
+        show: () => {},
+        controller: () => {},
+        present: () => this.presentButton.click(),
+        close: () => this.closeDialog(),
+        resumeAt: () => {},
+        hold: (on) => this.hold(on),
+        bringIn: (target) => this.bringIn(target),
+      },
+      { step: WHERE, panel: true },
+    );
+    return this.placePanel;
   }
 
   private closeWizard(): void {
@@ -742,8 +817,10 @@ export class Editor {
     if (!manifest || isAtRest(manifest, state) || state.parent || state.shown_by) return;
     const mine = this.context.kind === 'layer' && this.context.id === id;
     if (state.active && !mine && !manifest.alongside) this.context = { kind: 'layer', id };
-    else if (!state.active && mine) this.context = { kind: 'home' };
-    else return;
+    else if (!state.active && mine) {
+      this.context = { kind: 'home' };
+      this.homeItem = null;
+    } else return;
     this.render();
   }
 
@@ -873,6 +950,12 @@ export class Editor {
   private listenForKeys(): void {
     window.addEventListener('keydown', (event) => {
       const mod = mac ? event.metaKey : event.ctrlKey;
+      // A dialog that leaves the editor in view (Screens and calibration) closes with Escape too.
+      if (event.key === 'Escape' && this.dialog && !Editor.DIALOGS[this.dialog.id].modal && !document.querySelector('dialog[open]:modal')) {
+        event.preventDefault();
+        this.closeDialog();
+        return;
+      }
       // Command search and the shortcut sheet open from anywhere, a field included (#65).
       if (mod && !event.altKey && !event.shiftKey && event.key.toLowerCase() === 'k') {
         event.preventDefault();
@@ -891,16 +974,15 @@ export class Editor {
         return;
       }
       const target = this.wizard ? null : this.target();
-      if ((event.key === 'Delete' || event.key === 'Backspace') && !mod && target) {
+      // The keys run the same commands as the ribbon (#392).
+      const run = (id: 'layer.remove' | 'layer.duplicate' | 'layer.rename'): void => {
         event.preventDefault();
-        void this.removeLayer(target);
-      } else if (mod && !event.shiftKey && !event.altKey && event.key.toLowerCase() === 'd' && target) {
-        event.preventDefault();
-        void this.duplicate(target);
-      } else if (event.key === 'F2' && this.context.kind === 'layer' && !this.layerItem) {
-        event.preventDefault();
-        this.rename(this.context.id);
-      } else if (event.key === 'Escape' && !document.querySelector('.ed-context, .ed-add-menu, .ed-history')) {
+        if (this.handlers[id].disabled?.() === undefined) void this.handlers[id].run();
+      };
+      if ((event.key === 'Delete' || event.key === 'Backspace') && !mod && target) run('layer.remove');
+      else if (mod && !event.shiftKey && !event.altKey && event.key.toLowerCase() === 'd' && target) run('layer.duplicate');
+      else if (event.key === 'F2' && this.context.kind === 'layer' && !this.layerItem) run('layer.rename');
+      else if (event.key === 'Escape' && !document.querySelector('.ed-context, .ed-add-menu, .ed-history')) {
         if (this.shell.classList.contains('is-drawer-open')) this.setDrawer(false);
         else if (this.wizard) this.closeWizard();
         else if (this.context.kind !== 'home' || this.homeItem) {
@@ -921,13 +1003,6 @@ export class Editor {
     });
   }
 
-  private drawRehearseButton(): void {
-    const on = this.rehearsal.on;
-    this.rehearseButton.replaceChildren(icon(on ? 'check' : 'people', 16), el('span', undefined, on ? 'Finish rehearsal' : 'Rehearse'));
-    this.rehearseButton.classList.toggle('is-pressed', on);
-    this.rehearseButton.title = on ? 'Put every layer back as it was (Esc)' : 'Try the table as a visitor here: press the controller and a phone. Nothing is saved and the real displays are not used.';
-  }
-
   private setDrawer(open: boolean): void {
     const on = open && NARROW.matches;
     this.shell.classList.toggle('is-drawer-open', on);
@@ -943,8 +1018,7 @@ export class Editor {
     if (last && last.action === action && last.from !== from && from !== 'page' && last.from !== 'page' && now - last.at < 400) return;
     switch (action) {
       case 'table-settings':
-        if (this.wizard) this.closeWizard();
-        this.go({ kind: 'table' });
+        this.openDialog('place');
         break;
       case 'commands':
         commandSearch(() => this.commands(), this.shell);
@@ -1033,7 +1107,6 @@ export class Editor {
    */
   private commands(): Command[] {
     const list: Command[] = [];
-    const k = (key: string, shift = false) => shortcut(key, shift);
     const goTo = (context: Context, item: string | null = null) => () => {
       if (this.wizard) this.closeWizard();
       this.go(context, item);
@@ -1059,24 +1132,9 @@ export class Editor {
       { id: 'go:home', label: AT_REST, group: 'Go to', icon: 'home', also: 'home map life', run: goTo({ kind: 'home' }) },
       { id: 'go:controller', label: 'Controller', group: 'Go to', icon: 'tv', also: 'buttons screen dashboard', run: goTo({ kind: 'controller' }) },
       { id: 'go:phone', label: 'Phones', group: 'Go to', icon: 'phone', also: 'visitors mobile', run: goTo({ kind: 'phone' }) },
-      { id: 'go:table', label: 'Table settings', group: 'Go to', icon: 'settings', also: 'name time zone place size projector', run: goTo({ kind: 'table' }) },
     );
-    const target = this.wizard ? null : this.target();
-    const none = 'Select a layer first';
-    list.push(
-      { id: 'present', label: 'Present', group: 'Table', icon: 'tv', keys: k('Enter'), also: 'start show projector', run: () => this.presentButton.click() },
-      { id: 'rehearse', label: this.rehearsal.on ? 'Finish rehearsal' : 'Rehearse as a visitor', group: 'Table', icon: 'people', also: 'try test controller phone practise practice', run: () => (this.rehearsal.on ? void this.rehearsal.finish() : this.rehearsal.start()) },
-      { id: 'preview', label: 'Preview the table in a window', group: 'Table', icon: 'play', also: 'open', run: () => openView('table') },
-      { id: 'guide', label: this.wizard ? 'Close the setup guide' : 'Setup guide', group: 'Table', icon: 'route', also: 'wizard start steps', run: () => (this.wizard ? this.closeWizard() : this.openWizard()) },
-      { id: 'undo', label: 'Undo', group: 'Edit', icon: 'undo', keys: k('Z'), run: () => void this.history.step('undo') },
-      { id: 'redo', label: 'Redo', group: 'Edit', icon: 'redo', keys: mac ? k('Z', true) : 'Ctrl+Y', run: () => void this.history.step('redo') },
-      { id: 'history', label: 'History of changes', group: 'Edit', icon: 'undo', also: 'revisions earlier versions', run: () => this.history.toggle(this.saved) },
-      { id: 'save', label: 'Save', group: 'File', icon: 'save', keys: k('S'), run: () => void this.file('save') },
-      { id: 'rename', label: 'Rename the button', group: 'Selection', icon: 'pencil', keys: 'F2', disabled: this.context.kind === 'layer' && !this.layerItem ? undefined : 'Select a layer with a button first', run: () => this.context.kind === 'layer' && this.rename(this.context.id) },
-      { id: 'duplicate', label: 'Duplicate', group: 'Selection', icon: 'layers', keys: k('D'), also: 'copy', disabled: target ? undefined : none, run: () => target && void this.duplicate(target) },
-      { id: 'reset', label: 'Reset settings', group: 'Selection', icon: 'reset', also: 'defaults', disabled: target ? undefined : none, run: () => target && void this.resetLayer(target) },
-      { id: 'remove', label: 'Remove', group: 'Selection', icon: 'trash', keys: mac ? '⌫' : 'Del', also: 'delete', disabled: target ? undefined : none, run: () => target && void this.removeLayer(target) },
-    );
+    // Every command of the ribbon, by the same name and with the same reason when it is greyed out (#392).
+    list.push(...searchable(this.handlers));
     for (const manifest of this.store.manifests.filter((m) => !isAmbient(m) && isOffered(m))) {
       list.push({ id: `add:${manifest.id}`, label: `Add ${manifest.name}`, group: 'Add a layer', icon: manifest.icon, also: `new ${manifest.description ?? ''}`, run: () => {
         if (this.wizard) this.closeWizard();
@@ -1089,32 +1147,7 @@ export class Editor {
         void this.addChecked(manifest);
       } });
     }
-    list.push(
-      { id: 'data', label: 'Add data', group: 'Data', icon: 'map', also: 'import file openstreetmap osm buildings ground terrain trees streets roads walking paths trips geojson', run: () => this.addData() },
-      { id: 'media', label: 'Add media', group: 'Data', icon: 'images', also: 'picture video file', run: () => void this.addMedia(['image', 'video'] as MediaKind[]) },
-      { id: 'custom', label: 'Custom layer', group: 'Make your own', icon: 'brush', also: 'new build style', run: () => newCustomLayer(this.builderHost(), this.shell) },
-      { id: 'palette', label: 'Palette', group: 'Make your own', icon: 'palette', also: 'colours colors', run: () => paletteDialog(this.builderHost(), this.shell) },
-    );
-    const tabs: [RibbonTab, string, string][] = [
-      ['edit', 'Edit', 'ribbon'],
-      ['place', 'Name and place', 'location where'],
-      ['rest', AT_REST, 'home'],
-      ['design', 'Design', 'theme buttons controller look'],
-      ['display', 'Display', 'colour projector calibration'],
-      ['media', 'Media', 'files sources'],
-      ['help', 'Help', 'guide'],
-    ];
-    for (const [tab, label, also] of tabs) list.push({ id: `tab:${tab}`, label: `${label} tab`, group: 'Ribbon', icon: 'next', also, run: () => this.setRibbonTab(tab) });
-    list.push(
-      { id: 'view:map', label: 'Show the map only', group: 'View', icon: 'map', also: 'canvas', run: () => this.menuAction('view-map') },
-      { id: 'view:controller', label: 'Show the controller only', group: 'View', icon: 'tv', also: 'canvas', run: () => this.menuAction('view-controller') },
-      { id: 'view:both', label: 'Show the map and the controller', group: 'View', icon: 'grid', also: 'both canvas', run: () => this.menuAction('view-both') },
-      { id: 'zoom:fit', label: 'Fit the map', group: 'View', icon: 'search', keys: k('0'), also: 'zoom', run: () => this.menuAction('zoom-fit') },
-      { id: 'zoom:100', label: 'Zoom to 100 %', group: 'View', icon: 'search', keys: k('1'), also: 'actual size projector pixels', run: () => this.menuAction('zoom-100') },
-      { id: 'outline', label: this.canvasTools.outlined ? 'Hide the table outline' : 'Show the table outline', group: 'View', icon: 'grid', also: 'tiles seams edge', run: () => this.menuAction('outline') },
-      { id: 'shortcuts', label: 'Keyboard shortcuts', group: 'Help', icon: 'info', keys: k('/'), also: 'keys', run: () => this.menuAction('shortcuts') },
-      { id: 'report', label: 'Report a problem', group: 'Help', icon: 'alert', also: 'bug issue feedback', run: () => this.menuAction('report') },
-    );
+    for (const tab of RIBBON) list.push({ id: `tab:${tab.id}`, label: `${tab.label} tab`, group: 'Ribbon', icon: 'next', also: tab.tip, run: () => this.setRibbonTab(tab.id) });
     for (const page of this.helpPages ?? []) list.push({ id: `help:${page.id}`, label: page.title, group: 'Help', icon: 'info', also: `guide ${page.summary}`, run: () => openHelp(page.id) });
     return list;
   }
@@ -1332,8 +1365,6 @@ export class Editor {
   }
 
   private go(context: Context, item: string | null = null, remember = true): void {
-    // Choosing something to edit brings back its settings, which a setup tab's panel and Media cover.
-    if (isSetupTab(this.ribbonTab) || this.ribbonTab === 'media') this.setRibbonTab('edit');
     if (context.kind !== 'layer' || this.context.kind !== 'layer' || this.context.id !== context.id || item !== null) this.layerItem = item;
     this.context = context;
     if (remember) this.remember();
@@ -1375,7 +1406,8 @@ export class Editor {
     else if (kind === 'rest') {
       this.homeItem = id && layers[id] ? id : null;
       this.go({ kind: 'home' }, null, false);
-    } else if (kind === 'controller' || kind === 'phone' || kind === 'table') this.go({ kind }, null, false);
+    } else if (kind === 'controller' || kind === 'phone') this.go({ kind }, null, false);
+    else if (kind === 'table') this.openDialog('place');
     else return false;
     return true;
   }
@@ -1408,16 +1440,11 @@ export class Editor {
     search.append(icon('search', 14), el('span', undefined, 'Search'), el('kbd', undefined, shortcut('K')));
     search.addEventListener('click', () => this.menuAction('commands'));
 
+    // The title bar holds the file, Share and Present (docs/editor-ui.md); Rehearse and the windows are on Present and View.
     const actions = el('div', 'ed-actions');
-    const preview = button('ed-button', 'Preview', 'play');
-    preview.title = 'Open the table in a window on this screen';
-    preview.addEventListener('click', () => openView('table'));
-    const rehearse = button('ed-button', 'Rehearse', 'people');
-    this.rehearseButton = rehearse;
-    rehearse.addEventListener('click', () => (this.rehearsal.on ? void this.rehearsal.finish() : this.rehearsal.start()));
-    const guide = button('ed-button', 'Setup guide', 'route');
+    const guide = button('ed-button is-pressed', 'Close guide', 'check');
     this.guideButton = guide;
-    guide.addEventListener('click', () => (this.wizard ? this.closeWizard() : this.openWizard()));
+    guide.addEventListener('click', () => this.closeWizard());
     actions.append(guide);
     const present = button('ed-button is-primary', 'Present', 'tv');
     this.presentButton = present;
@@ -1472,7 +1499,6 @@ export class Editor {
       window.addEventListener('focus', () => void refresh());
       void refresh();
     }
-    actions.append(rehearse, preview);
     if (invoke) {
       // Share by email (#372): the table as one file, attached to a new email in this
       // computer's mail app, for someone to open on another computer, such as the studio PC.
@@ -1582,7 +1608,7 @@ export class Editor {
     const note = el('button', 'ed-slow');
     note.type = 'button';
     note.hidden = true;
-    note.addEventListener('click', () => this.setRibbonTab('display'));
+    note.addEventListener('click', () => this.openDialog('screens'));
     let slowFor = 0;
     const check = async () => {
       const report = (await fetch('/api/performance', { cache: 'no-store' })
@@ -1637,7 +1663,7 @@ export class Editor {
     this.renderInspector(instances);
     this.renderNext();
     // The time bar follows the open layer, in the editor proper (not the guide, not Media).
-    const timed = this.wizard || this.ribbonTab === 'media' || this.context.kind !== 'layer' ? null : this.context.id;
+    const timed = this.wizard || this.context.kind !== 'layer' ? null : this.context.id;
     const timedState = timed ? this.store.state.layers[timed] : undefined;
     this.timeBar.open(timed, timedState && this.store.manifest(timedState.layer), timedState);
     for (const { id, state } of instances) this.sync.get(id)?.(state);
@@ -1693,14 +1719,22 @@ export class Editor {
       const target = targetFor(fix.dataset)?.target;
       if (target) this.bringIn(target);
       else this.addData();
-    } else if (fix.kind === 'guide') this.openWizard(false, fix.step === 'place' ? (check.id === 'table:size' ? WHERE : 1) : fix.step === 'rest' ? REST : 3);
-    else if (fix.kind === 'table' || fix.kind === 'controller') {
+    } else if (fix.kind === 'guide') {
+      // Each fix goes to the one home of what it asks for (#382), never back into the guide.
+      if (this.wizard) this.closeWizard();
+      if (fix.step === 'place') {
+        if (check.id === 'table:size') this.openDialog('place');
+        else this.bringIn('buildings');
+      } else if (fix.step === 'rest') this.go({ kind: 'home' });
+      else this.gallery();
+    } else if (fix.kind === 'table') this.openDialog(check.id === 'table:welcome' ? 'welcome' : 'place');
+    else if (fix.kind === 'controller') {
       if (this.wizard) this.closeWizard();
       this.go({ kind: fix.kind });
     } else if (fix.kind === 'layer') {
       if (this.wizard) this.closeWizard();
       this.go({ kind: 'layer', id: fix.id });
-    } else if (fix.kind === 'calibrate') void shell()?.('open_settings');
+    } else if (fix.kind === 'calibrate') this.openDialog('screens');
   }
 
   /** The list behind the Checks button: Must fix, Should fix, Nice to have, each with its fix. */
@@ -1769,336 +1803,233 @@ export class Editor {
     return choice === 'present';
   }
 
-  private group(name: string, ...children: HTMLElement[]): HTMLElement {
-    const group = el('div', 'ed-group');
-    const tools = el('div', 'ed-group-tools');
-    tools.append(...children);
-    group.append(tools, el('div', 'ed-group-name', name));
-    return group;
+  // ---- The ribbon and its commands (#392) -------------------------------------
+
+  /**
+   * What `target` (a layer, map life or an item; the selection when left out) allows, for the
+   * Selection commands: whether it can be shown or hidden, and its neighbours to move past.
+   */
+  private facts(target?: string | null) {
+    const id = target ?? (this.wizard ? null : this.target());
+    const instances = this.instances();
+    const live = id ? instances.find((i) => i.id === id) : undefined;
+    const parent = live?.state.parent ?? null;
+    const parentState = parent ? this.store.state.layers[parent] : undefined;
+    const sequence = Boolean(parentState && this.store.manifest(parentState.layer)?.sequence);
+    const onMap = live ? isAmbient(live.manifest) || parent !== null : false;
+    const canShow = Boolean(live && onMap && !(parent && sequence));
+    const on = live && canShow ? (parent ? this.comesOn(live.id) : live.state.active) : false;
+    // Up and down step over the neighbours in the same list: map life among itself,
+    // layers among themselves, and a layer's items among themselves. `peers` runs top first.
+    const peers = live ? instances.filter((i) => (i.state.parent ?? null) === parent && (parent !== null || isAmbient(i.manifest) === onMap)).map((i) => i.id) : [];
+    const at = live ? peers.indexOf(live.id) : -1;
+    return { live, parent, onMap, canShow, on, front: at > 0 ? peers[at - 1] : undefined, behind: at >= 0 ? peers[at + 1] : undefined, list: this.siblings(parent) };
   }
 
-  /** A column of small tools, three to a column, as in a desktop ribbon. */
-  private column(tools: HTMLElement[]): HTMLElement[] {
-    const columns: HTMLElement[] = [];
-    for (let i = 0; i < tools.length; i += 3) {
-      const column = el('div', 'ed-tool-column');
-      column.append(...tools.slice(i, i + 3));
-      columns.push(column);
-    }
-    return columns;
-  }
-
-  private insertTool(manifest: LayerManifest, large: boolean, parent?: string): HTMLButtonElement {
-    const tool = button(large ? 'ed-tool is-large' : 'ed-tool', manifest.name, manifest.icon, large ? 20 : 16);
-    tool.dataset.layer = manifest.id;
-    const data = this.store.state.site.data ?? {};
-    const missing = (manifest.requires?.data ?? []).filter((name) => !(name in data));
-    const source = missing[0] ? targetFor(missing[0])?.target : undefined;
-    tool.title = missing.length > 0 ? `${manifest.description ?? manifest.name}. This table has no ${missing.join(' or ')} data yet.${source ? ' Click to bring it in.' : ''}` : (manifest.description ?? manifest.name);
-    tool.classList.toggle('is-needs', missing.length > 0);
-    // A layer that needs data takes the author to the place to bring it in, rather than doing nothing.
-    tool.disabled = missing.length > 0 && !source;
-    tool.addEventListener('click', async () => {
-      if (missing.length > 0) {
-        if (source) this.bringIn(source);
-        return;
+  /** What each command in commands-list.ts does and when it is greyed out. TypeScript checks none is missing. */
+  private commandHandlers(): CommandHandlers {
+    const k = (key: string, shift = false) => shortcut(key, shift);
+    const none = 'Select something in the list on the left first';
+    const app = 'This needs the MR Studio app';
+    const selected = (target?: string): string | null => target ?? (this.wizard ? null : this.target());
+    const needs = (target?: string) => (selected(target) && this.facts(target).live ? undefined : none);
+    /** A layer with a button: the open layer itself, not one of its items. */
+    const buttonOf = (target?: string): string | null => {
+      if (target) {
+        const state = this.store.state.layers[target];
+        const manifest = state && this.store.manifest(state.layer);
+        return state && manifest && !state.parent && !isAtRest(manifest, state) ? target : null;
       }
-      // Busy until the layer is in (#68): a second click does not add a second one.
-      tool.disabled = true;
-      tool.classList.add('is-busy');
-      try {
-        await this.addChecked(manifest, parent);
-      } finally {
-        tool.disabled = false;
-        tool.classList.remove('is-busy');
-      }
+      return this.context.kind === 'layer' && !this.layerItem && !this.wizard ? this.context.id : null;
+    };
+    const basemap = (): string | undefined => this.instances().find((i) => i.manifest.id === 'basemap' && !i.state.parent)?.id;
+    const view = (v: 'map' | 'controller' | 'both') => ({ pressed: () => this.canvasTools.view === v, run: () => this.menuAction(`view-${v}`) });
+    const style = (value: 'icons' | 'labelled') => ({
+      pressed: () => (this.store.state.site.tv?.rail_style ?? 'icons') === value,
+      run: () => void this.send('site.tv', { tv: { rail_style: value === 'icons' ? null : value } }),
     });
-    return tool;
-  }
-
-  private renderRibbon(instances: { id: string; manifest: LayerManifest; state: LayerState }[]): void {
-    if (this.ribbonTab === 'help') {
-      this.renderHelpRibbon();
-      return;
-    }
-    if (isSetupTab(this.ribbonTab)) {
-      this.renderSetupRibbon(this.ribbonTab, instances);
-      return;
-    }
-    if (this.ribbonTab === 'media') {
-      const tool = (label: string, iconName: string, large = false) => button(large ? 'ed-tool is-large' : 'ed-tool', label, iconName, large ? 20 : 16);
-      this.ribbon.replaceChildren(...this.mediaTab.ribbon(tool, (name, ...children) => this.group(name, ...children), (tools) => this.column(tools)));
-      return;
-    }
-    if (this.ribbonTab === 'display') {
-      // The Display tab keeps its own controls, so a slider being dragged is not rebuilt when the scene changes.
-      if (this.ribbon.firstElementChild !== this.displayTab.groups[0]) this.ribbon.replaceChildren(...this.displayTab.groups);
-      this.displayTab.refresh();
-      return;
-    }
-    const groups: HTMLElement[] = [];
-    const target = this.target();
-    const selected = instances.find((i) => i.id === target);
-
-    // The ribbon is the same whatever is selected (#182): the same groups in the same places, and a
-    // tool that does not apply right now is greyed out with the reason, never taken away.
-    const { kind } = this.context;
-    const ambient = this.store.manifests.filter((m) => isAmbient(m) && isOffered(m));
-    // Map life goes into the layer that is open, or onto the map at rest; the group says which.
-    const openId = kind === 'layer' ? (this.context as { id: string }).id : undefined;
-    const opened = openId ? this.store.state.layers[openId] : undefined;
-    const openedManifest = opened && this.store.manifest(opened.layer);
-    // A slideshow's items are its slides, added from its Slides list.
-    const sequence = Boolean(openedManifest?.sequence);
-    const openName = openId && openedManifest && opened ? layerButton(openId, openedManifest, opened).name : undefined;
-    if (ambient.length > 0) {
-      const into = openId && !sequence ? openId : undefined;
-      const tools = ambient.map((m) => {
-        const tool = this.insertTool(m, false, into);
-        if (sequence) {
-          tool.disabled = true;
-          tool.title = 'A slideshow shows its slides, not map life. Pick At rest or another layer to add this.';
-        }
-        return tool;
-      });
-      const name = sequence ? 'Map life' : `Map life: adds to ${openName ?? AT_REST}`;
-      const group = this.group(name, ...this.column(tools));
-      group.title = openName && !sequence ? `These go into ${openName} and show while it is open` : `These go onto the map at rest, under every layer`;
-      groups.push(group);
-    }
-    // Every layer is made from the New layer gallery (#59): pictures, what each needs, and your own.
-    const gallery = button('ed-tool is-large', 'New layer', 'plus', 20);
-    gallery.title = 'Choose a layer from the gallery: from your data, analysis, story, your own, or map life';
-    gallery.dataset.gallery = '';
-    gallery.addEventListener('click', () => this.gallery());
-    // Make a layer of your own from the table's data, and the colours every layer shares (#38, #93).
-    const custom = button('ed-tool is-large', 'Custom layer', 'brush', 20);
-    custom.title = 'Make a layer from your own data: choose the data, then style it, move it and save it as a button';
-    custom.addEventListener('click', () => newCustomLayer(this.builderHost(), this.shell));
-    const palette = button('ed-tool is-large', 'Palette', 'palette', 20);
-    palette.title = 'The colours every custom layer uses. Change one and the whole table follows.';
-    palette.addEventListener('click', () => paletteDialog(this.builderHost(), this.shell));
-    const forget = button('ed-tool', 'Delete custom', 'trash');
-    const saved = this.store.manifests.filter((m) => m.custom).length;
-    forget.disabled = saved === 0;
-    forget.title = saved ? 'Delete custom layers this table no longer needs, wherever they are used' : 'This table has no custom layers';
-    forget.addEventListener('click', () => deleteCustomDialog(this.builderHost(), this.shell));
-    groups.push(this.group('Layers', gallery, custom, palette, ...this.column([forget])));
-
-    // The selection: always the same four tools, greyed out when nothing is selected or a tool does not apply.
-    {
-      const live = selected && (kind === 'home' || kind === 'layer') ? selected : undefined;
-      const parent = live?.state.parent ?? null;
-      const onMap = live ? isAmbient(live.manifest) || parent !== null : false;
-      const none = 'Select something in the list on the left first';
-      const canShow = Boolean(live && onMap && !(parent && sequence));
-      const on = live && canShow ? (parent ? this.comesOn(live.id) : live.state.active) : false;
-      const show = button('ed-tool', on ? 'Hide' : 'Show', on ? 'eye-off' : 'eye');
-      show.disabled = !canShow;
-      show.title = !live ? none : !canShow ? 'A layer shows when its button is pressed on the controller' : parent ? 'Whether this comes on when its layer opens' : 'Show or hide this when no layer is open';
-      show.addEventListener('click', () => {
-        if (!live) return;
-        if (parent) this.itemOn.set(live.id, !on);
-        void this.send('scene.set', { layer: live.id, active: !on });
-      });
-      // Up and down step over the neighbours in the same list: map life among itself,
-      // layers among themselves, and a layer's items among themselves.
-      const list = this.siblings(parent);
-      const peers = live ? instances.filter((i) => (i.state.parent ?? null) === parent && (parent !== null || isAmbient(i.manifest) === onMap)).map((i) => i.id) : [];
-      const place = live ? peers.indexOf(live.id) : -1;
-      // `peers` runs top first, so the one in front is the one before.
-      const front = place > 0 ? peers[place - 1] : undefined;
-      const behind = place >= 0 ? peers[place + 1] : undefined;
-      const up = button('ed-tool', 'Move up', 'up');
-      up.title = !live ? none : onMap ? 'Draw this above the next one on the map' : 'Move this button up on the controller';
-      up.disabled = !front;
-      up.addEventListener('click', () => live && front && void this.send('scene.move', { layer: live.id, index: list.indexOf(front) }));
-      const down = button('ed-tool', 'Move down', 'down');
-      down.title = !live ? none : onMap ? 'Draw this below the previous one on the map' : 'Move this button down on the controller';
-      down.disabled = !behind;
-      down.addEventListener('click', () => live && behind && void this.send('scene.move', { layer: live.id, index: list.indexOf(behind) }));
-      const remove = button('ed-tool', 'Remove', 'trash');
-      remove.title = live ? 'Take this out of the table' : none;
-      remove.disabled = !live;
-      remove.addEventListener('click', () => live && void this.send('scene.remove', { layer: live.id }));
-      const reset = button('ed-tool', 'Reset', 'reset');
-      const resettable = Boolean(live && visibleControls(live.manifest.controls).some((c) => 'default' in c));
-      reset.disabled = !resettable;
-      reset.title = !live ? none : resettable ? 'Put every setting of this back to its own value' : 'This has no settings to reset';
-      reset.addEventListener('click', () => live && void this.resetLayer(live.id));
-      const name = live ? `Selected: ${layerButton(live.id, live.manifest, live.state).name}` : 'Nothing selected';
-      const selection = this.group(name, ...this.column([show, up, down]), ...this.column([remove, reset]));
-      // On a small screen the selection's tools stay in view; other groups give way first (#66).
-      selection.classList.add('is-keep');
-      groups.push(selection);
-    }
-
-    const open = (label: string, iconName: string, role: 'table' | 'tv' | 'dev', tip: string) => {
-      const tool = button('ed-tool', label, iconName);
-      tool.title = tip;
-      tool.addEventListener('click', () => openView(role));
-      return tool;
+    return {
+      'layer.new': { run: () => this.gallery() },
+      'layer.duplicate': { keys: k('D'), disabled: needs, run: (t) => this.withSelected(t, (id) => this.duplicate(id)) },
+      'layer.remove': { keys: mac ? '⌫' : 'Del', disabled: needs, run: (t) => this.withSelected(t, (id) => this.removeLayer(id)) },
+      'layer.toggle': {
+        label: (t) => (this.facts(t).on ? 'Hide' : 'Show'),
+        icon: (t) => (this.facts(t).on ? 'eye-off' : 'eye'),
+        disabled: (t) => {
+          const f = this.facts(t);
+          return !f.live ? none : !f.canShow ? 'A layer shows when its button is pressed on the controller' : undefined;
+        },
+        run: (t) => {
+          const f = this.facts(t);
+          if (!f.live || !f.canShow) return;
+          if (f.parent) this.itemOn.set(f.live.id, !f.on);
+          void this.send('scene.set', { layer: f.live.id, active: !f.on });
+        },
+      },
+      'layer.up': {
+        disabled: (t) => (!this.facts(t).live ? none : this.facts(t).front ? undefined : 'It is already at the top of its list'),
+        run: (t) => {
+          const f = this.facts(t);
+          if (f.live && f.front) void this.send('scene.move', { layer: f.live.id, index: f.list.indexOf(f.front) });
+        },
+      },
+      'layer.down': {
+        disabled: (t) => (!this.facts(t).live ? none : this.facts(t).behind ? undefined : 'It is already at the bottom of its list'),
+        run: (t) => {
+          const f = this.facts(t);
+          if (f.live && f.behind) void this.send('scene.move', { layer: f.live.id, index: f.list.indexOf(f.behind) });
+        },
+      },
+      'layer.rename': { keys: 'F2', disabled: (t) => (buttonOf(t) ? undefined : 'Select a layer with a button first'), run: (t) => this.withSelected(buttonOf(t) ?? undefined, (id) => this.rename(id)) },
+      'layer.reset': {
+        disabled: (t) => {
+          const f = this.facts(t);
+          return !f.live ? none : visibleControls(f.live.manifest.controls).some((c) => 'default' in c) ? undefined : 'This has no settings to reset';
+        },
+        run: (t) => this.withSelected(t, (id) => this.resetLayer(id)),
+      },
+      'commands.search': { keys: k('K'), run: () => this.menuAction('commands') },
+      'layer.custom': { run: () => newCustomLayer(this.builderHost(), this.shell) },
+      'layer.forget': {
+        disabled: () => (this.store.manifests.some((m) => m.custom) ? undefined : 'This table has no custom layers'),
+        run: () => deleteCustomDialog(this.builderHost(), this.shell),
+      },
+      'data.file': { run: () => this.addData() },
+      'data.open': { run: () => this.openDialog('open-data') },
+      'media.picture': { run: () => void this.addMedia(['picture']) },
+      'media.video': { run: () => void this.addMedia(['video']) },
+      'media.sound': { run: () => void this.addMedia(['sound']) },
+      'media.model': { run: () => this.bringIn(MODEL_ROW) },
+      'buttons.icons': style('icons'),
+      'buttons.labelled': style('labelled'),
+      'map.basemap': {
+        disabled: () => (basemap() ? undefined : 'This table has no base map. Insert › New layer › Map life adds one.'),
+        run: () => {
+          const id = basemap();
+          if (!id) return;
+          if (this.wizard) this.closeWizard();
+          this.homeItem = id;
+          this.go({ kind: 'home' });
+        },
+      },
+      'map.palette': { run: () => paletteDialog(this.builderHost(), this.shell) },
+      'dialog.place': { run: () => this.openDialog('place') },
+      'dialog.welcome': { run: () => this.openDialog('welcome') },
+      'present.check': { run: () => this.showChecks() },
+      'present.rehearse': {
+        label: () => (this.rehearsal.on ? 'Finish rehearsal' : 'Rehearse'),
+        icon: () => (this.rehearsal.on ? 'check' : 'people'),
+        pressed: () => this.rehearsal.on,
+        tip: () => (this.rehearsal.on ? 'Put every layer back as it was (Esc)' : undefined),
+        run: () => (this.rehearsal.on ? void this.rehearsal.finish() : this.rehearsal.start()),
+      },
+      'present.start': { keys: k('Enter'), run: () => this.presentButton.click() },
+      'dialog.screens': { run: () => this.openDialog('screens') },
+      'file.share': { disabled: () => (shell() ? undefined : app), run: () => this.file('share') },
+      'file.export': { disabled: () => (shell() ? undefined : app), run: () => this.file('export') },
+      'view.map': view('map'),
+      'view.controller': view('controller'),
+      'view.both': view('both'),
+      'zoom.fit': { keys: k('0'), run: () => this.menuAction('zoom-fit') },
+      'zoom.100': { keys: k('1'), run: () => this.menuAction('zoom-100') },
+      'view.outline': { pressed: () => this.canvasTools.outlined, run: () => this.menuAction('outline') },
+      'dialog.media': { run: () => this.openDialog('media') },
+      'window.table': { run: () => openView('table') },
+      'window.tv': { run: () => openView('tv') },
+      'window.dev': { run: () => openView('dev') },
+      'help.features': { run: () => openHelp('features') },
+      'help.troubleshooting': { run: () => openHelp('troubleshooting') },
+      'help.shortcuts': { keys: k('/'), run: () => this.menuAction('shortcuts') },
+      'help.report': { run: () => this.menuAction('report') },
+      'edit.undo': { keys: k('Z'), run: () => void this.history.step('undo') },
+      'edit.redo': { keys: mac ? k('Z', true) : 'Ctrl+Y', run: () => void this.history.step('redo') },
+      'edit.history': { run: () => this.history.toggle(this.saved) },
+      'file.save': { keys: k('S'), run: () => this.file('save') },
     };
-    const data = button('ed-tool is-large', 'Add data', 'map', 20);
-    data.title = 'Bring in a file or OpenStreetMap data: buildings, ground, trees, streets, walking paths, trips or a dataset of your own';
-    data.addEventListener('click', () => this.addData());
-    groups.push(this.group('Your place', data));
-
-    const windows = this.group(
-      'Open in a window',
-      ...this.column([open('Map', 'table', 'table', 'The map projected on the table'), open('Controller', 'tv', 'tv', 'The screen beside the table'), open('Developer', 'code', 'dev', 'The workbench: map, controls, widget gallery, live values, action log and problems')]),
-    );
-    windows.classList.add('is-last');
-    groups.push(windows);
-    this.ribbon.replaceChildren(...groups);
   }
 
-  /**
-   * The ribbons of the setup tabs (#311, #312, #313). The panel beside the map holds the step of
-   * the guide; the ribbon holds the quick tools for it, PowerPoint-style.
-   */
-  private renderSetupRibbon(tab: SetupTab, instances: { id: string; manifest: LayerManifest; state: LayerState }[]): void {
-    const groups: HTMLElement[] = [];
-    const addData = (): HTMLButtonElement => {
-      const data = button('ed-tool is-large', 'Add data', 'map', 20);
-      data.title = 'Bring in a file or OpenStreetMap data for the table';
-      data.addEventListener('click', () => this.addData());
-      return data;
+  /** Runs `act` on `target`, or on the selection. */
+  private withSelected(target: string | undefined, act: (id: string) => unknown): void | Promise<void> {
+    const id = target ?? (this.wizard ? null : this.target());
+    if (!id) return;
+    const result = act(id);
+    if (result instanceof Promise) return result.then(() => {});
+  }
+
+  /** The parts of the ribbon the editor draws itself, named by the layout file. */
+  private widgets(): Record<WidgetId, () => HTMLElement[]> {
+    return {
+      themes: () => [this.themeGallery()],
+      'help.guides': () => {
+        const guides = this.help().filter((p) => p.kind === 'guide');
+        const open = this.helpTool('Open the guide', 'info', guides[0]?.id ?? '', 'Every feature and step-by-step guides, in a window of their own', true);
+        return [open, ...columns(guides.map((g) => this.helpTool(g.title, 'route', g.id, g.summary)))];
+      },
+      'help.diagnostics': () => columns(this.diagnosticsTools()),
+      'help.news': () => {
+        const latest = this.help().find((p) => p.kind === 'release');
+        return [this.helpTool(latest ? latest.title.replace('MR Studio ', 'Version ') : 'What’s new', 'sparkle', latest?.id ?? 'features', 'What the newest versions brought', true)];
+      },
     };
-    if (tab === 'place') {
-      const panel = this.panel('place');
-      const move = button('ed-tool is-large', 'Move the table', 'route', 20);
-      move.disabled = !panel.pending;
-      move.title = panel.pending ? 'Rename, move, resize or turn the table as the panel says. Undo puts it back.' : 'Change the name or the place in the panel first';
-      move.addEventListener('click', () => panel.moveTable());
-      const back = button('ed-tool', 'Put back', 'undo');
-      back.disabled = !panel.pending;
-      back.title = 'Forget the changes in the panel';
-      back.addEventListener('click', () => panel.putBack());
-      groups.push(this.group('Place', move, ...this.column([back])));
-      groups.push(this.group('Your place', addData()));
-    } else if (tab === 'rest') {
-      // Each piece of map life switches on and off here; the panel has the words and the base map's style.
-      const ambient = this.store.manifests.filter((m) => isAmbient(m) && isOffered(m));
-      const data = this.store.state.site.data ?? {};
-      const tools = ambient.map((manifest) => {
-        const mine = instances.filter((i) => i.manifest.id === manifest.id && !i.state.parent);
-        const on = mine.length > 0;
-        const tool = button('ed-tool', manifest.name, manifest.icon);
-        tool.dataset.layer = manifest.id;
-        tool.setAttribute('aria-pressed', String(on));
-        tool.classList.toggle('is-pressed', on);
-        const missing = (manifest.requires?.data ?? []).filter((name) => !(name in data));
-        tool.disabled = !on && missing.length > 0;
-        tool.title = on ? `Take ${manifest.name.toLowerCase()} off the map at rest` : missing.length ? `Needs ${missing.join(' and ')} data first` : (manifest.description ?? manifest.name);
-        tool.addEventListener('click', async () => {
-          tool.disabled = true;
-          if (on) for (const { id } of mine) await this.send('scene.remove', { layer: id });
-          else await this.add(manifest);
-        });
-        return tool;
-      });
-      if (tools.length) groups.push(this.group('Map life', ...this.column(tools)));
-      groups.push(this.group('Your place', addData()));
-    } else {
-      // The controller's theme as a gallery, as PowerPoint's Design tab has, and the button style.
-      const tv = this.store.state.site.tv;
-      const chosen = chosenTheme(tv);
-      const gallery = el('div', 'ed-themes');
-      gallery.setAttribute('role', 'radiogroup');
-      gallery.ariaLabel = 'Controller theme';
-      // The table's palette as a theme (#93): the controller in the map's own colours.
-      {
-        const theme = paletteTheme(this.store.state.site.palette);
-        const card = el('button', 'ed-theme');
-        card.type = 'button';
-        card.dataset.theme = theme.id;
-        card.setAttribute('role', 'radio');
-        card.setAttribute('aria-checked', String(chosen === theme.id));
-        card.title = `${theme.name}: ${theme.description} It follows the palette when the palette changes.`;
-        card.append(themeSwatch(theme), el('span', undefined, theme.name));
-        card.addEventListener('click', () => void this.send('site.tv', paletteThemeChoice(this.store.state.site.palette)));
-        gallery.append(card);
-      }
-      THEMES.forEach((theme, index) => {
-        const card = el('button', 'ed-theme');
-        card.type = 'button';
-        card.setAttribute('role', 'radio');
-        card.setAttribute('aria-checked', String(theme.id === chosen));
-        card.title = `${theme.name}: ${theme.description}`;
-        card.append(themeSwatch(theme), el('span', undefined, theme.name));
-        card.addEventListener('click', () => void this.send('site.tv', themeChoice(index)));
-        gallery.append(card);
-      });
-      groups.push(this.group('Theme', gallery));
-      const style = tv?.rail_style ?? 'icons';
-      const styles = (['icons', 'labelled'] as const).map((value) => {
-        const tool = button('ed-tool', value === 'icons' ? 'Icons' : 'Icons and names', value === 'icons' ? 'grid' : 'bars');
-        tool.setAttribute('aria-pressed', String(style === value));
-        tool.classList.toggle('is-pressed', style === value);
-        tool.title = value === 'icons' ? 'Each button is its icon; the name shows when it is pressed' : 'Each button shows its icon and its name';
-        tool.addEventListener('click', () => void this.send('site.tv', { tv: { rail_style: value === 'icons' ? null : value } }));
-        return tool;
-      });
-      groups.push(this.group('Buttons', ...this.column(styles)));
-      const controller = button('ed-tool is-large', 'Controller', 'tv', 20);
-      controller.title = 'Open the controller in a window of its own';
-      controller.addEventListener('click', () => openView('tv'));
-      const window = this.group('Window', controller);
-      window.classList.add('is-last');
-      groups.push(window);
-    }
-    this.ribbon.replaceChildren(...groups);
   }
 
-  /**
-   * The Help tab (#271): the guide opens in a window of its own, at the page a tool names.
-   * The guides come from help.json, which is built from docs/guide when the app is built.
-   */
-  private renderHelpRibbon(): void {
+  /** The guides, from help.json (#271), fetched the first time they are needed. */
+  private help(): { id: string; kind: string; title: string; summary: string }[] {
     if (!this.helpPages) {
       this.helpPages = [];
       fetch('/help.json')
         .then((r) => r.json())
         .then((help: { pages: { id: string; kind: string; title: string; summary: string }[] }) => {
           this.helpPages = help.pages;
-          if (this.ribbonTab === 'help') this.renderHelpRibbon();
+          if (this.ribbonTab === 'help') this.renderRibbon(this.instances());
         })
         .catch(() => {});
     }
-    const pages = this.helpPages;
-    const tool = (label: string, iconName: string, page: string, tip: string, large = false) => {
-      const node = button(large ? 'ed-tool is-large' : 'ed-tool', label, iconName, large ? 20 : 16);
-      node.title = tip;
-      node.addEventListener('click', () => openHelp(page));
+    return this.helpPages;
+  }
+
+  private helpTool(label: string, iconName: string, page: string, tip: string, large = false): HTMLButtonElement {
+    const node = button(large ? 'ed-tool is-large' : 'ed-tool', label, iconName, large ? 20 : 16);
+    node.title = tip;
+    node.addEventListener('click', () => openHelp(page));
+    return node;
+  }
+
+  /** The controller's theme as a gallery, as PowerPoint's Design tab has: the one home of the theme (#382). */
+  private themeGallery(): HTMLElement {
+    const chosen = chosenTheme(this.store.state.site.tv);
+    const gallery = setting('controller.theme', 'ribbon:design', el('div', 'ed-themes'));
+    gallery.setAttribute('role', 'radiogroup');
+    gallery.ariaLabel = 'Controller theme';
+    const card = (id: string, name: string, title: string, swatch: HTMLElement, pick: () => void): HTMLElement => {
+      const node = el('button', 'ed-theme');
+      node.type = 'button';
+      node.dataset.theme = id;
+      node.setAttribute('role', 'radio');
+      node.setAttribute('aria-checked', String(chosen === id));
+      node.title = title;
+      node.append(swatch, el('span', undefined, name));
+      node.addEventListener('click', pick);
       return node;
     };
-    const guides = pages.filter((p) => p.kind === 'guide');
-    const latest = pages.find((p) => p.kind === 'release');
-    const groups = [
-      this.group('Guide', tool('Open the guide', 'info', guides[0]?.id ?? '', 'Every feature and step-by-step guides, in a window of their own', true)),
-      this.group('Step by step', ...this.column(guides.map((g) => tool(g.title, 'route', g.id, g.summary)))),
-      this.group('Features', tool('Everything on the table', 'layers', 'features', 'Every layer, what it shows and where to find it', true)),
-      this.group(
-        'Problems',
-        tool('When something is wrong', 'alert', 'troubleshooting', 'The usual problems and how to fix them: projection, phones, empty layers, speed, updates', true),
-        ...this.column(this.diagnosticsTools()),
-      ),
-    ];
-    // The keys, and a way to tell us when something is wrong (#65, #88).
-    const keysTool = button('ed-tool', 'Keyboard shortcuts', 'info');
-    keysTool.title = `Every key the editor knows (${shortcut('/')})`;
-    keysTool.addEventListener('click', () => this.menuAction('shortcuts'));
-    const searchTool = button('ed-tool', 'Search commands', 'search');
-    searchTool.title = `Find any command, layer or setting by a few words (${shortcut('K')})`;
-    searchTool.addEventListener('click', () => this.menuAction('commands'));
-    const report = button('ed-tool', 'Report a problem', 'alert');
-    report.title = 'Opens a new GitHub issue with the version and this computer filled in. You see it before anything is sent.';
-    report.addEventListener('click', () => this.menuAction('report'));
-    groups.push(this.group('Keys and feedback', ...this.column([searchTool, keysTool, report])));
-    const news = this.group("What's new", tool(latest ? latest.title.replace('MR Studio ', 'Version ') : "What's new", 'sparkle', latest?.id ?? 'features', 'What the newest versions brought', true));
-    news.classList.add('is-last');
-    groups.push(news);
+    // The table's palette as a theme (#93): the controller in the map's own colours.
+    const own = paletteTheme(this.store.state.site.palette);
+    gallery.append(card(own.id, own.name, `${own.name}: ${own.description} It follows the palette when the palette changes.`, themeSwatch(own), () => void this.send('site.tv', paletteThemeChoice(this.store.state.site.palette))));
+    THEMES.forEach((theme, index) => gallery.append(card(theme.id, theme.name, `${theme.name}: ${theme.description}`, themeSwatch(theme), () => void this.send('site.tv', themeChoice(index)))));
+    return gallery;
+  }
+
+  /**
+   * The ribbon: the open tab of the layout file, drawn from the commands (#392). It is the same
+   * whatever is selected (#182): a command that does not apply right now is greyed out with the
+   * reason, never taken away.
+   */
+  private renderRibbon(_instances?: unknown): void {
+    const tab = RIBBON.find((t) => t.id === this.ribbonTab) ?? RIBBON[0]!;
+    const groups = drawTab(tab, this.handlers, this.widgets());
+    // The button style is a setting of the table, edited only here (docs/editor-ui.md).
+    const buttons = groups.find((g) => g.dataset.group === 'Buttons');
+    if (buttons) setting('controller.buttons', 'ribbon:design', buttons);
     this.ribbon.replaceChildren(...groups);
   }
 
@@ -2315,9 +2246,19 @@ export class Editor {
     const nodes: HTMLElement[] = [];
 
     nodes.push(el('h2', 'ed-tree-title', 'Map'));
-    const home = this.treeRow(AT_REST, ambient.length > 0 ? ambient.map((i) => i.manifest.name).join(', ') : 'Nothing yet', 'moon', context.kind === 'home', () => this.go({ kind: 'home' }));
+    const home = this.treeRow(AT_REST, ambient.length > 0 ? 'When no layer is open' : 'Nothing yet', 'moon', context.kind === 'home' && !this.homeItem, () => {
+      this.homeItem = null;
+      this.go({ kind: 'home' });
+    });
     home.dataset.context = 'home';
     nodes.push(home);
+    // Map life as rows under At rest, like the slide master's layouts (#382): select one to format it,
+    // its eye turns it on or off. The eye is the one home of that switch (docs/editor-ui.md).
+    const rest = el('div', 'ed-rest');
+    rest.setAttribute('role', 'group');
+    rest.ariaLabel = AT_REST;
+    for (const { id, manifest, state } of ambient) rest.append(this.restRow(id, manifest, state, context.kind === 'home' && this.homeItem === id));
+    nodes.push(rest);
 
     const title = el('h2', 'ed-tree-title', 'Layers');
     const plus = el('button', 'ed-icon-button');
@@ -2339,7 +2280,7 @@ export class Editor {
       // The list is the controller's two rails (#58): drag a row up or down, or across to the other side.
       const rails = this.rails(layers);
       for (const side of ['left', 'right'] as const) {
-        const zone = el('div', 'ed-rail');
+        const zone = setting('layer.order', 'list:drag', el('div', 'ed-rail'));
         zone.dataset.side = side;
         zone.setAttribute('role', 'group');
         zone.ariaLabel = side === 'left' ? 'Left of the controller' : 'Right of the controller';
@@ -2394,6 +2335,40 @@ export class Editor {
     return out;
   }
 
+  /** One piece of map life under At rest: select it to see its settings; the eye turns it on or off. */
+  private restRow(id: string, manifest: LayerManifest, state: LayerState, selected: boolean): HTMLElement {
+    const row = this.treeRow(layerButton(id, manifest).name, '', manifest.icon, selected, () => {
+      this.homeItem = id;
+      this.go({ kind: 'home' });
+    });
+    row.classList.add('is-item', 'is-rest');
+    row.dataset.layer = id;
+    row.addEventListener('contextmenu', (event) => this.rowMenu(event, id));
+    const eye = setting('maplife.shown', 'list:eye', el('span', 'ed-row-eye'));
+    eye.setAttribute('role', 'switch');
+    eye.tabIndex = 0;
+    const flip = (event: Event): void => {
+      event.stopPropagation();
+      event.preventDefault();
+      void this.send('scene.set', { layer: id, active: !this.store.state.layers[id]?.active });
+    };
+    eye.addEventListener('click', flip);
+    eye.addEventListener('keydown', (event) => (event.key === 'Enter' || event.key === ' ') && flip(event));
+    row.append(eye);
+    const draw = (next: LayerState): void => {
+      row.classList.toggle('is-off', !next.active);
+      eye.replaceChildren(icon(next.active ? 'eye' : 'eye-off', 14));
+      eye.setAttribute('aria-checked', String(next.active));
+      eye.ariaLabel = `${manifest.name} on the map at rest`;
+      eye.title = next.active ? `${manifest.name} shows on the map when no layer is open. Click to turn it off.` : `${manifest.name} is off. Click to show it on the map at rest.`;
+      markTrouble(row, next);
+    };
+    row.dataset.troubleTitle = '';
+    draw(state);
+    this.sync.set(id, draw);
+    return row;
+  }
+
   /**
    * One layer in the list: its button's icon and name, and an eye that keeps the button off the
    * controller. Click to open it, double-click or F2 to rename, right-click for the rest, drag to move.
@@ -2410,7 +2385,7 @@ export class Editor {
     const label = el('span', 'ed-row-label');
     const detail = el('span', 'ed-row-detail');
     text.append(label, detail);
-    const eye = el('button', 'ed-row-eye');
+    const eye = setting('button.hidden', 'list:eye', el('button', 'ed-row-eye'));
     eye.type = 'button';
     eye.setAttribute('role', 'switch');
     // The side stays readable for tests and screen readers; the rail heading shows it.
@@ -2590,36 +2565,22 @@ export class Editor {
     const manifest = state && this.store.manifest(state.layer);
     if (!state || !manifest) return;
     const layer = !state.parent && !isAtRest(manifest, state);
+    // The same commands as the ribbon, by the same names (#392); Settings… selects it (docs/editor-ui.md, "Right-click").
+    const h = this.handlers;
+    const settings: MenuItem = { label: 'Settings…', icon: 'settings', run: () => (state.parent ? this.go({ kind: 'layer', id: state.parent }, id) : layer ? this.go({ kind: 'layer', id }) : ((this.homeItem = id), this.go({ kind: 'home' }))) };
     const items: MenuItem[] = [];
     if (layer) {
       const side = layerButton(id, manifest, state, defaultSideOf(this.store, id)).side;
       const hidden = Boolean(state.button?.hidden);
       items.push(
-        { label: 'Open', icon: 'play', run: () => this.go({ kind: 'layer', id }) },
-        { label: 'Rename', icon: 'pencil', keys: 'F2', run: () => this.rename(id) },
-        { label: 'Duplicate', icon: 'layers', keys: shortcut('D'), run: () => void this.duplicate(id) },
+        menuItem('layer.rename', h, id),
+        menuItem('layer.duplicate', h, id),
         'line',
         { label: hidden ? 'Show on the controller' : 'Hide from the controller', icon: hidden ? 'eye' : 'eye-off', run: () => void this.send('scene.set', { layer: id, button: { hidden: hidden ? null : true } }) },
         { label: side === 'left' ? 'Move to the right side' : 'Move to the left side', icon: side === 'left' ? 'next' : 'previous', run: () => this.place(id, side === 'left' ? 'right' : 'left', null) },
       );
-    } else {
-      const on = state.parent ? this.comesOn(id) : state.active;
-      items.push(
-        { label: 'Settings', icon: 'settings', run: () => (state.parent ? this.go({ kind: 'layer', id: state.parent }, id) : ((this.homeItem = id), this.go({ kind: 'home' }))) },
-        { label: 'Duplicate', icon: 'layers', keys: shortcut('D'), run: () => void this.duplicate(id) },
-        'line',
-        {
-          label: on ? 'Turn off' : 'Turn on',
-          icon: on ? 'eye-off' : 'eye',
-          run: () => {
-            if (state.parent) this.itemOn.set(id, !on);
-            void this.send('scene.set', { layer: id, active: !on });
-          },
-        },
-      );
-    }
-    items.push({ label: 'Reset settings', icon: 'reset', disabled: !visibleControls(manifest.controls).some((c) => 'default' in c), run: () => void this.resetLayer(id) });
-    items.push('line', { label: 'Remove', icon: 'trash', keys: mac ? '⌫' : 'Del', danger: true, run: () => void this.removeLayer(id) });
+    } else items.push(menuItem('layer.toggle', h, id), menuItem('layer.up', h, id), menuItem('layer.down', h, id), menuItem('layer.duplicate', h, id));
+    items.push(menuItem('layer.reset', h, id), 'line', menuItem('layer.remove', h, id, { danger: true }), 'line', settings);
     contextMenu(items, { x: event.clientX, y: event.clientY }, this.shell, `${layerButton(id, manifest, state).name}`);
   }
 
@@ -2641,10 +2602,6 @@ export class Editor {
       title = 'Phones';
       detail = 'Personal controllers for visitors';
       notice = `Visitors join with the code ${this.store.state.session.code}. Choosing which layers a phone may control comes with a later step of the editor.`;
-    } else if (context.kind === 'table') {
-      iconName = 'settings';
-      title = 'Table settings';
-      detail = 'This table only. The controller shows its title and welcome line.';
     } else if (context.kind === 'controller') {
       iconName = 'tv';
       title = 'Controller';
@@ -2652,15 +2609,7 @@ export class Editor {
       notice = 'The map stays visual. Words, buttons and numbers live on the controller. Arranging it here comes with a later step of the editor. ';
     }
     if (this.wizard) return;
-    if (this.ribbonTab === 'media') {
-      const badge = el('span', 'ed-row-icon');
-      badge.append(icon('folder'));
-      this.canvasHead.replaceChildren(badge, el('strong', undefined, 'Media'), el('span', undefined, 'Every file and online source this table can show'));
-      this.notice.hidden = true;
-      this.mediaTab.drawView();
-      return;
-    }
-    const showsController = context.kind === 'controller' || context.kind === 'table';
+    const showsController = context.kind === 'controller';
     this.showController(false);
     this.canvasTools.force(showsController);
     if (showsController) notice = null;
@@ -2677,7 +2626,7 @@ export class Editor {
     const open = this.context.kind === 'layer' ? this.context.id : null;
     const plan = [this.layerItem, open].map((id) => instances.find((i) => i.id === id)).find((i) => i?.manifest.id === 'plan');
     const surface = this.canvas.querySelector<HTMLElement>('.table-surface');
-    if (!plan || !surface || this.wizard || this.ribbonTab !== 'edit') {
+    if (!plan || !surface || this.wizard) {
       this.framedDrawing = null;
       this.drawingFrame.hide();
       return;
@@ -2708,15 +2657,15 @@ export class Editor {
       return row;
     };
 
-    const name = el('input');
+    const name = setting('button.words', 'format:button', el('input'));
     Object.assign(name, { type: 'text', maxLength: 40, placeholder: manifest.name });
     name.addEventListener('change', () => set({ name: name.value.trim() || null }));
-    const description = el('textarea');
+    const description = setting('button.words', 'format:button', el('textarea'));
     Object.assign(description, { rows: 3, maxLength: 200, placeholder: manifest.description ?? 'One line about what this layer shows' });
     description.addEventListener('change', () => set({ description: description.value.trim() || null }));
 
     // The group of buttons it sits in on its rail. The groups already in use are offered.
-    const group = el('input');
+    const group = setting('button.words', 'format:button', el('input'));
     const known = el('datalist');
     known.id = `ed-groups-${id}`;
     Object.assign(group, { type: 'text', maxLength: 40, placeholder: 'None, for example Simulations' });
@@ -2727,7 +2676,7 @@ export class Editor {
     });
     group.addEventListener('change', () => set({ group: group.value.trim() || null }));
 
-    const side = el('div', 'segmented');
+    const side = setting('button.side', 'format:button', el('div', 'segmented'));
     side.setAttribute('role', 'radiogroup');
     side.setAttribute('aria-label', 'Side of the controller');
     const sides = (['left', 'right'] as const).map((value) => {
@@ -2739,7 +2688,7 @@ export class Editor {
       return [value, option] as const;
     });
 
-    const icons = el('div', 'ed-icons');
+    const icons = setting('button.icon', 'format:button', el('div', 'ed-icons'));
     icons.setAttribute('role', 'radiogroup');
     icons.setAttribute('aria-label', 'Icon');
     const names = LAYER_ICONS.includes(manifest.icon ?? '') || !manifest.icon ? LAYER_ICONS : [manifest.icon, ...LAYER_ICONS];
@@ -2807,9 +2756,9 @@ export class Editor {
     const slide = Boolean(parentState && this.store.manifest(parentState.layer)?.sequence);
     const shown = el('div', 'control control-toggle');
     const label = el('label', 'control-label', item ? 'Comes on with the layer' : 'Shown on the map');
-    // A layer is opened by its button, so only the map's own things and a layer's items have this switch.
-    shown.hidden = (!isAmbient(manifest) && !item) || slide;
-    const power = el('input');
+    // A layer is opened by its button and map life by its eye in the list, so only a layer's items have this switch.
+    shown.hidden = !item || slide;
+    const power = setting('item.on', 'format:layer', el('input'));
     Object.assign(power, { type: 'checkbox', className: 'switch', id: `shown-${id}` });
     label.htmlFor = power.id;
     power.addEventListener('change', () => {
@@ -2831,7 +2780,7 @@ export class Editor {
     const offered = !isAmbient(manifest) && !item;
     const defaults = new Map(visibleControls(manifest.controls).flatMap((c) => ('default' in c ? [[c.id, c.default as unknown]] : [])));
     const rows = widgets.map((w) => {
-      const row = el('div', 'ed-setting');
+      const row = setting('layer.settings', 'format:layer', el('div', 'ed-setting'));
       row.dataset.control = w.control.id;
       // Back to the layer's own value (#64): on hover, or Alt-click (Option-click) the control's name.
       const reset = el('button', 'ed-reset');
@@ -3019,10 +2968,6 @@ export class Editor {
   }
 
   private renderInspector(instances: { id: string; manifest: LayerManifest; state: LayerState }[]): void {
-    if (this.ribbonTab === 'media' && !this.wizard) {
-      this.inspector.replaceChildren(...this.mediaTab.inspector());
-      return;
-    }
     const { context } = this;
     const nodes: HTMLElement[] = [];
     const head = (iconName: string | undefined, title: string, detail: string) => {
@@ -3032,42 +2977,23 @@ export class Editor {
     };
 
     if (context.kind === 'home') {
-      nodes.push(head('moon', AT_REST, 'When no layer is open'));
       const ambient = instances.filter((i) => isAtRest(i.manifest, i.state) && !i.state.parent);
-      const section = el('section', 'ed-section');
-      section.append(el('h3', undefined, 'On the map'));
-      if (ambient.length === 0) section.append(el('p', 'ed-empty', 'Nothing yet. Add a base map and some ambient life from the toolbar above.'));
-      for (const { id, manifest, state } of ambient) {
-        const row = this.treeRow(layerButton(id, manifest).name, '', manifest.icon, this.homeItem === id, () => {
-          this.homeItem = this.homeItem === id ? null : id;
-          this.render();
-        });
-        row.dataset.layer = id;
-        row.addEventListener('contextmenu', (event) => this.rowMenu(event, id));
-        row.classList.toggle('is-off', !state.active);
-        row.dataset.troubleTitle = '';
-        markTrouble(row, state);
-        this.sync.set(id, (next) => {
-          row.classList.toggle('is-off', !next.active);
-          markTrouble(row, next);
-        });
-        section.append(row);
-      }
-      nodes.push(section);
       const open = ambient.find((i) => i.id === this.homeItem);
-      if (open) nodes.push(this.troubleBox(open.id), this.settings(open.id, open.manifest));
-    } else if (context.kind === 'table') {
-      nodes.push(head('settings', 'Table settings', this.store.state.site.name));
-      const invoke = desktop();
-      nodes.push(
-        ...tableSettings({
-          store: this.store,
-          send: (method, params) => this.send(method, params),
-          place: () => this.setRibbonTab('place'),
-          appSettings: invoke ? () => void invoke('open_settings') : null,
-          design: () => this.setRibbonTab('design'),
-        }),
-      );
+      if (open) {
+        nodes.push(head(open.manifest.icon, layerButton(open.id, open.manifest).name, `${AT_REST}: when no layer is open`));
+        nodes.push(this.troubleBox(open.id), this.settings(open.id, open.manifest));
+      } else {
+        nodes.push(head('moon', AT_REST, 'When no layer is open'));
+        nodes.push(
+          el(
+            'p',
+            'ed-empty',
+            ambient.length === 0
+              ? 'Nothing shows when no layer is open. Insert › New layer › Map life adds a base map and some life.'
+              : 'What the map shows when nobody is using the table. Select one under At rest on the left to change it; its eye turns it on or off.',
+          ),
+        );
+      }
     } else if (context.kind === 'layer') {
       const layer = instances.find((i) => i.id === context.id)!;
       const as = layerButton(layer.id, layer.manifest, layer.state);

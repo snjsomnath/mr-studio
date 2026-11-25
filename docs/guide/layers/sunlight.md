@@ -12,7 +12,7 @@ Showing where a courtyard gets sun, how a new building shades its neighbours, an
 
 ## Set it up
 
-1. Make sure the table has buildings (and ground heights and trees if you have them): Edit tab, **Add data**.
+1. Make sure the table has buildings (and ground heights and trees if you have them): Insert tab, **Data file**.
 2. Add **Sunlight** from **Add a layer**. It gets a button on the controller.
 3. Under **Show**, pick **Shadows**, **Golden hour**, **Sun hours** or **Seasons**.
 4. Set the **Day** and the **Time of day**. **Animate the day** plays the sun from morning to evening.
@@ -23,4 +23,4 @@ Showing where a courtyard gets sun, how a new building shades its neighbours, an
 
 - **Shadow trails over the day** draws every shadow of the day at once, which shows the sun's sweep in one picture.
 - **Golden hour** starts playing as soon as it is picked: in the evening the sun sinks from 6° up to 4° under the horizon (in the morning it rises the same way), the blue hour holds a moment, and it starts again. Pick **Evening** or **Morning** under **Golden hour**; the controller's timeline marks both in gold.
-- If shadows look wrong, check that the table faces the right way in its place (Table settings, **Place**).
+- If shadows look wrong, check that the table faces the right way in its place (Design tab, **Table size and place…**).

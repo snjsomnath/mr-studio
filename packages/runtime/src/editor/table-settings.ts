@@ -1,30 +1,21 @@
 /**
- * Table settings (#73, #62): what belongs to this table only, stored in its site.json.
+ * The table's own settings (#73, #62), stored in its site.json, as the two dialogs of the
+ * Design tab (#382): Table size and place (with the guide's place form) and Welcome and
+ * languages. Each field is tagged with its one home (settings-list.ts, #392).
  *
- * App settings (screens, colour, calibration, updates, keys and outside sources, phones on
- * the network) belong to this computer and live in MR Studio > Settings. A setting is in
- * one of the two places, never both. The welcome line and title are edited here and shown
- * on the controller; the controller page previews them.
+ * This computer's settings (screens, colour, calibration, quality) are in Present › Screens and
+ * calibration…; keys and outside sources in the app's settings. A setting is in one place only.
  */
 import type { Store } from '../store.ts';
 import { el } from '../controls.ts';
 import { icon } from './icons.ts';
 import { addMedia, siteMedia } from './slides.ts';
+import { setting } from './settings-list.ts';
 
 export interface TableSettingsHost {
   store: Store;
   /** Sends a request to the host; a refusal shows on the status line and resolves to null. */
   send: <T = unknown>(method: string, params: object) => Promise<T | null>;
-  /** Opens the setup guide where the place and size are set. */
-  place: () => void;
-  /** Opens the app settings window (screens, colour, sources), when the app is there. */
-  appSettings: (() => void) | null;
-  /** Opens the Design tab, where the controller's theme and buttons are chosen. */
-  design: () => void;
-}
-
-interface SourcesUsed {
-  sources: { source: string; layers: { id: string; name: string }[] }[];
 }
 
 function field(label: string, input: HTMLElement, hint?: string): HTMLElement {
@@ -161,104 +152,77 @@ function logoPicker(current: string | null, onChange: (path: string | null) => v
   return box;
 }
 
-export function tableSettings(host: TableSettingsHost): HTMLElement[] {
+/** Table size and place, below the place form: the time zone, and how the table stands in the room. */
+export function placeSettings(host: TableSettingsHost): HTMLElement[] {
+  const { store, send } = host;
+  const site = store.state.site;
+  const table = (patch: object) => void send('site.table', patch);
+
+  const about = el('section', 'ed-section');
+  const zone = setting('table.timezone', 'dialog:place', el('select'));
+  for (const z of zones(site.timezone)) zone.append(Object.assign(el('option'), { value: z, textContent: z.replaceAll('_', ' ') }));
+  zone.prepend(Object.assign(el('option'), { value: '', textContent: 'This computer’s time zone' }));
+  zone.value = site.timezone ?? '';
+  zone.addEventListener('change', () => table({ timezone: zone.value || null }));
+  about.append(el('h3', undefined, 'Time'), field('Time zone', zone, 'The sun study and clocks use it. It is the place’s zone, not this computer’s.'));
+
+  // ---- The table in the room (#62, #78): where visitors stand, the ribbons ----
+  const t = site.table;
+  if (!t) return [about];
+  const physical = el('section', 'ed-section');
+  physical.append(el('h3', undefined, 'In the room'));
+  const SIDES = [
+    ['bottom', 'Bottom'],
+    ['top', 'Top'],
+    ['left', 'Left'],
+    ['right', 'Right'],
+  ] as const;
+  const front = setting('table.front', 'dialog:place', el('select'));
+  for (const [value, label] of SIDES) front.append(Object.assign(el('option'), { value, textContent: `${label} edge` }));
+  front.value = t.front ?? 'bottom';
+  front.addEventListener('change', () => table({ table: { front: front.value === 'bottom' ? null : front.value } }));
+  physical.append(field('Visitors stand at', front, 'The side of the projected picture nearest the visitors. Ribbons go there first, because the model hides what is behind it.'));
+  const ribbons = setting('table.ribbons', 'dialog:place', el('div', 'ed-ribbon-sides'));
+  const value = (ribbon: unknown): string => (ribbon === undefined || ribbon === null ? '' : typeof ribbon === 'string' ? ribbon : String((ribbon as { cm: number }).cm));
+  for (const [side, label] of SIDES) {
+    const pick = el('select');
+    pick.ariaLabel = `${label} ribbon`;
+    for (const [v, text] of [
+      ['', 'Default'],
+      ['off', 'Off'],
+      ['auto', 'If room'],
+      ['6', '6 cm'],
+      ['9', '9 cm'],
+      ['12', '12 cm'],
+      ['15', '15 cm'],
+    ]) pick.append(Object.assign(el('option'), { value: v, textContent: text }));
+    const now = value((t.ribbons as Record<string, unknown> | undefined)?.[side]);
+    if (now && ![...pick.options].some((o) => o.value === now)) pick.append(Object.assign(el('option'), { value: now, textContent: `${now} cm` }));
+    pick.value = now;
+    pick.addEventListener('change', () => {
+      const v = pick.value;
+      table({ table: { ribbons: { [side]: v === '' ? null : v === 'off' || v === 'auto' ? v : { cm: Number(v) } } } });
+    });
+    const row = el('div', 'ed-ribbon-side');
+    row.append(el('span', undefined, label), pick);
+    ribbons.append(row);
+  }
+  physical.append(field('Ribbons', ribbons, 'The strips of the projected picture beside the model that show the open layer at a glance. Default puts one at the visitors’ side when there is room; If room tries this side too.'));
+  return [about, physical];
+}
+
+/** Welcome and languages: what the controller says when nobody is using the table, and in which languages. */
+export function welcomeSettings(host: TableSettingsHost): HTMLElement[] {
   const { store, send } = host;
   const site = store.state.site;
   const table = (patch: object) => void send('site.table', patch);
   const tv = (patch: object) => void send('site.tv', { tv: patch });
 
-  // ---- This table ----
-  const about = el('section', 'ed-section');
-  const name = text(site.name, 60, 'A name for this table', (value) => {
-    if (value) table({ name: value });
-    else name.value = store.state.site.name;
-  });
-  const zone = el('select');
-  for (const z of zones(site.timezone)) zone.append(Object.assign(el('option'), { value: z, textContent: z.replaceAll('_', ' ') }));
-  zone.prepend(Object.assign(el('option'), { value: '', textContent: 'This computer’s time zone' }));
-  zone.value = site.timezone ?? '';
-  zone.addEventListener('change', () => table({ timezone: zone.value || null }));
-  const { width_m, height_m } = site.extent;
-  const where = el('div', 'ed-place');
-  const scale = site.table?.width_cm ? ` · ${site.table.width_cm} × ${site.table.height_cm} cm table, 1 : ${Math.round((width_m * 100) / site.table.width_cm)}` : '';
-  where.append(el('span', undefined, `${width_m} × ${height_m} m around ${site.origin.lat.toFixed(4)}, ${site.origin.lon.toFixed(4)}${scale}`));
-  const move = el('button', 'ed-button', 'Change place and size');
-  move.type = 'button';
-  move.addEventListener('click', () => host.place());
-  where.append(move);
-  about.append(
-    el('h3', undefined, 'This table'),
-    field('Name', name),
-    field('Time zone', zone, 'The sun study and clocks use it. It is the place’s zone, not this computer’s.'),
-    field('Place', where),
-  );
-
-  // ---- The table itself (#62, #78): its size, the projector, where visitors stand, the ribbons ----
-  const physical = el('section', 'ed-section');
-  const t = site.table;
-  const size = el('div', 'ed-place');
-  size.append(el('span', undefined, t ? `${t.width_cm} × ${t.height_cm} cm${t.tile_cm ? `, tiles of ${t.tile_cm} cm` : ''}` : 'No size yet'));
-  const resize = el('button', 'ed-button', t ? 'Change with the place' : 'Set the size');
-  resize.type = 'button';
-  resize.addEventListener('click', () => host.place());
-  size.append(resize);
-  const projector = el('div', 'ed-place');
-  const window_ = site.calibration?.window;
-  projector.append(el('span', undefined, window_ ? `${window_.width_px} × ${window_.height_px} pixels, calibrated` : 'Not calibrated on this computer yet'));
-  if (host.appSettings) {
-    const calibrate = el('button', 'ed-button', 'Calibrate…');
-    calibrate.type = 'button';
-    calibrate.title = 'Calibration belongs to this computer and its projector: it is in the app settings';
-    calibrate.addEventListener('click', () => host.appSettings?.());
-    projector.append(calibrate);
-  }
-  physical.append(el('h3', undefined, 'The table itself'), field('Size', size), field('Projector', projector));
-  if (t) {
-    const SIDES = [
-      ['bottom', 'Bottom'],
-      ['top', 'Top'],
-      ['left', 'Left'],
-      ['right', 'Right'],
-    ] as const;
-    const front = el('select');
-    for (const [value, label] of SIDES) front.append(Object.assign(el('option'), { value, textContent: `${label} edge` }));
-    front.value = t.front ?? 'bottom';
-    front.addEventListener('change', () => table({ table: { front: front.value === 'bottom' ? null : front.value } }));
-    physical.append(field('Visitors stand at', front, 'The side of the projected picture nearest the visitors. Ribbons go there first, because the model hides what is behind it.'));
-    const ribbons = el('div', 'ed-ribbon-sides');
-    const value = (ribbon: unknown): string => (ribbon === undefined || ribbon === null ? '' : typeof ribbon === 'string' ? ribbon : String((ribbon as { cm: number }).cm));
-    for (const [side, label] of SIDES) {
-      const pick = el('select');
-      pick.ariaLabel = `${label} ribbon`;
-      for (const [v, text] of [
-        ['', 'Default'],
-        ['off', 'Off'],
-        ['auto', 'If room'],
-        ['6', '6 cm'],
-        ['9', '9 cm'],
-        ['12', '12 cm'],
-        ['15', '15 cm'],
-      ]) pick.append(Object.assign(el('option'), { value: v, textContent: text }));
-      const now = value((t.ribbons as Record<string, unknown> | undefined)?.[side]);
-      if (now && ![...pick.options].some((o) => o.value === now)) pick.append(Object.assign(el('option'), { value: now, textContent: `${now} cm` }));
-      pick.value = now;
-      pick.addEventListener('change', () => {
-        const v = pick.value;
-        table({ table: { ribbons: { [side]: v === '' ? null : v === 'off' || v === 'auto' ? v : { cm: Number(v) } } } });
-      });
-      const row = el('div', 'ed-ribbon-side');
-      row.append(el('span', undefined, label), pick);
-      ribbons.append(row);
-    }
-    physical.append(field('Ribbons', ribbons, 'The strips of the projected picture beside the model that show the open layer at a glance. Default puts one at the visitors’ side when there is room; If room tries this side too.'));
-  }
-
-  // ---- On the controller ----
   const look = el('section', 'ed-section');
   const b = site.branding;
-  const title = text(b.title, 80, site.name, (value) => table({ branding: { title: value } }));
-  const welcome = text(b.welcome, 160, 'Choose a layer to bring it to the table.', (value) => table({ branding: { welcome: value } }));
-  const logo = logoPicker(b.logo ?? null, (value) => table({ branding: { logo: value } }));
+  const title = setting('controller.title', 'dialog:welcome', text(b.title, 80, site.name, (value) => table({ branding: { title: value } })));
+  const welcome = setting('controller.welcome', 'dialog:welcome', text(b.welcome, 160, 'Choose a layer to bring it to the table.', (value) => table({ branding: { welcome: value } })));
+  const logo = setting('controller.logo', 'dialog:welcome', logoPicker(b.logo ?? null, (value) => table({ branding: { logo: value } })));
   const number = (value: number | undefined, min: number, max: number, unit: string, onChange: (value: number) => void) => {
     const box = el('div', 'ed-number');
     const input = el('input');
@@ -270,23 +234,14 @@ export function tableSettings(host: TableSettingsHost): HTMLElement[] {
     box.append(input, el('span', undefined, unit));
     return box;
   };
-  const idle = number(site.tv?.idle_reset_s ?? 180, 0, 3600, 's, 0 never', (s) => tv({ idle_reset_s: s }));
-  const loop = number(site.tv?.attract_s ?? 4, 2, 30, 's per layer', (s) => tv({ attract_s: s }));
+  const idle = setting('controller.idle', 'dialog:welcome', number(site.tv?.idle_reset_s ?? 180, 0, 3600, 's, 0 never', (s) => tv({ idle_reset_s: s })));
+  const loop = setting('controller.loop', 'dialog:welcome', number(site.tv?.attract_s ?? 4, 2, 30, 's per layer', (s) => tv({ attract_s: s })));
   // Phones turn layers on and off unless the table says not (#335).
-  const phones = el('input');
+  const phones = setting('controller.phones', 'dialog:welcome', el('input'));
   Object.assign(phones, { type: 'checkbox', checked: site.tv?.phone_switch !== false });
   phones.addEventListener('change', () => tv({ phone_switch: phones.checked ? null : false }));
-  const theme = el('div', 'ed-place');
-  const themeName = site.tv?.theme_name;
-  theme.append(el('span', undefined, themeName ? `${themeName[0]!.toUpperCase()}${themeName.slice(1)} theme` : 'Your own colours'));
-  const toDesign = el('button', 'ed-button', 'Design…');
-  toDesign.type = 'button';
-  toDesign.title = 'The controller’s theme, accent colour and buttons are on the Design tab';
-  toDesign.addEventListener('click', () => host.design());
-  theme.append(toDesign);
   look.append(
     el('h3', undefined, 'On the controller'),
-    field('Look', theme),
     field('Title', title),
     field('Welcome', welcome, 'Under the title when nobody is using the table.'),
     field('Logo', logo, 'Shown above the title on the controller’s welcome screen and on phones.'),
@@ -297,7 +252,7 @@ export function tableSettings(host: TableSettingsHost): HTMLElement[] {
 
   // ---- Languages for visitors (#80) ----
   const speech = el('section', 'ed-section');
-  const languages = el('select');
+  const languages = setting('controller.languages', 'dialog:welcome', el('select'));
   for (const [value, label] of [
     ['en', 'English only'],
     ['en,sv', 'English and Swedish, starting in English'],
@@ -307,7 +262,7 @@ export function tableSettings(host: TableSettingsHost): HTMLElement[] {
   }
   const offeredNow = (b.languages ?? []).join(',');
   languages.value = ['en,sv', 'sv,en'].includes(offeredNow) ? offeredNow : 'en';
-  const words = swedishWords(store, (translations) => table({ branding: { translations: { ...(store.state.site.branding.translations ?? {}), sv: translations } } }));
+  const words = setting('controller.translations', 'dialog:welcome', swedishWords(store, (translations) => table({ branding: { translations: { ...(store.state.site.branding.translations ?? {}), sv: translations } } })));
   words.hidden = languages.value === 'en';
   languages.addEventListener('change', () => {
     table({ branding: { languages: languages.value.split(',') } });
@@ -318,42 +273,5 @@ export function tableSettings(host: TableSettingsHost): HTMLElement[] {
     field('Visitors read', languages, 'With two languages, SV and EN buttons appear on the controller and the phones. The layers bring their own Swedish; the words this table adds are below.'),
     words,
   );
-
-  // ---- Sources ----
-  const sources = el('section', 'ed-section');
-  const list = el('div', 'ed-sources-used');
-  list.append(el('p', 'ed-empty', 'Looking…'));
-  void send<SourcesUsed>('site.sources', {}).then((used) => {
-    list.replaceChildren();
-    if (!used || used.sources.length === 0) {
-      list.append(el('p', 'ed-empty', 'This table uses no outside sources. Everything it shows is in its folder or free to use.'));
-      return;
-    }
-    for (const { source, layers } of used.sources) {
-      const row = el('div', 'ed-source-row');
-      const badge = el('span', 'ed-row-icon');
-      badge.append(icon('map', 14));
-      const words = el('div');
-      words.append(el('strong', undefined, source), el('span', undefined, `Used by ${layers.map((l) => l.name).join(', ')}`));
-      row.append(badge, words);
-      list.append(row);
-    }
-  });
-  sources.append(el('h3', undefined, 'Sources this table uses'), list);
-  if (host.appSettings) {
-    const manage = el('button', 'ed-button', 'Keys and sources…');
-    manage.type = 'button';
-    manage.title = 'Keys and outside sources belong to this computer: they are app settings';
-    manage.addEventListener('click', () => host.appSettings?.());
-    sources.append(manage);
-  }
-
-  // ---- Where the rest is ----
-  const elsewhere = el('section', 'ed-section');
-  const settingsName = navigator.platform.startsWith('Mac') ? 'MR Studio › Settings…' : 'File › Settings…';
-  elsewhere.append(
-    el('h3', undefined, 'On this computer'),
-    el('p', 'ed-empty', `Screens, colour, calibration, updates, keys and phones on the network are the same for every table on this computer. They are in ${settingsName}`),
-  );
-  return [about, physical, look, speech, sources, elsewhere];
+  return [look, speech];
 }

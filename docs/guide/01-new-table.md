@@ -5,7 +5,7 @@
 1. On **Home**, choose **New table**.
 2. **Name and place.** Give the table a name and find its place: search for an address, or drag the map. The rectangle is the area the table shows; turn it to match how the physical model sits.
 3. **Size.** Enter the table's width and height in centimetres, and the tile size if the model is made of tiles. The area on the map follows the table's shape.
-4. When you finish these steps, the editor opens with the **Setup guide** on the left. It walks through the rest; you can leave it at any time and come back with **Setup guide** in the title bar.
+4. When you finish these steps, the editor opens with the guide on the left. It walks through the rest; **Close guide** leaves it at any time. The guide only starts a table: after that, everything is in the editor, and **Present, Ready to present?** says what is left.
 5. **Your place.** Bring in the buildings, terrain and trees. **Fetch everything from open data**, at the top, gets buildings, streets, walking paths and trees from OpenStreetMap and the ground from free elevation in one go, with a line for each that says how it went and **Try again** on any that failed. Or fetch them one at a time, or import your own files (GeoJSON, GeoTIFF, a 3D model).
 6. **At rest.** Choose what the table shows when nobody has pressed anything: a base map and some life on the streets (traffic, public transport, street life, building lights).
 7. **Layers.** Add the layers that tell your story: sunlight, wind, stormwater, cool paths and the rest. Each layer gets a button on the controller.
@@ -22,16 +22,12 @@ Rather than start blank, start from a table that already works. Point at a card 
 
 ## Change it later
 
-Three of the guide's steps are also tabs on the editor's ribbon, so you never have to walk back through the guide:
+The editor is laid out like PowerPoint: the list of what is on the map on the left, the map and the controller in the middle, and the settings of what you select on the right. The ribbon's tabs hold commands only, so opening a tab never changes what is selected or what the map shows.
 
-- **Name and place** opens the guide's Name and place beside the map: rename the table, or move, resize or turn it on the map. Nothing moves until you press **Move the table** (on the ribbon or under the form); **Put back** forgets the changes. The panel says what a move does: the data you brought in and every layer stay, map pictures are fetched again for the new outline, and if the new outline goes past what your files cover you bring them in again under Your place. **Undo** puts the table back.
-- **At rest** switches each piece of map life on or off from the ribbon, with the descriptions, the base map's style and **Bring in** for missing data in the panel.
-- **Design** has the controller's theme as a gallery and the button style (icons, or icons and names) on the ribbon, and each button's name, description and side in the panel. The controller beside the map is live.
+- **Design, Table size and place…** opens the guide's Name and place as a dialog: rename the table, or move, resize or turn it on the map, with its time zone, where visitors stand and the ribbons below. Nothing moves until you press **Move the table**; **Put back** forgets the changes. The data you brought in and every layer stay, map pictures are fetched again for the new outline, and if the new outline goes past what your files cover you bring them in again. **Undo** puts the table back.
+- **At rest** is the first row of the list, with each piece of map life under it. Its eye turns it on or off; select it to change its settings on the right. **Insert, New layer** adds more map life.
+- **Design** has the controller's theme as a gallery and the button style (icons, or icons and names). Each button's name, description, icon and side are in the Button section of its layer's settings.
 
-Choosing something in the list on the left goes back to the Edit tab and its settings.
-
-![The Design tab](docs/screenshots/311-design.png)
-
-![The Name and place tab, with a change waiting](docs/screenshots/313-name-and-place.png)
+![Table size and place](docs/screenshots/382-table-size-and-place.png)
 
 Tip: everything you change is saved at once, and **Undo** (Ctrl+Z, or ⌘Z on a Mac) takes it back.

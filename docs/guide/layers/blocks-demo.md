@@ -18,4 +18,4 @@ Seeing what the building blocks can do before you make a layer of your own. It i
 
 ## Tips
 
-- To make your own layer like this, use **New layer** under **Make your own** on the Edit tab.
+- To make your own layer like this, use **Custom layer** on the Insert tab.
