@@ -549,13 +549,11 @@ async function main() {
     await tv.keyboard.press('PageDown');
     await dev.getByText('from the south').waitFor(slow);
     // A tap on the dial turns it there: tapped at the dial's top, the wind comes from the table's top.
-    // The dial is drawn anew on every update, so its box is read in one step: a box asked for
-    // after the wait can find the ring already replaced (null).
-    const dial = await windHero.locator('.wind-hero-ring').evaluate((ring) => {
-      const { x, y, width, height } = ring.getBoundingClientRect();
-      return { x, y, width, height };
-    });
-    await tv.mouse.click(dial.x + dial.width / 2, dial.y + 2);
+    // The dial is drawn anew on every update, so the click goes through the locator, which finds
+    // the ring as it is at that moment, rather than through a box read earlier.
+    const ring = windHero.locator('.wind-hero-ring');
+    const { width } = await ring.evaluate((r) => r.getBoundingClientRect());
+    await ring.click({ position: { x: width / 2, y: 2 }, force: true });
     await windHero.locator('.wind-hero-dial[aria-valuenow="0"]').waitFor();
     await dev.getByText('from the north').waitFor(slow);
     if (shots) await tv.screenshot({ path: path.join(shots, 'tv-wind.png') });
@@ -593,8 +591,8 @@ async function main() {
       await tv.waitForTimeout(ms);
       await tv.mouse.up();
     };
-    await hold('Isovist', 1100);
-    await lit('Isovist', true);
+    await hold('Mobility', 1100);
+    await lit('Mobility', true);
     await lit('Sunlight', false);
     await lit('Wind', true);
     // Letting go before the ring closes adds nothing, and doesn't open the layer either.
@@ -605,7 +603,7 @@ async function main() {
     await tv.locator('.layer-button', { hasText: 'Sunlight' }).click();
     await lit('Sunlight', true);
     await lit('Wind', false);
-    await lit('Isovist', false);
+    await lit('Mobility', false);
     assert.ok(await pair.isHidden());
     // The slideshow never shares the table: Shift-click opens it alone.
     await tv.locator('.layer-button', { hasText: 'Slideshow' }).click({ modifiers: ['Shift'] });
