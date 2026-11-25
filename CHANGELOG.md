@@ -4,6 +4,80 @@ Every merge to main that carries a release note becomes a version. The newest is
 The app shows these notes, with their pictures, on Home when a newer version is out.
 How notes are written: docs/RELEASING.md.
 
+## 0.40.0 (2026-11-25)
+
+### New
+
+#### Click the map to select a layer (#425)
+
+A click on the editor's map selects what drew there, as in a drawing program: the topmost layer with a mark, a shape, a map feature or a field under the pointer. An item opens in its layer, and map life selects its row under At rest. A layer that reads clicks itself, such as CoolPaths' ends or Sunlight's spot, keeps them while it is open, and a drag or a pan is not a pick. Layers need no changes: the table finds the pixels each layer drew.
+
+![Lit buildings selected by a click on the map](docs/screenshots/425-map-pick.png)
+
+#### One authoring page, numbers in the visitors' language, and a drawing that follows its frame (#87, #397, #405, #426)
+
+The old scene composer is retired: `/compose` now opens the editor, the one place to author a table.
+
+Visitors' screens write numbers in their language: **5,0 m/s** in Swedish, 5.0 m/s in English, with 270° and the 24-hour clock in both. Typed numbers read with a point or a comma. One formatter in the SDK does it for the controls, the controller tiles, Sunlight and Cool paths.
+
+![A phone in Swedish](docs/screenshots/397-swedish-phone.png)
+
+Moving a Masterplan drawing by its frame, the drawing itself follows the hand before the table redraws it. Arrow keys nudge it (Shift for larger steps), **[** and **]** turn it, **+** and **−** scale it, and the frame's buttons sit below the table so they never cover its handles.
+
+![The drawing follows its frame](docs/screenshots/405-drawing-drag.png)
+
+The editor's end-to-end check now runs on every pull request.
+
+#### Room for the map, a phone beside it, several layers at once, and a sharper search (#388, #389, #399, #464)
+
+**Shrink controller**, on the controller's caption, docks it as a small live picture in the corner so the map gets the canvas; click the picture to enlarge it again.
+
+![The controller docked small](docs/screenshots/388-controller-small.png)
+
+**View › Phone** shows a visitor's phone beside the map, live.
+
+![A phone beside the map](docs/screenshots/389-phone.png)
+
+Ctrl-click (⌘-click on a Mac) or Shift-click selects several layers in the list; Show, Hide and Remove act on all of them. A table with no layers shows **Insert a layer** on the map, and dialogs order their buttons the way each platform does.
+
+![Two layers selected](docs/screenshots/399-multi.png)
+
+![An empty table](docs/screenshots/399-empty.png)
+
+Search (Ctrl+K or ⌘K) puts the exact match first, then names that start with or hold what you typed, and leaves out matches that only come from a description once a name matches.
+
+![Searching for field walk](docs/screenshots/464-search.png)
+
+#### File › Version history… (#395)
+
+**File › Version history…** lists every saved version of the table on this computer: who made it, when, and **What changed**, such as "Wind: wind speed 5 → 8 m/s" or "Added Sun study". **Go back** restores one as a new version on top, so nothing is lost and Undo takes it back. An AI assistant can do the same through the MCP server's `list_versions` and `restore_version`.
+
+![Version history](docs/screenshots/395-version-history.png)
+
+### Fixes
+
+#### The guide stays open behind a fix, starter tables in Design, and Settings… under File on a Mac (#469, #470)
+
+A fix opened from the setup guide, such as **Write a welcome**, opens its dialog over the guide; closing it brings you back to where you were. **Design › Starter tables…** opens the guide at *Start from…* on any table, so Climate, Movement, Story and Blank are there after the guide is closed.
+
+![Starter tables](docs/screenshots/469-starters.png)
+
+On a Mac, **Settings…** is under File as well as in the MR Studio menu (⌘,). **Table size and place…** opens at the large dialog size.
+
+![Table size and place](docs/screenshots/470-place.png)
+
+#### Two authors at once (#396)
+
+When an AI assistant, another editor window or the controller changes the table while you edit it, the list, the canvas and the Format pane update in place. The field you are typing in is never replaced: a notice offers the other value (**Use theirs**), and yours is kept when you finish.
+
+![A name changed elsewhere while typing](docs/screenshots/396-two-authors.png)
+
+#### A larger Welcome and languages dialog (#468)
+
+**Design › Welcome and languages…** opens at the large dialog size, so the welcome, the languages and the translations have room, and its tick box lines up with the other fields.
+
+![Welcome and languages](docs/screenshots/468-welcome.png)
+
 ## 0.39.0 (2026-11-25)
 
 ### New
