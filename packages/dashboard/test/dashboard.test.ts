@@ -10,6 +10,7 @@ import { GRID, SCREEN, SIZES } from '../src/rules.ts';
 import { contrast, STYLE_TOKENS, themeVariables, validateTheme } from '../src/theme.ts';
 import { controlProblems, panelReads, validateLayerPanels, validatePage, validatePanel, validateRibbon } from '../src/validate.ts';
 import { defineWidget } from '../src/registry.ts';
+import { colourFeatures, rampColour, valueOf } from '../src/widgets/map.ts';
 import { coreWidgets, donutParts, entityAt, gaugeShare, mediaUrl } from '../src/widgets/index.ts';
 
 const json = (path: string) => JSON.parse(readFileSync(new URL(path, import.meta.url), 'utf8'));
@@ -309,4 +310,31 @@ test('every core widget has an example that passes the rules at every size it ta
       assert.deepEqual(issues, [], `${widget.type} at ${size}`);
     }
   }
+});
+
+test('a map colours its features by data (#374)', () => {
+  const slot = (n: number) => `slot${n}`;
+  // Numbers follow the ramp from the smallest to the largest value.
+  const ramp = colourFeatures({ property: 'h', ramp: ['#000000', '#ffffff'] }, [0, 5, 10, undefined], slot);
+  assert.deepEqual(ramp, ['rgb(0 0 0)', 'rgb(128 128 128)', 'rgb(255 255 255)', undefined]);
+  assert.equal(rampColour(['#000000', '#ffffff'], 2), 'rgb(255 255 255)', 'clamped');
+  assert.match(rampColour('viridis', 0.5), /^rgb\(/);
+  // Categories: a slot number or a CSS colour; values not listed get none.
+  assert.deepEqual(colourFeatures({ entity: 'use', categories: { a: 2, b: 'red' } }, ['a', 'b', 'c'], slot), ['slot2', 'red', undefined]);
+  // Without categories each new value takes the next slot.
+  assert.deepEqual(colourFeatures({ property: 'kind' }, ['x', 'y', 'x', true], slot), ['slot1', 'slot2', 'slot1', 'slot3']);
+  // Where the value comes from.
+  const f = { id: 'b1', props: { kind: 'shop' }, geometry: { type: 'Point', coordinates: [0, 0] } };
+  const set = { id: 'buildings', dataset: 'buildings', key: 'id', controls: [{ id: 'use', type: 'select', label: 'Use', default: 'home', options: [] }] } as never;
+  assert.equal(valueOf({ property: 'kind' }, f, undefined, undefined, undefined), 'shop');
+  assert.equal(valueOf({ entity: 'use' }, f, set, { entities: { buildings: { b1: { use: 'office' } } } }, undefined), 'office');
+  assert.equal(valueOf({ entity: 'use' }, { ...f, id: 'b2' }, set, {}, undefined), 'home');
+  assert.equal(valueOf({ shared: 'load' }, f, undefined, undefined, { load: { b1: 0.4 } }), 0.4);
+});
+
+test('a colour rule names one source (#374)', () => {
+  const map = (by: unknown) => rules({ id: 'm', widget: 'map', size: 'block', title: 'Map', props: { fill_by: by } } as PanelSpec);
+  assert.deepEqual(map({ entity: 'use' }), []);
+  assert.ok(map({ entity: 'use', property: 'kind' }).length > 0);
+  assert.ok(map({ property: 'h', ramp: ['#000'] }).length > 0);
 });

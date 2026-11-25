@@ -389,6 +389,8 @@ Events:
 
 `session.performance` is whether the table and the controller show the frame meter (#262, Frame budget), false when a session starts. `session.performance { on }` switches it, from the editor or the controller, and the host sends `session.changed`.
 
+`session.tables` is how many views draw the table and run its layers now (`table` and `dev` surfaces, #412). Layers publish their legend and live values only from such a view, so with none the controller says "Open the table to see live values here." The host sends `session.changed` when it changes. `session.phones_paused` is true while the operator has paused the phones (#335).
+
 `session.sound` is whether the table plays sound, true when the session starts (#282). `session.sound { on }` switches it, from the controller (the **Sound** button under Map controls), the editor or the guide, and the host sends `session.changed`. While it is false the table plays nothing: no voice beds (layer.md, Sound voices) and no sounds on points; what follows the sound on the map carries on.
 
 `session.ribbon` is the layer whose ribbon the table shows, or null for Auto (the layer turned on last that has ribbon panels), null when the session starts (#231). `session.ribbon { layer }` sets it, from the controller (the **Ribbon** button under Map controls, shown when more than one open layer has ribbon panels), the dev page or the guide; the layer must be on the table. The host sends `session.changed`. The controller sets it back to null when that layer closes (present.md, Ribbon).

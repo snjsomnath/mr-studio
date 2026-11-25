@@ -1,5 +1,5 @@
-import { controlProblems, DashboardView, validateLayerPanels, validatePage } from '@mrstudio/dashboard';
-import type { PanelInput } from '@mrstudio/dashboard';
+import { controlProblems, DashboardView, LOOK_ATTRIBUTES, resolveProps, themeVariables, validateLayerPanels, validatePage, validatePanel } from '@mrstudio/dashboard';
+import type { PanelInput, WidgetDefinition, WidgetHandle } from '@mrstudio/dashboard';
 import type { Connection, LayerManifest, PanelContext, PanelControls, PanelLayer, PanelSpec, StageLayout } from '@mrstudio/sdk';
 
 import { say, t } from './i18n.ts';
@@ -91,6 +91,7 @@ export function mountDashboard(root: HTMLElement, store: Store, connection: Conn
  * with the layer's own widgets, controls and map. Panels with `at` stay put; the rest are laid out.
  */
 export function mountStage(el: HTMLElement, store: Store, connection: Connection, id: string, layout: StageLayout): { sync(): void; dispose(): void } {
+  if (layout.map) return mountMapStage(el, store, connection, id, layout);
   const manifest = store.manifest(store.state.layers[id]?.layer ?? '');
   const view = new DashboardView(el, { registry: widgets, rotateS: 60, empty: '' });
   view.setTheme(store.state.site.tv?.theme);
@@ -106,6 +107,102 @@ export function mountStage(el: HTMLElement, store: Store, connection: Connection
     dispose: () => {
       stopTheme();
       view.destroy();
+    },
+  };
+}
+
+/** Sizes a panel beside a stage's map may take, and how many (#374). */
+export const STAGE_MAP_PANELS = { sizes: ['chip', 'tile'], max: 4 } as const;
+
+/**
+ * A stage that is a map (#374): the map widget fills the centre, and up to four small panels
+ * sit in a strip along its bottom edge, so the numbers stay beside the map without covering it.
+ */
+function mountMapStage(el: HTMLElement, store: Store, connection: Connection, id: string, layout: StageLayout): { sync(): void; dispose(): void } {
+  const manifest = store.manifest(store.state.layers[id]?.layer ?? '');
+  el.classList.add('stage-map-layout');
+  const root = document.createElement('div');
+  root.className = 'stage-map mrs-dash';
+  const body = document.createElement('div');
+  body.className = 'stage-map-body';
+  const strip = document.createElement('div');
+  strip.className = 'stage-map-strip';
+  root.append(body, strip);
+  el.append(root);
+  const applyTheme = (theme: Record<string, unknown> | null | undefined) => {
+    for (const [name, value] of Object.entries(themeVariables(theme).variables)) {
+      if (LOOK_ATTRIBUTES[name]) root.dataset[LOOK_ATTRIBUTES[name]!] = value;
+      else root.style.setProperty(name, value);
+    }
+  };
+  applyTheme(store.state.site.tv?.theme);
+  const stopTheme = store.onTv((tv) => applyTheme(tv?.theme));
+
+  const mounted: { input: PanelInput; widget: WidgetDefinition; handle: WidgetHandle; el: HTMLElement }[] = [];
+  const place = (spec: PanelSpec, into: HTMLElement, className: string) => {
+    const issues = validatePanel(spec, widgets, `stage.${spec.id}`);
+    for (const issue of issues) console.warn(`[${id}] ${issue.path} ${issue.message}`);
+    if (issues.length) return;
+    const input = panelInput(store, connection, id, spec, `${id}/stage/${spec.id}`);
+    const widget = widgets.get(spec.widget)!;
+    const panel = document.createElement('section');
+    panel.className = `mrs-panel mrs-size-${spec.size} ${className}`;
+    panel.dataset.widget = widget.type;
+    // The map sits under the layer's name, so it shows no title of its own.
+    if (spec.title && into !== body) {
+      const title = document.createElement('h2');
+      title.className = 'mrs-panel-title';
+      title.textContent = spec.title;
+      panel.append(title);
+    }
+    const inner = document.createElement('div');
+    inner.className = 'mrs-panel-body';
+    panel.append(inner);
+    into.append(panel);
+    try {
+      mounted.push({ input, widget, el: panel, handle: widget.mount(inner, { size: spec.size, custom: input.custom, controls: input.controls, layer: input.layer }) });
+    } catch (error) {
+      console.error(`[${input.key}] stage panel failed to mount`, error);
+      panel.remove();
+    }
+  };
+  place({ id: 'map', widget: 'map', size: 'hero', title: manifest?.name ?? 'Map', props: { zoom: true, ...layout.map } }, body, 'stage-map-panel');
+  const floating = withTeamWidgets(manifest?.id ?? '', layout.panels ?? []);
+  floating.forEach((spec, index) => {
+    if (index >= STAGE_MAP_PANELS.max) return console.warn(`[${id}] stage.${spec.id} a map stage holds ${STAGE_MAP_PANELS.max} panels, this is one more`);
+    if (!(STAGE_MAP_PANELS.sizes as readonly string[]).includes(spec.size)) return console.warn(`[${id}] stage.${spec.id} a panel beside the map is chip or tile, never ${spec.size}`);
+    place(spec, strip, 'stage-map-float');
+  });
+  for (const problem of controlProblems(floating, controlIds(manifest))) console.warn(`[${id}] stage ${problem}`);
+  const sync = () => {
+    for (const { input, widget, handle, el: panel } of mounted) {
+      const source = input.source();
+      const when = input.spec.visibleWhen;
+      panel.hidden = when ? !Object.entries(when).every(([k, v]) => (Array.isArray(v) ? v.includes(source.params[k]) : source.params[k] === v)) : false;
+      if (panel.hidden) continue;
+      try {
+        handle.update(resolveProps(widget, input.spec.props, input.spec.size, source));
+      } catch (error) {
+        console.error(`[${input.key}] stage panel failed`, error);
+      }
+    }
+    strip.hidden = !mounted.some((m) => m.el.parentElement === strip && !m.el.hidden);
+  };
+  sync();
+  return {
+    sync,
+    dispose: () => {
+      stopTheme();
+      for (const { input, handle } of mounted.splice(0)) {
+        try {
+          handle.destroy?.();
+          input.onRemove?.();
+        } catch (error) {
+          console.error(`[${input.key}] stage panel failed to clean up`, error);
+        }
+      }
+      root.remove();
+      el.classList.remove('stage-map-layout');
     },
   };
 }
@@ -160,6 +257,12 @@ function panelLayer(store: Store, connection: Connection, layer: string, touch: 
     },
     get selection() {
       return base.selection;
+    },
+    get params() {
+      return store.state.layers[layer]?.params;
+    },
+    get shared() {
+      return store.state.layers[layer]?.shared;
     },
     select: (set, id) => touch && base.select(set, id),
     sendTool: (tool, geometry) => (touch ? base.sendTool(tool, geometry) : Promise.resolve()),

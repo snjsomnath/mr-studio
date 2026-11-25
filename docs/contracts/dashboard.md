@@ -124,8 +124,24 @@ A `map` panel is the site's map with no code: the same map a layer's own stage g
     "entities": "buildings",                      // a tap picks one of the layer's entities (#279), drawn picked
     "tool": "start",                              // or: a tap sends a point to one of the layer's tools
     "shapes": { "bind": "shared.route" },         // GeoJSON the layer publishes, drawn on top in the accent
+    "tap_action": "travel",                       // or: a tap presses one of the layer's named actions
+    "zoom": true,                                 // drag and pinch zoom; Reset frames the table again
+    "fill_by": { "entity": "use", "categories": { "housing": 1, "offices": 2 } },   // colour by data (#374)
+    "stroke_by": { "shared": "load", "ramp": "magma" },
+    "labels": "name",                             // a feature property written on each feature (at most 60)
     "hint": "Tap a building to change it" } }
 ```
+
+**Colouring by data (#374).** `fill_by` and `stroke_by` colour every feature of the entity set's
+dataset (else `dataset`, else the first of `data`) by one value:
+
+- exactly one of `property` (the feature's own property), `entity` (an entity control's value,
+  as visitors change it) or `shared` (a map of feature id to value the layer publishes, such as
+  `{ "b12": 0.4 }`). A feature's id is the entity set's key, else its `id`.
+- numbers follow `ramp`: a colour ramp's name or a list of two or more CSS colours, from `min`
+  to `max` (default: the values' own range).
+- anything else uses `categories`, value to a data slot 1 to 6 or a CSS colour; values not
+  listed get no colour. Without `categories` each new value takes the next data slot.
 
 The table's outline is always drawn. A tap reaches the table the way the controller's own does
 (`layer.select`, `tool.input`), so the table marks a picked entity and the controller shows its

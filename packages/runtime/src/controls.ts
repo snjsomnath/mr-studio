@@ -568,8 +568,21 @@ function fullScreen(): void {
     window.location.href = '/__shell/fullscreen';
     return;
   }
-  if (document.fullscreenElement) void document.exitFullscreen().catch(() => {});
-  else void document.documentElement.requestFullscreen().catch(() => {});
+  // Safari before 16.4 and WKWebView spell it with a prefix, or have none at all (#420).
+  const page = document as Document & { webkitFullscreenElement?: Element | null; webkitExitFullscreen?: () => void };
+  const root = document.documentElement as HTMLElement & { webkitRequestFullscreen?: () => void };
+  if (document.fullscreenElement ?? page.webkitFullscreenElement) {
+    if (document.exitFullscreen) void document.exitFullscreen().catch(() => {});
+    else page.webkitExitFullscreen?.();
+  } else if (root.requestFullscreen) void root.requestFullscreen().catch(() => {});
+  else root.webkitRequestFullscreen?.();
+}
+
+/** Whether this page can go full screen: in the app's shell, or a browser that offers it (#420). */
+function canFullScreen(): boolean {
+  if ((window as { __MRS_SHELL__?: boolean }).__MRS_SHELL__) return true;
+  const root = document.documentElement as HTMLElement & { webkitRequestFullscreen?: () => void };
+  return typeof root.requestFullscreen === 'function' || typeof root.webkitRequestFullscreen === 'function';
 }
 
 /**
@@ -1256,7 +1269,12 @@ export class Controller {
     const sounds = soundZone(id, store, connection);
     const busy = busyZone(store);
     const entities = entityZone(id, manifest, store, connection);
-    body.append(words, troubleLine, busy.element, strip.element);
+    // With no table window open, no layer runs, so nothing publishes its legend or live values (#412).
+    const noTable = el('p', 'stage-no-table', t('Open the table to see live values here.'));
+    const showNoTable = () => (noTable.hidden = store.state.session.tables !== 0);
+    showNoTable();
+    store.onParticipants(showNoTable);
+    body.append(words, troubleLine, busy.element, noTable, strip.element);
     if (!hero.hidden) body.append(hero);
     // The picked entity's own controls come before the layer's, as the thing in hand (#279).
     if (!entities.element.hidden) body.append(entities.element);
@@ -1527,7 +1545,8 @@ export class Controller {
     if (operator) box.append(el('div', 'rail-group', t('Map controls')));
     action(operator ? t('Reset view') : t('Reset'), 'reset', () => this.reset());
     if (operator) {
-      action(t('Full screen'), 'fullscreen', () => fullScreen());
+      // A page that cannot fill the screen (an embedded preview) shows no button that does nothing.
+      if (canFullScreen()) action(t('Full screen'), 'fullscreen', () => fullScreen());
       // Calibrate opens the projector calibration on the table, and closes it again.
       let calibrating = false;
       const calibrate = action(t('Calibrate'), 'overscan', () => {
