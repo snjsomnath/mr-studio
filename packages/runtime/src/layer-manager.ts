@@ -23,6 +23,15 @@ export function isAtRest(manifest: LayerManifest, state: LayerState | undefined)
   return Boolean(state?.rest && !state.parent && !manifest.alongside);
 }
 
+/**
+ * The order the table stacks the scene's layers in, bottom first: the scene's own order, except
+ * that base maps always lie under everything else (#471), wherever the scene has them.
+ */
+export function stackOrder(store: { state: { layers: Record<string, { layer: string } | undefined> }; manifest(id: string): LayerManifest | undefined }, scene: readonly string[]): string[] {
+  const base = (id: string) => store.manifest(store.state.layers[id]?.layer ?? '')?.category === 'base';
+  return [...scene.filter(base), ...scene.filter((id) => !base(id))];
+}
+
 interface Running {
   handlers: TableHandlers;
   /** Entity changes waiting for their set's `debounce_ms` of quiet (#279), by set. */
@@ -240,14 +249,14 @@ export class LayerManager {
     this.view = view;
     this.engine = new EngineClient(connection);
     this.cues = new Cues(view);
-    view.setOrder(store.state.scene);
+    view.setOrder(stackOrder(store, store.state.scene));
     store.onLayer((id, state, previous) => this.sync(id, state, previous));
     store.onRemoved((id) => {
       this.forget(id, false);
       this.stop(id);
       view.dropSlot(id);
     });
-    store.onScene((scene) => view.setOrder(scene));
+    store.onScene((scene) => view.setOrder(stackOrder(store, scene)));
     for (const id of store.state.scene) this.sync(id, store.layer(id), undefined);
     connection.on('layer.action', (p: { layer: string; action: string; participant?: Sender }) => this.running.get(p.layer)?.handlers.action?.(p.action, p.participant));
     // Retry from the editor or the controller: a layer in trouble starts again now.
