@@ -549,11 +549,14 @@ async function main() {
     await tv.keyboard.press('PageDown');
     await dev.getByText('from the south').waitFor(slow);
     // A tap on the dial turns it there: tapped at the dial's top, the wind comes from the table's top.
-    // The dial is drawn anew on every update, so the click goes through the locator, which finds
-    // the ring as it is at that moment, rather than through a box read earlier.
-    const ring = windHero.locator('.wind-hero-ring');
-    const { width } = await ring.evaluate((r) => r.getBoundingClientRect());
-    await ring.click({ position: { x: width / 2, y: 2 }, force: true });
+    // The dial is drawn anew on every update, so a ring found in one step can be gone by the next and
+    // measure 0 × 0, sending the tap to the dial's corner (#590). Where its top is comes from the ring
+    // on the page in one go; the place stays the same however often the dial is redrawn.
+    const top = await windHero.evaluate((hero) => {
+      const box = hero.querySelector('.wind-hero-ring').getBoundingClientRect();
+      return { x: box.left + box.width / 2, y: box.top + 2 };
+    });
+    await tv.mouse.click(top.x, top.y);
     await windHero.locator('.wind-hero-dial[aria-valuenow="0"]').waitFor();
     await dev.getByText('from the north').waitFor(slow);
     if (shots) await tv.screenshot({ path: path.join(shots, 'tv-wind.png') });
