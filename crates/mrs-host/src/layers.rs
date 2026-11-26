@@ -568,6 +568,20 @@ fn custom_manifest(id: &str, recipe: &mrs_site::CustomLayer) -> Value {
         if let Some(controls) = manifest["controls"].as_array_mut() {
             controls.extend(extra);
         }
+        // A series that announces changes (#338) puts its words on the controller, never on the table.
+        let announces = recipe
+            .motion
+            .iter()
+            .any(|m| m.block == "network" && m.props.get("note").and_then(Value::as_str).is_some_and(|n| !n.trim().is_empty()));
+        if announces {
+            let note = serde_json::json!({ "id": "network-note", "widget": "text", "size": "wide", "title": "What changed",
+                "props": { "body": { "bind": "shared.network_note" } } });
+            match manifest["panels"].as_array_mut() {
+                Some(panels) if !panels.iter().any(|p| p["id"] == "network-note") => panels.push(note),
+                None => manifest["panels"] = serde_json::json!([note]),
+                _ => {}
+            }
+        }
     }
     manifest
 }
@@ -1017,5 +1031,12 @@ mod tests {
         assert_eq!(time["shows"], json!("network_time"));
         let plain: mrs_site::CustomLayer = serde_json::from_value(json!({ "name": "Dots" })).unwrap();
         assert!(custom_def("dots", &plain).unwrap().validate(&patch(json!({ "network_at": 1 })), false).is_err());
+        // Only a network that announces changes gets the controller's words for them (#338).
+        assert!(def.manifest["panels"].as_array().is_none_or(|p| !p.iter().any(|p| p["id"] == "network-note")));
+        let mut announcing = recipe.clone();
+        announcing.motion[0].props.insert("note".into(), json!("note"));
+        let def = custom_def("energy", &announcing).unwrap();
+        let panel = def.manifest["panels"].as_array().unwrap().iter().find(|p| p["id"] == "network-note").unwrap();
+        assert_eq!(panel["props"]["body"]["bind"], json!("shared.network_note"));
     }
 }
