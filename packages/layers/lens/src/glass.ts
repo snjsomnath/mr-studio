@@ -23,8 +23,6 @@ export interface GlassLook {
 
 export function drawGlass(g: CanvasRenderingContext2D, look: GlassLook): void {
   const [x, y] = look.centre;
-  // A glass with no size (its layer hidden, or the table not laid out yet) draws nothing (#553).
-  if (!(look.radius > 0) || !Number.isFinite(look.radius) || !Number.isFinite(x) || !Number.isFinite(y)) return;
   const r = Math.max(2, look.radius);
   const a = Math.max(0, Math.min(1, look.arrival));
   const breath = 0.88 + 0.12 * Math.sin((look.time * Math.PI) / 4);
@@ -73,12 +71,9 @@ export function drawGlass(g: CanvasRenderingContext2D, look: GlassLook): void {
   g.beginPath();
   g.arc(x, y, r + 2 * line, Math.PI * 1.1, Math.PI * 1.65);
   g.stroke();
-  // The faint ring inside, while the glass is large enough to have an inside (#553).
-  if (r > 3 * line) {
-    g.lineWidth = 0.75 * line;
-    g.strokeStyle = 'rgb(255 226 170 / 0.16)';
-    g.beginPath();
-    g.arc(x, y, r - 3 * line, 0, Math.PI * 2);
-    g.stroke();
-  }
+  g.lineWidth = 0.75 * line;
+  g.strokeStyle = 'rgb(255 226 170 / 0.16)';
+  g.beginPath();
+  g.arc(x, y, r - 3 * line, 0, Math.PI * 2);
+  g.stroke();
 }
