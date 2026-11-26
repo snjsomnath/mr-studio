@@ -891,6 +891,13 @@ async fn calibration_is_saved_shared_and_survives_a_restart() {
     // Any controller can ask the table to open its calibration tool.
     dev.request("calibration.mode", json!({ "active": true })).await.unwrap();
     assert_eq!(table.event("calibration.mode").await["active"], true);
+    // The tool's panel lives on the controller (#594): the table says where it is, the controller answers.
+    table.request("calibration.state", json!({ "index": 2, "count": 10 })).await.unwrap();
+    assert_eq!(dev.event("calibration.state").await["index"], 2);
+    dev.request("calibration.command", json!({ "action": "nudge", "dx": 1, "dy": 0 })).await.unwrap();
+    assert_eq!(table.event("calibration.command").await["action"], "nudge");
+    assert!(dev.request("calibration.command", json!({ "action": "explode" })).await.is_err());
+    assert!(phone.request("calibration.command", json!({ "action": "next" })).await.is_err());
     host.shutdown().await;
 
     let file: Value = serde_json::from_str(&std::fs::read_to_string(dir.join("calibration.json")).unwrap()).unwrap();

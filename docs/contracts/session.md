@@ -348,6 +348,8 @@ Requests:
 | `calibration.get` | none | table, tv, dev | Returns `{ projector }`, the saved projector calibration or null (see model.md) |
 | `calibration.set` | `{ projector }` | table, tv, dev | Saves it to the site's `calibration.json` (null clears it) and broadcasts `calibration` |
 | `calibration.mode` | `{ active }` | table, tv, dev | Asks the table to open or close its calibration tool |
+| `calibration.state` | `{ open, index, count, label, status, problem, placed, needed, done, solved, showModel, preview, planKey, plan? }` | table, tv, dev | The table's calibration tool says where it is, broadcast for the controllers' panel (#594, model.md) |
+| `calibration.command` | `{ action, dx?, dy?, index? }` | table, tv, dev | A press on a controller's calibration panel, broadcast for the table's tool. `action` is `sync`, `back`, `next`, `skip`, `select`, `nudge`, `model`, `save` or `flat` |
 | `scene.add` | `{ use, id?, parent?, index?, active?, params? }` | tv, dev | Adds a layer from the catalogue (`use` is its id, or `custom:<id>` for a custom layer) at `index` (default: on top, active). With `parent`, it becomes an item of that layer, at `index` among its items. Returns `{ id }`; without `id` the first copy is named after the layer and later ones `<layer>-2`, `-3`, ... |
 | `scene.remove` | `{ layer }` | tv, dev | Takes a layer, with its items, or one item out of the scene. Steps of a sequence that showed it go too; the answer says how many: `{ dropped_steps }` |
 | `scene.move` | `{ layer, index, parent? }` | tv, dev | Moves a layer (with its items) or an item to `index` in its list: the scene's layers (0 is the bottom), or its layer's items. `parent` moves it into another layer as an item; `parent: null` makes an item a layer of the scene. A layer with items, steps or a button cannot become an item |
@@ -388,6 +390,8 @@ Events:
 | `phone.switched` | `{ layer, active, participant? }` after a phone turned a layer on or off; `participant` is `{ slot, colour, avatar, mood, name }` |
 | `calibration` | `{ projector }` after a calibration was saved or cleared |
 | `calibration.mode` | `{ active }` |
+| `calibration.state` | as the request: the table's calibration tool, for the controllers' panel |
+| `calibration.command` | as the request: a press on a controller's calibration panel |
 | `site.changed` | `{ site: SiteInfo }` after data was imported, or an undo or outside edit changed more than the live keys: the scene is re-baked and the engine and twin already use it. Replace `state.site`; layers that read site data at start need a reload |
 | `history.changed` | `{ revision, head, stepped, can_undo, can_redo }` after every change to site.json, from any writer. `stepped` is true for undo and redo. `revision.surface` is the surface that made it, so an editor can say "changed by someone else" |
 | `site.problem` | `{ message, revision }`: site.json was changed outside MR Studio and does not load. The table keeps what it shows; undo puts the last good version back |

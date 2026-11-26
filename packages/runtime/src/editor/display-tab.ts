@@ -9,6 +9,8 @@ import type { Connection, DisplayQuality, ProjectorCalibration } from '@mrstudio
 
 import { el } from '../controls.ts';
 import { icon } from './icons.ts';
+import { remoteCalibrationPanel } from '../model/calibration-panel.ts';
+import type { CalibrationPanel } from '../model/calibration-panel.ts';
 
 type Invoke = (command: string, args?: object) => Promise<unknown>;
 
@@ -152,6 +154,8 @@ export class DisplayTab {
   private tableShown: boolean | null = null;
   /** Saved while the guide was open, to tick its last step. */
   private savedNow = false;
+  /** The calibration's panel (#594), shown in the guide while the tool is open on the table. */
+  private panel: CalibrationPanel | null = null;
 
   /** `preview` is the editor's map, which shows the chosen display's colour while this tab is open. */
   constructor(invoke: Invoke | undefined, connection: Connection, preview: HTMLElement, openSettings: () => void) {
@@ -384,18 +388,21 @@ export class DisplayTab {
         this.calibrating || this.savedNow,
         shown && !this.calibrating && !this.savedNow,
         'Open the tool on the table',
-        'A cross of light and a small panel appear on the projected table. It needs the buildings or a 3D model of the place.',
+        'A cross of light appears on the projected table, and nothing else covers the map. It needs the buildings or a 3D model of the place.',
         start,
       ),
     );
 
-    // 3. The corners, done on the table itself.
+    // 3. The corners: the cross is on the table, the words and buttons here and on the controller (#594).
+    this.panel ??= remoteCalibrationPanel(this.connection, { compact: true, onChange: () => this.drawCalibration() });
+    const panel = this.calibrating && this.panel.isOpen ? [this.panel.element] : [];
     steps.append(
       step(
         this.savedNow,
         this.calibrating && !this.savedNow,
         'Put the cross on each corner',
-        'The panel on the table names a corner of the model and shows it on a small map. Move the mouse onto the table’s screen and click or drag until the cross’s light sits exactly on that corner of the real model. Arrow keys nudge it; hold Shift for bigger steps. Press Next, or Skip a corner you cannot see.',
+        'The panel below and the controller name a corner of the model and ring it on a small plan. Click or drag on the table’s screen, or use the arrows, until the cross’s light sits exactly on that corner of the real model. Arrow keys nudge it; hold Shift for bigger steps. Press Next, or Skip a corner you cannot see.',
+        ...panel,
       ),
     );
 
@@ -405,7 +412,7 @@ export class DisplayTab {
         this.savedNow,
         false,
         'Save',
-        'After at least 6 of the 10 corners, press Save on the table. The map then follows the model, buildings and all.',
+        'After at least 6 of the 10 corners, press Save. The map then follows the model, buildings and all.',
       ),
     );
 

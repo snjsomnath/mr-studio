@@ -471,6 +471,12 @@ export class ModelView {
     }
   }
 
+  /** The buildings' footprints once they are read, or null when the site has none (or they could not be read). */
+  async footprintsReady(): Promise<Footprint[] | null> {
+    await this.buildingsLoaded;
+    return this.buildings ? this.footprints() : null;
+  }
+
   /** The buildings' footprints, in the form sun shadows take them. */
   private footprints(): Footprint[] {
     // A ring repeats its first point at the end; casters do not need it twice.

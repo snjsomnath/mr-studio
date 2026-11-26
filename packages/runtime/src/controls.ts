@@ -19,6 +19,8 @@ import { PHONE_SEND_INTERVAL, toolSection, wordsField } from './phone-tools.ts';
 import type { Store } from './store.ts';
 import { avatarOf, nameOf } from './avatars.ts';
 import { canJoin, chosenLayers, joinLayer } from './two-layers.ts';
+import { remoteCalibrationPanel } from './model/calibration-panel.ts';
+import type { CalibrationPanel } from './model/calibration-panel.ts';
 
 export function el<K extends keyof HTMLElementTagNameMap>(tag: K, className?: string, text?: string): HTMLElementTagNameMap[K] {
   const node = document.createElement(tag);
@@ -1120,6 +1122,8 @@ export class Controller {
   private focus: string | undefined;
   /** The newest open layer when the centre was last drawn: a layer opened since puts its controls in front. */
   private newest: string | undefined;
+  /** The projector calibration's panel (#594): in the centre while the table's tool is open. */
+  private calibration: CalibrationPanel | undefined;
   /** The chip for the other open layer: press it to swap, × to close it. */
   private pair: { element: HTMLElement; swap: HTMLButtonElement; name: HTMLElement; mark: HTMLElement; close: HTMLButtonElement } | undefined;
   private readonly root: HTMLElement;
@@ -1147,6 +1151,10 @@ export class Controller {
     this.role = role;
     this.about = centre && site.tv?.about ? aboutPage(site.tv.about, heading, site.branding.logo) : undefined;
     if (centre) this.pair = this.pairChip();
+    // The calibration's words and buttons are here, not over the map on the table (#594).
+    if (centre && site.tv?.map_controls !== false) {
+      this.calibration = remoteCalibrationPanel(connection, { onChange: (open) => centre.classList.toggle('is-calibrating', open) });
+    }
     this.arrange();
     this.creditMaps();
     if (centre) {
@@ -1262,7 +1270,14 @@ export class Controller {
       const ids = [...store.state.scene].reverse();
       const kept = (id: string) => Boolean(store.manifest(store.state.layers[id]?.layer ?? '')?.alongside);
       const bodies = [...ids.filter((id) => !kept(id)), ...ids.filter(kept)].flatMap((id) => this.cards.get(id)?.body ?? []);
-      this.centre.replaceChildren(...(this.cue ? [this.cue] : []), this.welcome, ...(this.about ? [this.about] : []), ...(this.pair ? [this.pair.element] : []), ...bodies);
+      this.centre.replaceChildren(
+        ...(this.cue ? [this.cue] : []),
+        ...(this.calibration ? [this.calibration.element] : []),
+        this.welcome,
+        ...(this.about ? [this.about] : []),
+        ...(this.pair ? [this.pair.element] : []),
+        ...bodies,
+      );
       this.rest();
     }
   }

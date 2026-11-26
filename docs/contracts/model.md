@@ -68,12 +68,14 @@ Only `matrix` and `image` are needed to render; the rest is for the tool and for
 
 The tool runs on the table surface, because the person must see the projector's light on the model. It opens with `?calibrate` in the address, with Shift+C on the surface, or when any controller sends the `calibration.mode` request (this is how the desktop shell's calibration tab starts it).
 
-1. The tool proposes ten corners: the four corners of the model's base and six roof corners chosen to be far apart and at different heights. It names each one and rings it on a plan.
-2. The person moves a projected marker (click, drag or arrow keys) until its light sits on that corner of the physical model. A corner that cannot be found is skipped.
+1. The tool proposes ten corners: the four corners of the model's base and six roof corners chosen to be far apart and at different heights. With the site's building footprints (`data.buildings`), the roof corners are real corners of the footprints (outward corners between walls long enough to see, of buildings wholly on the table) at the building's roof height in the twin (#595); without footprints they come from the twin's roofs, which are steps of the height raster. It names each one and rings it on a plan, with the building outlined.
+2. The person moves a projected marker (click or drag on the table, arrow keys, or the panel's arrows) until its light sits on that corner of the physical model. A corner that cannot be found is skipped.
 3. From six placed corners on, the camera is solved after every change (`solveProjector` in the SDK: a direct linear transform, then a refinement that measures the error in pixels). The twin is shown through the solved camera, lit plainly, so the person sees at once whether it lands on the model.
 4. Save sends `calibration.set`. Every surface hears about it and the table switches to the new camera.
 
 The corners must not all lie in one plane, which is why the tool mixes roofs with the base.
+
+The table shows only the marker and the corners already placed (#594): the table stays a picture. The words, the plan and the buttons (Back, Skip, Next, a nudge pad, Show the model, Save, Use flat table, Stop calibrating) are a panel on the controller screen's centre and in the editor's calibration guide. The projected table's tool sends its state with `calibration.state` (which corner, its label, the status line, which corners are placed, whether it is solved, and the plan as a PNG data URL only when it changed); the panels send their presses with `calibration.command { action, dx?, dy?, index? }`, where `action` is `sync` (send the state again, plan and all), `back`, `next`, `skip`, `select`, `nudge`, `model`, `save` or `flat`. When the tool closes it sends a state with `open: false`. A preview window (the developer page) keeps the panel on its own surface and takes no commands. With no controller screen, K on the table shows the same panel in a corner of the table.
 
 **Planned**: two projectors (for example one from each side, to reach walls a single projector cannot) as two cameras on the same twin with a blend mask; a four-corner keystone for flat tables with no model.
 

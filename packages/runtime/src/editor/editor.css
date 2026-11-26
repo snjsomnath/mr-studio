@@ -5563,3 +5563,9 @@ body[data-role='edit'] > .connection {
   border-color: currentColor;
   color: var(--ed-danger, #b3261e);
 }
+
+/* The calibration's panel in the guide's third step (#594) takes the step's whole width. */
+.dt-step-actions > .calibration-remote {
+  flex: 1 1 100%;
+  margin-top: 4px;
+}

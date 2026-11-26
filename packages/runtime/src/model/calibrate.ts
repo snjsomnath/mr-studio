@@ -1,14 +1,20 @@
 import { MIN_CALIBRATION_PAIRS, describeProjector, solveProjector } from '@mrstudio/sdk';
 import type { CalibrationPair, Connection, ModelHandle, ProjectorCalibration, SiteInfo } from '@mrstudio/sdk';
 
+import { CalibrationPanel } from './calibration-panel.ts';
+import type { CalibrationCommand, CalibrationState } from './calibration-panel.ts';
 import { proposeLandmarks, tableAxes } from './landmarks.ts';
 import type { Landmark } from './landmarks.ts';
+import type { Footprint } from './sun-shadows.ts';
 import type { ModelView } from './view.ts';
 
 /** The pseudo layer the tool draws its preview light through. */
 const LAYER = '__calibration';
-const PLAN_WIDTH = 260;
-const PLAN_MARGIN = 10;
+/** The plan is drawn for the controller's screen, where it has room. */
+const PLAN_WIDTH = 480;
+const PLAN_MARGIN = 16;
+/** How often, at most, the tool tells the controllers where it is while the cross is dragged. */
+const STATE_MS = 60;
 
 interface Target extends Landmark {
   /** Where the marker was put, in CSS pixels of the surface. Null until placed. */
@@ -27,6 +33,11 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, className: string, te
  * shows it on a plan; the person moves a projected marker until its light sits on that corner.
  * From six or more such pairs the projector's camera is solved, the twin is shown through it
  * as a check, and the result is saved by the host to calibration.json.
+ *
+ * The table shows only the cross and the corners placed so far (#594): the words, the plan and
+ * the buttons are on the controller, which gets the tool's state as `calibration.state` and
+ * sends its presses back as `calibration.command`. K shows the same panel on the table, for a
+ * table run without a controller.
  */
 export class CalibrationTool {
   private readonly surface: HTMLElement;
@@ -43,15 +54,17 @@ export class CalibrationTool {
   private showModel = true;
   private cleanups: (() => void)[] = [];
   private handle: ModelHandle | null = null;
-  // Parts of the panel that change.
+  /** True from `open` until the footprints are read and the tool shows. */
+  private opening = false;
+  private footprints: Footprint[] | null = null;
   private marker!: HTMLElement;
   private dots!: HTMLElement;
-  private title!: HTMLElement;
-  private label!: HTMLElement;
-  private status!: HTMLElement;
-  private plan!: HTMLCanvasElement;
-  private saveButton!: HTMLButtonElement;
-  private modelButton!: HTMLButtonElement;
+  /** The panel on the table itself, hidden unless K asks for it. */
+  private panel: CalibrationPanel | null = null;
+  private stateTimer: number | null = null;
+  /** The plan last sent, so its picture goes out only when it changed. */
+  private planSent = '';
+  private planPicture = '';
 
   constructor(surface: HTMLElement, model: ModelView, connection: Connection, site: SiteInfo, onProjector: boolean) {
     this.surface = surface;
@@ -71,9 +84,20 @@ export class CalibrationTool {
   }
 
   open(): void {
-    if (this.root) return;
+    if (this.root || this.opening) return;
+    this.opening = true;
+    // Footprint corners are the ones a person can find (#595), so the tool waits for them.
+    void this.model.footprintsReady().then((footprints) => {
+      if (!this.opening) return;
+      this.opening = false;
+      this.footprints = footprints;
+      this.start();
+    });
+  }
+
+  private start(): void {
     this.size = [this.surface.clientWidth, this.surface.clientHeight];
-    this.targets = proposeLandmarks(this.model.twin, this.site).map((landmark) => ({ ...landmark, image: null }));
+    this.targets = proposeLandmarks(this.model.twin, this.site, 6, this.footprints).map((landmark) => ({ ...landmark, image: null }));
     this.restore(this.model.savedCalibration);
     this.current = Math.max(0, this.targets.findIndex((target) => target.image === null));
 
@@ -89,12 +113,23 @@ export class CalibrationTool {
     this.cleanups.push(() => resize.disconnect());
     window.addEventListener('keydown', this.onKey);
     this.cleanups.push(() => window.removeEventListener('keydown', this.onKey));
+    // The projected table's tool is run from the controllers. A preview window (the developer
+    // page) keeps its panel to itself, so two tools never answer the same controller.
+    if (this.onProjector) this.cleanups.push(this.connection.on('calibration.command', (command: CalibrationCommand) => this.command(command)));
+    this.planSent = '';
+    if (!this.onProjector) this.togglePanel();
     this.solve();
   }
 
   close(): void {
+    this.opening = false;
     if (!this.root) return;
     for (const cleanup of this.cleanups.splice(0).reverse()) cleanup();
+    if (this.stateTimer !== null) window.clearTimeout(this.stateTimer);
+    this.stateTimer = null;
+    this.panel = null;
+    // The controllers put their panel away.
+    if (this.onProjector) void this.connection.request('calibration.state', closedState()).catch(() => {});
     this.handle = null;
     this.root.remove();
     this.root = null;
@@ -125,44 +160,7 @@ export class CalibrationTool {
     this.dots = el('div', 'calibration-dots');
     this.marker = el('div', 'calibration-marker');
     this.marker.append(el('i', ''), el('i', ''), el('b', ''));
-
-    const panel = el('div', 'calibration-panel');
-    // The panel is for reading and pressing; only the rest of the surface places the marker.
-    panel.addEventListener('pointerdown', (event) => event.stopPropagation());
-    this.title = el('h2', '');
-    this.label = el('p', 'calibration-label');
-    this.plan = el('canvas', 'calibration-plan');
-    this.status = el('p', 'calibration-status');
-    const button = (text: string, action: () => void, className = '') => {
-      const node = el('button', className, text);
-      node.type = 'button';
-      node.addEventListener('click', action);
-      return node;
-    };
-    const steps = el('div', 'calibration-row');
-    steps.append(
-      button('Back', () => this.go(this.current - 1)),
-      button('Skip', () => this.skip()),
-      button('Next', () => this.go(this.current + 1), 'is-primary'),
-    );
-    const actions = el('div', 'calibration-row');
-    this.modelButton = button('', () => {
-      this.showModel = !this.showModel;
-      this.refresh();
-    });
-    this.saveButton = button('Save', () => void this.save(), 'is-primary');
-    actions.append(this.modelButton, this.saveButton);
-    const ending = el('div', 'calibration-row');
-    ending.append(
-      button('Use flat table', () => void this.clear()),
-      button('Close', () => this.close()),
-    );
-    const help = el('p', 'calibration-help', 'Click or drag to move the marker. Arrow keys nudge it; hold Shift for bigger steps. Enter goes to the next corner.');
-    panel.append(this.title, this.label, this.plan, steps, this.status, actions, ending, help);
-    if (!this.onProjector) {
-      panel.append(el('p', 'calibration-help', 'This is a preview window. To calibrate the real projector, open this tool on the projected table.'));
-    }
-    root.append(this.dots, this.marker, panel);
+    root.append(this.dots, this.marker);
 
     const place = (event: PointerEvent) => {
       const box = this.surface.getBoundingClientRect();
@@ -178,6 +176,67 @@ export class CalibrationTool {
     this.surface.append(root);
   }
 
+  /** K: the panel on the table too, for a table with no controller. It covers part of the map. */
+  private togglePanel(): void {
+    if (!this.root) return;
+    if (this.panel) {
+      this.panel.element.remove();
+      this.panel = null;
+      return;
+    }
+    const panel = new CalibrationPanel(
+      (command) => this.command(command),
+      () => this.close(),
+      { compact: true },
+    );
+    panel.element.classList.add('is-on-table');
+    // The panel is for reading and pressing; only the rest of the surface places the marker.
+    panel.element.addEventListener('pointerdown', (event) => event.stopPropagation());
+    this.root.append(panel.element);
+    this.panel = panel;
+    this.planSent = '';
+    this.publish();
+  }
+
+  /** A press on a controller's panel, or on the table's own. */
+  private command(command: CalibrationCommand): void {
+    if (!this.root) return;
+    switch (command.action) {
+      case 'sync':
+        this.planSent = '';
+        this.publish();
+        break;
+      case 'back':
+        this.go(this.current - 1);
+        break;
+      case 'next':
+        this.go(this.current + 1);
+        break;
+      case 'skip':
+        this.skip();
+        break;
+      case 'select':
+        if (Number.isInteger(command.index)) this.go(command.index!);
+        break;
+      case 'nudge': {
+        const [dx, dy] = [Number(command.dx) || 0, Number(command.dy) || 0];
+        const from = this.targets[this.current]?.image ?? this.guess(this.current);
+        this.put([from[0] + dx, from[1] + dy]);
+        break;
+      }
+      case 'model':
+        this.showModel = !this.showModel;
+        this.refresh();
+        break;
+      case 'save':
+        void this.save();
+        break;
+      case 'flat':
+        void this.clear();
+        break;
+    }
+  }
+
   private onKey = (event: KeyboardEvent): void => {
     const step = event.shiftKey ? 10 : event.altKey ? 0.25 : 1;
     const moves: Record<string, [number, number]> = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] };
@@ -188,6 +247,7 @@ export class CalibrationTool {
     } else if (event.key === 'Enter') this.go(this.current + 1);
     else if (event.key === 'Backspace') this.skip();
     else if (event.key === 'Escape') this.close();
+    else if (event.key === 'k' || event.key === 'K') this.togglePanel();
     else return;
     event.preventDefault();
   };
@@ -275,7 +335,6 @@ export class CalibrationTool {
   private refresh(): void {
     if (!this.root) return;
     const target = this.targets[this.current]!;
-    const placed = this.targets.filter((t) => t.image).length;
 
     // The twin shows through the solved camera, as the check that the fit is right.
     this.model.setCalibrationOverride(this.solution && this.showModel ? this.solution : null);
@@ -295,22 +354,53 @@ export class CalibrationTool {
       }),
     );
 
-    this.title.textContent = `Corner ${this.current + 1} of ${this.targets.length}`;
-    this.label.textContent = `${target.label}. Move the marker until its light sits on that corner.`;
-    if (this.problem) this.status.textContent = this.problem;
+    this.publish();
+  }
+
+  /** Tells the controllers (and the table's own panel) where the tool is, at most every STATE_MS. */
+  private publish(): void {
+    if (this.stateTimer !== null) return;
+    this.stateTimer = window.setTimeout(() => {
+      this.stateTimer = null;
+      if (this.root) this.sendState();
+    }, STATE_MS);
+  }
+
+  private sendState(): void {
+    const target = this.targets[this.current]!;
+    const placed = this.targets.filter((t) => t.image).length;
+    let status: string;
+    if (this.problem) status = this.problem;
     else if (this.solution) {
       const camera = this.solution.camera;
-      this.status.textContent =
+      status =
         `${placed} corners placed. The fit is off by ${this.solution.error_px} px on average. ` +
         `The projector is ${this.projectorHeight(camera.position[2])}, with a ${camera.fov_deg.horizontal}° wide image${camera.mirrored ? ', mirrored' : ''}.`;
-    } else {
-      this.status.textContent = `${placed} of at least ${MIN_CALIBRATION_PAIRS} corners placed.`;
+    } else status = `${placed} of at least ${MIN_CALIBRATION_PAIRS} corners placed.`;
+    const done = this.targets.map((t) => t.image !== null);
+    const planKey = `${this.current}|${done.map(Number).join('')}|${this.targets.length}`;
+    const state: CalibrationState = {
+      open: true,
+      index: this.current,
+      count: this.targets.length,
+      label: target.label,
+      status,
+      problem: this.problem !== '',
+      placed,
+      needed: MIN_CALIBRATION_PAIRS,
+      done,
+      solved: this.solution !== null,
+      showModel: this.showModel,
+      preview: !this.onProjector,
+      planKey,
+    };
+    if (planKey !== this.planSent) {
+      this.planPicture = this.drawPlan();
+      this.planSent = planKey;
+      state.plan = this.planPicture;
     }
-    this.status.classList.toggle('is-problem', this.problem !== '');
-    this.saveButton.disabled = this.solution === null;
-    this.modelButton.disabled = this.solution === null;
-    this.modelButton.textContent = this.showModel ? 'Hide the model' : 'Show the model';
-    this.drawPlan();
+    this.panel?.show({ ...state, plan: this.planPicture });
+    if (this.onProjector) void this.connection.request('calibration.state', state).catch(() => {});
   }
 
   /** The solved height of the lens over the model's base, in the room's own measure when the table's size is known. */
@@ -322,20 +412,19 @@ export class CalibrationTool {
     return `about ${metres.toFixed(2)} m above the table`;
   }
 
-  /** The site from above with the current corner ringed, so the person knows which corner is meant. */
-  private drawPlan(): void {
+  /** The site from above with the current corner ringed (and its building outlined), as a picture for the panel. */
+  private drawPlan(): string {
     const { twin } = this.model;
     const axes = tableAxes(this.site);
     const { width_m, height_m } = this.site.extent;
     // A margin keeps corners on the model's edge whole.
     const scale = (PLAN_WIDTH - 2 * PLAN_MARGIN) / width_m;
-    const ratio = Math.min(2, window.devicePixelRatio || 1);
+    const ratio = 2;
     const height = Math.round(height_m * scale) + 2 * PLAN_MARGIN;
-    this.plan.width = PLAN_WIDTH * ratio;
-    this.plan.height = height * ratio;
-    this.plan.style.width = `${PLAN_WIDTH}px`;
-    this.plan.style.height = `${height}px`;
-    const g = this.plan.getContext('2d')!;
+    const plan = document.createElement('canvas');
+    plan.width = PLAN_WIDTH * ratio;
+    plan.height = height * ratio;
+    const g = plan.getContext('2d')!;
     g.setTransform(ratio, 0, 0, ratio, 0, 0);
     g.fillStyle = '#10141c';
     g.fillRect(0, 0, PLAN_WIDTH, height);
@@ -347,36 +436,85 @@ export class CalibrationTool {
     };
     // Roofs, lighter the taller they are.
     const span = Math.max(1, twin.maxZ - twin.minZ);
-    for (let t = 0; t < twin.indices.length; t += 3) {
-      const a = twin.indices[t]!;
-      if (twin.kinds[a] !== 1) continue;
-      const shade = 70 + Math.round(((twin.positions[a * 3 + 2]! - twin.minZ) / span) * 150);
-      g.fillStyle = `rgb(${shade} ${shade} ${shade + 12})`;
+    const shadeOf = (z: number) => {
+      const shade = 70 + Math.round(((z - twin.minZ) / span) * 150);
+      return `rgb(${shade} ${shade} ${shade + 12})`;
+    };
+    const target = this.targets[this.current];
+    const outline = (rings: [number, number][][]) => {
       g.beginPath();
-      for (let k = 0; k < 3; k++) {
-        const i = twin.indices[t + k]!;
-        const [x, y] = xy(twin.positions[i * 3]!, twin.positions[i * 3 + 1]!);
-        if (k === 0) g.moveTo(x, y);
-        else g.lineTo(x, y);
+      for (const ring of rings) {
+        ring.forEach(([east, north], k) => {
+          const [x, y] = xy(east, north);
+          if (k === 0) g.moveTo(x, y);
+          else g.lineTo(x, y);
+        });
+        g.closePath();
       }
-      g.fill();
-    }
-    this.targets.forEach((target, index) => {
-      const [x, y] = xy(target.point[0], target.point[1]);
-      const here = index === this.current;
-      g.beginPath();
-      g.arc(x, y, here ? 7 : 3, 0, Math.PI * 2);
-      if (here) {
-        g.strokeStyle = '#ffd24a';
-        g.lineWidth = 2;
-        g.stroke();
+    };
+    if (this.footprints) {
+      // The footprints, as the corners were picked from them (#595).
+      const tops = new Map<number, number>();
+      for (let i = 0; i < twin.kinds.length; i++) {
+        const b = twin.buildings[i]!;
+        if (twin.kinds[i] === 1 && b) tops.set(b, Math.max(tops.get(b) ?? -Infinity, twin.positions[i * 3 + 2]!));
+      }
+      for (const footprint of this.footprints) {
+        const top = tops.get(footprint.number);
+        if (top === undefined) continue;
+        outline(footprint.rings);
+        g.fillStyle = shadeOf(top);
+        g.fill('evenodd');
+      }
+      if (target?.building) {
+        for (const footprint of this.footprints) {
+          if (footprint.number !== target.building) continue;
+          outline(footprint.rings);
+          g.strokeStyle = '#ffd24a';
+          g.lineWidth = 2;
+          g.stroke();
+        }
+      }
+    } else {
+      for (let t = 0; t < twin.indices.length; t += 3) {
+        const a = twin.indices[t]!;
+        if (twin.kinds[a] !== 1) continue;
+        g.fillStyle = shadeOf(twin.positions[a * 3 + 2]!);
         g.beginPath();
-        g.arc(x, y, 2, 0, Math.PI * 2);
-        g.fillStyle = '#ffd24a';
-      } else {
-        g.fillStyle = target.image ? '#4ade80' : '#7c8799';
+        for (let k = 0; k < 3; k++) {
+          const i = twin.indices[t + k]!;
+          const [x, y] = xy(twin.positions[i * 3]!, twin.positions[i * 3 + 1]!);
+          if (k === 0) g.moveTo(x, y);
+          else g.lineTo(x, y);
+        }
+        g.fill();
       }
+    }
+    this.targets.forEach((t, index) => {
+      if (index === this.current) return;
+      const [x, y] = xy(t.point[0], t.point[1]);
+      g.beginPath();
+      g.arc(x, y, 4, 0, Math.PI * 2);
+      g.fillStyle = t.image ? '#4ade80' : '#7c8799';
       g.fill();
     });
+    if (target) {
+      const [x, y] = xy(target.point[0], target.point[1]);
+      g.beginPath();
+      g.arc(x, y, 11, 0, Math.PI * 2);
+      g.strokeStyle = '#ffd24a';
+      g.lineWidth = 3;
+      g.stroke();
+      g.beginPath();
+      g.arc(x, y, 3, 0, Math.PI * 2);
+      g.fillStyle = '#ffd24a';
+      g.fill();
+    }
+    return plan.toDataURL('image/png');
   }
+}
+
+/** What the controllers hear when the tool closes. */
+function closedState(): CalibrationState {
+  return { open: false, index: 0, count: 0, label: '', status: '', problem: false, placed: 0, needed: MIN_CALIBRATION_PAIRS, done: [], solved: false, showModel: false, preview: false, planKey: '' };
 }
