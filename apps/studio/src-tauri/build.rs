@@ -26,6 +26,7 @@ fn main() {
         "identify",
         "start",
         "open_site",
+        "open_site_read_only",
         "create_site",
         "present",
         "stop_presenting",

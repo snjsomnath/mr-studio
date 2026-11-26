@@ -15,6 +15,7 @@
     "allow-identify",
     "allow-start",
     "allow-open-site",
+    "allow-open-site-read-only",
     "allow-create-site",
     "allow-present",
     "allow-stop-presenting",
