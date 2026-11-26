@@ -4,6 +4,31 @@ Every merge to main that carries a release note becomes a version. The newest is
 The app shows these notes, with their pictures, on Home when a newer version is out.
 How notes are written: docs/RELEASING.md.
 
+## 0.47.0 (2026-11-26)
+
+### New
+
+#### Phones can look when the table is full, and add words to their marks (#462)
+
+A phone that joins when every seat is taken can still look around, and gets a seat when one frees up. In Sketch, a phone can add a few words to its last mark. The table shows only a small ring, and the controller shows the words once "Show what the phones said" is on.
+
+![Words on the marks, on the controller](docs/screenshots/462-controller-words.png)
+![A phone watching a full table](docs/screenshots/462-watching.png)
+
+#### One play head for every view (#373)
+
+A layer that plays through time now keeps one play head that the table, the controller, the phones and the TV all read (#373). The table tells the host where the time is and how fast it moves (`ctx.clock.set`), and every view works out the time in between, so the controller's time slider, its hero and TV panels bound to the time follow the table smoothly while it plays, instead of jumping where play started. Stopping leaves the slider where the table stopped. Sunlight and Mobility use it: a playing day now sends about two updates a second instead of ten. Layers read it with `ctx.clock.now()`.
+
+![The controller's Sunlight hero following the playing day, one and six seconds in](docs/screenshots/373-play-head.png)
+
+### Fixes
+
+#### A chip gauge keeps its half circle (#491)
+
+A gauge at chip size drew its half circle as a sliver beside the number. It now keeps its own shape, as tall as the number. Before on top, after below.
+
+![Chip gauges before and after](docs/screenshots/491-gauge-chip.png)
+
 ## 0.46.0 (2026-11-26)
 
 ### New
