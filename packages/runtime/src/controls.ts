@@ -1109,7 +1109,7 @@ export class Controller {
   /** The home screen: the site's title over the attract loop (#74). */
   private readonly welcome: HTMLElement;
   private readonly attract: AttractLoop | undefined;
-  /** When someone last touched the controller, for the idle reset (#74). */
+  /** When someone last touched this screen, for a spell of its own from `?idle=` (#74). */
   private lastInput = performance.now();
   /** The site's About page in the centre, when `tv.about` gives it words. */
   private readonly about: HTMLElement | undefined;
@@ -1678,17 +1678,19 @@ export class Controller {
   }
 
   /**
-   * After a quiet spell the controller goes home, as if Reset were pressed (#74), so the next
-   * visitor finds the welcome, not the last visitor's layer. `tv.idle_reset_s` sets the spell
-   * (default 3 minutes, 0 for never); `?idle=` in the address overrides it on this screen.
+   * After a quiet spell the table goes home, as if Reset were pressed (#74), so the next visitor
+   * finds the welcome, not the last visitor's layer. The host keeps the one timer for the whole
+   * table (#604), counting a touch on any screen, so this page only closes its About page then.
+   * `?idle=` in the address still gives this screen a spell of its own (Rehearse's quick try).
    */
   private idleReset(): void {
+    this.connection.on('table.intro', () => this.showAbout(false));
+    const fromAddress = Number(new URLSearchParams(location.search).get('idle'));
+    if (!Number.isFinite(fromAddress) || fromAddress <= 0) return;
     const touched = () => (this.lastInput = performance.now());
     for (const kind of ['pointerdown', 'keydown', 'wheel'] as const) window.addEventListener(kind, touched, { capture: true, passive: true });
-    const fromAddress = Number(new URLSearchParams(location.search).get('idle'));
     setInterval(() => {
-      const seconds = Number.isFinite(fromAddress) && fromAddress > 0 ? fromAddress : (this.store.state.site.tv?.idle_reset_s ?? 180);
-      if (seconds <= 0 || performance.now() - this.lastInput < seconds * 1000) return;
+      if (performance.now() - this.lastInput < fromAddress * 1000) return;
       if (this.welcome.hidden) this.reset();
       touched();
     }, 1000);

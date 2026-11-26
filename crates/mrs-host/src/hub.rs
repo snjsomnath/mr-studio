@@ -621,6 +621,37 @@ pub struct Hub {
     recorded: Mutex<Vec<Revision>>,
     /// Set by `inject_fault`: the next request fails inside the host.
     fault: std::sync::atomic::AtomicBool,
+    /// When a person last did something on any surface (#604), for the idle reset.
+    last_input: Mutex<Instant>,
+    /// The controller screens connected now (#604): the idle reset runs only while there is one.
+    controllers: Mutex<Vec<u64>>,
+}
+
+/// The controller goes home after this many seconds with nobody at the table (#74), unless `tv.idle_reset_s` says otherwise.
+const DEFAULT_IDLE_RESET_S: f64 = 180.0;
+
+/// Whether a request is a person doing something (#604), which holds off the idle reset. A
+/// table's layers send requests of their own, so from the table only a touch counts.
+fn is_input(role: Role, method: &str) -> bool {
+    if role == Role::Table {
+        return method == "session.input";
+    }
+    method.starts_with("scene.")
+        || matches!(
+            method,
+            "session.input"
+                | "layer.activate"
+                | "layer.set"
+                | "layer.action"
+                | "layer.step"
+                | "layer.select"
+                | "layer.entity"
+                | "tool.input"
+                | "layers.reset"
+                | "session.ribbon"
+                | "session.language"
+                | "session.sound"
+        )
 }
 
 /// How the answer to a request that failed inside the host starts (#507); the operator log hears of it.
@@ -747,6 +778,8 @@ impl Hub {
             history: Arc::new(Mutex::new(History::open(&site.dir))),
             recorded: Mutex::new(Vec::new()),
             fault: Default::default(),
+            last_input: Mutex::new(Instant::now()),
+            controllers: Mutex::new(Vec::new()),
         };
         // A sequence that starts on shows its first step.
         {
@@ -1105,6 +1138,11 @@ impl Hub {
                 self.drawing.lock().push(surface);
                 self.emit("session.changed", json!({ "session": self.session() }));
             }
+            if role == Role::Tv {
+                // A controller that just opened gets the whole spell before the table goes home.
+                self.controllers.lock().push(surface);
+                *self.last_input.lock() = now;
+            }
             return Ok(Joined { surface, kick: None });
         }
         if code != Some(self.session.code.as_str()) {
@@ -1180,6 +1218,7 @@ impl Hub {
         if drew {
             self.emit("session.changed", json!({ "session": self.session() }));
         }
+        self.controllers.lock().retain(|s| *s != surface);
         inner.watching.retain(|w| w.surface != surface);
         // A seat that was taken over belongs to another surface by now, so this finds nothing.
         let seat = inner.seats.iter_mut().find(|s| s.participant.surface == surface && s.participant.connected)?;
@@ -1310,6 +1349,9 @@ impl Hub {
             tracing::error!("the request '{method}' failed inside the host: {why}");
             Err(format!("{FAULT} '{method}' could not be handled. The table carries on."))
         });
+        if result.is_ok() && is_input(role, method) {
+            *self.last_input.lock() = Instant::now();
+        }
         // A change to site.json is announced after what it did, so a surface already shows it.
         let recorded = std::mem::take(&mut *self.recorded.lock());
         for revision in recorded {
@@ -1492,6 +1534,10 @@ impl Hub {
             *self.ribbon.write() = layer.clone();
             self.emit("session.changed", json!({ "session": self.session() }));
             return Ok(json!({ "ribbon": layer }));
+        }
+        if method == "session.input" {
+            // Someone touched a screen (#604): `request` notes the time for the idle reset.
+            return Ok(json!({}));
         }
         if method == "session.guide" {
             if !matches!(role, Role::Tv | Role::Dev) {
@@ -2796,6 +2842,7 @@ impl Hub {
     fn tick_at(&self, now: Instant) {
         let mut inner = self.inner.lock();
         let scene = &mut inner.scene;
+        self.idle_reset(scene, now);
         let due: Vec<String> = scene
             .iter()
             .filter(|i| i.state.active && i.state.step.as_ref().is_some_and(|s| s.playing && s.due.is_some_and(|d| d <= now)))
@@ -2807,6 +2854,32 @@ impl Hub {
                     tracing::warn!("{id}: {e}");
                 }
             }
+        }
+    }
+
+    /// After `tv.idle_reset_s` seconds (default 180, 0 for never) with nobody doing anything on
+    /// any surface, the table goes home as Reset does (#74, #604), so the next visitor finds the
+    /// welcome. One timer for the whole table: a controller page that nobody touches does not
+    /// reset a table that people are using from another screen, the editor or their phones.
+    /// It runs only while a controller is connected.
+    fn idle_reset(&self, scene: &mut [Instance], now: Instant) {
+        let seconds = self.info.read().tv.as_ref().and_then(|tv| tv["idle_reset_s"].as_f64()).unwrap_or(DEFAULT_IDLE_RESET_S);
+        if seconds <= 0.0 || self.controllers.lock().is_empty() {
+            return;
+        }
+        {
+            let mut last = self.last_input.lock();
+            if now.saturating_duration_since(*last) < Duration::from_secs_f64(seconds) {
+                return;
+            }
+            *last = now;
+        }
+        let catalog = self.catalog();
+        let open = scene.iter().any(|i| i.parent.is_none() && i.state.active && !at_rest(&catalog[i.def], i));
+        if open {
+            tracing::info!("nobody used the table for {seconds} s: back to the welcome");
+            self.reset(scene);
+            self.emit("table.intro", json!({}));
         }
     }
 
@@ -3213,6 +3286,46 @@ mod tests {
         assert_eq!((trees["active"].clone(), trees["shown_by"].clone()), (json!(true), json!("slideshow")));
         dev("layer.activate", json!({ "layer": "slideshow", "active": false })).unwrap();
         assert_eq!(layer(&hub, "slide-trees")["active"], false);
+    }
+
+    #[test]
+    fn the_table_goes_home_only_when_nobody_anywhere_has_done_anything() {
+        let hub = scratch_hub("idle");
+        let open = |hub: &Hub| layer(hub, "sunlight")["active"] == json!(true);
+        let dev = |method: &str, p: Value| hub.request(Role::Dev, 0, method, &p);
+        dev("layer.activate", json!({ "layer": "sunlight", "active": true })).unwrap();
+        // No controller connected: nothing goes home, however long.
+        hub.tick_at(Instant::now() + Duration::from_secs(3600));
+        assert!(open(&hub));
+        let controller = hub.join(Role::Tv, None, None).unwrap().surface;
+        let at = Instant::now();
+        hub.tick_at(at + Duration::from_secs(170));
+        assert!(open(&hub), "not yet: 3 minutes by default");
+        // Someone uses the editor, a phone or another screen: the controller page itself was never touched.
+        dev("layer.set", json!({ "layer": "sunlight", "params": { "hour": 9 } })).unwrap();
+        hub.tick_at(Instant::now() + Duration::from_secs(170));
+        assert!(open(&hub), "the editor's change counts");
+        hub.request(Role::Table, 0, "session.input", &json!({})).unwrap();
+        hub.tick_at(Instant::now() + Duration::from_secs(170));
+        assert!(open(&hub), "a touch on the table counts");
+        // The table's own layers sending requests is not a person.
+        let quiet = Instant::now();
+        let _ = hub.request(Role::Table, 0, "layer.set", &json!({ "layer": "sunlight", "params": { "hour": 10 } }));
+        let mut events = hub.subscribe();
+        hub.tick_at(quiet + Duration::from_secs(181));
+        assert!(!open(&hub), "nobody for 3 minutes: home");
+        let sent: Vec<Value> = std::iter::from_fn(|| events.try_recv().ok()).map(|e| serde_json::from_str(&e).unwrap()).collect();
+        assert!(sent.iter().any(|e| e["m"] == "table.intro"), "the table plays its opening zoom");
+        // 0 is never.
+        dev("site.tv", json!({ "tv": { "idle_reset_s": 0 } })).unwrap();
+        dev("layer.activate", json!({ "layer": "sunlight", "active": true })).unwrap();
+        hub.tick_at(Instant::now() + Duration::from_secs(3600));
+        assert!(open(&hub));
+        // With the controller gone, nothing goes home either.
+        dev("site.tv", json!({ "tv": { "idle_reset_s": 60 } })).unwrap();
+        hub.leave(controller);
+        hub.tick_at(Instant::now() + Duration::from_secs(3600));
+        assert!(open(&hub));
     }
 
     #[test]
