@@ -164,6 +164,11 @@ function sideFile(text: string): { image?: unknown; bounds?: Record<string, unkn
   }
 }
 
+/** Opened read-only from Home (#565): the app runs a copy, so nothing done here reaches the table. */
+function readOnly(): boolean {
+  return new URLSearchParams(location.search).get('readonly') === '1';
+}
+
 export class Editor {
   /** Where the live table goes. */
   readonly canvas = el('div', 'ed-canvas');
@@ -1077,8 +1082,14 @@ export class Editor {
   private setSaved(problem?: string): void {
     this.problem = problem ?? null;
     const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    this.saved.replaceChildren(icon(problem ? 'alert' : 'check', 14), el('span', undefined, problem ?? `Saved ${time}`));
-    this.saved.title = problem ? 'This change could not be saved. Click for the history.' : `Every change is saved as you make it. Last saved at ${time}. Click for the history.`;
+    // A read-only copy keeps changes only in the copy, so it never says Saved (#575).
+    const kept = readOnly() ? `Kept in the copy ${time}` : `Saved ${time}`;
+    this.saved.replaceChildren(icon(problem ? 'alert' : 'check', 14), el('span', undefined, problem ?? kept));
+    this.saved.title = problem
+      ? 'This change could not be saved. Click for the history.'
+      : readOnly()
+        ? `A read-only copy: changes stay in this copy and never reach the table. File › Save As… keeps them as a new table. Click for the history.`
+        : `Every change is saved as you make it. Last saved at ${time}. Click for the history.`;
     this.saved.classList.toggle('is-error', Boolean(problem));
   }
 
@@ -1677,7 +1688,7 @@ export class Editor {
     this.titleName.textContent = this.store.state.site.name;
     name.append(this.titleName, this.saved);
     // Opened read-only from Home: the app runs a copy, so nothing done here reaches the table.
-    if (new URLSearchParams(location.search).get('readonly') === '1') {
+    if (readOnly()) {
       const badge = el('span', 'ed-readonly', 'Read-only');
       badge.title = 'This is a copy of the table: nothing you change here is saved to it. File › Save As… keeps the changes as a new table.';
       name.append(badge);
@@ -1841,7 +1852,15 @@ export class Editor {
       .catch(() => {});
     this.checksButton.type = 'button';
     this.checksButton.addEventListener('click', () => this.showChecks());
-    bar.append(this.slowTable(), el('span', undefined, shell() ? 'Changes are saved as you make them. File > Save As makes a copy.' : 'Changes are saved as you make them'), el('span', 'ed-grow'), work, this.checksButton, phones, engine, connected, el('span', undefined, `${Math.round(width_m)} × ${Math.round(height_m)} m`));
+    bar.append(this.slowTable(), el(
+        'span',
+        readOnly() ? 'ed-readonly-note' : undefined,
+        readOnly()
+          ? 'Read-only copy: changes are not kept. File › Save As… keeps them as a new table.'
+          : shell()
+            ? 'Changes are saved as you make them. File > Save As makes a copy.'
+            : 'Changes are saved as you make them',
+      ), el('span', 'ed-grow'), work, this.checksButton, phones, engine, connected, el('span', undefined, `${Math.round(width_m)} × ${Math.round(height_m)} m`));
     return bar;
   }
 

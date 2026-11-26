@@ -59,10 +59,14 @@ export function pagesEditor(host: TableSettingsHost): HTMLElement {
   let current = 0;
   let selected: string | null = null;
   let note = '';
+  /** What this dialog sent and the host has not echoed yet, oldest first (#572). */
+  const sent: string[] = [];
 
   const page = (): Page | undefined => pages[current];
   const panel = (): PanelSpec | undefined => page()?.panels.find((p) => p.id === selected);
   const save = (): void => {
+    sent.push(JSON.stringify(pages));
+    if (sent.length > 50) sent.shift();
     void send('site.tv', { tv: { pages: pages.length ? pages : null } });
     draw();
   };
@@ -320,6 +324,13 @@ export function pagesEditor(host: TableSettingsHost): HTMLElement {
   store.onTv((tv) => {
     if (!root.isConnected) return;
     const theirs = JSON.stringify(tv?.pages ?? []);
+    // The echo of one of our own saves, maybe older than what is on screen now: not another
+    // author's change, so it must not take the dialog back or redraw it under the typing.
+    const ours = sent.indexOf(theirs);
+    if (ours >= 0) {
+      sent.splice(0, ours + 1);
+      return;
+    }
     if (theirs === JSON.stringify(pages)) return;
     pages = structuredClone((tv?.pages ?? []) as Page[]);
     draw();
