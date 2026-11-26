@@ -56,6 +56,12 @@ const MAX_BIKES = 400;
 const WALKER_PAINTS = ['#5d7186', '#6f8399', '#8195ab', '#64788c', '#7488a0', '#00c4c4', '#00c49e'];
 const BIKE_PAINTS = ['#00f2ff', '#00cc88', '#ff6688'];
 
+/**
+ * Seconds between redraws: a full-table picture drawn every frame cost the presented table dearly
+ * in WebKit (#596), and at a few pixels a second, movement 30 times a second looks the same.
+ */
+const FRAME_S = 1 / 30;
+
 export default defineLayer<Params>({
   manifest: manifest as LayerManifest,
 
@@ -165,7 +171,12 @@ export default defineLayer<Params>({
     const alphaOf = (m: Mover) => Math.min(1, m.age / FADE_S, m.leaving === null ? 1 : Math.max(0, m.leaving / FADE_S));
     const offscreen = (x: number, y: number) => x < -20 || y < -20 || x > people.width + 20 || y > people.height + 20;
 
-    ctx.onFrame((dt) => {
+    let since = 0;
+    ctx.onFrame((frame) => {
+      since += frame;
+      if (since < FRAME_S) return;
+      const dt = Math.min(since, 0.25);
+      since = 0;
       const { pace, size } = ctx.params;
       for (let i = 0; i < walkers.length; i++) if (!move(walkers[i]!, walks, WALK_MS * pace, dt)) walkers[i] = spawnWalker();
       for (let i = 0; i < bikes.length; i++) if (!move(bikes[i]!, rides, BIKE_MS * pace, dt)) bikes[i] = spawnBike();

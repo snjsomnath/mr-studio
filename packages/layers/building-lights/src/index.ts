@@ -62,6 +62,9 @@ export default defineLayer<Params>({
   manifest: manifest as LayerManifest,
 
   async table(ctx) {
+    // The soft glow under the facades changes only with the controls, so it is a picture of its own,
+    // drawn once, and only the windows are drawn again (#596).
+    const glowCanvas = ctx.map.addDrawing('glow', { opacity: ctx.params.opacity });
     const canvas = ctx.map.addDrawing('windows', { opacity: ctx.params.opacity });
     const space = tableSpace(ctx.site);
     const random = seededRandom(23);
@@ -129,6 +132,7 @@ export default defineLayer<Params>({
         }
         light.level += (light.target - light.level) * Math.min(1, step * 2.5);
       }
+      showGlow();
       canvas.clear();
       paint(canvas.ctx, true);
       canvas.commit();
@@ -170,27 +174,38 @@ export default defineLayer<Params>({
         yield;
       }
     }
-    let glowCache: { key: string; picture: OffscreenCanvas; stop: () => void } | null = null;
-    ctx.onCleanup(() => glowCache?.stop());
-    function cachedGlow(g: CanvasRenderingContext2D): OffscreenCanvas | null {
-      if (typeof OffscreenCanvas === 'undefined') return null;
-      const key = `${ctx.params.lit}|${ctx.params.color}|${g.canvas.width}x${g.canvas.height}`;
-      if (glowCache?.key === key) return glowCache.picture;
-      const picture = new OffscreenCanvas(g.canvas.width, g.canvas.height);
-      const pg = picture.getContext('2d') as unknown as CanvasRenderingContext2D | null;
-      if (!pg) return null;
-      pg.setTransform(g.getTransform());
-      pg.lineCap = 'round';
-      pg.lineJoin = 'round';
-      glowCache?.stop();
-      // One chunk a frame: each is rasterised when the frame's picture is made.
-      glowCache = { key, picture, stop: inSlices(glowSteps(pg, false), () => {}, 0) };
-      return picture;
+    let glowKey = '';
+    let stopGlow = () => {};
+    ctx.onCleanup(() => stopGlow());
+    /** Draws the glow again when the controls that shape it change: a chunk a frame, shown when done. */
+    function showGlow() {
+      const key = `${ctx.params.lit}|${ctx.params.color}`;
+      if (key === glowKey) return;
+      glowKey = key;
+      stopGlow();
+      const g = glowCanvas.ctx;
+      glowCanvas.clear();
+      if (ctx.params.lit <= 0) {
+        glowCanvas.commit();
+        return;
+      }
+      g.save();
+      g.globalCompositeOperation = 'lighter';
+      g.lineCap = 'round';
+      g.lineJoin = 'round';
+      stopGlow = inSlices(
+        glowSteps(g, false),
+        () => {
+          g.restore();
+          glowCanvas.commit();
+        },
+        0,
+      );
     }
 
     /**
      * Draws the lit facades as they are now into `g`, in table metres: the table (`table`, whose glow
-     * is drawn once and reused), and a magnifier's sharp picture (#413). Windows of the same colour and
+     * is a picture of its own) and a magnifier's sharp picture (#413). Windows of the same colour and
      * brightness go in one stroke (#483).
      */
     function paint(g: CanvasRenderingContext2D, table = false) {
@@ -200,16 +215,7 @@ export default defineLayer<Params>({
       g.lineCap = 'round';
       g.lineJoin = 'round';
       // A soft glow along every lit building's outline, so the facades read as lit from within.
-      if (lit > 0) {
-        const picture = table ? cachedGlow(g) : null;
-        if (picture) {
-          g.save();
-          g.setTransform(1, 0, 0, 1, 0, 0);
-          g.globalAlpha = 1;
-          g.drawImage(picture, 0, 0);
-          g.restore();
-        } else drainSteps(glowSteps(g, true));
-      }
+      if (lit > 0 && !table) drainSteps(glowSteps(g, true));
       // The windows themselves: dashes along the facade that come on and go off.
       const windows = buckets();
       for (const light of lights) {
@@ -230,7 +236,10 @@ export default defineLayer<Params>({
 
     return {
       update(changed) {
-        if (changed.includes('opacity')) canvas.setOpacity(ctx.params.opacity);
+        if (changed.includes('opacity')) {
+          canvas.setOpacity(ctx.params.opacity);
+          glowCanvas.setOpacity(ctx.params.opacity);
+        }
         // Respond to the slider now rather than as each window's timer runs out.
         if (changed.includes('lit')) for (const light of lights) light.wait = Math.min(light.wait, random() * 1.5);
       },

@@ -19,6 +19,12 @@ interface Tree {
 
 /** Seconds between redraws. Leaves move slowly, so there is no need to draw every frame. */
 const FRAME_S = 1 / 24;
+/**
+ * The trees are split over this many pictures, and each redraw makes only one of them again, so a
+ * city's trees cost a third as much a frame (#596). Each tree still moves eight times a second,
+ * plenty for a crown that leans a metre or so.
+ */
+const PARTS = 3;
 
 /** A soft crown, drawn once and stamped for every tree. */
 function crownSprite(color: string): HTMLCanvasElement {
@@ -38,7 +44,7 @@ export default defineLayer<Params>({
   manifest: manifest as LayerManifest,
 
   async table(ctx) {
-    const canvas = ctx.map.addDrawing('crowns', { opacity: ctx.params.opacity });
+    const canvases = Array.from({ length: PARTS }, (_, i) => ctx.map.addDrawing(i === 0 ? 'crowns' : `crowns-${i}`, { opacity: ctx.params.opacity }));
     const space = tableSpace(ctx.site);
     const random = seededRandom(11);
     const trees: Tree[] = ((await readSiteGeometry(ctx.site, 'trees'))?.points ?? [])
@@ -53,15 +59,16 @@ export default defineLayer<Params>({
     let sprite = crownSprite(ctx.params.color);
     let time = 0;
     let since = Infinity;
+    let turn = 0;
+    /** Parts still to draw before the trees stand still, when there is no wind. */
+    let still = PARTS;
 
-    ctx.onFrame((dt) => {
-      time += dt;
-      since += dt;
-      if (since < FRAME_S) return;
-      since = 0;
+    function draw(part: number) {
       const { size, sway } = ctx.params;
+      const canvas = canvases[part]!;
       canvas.clear();
-      for (const tree of trees) {
+      for (let t = part; t < trees.length; t += PARTS) {
+        const tree = trees[t]!;
         const r = tree.radius * size;
         // A gust travels across the table, so neighbouring trees lean together.
         const gust = Math.sin(time * 0.9 + tree.x * 0.012 + tree.phase * 0.3) + 0.4 * Math.sin(time * 2.3 + tree.phase);
@@ -70,13 +77,29 @@ export default defineLayer<Params>({
         canvas.ctx.drawImage(sprite, tree.x - r + dx, tree.y - r + dy, r * 2, r * 2);
       }
       canvas.commit();
+    }
+
+    ctx.onFrame((dt) => {
+      time += dt;
+      since += dt;
+      if (since < FRAME_S) return;
+      since = 0;
+      // With no wind the crowns are drawn once and left.
+      if (ctx.params.sway === 0) {
+        if (still === 0) return;
+        still -= 1;
+      } else still = PARTS;
+      draw(turn);
+      turn = (turn + 1) % PARTS;
     });
 
     return {
       update(changed) {
-        if (changed.includes('opacity')) canvas.setOpacity(ctx.params.opacity);
+        if (changed.includes('opacity')) for (const canvas of canvases) canvas.setOpacity(ctx.params.opacity);
         if (changed.includes('color')) sprite = crownSprite(ctx.params.color);
-        since = Infinity;
+        // A new colour or size shows on every tree at once.
+        for (let part = 0; part < PARTS; part++) draw(part);
+        still = PARTS;
       },
     };
   },
