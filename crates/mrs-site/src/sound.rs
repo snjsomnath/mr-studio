@@ -49,6 +49,7 @@ pub fn save(site_dir: &Path, name: &str, bytes: &[u8]) -> Result<String, String>
     }
     let extension = kind(bytes).ok_or("This file is not a sound MR Studio can play. Use WAV, MP3, OGG or M4A.")?;
     let file = file_name(name, extension);
+    let file = crate::media::free_name(&site_dir.join(SOUNDS_DIR), &file, bytes);
     let relative = format!("{SOUNDS_DIR}/{file}");
     let path = site_dir.join(&relative);
     std::fs::create_dir_all(path.parent().expect("inside data/")).map_err(|e| e.to_string())?;

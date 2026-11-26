@@ -1544,3 +1544,33 @@ async fn a_request_that_fails_inside_the_host_does_not_stop_the_table() {
     assert!(incidents.iter().any(|(_, message)| message.contains("layer.activate")), "{incidents:?}");
     host.shutdown().await;
 }
+
+/// #512: Undo after bringing in buildings puts the earlier buildings back on the table, since
+/// the import saved the new ones beside them and never over them.
+#[tokio::test(flavor = "multi_thread")]
+async fn undo_after_an_import_brings_the_earlier_data_back() {
+    let site = scratch_site("import-undo");
+    let original = std::fs::read(site.join("data/buildings.geojson")).unwrap();
+    let host = host_for(site.clone()).await;
+    let mut editor = Surface::join(&host, "dev", None).await.unwrap();
+    let buildings_path = |site: &std::path::Path| {
+        let saved: Value = serde_json::from_str(&std::fs::read_to_string(site.join("site.json")).unwrap()).unwrap();
+        saved["scene"]["buildings"]["path"].as_str().unwrap().to_string()
+    };
+
+    let one = json!({ "type": "FeatureCollection", "features": [{ "type": "Feature", "properties": { "height": 9 }, "geometry": {
+        "type": "Polygon", "coordinates": [[[11.969, 57.70], [11.9694, 57.70], [11.9694, 57.7002], [11.969, 57.7002], [11.969, 57.70]]] } }] });
+    let (status, report) = http_post(&host, "/api/data/import?target=buildings", "mine.geojson", one.to_string().as_bytes()).await;
+    assert_eq!(status, 200, "{report}");
+    assert_eq!(report["path"], "data/buildings.v2.geojson");
+    editor.event("site.changed").await;
+    assert_eq!(buildings_path(&site), "data/buildings.v2.geojson");
+    assert_eq!(std::fs::read(site.join("data/buildings.geojson")).unwrap(), original, "the earlier buildings are still there");
+
+    editor.request("history.undo", json!({})).await.unwrap();
+    assert_eq!(buildings_path(&site), "data/buildings.geojson");
+    editor.request("history.redo", json!({})).await.unwrap();
+    assert_eq!(buildings_path(&site), "data/buildings.v2.geojson");
+    host.shutdown().await;
+    let _ = std::fs::remove_dir_all(&site);
+}
