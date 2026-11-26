@@ -97,6 +97,14 @@ export const DATA_FORMATS: DataFormat[] = [
     sample: (o) => geojson('example-water.geojson', [{ type: 'Feature', properties: { natural: 'water', water: 'river' }, geometry: { type: 'Polygon', coordinates: block(o, -80, -60, 160, 35) } }]),
   },
   {
+    dataset: 'context',
+    name: 'Buildings around',
+    files: 'GeoJSON',
+    example:
+      'GeoJSON footprints around the table, reaching up to 500 m past its edge (scene.context.reach_m in site.json sets how far). The wind simulation puts them around the table, so wind arriving at the table has passed real buildings. Nothing is drawn. Footprints on the table itself are left to Buildings.\n\n{ "type": "Feature",\n  "properties": {},\n  "geometry": { "type": "Polygon", "coordinates": [[[11.955, 57.700], [11.956, 57.700], [11.956, 57.7005], [11.955, 57.7005], [11.955, 57.700]]] } }',
+    sample: (o) => geojson('example-context.geojson', [-1, 1].flatMap((side) => [-120, -40, 40, 120].map((n) => ({ type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: block(o, side * 260 - 20, n, 40, 30) } })))),
+  },
+  {
     dataset: 'roads',
     name: 'Streets',
     files: 'GeoJSON',

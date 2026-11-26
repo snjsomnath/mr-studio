@@ -2,7 +2,7 @@
 
 use std::path::Path;
 
-use mrs_engine::{Grid, SceneData};
+use mrs_engine::{ContextRing, Grid, SceneData};
 use serde::Serialize;
 use serde_json::Value;
 
@@ -26,6 +26,8 @@ pub struct BakeStats {
     pub terrain_flattened_cells: usize,
     /// Share of cells that are water (#343).
     pub water_fraction: f32,
+    /// Footprints around the table that shape the wind (#488).
+    pub context_buildings: usize,
 }
 
 pub fn bake(site: &Site) -> Result<(SceneData, BakeStats), SiteError> {
@@ -109,6 +111,29 @@ pub fn bake(site: &Site) -> Result<(SceneData, BakeStats), SiteError> {
             }
         }
         stats.water_fraction = scene.water.iter().filter(|w| **w != 0).count() as f32 / grid.len() as f32;
+    }
+
+    if let Some(context) = &spec.context {
+        let path = site.resolve(&context.path).expect("validated");
+        let margin = (context.reach_m / f64::from(grid.cell_m)).ceil().max(1.0) as u32;
+        let (width, rows) = (grid.width as usize + 2 * margin as usize, grid.height as usize + 2 * margin as usize);
+        let mut solid = vec![0u8; ContextRing::len_for(&grid, margin)];
+        let shift = f64::from(margin);
+        for feature in features(&path)? {
+            let mut counted = false;
+            for polygon in polygons(&feature["geometry"]) {
+                let rings: Vec<Vec<(f64, f64)>> = polygon
+                    .iter()
+                    .map(|ring| to_cells(ring, &projection, grid).into_iter().map(|(c, r)| (c + shift, r + shift)).collect())
+                    .collect();
+                for i in polygon_cells(&rings, width, rows) {
+                    solid[i] = 1;
+                    counted = true;
+                }
+            }
+            stats.context_buildings += counted as usize;
+        }
+        scene.context = Some(ContextRing { margin, solid });
     }
 
     if let Some(spec) = &spec.mesh {

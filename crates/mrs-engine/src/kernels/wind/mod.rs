@@ -47,6 +47,8 @@ const SPONGE_MARGIN: i32 = 8;
 /// travelled at unit lattice speed.
 const CANOPY_DRAG: f32 = 0.510_825_6;
 const CANOPY_REFERENCE_M: f32 = 4.0;
+/// Lattice cells along the domain's edge kept free of context buildings (#488), for the inlet and outlet.
+const CONTEXT_EDGE_CLEAR: usize = 3;
 /// Convergence is checked at least this many steps apart.
 const CHECK_INTERVAL: u64 = 100;
 /// Settled when the flow changed by less than this share of the inlet speed
@@ -298,6 +300,32 @@ impl Geometry {
                     has_solid = true;
                 } else if total > 0 {
                     coverage[n] = treed as f32 / total as f32;
+                }
+            }
+        }
+
+        // Buildings around the table (#488) stand in the padding, so wind reaching the table has
+        // passed them. The outermost cells stay clear for the inlet and outlet.
+        if let (Some(ring), Boundary::Open) = (&scene.context, params.boundary) {
+            let edge = CONTEXT_EDGE_CLEAR;
+            for y in edge..ny.saturating_sub(edge) {
+                for x in edge..nx.saturating_sub(edge) {
+                    let (i, j) = (x as i64 - x0 as i64, y as i64 - y0 as i64);
+                    if i >= 0 && j >= 0 && (i as usize) < vw && (j as usize) < vh {
+                        continue;
+                    }
+                    let f = factor as i64;
+                    let (mut total, mut built) = (0u32, 0u32);
+                    for row in (j * f)..((j + 1) * f) {
+                        for col in (i * f)..((i + 1) * f) {
+                            total += 1;
+                            built += ring.is_solid(&scene.grid, col, row) as u32;
+                        }
+                    }
+                    if built * 2 >= total {
+                        solid[y * nx + x] = true;
+                        has_solid = true;
+                    }
                 }
             }
         }

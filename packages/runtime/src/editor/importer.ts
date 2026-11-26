@@ -122,6 +122,16 @@ export const TARGETS: ImportTarget[] = [
     example: formatExample('water'),
   },
   {
+    target: 'context',
+    dataset: 'context',
+    name: 'Buildings around',
+    icon: 'wind',
+    about: 'Footprints reaching past the table, up to 500 m. Only the wind feels them: air reaching the table has passed real buildings. Nothing is drawn. GeoJSON areas.',
+    accept: '.geojson,.json',
+    osm: false,
+    example: formatExample('context'),
+  },
+  {
     target: 'data:roads',
     dataset: 'roads',
     name: 'Streets',

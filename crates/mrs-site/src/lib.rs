@@ -188,6 +188,12 @@ impl Site {
                 out.push(format!("scene.water.crs: '{crs}' is not supported; use one of {}", Crs::SUPPORTED));
             }
         }
+        if let Some(c) = &m.scene.context {
+            check(&mut out, "scene.context.path", &c.path);
+            if !(c.reach_m > 0.0 && c.reach_m <= manifest::CONTEXT_REACH_MAX_M) {
+                out.push(format!("scene.context.reach_m must be above 0 and at most {} m", manifest::CONTEXT_REACH_MAX_M));
+            }
+        }
         if let Some(t) = &m.scene.terrain {
             check(&mut out, "scene.terrain.path", &t.path);
             if t.is_geotiff() {
@@ -545,6 +551,9 @@ impl Site {
         }
         if let Some(w) = &m.scene.water {
             data.insert("water".to_string(), w.path.clone());
+        }
+        if let Some(c) = &m.scene.context {
+            data.insert("context".to_string(), c.path.clone());
         }
         data.extend(m.data.clone());
         data
