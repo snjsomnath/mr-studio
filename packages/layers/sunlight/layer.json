@@ -89,8 +89,6 @@
       "props": { "value": { "bind": "shared.altitude" }, "unit": "°", "decimals": 0 } },
     { "id": "ribbon-daylight", "widget": "stat", "size": "tile", "title": "Daylight", "ribbon": true, "visibleWhen": { "mode": "day", "window": "day" },
       "props": { "value": { "bind": "shared.daylightHours" }, "unit": "h", "decimals": 1 } },
-    { "id": "ribbon-rule", "widget": "stat", "size": "tile", "title": "Enough sun", "ribbon": true, "visibleWhen": { "mode": "rule" },
-      "props": { "value": { "bind": "shared.rulePass" }, "unit": "%", "decimals": 0 } },
     { "id": "ribbon-key", "widget": "ramp", "size": "tile", "title": "On the table", "ribbon": true,
       "props": { "colormap": { "bind": "shared.ramp" }, "low": { "bind": "shared.rampLow" }, "high": { "bind": "shared.rampHigh" } } }
   ]
