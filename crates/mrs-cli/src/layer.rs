@@ -112,10 +112,32 @@ pub fn build(site: &Path, only: Option<&str>, watch: bool) -> anyhow::Result<()>
         }
         run(node, &dir, "node build.mjs")?;
         if !watch {
+            requires_this_app(&dir)?;
             println!("Built {}", dir.join(SITE_LAYER_MODULE).display());
         }
     }
     Ok(())
+}
+
+/// Writes into `layer.json` that the layer needs this MR Studio or newer (#509): it was built
+/// against this SDK, and an older app says "update" instead of failing inside the layer.
+/// A layer that already asks for a newer one keeps that.
+fn requires_this_app(dir: &Path) -> anyhow::Result<()> {
+    use mrs_site::version;
+    let path = dir.join("layer.json");
+    let text = std::fs::read_to_string(&path).with_context(|| format!("reading {}", path.display()))?;
+    let mut manifest: serde_json::Value = serde_json::from_str(&text).with_context(|| format!("{} is not JSON", path.display()))?;
+    let wanted = format!(">={}", version::short(version::THIS));
+    let current = manifest["requires"]["app"].as_str().unwrap_or_default();
+    let keep = version::parse(current).is_some_and(|c| Some((c.0, c.1)) >= version::parse(&wanted).map(|w| (w.0, w.1)));
+    if keep {
+        return Ok(());
+    }
+    if !manifest["requires"].is_object() {
+        manifest["requires"] = serde_json::json!({});
+    }
+    manifest["requires"]["app"] = wanted.into();
+    std::fs::write(&path, serde_json::to_string_pretty(&manifest)? + "\n").with_context(|| format!("writing {}", path.display()))
 }
 
 #[cfg(test)]
@@ -135,6 +157,16 @@ mod tests {
         assert_eq!(manifest["id"], "energy-flows");
         assert_eq!(manifest["name"], "Energy flows");
         assert!(mrs_host::layers::LayerDef::parse(manifest).is_ok());
+        // A build says which MR Studio the layer needs, and never lowers what it asks for (#509).
+        requires_this_app(&dir).unwrap();
+        let read = || serde_json::from_str::<serde_json::Value>(&std::fs::read_to_string(dir.join("layer.json")).unwrap()).unwrap();
+        assert_eq!(read()["requires"]["app"], format!(">={}", mrs_site::version::short(mrs_site::version::THIS)));
+        assert!(mrs_host::layers::LayerDef::parse(read()).is_ok());
+        let mut newer = read();
+        newer["requires"]["app"] = ">=999.1".into();
+        std::fs::write(dir.join("layer.json"), newer.to_string()).unwrap();
+        requires_this_app(&dir).unwrap();
+        assert_eq!(read()["requires"]["app"], ">=999.1");
         assert!(new(&site_dir, "energy-flows", None).is_err(), "an existing package is never overwritten");
         assert!(new(&site_dir, "Bad Name", None).is_err());
         let _ = std::fs::remove_dir_all(&tmp);

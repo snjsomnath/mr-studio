@@ -117,8 +117,8 @@ What a team installs:
 | `@mrstudio/sdk` | npm package | Writing custom layers and TV widgets |
 | MR Studio MCP server | One file inside the app, also npm `@mrstudio/mcp` | Building a site by talking to an LLM ([MCP.md](MCP.md)) |
 
-What a team owns: a site repository made from the [site template repository](https://github.com/snjsomnath/mr-studio-site-template) (#86; `mrstudio new-site` makes the same `site.json`). Its source is `templates/site` in this repository, which a test opens and validates; a change there is copied to the template repository, and the template's check names the app version it installs (`MRSTUDIO_VERSION`).
-It holds `site.json`, data, custom layers and dashboards, its own code layers in `layers/` (built with `mrstudio layer build`, loaded by the app; see layer.md, Site layers), and a `mrstudio` version range. It contains no core code.
+What a team owns: a site repository made from the [site template repository](https://github.com/snjsomnath/mr-studio-site-template) (#86; `mrstudio new-site` makes the same `site.json`). Its source is `templates/site` in this repository, which a test opens and validates; a change there is copied to the template repository, and the template's check installs the app version the table names in `mrstudio.version`, or `MRSTUDIO_VERSION` for a table that names none.
+It holds `site.json`, data, custom layers and dashboards, its own code layers in `layers/` (built with `mrstudio layer build`, loaded by the app; see layer.md, Site layers), and `mrstudio.version`, the newest MR Studio that changed it (site.md, Which MR Studio a table needs). It contains no core code.
 The app opens that folder. Updating the core is installing a newer app; the site folder is not touched.
 
 Versioning. The app, CLI and SDK share one semantic version. What that version promises is the contracts, each of which carries its own number:
@@ -126,7 +126,7 @@ Versioning. The app, CLI and SDK share one semantic version. What that version p
 
 - Patch and minor releases never break a site or layer that worked on the same major version. New controls, kernels and fields are additions.
 - A breaking change raises the contract number and the major version. The app keeps reading the previous `format` and `api` for one major version and `mrstudio migrate` rewrites a site to the new one.
-- The app refuses a site that needs a newer core than it has, and says which version to install.
+- Additions are not breaks, so `format` and `api` do not say which app a table needs. A table carries the version of the newest app that changed it (`mrstudio.version`) and a site layer the oldest app it runs in (`requires.app`). An older app that cannot read the table refuses it and says which version to install; one that can read it says so and offers to open it anyway (#509).
 - Kernel results are part of the promise: the parity and physics tests guard them, and a change in output beyond the stated tolerance is a breaking change.
 
 Channels: `stable` for tables in use, `beta` for trying the next release, and nightly builds from `main` for development.

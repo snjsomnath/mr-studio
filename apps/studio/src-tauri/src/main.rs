@@ -111,6 +111,9 @@ struct Shell {
     /// Tables opened without their own programs in this run of the app (#506), with the
     /// programs that were turned down: the question is not asked again until they change or the app restarts.
     without_programs: Mutex<std::collections::HashMap<PathBuf, String>>,
+    /// Tables from a newer MR Studio that were opened anyway in this run of the app (#509),
+    /// with the version they named: asked once, not at every start.
+    opened_newer: Mutex<std::collections::HashSet<(PathBuf, String)>>,
     /// What happened while nobody watched: one file a day for the team (#79).
     operator: operator::OperatorLog,
     /// Operator mode (#394): while it is on, the ways to the editor lead to the operator window.
@@ -291,6 +294,7 @@ fn main() -> anyhow::Result<()> {
                 sources: Arc::new(sources),
                 opened_file: Mutex::new(None),
                 without_programs: Default::default(),
+                opened_newer: Default::default(),
                 operator: operator::OperatorLog::new(paths.app_log_dir().ok()),
                 operator_mode: Default::default(),
             });
@@ -685,9 +689,16 @@ async fn launch(app: &AppHandle, site: PathBuf, lan: bool) -> anyhow::Result<()>
 
     // A site saved by an older version is brought up to this version's format, on disk,
     // with the original kept beside it. A site from a newer version is refused with advice.
-    if let Some(done) = mrs_site::migrate::upgrade_site(&site)? {
+    let upgraded = mrs_site::migrate::upgrade_site(&site).map_err(|e| match mrs_site::version::needs_newer(&site) {
+        Some(needed) => anyhow::anyhow!(mrs_site::version::update_message(&needed)),
+        None => e.into(),
+    })?;
+    if let Some(done) = upgraded {
         tracing::info!("upgraded {} from site format {} to {}: {}", site.display(), done.from, done.to, done.changes.join("; "));
     }
+
+    // A table changed by a newer MR Studio opens only when someone says so (#509).
+    may_open_newer(app, &site).await?;
 
     // A table from elsewhere runs its own programs only after someone said so (#506).
     let run_programs = may_run_programs(app, &site).await?;
@@ -726,6 +737,58 @@ async fn launch(app: &AppHandle, site: PathBuf, lan: bool) -> anyhow::Result<()>
     *shell.running.lock() = Some(running);
     Ok(())
 }
+
+/// A table that a newer MR Studio changed (#509). One this version cannot read is refused,
+/// naming the version to install. One it can read may still use a layer or a setting from
+/// later, so the person is told once and chooses; an error when they cancel.
+async fn may_open_newer(app: &AppHandle, site: &Path) -> anyhow::Result<()> {
+    let shell = app.state::<Shell>();
+    let site = sites::canonical(site.to_path_buf());
+    let Some(needed) = mrs_site::version::needs_newer(&site) else { return Ok(()) };
+    let read = {
+        let site = site.clone();
+        tokio::task::spawn_blocking(move || mrs_site::Site::load(&site)).await?
+    };
+    if let Err(mrs_site::SiteError::Newer { .. }) = &read {
+        anyhow::bail!(mrs_site::version::update_message(&needed));
+    }
+    if shell.opened_newer.lock().contains(&(site.clone(), needed.clone())) {
+        return Ok(());
+    }
+    let asking = app
+        .dialog()
+        .message(format!(
+            "{}\n\nIt can be opened here, but anything it uses that came after this version will be missing or will not work.",
+            mrs_site::version::update_message(&needed)
+        ))
+        .title(NEWER_TITLE)
+        .kind(tauri_plugin_dialog::MessageDialogKind::Warning)
+        .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(NEWER_OPEN.into(), NEWER_CANCEL.into()));
+    use tauri_plugin_dialog::MessageDialogResult as Pressed;
+    let open = match tokio::task::spawn_blocking(move || asking.blocking_show_with_result()).await? {
+        Pressed::Ok | Pressed::Yes => true,
+        Pressed::Custom(label) => label == NEWER_OPEN,
+        _ => false,
+    };
+    if !open {
+        anyhow::bail!(
+            "{} was not opened. {}",
+            file_menu::name_from(&site).unwrap_or_else(|| "The table".into()),
+            mrs_site::version::update_message(&needed)
+        );
+    }
+    shell.operator.note(format!(
+        "Opened a table made with MR Studio {} in {}.",
+        mrs_site::version::short(&needed),
+        mrs_site::version::short(mrs_site::version::THIS)
+    ));
+    shell.opened_newer.lock().insert((site, needed));
+    Ok(())
+}
+
+const NEWER_TITLE: &str = "Made with a newer MR Studio";
+const NEWER_OPEN: &str = "Open anyway";
+const NEWER_CANCEL: &str = "Cancel";
 
 /// Whether the table in `site` runs its own programs (#506): the services the host would start
 /// and its layers' code. A table of data, one made here and one already allowed run without

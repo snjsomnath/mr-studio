@@ -308,8 +308,13 @@ pub fn import(file: &Path, into: &Path) -> Result<Imported, PackageError> {
     // that tells the two apart on Home.
     let renamed = folder != folder_name(&about.name);
     let finish = (|| -> Result<Option<String>, PackageError> {
+        // The table says which MR Studio it came from (#509), and an older one says so
+        // rather than what it could not read.
+        crate::version::stamp_with(&partial, &about.app);
         let upgraded = migrate::upgrade_site(&partial)
-            .map_err(|e| refused(e.to_string()))?
+            .map_err(|e| {
+                refused(crate::version::needs_newer(&partial).map(|v| crate::version::update_message(&v)).unwrap_or(e.to_string()))
+            })?
             .map(|u| format!("Brought up to date from site format {} to {}: {}", u.from, u.to, u.changes.join("; ")));
         if renamed {
             let path = partial.join("site.json");
@@ -366,8 +371,13 @@ pub fn update(file: &Path, existing: &Path) -> Result<Imported, PackageError> {
         if !partial.join("site.json").is_file() {
             return Err(refused("there is no site.json in it, so it is not a table"));
         }
+        // The table says which MR Studio it came from (#509), and an older one says so
+        // rather than what it could not read.
+        crate::version::stamp_with(&partial, &about.app);
         let upgraded = migrate::upgrade_site(&partial)
-            .map_err(|e| refused(e.to_string()))?
+            .map_err(|e| {
+                refused(crate::version::needs_newer(&partial).map(|v| crate::version::update_message(&v)).unwrap_or(e.to_string()))
+            })?
             .map(|u| format!("Brought up to date from site format {} to {}: {}", u.from, u.to, u.changes.join("; ")));
         Ok((files, upgraded))
     })();

@@ -9,6 +9,7 @@ sites/<id>/
   scene/             baked rasters written by `mrstudio prepare`, for inspection (generated, git-ignored)
   layers/            site-only layer packages (optional)
   calibration.json   table calibration, written by the app (optional)
+  mrstudio.version   the newest MR Studio that changed the table, written by the app (see below)
 ```
 
 ## site.json
@@ -109,6 +110,16 @@ Rules:
 - Unknown keys are an error, so a typo is caught by `mrstudio validate` rather than silently ignored.
 - Vector data is GeoJSON in WGS84 (CRS84). Site prep reprojects from national grids.
 - Nothing in `site.json` is a secret. Credentials for services live in the app's own config.
+
+## Which MR Studio a table needs (#509)
+
+`format` changes only when a site.json from before would no longer load. Between two formats the app gains layers, widgets and settings, and a table that uses them does not open in an app from before. So a table carries the version of the newest app that changed it:
+
+- `mrstudio.version` beside site.json holds one line, such as `0.50.0`. The host writes it when it saves a change to site.json, and never lowers it. Opening a `.mrstable` writes the version that exported it. Keep the file in the table's repository; a table without one is taken to open anywhere. It is not a key of site.json, because apps from before it refuse a site.json with a key they do not know.
+- Only the release line counts: `0.50.3` opens in `0.50.0`. A later minor or major version is newer.
+- A newer table that this app cannot read is refused with one message, whatever it tripped over: "This table was made with MR Studio 0.55. This computer has 0.50. Update MR Studio on this computer to 0.55 or newer." (`SiteError::Newer`; the same from `mrstudio validate` and when a `.mrstable` is opened.)
+- A newer table that this app can read may still use a layer or a setting from later. The app says so once, with the version, and offers **Open anyway**; `mrstudio dev` and `mrstudio validate` write the same note and carry on.
+- A site layer says what it needs in its own `layer.json` (`requires.app`, see layer.md). One built for a newer app is listed without its code and reports through layer health that it needs that version; the rest of the table shows.
 
 ## Layers, items and sequences
 

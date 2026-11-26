@@ -220,6 +220,10 @@ impl History {
     ) -> Result<(T, Option<Change>), E> {
         let value = write()?;
         let change = self.record(by, summary.into(), surface);
+        if change.is_some() {
+            // The table now holds what this version can make (#509).
+            crate::version::stamp(&self.dir);
+        }
         Ok((value, change))
     }
 

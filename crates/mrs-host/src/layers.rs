@@ -139,6 +139,11 @@ impl LayerDef {
             bail!("layer api is {api}, this app supports {LAYER_API}");
         }
         let id = manifest["id"].as_str().ok_or_else(|| anyhow!("missing id"))?.to_string();
+        match &manifest["requires"]["app"] {
+            Value::Null => {}
+            Value::String(version) if mrs_site::version::parse(version).is_some() => {}
+            other => bail!("requires.app is {other}; write the oldest MR Studio it runs in, such as \">=0.50\""),
+        }
         if !mrs_site::is_instance_id(&id) {
             bail!("id '{id}' must be lowercase letters, digits and dashes");
         }
@@ -674,7 +679,11 @@ pub fn load_catalog(site: &Site, core_layers: &Path, code: bool) -> anyhow::Resu
                 bail!("{} declares id '{}', which another layer already uses", dir.display(), def.id);
             }
             def.source = used.to_string();
-            if let Some(module) = module_url(used, &dir) {
+            if let Some(needs) = def.manifest["requires"]["app"].as_str().filter(|v| mrs_site::version::is_newer(v)) {
+                // Built for a newer MR Studio (#509): listed without its code, and it says so.
+                def.manifest["needs_app"] = Value::String(mrs_site::version::short(needs));
+                def.manifest["this_app"] = Value::String(mrs_site::version::short(mrs_site::version::THIS));
+            } else if let Some(module) = module_url(used, &dir) {
                 if code {
                     def.manifest["module"] = Value::String(module);
                 } else {
@@ -853,6 +862,16 @@ mod tests {
         assert!(rings.manifest.get("module").is_none());
         assert_eq!(rings.manifest["held"], true);
         assert!(held.iter().find(|d| d.id == "unbuilt").unwrap().manifest.get("held").is_none());
+        // Built for a newer MR Studio (#509): offered without its code, with the version it needs.
+        let later = package("later", json!({ "api": 1, "id": "later", "name": "Later", "requires": { "app": ">=999.4" } }));
+        std::fs::create_dir_all(later.join("dist")).unwrap();
+        std::fs::write(later.join(SITE_LAYER_MODULE), "export default {}").unwrap();
+        let catalog = load_catalog(&site, &repo.join("packages/layers"), true).unwrap();
+        let later = catalog.iter().find(|d| d.id == "later").unwrap();
+        assert!(later.manifest.get("module").is_none());
+        assert_eq!(later.manifest["needs_app"], "999.4");
+        assert!(LayerDef::parse(json!({ "api": 1, "id": "t", "requires": { "app": "soon" } })).is_err());
+        assert!(LayerDef::parse(json!({ "api": 1, "id": "t", "requires": { "app": ">=0.1" } })).is_ok());
         // In the scene, named either way, it is the same layer, listed once.
         site.manifest.layers.push(serde_json::from_value(json!({ "use": "./layers/rings", "id": "rings" })).unwrap());
         let catalog = load_catalog(&site, &repo.join("packages/layers"), true).unwrap();

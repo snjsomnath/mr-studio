@@ -229,6 +229,9 @@ async fn main() -> anyhow::Result<()> {
         Command::Dev { site, layers, web, port, lan, public_url, backend, relay, without_programs } => {
             let backend = Backend::parse(&backend).context("backend must be auto, gpu or cpu")?;
             let ip = if lan { [0, 0, 0, 0] } else { [127, 0, 0, 1] };
+            if let Some(needed) = mrs_site::version::needs_newer(&site) {
+                tracing::warn!("{} It opens here only as far as this version knows it.", mrs_site::version::update_message(&needed));
+            }
             let host = mrs_host::start(HostConfig {
                 site_dir: site,
                 layers_dir: layers,
@@ -359,6 +362,9 @@ fn migrate(dir: &Path) -> anyhow::Result<()> {
 
 fn validate(dir: &Path) -> anyhow::Result<(Site, mrs_engine::SceneData)> {
     let site = Site::load(dir)?;
+    if let Some(needed) = mrs_site::version::needs_newer(dir) {
+        println!("Note: {}", mrs_site::version::update_message(&needed));
+    }
     let started = Instant::now();
     let (scene, stats) = site.bake()?;
     let grid = scene.grid;

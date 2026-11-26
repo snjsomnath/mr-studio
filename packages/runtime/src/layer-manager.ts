@@ -542,6 +542,9 @@ export class LayerManager {
         // The table was opened without its own programs (#506): the layer's code is one of them.
         console.warn(`layer '${layer}' is held: this table's own programs are not run on this computer`);
         this.failed(id, 'this table was opened without its own programs, and this layer is one of them', false);
+      } else if (manifest?.needs_app) {
+        // The table's own layer, built for a newer MR Studio than this one (#509).
+        this.failed(id, `it needs MR Studio ${manifest.needs_app} or newer, and this computer has ${manifest.this_app ?? 'an older one'}. Update MR Studio on this computer`, false);
       } else if (!module && siteModuleProblem(layer)) {
         // The table's own layer, whose code did not load (#510).
         this.failed(id, `its code could not be loaded: ${siteModuleProblem(layer)}`, false);

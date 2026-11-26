@@ -1571,6 +1571,8 @@ async fn undo_after_an_import_brings_the_earlier_data_back() {
     assert_eq!(buildings_path(&site), "data/buildings.geojson");
     editor.request("history.redo", json!({})).await.unwrap();
     assert_eq!(buildings_path(&site), "data/buildings.v2.geojson");
+    // A table that was changed says which MR Studio changed it (#509).
+    assert_eq!(mrs_site::version::made_with(&site).as_deref(), Some(mrs_site::version::THIS));
     host.shutdown().await;
     let _ = std::fs::remove_dir_all(&site);
 }

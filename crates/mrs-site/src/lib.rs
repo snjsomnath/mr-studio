@@ -23,6 +23,7 @@ mod projection;
 pub mod sound;
 pub mod starter;
 mod twin;
+pub mod version;
 pub mod video;
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -48,6 +49,9 @@ pub enum SiteError {
     Parse { path: PathBuf, message: String },
     #[error("site is not valid:\n  {}", .0.join("\n  "))]
     Invalid(Vec<String>),
+    /// The table was changed by a newer MR Studio and does not open in this one (#509).
+    #[error("{}\n(What this version could not read: {reason})", version::update_message(.needed))]
+    Newer { needed: String, reason: String },
 }
 
 /// A loaded site package.
@@ -119,7 +123,16 @@ pub struct MeshInfo {
 
 impl Site {
     pub fn load(dir: impl AsRef<Path>) -> Result<Self, SiteError> {
-        let dir = dir.as_ref().to_path_buf();
+        let dir = dir.as_ref();
+        Self::read(dir).map_err(|e| match (&e, version::needs_newer(dir)) {
+            // Whatever it tripped over, the answer is the same: this app is too old for it.
+            (SiteError::Parse { .. } | SiteError::Invalid(_), Some(needed)) => SiteError::Newer { needed, reason: e.to_string() },
+            _ => e,
+        })
+    }
+
+    fn read(dir: &Path) -> Result<Self, SiteError> {
+        let dir = dir.to_path_buf();
         let path = dir.join("site.json");
         let text = std::fs::read_to_string(&path).map_err(|source| SiteError::Io { path: path.clone(), source })?;
         // A site written for an older format is upgraded as it is read; see `migrate`.
