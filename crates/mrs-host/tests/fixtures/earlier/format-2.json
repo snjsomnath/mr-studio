@@ -1,0 +1,117 @@
+{
+  "format": 2,
+  "id": "sample",
+  "name": "Sample district",
+  "origin": {
+    "lon": 11.97,
+    "lat": 57.7
+  },
+  "extent": {
+    "width_m": 1000,
+    "height_m": 600,
+    "rotation_deg": 0
+  },
+  "timezone": "Europe/Stockholm",
+  "table": {
+    "width_cm": 100,
+    "height_cm": 60,
+    "tile_cm": 20
+  },
+  "scene": {
+    "cell_m": 1,
+    "buildings": {
+      "path": "data/buildings.geojson",
+      "height_property": "height",
+      "default_height_m": 12
+    },
+    "terrain": {
+      "path": "data/terrain.f32",
+      "width": 100,
+      "height": 60
+    },
+    "trees": {
+      "path": "data/trees.geojson",
+      "height_property": "height",
+      "crown_radius_m": 3.5
+    }
+  },
+  "data": {
+    "roads": "data/roads.geojson",
+    "transit": "data/transit.geojson",
+    "slideshow": "data/slideshow/slideshow.json",
+    "walkways": "data/walkways.geojson",
+    "trips": "data/trips.json",
+    "trip_cells": "data/trip-cells.geojson"
+  },
+  "basemap": {
+    "background": "#0b0e14",
+    "style": null
+  },
+  "layers": [
+    {
+      "use": "basemap",
+      "active": true
+    },
+    {
+      "use": "sunlight",
+      "active": false,
+      "params": {
+        "date": "2026-06-21",
+        "hour": 15,
+        "relight": true
+      }
+    },
+    {
+      "use": "building-lights",
+      "active": true
+    },
+    {
+      "use": "cars",
+      "active": true
+    },
+    {
+      "use": "transit",
+      "active": true
+    },
+    {
+      "use": "trees",
+      "active": true
+    },
+    {
+      "use": "slideshow",
+      "active": false
+    },
+    {
+      "use": "sketch",
+      "active": true
+    },
+    {
+      "use": "coolpaths",
+      "active": false
+    },
+    {
+      "use": "isovist",
+      "active": false
+    },
+    {
+      "use": "mobility",
+      "active": false
+    },
+    {
+      "use": "wind",
+      "active": false
+    }
+  ],
+  "branding": {
+    "title": "MR Studio",
+    "languages": [
+      "en",
+      "sv"
+    ],
+    "translations": {
+      "sv": {
+        "Sample district": "Exempelstadsdelen"
+      }
+    }
+  }
+}
