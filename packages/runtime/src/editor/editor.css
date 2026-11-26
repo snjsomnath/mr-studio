@@ -4679,7 +4679,9 @@ body[data-role='edit'] > .connection {
 }
 
 .ed-dialog-body {
-  flex: 1;
+  /* Grows from its content, not from 0: in WebKit a `flex: 1` (basis 0%) body in a dialog of
+     no set height collapsed to a 20-pixel strip (Screens and calibration on the Mac, #573). */
+  flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
   padding: 4px 18px 18px;

@@ -1,6 +1,7 @@
 import { Connection } from '@mrstudio/sdk';
 import { reportErrors } from './diagnostics.ts';
 import { meter } from './perf.ts';
+import { fitRail } from './rail-fit.ts';
 import type { Role, SiteInfo } from '@mrstudio/sdk';
 
 import { luminance, themeVariables } from '@mrstudio/dashboard';
@@ -441,6 +442,11 @@ async function main() {
     if (second) (site.tv?.rail === 'right' ? second : side).append(controller.actions());
     app.append(side);
     if (second) app.append(second);
+    // Every button stays reachable however many a side has (#576).
+    if (second) {
+      fitRail(side, cards);
+      fitRail(second, rightCards);
+    }
   }
 }
 

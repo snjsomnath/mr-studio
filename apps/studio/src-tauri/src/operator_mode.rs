@@ -310,6 +310,7 @@ pub async fn operator_state(app: AppHandle, shell: State<'_, Shell>) -> Result<O
     let settings = shell.settings();
     let running = shell.running.lock().clone();
     let state = shell.host.lock().await.as_ref().map(|h| h.state.clone());
+    let join = state.as_ref().and_then(|s| s.hub.session().join_url);
     let beats = state.as_ref().map(|s| s.health.windows()).unwrap_or_default();
     let surfaces = shell.surfaces.lock().clone();
     let screens = list_displays(&app)
@@ -350,11 +351,20 @@ pub async fn operator_state(app: AppHandle, shell: State<'_, Shell>) -> Result<O
         on: shell.operator_mode.is_on(),
         pin_set: settings.operator_pin.is_some(),
         start: settings.operator_start,
-        table: running.as_ref().map(|r| r.name.clone()),
+        // A read-only copy says so here too, so nobody takes it for the table itself (#575).
+        table: running.as_ref().map(|r| {
+            if crate::is_read_only_copy(&app, &r.site) {
+                format!("{} (read-only copy)", r.name)
+            } else {
+                r.name.clone()
+            }
+        }),
         last_table,
         presenting: is_presenting(&app),
-        lan: running.as_ref().is_some_and(|r| r.lan),
-        code: running.as_ref().filter(|r| r.lan).map(|r| r.code.clone()),
+        // Whether phones can join is what the table's session says, which also counts the phone
+        // relay and the bridge, not only "Let phones on this network join" (#574).
+        lan: join.is_some(),
+        code: join.as_ref().and(running.as_ref()).map(|r| r.code.clone()),
         phones: state.as_ref().map(|s| s.hub.phones_connected()).unwrap_or(0),
         screens,
         problems,

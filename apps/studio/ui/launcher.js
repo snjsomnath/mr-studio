@@ -43,7 +43,7 @@ async function load() {
   $('running').hidden = !state.running;
   if (state.running) {
     const what = state.presenting ? 'Presenting' : 'Open';
-    $('running').replaceChildren(el('b', {}, `${what}: ${state.running.name}`), el('span', {}, state.running.lan ? `Phones join with ${state.running.code}` : 'Phones cannot join'));
+    $('running').replaceChildren(el('b', {}, `${what}: ${state.running.name}${state.read_only ? ' (read-only copy)' : ''}`), el('span', {}, state.join_url ? `Phones join with ${state.running.code}` : 'Phones cannot join'));
   }
   showError(state.error);
   renderDisplays();
