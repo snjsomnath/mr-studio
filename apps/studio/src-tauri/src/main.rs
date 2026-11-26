@@ -169,6 +169,7 @@ fn main() -> anyhow::Result<()> {
             identify,
             start,
             open_site,
+            open_site_read_only,
             create_site,
             present,
             stop_presenting,
@@ -944,7 +945,13 @@ fn open_editor(app: &AppHandle, page: &str) -> anyhow::Result<()> {
     }
     let running = shell.running.lock().unwrap().clone().context("no site is open")?;
     let url: tauri::Url = format!("http://127.0.0.1:{}/{page}", running.port).parse().context("the editor's address")?;
-    let title = if page == "new" { "MR Studio · New table".to_string() } else { format!("MR Studio · {}", running.name) };
+    let title = if page == "new" {
+        "MR Studio · New table".to_string()
+    } else if page.contains("readonly=1") {
+        format!("MR Studio · {} (read-only)", running.name)
+    } else {
+        format!("MR Studio · {}", running.name)
+    };
     let stale = shell.editor_stale.swap(false, Ordering::Relaxed);
     let window = match app.get_webview_window(EDITOR) {
         Some(window) => {
@@ -1619,6 +1626,36 @@ async fn open_site(app: AppHandle, shell: State<'_, Shell>, path: PathBuf, welco
     settings.opened(&path);
     settings.write(&shell.settings_path()).map_err(text)?;
     open_editor(&app, if welcome == Some(true) { "edit?welcome=1" } else { "edit" }).map_err(text)?;
+    close_shell_pages(&app);
+    Ok(())
+}
+
+/// Opens a table read-only: a copy of it in the app's cache is opened instead, so nothing done
+/// in the editor, on the controller or on the phones is saved to the table itself. Earlier
+/// read-only copies are thrown away, except one still running. The copy keeps the table's id
+/// and calibration, so it presents on the same projector. File › Save As keeps changes as a new table.
+#[tauri::command]
+async fn open_site_read_only(app: AppHandle, shell: State<'_, Shell>, path: PathBuf) -> Result<(), String> {
+    let path = sites::canonical(path);
+    if !path.join("site.json").is_file() {
+        return Err(format!("{} is not a table folder (it has no site.json).", path.display()));
+    }
+    let root = app.path().app_cache_dir().map_err(text)?.join("read-only");
+    let running = shell.running.lock().unwrap().as_ref().map(|r| r.site.clone());
+    if let Ok(entries) = std::fs::read_dir(&root) {
+        for entry in entries.flatten() {
+            if running.as_ref().is_none_or(|r| !r.starts_with(entry.path())) {
+                let _ = std::fs::remove_dir_all(entry.path());
+            }
+        }
+    }
+    let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or_default();
+    let folder = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "table".into());
+    let copy = root.join(format!("{stamp}")).join(folder);
+    file_menu::copy_dir(&path, &copy).map_err(|e| format!("Could not make a read-only copy of the table: {e}"))?;
+    tracing::info!("opening {} read-only from {}", path.display(), copy.display());
+    ensure_running(&app, &copy, shell.settings().lan).await.map_err(text)?;
+    open_editor(&app, "edit?readonly=1").map_err(text)?;
     close_shell_pages(&app);
     Ok(())
 }

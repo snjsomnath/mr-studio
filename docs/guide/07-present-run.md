@@ -9,7 +9,8 @@
    - **Forgot the PIN?** asks for this computer's password (on a Mac, the logged-in account's; on Windows, the Windows account's), then sets a new PIN.
    - Starting MR Studio with **Shift** held also asks for the computer's password, then opens the editor.
    - `mrstudio operator off` in a terminal turns operator mode off and forgets the PIN; start the app again afterwards.
-5. **Sources and keys** (on Home) holds the keys for live data and maps (Västtrafik, Lantmäteriet, Mapbox, CARTO). They stay on this computer, in its keychain.
+5. For a demo or a test that must leave the table as it is, press **Open read-only** on its card on Home. MR Studio opens a copy, the title bar says **Read-only**, and nothing changed in the editor, on the controller or on phones reaches the table. **File, Save As…** keeps the changes as a new table.
+6. **Sources and keys** (on Home) holds the keys for live data and maps (Västtrafik, Lantmäteriet, Mapbox, CARTO). They stay on this computer, in its keychain.
 
 ![The app starting a table by itself](docs/screenshots/79-startup.png)
 

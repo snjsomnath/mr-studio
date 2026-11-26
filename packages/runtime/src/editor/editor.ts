@@ -1676,6 +1676,12 @@ export class Editor {
     const name = el('div', 'ed-name');
     this.titleName.textContent = this.store.state.site.name;
     name.append(this.titleName, this.saved);
+    // Opened read-only from Home: the app runs a copy, so nothing done here reaches the table.
+    if (new URLSearchParams(location.search).get('readonly') === '1') {
+      const badge = el('span', 'ed-readonly', 'Read-only');
+      badge.title = 'This is a copy of the table: nothing you change here is saved to it. File › Save As… keeps the changes as a new table.';
+      name.append(badge);
+    }
     const steps = el('div', 'ed-steps');
     steps.append(this.history.undoButton, this.history.redoButton);
     // Command search, where it is seen (#65).

@@ -115,6 +115,14 @@ async function load(fresh) {
           }
         });
         tools.append(copy);
+        // Read only: a copy is opened, so a demo or a test changes nothing in the table itself.
+        const look = el(
+          'button',
+          { type: 'button', className: 'remove', title: 'Open a copy of this table: nothing changed in the editor, on the controller or on phones is saved to it' },
+          'Open read-only',
+        );
+        look.addEventListener('click', () => openTable(site.path, false, true));
+        tools.append(look);
       }
       if (site.source === 'added') {
         const remove = el('button', { type: 'button', className: 'remove', title: 'Take it off this list. The folder is not deleted.' }, 'Remove from list');
@@ -148,13 +156,14 @@ async function load(fresh) {
 }
 
 // On success the shell closes this window.
-async function openTable(path, welcome = false) {
+async function openTable(path, welcome = false, readOnly = false) {
   if (busy) return;
   busy = true;
   document.body.style.cursor = 'progress';
   showError();
   try {
-    await invoke('open_site', { path, welcome });
+    if (readOnly) await invoke('open_site_read_only', { path });
+    else await invoke('open_site', { path, welcome });
   } catch (e) {
     showError(e);
     show('home');

@@ -226,6 +226,7 @@ button.ed-brand:focus-visible {
   gap: 8px;
 }
 
+.ed-readonly { margin-left: 8px; padding: 1px 7px; border-radius: 999px; background: var(--ed-warning-soft, #fff4e0); color: var(--ed-warning, #a15c00); font-size: 11px; font-weight: 600; white-space: nowrap; cursor: help; }
 .ed-name {
   flex: 1;
   display: flex;
