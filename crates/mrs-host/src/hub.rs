@@ -1045,6 +1045,11 @@ impl Hub {
         self.info.read().unwrap().clone()
     }
 
+    /// Phones connected now, for the operator window (#394).
+    pub fn phones_connected(&self) -> usize {
+        self.inner.lock().unwrap().seats.iter().filter(|s| s.participant.connected).count()
+    }
+
     /// Every layer instance with whether it is on and how it is doing (#259), for diagnostics.
     pub fn layer_health(&self) -> Vec<Value> {
         let inner = self.inner.lock().unwrap();

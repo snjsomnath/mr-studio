@@ -2203,6 +2203,8 @@ export class Editor {
       },
       'present.start': { keys: k('Enter'), run: () => this.presentButton.click() },
       'dialog.screens': { run: () => this.openDialog('screens') },
+      // Operator mode (#394): the app's own window takes over from this editor until the PIN is given.
+      'present.operator': { disabled: () => (shell() ? undefined : app), run: () => void shell()?.('open_operator').catch(() => {}) },
       'file.share': { disabled: () => (shell() ? undefined : app), run: () => this.file('share') },
       'file.export': { disabled: () => (shell() ? undefined : app), run: () => this.file('export') },
       'dialog.starter': { run: () => this.file('starter') },

@@ -1,0 +1,18 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "operator",
+  "description": "The operator window (#394) runs an exhibition table: present and stop, which display is which, open the screens again, and how the table is doing. Leaving it takes the PIN, or this computer's password. It cannot reach the editor's commands.",
+  "windows": [
+    "operator"
+  ],
+  "permissions": [
+    "allow-operator-state",
+    "allow-operator-present",
+    "allow-stop-presenting",
+    "allow-identify",
+    "allow-operator-restart-screens",
+    "allow-operator-set-pin",
+    "allow-operator-exit",
+    "allow-operator-password"
+  ]
+}

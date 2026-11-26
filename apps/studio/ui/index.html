@@ -122,6 +122,14 @@
           <p class="hint indent">For a finished installation: when someone logs in, MR Studio starts straight on the screens chosen under Screens.</p>
         </section>
         <section class="panel">
+          <h2>Operator mode</h2>
+          <p class="hint">For the exhibition computer. The table runs with a small operator window in place of the editor: present and stop, which screen is which, open the screens again, and how the table is doing. Leaving it takes a PIN, so visitors never reach the editor.</p>
+          <label class="check"><input id="operator-start" type="checkbox" /> Start in operator mode</label>
+          <p class="hint indent">MR Studio opens presenting the last table, in operator mode. Turn on <b>Start with this computer</b> too for a table that runs by itself.</p>
+          <div class="row"><button id="operator-open" type="button">Open operator mode now</button><span id="operator-pin" class="hint"></span></div>
+          <p class="hint">A forgotten PIN: <b>Forgot the PIN?</b> asks for this computer's password. Starting MR Studio with <kbd>Shift</kbd> held does too, and <code>mrstudio operator off</code> in a terminal turns operator mode off.</p>
+        </section>
+        <section class="panel">
           <h2>Running unattended</h2>
           <p class="hint">While a table is presented, MR Studio watches it. A window that goes blank or stops answering is reloaded, and a table that stops is started again. A failed graphics card hands over to the processor. None of this shows on the screens.</p>
           <label class="check"><input id="nightly-on" type="checkbox" /> Restart the table every night at <input id="nightly-time" type="time" value="03:00" /></label>
@@ -131,6 +139,7 @@
         <section class="panel">
           <h2>Keys while presenting</h2>
           <p class="keys"><kbd>Ctrl</kbd> <kbd>Shift</kbd> <kbd>E</kbd> editor · <kbd>Ctrl</kbd> <kbd>Shift</kbd> <kbd>S</kbd> this window · <kbd>Ctrl</kbd> <kbd>Shift</kbd> <kbd>Q</kbd> quit · <kbd>Esc</kbd> on a screen stops presenting</p>
+          <p class="hint">In operator mode these keys open the operator window, and <kbd>Esc</kbd> does nothing.</p>
         </section>
       </main>
 

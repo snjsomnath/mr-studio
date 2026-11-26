@@ -55,6 +55,10 @@ The aerial photo, ready-made map styles, web maps and the pictures in this Help 
 
 MR Studio watches its windows while presenting and reloads one that stops drawing. It writes what happened in the **operator log**: Home, **Settings**, **Show the operator log**. While presenting, Ctrl+Shift+E brings the editor back.
 
+## The PIN for operator mode is forgotten
+
+In the operator window, **Leave operator mode…**, then **Forgot the PIN?**: this computer's password sets a new PIN. Or quit and start MR Studio with **Shift** held, which asks for the password and opens the editor. With no password at hand, `mrstudio operator off` in a terminal turns operator mode off and forgets the PIN.
+
 ## The app will not open the first time
 
 - **Mac**: macOS may say the app is from an unidentified developer. Open **System Settings**, **Privacy and Security**, and press **Open Anyway** beside MR Studio. You only do this once per version.

@@ -38,6 +38,8 @@ async function load() {
   if (state.nightly_restart) $('nightly-time').value = state.nightly_restart;
   $('nightly-time').disabled = !state.nightly_restart;
   $('lan').checked = state.lan;
+  $('operator-start').checked = state.operator_start;
+  $('operator-pin').textContent = state.operator_pin ? 'A PIN is set.' : 'No PIN yet: set one in the operator window.';
   $('running').hidden = !state.running;
   if (state.running) {
     const what = state.presenting ? 'Presenting' : 'Open';
@@ -154,6 +156,13 @@ $('lan').addEventListener('change', saveSettings);
 $('autostart').addEventListener('change', saveSettings);
 $('nightly-on').addEventListener('change', saveSettings);
 $('nightly-time').addEventListener('change', saveSettings);
+// Operator mode (#394).
+$('operator-start').addEventListener('change', async () => {
+  showError();
+  await invoke('set_operator_start', { on: $('operator-start').checked }).catch((e) => showError(String(e)));
+  await load();
+});
+$('operator-open').addEventListener('click', () => invoke('open_operator').catch((e) => showError(String(e))));
 $('operator-log').addEventListener('click', () => invoke('open_operator_log').catch((e) => showError(String(e))));
 $('open-sources').addEventListener('click', () => invoke('open_sources').catch((e) => showError(String(e))));
 

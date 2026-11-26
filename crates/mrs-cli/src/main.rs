@@ -124,11 +124,23 @@ enum Command {
         #[command(subcommand)]
         action: DataCommand,
     },
+    /// The desktop app's operator mode (#394). `mrstudio operator off` is the way out when the
+    /// PIN is forgotten: the app starts in its usual way next time, and the PIN is forgotten.
+    Operator {
+        #[command(subcommand)]
+        action: OperatorCommand,
+    },
     /// Time a kernel on a site with each backend.
     Bench {
         #[arg(default_value = "sites/sample")]
         site: PathBuf,
     },
+}
+
+#[derive(Subcommand)]
+enum OperatorCommand {
+    /// Turn off "Start in operator mode" and forget the PIN. Quit and start the app again after.
+    Off,
 }
 
 #[derive(Subcommand)]
@@ -248,6 +260,7 @@ async fn main() -> anyhow::Result<()> {
             new_site(&dir, name, lon, lat, width_m, height_m, rotation_deg)
         }
         Command::Bench { site } => bench(&site),
+        Command::Operator { action: OperatorCommand::Off } => operator_off(&app_settings_path()?),
         Command::Layer { action: LayerCommand::New { id, site, name } } => {
             let dir = layer::new(&site, &id, name.as_deref())?;
             println!("Made {}. Build it with `mrstudio layer build {id} --site {}`.", dir.display(), site.display());
@@ -589,4 +602,60 @@ fn starter_pack(
         (Err(e), false) => return Err(e),
     }
     Ok(())
+}
+
+/// The desktop app's settings file: `studio.json` in its config folder (Tauri's `app_config_dir`
+/// for the identifier `app.mrstudio.studio`).
+fn app_settings_path() -> anyhow::Result<PathBuf> {
+    const ID: &str = "app.mrstudio.studio";
+    let var = |name: &str| std::env::var_os(name).filter(|v| !v.is_empty()).map(PathBuf::from);
+    let base = if cfg!(windows) {
+        var("APPDATA").context("APPDATA is not set")?
+    } else if cfg!(target_os = "macos") {
+        var("HOME").context("HOME is not set")?.join("Library/Application Support")
+    } else {
+        var("XDG_CONFIG_HOME").or_else(|| var("HOME").map(|h| h.join(".config"))).context("HOME is not set")?
+    };
+    Ok(base.join(ID).join("studio.json"))
+}
+
+/// `mrstudio operator off` (#394): the app starts as usual next time, with no PIN.
+fn operator_off(path: &Path) -> anyhow::Result<()> {
+    let text = match std::fs::read_to_string(path) {
+        Ok(text) => text,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            println!("MR Studio has no settings on this computer yet, so operator mode is off.");
+            return Ok(());
+        }
+        Err(e) => return Err(e).with_context(|| format!("reading {}", path.display())),
+    };
+    let mut settings: serde_json::Value = serde_json::from_str(&text).with_context(|| format!("reading {}", path.display()))?;
+    let map = settings.as_object_mut().context("studio.json is not a settings file")?;
+    let was = map.get("operator_start").and_then(|v| v.as_bool()).unwrap_or(false) || map.contains_key("operator_pin");
+    map.insert("operator_start".into(), json!(false));
+    map.remove("operator_pin");
+    std::fs::write(path, serde_json::to_string_pretty(&settings)?).with_context(|| format!("writing {}", path.display()))?;
+    println!(
+        "{} Quit MR Studio and start it again to open the editor.",
+        if was { "Operator mode is off and its PIN is forgotten." } else { "Operator mode was already off." }
+    );
+    Ok(())
+}
+
+#[cfg(test)]
+mod operator_tests {
+    use super::*;
+
+    #[test]
+    fn operator_off_keeps_the_other_settings() {
+        let dir = std::env::temp_dir().join(format!("mrs-operator-off-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("studio.json");
+        std::fs::write(&path, r#"{"lan":true,"operator_start":true,"operator_pin":"sha256$a$b"}"#).unwrap();
+        operator_off(&path).unwrap();
+        let after: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(after, json!({ "lan": true, "operator_start": false }));
+        operator_off(&dir.join("missing.json")).unwrap();
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 }

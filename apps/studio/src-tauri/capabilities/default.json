@@ -47,6 +47,8 @@
     "allow-open-sources",
     "allow-open-operator-log",
     "allow-diagnostics-report",
-    "allow-save-diagnostics"
+    "allow-save-diagnostics",
+    "allow-open-operator",
+    "allow-set-operator-start"
   ]
 }

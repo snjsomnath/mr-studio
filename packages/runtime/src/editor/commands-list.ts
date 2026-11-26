@@ -60,6 +60,7 @@ export const COMMANDS = {
   'present.check': { label: 'Ready to present?', icon: 'check', tip: 'What to check before presenting, and the way to fix each', group: 'Present', also: 'checks problems missing' },
   'present.rehearse': { label: 'Rehearse', icon: 'people', tip: 'Try the table as a visitor here: press the controller and a phone. Nothing is saved and the real displays are not used.', group: 'Present', also: 'try test practise practice preview' },
   'present.start': { label: 'Present', icon: 'tv', tip: 'Show the map on the projector and the controller on its screen', group: 'Present', also: 'start show projector' },
+  'present.operator': { label: 'Operator mode', icon: 'lock', tip: 'For the exhibition computer: the table runs with a small operator window in place of this editor, and leaving it takes a PIN', group: 'Present', also: 'kiosk exhibition lock pin visitors unattended museum' },
   'dialog.screens': { label: 'Screens and calibration…', icon: 'crosshair', tip: 'Which screen shows what, lining the map up with the table, colour and quality. These belong to this computer.', group: 'Present', also: 'display projector colour calibrate quality' },
   'file.share': { label: 'Share by email', icon: 'share', tip: 'Email this table as one file, for the studio PC or a colleague. Keys stay on this computer.', group: 'File', also: 'send mail' },
   'file.export': { label: 'Export', icon: 'save', tip: 'Save this table as one .mrstable file', group: 'File', also: 'mrstable file' },
