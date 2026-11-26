@@ -802,7 +802,7 @@ async function main() {
     await guide.locator('.wz-place[data-target="trees"] .wz-state', { hasText: 'On the table' }).waitFor();
     assert.ok(fs.statSync(path.join(site, 'data', 'trees.geojson')).mtimeMs > written, 'the file is written into the table');
     // A file that is not what was asked for is refused with a reason, and nothing is written.
-    await guide.getByLabel('File for Buildings').setInputFiles(path.join(site, 'data', 'trees.geojson'));
+    await guide.getByLabel('File for Buildings', { exact: true }).setInputFiles(path.join(site, 'data', 'trees.geojson'));
     await guide.locator('.wz-place[data-target="buildings"] .wz-issue.is-blocker').waitFor();
     assert.equal(await guide.locator('.wz-place[data-target="buildings"]').getByRole('button', { name: 'Add to the table' }).isDisabled(), true);
     await guide.locator('.wz-place[data-target="buildings"]').getByRole('button', { name: 'Cancel' }).click();
