@@ -53,16 +53,20 @@ function dataName(dataset: string): string {
   return known ? `${known.name.toLowerCase()} data` : `${dataset} data`;
 }
 
-/** The list of steps down the side of the wizard. `done` steps before `current` are ticked. */
-export function stepList(names: readonly string[], current: number, go?: (index: number) => void): HTMLElement {
+/**
+ * The list of steps down the side of the wizard. Steps before `current` are ticked, except those
+ * in `unfinished`: passed, but with nothing in them yet (#581).
+ */
+export function stepList(names: readonly string[], current: number, go?: (index: number) => void, unfinished: readonly number[] = []): HTMLElement {
   const list = el('ol', 'wz-steps');
   names.forEach((name, index) => {
     const item = el('li', 'wz-step');
     const press = el('button', undefined);
     press.type = 'button';
     const dot = el('span', 'wz-dot');
-    if (index < current) dot.append(icon('check', 12));
+    if (index < current && !unfinished.includes(index)) dot.append(icon('check', 12));
     else dot.textContent = String(index + 1);
+    if (index < current && unfinished.includes(index)) item.classList.add('is-unfinished');
     press.append(dot, el('span', undefined, name));
     if (index === current) press.setAttribute('aria-current', 'step');
     press.disabled = !go;
@@ -264,6 +268,8 @@ export class Wizard {
       real.show(null);
       title('Start from…', 'Pick a starting point. Each one adds its layers, a little life on the map at rest and a controller theme. Everything can be changed in the editor afterwards.');
       body.append(this.starters());
+      const leftOut = this.leftOutNote();
+      if (leftOut) body.append(leftOut);
     }
 
     if (this.panel) {
@@ -311,7 +317,10 @@ export class Wizard {
     }
 
     const head = el('header', 'wz-head');
-    head.append(stepList(WIZARD_STEPS, this.step, (index) => this.go(index)));
+    // Data is ticked only when something more than the ground came in (#581): with every OpenStreetMap
+    // fetch failed, the map is empty and the step is not done.
+    const data = Object.keys(this.host.store.state.site.data ?? {}).filter((name) => !targetFor(name)?.elevation);
+    head.append(stepList(WIZARD_STEPS, this.step, (index) => this.go(index), data.length ? [] : [PLACE]));
     // Typing in a field must survive a redraw caused by someone else's change.
     this.element.replaceChildren(head, body, foot);
   }
@@ -571,6 +580,8 @@ export class Wizard {
   private chosen: string | null = null;
   private addedByStarter: string[] = [];
   private starting = false;
+  /** The picked starter's layers that could not be put on the table, with what they need (#581). */
+  private leftOut: { name: string; needs: string[] }[] = [];
 
   /** Start from… (#390): a card per starter table. Picking one sets its layers, map life and theme. */
   private starters(): HTMLElement {
@@ -608,9 +619,25 @@ export class Wizard {
     return list;
   }
 
+  /** What the picked starter could not add, said under the cards, so nothing goes missing quietly (#581). */
+  private leftOutNote(): HTMLElement | null {
+    if (!this.leftOut.length) return null;
+    const starter = STARTERS.find((s) => s.id === this.chosen);
+    const note = el('div', 'wz-left-out');
+    note.setAttribute('role', 'status');
+    note.append(el('strong', undefined, `Left out of ${starter?.name ?? 'the starter'}`));
+    const list = el('ul', 'wz-facts');
+    for (const { name, needs } of this.leftOut) list.append(el('li', undefined, needs.length ? `${name}: needs ${needs.map(dataName).join(' and ')}` : `${name}: could not be added`));
+    const back = el('button', 'ed-button', 'Fetch data');
+    back.type = 'button';
+    back.addEventListener('click', () => this.go(PLACE));
+    note.append(list, el('p', 'wz-hint', 'Fetch what is missing on the Data step, then pick the starter again to add these.'), back);
+    return note;
+  }
+
   /** Puts a starter on the table: what an earlier pick added goes, the author's own layers stay. */
   private async start(starter: Starter): Promise<void> {
-    if (this.starting || this.chosen === starter.id) return;
+    if (this.starting || (this.chosen === starter.id && !this.leftOut.length)) return;
     const { host } = this;
     this.starting = true;
     this.render();
@@ -618,11 +645,14 @@ export class Wizard {
       for (const id of this.addedByStarter) await host.send('scene.remove', { layer: id });
       this.addedByStarter = [];
       const have = new Set(this.instances().map((i) => i.manifest.id));
+      const data = host.store.state.site.data ?? {};
+      this.leftOut = [];
       for (const pkg of [...starter.rest, ...starter.layers]) {
         const manifest = host.store.manifest(pkg);
         if (!manifest || have.has(pkg)) continue;
         const id = await host.add(manifest);
         if (id) this.addedByStarter.push(id);
+        else this.leftOut.push({ name: manifest.name, needs: (manifest.requires?.data ?? []).filter((d) => !(d in data)) });
       }
       const index = THEMES.findIndex((t) => t.id === starter.theme);
       await host.send('site.tv', themeChoice(Math.max(0, index)));

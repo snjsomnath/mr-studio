@@ -11,7 +11,7 @@ import { clock, videoDataset, videoTime } from './path.ts';
 const DRIFT_S = 0.3;
 
 const STYLE = `
-.walk-hero { position: relative; height: clamp(16rem, 44vh, 32rem); aspect-ratio: 16 / 9; max-width: 100%; margin: 0 auto; border-radius: 1.125rem; overflow: hidden; color: #fff; user-select: none;
+.walk-hero { position: relative; height: calc(clamp(16rem, 44vh, 32rem) * var(--mrs-hero-scale, 1)); aspect-ratio: 16 / 9; max-width: 100%; margin: 0 auto; border-radius: 1.125rem; overflow: hidden; color: #fff; user-select: none;
   background: #0b0d17; box-shadow: 0 1.25rem 3.75rem rgb(0 0 0 / 0.35), inset 0 0 0 1px rgb(255 255 255 / 0.06); }
 .walk-hero [hidden] { display: none !important; }
 .walk-hero video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; background: #0b0d17; }

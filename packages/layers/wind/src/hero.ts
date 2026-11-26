@@ -33,7 +33,7 @@ export function windName(speed: number): string {
 }
 
 const STYLE = `
-.wind-hero { position: relative; height: clamp(16rem, 40vh, 30rem); border-radius: 1.125rem; overflow: hidden; touch-action: none; user-select: none; color: #fff;
+.wind-hero { position: relative; height: calc(clamp(16rem, 40vh, 30rem) * var(--mrs-hero-scale, 1)); border-radius: 1.125rem; overflow: hidden; touch-action: none; user-select: none; color: #fff;
   background: radial-gradient(120% 90% at 50% 40%, #1d3b66 0%, #12284a 45%, #0a1630 100%);
   box-shadow: 0 1.25rem 3.75rem rgb(0 0 0 / 0.35), inset 0 0 0 1px rgb(255 255 255 / 0.06); }
 .wind-hero canvas, .wind-hero > svg { position: absolute; inset: 0; width: 100%; height: 100%; }

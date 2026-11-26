@@ -4,6 +4,14 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="color-scheme" content="dark" />
+    <script>
+      // The editor, the new-table wizard and Help are light. Say so before anything loads, so the
+      // window is not black for the seconds the editor takes to start (#582).
+      if (/\/(edit|new|help)\/?$/.test(location.pathname)) {
+        document.querySelector('meta[name="color-scheme"]').content = 'light';
+        document.documentElement.style.background = '#f6f7f9';
+      }
+    </script>
     <title>MR Studio</title>
   </head>
   <body>

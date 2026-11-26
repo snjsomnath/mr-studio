@@ -15,7 +15,7 @@ export interface TourStep {
 
 export const TOUR_STEPS: TourStep[] = [
   { target: '.ed-ribbon', title: 'The ribbon', text: 'Commands, grouped like PowerPoint: Home works on what is selected, Insert adds layers, data and media, Design sets the look and the table’s size and place, Present checks and starts the table.' },
-  { target: '.ed-left', title: 'The list', text: 'What the map shows. At rest is the map when nobody presses anything; each layer below it is a button on the controller. Drag to reorder, the eye hides.' },
+  { target: '.ed-left', title: 'The list', text: 'What the map shows. At rest is the map when nobody presses anything; each layer below it is a button on the controller. Move up and Move down on Home reorder them; the eye hides one.' },
   { target: '.ed-surfaces', title: 'The map and the controller', text: 'What visitors see, live: the map projected on the table and the screen beside it. View chooses the map, the controller or both.' },
   { target: '.ed-inspector', title: 'The Format pane', text: 'The settings of whatever is selected, and the only place they are changed.' },
   { target: '.ed-status', title: 'The status bar', text: 'Saved, the connection to the table, and what is left to check before presenting.' },
@@ -43,14 +43,19 @@ function setTourOnStart(on: boolean): void {
   }
 }
 
-/** Runs the tour over `root`. Resolves when it is closed. */
-export function runTour(root: HTMLElement): Promise<void> {
+/**
+ * Runs the tour over `root`. Resolves when it is closed. `startup` is the tour the editor opens
+ * with: being shown counts as seen (#585), so it does not come back on the next table unless the
+ * author ticks the box.
+ */
+export function runTour(root: HTMLElement, startup = false): Promise<void> {
   document.querySelector('.ed-tour')?.remove();
   const steps = TOUR_STEPS.filter((s) => {
     const node = root.querySelector<HTMLElement>(s.target);
     return node && node.getBoundingClientRect().width > 0;
   });
   if (steps.length === 0) return Promise.resolve();
+  if (startup) setTourOnStart(false);
   return new Promise((resolve) => {
     const layer = el('div', 'ed-tour');
     layer.setAttribute('role', 'dialog');
@@ -104,7 +109,7 @@ export function runTour(root: HTMLElement): Promise<void> {
       box.type = 'checkbox';
       box.checked = tourOnStart();
       box.addEventListener('change', () => setTourOnStart(box.checked));
-      onStart.append(box, el('span', undefined, 'Show this tour when the editor opens'));
+      onStart.append(box, el('span', undefined, startup ? 'Show this tour again next time' : 'Show this tour when the editor opens'));
       const foot = el('footer');
       const skip = el('button', 'ed-link', 'Close');
       skip.type = 'button';

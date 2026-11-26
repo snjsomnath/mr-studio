@@ -953,8 +953,16 @@ export class Editor {
    */
   private startTour(): void {
     if (!tourOnStart() || navigator.webdriver || this.wizard) return;
+    // An author who has already clicked or typed is at work: the tour does not land on top of
+    // that first click (#585). Help › Tour of the editor still shows it.
+    let busy = false;
+    const touched = () => (busy = true);
+    document.addEventListener('pointerdown', touched, { capture: true, once: true });
+    document.addEventListener('keydown', touched, { capture: true, once: true });
     setTimeout(() => {
-      if (!this.wizard && !this.dialog) void runTour(this.shell);
+      document.removeEventListener('pointerdown', touched, { capture: true });
+      document.removeEventListener('keydown', touched, { capture: true });
+      if (!busy && !this.wizard && !this.dialog) void runTour(this.shell, true);
     }, 600);
   }
 
@@ -1978,7 +1986,7 @@ export class Editor {
       welcome: site.branding.welcome,
       layers: this.instances().map(({ id, manifest, state }) => {
         const b = layerButton(id, manifest, state, defaultSideOf(this.store, id) ?? defaultSide);
-        return { id, name: b.name, ambient: isAmbient(manifest), parent: state.parent ?? null, hidden: Boolean(state.button?.hidden), side: b.side, needs: manifest.requires?.data ?? [] };
+        return { id, name: b.name, ambient: isAmbient(manifest), parent: state.parent ?? null, hidden: Boolean(state.button?.hidden), side: b.side, needs: manifest.requires?.data ?? [], noWords: !b.description };
       }),
     });
   }

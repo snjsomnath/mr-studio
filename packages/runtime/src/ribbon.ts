@@ -77,6 +77,9 @@ export class Ribbons {
       this.queue();
     });
     store.onParticipants(() => this.queue());
+    // A running play head (#373) moves the strip's clock between the table's updates, so it reads
+    // the same minute as the controller (#584).
+    store.onClock(() => this.queue());
     store.onTv(() => this.layout());
     // The visitors' language changed (#80): every strip draws again in it.
     window.addEventListener('mrs-language', () => {

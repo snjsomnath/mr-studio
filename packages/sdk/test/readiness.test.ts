@@ -51,3 +51,15 @@ test('a one-sided controller and hidden buttons are found', () => {
   const hidden = ready.layers.map((l) => ({ ...l, hidden: !l.ambient }));
   assert.ok(readiness({ ...ready, layers: hidden }).some((c) => c.id === 'layers:hidden'));
 });
+
+test('a name with an id in it, and a data layer with no words, are flagged for visitors (#586)', () => {
+  const layers = [
+    ...ready.layers,
+    { id: 'showcase-today', name: 'Web map (WMS) (showcase-today)', ambient: false, side: 'right' as const },
+    { id: 'epc', name: 'EPC classes', ambient: false, side: 'right' as const, noWords: true },
+  ];
+  const checks = readiness({ ...ready, layers });
+  assert.equal(checks.find((c) => c.id === 'words:showcase-today:name')?.level, 'should');
+  assert.deepEqual(checks.find((c) => c.id === 'words:epc:about')?.fix, { kind: 'layer', id: 'epc' });
+  assert.ok(!checks.some((c) => c.id.startsWith('words:') && !['showcase-today', 'epc'].some((id) => c.id.includes(id))));
+});

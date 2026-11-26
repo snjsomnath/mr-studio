@@ -52,6 +52,11 @@
         </button>
       </div>
 
+      <!-- A returning author's tables come first; what's new follows (#587). -->
+      <h2>Your tables</h2>
+      <ul id="tables" class="tables"></ul>
+      <p id="tables-hint" class="hint"></p>
+
       <section id="whats-new" class="news" aria-labelledby="news-title" hidden>
         <header>
           <span class="pill">New</span>
@@ -73,9 +78,6 @@
         <div id="news-dialog-body" class="sheet-body"></div>
       </dialog>
 
-      <h2>Your tables</h2>
-      <ul id="tables" class="tables"></ul>
-      <p id="tables-hint" class="hint"></p>
 
       <dialog id="delete-dialog" class="confirm" aria-labelledby="delete-title">
         <h2 id="delete-title">Delete this table?</h2>

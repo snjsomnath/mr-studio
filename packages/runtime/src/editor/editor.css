@@ -431,8 +431,7 @@ button.ed-saved:hover {
 
 .ed-toast-text small {
   opacity: 0.8;
-  font-family: ui-monospace, monospace;
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .ed-toast-button {
@@ -1410,6 +1409,42 @@ body[data-role='edit'] .table-surface {
 .wz-field input {
   height: 32px;
   font-weight: 400;
+}
+
+/* What a starter could not add, and a step passed with nothing in it (#581). */
+.wz-left-out {
+  display: grid;
+  gap: 6px;
+  justify-items: start;
+  margin-top: 14px;
+  padding: 12px 14px;
+  border: 1px solid #f0c98a;
+  border-radius: 8px;
+  background: #fff8ec;
+}
+
+.wz-left-out .wz-facts {
+  margin: 0;
+}
+
+.wz-step.is-unfinished .wz-dot {
+  border-style: dashed;
+}
+
+/* The field a problem is about, and the problem beside Create (#582). */
+.wz-foot > .wz-problem {
+  flex: 1 1 auto;
+  margin: 0;
+  font-size: 13px;
+}
+
+.wz-foot > .wz-problem:not([hidden]) + .ed-grow {
+  display: none;
+}
+
+.wz-field input[aria-invalid] {
+  border-color: #c4321f;
+  box-shadow: 0 0 0 3px rgba(196, 50, 31, 0.15);
 }
 
 .wz-field small {

@@ -85,7 +85,6 @@ export function newTable(root: HTMLElement): void {
   const problem = el('p', 'wz-problem');
   problem.setAttribute('role', 'alert');
   problem.hidden = true;
-  body.append(problem);
 
   const foot = el('footer', 'wz-foot');
   const cancel = el('button', 'ed-button', 'Cancel');
@@ -93,7 +92,9 @@ export function newTable(root: HTMLElement): void {
   cancel.addEventListener('click', () => void invoke?.('open_home').catch(() => {}));
   const create = el('button', 'ed-button is-primary', 'Create the table');
   create.type = 'button';
-  foot.append(el('span', 'ed-grow'), ...okCancel(create, cancel));
+  // The problem line sits beside the button, always in view however far the form is scrolled (#582).
+  problem.classList.add('ed-grow');
+  foot.append(problem, el('span', 'ed-grow'), ...okCancel(create, cancel));
   panel.append(head, body, foot);
 
   // The other half of the window is a map with the table on it: click to place it, drag to scale and turn it.
@@ -127,9 +128,14 @@ export function newTable(root: HTMLElement): void {
   });
   for (const input of [name, place, width, height, turned]) input.addEventListener('input', () => invoke && say(''));
 
-  const say = (text: string): void => {
+  // A problem is said beside the button, and the field it is about is marked and focused (#582):
+  // below the fold, the line alone looked like Create did nothing.
+  const say = (text: string, field?: HTMLInputElement): void => {
     problem.textContent = text;
     problem.hidden = !text;
+    for (const input of [name, place, width, height]) input.toggleAttribute('aria-invalid', input === field);
+    if (!text) return;
+    field?.focus();
   };
   if (!invoke) {
     say('New tables are created from the MR Studio app. In a browser this page only shows what it asks.');
@@ -137,19 +143,24 @@ export function newTable(root: HTMLElement): void {
   }
   create.addEventListener('click', async () => {
     const { name: title, at, width_m, height_m } = read();
-    if (!title) return say('Give the table a name.');
-    if (!at) return say('Paste the coordinates of the centre of the table, for example 57.6898, 11.9742.');
-    if (!(width_m >= 100 && height_m >= 100)) return say('The width and the height must each be at least 100 metres.');
+    if (!title) return say('Give the table a name.', name);
+    if (!at) return say('Click the map to place the table, or paste the coordinates of its centre, for example 57.6898, 11.9742.', place);
+    if (!(width_m >= 100 && height_m >= 100)) return say('The width and the height must each be at least 100 metres.', width_m >= 100 ? height : width);
     const tiles = scale.problem();
     if (tiles) return say(tiles);
     say('');
     create.disabled = true;
+    // The wizard stays in view while the table is made and the editor starts (#582).
+    create.textContent = 'Making the table…';
+    document.body.style.cursor = 'progress';
     try {
       const path = await invoke!('create_site', { site: { name: title, lat: at.lat, lon: at.lon, width_m, height_m, rotation_deg: rotation(), table_width_cm: tableCm, tile_cm: tileCm ?? 0, detail } });
       await invoke!('open_site', { path, welcome: true });
     } catch (error) {
       say(String(error));
       create.disabled = false;
+      create.textContent = 'Create the table';
+      document.body.style.cursor = '';
     }
   });
 

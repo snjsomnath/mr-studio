@@ -11,7 +11,7 @@ import type { Arriving, Spot, Track } from './spots.ts';
 const STYLE = `
 .fw { display: grid; gap: 0.9rem; color: #fff; user-select: none; }
 .fw [hidden] { display: none !important; }
-.fw-frame { position: relative; height: clamp(16rem, 46vh, 34rem); border-radius: 1.125rem; overflow: hidden; background: #0b0d17;
+.fw-frame { position: relative; height: calc(clamp(16rem, 46vh, 34rem) * var(--mrs-hero-scale, 1)); border-radius: 1.125rem; overflow: hidden; background: #0b0d17;
   box-shadow: 0 1.25rem 3.75rem rgb(0 0 0 / 0.35), inset 0 0 0 1px rgb(255 255 255 / 0.06); }
 .fw-blur { position: absolute; inset: -2rem; background-size: cover; background-position: center; filter: blur(2rem) brightness(0.55); }
 .fw-photo { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }

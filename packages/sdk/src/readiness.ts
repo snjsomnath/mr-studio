@@ -9,6 +9,13 @@
 
 export type ReadyLevel = 'must' | 'should' | 'nice';
 
+/**
+ * Layers that carry the author's own data (a GeoJSON file, a picture, a web map, a plan, a
+ * slideshow). Their package's description says what kind of layer they are, which is for the
+ * gallery, not for visitors (#586): until the author writes one, visitors see none.
+ */
+export const KIND_LAYERS: ReadonlySet<string> = new Set(['mapdata', 'media', 'plan', 'wms', 'slideshow']);
+
 /** Where a problem is fixed. The editor turns each into a button; the MCP server into words. */
 export type ReadyFix =
   | { kind: 'data'; dataset: string }
@@ -42,6 +49,8 @@ export interface ReadyLayer {
   side?: 'left' | 'right';
   /** Site data it reads (`requires.data`). */
   needs?: string[];
+  /** Visitors see no words about it: it holds the author's own data and none were written (#586). */
+  noWords?: boolean;
 }
 
 export interface ReadyTable {
@@ -97,6 +106,15 @@ export function readiness(table: ReadyTable): ReadyCheck[] {
         action: `Bring in ${words(dataset)}`,
         fix: { kind: 'data', dataset },
       });
+    }
+  }
+  // Visitors see the table's words, never an id or the gallery's description of a kind of layer (#586).
+  for (const layer of buttons) {
+    if (layer.hidden) continue;
+    if (layer.name.includes(`(${layer.id})`) || /\([a-z0-9]+(?:[-_][a-z0-9]+)+\)/.test(layer.name)) {
+      checks.push({ id: `words:${layer.id}:name`, level: 'should', text: `"${layer.name}" shows its id to visitors. Give it a name of its own.`, action: 'Rename it', fix: { kind: 'layer', id: layer.id } });
+    } else if (layer.noWords) {
+      checks.push({ id: `words:${layer.id}:about`, level: 'nice', text: `${layer.name} has no description, so visitors see only its name.`, action: 'Describe it', fix: { kind: 'layer', id: layer.id } });
     }
   }
   if (!top.some((l) => l.ambient)) {

@@ -86,8 +86,10 @@ export function tileProblem(ground: Ground): string | null {
 
 /**
  * The physical table's width and height and the model scale, beside the ground's width and
- * height. The scale holds still: the ground and the table follow each other at it, so the
- * table can have any shape. A scale typed or picked keeps the ground and resizes the table.
+ * height. The physical table is furniture and holds still (#580): more or less ground
+ * changes the scale, and the other side of the ground follows so it keeps the table's shape.
+ * The table's own fields resize the table at the scale; a scale typed or picked keeps the
+ * ground and resizes the table.
  */
 export class ScaleFields {
   readonly element = el('div', 'wz-scale');
@@ -108,6 +110,10 @@ export class ScaleFields {
   /** The model scale, 1 : n, which the other fields follow. */
   private n: number | null = null;
   private lastTile = 20;
+  /** The ground as last shown, to tell which side was changed elsewhere. */
+  private last: Ground | null = null;
+  /** The change came from these fields (table size, scale, tiles), not from the ground. */
+  private own = false;
 
   /** `tiles` hears the tile grid's step in metres of ground, for the map to draw; null for none. */
   constructor(get: () => Ground, set: (ground: Ground) => void, tiles: (tile_m: number | null) => void = () => {}) {
@@ -160,12 +166,14 @@ export class ScaleFields {
     this.table.addEventListener('input', () => {
       const table_cm = Number(this.table.value);
       if (!(table_cm >= 10 && table_cm <= 2000) || !this.n) return;
+      this.own = true;
       this.set({ ...this.get(), table_cm, width_m: Math.round((table_cm * this.n) / 100) });
       this.refresh();
     });
     this.tableH.addEventListener('input', () => {
       const height_cm = Number(this.tableH.value);
       if (!(height_cm >= 10 && height_cm <= 2000) || !this.n) return;
+      this.own = true;
       this.set({ ...this.get(), height_m: Math.round((height_cm * this.n) / 100) });
       this.refresh();
     });
@@ -194,18 +202,38 @@ export class ScaleFields {
 
   /**
    * Shows the ground and table as they now are, leaving the field being typed in alone.
-   * A ground resized elsewhere (the fields, the map's corner) keeps the scale and resizes the table.
+   * A ground resized elsewhere (the metre fields, the map's corner) keeps the table and changes
+   * the scale; the other side follows, so the ground keeps the table's shape (#580).
    */
   refresh(): void {
     let ground = this.get();
     if (this.n === null && ground.table_cm > 0 && ground.width_m > 0) this.n = Math.round(scaleOf(ground.width_m, ground.table_cm));
-    if (this.n && ground.width_m > 0) {
-      const table_cm = tenth((ground.width_m * 100) / this.n);
-      if (Math.abs(table_cm - ground.table_cm) >= 0.05 && table_cm >= 10 && table_cm <= 2000) {
-        ground = { ...ground, table_cm };
-        this.set(ground);
+    const last = this.last;
+    if (last && !this.own && ground.table_cm > 0 && ground.table_cm === last.table_cm) {
+      const table = { width_cm: ground.table_cm, height_cm: tableHeight(last) };
+      // Both sides at once come from the map's corner, which keeps the shape itself: only the
+      // scale follows, so rounding never fights a drag. One side typed brings the other along.
+      const both = ground.width_m !== last.width_m && ground.height_m !== last.height_m;
+      const off = (want: number, have: number) => Math.abs(want - have) > Math.max(2, want * 0.01);
+      // Half-typed numbers (a "2" on the way to "2000") give no scale and change nothing yet.
+      if (ground.width_m !== last.width_m && ground.width_m > 0) {
+        const n = Math.round((ground.width_m * 100) / table.width_cm);
+        const height_m = Math.round((table.height_cm * n) / 100);
+        if (n >= 10 && height_m >= 100) {
+          this.n = n;
+          if (!both && off(height_m, ground.height_m)) this.set((ground = { ...ground, height_m }));
+        }
+      } else if (ground.height_m !== last.height_m && ground.height_m > 0 && table.height_cm > 0) {
+        const n = Math.round((ground.height_m * 100) / table.height_cm);
+        const width_m = Math.round((table.width_cm * n) / 100);
+        if (n >= 10 && width_m >= 100) {
+          this.n = n;
+          if (off(width_m, ground.width_m)) this.set((ground = { ...ground, width_m }));
+        }
       }
     }
+    this.own = false;
+    this.last = ground;
     const shown = (input: HTMLInputElement, value: string) => {
       if (document.activeElement !== input) input.value = value;
     };
@@ -233,6 +261,7 @@ export class ScaleFields {
   /** A new scale keeps the ground and resizes the table to show it. */
   private toScale(n: number, show = true): void {
     this.n = n;
+    this.own = true;
     const ground = this.get();
     const table_cm = tenth((ground.width_m * 100) / n);
     if (table_cm >= 10 && table_cm <= 2000) this.set({ ...ground, table_cm });

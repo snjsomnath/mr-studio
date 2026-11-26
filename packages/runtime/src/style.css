@@ -690,6 +690,21 @@ body[data-role='tv'] .dash {
   display: none;
 }
 
+/*
+ * A slideshow step's own layer (#552) sits under the step strip, so its hero is drawn smaller
+ * and the slideshow may take more of the height: its option rows stay whole (#577). Heroes
+ * scale their height by --mrs-hero-scale.
+ */
+.stage-guest .layer-hero {
+  --mrs-hero-scale: 0.75;
+  margin-bottom: 1rem;
+}
+
+/* (Doubled class: it outranks the hero rule above.) */
+.open-layers.open-layers:has(.layer-open:not([hidden]) .stage-guest:not([hidden])) {
+  max-height: 84%;
+}
+
 /* A custom layer's hero (#342): its data on a small map, and its places by name. */
 .custom-hero {
   display: grid;
