@@ -943,7 +943,7 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
       code: 'no_cli',
       next: ['Install or update the MR Studio app (it ships the command line inside it), then in the app use Displays and settings, Command line, Install command line tool so terminals find mrstudio; or set MRSTUDIO_CLI to an mrstudio program.', "Or add the data in the editor's Your place or Add data, then call list_site_files."],
     });
-  const TARGETS = 'buildings, trees, walkways, trips, terrain, or data:<name> for any other dataset (data:roads, data:zones)';
+  const TARGETS = 'buildings, trees, water, context (buildings around the table, felt only by the wind), walkways, trips, terrain, or data:<name> for any other dataset (data:roads, data:zones)';
 
   tool(
     'import_data',
