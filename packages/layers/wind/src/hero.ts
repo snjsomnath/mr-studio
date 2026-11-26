@@ -236,6 +236,9 @@ export function windHero(ctx: PanelContext<Params>, el: HTMLElement): PanelHandl
   });
   root.addEventListener('pointermove', (event) => dragging && apply(event));
   const release = () => {
+    // What the hand left is shown until the host confirms it, as for keys: an older value coming
+    // back in between must not turn the dial back (#560).
+    keyed = { ...keyed, ...held };
     dragging = null;
     held = {};
   };

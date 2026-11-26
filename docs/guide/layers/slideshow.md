@@ -2,7 +2,7 @@
 
 ## What it shows
 
-A sequence of slides shown on the table one after another: layers, pictures, videos, map data and web maps. The controller shows each slide's title, text and legend.
+A sequence of slides shown on the table one after another: layers, pictures, videos, map data and web maps. The controller shows each slide's title, text and legend. A slide that shows a layer of the table, such as a Magnifier X-ray, Sunlight or a custom layer, keeps the base map under it and brings that layer's own controls onto the controller (the glass's navigator, the time slider), as when it is opened from its button. Pictures, videos and web maps fill the table on their own.
 
 ![Slides in the editor](docs/screenshots/43-slides-editor.png)
 

@@ -1000,6 +1000,106 @@ function soundZone(id: string, store: Store, connection: Connection): { element:
   };
 }
 
+/**
+ * The layer a slideshow is showing, as the controller has it when opened from its own button (#552):
+ * its hero (the Magnifier's navigator, the reveal line's pad, Sunlight's sky) and its primary and
+ * secondary controls, under the step strip. Rebuilt when the step shows another layer.
+ */
+function guestZone(id: string, store: Store, connection: Connection): { element: HTMLElement; sync(state: LayerState): void; dispose(): void } {
+  const zone = el('div', 'stage-guest');
+  zone.hidden = true;
+  let guest: { id: string; sync(): void; dispose(): void } | undefined;
+  const build = (shown: string): NonNullable<typeof guest> | undefined => {
+    const state = store.state.layers[shown];
+    const manifest = state ? store.manifest(state.layer) : undefined;
+    if (!state || !manifest || manifest.hidesAtRest || manifest.category === 'media') return undefined;
+    const cleanups: (() => void)[] = [];
+    const parts: HTMLElement[] = [];
+    let heroHandlers: PanelHandlers | void = undefined;
+    const module = layerModule(manifest.id);
+    const heroOf =
+      module?.hero ??
+      (!module && hasCustomHero(manifest.custom) ? (ctx: PanelContext, place: HTMLElement) => customHero(ctx, place, () => store.manifest(manifest.id)?.custom) : undefined);
+    if (heroOf) {
+      const hero = el('div', 'layer-hero');
+      const ctx: PanelContext = Object.assign(Object.create(baseContext(store, connection, shown)), {
+        panel: 'hero',
+        onCleanup: (cleanup: () => void) => cleanups.push(cleanup),
+      });
+      try {
+        heroHandlers = heroOf(ctx, hero);
+        parts.push(hero);
+      } catch (error) {
+        console.error(`[${shown}] hero`, error);
+      }
+    }
+    const send = paramSender(connection, shown);
+    const widgets = visibleControls(manifest.controls)
+      .filter((control) => (control.tier ?? 'secondary') !== 'more')
+      .map((control) =>
+        widget(
+          control,
+          (value) => send({ [control.id]: value }),
+          (words) => void connection.request('layer.action', { layer: shown, action: control.id, ...(words ? { words } : {}) }).catch(() => {}),
+        ),
+      );
+    const primary = el('div', 'controls controls-primary');
+    const rest = el('div', 'controls');
+    primary.append(...widgets.filter((w) => w.control.tier === 'primary').map((w) => w.row));
+    rest.append(...widgets.filter((w) => w.control.tier !== 'primary').map((w) => w.row));
+    for (const group of [primary, rest]) if (group.childElementCount > 0) parts.push(group);
+    if (parts.length === 0) return undefined;
+    zone.replaceChildren(...parts);
+    const update = () => {
+      const now = store.state.layers[shown];
+      if (!now) return;
+      for (const w of widgets) {
+        w.row.hidden = !isVisible(w.control, now.params) || Boolean(now.hide?.includes(w.control.id));
+        w.sync(clockParam(store, shown, w.control, now.params), now.params, now.shared);
+      }
+      try {
+        heroHandlers?.update?.();
+      } catch (error) {
+        console.error(`[${shown}] hero`, error);
+      }
+    };
+    const stopClock = store.onClock((layer) => {
+      if (layer !== shown) return;
+      followClock(store, shown, widgets);
+      try {
+        heroHandlers?.update?.();
+      } catch (error) {
+        console.error(`[${shown}] hero`, error);
+      }
+    });
+    return {
+      id: shown,
+      sync: update,
+      dispose: () => {
+        stopClock();
+        for (const cleanup of cleanups) cleanup();
+        zone.replaceChildren();
+      },
+    };
+  };
+  return {
+    element: zone,
+    sync(state) {
+      const shown = state.active && store.manifest(state.layer)?.sequence ? shownBy(store, id) : undefined;
+      if (guest?.id !== shown) {
+        guest?.dispose();
+        guest = shown ? build(shown) : undefined;
+      }
+      zone.hidden = !guest;
+      guest?.sync();
+    },
+    dispose() {
+      guest?.dispose();
+      guest = undefined;
+    },
+  };
+}
+
 export class Controller {
   private cards = new Map<string, Card>();
   private backListened = false;
@@ -1334,6 +1434,7 @@ export class Controller {
     const sounds = soundZone(id, store, connection);
     const busy = busyZone(store);
     const entities = entityZone(id, manifest, store, connection);
+    const guest = guestZone(id, store, connection);
     // With no table window open, no layer runs, so nothing publishes its legend or live values (#412).
     const noTable = el('p', 'stage-no-table', t('Open the table to see live values here.'));
     const showNoTable = () => (noTable.hidden = store.state.session.tables !== 0);
@@ -1347,7 +1448,8 @@ export class Controller {
     // A layout of panels is the view: the generated control rows stay away unless it asks for them.
     const generated = !layout || layout.controls === true;
     if (generated) for (const group of [primary, controls]) if (group.childElementCount > 0) body.append(group);
-    body.append(legend.element, sounds.element);
+    // A slideshow step's own layer: its hero and controls, as from its own button (#552).
+    body.append(guest.element, legend.element, sounds.element);
     // "More settings" closes the primary row when there is one, so it costs no height of its own.
     if (generated && moreRows.childElementCount > 0) (primary.childElementCount > 0 ? primary : body).append(more);
 
@@ -1369,6 +1471,7 @@ export class Controller {
       body,
       dispose: () => {
         stopClock();
+        guest.dispose();
         for (const cleanup of heroCleanups) cleanup();
         for (const cleanup of stageCleanups) cleanup();
         body.remove();
@@ -1400,6 +1503,7 @@ export class Controller {
         sounds.sync(state);
         busy.sync(state);
         entities.sync(state);
+        guest.sync(state);
         // A slideshow made of layers is driven by its steps: its own slide controls step aside.
         const stepped = Boolean(manifest.sequence && state.step);
         for (const w of widgets) {

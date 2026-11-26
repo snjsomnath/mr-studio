@@ -332,8 +332,22 @@ export class LayerManager {
     if (!this.atRest(id)) return false;
     const open = this.store.state.scene.filter((other) => other !== id && this.opensOver(other));
     if (open.length === 0) return false;
-    if (open.some((other) => this.store.manifest(this.store.state.layers[other]!.layer)?.hidesAtRest)) return true;
+    if (open.some((other) => this.hidesMap(other))) return true;
     return this.store.manifest(this.store.state.layers[id]!.layer)?.category !== 'base';
+  }
+
+  /**
+   * Whether the open layer `id` turns the base map off. A slideshow does, unless the step it shows
+   * now is a layer of the scene, such as a Magnifier X-ray or a custom layer: that keeps the map
+   * under it, as it does when opened from its own button (#551). Pictures, videos and web maps
+   * (`media` layers) still show on their own.
+   */
+  private hidesMap(id: string): boolean {
+    const state = this.store.state.layers[id];
+    if (!state || !this.store.manifest(state.layer)?.hidesAtRest) return false;
+    if (!state.steps?.sequence?.length) return true;
+    const shown = Object.values(this.store.state.layers).filter((l) => l.shown_by === id && l.active);
+    return shown.length === 0 || shown.some((l) => this.store.manifest(l.layer)?.category === 'media');
   }
 
   private applyIntensity(id: string): void {
@@ -372,7 +386,8 @@ export class LayerManager {
     this.applyIntensity(id);
     // Off: any trouble it had is over (the host forgets it too).
     if (!state.active) this.forget(id, false);
-    if (!this.atRest(id) && Boolean(state.active) !== Boolean(previous?.active)) {
+    // A slideshow's step changing between a picture and a scene layer changes the base map too (#551).
+    if (!this.atRest(id) && (Boolean(state.active) !== Boolean(previous?.active) || state.shown_by !== previous?.shown_by)) {
       // The map at rest steps aside while a layer is open and comes back when it closes.
       for (const other of this.store.state.scene) if (other !== id && this.atRest(other)) this.sync(other, this.store.layer(other), this.store.layer(other));
     }
