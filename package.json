@@ -13,6 +13,7 @@
     "app": "pnpm build && cargo run -p mr-studio-app",
     "app:build": "pnpm build && pnpm --filter @mrstudio/studio exec tauri build",
     "mcp": "pnpm --filter @mrstudio/mcp build",
+    "test:release": "node --test scripts/release.test.mjs",
     "lint": "eslint",
     "smoke": "node scripts/smoke.cjs"
   },

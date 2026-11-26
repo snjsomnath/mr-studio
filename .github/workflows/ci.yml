@@ -32,6 +32,9 @@ jobs:
         run: node scripts/release.mjs check "origin/${{ github.base_ref }}"
       - name: Release notes are readable
         run: node scripts/release.mjs pending
+      # The script that decides every version is itself tested (#544).
+      - name: The release script does what it says
+        run: node --test scripts/release.test.mjs
       # Every layer, kernel and site setting is covered by the docs and the MCP server.
       - name: Docs and MCP server know what is built
         run: node scripts/check-docs.mjs

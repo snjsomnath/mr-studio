@@ -75,3 +75,5 @@ The app can also install an update itself and restart, if releases are signed wi
 An update never strands a site. `site.json` carries a `format` number; when a release changes the format, it adds one step to `crates/mrs-site/src/migrate.rs` and its release note says so under `breaking`.
 Opening a site saved by an older version runs the steps it needs, rewrites `site.json` and keeps the original beside it as `site.format-<n>.json`.
 `mrstudio migrate <site>` does the same from the command line. A site saved by a newer version than the app is refused with a message that says to update the app.
+
+The script has tests of its own (`pnpm test:release`, run in CI): change them with it.
