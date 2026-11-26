@@ -1,4 +1,4 @@
-import { EngineClient, VoiceBed, clockControl, entityChanges, entityValues, hearsSound, onDataProblem, serviceClient, stepTransition, transitionGain } from '@mrstudio/sdk';
+import { EngineClient, VoiceBed, clockControl, entityChanges, entityValues, hearsSound, onDataProblem, revealComplement, serviceClient, stepTransition, transitionGain } from '@mrstudio/sdk';
 import type { LayerView, RevealShape } from '@mrstudio/sdk';
 import type { Connection, DataProblem, EntityChange, LayerHealth, LayerManifest, LayerModule, LayerPlayHead, LayerState, PanelContext, Sender, StepTransitionKind, TableContext, TableHandlers, TablePlayHead, ToolInput } from '@mrstudio/sdk';
 
@@ -433,6 +433,11 @@ export class LayerManager {
       }
       const revealed = state.step?.index ?? 0;
       if (revealed !== (previous?.step?.index ?? 0)) this.guard(id, () => running.handlers.step?.(revealed));
+      // Moved between the surface and the stack underneath (#606): clipped the other way.
+      if (state.stack !== previous?.stack && state.parent) {
+        const clip = this.clipOf(id, state.parent);
+        if (clip !== undefined && this.revealedBy(id) !== null) this.view.setClip(id, clip);
+      }
     }
   }
 
@@ -494,11 +499,23 @@ export class LayerManager {
     return parent && state && this.store.manifest(state.layer)?.reveals ? parent : null;
   }
 
-  /** A revealing layer set its shape: its items show only inside it. */
+  /**
+   * Where an item of a revealing layer shows: its own shape if the layer gave it one, else the
+   * layer's shape for the stack underneath and everywhere else for the surface stack (#606).
+   * `undefined` while the layer has set no shape yet.
+   */
+  private clipOf(id: string, parent: string): RevealShape | null | undefined {
+    if (this.itemReveals.has(id)) return this.itemReveals.get(id) ?? null;
+    if (!this.reveals.has(parent)) return undefined;
+    const shape = this.reveals.get(parent) ?? null;
+    return this.store.state.layers[id]?.stack === 1 ? revealComplement(shape) : shape;
+  }
+
+  /** A revealing layer set its shape: its items show only inside it, the surface stack outside. */
   private reveal(parent: string, shape: RevealShape | null): void {
     this.reveals.set(parent, shape);
     for (const id of this.store.state.scene) {
-      if (this.store.state.layers[id]?.parent === parent && !this.itemReveals.has(id)) this.view.setClip(id, shape);
+      if (this.store.state.layers[id]?.parent === parent && !this.itemReveals.has(id)) this.view.setClip(id, this.clipOf(id, parent) ?? null);
     }
   }
 
@@ -514,7 +531,7 @@ export class LayerManager {
     if (shape === undefined) this.itemReveals.delete(id);
     else this.itemReveals.set(id, shape);
     if (!this.store.state.scene.includes(id)) return;
-    const own = this.itemReveals.has(id) ? this.itemReveals.get(id)! : this.reveals.get(parent);
+    const own = this.clipOf(id, parent);
     if (own !== undefined) this.view.setClip(id, own);
   }
 
@@ -524,8 +541,8 @@ export class LayerManager {
     // An item of a Magnifier or a Reveal line is clipped to its shape, and shows nowhere until there is one.
     const revealer = this.revealedBy(id);
     this.view.setClippable(id, revealer !== null);
-    if (revealer !== null && this.itemReveals.has(id)) this.view.setClip(id, this.itemReveals.get(id) ?? null);
-    else if (revealer !== null && this.reveals.has(revealer)) this.view.setClip(id, this.reveals.get(revealer) ?? null);
+    const clip = revealer !== null ? this.clipOf(id, revealer) : undefined;
+    if (clip !== undefined) this.view.setClip(id, clip);
     // A custom layer has no code: the recipe player draws it from its manifest, and restyles as it is saved again.
     const manifest = this.store.manifest(layer);
     const module = (layerModule(layer) as LayerModule | undefined) ??

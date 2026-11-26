@@ -139,6 +139,11 @@ export interface EntitySet {
    * layer's "tap to read"). A set may have facts and no controls.
    */
   facts?: (string | EntityFact)[];
+  /**
+   * A log of layers read from another dataset (#602): a well's or a borehole's soil and rock from
+   * the top down, drawn as a column on the controller for the picked entity.
+   */
+  log?: EntityLog;
   /** Milliseconds of quiet before the table's `entities` handler runs, for layers that call a model on change. Default 0. */
   debounce_ms?: number;
 }
@@ -154,6 +159,29 @@ export interface EntityFact {
   scale?: number;
   /** Decimals for a number. Default: none for whole numbers, else up to two. */
   decimals?: number;
+}
+
+/**
+ * Where an entity's log is (#602): rows of another dataset, one per layer, found by the entity's
+ * key in `key`, each from a depth to a depth with a material: `{ dataset: "well-logs", key:
+ * "BRUNNS_ID", from: "FRANDJUP", to: "TILLDJUP", material: "JORD_BERG" }`.
+ */
+export interface EntityLog {
+  /** A dataset from site.json `data`. Name it in `requires.data`. */
+  dataset: string;
+  /** The column of the log that holds the entity's key. */
+  key: string;
+  /** Columns of each layer's top and bottom, as depths. */
+  from: string;
+  to: string;
+  /** The column that says what the layer is: clay, sand, rock. */
+  material: string;
+  /** A column of remarks shown beside a layer. */
+  note?: string;
+  /** The depths' unit. Default `m`. */
+  unit?: string;
+  /** What the column is called on the controller. Default "Layers". */
+  title?: string;
 }
 
 /** An entity that is picked on the table and the controller: `state.selection`. */
@@ -507,6 +535,11 @@ export interface LayerState {
   hide?: string[];
   /** For an item: the layer it belongs to. It has no button and comes on with that layer. */
   parent?: string;
+  /**
+   * For an item of a revealing layer (#606): 1 puts it in the surface stack, shown outside the
+   * glass or on the far side of the line; absent, it is in the stack underneath, shown through it.
+   */
+  stack?: 1;
   /** How Next moves through the layer, and a sequence's steps, as site.json has them. */
   steps?: Steps;
   /** Where Next is while the layer is on: a sequence's current step, or the sub-steps the layer reported. */

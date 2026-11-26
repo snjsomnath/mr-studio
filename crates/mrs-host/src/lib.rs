@@ -1205,6 +1205,9 @@ struct ImportQuery {
     /// `EPSG:3006`, for a terrain GeoTIFF that does not say.
     #[serde(default)]
     crs: Option<String>,
+    /// Which layer of a zipped shapefile or GeoPackage to read (#600).
+    #[serde(default)]
+    layer: Option<String>,
     /// `osm`: fetch the data from OpenStreetMap instead of reading the body; `elevation`: free
     /// elevation for the ground.
     #[serde(default)]
@@ -1631,7 +1634,8 @@ async fn data_request(
         Some(Ok(code)) => Some(code),
         Some(Err(_)) => return (StatusCode::BAD_REQUEST, Json(json!({ "error": "crs must look like EPSG:3006" }))).into_response(),
     };
-    let options = Options { crop: flag(&query.crop), swap: flag(&query.swap), crs, flatten: flag(&query.flatten) };
+    let options =
+        Options { crop: flag(&query.crop), swap: flag(&query.swap), crs, flatten: flag(&query.flatten), layer: query.layer.clone() };
     let free_elevation = query.source.as_deref() == Some("elevation");
     match state.import_data(&query.target, &filename, body, options, write).await.map(|mut report| {
         if free_elevation {

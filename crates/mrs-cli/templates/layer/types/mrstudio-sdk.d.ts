@@ -225,6 +225,11 @@ declare module "@mrstudio/sdk/types" {
          * layer's "tap to read"). A set may have facts and no controls.
          */
         facts?: (string | EntityFact)[];
+        /**
+         * A log of layers read from another dataset (#602): a well's or a borehole's soil and rock from
+         * the top down, drawn as a column on the controller for the picked entity.
+         */
+        log?: EntityLog;
         /** Milliseconds of quiet before the table's `entities` handler runs, for layers that call a model on change. Default 0. */
         debounce_ms?: number;
     }
@@ -239,6 +244,28 @@ declare module "@mrstudio/sdk/types" {
         scale?: number;
         /** Decimals for a number. Default: none for whole numbers, else up to two. */
         decimals?: number;
+    }
+    /**
+     * Where an entity's log is (#602): rows of another dataset, one per layer, found by the entity's
+     * key in `key`, each from a depth to a depth with a material: `{ dataset: "well-logs", key:
+     * "BRUNNS_ID", from: "FRANDJUP", to: "TILLDJUP", material: "JORD_BERG" }`.
+     */
+    export interface EntityLog {
+        /** A dataset from site.json `data`. Name it in `requires.data`. */
+        dataset: string;
+        /** The column of the log that holds the entity's key. */
+        key: string;
+        /** Columns of each layer's top and bottom, as depths. */
+        from: string;
+        to: string;
+        /** The column that says what the layer is: clay, sand, rock. */
+        material: string;
+        /** A column of remarks shown beside a layer. */
+        note?: string;
+        /** The depths' unit. Default `m`. */
+        unit?: string;
+        /** What the column is called on the controller. Default "Layers". */
+        title?: string;
     }
     /** An entity that is picked on the table and the controller: `state.selection`. */
     export interface EntitySelection {
@@ -627,6 +654,11 @@ declare module "@mrstudio/sdk/types" {
         hide?: string[];
         /** For an item: the layer it belongs to. It has no button and comes on with that layer. */
         parent?: string;
+        /**
+         * For an item of a revealing layer (#606): 1 puts it in the surface stack, shown outside the
+         * glass or on the far side of the line; absent, it is in the stack underneath, shown through it.
+         */
+        stack?: 1;
         /** How Next moves through the layer, and a sequence's steps, as site.json has them. */
         steps?: Steps;
         /** Where Next is while the layer is on: a sequence's current step, or the sub-steps the layer reported. */
@@ -1700,7 +1732,8 @@ declare module "@mrstudio/sdk/reveal" {
     import type { Point } from "@mrstudio/sdk/blocks/geo";
     /**
      * Where a revealing layer's items show, in table metres (x right, y down from the top left).
-     * - `circle`: inside a circle, a magnifying glass.
+     * - `circle`: inside a circle, a magnifying glass; with `outside`, everywhere but the circle
+     *   (the surface around an X-ray, #606).
      * - `side`: on one side of a straight line across the table, `before` the smaller coordinate
      *   (left of a vertical line, above a horizontal one) or `after` it.
      * - `none`: nowhere; the items are hidden.
@@ -1710,6 +1743,7 @@ declare module "@mrstudio/sdk/reveal" {
         kind: 'circle';
         centre: Point;
         radius_m: number;
+        outside?: boolean;
     } | {
         kind: 'side';
         axis: 'x' | 'y';
@@ -1731,11 +1765,19 @@ declare module "@mrstudio/sdk/reveal" {
     }
     /** The other side of a line; any other shape is returned as it is. */
     export function otherSide(shape: RevealShape): RevealShape;
+    /**
+     * Everywhere the shape is not (#606): stack 1 of a revealing layer, the surface, shows here while
+     * stack 2 shows through the shape. Outside a glass, the other side of a line; everywhere for
+     * nowhere, and nowhere for everywhere (`null`).
+     */
+    export function revealComplement(shape: RevealShape | null): RevealShape | null;
     /** Whether a point (table metres) is where the items show. */
     export function revealContains(shape: RevealShape | null, point: Point): boolean;
     /**
      * The shape as a polygon in table metres, inside a table of `width` by `height` metres:
-     * a circle as `segments` points, a side as the rectangle it keeps. Empty for `none`.
+     * a circle as `segments` points, a side as the rectangle it keeps. Empty for `none`. Outside a
+     * circle is one outline with a hole: far around the table, in to the circle by a seam and round
+     * it the other way, so a non-zero fill (CSS `polygon()`) leaves the circle out.
      * The runtime projects it for the CSS clip of canvases and decorations.
      */
     export function revealPolygon(shape: RevealShape, width: number, height: number, segments?: number): Point[];
@@ -1745,7 +1787,8 @@ declare module "@mrstudio/sdk/reveal" {
     export function sameReveal(a: RevealShape | null, b: RevealShape | null): boolean;
     /**
      * The shape as numbers for a shader: `kind` 0 everywhere, 1 circle (x, y, radius), 2 side
-     * (axis 0 for x or 1 for y, at, +1 keeps after or -1 keeps before), 3 nowhere. In metres.
+     * (axis 0 for x or 1 for y, at, +1 keeps after or -1 keeps before), 3 nowhere, 4 outside a
+     * circle (x, y, radius). In metres.
      */
     export function revealUniform(shape: RevealShape | null): {
         kind: number;
@@ -4556,7 +4599,8 @@ declare module "@mrstudio/sdk/recipe" {
         by: string;
         range: [number, number];
     };
-    export type GeometryKind = 'points' | 'lines' | 'fill';
+    /** `raster`: a GeoTIFF of values on the table's grid (#601), drawn by raster-look.ts. */
+    export type GeometryKind = 'points' | 'lines' | 'fill' | 'raster';
     /** The props of each look block, with their defaults. */
     export interface PointsProps {
         color: Paint;
@@ -4635,6 +4679,15 @@ declare module "@mrstudio/sdk/recipe" {
             edge_glow: number;
             shadow_mm: number;
             hatch: false;
+        };
+        raster: {
+            color: Paint;
+            opacity: number;
+            hide_below: number | null;
+            hide_above: number | null;
+            edge_glow: number;
+            edge_color: string;
+            unit: string;
         };
     };
     /** Motion blocks of this slice, by the geometry they act on. */
@@ -4898,6 +4951,48 @@ declare module "@mrstudio/sdk/recipe" {
     /** The legend a recipe's looks give, for the controller (S2: every colour on the table has its swatch). */
     export function recipeLegend(looks: readonly CompiledLook[]): LegendItem[];
 }
+declare module "@mrstudio/sdk/raster-look" {
+    import type { Paint } from "@mrstudio/sdk/recipe";
+    import type { Colormap } from "@mrstudio/sdk/colormap";
+    import type { ResolvedPalette } from "@mrstudio/sdk/palette";
+    import type { FieldFrame, LegendItem } from "@mrstudio/sdk/types";
+    export interface RasterProps {
+        /** By value (always `by: "value"`, `kind: "number"`): ramp, classes, middle. A fixed colour paints every cell alike. */
+        color: Paint;
+        opacity: number;
+        /** Hide cells below this value (null: none hidden). A bound slider makes it Dig. */
+        hide_below: number | null;
+        /** Hide cells above this value (null: none hidden). */
+        hide_above: number | null;
+        /** A glow along the cut, 0 to 1, in `edge_color`. */
+        edge_glow: number;
+        edge_color: string;
+        /** Words after numbers in the legend: `m`, `dB`. */
+        unit: string;
+    }
+    export const RASTER_DEFAULTS: RasterProps;
+    /** The props of a raster look over its defaults, with control overrides applied. */
+    export function rasterProps(props: Record<string, unknown> | undefined, overrides?: Record<string, unknown>): RasterProps;
+    /** What a raster look draws: its coloured frame, the glowing cut, and their legend. */
+    export interface RasterPicture {
+        frame: FieldFrame;
+        colormap: Colormap;
+        /** Cells along the cut, 0 or 1; null when nothing is cut or the glow is off. */
+        edge: FieldFrame | null;
+        edgeColormap: Colormap;
+        legend: LegendItem[];
+        /** The values on the table, low and high, for sliders. */
+        range: [number, number];
+    }
+    /** Up to `most` values of the field, spread evenly, for classes and a legend. */
+    export function rasterSample(field: Pick<FieldFrame, 'data'>, most?: number): number[];
+    /**
+     * Colours a field of exact values for the table: each cell a level of the look's ramp (or its
+     * class), the cells past a cut-off left empty, and the cells just inside the cut marked for the
+     * glow. `field` is a frame of f32 values with NaN where there is no data.
+     */
+    export function rasterPicture(field: FieldFrame, props: RasterProps, palette: ResolvedPalette): RasterPicture;
+}
 declare module "@mrstudio/sdk/isovist" {
     import type { Point } from "@mrstudio/sdk/blocks/geo";
     import type { XY } from "@mrstudio/sdk/table-space";
@@ -5066,7 +5161,7 @@ declare module "@mrstudio/sdk/transition" {
     export function transitionGain(kind: StepTransitionKind, role: 'in' | 'out', t: number): number;
 }
 declare module "@mrstudio/sdk/entities" {
-    import type { EntityChange, EntityFact, EntitySet, Params, Position, ToolGeometry } from "@mrstudio/sdk/types";
+    import type { EntityChange, EntityFact, EntityLog, EntitySet, Params, Position, ToolGeometry } from "@mrstudio/sdk/types";
     /** `params.entities` as the host keeps it: set, then entity, then control. Only changed values are there. */
     export type EntityOverrides = Record<string, Record<string, Record<string, unknown>>>;
     /** The overrides kept for every entity of one set. */
@@ -5121,6 +5216,20 @@ declare module "@mrstudio/sdk/entities" {
      * within `tolerance_m` (default 12 m, about a fingertip on a 1:1000 table). Null when none is.
      */
     export function pickEntity(features: readonly EntityFeature[], at: Position, tolerance_m?: number): EntityFeature | null;
+    /** One layer of a log (#602), from a depth to a depth. */
+    export interface LogLayer {
+        from: number;
+        to: number;
+        material: string;
+        note?: string;
+    }
+    /**
+     * The layers of one entity's log, from the top down: the rows of `collection` whose key column is
+     * `id`, with a material and a thickness. Rows sharing a top are kept once (the deepest wins).
+     */
+    export function logLayers(collection: Collection, log: EntityLog, id: string): LogLayer[];
+    /** The colour a log draws a material in. */
+    export function materialColour(material: string): string;
 }
 declare module "@mrstudio/sdk/controller-map" {
     import type { PanelContext } from "@mrstudio/sdk/layer";
@@ -5542,6 +5651,7 @@ declare module "@mrstudio/sdk" {
     export * from "@mrstudio/sdk/blocks/index";
     export * from "@mrstudio/sdk/palette";
     export * from "@mrstudio/sdk/recipe";
+    export * from "@mrstudio/sdk/raster-look";
     export * from "@mrstudio/sdk/marks";
     export * from "@mrstudio/sdk/places";
     export * from "@mrstudio/sdk/place-motions";

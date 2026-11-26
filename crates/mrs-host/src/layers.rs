@@ -514,6 +514,26 @@ fn custom_manifest(id: &str, recipe: &mrs_site::CustomLayer) -> Value {
         if let Some(name) = text("name") {
             set["name"] = name.into();
         }
+        // A log of layers from another dataset (#602): `log.data` names a recipe data entry.
+        if let Some(log) = props.get("log").and_then(Value::as_object) {
+            let dataset = log
+                .get("data")
+                .and_then(Value::as_str)
+                .and_then(|d| recipe.data.iter().find(|r| r.id == d))
+                .and_then(|r| r.dataset.clone());
+            let column = |key: &str| log.get(key).and_then(Value::as_str).filter(|s| !s.is_empty());
+            if let (Some(dataset), Some(key), Some(from), Some(to), Some(material)) =
+                (dataset, column("key"), column("from"), column("to"), column("material"))
+            {
+                let mut out = serde_json::json!({ "dataset": dataset, "key": key, "from": from, "to": to, "material": material });
+                for extra in ["note", "unit", "title"] {
+                    if let Some(value) = column(extra) {
+                        out[extra] = value.into();
+                    }
+                }
+                set["log"] = out;
+            }
+        }
         if set["facts"].as_array().is_none_or(Vec::is_empty) {
             // Without facts the name alone is read; the set still needs something to show.
             set["facts"] = serde_json::json!([set["label"].as_str().unwrap_or("#")]);
@@ -1038,6 +1058,17 @@ mod tests {
         assert_eq!(set["label"], json!("name"));
         assert_eq!(set["facts"], json!(["use", "population"]));
         assert_eq!(set["name"], json!("Zone"));
+        // A log of layers from another dataset (#602) names that dataset, not the recipe's data id.
+        let wells: mrs_site::CustomLayer = serde_json::from_value(json!({
+            "name": "Wells",
+            "data": [{ "id": "wells", "dataset": "wells" }, { "id": "logs", "dataset": "well-logs" }],
+            "look": [{ "id": "dots", "block": "points", "data": "wells" }],
+            "interaction": [{ "id": "tap", "block": "tap-info", "data": "wells", "props": { "key": "ID",
+                "log": { "data": "logs", "key": "ID", "from": "top", "to": "bottom", "material": "what", "note": "" } } }]
+        }))
+        .unwrap();
+        let set = &custom_def("wells", &wells).unwrap().manifest["entities"][0];
+        assert_eq!(set["log"], json!({ "dataset": "well-logs", "key": "ID", "from": "top", "to": "bottom", "material": "what" }));
         // A set with neither controls nor facts is still refused in layer.json.
         let bare = json!({ "api": LAYER_API, "id": "x", "name": "X", "entities": [{ "id": "s", "dataset": "d", "key": "id" }] });
         assert!(LayerDef::parse(bare).is_err());

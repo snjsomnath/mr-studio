@@ -2624,8 +2624,11 @@ export class Editor {
           zone.append(this.layerRow(layer.id, layer.manifest, layer.state, context.kind === 'layer' && context.id === id && this.layerItem === null));
           const as = layerButton(id, layer.manifest, layer.state);
           // Its items, indented under it: they show only while it is open.
+          // A glass or a reveal line says which stack each item is in (#606).
+          const stacked = Boolean(layer.manifest.reveals);
           for (const item of instances.filter((i) => i.state.parent === id)) {
-            const child = this.treeRow(item.manifest.name, '', item.manifest.icon, context.kind === 'layer' && context.id === id && this.layerItem === item.id, () =>
+            const stackWords = !stacked ? '' : item.state.stack === 1 ? 'Stack 1 · surface' : 'Stack 2 · underneath';
+            const child = this.treeRow(item.manifest.name, stackWords, item.manifest.icon, context.kind === 'layer' && context.id === id && this.layerItem === item.id, () =>
               this.go({ kind: 'layer', id }, item.id),
             );
             child.classList.add('is-item');
@@ -3059,6 +3062,25 @@ export class Editor {
       void this.send('scene.set', { layer: id, active: power.checked });
     });
     shown.append(label, power);
+    // Which stack an item of a glass or a reveal line is in (#606).
+    const reveals = Boolean(parentState && this.store.manifest(parentState.layer)?.reveals);
+    const stackRow = el('div', 'control control-select');
+    stackRow.hidden = !reveals;
+    if (reveals) {
+      const swipe = parentState!.layer === 'swipe';
+      const pick = el('select');
+      pick.id = `stack-${id}`;
+      const choices: [string, string][] = [
+        ['1', `Stack 1: the surface, ${swipe ? 'on the other side of the line' : 'around the glass'}`],
+        ['2', `Stack 2: underneath, ${swipe ? 'on the revealed side' : 'inside the glass'}`],
+      ];
+      for (const [value, text] of choices) pick.append(Object.assign(el('option'), { value, textContent: text }));
+      pick.value = this.store.state.layers[id]?.stack === 1 ? '1' : '2';
+      pick.addEventListener('change', () => void this.send('scene.set', { layer: id, stack: Number(pick.value) }));
+      const stackLabel = el('label', 'control-label', 'Stack');
+      stackLabel.htmlFor = pick.id;
+      stackRow.append(stackLabel, pick);
+    }
 
     const send = paramSender(this.connection, id, { method: 'scene.set' });
     const widgets: Widget[] = visibleControls(manifest.controls).map((control) =>
@@ -3107,7 +3129,7 @@ export class Editor {
     const main = rows.filter((r) => r.w.control.tier !== 'more' && r.w.control.tier !== 'state');
     const more = rows.filter((r) => r.w.control.tier === 'more');
     const controls = el('div', 'controls');
-    controls.append(shown, ...main.map((r) => r.row));
+    controls.append(shown, stackRow, ...main.map((r) => r.row));
     const heading = el('h3', 'ed-settings-head', title);
     const tools = el('span', 'ed-settings-tools');
     if (rows.some((r) => r.fallback !== undefined)) {
@@ -3226,7 +3248,21 @@ export class Editor {
     const addInside = button('ed-button', 'Add inside…', 'plus');
     addInside.dataset.command = 'dialog.inside';
     addInside.addEventListener('click', () => void this.handlers['dialog.inside'].run(layer));
-    for (const { id, manifest } of items) {
+    // A glass or a reveal line holds two stacks (#606): the surface, shown around the glass or on
+    // the far side of the line, and what is underneath, shown through it. Each row can move across.
+    const parentManifest = kind ? this.store.manifest(kind) : undefined;
+    const stacked = Boolean(parentManifest?.reveals) && items.length > 0;
+    const where = kind === 'swipe' ? (['on the other side of the line', 'on the revealed side'] as const) : (['around the glass', 'inside the glass'] as const);
+    const ordered = stacked ? [...items.filter((i) => i.state.stack === 1), ...items.filter((i) => i.state.stack !== 1)] : items;
+    let heading: number | null = null;
+    for (const { id, manifest, state } of ordered) {
+      const stack = state.stack === 1 ? 1 : 2;
+      if (stacked && heading !== stack) {
+        heading = stack;
+        const head = el('div', 'ed-stack-head');
+        head.append(el('strong', undefined, stack === 1 ? 'Stack 1 · the surface' : 'Stack 2 · underneath'), el('span', 'ed-hint', where[stack - 1]));
+        section.append(head);
+      }
       const row = this.treeRow(manifest.name, '', manifest.icon, this.layerItem === id, () => {
         this.layerItem = this.layerItem === id ? null : id;
         this.render();
@@ -3240,6 +3276,8 @@ export class Editor {
       });
       section.append(row);
     }
+    // Only the stack underneath so far: a line says how to make a surface.
+    if (stacked && !items.some((i) => i.state.stack === 1)) section.append(el('p', 'ed-hint', 'Select a layer here and choose Stack 1 to keep it on the surface, around what is revealed.'));
     section.append(addInside);
     return section;
   }

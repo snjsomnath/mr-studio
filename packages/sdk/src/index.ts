@@ -24,6 +24,7 @@ export * from './projector.ts';
 export * from './blocks/index.ts';
 export * from './palette.ts';
 export * from './recipe.ts';
+export * from './raster-look.ts';
 export * from './marks.ts';
 export * from './places.ts';
 export * from './place-motions.ts';

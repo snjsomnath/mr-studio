@@ -738,9 +738,10 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
         active: z.boolean().optional().describe('Turn on at start; for an item, whether it comes on with its layer (default true)'),
         params: z.record(z.string(), z.unknown()).optional().describe('Control id to value, overriding defaults'),
         position: z.number().int().optional().describe('Index to insert at in the scene, or in the parent\'s items (0 is the bottom); default top'),
+        stack: z.union([z.literal(1), z.literal(2)]).optional().describe('Inside an X-ray glass (lens) or a Reveal line (swipe): 1 the surface, shown around the glass or on the far side of the line; 2 (default) underneath, shown through it (#606)'),
       },
     },
-    async ({ site, use, id, parent, active, params, position }) =>
+    async ({ site, use, id, parent, active, params, position, stack }) =>
       editScene(site, (m) => {
         const layer = findLayer(catalog, at(site), use, m);
         if (!layer) return `No layer '${use}'. Core layers: ${catalog.layers.map((l) => l.id).join(', ')}. For something new, use find_capabilities and assess_experience.`;
@@ -750,6 +751,10 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
         const entry: Record<string, unknown> = { use, id: name };
         if (active !== undefined && !(parent && active)) entry.active = active;
         if (checked.cleaned && Object.keys(checked.cleaned).length) entry.params = checked.cleaned;
+        if (stack === 1) {
+          if (!parent) return 'Only an item inside a layer has a stack: give parent too.';
+          entry.stack = 1;
+        }
         let list: any[] = m.layers;
         if (parent) {
           const owner = m.layers.find((l: any) => l.id === parent);
@@ -949,7 +954,7 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
     'import_data',
     {
       title: 'Bring data into a site',
-      description: `Bring a dataset into the site exactly as the editor's Add data does, with the same checks: from a file (GeoJSON, CSV with lon and lat, zipped Shapefile, GeoTIFF for terrain), from OpenStreetMap for the table's area (source osm: buildings, trees, walkways, data:roads), or free elevation for the ground (source elevation, target terrain). The coordinate system is detected and reprojected, and what lies off the table is reported. Without write it only checks and reports (count, how many are on the table, issues, blockers); with write it saves the file into data/ and points site.json at it (scene.* or data.<name>). Targets: ${TARGETS}. Needs the MR Studio app or the mrstudio command line.`,
+      description: `Bring a dataset into the site exactly as the editor's Add data does, with the same checks: from a file (GeoJSON, CSV with lon and lat, a zipped shapefile or a GeoPackage as agencies like SGU and Lantmäteriet hand them out (one layer at a time: the report lists the layers, pass layer to choose), GeoTIFF for terrain or for a raster of values such as data:soil-depth), from OpenStreetMap for the table's area (source osm: buildings, trees, walkways, data:roads), or free elevation for the ground (source elevation, target terrain). The coordinate system is detected and reprojected, and what lies off the table is reported. Without write it only checks and reports (count, how many are on the table, issues, blockers); with write it saves the file into data/ and points site.json at it (scene.* or data.<name>). Targets: ${TARGETS}. Needs the MR Studio app or the mrstudio command line.`,
       inputSchema: {
         site: z.string(),
         target: z.string().describe(TARGETS),
@@ -959,9 +964,10 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
         crop: z.boolean().optional().describe('Leave out what lies well outside the table'),
         swap: z.boolean().optional().describe('The file has latitude first'),
         crs: z.string().optional().describe('For a terrain GeoTIFF that does not say: "EPSG:3006"'),
+        layer: z.string().optional().describe('For a zip of shapefiles or a GeoPackage with several layers: the layer name the report lists'),
       },
     },
-    async ({ site, target, file, source, write, crop, swap, crs }) => {
+    async ({ site, target, file, source, write, crop, swap, crs, layer }) => {
       const cli = findCli(catalog);
       if (!cli) return noCli();
       const from = source ?? 'file';
@@ -973,6 +979,7 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
       if (crop) args.push('--crop');
       if (swap) args.push('--swap');
       if (crs) args.push('--crs', crs);
+      if (layer) args.push('--layer', layer);
       const run = await runCliJson(cli, args);
       const report = run.json;
       if (!report || report.error) return fail(report?.error ?? `The command line failed: ${run.output.slice(-400)}`, undefined, { code: 'import_failed', next: [] });

@@ -7,14 +7,15 @@ import type { Point } from './blocks/geo.ts';
 
 /**
  * Where a revealing layer's items show, in table metres (x right, y down from the top left).
- * - `circle`: inside a circle, a magnifying glass.
+ * - `circle`: inside a circle, a magnifying glass; with `outside`, everywhere but the circle
+ *   (the surface around an X-ray, #606).
  * - `side`: on one side of a straight line across the table, `before` the smaller coordinate
  *   (left of a vertical line, above a horizontal one) or `after` it.
  * - `none`: nowhere; the items are hidden.
  * `null` instead of a shape shows the items everywhere.
  */
 export type RevealShape =
-  | { kind: 'circle'; centre: Point; radius_m: number }
+  | { kind: 'circle'; centre: Point; radius_m: number; outside?: boolean }
   | { kind: 'side'; axis: 'x' | 'y'; at_m: number; keep: 'before' | 'after' }
   | { kind: 'none' };
 
@@ -35,31 +36,49 @@ export function otherSide(shape: RevealShape): RevealShape {
   return shape.kind === 'side' ? { ...shape, keep: shape.keep === 'before' ? 'after' : 'before' } : shape;
 }
 
+/**
+ * Everywhere the shape is not (#606): stack 1 of a revealing layer, the surface, shows here while
+ * stack 2 shows through the shape. Outside a glass, the other side of a line; everywhere for
+ * nowhere, and nowhere for everywhere (`null`).
+ */
+export function revealComplement(shape: RevealShape | null): RevealShape | null {
+  if (!shape) return { kind: 'none' };
+  if (shape.kind === 'none') return null;
+  if (shape.kind === 'circle') return { ...shape, outside: !shape.outside };
+  return otherSide(shape);
+}
+
 /** Whether a point (table metres) is where the items show. */
 export function revealContains(shape: RevealShape | null, point: Point): boolean {
   if (!shape) return true;
   if (shape.kind === 'none') return false;
-  if (shape.kind === 'circle') return Math.hypot(point[0] - shape.centre[0], point[1] - shape.centre[1]) <= shape.radius_m;
+  if (shape.kind === 'circle') return (Math.hypot(point[0] - shape.centre[0], point[1] - shape.centre[1]) <= shape.radius_m) !== Boolean(shape.outside);
   const v = shape.axis === 'x' ? point[0] : point[1];
   return shape.keep === 'before' ? v <= shape.at_m : v >= shape.at_m;
 }
 
 /**
  * The shape as a polygon in table metres, inside a table of `width` by `height` metres:
- * a circle as `segments` points, a side as the rectangle it keeps. Empty for `none`.
+ * a circle as `segments` points, a side as the rectangle it keeps. Empty for `none`. Outside a
+ * circle is one outline with a hole: far around the table, in to the circle by a seam and round
+ * it the other way, so a non-zero fill (CSS `polygon()`) leaves the circle out.
  * The runtime projects it for the CSS clip of canvases and decorations.
  */
 export function revealPolygon(shape: RevealShape, width: number, height: number, segments = 72): Point[] {
   if (shape.kind === 'none') return [];
+  // A side reaches well past the table, so a calibrated view that shows a margin is clipped cleanly too.
+  const far = 10 * Math.max(width, height);
   if (shape.kind === 'circle') {
     const [cx, cy] = shape.centre;
-    return Array.from({ length: segments }, (_, k) => {
+    const ring = Array.from({ length: segments }, (_, k) => {
       const a = (k / segments) * Math.PI * 2;
       return [cx + Math.cos(a) * shape.radius_m, cy + Math.sin(a) * shape.radius_m] as Point;
     });
+    if (!shape.outside) return ring;
+    // Clockwise round the far box (y down), then the circle anticlockwise, joined at its rightmost point.
+    const start: Point = [width + far, cy];
+    return [start, [width + far, height + far], [-far, height + far], [-far, -far], [width + far, -far], start, ring[0]!, ...ring.slice(1).reverse(), ring[0]!];
   }
-  // A side reaches well past the table, so a calibrated view that shows a margin is clipped cleanly too.
-  const far = 10 * Math.max(width, height);
   const at = shape.at_m;
   if (shape.axis === 'x') {
     return shape.keep === 'before'
@@ -74,7 +93,7 @@ export function revealPolygon(shape: RevealShape, width: number, height: number,
 /** Adds the shape to a canvas path in the context's own units (table metres on a drawing overlay). */
 export function revealPath(pen: Pick<CanvasRenderingContext2D, 'beginPath' | 'arc' | 'moveTo' | 'lineTo' | 'closePath'>, shape: RevealShape, width: number, height: number): void {
   pen.beginPath();
-  if (shape.kind === 'circle') {
+  if (shape.kind === 'circle' && !shape.outside) {
     pen.arc(shape.centre[0], shape.centre[1], Math.max(0, shape.radius_m), 0, Math.PI * 2);
     return;
   }
@@ -90,11 +109,12 @@ export function sameReveal(a: RevealShape | null, b: RevealShape | null): boolea
 
 /**
  * The shape as numbers for a shader: `kind` 0 everywhere, 1 circle (x, y, radius), 2 side
- * (axis 0 for x or 1 for y, at, +1 keeps after or -1 keeps before), 3 nowhere. In metres.
+ * (axis 0 for x or 1 for y, at, +1 keeps after or -1 keeps before), 3 nowhere, 4 outside a
+ * circle (x, y, radius). In metres.
  */
 export function revealUniform(shape: RevealShape | null): { kind: number; values: [number, number, number] } {
   if (!shape) return { kind: 0, values: [0, 0, 0] };
   if (shape.kind === 'none') return { kind: 3, values: [0, 0, 0] };
-  if (shape.kind === 'circle') return { kind: 1, values: [shape.centre[0], shape.centre[1], shape.radius_m] };
+  if (shape.kind === 'circle') return { kind: shape.outside ? 4 : 1, values: [shape.centre[0], shape.centre[1], shape.radius_m] };
   return { kind: 2, values: [shape.axis === 'x' ? 0 : 1, shape.at_m, shape.keep === 'after' ? 1 : -1] };
 }

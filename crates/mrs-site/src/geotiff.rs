@@ -29,6 +29,9 @@ pub struct GeoRaster {
     dy: f64,
 }
 
+/// GeoTIFF ModelTransformationTag: a 4x4 matrix from raster to model space.
+const MODEL_TRANSFORMATION: u16 = 34264;
+
 impl GeoRaster {
     /// `crs` overrides what the file says, for files that only carry a citation.
     pub fn read(path: &Path, crs: Option<Crs>) -> Result<Self, String> {
@@ -39,6 +42,18 @@ impl GeoRaster {
 
         let scale = decoder.find_tag(Tag::ModelPixelScaleTag).ok().flatten().and_then(|v| v.into_f64_vec().ok());
         let tie = decoder.find_tag(Tag::ModelTiepointTag).ok().flatten().and_then(|v| v.into_f64_vec().ok());
+        // Some exporters (SLU GET, #601) write a ModelTransformation matrix instead: north-up when
+        // it has no rotation, so read it as a scale and a tiepoint at the top-left corner.
+        let (scale, tie) = match (scale, tie) {
+            (Some(scale), Some(tie)) => (Some(scale), Some(tie)),
+            _ => {
+                let matrix = decoder.find_tag(Tag::Unknown(MODEL_TRANSFORMATION)).ok().flatten().and_then(|v| v.into_f64_vec().ok());
+                match matrix.filter(|m| m.len() >= 8 && m[1] == 0.0 && m[4] == 0.0 && m[0] > 0.0 && m[5] < 0.0) {
+                    Some(m) => (Some(vec![m[0], -m[5], 0.0]), Some(vec![0.0, 0.0, 0.0, m[3], m[7], 0.0])),
+                    None => (None, None),
+                }
+            }
+        };
         let (Some(scale), Some(tie)) = (scale.filter(|s| s.len() >= 2 && s[0] > 0.0 && s[1] > 0.0), tie.filter(|t| t.len() >= 6)) else {
             return Err("not a north-up GeoTIFF: it needs ModelPixelScale and ModelTiepoint tags".into());
         };

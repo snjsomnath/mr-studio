@@ -40,8 +40,12 @@ import {
   LISTEN_KEY,
   TEST_DATA,
   makeTestData,
+  loadSiteField,
+  rasterPicture,
+  rasterProps,
+  rasterSample,
 } from '@mrstudio/sdk';
-import type { CustomLayer, GeometryKind, LayerManifest, Paint, RecipeBlock, RecipeData, ResolvedPalette, Shapes, SitePalette, Size, TestDataDef } from '@mrstudio/sdk';
+import type { CustomLayer, FieldFrame, GeometryKind, LegendItem, LayerManifest, Paint, RecipeBlock, RecipeData, ResolvedPalette, Shapes, SitePalette, Size, TestDataDef } from '@mrstudio/sdk';
 
 import { el, layerButton } from '../controls.ts';
 import { dataUrl, loadData } from '../recipe-player.ts';
@@ -71,6 +75,19 @@ function button(className: string, label: string, iconName?: string): HTMLButton
   if (iconName) node.append(icon(iconName, 14));
   node.append(el('span', undefined, label));
   return node;
+}
+
+/** A number for the author: whole above 100, one decimal below. */
+function formatValue(n: number): string {
+  return Math.abs(n) >= 100 ? String(Math.round(n)) : String(Math.round(n * 10) / 10);
+}
+
+/** A round slider step for a span of values: about a hundred steps. */
+function niceStep(span: number): number {
+  if (!(span > 0)) return 1;
+  const raw = span / 100;
+  const power = 10 ** Math.floor(Math.log10(raw));
+  return [1, 2, 5, 10].map((m) => m * power).find((s) => s >= raw) ?? raw;
 }
 
 function field(label: string, ...inputs: HTMLElement[]): HTMLElement {
@@ -282,6 +299,26 @@ export function vectorDatasets(store: Store): { name: string; path: string }[] {
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
+/** The table's rasters of values (#601): GeoTIFF datasets other than the scene's ground and water. */
+export function rasterDatasets(store: Store): { name: string; path: string }[] {
+  return Object.entries(store.state.site.data ?? {})
+    .filter(([name, path]) => /\.tiff?$/i.test(path) && name !== 'terrain' && name !== 'water')
+    .map(([name, path]) => ({ name, path }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** A raster dataset on the table's grid, read once per page from the host. */
+const fieldCache = new Map<string, Promise<FieldFrame | null>>();
+export function rasterOf(store: Store, name: string): Promise<FieldFrame | null> {
+  const key = `${name}|${store.state.site.data?.[name] ?? ''}`;
+  let found = fieldCache.get(key);
+  if (!found) {
+    found = loadSiteField(store.state.site, name).catch(() => null);
+    fieldCache.set(key, found);
+  }
+  return found;
+}
+
 const shapeCache = new Map<string, Promise<Shapes>>();
 function shapesOf(store: Store, url: string): Promise<Shapes> {
   let shapes = shapeCache.get(url);
@@ -311,8 +348,8 @@ export function describeShapes(shapes: Shapes): string {
   return parts.join(', ') || 'Nothing on this table';
 }
 
-const KIND_ICON: Record<GeometryKind, string> = { points: 'point', lines: 'line', fill: 'polygon' };
-const KIND_LABEL: Record<GeometryKind, string> = { points: 'Points', lines: 'Lines', fill: 'Areas' };
+const KIND_ICON: Record<GeometryKind, string> = { points: 'point', lines: 'line', fill: 'polygon', raster: 'grid' };
+const KIND_LABEL: Record<GeometryKind, string> = { points: 'Points', lines: 'Lines', fill: 'Areas', raster: 'Raster' };
 
 /** Presets per geometry (L3): starting points, not the end. */
 const PRESETS: Record<GeometryKind, { name: string; props: Record<string, unknown>; motion?: { block: string; props: Record<string, unknown> } }[]> = {
@@ -335,6 +372,12 @@ const PRESETS: Record<GeometryKind, { name: string; props: Record<string, unknow
     { name: 'Lifted', props: { color: '@warm', opacity: 0.55, stroke: null, stroke_mm: 0, edge_glow: 0, shadow_mm: 3, hatch: false } },
     { name: 'Hatched', props: { color: '@warning', opacity: 0.5, stroke: '@warning', stroke_mm: 0.5, edge_glow: 0, shadow_mm: 0, hatch: true } },
   ],
+  // Rasters of values (#601): a smooth ramp, bands, or a surface visitors cut away.
+  raster: [
+    { name: 'Smooth ramp', props: { color: { by: 'value', kind: 'number', ramp: 'sun', classes: 'continuous' }, opacity: 0.8 } },
+    { name: 'Bands', props: { color: { by: 'value', kind: 'number', ramp: 'sun', classes: 'natural', count: 5 }, opacity: 0.8 } },
+    { name: 'Dig away', props: { color: { by: 'value', kind: 'number', ramp: 'sun', classes: 'continuous' }, opacity: 0.9, hide_below: 0, edge_glow: 0.8, edge_color: '@focus' } },
+  ],
 };
 
 /** An id for a new custom layer from its name, free in the catalogue. */
@@ -352,7 +395,7 @@ export function startingRecipe(name: string, dataset: string, kind: GeometryKind
   const preset = PRESETS[kind][0]!;
   return {
     name,
-    icon: kind === 'lines' ? 'route' : kind === 'points' ? 'point' : 'polygon',
+    icon: kind === 'lines' ? 'route' : kind === 'points' ? 'point' : kind === 'raster' ? 'grid' : 'polygon',
     category: 'analysis',
     enter: 'fade',
     data: [{ id: 'data', dataset }],
@@ -377,6 +420,7 @@ export async function layerFromImport(host: BuilderHost, layer: { dataset: strin
  * saved, put on the table and opened in the builder. `kind` is read from the data when not given.
  */
 export async function customFromDataset(host: BuilderHost, name: string, kind?: GeometryKind): Promise<void> {
+  if (!kind && rasterDatasets(host.store).some((d) => d.name === name)) kind = 'raster';
   if (!kind) {
     const path = vectorDatasets(host.store).find((d) => d.name === name)?.path;
     kind = path ? await shapesOf(host.store, `/site/${path}`).then(lookFor, () => 'points' as const) : 'points';
@@ -429,6 +473,25 @@ export function newCustomLayer(host: BuilderHost, shell: HTMLElement): void {
     });
     list.append(card);
   }
+  // Rasters of values (#601): coloured by value, and a slider can cut them away.
+  for (const { name } of rasterDatasets(host.store)) {
+    const card = el('button', 'lb-data-card');
+    card.type = 'button';
+    const badge = el('span', 'lb-data-icon');
+    badge.append(icon('grid', 20));
+    const text = el('span', 'lb-data-text');
+    const detail = el('span', 'lb-data-detail', 'A raster of values');
+    text.append(el('strong', undefined, name), detail);
+    card.append(badge, text);
+    void rasterOf(host.store, name).then((field) => {
+      if (field) detail.textContent = `A raster of values, ${formatValue(field.min)} to ${formatValue(field.max)}`;
+    });
+    card.addEventListener('click', async () => {
+      dialog.close();
+      await customFromDataset(host, name, 'raster');
+    });
+    list.append(card);
+  }
   const more = button('action', 'Bring in a file…', 'plus');
   more.addEventListener('click', () => {
     dialog.close();
@@ -460,7 +523,7 @@ export function newCustomLayer(host: BuilderHost, shell: HTMLElement): void {
   dialog.append(
     head,
     el('p', 'wz-lead', 'Choose what the layer shows. It starts with a look that fits the data, and you style it on the right while the map shows it live.'),
-    datasets.length ? list : el('p', 'ed-empty', 'This table has no points, lines or areas of its own yet.'),
+    datasets.length || rasterDatasets(host.store).length ? list : el('p', 'ed-empty', 'This table has no points, lines or areas of its own yet.'),
     more,
     el('h3', 'lb-new-sub', 'Or try it with test data'),
     el('p', 'lb-hint lb-new-hint', 'Made up on the spot, spread over this table, with columns to colour, size and animate by. Each becomes a dataset of the table, so you can remove it later.'),
@@ -659,16 +722,28 @@ export function builderSection(host: BuilderHost, manifest: LayerManifest, butto
     return url ? shapesOf(host.store, url).catch(() => null) : null;
   };
 
+  /** The raster a raster look draws (#601), on the table's grid. */
+  const rasterField = async (block: RecipeBlock): Promise<FieldFrame | null> => {
+    const data = recipe.data!.find((d) => d.id === block.data);
+    return data?.dataset ? rasterOf(host.store, data.dataset) : null;
+  };
+
   // The legend follows the looks (S2): every colour on the table has its swatch on the controller.
   const legendBox = el('div', 'lb-legend');
   const updateLegend = async () => {
     const looks = [];
+    const rasterRows: LegendItem[] = [];
     for (const block of recipe.look!) {
+      if (block.block === 'raster') {
+        const field = await rasterField(block);
+        if (field) rasterRows.push(...rasterPicture(field, rasterProps(block.props), palette()).legend.map((row) => ({ ...row, id: `${block.id}-${row.id}` })));
+        continue;
+      }
       const s = await shapes(block);
       const look = s && compileLook(block, s, palette(), 1);
       if (look) looks.push(look);
     }
-    recipe.legend = recipeLegend(looks).slice(0, 12);
+    recipe.legend = [...rasterRows, ...recipeLegend(looks)].slice(0, 12);
     if (recipe.legend.length === 0) delete recipe.legend;
     drawLegend();
   };
@@ -711,12 +786,19 @@ export function builderSection(host: BuilderHost, manifest: LayerManifest, butto
   const dataTab = (): HTMLElement[] => {
     const nodes: HTMLElement[] = [el('p', 'lb-lead', 'What this layer shows. Each dataset gets its own look.')];
     const datasets = vectorDatasets(host.store);
+    const rasters = rasterDatasets(host.store);
     for (const data of recipe.data!) {
       const select = el('select');
-      for (const { name } of datasets) select.append(Object.assign(el('option'), { value: name, textContent: name, selected: name === data.dataset }));
+      // A look draws one kind of data: a raster's entry offers the rasters, any other the vector datasets.
+      const isRaster = rasters.some((r) => r.name === data.dataset);
+      for (const { name } of isRaster ? rasters : datasets) select.append(Object.assign(el('option'), { value: name, textContent: name, selected: name === data.dataset }));
       if (data.path) select.append(Object.assign(el('option'), { value: '', textContent: data.path, selected: true }));
       const detail = el('span', 'lb-detail');
       const describe = () => {
+        if (rasters.some((r) => r.name === data.dataset)) {
+          void rasterOf(host.store, data.dataset!).then((f) => (detail.textContent = f ? `A raster of values, ${formatValue(f.min)} to ${formatValue(f.max)}` : 'Could not be read'));
+          return;
+        }
         const url = dataUrl(data, host.store.state.site);
         if (url) void shapesOf(host.store, url).then((s) => (detail.textContent = describeShapes(s)), () => (detail.textContent = 'Could not be read'));
       };
@@ -775,6 +857,14 @@ export function builderSection(host: BuilderHost, manifest: LayerManifest, butto
     const kindRow = el('div', 'lb-kinds');
     const content = el('div', 'lb-card-body');
     card.append(head, kindRow, content);
+    if (block.block === 'raster') {
+      // A raster's one column is its value; a sample of the cells gives classes and the histogram.
+      void rasterField(block).then((f) => {
+        const rows = f ? rasterSample(f, 3000).map((value) => ({ value })) : [];
+        content.replaceChildren(...lookFields(block, props, [{ name: 'value', kind: 'number' }], rows, f ? [f.min, f.max] : undefined));
+      });
+      return card;
+    }
     void shapes(block).then((s) => {
       // L1: only the looks the data has geometry for.
       const kinds: GeometryKind[] = s ? (['points', 'lines', 'fill'] as const).filter((k) => (k === 'points' ? s.spots : k === 'lines' ? s.paths : s.areas).length > 0) : [block.block as GeometryKind];
@@ -795,7 +885,7 @@ export function builderSection(host: BuilderHost, manifest: LayerManifest, butto
     return card;
   };
 
-  const lookFields = (block: RecipeBlock, props: Record<string, any>, columns: { name: string; kind: 'number' | 'category' }[], rows: readonly Record<string, unknown>[] = []): HTMLElement[] => {
+  const lookFields = (block: RecipeBlock, props: Record<string, any>, columns: { name: string; kind: 'number' | 'category' }[], rows: readonly Record<string, unknown>[] = [], range?: [number, number]): HTMLElement[] => {
     const kind = block.block as GeometryKind;
     const set = (key: string, value: unknown) => {
       props[key] = value;
@@ -864,6 +954,36 @@ export function builderSection(host: BuilderHost, manifest: LayerManifest, butto
         set('arrows', v);
         drawArrows();
       }, 'Arrows')), arrowDetail);
+    } else if (kind === 'raster') {
+      // Cut-offs (#601): cells past them are cleared and what lies below shows through.
+      const [lo, hi] = range ?? [0, 100];
+      const step = niceStep(hi - lo);
+      const cut = (key: 'hide_below' | 'hide_above', label: string, start: number) => {
+        const on = props[key] !== null && props[key] !== undefined;
+        const detail = el('div', 'lb-sub');
+        const draw = () => {
+          const has = props[key] !== null && props[key] !== undefined;
+          detail.hidden = !has;
+          if (has) detail.replaceChildren(field('At', slider(Number(props[key]), lo, hi, step, props.unit ? ` ${props.unit}` : '', (v) => set(key, v))));
+        };
+        draw();
+        return [
+          field(label, toggle(on, (v) => {
+            props[key] = v ? start : null;
+            save();
+            draw();
+          }, label)),
+          detail,
+        ];
+      };
+      const unit = el('input');
+      Object.assign(unit, { type: 'text', maxLength: 8, value: props.unit ?? '', placeholder: 'm, dB, °C' });
+      unit.addEventListener('change', () => set('unit', unit.value.trim()));
+      nodes.push(field('Unit', unit));
+      nodes.push(...cut('hide_below', 'Hide what is below', lo), ...cut('hide_above', 'Hide what is above', hi));
+      nodes.push(field('Glow along the cut', slider(props.edge_glow ?? 0, 0, 1, 0.05, '', (v) => set('edge_glow', v))));
+      nodes.push(field('Glow colour', colourPicker(props.edge_color ?? '@focus', palette, (v) => set('edge_color', v ?? '@focus'), { label: 'Glow colour' })));
+      nodes.push(el('p', 'lb-hint', `Values on this table run from ${formatValue(lo)} to ${formatValue(hi)}${props.unit ? ` ${props.unit}` : ''}. Let visitors move a cut under Interaction, such as Dig on soil depth: the ground clears where it is shallower and the layers below show through.`));
     } else {
       nodes.push(field('Fill', segmented([['flat', 'Flat'], ['hatch', 'Hatched']] as const, props.hatch ? 'hatch' : 'flat', (v) => set('hatch', v === 'hatch'), 'Fill')));
       nodes.push(field('Outline', colourPicker(props.stroke ?? null, palette, (v) => set('stroke', v), { allowNone: true, label: 'Outline colour' })));
@@ -1442,6 +1562,11 @@ export function builderSection(host: BuilderHost, manifest: LayerManifest, butto
     const content = el('div', 'lb-card-body');
     content.append(el('p', 'lb-hint', 'Reading the data…'));
     card.append(head, content);
+    if (block.block === 'raster') {
+      // A raster has no features to tap or filter; visitors move its cuts (#601).
+      content.replaceChildren(...changePart(block));
+      return card;
+    }
     void shapes(block).then((s) => {
       const kind = block.block as GeometryKind;
       const rows = s ? (kind === 'points' ? s.spots : kind === 'lines' ? s.paths : s.areas).map((x) => x.properties as Record<string, unknown>) : [];
@@ -1558,6 +1683,7 @@ export function builderSection(host: BuilderHost, manifest: LayerManifest, butto
         el('span', 'lb-field-label', 'Facts on the controller'),
         columns.length ? facts : el('p', 'lb-hint', 'This data has no columns to show.'),
         words,
+        ...logPart(props, data, columns),
       );
     };
     const switchRow = el('label', 'lb-fact lb-switch-row');
@@ -1579,6 +1705,104 @@ export function builderSection(host: BuilderHost, manifest: LayerManifest, butto
     );
     draw();
     return nodes;
+  };
+
+  // A log under each one (#602): a well's or a borehole's layers from another dataset, drawn as a
+  // column on the controller. The rows are matched to the tapped one by a shared column.
+  type LogProps = { data: string; key: string; from: string; to: string; material: string; note?: string; title?: string };
+  const logPart = (props: Record<string, unknown>, tapped: RecipeData, columns: { name: string; kind: 'number' | 'category' }[]): HTMLElement[] => {
+    const box = el('div', 'lb-log');
+    const vectors = vectorDatasets(host.store)
+      .map((d) => d.name)
+      .filter((name) => name !== tapped.dataset);
+    const source = el('select');
+    source.append(Object.assign(el('option'), { value: '', textContent: 'No log' }));
+    const current = props.log as LogProps | undefined;
+    const currentSet = current ? recipe.data!.find((d) => d.id === current.data)?.dataset : undefined;
+    for (const name of vectors) source.append(Object.assign(el('option'), { value: name, textContent: name, selected: name === currentSet }));
+    const columnsBox = el('div', 'lb-log-columns');
+    const pick = (label: string, options: string[], value: string | undefined, change: (v: string) => void, none?: string) => {
+      const select = el('select');
+      if (none !== undefined) select.append(Object.assign(el('option'), { value: '', textContent: none }));
+      for (const o of options) select.append(Object.assign(el('option'), { value: o, textContent: o, selected: o === value }));
+      select.addEventListener('change', () => change(select.value));
+      return field(label, select);
+    };
+    const drawColumns = async () => {
+      columnsBox.replaceChildren();
+      const log = props.log as LogProps | undefined;
+      const entry = log && recipe.data!.find((d) => d.id === log.data);
+      const url = entry && dataUrl(entry, host.store.state.site);
+      if (!log || !url) return;
+      columnsBox.append(el('p', 'lb-hint', 'Reading the log…'));
+      const rows = await loadData(url)
+        .then((c) => c.features.map((f) => (f.properties ?? {}) as Record<string, unknown>))
+        .catch(() => []);
+      const theirs = profileColumns(rows);
+      const numbers = theirs.filter((c) => c.kind === 'number').map((c) => c.name);
+      const all = theirs.map((c) => c.name);
+      const set = (key: keyof LogProps) => (v: string) => {
+        if (v) (log as Record<string, string>)[key] = v;
+        else delete (log as Record<string, string>)[key];
+        save();
+      };
+      const matched = new Set(rows.map((r) => String(r[log.key] ?? ''))).size;
+      columnsBox.replaceChildren(
+        pick('Matched by its', columns.map((c) => c.name), typeof props.key === 'string' ? props.key : undefined, (v) => {
+          if (v) props.key = v;
+          else delete props.key;
+          save();
+        }, 'Its number in the file'),
+        pick('… and the log’s', all, log.key, set('key')),
+        pick('Layer top (depth)', numbers, log.from, set('from')),
+        pick('Layer bottom (depth)', numbers, log.to, set('to')),
+        pick('What the layer is', all, log.material, set('material')),
+        pick('Remarks', all, log.note, set('note'), 'None'),
+        el('p', 'lb-hint', `${rows.length} layers for ${matched} places. Each picked one shows its layers from the top down, coloured by what they are: clay, sand, rock.`),
+      );
+    };
+    source.addEventListener('change', () => {
+      const name = source.value;
+      const old = props.log as LogProps | undefined;
+      // The log's data entry is the layer's own, so it goes with the log.
+      if (old) recipe.data = recipe.data!.filter((d) => d.id !== old.data || recipe.look!.some((b) => b.data === d.id));
+      delete props.log;
+      if (name) {
+        let entry = recipe.data!.find((d) => d.dataset === name);
+        if (!entry) {
+          entry = { id: `log-${name}`.replace(/[^a-z0-9-]+/gi, '-').toLowerCase(), dataset: name };
+          recipe.data!.push(entry);
+        }
+        const entryId = entry.id;
+        void loadData(dataUrl(entry, host.store.state.site) ?? '')
+          .then((c) => profileColumns(c.features.map((f) => (f.properties ?? {}) as Record<string, unknown>)))
+          .catch(() => [] as { name: string; kind: 'number' | 'category' }[])
+          .then((theirs) => {
+            const names = theirs.map((c) => c.name);
+            const numbers = theirs.filter((c) => c.kind === 'number').map((c) => c.name);
+            const words = theirs.filter((c) => c.kind === 'category').map((c) => c.name);
+            // A first guess: the column both share, then top/bottom and material by their names.
+            const shared = columns.find((c) => names.includes(c.name))?.name ?? names[0] ?? '';
+            const find = (list: string[], pattern: RegExp, fallback = 0) => list.find((n) => pattern.test(n)) ?? list[fallback] ?? '';
+            props.log = {
+              data: entryId,
+              key: shared,
+              from: find(numbers, /fr[åa]n|from|top|start|upper/i),
+              to: find(numbers, /till|^to|bottom|bot|end|lower/i, 1),
+              material: find(words, /jord|berg|material|soil|rock|lith|type/i),
+            } satisfies LogProps;
+            if (shared && columns.some((c) => c.name === shared)) props.key = shared;
+            save();
+            void drawColumns();
+          });
+        return;
+      }
+      save();
+      void drawColumns();
+    });
+    void drawColumns();
+    box.append(field('A log of layers under each one', source), columnsBox);
+    return [el('span', 'lb-field-label', 'Layers underneath'), box];
   };
 
   // Show only: one control on the controller that keeps the features of a category, or at least a value.
@@ -1643,6 +1867,8 @@ export function builderSection(host: BuilderHost, manifest: LayerManifest, butto
     return nodes;
   };
 
+  /** Each raster look's values, low and high, for its cut sliders (#601). */
+  const rasterRanges = new Map<string, [number, number]>();
   // Sliders for the look: size, glow and how solid, each a control bound to the look's prop.
   const LIVE: Record<GeometryKind, [string, string, number, number, number, string][]> = {
     points: [
@@ -1659,12 +1885,33 @@ export function builderSection(host: BuilderHost, manifest: LayerManifest, butto
       ['opacity', 'Strength', 0.05, 1, 0.05, ''],
       ['edge_glow', 'Edge glow', 0, 1, 0.05, ''],
     ],
+    // Rasters (#601): the cut's range is the data's own, filled in from the raster below.
+    raster: [
+      ['hide_below', 'Dig', 0, 0, 0, ''],
+      ['hide_above', 'Cut from above', 0, 0, 0, ''],
+      ['opacity', 'Strength', 0.05, 1, 0.05, ''],
+    ],
   };
   const changePart = (block: RecipeBlock): HTMLElement[] => {
     const kind = block.block as GeometryKind;
     const nodes: HTMLElement[] = [el('h4', undefined, 'Visitors can change')];
     const list = el('div', 'lb-facts');
-    for (const [prop, label, min, max, step, unit] of LIVE[kind] ?? []) {
+    let rows = LIVE[kind] ?? [];
+    if (kind === 'raster') {
+      // A cut moves over the raster's own values: wait for them, then draw the rows.
+      const range = rasterRanges.get(block.id);
+      if (!range) {
+        void rasterField(block).then((f) => {
+          rasterRanges.set(block.id, f ? [f.min, f.max] : [0, 100]);
+          show('interaction');
+        });
+        return nodes;
+      }
+      const [lo, hi] = range;
+      const unit = String(block.props?.unit ?? '');
+      rows = rows.map(([prop, label, min, max, step, u]) => (prop.startsWith('hide_') ? [prop, label, lo, hi, niceStep(hi - lo), unit] : [prop, label, min, max, step, u]));
+    }
+    for (const [prop, label, min, max, step, unit] of rows) {
       const bind = `look.${block.id}.${prop}`;
       const row = el('label', 'lb-fact');
       const box = el('input');
@@ -1673,7 +1920,8 @@ export function builderSection(host: BuilderHost, manifest: LayerManifest, butto
       box.addEventListener('change', () => {
         dropControls((c) => c.bind !== bind);
         if (box.checked) {
-          const now = Number(block.props?.[prop] ?? (LOOK_DEFAULTS[kind] as Record<string, unknown>)[prop]);
+          const raw = block.props?.[prop] ?? (LOOK_DEFAULTS[kind] as Record<string, unknown>)[prop];
+          const now = raw === null || raw === undefined ? (prop === 'hide_above' ? max : min) : Number(raw);
           const value = Math.min(max, Math.max(min, Number.isFinite(now) ? now : min));
           (recipe.controls ??= []).push({ id: `${block.id}-${prop.replace(/_/g, '-')}`, type: 'range', label, min, max, step, default: value, ...(unit ? { unit } : {}), bind } as never);
         }

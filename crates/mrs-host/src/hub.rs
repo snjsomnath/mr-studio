@@ -232,6 +232,9 @@ pub struct LayerState {
     /// For an item: the layer it belongs to. It has no button and comes on with that layer.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub parent: Option<String>,
+    /// For an item of a revealing layer (#606): 1 the surface stack, 2 (or none) the stack underneath.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stack: Option<u8>,
     /// How Next moves through the layer, and a sequence's steps, as site.json has them.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub steps: Option<Steps>,
@@ -438,6 +441,8 @@ struct Instance {
     def: usize,
     /// The layer that owns this item. `None` for a layer of the scene.
     parent: Option<String>,
+    /// For an item of a revealing layer (#606): the stack it is in, as site.json has it.
+    stack: Option<u8>,
     /// The entry as site.json holds it, without its items (they follow it in the scene).
     /// For an item, `active` says whether it comes on with its layer. Live changes
     /// (`layer.set`, `layer.activate`) do not touch it.
@@ -451,9 +456,43 @@ impl Instance {
         self.state.rest = self.parent.is_none() && self.saved.active && self.saved.button.is_empty();
     }
 
+    /// Puts an item in a stack (#606), for the state and for site.json alike.
+    fn set_stack(&mut self, stack: Option<u8>) {
+        self.stack = stack;
+        self.state.stack = stack;
+    }
+
     fn item(&self) -> LayerItem {
         let s = &self.saved;
-        LayerItem { r#use: s.r#use.clone(), id: s.id.clone(), active: s.active, params: s.params.clone(), hide: s.hide.clone() }
+        LayerItem {
+            r#use: s.r#use.clone(),
+            id: s.id.clone(),
+            active: s.active,
+            params: s.params.clone(),
+            hide: s.hide.clone(),
+            stack: self.stack,
+        }
+    }
+}
+
+/// A stack as site.json may write it: 1 is the surface; 2, or anything else, the stack underneath (none).
+fn item_stack(stack: Option<u8>) -> Option<u8> {
+    stack.filter(|s| *s == 1)
+}
+
+fn item_ref_stack(items: &[LayerItem], id: &str) -> Option<u8> {
+    items.iter().find(|i| i.id == id).and_then(|i| i.stack)
+}
+
+/// A `stack` param of a request: 1, 2, or null for none.
+fn stack_param(value: &Value) -> Result<Option<u8>, String> {
+    match value {
+        Value::Null => Ok(None),
+        v => match v.as_u64() {
+            Some(1) => Ok(Some(1)),
+            Some(2) => Ok(None),
+            _ => Err("stack is 1 (the surface) or 2 (underneath)".into()),
+        },
     }
 }
 
@@ -812,6 +851,7 @@ impl Hub {
             for item in &reference.items {
                 let mut item = Self::instance(catalog, find(&item.r#use)?, item_ref(item), Some(reference.id.clone()), true)?;
                 item.state.active &= on && !sequence;
+                item.set_stack(item_stack(item_ref_stack(&reference.items, &item.id)));
                 scene.push(item);
             }
         }
@@ -844,6 +884,7 @@ impl Hub {
             // A control the layer package no longer has is not worth refusing the site over.
             hide: saved.hide.iter().filter(|id| layer.controls.iter().any(|c| &c.id == *id)).cloned().collect(),
             parent: parent.clone(),
+            stack: None,
             steps: saved.steps.clone(),
             step: None,
             shown_by: None,
@@ -852,7 +893,7 @@ impl Hub {
             health: None,
             clock: None,
         };
-        let mut instance = Instance { id, def, parent, saved, state };
+        let mut instance = Instance { id, def, parent, stack: None, saved, state };
         instance.sync_rest();
         // A table starts at rest (#419): a layer with a button on the controller starts closed,
         // even when site.json saved it on. Only the map at rest and items follow `active`.
@@ -2223,6 +2264,9 @@ impl Hub {
                 let mut instance = Self::instance(&self.catalog(), def, saved, parent.clone(), false).map_err(|e| e.to_string())?;
                 if let Some(parent) = &parent {
                     instance.state.active &= scene.iter().any(|i| &i.id == parent && i.state.active);
+                    instance.set_stack(stack_param(&p["stack"])?);
+                } else if !p["stack"].is_null() {
+                    return Err("only an item inside a layer has a stack".into());
                 }
                 summary = match &parent {
                     Some(parent) => format!("Added {} to {}", self.label(&instance), self.label_of(&scene, parent)),
@@ -2334,6 +2378,8 @@ impl Hub {
                     format!("Changed the button of {name}")
                 } else if !p["hide"].is_null() {
                     format!("Changed which controls of {name} show")
+                } else if p.get("stack").is_some() {
+                    format!("Moved {name} to stack {}", p["stack"].as_u64().unwrap_or(2))
                 } else {
                     format!("Changed {name}")
                 };
@@ -2366,6 +2412,13 @@ impl Hub {
                 if let Some(hide) = hide_list(&self.catalog()[instance.def], &p["hide"])? {
                     instance.state.hide = hide.clone();
                     instance.saved.hide = hide;
+                }
+                // Which stack an item is in (#606): 1 the surface, 2 or null the one underneath.
+                if p.get("stack").is_some() {
+                    if instance.parent.is_none() {
+                        return Err("only an item inside a layer has a stack".into());
+                    }
+                    instance.set_stack(stack_param(&p["stack"])?);
                 }
                 changed_layer = Some((index, active));
             }
@@ -3472,6 +3525,27 @@ mod tests {
         // An item comes on with its layer, never at rest.
         dev("scene.add", json!({ "use": "trees", "parent": "slideshow", "id": "slide-trees" })).unwrap();
         assert_eq!(layer(&hub, "slide-trees")["rest"], Value::Null);
+    }
+
+    #[test]
+    fn items_of_a_revealing_layer_go_in_a_stack() {
+        let hub = scratch_hub("stacks-606");
+        let dev = |method: &str, p: Value| hub.request(Role::Dev, 0, method, &p);
+        dev("scene.add", json!({ "use": "lens", "id": "glass", "button": { "name": "Glass" } })).unwrap();
+        dev("scene.add", json!({ "use": "trees", "parent": "glass", "id": "surface", "stack": 1 })).unwrap();
+        dev("scene.add", json!({ "use": "wind", "parent": "glass", "id": "under" })).unwrap();
+        assert_eq!(layer(&hub, "surface")["stack"], 1);
+        assert_eq!(layer(&hub, "under")["stack"], Value::Null, "underneath is the default");
+        let saved = || -> Value { serde_json::from_str(&std::fs::read_to_string(hub.site.dir.join("site.json")).unwrap()).unwrap() };
+        let items = |site: Value| site["layers"].as_array().unwrap().iter().find(|l| l["id"] == "glass").unwrap()["items"].clone();
+        assert_eq!(items(saved())[0]["stack"], 1);
+        // Moved underneath, and the surface again; a layer of the scene has no stack.
+        dev("scene.set", json!({ "layer": "surface", "stack": 2 })).unwrap();
+        assert_eq!(items(saved())[0].get("stack"), None);
+        dev("scene.set", json!({ "layer": "under", "stack": 1 })).unwrap();
+        assert_eq!(layer(&hub, "under")["stack"], 1);
+        assert!(dev("scene.set", json!({ "layer": "glass", "stack": 1 })).is_err());
+        assert!(dev("scene.set", json!({ "layer": "under", "stack": 3 })).is_err());
     }
 
     #[test]

@@ -379,6 +379,11 @@ pub struct LayerItem {
     pub params: Map<String, Value>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub hide: Vec<String>,
+    /// For an item of a revealing layer (an X-ray glass, a Reveal line, #606): `1` puts it in the
+    /// surface stack, shown outside the glass or on the other side of the line; `2` (or none) in
+    /// the stack underneath, shown through it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stack: Option<u8>,
 }
 
 /// How Next moves through a layer (`docs/contracts/present.md`, Steps).

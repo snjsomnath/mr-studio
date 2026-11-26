@@ -4,7 +4,7 @@
 // controller's inspector; a layer uses `entityValues` to read what was set.
 
 import { formatDecimal, formatUnit } from './format.ts';
-import type { EntityChange, EntityFact, EntitySet, Params, Position, ToolGeometry } from './types.ts';
+import type { EntityChange, EntityFact, EntityLog, EntitySet, Params, Position, ToolGeometry } from './types.ts';
 
 /** `params.entities` as the host keeps it: set, then entity, then control. Only changed values are there. */
 export type EntityOverrides = Record<string, Record<string, Record<string, unknown>>>;
@@ -198,4 +198,55 @@ export function pickEntity(features: readonly EntityFeature[], at: Position, tol
     }
   }
   return best;
+}
+
+/** One layer of a log (#602), from a depth to a depth. */
+export interface LogLayer {
+  from: number;
+  to: number;
+  material: string;
+  note?: string;
+}
+
+/**
+ * The layers of one entity's log, from the top down: the rows of `collection` whose key column is
+ * `id`, with a material and a thickness. Rows sharing a top are kept once (the deepest wins).
+ */
+export function logLayers(collection: Collection, log: EntityLog, id: string): LogLayer[] {
+  const out: LogLayer[] = [];
+  for (const feature of collection.features ?? []) {
+    const p = feature.properties ?? {};
+    const key = propertyAt(p, log.key);
+    if (key === undefined || key === null || String(key) !== id) continue;
+    const from = Number(propertyAt(p, log.from));
+    const to = Number(propertyAt(p, log.to));
+    const material = String(propertyAt(p, log.material) ?? '').trim();
+    if (!Number.isFinite(from) || !Number.isFinite(to) || to <= from || !material) continue;
+    const note = log.note ? String(propertyAt(p, log.note) ?? '').trim() : '';
+    out.push({ from, to, material, ...(note ? { note } : {}) });
+  }
+  out.sort((a, b) => a.from - b.from || b.to - a.to);
+  return out.filter((layer, i) => i === 0 || layer.from !== out[i - 1]!.from);
+}
+
+/** Earth colours for the materials a log names, in Swedish or English; anything else gets a steady colour of its own. */
+const MATERIALS: [RegExp, string][] = [
+  [/berg|rock|granit|gnejs|gneiss|bedrock/i, '#8a8f99'],
+  [/fyll|fill|made/i, '#b59a7a'],
+  [/lera|clay|silt|gyttja/i, '#7f9bb0'],
+  [/sand|grus|gravel/i, '#d9bf73'],
+  [/mor[äa]n|till/i, '#9c9c5e'],
+  [/torv|peat|mull|humus|organic/i, '#6b5440'],
+  [/sten|block|stone|boulder/i, '#a88f6a'],
+  [/jord|soil/i, '#a07850'],
+  [/vatten|water/i, '#5aa0d0'],
+];
+const OTHERS = ['#c08a5a', '#8fa26a', '#b07090', '#6f8fb0', '#c0a050', '#7a9a8a'];
+
+/** The colour a log draws a material in. */
+export function materialColour(material: string): string {
+  for (const [pattern, colour] of MATERIALS) if (pattern.test(material)) return colour;
+  let hash = 0;
+  for (const c of material) hash = (hash * 31 + c.charCodeAt(0)) >>> 0;
+  return OTHERS[hash % OTHERS.length]!;
 }

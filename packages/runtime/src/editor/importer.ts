@@ -59,7 +59,12 @@ export interface ImportReport {
   issues: { code: string; severity: 'blocker' | 'warning' | 'note'; message: string; fix?: ImportFix }[];
   preview?: { type: 'FeatureCollection'; features: { geometry: { type: string; coordinates: unknown } | null; properties?: Record<string, unknown> | null }[] };
   path?: string;
+  /** The layers of a zipped shapefile or GeoPackage (#600), one of them `chosen`. */
+  layers?: { name: string; count: number; on_table: number; shape: 'points' | 'lines' | 'areas' | 'mixed' | 'none' | 'raster'; chosen: boolean }[];
 }
+
+/** Agencies' GIS files (#600): zipped shapefiles and GeoPackages, read one layer at a time. */
+const GIS = '.zip,.gpkg';
 
 /** A kind of data a table is made from, and how it is brought in. */
 export interface ImportTarget {
@@ -85,8 +90,8 @@ export const TARGETS: ImportTarget[] = [
     dataset: 'buildings',
     name: 'Buildings',
     icon: 'blocks',
-    about: 'Footprints with heights. They cast the shadows and shape the wind. GeoJSON.',
-    accept: '.geojson,.json',
+    about: 'Footprints with heights. They cast the shadows and shape the wind. GeoJSON, a zipped shapefile or a GeoPackage.',
+    accept: '.geojson,.json,' + GIS,
     osm: true,
     example: formatExample('buildings'),
   },
@@ -107,7 +112,7 @@ export const TARGETS: ImportTarget[] = [
     name: 'Trees',
     icon: 'tree',
     about: 'Where the trees stand. GeoJSON points, or a CSV with coordinates.',
-    accept: '.geojson,.json,.csv',
+    accept: '.geojson,.json,.csv,' + GIS,
     osm: true,
     example: formatExample('trees'),
   },
@@ -117,7 +122,7 @@ export const TARGETS: ImportTarget[] = [
     name: 'Water',
     icon: 'droplet',
     about: 'Rivers, lakes and the sea. Cool in thermal comfort, where stormwater drains to. GeoJSON areas.',
-    accept: '.geojson,.json',
+    accept: '.geojson,.json,' + GIS,
     osm: true,
     example: formatExample('water'),
   },
@@ -127,7 +132,7 @@ export const TARGETS: ImportTarget[] = [
     name: 'Buildings around',
     icon: 'wind',
     about: 'Footprints reaching past the table, up to 500 m. Only the wind feels them: air reaching the table has passed real buildings. Nothing is drawn. GeoJSON areas.',
-    accept: '.geojson,.json',
+    accept: '.geojson,.json,' + GIS,
     osm: false,
     example: formatExample('context'),
   },
@@ -137,7 +142,7 @@ export const TARGETS: ImportTarget[] = [
     name: 'Streets',
     icon: 'car',
     about: 'The street network, as lines. Traffic drives along it. GeoJSON.',
-    accept: '.geojson,.json',
+    accept: '.geojson,.json,' + GIS,
     osm: true,
     example: formatExample('roads'),
   },
@@ -147,7 +152,7 @@ export const TARGETS: ImportTarget[] = [
     name: 'Walking paths',
     icon: 'footprints',
     about: 'Lines people can walk along. Cool paths needs them. GeoJSON.',
-    accept: '.geojson,.json',
+    accept: '.geojson,.json,' + GIS,
     osm: true,
     example: formatExample('walkways'),
   },
@@ -364,6 +369,8 @@ export class Importer {
   /** In Add data: what the file is, and the name of a dataset of the author's own. */
   private chosen: string;
   private ownName = '';
+  /** The layer of a zipped shapefile or GeoPackage the author picked (#600); the host's choice when unset. */
+  private layer?: string;
   /** The colouring chosen for an own dataset, offered once its report is in (#94). One colour by default. */
   private showAs: ShowAs = { column: '' };
   private readonly fixed: boolean;
@@ -491,7 +498,7 @@ export class Importer {
         const field = el('label', 'wz-field');
         field.append(el('span', undefined, 'Its name'), own, el('small', undefined, 'Layers ask for data by this name. Lowercase letters, digits and dashes.'));
         kind.append(field);
-        kind.append(el('p', 'im-about', 'GeoJSON, or a CSV with lat and lon columns. A CSV without positions, such as activity through the day or flows and links between places, is kept as a table that place motions join to places by name or id. An SVG plan drawing covers the table, and its layers are revealed one phase at a time. A video (MP4, MOV or WebM) plays on the controller as a Video walk, with the walker moving along a path on the table.'));
+        kind.append(el('p', 'im-about', 'GeoJSON, a CSV with lat and lon columns, or a shapefile zip or GeoPackage as SGU, Lantmäteriet and SLU hand them out (one layer at a time; you pick which). A GeoTIFF of values, such as soil depth or noise, becomes a raster a layer colours by value. A CSV without positions, such as activity through the day or flows and links between places, is kept as a table that place motions join to places by name or id. An SVG plan drawing covers the table, and its layers are revealed one phase at a time. A video (MP4, MOV or WebM) plays on the controller as a Video walk, with the walker moving along a path on the table.'));
       }
       nodes.push(kind);
       if (item) nodes.push(el('p', 'im-about', item.about), exampleBox(item.dataset, this.host.site()));
@@ -506,7 +513,7 @@ export class Importer {
 
   private sourceButtons(item: ImportTarget | undefined, has: boolean): HTMLElement[] {
     const input = el('input');
-    Object.assign(input, { type: 'file', accept: item?.accept ?? '.geojson,.json,.csv,.svg,.mp4,.mov,.webm', hidden: true, ariaLabel: `File for ${item?.name ?? 'the dataset'}` });
+    Object.assign(input, { type: 'file', accept: item?.accept ?? `.geojson,.json,.csv,${GIS},.tif,.tiff,.svg,.mp4,.mov,.webm`, hidden: true, ariaLabel: `File for ${item?.name ?? 'the dataset'}` });
     input.addEventListener('change', () => {
       const file = input.files?.[0];
       if (file) this.start({ kind: 'file', file });
@@ -550,6 +557,7 @@ export class Importer {
     this.source = null;
     this.options.clear();
     this.crs = undefined;
+    this.layer = undefined;
     this.report = undefined;
     this.failed = undefined;
     this.busy = false;
@@ -597,6 +605,7 @@ export class Importer {
     else if (this.report) {
       const answer = this.report;
       report.append(el('p', 'wz-summary', answer.summary));
+      if (answer.layers?.length) report.append(this.layerPicker(answer.layers));
       for (const issue of answer.issues) {
         const line = el('p', `wz-issue is-${issue.severity}`, issue.message);
         const fix = issue.fix;
@@ -667,11 +676,23 @@ export class Importer {
     const plan = Boolean(this.report?.issues.some((i) => i.code === 'plan.cover') && this.host.showPlan);
     // So is a video (#194), as a Video walk.
     const walk = Boolean(this.report?.issues.some((i) => i.code === 'video.walk') && this.host.showVideo);
+    // So is a raster of values (#601), as a custom layer coloured by value.
+    const raster = Boolean(this.report?.ok && this.report.issues.some((i) => i.code === 'raster.values') && this.host.showAs);
     const actions = el('div', 'wz-report-actions');
-    const add = el('button', 'ed-button is-primary', plan || walk || (colouring && this.showAs.column !== null) ? 'Add and show on the table' : 'Add to the table');
+    const add = el('button', 'ed-button is-primary', plan || walk || raster || (colouring && this.showAs.column !== null) ? 'Add and show on the table' : 'Add to the table');
     add.type = 'button';
     add.disabled = this.busy || !this.report?.ok;
-    add.addEventListener('click', () => void (plan ? this.addPlan('showPlan') : walk ? this.addPlan('showVideo') : colouring && this.showAs.column !== null ? this.addAndShow(colouring.kind, colouring.paint) : this.check(true)));
+    add.addEventListener('click', () =>
+      void (plan
+        ? this.addPlan('showPlan')
+        : walk
+          ? this.addPlan('showVideo')
+          : raster
+            ? this.addAndShow('raster', { by: 'value', kind: 'number', ramp: 'sun', classes: 'continuous' })
+            : colouring && this.showAs.column !== null
+              ? this.addAndShow(colouring.kind, colouring.paint)
+              : this.check(true)),
+    );
     const cancel = el('button', 'ed-button', 'Cancel');
     cancel.type = 'button';
     cancel.addEventListener('click', () => {
@@ -684,12 +705,40 @@ export class Importer {
     return report;
   }
 
+  /**
+   * Which layer of a file with several (#600): each with what it holds and how much is on the
+   * table, so the author can tell the soil map from its coverage outline at a glance.
+   */
+  private layerPicker(layers: NonNullable<ImportReport['layers']>): HTMLElement {
+    const select = el('select');
+    select.ariaLabel = 'Layer of the file';
+    const words = (l: (typeof layers)[number]): string => {
+      if (l.shape === 'raster') return `${l.name}: a raster${l.on_table ? '' : ', off the table'}`;
+      if (l.count === 0) return `${l.name}: empty`;
+      const what = l.shape === 'mixed' ? 'shapes' : l.shape;
+      return `${l.name}: ${l.count} ${what}, ${l.on_table ? `${l.on_table} on the table` : 'none on the table'}`;
+    };
+    for (const l of layers) {
+      const option = new Option(words(l), l.name, false, l.chosen);
+      option.disabled = l.count === 0 && l.shape !== 'raster';
+      select.append(option);
+    }
+    select.addEventListener('change', () => {
+      this.layer = select.value;
+      void this.check(false);
+    });
+    const field = el('label', 'wz-field im-layer');
+    field.append(el('span', undefined, 'Layer'), select);
+    return field;
+  }
+
   private query(): URLSearchParams | null {
     const target = this.target();
     if (!target) return null;
     const query = new URLSearchParams({ target });
     for (const option of this.options) query.set(option, '1');
     if (this.crs) query.set('crs', this.crs);
+    if (this.layer) query.set('layer', this.layer);
     if (this.source?.kind === 'osm') query.set('source', 'osm');
     if (this.source?.kind === 'elevation') query.set('source', 'elevation');
     return query;

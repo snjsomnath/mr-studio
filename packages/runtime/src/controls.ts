@@ -7,6 +7,7 @@ import { LANGUAGE_NAMES, language, offered, say, t } from './i18n.ts';
 import type { Language } from './i18n.ts';
 import { entitySender, baseContext, isAtRest, paramSender } from './layer-manager.ts';
 import { loadEntities } from './entities.ts';
+import { entityLog } from './entity-log.ts';
 
 export { isAtRest };
 import { mountStage } from './dashboard.ts';
@@ -876,7 +877,9 @@ function entitySetPart(
   // Tap to read (#38): the picked one's facts, read only.
   const facts = el('dl', 'entity-facts');
   facts.hidden = true;
-  part.append(head, facts, controls, actions);
+  // A log of layers under the picked one (#602): a well's soil and rock, from the top down.
+  const log = set.log ? entityLog(store.state.site, set.log) : null;
+  part.append(head, facts, ...(log ? [log.element] : []), controls, actions);
   if (set.controls.length === 0) actions.hidden = true;
 
   let features: EntityFeature[] = [];
@@ -929,6 +932,7 @@ function entitySetPart(
     const rows = feature?.facts ?? [];
     facts.hidden = rows.length === 0;
     facts.replaceChildren(...rows.flatMap(([term, value]) => [el('dt', undefined, say(term, manifest)), el('dd', undefined, value)]));
+    log?.show(selection);
     controls.hidden = selection === null;
     const values = selection !== null ? entityValues(set, state.params, selection) : {};
     for (const w of widgets) {
@@ -1453,12 +1457,17 @@ export class Controller {
     store.onParticipants(showNoTable);
     body.append(words, troubleLine, busy.element, noTable, strip.element);
     if (!hero.hidden) body.append(hero);
-    // The picked entity's own controls come before the layer's, as the thing in hand (#279).
-    if (!entities.element.hidden) body.append(entities.element);
+    // The picked entity's own controls come before the layer's, as the thing in hand (#279). A
+    // set that is only read (tap to read, a well's log, #602) comes after the layer's main controls,
+    // so a Dig slider is not pushed down by a column of layers.
+    const readOnly = (manifest.entities ?? []).every((set) => set.controls.length === 0);
+    if (!entities.element.hidden && !readOnly) body.append(entities.element);
     if (!stage.hidden) body.append(stage);
     // A layout of panels is the view: the generated control rows stay away unless it asks for them.
     const generated = !layout || layout.controls === true;
-    if (generated) for (const group of [primary, controls]) if (group.childElementCount > 0) body.append(group);
+    if (generated && primary.childElementCount > 0) body.append(primary);
+    if (!entities.element.hidden && readOnly) body.append(entities.element);
+    if (generated && controls.childElementCount > 0) body.append(controls);
     // A slideshow step's own layer: its hero and controls, as from its own button (#552).
     body.append(guest.element, legend.element, sounds.element);
     // "More settings" closes the primary row when there is one, so it costs no height of its own.

@@ -111,7 +111,12 @@ pub fn read(site: &Site, name: &str, hour: Option<u32>) -> Result<Option<GridFie
         _ => None,
     }
     .and_then(crate::Crs::parse);
-    let raster = GeoRaster::read(&path, crs).map_err(|e| format!("{}: {e}", path.display()))?;
+    // A dataset raster that only cites its grid is placed as it was when it was added (#601).
+    let raster = match crs {
+        Some(crs) => GeoRaster::read(&path, Some(crs)),
+        None => crate::import::read_on_table(site, &path).map(|(raster, _)| raster),
+    }
+    .map_err(|e| format!("{}: {e}", path.display()))?;
     Ok(Some(on_grid(&raster, site.grid(), &site.projection())))
 }
 
