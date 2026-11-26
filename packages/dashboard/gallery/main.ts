@@ -3,6 +3,7 @@
 //   ?view=energy   a hand-made site page (the default)
 //   ?view=auto     panels from layers, laid out automatically; too many for one page
 //   ?view=refused  what dev mode shows for panels that break the rules
+//   ?view=gauges   gauges at several values, tile and chip (#491)
 //   &theme=light   a site's restyle     &still   freeze the clock     &rail=none
 import type { PanelSpec } from '@mrstudio/sdk';
 
@@ -73,6 +74,12 @@ if (which === 'energy') {
   // Two layers on at once: more than one screen may hold, so the layout makes a second page.
   const extra = (energy.panels as PanelSpec[]).map(({ at: _at, layer: _layer, ...spec }) => spec as PanelSpec);
   view.setPanels([...(sunlight.panels as PanelSpec[]).map((spec) => input('sunlight', spec)), ...extra.map((spec) => input('energy', spec))]);
+} else if (which === 'gauges') {
+  const gauges = [0.12, 0.5, 0.62, 0.9].flatMap((value) => [
+    { id: `tile-${value * 100}`, widget: 'gauge', size: 'tile', title: `Target 50%`, props: { value, max: 1, target: 0.5, format: 'percent' } },
+    { id: `chip-${value * 100}`, widget: 'gauge', size: 'chip', title: `Chip`, props: { value, max: 1, format: 'percent' } },
+  ]) as PanelSpec[];
+  view.setPanels(gauges.map((spec) => input('demo', spec)));
 } else {
   view.setPanels([
     input('demo', { id: 'ok', widget: 'stat', size: 'tile', title: 'This one is fine', props: { value: 42, unit: 'kW' } }),

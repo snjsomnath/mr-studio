@@ -11,7 +11,7 @@ import { contrast, STYLE_TOKENS, themeVariables, validateTheme } from '../src/th
 import { controlProblems, panelReads, validateLayerPanels, validatePage, validatePanel, validateRibbon } from '../src/validate.ts';
 import { defineWidget } from '../src/registry.ts';
 import { colourFeatures, rampColour, valueOf } from '../src/widgets/map.ts';
-import { coreWidgets, donutParts, entityAt, gaugeShare, mediaUrl } from '../src/widgets/index.ts';
+import { coreWidgets, donutParts, entityAt, gaugeArc, gaugeShare, mediaUrl } from '../src/widgets/index.ts';
 
 const json = (path: string) => JSON.parse(readFileSync(new URL(path, import.meta.url), 'utf8'));
 const registry = coreWidgets();
@@ -284,6 +284,8 @@ test('gauge, list, donut, picture and legend widgets hold to the budget (#356)',
   assert.equal(gaugeShare(50, 0, 200), 0.25);
   assert.equal(gaugeShare(500, 0, 200), 1);
   assert.equal(gaugeShare('x', 0, 1), null);
+  // The fill is never the large arc, or past half the range it leaves the track (#491).
+  for (const share of [0.1, 0.5, 0.62, 0.99, 1]) assert.match(gaugeArc(0, share), / A 40 40 0 0 1 /);
   assert.deepEqual(donutParts([1, 3, -2, undefined]), [{ from: 0, to: 0.25 }, { from: 0.25, to: 1 }, { from: 1, to: 1 }, { from: 1, to: 1 }]);
   assert.equal(mediaUrl('media/plan view.png'), '/site/media/plan%20view.png');
   assert.equal(mediaUrl('../secret.txt'), null);
