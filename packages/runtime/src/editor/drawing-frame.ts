@@ -1,4 +1,4 @@
-import { formatCorners, parseCorners, siteDataUrl, tableFrame } from '@mrstudio/sdk';
+import { drawingSize, fitCorners, formatCorners, parseCorners, siteDataUrl, tableFrame } from '@mrstudio/sdk';
 import type { SiteInfo } from '@mrstudio/sdk';
 
 import { fitFrame, loadInk, loadOutlines, outlinePoints } from './drawing-snap.ts';
@@ -110,7 +110,7 @@ export class DrawingFrame {
   private readonly knob = svg('circle', { r: 7, class: 'ed-df-turn' });
   private readonly corners = [0, 1, 2, 3].map(() => svg('rect', { width: 12, height: 12, class: 'ed-df-corner' }));
   private readonly top = svg('text', { class: 'ed-df-top', 'text-anchor': 'middle' });
-  private readonly fill = Object.assign(document.createElement('button'), { type: 'button', className: 'ed-button', textContent: 'Fill the table again' });
+  private readonly fill = Object.assign(document.createElement('button'), { type: 'button', className: 'ed-button', textContent: 'Fit to the table again' });
   private readonly snap = Object.assign(document.createElement('button'), { type: 'button', className: 'ed-button', textContent: 'Snap to buildings' });
   private readonly hint = Object.assign(document.createElement('span'), { className: 'ed-df-hint-howto', textContent: 'Drag to move the drawing, a corner to scale it, the round handle to turn it. Arrow keys nudge it.' });
   /** The drawing itself, drawn into the frame while it moves (#405), so it follows the hand before the table redraws. */
@@ -123,6 +123,9 @@ export class DrawingFrame {
   private snapping = false;
   private surface: HTMLElement | null = null;
   private frame: Frame | null = null;
+  /** The framed drawing's own size, read from its file, so a drawing with no corners is framed at its proportions (#559). */
+  private size: { width: number; height: number } | null = null;
+  private placedBy = '';
   private resize = new ResizeObserver(() => this.draw());
 
   private readonly host: DrawingFrameHost;
@@ -161,7 +164,8 @@ export class DrawingFrame {
     const parsed = parseCorners(corners);
     this.fill.hidden = !parsed;
     this.snap.disabled = this.snapping || !this.host.site().data?.buildings;
-    this.frame = parsed ? (parsed.map((c) => map.toTable(c)) as Frame) : [[0, 0], [map.width, 0], [0, map.height]];
+    this.placedBy = corners;
+    this.frame = parsed ? (parsed.map((c) => map.toTable(c)) as Frame) : this.fitted();
     // Drawn in the surface's parent, so the handles may reach past the table's edge.
     const holder = surface.parentElement!;
     if (this.surface !== surface) {
@@ -172,6 +176,13 @@ export class DrawingFrame {
     }
     if (this.root.parentElement !== holder) holder.append(this.root);
     this.draw();
+  }
+
+  /** The frame of a drawing with no corners: fitted inside the table at its own proportions, as the layer places it. */
+  private fitted(): Frame {
+    const map = tableFrame(this.host.site());
+    const quarters = Math.round((this.host.drawing()?.turn ?? 0) / 90);
+    return fitCorners({ width: map.width, height: map.height }, this.size, quarters);
   }
 
   hide(): void {
@@ -265,6 +276,11 @@ export class DrawingFrame {
         .then((r) => r.text())
         .then((text) => {
           if (this.ghostFrom !== url) return;
+          this.size = drawingSize(new DOMParser().parseFromString(text, 'image/svg+xml').documentElement);
+          if (!parseCorners(this.placedBy) && !this.root.classList.contains('is-dragging')) {
+            this.frame = this.fitted();
+            this.draw();
+          }
           if (this.ghostBlob) URL.revokeObjectURL(this.ghostBlob);
           this.ghostBlob = URL.createObjectURL(new Blob([text], { type: 'image/svg+xml' }));
           this.ghostImage.setAttribute('href', this.ghostBlob);

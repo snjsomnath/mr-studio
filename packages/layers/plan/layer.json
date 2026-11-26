@@ -57,7 +57,7 @@
         { "value": "270", "label": "A quarter turn anticlockwise" }
       ]
     },
-    { "id": "corners", "type": "text", "label": "Place by its corners (lon,lat of top left; top right; bottom left), empty to fill the table", "default": "", "tier": "more" },
+    { "id": "corners", "type": "text", "label": "Place by its corners (lon,lat of top left; top right; bottom left), empty to fit it in the table", "default": "", "tier": "more" },
     {
       "id": "motion", "type": "select", "label": "Parts of the drawing", "default": "roles", "tier": "more",
       "options": [
