@@ -17,6 +17,13 @@ Then-and-now comparisons, official maps and plans, and data you do not want to d
 3. For another service, choose **Your own service**, paste its **Service address**, and type the names of its **Layers** (comma separated). Its owner can tell you them.
 4. If the service needs a login, add it once under **Sources and keys** on Home and choose it under **Sign-in**.
 
+## Lantmäteriet maps
+
+- The built-in Swedish maps come from SLU's open copy of Lantmäteriet's services (hades.slu.se). They need no login, and the credit "© Lantmäteriet, via SLU" is shown with them.
+- Lantmäteriet's own services (maps.lantmateriet.se), such as Ortofoto Visning and Topowebb, need a user name and password even though the data is open. Create a free account on Geotorget (geotorget.lantmateriet.se), order the service there (for example **Ortofoto Visning**), and type the user name and password it gives you under **Lantmäteriet** in **Sources and keys**.
+- Then choose **Your own service**, paste the address, for example `https://maps.lantmateriet.se/ortofoto/wms/v1.3` with the layer `Ortofoto_0.5`, and choose **Lantmäteriet** under **Sign-in**. The same login works for every address on maps.lantmateriet.se.
+- SLU's GET download service needs an SLU student or staff login and gives files to download, not a map service, so it cannot be a source.
+
 ## Tips
 
 - The computer must be online the first time; after that, the map picture is kept for the table.
