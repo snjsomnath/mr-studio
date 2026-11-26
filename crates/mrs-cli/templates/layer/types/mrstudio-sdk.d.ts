@@ -5288,6 +5288,24 @@ declare module "@mrstudio/sdk/drawing-reveal" {
      * where the corners of the drawing as drawn land, for `placement`.
      */
     export function turnCorners(corners: readonly (readonly [number, number])[], quarters: number): Corners;
+    /**
+     * Where a drawing placed by no corners lands (#559): as large as fits inside the table, centred,
+     * at its own proportions as shown (`quarters` quarter turns clockwise swap its sides), never
+     * stretched. Answers the corners of the drawing as shown, in table metres, as `corners` gives them.
+     * A drawing within 2 % of the table's shape fills it, as before.
+     */
+    export function fitCorners(table: {
+        width: number;
+        height: number;
+    }, drawing: {
+        width: number;
+        height: number;
+    } | null, quarters?: number): Corners;
+    /** A drawing's own size from its viewBox, else its width and height attributes; null when it has neither. */
+    export function drawingSize(svg: Element | null | undefined): {
+        width: number;
+        height: number;
+    } | null;
     /** Corners as the `corners` param writes them: "lon,lat; lon,lat; lon,lat", to about a centimetre. */
     export function formatCorners(corners: readonly (readonly [number, number])[]): string;
     /**
