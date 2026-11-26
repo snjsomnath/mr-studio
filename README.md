@@ -78,9 +78,9 @@ Custom layers made in the editor's layer builder (data, look, motion and interac
 ## For a team at a new site
 
 A table for your own place lives in a repository of your own, with no MR Studio code in it.
-Make it from the site template in [templates/site](templates/site): `site.json`, `data/`, `layers/`
-for your own code layers, a README for the team, and a GitHub check that runs `mrstudio validate`
-on every push. Then follow the [author's guide](docs/guide/README.md).
+Make it from the [site template repository](https://github.com/snjsomnath/mr-studio-site-template)
+(**Use this template** on GitHub): `site.json`, `data/`, `layers/` for your own code layers, a
+README for the team, and a GitHub check that runs `mrstudio validate` on every push. Then follow the [author's guide](docs/guide/README.md).
 
 ## For core developers
 
