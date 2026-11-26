@@ -89,7 +89,7 @@ pub const TEMPLATES: [Template; 10] = [
     Template {
         kind: Kind::Lantmateriet,
         name: "Lantmäteriet",
-        purpose: "Swedish maps and aerial photos (WMS and WMTS) with a Geotorget account",
+        purpose: "Lantmäteriet's own map and aerial photo services (topowebb, ortofoto) with a Geotorget login",
         url: "https://maps.lantmateriet.se/topowebb/wms/v1",
         auth: Auth::Basic,
         param: "",
