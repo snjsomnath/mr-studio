@@ -827,7 +827,7 @@ async function main() {
     const savedTv = () => JSON.parse(fs.readFileSync(path.join(site, 'site.json'), 'utf8')).tv;
     // The host writes site.json a moment after a change.
     const saved = async (check, what) => {
-      for (let i = 0; i < 50 && !check(); i++) await sleep(100);
+      for (let i = 0; i < 50 && !check(); i++) await new Promise((r) => setTimeout(r, 100));
       assert.ok(check(), what);
     };
     // The sample has most layers already; Movement adds the one it lacks, Street life, at rest.

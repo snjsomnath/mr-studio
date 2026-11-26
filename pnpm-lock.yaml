@@ -11,6 +11,9 @@ importers:
       eslint:
         specifier: ^9.39.5
         version: 9.39.5
+      globals:
+        specifier: 14.0.0
+        version: 14.0.0
       jsqr:
         specifier: ^1.4.0
         version: 1.4.0
