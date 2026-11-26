@@ -32,7 +32,11 @@ export interface ConnectionTrace {
 interface Pending {
   resolve: (value: any) => void;
   reject: (error: Error) => void;
+  timer?: ReturnType<typeof setTimeout>;
 }
+
+/** How long a request waits for its answer before it fails (#510). The host answers in milliseconds. */
+export const REQUEST_TIMEOUT_MS = 30_000;
 
 /**
  * The single link between a surface and the host: JSON requests and events,
@@ -79,11 +83,30 @@ export class Connection {
         };
         socket.onmessage = (event) => {
           if (typeof event.data !== 'string') {
-            const frame = parseFrame(event.data as ArrayBuffer);
-            for (const listener of this.frameListeners) listener(frame);
+            let frame: FieldFrame;
+            try {
+              frame = parseFrame(event.data as ArrayBuffer);
+            } catch (error) {
+              this.failedListener('a field frame that could not be read', error);
+              return;
+            }
+            // One layer's listener that throws does not keep the frame from the others (#510).
+            for (const listener of this.frameListeners) {
+              try {
+                listener(frame);
+              } catch (error) {
+                this.failedListener('a field frame', error);
+              }
+            }
             return;
           }
-          const message = JSON.parse(event.data);
+          let message: any;
+          try {
+            message = JSON.parse(event.data);
+          } catch (error) {
+            this.failedListener('a message that could not be read', error);
+            return;
+          }
           switch (message.t) {
             case 'welcome':
               this.retry = 0;
@@ -108,6 +131,7 @@ export class Connection {
             case 'res': {
               const pending = this.pending.get(message.id);
               this.pending.delete(message.id);
+              if (pending?.timer) clearTimeout(pending.timer);
               if (message.ok) pending?.resolve(message.r);
               else pending?.reject(new Error(message.e));
               break;
@@ -119,7 +143,10 @@ export class Connection {
           }
         };
         socket.onclose = () => {
-          for (const pending of this.pending.values()) pending.reject(new Error('connection lost'));
+          for (const pending of this.pending.values()) {
+            if (pending.timer) clearTimeout(pending.timer);
+            pending.reject(new Error('connection lost'));
+          }
           this.pending.clear();
           this.emit('disconnected', null);
           if (this.closed) return;
@@ -131,19 +158,33 @@ export class Connection {
     });
   }
 
-  request<T = unknown>(method: string, params?: object): Promise<T> {
+  /**
+   * Asks the host and resolves with its answer. Fails when the host refuses, when the connection
+   * is lost, and when no answer came within `timeoutMs` (30 s unless given; 0 waits for ever).
+   */
+  request<T = unknown>(method: string, params?: object, options?: { timeoutMs?: number }): Promise<T> {
     const socket = this.socket;
     if (!socket || socket.readyState !== WebSocket.OPEN) return Promise.reject(new Error('not connected'));
     const id = this.nextId++;
+    const limit = options?.timeoutMs ?? REQUEST_TIMEOUT_MS;
     return new Promise<T>((resolve, reject) => {
+      const timer =
+        limit > 0
+          ? setTimeout(() => {
+              const pending = this.pending.get(id);
+              this.pending.delete(id);
+              pending?.reject(new Error(`the host did not answer '${method}' within ${Math.round(limit / 1000)} s`));
+            }, limit)
+          : undefined;
       if (this.tracers.size) {
         const at = now();
         const done = (ok: boolean, error?: string) => this.traced({ kind: 'request', method, payload: params ?? {}, at, ms: now() - at, ok, error });
         this.pending.set(id, {
           resolve: (value) => (done(true), resolve(value)),
           reject: (error) => (done(false, error.message), reject(error)),
+          timer,
         });
-      } else this.pending.set(id, { resolve, reject });
+      } else this.pending.set(id, { resolve, reject, timer });
       socket.send(JSON.stringify({ t: 'req', id, m: method, p: params ?? {} }));
     });
   }
@@ -200,8 +241,22 @@ export class Connection {
     this.socket?.close();
   }
 
+  /** Calls every listener of `event`. One that throws does not keep the event from the others (#510). */
   private emit(event: string, payload: unknown): void {
-    for (const listener of this.listeners.get(event) ?? []) listener(payload);
+    for (const listener of [...(this.listeners.get(event) ?? [])]) {
+      try {
+        listener(payload);
+      } catch (error) {
+        this.failedListener(`the event '${event}'`, error);
+      }
+    }
+  }
+
+  /** A listener threw, or a message could not be read: the console and the app's log hear of it. */
+  private failedListener(what: string, error: unknown): void {
+    console.error(`[connection] handling ${what} failed:`, error);
+    const message = error instanceof Error ? error.message : String(error);
+    this.report({ message: `handling ${what} failed: ${message}`, stack: error instanceof Error ? error.stack : undefined });
   }
 }
 

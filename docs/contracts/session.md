@@ -463,6 +463,20 @@ A layer must never be silently missing from the table.
   name it in `requires.data` or in a setting; otherwise on the one layer starting just then.
   Once a start reads everything, it sends `running` and the trouble ends. A layer whose code is
   not in the app is `failed` and waits.
+- **Trouble the layer does not report itself (#510).** Three more cases end as `layer.health`,
+  in the editor, on the controller and in Copy diagnostics:
+  - A site layer whose code does not load (a syntax error in `dist/index.js`, another `api`, an
+    id that does not match, no default export): `failed`, "its code could not be loaded: …",
+    and the error is in the window errors. It waits for Retry or a rebuilt layer.
+  - A layer whose handlers keep throwing: after 10 throws with no quiet spell of 2 s between
+    them it is stopped and joins the retry schedule above, with "it kept failing while it
+    ran: …". An occasional throw is logged and the layer runs on.
+  - A `table()` that has not finished after 20 s: `failed`, "it has not finished starting after
+    20 s", with Retry. The start is not cut short; when it finishes, the trouble is over.
+- **The connection (#510).** A listener that throws does not keep an event or a field frame
+  from the listeners after it; the error goes to the window errors. A request the host has
+  not answered within 30 s fails with "the host did not answer '<method>' within 30 s"
+  (`Connection.request(method, params, { timeoutMs })`; 0 waits for ever).
 - **Where it shows.** The editor puts a red dot on the layer's row, with why in its tooltip,
   and a box with the reason and **Retry** at the top of its settings. The controller dims the
   layer's button and writes "Not available right now" under its name; it comes back by itself.
