@@ -25,6 +25,7 @@ tower = { version = "0.5", features = ["util"] }
 parking_lot = "0.12"
 
 [dev-dependencies]
+tiff = { version = "0.11", default-features = false, features = ["deflate", "lzw"] }
 png = "0.18"
 
 [lints]

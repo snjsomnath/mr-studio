@@ -183,7 +183,7 @@ The host works the address out from the interface it listens on. It is `null` wh
 GET /api/data/field?name=<dataset>[&hour=<0-23>]
 ```
 
-Reads a raster dataset of the site (`data` in site.json: a GeoTIFF, or a folder of one GeoTIFF per hour whose file names end in the two-digit hour) and samples it at the centre of every grid cell. Answers a version 1 field frame (engine.md) with f32 values, NaN where the raster has no data; 404 when the folder has no raster for that hour, 422 when the dataset is missing or unreadable. Cool paths reads the Chalmers demo's prepared PET this way (#196).
+Reads a raster dataset of the site (`data` in site.json: a GeoTIFF, or a folder of one GeoTIFF per hour whose file names end in the two-digit hour) and samples it at the centre of every grid cell. Answers a version 1 field frame (engine.md) with f32 values, NaN where the raster has no data; 404 when the folder has no raster for that hour, 422 when the dataset is missing or unreadable. Cool paths reads the Chalmers demo's prepared PET this way (#196). A frame is kept once read (up to 256 MB of them, the ones used longest ago going first), so asking for the same hour again opens nothing; it is read again when the raster or site.json has changed on disk (#534).
 
 ## A table's media
 

@@ -14,6 +14,7 @@ mod hub;
 pub mod kept;
 pub mod layers;
 mod model;
+pub mod rasters;
 pub mod relay;
 pub mod services;
 pub mod sources;
@@ -102,6 +103,8 @@ pub struct AppState {
     pub field: field::Field,
     /// Wrong join codes by address, so a code cannot be guessed by trying them all (#504).
     pub(crate) tries: ws::Tries,
+    /// Rasters laid on the grid, kept once read (#534).
+    pub rasters: rasters::Rasters,
 }
 
 /// A picture a layer's table sent for the controller: the Magnifier's view under its glass.
@@ -640,6 +643,7 @@ pub async fn start(config: HostConfig) -> anyhow::Result<RunningHost> {
         bridge: Default::default(),
         views: Default::default(),
         tries: Default::default(),
+        rasters: Default::default(),
         links: Default::default(),
         field,
     });
@@ -1382,18 +1386,18 @@ struct FieldQuery {
 
 /// `GET /api/data/field?name=pet&hour=14`: a raster dataset sampled on the site grid, as a binary
 /// field frame of f32 values (NaN where it has no data). 404 when a folder of hourly rasters has
-/// none for that hour, so a layer can fall back to what it works out itself (#196).
+/// none for that hour, so a layer can fall back to what it works out itself (#196). The frame is
+/// kept until the raster or site.json changes (#534, `rasters`).
 async fn data_field(State(state): State<Arc<AppState>>, Query(query): Query<FieldQuery>) -> axum::response::Response {
-    let dir = state.site.dir.clone();
     let FieldQuery { name, hour } = query;
-    let read = tokio::task::spawn_blocking(move || {
-        let site = Site::load(&dir).map_err(|e| e.to_string())?;
-        mrs_site::field::read(&site, &name, hour)
-    })
-    .await;
+    // Kept once read (#534): the same hour asked for again opens nothing.
+    let read = {
+        let state = state.clone();
+        tokio::task::spawn_blocking(move || state.rasters.frame(&state.site.dir, &name, hour)).await
+    };
     match read {
-        Ok(Ok(Some(field))) => {
-            ([(header::CONTENT_TYPE, "application/octet-stream"), (header::CACHE_CONTROL, "no-cache")], field.to_frame()).into_response()
+        Ok(Ok(Some(frame))) => {
+            ([(header::CONTENT_TYPE, "application/octet-stream"), (header::CACHE_CONTROL, "no-cache")], frame).into_response()
         }
         Ok(Ok(None)) => (StatusCode::NOT_FOUND, Json(json!({ "error": "no raster for that hour" }))).into_response(),
         Ok(Err(error)) => (StatusCode::UNPROCESSABLE_ENTITY, Json(json!({ "error": error }))).into_response(),
