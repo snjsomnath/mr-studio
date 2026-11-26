@@ -175,7 +175,8 @@ class Link {
   private send(bytes: Uint8Array) {
     const conn = this.conn;
     if (!conn || !conn.open) return;
-    for (const piece of pieces(bytes)) conn.send(piece);
+    // A send that fails means the link dropped: its close is what is acted on, and what waited goes again.
+    for (const piece of pieces(bytes)) void conn.send(piece);
   }
 
   fetch(head: HttpHead): Promise<{ status: number; headers: [string, string][]; body: Uint8Array }> {

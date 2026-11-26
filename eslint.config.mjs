@@ -4,11 +4,11 @@
 import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
-  { ignores: ['**/dist/**', '**/node_modules/**', '**/*.js', '**/*.cjs', '**/*.mjs', 'packages/mcp/**', 'packages/join/**'] },
+  { ignores: ['**/dist/**', '**/node_modules/**', '**/*.js', '**/*.cjs', '**/*.mjs'] },
   // Other tools' directives (`no-var` for a global declaration) stay without complaint.
   { linterOptions: { reportUnusedDisableDirectives: 'off' } },
   {
-    files: ['packages/runtime/src/**/*.ts', 'packages/sdk/src/**/*.ts', 'packages/layers/*/src/**/*.ts', 'packages/dashboard/src/**/*.ts'],
+    files: ['packages/runtime/src/**/*.ts', 'packages/sdk/src/**/*.ts', 'packages/layers/*/src/**/*.ts', 'packages/dashboard/src/**/*.ts', 'packages/mcp/src/**/*.ts', 'packages/join/src/**/*.ts'],
     languageOptions: {
       parser: tseslint.parser,
       parserOptions: { projectService: true, tsconfigRootDir: import.meta.dirname },
