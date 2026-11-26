@@ -1789,7 +1789,7 @@ async fn open_site_read_only(app: AppHandle, shell: State<'_, Shell>, path: Path
         return Err(format!("{} is not a table folder (it has no site.json).", path.display()));
     }
     let root = app.path().app_cache_dir().map_err(text)?.join("read-only");
-    let running = shell.running.lock().unwrap().as_ref().map(|r| r.site.clone());
+    let running = shell.running.lock().as_ref().map(|r| r.site.clone());
     if let Ok(entries) = std::fs::read_dir(&root) {
         for entry in entries.flatten() {
             if running.as_ref().is_none_or(|r| !r.starts_with(entry.path())) {
