@@ -1063,6 +1063,8 @@ async fn buildings_come_from_openstreetmap_when_asked() {
     assert_eq!(asked.lock().unwrap().len(), 2, "a busy server is asked again");
     let query = asked.lock().unwrap()[1].clone();
     assert!(query.starts_with("data=") && query.contains("building"), "{query}");
+    // A small declared budget, so a busy server still takes it (#603).
+    assert!(query.contains("timeout%3A60") && query.contains("maxsize%3A67108864"), "{query}");
 
     let (status, report) = http_post(&host, "/api/data/import?target=buildings&source=osm&crop=1", "", b"").await;
     assert_eq!(status, 200, "{report}");

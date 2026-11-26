@@ -72,6 +72,13 @@ pub fn bounds(site: &Site) -> [f64; 4] {
     [s - dy, w - dx, n + dy, e + dx]
 }
 
+/// What every query tells the server it needs (#603): at most 60 s and 64 MiB. The server takes a
+/// query only when its declared budget fits in half of what it has free, so the defaults (180 s,
+/// 512 MiB) were turned away with 504 whenever it was busy, however small the table.
+pub const SETTINGS: &str = "[out:json][timeout:60][maxsize:67108864]";
+/// The query's own time limit in seconds, as `SETTINGS` declares it.
+pub const QUERY_SECONDS: u64 = 60;
+
 /// The Overpass QL query for one layer within `bounds`.
 pub fn query(layer: OsmLayer, bounds: [f64; 4]) -> String {
     let [s, w, n, e] = bounds;
@@ -83,7 +90,7 @@ pub fn query(layer: OsmLayer, bounds: [f64; 4]) -> String {
         OsmLayer::Streets => format!("way[\"highway\"~\"^({STREETS})$\"]{b};out geom;"),
         OsmLayer::Water => format!("({WATER_WAY}{b};{WATER_RELATION}{b};way[\"waterway\"=\"riverbank\"]{b};);out geom;"),
     };
-    format!("[out:json][timeout:90];{body}")
+    format!("{SETTINGS};{body}")
 }
 
 /// One Overpass QL query for several layers at once (#310), so a table's open data is one
@@ -115,7 +122,7 @@ pub fn query_all(layers: &[OsmLayer], bounds: [f64; 4]) -> String {
     if !classes.is_empty() {
         parts.push_str(&format!("way[\"highway\"~\"^({})$\"]{b};", classes.join("|")));
     }
-    format!("[out:json][timeout:180];({parts});out geom;")
+    format!("{SETTINGS};({parts});out geom;")
 }
 
 /// The widest side of one Overpass query, in metres (#424). A whole table at once made the main
@@ -323,7 +330,7 @@ mod tests {
         assert!(s < 57.6973 && n > 57.7027 && w < 11.9616 && e > 11.9784, "{s} {w} {n} {e}");
         let q = query(OsmLayer::Buildings, [57.69, 11.96, 57.71, 11.98]);
         assert_eq!(date(1_763_164_800), "2025-11-15");
-        assert_eq!(q, "[out:json][timeout:90];(way[\"building\"](57.690000,11.960000,57.710000,11.980000);relation[\"building\"][\"type\"=\"multipolygon\"](57.690000,11.960000,57.710000,11.980000););out geom;");
+        assert_eq!(q, "[out:json][timeout:60][maxsize:67108864];(way[\"building\"](57.690000,11.960000,57.710000,11.980000);relation[\"building\"][\"type\"=\"multipolygon\"](57.690000,11.960000,57.710000,11.980000););out geom;");
     }
 
     #[test]
@@ -370,7 +377,7 @@ mod tests {
     fn one_answer_for_every_layer() {
         let all = [OsmLayer::Buildings, OsmLayer::Trees, OsmLayer::Walkways, OsmLayer::Streets];
         let q = query_all(&all, [57.69, 11.96, 57.71, 11.98]);
-        assert!(q.starts_with("[out:json][timeout:180];(") && q.ends_with(");out geom;"), "{q}");
+        assert!(q.starts_with("[out:json][timeout:60][maxsize:67108864];(") && q.ends_with(");out geom;"), "{q}");
         assert_eq!(q.matches("way[\"highway\"").count(), 1, "streets and walkways are one clause: {q}");
         assert!(q.contains("|footway|") || q.contains("(footway|") || q.contains("|footway)"), "{q}");
         assert!(!query_all(&[OsmLayer::Trees], [57.69, 11.96, 57.71, 11.98]).contains("highway"));
