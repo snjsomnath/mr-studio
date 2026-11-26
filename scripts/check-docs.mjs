@@ -83,6 +83,26 @@ for (const line of workspace.split('\n')) {
 }
 if (!workspace) problems.push('docs/ARCHITECTURE.md has no "## Workspace" section with the list of folders.');
 
+// The contract numbers are written once per language (#538): the host's and the SDK's must
+// agree, and the MCP server's copy with them, or a window and its host disagree silently.
+const numberIn = (path, pattern) => Number(read(...path).match(pattern)?.[1] ?? NaN);
+const numbers = {
+  LAYER_API: [
+    [['crates', 'mrs-host', 'src', 'layers.rs'], /pub const LAYER_API: u64 = (\d+);/],
+    [['packages', 'sdk', 'src', 'types.ts'], /export const LAYER_API = (\d+);/],
+    [['packages', 'mcp', 'src', 'devlayer.ts'], /export const LAYER_API = (\d+);/],
+  ],
+  PROTOCOL: [
+    [['crates', 'mrs-host', 'src', 'hub.rs'], /pub const PROTOCOL: u32 = (\d+);/],
+    [['packages', 'sdk', 'src', 'types.ts'], /export const PROTOCOL = (\d+);/],
+  ],
+};
+for (const [name, places] of Object.entries(numbers)) {
+  const found = places.map(([path, pattern]) => [path.join('/'), numberIn(path, pattern)]);
+  for (const [path, value] of found) if (Number.isNaN(value)) problems.push(`scripts/check-docs.mjs could not read ${name} in ${path}; update the check.`);
+  if (new Set(found.map(([, value]) => value)).size > 1) problems.push(`${name} differs: ${found.map(([path, value]) => `${value} in ${path}`).join(', ')}. The host, the SDK and the MCP server must name the same number.`);
+}
+
 // Kernels
 const engine = read('docs', 'contracts', 'engine.md');
 for (const kernel of dirs('crates', 'mrs-engine', 'src', 'kernels')) {
