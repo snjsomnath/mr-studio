@@ -469,13 +469,19 @@ export default defineLayer<Params>({
       paint(g, shown);
     });
 
+    let since = Infinity;
     ctx.onFrame((dt) => {
       clock += dt;
       const isLive = ctx.params.source === 'live';
       if (isLive) stepLive(dt);
       else stepSimulated(dt);
       const vehicles = isLive ? [...live.values()] : simulated;
-      draw(vehicles);
+      // Drawn up to 30 times a second: a full-table picture every frame cost the presented table dearly in WebKit (#596).
+      since += dt;
+      if (since >= 1 / 30) {
+        since = 0;
+        draw(vehicles);
+      }
       ctx.publish({
         vehicles: vehicles.length,
         status: isLive

@@ -54,6 +54,12 @@ const BUS_PAINTS = ['#0088cc', '#ffcc00'];
 /** An ambulance or a police car comes through every 10 to 20 seconds, as in the interactive map. */
 const EMERGENCY_GAP_S: [number, number] = [10, 20];
 
+/**
+ * Seconds between redraws: a full-table picture drawn every frame cost the presented table dearly
+ * in WebKit (#596), and at a few pixels a second, movement 30 times a second looks the same.
+ */
+const FRAME_S = 1 / 30;
+
 export default defineLayer<Params>({
   manifest: manifest as LayerManifest,
 
@@ -207,7 +213,12 @@ export default defineLayer<Params>({
       g.restore();
     }
 
-    ctx.onFrame((dt) => {
+    let since = 0;
+    ctx.onFrame((frame) => {
+      since += frame;
+      if (since < FRAME_S) return;
+      const dt = Math.min(since, 0.25);
+      since = 0;
       clock += dt;
       const metresPerSecond = ctx.params.speed / 3.6;
       for (let i = 0; i < traffic.length; i++) if (!drive(traffic[i]!, roads, metresPerSecond, dt)) traffic[i] = spawnTraffic();
