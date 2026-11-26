@@ -1,13 +1,19 @@
 name: CI
 
+# Runs on every pull request, and is called by the "Desktop app" workflow for every push to main
+# and every version tag (.github/workflows/desktop.yml): a version is made and published only
+# after these checks pass on that commit (#505).
 on:
-  push:
-    branches: [main]
   pull_request:
+  workflow_call:
+  workflow_dispatch:
 
+# A newer push to a pull request replaces the run before it. A run on main or a tag has a group
+# of its own and is never cancelled or replaced by this workflow: the Desktop app workflow that
+# calls it decides the order of releases.
 concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   notes:

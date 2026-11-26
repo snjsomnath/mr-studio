@@ -2,10 +2,12 @@ name: Desktop app
 
 # Builds the installers for Windows and macOS.
 # - Every pull request: the installers are attached to the run as artifacts.
-# - Every push to main: the release notes waiting in changes/ become a new version first
-#   (scripts/release.mjs: Cargo.toml, CHANGELOG.md, a vX.Y.Z tag), then that version is built
-#   and published as a GitHub release, which installed apps show on Home. See docs/RELEASING.md.
-# - A tag like v0.2.0 pushed by hand: built and published the same way.
+# - Every push to main: the checks run first (ci.yml, #505). Only when they pass do the release
+#   notes waiting in changes/ become a new version (scripts/release.mjs: Cargo.toml,
+#   CHANGELOG.md, a vX.Y.Z tag), which is then built and published as a GitHub release that
+#   installed apps show on Home. When they fail nothing is released: the notes wait in changes/
+#   and go out with the next merge whose checks pass. See docs/RELEASING.md.
+# - A tag like v0.2.0 pushed by hand: checked, built and published the same way.
 on:
   push:
     branches: [main]
@@ -19,8 +21,16 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # The same checks a pull request gets, on the commit that would be released. Pull requests
+  # run them through ci.yml itself.
+  checks:
+    name: Checks
+    if: github.event_name != 'pull_request'
+    uses: ./.github/workflows/ci.yml
+
   version:
     name: New version from the release notes
+    needs: checks
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
@@ -35,14 +45,21 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      # Always from the newest main, so two quick merges never release the same note twice.
-      # A push that loses a race with another merge starts again from the new main.
+      # Only the commit whose checks just passed is released (#505). When main has moved on
+      # since, this run makes no version: the run for the newer commit checks everything
+      # merged so far and releases it, so two quick merges never release the same note twice
+      # and nothing unchecked goes out.
       - id: release
         run: |
           git config user.name "mr-studio-release"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           for try in 1 2 3 4; do
-            git fetch origin main && git reset --hard origin/main
+            git fetch origin main
+            if [ "$(git rev-parse origin/main)" != "$GITHUB_SHA" ]; then
+              echo "main has moved on from $GITHUB_SHA; the run for the newer commit makes the version."
+              exit 0
+            fi
+            git reset --hard origin/main
             version=$(node scripts/release.mjs apply)
             if [ -z "$version" ]; then
               if [ -n "$(git status --porcelain)" ]; then
@@ -67,9 +84,9 @@ jobs:
 
   build:
     name: ${{ matrix.name }}
-    needs: version
-    # Runs for pull requests and tags too, where the version job is skipped.
-    if: ${{ !cancelled() && needs.version.result != 'failure' && (github.event_name != 'push' || github.ref != 'refs/heads/main' || needs.version.outputs.tag != '') }}
+    needs: [checks, version]
+    # Runs for pull requests and tags too, where the version job is skipped. Never after failed checks.
+    if: ${{ !cancelled() && needs.checks.result != 'failure' && needs.version.result != 'failure' && (github.event_name != 'push' || github.ref != 'refs/heads/main' || needs.version.outputs.tag != '') }}
     strategy:
       fail-fast: false
       matrix:
@@ -161,8 +178,8 @@ jobs:
 
   release:
     name: Publish the release
-    needs: [version, build]
-    if: ${{ !cancelled() && needs.build.result == 'success' && (needs.version.outputs.tag != '' || startsWith(github.ref, 'refs/tags/v')) }}
+    needs: [checks, version, build]
+    if: ${{ !cancelled() && needs.checks.result == 'success' && needs.build.result == 'success' && (needs.version.outputs.tag != '' || startsWith(github.ref, 'refs/tags/v')) }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -208,6 +225,31 @@ jobs:
             release/latest.json
             release/mrstudio-mcp.mjs
             release/mr-studio.mcpb
+
+  # Says in the run's summary why nothing was released, so a held or half-made version is noticed.
+  held:
+    name: Why nothing was released
+    needs: [checks, version, build, release]
+    if: ${{ always() && github.event_name != 'pull_request' && (needs.checks.result == 'failure' || needs.version.result == 'failure' || needs.build.result == 'failure' || needs.release.result == 'failure') }}
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          CHECKS: ${{ needs.checks.result }}
+          VERSION: ${{ needs.version.result }}
+          BUILD: ${{ needs.build.result }}
+          RELEASE: ${{ needs.release.result }}
+          TAG: ${{ needs.version.outputs.tag }}
+        run: |
+          if [ "$CHECKS" = failure ]; then
+            message="The checks failed on this commit, so no version was made. The release notes stay in changes/ and go out with the next merge whose checks pass."
+          elif [ -n "$TAG" ]; then
+            message="$TAG was tagged but not published (version: $VERSION, build: $BUILD, release: $RELEASE). Run the failed jobs again; installed apps are not offered $TAG until the release exists."
+          else
+            message="Nothing was published (version: $VERSION, build: $BUILD, release: $RELEASE)."
+          fi
+          echo "::error::$message"
+          echo "### Nothing was released" >> "$GITHUB_STEP_SUMMARY"
+          echo "$message" >> "$GITHUB_STEP_SUMMARY"
 
   # Stages the same MCP server on npm and lists it in the MCP Registry once approved
   # (.github/workflows/mcp-publish.yml). Off until the repository variable MCP_PUBLISH is "true".
