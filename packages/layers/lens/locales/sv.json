@@ -16,5 +16,8 @@
   "Magnify: the table, larger on the controller": "Förstora: bordet, förstorat på kontrollpanelen",
   "A glass people move over the table: the controller shows what is under it larger, or the table shows the layers placed inside it, like an X-ray": "Ett glas man flyttar över bordet: kontrollpanelen visar det som ligger under förstorat, eller så visar bordet lagren som lagts i det, som en röntgenbild",
   "The table under the glass, larger": "Bordet under glaset, förstorat",
-  "Waiting for the table": "Väntar på bordet"
+  "Waiting for the table": "Väntar på bordet",
+  "The X-ray looks like": "Röntgen ser ut som",
+  "A glass on the table": "Ett glas på bordet",
+  "A hole in the table": "Ett hål i bordet"
 }

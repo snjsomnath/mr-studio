@@ -1127,6 +1127,11 @@ export function builderSection(host: BuilderHost, manifest: LayerManifest, butto
     rows.push(field('Ring reach', slider(p.reach_mm ?? 45, 10, 150, 5, ' mm', (v) => set('reach_mm', v))));
     rows.push(field('Ring width', slider(p.width_mm ?? 2, 0.4, 5, 0.1, ' mm', (v) => set('width_mm', v))));
     rows.push(field('Rings on', segmented([['0.2', 'Strong calls'], ['0.5', 'Calls'], ['0.85', 'Every note']] as const, (p.sensitivity ?? 0.5) < 0.35 ? '0.2' : (p.sensitivity ?? 0.5) > 0.7 ? '0.85' : '0.5', (v) => set('sensitivity', Number(v)), 'Rings on')));
+    rows.push(field('Waveform', toggle(p.waveform !== false, (on) => {
+      set('waveform', on);
+      redraw();
+    }, 'Waveform')));
+    if (p.waveform !== false) rows.push(field('Waveform swing', slider(p.wave_mm ?? 10, 1, 30, 0.5, ' mm', (v) => set('wave_mm', v))));
     let listening = false;
     try {
       listening = localStorage.getItem(LISTEN_KEY) === '1';

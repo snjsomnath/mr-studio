@@ -21,14 +21,15 @@ export class MapCanvasOverlay implements CanvasOverlay {
   private opacity = 1;
   private gain = 1;
 
-  constructor(map: MapLibreMap, container: HTMLElement, id: string, site: SiteInfo, style?: { opacity?: number }) {
+  constructor(map: MapLibreMap, container: HTMLElement, id: string, site: SiteInfo, style?: { opacity?: number; top?: boolean }) {
     this.map = map;
     this.container = container;
     this.site = site;
     this.canvas = document.createElement('canvas');
     this.canvas.dataset.overlay = id;
     this.canvas.setAttribute('aria-hidden', 'true');
-    this.canvas.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:2';
+    // A `top` canvas sits over every other layer canvas, whatever order they were made in.
+    this.canvas.style.cssText = `position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:${style?.top ? 3 : 2}`;
     if (style?.opacity !== undefined) this.setOpacity(style.opacity);
     this.context = this.canvas.getContext('2d')!;
     container.append(this.canvas);
