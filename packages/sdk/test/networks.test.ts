@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { compileLook, makeTestData, networkBalance, networkData, networkPosition, parseCsv, readShapes, resolvePalette, tableFrame } from '../src/index.ts';
+import { compileLook, makeTestData, moverRoutes, networkBalance, networkData, networkPosition, parseCsv, readShapes, resolvePalette, spotlight, tableFrame } from '../src/index.ts';
 import type { GeoJsonCollection, Pen, Shapes, Spot, View } from '../src/index.ts';
 
 const spot = (id: string, x: number, y: number, kind?: string): Spot => ({ id, point: [x, y], properties: { id, ...(kind ? { kind } : {}) } });
@@ -66,10 +66,16 @@ test('the energy network test data plays a day without problems, and draws', () 
   assert.deepEqual(files.map((f) => f.suffix), ['', '-links', '-series']);
   const shapes = readShapes(JSON.parse(files[0]!.text) as GeoJsonCollection, frame);
   const table = (suffix: string) => parseCsv(files.find((f) => f.suffix === suffix)!.text);
-  const data = networkData(shapes.spots, { linkRows: table('-links'), series: table('-series') });
+  const data = networkData(shapes.spots, { linkRows: table('-links'), series: table('-series') }, { note: 'note' });
   assert.deepEqual(data.problems, []);
   assert.equal(data.steps, 24);
-  assert.equal(data.nodes.length, 11);
+  assert.equal(data.nodes.length, 12);
+  // The chargers open at 08:00, announced with a spotlight on the charger, and cars arrive there (#338).
+  const charger = data.nodes.findIndex((n) => n.id === 'Charger');
+  assert.deepEqual(data.notes[8], { text: 'The car chargers open', nodes: [charger] });
+  assert.equal(data.notes.filter(Boolean).length, 1);
+  assert.equal(data.arrivals[charger]![18], 4);
+  assert.equal(data.arrivals[charger]!.reduce((a, b) => a + b, 0), 13);
   assert.ok(data.links.length >= 12);
   // Solar flows only by day; the battery fills, then gives in the evening.
   const solar = data.links.find((l) => data.nodes[l.from]!.id === 'Solar 1' && data.nodes[l.to]!.id === 'Battery')!;
@@ -103,4 +109,28 @@ test('a link that holds its own list of flows plays it, one step each, without a
   // Lines carry arrays as they are.
   const shapes: Shapes = { areas: [], spots: [], paths: [{ id: 'l', properties: { from: 'grid', to: 'battery', flow_hourly: [0, -2] }, ...measured([[0, 0], [100, 0]]) }] };
   assert.deepEqual(networkData(nodes, { linkShapes: shapes }, { flow: 'flow_hourly' }).links[0]!.values, [0, -2]);
+});
+
+test('a change spotlights its node for a few seconds, and movers come along the streets to arrive in their step (#338)', () => {
+  assert.equal(spotlight(-1, 4), 0);
+  assert.equal(spotlight(0.2, 4), 0.5);
+  assert.equal(spotlight(2, 4), 1);
+  assert.equal(spotlight(3.5, 4), 0.5);
+  assert.equal(spotlight(4.5, 4), 0);
+  const rows = [
+    { time: '1', id: 'home', arrivals: 2, note: 'Home joins' },
+    { time: '2', id: 'grid', arrivals: 0 },
+    { time: '2', note: 'A quiet hour' },
+  ];
+  const data = networkData(nodes, { linkRows: [{ from: 'grid', to: 'home' }], series: rows }, { note: 'note' });
+  assert.deepEqual(data.problems, []);
+  assert.deepEqual(data.notes, [{ text: 'Home joins', nodes: [2] }, { text: 'A quiet hour', nodes: [] }]);
+  const movers = moverRoutes(data);
+  assert.equal(movers.length, 2);
+  assert.deepEqual(movers.map((m) => m.due), [0.25, 0.75]);
+  // Without streets, they come straight in from about 320 m away, and end at the node.
+  assert.ok(Math.abs(movers[0]!.path.length - 320) < 1);
+  assert.deepEqual(movers[0]!.path.points.at(-1), data.nodes[2]!.point);
+  // Without the note option, the notes are not read: an existing layer looks the same.
+  assert.deepEqual(networkData(nodes, { linkRows: [{ from: 'grid', to: 'home' }], series: rows }).notes, [null, null]);
 });

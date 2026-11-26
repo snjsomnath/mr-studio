@@ -11,6 +11,9 @@
 //              column (time, hour, step, date), and one column per named series (flow, level).
 //              Without it, a link whose `flow` property is a list of numbers ([3, 5, 2, …], or
 //              that list written as text in a CSV) plays that list, one step each (#373).
+//              Two optional columns (#338): `note` announces a change at that step ("Kårhuset joins
+//              the community"), spotlighting the row's node; `arrivals` sends that many movers
+//              along the streets to the row's node during the step (cars coming to charge).
 //
 // One shared play head walks the series: an hour every `step_s` seconds, looping. Visitors
 // can scrub and pause it from the controller (the layer's `network_at` and `network_play`).
@@ -67,6 +70,15 @@ export interface NetworkProps {
   giving: string;
   taking: string;
   gauge_colour: string;
+  /** The series column whose text announces a change at a step (#338): a spotlight on its node, the words on the controller. */
+  note: string;
+  /** Seconds a change's spotlight stays on the table. */
+  note_s: number;
+  /** The series column with how many movers reach a node in a step (#338), along the streets. Empty for none. */
+  arrivals: string;
+  /** A mover's size on the table, in millimetres. */
+  mover_mm: number;
+  mover_colour: string;
 }
 
 export const NETWORK_DEFAULTS: NetworkProps = {
@@ -86,6 +98,11 @@ export const NETWORK_DEFAULTS: NetworkProps = {
   giving: '@warm',
   taking: '@cool',
   gauge_colour: '@green',
+  note: '',
+  note_s: 4,
+  arrivals: 'arrivals',
+  mover_mm: 4,
+  mover_colour: '@focus',
 };
 
 /** A node of the network. */
@@ -109,6 +126,12 @@ export interface NetworkLink {
   values: number[];
 }
 
+/** A change announced at a step (#338): words for the controller, nodes for the spotlight. */
+export interface NetworkNote {
+  text: string;
+  nodes: number[];
+}
+
 /** A network ready to draw: nodes, links, the steps of its series and what went wrong. */
 export interface NetworkData {
   nodes: NetworkNode[];
@@ -121,6 +144,12 @@ export interface NetworkData {
   peak: number;
   /** Problems an author should see: a link naming a node that is not there, a series row with no time. */
   problems: string[];
+  /** Per step, the change it announces, or null (#338). */
+  notes: (NetworkNote | null)[];
+  /** Per node, how many movers reach it in each step, or null for a node without any (#338). */
+  arrivals: (number[] | null)[];
+  /** The streets movers drive along, when there are any. */
+  streets: StreetNetwork | null;
 }
 
 export interface NetworkInputs {
@@ -258,6 +287,8 @@ export function networkData(spots: readonly Spot[], inputs: NetworkInputs, props
   if (missing.size > 0) problems.push(`Links name nodes that are not there: ${[...missing].slice(0, 5).join(', ')}${missing.size > 5 ? '…' : ''}.`);
 
   // ---- Series ----
+  let notes: (NetworkNote | null)[] = [null];
+  const arrivals: (number[] | null)[] = nodes.map(() => null);
   let steps = 1;
   let labels: string[] = [''];
   // Links that carry their own lists (#373) set the steps when there is no series table: step 0, 1, 2…
@@ -280,6 +311,8 @@ export function networkData(spots: readonly Spot[], inputs: NetworkInputs, props
     const sTo = findKey(first, ['to', 'target']);
     const flowKey = findKey(first, [o.flow.toLowerCase(), 'value']);
     const gaugeKey = findKey(first, [o.gauge.toLowerCase()]);
+    const noteKey = o.note ? findKey(first, [o.note.toLowerCase()]) : null;
+    const arrivalsKey = o.arrivals ? findKey(first, [o.arrivals.toLowerCase()]) : null;
     if (!timeKey) problems.push('The series needs a time column (time, hour, step or date).');
     else {
       // Steps are the distinct times in order: numbers as numbers, dates as dates, else as written.
@@ -291,11 +324,25 @@ export function networkData(spots: readonly Spot[], inputs: NetworkInputs, props
       const stepOf = new Map(labels.map((t, i) => [t, i]));
       const linkSeries = links.map(() => new Array<number>(steps).fill(NaN));
       const gauges = nodes.map(() => new Array<number>(steps).fill(NaN));
+      notes = new Array<NetworkNote | null>(steps).fill(null);
       const unknown = new Set<string>();
       for (const row of series) {
         const step = stepOf.get(text(row[timeKey]));
         if (step === undefined) continue;
         const id = idKey ? text(row[idKey]) : '';
+        // A note and arrivals ride on any row: its node, if it names one, is where they happen.
+        const at = byId.get(id);
+        const said = noteKey ? text(row[noteKey]) : '';
+        if (said) {
+          const note = (notes[step] ??= { text: said, nodes: [] });
+          if (note.text !== said && !note.text.split(' · ').includes(said)) note.text = `${note.text} · ${said}`;
+          if (at !== undefined && !note.nodes.includes(at)) note.nodes.push(at);
+        }
+        const count = arrivalsKey ? number(row[arrivalsKey]) : null;
+        if (count !== null && count > 0 && at !== undefined) {
+          const list = (arrivals[at] ??= new Array<number>(steps).fill(0));
+          list[step] = Math.min(50, Math.round(count));
+        }
         const linkKey = sFrom && sTo && text(row[sFrom]) ? `${text(row[sFrom])}>${text(row[sTo])}` : id;
         const link = linkIndex.get(linkKey);
         const node = byId.get(id);
@@ -305,7 +352,7 @@ export function networkData(spots: readonly Spot[], inputs: NetworkInputs, props
         } else if (node !== undefined && gaugeKey) {
           const v = number(row[gaugeKey]);
           if (v !== null) gauges[node]![step] = v;
-        } else if (linkKey && link === undefined && node === undefined) unknown.add(linkKey);
+        } else if (linkKey && link === undefined && node === undefined && !said && count === null) unknown.add(linkKey);
       }
       // A gap takes the step before it, so a sparse series still plays.
       const fill = (values: number[], start: number) => {
@@ -328,7 +375,8 @@ export function networkData(spots: readonly Spot[], inputs: NetworkInputs, props
   }
   let peak = 0;
   for (const link of links) for (const v of link.values) peak = Math.max(peak, Math.abs(v));
-  return { nodes, links, steps, labels, peak, problems };
+  if (notes.length !== steps) notes = new Array<NetworkNote | null>(steps).fill(null);
+  return { nodes, links, steps, labels, peak, problems, notes, arrivals, streets };
 }
 
 /** What leaves node `node` less what arrives, at a decimal step. Positive is giving. */
@@ -375,6 +423,11 @@ export function networkLook(data: NetworkData, props: Partial<NetworkProps>, pal
   // Lights travel by integrating speed, so a link speeding up never jumps.
   const phases = data.links.map((_, i) => (i * 0.37) % 1);
   let last: number | null = null;
+  const moverColour = paletteColour(o.mover_colour, palette, 'focus');
+  const movers = moverRoutes(data);
+  // The spotlight of the change announced last (#338): which step, and when it started.
+  let noted = -1;
+  let noteStart = -Infinity;
 
   const legend: LegendItem[] = [];
   if (data.links.length && !byNode) legend.push({ id: 'network-flow', label: 'Flow', color: paletteHex(o.colour, palette), shape: 'line' });
@@ -397,6 +450,49 @@ export function networkLook(data: NetworkData, props: Partial<NetworkProps>, pal
       pen.save();
       pen.lineCap = 'round';
       pen.lineJoin = 'round';
+      // A change announced at this step (#338): the table dims round its nodes for a few seconds.
+      const step = Math.floor(position) % Math.max(1, data.steps);
+      if (step !== noted) {
+        noted = step;
+        if (data.notes[step]?.nodes.length) noteStart = time;
+        else if (data.notes[step] === null && time - noteStart > o.note_s) noteStart = -Infinity;
+      }
+      const spot = data.notes[noted]?.nodes.length ? spotlight(time - noteStart, o.note_s) : 0;
+      if (spot > 0) {
+        const holes = data.notes[noted]!.nodes.map((n) => data.nodes[n]!.point);
+        const r = Math.max(12, px(o.ring_mm * 1.6));
+        pen.beginPath();
+        // Larger than any surface; the canvas clips it.
+        pen.rect(-1e5, -1e5, 2e5, 2e5);
+        for (const point of holes) {
+          const [x, y] = view.toPx(point);
+          pen.moveTo(x + r, y);
+          pen.arc(x, y, r, 0, Math.PI * 2);
+        }
+        pen.fillStyle = `rgb(4 6 12 / ${(0.62 * spot * alpha).toFixed(3)})`;
+        pen.fill('evenodd');
+        // A pool of light in each hole, so the spotlight reads on a dark table as well as a light one.
+        for (const point of holes) {
+          const [x, y] = view.toPx(point);
+          const pool = pen.createRadialGradient(x, y, 0, x, y, r);
+          pool.addColorStop(0, css(quiet, 0.22 * spot * alpha));
+          pool.addColorStop(1, css(quiet, 0));
+          pen.fillStyle = pool;
+          pen.beginPath();
+          pen.arc(x, y, r, 0, Math.PI * 2);
+          pen.fill();
+        }
+        // A ring that tightens onto each node as the spotlight opens.
+        const open = clamp01((time - noteStart) / 0.9);
+        for (const point of holes) {
+          const [x, y] = view.toPx(point);
+          pen.strokeStyle = css(quiet, alpha * spot * (0.4 + 0.6 * (1 - open)));
+          pen.lineWidth = Math.max(1.5, px(0.8));
+          pen.beginPath();
+          pen.arc(x, y, r * (1 + 1.4 * (1 - open)), 0, Math.PI * 2);
+          pen.stroke();
+        }
+      }
       const trace = (path: MeasuredPath) => {
         pen.beginPath();
         path.points.forEach((p, i) => {
@@ -466,6 +562,34 @@ export function networkLook(data: NetworkData, props: Partial<NetworkProps>, pal
           drawRings(view, node.point, { colour: net > 0 ? giving : taking, radius_m: o.ring_mm * mm, direction: net > 0 ? 1 : -1, level: alpha * (0.3 + 0.7 * level), count: 2, period: 2.2, width: Math.max(1.2, px(0.5)) }, (i * 0.29) % 1);
         });
       }
+      // Movers (#338): they leave a step before they are due and arrive across their step, then wait a moment.
+      if (movers.length) {
+        pen.globalCompositeOperation = 'lighter';
+        const n = Math.max(1, data.steps);
+        const r = Math.max(1.5, px(o.mover_mm / 2));
+        for (const mover of movers) {
+          // How far into its trip the play head is, the right way round the loop.
+          let t = (((position - (mover.due - 1)) % n) + n) % n;
+          if (t > 1.6) continue;
+          const parked = t > 1;
+          t = Math.min(1, t);
+          const at = pointAlong(mover.path, t).point;
+          const [x, y] = view.toPx(at);
+          const fade = alpha * Math.min(1, t / 0.1) * (parked ? 1 - (Math.min(1.6, t + (position % 1)) - 1) / 0.6 : 1);
+          const glow = pen.createRadialGradient(x, y, 0, x, y, r * 3.5);
+          glow.addColorStop(0, css(moverColour, fade * 0.55));
+          glow.addColorStop(1, css(moverColour, 0));
+          pen.fillStyle = glow;
+          pen.beginPath();
+          pen.arc(x, y, r * 3.5, 0, Math.PI * 2);
+          pen.fill();
+          pen.fillStyle = css(moverColour, fade);
+          pen.beginPath();
+          pen.arc(x, y, r, 0, Math.PI * 2);
+          pen.fill();
+        }
+        pen.globalCompositeOperation = 'source-over';
+      }
       // Gauges: an arc round the node, filling clockwise from the top.
       if (o.gauges) {
         for (const node of data.nodes) {
@@ -488,6 +612,55 @@ export function networkLook(data: NetworkData, props: Partial<NetworkProps>, pal
       pen.restore();
     },
   };
+}
+
+/** How bright a change's spotlight is `age` seconds after its step began: in fast, held, out over the last second. */
+export function spotlight(age: number, seconds: number): number {
+  if (!(age >= 0) || age > seconds) return 0;
+  return Math.min(1, age / 0.4, (seconds - age) / 1);
+}
+
+/** One mover: the way it comes, and the decimal step it reaches the node. */
+export interface Mover {
+  node: number;
+  due: number;
+  path: MeasuredPath;
+}
+
+/** Ways in to a node: the streets from about this far away, or straight lines across. */
+const MOVER_FROM_M = 320;
+const MOVER_WAYS = 6;
+
+/** Every mover of the series, with its way to its node (#338). Each node gets a few ways in, shared by its movers. */
+export function moverRoutes(data: Pick<NetworkData, 'nodes' | 'arrivals' | 'streets' | 'steps'>): Mover[] {
+  const out: Mover[] = [];
+  data.arrivals.forEach((counts, node) => {
+    if (!counts || !counts.some((c) => c > 0)) return;
+    const end = data.nodes[node]!.point;
+    const ways: MeasuredPath[] = [];
+    if (data.streets && data.streets.size > 1) {
+      const tree = data.streets.treeTo(end);
+      // Starts about MOVER_FROM_M away along the streets, spread round the node.
+      const far = data.streets.reachable(tree).filter((n) => tree.cost[n]! >= MOVER_FROM_M * 0.6 && tree.cost[n]! <= MOVER_FROM_M * 1.5);
+      const byAngle = far.map((n) => ({ n, a: Math.atan2(data.streets!.nodes[n]![1] - end[1], data.streets!.nodes[n]![0] - end[0]) })).sort((x, y) => x.a - y.a);
+      for (let k = 0; k < MOVER_WAYS && byAngle.length; k++) {
+        const pick = byAngle[Math.floor(((k + 0.5) / MOVER_WAYS) * byAngle.length)]!;
+        const path = data.streets.follow(tree, pick.n, end);
+        if (path) ways.push(path);
+      }
+    }
+    if (!ways.length) {
+      for (let k = 0; k < MOVER_WAYS; k++) {
+        const a = (k / MOVER_WAYS) * Math.PI * 2 + node;
+        ways.push(measurePath([[end[0] + Math.cos(a) * MOVER_FROM_M, end[1] + Math.sin(a) * MOVER_FROM_M], end]));
+      }
+    }
+    let k = node;
+    counts.forEach((count, step) => {
+      for (let i = 0; i < count; i++) out.push({ node, due: step + (i + 0.5) / count, path: ways[k++ % ways.length]! });
+    });
+  });
+  return out;
 }
 
 /** The files a network motion reads, by role, for whoever loads them. */

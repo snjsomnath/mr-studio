@@ -475,7 +475,7 @@ export interface CompiledLook {
     cue(point: number): void;
   };
   /** For points with a network motion (#280): its steps and their times, and what is wrong with its data. */
-  network?: { steps: number; labels: string[]; problems: string[] };
+  network?: { steps: number; labels: string[]; problems: string[]; /** Per step, the words of a change announced there (#338), or null. */ notes: (string | null)[] };
   /** With a Through time motion (#95): the year or date on show now, for the controller. */
   timeLabel?(time: number): string;
 }
@@ -573,7 +573,7 @@ export function compileLook(block: RecipeBlock, shapes: Shapes, palette: Resolve
       kind,
       legend: [...legendRows(block, paint, 'point', palette, props.color), ...(network?.legend ?? [])],
       ...(sound ? { sounds: { list: sound.list, cue: sound.cue } } : {}),
-      ...(network ? { network: { steps: network.data.steps, labels: network.data.labels, problems: network.data.problems } } : {}),
+      ...(network ? { network: { steps: network.data.steps, labels: network.data.labels, problems: network.data.problems, notes: network.data.notes.map((n) => n?.text ?? null) } } : {}),
       ...(sweep || reveal ? { timeLabel: (time: number) => (sweep ?? reveal)!.label(time) } : {}),
       draw(view, time, alpha) {
         sweep?.apply(rows, time);

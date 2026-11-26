@@ -233,16 +233,18 @@ export function makeTestData(kind: TestDataKind, site: Pick<SiteInfo, 'origin' |
  * A small energy community for the network motion (#280): the grid, a battery, solar roofs and
  * homes. Solar feeds its home and charges the battery by day; the battery gives in the evening;
  * the grid covers the rest. Hourly flows over a day, and the battery's level for its gauge.
+ * A car charger opens in the morning (a `note`) and cars arrive at it (`arrivals`, #338).
  */
 function energyNetwork(r: Rand, width: number, height: number, span: number, ll: (p: Point) => number[]): TestFile[] {
   const homes = 6;
   const solar = 3;
-  const points = scatter(r, width, height, 2 + homes + solar, span * 0.12);
+  const points = scatter(r, width, height, 3 + homes + solar, span * 0.12);
   const nodes = [
     { name: 'Grid', kind: 'grid' },
     { name: 'Battery', kind: 'battery' },
     ...Array.from({ length: homes }, (_, i) => ({ name: `Home ${i + 1}`, kind: 'home' })),
     ...Array.from({ length: solar }, (_, i) => ({ name: `Solar ${i + 1}`, kind: 'solar' })),
+    { name: 'Charger', kind: 'charger' },
   ];
   const text = collection(nodes.map((n, i) => ({ type: 'Feature', properties: { id: n.name, name: n.name, kind: n.kind }, geometry: { type: 'Point', coordinates: ll(points[i]!) } })));
   const links = ['from,to'];
@@ -257,6 +259,10 @@ function energyNetwork(r: Rand, width: number, height: number, span: number, ll:
     add(`Solar ${s}`, 'Battery');
   }
   for (let h = solar + 1; h <= homes; h++) add('Battery', `Home ${h}`);
+  add('Grid', 'Charger');
+  // Cars that come to charge, by hour: commuters in the morning, more in the evening. Each charges three hours at 7 kW.
+  const cars: Record<number, number> = { 8: 2, 9: 1, 13: 1, 17: 3, 18: 4, 19: 2 };
+  const charging = (h: number) => [0, 1, 2].reduce((sum, back) => sum + (h - back >= 8 ? cars[h - back] ?? 0 : 0), 0);
   // Hourly, kW. Demand peaks in the morning and the evening; the sun peaks at one o'clock.
   const sun = (h: number) => Math.max(0, Math.sin((Math.PI * (h - 6)) / 14));
   const demand = Array.from({ length: homes }, () => {
@@ -265,7 +271,7 @@ function energyNetwork(r: Rand, width: number, height: number, span: number, ll:
     return (h: number) => scale * (base + 1.6 * Math.exp(-(((h - 7.5) / 1.3) ** 2)) + 2.4 * Math.exp(-(((h - 19) / 2) ** 2)));
   });
   const size = Array.from({ length: solar }, () => between(r, 5, 8));
-  const series = ['time,id,from,to,flow,level'];
+  const series = ['time,id,from,to,flow,level,arrivals,note'];
   let stored = 4;
   const capacity = 24;
   for (let h = 0; h < 24; h++) {
@@ -293,8 +299,10 @@ function energyNetwork(r: Rand, width: number, height: number, span: number, ll:
       const covered = (flow.get(`Solar ${k + 1}>Home ${k + 1}`) ?? 0) + (flow.get(`Battery>Home ${k + 1}`) ?? 0);
       flow.set(`Grid>Home ${k + 1}`, Math.max(0, demand[k]!(h) - covered));
     }
-    for (const [a, b] of pairs) series.push(`${time},,${a},${b},${round(flow.get(`${a}>${b}`) ?? 0, 2)},`);
-    series.push(`${time},Battery,,,,${round(stored / capacity, 2)}`);
+    flow.set('Grid>Charger', charging(h) * 7);
+    for (const [a, b] of pairs) series.push(`${time},,${a},${b},${round(flow.get(`${a}>${b}`) ?? 0, 2)},,,`);
+    series.push(`${time},Battery,,,,${round(stored / capacity, 2)},,`);
+    if (cars[h] || h === 8) series.push(`${time},Charger,,,,,${cars[h] ?? 0},${h === 8 ? 'The car chargers open' : ''}`);
   }
   return [
     { suffix: '', filename: 'test-network.geojson', text },

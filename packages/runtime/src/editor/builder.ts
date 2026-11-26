@@ -1234,6 +1234,9 @@ export function builderSection(host: BuilderHost, manifest: LayerManifest, butto
     rows.push(field('Light speed', slider(p.speed_mm ?? 40, 5, 120, 5, ' mm/s', (v) => set('speed_mm', v))));
     rows.push(field('Give and take rings', toggle(p.rings ?? true, (v) => set('rings', v), 'Give and take rings')));
     rows.push(field('Gauges', toggle(p.gauges ?? true, (v) => set('gauges', v), 'Gauges')));
+    // Changes and arrivals ride on the series (#338).
+    rows.push(field('Announce changes', toggle(Boolean(p.note), (v) => set('note', v ? 'note' : ''), 'Announce changes')));
+    rows.push(el('p', 'lb-hint', "A note column in the series announces a change at that step: the table dims round the row's point for a few seconds, and the words go to the controller. An arrivals column sends that many movers along the streets to the point during the step."));
     rows.push(el('p', 'lb-hint', 'The controller gets Play and Time, so a visitor can pause the day and scrub through it. The time shown is published as network_time for ribbons and dashboards.'));
     return rows;
   };

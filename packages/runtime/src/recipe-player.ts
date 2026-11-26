@@ -359,7 +359,10 @@ export function recipeModule(current: () => LayerManifest | undefined, watch: (c
         const step = network ? Math.floor(clock.position) : -1;
         if (step !== shownStep) {
           shownStep = step;
-          ctx.publish({ network_time: network ? (network.labels[step] ?? '') || null : null, network_step: network ? step : null, network_steps: network ? network.steps : null });
+          // The latest change announced (#338): its words stay on the controller until the next one.
+          let note: string | null = null;
+          for (let k = step; network && k >= 0 && note === null; k--) note = network.notes[k] ?? null;
+          ctx.publish({ network_time: network ? (network.labels[step] ?? '') || null : null, network_step: network ? step : null, network_steps: network ? network.steps : null, network_note: note });
         }
         // The year or date on show, for the controller's Now panel (#95).
         const timed = looks.find((look) => look.timeLabel);
