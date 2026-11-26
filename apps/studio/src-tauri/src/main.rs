@@ -17,6 +17,7 @@ mod mail;
 #[cfg(windows)]
 mod models;
 mod operator;
+mod operator_mode;
 mod sites;
 mod updates;
 mod waiting;
@@ -107,6 +108,8 @@ struct Shell {
     opened_file: Mutex<Option<PathBuf>>,
     /// What happened while nobody watched: one file a day for the team (#79).
     operator: operator::OperatorLog,
+    /// Operator mode (#394): while it is on, the ways to the editor lead to the operator window.
+    operator_mode: operator_mode::OperatorMode,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -208,7 +211,15 @@ fn main() -> anyhow::Result<()> {
             save_diagnostics,
             cli_state,
             install_cli,
-            remove_cli
+            remove_cli,
+            operator_mode::open_operator,
+            operator_mode::operator_state,
+            operator_mode::operator_present,
+            operator_mode::operator_restart_screens,
+            operator_mode::operator_set_pin,
+            operator_mode::operator_exit,
+            operator_mode::operator_password,
+            operator_mode::set_operator_start
         ])
         .on_menu_event(|app, event| {
             let id = event.id().as_ref();
@@ -261,6 +272,7 @@ fn main() -> anyhow::Result<()> {
                 sources: Arc::new(sources),
                 opened_file: Mutex::new(None),
                 operator: operator::OperatorLog::new(paths.app_log_dir().ok()),
+                operator_mode: Default::default(),
             });
             app.state::<Shell>().operator.note(format!("MR Studio {} started.", app.package_info().version));
             // Keeps a presented table running with nobody at the computer (#79).
@@ -295,6 +307,13 @@ fn main() -> anyhow::Result<()> {
                         }
                     }
                 }
+            }
+            // In operator mode the last window closing, or Quit from the menu, does not end the
+            // show: the operator window comes forward and asks for the PIN (#394). An exit the
+            // app asks for itself (a restart, an update, Quit with the PIN) has a code and goes.
+            tauri::RunEvent::ExitRequested { code: None, api, .. } if app.state::<Shell>().operator_mode.is_on() => {
+                api.prevent_exit();
+                report(operator_mode::open_window(app));
             }
             tauri::RunEvent::Exit => app.state::<Shell>().operator.note("MR Studio quit."),
             _ => {}
@@ -485,9 +504,22 @@ async fn startup(app: AppHandle) {
     if let Some(file) = file {
         *shell.opened_file.lock().unwrap() = Some(file);
     }
+    // Operator mode (#394): the last table goes on the screens and the operator window stands
+    // in for the editor. Shift held at the start asks for this computer's password instead.
+    let operator = settings.operator_start && !setup;
+    let shift = operator && operator_mode::shift_held();
+    if operator {
+        shell.operator_mode.set(true);
+        shell.operator.note(if shift { "Started in operator mode with Shift held." } else { "Started in operator mode." });
+    }
+    if shift {
+        report(operator_mode::open_window_at(&app, "shift"));
+        return;
+    }
     let site = match (setup, explicit, &saved) {
         (true, _, _) => None,
         (false, Some(site), _) => Some(site),
+        (false, None, _) if operator => settings.site.clone(),
         (false, None, Some(_)) if settings.autostart => settings.site.clone(),
         _ => None,
     };
@@ -518,6 +550,9 @@ fn report(result: anyhow::Result<()>) {
 }
 
 fn open_home_window(app: &AppHandle) -> anyhow::Result<()> {
+    if app.state::<Shell>().operator_mode.is_on() {
+        return operator_mode::open_window(app);
+    }
     let window = match app.get_webview_window(HOME) {
         Some(window) => window,
         None => WebviewWindowBuilder::new(app, HOME, WebviewUrl::App("home.html".into()))
@@ -540,6 +575,9 @@ fn open_launcher(app: &AppHandle) -> anyhow::Result<()> {
 
 /// File › Settings (#393), opened at one of its pages (`setup`, `calibration`, `colour`, ...) when named.
 fn open_launcher_at(app: &AppHandle, page: Option<&str>) -> anyhow::Result<()> {
+    if app.state::<Shell>().operator_mode.is_on() {
+        return operator_mode::open_window(app);
+    }
     let page = page.filter(|p| p.chars().all(|c| c.is_ascii_lowercase()));
     let window = match app.get_webview_window(LAUNCHER) {
         Some(window) => {
@@ -864,6 +902,9 @@ fn usual_displays(app: &AppHandle) -> anyhow::Result<Displays> {
 /// editor, `edit?welcome=1` for a table that was just created, `new` for the new-table wizard.
 fn open_editor(app: &AppHandle, page: &str) -> anyhow::Result<()> {
     let shell = app.state::<Shell>();
+    if shell.operator_mode.is_on() {
+        return operator_mode::open_window(app);
+    }
     let running = shell.running.lock().unwrap().clone().context("no site is open")?;
     let url: tauri::Url = format!("http://127.0.0.1:{}/{page}", running.port).parse().context("the editor's address")?;
     let title = if page == "new" { "MR Studio · New table".to_string() } else { format!("MR Studio · {}", running.name) };
@@ -975,8 +1016,9 @@ fn open_surfaces(app: &AppHandle, port: u16, displays: &Displays) -> anyhow::Res
         let window = builder
             .initialization_script(format!(
                 // The window's name, which its page sends with each sign of life (#79).
-                "window.__MRS_SHELL__ = true;\nwindow.__MRS_WINDOW__ = {};\n{SHORTCUTS}\n{}\n{}\n{}",
+                "window.__MRS_SHELL__ = true;\nwindow.__MRS_WINDOW__ = {};\nwindow.__MRS_OPERATOR__ = {};\n{SHORTCUTS}\n{}\n{}\n{}",
                 serde_json::to_string(&label).expect("a label is a string"),
+                shell.operator_mode.is_on(),
                 colour::SCRIPT,
                 colour.script(),
                 // The way back. A table with a controller beside it is seen by visitors, so
@@ -1208,6 +1250,14 @@ fn toggle_view_fullscreen(app: &AppHandle, label: &str) -> anyhow::Result<()> {
 
 fn shell_action(app: &AppHandle, action: &str) {
     let app = app.clone();
+    // Operator mode (#394): Esc does nothing, and the keys and the button that lead to the editor,
+    // Settings or Quit bring the operator window instead. The show goes on.
+    if app.state::<Shell>().operator_mode.is_on() && matches!(action, "escape" | "setup" | "edit" | "quit") {
+        if action != "escape" {
+            drop(tauri::async_runtime::spawn(async move { report(operator_mode::open_window(&app)) }));
+        }
+        return;
+    }
     match action {
         // Off the event loop: creating a window from inside a webview callback can deadlock on Windows.
         "setup" => drop(tauri::async_runtime::spawn(async move { report(open_launcher(&app)) })),
@@ -1257,6 +1307,9 @@ struct LauncherState {
     autostart: bool,
     /// The nightly restart time, "03:00", or none.
     nightly_restart: Option<String>,
+    /// Start in operator mode (#394), and whether an operator PIN is set.
+    operator_start: bool,
+    operator_pin: bool,
     running: Option<Running>,
     /// The running site is on the displays, not only open in the editor.
     presenting: bool,
@@ -1320,6 +1373,8 @@ fn launcher_state(app: AppHandle, shell: State<'_, Shell>) -> Result<LauncherSta
         // A table that starts by itself is a choice for a finished installation, never the default.
         autostart: settings.autostart,
         nightly_restart: settings.nightly_restart.clone(),
+        operator_start: settings.operator_start,
+        operator_pin: settings.operator_pin.is_some(),
         running,
         presenting: is_presenting(&app),
         waiting: waiting::read(&shell.config_dir.join("waiting")).map(|w| w.name),

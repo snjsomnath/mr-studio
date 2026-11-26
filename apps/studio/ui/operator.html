@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light" />
+    <title>MR Studio · Operator</title>
+    <link rel="stylesheet" href="operator.css" />
+  </head>
+  <body>
+    <!-- Operator mode (#394): the exhibition computer's window in place of the editor. -->
+    <header>
+      <svg class="lock" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="2" /><path d="M8.5 11V8a3.5 3.5 0 0 1 7 0v3" /></svg>
+      <div class="title">
+        <h1>Operator mode</h1>
+        <span id="table">No table open</span>
+      </div>
+      <span id="status" class="pill">Not presenting</span>
+    </header>
+
+    <main>
+      <p id="error" class="error" role="alert" hidden></p>
+      <div id="no-pin" class="note" hidden>
+        <p><b>No PIN is set yet,</b> so anyone at this computer can leave operator mode.</p>
+        <button type="button" data-open="set">Set a PIN</button>
+      </div>
+
+      <section class="panel">
+        <h2>The table</h2>
+        <div class="row">
+          <button type="button" id="present" class="primary">Present</button>
+          <button type="button" id="restart" hidden>Open the screens again</button>
+        </div>
+        <p id="phones" class="hint"></p>
+      </section>
+
+      <section class="panel">
+        <div class="head">
+          <h2>Screens</h2>
+          <button type="button" id="identify">Show which screen is which</button>
+        </div>
+        <ul id="screens" class="screens"></ul>
+      </section>
+
+      <section id="problems-panel" class="panel" hidden>
+        <h2>Needs a look</h2>
+        <ul id="problems" class="problems"></ul>
+      </section>
+    </main>
+
+    <footer>
+      <button type="button" data-open="leave" class="leave">Leave operator mode…</button>
+      <button type="button" data-open="set" id="set-pin">Change the PIN…</button>
+      <span class="spacer"></span>
+      <button type="button" data-open="quit">Quit MR Studio…</button>
+    </footer>
+
+    <!-- The dialogs: one at a time, over the page. -->
+    <div id="scrim" class="scrim" hidden>
+      <form id="dialog-leave" class="dialog" data-dialog hidden>
+        <h2 data-title>Leave operator mode</h2>
+        <p class="hint" data-lead>The table stays on the screens and the editor opens.</p>
+        <label>PIN <input name="pin" type="password" inputmode="numeric" autocomplete="off" maxlength="8" /></label>
+        <p class="error" data-error hidden></p>
+        <div class="buttons">
+          <button type="button" class="link" data-open="forgot">Forgot the PIN?</button>
+          <span class="spacer"></span>
+          <button type="button" data-close>Cancel</button>
+          <button type="submit" class="primary" data-submit>Leave</button>
+        </div>
+      </form>
+
+      <form id="dialog-set" class="dialog" data-dialog hidden>
+        <h2>Set the PIN</h2>
+        <p class="hint">4 to 8 digits. Anyone who leaves operator mode needs it.</p>
+        <label data-current>PIN now <input name="current" type="password" inputmode="numeric" autocomplete="off" maxlength="8" /></label>
+        <label>New PIN <input name="pin" type="password" inputmode="numeric" autocomplete="off" maxlength="8" /></label>
+        <label>New PIN again <input name="again" type="password" inputmode="numeric" autocomplete="off" maxlength="8" /></label>
+        <p class="error" data-error hidden></p>
+        <div class="buttons">
+          <button type="button" class="link" data-open="forgot" data-current>Forgot the PIN?</button>
+          <span class="spacer"></span>
+          <button type="button" data-close>Cancel</button>
+          <button type="submit" class="primary">Save the PIN</button>
+        </div>
+      </form>
+
+      <form id="dialog-forgot" class="dialog" data-dialog hidden>
+        <h2>Forgot the PIN</h2>
+        <p class="hint" data-who></p>
+        <label>This computer's password <input name="password" type="password" autocomplete="off" /></label>
+        <label>New PIN <input name="pin" type="password" inputmode="numeric" autocomplete="off" maxlength="8" /></label>
+        <label>New PIN again <input name="again" type="password" inputmode="numeric" autocomplete="off" maxlength="8" /></label>
+        <p class="error" data-error hidden></p>
+        <div class="buttons">
+          <span class="spacer"></span>
+          <button type="button" data-close>Cancel</button>
+          <button type="submit" class="primary">Set the new PIN</button>
+        </div>
+      </form>
+
+      <form id="dialog-shift" class="dialog" data-dialog hidden>
+        <h2>MR Studio started with Shift held</h2>
+        <p class="hint">Shift at the start is the way out of operator mode without the PIN. Enter this computer's password to open the editor, or stay to present the table as usual.</p>
+        <p class="hint" data-who></p>
+        <label>This computer's password <input name="password" type="password" autocomplete="off" /></label>
+        <p class="error" data-error hidden></p>
+        <div class="buttons">
+          <span class="spacer"></span>
+          <button type="button" id="stay">Stay in operator mode</button>
+          <button type="submit" class="primary">Open the editor</button>
+        </div>
+      </form>
+    </div>
+
+    <script src="operator.js"></script>
+  </body>
+</html>

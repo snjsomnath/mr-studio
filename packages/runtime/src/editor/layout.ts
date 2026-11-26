@@ -76,7 +76,7 @@ export const RIBBON: LayoutTab[] = [
     groups: [
       { name: 'Check', items: [large('present.check')] },
       { name: 'Start', items: [large('present.rehearse'), large('present.start')], keep: true },
-      { name: 'Set up', items: [large('dialog.screens')] },
+      { name: 'Set up', items: [large('dialog.screens'), large('present.operator')] },
       { name: 'Send', items: ['file.share', 'file.export'] },
     ],
   },

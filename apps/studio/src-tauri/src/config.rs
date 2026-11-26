@@ -261,6 +261,12 @@ pub struct Settings {
     pub seen_notes: Option<String>,
     /// The sites opened last, newest first.
     pub recent: Vec<PathBuf>,
+    /// Open in operator mode (#394): the last table presented, the operator window in place of
+    /// the editor, and a PIN to leave. For the exhibition computer.
+    pub operator_start: bool,
+    /// The operator PIN, salted and hashed (`operator_mode::hash_pin`). None until one is set.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub operator_pin: Option<String>,
 }
 
 impl Settings {

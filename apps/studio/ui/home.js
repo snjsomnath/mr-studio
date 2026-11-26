@@ -295,6 +295,8 @@ for (const id of ['nav-open', 'card-open']) $(id).addEventListener('click', open
 for (const id of ['nav-file', 'card-file']) $(id).addEventListener('click', () => openTableFile());
 window.addEventListener('mrs-opened-file', () => void openWaitingFile());
 $('nav-settings').addEventListener('click', () => invoke('open_settings').catch(showError));
+// Operator mode (#394): the exhibition computer's own window; leaving it takes the PIN.
+$('nav-operator').addEventListener('click', () => invoke('open_operator').catch(showError));
 $('nav-quit').addEventListener('click', () => invoke('quit'));
 $('waiting-now').addEventListener('click', async () => {
   showError();

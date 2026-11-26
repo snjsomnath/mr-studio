@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "editor",
-  "description": "The editor window shows the host's pages from this computer. It may present, stop, choose which display shows the table and the controller, open a view of the table in a window, see the displays, create and open a site, use the File menu (save as, show in folder, close), set the colour pass and layer strength of each display and open the projector calibration (the Display ribbon tab), open the shell's own pages (the Sources page too, but not change a source), gather diagnostics and open the log folder (#260) and quit, and nothing else. Table, TV and phone surfaces get no commands at all.",
+  "description": "The editor window shows the host's pages from this computer. It may present, stop, choose which display shows the table and the controller, open a view of the table in a window, see the displays, create and open a site, use the File menu (save as, show in folder, close), set the colour pass and layer strength of each display and open the projector calibration (the Display ribbon tab), open the shell's own pages (the Sources page too, but not change a source), gather diagnostics and open the log folder (#260) and quit, turn on operator mode (#394), and nothing else. Table, TV and phone surfaces get no commands at all.",
   "windows": [
     "editor"
   ],
@@ -35,6 +35,7 @@
     "allow-open-sources",
     "allow-open-operator-log",
     "allow-diagnostics-report",
-    "allow-save-diagnostics"
+    "allow-save-diagnostics",
+    "allow-open-operator"
   ]
 }

@@ -65,6 +65,14 @@ fn main() {
         "open_operator_log",
         "diagnostics_report",
         "save_diagnostics",
+        "open_operator",
+        "operator_state",
+        "operator_present",
+        "operator_restart_screens",
+        "operator_set_pin",
+        "operator_exit",
+        "operator_password",
+        "set_operator_start",
     ]);
     tauri_build::try_build(tauri_build::Attributes::new().app_manifest(commands)).expect("the Tauri build step");
 }
