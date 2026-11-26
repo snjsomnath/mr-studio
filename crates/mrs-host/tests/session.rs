@@ -1496,8 +1496,9 @@ async fn only_this_computers_own_windows_are_screens_or_make_changes() {
         ("PUT", "/api/layers/sunlight/view"),
     ] {
         assert_eq!(status_from(&host, other, method, path).await, 403, "{method} {path}");
-        assert_ne!(status_from(&host, &own, method, path).await, 403, "{method} {path}");
     }
+    // MR Studio's own page gets past the guard (this request writes nothing, and its empty body is turned down).
+    assert_ne!(status_from(&host, &own, "POST", "/api/data/inspect?target=buildings").await, 403);
     // It may read what a phone may.
     assert_eq!(status_from(&host, other, "GET", "/api/info").await, 200);
     host.shutdown().await;
