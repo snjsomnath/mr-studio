@@ -8,7 +8,7 @@
 //! a blocker stops an import; warnings and notes travel with the report.
 
 use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use serde::Serialize;
 use serde_json::{json, Map, Value};
@@ -557,9 +557,7 @@ pub fn apply(site: &Site, mut prepared: Prepared) -> Result<(Site, Report), Site
     let file = site.dir.join(&relative);
     let fresh = !file.exists();
     if fresh {
-        let temporary = file.with_extension("import.tmp");
-        std::fs::write(&temporary, content).map_err(io(&temporary))?;
-        std::fs::rename(&temporary, &file).map_err(io(&file))?;
+        crate::files::replace(&file, content).map_err(io(&file))?;
     }
 
     let manifest_path = site.dir.join("site.json");
@@ -654,11 +652,8 @@ fn forget_old_versions(site_dir: &Path, current: &str, manifests: &[&str]) {
     }
 }
 
-pub(crate) fn write_atomically(path: &PathBuf, text: &str) -> Result<(), SiteError> {
-    let temporary = path.with_extension("json.tmp");
-    let io = |source| SiteError::Io { path: path.clone(), source };
-    std::fs::write(&temporary, text).map_err(io)?;
-    std::fs::rename(&temporary, path).map_err(io)
+pub(crate) fn write_atomically(path: &Path, text: &str) -> Result<(), SiteError> {
+    crate::files::replace(path, text).map_err(|source| SiteError::Io { path: path.to_path_buf(), source })
 }
 
 /// Points the manifest at the imported file, keeping any settings already there.

@@ -51,7 +51,8 @@ impl Calibration {
             file.insert("projector".into(), projector.clone());
         }
         let text = serde_json::to_string_pretty(&Value::Object(file)).map_err(|e| e.to_string())? + "\n";
-        std::fs::write(&self.path, text).map_err(|e| format!("could not write {}: {e}", self.path.display()))?;
+        // In one step (#515): a power cut during the write leaves the earlier calibration, not half of one.
+        mrs_site::files::replace(&self.path, text).map_err(|e| format!("could not write {}: {e}", self.path.display()))?;
         *current = projector.clone();
         Ok(())
     }

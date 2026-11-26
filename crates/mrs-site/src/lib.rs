@@ -7,6 +7,7 @@ mod crs;
 pub mod detail;
 pub mod elevation;
 pub mod field;
+pub mod files;
 mod geotiff;
 pub mod history;
 pub mod import;
@@ -688,9 +689,7 @@ impl Site {
             return Err(SiteError::Invalid(problems));
         }
         let text = serde_json::to_string_pretty(&value).map_err(|e| self.parse_error(e))? + "\n";
-        let temporary = self.dir.join("site.json.tmp");
-        std::fs::write(&temporary, text).map_err(io)?;
-        std::fs::rename(&temporary, &path).map_err(io)
+        files::replace(&path, text).map_err(io)
     }
 
     /// Renames the table, moves it, resizes or turns it: rewrites `name`, `origin` and `extent`
@@ -784,9 +783,7 @@ impl Site {
             return Err(SiteError::Invalid(problems));
         }
         let text = serde_json::to_string_pretty(&value).map_err(|e| parse(e.to_string()))? + "\n";
-        let temporary = self.dir.join("site.json.tmp");
-        std::fs::write(&temporary, text).map_err(io)?;
-        std::fs::rename(&temporary, &path).map_err(io)?;
+        files::replace(&path, text).map_err(io)?;
         Site::load(&self.dir)
     }
 

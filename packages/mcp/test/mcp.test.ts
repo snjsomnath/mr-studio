@@ -4,7 +4,7 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import assert from 'node:assert/strict';
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer, type Server } from 'node:http';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
@@ -804,6 +804,37 @@ describe('for layer developers (#284)', () => {
     } finally {
       await client.close();
       rmSync(site, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('two writers of site.json (#515)', () => {
+  test('a write replaces the file in one step, and never undoes a change the app saved meanwhile', async () => {
+    const { readSite, writeSite } = await import('../src/site.ts');
+    const dir = mkdtempSync(join(tmpdir(), 'mrs-writers-'));
+    try {
+      writeFileSync(join(dir, 'site.json'), '{"name":"Then","layers":[]}\n');
+      const site = readSite(dir);
+      site.name = 'From the assistant';
+      writeSite(dir, site, 'Renamed');
+      assert.equal(JSON.parse(readFileSync(join(dir, 'site.json'), 'utf8')).name, 'From the assistant');
+      assert.deepEqual(readdirSync(dir).filter((f) => f.endsWith('.tmp')), [], 'nothing is left beside it');
+      // Its own write is what it now knows, so a second change goes through.
+      site.name = 'Again';
+      writeSite(dir, site);
+      // The app saves between the read and the write: the write is refused, the app's change stays.
+      const read = readSite(dir);
+      writeFileSync(join(dir, 'site.json'), '{"name":"From the app","layers":[]}\n');
+      read.name = 'Too late';
+      assert.throws(() => writeSite(dir, read), /changed by MR Studio or someone else/);
+      assert.equal(JSON.parse(readFileSync(join(dir, 'site.json'), 'utf8')).name, 'From the app');
+      // Read again, and the change can be made.
+      const fresh = readSite(dir);
+      fresh.name = 'In time';
+      writeSite(dir, fresh);
+      assert.equal(JSON.parse(readFileSync(join(dir, 'site.json'), 'utf8')).name, 'In time');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
     }
   });
 });

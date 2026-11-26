@@ -63,9 +63,7 @@ pub fn place(site: &Site, file: Option<(&str, &[u8])>, placement: &ModelPlacemen
             let relative = model_path(format);
             let target = site.dir.join(&relative);
             std::fs::create_dir_all(target.parent().expect("inside data/")).map_err(io(&target))?;
-            let temporary = target.with_extension("import.tmp");
-            std::fs::write(&temporary, bytes).map_err(io(&temporary))?;
-            std::fs::rename(&temporary, &target).map_err(io(&target))?;
+            crate::files::replace(&target, bytes).map_err(io(&target))?;
             (relative, triangles.len())
         }
         None => {
