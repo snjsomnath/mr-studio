@@ -4,7 +4,7 @@ import type { CanvasOverlay, LayerManifest } from '@mrstudio/sdk';
 import manifest from '../layer.json';
 import { mobilityHero } from './hero.ts';
 import { arrivals, positionAt, prepareCells, prepareTrips, stepAt } from './trips.ts';
-import type { Cells, LonLat } from './trips.ts';
+import type { Cells, LonLat, Trips } from './trips.ts';
 
 interface Params {
   play: boolean;
@@ -14,10 +14,14 @@ interface Params {
   routes: boolean;
   cells: boolean;
   opacity: number;
+  /** The dataset of trips (#486); empty for none. */
+  tripsData: string;
+  /** The dataset of the map of values under the trips (#486); empty for none. */
+  cellsData: string;
 }
 
-/** The optional dataset drawn under the trips. */
-const CELLS = 'trip_cells';
+/** With no trips, how many seconds of the layer's clock each step of the map of values lasts. At Normal speed that is four seconds a step. */
+const STEP_CLOCK_S = 240;
 /** The step of the `progress` control. */
 const PROGRESS_STEP = 0.5;
 /** Seconds between the progress and arrival counts the table reports while playing. */
@@ -49,14 +53,23 @@ export default defineLayer<Params>({
     const routeCanvas = ctx.map.addCanvas('routes', { opacity: ctx.params.opacity });
     const tripCanvas = ctx.map.addCanvas('trips', { opacity: ctx.params.opacity });
 
-    const [rawTrips, rawCells] = await Promise.all([
-      loadSiteData(ctx.site, 'trips'),
-      hasSiteData(ctx.site, CELLS) ? loadSiteData(ctx.site, CELLS) : null,
-    ]);
-    const trips = prepareTrips(rawTrips, distance);
-    const cells: Cells | null = rawCells ? prepareCells(rawCells) : null;
+    /** No trips: the layer plays only the map of values, a step at a time (#486). */
+    const NO_TRIPS: Trips = { title: null, duration: 0, groups: [], destination: null, trips: [] };
+    let trips = NO_TRIPS;
+    let cells: Cells | null = null;
+    let duration = 1;
     const colours = lut(CELL_COLOURS);
-    const duration = Math.max(1, trips.duration);
+
+    /** Reads the datasets the settings name. A name the table has no dataset for counts as none. */
+    async function load(): Promise<void> {
+      const named = (name: string) => (name && hasSiteData(ctx.site, name) ? loadSiteData(ctx.site, name) : null);
+      const [rawTrips, rawCells] = await Promise.all([named(ctx.params.tripsData), named(ctx.params.cellsData)]);
+      trips = rawTrips ? prepareTrips(rawTrips, distance) : NO_TRIPS;
+      cells = rawCells ? prepareCells(rawCells) : null;
+      duration = Math.max(1, rawTrips ? trips.duration : (cells?.steps.length ?? 1) * STEP_CLOCK_S);
+      cellsDrawn = '';
+      routesDrawn = '';
+    }
 
     let time = (ctx.params.progress / 100) * duration;
     let held = 0;
@@ -65,6 +78,9 @@ export default defineLayer<Params>({
     const sent: number[] = [];
     let cellsDrawn = '';
     let routesDrawn = '';
+    await load();
+    time = (ctx.params.progress / 100) * duration;
+    if (trips === NO_TRIPS && !cells) throw new Error('Mobility needs a dataset of trips or a map of values: pick one in its settings');
 
     const step = () => (cells ? stepAt(time / duration, cells.steps.length) : 0);
 
@@ -75,6 +91,8 @@ export default defineLayer<Params>({
         title: trips.title,
         seconds: Math.round(time),
         duration,
+        // With no trips the time is the map's steps, named by the data (#486).
+        steps: trips.trips.length === 0 && cells ? cells.steps : null,
         groups: trips.groups.map((g, i) => ({ label: g.label, color: groupColour(g.color), arrived: counts[i], total: trips.trips.filter((t) => t.group === i).length })),
         cells: cells ? { label: cells.label, unit: cells.unit, min: cells.min, max: cells.max, step: cells.steps[step()] } : null,
       });
@@ -108,7 +126,7 @@ export default defineLayer<Params>({
     function drawRoutes(): void {
       const g = routeCanvas.context;
       routeCanvas.clear();
-      if (!ctx.params.trips || !ctx.params.routes) return;
+      if (!ctx.params.trips || !ctx.params.routes || trips.trips.length === 0) return;
       g.lineWidth = Math.max(1, 1.2 * routeCanvas.pixelsPerMetre);
       g.lineJoin = 'round';
       // Many faint lines add up, so busy corridors read brighter.
@@ -208,6 +226,16 @@ export default defineLayer<Params>({
 
     return {
       update(changed) {
+        if (changed.includes('tripsData') || changed.includes('cellsData')) {
+          // Another dataset: keep the same place through the time span.
+          const at = time / duration;
+          load()
+            .then(() => {
+              time = at * duration;
+              sinceReport = Infinity;
+            })
+            .catch((error: unknown) => console.error('mobility: could not read its datasets', error));
+        }
         if (changed.includes('opacity')) for (const canvas of [cellCanvas, routeCanvas, tripCanvas]) canvas.setOpacity(ctx.params.opacity);
         if (changed.includes('progress')) {
           const mine = sent.indexOf(ctx.params.progress);
@@ -258,11 +286,13 @@ export default defineLayer<Params>({
 
     function update() {
       const shared = ctx.shared;
-      time.textContent = shared.seconds === undefined ? '' : clock(shared.seconds);
-      time.title = shared.duration === undefined ? '' : `of ${clock(shared.duration)}`;
+      const steps = Array.isArray(shared.steps) && shared.steps.length > 0 ? (shared.steps as string[]) : null;
+      // With no trips, the map's step stands for the time (#486).
+      time.textContent = steps ? String(shared.cells?.step ?? '') : shared.seconds === undefined ? '' : clock(shared.seconds);
+      time.title = steps || shared.duration === undefined ? '' : `of ${clock(shared.duration)}`;
       title.textContent = shared.title ?? '';
       const list: { label: string; color: string; arrived: number; total: number }[] = shared.groups ?? [];
-      groups.hidden = !ctx.params.trips;
+      groups.hidden = !ctx.params.trips || Boolean(steps);
       // Rows are rebuilt only when the groups change, so the bars can animate.
       if (groups.children.length !== list.length) {
         groups.replaceChildren(
