@@ -125,7 +125,7 @@ export class DrawingFrame {
   private frame: Frame | null = null;
   /** The framed drawing's own size, read from its file, so a drawing with no corners is framed at its proportions (#559). */
   private size: { width: number; height: number } | null = null;
-  private corners = '';
+  private placedBy = '';
   private resize = new ResizeObserver(() => this.draw());
 
   private readonly host: DrawingFrameHost;
@@ -164,7 +164,7 @@ export class DrawingFrame {
     const parsed = parseCorners(corners);
     this.fill.hidden = !parsed;
     this.snap.disabled = this.snapping || !this.host.site().data?.buildings;
-    this.corners = corners;
+    this.placedBy = corners;
     this.frame = parsed ? (parsed.map((c) => map.toTable(c)) as Frame) : this.fitted();
     // Drawn in the surface's parent, so the handles may reach past the table's edge.
     const holder = surface.parentElement!;
@@ -277,7 +277,7 @@ export class DrawingFrame {
         .then((text) => {
           if (this.ghostFrom !== url) return;
           this.size = drawingSize(new DOMParser().parseFromString(text, 'image/svg+xml').documentElement);
-          if (!parseCorners(this.corners) && !this.root.classList.contains('is-dragging')) {
+          if (!parseCorners(this.placedBy) && !this.root.classList.contains('is-dragging')) {
             this.frame = this.fitted();
             this.draw();
           }
