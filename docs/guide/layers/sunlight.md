@@ -26,4 +26,7 @@ Showing where a courtyard gets sun, how a new building shades its neighbours, an
 - **Daylight rule** judges the ground outside buildings. **Sweden (Boverket)** is the default: at least half of it needs 5 hours of sun between 9 and 17 at the spring equinox, the measure Boverket's guidance on play and school yards uses. **UK (BRE)** asks for 2 hours on 21 March over at least half the area. Each rule sets its own day; **Sun a place needs** and **Share of open ground that must pass** can then be changed for a municipality's own numbers. The controller and TV show the share that passes and whether the area passes.
 
   ![Daylight rule](docs/screenshots/498-daylight-rule.png)
+- **What if?** Visitors can change the place from their phone: **Add a building** (draw its outline; it stands as tall as **New building height**), **Plant a tree**, or **Take a building or tree away** (tap it). The shadows and sun hours redraw with the change, and every simulation on the table sees it while Sunlight is open. On the controller, **Undo the last change** and **Take away all changes** undo them. Nothing is saved, and closing Sunlight brings the real place back. While changes are in place, shadows come from the simulation's cells and are a little blockier than the 3D model's.
+
+  ![A new 40 m block, a row of trees and a building taken away](docs/screenshots/500-what-if.png)
 - If shadows look wrong, check that the table faces the right way in its place (Design tab, **Table size and place…**).

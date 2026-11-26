@@ -487,6 +487,60 @@ async fn the_table_asks_the_engine_about_one_place() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn what_if_changes_reach_the_engine_and_go_with_the_table() {
+    let host = host().await;
+    let mut table = Surface::join(&host, "table", None).await.unwrap();
+    let spot = [11.97, 57.7];
+    let sun_at = |sun: Value| sun["sun_hours"].as_f64().unwrap();
+    let ask = json!({ "kernel": "sunlight", "params": { "time": "2026-03-20T12:00:00Z", "step_minutes": 15 }, "at": spot });
+    let before = sun_at(table.request("engine.probe", ask.clone()).await.unwrap());
+    assert!(before > 3.0, "sun at the equinox: {before} h");
+
+    // A tall block just south of the spot shades it for most of the day (#500).
+    let (dlon, dlat) = (0.0008, 0.0002);
+    let south = spot[1] - 0.0003;
+    let outline = json!([
+        [spot[0] - dlon, south - dlat],
+        [spot[0] + dlon, south - dlat],
+        [spot[0] + dlon, south + dlat],
+        [spot[0] - dlon, south + dlat]
+    ]);
+    table.request("engine.edit", json!({ "edits": [{ "kind": "building", "outline": outline, "height_m": 120 }] })).await.unwrap();
+    let shaded = sun_at(table.request("engine.probe", ask.clone()).await.unwrap());
+    assert!(shaded < before * 0.5, "{shaded} h with the block, {before} h without");
+
+    // Only the table changes the scene, and the values are checked.
+    let mut tv = Surface::join(&host, "tv", None).await.unwrap();
+    assert!(tv.request("engine.edit", json!({ "edits": [] })).await.is_err());
+    let code = host.state.hub.session().code.clone();
+    let mut phone = Surface::join(&host, "phone", Some(&code)).await.unwrap();
+    assert!(phone.request("engine.edit", json!({ "edits": [] })).await.is_err());
+    let tall = json!({ "edits": [{ "kind": "tree", "at": spot, "radius_m": 4, "height_m": 500 }] });
+    assert!(table.request("engine.edit", tall).await.is_err());
+    // A second table can't overwrite the first one's changes, but sees them.
+    let mut other = Surface::join(&host, "table", None).await.unwrap();
+    assert!(other.request("engine.edit", json!({ "edits": [{ "kind": "remove", "at": spot }] })).await.is_err());
+    assert_eq!(sun_at(other.request("engine.probe", ask.clone()).await.unwrap()), shaded);
+
+    // An empty list gives the baked scene back, and so does the table that made them going away.
+    table.request("engine.edit", json!({ "edits": [] })).await.unwrap();
+    assert_eq!(sun_at(table.request("engine.probe", ask.clone()).await.unwrap()), before);
+    table.request("engine.edit", json!({ "edits": [{ "kind": "building", "outline": outline, "height_m": 120 }] })).await.unwrap();
+    drop(table);
+    let mut restored = None;
+    for _ in 0..50 {
+        let now = sun_at(other.request("engine.probe", ask.clone()).await.unwrap());
+        if now == before {
+            restored = Some(now);
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+    assert_eq!(restored, Some(before), "the baked scene is back once the table has gone");
+    host.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn sun_hours_arrive_progressively() {
     let host = host().await;
     let mut table = Surface::join(&host, "table", None).await.unwrap();

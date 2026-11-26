@@ -19,6 +19,8 @@ use mrs_site::{LonLat, Projection};
 use serde_json::{json, Value};
 use tokio::sync::{mpsc as tmpsc, oneshot};
 
+use crate::whatif::{self, SceneEdit};
+
 /// Time the engine may spend stepping jobs before it looks at commands again.
 const FRAME_BUDGET: Duration = Duration::from_millis(12);
 
@@ -59,6 +61,12 @@ enum Command {
         reply: oneshot::Sender<Result<Value, String>>,
     },
     LoadScene(SceneData, oneshot::Sender<Result<(), String>>),
+    /// What-if changes over the baked scene from one connection (#500); an empty list takes them away.
+    Edit {
+        conn: u64,
+        edits: Vec<SceneEdit>,
+        reply: oneshot::Sender<Result<(), String>>,
+    },
     Relocate(SceneData, LonLat, oneshot::Sender<Result<(), String>>),
     /// For tests and the soak run: makes the engine thread fail as a GPU fault would.
     Fault,
@@ -150,6 +158,14 @@ impl EngineHandle {
         let _ = self.send(Command::Close { conn, stream });
     }
 
+    /// Lays what-if changes over the baked scene (#500), for as long as the connection that sent them
+    /// is open; an empty list gives the baked scene back. Each call replaces the last one's list.
+    pub async fn edit(&self, conn: u64, edits: Vec<SceneEdit>) -> Result<(), String> {
+        let (reply, rx) = oneshot::channel();
+        self.send(Command::Edit { conn, edits, reply }).map_err(|e| e.to_string())?;
+        rx.await.map_err(|e| e.to_string())?
+    }
+
     /// Replaces the scene, for a site whose sources changed. Running jobs pick it up on their next step.
     pub async fn load_scene(&self, scene: SceneData) -> Result<(), String> {
         let (reply, rx) = oneshot::channel();
@@ -170,6 +186,23 @@ impl EngineHandle {
     }
 }
 
+/// The scene the engine runs on: the baked one, where the table is, and any what-if changes over it.
+struct Current {
+    base: SceneData,
+    origin: LonLat,
+    /// The connection whose what-if changes these are, and the changes.
+    edits: Option<(u64, Vec<SceneEdit>)>,
+}
+
+impl Current {
+    fn scene(&self) -> SceneData {
+        match &self.edits {
+            Some((_, edits)) => whatif::apply(&self.base, edits, self.origin),
+            None => self.base.clone(),
+        }
+    }
+}
+
 /// Runs engines on this thread until the host lets go: a new one after each panic or GPU loss.
 fn supervise(
     requested: Backend,
@@ -181,12 +214,12 @@ fn supervise(
 ) {
     let mut backend = requested;
     // The scene and place the next engine starts with; `run` keeps them current.
-    let mut current = (scene, origin);
+    let mut current = Current { base: scene, origin, edits: None };
     let mut started = false;
     let mut restarts: Vec<Instant> = Vec::new();
     let mut reason = String::new();
     loop {
-        let built = Engine::new(EngineConfig { backend }).and_then(|mut e| e.load_scene(current.0.clone()).map(|_| e));
+        let built = Engine::new(EngineConfig { backend }).and_then(|mut e| e.load_scene(current.scene()).map(|_| e));
         let engine = match built {
             Ok(engine) => engine,
             Err(e) if !started => {
@@ -270,8 +303,8 @@ fn coalesce(batch: Vec<Command>) -> Vec<Command> {
         .collect()
 }
 
-fn run(mut engine: Engine, current: &mut (SceneData, LonLat), rx: &mpsc::Receiver<Command>) -> Exit {
-    let mut origin = current.1;
+fn run(mut engine: Engine, current: &mut Current, rx: &mpsc::Receiver<Command>) -> Exit {
+    let mut origin = current.origin;
     let mut streams: HashMap<u32, Stream> = HashMap::new();
     let mut next_stream = 1u32;
     let mut busy = false;
@@ -321,22 +354,41 @@ fn run(mut engine: Engine, current: &mut (SceneData, LonLat), rx: &mpsc::Receive
                     }
                 }
                 Command::LoadScene(scene, reply) => {
-                    current.0 = scene.clone();
-                    let _ = reply.send(engine.load_scene(scene).map_err(|e| e.to_string()));
+                    current.base = scene;
+                    let _ = reply.send(engine.load_scene(current.scene()).map_err(|e| e.to_string()));
+                }
+                Command::Edit { conn, edits, reply } => {
+                    let result = if current.edits.as_ref().is_some_and(|(owner, _)| *owner != conn) && !edits.is_empty() {
+                        Err("another surface's what-if changes are on the table".to_string())
+                    } else if edits.is_empty() && current.edits.as_ref().is_none_or(|(owner, _)| *owner != conn) {
+                        Ok(())
+                    } else {
+                        current.edits = (!edits.is_empty()).then_some((conn, edits));
+                        engine.load_scene(current.scene()).map_err(|e| e.to_string())
+                    };
+                    let _ = reply.send(result);
                 }
                 Command::Relocate(scene, at, reply) => {
                     for (_, stream) in streams.drain() {
                         engine.drop_job(stream.job);
                     }
                     origin = at;
-                    *current = (scene.clone(), at);
-                    let _ = reply.send(engine.load_scene(scene).map_err(|e| e.to_string()));
+                    current.base = scene;
+                    current.origin = at;
+                    let _ = reply.send(engine.load_scene(current.scene()).map_err(|e| e.to_string()));
                 }
                 Command::Probe { kernel, params, at, reply } => {
                     let _ = reply.send(probe(&engine, origin, &kernel, params, at));
                 }
                 Command::Fault => panic!("a fault was injected"),
                 Command::CloseConnection(conn) => {
+                    // What-if changes last only while the surface that made them is there.
+                    if current.edits.as_ref().is_some_and(|(owner, _)| *owner == conn) {
+                        current.edits = None;
+                        if let Err(e) = engine.load_scene(current.scene()) {
+                            tracing::error!("the baked scene could not be restored: {e}");
+                        }
+                    }
                     streams.retain(|_, s| {
                         if s.conn == conn {
                             engine.drop_job(s.job);

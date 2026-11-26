@@ -119,6 +119,12 @@ export class FieldStream {
   }
 }
 
+/** One what-if change to the scene (`ctx.engine.edit`). Places are WGS84 `[lon, lat]`. */
+export type SceneEdit =
+  | { kind: 'building'; outline: [number, number][]; height_m: number }
+  | { kind: 'tree'; at: [number, number]; radius_m: number; height_m: number }
+  | { kind: 'remove'; at: [number, number] };
+
 export class EngineClient {
   private readonly connection: Connection;
 
@@ -140,6 +146,15 @@ export class EngineClient {
    */
   probe<T = Record<string, unknown>>(kernel: string, params: Record<string, unknown>, at: readonly [number, number] | readonly number[]): Promise<T> {
     return this.connection.request<T>('engine.probe', { kernel, params, at: [at[0], at[1]] });
+  }
+
+  /**
+   * What-if changes over the baked scene (#500), seen by every kernel until replaced: buildings added or taken
+   * away, trees planted or felled. Each call replaces the last list; `[]` gives the baked scene back, as does the
+   * table going away. Table only. Nothing is saved to the site. See docs/contracts/engine.md.
+   */
+  edit(edits: readonly SceneEdit[]): Promise<void> {
+    return this.connection.request('engine.edit', { edits });
   }
 
   info(): Promise<{ backend: string; adapter: string | null; kernels: { id: string }[] }> {

@@ -257,6 +257,21 @@ async fn request(state: &AppState, role: Role, surface: u64, message: &Value, ou
             let kernel = p["kernel"].as_str().ok_or("missing kernel")?.to_string();
             state.engine.probe(kernel, p.get("params").cloned().unwrap_or_else(|| json!({})), at).await
         }
+        "engine.edit" => {
+            // What-if changes come from the table's layer (#500); phones reach it through tools.
+            if !matches!(role, Role::Table | Role::Dev) {
+                return Err("only the table changes the scene".into());
+            }
+            let edits: Vec<crate::whatif::SceneEdit> =
+                serde_json::from_value(p.get("edits").cloned().unwrap_or_else(|| json!([]))).map_err(|e| format!("edits: {e}"))?;
+            if edits.len() > crate::whatif::MAX_EDITS {
+                return Err(format!("at most {} changes at a time", crate::whatif::MAX_EDITS));
+            }
+            for edit in &edits {
+                edit.check()?;
+            }
+            state.engine.edit(surface, edits).await.map(|_| json!({}))
+        }
         "engine.close" => {
             state.engine.close(surface, stream()?);
             Ok(json!({}))

@@ -3,7 +3,7 @@
   "id": "sunlight",
   "name": "Sunlight",
   "description": "Shadows at any moment, or hours of direct sun over a day",
-  "about": {"purpose": "Shows shadows at any moment, the golden hour of a morning or evening, or sun hours over a day: the clearest way to discuss overshadowing and the light of a place.", "questions": ["Does a courtyard or school yard get enough sun under Boverket's guidance or BRE?", "How does a proposal change sun and shade on squares and courtyards?", "Which places get sun in the morning, at lunch, in winter?", "Where does the evening sun still reach, and where is the warm light at golden hour?"], "pairs_with": ["plan", "swipe", "coolpaths", "lens"], "limits": ["Shadows fall on the ground; sun on facades is planned", "Uses the site's buildings and trees for shadows"]},
+  "about": {"purpose": "Shows shadows at any moment, the golden hour of a morning or evening, or sun hours over a day: the clearest way to discuss overshadowing and the light of a place.", "questions": ["Does a courtyard or school yard get enough sun under Boverket's guidance or BRE?", "How does a proposal change sun and shade on squares and courtyards?", "Which places get sun in the morning, at lunch, in winter?", "Where does the evening sun still reach, and where is the warm light at golden hour?"], "pairs_with": ["plan", "swipe", "coolpaths", "lens"], "limits": ["Shadows fall on the ground; sun on facades is planned", "Buildings and trees added or taken away from phones last until Sunlight closes; they are not saved", "Uses the site's buildings and trees for shadows"]},
   "icon": "sun",
   "attract": { "effect": "sun" },
   "requires": { "kernels": ["sunlight"] },
@@ -67,10 +67,16 @@
     { "id": "trees", "type": "toggle", "label": "Trees cast shade", "help": "Trees in the table's data cast shade as well as buildings.", "default": true, "tier": "more" },
     { "id": "treeColor", "type": "toggle", "label": "Tree shade in its own colour", "default": true, "visibleWhen": { "trees": true }, "tier": "more" },
     { "id": "clearSpot", "type": "action", "label": "Clear the spot", "tier": "more" },
+    { "id": "whatIfHeight", "type": "range", "label": "New building height", "help": "How tall a building drawn on a phone stands. Changes from phones are not saved and go when Sunlight closes.", "min": 3, "max": 120, "step": 1, "unit": "m", "default": 15, "tier": "more" },
+    { "id": "undoWhatIf", "type": "action", "label": "Undo the last change", "tier": "more" },
+    { "id": "clearWhatIf", "type": "action", "label": "Take away all changes", "tier": "more" },
     { "id": "opacity", "type": "range", "label": "Opacity", "help": "How strongly the layer draws over the map.", "min": 0.1, "max": 1, "step": 0.05, "default": 1, "tier": "more" }
   ],
   "tools": [
-    { "id": "spot", "type": "point", "label": "How much sun here?", "help": "Tap a place to see how many hours of sun it gets." }
+    { "id": "spot", "type": "point", "label": "How much sun here?", "help": "Tap a place to see how many hours of sun it gets." },
+    { "id": "addBuilding", "type": "polygon", "label": "Add a building", "help": "Draw a new building's outline and see the shade it casts." },
+    { "id": "plantTree", "type": "point", "label": "Plant a tree", "help": "Tap where a new tree should stand." },
+    { "id": "remove", "type": "point", "label": "Take a building or tree away", "help": "Tap a building or tree to see the place without it." }
   ],
   "panels": [
     { "id": "daylight", "widget": "stat", "size": "tile", "title": "Daylight on this date", "visibleWhen": { "mode": "day", "window": "day" },
