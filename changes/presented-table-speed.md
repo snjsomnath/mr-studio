@@ -12,4 +12,4 @@ On a Mac, the presented Chalmers table ran at about 4–5 frames a second (#596)
 
 The table looks the same. In a test on the same site, the layers' own drawing time per frame fell from about 245 ms to about 100 ms, and street glow fell from about 60 ms to about 12 ms.
 
-![Before and after: the same streets, trees, lights and traffic](../docs/screenshots/596-same-look-less-drawing.png)
+![Before and after: the same streets, trees, lights and traffic](docs/screenshots/596-same-look-less-drawing.png)
