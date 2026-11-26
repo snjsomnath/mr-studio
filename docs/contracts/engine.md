@@ -134,11 +134,20 @@ The host exposes the engine to surfaces through these requests (see session.md f
 | `engine.set` | `{ stream, params }` | `{}` |
 | `engine.close` | `{ stream }` | `{}` |
 | `engine.probe` | `{ kernel, params, at: [lon, lat] }` | the kernel's answer for that place |
+| `engine.edit` | `{ edits: SceneEdit[] }` | `{}` |
 
 `engine.open` creates a job and subscribes the calling surface. The host steps the job and, whenever the job's revision changes, pushes an `engine.status` event followed by one binary frame per field, at most `maxHz` times per second (default 30). The final frame of a job is sent at once.
 Streams belong to the connection and are closed when it drops. If a kernel accepts `lat` and `lon` and the caller omits them, the host fills them from the site origin.
 
 `engine.probe` asks a kernel about one place instead of the whole table, without a job (#252): a point question is cheap where a field is not. `at` is WGS84 and must be on the table. It is answered in the engine thread between job steps, so it waits for at most one step of a running job. Kernels without a probe answer with an error; so far only `sunlight` has one. Phones cannot call it; a layer's table code asks and publishes what the controller shows.
+
+`engine.edit` lays what-if changes over the baked scene (#500), and every kernel sees them. Each call replaces the list. An empty list gives the baked scene back, and so does the connection that sent the changes going away. Only the table (or a dev surface) may call it, and one surface's changes hold at a time. Nothing is saved to the site. The changes are WGS84, applied in order:
+
+- `{ kind: "building", outline: [lon, lat][], height_m }` raises the surface over the outline to `height_m` above the ground, and clears canopy there. The height must be 0.5–400 m.
+- `{ kind: "tree", at: [lon, lat], radius_m, height_m }` adds a crown, highest at the trunk, wherever there is no building. The radius must be 0.5–30 m and the height 1–60 m.
+- `{ kind: "remove", at: [lon, lat] }` lowers the building under the point to the ground (everything connected that stands 2 m or more above it). If there is no building there, it clears the nearest tree crown within 4 m.
+
+At most 200 changes are taken. The 3D twin (`/api/twin`) does not include them, so a layer that draws shadows from the twin uses the engine's cells while changes are in place.
 
 | Event | Payload |
 | --- | --- |

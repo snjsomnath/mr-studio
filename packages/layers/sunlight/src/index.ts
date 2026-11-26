@@ -9,6 +9,7 @@ import { hasShade, isFlat } from './flat.ts';
 import { spotOnTable } from './spot.ts';
 import { SEASONS, seasonsHero, seasonsOnTable } from './seasons.ts';
 import { trailsOnTable } from './trails.ts';
+import { whatIfOnTable } from './whatif.ts';
 import { playPace, sharpSoften } from './pace.ts';
 import { passKey, passingShare, verdictColormap, verdictFrame, ruleDate, ruleOf, ruleWindow } from './rules.ts';
 
@@ -30,6 +31,7 @@ interface Params {
   rule: string;
   ruleHours: number;
   ruleShare: number;
+  whatIfHeight: number;
 }
 
 /** Hours of the day that pass per second while animating, with the sun well up or well down. */
@@ -128,6 +130,7 @@ export default defineLayer<Params>({
       flat = sunNow().altitude > 0 ? isFlat(frame) : true;
       if (dark() !== was) dress();
     };
+    let whatIf: ReturnType<typeof whatIfOnTable> | null = null;
     let maskRequest = 0;
     // One mask is drawn at a time; a sun that moved meanwhile is drawn as soon as it is back, for the newest time.
     let masking = false;
@@ -135,7 +138,8 @@ export default defineLayer<Params>({
     // While playing, the next mask waits as long as the last one took, so a slow graphics card spends at most
     // about half its time on shadows and the frame rate holds; a fast one still gets a new mask every frame or two.
     let maskFreeAt = 0;
-    const sharpWanted = () => atMoment(ctx.params.mode) && !ctx.params.relight;
+    // What-if changes (#500) are in the engine's scene but not the 3D twin: the engine draws the shadows then.
+    const sharpWanted = () => atMoment(ctx.params.mode) && !ctx.params.relight && !whatIf?.active();
     async function reshadow() {
       if (!sharpWanted() || sharp === false) return;
       if (masking) {
@@ -449,13 +453,17 @@ export default defineLayer<Params>({
     }
 
     const spot = spotOnTable(ctx);
+    // Shadows switch between the twin's and the engine's as changes come and go.
+    whatIf = whatIfOnTable(ctx, () => dress());
     const trails = trailsOnTable(ctx, spot.at);
 
     publishDay();
     await open();
 
     return {
-      tool: (input) => spot.tool(input),
+      tool: (input) => {
+        if (!whatIf?.tool(input)) spot.tool(input);
+      },
       // Next and Previous pin a season; the overview lets them take turns.
       step(revealed) {
         if (ctx.params.mode !== 'seasons') return;
@@ -464,6 +472,8 @@ export default defineLayer<Params>({
       },
       action(id) {
         if (id === 'clearSpot') spot.clear();
+        if (id === 'undoWhatIf') whatIf?.undo();
+        if (id === 'clearWhatIf') whatIf?.clear();
       },
       update(changed) {
         if (clock !== null) {

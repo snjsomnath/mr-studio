@@ -17,6 +17,7 @@ pub mod relay;
 pub mod services;
 pub mod sources;
 mod transit;
+mod whatif;
 mod wms;
 mod ws;
 

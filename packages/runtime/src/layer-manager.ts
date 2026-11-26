@@ -537,6 +537,7 @@ export class LayerManager {
     };
     const published: Record<string, unknown> = {};
     const { store, engine } = this;
+    let edited = false;
     const extras: Omit<TableContext, keyof Base> = {
       engine: {
         open: async (kernel, params, fields, options) => {
@@ -545,6 +546,14 @@ export class LayerManager {
           return stream;
         },
         probe: (kernel, params, at) => engine.probe(kernel, params, at),
+        // What-if changes (#500) go with the layer: the baked scene comes back when it stops.
+        edit: (edits) => {
+          if (!edited && edits.length) {
+            edited = true;
+            track(() => void engine.edit([]).catch(() => {}));
+          }
+          return engine.edit(edits);
+        },
         info: () => engine.info(),
       } as EngineClient,
       map: this.view.handle(id, track),
