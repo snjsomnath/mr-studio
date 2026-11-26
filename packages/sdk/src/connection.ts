@@ -6,6 +6,8 @@ export interface Welcome {
   surface: number;
   /** Phones only: present it in the next `hello` to return to the same slot. */
   resume?: string;
+  /** Phones only: every seat was taken, so this phone looks but changes nothing (#462). */
+  watching?: boolean;
   state: SessionState;
   manifests: LayerManifest[];
 }

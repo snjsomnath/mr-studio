@@ -3,17 +3,20 @@
   "id": "sketch",
   "name": "Sketch",
   "description": "Mark places, draw and point out routes and areas on the table from a phone",
-  "about": {"purpose": "Lets everyone contribute: people mark places, routes and areas on the table from their phones.", "questions": ["Where do you go, and what would you change?", "Which places feel unsafe, loved or missing?"], "pairs_with": ["isovist", "coolpaths", "plan"], "limits": ["There is no voting or commenting on each other's marks yet"]},
+  "about": {"purpose": "Lets everyone contribute: people mark places, routes and areas on the table from their phones.", "questions": ["Where do you go, and what would you change?", "Which places feel unsafe, loved or missing?"], "pairs_with": ["isovist", "coolpaths", "plan"], "limits": ["A phone adds words to its own last mark only; there is no voting on marks yet"]},
   "icon": "pencil",
   "attract": { "effect": "waves" },
   "alongside": true,
   "controls": [
     { "id": "opacity", "type": "range", "label": "Opacity", "min": 0.2, "max": 1, "step": 0.05, "default": 1, "tier": "more" },
     { "id": "undo", "type": "action", "label": "Take back my last mark", "phone": true, "tier": "more", "help": "From a phone, takes back that phone's last mark; from the controller, the last mark anyone made." },
+    { "id": "comment", "type": "action", "label": "Add to my last mark", "phone": true, "tier": "more", "words": { "prompt": "A few words about it", "max": 100 }, "help": "Words for the phone's last mark. The controller shows them; the table shows only a small ring that the mark has words." },
+    { "id": "show_words", "type": "toggle", "label": "Show what the phones said", "default": false, "tier": "more", "help": "The words phones add to their marks, on the controller. Off until someone running the table turns it on, as visitors' words go on a shared screen." },
     { "id": "clear", "type": "action", "label": "Clear the sketch", "tier": "more" }
   ],
   "panels": [
-    { "id": "marks", "widget": "stat", "size": "tile", "title": "Marks on the table", "props": { "value": { "bind": "shared.count" }, "caption": "From the phones" } }
+    { "id": "marks", "widget": "stat", "size": "tile", "title": "Marks on the table", "props": { "value": { "bind": "shared.count" }, "caption": "From the phones" } },
+    { "id": "words", "widget": "text", "size": "wide", "title": "What they said", "visibleWhen": { "show_words": true }, "props": { "body": { "bind": "shared.words" } } }
   ],
   "tools": [
     { "id": "place", "type": "point", "label": "Place" },

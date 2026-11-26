@@ -43,7 +43,7 @@ Any open button layer pauses the map at rest's life on the table, keeping only t
 `about` says what the layer is *for*, for people and LLMs designing an experience rather than picking a layer by name (#326): `purpose` (one sentence: what it helps a group see or do), `questions` (the questions it helps a group answer at the table), `pairs_with` (layer ids it works well with) and `limits` (what it cannot do, or what it needs). The MCP server's capability catalogue reads it (`find_capabilities`), and `scripts/check-docs.mjs` fails when a core layer has none. Example: `"about": { "purpose": "Shows shadows at any moment…", "questions": ["How does a proposal change sun and shade on squares?"], "pairs_with": ["plan", "swipe"], "limits": ["Shadows fall on the ground; sun on facades is planned"] }`.
 `requires.data` lists the site datasets the layer reads, by name (see `data` in site.md). A layer must still start when one is missing.
 
-Control types: `range`, `select`, `toggle`, `date`, `color`, `text`, `action` (a button, no stored value).
+Control types: `range`, `select`, `toggle`, `date`, `color`, `text`, `action` (a button, no stored value). An action with `words: { prompt?, max? }` (#462) is pressed with a few words typed first (default at most 120 characters); the layer's `action(action, by, words)` gets them. The sketch's "Add to my last mark" is one.
 Every control has `id`, `type`, `label` and `default`. `phone: true` lets phone participants change it; a `primary` control is on phones unless it says `phone: false` (#335).
 
 `"phone_switch": false` at the top of layer.json keeps phones from turning the layer on or off, for a layer only the controller should open (the slideshow). Default true.

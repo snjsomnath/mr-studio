@@ -95,6 +95,11 @@ export interface TextControl extends ControlBase {
 export type MediaKind = 'map' | 'table' | 'raster' | 'drawing' | 'picture' | 'video' | 'sound' | 'model' | 'data';
 export interface ActionControl extends ControlBase {
   type: 'action';
+  /**
+   * Pressed with a few words typed first (#462), such as a comment on a sketch mark: `prompt`
+   * is the field's placeholder, `max` its length (default 120). The layer's `action` gets them.
+   */
+  words?: { prompt?: string; max?: number };
 }
 export type Control = RangeControl | SelectControl | ToggleControl | DateControl | ColorControl | TextControl | ActionControl;
 

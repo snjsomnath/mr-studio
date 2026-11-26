@@ -11,6 +11,19 @@ interface Params {
 interface Mark {
   shapes: Shape[];
   slot?: number;
+  /** Words a phone added to it (#462): read on the controller, never drawn on the table. */
+  words?: string;
+  /** Who added them, for the controller: the phone's name, else its animal. */
+  by?: string;
+}
+
+/** The last point of a mark's first shape, where its words ring sits. */
+function endOf(shape: Shape | undefined): Position | null {
+  const g = shape?.geometry;
+  if (!g) return null;
+  if (g.type === 'Point') return g.coordinates;
+  if (g.type === 'LineString') return g.coordinates[g.coordinates.length - 1] ?? null;
+  return g.coordinates[0]?.[0] ?? null;
 }
 
 /** The oldest marks are dropped beyond this many, so a long session stays light. */
@@ -61,8 +74,15 @@ export default defineLayer<Params>({
     const places = new Map<number, Shape>();
     let marks: Mark[] = [];
     const show = () => {
-      overlay.set([...marks.flatMap((mark) => mark.shapes), ...places.values()]);
-      ctx.publish({ count: marks.length + places.size });
+      // A mark with words gets a small white ring at its end: the words themselves stay on the controller.
+      const rings: Shape[] = marks
+        .filter((mark) => mark.words)
+        .map((mark) => endOf(mark.shapes[0]))
+        .filter((at): at is Position => at !== null)
+        .map((at) => ({ geometry: { type: 'Point', coordinates: at }, colour: '#ffffff' }));
+      overlay.set([...marks.flatMap((mark) => mark.shapes), ...places.values(), ...rings]);
+      const said = marks.filter((mark) => mark.words).slice(-2).reverse();
+      ctx.publish({ count: marks.length + places.size, words: said.map((mark) => (mark.by ? `${mark.by}: ${mark.words}` : mark.words)).join(' · ') || null });
     };
     show();
 
@@ -70,8 +90,14 @@ export default defineLayer<Params>({
       update(changed) {
         if (changed.includes('opacity')) overlay.setOpacity(ctx.params.opacity);
       },
-      action(action, by) {
-        if (action === 'clear') {
+      action(action, by, words) {
+        if (action === 'comment') {
+          // Words for this phone's last mark (#462); from the controller, for the last mark of all.
+          const mark = [...marks].reverse().find((m) => !by || m.slot === by.slot);
+          if (!mark || !words) return;
+          mark.words = words;
+          mark.by = by?.name || (by?.avatar ? by.avatar.replace(/^./, (c) => c.toUpperCase()) : undefined);
+        } else if (action === 'clear') {
           marks = [];
           places.clear();
         } else if (action === 'undo') {

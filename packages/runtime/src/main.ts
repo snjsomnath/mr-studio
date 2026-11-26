@@ -11,7 +11,7 @@ import { mountDashboard } from './dashboard.ts';
 import { guideCode, guideDoor, guideScreen } from './guide.ts';
 import { browserLanguage, keepOwnLanguage, language, offered, ownLanguage, setLanguage, speak, t } from './i18n.ts';
 import type { Language } from './i18n.ts';
-import { joinPanel, pausedBanner, phonesPanel } from './join.ts';
+import { joinPanel, pausedBanner, phonesPanel, watchingBanner } from './join.ts';
 import { LayerManager } from './layer-manager.ts';
 import { loadSiteModules } from './registry.ts';
 import { fieldCard } from './field-phone.ts';
@@ -379,7 +379,7 @@ async function main() {
       );
     }
     side.append(header);
-    if (phone) side.append(pausedBanner(store));
+    if (phone) side.append(watchingBanner(store), pausedBanner(store));
     const cards = el('div', 'cards');
     if (phone) {
       // A field walk (#445) sits above the layers, outside the cards the controller redraws.

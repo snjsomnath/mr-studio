@@ -29,6 +29,8 @@ pub struct Control {
     /// Phone participants may change it.
     pub phone: bool,
     pub default: Value,
+    /// An action pressed with a few words typed first (#462): at most this many characters.
+    pub words: Option<usize>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -361,7 +363,10 @@ impl Control {
         };
         // Phones get a layer's primary controls unless the layer says otherwise (#335).
         let phone = c["phone"].as_bool().unwrap_or(c["tier"] == "primary");
-        let mut control = Control { id: cid.clone(), kind, phone, default: Value::Null };
+        let words = matches!(kind, ControlKind::Action)
+            .then(|| c.get("words").filter(|w| w.is_object()).map(|w| w["max"].as_u64().unwrap_or(120).clamp(1, 280) as usize))
+            .flatten();
+        let mut control = Control { id: cid.clone(), kind, phone, default: Value::Null, words };
         if !matches!(control.kind, ControlKind::Action) {
             control.default = control.validate(&c["default"]).map_err(|e| anyhow!("control '{cid}' default: {e}"))?;
         }

@@ -194,6 +194,22 @@ export function phonesPanel(store: Store, connection: Connection): HTMLElement {
   return panel;
 }
 
+/**
+ * A line across the top of a phone that joined a full table (#462). It looks around, and when a
+ * seat frees up (fewer phones in the session) it joins again to take it.
+ */
+export function watchingBanner(store: Store): HTMLElement {
+  const banner = el('p', 'phones-watching', t('Every seat at the table is taken. You can look around, and you get a seat when one frees up.'));
+  banner.setAttribute('role', 'status');
+  banner.hidden = !store.watching;
+  let seated = store.state.participants.length;
+  store.onParticipants((participants) => {
+    if (store.watching && participants.length < seated) location.reload();
+    seated = participants.length;
+  });
+  return banner;
+}
+
 /** A line across the top of a phone while the operator has paused the phones (#335). */
 export function pausedBanner(store: Store): HTMLElement {
   const banner = el('p', 'phones-paused', t('The table is paused for a moment. You can look around; changes wait until it goes on.'));
