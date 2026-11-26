@@ -795,12 +795,15 @@ async function main() {
     await guide.getByLabel('File for Trees').setInputFiles(path.join(site, 'data', 'trees.geojson'));
     await guide.locator('.wz-place[data-target="trees"] .wz-summary', { hasText: /trees/ }).waitFor();
     if (shots) await guide.screenshot({ path: path.join(shots, 'wizard-place.png') });
-    const written = fs.statSync(path.join(site, 'data', 'trees.geojson')).mtimeMs;
     await guide.getByRole('button', { name: 'Add to the table' }).click();
     // Every surface starts again with the new data, and the guide comes back where it was.
     await guide.waitForFunction(() => !document.querySelector('.wz-report') && document.querySelector('.wz h2')?.textContent === 'Data');
     await guide.locator('.wz-place[data-target="trees"] .wz-state', { hasText: 'On the table' }).waitFor();
-    assert.ok(fs.statSync(path.join(site, 'data', 'trees.geojson')).mtimeMs > written, 'the file is written into the table');
+    // The table names the trees it now uses, and that file is there. Data that differs from what
+    // was there is saved beside it (trees.v2.geojson), so Undo brings the earlier trees back (#512).
+    const treesFile = fs.readFileSync(path.join(site, 'site.json'), 'utf8').match(/"(data\/trees(?:\.v\d+)?\.geojson)"/)?.[1];
+    assert.ok(treesFile && fs.existsSync(path.join(site, treesFile)), 'the file is written into the table');
+    assert.ok(fs.existsSync(path.join(site, 'data', 'trees.geojson')), 'the earlier trees are kept');
     // A file that is not what was asked for is refused with a reason, and nothing is written.
     await guide.getByLabel('File for Buildings', { exact: true }).setInputFiles(path.join(site, 'data', 'trees.geojson'));
     await guide.locator('.wz-place[data-target="buildings"] .wz-issue.is-blocker').waitFor();
@@ -953,7 +956,7 @@ async function main() {
     await fresh.getByRole('button', { name: 'Create the table' }).click();
     await fresh.waitForFunction(() => window.shellCalls.length === 2);
     assert.deepEqual(await fresh.evaluate(() => window.shellCalls), [
-      ['create_site', { site: { name: 'Harbour', lat: 57.7069, lon: 11.9386, width_m: 1000, height_m: 600, rotation_deg: 10, table_width_cm: 80, tile_cm: 16 } }],
+      ['create_site', { site: { name: 'Harbour', lat: 57.7069, lon: 11.9386, width_m: 1000, height_m: 600, rotation_deg: 10, table_width_cm: 80, tile_cm: 16, detail: 'normal' } }],
       ['open_site', { path: '/sites/harbour', welcome: true }],
     ]);
     await fresh.close();
