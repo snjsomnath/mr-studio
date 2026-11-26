@@ -191,6 +191,7 @@ fn main() -> anyhow::Result<()> {
             identify,
             start,
             open_site,
+            open_site_read_only,
             create_site,
             present,
             stop_presenting,
@@ -618,10 +619,24 @@ fn open_launcher_at(app: &AppHandle, page: Option<&str>) -> anyhow::Result<()> {
             WebviewUrl::App(page.map_or_else(|| String::from("index.html"), |p| format!("index.html#{p}")).into()),
         )
         .title("MR Studio · Settings")
-        .inner_size(1080.0, 720.0)
+        .inner_size(launcher_size(app).0, launcher_size(app).1)
         .min_inner_size(820.0, 560.0)
         .center()
-        .build()?,
+        .build()
+        .inspect(|window| {
+            // The size it is left at is the size it opens at next time (#558).
+            let handle = app.clone();
+            let watched = window.clone();
+            window.on_window_event(move |event| {
+                if let tauri::WindowEvent::Resized(_) = event {
+                    if let (Ok(size), Ok(scale)) = (watched.inner_size(), watched.scale_factor()) {
+                        let logical = size.to_logical::<f64>(scale);
+                        let path = handle.state::<Shell>().config_dir.join("settings-window.json");
+                        let _ = std::fs::write(path, format!("{{\"width\":{:.0},\"height\":{:.0}}}", logical.width, logical.height));
+                    }
+                }
+            });
+        })?,
     };
     // A fullscreen surface may cover the display the launcher is on.
     window.set_always_on_top(is_presenting(app))?;
@@ -646,6 +661,29 @@ fn open_sources_window(app: &AppHandle) -> anyhow::Result<()> {
     window.show()?;
     window.set_focus()?;
     Ok(())
+}
+
+/// The size File › Settings opens at (#558): where it was last left, else most of the display it
+/// opens on, so the screens, Present and Calibration pages have room; never smaller than before.
+fn launcher_size(app: &AppHandle) -> (f64, f64) {
+    const DEFAULT: (f64, f64) = (1080.0, 720.0);
+    let saved = std::fs::read_to_string(app.state::<Shell>().config_dir.join("settings-window.json"))
+        .ok()
+        .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
+        .and_then(|v| Some((v.get("width")?.as_f64()?, v.get("height")?.as_f64()?)));
+    let monitor = app.primary_monitor().ok().flatten().map(|m| {
+        let size = m.size().to_logical::<f64>(m.scale_factor());
+        (size.width, size.height)
+    });
+    let fit = |(w, h): (f64, f64)| match monitor {
+        Some((mw, mh)) => (w.min(mw * 0.95).max(820.0), h.min(mh * 0.9).max(560.0)),
+        None => (w, h),
+    };
+    match (saved, monitor) {
+        (Some(size), _) => fit(size),
+        (None, Some((mw, mh))) => fit(((mw * 0.8).max(DEFAULT.0).min(1680.0), (mh * 0.85).max(DEFAULT.1).min(1100.0))),
+        (None, None) => DEFAULT,
+    }
 }
 
 fn list_displays(app: &AppHandle) -> anyhow::Result<Vec<Display>> {
@@ -1053,7 +1091,13 @@ fn open_editor(app: &AppHandle, page: &str) -> anyhow::Result<()> {
     }
     let running = shell.running.lock().clone().context("no site is open")?;
     let url: tauri::Url = format!("http://127.0.0.1:{}/{page}", running.port).parse().context("the editor's address")?;
-    let title = if page == "new" { "MR Studio · New table".to_string() } else { format!("MR Studio · {}", running.name) };
+    let title = if page == "new" {
+        "MR Studio · New table".to_string()
+    } else if page.contains("readonly=1") {
+        format!("MR Studio · {} (read-only)", running.name)
+    } else {
+        format!("MR Studio · {}", running.name)
+    };
     let stale = shell.editor_stale.swap(false, Ordering::Relaxed);
     let window = match app.get_webview_window(EDITOR) {
         Some(window) => {
@@ -1730,6 +1774,36 @@ async fn open_site(app: AppHandle, shell: State<'_, Shell>, path: PathBuf, welco
     settings.opened(&path);
     settings.write(&shell.settings_path()).map_err(text)?;
     open_editor(&app, if welcome == Some(true) { "edit?welcome=1" } else { "edit" }).map_err(text)?;
+    close_shell_pages(&app);
+    Ok(())
+}
+
+/// Opens a table read-only: a copy of it in the app's cache is opened instead, so nothing done
+/// in the editor, on the controller or on the phones is saved to the table itself. Earlier
+/// read-only copies are thrown away, except one still running. The copy keeps the table's id
+/// and calibration, so it presents on the same projector. File › Save As keeps changes as a new table.
+#[tauri::command]
+async fn open_site_read_only(app: AppHandle, shell: State<'_, Shell>, path: PathBuf) -> Result<(), String> {
+    let path = sites::canonical(path);
+    if !path.join("site.json").is_file() {
+        return Err(format!("{} is not a table folder (it has no site.json).", path.display()));
+    }
+    let root = app.path().app_cache_dir().map_err(text)?.join("read-only");
+    let running = shell.running.lock().unwrap().as_ref().map(|r| r.site.clone());
+    if let Ok(entries) = std::fs::read_dir(&root) {
+        for entry in entries.flatten() {
+            if running.as_ref().is_none_or(|r| !r.starts_with(entry.path())) {
+                let _ = std::fs::remove_dir_all(entry.path());
+            }
+        }
+    }
+    let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or_default();
+    let folder = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "table".into());
+    let copy = root.join(format!("{stamp}")).join(folder);
+    file_menu::copy_dir(&path, &copy).map_err(|e| format!("Could not make a read-only copy of the table: {e}"))?;
+    tracing::info!("opening {} read-only from {}", path.display(), copy.display());
+    ensure_running(&app, &copy, shell.settings().lan).await.map_err(text)?;
+    open_editor(&app, "edit?readonly=1").map_err(text)?;
     close_shell_pages(&app);
     Ok(())
 }

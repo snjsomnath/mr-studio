@@ -69,6 +69,33 @@ export default defineLayer<Params>({
     };
     restyle();
 
+    // The trees the wind feels (#561): faint crowns over the moving air while "Trees slow the
+    // wind" is on, so people see where and why it slows. Off, they go, and so does their drag.
+    const canopy = ctx.map.addDrawing('canopy', { resolution: 2048 });
+    const crowns = ((await readSiteGeometry(ctx.site, 'trees'))?.points ?? []).map(({ geometry: [x, y], properties }) => ({
+      x,
+      y,
+      radius: 2 + (Number(properties.height) || 8) * 0.22,
+    }));
+    const drawCanopy = () => {
+      canopy.clear();
+      if (ctx.params.trees && crowns.length) {
+        const g = canopy.ctx;
+        g.fillStyle = 'rgb(96 178 112 / 0.16)';
+        g.strokeStyle = 'rgb(150 220 160 / 0.5)';
+        g.lineWidth = Math.max(0.4, 1.2 / canopy.scale);
+        g.beginPath();
+        for (const tree of crowns) {
+          g.moveTo(tree.x + tree.radius, tree.y);
+          g.arc(tree.x, tree.y, tree.radius, 0, Math.PI * 2);
+        }
+        g.fill();
+        g.stroke();
+      }
+      canopy.commit();
+    };
+    drawCanopy();
+
     const stream = await ctx.engine.open('wind', kernelParams(ctx), ['speed', 'u', 'v'], { maxHz: FIELD_HZ });
     stream.on('speed', (frame) => {
       if (frame.max !== fieldMax) {
@@ -96,6 +123,7 @@ export default defineLayer<Params>({
       update(changed) {
         if (changed.some((key) => key === 'style' || key === 'scale' || key === 'opacity' || key === 'backdrop' || key === 'playback' || key === 'facades')) restyle();
         if (changed.some((key) => key === 'speed' || key === 'direction' || key === 'trees' || key === 'detail')) stream.set(kernelParams(ctx));
+        if (changed.includes('trees')) drawCanopy();
       },
     };
   },

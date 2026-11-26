@@ -2684,7 +2684,7 @@ dependencies = [
 
 [[package]]
 name = "mr-studio-app"
-version = "0.49.0"
+version = "0.50.0"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -2717,7 +2717,7 @@ dependencies = [
 
 [[package]]
 name = "mrs-cli"
-version = "0.49.0"
+version = "0.50.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -2732,7 +2732,7 @@ dependencies = [
 
 [[package]]
 name = "mrs-engine"
-version = "0.49.0"
+version = "0.50.0"
 dependencies = [
  "bytemuck",
  "pollster",
@@ -2745,7 +2745,7 @@ dependencies = [
 
 [[package]]
 name = "mrs-host"
-version = "0.49.0"
+version = "0.50.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -2769,7 +2769,7 @@ dependencies = [
 
 [[package]]
 name = "mrs-relay"
-version = "0.49.0"
+version = "0.50.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -2786,7 +2786,7 @@ dependencies = [
 
 [[package]]
 name = "mrs-site"
-version = "0.49.0"
+version = "0.50.0"
 dependencies = [
  "mrs-engine",
  "png",

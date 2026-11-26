@@ -386,13 +386,16 @@ export function slidesSection(host: SlidesHost, id: string): HTMLElement {
       row.classList.toggle('is-live', live?.index === n && Boolean(store.state.layers[id]?.active));
       const head = el('button', 'ed-slide-head');
       head.type = 'button';
-      head.title = item ? 'Open this slide’s settings' : 'Go to this layer';
+      head.title = item ? 'Open this slide’s settings' : 'Show this slide';
       head.append(el('span', 'ed-slide-number', String(n + 1)), icon(iconName), el('span', 'ed-slide-name', step.title || name));
       head.addEventListener('click', () => {
         // The map in the editor follows: it shows this slide.
-        if (store.state.layers[id]?.active) void host.send('layer.step', { layer: id, to: n }).catch(() => {});
+        const showSlide = () => void host.send('layer.step', { layer: id, to: n }).catch(() => {});
+        if (store.state.layers[id]?.active) showSlide();
+        else void host.send('layer.activate', { layer: id, active: true }).then(showSlide, () => {});
+        // A slide that shows a layer of the table stays in the slideshow: opening that layer on its
+        // own would close the slideshow. Its settings are one click away on the slide's own button.
         if (item) host.select(host.selected === step.layer ? null : step.layer);
-        else host.open(step.layer);
       });
       const change = (patch: Partial<SequenceStep>) => {
         const next = sequence.map((s, i) => (i === n ? { ...s, ...patch } : s));
@@ -410,6 +413,7 @@ export function slidesSection(host: SlidesHost, id: string): HTMLElement {
       up.disabled = n === 0;
       const down = small('Later', 'down', () => move(1));
       down.disabled = n === sequence.length - 1;
+      if (!item) tools.append(small('Go to this layer’s settings (closes the slideshow)', 'settings', () => host.open(step.layer)));
       tools.append(
         up,
         down,

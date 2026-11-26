@@ -27,7 +27,6 @@
   "End with every phase together": "Avsluta med alla etapper tillsammans",
   "The finale marks where every phase is": "Finalen markerar var varje etapp ligger",
   "Pointing at a phase lights it": "Att peka på en etapp lyser upp den",
-  "Place by its corners (lon,lat of top left; top right; bottom left), empty to fill the table": "Placera efter hörnen (lon,lat uppe till vänster; uppe till höger; nere till vänster), tomt fyller bordet",
   "All together": "Alla tillsammans",
   "Parts of the drawing": "Delarna i ritningen",
   "Move by what they are, when the drawing names them": "Rör sig efter vad de är, när ritningen namnger dem",
@@ -37,5 +36,6 @@
   "As it is drawn": "Som den är ritad",
   "A quarter turn clockwise": "Ett kvarts varv medurs",
   "Half a turn": "Ett halvt varv",
-  "A quarter turn anticlockwise": "Ett kvarts varv moturs"
+  "A quarter turn anticlockwise": "Ett kvarts varv moturs",
+  "Place by its corners (lon,lat of top left; top right; bottom left), empty to fit it in the table": "Placera efter hörnen (lon,lat uppe till vänster; uppe till höger; nere till vänster), tomt passar in den i bordet"
 }

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { apply, batchProgress, formatCorners, growRadius, invert, multiply, openingAt, parseCorners, parseTransform, placement, shapePath, stagedWeight, traceBucket, turnCorners } from '../src/drawing-reveal.ts';
+import { apply, batchProgress, formatCorners, growRadius, invert, multiply, openingAt, parseCorners, parseTransform, placement, shapePath, stagedWeight, traceBucket, turnCorners, fitCorners } from '../src/drawing-reveal.ts';
 
 const near = (a: number, b: number) => Math.abs(a - b) < 1e-9;
 
@@ -81,4 +81,19 @@ test('staged weights: a masterplan keeps its phases, viewpoints dim the earlier 
   assert.deepEqual([0, 1, 2].map((k) => stagedWeight(k, 0, 3, viewpoints)), [0, 0, 0]);
   assert.deepEqual([0, 1, 2].map((k) => stagedWeight(k, 2, 3, viewpoints)), [0.25, 1, 0]);
   assert.deepEqual([0, 1, 2].map((k) => stagedWeight(k, 4, 3, viewpoints)), [0.8, 0.8, 0.8]);
+});
+
+test('a drawing without corners is fitted at its own proportions, never stretched (#559)', () => {
+  const table = { width: 1250, height: 750 };
+  // A portrait drawing (Campus Vision, 1247 x 1816) shown as drawn: full height, centred across.
+  const [tl, tr, bl] = fitCorners(table, { width: 1247, height: 1816 }, 0);
+  assert.equal(bl[1] - tl[1], 750);
+  assert.ok(Math.abs((tr[0] - tl[0]) / (bl[1] - tl[1]) - 1247 / 1816) < 1e-9);
+  assert.ok(Math.abs(tl[0] - (1250 - (tr[0] - tl[0])) / 2) < 1e-9);
+  // Turned a quarter, its sides swap: 1816 across by 1247 down, fitted by width.
+  const turned = fitCorners(table, { width: 1247, height: 1816 }, 1);
+  assert.ok(Math.abs((turned[1][0] - turned[0][0]) / (turned[2][1] - turned[0][1]) - 1816 / 1247) < 1e-9);
+  // A drawing of the table's shape, or of no known size, fills the table as before.
+  assert.deepEqual(fitCorners(table, { width: 1000, height: 600 }), [[0, 0], [1250, 0], [0, 750]]);
+  assert.deepEqual(fitCorners(table, null), [[0, 0], [1250, 0], [0, 750]]);
 });

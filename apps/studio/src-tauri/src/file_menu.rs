@@ -240,7 +240,7 @@ pub fn copy_table(from: &Path, to: &Path, name: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn copy_dir(from: &Path, to: &Path) -> std::io::Result<()> {
+pub fn copy_dir(from: &Path, to: &Path) -> std::io::Result<()> {
     std::fs::create_dir_all(to)?;
     for entry in std::fs::read_dir(from)? {
         let entry = entry?;
