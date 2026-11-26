@@ -2,7 +2,7 @@
 
 What you need to work on MR Studio itself: the engine, the host, the runtime, the core layers and
 the desktop app. A team making a table for its own site does not need any of this: it starts
-from the site template ([templates/site](../templates/site)) and the
+from the [site template repository](https://github.com/snjsomnath/mr-studio-site-template) and the
 [author's guide](guide/README.md), and installs the app.
 
 To run it from source, see "Try it" in the [README](../README.md). The design is in
