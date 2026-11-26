@@ -178,7 +178,7 @@ export function trailsOnTable(ctx: TableContext<Params>, spotAt: () => [number, 
   }
 
   ctx.onFrame(() => {
-    const now = wanted() ? (nearestTrail(trails.map((t) => t.hour), ctx.params.hour) ?? -1) : -1;
+    const now = wanted() ? (nearestTrail(trails.map((t) => t.hour), ctx.clock.now() ?? ctx.params.hour) ?? -1) : -1;
     const spot = spotAt();
     const key = wanted() ? `${trails.length}|${now}|${spot?.join() ?? ''}` : '';
     if (key === drawn) return;

@@ -10,6 +10,8 @@ export interface Welcome {
   watching?: boolean;
   state: SessionState;
   manifests: LayerManifest[];
+  /** The host's clock when it said welcome, in ms since 1970 (#373). */
+  time?: number;
 }
 
 type Listener = (payload: any) => void;
@@ -49,6 +51,7 @@ export class Connection {
   private readonly role: Role;
   private readonly code: string | undefined;
   private resume: string | undefined;
+  private offset = 0;
 
   /** `resume` is a token kept from an earlier welcome, for a phone that reloaded. */
   constructor(options: { url: string; role: Role; code?: string; resume?: string }) {
@@ -56,6 +59,11 @@ export class Connection {
     this.role = options.role;
     this.code = options.code;
     this.resume = options.resume;
+  }
+
+  /** The host's time now, in ms since 1970: what a play head's `at` counts in (#373). */
+  hostNow(): number {
+    return Date.now() + this.offset;
   }
 
   /** Connects and resolves with the first welcome. Later reconnects emit `welcome`. */
@@ -81,6 +89,8 @@ export class Connection {
               this.retry = 0;
               // Reconnects present the latest token, so a brief drop returns to the same slot.
               this.resume = message.resume ?? this.resume;
+              // How far this device's clock is from the host's, for play heads (#373). A phone's may be off by minutes.
+              if (typeof message.time === 'number') this.offset = message.time - Date.now();
               if (first) {
                 first = false;
                 resolve(message);

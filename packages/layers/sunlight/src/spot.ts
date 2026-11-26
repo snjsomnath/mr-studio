@@ -96,7 +96,8 @@ export function spotOnTable(ctx: TableContext<Params>) {
   function lightNow(): number {
     if (!day) return 0;
     if (ctx.params.mode === 'day') return day.sunHours > 0 ? 1 : 0;
-    const k = Math.round((ctx.params.hour - day.start) / day.step);
+    // While the day plays, the shared play head (#373).
+    const k = Math.round(((ctx.clock.now() ?? ctx.params.hour) - day.start) / day.step);
     return day.light[Math.min(day.light.length - 1, Math.max(0, k))] ?? 0;
   }
 

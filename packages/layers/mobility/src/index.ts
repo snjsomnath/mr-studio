@@ -74,8 +74,6 @@ export default defineLayer<Params>({
     let time = (ctx.params.progress / 100) * duration;
     let held = 0;
     let sinceReport = Infinity;
-    /** Progress values this table sent, to tell its own echoes from someone scrubbing. */
-    const sent: number[] = [];
     let cellsDrawn = '';
     let routesDrawn = '';
     await load();
@@ -96,12 +94,11 @@ export default defineLayer<Params>({
         groups: trips.groups.map((g, i) => ({ label: g.label, color: groupColour(g.color), arrived: counts[i], total: trips.trips.filter((t) => t.group === i).length })),
         cells: cells ? { label: cells.label, unit: cells.unit, min: cells.min, max: cells.max, step: cells.steps[step()] } : null,
       });
-      const progress = Math.round(((time / duration) * 100) / PROGRESS_STEP) * PROGRESS_STEP;
-      if (ctx.params.play && progress !== ctx.params.progress && !sent.includes(progress)) {
-        sent.push(progress);
-        if (sent.length > 8) sent.shift();
-        ctx.setParams({ progress });
-      }
+    }
+
+    /** The shared play head (#373): the runtime sends it on only when the other views could not work it out. */
+    function syncClock(): void {
+      ctx.clock.set((time / duration) * 100, ctx.params.play && time < duration ? (Number(ctx.params.speed) * 100) / duration : 0);
     }
 
     function drawCells(): void {
@@ -209,6 +206,7 @@ export default defineLayer<Params>({
       }
       sinceReport += dt;
       if (sinceReport >= REPORT_S) report();
+      syncClock();
 
       // The static canvases are redrawn only when what they show changes.
       const cellsKey = `${cellCanvas.revision}:${step()}:${ctx.params.cells}`;
@@ -237,17 +235,17 @@ export default defineLayer<Params>({
             .catch((error: unknown) => console.error('mobility: could not read its datasets', error));
         }
         if (changed.includes('opacity')) for (const canvas of [cellCanvas, routeCanvas, tripCanvas]) canvas.setOpacity(ctx.params.opacity);
-        if (changed.includes('progress')) {
-          const mine = sent.indexOf(ctx.params.progress);
-          if (mine >= 0) sent.splice(0, mine + 1);
-          else {
-            // Someone moved the time: follow them.
-            time = (ctx.params.progress / 100) * duration;
-            held = 0;
-            sent.length = 0;
-          }
+        // Someone moved the time: follow them. The time this table stopped at comes back as the
+        // same progress, which it is already at.
+        if (changed.includes('progress') && Math.abs(ctx.params.progress - (time / duration) * 100) >= PROGRESS_STEP) {
+          time = (ctx.params.progress / 100) * duration;
+          held = 0;
         }
-        if (changed.includes('play') && ctx.params.play && time >= duration) time = 0;
+        if (changed.includes('play')) {
+          if (ctx.params.play && time >= duration) time = 0;
+          // Stopped: the slider keeps the time it stopped at.
+          if (!ctx.params.play) ctx.setParams({ progress: Math.round(((time / duration) * 100) / PROGRESS_STEP) * PROGRESS_STEP });
+        }
         sinceReport = Infinity;
       },
     };

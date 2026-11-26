@@ -150,7 +150,8 @@ export function sunlightHero(ctx: PanelContext<Params>, el: HTMLElement): PanelH
     const golden = ctx.params.mode === 'golden';
     const golds = goldenWindows(day);
     const goldNow = golds[ctx.params.golden === 'morning' ? 'morning' : 'evening'];
-    const hour = dragged ?? ctx.params.hour;
+    // While the day plays, the shared play head (#373) moves the sun between the table's updates.
+    const hour = dragged ?? ctx.clock.now() ?? ctx.params.hour;
     const now = sunAt(ctx.site, ctx.params.date, hour);
     const { x } = scale();
     const bandH = BAND_REM * rem;
@@ -318,7 +319,7 @@ export function sunlightHero(ctx: PanelContext<Params>, el: HTMLElement): PanelH
     const step = { ArrowLeft: -0.25, ArrowRight: 0.25, PageDown: -1, PageUp: 1 }[event.key];
     if (step === undefined || !atMoment(ctx.params.mode)) return;
     event.preventDefault();
-    ctx.setParams({ hour: Math.min(24, Math.max(0, ctx.params.hour + step)) });
+    ctx.setParams({ hour: Math.min(24, Math.max(0, (ctx.clock.now() ?? ctx.params.hour) + step)) });
   });
   play.addEventListener('click', () => ctx.setParams({ play: !ctx.params.play }));
 

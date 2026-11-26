@@ -25,8 +25,8 @@ export function mobilityHero(ctx: PanelContext<Params>, el: HTMLElement): PanelH
       min: 0,
       max: 100,
       step: 0.5,
-      // While playing, the table's clock is finer than the progress it reports.
-      value: () => (ctx.params.play && duration() > 0 && ctx.shared.seconds !== undefined ? (Number(ctx.shared.seconds) / duration()) * 100 : ctx.params.progress),
+      // While playing, the shared play head (#373) moves between the table's reports.
+      value: () => (ctx.params.play ? (ctx.clock.now() ?? ctx.params.progress) : ctx.params.progress),
       set: (progress) => ctx.setParams({ progress, play: false }),
       ticks: [0, 25, 50, 75, 100],
       tick: (progress) => {
