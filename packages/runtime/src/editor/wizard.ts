@@ -7,7 +7,7 @@ import { icon } from './icons.ts';
 import { FetchAll } from './fetch-all.ts';
 import { Importer, TARGETS, targetFor } from './importer.ts';
 import { ModelImporter } from './model-import.ts';
-import { ScaleFields } from './place-scale.ts';
+import { type Detail, detailOf, ScaleFields } from './place-scale.ts';
 import { PlaceMap } from './place-map.ts';
 import type { Placement } from './place-map.ts';
 import { parsePlace } from './place.ts';
@@ -127,7 +127,7 @@ export class Wizard {
   /** The row of "Your place" that a layer needing data sent the author to. */
   private wanted: string | null = null;
   /** The "Name and place" form as the author left it, kept across redraws. */
-  private where: { name: string; centre: string; width: string; height: string; rotation: string; table: string; tile: string } | null = null;
+  private where: { name: string; centre: string; width: string; height: string; rotation: string; table: string; tile: string; detail: Detail } | null = null;
   private scaleFields: ScaleFields | null = null;
   /** The map in "Name and place", made once: it keeps its view across redraws. */
   private placeMap: PlaceMap | null = null;
@@ -359,7 +359,7 @@ export class Wizard {
   })();
 
   /** The site's name and place as the form would write them. */
-  private placeValues(): { name: string; centre: string; width: string; height: string; rotation: string; table: string; tile: string } {
+  private placeValues(): { name: string; centre: string; width: string; height: string; rotation: string; table: string; tile: string; detail: Detail } {
     const { site } = this.host.store.state;
     return (
       this.where ?? {
@@ -370,6 +370,7 @@ export class Wizard {
         rotation: String(Math.round(site.extent.rotation_deg ?? 0)),
         table: String(site.table?.width_cm ?? 100),
         tile: String(site.table?.tile_cm ?? ''),
+        detail: detailOf(site.extent.width_m, site.extent.height_m, site.grid.cell_m),
       }
     );
   }
@@ -387,7 +388,8 @@ export class Wizard {
       Number(this.where.height) !== Math.round(site.extent.height_m) ||
       turn(Number(this.where.rotation)) !== turn(Math.round(site.extent.rotation_deg ?? 0)) ||
       Number(this.where.table) !== (site.table?.width_cm ?? 100) ||
-      Number(this.where.tile || 0) !== (site.table?.tile_cm ?? 0)
+      Number(this.where.tile || 0) !== (site.table?.tile_cm ?? 0) ||
+      this.where.detail !== detailOf(site.extent.width_m, site.extent.height_m, site.grid.cell_m)
     );
   }
 
@@ -418,10 +420,10 @@ export class Wizard {
     this.scaleFields = new ScaleFields(
       () => {
         const v = this.placeValues();
-        return { width_m: Number(v.width), height_m: Number(v.height), table_cm: Number(v.table), tile_cm: v.tile ? Number(v.tile) : null };
+        return { width_m: Number(v.width), height_m: Number(v.height), table_cm: Number(v.table), tile_cm: v.tile ? Number(v.tile) : null, detail: v.detail };
       },
       (ground) => {
-        this.where = { ...this.placeValues(), width: String(ground.width_m), height: String(ground.height_m), table: String(ground.table_cm), tile: ground.tile_cm ? String(ground.tile_cm) : '' };
+        this.where = { ...this.placeValues(), width: String(ground.width_m), height: String(ground.height_m), table: String(ground.table_cm), tile: ground.tile_cm ? String(ground.tile_cm) : '', detail: ground.detail ?? this.placeValues().detail };
         for (const key of ['width', 'height'] as const) {
           const field = this.element.querySelector<HTMLInputElement>(`.wz-form input[name="${key}"]`);
           if (field) field.value = this.where[key];
@@ -543,11 +545,14 @@ export class Wizard {
     this.moving = true;
     say('');
     this.host.resumeAt(next);
+    // The detail goes only when it was changed, so a cell set by hand survives a new name.
+    const now = this.host.store.state.site;
+    const was = detailOf(now.extent.width_m, now.extent.height_m, now.grid.cell_m);
     try {
       const response = await fetch('/api/site/place', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: values.name.trim(), origin: { lat: at.lat, lon: at.lon }, extent: { width_m, height_m, rotation_deg }, table_width_cm: Number(values.table), tile_cm: values.tile ? Number(values.tile) : 0 }),
+        body: JSON.stringify({ name: values.name.trim(), origin: { lat: at.lat, lon: at.lon }, extent: { width_m, height_m, rotation_deg }, table_width_cm: Number(values.table), tile_cm: values.tile ? Number(values.tile) : 0, ...(values.detail !== was ? { detail: values.detail } : {}) }),
       });
       if (!response.ok) {
         const answer = await response.json().catch(() => null);

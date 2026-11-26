@@ -4,6 +4,7 @@
 mod bake;
 pub mod create;
 mod crs;
+pub mod detail;
 pub mod elevation;
 pub mod field;
 mod geotiff;
@@ -79,6 +80,10 @@ pub struct Place {
     /// table is not printed in tiles.
     #[serde(default)]
     pub tile_cm: Option<f64>,
+    /// How fine the analysis grid is (#513): `None` keeps the table's choice. The cell size
+    /// follows the ground at that detail whenever the ground changes size.
+    #[serde(default)]
+    pub detail: Option<detail::Detail>,
 }
 
 /// What surfaces need to know about the site.
@@ -176,7 +181,11 @@ impl Site {
         } else {
             let cells = (m.extent.width_m / m.scene.cell_m) * (m.extent.height_m / m.scene.cell_m);
             if cells > 64e6 {
-                out.push(format!("scene grid would have {:.0} million cells; raise scene.cell_m", cells / 1e6));
+                out.push(format!(
+                    "the ground would be worked out on {:.0} million squares of {} m, more than a computer holds; choose a coarser Analysis detail in Name and place (scene.cell_m in site.json), or show less ground",
+                    cells / 1e6,
+                    m.scene.cell_m
+                ));
             }
         }
         if let Some(table) = &m.table {
@@ -718,6 +727,15 @@ impl Site {
             || m.extent.width_m != width_m
             || m.extent.height_m != height_m
             || m.extent.rotation_deg != rotation_deg;
+        // The analysis grid follows the ground (#513): a resized table keeps its detail, not its cell.
+        let resized = m.extent.width_m != width_m || m.extent.height_m != height_m;
+        let cell_m = if resized || place.detail.is_some() {
+            let level = place.detail.unwrap_or_else(|| detail::detail_of(m.extent.width_m, m.extent.height_m, m.scene.cell_m));
+            detail::cell_for(width_m, height_m, level)
+        } else {
+            m.scene.cell_m
+        };
+        let moved = moved || cell_m != m.scene.cell_m;
         let raw_terrain = m.scene.terrain.as_ref().is_some_and(|t| {
             let path = t.path.to_ascii_lowercase();
             !(path.ends_with(".tif") || path.ends_with(".tiff"))
@@ -739,6 +757,10 @@ impl Site {
         }
         value["origin"] = serde_json::json!({ "lon": lon, "lat": lat });
         value["extent"] = serde_json::json!({ "width_m": width_m, "height_m": height_m, "rotation_deg": rotation_deg });
+        if cell_m != m.scene.cell_m {
+            // A whole number of metres is written as one.
+            value["scene"]["cell_m"] = if cell_m.fract() == 0.0 { (cell_m as u64).into() } else { cell_m.into() };
+        }
         // The physical table keeps its width unless a new one is given; its height follows the ground's shape.
         if let Some(width_cm) = place.table_width_cm {
             if !value["table"].is_object() {

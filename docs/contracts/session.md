@@ -286,10 +286,10 @@ How it asks (#424): the main server `overpass-api.de`, then the mirror `overpass
 ## Moving or renaming a table
 
 ```
-POST /api/site/place   { "name"?: "Harbour", "origin": { "lon": 11.97, "lat": 57.70 }, "extent": { "width_m": 1000, "height_m": 600, "rotation_deg": 0 }, "table_width_cm"?: 100 }
+POST /api/site/place   { "name"?: "Harbour", "origin": { "lon": 11.97, "lat": 57.70 }, "extent": { "width_m": 1000, "height_m": 600, "rotation_deg": 0 }, "table_width_cm"?: 100, "detail"?: "fine" | "normal" | "coarse" }
 ```
 
-Loopback only, like the data requests. It rewrites `name` (left out: kept), `origin` and `extent` of `site.json`, the table's `width_cm` when `table_width_cm` is given (10 cm to 20 m; it sets the model scale, 1 : `width_m` × 100 / `width_cm`), and the table's `height_cm` so its shape follows, then re-bakes the scene for the ground the table now covers, closes every engine stream and sends `site.changed`; surfaces reload. Data brought in stays where it is in the world. Answers `{ "site": <SiteInfo> }`, or 422 `{ "error" }` with the reason: a name over 60 characters, a place off the map, a side under 10 m or over 50 km, or a table whose ground is a raw height grid (`terrain.f32`), which is made for one extent and cannot move (a GeoTIFF can). The setup guide's "Name and place" step uses it.
+Loopback only, like the data requests. It rewrites `name` (left out: kept), `origin` and `extent` of `site.json`, the table's `width_cm` when `table_width_cm` is given (10 cm to 20 m; it sets the model scale, 1 : `width_m` × 100 / `width_cm`), the table's `height_cm` so its shape follows, and `scene.cell_m` when the ground changed size or `detail` is given (#513; the analysis grid follows the ground, see site.md), then re-bakes the scene for the ground the table now covers, closes every engine stream and sends `site.changed`; surfaces reload. Data brought in stays where it is in the world. Answers `{ "site": <SiteInfo> }`, or 422 `{ "error" }` with the reason: a name over 60 characters, a place off the map, a side under 10 m or over 50 km, or a table whose ground is a raw height grid (`terrain.f32`), which is made for one extent and cannot move (a GeoTIFF can). The setup guide's "Name and place" step uses it.
 
 ## A picture of the table for Home
 

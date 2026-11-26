@@ -9,6 +9,42 @@ export interface Ground {
   table_cm: number;
   /** The side of one square 3D-printed tile, or null when the table is not printed in tiles. */
   tile_cm?: number | null;
+  /** How fine the analysis grid is (#513); left out, the table's own choice. */
+  detail?: Detail;
+}
+
+/** How fine the grid is that sun, wind and shade are worked out on (#513). */
+export type Detail = 'fine' | 'normal' | 'coarse';
+
+/** The side of one square of that grid, in metres. The same rule as `mrs_site::detail`: about two million squares at normal. */
+export function cellFor(width_m: number, height_m: number, detail: Detail): number {
+  const area = width_m * height_m;
+  const normal = area > 2_000_000 ? Math.ceil(Math.sqrt(area / 2_000_000)) : 1;
+  return detail === 'fine' ? normal / 2 : detail === 'coarse' ? normal * 2 : normal;
+}
+
+/** The detail a table has now, from its cell and its ground. */
+export function detailOf(width_m: number, height_m: number, cell_m: number): Detail {
+  const ratio = cell_m / cellFor(width_m, height_m, 'normal');
+  return ratio < 0.75 ? 'fine' : ratio > 1.5 ? 'coarse' : 'normal';
+}
+
+const DETAILS: Array<[Detail, string]> = [
+  ['fine', 'Fine'],
+  ['normal', 'Normal'],
+  ['coarse', 'Coarse'],
+];
+
+/** "Sun, wind and shade are worked out on squares of 3 m, 1.1 million of them." and what the choice costs. */
+export function detailWords(ground: Ground): string {
+  const { width_m, height_m } = ground;
+  if (!(width_m > 0 && height_m > 0)) return '';
+  const detail = ground.detail ?? 'normal';
+  const cell = cellFor(width_m, height_m, detail);
+  const squares = Math.round(width_m / cell) * Math.round(height_m / cell);
+  const count = squares >= 1e6 ? `${format(Math.round(squares / 1e5) / 10)} million` : format(Math.round(squares / 1000) * 1000);
+  const cost = detail === 'fine' ? ' Fine is sharper, and about four times slower than Normal.' : detail === 'coarse' ? ' Coarse is blockier, and about four times faster than Normal.' : '';
+  return `Sun, wind and shade are worked out on squares of ${format(cell)} m, ${count} of them.${cost}`;
 }
 
 const format = (n: number) => (Number.isInteger(n) ? n.toLocaleString('en-GB').replace(/,/g, ' ') : n.toLocaleString('en-GB', { maximumFractionDigits: 1 }));
@@ -64,6 +100,8 @@ export class ScaleFields {
   private readonly tile = el('input');
   private readonly tileRow = el('div', 'wz-tiles');
   private readonly tileWords = el('p', 'wz-hint');
+  private readonly detail = el('select');
+  private readonly detailHint = el('small');
   private readonly get: () => Ground;
   private readonly set: (ground: Ground) => void;
   private readonly onTiles: (tile_m: number | null) => void;
@@ -105,7 +143,19 @@ export class ScaleFields {
     const toggle = el('label', 'wz-check');
     toggle.append(this.tiled, el('span', undefined, 'Show 3D-printing tiles'));
     this.tileRow.append(field('Tile size, cm', this.tile, 'Square tiles, edge to edge.'), this.tileWords);
-    this.element.append(pair, scaleRow, this.words, toggle, this.tileRow);
+    this.detail.name = 'detail';
+    for (const [value, label] of DETAILS) {
+      const option = el('option', undefined, label);
+      option.value = value;
+      this.detail.append(option);
+    }
+    const detailRow = el('label', 'wz-field wz-detail');
+    detailRow.append(el('span', undefined, 'Analysis detail'), this.detail, this.detailHint);
+    this.detail.addEventListener('change', () => {
+      this.set({ ...this.get(), detail: this.detail.value as Detail });
+      this.refresh();
+    });
+    this.element.append(pair, scaleRow, this.words, toggle, this.tileRow, detailRow);
 
     this.table.addEventListener('input', () => {
       const table_cm = Number(this.table.value);
@@ -175,6 +225,8 @@ export class ScaleFields {
     this.tileWords.textContent = tile
       ? (problem ?? `${format(Math.round(ground.table_cm / tile))} × ${format(Math.round(tableHeight(ground) / tile))} tiles, ${format(Math.round(ground.table_cm / tile) * Math.round(tableHeight(ground) / tile))} to print.`)
       : '';
+    this.detail.value = ground.detail ?? 'normal';
+    this.detailHint.textContent = detailWords(ground);
     this.onTiles(tile && ground.table_cm > 0 ? (tile * ground.width_m) / ground.table_cm : null);
   }
 

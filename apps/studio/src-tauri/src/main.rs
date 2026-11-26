@@ -1770,6 +1770,9 @@ struct NewSite {
     /// The side of a square 3D-printed tile in centimetres; left out or 0, no tiles.
     #[serde(default)]
     tile_cm: Option<f64>,
+    /// How fine the analysis grid is (#513); left out, normal.
+    #[serde(default)]
+    detail: Option<mrs_site::detail::Detail>,
 }
 
 /// Makes an empty site in the sites folder and returns where. The caller opens it.
@@ -1790,6 +1793,7 @@ fn create_site(shell: State<'_, Shell>, site: NewSite) -> Result<PathBuf, String
             extent: mrs_site::Extent { width_m: site.width_m, height_m: site.height_m, rotation_deg: site.rotation_deg },
             table_width_cm: Some(width_cm),
             tile_cm: site.tile_cm,
+            detail: site.detail,
         };
         let sized = mrs_site::Site::load(&dir).and_then(|made| made.place(&place));
         if let Err(error) = sized {
