@@ -74,6 +74,8 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm -r typecheck
+      - name: The layer template type-checks on its own, with the SDK types the app ships (#508)
+        run: pnpm --filter @mrstudio/sdk types:check
       # Promises nobody awaits or catches (#264): how errors went missing before #259 and #260.
       - run: pnpm lint
       # Every package with tests, including the density budget: every panel and theme in the repo is checked against the dashboard rules.

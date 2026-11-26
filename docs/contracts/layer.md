@@ -575,6 +575,7 @@ sites/lindholmen/layers/energy-flows/
   `ctx.publish` and a custom panel.
 - `mrstudio layer build [id] --site <site> [--watch]` bundles each package with esbuild (it runs `npm install` the
   first time). Building needs Node 20 or newer on the developer's computer; running needs nothing.
+- Both commands write `types/mrstudio-sdk.d.ts` into the package: every declaration of `@mrstudio/sdk` as the installed app has it (#508). The package's `tsconfig.json` includes it, so an editor completes and checks `ctx` calls, and `npm run typecheck` (`tsc`) checks the layer, in a repository that holds nothing of MR Studio. The SDK is not on npm; its code comes from the app that loads the layer. In this repository the file is generated from `packages/sdk` (`pnpm --filter @mrstudio/sdk types`), and CI fails when it is out of date or when the template does not type-check on its own.
 - `@mrstudio/sdk` is not bundled: the build turns its imports into reads of `globalThis.MRStudio.sdk`, the SDK of
   the app the layer runs in. A layer therefore always runs against the app's SDK, and `api` in layer.json says
   which contract it was written for; the app refuses a layer of another `api`.

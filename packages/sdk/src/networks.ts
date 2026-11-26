@@ -33,7 +33,7 @@ import { paletteColour, paletteHex } from './palette.ts';
 import type { ResolvedPalette } from './palette.ts';
 import type { LegendItem } from './types.ts';
 
-type Row = Record<string, unknown>;
+type NetworkRow = Record<string, unknown>;
 
 /** The props of a `network` motion block, on a points look (the nodes). */
 export interface NetworkProps {
@@ -156,14 +156,14 @@ export interface NetworkInputs {
   /** Links as lines (with from/to properties). */
   linkShapes?: Shapes | null;
   /** Links as a table. */
-  linkRows?: Row[] | null;
-  series?: Row[] | null;
+  linkRows?: NetworkRow[] | null;
+  series?: NetworkRow[] | null;
   /** Streets that links without a line follow. */
   streets?: Shapes | null;
 }
 
 const lower = (keys: Iterable<string>) => new Map([...keys].map((k) => [k.toLowerCase(), k]));
-function findKey(row: Row | undefined, names: readonly string[]): string | null {
+function findKey(row: NetworkRow | undefined, names: readonly string[]): string | null {
   const keys = lower(Object.keys(row ?? {}));
   for (const name of names) {
     const hit = keys.get(name);
@@ -200,7 +200,7 @@ function stepTime(value: string): number {
 
 /** The id of a node: its `id` column, else its `name`, else its position in the file. */
 export function nodeId(spot: Pick<Spot, 'properties'>, index: number): string {
-  const p = (spot.properties ?? {}) as Row;
+  const p = (spot.properties ?? {}) as NetworkRow;
   const key = findKey(p, ['id', 'node', 'name']);
   const value = key ? text(p[key]) : '';
   return value || String(index);
@@ -214,7 +214,7 @@ export function networkData(spots: readonly Spot[], inputs: NetworkInputs, props
   const o = { ...NETWORK_DEFAULTS, ...props };
   const problems: string[] = [];
   const nodes: NetworkNode[] = spots.map((spot, i) => {
-    const p = (spot.properties ?? {}) as Row;
+    const p = (spot.properties ?? {}) as NetworkRow;
     const kindKey = findKey(p, ['kind', 'type', 'category']);
     return { id: nodeId(spot, i), kind: kindKey ? text(p[kindKey]) || null : null, point: spot.point, gauge: null };
   });
@@ -228,7 +228,7 @@ export function networkData(spots: readonly Spot[], inputs: NetworkInputs, props
   type Raw = { id: string; from: string; to: string; line: MeasuredPath | null; value: number | null; values: number[] | null };
   const raw: Raw[] = [];
   for (const path of inputs.linkShapes?.paths ?? []) {
-    const p = (path.properties ?? {}) as Row;
+    const p = (path.properties ?? {}) as NetworkRow;
     const fromKey = findKey(p, ['from', 'source', 'start']);
     const toKey = findKey(p, ['to', 'target', 'end']);
     const idKey = findKey(p, ['id', 'link', 'name']);
@@ -304,7 +304,7 @@ export function networkData(spots: readonly Spot[], inputs: NetworkInputs, props
   const series = inputs.series ?? [];
   if (series.length > 0) {
     // Columns from the first rows together, so a row that leaves a column out still counts.
-    const first: Row = Object.assign({}, ...series.slice(0, 50));
+    const first: NetworkRow = Object.assign({}, ...series.slice(0, 50));
     const timeKey = findKey(first, ['time', 'hour', 'step', 't', 'date', 'datetime', 'timestamp']);
     const idKey = findKey(first, ['id', 'node', 'link', 'name', 'place']);
     const sFrom = findKey(first, ['from', 'source']);

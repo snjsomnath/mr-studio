@@ -114,7 +114,7 @@ What a team installs:
 | --- | --- | --- |
 | MR Studio app | Signed installer for Windows and macOS, with built-in update | Running a table. Contains the engine, host, runtime and core layers |
 | `mrstudio` CLI | Ships inside the app; **Install command line tool** in the app puts it on the PATH (#370); also `cargo install` | Creating, validating and previewing sites and layers |
-| `@mrstudio/sdk` | npm package | Writing custom layers and TV widgets |
+| `@mrstudio/sdk` | Inside the app: the code is supplied when a layer loads, and its types are written into each layer package (`types/mrstudio-sdk.d.ts`, #508). Not on npm | Writing custom layers and TV widgets |
 | MR Studio MCP server | One file inside the app, also npm `@mrstudio/mcp` | Building a site by talking to an LLM ([MCP.md](MCP.md)) |
 
 What a team owns: a site repository made from the [site template repository](https://github.com/snjsomnath/mr-studio-site-template) (#86; `mrstudio new-site` makes the same `site.json`). Its source is `templates/site` in this repository, which a test opens and validates; a change there is copied to the template repository, and the template's check installs the app version the table names in `mrstudio.version`, or `MRSTUDIO_VERSION` for a table that names none.
@@ -135,7 +135,7 @@ A venue can pin a version, so a table does not change the day before an exhibiti
 A custom layer that proves useful to more than one team moves into the core through a pull request, and from then on reaches everyone through an app update.
 When a site needs a layer, block, kernel or setting the core lacks, the team files a module request (an issue from `.github/ISSUE_TEMPLATE/module-request.yml`, which the MCP server drafts) rather than writing its own copy.
 
-Built so far: releases from a version tag, the in-app update check with release notes and breaking changes, in-place install from signed files, and the site format migration pipeline; see [RELEASING.md](RELEASING.md). Not built: channels and pinning, operating system code signing, npm publishing and the site template.
+Built so far: releases from a version tag, the in-app update check with release notes and breaking changes, in-place install from signed files, and the site format migration pipeline; see [RELEASING.md](RELEASING.md). Not built: channels and pinning, operating system code signing and npm publishing of the SDK (a layer package gets the SDK's types from the app instead, #508).
 
 ## Work packages
 
