@@ -255,6 +255,29 @@ pub struct SceneSpec {
     /// Water: a river, a lake, the sea (#343). Cool ground for thermal comfort, and a sink for stormwater.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub water: Option<Water>,
+    /// Buildings around the table that only shape the wind (#488): footprints reaching past the
+    /// table's edge. Nothing draws them.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context: Option<WindContext>,
+}
+
+/// Footprints around the table, for the wind kernel only (#488).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WindContext {
+    /// GeoJSON footprints. Those inside the table are left to `buildings`.
+    pub path: String,
+    /// How far past the table's edge they count, in metres.
+    #[serde(default = "default_context_reach")]
+    pub reach_m: f64,
+}
+
+/// The Universeum CFD's 500 m (`windContextMetres`).
+pub const CONTEXT_REACH_M: f64 = 500.0;
+/// The widest ring the scene takes, so a mistyped reach cannot ask for a huge mask.
+pub const CONTEXT_REACH_MAX_M: f64 = 2000.0;
+fn default_context_reach() -> f64 {
+    CONTEXT_REACH_M
 }
 
 /// Where the water is: GeoJSON polygons, or a GeoTIFF mask (cells above 0.5 are water).

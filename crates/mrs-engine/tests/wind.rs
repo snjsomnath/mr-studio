@@ -2,7 +2,7 @@
 
 use std::time::Duration;
 
-use mrs_engine::{testing, Backend, Engine, EngineConfig, EngineError, Field, Grid, JobId, JobState, JobStatus, SceneData};
+use mrs_engine::{testing, Backend, ContextRing, Engine, EngineConfig, EngineError, Field, Grid, JobId, JobState, JobStatus, SceneData};
 use serde_json::{json, Value};
 
 fn engine(backend: Backend, scene: SceneData) -> Option<Engine> {
@@ -144,6 +144,34 @@ fn air_stops_at_a_building_speeds_up_beside_it_and_leaves_a_wake() {
         let (above, below) = (at(&speed, col, 20), at(&speed, col, 59));
         assert!(close(above, below, 0.02 * above.max(1.0)), "column {col}: {above} vs {below}");
     }
+}
+
+#[test]
+fn buildings_around_the_table_shape_the_wind_that_reaches_it() {
+    // A row of buildings 20 to 60 m west of a 240 m by 160 m table, only in the context ring (#488).
+    let mut scene = flat(120, 80, 2.0, 0.0);
+    let margin = 40u32;
+    let width = 120 + 2 * margin as usize;
+    let mut solid = vec![0u8; ContextRing::len_for(&scene.grid, margin)];
+    for row in 30..50 {
+        for col in -30i64..-10 {
+            solid[(row + margin as usize) * width + (col + margin as i64) as usize] = 1;
+        }
+    }
+    scene.context = Some(ContextRing { margin, solid });
+    let mut engine = engine(Backend::Cpu, scene).unwrap();
+    let job = engine.create_job("wind", &json!({ "speed": 5, "direction_deg": 270, "resolution": 120 })).unwrap();
+    run(&mut engine, job, 4000);
+    let speed = engine.read_field(job, "speed").unwrap();
+    // Nothing is drawn on the table, but its west edge is in the buildings' wake.
+    assert!(at(&speed, 3, 40) < 3.0, "the wind arrives slowed behind the buildings, got {}", at(&speed, 3, 40));
+    assert!(at(&speed, 3, 5) > 4.0, "beside them it arrives free, got {}", at(&speed, 3, 5));
+
+    // The same wind from the east never passes them.
+    let job = engine.create_job("wind", &json!({ "speed": 5, "direction_deg": 90, "resolution": 120 })).unwrap();
+    run(&mut engine, job, 4000);
+    let speed = engine.read_field(job, "speed").unwrap();
+    assert!(at(&speed, 116, 40) > 4.0, "from the east the wind arrives free, got {}", at(&speed, 116, 40));
 }
 
 #[test]

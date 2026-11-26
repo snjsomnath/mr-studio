@@ -15,12 +15,38 @@ pub struct SceneData {
     pub canopy: Vec<f32>,
     /// 1 where the ground is water (a river, a lake, the sea), else 0 (#343).
     pub water: Vec<u8>,
+    /// Buildings around the table that only shape the wind (#488). Nothing draws them.
+    pub context: Option<ContextRing>,
 }
 
 impl SceneData {
     pub fn flat(grid: Grid) -> Self {
         let n = grid.len();
-        Self { grid, dtm: vec![0.0; n], dsm: vec![0.0; n], canopy: vec![0.0; n], water: vec![0; n] }
+        Self { grid, dtm: vec![0.0; n], dsm: vec![0.0; n], canopy: vec![0.0; n], water: vec![0; n], context: None }
+    }
+}
+
+/// Buildings in a ring around the table (#488): a mask over the grid grown by `margin` cells on
+/// every side, at the grid's cell size and turn. Row-major, `(width + 2 margin)` by `(height + 2 margin)`.
+/// The wind kernel puts them in its padding, so wind reaching the table has passed real buildings.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ContextRing {
+    pub margin: u32,
+    /// 1 where a building stands. Cells inside the table itself are ignored: the scene has those.
+    pub solid: Vec<u8>,
+}
+
+impl ContextRing {
+    pub fn len_for(grid: &Grid, margin: u32) -> usize {
+        (grid.width as usize + 2 * margin as usize) * (grid.height as usize + 2 * margin as usize)
+    }
+
+    /// Whether a grid cell, which may lie outside the grid by up to `margin`, holds a building.
+    pub fn is_solid(&self, grid: &Grid, col: i64, row: i64) -> bool {
+        let m = self.margin as i64;
+        let (width, height) = (grid.width as i64 + 2 * m, grid.height as i64 + 2 * m);
+        let (x, y) = (col + m, row + m);
+        x >= 0 && y >= 0 && x < width && y < height && self.solid[(y * width + x) as usize] != 0
     }
 }
 
@@ -38,6 +64,8 @@ pub struct Scene {
     pub canopy: Vec<f32>,
     /// 1 where the ground is water.
     pub water: Vec<u8>,
+    /// Buildings around the table, for the wind only (#488).
+    pub context: Option<ContextRing>,
     /// Highest point of the top surface or canopy.
     pub max_height: f32,
     /// Lowest point of the top surface.
@@ -63,6 +91,12 @@ impl Scene {
         if data.water.len() != n {
             return Err(EngineError::InvalidScene(format!("water has {} values, grid has {n}", data.water.len())));
         }
+        if let Some(ring) = &data.context {
+            let want = ContextRing::len_for(&data.grid, ring.margin);
+            if ring.solid.len() != want {
+                return Err(EngineError::InvalidScene(format!("context has {} values, its ring needs {want}", ring.solid.len())));
+            }
+        }
         let (mut max_height, mut min_height) = (f32::MIN, f32::MAX);
         for i in 0..n {
             max_height = max_height.max(data.dsm[i]).max(data.dtm[i] + data.canopy[i]);
@@ -79,6 +113,7 @@ impl Scene {
             dsm: data.dsm,
             canopy: data.canopy,
             water: data.water,
+            context: data.context,
             max_height,
             min_height,
             revision,

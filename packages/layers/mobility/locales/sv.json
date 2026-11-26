@@ -13,5 +13,11 @@
   "Opacity": "Opacitet",
   "Time of the trips": "Resornas tid",
   "{at} of {all}": "{at} av {all}",
-  "Trips under way": "Resor pågår"
+  "Trips under way": "Resor pågår",
+  "Trips from": "Resor från",
+  "Map of values from": "Värdekarta från",
+  "No trips": "Inga resor",
+  "No map of values": "Ingen värdekarta",
+  "Steps of the map": "Kartans steg",
+  "Step {at} of {all}": "Steg {at} av {all}"
 }

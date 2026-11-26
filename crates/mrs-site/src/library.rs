@@ -69,6 +69,9 @@ pub fn list(site: &Site) -> Vec<Item> {
     if let Some(w) = &scene.water {
         named.push(("water".into(), w.path.clone()));
     }
+    if let Some(c) = &scene.context {
+        named.push(("context".into(), c.path.clone()));
+    }
     for (name, path) in &site.manifest.data {
         if !named.iter().any(|(n, _)| n == name) {
             named.push((name.clone(), path.clone()));

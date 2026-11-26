@@ -3,10 +3,9 @@
   "id": "mobility",
   "name": "Mobility",
   "description": "People on the move: trips played over time, and a map of how travel differs from place to place",
-  "about": {"purpose": "Shows how people move over a day and where travel differs, from trip data.", "questions": ["When and where are people on the move?", "Which parts of the site are hard to reach?"], "pairs_with": ["transit", "cars", "street-life"], "limits": ["Needs a trips dataset"]},
+  "about": {"purpose": "Shows how people move over a day and where travel differs, from trip data.", "questions": ["When and where are people on the move?", "Which parts of the site are hard to reach?"], "pairs_with": ["transit", "cars", "street-life"], "limits": ["Needs a trips dataset or a map of values"]},
   "icon": "route",
   "attract": { "effect": "particles" },
-  "requires": { "data": ["trips"] },
   "controls": [
     { "id": "play", "type": "toggle", "clock": "play", "label": "Play", "default": true, "phone": true, "tier": "more" },
     { "id": "progress", "type": "range", "clock": "progress", "label": "Time", "min": 0, "max": 100, "step": 0.5, "unit": "%", "default": 0, "phone": true, "tier": "more" },
@@ -21,7 +20,9 @@
     { "id": "trips", "type": "toggle", "label": "Show trips", "default": true },
     { "id": "routes", "type": "toggle", "label": "Show their routes", "default": true, "visibleWhen": { "trips": true }, "tier": "more" },
     { "id": "cells", "type": "toggle", "label": "Show the map of values", "default": true, "tier": "more" },
-    { "id": "opacity", "type": "range", "label": "Opacity", "min": 0.1, "max": 1, "step": 0.05, "default": 1, "tier": "more" }
+    { "id": "opacity", "type": "range", "label": "Opacity", "min": 0.1, "max": 1, "step": 0.05, "default": 1, "tier": "more" },
+    { "id": "tripsData", "type": "text", "label": "Trips from", "default": "trips", "media": ["map"], "none": "No trips", "tier": "more" },
+    { "id": "cellsData", "type": "text", "label": "Map of values from", "default": "trip_cells", "media": ["map"], "none": "No map of values", "tier": "more" }
   ],
   "tools": []
 }

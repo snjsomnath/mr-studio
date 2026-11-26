@@ -43,6 +43,9 @@ impl OsmLayer {
             Target::Data(name) if name == "roads" || name == "streets" => Ok(Self::Streets),
             Target::Trips => Err("OpenStreetMap has no trips; they come from a travel survey or a simulation".into()),
             Target::Terrain => Err("OpenStreetMap has no ground heights; use a terrain GeoTIFF".into()),
+            Target::Context => {
+                Err("bring buildings around the table in from a file; fetching them from OpenStreetMap is not built yet".into())
+            }
             Target::Data(name) => Err(format!("OpenStreetMap can fill buildings, trees, water, walkways and roads, not '{name}'")),
         }
     }

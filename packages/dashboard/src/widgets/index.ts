@@ -21,7 +21,7 @@ export { scenarioChange } from './compare.ts';
 export type { ScenarioState } from './compare.ts';
 export { selfSufficiency } from './balance.ts';
 export { entityAt } from './map.ts';
-export { gaugeShare } from './gauge.ts';
+export { gaugeArc, gaugeShare } from './gauge.ts';
 export { donutParts } from './donut.ts';
 export { mediaUrl } from './media.ts';
 

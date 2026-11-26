@@ -17,7 +17,18 @@ destination and the numbers now come from the site's data.
 "layers": [{ "use": "mobility" }]
 ```
 
-`trips` is required. `trip_cells` is optional; without it the layer shows trips only.
+Those are the default names. Each copy of the layer can name its own datasets in its settings,
+**Trips from** (`tripsData`) and **Map of values from** (`cellsData`), so one table can tell more
+than one mobility story (#486):
+
+```jsonc
+"data": { "slow-walkers": "data/slow-walkers.geojson" },
+"layers": [{ "use": "mobility", "id": "slow-walkers", "params": { "tripsData": "", "cellsData": "slow-walkers" } }]
+```
+
+The layer needs at least one of the two. Without a map of values it shows trips only. Without trips it
+plays the map of values a step at a time (about four seconds a step at Normal speed), and the controller
+shows each step's name from `metadata.steps` instead of a clock.
 
 ### trips
 

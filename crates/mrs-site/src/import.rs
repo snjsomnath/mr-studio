@@ -33,6 +33,8 @@ pub enum Target {
     Trees,
     /// Water areas (a river, a lake, the sea): `scene.water` (#343).
     Water,
+    /// Footprints around the table that only shape the wind: `scene.context` (#488).
+    Context,
     /// Paths people walk: the `walkways` dataset (cool paths).
     Walkways,
     /// The mobility layer's `trips.json`: the `trips` dataset.
@@ -50,13 +52,14 @@ impl Target {
             "buildings" => Self::Buildings,
             "trees" => Self::Trees,
             "water" => Self::Water,
+            "context" => Self::Context,
             "walkways" => Self::Walkways,
             "trips" => Self::Trips,
             "terrain" => Self::Terrain,
             other => {
                 let name = other.strip_prefix("data:").ok_or_else(|| {
                     format!(
-                        "'{other}' is not something a table can take; use buildings, trees, water, walkways, trips, terrain or data:<name>"
+                        "'{other}' is not something a table can take; use buildings, trees, water, context, walkways, trips, terrain or data:<name>"
                     )
                 })?;
                 if name.is_empty() || !name.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '-') {
@@ -66,6 +69,7 @@ impl Target {
                     "buildings" => Self::Buildings,
                     "trees" => Self::Trees,
                     "water" => Self::Water,
+                    "context" => Self::Context,
                     "walkways" => Self::Walkways,
                     "trips" => Self::Trips,
                     "terrain" => Self::Terrain,
@@ -81,6 +85,7 @@ impl Target {
             Self::Buildings => "buildings",
             Self::Trees => "trees",
             Self::Water => "water",
+            Self::Context => "context",
             Self::Walkways => "walkways",
             Self::Trips => "trips",
             Self::Terrain => "terrain",
@@ -103,6 +108,7 @@ impl Target {
             Self::Buildings => ("building", "buildings"),
             Self::Trees => ("tree", "trees"),
             Self::Water => ("water area", "water areas"),
+            Self::Context => ("building around the table", "buildings around the table"),
             Self::Walkways => ("path", "paths"),
             Self::Trips => ("trip", "trips"),
             Self::Terrain => ("terrain", "terrain"),
@@ -113,7 +119,7 @@ impl Target {
     /// The geometry kind it needs, if any.
     fn shape(&self) -> Option<Shape> {
         match self {
-            Self::Buildings | Self::Water => Some(Shape::Area),
+            Self::Buildings | Self::Water | Self::Context => Some(Shape::Area),
             Self::Trees => Some(Shape::Point),
             Self::Walkways => Some(Shape::Line),
             Self::Trips | Self::Terrain | Self::Data(_) => None,
@@ -391,7 +397,9 @@ pub fn inspect(site: &Site, target: &Target, filename: &str, bytes: &[u8], optio
     // what lies off the table against the table's outline.
     let preview = preview_of(&features);
     let frame = Frame::new(site);
-    let inside = features.iter().filter(|f| frame.touches(&f["geometry"], 0.0)).count();
+    // Buildings around the table may all lie off it (#488), but not further than the table is wide.
+    let reach = if *target == Target::Context { 1.0 } else { 0.0 };
+    let inside = features.iter().filter(|f| frame.touches(&f["geometry"], reach)).count();
     let count = features.len();
     let outside = count - inside;
     if inside == 0 {
@@ -411,7 +419,8 @@ pub fn inspect(site: &Site, target: &Target, filename: &str, bytes: &[u8], optio
         if dropped > 0 {
             issues.push(Issue::new("extent.cropped", Severity::Note, format!("{dropped} {plural} well outside the table were left out.")));
         }
-    } else if outside > 0 {
+    } else if outside > 0 && *target != Target::Context {
+        // Buildings around the table are meant to lie outside it (#488).
         let message = format!("{outside} of {count} {plural} are outside the table.");
         issues.push(Issue::new("extent.outside_some", Severity::Warning, message).fix("crop"));
     }
@@ -588,6 +597,14 @@ fn point_at(document: &mut Value, target: &Target, path: &str, height_property: 
         Target::Water => {
             // A mask's `crs` belonged to the old file.
             document["scene"]["water"] = json!({ "path": path });
+        }
+        Target::Context => {
+            // A reach already set stays.
+            let reach = document["scene"]["context"]["reach_m"].clone();
+            document["scene"]["context"] = json!({ "path": path });
+            if !reach.is_null() {
+                document["scene"]["context"]["reach_m"] = reach;
+            }
         }
         Target::Terrain => {
             // A GeoTIFF carries its own size and place, so the raw format's keys and the old
@@ -1836,6 +1853,41 @@ mod tests {
         )
         .report;
         assert!(!r.ok && r.issues[0].code == "plan.unreadable");
+        std::fs::remove_dir_all(&site.dir).unwrap();
+    }
+
+    #[test]
+    fn buildings_around_the_table_go_into_the_scene_for_the_wind() {
+        // One footprint on the table and one about 200 m west of its edge (#488).
+        let site = scratch("context");
+        let square = |lon: f64| {
+            json!({
+                "type": "Feature", "properties": {},
+                "geometry": { "type": "Polygon", "coordinates": [[[lon, 57.6998], [lon + 0.0004, 57.6998], [lon + 0.0004, 57.7002], [lon, 57.7002], [lon, 57.6998]]] }
+            })
+        };
+        let ring = collection(vec![square(11.970), square(11.958)]);
+        let prepared = inspect(&site, &Target::Context, "context.geojson", &ring, Options::default());
+        assert!(prepared.report.ok, "{:?}", prepared.report.issues);
+        assert!(
+            prepared.report.issues.iter().all(|i| i.code != "extent.outside_some"),
+            "outside is where they belong: {:?}",
+            prepared.report.issues
+        );
+        let (site2, _) = apply(&site, prepared).unwrap();
+        let context = site2.manifest.scene.context.as_ref().unwrap();
+        assert_eq!((context.path.as_str(), context.reach_m), ("data/context.geojson", 500.0));
+        assert_eq!(site2.data()["context"], "data/context.geojson");
+        let (scene, stats) = site2.bake().unwrap();
+        assert_eq!(stats.context_buildings, 2);
+        let ring = scene.context.unwrap();
+        assert_eq!(ring.margin, 500);
+        // The west one lies outside the grid, in the ring; nothing of it is raised on the table.
+        let (east, north) = site2.projection().to_local(11.9582, 57.70);
+        let (col, row) = scene.grid.local_to_cell(east, north);
+        assert!(col < 0.0);
+        assert!(ring.is_solid(&scene.grid, col.floor() as i64, row.floor() as i64));
+        assert!(!ring.is_solid(&scene.grid, col.floor() as i64, row.floor() as i64 - 60));
         std::fs::remove_dir_all(&site.dir).unwrap();
     }
 

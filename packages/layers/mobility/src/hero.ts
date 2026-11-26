@@ -11,10 +11,17 @@ const clock = (seconds: number) => `${Math.floor(seconds / 60)}:${String(Math.fl
 export function mobilityHero(ctx: PanelContext<Params>, el: HTMLElement): PanelHandlers {
   const duration = () => Number(ctx.shared.duration) || 0;
   const at = (progress: number) => (progress / 100) * duration();
+  /** With no trips, the map of values' steps stand for the time (#486). */
+  const steps = () => (Array.isArray(ctx.shared.steps) && ctx.shared.steps.length > 0 ? (ctx.shared.steps as string[]) : null);
+  const stepAt = (progress: number, list: string[]) => Math.min(list.length - 1, Math.max(0, Math.floor((progress / 100) * list.length)));
+  const stepName = (progress: number, list: string[]) => {
+    const i = stepAt(progress, list);
+    return list[i] || ctx.say('Step {at} of {all}', { at: i + 1, all: list.length });
+  };
   const hero = timelineHero(
     el,
     {
-      label: ctx.say('Time of the trips'),
+      label: steps() ? ctx.say('Steps of the map') : ctx.say('Time of the trips'),
       min: 0,
       max: 100,
       step: 0.5,
@@ -22,12 +29,24 @@ export function mobilityHero(ctx: PanelContext<Params>, el: HTMLElement): PanelH
       value: () => (ctx.params.play && duration() > 0 && ctx.shared.seconds !== undefined ? (Number(ctx.shared.seconds) / duration()) * 100 : ctx.params.progress),
       set: (progress) => ctx.setParams({ progress, play: false }),
       ticks: [0, 25, 50, 75, 100],
-      tick: (progress) => (duration() > 0 ? clock(at(progress)) : `${progress}%`),
-      format: (progress) => (duration() > 0 ? ctx.say('{at} of {all}', { at: clock(at(progress)), all: clock(duration()) }) : `${progress}%`),
+      tick: (progress) => {
+        const list = steps();
+        return list ? stepName(Math.min(99.9, progress), list) : duration() > 0 ? clock(at(progress)) : `${progress}%`;
+      },
+      format: (progress) => {
+        const list = steps();
+        if (list) return stepName(Math.min(99.9, progress), list);
+        return duration() > 0 ? ctx.say('{at} of {all}', { at: clock(at(progress)), all: clock(duration()) }) : `${progress}%`;
+      },
       playing: () => ctx.params.play,
       play: (play) => ctx.setParams({ play }),
       // The clock counts minutes and seconds since the trips began.
       readout: (progress) => {
+        const list = steps();
+        if (list) {
+          const cells = ctx.shared.cells as { label: string | null } | null | undefined;
+          return { value: stepName(Math.min(99.9, progress), list), line: cells?.label ? ctx.say(cells.label) : '' };
+        }
         const line = ctx.say(ctx.shared.title || 'Trips under way');
         return duration() > 0 ? { value: clock(at(progress)), unit: 'min', line } : { value: `${Math.round(progress)}%`, line };
       },
