@@ -187,7 +187,8 @@ export interface LayerManifest {
   phone_switch?: boolean;
   /** The layer may share the table with a second open layer (#473). Default true; false for one that fills the table, such as the slideshow. */
   combine?: boolean;
-  requires?: { kernels?: string[]; data?: string[]; services?: string[] };
+  /** `app` (#509): for a site layer, the oldest MR Studio it runs in, such as `">=0.50"`; `mrstudio layer build` writes it. */
+  requires?: { kernels?: string[]; data?: string[]; services?: string[]; app?: string };
   controls?: Control[];
   tools?: ToolSpec[];
   /**
@@ -216,6 +217,15 @@ export interface LayerManifest {
    * host when `layers/<name>/dist/index.js` exists. Absent for core layers, which are bundled.
    */
   module?: string;
+  /**
+   * For a site's own code layer whose code is not run on this computer (#506): the table was
+   * opened without its programs. There is no `module` then; the layer draws nothing and says why.
+   */
+  held?: boolean;
+  /** Set by the host on a site layer built for a newer MR Studio than this one: the version it needs. It comes without `module`. */
+  needs_app?: string;
+  /** With `needs_app`: this computer's version. */
+  this_app?: string;
   /** For a custom layer saved in the site: the recipe the runtime draws. Absent for a code layer. */
   custom?: CustomLayer;
   /** Rows of the layer's legend on the controller (docs/contracts/present.md). */

@@ -4,7 +4,7 @@
 // and is run as well when the CLI can be found.
 
 import { execFile } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { delimiter, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 
@@ -86,10 +86,29 @@ export function sitePath(dir: string): string {
   return join(dir, 'site.json');
 }
 
+/**
+ * site.json as this server last read it, by folder (#515). The app saves the same file, so a
+ * write first checks that the file is still what the change was worked out from.
+ */
+const lastRead = new Map<string, string>();
+
+/** Replaces a file in one step: written beside it, then renamed over it, so the app never reads half of it. */
+function replaceFile(path: string, text: string): void {
+  const temporary = `${path}.${process.pid}-mcp.tmp`;
+  try {
+    writeFileSync(temporary, text);
+    renameSync(temporary, path);
+  } catch (error) {
+    rmSync(temporary, { force: true });
+    throw error;
+  }
+}
+
 export function readSite(dir: string): SiteManifest {
   const path = sitePath(dir);
   if (!existsSync(path)) throw new Error(`No site.json in ${dir}`);
   const text = readFileSync(path, 'utf8');
+  lastRead.set(resolve(dir), text);
   try {
     return JSON.parse(text);
   } catch (error) {
@@ -103,6 +122,13 @@ export function readSite(dir: string): SiteManifest {
  * then take it back like any edit made in the editor.
  */
 export function writeSite(dir: string, manifest: SiteManifest, summary?: string): void {
+  // The app, or someone in a text editor, saved the table since it was read: writing now would
+  // undo their change without a word. Nothing is written, and the change is made again on what is there.
+  const read = lastRead.get(resolve(dir));
+  if (read !== undefined && existsSync(sitePath(dir)) && readFileSync(sitePath(dir), 'utf8') !== read) {
+    lastRead.delete(resolve(dir));
+    throw new Error('site.json was changed by MR Studio or someone else while this change was being worked out, so nothing was written. Read the table again and make the change again.');
+  }
   if (summary) {
     try {
       mkdirSync(join(dir, '.mrstudio'), { recursive: true });
@@ -112,7 +138,9 @@ export function writeSite(dir: string, manifest: SiteManifest, summary?: string)
       // The history then calls it a change made outside MR Studio.
     }
   }
-  writeFileSync(sitePath(dir), JSON.stringify(manifest, null, 2) + '\n');
+  const text = JSON.stringify(manifest, null, 2) + '\n';
+  replaceFile(sitePath(dir), text);
+  lastRead.set(resolve(dir), text);
 }
 
 /** One kept version of site.json, as the app's revision history (#72) stores it. */
@@ -161,7 +189,8 @@ export function restoreVersion(dir: string, rev: number): SiteVersion {
   mkdirSync(join(dir, '.mrstudio'), { recursive: true });
   const note = { by: 'mcp', summary: `Went back to: ${stored.revision.summary}`.slice(0, 120), at: Math.floor(Date.now() / 1000) };
   writeFileSync(join(dir, '.mrstudio', 'next-change.json'), JSON.stringify(note) + '\n');
-  writeFileSync(sitePath(dir), stored.text);
+  replaceFile(sitePath(dir), stored.text);
+  lastRead.set(resolve(dir), stored.text);
   return stored.revision;
 }
 

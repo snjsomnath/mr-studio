@@ -100,7 +100,7 @@ A layer that has steps declares how it moves through them:
 - The editor and `/dev` keep room beside the map for the ribbons and preview them there at their size, with the front edge marked in amber.
 - **The front edge comes first** (learned on the table, 2026-11-23, [visualisation.md](../visualisation.md) S5). A viewer at one end of a table-height model cannot see a ribbon on the far edge, because the model hides it.
 - Ribbons are outside the model, so they don't break the "clean map" rule. Keep them glanceable (numbers, small charts, a QR), never paragraphs.
-- Not built yet: editing `front` and `ribbons` in Table settings (#73).
+- `front` and the ribbons are edited in Table size and place, "where visitors stand" (host request `site.table`, session.md; #62, #78).
 
 ## Ambient glow
 

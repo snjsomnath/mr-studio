@@ -2,8 +2,8 @@
 //! Kept per machine and site in `<site>/calibration.json` under the `projector` key; other keys
 //! in that file are left alone. The surfaces solve and interpret it; the host stores and shares it.
 
+use parking_lot::Mutex;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
 
 use serde_json::{json, Map, Value};
 
@@ -37,13 +37,13 @@ impl Calibration {
 
     /// The current calibration, or null when the table is flat.
     pub fn projector(&self) -> Value {
-        self.projector.lock().unwrap().clone()
+        self.projector.lock().clone()
     }
 
     /// Replaces the calibration (null clears it) and writes the file.
     pub fn set_projector(&self, projector: &Value) -> Result<(), String> {
         check(projector)?;
-        let mut current = self.projector.lock().unwrap();
+        let mut current = self.projector.lock();
         let mut file = read(&self.path).unwrap_or_default();
         if projector.is_null() {
             file.remove("projector");
@@ -51,7 +51,8 @@ impl Calibration {
             file.insert("projector".into(), projector.clone());
         }
         let text = serde_json::to_string_pretty(&Value::Object(file)).map_err(|e| e.to_string())? + "\n";
-        std::fs::write(&self.path, text).map_err(|e| format!("could not write {}: {e}", self.path.display()))?;
+        // In one step (#515): a power cut during the write leaves the earlier calibration, not half of one.
+        mrs_site::files::replace(&self.path, text).map_err(|e| format!("could not write {}: {e}", self.path.display()))?;
         *current = projector.clone();
         Ok(())
     }

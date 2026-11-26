@@ -33,7 +33,7 @@ pub async fn report(app: &AppHandle) -> String {
     let _ = writeln!(out, "\nApp");
     let _ = writeln!(out, "  MR Studio {} (commit {}, built {})", app.package_info().version, commit.unwrap_or("-"), built.unwrap_or("-"));
     let _ = writeln!(out, "  {} {}", std::env::consts::OS, std::env::consts::ARCH);
-    if let Some(running) = shell.running.lock().unwrap().clone() {
+    if let Some(running) = shell.running.lock().clone() {
         let _ = writeln!(
             out,
             "  Table '{}' served on port {}{}",
@@ -44,7 +44,7 @@ pub async fn report(app: &AppHandle) -> String {
     }
 
     let _ = writeln!(out, "\nDisplays");
-    let surfaces = shell.surfaces.lock().unwrap().clone();
+    let surfaces = shell.surfaces.lock().clone();
     match list_displays(app) {
         Ok(displays) => {
             for d in displays {

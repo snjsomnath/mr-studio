@@ -35,6 +35,7 @@ async fn host() -> mrs_host::RunningHost {
         backend: Backend::Cpu,
         session: SessionOptions::default(),
         sources: std::sync::Arc::new(mrs_host::Sources::in_memory()),
+        programs: true,
     })
     .await
     .unwrap()

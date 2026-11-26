@@ -4,8 +4,10 @@
 mod bake;
 pub mod create;
 mod crs;
+pub mod detail;
 pub mod elevation;
 pub mod field;
+pub mod files;
 mod geotiff;
 pub mod history;
 pub mod import;
@@ -18,10 +20,12 @@ pub mod model;
 pub mod osm;
 pub mod package;
 pub mod plan;
+pub mod programs;
 mod projection;
 pub mod sound;
 pub mod starter;
 mod twin;
+pub mod version;
 pub mod video;
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -47,6 +51,9 @@ pub enum SiteError {
     Parse { path: PathBuf, message: String },
     #[error("site is not valid:\n  {}", .0.join("\n  "))]
     Invalid(Vec<String>),
+    /// The table was changed by a newer MR Studio and does not open in this one (#509).
+    #[error("{}\n(What this version could not read: {reason})", version::update_message(.needed))]
+    Newer { needed: String, reason: String },
 }
 
 /// A loaded site package.
@@ -74,6 +81,10 @@ pub struct Place {
     /// table is not printed in tiles.
     #[serde(default)]
     pub tile_cm: Option<f64>,
+    /// How fine the analysis grid is (#513): `None` keeps the table's choice. The cell size
+    /// follows the ground at that detail whenever the ground changes size.
+    #[serde(default)]
+    pub detail: Option<detail::Detail>,
 }
 
 /// What surfaces need to know about the site.
@@ -118,7 +129,16 @@ pub struct MeshInfo {
 
 impl Site {
     pub fn load(dir: impl AsRef<Path>) -> Result<Self, SiteError> {
-        let dir = dir.as_ref().to_path_buf();
+        let dir = dir.as_ref();
+        Self::read(dir).map_err(|e| match (&e, version::needs_newer(dir)) {
+            // Whatever it tripped over, the answer is the same: this app is too old for it.
+            (SiteError::Parse { .. } | SiteError::Invalid(_), Some(needed)) => SiteError::Newer { needed, reason: e.to_string() },
+            _ => e,
+        })
+    }
+
+    fn read(dir: &Path) -> Result<Self, SiteError> {
+        let dir = dir.to_path_buf();
         let path = dir.join("site.json");
         let text = std::fs::read_to_string(&path).map_err(|source| SiteError::Io { path: path.clone(), source })?;
         // A site written for an older format is upgraded as it is read; see `migrate`.
@@ -162,7 +182,11 @@ impl Site {
         } else {
             let cells = (m.extent.width_m / m.scene.cell_m) * (m.extent.height_m / m.scene.cell_m);
             if cells > 64e6 {
-                out.push(format!("scene grid would have {:.0} million cells; raise scene.cell_m", cells / 1e6));
+                out.push(format!(
+                    "the ground would be worked out on {:.0} million squares of {} m, more than a computer holds; choose a coarser Analysis detail in Name and place (scene.cell_m in site.json), or show less ground",
+                    cells / 1e6,
+                    m.scene.cell_m
+                ));
             }
         }
         if let Some(table) = &m.table {
@@ -665,9 +689,7 @@ impl Site {
             return Err(SiteError::Invalid(problems));
         }
         let text = serde_json::to_string_pretty(&value).map_err(|e| self.parse_error(e))? + "\n";
-        let temporary = self.dir.join("site.json.tmp");
-        std::fs::write(&temporary, text).map_err(io)?;
-        std::fs::rename(&temporary, &path).map_err(io)
+        files::replace(&path, text).map_err(io)
     }
 
     /// Renames the table, moves it, resizes or turns it: rewrites `name`, `origin` and `extent`
@@ -704,6 +726,15 @@ impl Site {
             || m.extent.width_m != width_m
             || m.extent.height_m != height_m
             || m.extent.rotation_deg != rotation_deg;
+        // The analysis grid follows the ground (#513): a resized table keeps its detail, not its cell.
+        let resized = m.extent.width_m != width_m || m.extent.height_m != height_m;
+        let cell_m = if resized || place.detail.is_some() {
+            let level = place.detail.unwrap_or_else(|| detail::detail_of(m.extent.width_m, m.extent.height_m, m.scene.cell_m));
+            detail::cell_for(width_m, height_m, level)
+        } else {
+            m.scene.cell_m
+        };
+        let moved = moved || cell_m != m.scene.cell_m;
         let raw_terrain = m.scene.terrain.as_ref().is_some_and(|t| {
             let path = t.path.to_ascii_lowercase();
             !(path.ends_with(".tif") || path.ends_with(".tiff"))
@@ -725,6 +756,10 @@ impl Site {
         }
         value["origin"] = serde_json::json!({ "lon": lon, "lat": lat });
         value["extent"] = serde_json::json!({ "width_m": width_m, "height_m": height_m, "rotation_deg": rotation_deg });
+        if cell_m != m.scene.cell_m {
+            // A whole number of metres is written as one.
+            value["scene"]["cell_m"] = if cell_m.fract() == 0.0 { (cell_m as u64).into() } else { cell_m.into() };
+        }
         // The physical table keeps its width unless a new one is given; its height follows the ground's shape.
         if let Some(width_cm) = place.table_width_cm {
             if !value["table"].is_object() {
@@ -748,9 +783,7 @@ impl Site {
             return Err(SiteError::Invalid(problems));
         }
         let text = serde_json::to_string_pretty(&value).map_err(|e| parse(e.to_string()))? + "\n";
-        let temporary = self.dir.join("site.json.tmp");
-        std::fs::write(&temporary, text).map_err(io)?;
-        std::fs::rename(&temporary, &path).map_err(io)?;
+        files::replace(&path, text).map_err(io)?;
         Site::load(&self.dir)
     }
 

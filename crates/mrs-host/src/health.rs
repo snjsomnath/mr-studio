@@ -8,8 +8,8 @@
 //! Errors in the windows (a layer that throws, a script error) are sent here too (#260), so
 //! the app's log has them on a computer where nobody has the developer tools open.
 
+use parking_lot::Mutex;
 use std::collections::{HashMap, VecDeque};
-use std::sync::Mutex;
 use std::time::{Duration, Instant, SystemTime};
 
 use serde::Serialize;
@@ -155,7 +155,7 @@ fn seconds<S: serde::Serializer>(d: &Duration, s: S) -> Result<S::Ok, S::Error> 
 impl Health {
     /// Notes something that happened and was recovered from.
     pub fn note(&self, message: impl Into<String>) {
-        let mut incidents = self.incidents.lock().unwrap();
+        let mut incidents = self.incidents.lock();
         incidents.list.push_back((SystemTime::now(), message.into()));
         incidents.total += 1;
         while incidents.list.len() > KEPT {
@@ -165,7 +165,7 @@ impl Health {
 
     /// The incidents after the first `seen`, and how many there have been in all.
     pub fn incidents_after(&self, seen: u64) -> (Vec<(SystemTime, String)>, u64) {
-        let incidents = self.incidents.lock().unwrap();
+        let incidents = self.incidents.lock();
         let first = incidents.total - incidents.list.len() as u64;
         let skip = seen.saturating_sub(first) as usize;
         (incidents.list.iter().skip(skip).cloned().collect(), incidents.total)
@@ -177,7 +177,7 @@ impl Health {
             return;
         }
         let fps = if fps.is_finite() { fps.clamp(0.0, 1000.0) } else { 0.0 };
-        self.beats.lock().unwrap().insert(window.to_string(), Beat { role: role.to_string(), at: Instant::now(), fps, budget });
+        self.beats.lock().insert(window.to_string(), Beat { role: role.to_string(), at: Instant::now(), fps, budget });
     }
 
     /// Every window that has said it is alive, with how long ago.
@@ -186,7 +186,6 @@ impl Health {
         let mut list: Vec<_> = self
             .beats
             .lock()
-            .unwrap()
             .iter()
             .map(|(window, b)| WindowBeat {
                 window: window.clone(),
@@ -204,7 +203,7 @@ impl Health {
     /// minute and within the window's allowance, so it is worth a line in the logs.
     pub fn error(&self, from: &str, error: WindowError) -> bool {
         let now = Instant::now();
-        let mut errors = self.errors.lock().unwrap();
+        let mut errors = self.errors.lock();
         let budget = errors.budget.entry(from.to_string()).or_insert((now, 0));
         if now.duration_since(budget.0) > Duration::from_secs(60) {
             *budget = (now, 0);
@@ -235,12 +234,12 @@ impl Health {
 
     /// The window errors kept, oldest first.
     pub fn errors(&self) -> Vec<WindowError> {
-        self.errors.lock().unwrap().list.iter().map(|(_, e)| e.clone()).collect()
+        self.errors.lock().list.iter().map(|(_, e)| e.clone()).collect()
     }
 
     /// The last `most` incidents, oldest first, with when they happened (seconds since 1970).
     pub fn recent_incidents(&self, most: usize) -> Vec<(u64, String)> {
-        let incidents = self.incidents.lock().unwrap();
+        let incidents = self.incidents.lock();
         let skip = incidents.list.len().saturating_sub(most);
         incidents
             .list
@@ -252,7 +251,7 @@ impl Health {
 
     /// Forgets windows that are gone, so a label is not kept for ever.
     pub fn forget(&self, keep: impl Fn(&str) -> bool) {
-        self.beats.lock().unwrap().retain(|w, _| keep(w));
+        self.beats.lock().retain(|w, _| keep(w));
     }
 }
 

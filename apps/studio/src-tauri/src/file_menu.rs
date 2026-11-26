@@ -8,8 +8,8 @@
 //! On macOS the menu is the app's menu bar. On Windows and Linux it is a menu bar on the
 //! editor window only: the table, TV and phone windows never show one.
 
+use parking_lot::Mutex;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use anyhow::Context;
@@ -197,7 +197,7 @@ impl Debounce {
 
     /// True when `action` should run: it is not a repeat of the same action within a moment.
     pub fn allow(&self, action: &str) -> bool {
-        let mut last = self.0.lock().unwrap();
+        let mut last = self.0.lock();
         let now = Instant::now();
         let repeat = last.as_ref().is_some_and(|(a, at)| a == action && now.duration_since(*at) < Duration::from_millis(600));
         *last = Some((action.to_string(), now));

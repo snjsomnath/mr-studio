@@ -78,6 +78,7 @@ The controls are the single source of truth for a layer's params:
 
 - `kernels`: engine kernels it opens streams on.
 - `data`: named datasets the site must provide. A site maps each name to a file under `data` in `site.json` (see site.md), and the host refuses to start a site, or to add a layer to a scene, when one is missing; the composer's palette says so beforehand. The scene's `buildings` and `trees` count as datasets. The layer loads it with `loadSiteData(ctx.site, name)`. A layer may also use a dataset it does not require: it checks `hasSiteData(ctx.site, name)` and does without when the site has none. A raster dataset (a GeoTIFF, or a folder of one GeoTIFF per hour such as `pet_08.tif` .. `pet_20.tif`) is read laid on the site grid with `loadSiteField(ctx.site, name, hour)`: a field frame of exact values, NaN where the raster has no data, null when a folder has no raster for that hour (`GET /api/data/field?name=&hour=`).
+- `app`: for a site's own code layer, the oldest MR Studio it runs in, such as `">=0.50"` (#509). `mrstudio layer build` writes the version that built it, since the layer is bundled against that SDK, and never lowers what is there. An older app lists the layer without its code (`needs_app` and `this_app` in the manifest it sends, no `module`), and the layer reports "it needs MR Studio 0.55 or newer, and this computer has 0.50" through layer health instead of failing inside its code. Only the release line counts: a patch is never newer.
 - `services`: outside services it calls with `ctx.service(id)`, by their id under `services` in site.json (site.md, Services). The layer still starts when one is missing; its calls are refused, and the host warns.
 
 ## TV panels
@@ -574,6 +575,7 @@ sites/lindholmen/layers/energy-flows/
   `ctx.publish` and a custom panel.
 - `mrstudio layer build [id] --site <site> [--watch]` bundles each package with esbuild (it runs `npm install` the
   first time). Building needs Node 20 or newer on the developer's computer; running needs nothing.
+- Both commands write `types/mrstudio-sdk.d.ts` into the package: every declaration of `@mrstudio/sdk` as the installed app has it (#508). The package's `tsconfig.json` includes it, so an editor completes and checks `ctx` calls, and `npm run typecheck` (`tsc`) checks the layer, in a repository that holds nothing of MR Studio. The SDK is not on npm; its code comes from the app that loads the layer. In this repository the file is generated from `packages/sdk` (`pnpm --filter @mrstudio/sdk types`), and CI fails when it is out of date or when the template does not type-check on its own.
 - `@mrstudio/sdk` is not bundled: the build turns its imports into reads of `globalThis.MRStudio.sdk`, the SDK of
   the app the layer runs in. A layer therefore always runs against the app's SDK, and `api` in layer.json says
   which contract it was written for; the app refuses a layer of another `api`.
@@ -583,6 +585,9 @@ sites/lindholmen/layers/energy-flows/
 - The host adds `module` to the package's manifest when `dist/index.js` exists (`/site/layers/<id>/dist/index.js?v=<time>`),
   and every surface but the phones imports it before it starts layers. A rebuilt layer is picked up when the
   surface reloads. Without a build the layer is still listed and draws nothing.
+- A site layer's code is a program on the computer that opens the table, so the desktop app asks before it runs
+  (#506, see "Asking first" in site.md). Opened without it, the manifest carries `held: true` and no `module`,
+  and the layer reports that it is not running.
 - A `.mrstable` export carries the packages with their `dist/`, without `node_modules`.
 
 The rules for layers above apply to site layers too. Anything a site layer needs from the core that the SDK does

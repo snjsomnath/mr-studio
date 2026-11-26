@@ -13,6 +13,7 @@
     "app": "pnpm build && cargo run -p mr-studio-app",
     "app:build": "pnpm build && pnpm --filter @mrstudio/studio exec tauri build",
     "mcp": "pnpm --filter @mrstudio/mcp build",
+    "test:release": "node --test scripts/release.test.mjs",
     "lint": "eslint",
     "smoke": "node scripts/smoke.cjs"
   },
@@ -23,6 +24,7 @@
   },
   "devDependencies": {
     "eslint": "^9.39.5",
+    "globals": "14.0.0",
     "jsqr": "^1.4.0",
     "playwright": "1.63.0",
     "typescript-eslint": "^8.74.0"

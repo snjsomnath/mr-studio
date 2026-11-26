@@ -1,6 +1,7 @@
 import { coreWidgets } from '@mrstudio/dashboard';
 import * as sdk from '@mrstudio/sdk';
 import { LAYER_API, type LayerManifest, type LayerModule, type PanelSpec } from '@mrstudio/sdk';
+import { describe, reportError } from './diagnostics.ts';
 
 // Core layers are bundled with the runtime. Each package's default export is a LayerModule.
 const found = import.meta.glob<{ default: LayerModule }>('../../layers/*/src/index.ts', { eager: true });
@@ -50,6 +51,14 @@ export function layerModule(id: string): LayerModule | undefined {
   return modules.get(id);
 }
 
+/** Why a site layer's code did not load, by layer id (#510). Gone once it loads. */
+const problems = new Map<string, string>();
+
+/** Why the code of the site layer `id` did not load, if it did not. */
+export function siteModuleProblem(id: string): string | undefined {
+  return problems.get(id);
+}
+
 /** Where each site layer's module was loaded from, so a rebuilt one (a new address) loads again. */
 const loaded = new Map<string, string>();
 
@@ -71,8 +80,12 @@ export async function loadSiteModules(manifests: readonly LayerManifest[]): Prom
         modules.set(manifest.id, layer);
         reportWidgets(manifest.id, layer);
         loaded.set(manifest.id, manifest.module!);
+        problems.delete(manifest.id);
       } catch (error) {
         console.error(`site layer '${manifest.id}' could not be loaded from ${manifest.module}:`, error);
+        // Said where people look (#510): the app's log, and the layer's own trouble when it is on.
+        problems.set(manifest.id, describe(error));
+        reportError(`the code of the layer '${manifest.id}' could not be loaded: ${describe(error)}`);
       }
     }),
   );

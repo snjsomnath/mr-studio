@@ -119,10 +119,11 @@ pub fn upgrade_site(dir: &Path) -> Result<Option<Upgrade>, SiteError> {
     let Some(done) = upgrade(&mut document).map_err(parse)? else { return Ok(None) };
     let backup = dir.join(format!("site.format-{}.json", done.from));
     if !backup.exists() {
-        std::fs::write(&backup, &text).map_err(|source| SiteError::Io { path: backup.clone(), source })?;
+        crate::files::replace(&backup, &text).map_err(|source| SiteError::Io { path: backup.clone(), source })?;
     }
     let upgraded = serde_json::to_string_pretty(&document).map_err(|e| parse(e.to_string()))? + "\n";
-    std::fs::write(&path, upgraded).map_err(io)?;
+    // In one step (#515): a crash half way leaves the table as it was, not cut off.
+    crate::files::replace(&path, upgraded).map_err(io)?;
     Ok(Some(done))
 }
 

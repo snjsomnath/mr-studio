@@ -86,6 +86,8 @@ README for the team, and a GitHub check that runs `mrstudio validate` on every p
 
 The layout of this repository, how to add a layer, a kernel or a site, and the tests are in
 [docs/core-developers.md](docs/core-developers.md).
+How work is done here (issues first, release notes, screenshots, what belongs in core) is in
+[CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Status
 

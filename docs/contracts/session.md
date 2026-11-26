@@ -183,7 +183,7 @@ The host works the address out from the interface it listens on. It is `null` wh
 GET /api/data/field?name=<dataset>[&hour=<0-23>]
 ```
 
-Reads a raster dataset of the site (`data` in site.json: a GeoTIFF, or a folder of one GeoTIFF per hour whose file names end in the two-digit hour) and samples it at the centre of every grid cell. Answers a version 1 field frame (engine.md) with f32 values, NaN where the raster has no data; 404 when the folder has no raster for that hour, 422 when the dataset is missing or unreadable. Cool paths reads the Chalmers demo's prepared PET this way (#196).
+Reads a raster dataset of the site (`data` in site.json: a GeoTIFF, or a folder of one GeoTIFF per hour whose file names end in the two-digit hour) and samples it at the centre of every grid cell. Answers a version 1 field frame (engine.md) with f32 values, NaN where the raster has no data; 404 when the folder has no raster for that hour, 422 when the dataset is missing or unreadable. Cool paths reads the Chalmers demo's prepared PET this way (#196). A frame is kept once read (up to 256 MB of them, the ones used longest ago going first), so asking for the same hour again opens nothing; it is read again when the raster or site.json has changed on disk (#534).
 
 ## A table's media
 
@@ -286,10 +286,10 @@ How it asks (#424): the main server `overpass-api.de`, then the mirror `overpass
 ## Moving or renaming a table
 
 ```
-POST /api/site/place   { "name"?: "Harbour", "origin": { "lon": 11.97, "lat": 57.70 }, "extent": { "width_m": 1000, "height_m": 600, "rotation_deg": 0 }, "table_width_cm"?: 100 }
+POST /api/site/place   { "name"?: "Harbour", "origin": { "lon": 11.97, "lat": 57.70 }, "extent": { "width_m": 1000, "height_m": 600, "rotation_deg": 0 }, "table_width_cm"?: 100, "detail"?: "fine" | "normal" | "coarse" }
 ```
 
-Loopback only, like the data requests. It rewrites `name` (left out: kept), `origin` and `extent` of `site.json`, the table's `width_cm` when `table_width_cm` is given (10 cm to 20 m; it sets the model scale, 1 : `width_m` × 100 / `width_cm`), and the table's `height_cm` so its shape follows, then re-bakes the scene for the ground the table now covers, closes every engine stream and sends `site.changed`; surfaces reload. Data brought in stays where it is in the world. Answers `{ "site": <SiteInfo> }`, or 422 `{ "error" }` with the reason: a name over 60 characters, a place off the map, a side under 10 m or over 50 km, or a table whose ground is a raw height grid (`terrain.f32`), which is made for one extent and cannot move (a GeoTIFF can). The setup guide's "Name and place" step uses it.
+Loopback only, like the data requests. It rewrites `name` (left out: kept), `origin` and `extent` of `site.json`, the table's `width_cm` when `table_width_cm` is given (10 cm to 20 m; it sets the model scale, 1 : `width_m` × 100 / `width_cm`), the table's `height_cm` so its shape follows, and `scene.cell_m` when the ground changed size or `detail` is given (#513; the analysis grid follows the ground, see site.md), then re-bakes the scene for the ground the table now covers, closes every engine stream and sends `site.changed`; surfaces reload. Data brought in stays where it is in the world. Answers `{ "site": <SiteInfo> }`, or 422 `{ "error" }` with the reason: a name over 60 characters, a place off the map, a side under 10 m or over 50 km, or a table whose ground is a raw height grid (`terrain.f32`), which is made for one extent and cannot move (a GeoTIFF can). The setup guide's "Name and place" step uses it.
 
 ## A picture of the table for Home
 
@@ -336,6 +336,7 @@ Requests:
 | `layer.set` | `{ layer, params }` | all (phones only for `phone: true` controls) | Validates, merges, broadcasts |
 | `layer.action` | `{ layer, action, words? }` | all (phones only for `phone: true`) | Broadcast to the table, with `participant` (`{ slot, colour, avatar, mood, name }`) when a phone pressed it (#335). An action with `words` in layer.json needs `words` (spaces tidied, at most its `max`), passed on as `words` (#462) |
 | `phones.pause` | `{ paused }` | tv, dev | Pauses the phones (#335): while `session.phones_paused` is true a phone's `layer.activate`, `layer.set`, `layer.action`, `tool.input`, `layer.entity`, `layer.select` and `layer.step` are refused; looking around, profiles and field walks go on. Sends `session.changed` |
+| `field.remove`, `field.clear` | `{ id }`, `{}` | tv, dev | Removes one field walk spot (#445), or all of them and the pieces of spots still arriving, with their photos and sounds. Every Field walk layer's `revision` param moves on, so its views fetch the list again. The controller's Remove and Clear buttons do the same through `layer.action`. Phones add spots with `field.add` and `field.part` (mobile.md) and cannot remove them |
 | `phones.release` | `{ slot? }` | tv, dev | Lets one phone go, or every phone without `slot` (the end of a round). Its connection is closed with "the operator ended this phone's turn" and its slot is free at once |
 | `phones.log` | `{}` | tv, dev | `{ log }`: what the phones did this session, oldest first, at most 2000 entries `{ at, slot, avatar, name, what, … }` where `what` is joined, left, released, turned on, turned off, set (a dragged slider is one entry), pressed or drew |
 | `layer.publish` | `{ layer, values }` | table, dev | Merges into `shared`, broadcasts |
@@ -428,6 +429,11 @@ A table in an exhibition runs all day with nobody at the computer.
   table is started again. Every surface gets `engine.restarted { message, backend }`: the
   streams are gone, so the table and the controller reload. The incident goes to the
   operator log.
+- **Requests.** A request that fails inside the host (#507) costs that request only. The
+  surface gets `ok: false` with "Something went wrong inside MR Studio: '<method>' could not be
+  handled. The table carries on.", the incident goes to the operator log, and the next request
+  is handled as before: the host's locks do not poison. `Hub::inject_fault` makes the next
+  request fail this way, for tests.
 - **Windows.** Each table and controller sends `{ t: 'alive', window, fps, worst_ms, layers }`
   every 2 s. `window` is the label the desktop app gave it, as `window.__MRS_WINDOW__`, or the
   role (`table`, `tv`) in a browser. Phones' and the editor's beats are ignored. `worst_ms` and
@@ -435,7 +441,7 @@ A table in an exhibition runs all day with nobody at the computer.
 - **Watchdog.** The app's watchdog (apps/studio/src-tauri/src/watchdog.rs) checks every 2 s:
   - A window silent for 8 s is reloaded by navigation (a new or reloaded window gets 30 s to
     load first), which works even when the page's
-    script has stopped. After two reloads that did not help, every window is opened again.
+    script has stopped. After two reloads that did not help, every window is opened again. When the windows need that again within ten minutes, the fault is not theirs, and the table itself is started again (#507).
   - A server that stopped by itself is started again and presented again.
   - At the nightly restart time (`nightly_restart` in studio.json, "03:00"), a presented
     table is started anew.
@@ -458,6 +464,20 @@ A layer must never be silently missing from the table.
   name it in `requires.data` or in a setting; otherwise on the one layer starting just then.
   Once a start reads everything, it sends `running` and the trouble ends. A layer whose code is
   not in the app is `failed` and waits.
+- **Trouble the layer does not report itself (#510).** Three more cases end as `layer.health`,
+  in the editor, on the controller and in Copy diagnostics:
+  - A site layer whose code does not load (a syntax error in `dist/index.js`, another `api`, an
+    id that does not match, no default export): `failed`, "its code could not be loaded: …",
+    and the error is in the window errors. It waits for Retry or a rebuilt layer.
+  - A layer whose handlers keep throwing: after 10 throws with no quiet spell of 2 s between
+    them it is stopped and joins the retry schedule above, with "it kept failing while it
+    ran: …". An occasional throw is logged and the layer runs on.
+  - A `table()` that has not finished after 20 s: `failed`, "it has not finished starting after
+    20 s", with Retry. The start is not cut short; when it finishes, the trouble is over.
+- **The connection (#510).** A listener that throws does not keep an event or a field frame
+  from the listeners after it; the error goes to the window errors. A request the host has
+  not answered within 30 s fails with "the host did not answer '<method>' within 30 s"
+  (`Connection.request(method, params, { timeoutMs })`; 0 waits for ever).
 - **Where it shows.** The editor puts a red dot on the layer's row, with why in its tooltip,
   and a box with the reason and **Retry** at the top of its settings. The controller dims the
   layer's button and writes "Not available right now" under its name; it comes back by itself.
@@ -518,10 +538,11 @@ The host keeps every version of `site.json` (#72), whoever wrote it, in one list
 - **A revision** is `{ rev, at, by, summary, keys, surface? }`: `rev` counts up and is never reused, `at` is Unix seconds, `summary` is one line in plain words ("Added Sun study", "Changed outside MR Studio: the palette"), `keys` are the top-level keys of site.json that changed.
 - **Outside edits**: the host looks at `site.json` about once a second. A change it did not make becomes a revision and shows on every surface at once: the layers, custom layers, palette and the `tv` and `display` settings change live (`state.scene`, `catalog.*`, `palette.changed`, `site.tv`, `site.display`); anything else re-bakes the ground and sends `site.changed`. A file that does not load is recorded too and reported with `site.problem`.
 - **Naming an outside change**: a tool that writes site.json may first write `.mrstudio/next-change.json` in the site folder: `{ "by": "mcp", "summary": "Added trees", "at": <unix seconds> }`. The next outside change found within 30 seconds takes that name; the note is then deleted.
+- **More than one writer** (#515): the app, `mrstudio dev`, the MCP server and a text editor may all save the same site.json. Every writer of MR Studio's writes the new file beside it and renames it over the old one (`mrs_site::files::replace`; temporary names carry the process id), so a reader sees the old file or the new one, never half; calibration.json and a format upgrade are written the same way. The host looks at a site.json that does not parse once more, 700 ms later, before it records it or reports `site.problem`: a file caught half way through another tool's write never becomes a revision. The MCP server refuses to write when the file is no longer what it read ("site.json was changed by MR Studio or someone else …"), so it never undoes a change the app saved in between; it reads again and makes the change again.
 - **Undo and redo** walk the list and rewrite site.json; the running table follows as for an outside edit. A version that no longer loads (a layer package that is gone) is refused and site.json stays as it was.
 - **A dragged slider** is one revision: the same change from the same surface within 3 seconds joins the revision before it.
 - **Two editors**: each change is written as it arrives, so the later one wins; the other editor learns of it from `history.changed` with another `surface`.
-- **Where**: `.mrstudio/history/` in the site folder, one file per revision and `head.json`, the newest 200 kept. It belongs to this computer: it is left out of Save As, copies, exports and the site's repository. Only `site.json` is versioned: a data file replaced by an import stays replaced after an undo, though site.json points back to the file it named before.
+- **Where**: `.mrstudio/history/` in the site folder, one file per revision and `head.json`, the newest 200 kept. It belongs to this computer: it is left out of Save As, copies, exports and the site's repository. Only `site.json` is versioned, and that is enough for data too (#512): an import never writes over a file that holds something else. New data for `data/buildings.geojson` is saved beside it as `data/buildings.v2.geojson` (then `.v3`, and so on) and site.json names the new file, so an undo, a redo or a restored version names, and shows, the data of that moment. The same data brought in again reuses its file. The newest 3 earlier versions of a file are kept, never fewer than site.json names; `.mrstable` exports carry only the version in use. Media and sounds added under a name that is taken are saved as `name-2.ext`. An import whose result does not load changes nothing.
 
 Rules:
 

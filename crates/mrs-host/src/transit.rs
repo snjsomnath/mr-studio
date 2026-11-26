@@ -3,8 +3,8 @@
 //! host signs the request with the source's key (see `sources.rs`), so the table never
 //! holds it. Västtrafik is the first provider; others get their own `vehicles_*` here.
 
+use parking_lot::Mutex;
 use std::collections::HashMap;
-use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
@@ -25,7 +25,7 @@ pub async fn vehicles(sources: &Sources, cache: &Cache, id: &str, bbox: &str) ->
         return Err(refusal("bbox must be minLon,minLat,maxLon,maxLat around one table"));
     }
     let key = format!("{id} {bbox}");
-    if let Some((at, value)) = cache.0.lock().unwrap().get(&key) {
+    if let Some((at, value)) = cache.0.lock().get(&key) {
         if at.elapsed() < REUSE {
             return Ok(value.clone());
         }
@@ -50,7 +50,7 @@ pub async fn vehicles(sources: &Sources, cache: &Cache, id: &str, bbox: &str) ->
         }
         _ => return Err(refusal(&format!("{} is not a transit provider", connection.name))),
     };
-    cache.0.lock().unwrap().insert(key, (Instant::now(), value.clone()));
+    cache.0.lock().insert(key, (Instant::now(), value.clone()));
     Ok(value)
 }
 

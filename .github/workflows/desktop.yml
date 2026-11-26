@@ -94,12 +94,14 @@ jobs:
           - name: Windows installer
             os: windows-latest
             args: --bundles nsis
+            program: target/release/mr-studio.exe
             artifact: mr-studio-windows
             bundle: target/release/bundle
           - name: macOS app (Apple silicon and Intel)
             os: macos-latest
             targets: aarch64-apple-darwin,x86_64-apple-darwin
             args: --target universal-apple-darwin --bundles app,dmg
+            program: target/universal-apple-darwin/release/bundle/macos/MR Studio.app/Contents/MacOS/mr-studio
             cli_target: universal-apple-darwin
             artifact: mr-studio-macos
             bundle: target/universal-apple-darwin/release/bundle
@@ -108,7 +110,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ needs.version.outputs.tag || github.ref }}
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.100.0
         with:
           targets: ${{ matrix.targets }}
       - uses: Swatinem/rust-cache@v2
@@ -157,6 +159,11 @@ jobs:
           # try only repeats the packaging, because the compiled app is already there.
           pnpm app:build $args || { echo "::warning::The build failed once; trying again in 30 seconds."; sleep 30; pnpm app:build $args; }
           echo "VERSION=$version" >> "$GITHUB_ENV"
+      # The program that was just built is started on the sample table (#514): the host answers
+      # and a window draws, or nothing is published.
+      - name: The app starts
+        shell: bash
+        run: node scripts/launch-check.mjs "${{ matrix.program }}"
       # Release files get names without spaces, so their download links are predictable.
       - name: Collect the files
         shell: bash

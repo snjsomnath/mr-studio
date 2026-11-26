@@ -70,6 +70,10 @@ fn copy(from: &std::path::Path, to: &std::path::Path) {
 }
 
 async fn start(site_dir: PathBuf) -> RunningHost {
+    start_with(site_dir, true).await
+}
+
+async fn start_with(site_dir: PathBuf, programs: bool) -> RunningHost {
     mrs_host::start(HostConfig {
         site_dir,
         layers_dir: repo().join("packages/layers"),
@@ -78,6 +82,7 @@ async fn start(site_dir: PathBuf) -> RunningHost {
         backend: Backend::Cpu,
         session: Default::default(),
         sources: std::sync::Arc::new(mrs_host::Sources::in_memory()),
+        programs,
     })
     .await
     .unwrap()
@@ -210,4 +215,24 @@ async fn a_service_with_a_venv_gets_one_made_and_runs_in_it() {
     assert!(dir.join("services/adder/.venv").is_dir());
     host.shutdown().await;
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// #506: a table opened without its programs starts nothing, says so, and still answers
+/// from what it kept.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_table_opened_without_its_programs_starts_nothing() {
+    let dir = site_with_service("held");
+    let host = start_with(dir.clone(), false).await;
+    let base = format!("http://{}", host.addr);
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    let page: Value = reqwest::get(format!("{base}/api/services")).await.unwrap().json().await.unwrap();
+    assert_eq!(page["services"][0]["state"], "held", "{page}");
+    assert!(page["services"][0]["message"].as_str().unwrap().contains("not run on this computer"), "{page}");
+    let answer = reqwest::get(format!("{base}/api/services/{}/call/anything", page["services"][0]["id"].as_str().unwrap())).await.unwrap();
+    let status = answer.status();
+    let said: Value = answer.json().await.unwrap();
+    assert!(status.is_server_error(), "{status} {said}");
+    assert!(said["error"].as_str().unwrap().contains("held"), "{said}");
+    host.shutdown().await;
+    std::fs::remove_dir_all(&dir).unwrap();
 }

@@ -21,6 +21,8 @@ pub fn id_from(name: &str) -> String {
 
 /// The `site.json` of a site with nothing in it yet but a base map and sunlight.
 pub fn manifest(id: &str, name: &str, lon: f64, lat: f64, width_m: f64, height_m: f64, rotation_deg: f64) -> Value {
+    // The analysis grid follows the ground (#513): 1 m for a neighbourhood, coarser for a city.
+    let cell_m = crate::detail::cell_for(width_m, height_m, crate::detail::Detail::Normal) as u64;
     json!({
         "format": FORMAT,
         "id": id,
@@ -29,7 +31,7 @@ pub fn manifest(id: &str, name: &str, lon: f64, lat: f64, width_m: f64, height_m
         "extent": { "width_m": width_m, "height_m": height_m, "rotation_deg": rotation_deg },
         "timezone": "Europe/Stockholm",
         "table": { "width_cm": 100, "height_cm": (100.0 * height_m / width_m * 100.0).round() / 100.0 },
-        "scene": { "cell_m": 1 },
+        "scene": { "cell_m": cell_m },
         "basemap": { "background": "#0b0e14", "style": null },
         // The table rests on its base map; sunlight is there to open, as a first layer to try.
         "layers": [{ "use": "basemap", "id": "basemap", "active": true }, { "use": "sunlight", "id": "sunlight", "active": false }],
@@ -101,6 +103,7 @@ mod tests {
             extent: crate::Extent { width_m: w, height_m: h, rotation_deg: r },
             table_width_cm: None,
             tile_cm: None,
+            detail: None,
         };
         let moved = site.place(&place(Some(" Old harbour "), 11.95, 57.70, 1600.0, 1000.0, -30.0)).unwrap();
         assert_eq!(moved.manifest.name, "Old harbour");
@@ -127,6 +130,33 @@ mod tests {
         let plain = kept_tiles.place(&crate::Place { tile_cm: Some(0.0), ..place(None, 11.95, 57.70, 1000.0, 600.0, 330.0) }).unwrap();
         assert_eq!(plain.manifest.table.unwrap().tile_cm, None);
         plain.place(&crate::Place { table_width_cm: Some(100.0), ..place(None, 11.95, 57.70, 1600.0, 1000.0, 330.0) }).unwrap();
+
+        // The analysis grid follows the ground (#513): a new table for a whole city starts coarse
+        // enough to work, and the person's choice of detail is kept when the ground changes.
+        assert_eq!(plain.manifest.scene.cell_m, 1.0);
+        let big = base.join("city");
+        create(&big, "City", 11.97, 57.69, 10_000.0, 6000.0, 0.0).unwrap();
+        let city = Site::load(&big).unwrap();
+        assert_eq!(city.manifest.scene.cell_m, 6.0);
+        let district = city.place(&place(None, 11.95, 57.70, 4000.0, 2400.0, 330.0)).unwrap();
+        assert_eq!(district.manifest.scene.cell_m, 3.0);
+        assert_eq!(district.grid().width, 1333);
+        let coarse = district
+            .place(&crate::Place { detail: Some(crate::detail::Detail::Coarse), ..place(None, 11.95, 57.70, 4000.0, 2400.0, 330.0) })
+            .unwrap();
+        assert_eq!(coarse.manifest.scene.cell_m, 6.0);
+        let wider = coarse.place(&place(None, 11.95, 57.70, 10_000.0, 6000.0, 330.0)).unwrap();
+        assert_eq!(wider.manifest.scene.cell_m, 12.0, "still coarse: twice the 6 m a city gets");
+        let fine = wider
+            .place(&crate::Place { detail: Some(crate::detail::Detail::Fine), ..place(None, 11.95, 57.70, 1000.0, 600.0, 330.0) })
+            .unwrap();
+        assert_eq!(fine.manifest.scene.cell_m, 0.5);
+        // A cell set by hand stays until the ground changes size or a detail is chosen.
+        let mut by_hand: Value = serde_json::from_str(&std::fs::read_to_string(big.join("site.json")).unwrap()).unwrap();
+        by_hand["scene"]["cell_m"] = json!(1.5);
+        std::fs::write(big.join("site.json"), by_hand.to_string()).unwrap();
+        let renamed = Site::load(&big).unwrap().place(&place(Some("By hand"), 11.96, 57.70, 1000.0, 600.0, 330.0)).unwrap();
+        assert_eq!(renamed.manifest.scene.cell_m, 1.5);
 
         assert!(site.place(&place(Some(""), 11.95, 57.70, 1000.0, 600.0, 0.0)).is_err());
         assert!(site.place(&place(None, 11.95, 97.0, 1000.0, 600.0, 0.0)).is_err());

@@ -11,8 +11,10 @@ mod engine_bridge;
 pub mod field;
 pub mod health;
 mod hub;
+pub mod kept;
 pub mod layers;
 mod model;
+pub mod rasters;
 pub mod relay;
 pub mod services;
 pub mod sources;
@@ -21,9 +23,10 @@ mod whatif;
 mod wms;
 mod ws;
 
+use parking_lot::RwLock;
 use std::net::{IpAddr, SocketAddr, UdpSocket};
 use std::path::PathBuf;
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 
 use anyhow::Context as _;
 use axum::body::Bytes;
@@ -61,6 +64,10 @@ pub struct HostConfig {
     pub session: SessionOptions,
     /// The app's outside services and their keys (#41). The app shares one with its Sources page.
     pub sources: Arc<Sources>,
+    /// Whether the table's own programs run (#506): the services it starts and its layers'
+    /// code. With false the table opens as data: services are held and its own layers draw
+    /// nothing and say why. The app asks before a table from elsewhere runs its programs.
+    pub programs: bool,
 }
 
 pub struct AppState {
@@ -80,10 +87,10 @@ pub struct AppState {
     imports: tokio::sync::Mutex<()>,
     /// Recent OpenStreetMap answers, one per layer and place, so Import brings in what the
     /// preview (or a fetch of everything, #310) got without asking again.
-    osm_cache: std::sync::Mutex<std::collections::HashMap<String, OsmFetch>>,
+    osm_cache: parking_lot::Mutex<std::collections::HashMap<String, OsmFetch>>,
     /// What an OpenStreetMap fetch is doing now, in words ("Asking overpass-api.de, part 2 of 4"), for
     /// `GET /api/data/osm/status` (#424). Empty when nothing is being asked.
-    osm_status: std::sync::Mutex<String>,
+    osm_status: parking_lot::Mutex<String>,
     /// The join page's WebRTC bridge (#275): at most one surface carries phones at a time.
     bridge: bridge::BridgeSlot,
     /// The host's own router, for answering phones that come through a relay or the bridge.
@@ -91,11 +98,13 @@ pub struct AppState {
     /// The site's outside compute (#278), started with the host and stopped with it.
     pub services: services::Services,
     /// The latest picture each layer's table sent for its controller (`ctx.view`, #351), by layer instance.
-    views: std::sync::Mutex<std::collections::HashMap<String, LayerView>>,
+    views: parking_lot::Mutex<std::collections::HashMap<String, LayerView>>,
     /// The field walk's spots, photos and sounds from visitors' phones (#445).
     pub field: field::Field,
     /// Wrong join codes by address, so a code cannot be guessed by trying them all (#504).
     pub(crate) tries: ws::Tries,
+    /// Rasters laid on the grid, kept once read (#534).
+    pub rasters: rasters::Rasters,
 }
 
 /// A picture a layer's table sent for the controller: the Magnifier's view under its glass.
@@ -251,7 +260,7 @@ impl AppState {
     }
 
     fn osm_cached(&self, key: &str) -> Option<Vec<u8>> {
-        let mut cache = self.osm_cache.lock().unwrap();
+        let mut cache = self.osm_cache.lock();
         cache.retain(|_, f| f.at.elapsed() < OSM_REUSE);
         cache.get(key).map(|f| f.bytes.clone())
     }
@@ -259,21 +268,21 @@ impl AppState {
     /// One layer's share of an Overpass answer as GeoJSON, kept for the import; empty is a refusal.
     fn osm_keep(&self, target: &Target, layer: OsmLayer, key: String, answer: &Value) -> Result<Vec<u8>, Report> {
         let bytes = data::osm_collection(target, layer, answer)?;
-        self.osm_cache.lock().unwrap().insert(key, OsmFetch { at: std::time::Instant::now(), bytes: bytes.clone() });
+        self.osm_cache.lock().insert(key, OsmFetch { at: std::time::Instant::now(), bytes: bytes.clone() });
         Ok(bytes)
     }
 
     /// Asks Overpass in tiles (`data::ask_overpass`), keeping what it is doing for the status endpoint.
     async fn ask_overpass(&self, query_for: &(dyn Fn([f64; 4]) -> String + Sync), bounds: [f64; 4]) -> Result<Value, String> {
-        let say = |words: String| *self.osm_status.lock().unwrap() = words;
+        let say = |words: String| *self.osm_status.lock() = words;
         let answer = data::ask_overpass(query_for, bounds, &say).await;
-        self.osm_status.lock().unwrap().clear();
+        self.osm_status.lock().clear();
         answer
     }
 
     /// What an OpenStreetMap fetch is doing now, or "" (#424).
     pub fn osm_status(&self) -> String {
-        self.osm_status.lock().unwrap().clone()
+        self.osm_status.lock().clone()
     }
 
     /// Fetches free elevation around the table as a GeoTIFF (`data::elevation_for`).
@@ -296,7 +305,7 @@ impl AppState {
             }
             let what = import_words(&target);
             let history = history.clone();
-            let mut history = history.lock().unwrap();
+            let mut history = history.lock();
             let ((site, report), change) = history
                 .write(By::Import, format!("Brought in {what}"), None, || import::apply(&site, prepared))
                 .map_err(|e| e.to_string())?;
@@ -320,7 +329,7 @@ impl AppState {
         .map_err(|e| e.to_string())?;
         let (scene, twin, info) = rebuilt.map_err(|e| format!("the data was saved, but the scene could not be rebuilt: {e}"))?;
         self.engine.load_scene(scene).await?;
-        *self.twin.write().unwrap() = twin;
+        *self.twin.write() = twin;
         self.hub.site_changed(info);
         Ok(report)
     }
@@ -336,8 +345,7 @@ impl AppState {
         let rebuilt = tokio::task::spawn_blocking(move || -> Result<_, String> {
             let before = Site::load(&dir).map_err(|e| e.to_string())?;
             let summary = place_words(&before, &place);
-            let (site, change) =
-                history.lock().unwrap().write(By::Editor, summary, None, || before.place(&place)).map_err(|e| e.to_string())?;
+            let (site, change) = history.lock().write(By::Editor, summary, None, || before.place(&place)).map_err(|e| e.to_string())?;
             if let Some(change) = &change {
                 tracing::info!("history: {}", change.revision.summary);
             }
@@ -353,7 +361,7 @@ impl AppState {
             self.hub.history_changed(&change.revision, false);
         }
         self.engine.relocate(scene, origin).await?;
-        *self.twin.write().unwrap() = twin;
+        *self.twin.write() = twin;
         self.hub.site_changed(info.clone());
         Ok(info)
     }
@@ -408,7 +416,7 @@ impl AppState {
         if method == "history.get" {
             // A kept version and the one before it (#395): the editor shows what the change did.
             let rev = p["revision"].as_u64().ok_or("missing revision")?;
-            let (before, after) = self.hub.history().lock().unwrap().texts(rev).ok_or("that revision is no longer kept")?;
+            let (before, after) = self.hub.history().lock().texts(rev).ok_or("that revision is no longer kept")?;
             let parse = |t: &str| serde_json::from_str::<Value>(t).unwrap_or(Value::Null);
             return Ok(json!({ "revision": rev, "before": before.as_deref().map_or(Value::Null, parse), "after": parse(&after) }));
         }
@@ -423,7 +431,7 @@ impl AppState {
         let history = self.hub.history();
         let method_owned = method.to_string();
         let (change, from) = tokio::task::spawn_blocking(move || -> Result<(Change, u64), String> {
-            let mut history = history.lock().unwrap();
+            let mut history = history.lock();
             let from = history.head().rev;
             let change = match method_owned.as_str() {
                 "history.undo" => history.undo(),
@@ -438,7 +446,7 @@ impl AppState {
         if let Err(e) = self.apply_change(&change).await {
             // That version does not load as the table now is: leave site.json as it was.
             let history = self.hub.history();
-            let _ = tokio::task::spawn_blocking(move || history.lock().unwrap().step_back(from)).await;
+            let _ = tokio::task::spawn_blocking(move || history.lock().step_back(from)).await;
             return Err(format!("that version of the table could not be opened: {e}"));
         }
         self.hub.history_changed(&change.revision, method != "history.restore");
@@ -451,7 +459,7 @@ impl AppState {
     pub async fn check_outside(&self) {
         let Ok(_one) = self.imports.try_lock() else { return };
         let history = self.hub.history();
-        let Ok(Some(change)) = tokio::task::spawn_blocking(move || history.lock().unwrap().check_outside()).await else { return };
+        let Ok(Some(change)) = tokio::task::spawn_blocking(move || history.lock().check_outside()).await else { return };
         tracing::info!("history: {}", change.revision.summary);
         self.hub.history_changed(&change.revision, false);
         if let Err(e) = self.apply_change(&change).await {
@@ -481,7 +489,7 @@ impl AppState {
         self.hub.reload(&site, change).map_err(|e| format!("{e:#}"))?;
         if let Some((scene, twin)) = rebuilt {
             self.engine.relocate(scene, site.manifest.origin).await?;
-            *self.twin.write().unwrap() = twin;
+            *self.twin.write() = twin;
             self.hub.site_changed(site.info());
         }
         Ok(())
@@ -594,7 +602,7 @@ pub async fn start(config: HostConfig) -> anyhow::Result<RunningHost> {
     tracing::info!("twin: {} triangles", twin.triangle_count());
     let twin = Bytes::from(twin.encode());
     let calibration = Calibration::load(&site.dir);
-    let catalog = layers::load_catalog(&site, &config.layers_dir)?;
+    let catalog = layers::load_catalog(&site, &config.layers_dir, config.programs)?;
     let (incidents, mut incident_rx) = tokio::sync::mpsc::unbounded_channel();
     let engine = EngineHandle::spawn(config.backend, scene, site.manifest.origin, incidents)?;
     let info = engine.info().await?;
@@ -615,7 +623,7 @@ pub async fn start(config: HostConfig) -> anyhow::Result<RunningHost> {
     let hub = Hub::new(&site, catalog, addr.port(), join_base, config.session.clone())?;
     // The site's services start now and come up in the background; their incidents go to the operator log.
     let (service_incidents, mut service_incident_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
-    let services = services::Services::start(&site, move |message| {
+    let services = services::Services::start(&site, config.programs, move |message| {
         tracing::warn!("{message}");
         let _ = service_incidents.send(message);
     });
@@ -635,6 +643,7 @@ pub async fn start(config: HostConfig) -> anyhow::Result<RunningHost> {
         bridge: Default::default(),
         views: Default::default(),
         tries: Default::default(),
+        rasters: Default::default(),
         links: Default::default(),
         field,
     });
@@ -664,6 +673,23 @@ pub async fn start(config: HostConfig) -> anyhow::Result<RunningHost> {
     // Phones join through the relay when this computer has one (#89).
     if let Some(link) = config.sources.relay().await {
         relay::spawn(Arc::downgrade(&state), app.clone(), addr.port(), link);
+    }
+    // Keeps what the table fetched for offline use within its limits (#516): now, and once a
+    // day while it runs. It stops when the host is gone.
+    {
+        let state = Arc::downgrade(&state);
+        tokio::spawn(async move {
+            let mut every = tokio::time::interval(kept::EVERY);
+            loop {
+                every.tick().await;
+                let Some(dir) = state.upgrade().map(|state| state.site.dir.clone()) else { break };
+                if let Ok(removed) = tokio::task::spawn_blocking(move || kept::trim(&dir)).await {
+                    if removed.files > 0 {
+                        tracing::info!("kept for offline use: removed the {} oldest files ({})", removed.files, kept::words(removed.bytes));
+                    }
+                }
+            }
+        });
     }
     // Watches site.json for changes made outside the host (#72). It stops when the host is gone.
     {
@@ -739,6 +765,8 @@ fn router(state: Arc<AppState>, web_dir: Option<PathBuf>) -> Router {
         .route("/api/info", get(info))
         .route("/api/diagnostics", get(diagnostics_page))
         .route("/api/performance", get(performance_page))
+        .route("/api/kept", get(kept_page))
+        .route("/api/kept/clear", post(kept_clear))
         .route("/api/model", get(model))
         .route("/api/data/inspect", post(inspect_data))
         .route("/api/data/import", post(import_data))
@@ -851,7 +879,7 @@ async fn guard(request: axum::extract::Request, next: axum::middleware::Next) ->
             return (StatusCode::NOT_FOUND, "not found").into_response();
         }
         let lower = path.to_ascii_lowercase();
-        if ["/api/diagnostics", "/api/performance", "/api/services", "/api/wms"].iter().any(|p| lower.starts_with(p)) {
+        if ["/api/diagnostics", "/api/performance", "/api/services", "/api/wms", "/api/kept"].iter().any(|p| lower.starts_with(p)) {
             return (StatusCode::FORBIDDEN, Json(json!({ "error": "this is shown on this computer only" }))).into_response();
         }
     }
@@ -1135,9 +1163,33 @@ async fn diagnostics_page(State(state): State<Arc<AppState>>, Query(query): Quer
     ([(header::CACHE_CONTROL, "no-store")], Json(report)).into_response()
 }
 
+/// `GET /api/kept`: how much the table keeps for offline use (#516).
+async fn kept_page(State(state): State<Arc<AppState>>) -> axum::response::Response {
+    let dir = state.site.dir.clone();
+    let kept = tokio::task::spawn_blocking(move || kept::measure(&dir)).await.unwrap_or_default();
+    (
+        [(header::CACHE_CONTROL, "no-store")],
+        Json(json!({
+            "maps": kept.maps, "services": kept.services, "files": kept.files,
+            "words": kept::words(kept.maps + kept.services),
+            "limits": { "maps": kept::MAPS_LIMIT, "service": kept::SERVICE_LIMIT, "service_answers": kept::SERVICE_ANSWERS },
+        })),
+    )
+        .into_response()
+}
+
+/// `POST /api/kept/clear`: removes the kept tiles, map pictures and service answers (#516).
+/// The table fetches them again as it shows them.
+async fn kept_clear(State(state): State<Arc<AppState>>) -> axum::response::Response {
+    let dir = state.site.dir.clone();
+    let removed = tokio::task::spawn_blocking(move || kept::clear(&dir)).await.unwrap_or_default();
+    state.health.note(format!("Cleared what the table kept for offline use: {} files, {}.", removed.files, kept::words(removed.bytes)));
+    Json(json!({ "removed": removed.files, "bytes": removed.bytes, "words": kept::words(removed.bytes) })).into_response()
+}
+
 /// The digital twin mesh. Layout in `docs/contracts/model.md`.
 async fn model(State(state): State<Arc<AppState>>) -> impl IntoResponse {
-    ([(header::CONTENT_TYPE, "application/octet-stream"), (header::CACHE_CONTROL, "no-cache")], state.twin.read().unwrap().clone())
+    ([(header::CONTENT_TYPE, "application/octet-stream"), (header::CACHE_CONTROL, "no-cache")], state.twin.read().clone())
 }
 
 #[derive(serde::Deserialize)]
@@ -1284,7 +1336,7 @@ async fn save_layer_view(
     if body.len() > MAX_VIEW_BYTES || id.len() > 128 {
         return (StatusCode::PAYLOAD_TOO_LARGE, Json(json!({ "error": "the picture is too large" }))).into_response();
     }
-    let mut views = state.views.lock().expect("views lock");
+    let mut views = state.views.lock();
     // A few layers at most; a table that keeps sending under new names cannot grow this without end.
     if !views.contains_key(&id) && views.len() >= 32 {
         views.clear();
@@ -1308,7 +1360,7 @@ async fn layer_view(
     axum::extract::Path(id): axum::extract::Path<String>,
     Query(query): Query<ViewQuery>,
 ) -> axum::response::Response {
-    let views = state.views.lock().expect("views lock");
+    let views = state.views.lock();
     match views.get(&id) {
         Some(view) if query.after.is_none_or(|after| view.revision > after) => (
             [
@@ -1334,18 +1386,18 @@ struct FieldQuery {
 
 /// `GET /api/data/field?name=pet&hour=14`: a raster dataset sampled on the site grid, as a binary
 /// field frame of f32 values (NaN where it has no data). 404 when a folder of hourly rasters has
-/// none for that hour, so a layer can fall back to what it works out itself (#196).
+/// none for that hour, so a layer can fall back to what it works out itself (#196). The frame is
+/// kept until the raster or site.json changes (#534, `rasters`).
 async fn data_field(State(state): State<Arc<AppState>>, Query(query): Query<FieldQuery>) -> axum::response::Response {
-    let dir = state.site.dir.clone();
     let FieldQuery { name, hour } = query;
-    let read = tokio::task::spawn_blocking(move || {
-        let site = Site::load(&dir).map_err(|e| e.to_string())?;
-        mrs_site::field::read(&site, &name, hour)
-    })
-    .await;
+    // Kept once read (#534): the same hour asked for again opens nothing.
+    let read = {
+        let state = state.clone();
+        tokio::task::spawn_blocking(move || state.rasters.frame(&state.site.dir, &name, hour)).await
+    };
     match read {
-        Ok(Ok(Some(field))) => {
-            ([(header::CONTENT_TYPE, "application/octet-stream"), (header::CACHE_CONTROL, "no-cache")], field.to_frame()).into_response()
+        Ok(Ok(Some(frame))) => {
+            ([(header::CONTENT_TYPE, "application/octet-stream"), (header::CACHE_CONTROL, "no-cache")], frame).into_response()
         }
         Ok(Ok(None)) => (StatusCode::NOT_FOUND, Json(json!({ "error": "no raster for that hour" }))).into_response(),
         Ok(Err(error)) => (StatusCode::UNPROCESSABLE_ENTITY, Json(json!({ "error": error }))).into_response(),

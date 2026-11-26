@@ -40,6 +40,7 @@ pub fn save(site_dir: &Path, name: &str, bytes: &[u8]) -> Result<String, String>
     let extension =
         kind(bytes).ok_or("This file is not a picture or video MR Studio can show. Use PNG, JPEG, WebP or GIF, or MP4 or WebM video.")?;
     let file = file_name(name, extension).replacen("sound.", "media.", 1);
+    let file = free_name(&site_dir.join(MEDIA_DIR), &file, bytes);
     let relative = format!("{MEDIA_DIR}/{file}");
     let path = site_dir.join(&relative);
     std::fs::create_dir_all(path.parent().expect("inside data/")).map_err(|e| e.to_string())?;
@@ -47,6 +48,27 @@ pub fn save(site_dir: &Path, name: &str, bytes: &[u8]) -> Result<String, String>
     std::fs::write(&partial, bytes).map_err(|e| e.to_string())?;
     std::fs::rename(&partial, &path).map_err(|e| e.to_string())?;
     Ok(relative)
+}
+
+/// The name `file` is saved under in `folder` (#512): its own while that is free or already
+/// holds exactly these bytes, else the next free one (`street-2.jpg`). A picture a slide
+/// shows is never replaced by another that happens to have its name.
+pub(crate) fn free_name(folder: &Path, file: &str, bytes: &[u8]) -> String {
+    let (stem, extension) = file.rsplit_once('.').unwrap_or((file, ""));
+    let mut candidate = file.to_string();
+    let mut n = 1;
+    loop {
+        let path = folder.join(&candidate);
+        let taken = path.exists();
+        let same = taken
+            && std::fs::metadata(&path).is_ok_and(|m| m.len() == bytes.len() as u64)
+            && std::fs::read(&path).is_ok_and(|b| b == bytes);
+        if !taken || same {
+            return candidate;
+        }
+        n += 1;
+        candidate = if extension.is_empty() { format!("{stem}-{n}") } else { format!("{stem}-{n}.{extension}") };
+    }
 }
 
 /// The pictures and video a site has, as paths relative to the site folder, sorted.
@@ -88,6 +110,11 @@ mod tests {
         assert_eq!(save(&dir, "Satellit (nu).PNG", b"\x89PNG\r\n\x1a\n").unwrap(), "data/media/satellit-nu.png");
         assert_eq!(save(&dir, "???", b"\x00\x00\x00\x20ftypisom").unwrap(), "data/media/media.mp4");
         assert!(save(&dir, "notes.txt", b"hello").is_err());
+        // Another picture with a name that is taken is saved beside it (#512); the same picture again is the same file.
+        assert_eq!(save(&dir, "satellit-nu.png", b"\x89PNG\r\n\x1a\nother").unwrap(), "data/media/satellit-nu-2.png");
+        assert_eq!(save(&dir, "satellit-nu.png", b"\x89PNG\r\n\x1a\n").unwrap(), "data/media/satellit-nu.png");
+        assert_eq!(std::fs::read(dir.join("data/media/satellit-nu.png")).unwrap(), b"\x89PNG\r\n\x1a\n");
+        std::fs::remove_file(dir.join("data/media/satellit-nu-2.png")).unwrap();
         assert_eq!(list(&dir), vec!["data/media/media.mp4".to_string(), "data/media/satellit-nu.png".to_string()]);
         std::fs::remove_dir_all(&dir).unwrap();
     }

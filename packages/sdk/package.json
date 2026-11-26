@@ -7,6 +7,8 @@
   "types": "src/index.ts",
   "scripts": {
     "typecheck": "tsc --noEmit",
+    "types": "node scripts/types.mjs",
+    "types:check": "node scripts/types.mjs --check",
     "test": "node --test --experimental-strip-types test/*.test.ts"
   },
   "devDependencies": {

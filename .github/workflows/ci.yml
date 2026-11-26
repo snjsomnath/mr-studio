@@ -32,6 +32,9 @@ jobs:
         run: node scripts/release.mjs check "origin/${{ github.base_ref }}"
       - name: Release notes are readable
         run: node scripts/release.mjs pending
+      # The script that decides every version is itself tested (#544).
+      - name: The release script does what it says
+        run: node --test scripts/release.test.mjs
       # Every layer, kernel and site setting is covered by the docs and the MCP server.
       - name: Docs and MCP server know what is built
         run: node scripts/check-docs.mjs
@@ -41,11 +44,28 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      # The version the lint uses, so a new Rust release never turns an unrelated pull request red.
+      - uses: dtolnay/rust-toolchain@1.100.0
       - uses: Swatinem/rust-cache@v2
       # A software Vulkan driver, so the GPU kernels and the GPU/CPU parity tests run without a GPU.
       - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends mesa-vulkan-drivers
       - run: cargo test
+
+  # MR Studio runs on Windows and macOS (#514): files replaced while open, table packages, paths,
+  # services (venv paths, python against python3) and child processes behave differently there.
+  # The engine's kernels are the same code everywhere and are tested above, with a graphics driver.
+  rust-os:
+    name: Site, host and CLI (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.100.0
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test -p mrs-site -p mrs-host -p mrs-cli -p mrs-relay
 
   rust-lint:
     name: Rust format and lint
@@ -74,6 +94,8 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm -r typecheck
+      - name: The layer template type-checks on its own, with the SDK types the app ships (#508)
+        run: pnpm --filter @mrstudio/sdk types:check
       # Promises nobody awaits or catches (#264): how errors went missing before #259 and #260.
       - run: pnpm lint
       # Every package with tests, including the density budget: every panel and theme in the repo is checked against the dashboard rules.
@@ -105,7 +127,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.100.0
       - uses: Swatinem/rust-cache@v2
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
@@ -143,7 +165,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.100.0
       - uses: Swatinem/rust-cache@v2
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4

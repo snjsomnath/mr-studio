@@ -17,7 +17,7 @@ import { timeValue } from './marks.ts';
 import { categorySlots, paletteColour } from './palette.ts';
 import type { ResolvedPalette } from './palette.ts';
 
-type Row = Record<string, unknown>;
+type PlaceRow = Record<string, unknown>;
 
 /** One place, ready for a motion. */
 export interface Place {
@@ -63,9 +63,9 @@ export interface PlaceColumns {
 }
 
 export interface PlaceTables {
-  activity?: Row[];
-  flows?: Row[];
-  links?: Row[];
+  activity?: PlaceRow[];
+  flows?: PlaceRow[];
+  links?: PlaceRow[];
 }
 
 export interface PlaceExtras {
@@ -89,7 +89,7 @@ const WEIGHT_COLUMNS = ['weight', 'mass', 'importance', 'size', 'value', 'visito
 const CATEGORY_COLUMNS = ['category', 'kind', 'type', 'group', 'class'];
 
 /** Guesses which columns of the places are the name, weight and category (#160: auto-detection). */
-export function guessPlaceColumns(rows: readonly Row[]): { name: string | null; weight: string | null; category: string | null } {
+export function guessPlaceColumns(rows: readonly PlaceRow[]): { name: string | null; weight: string | null; category: string | null } {
   const keys = new Set<string>();
   for (const row of rows.slice(0, 200)) for (const k of Object.keys(row ?? {})) keys.add(k);
   return { name: findColumn(keys, NAME_COLUMNS), weight: findColumn(keys, WEIGHT_COLUMNS), category: findColumn(keys, CATEGORY_COLUMNS) };
@@ -108,7 +108,7 @@ export function placeData(
   cycle_s = 24,
 ): PlaceData {
   const problems: string[] = [];
-  const rows = spots.map((s) => (s.properties ?? {}) as Row);
+  const rows = spots.map((s) => (s.properties ?? {}) as PlaceRow);
   const guess = guessPlaceColumns(rows);
   const nameCol = columns.name === undefined ? guess.name : columns.name;
   const weightCol = columns.weight === undefined ? guess.weight : columns.weight;

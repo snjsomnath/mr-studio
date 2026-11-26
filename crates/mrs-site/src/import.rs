@@ -8,7 +8,7 @@
 //! a blocker stops an import; warnings and notes travel with the report.
 
 use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use serde::Serialize;
 use serde_json::{json, Map, Value};
@@ -476,7 +476,11 @@ pub fn inspect(site: &Site, target: &Target, filename: &str, bytes: &[u8], optio
         summary = format!("{summary}; {inside} on the table");
     }
     if let Some(existing) = site.data().get(target.name()) {
-        issues.push(Issue::new("data.replaces", Severity::Note, format!("This replaces the table's {} ({existing}).", target.name())));
+        issues.push(Issue::new(
+            "data.replaces",
+            Severity::Note,
+            format!("This replaces the table's {} ({existing}). Undo brings them back.", target.name()),
+        ));
     }
 
     let mut collection = json!({ "type": "FeatureCollection", "features": features });
@@ -546,9 +550,15 @@ pub fn apply(site: &Site, mut prepared: Prepared) -> Result<(Site, Report), Site
         move |source| SiteError::Io { path, source }
     };
     std::fs::create_dir_all(file.parent().expect("inside data/")).map_err(io(&file))?;
-    let temporary = file.with_extension("import.tmp");
-    std::fs::write(&temporary, content).map_err(io(&temporary))?;
-    std::fs::rename(&temporary, &file).map_err(io(&file))?;
+    // An import never writes over a file that holds something else (#512): the earlier data
+    // stays under its own name, so Undo and the version history, which put site.json back,
+    // bring the earlier data back with it.
+    let relative = beside(&site.dir, &relative, content);
+    let file = site.dir.join(&relative);
+    let fresh = !file.exists();
+    if fresh {
+        crate::files::replace(&file, content).map_err(io(&file))?;
+    }
 
     let manifest_path = site.dir.join("site.json");
     let before = std::fs::read_to_string(&manifest_path).map_err(io(&manifest_path))?;
@@ -558,24 +568,92 @@ pub fn apply(site: &Site, mut prepared: Prepared) -> Result<(Site, Report), Site
     if prepared.target == Target::Terrain && prepared.flatten {
         document["scene"]["terrain"]["flatten_buildings"] = json!(true);
     }
-    write_atomically(&manifest_path, &(serde_json::to_string_pretty(&document).map_err(parse)? + "\n"))?;
+    let after = serde_json::to_string_pretty(&document).map_err(parse)? + "\n";
+    write_atomically(&manifest_path, &after)?;
     match Site::load(&site.dir) {
         Ok(updated) => {
+            forget_old_versions(&site.dir, &relative, &[before.as_str(), after.as_str()]);
             prepared.report.path = Some(relative);
             Ok((updated, prepared.report))
         }
         Err(e) => {
+            // A refused import changes nothing: the manifest is put back and the new file goes.
             write_atomically(&manifest_path, &before)?;
+            if fresh {
+                let _ = std::fs::remove_file(&file);
+            }
             Err(e)
         }
     }
 }
 
-pub(crate) fn write_atomically(path: &PathBuf, text: &str) -> Result<(), SiteError> {
-    let temporary = path.with_extension("json.tmp");
-    let io = |source| SiteError::Io { path: path.clone(), source };
-    std::fs::write(&temporary, text).map_err(io)?;
-    std::fs::rename(&temporary, path).map_err(io)
+/// How many earlier versions of a data file are kept beside it, for Undo.
+pub const KEPT_VERSIONS: usize = 3;
+
+/// `data/buildings.geojson` as (`data/buildings`, `geojson`), and `data/buildings.v3.geojson`
+/// as the same with version 3. The first file of a name is version 1.
+pub(crate) fn version_of(relative: &str) -> (String, String, u32) {
+    let (stem, extension) = relative.rsplit_once('.').unwrap_or((relative, ""));
+    match stem.rsplit_once(".v").and_then(|(base, n)| n.parse::<u32>().ok().filter(|n| *n >= 2).map(|n| (base, n))) {
+        Some((base, n)) => (base.to_string(), extension.to_string(), n),
+        None => (stem.to_string(), extension.to_string(), 1),
+    }
+}
+
+/// Every version of `relative` in the site folder, as (version, path relative to the site).
+fn versions(site_dir: &Path, relative: &str) -> Vec<(u32, String)> {
+    let (base, extension, _) = version_of(relative);
+    let folder = Path::new(&base).parent().map(|p| p.to_string_lossy().replace('\\', "/")).unwrap_or_default();
+    let Ok(entries) = std::fs::read_dir(site_dir.join(&folder)) else { return Vec::new() };
+    let mut found: Vec<(u32, String)> = entries
+        .filter_map(|e| e.ok())
+        .filter_map(|e| e.file_name().to_str().map(|name| if folder.is_empty() { name.to_string() } else { format!("{folder}/{name}") }))
+        .filter_map(|path| {
+            let (b, e, n) = version_of(&path);
+            (b == base && e == extension).then_some((n, path))
+        })
+        .collect();
+    found.sort();
+    found
+}
+
+/// Where new `content` for `relative` is saved: the name itself while it is free, the version
+/// that already holds exactly this content, or else the next version (`buildings.v2.geojson`).
+fn beside(site_dir: &Path, relative: &str, content: &[u8]) -> String {
+    let existing = versions(site_dir, relative);
+    if existing.is_empty() {
+        return relative.to_string();
+    }
+    let same = |path: &String| {
+        let file = site_dir.join(path);
+        std::fs::metadata(&file).is_ok_and(|m| m.len() == content.len() as u64) && std::fs::read(&file).is_ok_and(|b| b == content)
+    };
+    if let Some((_, path)) = existing.iter().find(|(_, path)| same(path)) {
+        return path.clone();
+    }
+    let (base, extension, _) = version_of(relative);
+    let next = existing.iter().map(|(n, _)| *n).max().unwrap_or(1) + 1;
+    if extension.is_empty() {
+        format!("{base}.v{next}")
+    } else {
+        format!("{base}.v{next}.{extension}")
+    }
+}
+
+/// Removes versions of `current` that nothing needs any more: all but the newest
+/// [`KEPT_VERSIONS`] earlier ones, never one that `manifests` (site.json before and after) name.
+fn forget_old_versions(site_dir: &Path, current: &str, manifests: &[&str]) {
+    let mut earlier: Vec<(u32, String)> = versions(site_dir, current).into_iter().filter(|(_, path)| path != current).collect();
+    earlier.sort_by_key(|b| std::cmp::Reverse(b.0));
+    for (_, path) in earlier.into_iter().skip(KEPT_VERSIONS) {
+        if !manifests.iter().any(|text| text.contains(&format!("\"{path}\""))) {
+            let _ = std::fs::remove_file(site_dir.join(path));
+        }
+    }
+}
+
+pub(crate) fn write_atomically(path: &Path, text: &str) -> Result<(), SiteError> {
+    crate::files::replace(path, text).map_err(|source| SiteError::Io { path: path.to_path_buf(), source })
 }
 
 /// Points the manifest at the imported file, keeping any settings already there.
@@ -1049,7 +1127,11 @@ fn trips(site: &Site, target: &Target, text: &str, mut issues: Vec<Issue>) -> Pr
         issues.push(Issue::new("read.empty", Severity::Blocker, "The trips list is empty."));
     }
     if let Some(existing) = site.data().get("trips") {
-        issues.push(Issue::new("data.replaces", Severity::Note, format!("This replaces the table's trips ({existing}).")));
+        issues.push(Issue::new(
+            "data.replaces",
+            Severity::Note,
+            format!("This replaces the table's trips ({existing}). Undo brings them back."),
+        ));
     }
     let groups: std::collections::BTreeSet<&str> = list.iter().filter_map(|t| t["group"].as_str()).collect();
     report.summary = format!("{} trips in {} groups", list.len(), groups.len().max(1));
@@ -1116,7 +1198,11 @@ fn table(site: &Site, target: &Target, text: &str, mut issues: Vec<Issue>) -> Pr
         issues.push(Issue::new("read.empty", Severity::Blocker, "The table has column names but no rows."));
     }
     if let Some(existing) = site.data().get(target.name()) {
-        issues.push(Issue::new("data.replaces", Severity::Note, format!("This replaces the table's {} ({existing}).", target.name())));
+        issues.push(Issue::new(
+            "data.replaces",
+            Severity::Note,
+            format!("This replaces the table's {} ({existing}). Undo brings them back.", target.name()),
+        ));
     }
     let ok = !issues.iter().any(|i| i.severity == Severity::Blocker);
     let report = Report {
@@ -1244,7 +1330,11 @@ fn terrain(site: &Site, bytes: &[u8], crs: Option<u32>, flatten: bool) -> Prepar
         issues.push(Issue::new("extent.partial", Severity::Warning, message));
     }
     if let Some(existing) = site.manifest.scene.terrain.as_ref() {
-        issues.push(Issue::new("data.replaces", Severity::Note, format!("This replaces the table's terrain ({}).", existing.path)));
+        issues.push(Issue::new(
+            "data.replaces",
+            Severity::Note,
+            format!("This replaces the table's terrain ({}). Undo brings it back.", existing.path),
+        ));
     }
     report.summary = format!("Ground from {low:.0} to {high:.0} m, covering {:.0}% of the table", (share * 100.0).min(100.0));
     // A surface model has the buildings in it: they would read as ground (#344).
@@ -1643,13 +1733,14 @@ mod tests {
         assert!(codes(r).contains(&"geom.mixed") && codes(r).contains(&"height.estimated") && codes(r).contains(&"height.missing"));
         assert!(codes(r).contains(&"data.replaces"));
 
+        // The sample has buildings already: the new ones are saved beside them (#512).
         let (updated, report) = apply(&site, prepared).unwrap();
-        assert_eq!(report.path.as_deref(), Some("data/buildings.geojson"));
+        assert_eq!(report.path.as_deref(), Some("data/buildings.v2.geojson"));
         let b = updated.manifest.scene.buildings.as_ref().unwrap();
-        assert_eq!((b.path.as_str(), b.height_property.as_str(), b.default_height_m), ("data/buildings.geojson", "height", 12.0));
+        assert_eq!((b.path.as_str(), b.height_property.as_str(), b.default_height_m), ("data/buildings.v2.geojson", "height", 12.0));
         let (_, stats) = updated.bake().unwrap();
         assert_eq!(stats.buildings, 3);
-        let written: Value = serde_json::from_slice(&std::fs::read(updated.dir.join("data/buildings.geojson")).unwrap()).unwrap();
+        let written: Value = serde_json::from_slice(&std::fs::read(updated.dir.join("data/buildings.v2.geojson")).unwrap()).unwrap();
         assert_eq!(written["features"][1]["properties"]["height"], json!(12.0));
         std::fs::remove_dir_all(&site.dir).unwrap();
     }
@@ -1920,18 +2011,19 @@ mod tests {
             json!({ "type": "Feature", "properties": {}, "geometry": { "type": "LineString", "coordinates": [[11.969, 57.70], [11.971, 57.70]] } }),
         ]);
         let (site2, _) = apply(&site, inspect(&site, &Target::Walkways, "w.geojson", &walk, Options::default())).unwrap();
-        assert_eq!(site2.data()["walkways"], "data/walkways.geojson");
+        assert_eq!(site2.data()["walkways"], "data/walkways.v2.geojson");
 
         let trips = json!({ "trips": [{ "group": "walk", "legs": [{ "start": 0, "duration": 60, "coordinates": [[11.969, 57.70], [11.971, 57.70]] }] }] });
         let prepared = inspect(&site2, &Target::Trips, "trips.json", &serde_json::to_vec(&trips).unwrap(), Options::default());
         assert!(prepared.report.ok, "{:?}", prepared.report.issues);
         assert_eq!(prepared.report.summary, "1 trips in 1 groups");
         let (site3, _) = apply(&site2, prepared).unwrap();
-        assert_eq!(site3.data()["trips"], "data/trips.json");
+        assert_eq!(site3.data()["trips"], "data/trips.v2.json");
 
         let bad = inspect(&site3, &Target::Trips, "trips.json", br#"{ "nope": [] }"#, Options::default());
         assert_eq!(bad.report.issues[0].code, "trips.format");
         assert!(apply(&site3, bad).is_err());
+        assert!(!site3.dir.join("data/trips.v3.json").exists(), "a refused import leaves no file");
 
         let far_and_near = collection(vec![
             json!({ "type": "Feature", "properties": { "n": 1 }, "geometry": { "type": "Point", "coordinates": [11.97, 57.70] } }),
@@ -1945,6 +2037,57 @@ mod tests {
         let written: Value = serde_json::from_slice(&std::fs::read(site4.dir.join("data/counters.geojson")).unwrap()).unwrap();
         assert_eq!(written["features"].as_array().unwrap().len(), 1);
         std::fs::remove_dir_all(&site.dir).unwrap();
+    }
+
+    /// #512: an import never writes over other data, so putting site.json back (Undo, the
+    /// version history) brings the earlier data back with it.
+    #[test]
+    fn an_import_keeps_the_data_it_replaces_and_undo_finds_it() {
+        let site = scratch("keeps");
+        let original = std::fs::read(site.dir.join("data/buildings.geojson")).unwrap();
+        let first_manifest = std::fs::read_to_string(site.dir.join("site.json")).unwrap();
+        let square = |lon: f64| {
+            collection(vec![json!({ "type": "Feature", "properties": { "height": 9 }, "geometry": { "type": "Polygon", "coordinates":
+                [[[lon, 57.70], [lon + 0.0004, 57.70], [lon + 0.0004, 57.7002], [lon, 57.7002], [lon, 57.70]]] } })])
+        };
+        let import = |site: &Site, lon: f64| {
+            apply(site, inspect(site, &Target::Buildings, "b.geojson", &square(lon), Options::default())).unwrap().0
+        };
+
+        let second = import(&site, 11.9690);
+        assert_eq!(second.manifest.scene.buildings.as_ref().unwrap().path, "data/buildings.v2.geojson");
+        assert_eq!(std::fs::read(site.dir.join("data/buildings.geojson")).unwrap(), original, "the earlier buildings are untouched");
+        assert_eq!(second.bake().unwrap().1.buildings, 1);
+
+        // Undo is site.json as it was: the table has its first buildings again.
+        std::fs::write(site.dir.join("site.json"), &first_manifest).unwrap();
+        let undone = Site::load(&site.dir).unwrap();
+        assert_eq!(undone.manifest.scene.buildings.as_ref().unwrap().path, "data/buildings.geojson");
+        assert_eq!(std::fs::read(undone.dir.join("data/buildings.geojson")).unwrap(), original);
+
+        // The same data again is the same file, not another copy.
+        let again = import(&undone, 11.9690);
+        assert_eq!(again.manifest.scene.buildings.as_ref().unwrap().path, "data/buildings.v2.geojson");
+        assert!(!site.dir.join("data/buildings.v3.geojson").exists());
+
+        // Only the last few earlier versions are kept, and never fewer than what site.json names.
+        let mut latest = again;
+        for n in 0..6 {
+            latest = import(&latest, 11.9700 + n as f64 * 0.0005);
+        }
+        assert_eq!(latest.manifest.scene.buildings.as_ref().unwrap().path, "data/buildings.v8.geojson");
+        let kept: Vec<u32> = versions(&site.dir, "data/buildings.geojson").into_iter().map(|(n, _)| n).collect();
+        assert_eq!(kept, [5, 6, 7, 8], "the current one and the {KEPT_VERSIONS} before it");
+        std::fs::remove_dir_all(&site.dir).unwrap();
+    }
+
+    #[test]
+    fn versions_are_told_from_ordinary_names() {
+        assert_eq!(version_of("data/buildings.geojson"), ("data/buildings".into(), "geojson".into(), 1));
+        assert_eq!(version_of("data/buildings.v3.geojson"), ("data/buildings".into(), "geojson".into(), 3));
+        // A name that only looks like one is a name.
+        assert_eq!(version_of("data/plan.v1.geojson").2, 1);
+        assert_eq!(version_of("data/survey.vast.geojson"), ("data/survey.vast".into(), "geojson".into(), 1));
     }
 
     /// A WGS84 GeoTIFF over `bounds` (s, w, n, e) with `height(lon, lat)` in each pixel.

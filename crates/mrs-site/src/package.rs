@@ -181,6 +181,16 @@ pub fn export(dir: &Path, out: &Path, sources: Vec<SourceNeed>, app: &str) -> Re
     let mut files = Vec::new();
     let mut left_out = Vec::new();
     table_files(dir, "", &mut files, &mut left_out)?;
+    // Earlier versions of a data file, kept beside it for Undo (#512), stay on this computer:
+    // the package carries the version site.json names.
+    let manifest = std::fs::read_to_string(dir.join("site.json")).unwrap_or_default();
+    let named = |relative: &str| manifest.contains(&format!("\"{relative}\""));
+    let family = |relative: &str| {
+        let (base, extension, _) = crate::import::version_of(relative);
+        (base, extension)
+    };
+    let current: std::collections::BTreeSet<(String, String)> = files.iter().filter(|(r, _)| named(r)).map(|(r, _)| family(r)).collect();
+    files.retain(|(relative, _)| named(relative) || !current.contains(&family(relative)));
     let about = About {
         format: FORMAT,
         name: site.manifest.name.clone(),
@@ -298,8 +308,13 @@ pub fn import(file: &Path, into: &Path) -> Result<Imported, PackageError> {
     // that tells the two apart on Home.
     let renamed = folder != folder_name(&about.name);
     let finish = (|| -> Result<Option<String>, PackageError> {
+        // The table says which MR Studio it came from (#509), and an older one says so
+        // rather than what it could not read.
+        crate::version::stamp_with(&partial, &about.app);
         let upgraded = migrate::upgrade_site(&partial)
-            .map_err(|e| refused(e.to_string()))?
+            .map_err(|e| {
+                refused(crate::version::needs_newer(&partial).map(|v| crate::version::update_message(&v)).unwrap_or(e.to_string()))
+            })?
             .map(|u| format!("Brought up to date from site format {} to {}: {}", u.from, u.to, u.changes.join("; ")));
         if renamed {
             let path = partial.join("site.json");
@@ -356,8 +371,13 @@ pub fn update(file: &Path, existing: &Path) -> Result<Imported, PackageError> {
         if !partial.join("site.json").is_file() {
             return Err(refused("there is no site.json in it, so it is not a table"));
         }
+        // The table says which MR Studio it came from (#509), and an older one says so
+        // rather than what it could not read.
+        crate::version::stamp_with(&partial, &about.app);
         let upgraded = migrate::upgrade_site(&partial)
-            .map_err(|e| refused(e.to_string()))?
+            .map_err(|e| {
+                refused(crate::version::needs_newer(&partial).map(|v| crate::version::update_message(&v)).unwrap_or(e.to_string()))
+            })?
             .map(|u| format!("Brought up to date from site format {} to {}: {}", u.from, u.to, u.changes.join("; ")));
         Ok((files, upgraded))
     })();
@@ -530,6 +550,28 @@ mod tests {
         assert_eq!(Site::load(&first.dir).unwrap().manifest.name, "Lindholmen");
         assert!(!other.read_dir().unwrap().any(|e| e.unwrap().file_name().to_string_lossy().ends_with(".unpacking")));
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// #512: earlier versions of a data file are for Undo on this computer; the package carries
+    /// the one site.json names, and files that only look like versions stay in.
+    #[test]
+    fn earlier_versions_of_data_stay_behind() {
+        let dir = scratch("versions");
+        let site = table(&dir);
+        std::fs::create_dir_all(site.join("data")).unwrap();
+        for name in ["roads.geojson", "roads.v2.geojson", "roads.v3.geojson", "survey.v2.geojson"] {
+            std::fs::write(site.join("data").join(name), r#"{"type":"FeatureCollection","features":[]}"#).unwrap();
+        }
+        let mut manifest: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(site.join("site.json")).unwrap()).unwrap();
+        manifest["data"]["roads"] = serde_json::json!("data/roads.v3.geojson");
+        std::fs::write(site.join("site.json"), serde_json::to_string_pretty(&manifest).unwrap()).unwrap();
+        let out = dir.join("Lindholmen.mrstable");
+        export(&site, &out, Vec::new(), "2.0.0").unwrap();
+        let mut zip = ZipArchive::new(File::open(&out).unwrap()).unwrap();
+        let names: Vec<String> = (0..zip.len()).map(|i| zip.by_index(i).unwrap().name().unwrap().to_string()).collect();
+        let data: Vec<&str> = names.iter().filter(|n| n.starts_with("data/")).map(String::as_str).collect();
+        assert_eq!(data, ["data/roads.v3.geojson", "data/survey.v2.geojson"]);
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

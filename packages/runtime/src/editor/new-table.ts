@@ -2,7 +2,7 @@ import { okCancel } from './platform.ts';
 import { el } from '../controls.ts';
 import { icon } from './icons.ts';
 import { PlaceMap } from './place-map.ts';
-import { ScaleFields } from './place-scale.ts';
+import { type Detail, ScaleFields } from './place-scale.ts';
 import { parsePlace } from './place.ts';
 import { WIZARD_STEPS, stepList } from './wizard.ts';
 import './editor.css';
@@ -54,16 +54,18 @@ export function newTable(root: HTMLElement): void {
   // The physical table and the model scale: the ground and the table follow each other at the scale.
   let tableCm = 100;
   let tileCm: number | null = null;
+  let detail: Detail = 'normal';
   let tileM: number | null = null;
   // The map is made below; until then the grid waits in tileM.
   let ready: PlaceMap | null = null;
   const scale = new ScaleFields(
-    () => ({ width_m: Number(width.value), height_m: Number(height.value), table_cm: tableCm, tile_cm: tileCm }),
+    () => ({ width_m: Number(width.value), height_m: Number(height.value), table_cm: tableCm, tile_cm: tileCm, detail }),
     (ground) => {
       width.value = String(ground.width_m);
       height.value = String(ground.height_m);
       tableCm = ground.table_cm;
       tileCm = ground.tile_cm ?? null;
+      detail = ground.detail ?? 'normal';
       map.set(placement());
       if (invoke) say('');
     },
@@ -143,7 +145,7 @@ export function newTable(root: HTMLElement): void {
     say('');
     create.disabled = true;
     try {
-      const path = await invoke!('create_site', { site: { name: title, lat: at.lat, lon: at.lon, width_m, height_m, rotation_deg: rotation(), table_width_cm: tableCm, tile_cm: tileCm ?? 0 } });
+      const path = await invoke!('create_site', { site: { name: title, lat: at.lat, lon: at.lon, width_m, height_m, rotation_deg: rotation(), table_width_cm: tableCm, tile_cm: tileCm ?? 0, detail } });
       await invoke!('open_site', { path, welcome: true });
     } catch (error) {
       say(String(error));

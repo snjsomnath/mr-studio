@@ -7,9 +7,9 @@
 //! left out of a shared `.mrstable` and is served to this computer only (`/api/field`), so a
 //! phone never sees another visitor's photos. The controller removes a spot or clears the walk.
 
+use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
 
 use base64::Engine as _;
 use serde::{Deserialize, Serialize};
@@ -158,7 +158,7 @@ impl Field {
 
     /// Every spot, oldest first, and the walk's revision, for `GET /api/field`.
     pub fn list(&self) -> Value {
-        let inner = self.inner.lock().unwrap();
+        let inner = self.inner.lock();
         // Spots on their way, so the controller sees who is still sending.
         let pending: Vec<Value> = inner
             .pending
@@ -170,7 +170,7 @@ impl Field {
 
     /// A field file's path, by its name as a spot has it. None for anything else.
     pub fn file(&self, name: &str) -> Option<PathBuf> {
-        let inner = self.inner.lock().unwrap();
+        let inner = self.inner.lock();
         inner.saved.spots.iter().any(|s| s.file == name).then(|| self.dir.join(name))
     }
 
@@ -200,7 +200,7 @@ impl Field {
                 if !matches!(role, Role::Tv | Role::Dev) {
                     return Err("only the controller removes spots".into());
                 }
-                let mut inner = self.inner.lock().unwrap();
+                let mut inner = self.inner.lock();
                 let gone: Vec<Spot> = if method == "field.clear" {
                     inner.pending.clear();
                     std::mem::take(&mut inner.saved.spots)
@@ -234,7 +234,7 @@ impl Field {
     /// phone that lost its connection goes on where it stopped. Sending a spot again is harmless.
     fn add(&self, p: &Value, seat: Option<Value>) -> Result<(Value, Option<u64>), String> {
         let id = clean_id(&p["id"])?;
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.inner.lock();
         if let Some(done) = inner.saved.spots.iter().find(|s| s.id == id) {
             return Ok((json!({ "have": done.bytes, "done": true }), None));
         }
@@ -294,7 +294,7 @@ impl Field {
     fn part(&self, p: &Value) -> Result<(Value, Option<u64>), String> {
         use std::io::Write;
         let id = clean_id(&p["id"])?;
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.inner.lock();
         let pending = inner.pending.get_mut(&id).ok_or("send field.add first")?;
         let offset = p["offset"].as_u64().ok_or("missing offset")?;
         if offset != pending.have {

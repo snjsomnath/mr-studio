@@ -111,6 +111,9 @@ pub struct History {
     head: usize,
     /// Where history files go; `None` keeps the history in memory only (a read-only folder).
     store: Option<PathBuf>,
+    /// A site.json that could not be read as JSON at the last look (#515): a writer may be
+    /// half way through it, so it is looked at once more before it is recorded.
+    unreadable: Option<String>,
 }
 
 fn now() -> u64 {
@@ -138,9 +141,7 @@ fn same(a: &str, b: &str) -> bool {
 }
 
 fn write_atomically(path: &Path, text: &str) -> std::io::Result<()> {
-    let temporary = path.with_extension("json.tmp");
-    std::fs::write(&temporary, text)?;
-    std::fs::rename(&temporary, path)
+    crate::files::replace(path, text)
 }
 
 impl History {
@@ -167,7 +168,7 @@ impl History {
             std::fs::read_to_string(store.join("head.json")).ok().and_then(|t| serde_json::from_str::<Head>(&t).ok()).map(|h| h.head);
         let head = saved_head.and_then(|h| revisions.iter().position(|(r, _)| r.rev == h)).unwrap_or(revisions.len().saturating_sub(1));
         let writable = std::fs::create_dir_all(&store).is_ok();
-        let mut history = Self { dir: dir.to_path_buf(), site_json, revisions, head, store: writable.then_some(store) };
+        let mut history = Self { dir: dir.to_path_buf(), site_json, revisions, head, store: writable.then_some(store), unreadable: None };
         let current = std::fs::read_to_string(&history.site_json).unwrap_or_default();
         if history.revisions.is_empty() {
             history.push(By::Start, "Opened the table".into(), Vec::new(), None, current);
@@ -220,6 +221,10 @@ impl History {
     ) -> Result<(T, Option<Change>), E> {
         let value = write()?;
         let change = self.record(by, summary.into(), surface);
+        if change.is_some() {
+            // The table now holds what this version can make (#509).
+            crate::version::stamp(&self.dir);
+        }
         Ok((value, change))
     }
 
@@ -270,8 +275,17 @@ impl History {
     pub fn check_outside(&mut self) -> Option<Change> {
         let after = std::fs::read_to_string(&self.site_json).ok()?;
         if same(&self.revisions[self.head].1, &after) {
+            self.unreadable = None;
             return None;
         }
+        // A file that is empty or cut off is most often one being written this moment (a tool
+        // that writes in place, a sync program). It is recorded only when the next look finds
+        // it the same, so a half-written file never becomes a version or stops the table.
+        if serde_json::from_str::<Value>(&after).is_err() && self.unreadable.as_deref() != Some(after.as_str()) {
+            self.unreadable = Some(after);
+            return None;
+        }
+        self.unreadable = None;
         let keys = changed_keys(&self.revisions[self.head].1, &after);
         let note_path = self.dir.join(NOTE);
         let note = std::fs::read_to_string(&note_path).ok().and_then(|t| serde_json::from_str::<Value>(&t).ok());
@@ -414,6 +428,25 @@ mod tests {
 
     fn edit(dir: &Path, text: &str) {
         std::fs::write(dir.join("site.json"), text).unwrap();
+    }
+
+    /// #515: a tool that writes site.json in place leaves it empty or cut off for a moment.
+    #[test]
+    fn a_half_written_file_is_looked_at_again_before_it_counts() {
+        let dir = scratch("half-written");
+        let mut h = History::open(&dir);
+        edit(&dir, "");
+        assert!(h.check_outside().is_none(), "an empty file is a write under way");
+        edit(&dir, r#"{"name":"B","la"#);
+        assert!(h.check_outside().is_none(), "so is a cut-off one");
+        edit(&dir, r#"{"name":"B","layers":[]}"#);
+        let done = h.check_outside().unwrap();
+        assert_eq!(done.revision.summary, "Changed outside MR Studio: the name");
+        assert_eq!(h.list().len(), 2, "the half-written file never became a version");
+        // A file that stays broken is someone's mistake, and is reported at the next look.
+        edit(&dir, r#"{"name":"C","#);
+        assert!(h.check_outside().is_none());
+        assert!(h.check_outside().is_some());
     }
 
     #[test]

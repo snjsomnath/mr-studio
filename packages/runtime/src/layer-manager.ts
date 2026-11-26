@@ -4,11 +4,12 @@ import type { Connection, DataProblem, EntityChange, LayerHealth, LayerManifest,
 
 import { Cues } from './cues.ts';
 import { describe, reportError } from './diagnostics.ts';
+import { FaultCount, START_LIMIT_MS, noticeSlow } from './layer-faults.ts';
 import { meter } from './perf.ts';
 import { entitiesOnTable } from './entities.ts';
 import { language, say } from './i18n.ts';
 import { recipeModule } from './recipe-player.ts';
-import { layerModule } from './registry.ts';
+import { layerModule, siteModuleProblem } from './registry.ts';
 import { changedKeys } from './store.ts';
 import type { Store } from './store.ts';
 import type { TableView } from './table.ts';
@@ -537,7 +538,17 @@ export class LayerManager {
     if (!module?.table) {
       // A layer made only of a controller stage (a map or panels in layer.json, #357, #374) has nothing to draw here.
       const stageOnly = typeof manifest?.stage === 'object' && manifest.stage !== null;
-      if (!module && !stageOnly) {
+      if (manifest?.held) {
+        // The table was opened without its own programs (#506): the layer's code is one of them.
+        console.warn(`layer '${layer}' is held: this table's own programs are not run on this computer`);
+        this.failed(id, 'this table was opened without its own programs, and this layer is one of them', false);
+      } else if (manifest?.needs_app) {
+        // The table's own layer, built for a newer MR Studio than this one (#509).
+        this.failed(id, `it needs MR Studio ${manifest.needs_app} or newer, and this computer has ${manifest.this_app ?? 'an older one'}. Update MR Studio on this computer`, false);
+      } else if (!module && siteModuleProblem(layer)) {
+        // The table's own layer, whose code did not load (#510).
+        this.failed(id, `its code could not be loaded: ${siteModuleProblem(layer)}`, false);
+      } else if (!module && !stageOnly) {
         console.warn(`layer '${layer}' is not part of this build`);
         this.failed(id, `the code for '${layer}' is not in this version of MR Studio`, false);
       }
@@ -642,7 +653,12 @@ export class LayerManager {
     const before = { ...store.layer(id).params };
     this.starting.set(id, null);
     try {
-      running.handlers = (await module.table(ctx)) ?? {};
+      // A start that never finishes (a fetch or a service that does not answer) shows as trouble (#510).
+      // It is not cut short: when it does finish, the trouble is over.
+      const slow = () => {
+        if (this.starting.has(id) && !running.stopped) this.failed(id, `it has not finished starting after ${START_LIMIT_MS / 1000} s`, false);
+      };
+      running.handlers = (await noticeSlow(module.table(ctx), START_LIMIT_MS, slow)) ?? {};
     } catch (error) {
       const heard = this.starting.get(id);
       this.starting.delete(id);
@@ -707,6 +723,7 @@ export class LayerManager {
     if (!running) return;
     running.stopped = true;
     this.running.delete(id);
+    this.faults.clear(id);
     meter.drop(id);
     for (const waiting of running.entities?.values() ?? []) clearTimeout(waiting.timer);
     for (const cleanup of running.cleanups.reverse()) this.guard(id, cleanup);
@@ -722,8 +739,16 @@ export class LayerManager {
     } catch (error) {
       console.error(`[${id}]`, error);
       reportError(error, id);
+      // A layer that throws every time (#510) is stopped and handed to the retry schedule,
+      // instead of drawing half of itself sixty times a second.
+      if (this.running.has(id) && this.faults.thrown(id, performance.now())) {
+        this.stop(id);
+        this.failed(id, `it kept failing while it ran: ${describe(error)}`);
+      }
     }
   }
+
+  private faults = new FaultCount();
 
   // ---- Trouble (#259) ---------------------------------------------------------
 

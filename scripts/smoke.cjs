@@ -1,6 +1,7 @@
 // Engine smoke (#261): the table, the controller and the editor in one browser engine, with
 // every core layer turned on and off and the display colour pass on, as the desktop app would
-// show them. It fails on any error a page throws, and on a frame that takes over 5 s, which is
+// show them. It fails on any error a page throws, on a layer that is on and has failed (by its
+// name, #514), and on a frame that takes over 5 s, which is
 // how an engine-only hang shows (PR 220: SVG filters froze WebKit on the Mac).
 //
 //   pnpm build && cargo build -p mrs-cli && node scripts/smoke.cjs [chromium|webkit|msedge] [screenshot-dir]
@@ -26,6 +27,8 @@ const base = `http://127.0.0.1:${port}`;
 const LONGEST_FRAME_MS = 5000;
 /** Long enough for a layer to load its data and draw a few seconds. */
 const LAYER_MS = 2500;
+/** What a mistake in a layer's code says when it is caught, as against missing data or a service that is away. */
+const CODE_FAULT = /is not a function|is not defined|is not iterable|is not a constructor|Cannot read prop|Cannot set prop|undefined is not|null is not|TypeError|ReferenceError|RangeError|kept failing while it ran/i;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /** A strong colour pass, so every part of the shell's colour.js is on. */
@@ -156,6 +159,20 @@ function launch() {
       await dev.request('layer.activate', { layer: id, active: !was });
       await sleep(LAYER_MS);
       await frames(`with '${id}' ${was ? 'off' : 'on'}`);
+      // A layer that throws when it starts or draws is caught by the table and shown as trouble,
+      // so no page error names it. Its health does (#514): a layer that is on and not running fails the run by name.
+      if (!was) {
+        const seen = await join('dev');
+        const health = seen.state.layers[id]?.health;
+        seen.close();
+        if (health && health.status !== 'running') {
+          const said = `the layer '${id}' is ${health.status}: ${health.reason ?? 'no reason given'}`;
+          // Missing data or an unreachable service is the table's business and is tried again;
+          // an error in the layer's own code is ours.
+          if (health.status === 'failed' || CODE_FAULT.test(health.reason ?? '')) problems.push(said);
+          else console.warn(`  ${said}`);
+        }
+      }
       // A page too busy to draw a frame names its layer, rather than failing the run with no name.
       if (shots && !was) {
         await table.screenshot({ path: path.join(shots, `${engine}-${id}.png`), timeout: 20000 }).catch((e) => {

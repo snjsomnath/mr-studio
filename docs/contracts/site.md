@@ -9,6 +9,7 @@ sites/<id>/
   scene/             baked rasters written by `mrstudio prepare`, for inspection (generated, git-ignored)
   layers/            site-only layer packages (optional)
   calibration.json   table calibration, written by the app (optional)
+  mrstudio.version   the newest MR Studio that changed the table, written by the app (see below)
 ```
 
 ## site.json
@@ -83,6 +84,7 @@ Rules:
   - Format 3: every entry in `layers` has an `id`, and layers can hold `items`, sequences have `steps`, custom layers are saved under `custom`, buttons have `group` and `order`, and the table has `ribbons`. The upgrade writes into each entry the id format 2 gave it implicitly (the layer's id, or the folder name of a site layer), so the session and the editor keep calling every layer what they called it before. Nothing else changes.
 - `extent` is the table area: a `width_m` by `height_m` rectangle centred on `origin`, rotated by `rotation_deg`. Its aspect ratio should match the table's.
 - The scene grid covers exactly the extent with `cell_m` cells, so `width = round(width_m / cell_m)`.
+- `cell_m` follows the ground (#513): a table made or resized in the app gets the cell that keeps the grid near two million cells (1 m up to 2 km², then whole metres: 3 m for 4 × 2.4 km, 6 m for 10 × 6 km). **Analysis detail** in Table size and place chooses Fine (half the cell, about four times the work), Normal or Coarse (twice the cell), and the choice is kept when the ground changes size. A cell written by hand stays until then. A grid above 64 million cells is refused.
 - Paths are relative to the site folder and may not leave it.
 - `layers[].use` is a core layer id, a relative path to a site-only layer package, or `custom:<id>` for a custom layer saved under `custom`. `params` override the layer's defaults and `active` turns it on at start.
 - `layers[].id` names an entry: lowercase letters, digits and dashes, up to 40. It is required, and unique across the whole scene, items included. Items, steps, the session's state and the editor all refer to an entry by it. New entries get the layer's id, then `-2`, `-3`… when that is taken.
@@ -109,6 +111,16 @@ Rules:
 - Unknown keys are an error, so a typo is caught by `mrstudio validate` rather than silently ignored.
 - Vector data is GeoJSON in WGS84 (CRS84). Site prep reprojects from national grids.
 - Nothing in `site.json` is a secret. Credentials for services live in the app's own config.
+
+## Which MR Studio a table needs (#509)
+
+`format` changes only when a site.json from before would no longer load. Between two formats the app gains layers, widgets and settings, and a table that uses them does not open in an app from before. So a table carries the version of the newest app that changed it:
+
+- `mrstudio.version` beside site.json holds one line, such as `0.50.0`. The host writes it when it saves a change to site.json, and never lowers it. Opening a `.mrstable` writes the version that exported it. Keep the file in the table's repository; a table without one is taken to open anywhere. It is not a key of site.json, because apps from before it refuse a site.json with a key they do not know.
+- Only the release line counts: `0.50.3` opens in `0.50.0`. A later minor or major version is newer.
+- A newer table that this app cannot read is refused with one message, whatever it tripped over: "This table was made with MR Studio 0.55. This computer has 0.50. Update MR Studio on this computer to 0.55 or newer." (`SiteError::Newer`; the same from `mrstudio validate` and when a `.mrstable` is opened.)
+- A newer table that this app can read may still use a layer or a setting from later. The app says so once, with the version, and offers **Open anyway**; `mrstudio dev` and `mrstudio validate` write the same note and carry on.
+- A site layer says what it needs in its own `layer.json` (`requires.app`, see layer.md). One built for a newer app is listed without its code and reports through layer health that it needs that version; the rest of the table shows.
 
 ## Layers, items and sequences
 
@@ -254,11 +266,31 @@ Layers reach a service only through the host, from this computer, and name it in
 What the host does with them:
 
 - Starts each `run` service when the table opens, waits for `health`, and starts it again after a crash with a growing pause (1 s up to a minute). Each stop is in the operator log. It stops them when the table closes. A change to `services` takes effect when the table opens again.
-- `GET /api/services` gives each service's state (`installing`, `starting`, `up`, `down`, `remote`), why, and how often it restarted; `/api/services/<id>/log` the last lines it wrote.
+- `GET /api/services` gives each service's state (`installing`, `starting`, `up`, `down`, `remote`, or `held` when the table was opened without its programs, see below), why, and how often it restarted; `/api/services/<id>/log` the last lines it wrote.
 - `/api/services/<id>/call/<path>` forwards any method, with its body and query, to the service. The same request from several views of the table at once (the projector and the editor both run the layer) reaches the service once, and they share the answer, so a job starts once.
 - Every good answer is kept in `.mrstudio/services/<id>/`. When the service is down or fails, the kept answer to the same request is given instead, marked with `x-mrs-cached`, so a table without its model, or offline, still shows the last result. `.mrstable` exports leave this folder out.
+- What is kept has a limit (#516): each service's answers stay within 200 MB and 2000 answers, the ones fetched longest ago going first. A value a layer keeps by name (`ctx.service(id).remember`) is never removed that way. See "Kept for offline use" below.
+
+**Asking first (#506).** A table's `run` services and the built code of its own layers (`layers/<id>/dist/`) are programs that run on the computer that opens it. The desktop app asks before they run, naming each one: **Run them**, **Open without them** or **Cancel**.
+
+- A table made on this computer is never asked about. A folder opened by hand is asked about once. A table that arrived as a `.mrstable` file is asked about once, and again when an update brings other programs (the services' commands and files or the layers' code changed; `mrs_site::programs` fingerprints them, leaving out the venv, caches and logs).
+- A yes is remembered in `programs.json` in the app's own settings folder, never in the table's folder. "Open without them" holds until the app is closed, so the question comes back.
+- Opened without them (`HostConfig.programs: false`), the table still shows: no service is started and each is `held`, calls to it answer from what was kept or say why, and the table's own layers are listed without their code (`held: true` in the manifest, no `module`), draw nothing and report through layer health that the table was opened without its programs.
+- `mrstudio dev` runs them without asking: it is the developer's own command, on their own table. `mrstudio dev --without-programs` opens the table as data, and `mrstudio export` never runs them.
 
 In a layer, `ctx.service(id)` has `get(path)`, `post(path, body)` and `job(path, body, { onProgress })`: a job POST answers `{ "job": "<id>" }`, and the SDK polls `<path>/<id>` until `state` is done or failed, passing on `progress` and `message`. A finished job's result is kept too. While a call runs, the layer publishes `busy: { label, progress }` and the controller shows it under the layer's name. `samples/service-example` has a model and a layer to copy.
+
+## Kept for offline use (#516)
+
+The host keeps what it fetches in the table's folder, so a table that has shown something once shows it again without the internet:
+
+| Folder | What | Limit |
+|---|---|---|
+| `.cache/tiles` | base map tiles, by service and tile | 500 MB together with the map pictures |
+| `.cache/maps` | one picture per WMS or ArcGIS request | |
+| `.mrstudio/services/<id>/` | each service's answers | 200 MB and 2000 answers per service |
+
+When a table starts, and once a day while it runs, each folder is brought within its limit: the files fetched longest ago are removed first (`mrs_host::kept`). `GET /api/kept` gives `{ maps, services, files, words, limits }` (bytes, and "312 MB" in words); `POST /api/kept/clear` removes all of it but the values layers kept by name, and answers `{ removed, bytes, words }`. Both are for this computer only. The editor shows the size, with **Clear**, under the media library (View › Media). None of this goes into a `.mrstable`, and none of it is the table's own data.
 
 ## Composing a scene
 

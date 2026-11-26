@@ -42,6 +42,7 @@ computer's keychain, and an exported table carries none.
 
 ## The check
 
-`.github/workflows/check.yml` installs the `mrstudio` command line at the version in
-`MRSTUDIO_VERSION` and runs `mrstudio validate .`. Raise the version when the studio computer's
-app is updated. The first run takes a few minutes to build the command line; later runs reuse it.
+`.github/workflows/check.yml` installs the `mrstudio` command line and runs `mrstudio validate .`.
+It uses the version in `mrstudio.version`, which the app writes when it changes the table, so
+keep that file in the repository. A table without one is checked with `MRSTUDIO_VERSION`. A
+studio computer with an older app says which version to install when it opens the table. The first run takes a few minutes to build the command line; later runs reuse it.
