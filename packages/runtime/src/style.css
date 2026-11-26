@@ -1478,77 +1478,215 @@ button.action:disabled {
   text-align: center;
 }
 
-.calibration-panel {
-  position: absolute;
-  right: 1rem;
-  bottom: 1rem;
-  width: 18.25rem;
-  padding: 1rem;
+/*
+ * The calibration's words and buttons (#594): in the controller's centre, in the editor's guide,
+ * and on the table only when K asks for it. Colours follow the text, so the panel suits any theme.
+ */
+.calibration-remote {
+  --cp-line: color-mix(in srgb, currentColor 18%, transparent);
+  --cp-fill: color-mix(in srgb, currentColor 8%, transparent);
   display: grid;
-  gap: 0.625rem;
-  cursor: default;
-  background: rgb(14 18 26 / 0.94);
-  border: 1px solid rgb(255 255 255 / 0.14);
-  border-radius: 0.625rem;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+  grid-template-areas: 'head head' 'look work';
+  gap: 1rem 1.75rem;
+  align-items: start;
 }
 
-.calibration-panel h2 {
+.calibration-remote[hidden] {
+  display: none;
+}
+
+.calibration-remote.is-compact {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: 'head' 'look' 'work';
+  gap: 0.625rem;
+}
+
+.cp-head {
+  grid-area: head;
+}
+
+.cp-title {
   margin: 0;
-  font-size: 1rem;
+  font-size: 1.75rem;
   font-weight: 600;
 }
 
-.calibration-panel p {
+.is-compact .cp-title {
+  font-size: 1rem;
+}
+
+.cp-look {
+  grid-area: look;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.cp-work {
+  grid-area: work;
+  display: grid;
+  gap: 0.875rem;
+}
+
+.is-compact .cp-work {
+  gap: 0.625rem;
+}
+
+.cp-plan {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 0.5rem;
+}
+
+.cp-corners {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+}
+
+.cp-corner {
+  min-width: 2.25rem;
+  height: 2.25rem;
+  padding: 0 0.5rem;
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  color: inherit;
+  background: var(--cp-fill);
+  border: 1px solid var(--cp-line);
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.cp-corner.is-done {
+  border-color: #4ade80;
+  color: #16a34a;
+}
+
+.cp-corner.is-current {
+  border-color: #ffd24a;
+  background: #ffd24a;
+  color: #14171d;
+  font-weight: 600;
+}
+
+.is-compact .cp-corner {
+  min-width: 1.75rem;
+  height: 1.75rem;
+  font-size: 0.75rem;
+}
+
+.cp-label {
   margin: 0;
+  font-size: 1.25rem;
   line-height: 1.4;
 }
 
-.calibration-plan {
-  display: block;
-  border-radius: 0.375rem;
+.is-compact .cp-label {
+  font-size: inherit;
 }
 
-.calibration-status {
+.cp-status {
+  margin: 0;
+  line-height: 1.4;
   font-variant-numeric: tabular-nums;
   opacity: 0.85;
 }
 
-.calibration-status.is-problem {
-  color: #ffb4a8;
+.cp-status.is-problem {
+  color: #e5484d;
   opacity: 1;
 }
 
-.calibration-help {
-  font-size: 0.75rem;
+.cp-help {
+  margin: 0;
+  font-size: 0.8125rem;
+  line-height: 1.4;
   opacity: 0.6;
 }
 
-.calibration-row {
+.cp-help[hidden] {
+  display: none;
+}
+
+.cp-row {
   display: flex;
   gap: 0.5rem;
 }
 
-.calibration-row button {
+.cp-button {
   flex: 1;
-  padding: 0.4375rem 0.5rem;
+  min-height: 3rem;
+  padding: 0.5rem 0.75rem;
   font: inherit;
   color: inherit;
-  background: rgb(255 255 255 / 0.08);
-  border: 1px solid rgb(255 255 255 / 0.16);
-  border-radius: 0.375rem;
+  background: var(--cp-fill);
+  border: 1px solid var(--cp-line);
+  border-radius: 0.5rem;
   cursor: pointer;
 }
 
-.calibration-row button.is-primary {
+.is-compact .cp-button {
+  min-height: 2.25rem;
+  padding: 0.375rem 0.5rem;
+}
+
+.cp-button.is-primary {
   background: #ffd24a;
   border-color: #ffd24a;
   color: #14171d;
   font-weight: 600;
 }
 
-.calibration-row button:disabled {
+.cp-button:disabled {
   opacity: 0.4;
   cursor: default;
+}
+
+/* The nudge pad: one pixel next to the middle, ten pixels on the outside. */
+.cp-pad {
+  display: grid;
+  grid-template-columns: repeat(5, 3.25rem);
+  grid-template-rows: repeat(5, 3.25rem);
+  grid-template-areas: '. . uu . .' '. . u . .' 'll l . r rr' '. . d . .' '. . dd . .';
+  gap: 0.25rem;
+  justify-content: center;
+}
+
+.is-compact .cp-pad {
+  grid-template-columns: repeat(5, 2.25rem);
+  grid-template-rows: repeat(5, 2.25rem);
+}
+
+.cp-nudge {
+  min-height: 0;
+  padding: 0;
+  font-size: 1.25rem;
+}
+
+/* While calibrating, the controller's centre is the panel alone. */
+.open-layers.is-calibrating {
+  max-height: 92%;
+}
+
+.open-layers.is-calibrating > :not(.calibration-remote) {
+  display: none !important;
+}
+
+/* K on the table: the same panel in a corner of the surface, for a table without a controller. */
+.calibration-remote.is-on-table {
+  position: absolute;
+  right: 1rem;
+  bottom: 1rem;
+  width: 20rem;
+  max-height: calc(100% - 2rem);
+  overflow: auto;
+  padding: 1rem;
+  cursor: default;
+  font-size: 0.875rem;
+  background: rgb(14 18 26 / 0.94);
+  border: 1px solid rgb(255 255 255 / 0.14);
+  border-radius: 0.625rem;
 }
 
 /* Layers' own decorations would only distract from the markers. */

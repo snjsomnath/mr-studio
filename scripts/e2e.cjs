@@ -388,12 +388,27 @@ async function main() {
     assert.equal(await dev.locator('.table-surface.is-projector').count(), 0);
 
     // Any controller can open the calibration tool on the table. It starts from a dark surface and counts corners.
+    // The table shows only the cross; the corner to find and the buttons are on the controller (#594).
     await controller.request('calibration.mode', { active: true });
-    await projected.getByText('Corner 1 of 10').waitFor();
+    const panel = tv.locator('.open-layers .calibration-remote');
+    await panel.getByText(/^Corner 1 of \d+$/).waitFor();
+    assert.equal(await projected.locator('.calibration-remote').count(), 0, 'the table should show no calibration panel');
     await projected.mouse.click(300, 200);
-    await projected.getByText('1 of at least 6 corners placed.').waitFor();
-    if (shots) await projected.screenshot({ path: path.join(shots, 'table-calibrating.png') });
+    await panel.getByText('1 of at least 6 corners placed.').waitFor();
+    // The controller's arrows nudge the cross on the table.
+    const cross = () => projected.locator('.calibration-marker').evaluate((node) => node.style.transform);
+    const placedAt = await cross();
+    await panel.getByTitle('Right 10 px').click();
+    await projected.waitForFunction((was) => document.querySelector('.calibration-marker').style.transform !== was, placedAt);
+    assert.match(await cross(), /translate\(310px, 200px\)/);
+    await panel.getByRole('button', { name: 'Next', exact: true }).click();
+    await panel.getByText(/^Corner 2 of \d+$/).waitFor();
+    if (shots) {
+      await projected.screenshot({ path: path.join(shots, 'table-calibrating.png') });
+      await tv.screenshot({ path: path.join(shots, 'controller-calibrating.png') });
+    }
     await projected.keyboard.press('Escape');
+    await panel.waitFor({ state: 'hidden' });
     await projected.locator('.table-surface.is-projector:not(.is-calibrating)').waitFor();
     assert.equal(await projected.locator('.calibration').count(), 0);
     // The dev surface opened its preview of the tool too; close it for the layers that follow.

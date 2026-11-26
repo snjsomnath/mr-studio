@@ -10,6 +10,9 @@ use serde_json::{json, Map, Value};
 /// An event to broadcast to every surface: its name and payload.
 pub type Event = (&'static str, Value);
 
+/// What a controller can ask of the table's calibration tool.
+const COMMANDS: &[&str] = &["sync", "back", "next", "skip", "select", "nudge", "model", "save", "flat"];
+
 pub struct Calibration {
     path: PathBuf,
     projector: Mutex<Value>,
@@ -70,6 +73,22 @@ impl Calibration {
             "calibration.mode" => {
                 let active = p["active"].as_bool().ok_or("missing active")?;
                 Ok((json!({}), Some(("calibration.mode", json!({ "active": active })))))
+            }
+            // The table's tool says where it is (which corner, the plan, the fit), so a controller
+            // can show the panel the table no longer draws over the map (#594).
+            "calibration.state" => {
+                if !p.is_object() {
+                    return Err("the calibration state must be an object".into());
+                }
+                Ok((json!({}), Some(("calibration.state", p.clone()))))
+            }
+            // A controller's press on that panel (next, back, skip, nudge, save...), for the table's tool.
+            "calibration.command" => {
+                let action = p.get("action").and_then(Value::as_str).ok_or("missing action")?;
+                if !COMMANDS.contains(&action) {
+                    return Err(format!("unknown calibration action '{action}'"));
+                }
+                Ok((json!({}), Some(("calibration.command", p.clone()))))
             }
             other => Err(format!("unknown method '{other}'")),
         }
