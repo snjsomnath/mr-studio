@@ -2304,7 +2304,9 @@ declare module "@mrstudio/sdk/layer" {
         /**
          * Draws the layer's hero on the controller: the one large, direct way to work the layer, at the
          * top of the open layer (Sunlight's sky and time scrubber). It may change params with
-         * `ctx.setParams`. `ctx.panel` is `"hero"`. The element is as wide as the centre; the hero sets its height.
+         * `ctx.setParams`. `ctx.panel` is `"hero"`. The element is as wide as the centre; the hero sets its height,
+         * times the CSS variable `--mrs-hero-scale` (1, or less inside a slideshow step, #577):
+         * `height: calc(clamp(16rem, 40vh, 30rem) * var(--mrs-hero-scale, 1))`.
          */
         hero?(ctx: PanelContext<P>, el: HTMLElement): PanelHandlers | void;
         /**
@@ -5450,6 +5452,12 @@ declare module "@mrstudio/sdk/readiness" {
      * the editor from the live session, the MCP server from site.json and the layer catalogue.
      */
     export type ReadyLevel = 'must' | 'should' | 'nice';
+    /**
+     * Layers that carry the author's own data (a GeoJSON file, a picture, a web map, a plan, a
+     * slideshow). Their package's description says what kind of layer they are, which is for the
+     * gallery, not for visitors (#586): until the author writes one, visitors see none.
+     */
+    export const KIND_LAYERS: ReadonlySet<string>;
     /** Where a problem is fixed. The editor turns each into a button; the MCP server into words. */
     export type ReadyFix = {
         kind: 'data';
@@ -5490,6 +5498,8 @@ declare module "@mrstudio/sdk/readiness" {
         side?: 'left' | 'right';
         /** Site data it reads (`requires.data`). */
         needs?: string[];
+        /** Visitors see no words about it: it holds the author's own data and none were written (#586). */
+        noWords?: boolean;
     }
     export interface ReadyTable {
         /** The site's datasets by name. */

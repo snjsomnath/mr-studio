@@ -1,4 +1,4 @@
-import { entityOverrides, entityValues, formatClock, formatUnit, isVisible, parseNumber, profileColumns } from '@mrstudio/sdk';
+import { KIND_LAYERS, entityOverrides, entityValues, formatClock, formatUnit, isVisible, parseNumber, profileColumns } from '@mrstudio/sdk';
 import type { Connection, Control, Participant, EntityFeature, EntitySet, LayerManifest, LegendRow, TextControl, LayerState, PanelContext, PanelHandlers, Role, TvAbout } from '@mrstudio/sdk';
 
 import { AttractLoop, effectOf } from './attract.ts';
@@ -448,12 +448,7 @@ export function widget(control: Control, send: (value: unknown) => void, act: (w
   return { control, row, sync };
 }
 
-/** What an instance is called on screen: the layer's name, plus the instance id when it is not the only one. */
-export function instanceTitle(id: string, manifest: LayerManifest): string {
-  return id === manifest.id ? manifest.name : `${manifest.name} (${id})`;
-}
-
-/** The words and icon a layer goes by on the controller: the site's own, else the layer package's. */
+/** The words and icon a layer goes by on the controller and phones: the site's own, else the layer package's. */
 export function layerButton(
   id: string,
   manifest: LayerManifest,
@@ -463,8 +458,9 @@ export function layerButton(
   const button = state?.button ?? {};
   return {
     // The site's own words are written in English and said in the visitors' language (#80).
-    name: button.name ? t(button.name) : instanceTitle(id, manifest),
-    description: button.description ? t(button.description) : (manifest.description ?? ''),
+    // Visitors never see an instance's id (#586); the editor's list keeps it, to tell two apart.
+    name: button.name ? t(button.name) : manifest.name,
+    description: button.description ? t(button.description) : KIND_LAYERS.has(manifest.id) ? '' : (manifest.description ?? ''),
     icon: button.icon ?? manifest.icon,
     side: button.side ?? defaultSide,
   };
@@ -1876,14 +1872,16 @@ export class Controller {
       this.backListened = true;
       this.listenForBack();
     }
-    const name = instanceTitle(id, manifest);
+    // The phone list and pages use the table's own words for the layer, as the controller does (#586).
+    const words = layerButton(id, manifest, store.state.layers[id]);
+    const name = words.name;
     const card = el('section', 'layer-card');
     card.dataset.layer = id;
     const header = el('header');
     const title = el('div', 'layer-title');
     const heading = el('h2', undefined, name);
-    const about = el('p', undefined, manifest.description ?? '');
-    about.hidden = !manifest.description;
+    const about = el('p', undefined, words.description);
+    about.hidden = !words.description;
     title.append(heading, about);
     const back = el('button', 'app-back');
     if (phone) {

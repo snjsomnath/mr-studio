@@ -300,6 +300,9 @@ struct Screen {
     primary: bool,
     /// What it shows: `table`, `tv` or `dev`.
     shows: Vec<String>,
+    /// What it will show when the table is presented, from the same choice as Settings ›
+    /// Screens (#579), so a screen that is not in use yet still says what it is for.
+    planned: Vec<String>,
     /// Frames a second of its window, and whether it said it was alive in the last 8 s.
     fps: Option<f64>,
     alive: Option<bool>,
@@ -313,10 +316,17 @@ pub async fn operator_state(app: AppHandle, shell: State<'_, Shell>) -> Result<O
     let join = state.as_ref().and_then(|s| s.hub.session().join_url);
     let beats = state.as_ref().map(|s| s.health.windows()).unwrap_or_default();
     let surfaces = shell.surfaces.lock().clone();
-    let screens = list_displays(&app)
-        .map_err(text)?
-        .into_iter()
+    let displays = list_displays(&app).map_err(text)?;
+    let usual = usual_displays(&app).map_err(text)?;
+    let screens = displays
+        .iter()
         .map(|d| {
+            let planned = usual
+                .windows
+                .iter()
+                .filter(|w| w.display.resolve(&displays).is_some_and(|at| at.index == d.index))
+                .map(|w| w.role.clone())
+                .collect();
             let here: Vec<&String> = surfaces.iter().filter(|(_, at)| *at == d.index).map(|(label, _)| label).collect();
             let beat = beats.iter().find(|b| here.contains(&&b.window));
             Screen {
@@ -324,6 +334,7 @@ pub async fn operator_state(app: AppHandle, shell: State<'_, Shell>) -> Result<O
                 name: d.model.clone().or(d.name.clone()).unwrap_or_else(|| "Display".into()),
                 primary: d.primary,
                 shows: here.iter().map(|label| label.rsplit('-').next().unwrap_or("").to_string()).collect(),
+                planned,
                 fps: beat.map(|b| b.fps),
                 alive: (!here.is_empty()).then(|| beat.is_some_and(|b| b.age < Duration::from_secs(8))),
             }

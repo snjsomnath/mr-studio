@@ -23,7 +23,7 @@ const MAX_ALT = 65;
 const COMPASS = ['north', 'north-east', 'east', 'south-east', 'south', 'south-west', 'west', 'north-west'];
 
 const STYLE = `
-.sun-hero { position: relative; height: clamp(16rem, 40vh, 30rem); border-radius: 1.125rem; overflow: hidden; touch-action: none; user-select: none; cursor: ew-resize;
+.sun-hero { position: relative; height: calc(clamp(16rem, 40vh, 30rem) * var(--mrs-hero-scale, 1)); border-radius: 1.125rem; overflow: hidden; touch-action: none; user-select: none; cursor: ew-resize;
   box-shadow: 0 1.25rem 3.75rem rgb(0 0 0 / 0.35), inset 0 0 0 1px rgb(255 255 255 / 0.06); color: #fff; }
 .sun-hero [hidden] { display: none !important; }
 .sun-hero svg { position: absolute; inset: 0; width: 100%; height: 100%; }

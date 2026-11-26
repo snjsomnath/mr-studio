@@ -12,7 +12,7 @@ const STYLE = `
 .mrs-plan { position: relative; border-radius: 1.125rem; overflow: hidden; user-select: none;
   background: radial-gradient(120% 100% at 50% 0%, #1d2233 0%, #10131d 60%, #0a0c14 100%);
   box-shadow: 0 1.25rem 3.75rem rgb(0 0 0 / 0.35), inset 0 0 0 1px rgb(255 255 255 / 0.06); }
-.mrs-plan canvas { display: block; width: 100%; height: clamp(16rem, 52vh, 40rem); }
+.mrs-plan canvas { display: block; width: 100%; height: calc(clamp(16rem, 52vh, 40rem) * var(--mrs-hero-scale, 1)); }
 `;
 
 /** Seconds a phase or the colour takes to change on the controller. */

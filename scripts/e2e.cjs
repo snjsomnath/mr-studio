@@ -904,7 +904,7 @@ async function main() {
     await fresh.goto(base + '/new');
     await fresh.getByLabel('Name').fill('Harbour');
     await fresh.getByRole('button', { name: 'Create the table' }).click();
-    await fresh.getByRole('alert').getByText(/Paste the coordinates/).waitFor();
+    await fresh.getByRole('alert').getByText(/paste the coordinates/i).waitFor();
     await fresh.getByLabel('Centre of the table').fill('https://www.openstreetmap.org/#map=16/57.7069/11.9386');
     // The table shows on the map, upright as it stands in the room. Turning turns the map under it.
     await fresh.locator('.pm-handle.is-corner').waitFor();
@@ -918,8 +918,8 @@ async function main() {
     const [kx, ky] = await centreOf('.pm-handle.is-corner');
     // The corner is still up and to the right of the middle, at the table's own shape: the outline did not tilt.
     assert.ok(kx > mx && ky < my && Math.abs((kx - mx) / (my - ky) - 1000 / 600) < 0.05, `the table stays upright: ${[mx, my, kx, ky]}`);
-    // The scale holds still: a new scale keeps the ground and resizes the table, and the table's
-    // width and height each set the ground's at that scale, so the table can have any shape (#128).
+    // A new scale keeps the ground and resizes the table, and the table's width and height each
+    // set the ground's at that scale, so the table can have any shape (#128).
     const value = (label) => fresh.getByLabel(label).inputValue();
     await fresh.getByRole('button', { name: '1 : 2 000' }).click();
     assert.deepEqual([await value('Width, metres'), await value('Height, metres'), await value('Table width, cm'), await value('Table height, cm')], ['1000', '600', '50', '30']);
@@ -927,11 +927,14 @@ async function main() {
     await fresh.locator('.wz-scale-words', { hasText: 'The table, 80 × 48 cm, shows 1 000 × 600 m at 1 : 1 250' }).waitFor();
     await fresh.getByLabel('Table height, cm').fill('60');
     assert.deepEqual([await value('Width, metres'), await value('Height, metres'), await fresh.locator('input[name="scale"]').inputValue()], ['1000', '750', '1250']);
+    // The physical table holds still when the ground changes (#580): more ground is a new scale,
+    // and the other side follows so the ground keeps the table's shape.
     await fresh.getByLabel('Width, metres').fill('1600');
-    assert.deepEqual([await value('Table width, cm'), await fresh.locator('input[name="scale"]').inputValue()], ['128', '1250']);
+    assert.deepEqual([await value('Table width, cm'), await fresh.locator('input[name="scale"]').inputValue(), await value('Height, metres')], ['80', '2000', '1200']);
     await fresh.getByLabel('Width, metres').fill('1000');
-    await fresh.getByLabel('Height, metres').fill('600');
-    assert.deepEqual([await value('Table width, cm'), await value('Table height, cm')], ['80', '48']);
+    assert.deepEqual([await fresh.locator('input[name="scale"]').inputValue(), await value('Height, metres')], ['1250', '750']);
+    await fresh.getByLabel('Table height, cm').fill('48');
+    assert.deepEqual([await value('Width, metres'), await value('Height, metres'), await value('Table width, cm'), await value('Table height, cm')], ['1000', '600', '80', '48']);
     // 3D-printing tiles: a grid on the map, and a clear problem when they do not fit (#129).
     await fresh.getByLabel('Show 3D-printing tiles').check();
     await fresh.getByLabel('Tile size, cm').fill('16');
@@ -939,7 +942,7 @@ async function main() {
     await fresh.getByLabel('Tile size, cm').fill('15');
     await fresh.locator('.wz-tiles .wz-problem', { hasText: 'not a whole number' }).waitFor();
     await fresh.getByRole('button', { name: 'Create the table' }).click();
-    await fresh.locator('.wz-form > .wz-problem', { hasText: 'not a whole number' }).waitFor();
+    await fresh.locator('.wz-foot > .wz-problem', { hasText: 'not a whole number' }).waitFor();
     await fresh.getByLabel('Tile size, cm').fill('16');
     if (shots) await fresh.screenshot({ path: path.join(shots, 'new-table-tiles.png') });
     // Dragging the corner in covers less ground, keeping the table's shape.

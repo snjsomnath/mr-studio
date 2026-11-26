@@ -60,10 +60,11 @@
       <form id="dialog-leave" class="dialog" data-dialog hidden>
         <h2 data-title>Leave operator mode</h2>
         <p class="hint" data-lead>The table stays on the screens and the editor opens.</p>
-        <label>PIN <input name="pin" type="password" inputmode="numeric" autocomplete="off" maxlength="8" /></label>
+        <!-- With no PIN set, leaving asks nothing more (#583). -->
+        <label data-current>PIN <input name="pin" type="password" inputmode="numeric" autocomplete="off" maxlength="8" /></label>
         <p class="error" data-error hidden></p>
         <div class="buttons">
-          <button type="button" class="link" data-open="forgot">Forgot the PIN?</button>
+          <button type="button" class="link" data-open="forgot" data-current>Forgot the PIN?</button>
           <span class="spacer"></span>
           <button type="button" data-close>Cancel</button>
           <button type="submit" class="primary" data-submit>Leave</button>

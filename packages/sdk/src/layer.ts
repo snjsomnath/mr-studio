@@ -399,7 +399,9 @@ export interface LayerModule<P = Params> {
   /**
    * Draws the layer's hero on the controller: the one large, direct way to work the layer, at the
    * top of the open layer (Sunlight's sky and time scrubber). It may change params with
-   * `ctx.setParams`. `ctx.panel` is `"hero"`. The element is as wide as the centre; the hero sets its height.
+   * `ctx.setParams`. `ctx.panel` is `"hero"`. The element is as wide as the centre; the hero sets its height,
+   * times the CSS variable `--mrs-hero-scale` (1, or less inside a slideshow step, #577):
+   * `height: calc(clamp(16rem, 40vh, 30rem) * var(--mrs-hero-scale, 1))`.
    */
   hero?(ctx: PanelContext<P>, el: HTMLElement): PanelHandlers | void;
   /**

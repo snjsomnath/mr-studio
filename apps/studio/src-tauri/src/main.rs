@@ -697,7 +697,12 @@ fn list_displays(app: &AppHandle) -> anyhow::Result<Vec<Display>> {
         if let Some((_, model)) = models.iter().find(|(system, _)| Some(system) == name) {
             return Some(model.clone());
         }
-        name.filter(|n| !n.is_empty() && !n.starts_with(r"\\.\")).cloned()
+        // macOS only gives "Monitor #<model number>" (#579): say which one is the Mac's own.
+        #[cfg(target_os = "macos")]
+        if let Some(friendly) = name.map(String::as_str).and_then(mac_displays::friendly) {
+            return Some(friendly);
+        }
+        name.filter(|n| !n.is_empty() && !n.starts_with(r"\\.\") && !n.starts_with("Monitor #")).cloned()
     };
     let displays = monitors.iter().enumerate().map(|(index, m)| {
         let model = model(m.name());
@@ -715,6 +720,34 @@ fn list_displays(app: &AppHandle) -> anyhow::Result<Vec<Display>> {
         }
     });
     Ok(displays.collect())
+}
+
+/// Names for macOS displays, which the window library calls "Monitor #<model number>" (#579).
+#[cfg(target_os = "macos")]
+mod mac_displays {
+    #[link(name = "CoreGraphics", kind = "framework")]
+    extern "C" {
+        fn CGGetActiveDisplayList(max: u32, displays: *mut u32, count: *mut u32) -> i32;
+        fn CGDisplayModelNumber(display: u32) -> u32;
+        fn CGDisplayIsBuiltin(display: u32) -> i32;
+    }
+
+    /// "Built-in display" for the Mac's own screen, "External display" for another one.
+    pub fn friendly(name: &str) -> Option<String> {
+        let model: u32 = name.strip_prefix("Monitor #")?.trim().parse().ok()?;
+        let mut ids = [0u32; 16];
+        let mut count = 0u32;
+        // SAFETY: the list has room for the 16 displays asked for, and `count` says how many were written.
+        if unsafe { CGGetActiveDisplayList(ids.len() as u32, ids.as_mut_ptr(), &mut count) } != 0 {
+            return None;
+        }
+        let ids = &ids[..(count as usize).min(ids.len())];
+        // SAFETY: plain queries on display ids the system just listed.
+        let id = *ids.iter().find(|&&id| unsafe { CGDisplayModelNumber(id) } == model)?;
+        // SAFETY: as above.
+        let builtin = unsafe { CGDisplayIsBuiltin(id) } != 0;
+        Some(if builtin { "Built-in display" } else { "External display" }.into())
+    }
 }
 
 /// Stops whatever is running, then runs `site`. No window is opened: `show` puts it on
@@ -2374,9 +2407,77 @@ async fn share_table(app: &AppHandle) -> anyhow::Result<()> {
     let exported = tokio::task::spawn_blocking(move || state.export_table(&out, &version)).await?.map_err(anyhow::Error::msg)?;
     tracing::info!("shared '{}' as {} ({} bytes)", running.name, target.display(), exported.bytes);
     let size = megabytes(exported.bytes);
-    let message = mail_with(app, &target, mail::letter(&running.name), &running.name, &size).await?;
+    // Ask before any mail window opens (#578): the size, and for a big table a way that is
+    // not email, since most mail servers refuse attachments over 20 to 25 MB.
+    let message = match ask_how_to_share(app, &running.name, &size, exported.bytes).await? {
+        ShareBy::Email => mail_with(app, &target, mail::letter(&running.name), &running.name, &size).await?,
+        ShareBy::Folder => {
+            app.opener().reveal_item_in_dir(&target)?;
+            json!({
+                "action": "exported",
+                "message": format!("{} is in the Shared folder ({size})", running.name),
+                "detail": "Send it by OneDrive, WeTransfer or a USB stick. The other computer opens it with File › Open.",
+                "path": target,
+            })
+        }
+        ShareBy::Nothing => json!({ "action": "exported" }),
+    };
     file_menu::tell_editor(app, EDITOR, message);
     Ok(())
+}
+
+/// Over this, a table is likely too big to email (Outlook takes 20 MB, Gmail 25 MB).
+const MAIL_LIMIT: u64 = 20 * 1024 * 1024;
+
+enum ShareBy {
+    Email,
+    Folder,
+    Nothing,
+}
+
+const SHARE_EMAIL: &str = "Email it";
+const SHARE_CANCEL: &str = "Cancel";
+const SHARE_FOLDER: &str = if cfg!(target_os = "macos") {
+    "Show in Finder"
+} else if cfg!(windows) {
+    "Show in Explorer"
+} else {
+    "Show in folder"
+};
+
+/// How the packed table goes out: by email, from its folder, or not at all (#578).
+async fn ask_how_to_share(app: &AppHandle, name: &str, size: &str, bytes: u64) -> anyhow::Result<ShareBy> {
+    use tauri_plugin_dialog::{MessageDialogButtons as Buttons, MessageDialogResult as Pressed};
+    let big = bytes > MAIL_LIMIT;
+    let text = if big {
+        format!(
+            "{name} is packed: {size}. That is likely too big for email: most mail servers refuse attachments over 20 to 25 MB.\n\nShow it in its folder to send it by OneDrive, WeTransfer or a USB stick, or try email anyway."
+        )
+    } else {
+        format!("{name} is packed: {size}. Attach it to a new email, or show it in its folder to send it another way.")
+    };
+    let asking = app
+        .dialog()
+        .message(text)
+        .title(format!("Share {name}"))
+        .kind(if big { tauri_plugin_dialog::MessageDialogKind::Warning } else { tauri_plugin_dialog::MessageDialogKind::Info })
+        .buttons(if big {
+            Buttons::YesNoCancelCustom(SHARE_FOLDER.into(), SHARE_EMAIL.into(), SHARE_CANCEL.into())
+        } else {
+            Buttons::YesNoCancelCustom(SHARE_EMAIL.into(), SHARE_FOLDER.into(), SHARE_CANCEL.into())
+        });
+    let pressed = tokio::task::spawn_blocking(move || asking.blocking_show_with_result()).await?;
+    let label = match pressed {
+        Pressed::Custom(label) => label,
+        Pressed::Yes | Pressed::Ok => (if big { SHARE_FOLDER } else { SHARE_EMAIL }).to_string(),
+        Pressed::No => (if big { SHARE_EMAIL } else { SHARE_FOLDER }).to_string(),
+        _ => SHARE_CANCEL.to_string(),
+    };
+    Ok(match label.as_str() {
+        SHARE_EMAIL => ShareBy::Email,
+        SHARE_FOLDER => ShareBy::Folder,
+        _ => ShareBy::Nothing,
+    })
 }
 
 /// Opens a new message with `target` attached in the computer's mail app, or shows the file

@@ -10,7 +10,7 @@ import { delimiter, dirname, isAbsolute, join, relative, resolve } from 'node:pa
 
 import { readLayerDir, type Catalog, type LayerEntry, type SiteSchema } from './core.ts';
 import { checkRecipe, checkIcon } from './recipe.ts';
-import { readiness } from '../../sdk/src/readiness.ts';
+import { KIND_LAYERS, readiness } from '../../sdk/src/readiness.ts';
 
 export const SITE_FORMAT = 3;
 
@@ -572,7 +572,7 @@ export function validateManifest(manifest: SiteManifest, dir: string | null, cat
       layers: refs.flatMap((ref: any) => {
         const entry = typeof ref?.use === 'string' ? findLayer(catalog, dir, ref.use, manifest) : undefined;
         const category = entry?.manifest?.category;
-        const top = { id: String(ref?.id ?? ref?.use), name: ref?.button?.name ?? entry?.manifest?.name ?? String(ref?.use), ambient: category === 'base' || category === 'ambient', hidden: Boolean(ref?.button?.hidden), side: ref?.button?.side, needs: [] };
+        const top = { id: String(ref?.id ?? ref?.use), name: ref?.button?.name ?? entry?.manifest?.name ?? String(ref?.use), ambient: category === 'base' || category === 'ambient', hidden: Boolean(ref?.button?.hidden), side: ref?.button?.side, needs: [], noWords: !ref?.button?.description && (KIND_LAYERS.has(String(entry?.manifest?.id)) || !entry?.manifest?.description) };
         return [top, ...(Array.isArray(ref?.items) ? ref.items : []).map((item: any) => ({ id: String(item?.id ?? item?.use), name: String(item?.use), ambient: true, parent: top.id }))];
       }),
     });

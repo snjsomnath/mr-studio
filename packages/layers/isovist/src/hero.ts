@@ -25,7 +25,7 @@ const COMPASS = ['north', 'north-east', 'east', 'south-east', 'south', 'south-we
 export const compassWord = (bearing: number) => COMPASS[Math.round((((bearing % 360) + 360) % 360) / 45) % 8]!;
 
 const STYLE = `
-.iso-hero { position: relative; height: clamp(16rem, 44vh, 32rem); border-radius: 1.125rem; overflow: hidden; color: #fff; user-select: none;
+.iso-hero { position: relative; height: calc(clamp(16rem, 44vh, 32rem) * var(--mrs-hero-scale, 1)); border-radius: 1.125rem; overflow: hidden; color: #fff; user-select: none;
   background: radial-gradient(120% 100% at 50% 100%, #2a2f45 0%, #151827 55%, #0b0d17 100%);
   box-shadow: 0 1.25rem 3.75rem rgb(0 0 0 / 0.35), inset 0 0 0 1px rgb(255 255 255 / 0.06); }
 .iso-hero img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity 0.6s ease; }

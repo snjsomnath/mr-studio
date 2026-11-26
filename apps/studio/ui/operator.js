@@ -37,7 +37,9 @@ async function load() {
   $('set-pin').textContent = state.pin_set ? 'Change the PIN…' : 'Set a PIN…';
   $('screens').replaceChildren(
     ...state.screens.map((s) => {
-      const shows = s.shows.map((r) => ROLE[r] ?? r).join(' and ');
+      // A screen not in use yet says what it shows when presenting, as Settings › Screens does (#579).
+      const roles = (list) => list.map((r) => ROLE[r] ?? r).join(' and ');
+      const shows = s.shows.length ? roles(s.shows) : s.planned?.length ? `${roles(s.planned)} (when presenting)` : '';
       const health = s.alive == null ? ['', ''] : s.alive ? ['ok', s.fps ? `Running, ${Math.round(s.fps)} fps` : 'Running'] : ['bad', 'Not answering'];
       return el(
         'li',

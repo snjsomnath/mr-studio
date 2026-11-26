@@ -17,7 +17,7 @@ const STYLE = `
 .mrs-lens-glass p { position: absolute; inset: 0; display: grid; place-items: center; margin: 0; text-align: center; padding: 3rem;
   color: rgb(255 241 210 / 0.6); font-size: 1rem; }
 .mrs-lens-nav { flex: 1 1 18rem; max-width: 28rem; }
-.mrs-lens-nav .mrs-pad canvas { height: clamp(10rem, 26vh, 18rem); }
+.mrs-lens-nav .mrs-pad canvas { height: calc(clamp(10rem, 26vh, 18rem) * var(--mrs-hero-scale, 1)); }
 `;
 
 export function lensHero(ctx: PanelContext<Params>, el: HTMLElement): PanelHandlers {
