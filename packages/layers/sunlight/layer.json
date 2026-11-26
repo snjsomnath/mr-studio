@@ -3,7 +3,7 @@
   "id": "sunlight",
   "name": "Sunlight",
   "description": "Shadows at any moment, or hours of direct sun over a day",
-  "about": {"purpose": "Shows shadows at any moment, the golden hour of a morning or evening, or sun hours over a day: the clearest way to discuss overshadowing and the light of a place.", "questions": ["How does a proposal change sun and shade on squares and courtyards?", "Which places get sun in the morning, at lunch, in winter?", "Where does the evening sun still reach, and where is the warm light at golden hour?"], "pairs_with": ["plan", "swipe", "coolpaths", "lens"], "limits": ["Shadows fall on the ground; sun on facades is planned", "Uses the site's buildings and trees for shadows"]},
+  "about": {"purpose": "Shows shadows at any moment, the golden hour of a morning or evening, or sun hours over a day: the clearest way to discuss overshadowing and the light of a place.", "questions": ["Does a courtyard or school yard get enough sun under Boverket's guidance or BRE?", "How does a proposal change sun and shade on squares and courtyards?", "Which places get sun in the morning, at lunch, in winter?", "Where does the evening sun still reach, and where is the warm light at golden hour?"], "pairs_with": ["plan", "swipe", "coolpaths", "lens"], "limits": ["Shadows fall on the ground; sun on facades is planned", "Uses the site's buildings and trees for shadows"]},
   "icon": "sun",
   "attract": { "effect": "sun" },
   "requires": { "kernels": ["sunlight"] },
@@ -14,15 +14,25 @@
         { "value": "instant", "label": "Shadows" },
         { "value": "golden", "label": "Golden hour" },
         { "value": "day", "label": "Sun hours" },
-        { "value": "seasons", "label": "Seasons" }
+        { "value": "seasons", "label": "Seasons" },
+        { "value": "rule", "label": "Daylight rule" }
       ]
     },
+    {
+      "id": "rule", "type": "select", "label": "Rule", "help": "Which daylight rule open ground is judged by. Each sets its own day, hours and share, which can then be changed.", "default": "se", "visibleWhen": { "mode": "rule" }, "tier": "primary",
+      "options": [
+        { "value": "se", "label": "Sweden (Boverket)" },
+        { "value": "bre", "label": "UK (BRE)" }
+      ]
+    },
+    { "id": "ruleHours", "type": "range", "label": "Sun a place needs", "help": "Hours of direct sun a place needs to pass. Boverket's guidance asks 5 h between 9 and 17 at the equinox; BRE asks 2 h on 21 March.", "min": 0.5, "max": 12, "step": 0.5, "unit": "h", "default": 5, "visibleWhen": { "mode": "rule" } },
+    { "id": "ruleShare", "type": "range", "label": "Share of open ground that must pass", "help": "How much of the ground outside buildings needs that much sun for the area to pass.", "min": 10, "max": 100, "step": 5, "unit": "%", "default": 50, "visibleWhen": { "mode": "rule" } },
     { "id": "golden", "type": "select", "label": "Golden hour", "default": "evening", "visibleWhen": { "mode": "golden" }, "tier": "primary",
       "options": [
         { "value": "evening", "label": "Evening" },
         { "value": "morning", "label": "Morning" }
       ] },
-    { "id": "date", "type": "date", "clock": "date", "label": "Day", "help": "The day the sun is worked out for. Midsummer, the equinox and midwinter are one tap.", "default": "2026-06-21", "phone": true, "tier": "primary",
+    { "id": "date", "type": "date", "clock": "date", "label": "Day", "help": "The day the sun is worked out for. Midsummer, the equinox and midwinter are one tap.", "default": "2026-06-21", "phone": true, "tier": "primary", "visibleWhen": { "mode": ["instant", "golden", "day", "seasons"] },
       "presets": [
         { "value": "06-21", "label": "Midsummer" },
         { "value": "03-20", "label": "Equinox" },
@@ -67,6 +77,8 @@
       "props": { "value": { "bind": "shared.daylightHours" }, "unit": "h", "decimals": 1, "caption": { "bind": "shared.dayStatus" } } },
     { "id": "window", "widget": "stat", "size": "tile", "title": "Sun hours counted", "visibleWhen": { "mode": "day", "window": ["morning", "lunch", "afternoon", "evening"] },
       "props": { "value": { "bind": "shared.daylightHours" }, "unit": "h", "decimals": 1, "caption": { "bind": "shared.dayStatus" } } },
+    { "id": "rule", "widget": "stat", "size": "tile", "title": "Open ground with enough sun", "visibleWhen": { "mode": "rule" },
+      "props": { "value": { "bind": "shared.rulePass" }, "unit": "%", "decimals": 0, "caption": { "bind": "shared.ruleVerdict" } } },
     { "id": "trees", "widget": "ramp", "size": "tile", "title": "Shade from trees", "visibleWhen": { "trees": true, "treeColor": true, "mode": ["instant", "day"] },
       "props": { "colormap": { "bind": "shared.treeRamp" }, "low": { "bind": "shared.treeLow" }, "high": { "bind": "shared.treeHigh" } } },
     { "id": "key", "widget": "ramp", "size": "band", "title": "On the table",

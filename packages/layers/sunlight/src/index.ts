@@ -1,4 +1,4 @@
-import { defineLayer, zonedTimeToUtc } from '@mrstudio/sdk';
+import { defineLayer, hasSiteData, readSiteMask, zonedTimeToUtc } from '@mrstudio/sdk';
 import type { Colormap, FieldFrame, FieldStream, LayerManifest, LightHandle, SunLight, TableContext } from '@mrstudio/sdk';
 
 import manifest from '../layer.json';
@@ -10,9 +10,10 @@ import { spotOnTable } from './spot.ts';
 import { SEASONS, seasonsHero, seasonsOnTable } from './seasons.ts';
 import { trailsOnTable } from './trails.ts';
 import { playPace, sharpSoften } from './pace.ts';
+import { passKey, passingShare, verdictColormap, verdictFrame, ruleDate, ruleOf, ruleWindow } from './rules.ts';
 
 interface Params {
-  mode: 'instant' | 'golden' | 'day' | 'seasons';
+  mode: 'instant' | 'golden' | 'day' | 'seasons' | 'rule';
   golden: 'evening' | 'morning';
   date: string;
   hour: number;
@@ -26,6 +27,9 @@ interface Params {
   season: string;
   trails: boolean;
   window: string;
+  rule: string;
+  ruleHours: number;
+  ruleShare: number;
 }
 
 /** Hours of the day that pass per second while animating, with the sun well up or well down. */
@@ -47,14 +51,20 @@ const GOLDEN_HOLD_SECONDS = 2.5;
 
 /** Shadows at a moment: plain, or the golden hour's (#363). Both use the same shadows, sun and clock. */
 const atMoment = (mode: string) => mode === 'instant' || mode === 'golden';
+/** Sun hours summed over a day: plain, or judged against a daylight rule (#498). */
+const summed = (mode: string) => mode === 'day' || mode === 'rule';
 
 /** Kernel params for the layer's params. The site's time zone turns wall-clock time into UTC. */
 /** What the engine works the light out for. `hour` is the table's own time while the day plays. */
 function kernelParams(ctx: TableContext<Params>, hour = ctx.params.hour) {
-  const { mode, date, trees } = ctx.params;
-  const time = zonedTimeToUtc(date, mode === 'day' ? 12 : hour, ctx.site.timezone);
+  const { mode, trees } = ctx.params;
+  // A daylight rule fixes its own day and hours (#498); the engine sums them like Sun hours.
+  const rule = mode === 'rule';
+  const date = rule ? ruleDate(ctx.params.rule, ctx.params.date) : ctx.params.date;
+  const time = zonedTimeToUtc(date, summed(mode) ? 12 : hour, ctx.site.timezone);
   // In Sun hours, only the sun in the chosen window counts; an instant has none. Golden hour is an instant to the engine.
-  return { mode: mode === 'golden' ? 'instant' : mode, time, trees, ...(mode === 'day' ? windowParams(ctx.site, date, ctx.params.window) : { from: null, until: null }) };
+  const window = rule ? ruleWindow(ctx.site, ctx.params.rule, date) : mode === 'day' ? windowParams(ctx.site, date, ctx.params.window) : { from: null, until: null };
+  return { mode: mode === 'golden' ? 'instant' : rule ? 'day' : mode, time, trees, ...window };
 }
 
 /** The sun hours ramp, with areas under the layer's threshold flagged when one is set. */
@@ -160,7 +170,8 @@ export default defineLayer<Params>({
       const [shade] = lightColormap(sunNow().altitude).stops;
       return { stops: [[0, shade![1], shade![2], shade![3], 0], [1, shade![1], shade![2], shade![3], shade![4]]] };
     };
-    const treeOpacity = () => (ctx.params.trees && (ctx.params.treeColor || (sharp && sharpWanted())) ? ctx.params.opacity : 0);
+    // A daylight rule already counts the trees' shade in its verdict; a second colour would muddle pass and fail.
+    const treeOpacity = () => (ctx.params.mode !== 'rule' && ctx.params.trees && (ctx.params.treeColor || (sharp && sharpWanted())) ? ctx.params.opacity : 0);
     const path = new SunPath(ctx.map.addElement(), ctx.site.extent.rotation_deg);
     let stream: FieldStream | null = null;
     let generation = 0;
@@ -185,8 +196,9 @@ export default defineLayer<Params>({
     let percent = 0;
     // The line under the daylight figure on the TV: progress, then what the map is flagging.
     const dayStatus = () => {
-      if (ctx.params.mode !== 'day') return '';
+      if (!summed(ctx.params.mode)) return '';
       if (percent < 100) return ctx.say('adding up the day, {percent}%', { percent });
+      if (ctx.params.mode === 'rule') return '';
       if (ctx.params.threshold > 0) return ctx.say('under {hours} h of sun is flagged', { hours: ctx.params.threshold });
       const window = WINDOWS[ctx.params.window];
       return window ? ctx.say('sun from {from} to {to} added up', { from: window[0], to: window[1] }) : ctx.say('whole day added up');
@@ -197,8 +209,10 @@ export default defineLayer<Params>({
     });
 
     // The light's colour and the sun on its path follow the clock at once; the shadows follow from the engine.
+    // In a daylight rule the table shows pass and fail (verdictFrame), and the TV's key the two colours.
+    const dayColormap = (key = false) => (ctx.params.mode === 'rule' ? (key ? passKey : verdictColormap) : hoursColormap(ctx.params.threshold, daylightHours));
     function dress() {
-      const day = ctx.params.mode === 'day';
+      const day = summed(ctx.params.mode);
       const sun = sunNow();
       if (ctx.params.mode === 'seasons') {
         // The seasons draw their own field on a common scale (seasons.ts); only the look is set here.
@@ -214,7 +228,7 @@ export default defineLayer<Params>({
       // While playing, each frame asks for the shadows itself (animate).
       if (!playing()) void reshadow();
       overlay.setStyle({
-        colormap: day ? hoursColormap(ctx.params.threshold, daylightHours) : lightColormap(sun.altitude),
+        colormap: day ? dayColormap() : lightColormap(sun.altitude),
         soften: day ? 1 : SOFTEN_CELLS,
         // With nothing to cast shade the whole table would be lit in one colour; stay dark instead (#55).
         opacity: relit() || dark() ? 0 : ctx.params.opacity,
@@ -228,9 +242,9 @@ export default defineLayer<Params>({
       path.setSun(day ? { ...sun, altitude: -90 } : sun);
       // The TV's colour key shows the ramp the table is using right now.
       ctx.publish({
-        ramp: day ? hoursColormap(ctx.params.threshold, daylightHours) : lightColormap(sun.altitude),
+        ramp: day ? dayColormap(true) : lightColormap(sun.altitude),
         dayStatus: dayStatus(),
-        rampLow: day ? '0 h' : 'Shade',
+        rampLow: ctx.params.mode === 'rule' ? ctx.say('Too little') : day ? '0 h' : 'Shade',
         treeRamp: day ? treeHoursColormap : treeShadeColormap,
         treeLow: day ? 'No sun lost' : 'No shade',
         treeHigh: day ? 'Most lost' : 'Full shade',
@@ -276,7 +290,7 @@ export default defineLayer<Params>({
         publishDay();
       }
       seasonSteps = false;
-      const [field, treeField] = ctx.params.mode === 'day' ? ['sun_hours', 'tree_shade_hours'] : ['shadow', 'tree_shade'];
+      const [field, treeField] = summed(ctx.params.mode) ? ['sun_hours', 'tree_shade_hours'] : ['shadow', 'tree_shade'];
       // The panel shows progress from the first moment, not the previous job's.
       percent = 0;
       ctx.publish({ progress: 0 });
@@ -295,7 +309,8 @@ export default defineLayer<Params>({
       dress();
       // With a shadow map, the engine's cells only fill in until the first mask is ready.
       opened.on(field, (frame) => {
-        if (!(sharp && sharpWanted())) show(frame);
+        if (ctx.params.mode === 'rule') judge(frame);
+        else if (!(sharp && sharpWanted())) show(frame);
       });
       opened.on(treeField, (frame) => {
         treeOverlay.set(frame);
@@ -313,7 +328,7 @@ export default defineLayer<Params>({
         const azimuth = Math.round(status.info.sun.azimuth_deg);
         const hours = Math.round(status.info.daylight_hours * 10) / 10;
         percent = Math.round(status.progress * 100);
-        const day = ctx.params.mode === 'day';
+        const day = summed(ctx.params.mode);
         ctx.publish({
           altitude,
           azimuth,
@@ -321,8 +336,35 @@ export default defineLayer<Params>({
           progress: Math.round(status.progress * 100) / 100,
           sun: altitude > 0 ? `sun ${altitude}° up, bearing ${azimuth}°` : 'sun below the horizon',
           dayStatus: dayStatus(),
-          rampHigh: day ? `${hours} h` : 'Sun',
+          rampHigh: ctx.params.mode === 'rule' ? ctx.say('Enough sun') : day ? `${hours} h` : 'Sun',
         });
+      });
+    }
+
+    // A daylight rule (#498): the share of open ground with enough sun, judged once the day is summed.
+    let buildings: Uint8Array | null = null;
+    if (hasSiteData(ctx.site, 'buildings')) {
+      readSiteMask(ctx.site, 'buildings')
+        .then((mask) => {
+          buildings = mask;
+          if (last) judge(last);
+        })
+        .catch((error) => console.warn('[sunlight] footprints not read', error));
+    }
+    let last: FieldFrame | null = null;
+    function judge(frame: FieldFrame) {
+      last = frame;
+      show(verdictFrame(frame, ctx.params.ruleHours, buildings));
+      if (frame.progress < 1) {
+        ctx.publish({ rulePass: '', ruleVerdict: ctx.say('adding up the day, {percent}%', { percent: Math.round(frame.progress * 100) }) });
+        return;
+      }
+      const share = passingShare(frame, ctx.params.ruleHours, buildings);
+      const need = ctx.params.ruleShare;
+      ctx.publish({
+        rulePass: share === null ? '' : Math.round(share),
+        ruleVerdict: share === null ? '' : ctx.say(share >= need ? 'passes, {need}% needed' : 'fails, {need}% needed', { need }),
+        rulePasses: share !== null && share >= need,
       });
     }
 
@@ -437,6 +479,14 @@ export default defineLayer<Params>({
         }
         spot.update(changed);
         trails.update(changed);
+        // A rule's day and numbers come with it; the controller can change the numbers afterwards.
+        if (changed.includes('rule') || (changed.includes('mode') && ctx.params.mode === 'rule')) {
+          const rule = ruleOf(ctx.params.rule);
+          const date = ruleDate(ctx.params.rule, ctx.params.date);
+          const preset = changed.includes('rule') ? { ruleHours: rule.hours, ruleShare: rule.share } : {};
+          if (date !== ctx.params.date || changed.includes('rule')) ctx.setParams({ date, ...preset });
+        }
+        if (changed.some((key) => key === 'ruleHours' || key === 'ruleShare') && last) judge(last);
         if (changed.includes('date')) publishDay();
         if (changed.includes('mode') && golden()) enterGolden();
         else if (changed.includes('golden') && golden()) {
@@ -449,7 +499,7 @@ export default defineLayer<Params>({
           seasons.update(changed);
         } else {
           dress();
-          if (changed.some((key) => key === 'date' || key === 'hour' || key === 'trees' || key === 'window')) stream?.set(kernelParams(ctx, hourNow()));
+          if (changed.some((key) => key === 'date' || key === 'hour' || key === 'trees' || key === 'window' || key === 'rule')) stream?.set(kernelParams(ctx, hourNow()));
         }
       },
     };

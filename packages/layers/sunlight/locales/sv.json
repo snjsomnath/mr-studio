@@ -72,5 +72,20 @@
   "Sun hours counted": "Soltimmar som räknas",
   "Golden hour": "Gyllene timmen",
   "golden hour {from} to {to}": "gyllene timmen {from} till {to}",
-  "no golden hour on {date}": "ingen gyllene timme den {date}"
+  "no golden hour on {date}": "ingen gyllene timme den {date}",
+  "Daylight rule": "Dagsljuskrav",
+  "Rule": "Krav",
+  "Which daylight rule open ground is judged by. Each sets its own day, hours and share, which can then be changed.": "Vilket dagsljuskrav friytan bedöms mot. Varje krav sätter sin egen dag, sina timmar och sin andel, som sedan kan ändras.",
+  "Sweden (Boverket)": "Sverige (Boverket)",
+  "UK (BRE)": "Storbritannien (BRE)",
+  "Sun a place needs": "Sol en plats behöver",
+  "Hours of direct sun a place needs to pass. Boverket's guidance asks 5 h between 9 and 17 at the equinox; BRE asks 2 h on 21 March.": "Timmar med direkt sol en plats behöver för att klara kravet. Boverkets vägledning anger 5 h mellan 9 och 17 vid dagjämningen; BRE anger 2 h den 21 mars.",
+  "Share of open ground that must pass": "Andel av friytan som måste klara kravet",
+  "How much of the ground outside buildings needs that much sun for the area to pass.": "Hur stor del av marken utanför byggnader som behöver så mycket sol för att ytan ska klara kravet.",
+  "Open ground with enough sun": "Friyta med tillräckligt sol",
+  "Enough sun": "Tillräckligt sol",
+  "Does a courtyard or school yard get enough sun under Boverket's guidance or BRE?": "Får en gård eller skolgård tillräckligt med sol enligt Boverkets vägledning eller BRE?",
+  "passes, {need}% needed": "klarar kravet, {need} % krävs",
+  "fails, {need}% needed": "klarar inte kravet, {need} % krävs",
+  "Too little": "För lite"
 }
