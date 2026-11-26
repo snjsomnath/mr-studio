@@ -8,6 +8,7 @@ from the [site template repository](https://github.com/snjsomnath/mr-studio-site
 To run it from source, see "Try it" in the [README](../README.md). The design is in
 [ARCHITECTURE.md](ARCHITECTURE.md) and the interface contracts are in [contracts](contracts).
 Releasing is in [RELEASING.md](RELEASING.md).
+The working rules (issues, pull requests, release notes) are in [CONTRIBUTING.md](../CONTRIBUTING.md).
 
 ## Layout
 

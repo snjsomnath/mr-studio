@@ -1,4 +1,5 @@
-<!-- What changed and why, for whoever reviews it. Screenshots inline. -->
+<!-- What changed and why, for whoever reviews it. Screenshots inline.
+     The working rules are in CONTRIBUTING.md. -->
 
 Closes #
 
