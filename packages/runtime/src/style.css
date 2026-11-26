@@ -429,6 +429,66 @@ body[data-role='tv'][data-rail-style='labelled'] .rail-group {
   text-align: left;
 }
 
+/*
+ * A rail with more buttons than its height (#576): smaller buttons first, then tighter ones
+ * with one-line names; past that the list scrolls and fades where more buttons are.
+ */
+body[data-role='tv'] .controller[data-fit] .cards {
+  gap: 0.5rem;
+  padding-top: 0.75rem;
+  padding-bottom: 0.75rem;
+}
+
+body[data-role='tv'] .controller[data-fit] .layer-button .layer-button-icon {
+  width: 2.625rem;
+  height: 2.625rem;
+}
+
+body[data-role='tv'] .controller[data-fit] .layer-button .layer-button-icon svg {
+  width: 1.375rem;
+  height: 1.375rem;
+}
+
+body[data-role='tv'] .controller[data-fit] .rail-gap {
+  height: 0.25rem;
+}
+
+body[data-role='tv'] .controller[data-fit] .rail-actions {
+  gap: 0.5rem;
+  padding: 0.5rem 0.5rem 0.75rem;
+}
+
+body[data-role='tv'] .controller[data-fit='tight'] .cards,
+body[data-role='tv'] .controller[data-fit='tight'] .rail-actions {
+  gap: 0.25rem;
+}
+
+body[data-role='tv'] .controller[data-fit='tight'] .layer-button {
+  gap: 0.2rem;
+  font-size: 0.6875rem;
+}
+
+body[data-role='tv'] .controller[data-fit='tight'] .layer-button .layer-button-icon {
+  width: 2.25rem;
+  height: 2.25rem;
+}
+
+body[data-role='tv'] .controller[data-fit='tight'] .layer-button-name {
+  -webkit-line-clamp: 1;
+}
+
+body[data-role='tv'] .controller .cards.is-more-below {
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 3rem), transparent);
+}
+
+body[data-role='tv'] .controller .cards.is-more-above {
+  mask-image: linear-gradient(to top, #000 calc(100% - 3rem), transparent);
+}
+
+body[data-role='tv'] .controller .cards.is-more-above.is-more-below {
+  mask-image: linear-gradient(to bottom, transparent, #000 3rem, #000 calc(100% - 3rem), transparent);
+}
+
 /* A rail with nothing on it gives its width to the centre. */
 body[data-role='tv'] .controller-right:not(:has(.layer-button-card, .join-qr, .home-button, .rail-actions)) {
   display: none;

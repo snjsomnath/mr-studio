@@ -1090,6 +1090,13 @@ fn open_editor(app: &AppHandle, page: &str) -> anyhow::Result<()> {
         return operator_mode::open_window(app);
     }
     let running = shell.running.lock().clone().context("no site is open")?;
+    // A read-only copy stays read-only however the editor is reopened: after operator mode,
+    // Present, a reload or the Window menu (#575). The copy is what says so, not the page asked for.
+    let page = match is_read_only_copy(app, &running.site) && page != "new" && !page.contains("readonly=1") {
+        true => format!("{page}{}readonly=1", if page.contains('?') { '&' } else { '?' }),
+        false => page.to_string(),
+    };
+    let page = page.as_str();
     let url: tauri::Url = format!("http://127.0.0.1:{}/{page}", running.port).parse().context("the editor's address")?;
     let title = if page == "new" {
         "MR Studio · New table".to_string()
@@ -1501,6 +1508,11 @@ struct LauncherState {
     operator_start: bool,
     operator_pin: bool,
     running: Option<Running>,
+    /// Where phones join the running table, when they can: on this network, through the phone
+    /// relay or the bridge (#574). None when they cannot.
+    join_url: Option<String>,
+    /// The running table is a read-only copy (#575).
+    read_only: bool,
     /// The running site is on the displays, not only open in the editor.
     presenting: bool,
     /// The name of a table whose newer version waits for the show to stop (#401).
@@ -1565,6 +1577,8 @@ fn launcher_state(app: AppHandle, shell: State<'_, Shell>) -> Result<LauncherSta
         nightly_restart: settings.nightly_restart.clone(),
         operator_start: settings.operator_start,
         operator_pin: settings.operator_pin.is_some(),
+        join_url: shell.host.try_lock().ok().and_then(|host| host.as_ref().and_then(|h| h.state.hub.session().join_url)),
+        read_only: running.as_ref().is_some_and(|r| is_read_only_copy(&app, &r.site)),
         running,
         presenting: is_presenting(&app),
         waiting: waiting::read(&shell.config_dir.join("waiting")).map(|w| w.name),
@@ -1778,6 +1792,17 @@ async fn open_site(app: AppHandle, shell: State<'_, Shell>, path: PathBuf, welco
     Ok(())
 }
 
+/// Where read-only copies are made (#565).
+fn read_only_root(app: &AppHandle) -> Option<PathBuf> {
+    app.path().app_cache_dir().ok().map(|dir| dir.join("read-only"))
+}
+
+/// The table at `site` is a read-only copy made by Open read-only (#565, #575).
+pub fn is_read_only_copy(app: &AppHandle, site: &Path) -> bool {
+    read_only_root(app)
+        .is_some_and(|root| site.starts_with(&root) || sites::canonical(site.to_path_buf()).starts_with(sites::canonical(root)))
+}
+
 /// Opens a table read-only: a copy of it in the app's cache is opened instead, so nothing done
 /// in the editor, on the controller or on the phones is saved to the table itself. Earlier
 /// read-only copies are thrown away, except one still running. The copy keeps the table's id
@@ -1788,7 +1813,7 @@ async fn open_site_read_only(app: AppHandle, shell: State<'_, Shell>, path: Path
     if !path.join("site.json").is_file() {
         return Err(format!("{} is not a table folder (it has no site.json).", path.display()));
     }
-    let root = app.path().app_cache_dir().map_err(text)?.join("read-only");
+    let root = read_only_root(&app).ok_or("The app's cache folder could not be found.")?;
     let running = shell.running.lock().as_ref().map(|r| r.site.clone());
     if let Ok(entries) = std::fs::read_dir(&root) {
         for entry in entries.flatten() {
