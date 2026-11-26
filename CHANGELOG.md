@@ -4,6 +4,26 @@ Every merge to main that carries a release note becomes a version. The newest is
 The app shows these notes, with their pictures, on Home when a newer version is out.
 How notes are written: docs/RELEASING.md.
 
+## 0.49.0 (2026-11-26)
+
+### New
+
+#### Networks announce changes, and cars arrive on schedule (#338)
+
+A network of flows can now announce a change at a step of its series (#338). With **Announce changes** on in the layer builder, a `note` column in the series dims the table round the row's point for a few seconds. The words, such as "The car chargers open", go to a **What changed** panel on the controller and never onto the table.
+
+An `arrivals` column sends that many movers along the streets to a point during its step, like cars coming to a charger. The builder's Energy network test data now has a charger with both.
+
+![The charger spotlighted at 08:00, cars driving to it at 18:00, and the controller's What changed panel](docs/screenshots/338-network-news.png)
+
+#### What if a building were here? (#500, #81)
+
+Visitors can change the place from their phones in Sunlight (#500, from #81). They can draw a new building, plant a tree, or tap a building or tree to take it away. The shadows and sun hours redraw with the change.
+
+The changes live only in the simulation's scene, so every simulation on the table sees them. Nothing is saved: the controller can undo them, and closing Sunlight brings the real place back. Layers can do the same with the new `ctx.engine.edit` (host request `engine.edit`, see docs/contracts/engine.md).
+
+![Before and after: a new 40 m block casts its shadow, a row of trees is planted, and a building is taken away](docs/screenshots/500-what-if.png)
+
 ## 0.48.0 (2026-11-26)
 
 ### New
