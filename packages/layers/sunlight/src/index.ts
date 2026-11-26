@@ -244,7 +244,7 @@ export default defineLayer<Params>({
       ctx.publish({
         ramp: day ? dayColormap(true) : lightColormap(sun.altitude),
         dayStatus: dayStatus(),
-        rampLow: ctx.params.mode === 'rule' ? ctx.say('Too little sun') : day ? '0 h' : 'Shade',
+        rampLow: ctx.params.mode === 'rule' ? ctx.say('Too little') : day ? '0 h' : 'Shade',
         treeRamp: day ? treeHoursColormap : treeShadeColormap,
         treeLow: day ? 'No sun lost' : 'No shade',
         treeHigh: day ? 'Most lost' : 'Full shade',
@@ -355,17 +355,15 @@ export default defineLayer<Params>({
     function judge(frame: FieldFrame) {
       last = frame;
       show(verdictFrame(frame, ctx.params.ruleHours, buildings));
-      const rule = ruleOf(ctx.params.rule);
       if (frame.progress < 1) {
         ctx.publish({ rulePass: '', ruleVerdict: ctx.say('adding up the day, {percent}%', { percent: Math.round(frame.progress * 100) }) });
         return;
       }
       const share = passingShare(frame, ctx.params.ruleHours, buildings);
       const need = ctx.params.ruleShare;
-      const hours = rule.window ? ctx.say('{hours} h of sun between {from} and {to}', { hours: ctx.params.ruleHours, from: rule.window[0], to: rule.window[1] }) : ctx.say('{hours} h of sun over the day', { hours: ctx.params.ruleHours });
       ctx.publish({
         rulePass: share === null ? '' : Math.round(share),
-        ruleVerdict: share === null ? '' : ctx.say(share >= need ? 'passes: {need}% needs {hours}' : 'fails: {need}% needs {hours}', { need, hours }),
+        ruleVerdict: share === null ? '' : ctx.say(share >= need ? 'passes, {need}% needed' : 'fails, {need}% needed', { need }),
         rulePasses: share !== null && share >= need,
       });
     }
