@@ -1,10 +1,13 @@
 //! One WebSocket connection per surface. Wire protocol in `docs/contracts/session.md`.
 
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::net::{IpAddr, SocketAddr};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
-use axum::extract::State;
+use axum::extract::{ConnectInfo, State};
+use axum::http::HeaderMap;
 use axum::response::Response;
 use futures_util::{SinkExt, StreamExt};
 use mrs_engine::Encoding;
@@ -25,11 +28,62 @@ const PING_EVERY: Duration = Duration::from_secs(10);
 /// walked out of range leaves no close frame; this is what starts its seat's hold.
 const SILENCE_LIMIT: Duration = Duration::from_secs(30);
 
-pub async fn upgrade(ws: WebSocketUpgrade, State(state): State<Arc<AppState>>) -> Response {
-    ws.max_message_size(1 << 20).on_upgrade(move |socket| connection(socket, state))
+/// Wrong join codes, by the address they came from (#504). After [`Tries::limit`] wrong codes in
+/// a minute an address is refused until the minute is over, right code or not.
+#[derive(Default)]
+pub struct Tries(Mutex<HashMap<IpAddr, (Instant, u32)>>);
+
+impl Tries {
+    const WINDOW: Duration = Duration::from_secs(60);
+
+    /// Phones through the relay or the join page all arrive from this computer, so it gets more.
+    fn limit(from: IpAddr) -> u32 {
+        if from.is_loopback() {
+            60
+        } else {
+            10
+        }
+    }
+
+    fn blocked(&self, from: IpAddr, now: Instant) -> bool {
+        let tries = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        tries.get(&from).is_some_and(|(since, wrong)| now.duration_since(*since) < Self::WINDOW && *wrong >= Self::limit(from))
+    }
+
+    fn wrong(&self, from: IpAddr, now: Instant) {
+        let mut tries = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        if tries.len() > 4096 {
+            tries.retain(|_, (since, _)| now.duration_since(*since) < Self::WINDOW);
+        }
+        let entry = tries.entry(from).or_insert((now, 0));
+        if now.duration_since(entry.0) >= Self::WINDOW {
+            *entry = (now, 0);
+        }
+        entry.1 += 1;
+    }
 }
 
-async fn connection(socket: WebSocket, state: Arc<AppState>) {
+/// Whether a surface may join in this role (#504). The table, the screens and the controller
+/// are MR Studio's own windows on this computer; from anywhere else a surface is a phone or the guide.
+pub(crate) fn may_join(role: Role, operator: bool) -> Result<(), String> {
+    if operator || matches!(role, Role::Phone | Role::Guide) {
+        Ok(())
+    } else {
+        Err("this screen opens on the table's own computer only".into())
+    }
+}
+
+pub async fn upgrade(
+    ws: WebSocketUpgrade,
+    ConnectInfo(from): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    State(state): State<Arc<AppState>>,
+) -> Response {
+    let operator = crate::operator(&from, &headers);
+    ws.max_message_size(1 << 20).on_upgrade(move |socket| connection(socket, state, from.ip(), operator))
+}
+
+async fn connection(socket: WebSocket, state: Arc<AppState>, from: IpAddr, operator: bool) {
     let (mut sink, mut source) = socket.split();
 
     // The first message must be a hello.
@@ -45,7 +99,16 @@ async fn connection(socket: WebSocket, state: Arc<AppState>) {
             return Err(format!("protocol mismatch: host speaks {PROTOCOL}"));
         }
         let role = hello["role"].as_str().and_then(Role::parse).ok_or("unknown role")?;
-        let joined = state.hub.join(role, hello["code"].as_str(), hello["resume"].as_str())?;
+        may_join(role, operator)?;
+        let coded = matches!(role, Role::Phone | Role::Guide);
+        if coded && state.tries.blocked(from, Instant::now()) {
+            return Err("too many wrong codes; wait a minute and scan the code again".to_string());
+        }
+        let joined = state.hub.join(role, hello["code"].as_str(), hello["resume"].as_str()).inspect_err(|_| {
+            if coded {
+                state.tries.wrong(from, Instant::now());
+            }
+        })?;
         Ok((role, joined))
     })();
     let (role, joined) = match admitted {

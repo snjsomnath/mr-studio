@@ -318,6 +318,14 @@ Text frames are JSON. Binary frames are engine field frames (see engine.md).
 { t: 'ev', m: string, p: object }
 ```
 
+### Who may be what (#504)
+
+The table, the screens and the controller (`table`, `tv`, `dev`) are MR Studio's own windows on the studio computer. The host admits those roles only from this computer (the loopback address), and only when the socket says nothing about where it comes from (a program) or comes from the host's own pages (`Origin` equal to `http://<Host>`, with `Host` being `127.0.0.1`, `localhost` or `[::1]`). Any other socket, from the network, through the relay or the join page, or from another site's page in a browser on this computer, can only be a `phone` or the `guide`, and is `refused` otherwise.
+
+The same rule holds over HTTP. Every request under `/api/` that is not a GET, HEAD or OPTIONS must come from the operator as described above, or it gets 403. Another address is also refused `/api/diagnostics`, `/api/performance`, `/api/services…` and `/api/wms…` (403), is not told the session in `/api/info` (`session` is `null`, so the join code is only on the QR code), and gets 404 for the table's private files under `/site`: `site.json`, `calibration.json`, `site-services.json`, `services/` and every folder whose name starts with a dot (`.mrstudio`, `.cache`). The table's data, media and layers stay readable, since phones draw from them.
+
+Wrong join codes are counted by address: after 10 in a minute (60 for this computer, where every phone that comes through the relay or the join page arrives) a `phone` or `guide` hello is refused with "too many wrong codes" until the minute is over.
+
 Requests:
 
 | Method | Params | Roles | Effect |

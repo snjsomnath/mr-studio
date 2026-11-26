@@ -94,6 +94,8 @@ pub struct AppState {
     views: std::sync::Mutex<std::collections::HashMap<String, LayerView>>,
     /// The field walk's spots, photos and sounds from visitors' phones (#445).
     pub field: field::Field,
+    /// Wrong join codes by address, so a code cannot be guessed by trying them all (#504).
+    pub(crate) tries: ws::Tries,
 }
 
 /// A picture a layer's table sent for the controller: the Magnifier's view under its glass.
@@ -632,6 +634,7 @@ pub async fn start(config: HostConfig) -> anyhow::Result<RunningHost> {
         health: Default::default(),
         bridge: Default::default(),
         views: Default::default(),
+        tries: Default::default(),
         links: Default::default(),
         field,
     });
@@ -794,18 +797,62 @@ fn router(state: Arc<AppState>, web_dir: Option<PathBuf>) -> Router {
         )),
         None => app.fallback(|| async { "MR Studio host is running. Surfaces are not built; run the web dev server or pass --web." }),
     };
-    // The field walk (#445) is visitors' photos and sounds: this computer reads them through
-    // /api/field, and no phone reaches them through /site, however the path is spelt.
-    app = app.layer(axum::middleware::from_fn(guard_field));
+    // What only this computer may read or change is settled here, before any route (#504).
+    app = app.layer(axum::middleware::from_fn(guard));
     app.with_state(state)
 }
 
-async fn guard_field(request: axum::extract::Request, next: axum::middleware::Next) -> axum::response::Response {
+/// Whether a request that says where it comes from comes from one of the host's own pages, at
+/// this computer's own name. A page from another site sends its own `Origin`; a site whose name
+/// was pointed at this computer sends its own `Host`.
+pub(crate) fn own_page(headers: &HeaderMap) -> bool {
+    let host = headers.get(header::HOST).and_then(|v| v.to_str().ok()).unwrap_or("");
+    match headers.get(header::ORIGIN).and_then(|v| v.to_str().ok()) {
+        None => true,
+        Some(origin) => {
+            let name = host.rsplit_once(':').map_or(host, |(name, port)| if port.contains(']') { host } else { name });
+            origin == format!("http://{host}") && matches!(name, "127.0.0.1" | "localhost" | "[::1]")
+        }
+    }
+}
+
+/// Whether the request is the operator's: from this computer, and from MR Studio's own windows.
+/// Everything else is a visitor: a phone on the network, through the relay or the join page,
+/// or a page from some other site open in a browser here.
+pub(crate) fn operator(from: &SocketAddr, headers: &HeaderMap) -> bool {
+    from.ip().is_loopback() && own_page(headers)
+}
+
+/// The parts of the table folder a visitor is never served, however the path is spelt
+/// (`.MRStudio`, `%2e`, doubled slashes): the table's description and calibration, its
+/// history, caches and field walk (every folder that starts with a dot), and its services' code.
+pub(crate) fn is_private_site_path(path: &str) -> bool {
+    let decoded = field::percent_decode(path).to_ascii_lowercase().replace('\\', "/");
+    let parts: Vec<&str> = decoded.split('/').filter(|p| !p.is_empty() && *p != ".").collect();
+    parts.iter().any(|p| p.starts_with('.'))
+        || matches!(parts.as_slice(), ["site.json"] | ["calibration.json"] | ["site-services.json"] | ["services", ..])
+}
+
+/// What a visitor is refused (#504): every change over HTTP, the table's private files, and the
+/// pages that tell how this computer is doing or make it fetch from an address of the asker's choosing.
+async fn guard(request: axum::extract::Request, next: axum::middleware::Next) -> axum::response::Response {
     let path = request.uri().path();
-    if path.len() > 5 && path[..5].eq_ignore_ascii_case("/site") && field::is_field_path(&path[5..]) {
-        let local = request.extensions().get::<ConnectInfo<SocketAddr>>().is_some_and(|c| c.0.ip().is_loopback());
-        if !local {
+    let from = request.extensions().get::<ConnectInfo<SocketAddr>>().map(|c| c.0);
+    let here = from.is_some_and(|from| from.ip().is_loopback());
+    let ours = from.is_some_and(|from| operator(&from, request.headers()));
+    let api = path.len() >= 5 && path[..5].eq_ignore_ascii_case("/api/");
+    let reads = matches!(*request.method(), axum::http::Method::GET | axum::http::Method::HEAD | axum::http::Method::OPTIONS);
+    if api && !reads && !ours {
+        let error = "changes are made from MR Studio's own windows on this computer only";
+        return (StatusCode::FORBIDDEN, Json(json!({ "error": error }))).into_response();
+    }
+    if !here {
+        if path.len() > 5 && path[..5].eq_ignore_ascii_case("/site") && is_private_site_path(&path[5..]) {
             return (StatusCode::NOT_FOUND, "not found").into_response();
+        }
+        let lower = path.to_ascii_lowercase();
+        if ["/api/diagnostics", "/api/performance", "/api/services", "/api/wms"].iter().any(|p| lower.starts_with(p)) {
+            return (StatusCode::FORBIDDEN, Json(json!({ "error": "this is shown on this computer only" }))).into_response();
         }
     }
     next.run(request).await
@@ -845,15 +892,10 @@ fn local(from: &SocketAddr, headers: &HeaderMap) -> Result<(), Box<axum::respons
             (StatusCode::FORBIDDEN, Json(json!({ "error": "sources are used from this computer only" }))).into_response(),
         ));
     }
-    let origin = headers.get(header::ORIGIN).and_then(|v| v.to_str().ok());
-    let host = headers.get(header::HOST).and_then(|v| v.to_str().ok()).unwrap_or("");
-    match origin {
-        None => Ok(()),
-        Some(origin) if origin == format!("http://{host}") => Ok(()),
-        Some(_) => Err(Box::new(
-            (StatusCode::FORBIDDEN, Json(json!({ "error": "sources are used from MR Studio's own pages only" }))).into_response(),
-        )),
+    if own_page(headers) {
+        return Ok(());
     }
+    Err(Box::new((StatusCode::FORBIDDEN, Json(json!({ "error": "sources are used from MR Studio's own pages only" }))).into_response()))
 }
 
 /// `GET /api/basemap/<service>/<z>/<x>/<y>`: a base map tile, kept in the site folder so the
@@ -1063,9 +1105,12 @@ async fn transit_vehicles(
     }
 }
 
-async fn info(State(state): State<Arc<AppState>>) -> Json<Value> {
+/// `GET /api/info`: the table and its engine. The session, with the code phones join with, is
+/// told to this computer only (#504): a phone has the code from the QR code it scanned.
+async fn info(State(state): State<Arc<AppState>>, ConnectInfo(from): ConnectInfo<SocketAddr>) -> Json<Value> {
     let engine = state.engine.info().await.map(|i| json!(i)).unwrap_or(Value::Null);
-    Json(json!({ "site": state.hub.site(), "engine": engine, "session": state.hub.session() }))
+    let session = if from.ip().is_loopback() { json!(state.hub.session()) } else { Value::Null };
+    Json(json!({ "site": state.hub.site(), "engine": engine, "session": session }))
 }
 
 #[derive(serde::Deserialize)]
@@ -1731,4 +1776,74 @@ async fn ask_service(method: String, url: String, kind: Option<String>, body: By
         answer.headers().get(reqwest::header::CONTENT_TYPE).and_then(|v| v.to_str().ok()).unwrap_or("application/octet-stream").to_string();
     let bytes = answer.bytes().await.map_err(|e| format!("reading its answer: {}", e.without_url()))?;
     Ok((status, kind, bytes))
+}
+
+#[cfg(test)]
+mod guard_tests {
+    use super::*;
+
+    fn headers(host: &str, origin: Option<&str>) -> HeaderMap {
+        let mut headers = HeaderMap::new();
+        headers.insert(header::HOST, host.parse().unwrap());
+        if let Some(origin) = origin {
+            headers.insert(header::ORIGIN, origin.parse().unwrap());
+        }
+        headers
+    }
+
+    #[test]
+    fn the_operator_is_this_computers_own_windows() {
+        let here: SocketAddr = "127.0.0.1:50000".parse().unwrap();
+        let network: SocketAddr = "192.168.1.20:50000".parse().unwrap();
+        // The app's windows, the dev server's pages, and programs that send no Origin.
+        assert!(operator(&here, &headers("127.0.0.1:4170", Some("http://127.0.0.1:4170"))));
+        assert!(operator(&here, &headers("localhost:5173", Some("http://localhost:5173"))));
+        assert!(operator(&here, &headers("[::1]:4170", Some("http://[::1]:4170"))));
+        assert!(operator(&here, &headers("127.0.0.1:4170", None)));
+        // A page from another site, a sandboxed page, and a name pointed at this computer.
+        assert!(!operator(&here, &headers("127.0.0.1:4170", Some("http://elsewhere.example"))));
+        assert!(!operator(&here, &headers("127.0.0.1:4170", Some("null"))));
+        assert!(!operator(&here, &headers("elsewhere.example:4170", Some("http://elsewhere.example:4170"))));
+        // Anything on the network, and what the relay and the join page carry in.
+        assert!(!operator(&network, &headers("192.168.1.5:4170", Some("http://192.168.1.5:4170"))));
+        assert!(!operator(&network, &headers("192.168.1.5:4170", None)));
+        assert!(!operator(&relay::RELAYED, &headers("127.0.0.1:4170", None)));
+    }
+
+    #[test]
+    fn screens_join_from_the_operator_only() {
+        use hub::Role;
+        for role in [Role::Table, Role::Tv, Role::Dev] {
+            assert!(ws::may_join(role, true).is_ok());
+            assert!(ws::may_join(role, false).is_err());
+        }
+        for role in [Role::Phone, Role::Guide] {
+            assert!(ws::may_join(role, false).is_ok());
+        }
+    }
+
+    #[test]
+    fn a_visitor_is_served_the_tables_data_and_not_its_private_files() {
+        for path in [
+            "/site.json",
+            "/SITE.JSON",
+            "//site.json",
+            "/./site.json",
+            "/calibration.json",
+            "/site-services.json",
+            "/services/run.py",
+            "/.mrstudio/history/r00000001.json",
+            "/%2emrstudio/services/a/kept.json",
+            "/.cache/maps/a.png",
+            "/.git/config",
+            "/.env",
+            "/data/.hidden/a.json",
+            "\\.MRStudio\\field\\a.jpg",
+        ] {
+            assert!(is_private_site_path(path), "{path}");
+        }
+        for path in ["/data/buildings.geojson", "/media/street.jpg", "/layers/mine/dist/index.js", "/data/site.json", "/sounds/a.b.mp3"] {
+            assert!(!is_private_site_path(path), "{path}");
+        }
+    }
 }
