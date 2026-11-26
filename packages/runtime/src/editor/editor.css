@@ -5522,3 +5522,42 @@ body[data-role='edit'] > .connection {
   font: inherit;
   font-weight: 400;
 }
+
+/* Kept for offline use (#516): a quiet line under the media library. */
+.ed-media-kept {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  align-items: center;
+  margin-top: 24px;
+  padding: 12px 14px;
+  border: 1px solid var(--ed-line, #d5d9e0);
+  border-radius: 8px;
+  color: var(--ed-text-2);
+}
+
+.ed-media-kept p {
+  flex: 1 1 320px;
+  margin: 0;
+}
+
+.ed-media-kept strong {
+  color: var(--ed-text, inherit);
+}
+
+.ed-media-kept-ask {
+  display: flex;
+  flex: 1 1 100%;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.ed-media-kept-ask span {
+  flex: 1 1 280px;
+}
+
+.ed-media-kept .is-danger {
+  border-color: currentColor;
+  color: var(--ed-danger, #b3261e);
+}

@@ -269,6 +269,7 @@ What the host does with them:
 - `GET /api/services` gives each service's state (`installing`, `starting`, `up`, `down`, `remote`, or `held` when the table was opened without its programs, see below), why, and how often it restarted; `/api/services/<id>/log` the last lines it wrote.
 - `/api/services/<id>/call/<path>` forwards any method, with its body and query, to the service. The same request from several views of the table at once (the projector and the editor both run the layer) reaches the service once, and they share the answer, so a job starts once.
 - Every good answer is kept in `.mrstudio/services/<id>/`. When the service is down or fails, the kept answer to the same request is given instead, marked with `x-mrs-cached`, so a table without its model, or offline, still shows the last result. `.mrstable` exports leave this folder out.
+- What is kept has a limit (#516): each service's answers stay within 200 MB and 2000 answers, the ones fetched longest ago going first. A value a layer keeps by name (`ctx.service(id).remember`) is never removed that way. See "Kept for offline use" below.
 
 **Asking first (#506).** A table's `run` services and the built code of its own layers (`layers/<id>/dist/`) are programs that run on the computer that opens it. The desktop app asks before they run, naming each one: **Run them**, **Open without them** or **Cancel**.
 
@@ -278,6 +279,18 @@ What the host does with them:
 - `mrstudio dev` runs them without asking: it is the developer's own command, on their own table. `mrstudio dev --without-programs` opens the table as data, and `mrstudio export` never runs them.
 
 In a layer, `ctx.service(id)` has `get(path)`, `post(path, body)` and `job(path, body, { onProgress })`: a job POST answers `{ "job": "<id>" }`, and the SDK polls `<path>/<id>` until `state` is done or failed, passing on `progress` and `message`. A finished job's result is kept too. While a call runs, the layer publishes `busy: { label, progress }` and the controller shows it under the layer's name. `samples/service-example` has a model and a layer to copy.
+
+## Kept for offline use (#516)
+
+The host keeps what it fetches in the table's folder, so a table that has shown something once shows it again without the internet:
+
+| Folder | What | Limit |
+|---|---|---|
+| `.cache/tiles` | base map tiles, by service and tile | 500 MB together with the map pictures |
+| `.cache/maps` | one picture per WMS or ArcGIS request | |
+| `.mrstudio/services/<id>/` | each service's answers | 200 MB and 2000 answers per service |
+
+When a table starts, and once a day while it runs, each folder is brought within its limit: the files fetched longest ago are removed first (`mrs_host::kept`). `GET /api/kept` gives `{ maps, services, files, words, limits }` (bytes, and "312 MB" in words); `POST /api/kept/clear` removes all of it but the values layers kept by name, and answers `{ removed, bytes, words }`. Both are for this computer only. The editor shows the size, with **Clear**, under the media library (View › Media). None of this goes into a `.mrstable`, and none of it is the table's own data.
 
 ## Composing a scene
 

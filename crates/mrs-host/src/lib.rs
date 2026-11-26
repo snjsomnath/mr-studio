@@ -11,6 +11,7 @@ mod engine_bridge;
 pub mod field;
 pub mod health;
 mod hub;
+pub mod kept;
 pub mod layers;
 mod model;
 pub mod relay;
@@ -669,6 +670,23 @@ pub async fn start(config: HostConfig) -> anyhow::Result<RunningHost> {
     if let Some(link) = config.sources.relay().await {
         relay::spawn(Arc::downgrade(&state), app.clone(), addr.port(), link);
     }
+    // Keeps what the table fetched for offline use within its limits (#516): now, and once a
+    // day while it runs. It stops when the host is gone.
+    {
+        let state = Arc::downgrade(&state);
+        tokio::spawn(async move {
+            let mut every = tokio::time::interval(kept::EVERY);
+            loop {
+                every.tick().await;
+                let Some(dir) = state.upgrade().map(|state| state.site.dir.clone()) else { break };
+                if let Ok(removed) = tokio::task::spawn_blocking(move || kept::trim(&dir)).await {
+                    if removed.files > 0 {
+                        tracing::info!("kept for offline use: removed the {} oldest files ({})", removed.files, kept::words(removed.bytes));
+                    }
+                }
+            }
+        });
+    }
     // Watches site.json for changes made outside the host (#72). It stops when the host is gone.
     {
         let state = Arc::downgrade(&state);
@@ -743,6 +761,8 @@ fn router(state: Arc<AppState>, web_dir: Option<PathBuf>) -> Router {
         .route("/api/info", get(info))
         .route("/api/diagnostics", get(diagnostics_page))
         .route("/api/performance", get(performance_page))
+        .route("/api/kept", get(kept_page))
+        .route("/api/kept/clear", post(kept_clear))
         .route("/api/model", get(model))
         .route("/api/data/inspect", post(inspect_data))
         .route("/api/data/import", post(import_data))
@@ -855,7 +875,7 @@ async fn guard(request: axum::extract::Request, next: axum::middleware::Next) ->
             return (StatusCode::NOT_FOUND, "not found").into_response();
         }
         let lower = path.to_ascii_lowercase();
-        if ["/api/diagnostics", "/api/performance", "/api/services", "/api/wms"].iter().any(|p| lower.starts_with(p)) {
+        if ["/api/diagnostics", "/api/performance", "/api/services", "/api/wms", "/api/kept"].iter().any(|p| lower.starts_with(p)) {
             return (StatusCode::FORBIDDEN, Json(json!({ "error": "this is shown on this computer only" }))).into_response();
         }
     }
@@ -1137,6 +1157,30 @@ async fn diagnostics_page(State(state): State<Arc<AppState>>, Query(query): Quer
             .into_response();
     }
     ([(header::CACHE_CONTROL, "no-store")], Json(report)).into_response()
+}
+
+/// `GET /api/kept`: how much the table keeps for offline use (#516).
+async fn kept_page(State(state): State<Arc<AppState>>) -> axum::response::Response {
+    let dir = state.site.dir.clone();
+    let kept = tokio::task::spawn_blocking(move || kept::measure(&dir)).await.unwrap_or_default();
+    (
+        [(header::CACHE_CONTROL, "no-store")],
+        Json(json!({
+            "maps": kept.maps, "services": kept.services, "files": kept.files,
+            "words": kept::words(kept.maps + kept.services),
+            "limits": { "maps": kept::MAPS_LIMIT, "service": kept::SERVICE_LIMIT, "service_answers": kept::SERVICE_ANSWERS },
+        })),
+    )
+        .into_response()
+}
+
+/// `POST /api/kept/clear`: removes the kept tiles, map pictures and service answers (#516).
+/// The table fetches them again as it shows them.
+async fn kept_clear(State(state): State<Arc<AppState>>) -> axum::response::Response {
+    let dir = state.site.dir.clone();
+    let removed = tokio::task::spawn_blocking(move || kept::clear(&dir)).await.unwrap_or_default();
+    state.health.note(format!("Cleared what the table kept for offline use: {} files, {}.", removed.files, kept::words(removed.bytes)));
+    Json(json!({ "removed": removed.files, "bytes": removed.bytes, "words": kept::words(removed.bytes) })).into_response()
 }
 
 /// The digital twin mesh. Layout in `docs/contracts/model.md`.

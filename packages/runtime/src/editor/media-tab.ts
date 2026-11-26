@@ -66,6 +66,18 @@ interface Use {
 /** A small drawing of a GeoJSON file against the table's outline, kept per file. */
 const sketches = new Map<string, Promise<string | null>>();
 
+/** How much the table keeps for offline use (#516), from the host; null when it cannot say (an older host, or not this computer). */
+async function keptForOffline(): Promise<{ bytes: number; words: string } | null> {
+  try {
+    const response = await fetch('/api/kept');
+    if (!response.ok) return null;
+    const kept = (await response.json()) as { maps?: number; services?: number; words?: string };
+    return typeof kept.words === 'string' ? { bytes: (kept.maps ?? 0) + (kept.services ?? 0), words: kept.words } : null;
+  } catch {
+    return null;
+  }
+}
+
 export class MediaTab {
   readonly groups: HTMLElement[] = [];
   /** The library, shown in the middle of the window while the tab is open. */
@@ -81,6 +93,10 @@ export class MediaTab {
   /** The Your place rows (#71, #56), made once and kept, so a file being checked stays. */
   private readonly importers = new Map<string, Importer>();
   private model: ModelImporter | null = null;
+  /** What the table keeps for offline use (#516), in words such as "312 MB"; null when the host did not say. */
+  private kept: { bytes: number; words: string } | null = null;
+  /** True once Clear was pressed and waits for a yes. */
+  private clearing = false;
 
   constructor(host: MediaTabHost) {
     this.host = host;
@@ -98,7 +114,8 @@ export class MediaTab {
 
   /** Lists what the table has again, and draws. */
   async load(): Promise<void> {
-    const [items, sources] = await Promise.all([mediaItems(), onlineSources()]);
+    const [items, sources, kept] = await Promise.all([mediaItems(), onlineSources(), keptForOffline()]);
+    this.kept = kept;
     this.items = items;
     this.sources = sources;
     this.loaded = true;
@@ -252,7 +269,69 @@ export class MediaTab {
       section.append(grid);
       nodes.push(section);
     }
+    const kept = this.keptLine();
+    if (kept) nodes.push(kept);
     this.view.replaceChildren(...nodes);
+  }
+
+  /**
+   * "Kept for offline use: 312 MB" with Clear (#516): the map tiles, map pictures and service
+   * answers the table fetched, which let it run without the internet. Not the table's own files.
+   */
+  private keptLine(): HTMLElement | null {
+    if (!this.kept) return null;
+    const line = el('footer', 'ed-media-kept');
+    const words = el('p');
+    words.append(el('strong', undefined, `Kept for offline use: ${this.kept.words}`));
+    words.append(
+      el(
+        'span',
+        undefined,
+        this.kept.bytes > 0
+          ? ' of map tiles, map pictures and service answers the table has fetched. The oldest are removed by themselves when there are too many.'
+          : '. Map tiles, map pictures and service answers are kept here as the table shows them, so it also runs without the internet.',
+      ),
+    );
+    line.append(words);
+    if (this.kept.bytes === 0) return line;
+    const button = (label: string, className: string, act: () => void) => {
+      const b = el('button', className, label);
+      b.type = 'button';
+      b.addEventListener('click', act);
+      return b;
+    };
+    if (!this.clearing) {
+      line.append(
+        button('Clear', 'ed-button', () => {
+          this.clearing = true;
+          this.drawView();
+        }),
+      );
+      return line;
+    }
+    const ask = el('div', 'ed-media-kept-ask');
+    ask.setAttribute('role', 'alert');
+    ask.append(
+      el('span', undefined, 'The table fetches these again as it shows them, which needs the internet. Your own files stay.'),
+      button(`Clear ${this.kept.words}`, 'ed-button is-danger', () => void this.clearKept()),
+      button('Keep', 'ed-button', () => {
+        this.clearing = false;
+        this.drawView();
+      }),
+    );
+    line.append(ask);
+    return line;
+  }
+
+  private async clearKept(): Promise<void> {
+    this.clearing = false;
+    try {
+      await fetch('/api/kept/clear', { method: 'POST' });
+    } catch {
+      // The line below says what is still kept.
+    }
+    this.kept = await keptForOffline();
+    this.drawView();
   }
 
   private card(entry: Entry): HTMLElement {
