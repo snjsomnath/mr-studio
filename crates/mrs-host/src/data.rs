@@ -11,21 +11,37 @@ use mrs_site::osm::{self, OsmLayer};
 use mrs_site::Site;
 use serde_json::Value;
 
-/// Where OpenStreetMap is asked, in turn: the main Overpass server, then a public mirror, each
+/// Where OpenStreetMap is asked, in turn: the main Overpass server, then public mirrors, each
 /// host once (#424: `overpass.kumi.systems` now redirects to `overpass.private.coffee`, so
-/// listing both asked one silent server twice). `MRS_OVERPASS_URL` replaces the list with one
-/// server (a mirror of your own, or a test); several can be given, separated by commas.
-const OVERPASS_URLS: [&str; 2] = ["https://overpass-api.de/api/interpreter", "https://overpass.private.coffee/api/interpreter"];
+/// listing both asked one silent server twice; #603 added VK Maps' mirror). `MRS_OVERPASS_URL`
+/// replaces the list (a mirror of your own, or a test); several can be given, separated by commas.
+const OVERPASS_URLS: [&str; 3] = [
+    "https://overpass-api.de/api/interpreter",
+    "https://overpass.private.coffee/api/interpreter",
+    "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
+];
 
-/// Tries for each part before a fetch gives up, waiting 1 then 2 seconds between them.
-const OVERPASS_TRIES: u32 = 3;
-/// How long a server may take to accept the connection, and then to start its answer. Overpass
-/// starts its JSON at once and streams the rest, so a server that is silent this long is not
-/// going to answer: move on in seconds, not minutes (#424).
+/// Tries for each part before a fetch gives up, across the servers.
+const OVERPASS_TRIES: u32 = 4;
+/// How long a server may take to accept the connection.
 const OVERPASS_CONNECT: std::time::Duration = std::time::Duration::from_secs(10);
-const OVERPASS_FIRST_BYTE: std::time::Duration = std::time::Duration::from_secs(20);
-/// How long the rest of the answer may take once it has started (the query's own limit is 180 s).
-const OVERPASS_BODY: std::time::Duration = std::time::Duration::from_secs(190);
+/// How long a server may take to start its answer (#603): it may queue a query 15 s for a free
+/// slot and then run it for the query's own limit. Hanging up sooner does not stop the work, which
+/// keeps holding one of our slots there, so the next try was refused with 429 by our own query.
+const OVERPASS_FIRST_BYTE: std::time::Duration = std::time::Duration::from_secs(osm::QUERY_SECONDS + 20);
+/// How long the rest of the answer may take once it has started.
+const OVERPASS_BODY: std::time::Duration = std::time::Duration::from_secs(osm::QUERY_SECONDS + 30);
+/// How long a server that answered 429 (too many requests from us) is left alone (#603). Its
+/// operators ask for at least 30 s, and ban addresses that come back sooner.
+const OVERPASS_REST_429: std::time::Duration = std::time::Duration::from_secs(30);
+/// How long a busy (502, 503, 504) or silent server is left alone before it is asked again.
+const OVERPASS_REST_BUSY: std::time::Duration = std::time::Duration::from_secs(3);
+/// The longest wait for a free slot that a server's `/api/status` announces before it is asked.
+const OVERPASS_SLOT_WAIT: u64 = 60;
+/// How long a part that came back is kept, so trying again after a failure asks only for the rest.
+const OVERPASS_KEEP: std::time::Duration = std::time::Duration::from_secs(15 * 60);
+/// Who is asking, with where to find us, as the Overpass operators ask of every app (#603).
+const OVERPASS_AGENT: &str = concat!("MR Studio/", env!("CARGO_PKG_VERSION"), " (+https://github.com/snjsomnath/mr-studio)");
 /// Each elevation tile is asked for this many times before the fetch gives up.
 const ELEVATION_TRIES: u32 = 3;
 
@@ -95,6 +111,10 @@ fn server_name(url: &str) -> String {
     }
 }
 
+/// Parts that came back lately, by query, so a fetch tried again asks only for what failed.
+static OVERPASS_ANSWERS: std::sync::LazyLock<parking_lot::Mutex<std::collections::HashMap<String, (std::time::Instant, Value)>>> =
+    std::sync::LazyLock::new(Default::default);
+
 /// Asks OpenStreetMap for everything `query_for` asks within `bounds`, in tiles no wider than
 /// `osm::TILE_M` (#424) so the main server does not refuse a whole table, and merges the
 /// answers. Each tile is tried on the next server when one is busy or silent. `say` hears
@@ -108,53 +128,154 @@ pub async fn ask_overpass(
     if urls.is_empty() {
         return Err("no Overpass server is set".into());
     }
-    let client = reqwest::Client::builder().user_agent("MR Studio").connect_timeout(OVERPASS_CONNECT).build().map_err(|e| e.to_string())?;
+    let client =
+        reqwest::Client::builder().user_agent(OVERPASS_AGENT).connect_timeout(OVERPASS_CONNECT).build().map_err(|e| e.to_string())?;
     let tiles = osm::tiles(bounds, osm::TILE_M);
     let mut merged = osm::Merge::default();
-    // The next part starts on the server that answered the last one, so a silent one costs once.
-    let mut first = 0;
+    let mut servers = Servers::new(urls);
     for (i, tile) in tiles.iter().enumerate() {
-        let part = if tiles.len() > 1 { format!(", part {} of {}", i + 1, tiles.len()) } else { String::new() };
-        let (answer, used) = ask_one(&client, &urls, first, &query_for(*tile), &|server, attempt| {
-            let again = if attempt > 0 { format!(", try {} of {OVERPASS_TRIES}", attempt + 1) } else { String::new() };
-            say(format!("Asking {server}{part}{again}"));
-        })
-        .await?;
-        first = used;
+        let query = query_for(*tile);
+        let kept = {
+            let mut answers = OVERPASS_ANSWERS.lock();
+            answers.retain(|_, (at, _)| at.elapsed() < OVERPASS_KEEP);
+            answers.get(&query).map(|(_, answer)| answer.clone())
+        };
+        let answer = match kept {
+            Some(answer) => answer,
+            None => {
+                let part = if tiles.len() > 1 { format!(", part {} of {}", i + 1, tiles.len()) } else { String::new() };
+                let answer = ask_one(&client, &mut servers, &query, &|words| say(format!("{words}{part}"))).await?;
+                OVERPASS_ANSWERS.lock().insert(query, (std::time::Instant::now(), answer.clone()));
+                answer
+            }
+        };
         merged.add(answer);
     }
     Ok(merged.answer())
 }
 
-/// One Overpass query, tried on each server in turn (from `urls[first]`) after a short pause. A
-/// server that does not start answering within `OVERPASS_FIRST_BYTE` counts as busy. Returns the
-/// answer and which server gave it.
+/// The Overpass servers of one fetch, and when each may be asked again (#603).
+struct Servers {
+    urls: Vec<String>,
+    rest_until: Vec<tokio::time::Instant>,
+    /// The server that answered last: the next part starts there, so a silent one costs once.
+    current: usize,
+}
+
+impl Servers {
+    fn new(urls: Vec<String>) -> Self {
+        let now = tokio::time::Instant::now();
+        Self { rest_until: vec![now; urls.len()], urls, current: 0 }
+    }
+
+    /// The next server to ask, from the current one on: the first that is not resting, or the one
+    /// that rests the shortest, with how long it still rests.
+    fn next(&self) -> (usize, std::time::Duration) {
+        let now = tokio::time::Instant::now();
+        let order = (0..self.urls.len()).map(|k| (self.current + k) % self.urls.len());
+        let index =
+            order.clone().find(|&i| self.rest_until[i] <= now).unwrap_or_else(|| order.min_by_key(|&i| self.rest_until[i]).unwrap_or(0));
+        (index, self.rest_until[index].saturating_duration_since(now))
+    }
+
+    fn rest(&mut self, index: usize, how_long: std::time::Duration) {
+        self.rest_until[index] = self.rest_until[index].max(tokio::time::Instant::now() + how_long);
+    }
+}
+
+/// How long a server's `/api/status` text says to wait for one of our slots, in seconds: none
+/// when a slot is free or there is no limit, else the soonest "in N seconds".
+pub fn slot_wait(status: &str) -> Option<u64> {
+    if status.lines().any(|l| l.trim() == "Rate limit: 0") {
+        return None;
+    }
+    if status.lines().any(|l| l.trim_end().ends_with("slots available now.") && !l.trim_start().starts_with("0 ")) {
+        return None;
+    }
+    status
+        .lines()
+        .filter(|l| l.starts_with("Slot available after:"))
+        .filter_map(|l| l.rsplit_once(", in ").and_then(|(_, rest)| rest.split_whitespace().next()?.parse::<i64>().ok()))
+        .min()
+        .map(|seconds| seconds.max(0) as u64)
+}
+
+/// Waits for a free slot when the server says when one frees (#603), instead of asking blind and
+/// getting 429. A server without the status page, or one that does not answer it, is just asked.
+async fn wait_for_slot(client: &reqwest::Client, url: &str, server: &str, say: &(dyn Fn(String) + Send + Sync)) {
+    let Some(status_url) = url.strip_suffix("/interpreter").map(|base| format!("{base}/status")) else { return };
+    let ask = client.get(&status_url).timeout(std::time::Duration::from_secs(5)).send();
+    let Ok(Ok(response)) = tokio::time::timeout(std::time::Duration::from_secs(6), ask).await else { return };
+    if !response.status().is_success() {
+        return;
+    }
+    let Ok(text) = response.text().await else { return };
+    if let Some(seconds) = slot_wait(&text) {
+        let seconds = seconds.min(OVERPASS_SLOT_WAIT) + 1;
+        say(format!("Waiting {seconds} s for a free turn at {server}"));
+        tracing::info!("OpenStreetMap: {server} has no free slot for us, waiting {seconds} s");
+        tokio::time::sleep(std::time::Duration::from_secs(seconds)).await;
+    }
+}
+
+/// One Overpass query, tried on the servers in turn. A server that refuses (429) rests at least
+/// 30 s, a busy or silent one a few seconds, and the next server is asked meanwhile. Returns
+/// the answer; the server that gave it becomes the current one.
 async fn ask_one(
     client: &reqwest::Client,
-    urls: &[String],
-    first: usize,
+    servers: &mut Servers,
     query: &str,
-    trying: &(dyn Fn(&str, u32) + Send + Sync),
-) -> Result<(Value, usize), String> {
+    say: &(dyn Fn(String) + Send + Sync),
+) -> Result<Value, String> {
     let mut last = String::new();
     for attempt in 0..OVERPASS_TRIES {
-        if attempt > 0 {
-            tokio::time::sleep(std::time::Duration::from_secs(1 << (attempt - 1))).await;
+        let (index, resting) = servers.next();
+        let url = servers.urls[index].clone();
+        let server = server_name(&url);
+        let again = if attempt > 0 { format!(", try {} of {OVERPASS_TRIES}", attempt + 1) } else { String::new() };
+        if !resting.is_zero() {
+            say(format!("Every server is busy; asking {server} again in {} s{again}", resting.as_secs().max(1)));
+            tokio::time::sleep(resting).await;
         }
-        let index = (first + attempt as usize) % urls.len();
-        let url = &urls[index];
-        let server = server_name(url);
-        trying(&server, attempt);
-        match tokio::time::timeout(OVERPASS_FIRST_BYTE, client.post(url).form(&[("data", query)]).send()).await {
-            Err(_) => last = format!("{server} did not answer within {} s", OVERPASS_FIRST_BYTE.as_secs()),
-            Ok(Err(e)) => last = format!("{server}: {e}"),
+        wait_for_slot(client, &url, &server, say).await;
+        say(format!("Asking {server}{again}"));
+        match tokio::time::timeout(OVERPASS_FIRST_BYTE, client.post(&url).form(&[("data", query)]).send()).await {
+            Err(_) => {
+                last = format!("{server} did not answer within {} s", OVERPASS_FIRST_BYTE.as_secs());
+                servers.rest(index, OVERPASS_REST_BUSY);
+            }
+            Ok(Err(e)) => {
+                last = format!("{server}: {e}");
+                servers.rest(index, OVERPASS_REST_BUSY);
+            }
             Ok(Ok(response)) if response.status().is_success() => match tokio::time::timeout(OVERPASS_BODY, response.json::<Value>()).await
             {
-                Ok(Ok(value)) => return Ok((value, index)),
-                Ok(Err(e)) => last = format!("{server}: {e}"),
-                Err(_) => last = format!("{server} stopped part-way through its answer"),
+                Ok(Ok(value)) => {
+                    servers.current = index;
+                    return Ok(value);
+                }
+                Ok(Err(e)) => {
+                    last = format!("{server}: {e}");
+                    servers.rest(index, OVERPASS_REST_BUSY);
+                }
+                Err(_) => {
+                    last = format!("{server} stopped part-way through its answer");
+                    servers.rest(index, OVERPASS_REST_BUSY);
+                }
             },
-            Ok(Ok(response)) => last = format!("{server} answered {}", response.status()),
+            Ok(Ok(response)) if response.status() == reqwest::StatusCode::TOO_MANY_REQUESTS => {
+                let asked = response
+                    .headers()
+                    .get(reqwest::header::RETRY_AFTER)
+                    .and_then(|v| v.to_str().ok()?.trim().parse::<u64>().ok())
+                    .map_or(OVERPASS_REST_429, std::time::Duration::from_secs);
+                last = format!("{server} answered 429: we asked too often, so it rests {} s", asked.max(OVERPASS_REST_429).as_secs());
+                servers.rest(index, asked.max(OVERPASS_REST_429));
+            }
+            Ok(Ok(response)) => {
+                last = format!("{server} answered {}", response.status());
+                servers.rest(index, OVERPASS_REST_BUSY);
+            }
         }
         tracing::info!("OpenStreetMap try {} of {OVERPASS_TRIES} failed: {last}", attempt + 1);
     }
@@ -246,4 +367,95 @@ pub fn elevation_note(report: &mut Report) {
             elevation::ATTRIBUTION
         ),
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_free_slot_means_no_wait() {
+        let status = "Connected as: 1\nCurrent time: 2026-11-26T15:00:00Z\nRate limit: 2\n2 slots available now.\nCurrently running queries (pid, space limit, time limit, start time):\n";
+        assert_eq!(slot_wait(status), None);
+        assert_eq!(slot_wait("Rate limit: 0\nCurrently running queries:\n"), None);
+    }
+
+    #[test]
+    fn a_busy_server_says_when_a_slot_frees() {
+        let status = "Rate limit: 2\nSlot available after: 2026-11-26T15:00:12Z, in 12 seconds.\nSlot available after: 2026-11-26T15:00:40Z, in 40 seconds.\nCurrently running queries (pid, space limit, time limit, start time):\n";
+        assert_eq!(slot_wait(status), Some(12));
+        assert_eq!(slot_wait("Rate limit: 2\n1 slots available now.\nSlot available after: x, in 9 seconds.\n"), None);
+        assert_eq!(slot_wait("not a status page"), None);
+    }
+
+    #[test]
+    fn a_refusing_server_rests_and_the_next_is_asked() {
+        let mut servers = Servers::new(vec!["a".into(), "b".into()]);
+        assert_eq!(servers.next().0, 0);
+        servers.rest(0, OVERPASS_REST_429);
+        assert_eq!(servers.next(), (1, std::time::Duration::ZERO));
+        servers.rest(1, OVERPASS_REST_BUSY);
+        let (index, wait) = servers.next();
+        assert_eq!(index, 1, "the one that rests the shortest");
+        assert!(wait > std::time::Duration::ZERO && wait <= OVERPASS_REST_BUSY);
+    }
+
+    /// A stand-in Overpass server: its status page says `status`, and each query gets `code`
+    /// with `body`. Returns its interpreter URL and how many queries it got.
+    async fn stand_in(status: &'static str, code: u16, body: Value) -> (String, std::sync::Arc<std::sync::atomic::AtomicUsize>) {
+        let asked = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let count = asked.clone();
+        let app = axum::Router::new().route("/api/status", axum::routing::get(move || async move { status })).route(
+            "/api/interpreter",
+            axum::routing::post(move || {
+                let (count, body) = (count.clone(), body.clone());
+                async move {
+                    count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    (axum::http::StatusCode::from_u16(code).unwrap(), axum::Json(body))
+                }
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/api/interpreter", listener.local_addr().unwrap());
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        (url, asked)
+    }
+
+    #[tokio::test]
+    async fn too_many_requests_moves_on_and_leaves_that_server_alone() {
+        let free = "Rate limit: 2\n2 slots available now.\n";
+        let (refusing, refused) = stand_in(free, 429, serde_json::json!({})).await;
+        let (answering, answered) = stand_in(free, 200, serde_json::json!({ "elements": [] })).await;
+        let client = reqwest::Client::new();
+        let mut servers = Servers::new(vec![refusing, answering]);
+        let said = parking_lot::Mutex::new(Vec::new());
+        let say = |words: String| said.lock().push(words);
+        let started = std::time::Instant::now();
+        for _ in 0..3 {
+            ask_one(&client, &mut servers, "[out:json];node(1);out;", &say).await.unwrap();
+        }
+        assert!(started.elapsed() < std::time::Duration::from_secs(10), "no wait while another server is free");
+        use std::sync::atomic::Ordering::SeqCst;
+        assert_eq!((refused.load(SeqCst), answered.load(SeqCst)), (1, 3), "the refusing server is asked once, then rests");
+        assert!(servers.rest_until[0] > tokio::time::Instant::now() + std::time::Duration::from_secs(25));
+    }
+
+    #[tokio::test]
+    async fn a_server_with_no_free_slot_is_waited_for() {
+        let (url, asked) = stand_in(
+            "Rate limit: 2\nSlot available after: 2026-11-26T15:00:01Z, in 1 seconds.\n",
+            200,
+            serde_json::json!({ "elements": [] }),
+        )
+        .await;
+        let client = reqwest::Client::new();
+        let mut servers = Servers::new(vec![url]);
+        let said = parking_lot::Mutex::new(Vec::new());
+        let say = |words: String| said.lock().push(words);
+        let started = std::time::Instant::now();
+        ask_one(&client, &mut servers, "[out:json];node(1);out;", &say).await.unwrap();
+        assert!(started.elapsed() >= std::time::Duration::from_secs(2), "waited for the slot");
+        assert_eq!(asked.load(std::sync::atomic::Ordering::SeqCst), 1);
+        assert!(said.lock().iter().any(|w| w.starts_with("Waiting 2 s for a free turn at 127.0.0.1")), "{:?}", said.lock());
+    }
 }
