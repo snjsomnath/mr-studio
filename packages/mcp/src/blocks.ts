@@ -131,6 +131,18 @@ export const BLOCKS: BlockDef[] = [
     detect: 'export function compileLook',
   },
   {
+    id: 'raster-look', group: 'visual', name: 'Raster look with Dig',
+    description: 'A GeoTIFF of values (soil depth, rock surface, noise) coloured by value on the table grid, with cut-offs a slider moves so the ground peels away, and a glow along the cut.',
+    usage: "a custom layer look block 'raster' on a data:<name> GeoTIFF; bind a range control to look.<id>.hide_below",
+    detect: 'export function rasterPicture',
+  },
+  {
+    id: 'entity-log', group: 'interaction', name: 'Log of layers on the controller',
+    description: "Tap a well or borehole and the controller draws its layers top down from another dataset, coloured by material (clay, sand, rock).",
+    usage: "tap-info props.log { data, key, from, to, material, note } (docs/contracts/site.md)",
+    detect: 'export function logLayers',
+  },
+  {
     id: 'category-schemes', group: 'visual', name: 'Category colour schemes',
     description: 'Colour schemes for categories (land use, building kinds) that match the table palette.',
     usage: 'categoryScheme(name) / schemeFor(values) from @mrstudio/sdk',

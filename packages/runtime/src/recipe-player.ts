@@ -20,13 +20,22 @@ import {
   networkFiles,
   placeFiles,
   placeStepTitles,
+  rasterPicture,
+  rasterProps,
+  loadSiteField,
   readShapes,
   resolvePalette,
   tableFrame,
 } from '@mrstudio/sdk';
-import type { CompiledLook, CustomLayer, GeoJsonCollection, LayerManifest, LayerModule, RecipeData, Shapes, SiteInfo, TableContext } from '@mrstudio/sdk';
+import type { CompiledLook, CustomLayer, FieldFrame, FieldOverlay, GeoJsonCollection, LayerManifest, LayerModule, RecipeData, Shapes, SiteInfo, TableContext } from '@mrstudio/sdk';
 
 const EMPTY: Shapes = { areas: [], paths: [], spots: [] };
+
+/** A data entry that is a raster of values (#601): a GeoTIFF, drawn by a raster look. */
+export function isRasterData(data: RecipeData, site: Pick<SiteInfo, 'data'>): boolean {
+  const path = data.path ?? (data.dataset ? site.data?.[data.dataset] : undefined);
+  return typeof path === 'string' && /\.tiff?$/i.test(path);
+}
 /** Seconds a layer takes to fade in when its recipe says `enter: fade` (M4). */
 const FADE_S = 0.8;
 
@@ -119,6 +128,46 @@ export function recipeModule(current: () => LayerManifest | undefined, watch: (c
       const surface = mapSurface(ctx.map.addCanvas('drawing'), frame);
       let recipe: CustomLayer = current()?.custom ?? { name: '' };
       let shapes = new Map<string, Shapes>();
+      /** Rasters of values on the table's grid (#601), by data entry id. */
+      let fields = new Map<string, FieldFrame>();
+      /** Each raster look's coloured field and the glow along its cut, by look id. */
+      const rasters = new Map<string, { main: FieldOverlay; edge: FieldOverlay; key: string }>();
+      const fadeOf = () => (recipe.enter === 'fade' ? ease(time / FADE_S) : 1);
+      /** Draws the raster looks again: only when their props, the palette or the data changed. */
+      const drawRasters = (overrides: Record<string, Record<string, unknown>>) => {
+        const palette = resolvePalette(ctx.site.palette);
+        const wanted = new Set<string>();
+        for (const block of recipe.look ?? []) {
+          if (block.block !== 'raster') continue;
+          const field = block.data ? fields.get(block.data) : undefined;
+          if (!field) continue;
+          wanted.add(block.id);
+          let overlay = rasters.get(block.id);
+          if (!overlay) {
+            overlay = {
+              main: ctx.map.addField(`raster-${block.id}`, { colormap: { stops: [[0, 0, 0, 0, 0], [1, 0, 0, 0, 0]] }, opacity: 0, smooth: false }),
+              edge: ctx.map.addField(`raster-${block.id}-edge`, { colormap: { stops: [[0, 0, 0, 0, 0], [1, 0, 0, 0, 0]] }, opacity: 0, smooth: true, soften: 1.5 }),
+              key: '',
+            };
+            rasters.set(block.id, overlay);
+          }
+          const props = rasterProps(block.props, overrides[block.id]);
+          const key = JSON.stringify([props, field.revision, field.width, field.height, ctx.site.palette]);
+          if (key === overlay.key) continue;
+          overlay.key = key;
+          const picture = rasterPicture(field, props, palette);
+          overlay.main.setStyle({ colormap: picture.colormap, opacity: props.opacity * fadeOf(), smooth: false });
+          overlay.main.set(picture.frame);
+          overlay.edge.setStyle({ colormap: picture.edgeColormap, opacity: picture.edge ? fadeOf() : 0 });
+          if (picture.edge) overlay.edge.set(picture.edge);
+        }
+        for (const [id, overlay] of rasters) {
+          if (wanted.has(id)) continue;
+          overlay.main.remove();
+          overlay.edge.remove();
+          rasters.delete(id);
+        }
+      };
       /** Street networks that crowds walk on, by dataset name. */
       let streets = new Map<string, Shapes>();
       /** Place motions' other files (streets, buildings, targets, CSV tables), by name. */
@@ -162,8 +211,20 @@ export function recipeModule(current: () => LayerManifest | undefined, watch: (c
 
       const loadAll = async () => {
         const next = new Map<string, Shapes>();
+        const nextFields = new Map<string, FieldFrame>();
         await Promise.all(
           (recipe.data ?? []).map(async (data) => {
+            // A raster of values (#601) comes from the host already laid on the table's grid.
+            if (isRasterData(data, ctx.site)) {
+              if (!data.dataset) return;
+              try {
+                const field = await loadSiteField(ctx.site, data.dataset);
+                if (field) nextFields.set(data.id, field);
+              } catch (error) {
+                console.warn(`[custom ${recipe.name}] ${data.id}: ${(error as Error).message}`);
+              }
+              return;
+            }
             const url = dataUrl(data, ctx.site);
             if (!url) return;
             try {
@@ -209,6 +270,7 @@ export function recipeModule(current: () => LayerManifest | undefined, watch: (c
           }),
         ]);
         shapes = next;
+        fields = nextFields;
         streets = nextStreets;
         extraShapes = nextExtra;
         extraTables = nextTables;
@@ -269,6 +331,7 @@ export function recipeModule(current: () => LayerManifest | undefined, watch: (c
             return compileLook(block, filterShapes((block.data && shapes.get(block.data)) || EMPTY, filters[block.id]), palette, mm, motion, overrides.look[block.id]);
           })
           .filter((look): look is CompiledLook => look !== null);
+        drawRasters(overrides.look);
         if (!(recipe.motion ?? []).some((m) => m.block === 'sound')) sounds.stop();
         // A place motion that steps: Next shows the places, then starts the motion (#341).
         const stepping = (recipe.motion ?? []).find((m) => m.block === 'place' && { ...m.props, ...overrides.motion[m.id] }.reveal === true);
@@ -375,6 +438,17 @@ export function recipeModule(current: () => LayerManifest | undefined, watch: (c
         const view = surface.begin(time);
         const alpha = recipe.enter === 'fade' ? ease(time / FADE_S) : 1;
         for (const look of looks) look.draw(view, time, alpha);
+        // Rasters fade in with the rest; after that their style is left alone (#596).
+        if (rasters.size && time - dt < FADE_S + 0.1) {
+          const overrides = boundOverrides(recipe, ctx.params).look;
+          for (const block of recipe.look ?? []) {
+            const overlay = rasters.get(block.id);
+            if (!overlay) continue;
+            const props = rasterProps(block.props, overrides[block.id]);
+            overlay.main.setStyle({ opacity: props.opacity * alpha });
+            overlay.edge.setStyle({ opacity: props.edge_glow > 0 ? alpha : 0 });
+          }
+        }
         playWanted();
         sincePublish += dt;
         if (sincePublish >= 0.25) {

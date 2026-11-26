@@ -9,6 +9,7 @@ pub mod elevation;
 pub mod field;
 pub mod files;
 mod geotiff;
+mod gisfile;
 pub mod history;
 pub mod import;
 pub mod library;
@@ -815,7 +816,7 @@ mod tests {
     }
 
     fn item(name: &str, id: &str) -> LayerItem {
-        LayerItem { r#use: name.into(), id: id.into(), active: true, params: Default::default(), hide: Vec::new() }
+        LayerItem { r#use: name.into(), id: id.into(), active: true, params: Default::default(), hide: Vec::new(), stack: None }
     }
 
     fn problems_with(site: &Site, needle: &str) -> bool {

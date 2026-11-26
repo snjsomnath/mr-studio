@@ -532,6 +532,11 @@ ctx.reveal.set(shape | null);   // null: everywhere, as without a revealer
 ctx.reveal.item(index, shape | null | undefined);  // one item (0 is the first) gets a shape of its own; undefined hands it back
 ```
 
+Items have two stacks (#606): an item with `stack: 1` in site.json is the surface and shows
+everywhere the shape is not (`revealComplement(shape)`: around a glass, `{ kind: 'circle', ...,
+outside: true }`, or the far side of a line); the others show through the shape. A layer needs no
+code for this.
+
 `otherSide(shape)` turns a side round, for a Reveal line with `split` on: its first item shows on one
 side and its second on the other, then and now (#349).
 

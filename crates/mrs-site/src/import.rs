@@ -218,6 +218,24 @@ pub struct Report {
     /// Where it was saved, after `apply`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub path: Option<String>,
+    /// The layers of a zipped shapefile or GeoPackage (#600), for the author to choose from.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub layers: Vec<LayerChoice>,
+}
+
+/// One layer of a file that holds several (#600).
+#[derive(Debug, Clone, Serialize)]
+pub struct LayerChoice {
+    /// The name to pass back as the `layer` option.
+    pub name: String,
+    /// Places, lines and areas in it.
+    pub count: usize,
+    /// How many of them are on the table.
+    pub on_table: usize,
+    /// `points`, `lines`, `areas`, or `mixed`; `none` when it is empty.
+    pub shape: &'static str,
+    /// True for the layer this report is about.
+    pub chosen: bool,
 }
 
 impl Report {
@@ -240,13 +258,16 @@ impl Report {
             issues: vec![Issue::new(code, Severity::Blocker, message)],
             preview: None,
             path: None,
+            layers: Vec::new(),
         }
     }
 }
 
 /// Choices the author made after a first look.
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct Options {
+    /// Which layer of a zipped shapefile or GeoPackage to read (#600); the first on the table when not given.
+    pub layer: Option<String>,
     /// Leave out what lies well outside the table.
     pub crop: bool,
     /// Read the first coordinate as latitude.
@@ -274,6 +295,21 @@ pub struct Prepared {
 
 /// Reads and checks `bytes` (a file called `filename`) as `target` for `site`. Writes nothing.
 pub fn inspect(site: &Site, target: &Target, filename: &str, bytes: &[u8], options: Options) -> Prepared {
+    let mut layers = Vec::new();
+    let mut prepared = inspect_file(site, target, filename, bytes, options, &mut layers);
+    prepared.report.layers = layers;
+    prepared
+}
+
+/// `inspect`, noting the layers of a file that holds several in `layer_choices`.
+fn inspect_file(
+    site: &Site,
+    target: &Target,
+    filename: &str,
+    bytes: &[u8],
+    options: Options,
+    layer_choices: &mut Vec<LayerChoice>,
+) -> Prepared {
     let mut issues = Vec::new();
     let (singular, plural) = target.noun();
     let refuse = |issues: Vec<Issue>, summary: String| Prepared {
@@ -290,6 +326,7 @@ pub fn inspect(site: &Site, target: &Target, filename: &str, bytes: &[u8], optio
             issues,
             preview: None,
             path: None,
+            layers: Vec::new(),
         },
         content: None,
         terrain_crs: None,
@@ -305,7 +342,111 @@ pub fn inspect(site: &Site, target: &Target, filename: &str, bytes: &[u8], optio
         return video(target, bytes, found);
     }
 
-    let text = match decode(bytes) {
+    // A GeoTIFF of values for a named dataset (#601): kept as it is, sampled on the grid by the host.
+    if matches!(target, Target::Data(_)) && matches!(bytes, [0x49, 0x49, 0x2a, 0x00, ..] | [0x4d, 0x4d, 0x00, 0x2a, ..]) {
+        return value_raster(site, target, bytes);
+    }
+
+    // A zipped shapefile or a GeoPackage (#600): one of its layers, read as GeoJSON.
+    let gis_text = if crate::gisfile::sniff(bytes).is_some() {
+        let layers = match crate::gisfile::read(bytes) {
+            Ok(layers) => layers,
+            Err(e) => {
+                let message = format!("This file can't be read: {e}. Use a zipped shapefile, a GeoPackage, GeoJSON or CSV.");
+                return refuse(vec![Issue::new("read.gis", Severity::Blocker, message)], "Not a file MR Studio can read.".into());
+            }
+        };
+        let frame = Frame::new(site);
+        // How many of a layer's features are on the table, read in the layer's own system.
+        let on_table = |layer: &crate::gisfile::Layer| -> usize {
+            if let Some(raster) = &layer.raster {
+                return usize::from(value_raster(site, target, raster).report.inside > 0);
+            }
+            let Ok(choice) = choose_crs(site, &layer.features, layer.crs.as_deref(), false) else { return 0 };
+            layer
+                .features
+                .iter()
+                .filter(|f| {
+                    let mut geometry = f["geometry"].clone();
+                    map_positions(&mut geometry["coordinates"], &|x, y| choice.crs.inverse(x, y));
+                    frame.touches(&geometry, 0.0)
+                })
+                .count()
+        };
+        let suits = |layer: &crate::gisfile::Layer| match target.shape() {
+            _ if layer.raster.is_some() => false,
+            Some(shape) => layer.features.iter().any(|f| f["geometry"]["type"].as_str().and_then(Shape::of) == Some(shape)),
+            None => true,
+        };
+        let on: Vec<usize> = layers.iter().map(on_table).collect();
+        let index = match &options.layer {
+            Some(name) => match layers.iter().position(|l| &l.name == name) {
+                Some(i) => i,
+                None => {
+                    let names = layers.iter().map(|l| l.name.as_str()).collect::<Vec<_>>().join(", ");
+                    let message = format!("The file has no layer called {name}. Its layers are {names}.");
+                    return refuse(vec![Issue::new("read.layer", Severity::Blocker, message)], "No such layer in the file.".into());
+                }
+            },
+            // The layer of the right shape with the most on the table; the first on a tie.
+            None => {
+                let counts: Vec<usize> = layers.iter().zip(&on).map(|(l, &n)| if suits(l) { n } else { 0 }).collect();
+                let best = counts.iter().copied().max().unwrap_or(0);
+                if best > 0 {
+                    counts.iter().position(|&c| c == best).unwrap_or(0)
+                } else {
+                    layers
+                        .iter()
+                        .position(|l| !l.features.is_empty() && suits(l))
+                        .or_else(|| layers.iter().position(|l| !l.features.is_empty()))
+                        .unwrap_or(0)
+                }
+            }
+        };
+        if layers.len() > 1 {
+            *layer_choices = layers
+                .iter()
+                .enumerate()
+                .map(|(i, l)| {
+                    let mut kinds: Vec<&'static str> =
+                        l.features.iter().filter_map(|f| f["geometry"]["type"].as_str().and_then(Shape::of)).map(Shape::words).collect();
+                    kinds.sort_unstable();
+                    kinds.dedup();
+                    let shape = match kinds.as_slice() {
+                        _ if l.raster.is_some() => "raster",
+                        [] => "none",
+                        [one] => one,
+                        _ => "mixed",
+                    };
+                    LayerChoice { name: l.name.clone(), count: l.features.len(), on_table: on[i], shape, chosen: i == index }
+                })
+                .collect();
+            let others = layers.len() - 1;
+            let message =
+                format!("The file has {} layers. Reading \"{}\"; choose another below ({others} more).", layers.len(), layers[index].name);
+            issues.push(Issue::new("read.layers", Severity::Note, message));
+        }
+        let layer = layers.into_iter().nth(index).expect("chosen");
+        if let Some(raster) = &layer.raster {
+            if !matches!(target, Target::Data(_)) {
+                let message =
+                    format!("{} is a raster. A raster of values can only be a dataset of its own, such as data:soil-depth.", layer.name);
+                return refuse(vec![Issue::new("read.raster", Severity::Blocker, message)], "A raster, not places, lines or areas.".into());
+            }
+            let mut prepared = value_raster(site, target, raster);
+            prepared.report.issues.splice(0..0, issues);
+            return prepared;
+        }
+        let mut collection = json!({ "type": "FeatureCollection", "features": layer.features });
+        if let Some(code) = layer.crs {
+            collection["crs"] = json!({ "type": "name", "properties": { "name": code } });
+        }
+        Some(serde_json::to_string(&collection).expect("json"))
+    } else {
+        None
+    };
+
+    let text = match gis_text.map(|t| Ok((t, false))).unwrap_or_else(|| decode(bytes)) {
         Ok((text, recoded)) => {
             if recoded {
                 issues.push(Issue::new(
@@ -506,6 +647,7 @@ pub fn inspect(site: &Site, target: &Target, filename: &str, bytes: &[u8], optio
             issues,
             preview: Some(preview),
             path: None,
+            layers: Vec::new(),
         },
         content: Some(content),
         terrain_crs: None,
@@ -764,6 +906,7 @@ fn video(target: &Target, bytes: &[u8], found: crate::video::Video) -> Prepared 
             issues,
             preview: None,
             path: None,
+            layers: Vec::new(),
         },
         content: Some(bytes.to_vec()),
         terrain_crs: None,
@@ -843,6 +986,7 @@ fn drawing(site: &Site, target: &Target, text: &str, mut issues: Vec<Issue>) -> 
             issues,
             preview: None,
             path: None,
+            layers: Vec::new(),
         },
         content: Some(plan.svg.into_bytes()),
         terrain_crs: None,
@@ -880,7 +1024,7 @@ fn decode(bytes: &[u8]) -> Result<(String, bool), &'static str> {
     }
 }
 
-fn windows_1252(b: u8) -> char {
+pub(crate) fn windows_1252(b: u8) -> char {
     const HIGH: [char; 32] = [
         '€', '\u{81}', '‚', 'ƒ', '„', '…', '†', '‡', 'ˆ', '‰', 'Š', '‹', 'Œ', '\u{8d}', 'Ž', '\u{8f}', '\u{90}', '‘', '’', '“', '”', '•',
         '–', '—', '˜', '™', 'š', '›', 'œ', '\u{9d}', 'ž', 'Ÿ',
@@ -1064,6 +1208,7 @@ fn trips(site: &Site, target: &Target, text: &str, mut issues: Vec<Issue>) -> Pr
         issues: Vec::new(),
         preview: None,
         path: None,
+        layers: Vec::new(),
     };
     let value: Value = match serde_json::from_str(text) {
         Ok(value) => value,
@@ -1217,6 +1362,7 @@ fn table(site: &Site, target: &Target, text: &str, mut issues: Vec<Issue>) -> Pr
         issues,
         preview: None,
         path: None,
+        layers: Vec::new(),
     };
     let content = ok.then(|| out.into_bytes());
     Prepared {
@@ -1246,6 +1392,7 @@ fn terrain(site: &Site, bytes: &[u8], crs: Option<u32>, flatten: bool) -> Prepar
         issues: Vec::new(),
         preview: None,
         path: None,
+        layers: Vec::new(),
     };
     let done = |mut report: Report, issues: Vec<Issue>, content: Option<Vec<u8>>, terrain_crs: Option<String>| {
         report.ok = content.is_some() && !issues.iter().any(|i| i.severity == Severity::Blocker);
@@ -1359,6 +1506,95 @@ fn terrain(site: &Site, bytes: &[u8], crs: Option<u32>, flatten: bool) -> Prepar
     }
     let terrain_crs = crs.map(|c| format!("EPSG:{c}"));
     done(report, issues, Some(bytes.to_vec()), terrain_crs)
+}
+
+/// A GeoTIFF of values kept as a named dataset (#601): soil depth, noise, a simulation. The host
+/// samples it on the table's grid (`/api/data/field`) and the raster look colours it.
+/// Reads a GeoTIFF of values. One that only cites its grid is tried in the systems a site's
+/// rasters come in (SWEREF99 TM, its local zones, the site's UTM zone, WGS84), and the first
+/// that lands on the table is kept: the code of the one guessed is returned with it.
+pub(crate) fn read_on_table(site: &Site, path: &std::path::Path) -> Result<(GeoRaster, Option<u32>), String> {
+    match GeoRaster::read(path, None) {
+        Err(e) if e.contains("coordinate system") => {
+            let utm_zone = ((site.manifest.origin.lon + 180.0) / 6.0).floor() as u32 + 1;
+            let candidates = [3006].into_iter().chain(3007..=3018).chain([32600 + utm_zone, 25800 + utm_zone, 4326]);
+            for code in candidates {
+                if let Ok(raster) = GeoRaster::read(path, Crs::from_epsg(code)) {
+                    if coverage(site, &raster).0 > 0 {
+                        return Ok((raster, Some(code)));
+                    }
+                }
+            }
+            Err(e)
+        }
+        read => read.map(|raster| (raster, None)),
+    }
+}
+
+fn value_raster(site: &Site, target: &Target, bytes: &[u8]) -> Prepared {
+    let mut report = Report::refused(target, "read.geotiff", "", "");
+    report.issues.clear();
+    let done = |mut report: Report, issues: Vec<Issue>, content: Option<Vec<u8>>| {
+        report.ok = content.is_some() && !issues.iter().any(|i| i.severity == Severity::Blocker);
+        report.issues = issues;
+        let file = format!("data/{}.tif", target.name());
+        Prepared { target: target.clone(), report, content, terrain_crs: None, flatten: false, file: Some(file) }
+    };
+    let mut issues = Vec::new();
+    let scratch = std::env::temp_dir().join(format!("mrs-raster-{}-{:p}.tif", std::process::id(), bytes.as_ptr()));
+    if let Err(e) = std::fs::write(&scratch, bytes) {
+        issues.push(Issue::new("read.io", Severity::Blocker, format!("The file could not be read: {e}.")));
+        return done(report, issues, None);
+    }
+    let read = read_on_table(site, &scratch);
+    let _ = std::fs::remove_file(&scratch);
+    let raster = match read {
+        Ok((raster, guessed)) => {
+            if let Some(code) = guessed {
+                let message =
+                    format!("The GeoTIFF does not name its coordinate system; EPSG:{code} puts it on your table, so it is read in that.");
+                issues.push(Issue::new("coords.guessed", Severity::Note, message));
+            }
+            raster
+        }
+        Err(e) => {
+            let message = if e.contains("coordinate system") {
+                "The GeoTIFF does not say which coordinate system it is in, and none that MR Studio knows puts it on your table. Save it again with its coordinate system (in QGIS: Export, Save as GeoTIFF).".to_string()
+            } else {
+                format!("The GeoTIFF can't be read: {e}.")
+            };
+            issues.push(Issue::new("coords.unknown", Severity::Blocker, message));
+            report.summary = "A GeoTIFF that can't be placed.".into();
+            return done(report, issues, None);
+        }
+    };
+    let (covered, total, low, high) = coverage(site, &raster);
+    report.count = 1;
+    if covered == 0 {
+        issues.push(Issue::new(
+            "extent.outside_all",
+            Severity::Blocker,
+            "The GeoTIFF does not cover any of your table. Check that it is the right area.",
+        ));
+        report.outside = 1;
+        report.summary = format!("A {} x {} raster that misses the table.", raster.width, raster.height);
+        return done(report, issues, None);
+    }
+    report.inside = 1;
+    let share = covered as f64 / total as f64;
+    if share < 0.99 {
+        let message = format!("It covers about {:.0}% of the table; the rest shows nothing.", share * 100.0);
+        issues.push(Issue::new("extent.partial", Severity::Warning, message));
+    }
+    let number = |v: f32| if (high - low).abs() < 10.0 { format!("{v:.1}") } else { format!("{v:.0}") };
+    issues.push(Issue::new("raster.values", Severity::Note, "A custom layer can colour it by value, and a slider can cut it away (Dig)."));
+    report.summary = format!(
+        "A raster of values from {} to {} on the table, covering {:.0}% of it",
+        number(low),
+        number(high),
+        (share * 100.0).min(100.0)
+    );
+    done(report, issues, Some(bytes.to_vec()))
 }
 
 /// How many of the table's footprints (up to 400) stand at least 3 m above the ground around
@@ -1556,16 +1792,31 @@ impl Frame {
         let mut positions = Vec::new();
         collect_positions(&geometry["coordinates"], &mut positions, usize::MAX);
         positions.iter().any(|&(lon, lat)| self.within(lon, lat, margin))
-            || (Shape::of(geometry["type"].as_str().unwrap_or("")) == Some(Shape::Area) && self.covers_centre(&positions))
+            || (Shape::of(geometry["type"].as_str().unwrap_or("")) == Some(Shape::Area) && self.covers_centre(&geometry["coordinates"]))
     }
 
-    fn covers_centre(&self, ring: &[(f64, f64)]) -> bool {
+    /// True when an area (a Polygon's or MultiPolygon's rings, holes counted by the even-odd
+    /// rule) covers the table's centre: a large area with no corner on the table (#600).
+    fn covers_centre(&self, coordinates: &Value) -> bool {
+        fn rings<'a>(value: &'a Value, out: &mut Vec<&'a Vec<Value>>) {
+            let Some(items) = value.as_array() else { return };
+            if items.first().is_some_and(|p| p.get(0).is_some_and(Value::is_number)) {
+                out.push(items);
+            } else {
+                items.iter().for_each(|v| rings(v, out));
+            }
+        }
+        let mut all = Vec::new();
+        rings(coordinates, &mut all);
         let (x, y) = self.origin;
         let mut inside = false;
-        for (i, &(x1, y1)) in ring.iter().enumerate() {
-            let (x2, y2) = ring[(i + 1) % ring.len()];
-            if (y1 > y) != (y2 > y) && x < x1 + (y - y1) / (y2 - y1) * (x2 - x1) {
-                inside = !inside;
+        for ring in all {
+            let ring: Vec<(f64, f64)> = ring.iter().filter_map(|p| Some((p.get(0)?.as_f64()?, p.get(1)?.as_f64()?))).collect();
+            for (i, &(x1, y1)) in ring.iter().enumerate() {
+                let (x2, y2) = ring[(i + 1) % ring.len()];
+                if (y1 > y) != (y2 > y) && x < x1 + (y - y1) / (y2 - y1) * (x2 - x1) {
+                    inside = !inside;
+                }
             }
         }
         inside
@@ -1742,6 +1993,63 @@ mod tests {
         assert_eq!(stats.buildings, 3);
         let written: Value = serde_json::from_slice(&std::fs::read(updated.dir.join("data/buildings.v2.geojson")).unwrap()).unwrap();
         assert_eq!(written["features"][1]["properties"]["height"], json!(12.0));
+        std::fs::remove_dir_all(&site.dir).unwrap();
+    }
+
+    #[test]
+    fn a_zipped_shapefile_lands_and_its_layers_are_listed() {
+        use crate::gisfile::tests::{shp_points, zip_of};
+        let site = scratch("shapefile-zip");
+        let crs = Crs::from_epsg(3006).unwrap();
+        let (lon, lat) = (site.manifest.origin.lon, site.manifest.origin.lat);
+        let (x, y) = crs.forward(lon, lat);
+        let (wells, wells_dbf) = shp_points(&[(x, y, "Energibrunn"), (x + 20.0, y + 5.0, "Brunn 2")]);
+        let (far, far_dbf) = shp_points(&[(x + 90_000.0, y, "Far away")]);
+        let prj: &[u8] = br#"PROJCS["SWEREF99_TM",GEOGCS["GCS_SWEREF99"],AUTHORITY["EPSG","3006"]]"#;
+        let zip = zip_of(&[
+            ("far.shp", &far),
+            ("far.dbf", &far_dbf),
+            ("far.prj", prj),
+            ("wells.shp", &wells),
+            ("wells.dbf", &wells_dbf),
+            ("wells.prj", prj),
+        ]);
+
+        // The layer with most on the table is read first, and the others are offered.
+        let r = inspect(&site, &Target::Data("wells".into()), "sgu.zip", &zip, Options::default()).report;
+        assert!(r.ok, "{:?}", r.issues);
+        assert_eq!(r.count, 2);
+        assert_eq!(r.crs.as_ref().map(|c| (c.code.as_str(), c.guessed)), Some(("EPSG:3006", false)));
+        assert!(codes(&r).contains(&"read.layers"));
+        let chosen: Vec<(&str, usize, bool)> = r.layers.iter().map(|l| (l.name.as_str(), l.on_table, l.chosen)).collect();
+        assert_eq!(chosen, [("far", 0, false), ("wells", 2, true)]);
+        assert_eq!(r.preview.as_ref().unwrap()["features"][0]["properties"]["NAMN"], "Energibrunn");
+
+        // The author chooses another; an unknown name is refused with the names.
+        let other = Options { layer: Some("far".into()), ..Default::default() };
+        let r = inspect(&site, &Target::Data("wells".into()), "sgu.zip", &zip, other).report;
+        assert!(!r.ok && codes(&r).contains(&"extent.outside_all"));
+        let wrong = Options { layer: Some("nope".into()), ..Default::default() };
+        let r = inspect(&site, &Target::Data("wells".into()), "sgu.zip", &zip, wrong).report;
+        assert!(r.issues[0].message.contains("wells"), "{:?}", r.issues);
+
+        // A zip with nothing to read says so.
+        let r = inspect(&site, &Target::Data("wells".into()), "x.zip", &zip_of(&[("a.pdf", b"%PDF")]), Options::default()).report;
+        assert_eq!(codes(&r), ["read.gis"]);
+        std::fs::remove_dir_all(&site.dir).unwrap();
+    }
+
+    #[test]
+    fn an_area_larger_than_the_table_is_on_it() {
+        let site = scratch("big-area");
+        let (lon, lat) = (site.manifest.origin.lon, site.manifest.origin.lat);
+        // A square 0.1 degree wide with a hole far from the table: no corner on the table.
+        let square = |d: f64, at: (f64, f64)| {
+            json!([[at.0 - d, at.1 - d], [at.0 + d, at.1 - d], [at.0 + d, at.1 + d], [at.0 - d, at.1 + d], [at.0 - d, at.1 - d]])
+        };
+        let area = json!({ "type": "Feature", "properties": {}, "geometry": { "type": "MultiPolygon", "coordinates": [[square(0.1, (lon, lat)), square(0.01, (lon + 0.05, lat))]] } });
+        let r = inspect(&site, &Target::Data("aquifer".into()), "a.geojson", &collection(vec![area]), Options::default()).report;
+        assert!(r.ok && r.inside == 1, "{:?}", r.issues);
         std::fs::remove_dir_all(&site.dir).unwrap();
     }
 
@@ -2114,6 +2422,27 @@ mod tests {
     }
 
     #[test]
+    fn a_geotiff_of_values_is_kept_as_a_dataset_and_sampled_on_the_grid() {
+        let site = scratch("value-raster");
+        let (lon, lat) = (site.manifest.origin.lon, site.manifest.origin.lat);
+        // Soil depth growing from west to east, 0 to 20 m across the raster.
+        let tif = wgs84_tif([lat - 0.01, lon - 0.02, lat + 0.01, lon + 0.02], 0.0005, |x, _| ((x - (lon - 0.02)) / 0.04 * 20.0) as f32);
+        let prepared = inspect(&site, &Target::Data("soil-depth".into()), "jorddjup.tif", &tif, Options::default());
+        assert!(prepared.report.ok, "{:?}", prepared.report.issues);
+        assert!(prepared.report.summary.starts_with("A raster of values from"), "{}", prepared.report.summary);
+        let (site, report) = apply(&site, prepared).unwrap();
+        assert_eq!(report.path.as_deref(), Some("data/soil-depth.tif"));
+        let field = crate::field::read(&site, "soil-depth", None).unwrap().unwrap();
+        let (low, high) = field.range();
+        assert!(low > 5.0 && high < 15.0 && high > low, "{low} {high}");
+        // A raster for buildings is still refused, and a raster that misses the table too.
+        assert!(!inspect(&site, &Target::Buildings, "d.tif", &tif, Options::default()).report.ok);
+        let far = wgs84_tif([lat + 1.0, lon, lat + 1.01, lon + 0.01], 0.001, |_, _| 1.0);
+        assert_eq!(codes(&inspect(&site, &Target::Data("x".into()), "far.tif", &far, Options::default()).report), ["extent.outside_all"]);
+        std::fs::remove_dir_all(&site.dir).unwrap();
+    }
+
+    #[test]
     fn a_surface_model_with_the_buildings_in_it_is_offered_flattening() {
         let site = scratch("terrain-dsm");
         // The sample's footprints (courtyards left as ground), raised 15 m above flat ground at 10 m: a surface model.
@@ -2215,6 +2544,13 @@ mod tests {
         let terrain = campus.manifest.scene.terrain.as_ref().unwrap();
         // The grid was found by trying, so it is written down for the bake.
         assert_eq!((terrain.path.as_str(), terrain.width, terrain.crs.as_deref()), ("data/terrain.tif", None, Some("EPSG:3006")));
+        // The same file as a raster of values (#601) is placed the same way, and the grid sampler finds it.
+        let values = inspect(&campus, &Target::Data("ground".into()), "terrain.tif", &tif, Options::default());
+        assert!(values.report.ok, "{:?}", values.report.issues);
+        assert!(codes(&values.report).contains(&"coords.guessed"), "{:?}", values.report.issues);
+        let (campus, _) = apply(&campus, values).unwrap();
+        let field = crate::field::read(&campus, "ground", None).unwrap().unwrap();
+        assert!(field.range().1 > field.range().0);
         let (scene, stats) = campus.bake().unwrap();
         assert_eq!(stats.terrain_missing_cells, 0);
         let (low, high) = scene.dtm.iter().fold((f32::MAX, f32::MIN), |(a, b), &z| (a.min(z), b.max(z)));

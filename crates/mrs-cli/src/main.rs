@@ -154,7 +154,7 @@ enum DataCommand {
         site: PathBuf,
         #[arg(long)]
         target: String,
-        /// A GeoJSON, CSV, Shapefile (zipped) or GeoTIFF file. Leave out with --osm or --elevation.
+        /// A GeoJSON, CSV, zipped Shapefiles, a GeoPackage or a GeoTIFF. Leave out with --osm or --elevation.
         #[arg(long)]
         file: Option<PathBuf>,
         /// Fetch it from OpenStreetMap for the table's area (buildings, trees, walkways, data:roads).
@@ -178,6 +178,9 @@ enum DataCommand {
         /// The coordinate system of a terrain GeoTIFF that does not say, such as EPSG:3006.
         #[arg(long)]
         crs: Option<String>,
+        /// Which layer of a zipped shapefile or GeoPackage that holds several (the report lists them).
+        #[arg(long)]
+        layer: Option<String>,
         #[arg(long)]
         json: bool,
     },
@@ -507,7 +510,7 @@ async fn data(action: DataCommand) -> anyhow::Result<()> {
         std::process::exit(1);
     };
     match action {
-        DataCommand::Add { site, target, file, osm, elevation, write, crop, swap, flatten, crs, json } => {
+        DataCommand::Add { site, target, file, osm, elevation, write, crop, swap, flatten, crs, layer, json } => {
             let parsed = Target::parse(&target).map_err(anyhow::Error::msg)?;
             let crs = match crs.as_deref().map(|c| c.trim().trim_start_matches("EPSG:").trim_start_matches("epsg:").parse::<u32>()) {
                 None => None,
@@ -534,7 +537,7 @@ async fn data(action: DataCommand) -> anyhow::Result<()> {
             };
             let site_dir = site.clone();
             let mut report = tokio::task::spawn_blocking(move || {
-                mrs_host::data::import_file(&site_dir, &target, &filename, &bytes, Options { crop, swap, crs, flatten }, write)
+                mrs_host::data::import_file(&site_dir, &target, &filename, &bytes, Options { crop, swap, crs, flatten, layer }, write)
             })
             .await?
             .map_err(anyhow::Error::msg)?;

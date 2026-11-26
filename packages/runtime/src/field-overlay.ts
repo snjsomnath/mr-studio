@@ -21,15 +21,16 @@ uniform vec2 u_range;   // offset and scale that take a texel to 0..1
 uniform float u_opacity;
 uniform float u_gain;    // the layer's intensity: below 1 fades, above 1 brightens
 uniform vec2 u_soften;  // blur radius in texture coordinates, 0 for none
-uniform float u_clipKind; // where the field shows (#287): 0 everywhere, 1 a circle, 2 one side of a line, 3 nowhere
+uniform float u_clipKind; // where the field shows (#287): 0 everywhere, 1 a circle, 2 one side of a line, 3 nowhere, 4 outside a circle
 uniform vec3 u_clip;      // in table metres, see revealUniform in the SDK
 uniform vec2 u_extent;    // the table's width and height in metres
 in vec2 v_uv;
 out vec4 color;
 bool clipped() {
   if (u_clipKind < 0.5) return false;
-  if (u_clipKind > 2.5) return true;
+  if (u_clipKind > 2.5 && u_clipKind < 3.5) return true;
   vec2 m = v_uv * u_extent;
+  if (u_clipKind > 3.5) return distance(m, u_clip.xy) <= u_clip.z;
   if (u_clipKind < 1.5) return distance(m, u_clip.xy) > u_clip.z;
   float c = u_clip.x < 0.5 ? m.x : m.y;
   return (c - u_clip.y) * u_clip.z < 0.0;

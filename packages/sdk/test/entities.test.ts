@@ -96,3 +96,20 @@ test('a set reads nested properties by a dotted path (#373)', () => {
   // The fact is named by the last part of its path.
   assert.deepEqual(list[0]!.facts, [['Area', '1,200']]);
 });
+
+test('a log lists the picked one’s layers from the top down (#602)', async () => {
+  const { logLayers, materialColour } = await import('../src/entities.ts');
+  const row = (id: number, from: number, to: number, what: string, note = '') => ({ properties: { ID: id, top: from, bottom: to, what, note }, geometry: null });
+  const logs = {
+    features: [row(7, 3, 140, 'BERG', 'KROSSZON 4-5 M'), row(7, 0, 3, 'FYLLN.+JORD'), row(8, 0, 2, 'LERA'), row(7, 0, 0, ''), row(7, 3, 20, 'BERG')],
+  };
+  const log = { dataset: 'logs', key: 'ID', from: 'top', to: 'bottom', material: 'what', note: 'note' };
+  assert.deepEqual(logLayers(logs, log, '7'), [
+    { from: 0, to: 3, material: 'FYLLN.+JORD' },
+    { from: 3, to: 140, material: 'BERG', note: 'KROSSZON 4-5 M' },
+  ]);
+  assert.deepEqual(logLayers(logs, log, '9'), []);
+  assert.equal(materialColour('BERG'), materialColour('rock'));
+  assert.notEqual(materialColour('LERA'), materialColour('BERG'));
+  assert.equal(materialColour('something else'), materialColour('something else'));
+});

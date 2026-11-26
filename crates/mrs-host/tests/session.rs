@@ -975,7 +975,7 @@ async fn a_new_table_takes_its_buildings_without_a_restart() {
     // A blocker is a 422 with the reason, and nothing changes.
     let (status, report) = http_post(&host, "/api/data/import?target=trees", "trees.zip", b"PK\x03\x04").await;
     assert_eq!(status, 422);
-    assert_eq!(report["issues"][0]["code"], "read.unknown");
+    assert_eq!(report["issues"][0]["code"], "read.gis");
     let (status, report) = http_post(&host, "/api/data/import?target=slideshow", "s.json", b"{}").await;
     assert_eq!(status, 400);
     assert!(report["error"].as_str().unwrap().contains("not something a table can take"));

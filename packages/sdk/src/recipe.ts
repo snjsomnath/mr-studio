@@ -82,7 +82,8 @@ export function rampShare(n: number, lo: number, hi: number, mid?: number): numb
 /** A size in table millimetres: fixed, or spread over a range by a numeric column. */
 export type Size = number | { by: string; range: [number, number] };
 
-export type GeometryKind = 'points' | 'lines' | 'fill';
+/** `raster`: a GeoTIFF of values on the table's grid (#601), drawn by raster-look.ts. */
+export type GeometryKind = 'points' | 'lines' | 'fill' | 'raster';
 
 /** The props of each look block, with their defaults. */
 export interface PointsProps {
@@ -133,6 +134,16 @@ export const LOOK_DEFAULTS = {
   points: { color: '@accent', radius_mm: 4, opacity: 1, glow: 0.5, core: true, stroke: null, stroke_mm: 0.6, label: null, shape: 'circle', icon: 'star' } satisfies PointsProps,
   lines: { color: '@accent', width_mm: 2, opacity: 1, glow: 0.3, casing: true, dash: 'solid', dash_mm: 6, gap_mm: 4, arrows: 'none', arrow_mm: 4, arrow_gap_mm: 40 } satisfies LinesProps,
   fill: { color: '@accent', opacity: 0.55, stroke: '@accent', stroke_mm: 0.6, edge_glow: 0, shadow_mm: 0, hatch: false } satisfies FillProps,
+  // The raster look's props (#601) are described in raster-look.ts.
+  raster: {
+    color: { by: 'value', kind: 'number', ramp: 'sun', classes: 'continuous' } as Paint,
+    opacity: 0.8,
+    hide_below: null as number | null,
+    hide_above: null as number | null,
+    edge_glow: 0,
+    edge_color: '@focus',
+    unit: '',
+  },
 };
 
 /** Motion blocks of this slice, by the geometry they act on. */
@@ -224,6 +235,7 @@ export const MOTIONS_FOR: Record<GeometryKind, (keyof typeof MOTION_DEFAULTS)[]>
   points: ['pulse', 'attract', 'gravity', 'timeline', 'place', 'sound', 'network'],
   lines: ['draw-in', 'flow', 'particles', 'timeline'],
   fill: ['pulse', 'timeline'],
+  raster: [],
 };
 
 /** The look a geometry gets by default (D2: a single file can be a layer). */

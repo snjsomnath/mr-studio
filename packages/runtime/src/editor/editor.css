@@ -5604,3 +5604,16 @@ body[data-role='edit'] > .connection {
   flex: 1 1 100%;
   margin-top: 4px;
 }
+
+/* The two stacks of a glass or a reveal line (#606): the surface, and what is underneath. */
+.ed-stack-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  margin: 0.625rem 0 0.25rem;
+  font-size: 0.8125rem;
+}
+
+.ed-stack-head strong {
+  font-weight: 600;
+}
