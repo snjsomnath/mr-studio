@@ -1054,7 +1054,7 @@ impl Hub {
 
     /// Phones connected now, for the operator window (#394).
     pub fn phones_connected(&self) -> usize {
-        self.inner.lock().unwrap().seats.iter().filter(|s| s.participant.connected).count()
+        self.inner.lock().seats.iter().filter(|s| s.participant.connected).count()
     }
 
     /// Every layer instance with whether it is on and how it is doing (#259), for diagnostics.

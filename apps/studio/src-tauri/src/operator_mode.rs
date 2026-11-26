@@ -246,7 +246,7 @@ fn leave(app: &AppHandle, quit: bool) -> Result<(), String> {
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
         // The editor first: with no other window the app would quit.
-        let has_table = app.state::<Shell>().running.lock().unwrap().is_some();
+        let has_table = app.state::<Shell>().running.lock().is_some();
         report(if has_table { open_editor(&app, "edit") } else { open_home_window(&app) });
         if let Some(window) = app.get_webview_window(WINDOW) {
             let _ = window.destroy();
@@ -308,10 +308,10 @@ struct Screen {
 #[tauri::command]
 pub async fn operator_state(app: AppHandle, shell: State<'_, Shell>) -> Result<OperatorState, String> {
     let settings = shell.settings();
-    let running = shell.running.lock().unwrap().clone();
+    let running = shell.running.lock().clone();
     let state = shell.host.lock().await.as_ref().map(|h| h.state.clone());
     let beats = state.as_ref().map(|s| s.health.windows()).unwrap_or_default();
-    let surfaces = shell.surfaces.lock().unwrap().clone();
+    let surfaces = shell.surfaces.lock().clone();
     let screens = list_displays(&app)
         .map_err(text)?
         .into_iter()
@@ -366,7 +366,7 @@ pub async fn operator_state(app: AppHandle, shell: State<'_, Shell>) -> Result<O
 /// Present: the open table, or the last one when none is open, on the usual screens.
 #[tauri::command]
 pub async fn operator_present(app: AppHandle, shell: State<'_, Shell>) -> Result<(), String> {
-    if shell.running.lock().unwrap().is_none() {
+    if shell.running.lock().is_none() {
         let settings = shell.settings();
         let site = settings.site.clone().ok_or("No table has been opened on this computer yet. Leave operator mode and open one first.")?;
         launch(&app, site, settings.lan).await.map_err(|e| format!("{e:#}"))?;
