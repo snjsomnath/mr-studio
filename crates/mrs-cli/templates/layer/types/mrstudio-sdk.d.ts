@@ -5452,6 +5452,12 @@ declare module "@mrstudio/sdk/readiness" {
      * the editor from the live session, the MCP server from site.json and the layer catalogue.
      */
     export type ReadyLevel = 'must' | 'should' | 'nice';
+    /**
+     * Layers that carry the author's own data (a GeoJSON file, a picture, a web map, a plan, a
+     * slideshow). Their package's description says what kind of layer they are, which is for the
+     * gallery, not for visitors (#586): until the author writes one, visitors see none.
+     */
+    export const KIND_LAYERS: ReadonlySet<string>;
     /** Where a problem is fixed. The editor turns each into a button; the MCP server into words. */
     export type ReadyFix = {
         kind: 'data';
@@ -5492,6 +5498,8 @@ declare module "@mrstudio/sdk/readiness" {
         side?: 'left' | 'right';
         /** Site data it reads (`requires.data`). */
         needs?: string[];
+        /** Visitors see no words about it: it holds the author's own data and none were written (#586). */
+        noWords?: boolean;
     }
     export interface ReadyTable {
         /** The site's datasets by name. */
