@@ -18,6 +18,8 @@ import {
   openingAt,
   parseCorners,
   turnCorners,
+  fitCorners,
+  drawingSize,
   placement,
   hasRoles,
   roleFrame,
@@ -181,12 +183,13 @@ export default defineLayer<Params>({
         }
       }
       if (svg?.querySelector('parsererror') || svg?.documentElement.localName !== 'svg') svg = null;
-      // Placed by its corners, or stretched over the table; pictured at the drawing's own pixel density.
-      // Corners are of the drawing as shown; a drawing shown turned is placed by its own corners (#301).
+      // Placed by its corners, or fitted inside the table at its own proportions (#559); pictured
+      // at the drawing's own pixel density. Corners are of the drawing as shown; a drawing shown
+      // turned is placed by its own corners (#301).
       const corners = parseCorners(ctx.params.corners);
-      const shown: [number, number][] = corners ? corners.map((c) => frame.toTable(c)) : [[0, 0], [drawing.width, 0], [0, drawing.height]];
       const turn = Number(ctx.params.turn) / 90 || 0;
-      const nextPlace = placement(drawing, corners || turn ? turnCorners(shown, turn) : null);
+      const shown: [number, number][] = corners ? corners.map((c) => frame.toTable(c)) : fitCorners(drawing, drawingSize(svg?.documentElement), turn);
+      const nextPlace = placement(drawing, turnCorners(shown, turn));
       const across = Math.hypot(nextPlace[0], nextPlace[1]);
       const down = Math.hypot(nextPlace[2], nextPlace[3]);
       const budget = Math.sqrt((drawing.width * drawing.scale * drawing.height * drawing.scale) / Math.max(1e-6, across * down * drawing.scale * drawing.scale));

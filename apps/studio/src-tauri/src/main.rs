@@ -555,10 +555,24 @@ fn open_launcher_at(app: &AppHandle, page: Option<&str>) -> anyhow::Result<()> {
             WebviewUrl::App(page.map_or_else(|| String::from("index.html"), |p| format!("index.html#{p}")).into()),
         )
         .title("MR Studio · Settings")
-        .inner_size(1080.0, 720.0)
+        .inner_size(launcher_size(app).0, launcher_size(app).1)
         .min_inner_size(820.0, 560.0)
         .center()
-        .build()?,
+        .build()
+        .inspect(|window| {
+            // The size it is left at is the size it opens at next time (#558).
+            let handle = app.clone();
+            let watched = window.clone();
+            window.on_window_event(move |event| {
+                if let tauri::WindowEvent::Resized(_) = event {
+                    if let (Ok(size), Ok(scale)) = (watched.inner_size(), watched.scale_factor()) {
+                        let logical = size.to_logical::<f64>(scale);
+                        let path = handle.state::<Shell>().config_dir.join("settings-window.json");
+                        let _ = std::fs::write(path, format!("{{\"width\":{:.0},\"height\":{:.0}}}", logical.width, logical.height));
+                    }
+                }
+            });
+        })?,
     };
     // A fullscreen surface may cover the display the launcher is on.
     window.set_always_on_top(is_presenting(app))?;
@@ -583,6 +597,29 @@ fn open_sources_window(app: &AppHandle) -> anyhow::Result<()> {
     window.show()?;
     window.set_focus()?;
     Ok(())
+}
+
+/// The size File › Settings opens at (#558): where it was last left, else most of the display it
+/// opens on, so the screens, Present and Calibration pages have room; never smaller than before.
+fn launcher_size(app: &AppHandle) -> (f64, f64) {
+    const DEFAULT: (f64, f64) = (1080.0, 720.0);
+    let saved = std::fs::read_to_string(app.state::<Shell>().config_dir.join("settings-window.json"))
+        .ok()
+        .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
+        .and_then(|v| Some((v.get("width")?.as_f64()?, v.get("height")?.as_f64()?)));
+    let monitor = app.primary_monitor().ok().flatten().map(|m| {
+        let size = m.size().to_logical::<f64>(m.scale_factor());
+        (size.width, size.height)
+    });
+    let fit = |(w, h): (f64, f64)| match monitor {
+        Some((mw, mh)) => (w.min(mw * 0.95).max(820.0), h.min(mh * 0.9).max(560.0)),
+        None => (w, h),
+    };
+    match (saved, monitor) {
+        (Some(size), _) => fit(size),
+        (None, Some((mw, mh))) => fit(((mw * 0.8).max(DEFAULT.0).min(1680.0), (mh * 0.85).max(DEFAULT.1).min(1100.0))),
+        (None, None) => DEFAULT,
+    }
 }
 
 fn list_displays(app: &AppHandle) -> anyhow::Result<Vec<Display>> {

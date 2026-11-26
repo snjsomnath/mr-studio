@@ -181,6 +181,36 @@ export function turnCorners(corners: readonly (readonly [number, number])[], qua
   }
 }
 
+/**
+ * Where a drawing placed by no corners lands (#559): as large as fits inside the table, centred,
+ * at its own proportions as shown (`quarters` quarter turns clockwise swap its sides), never
+ * stretched. Answers the corners of the drawing as shown, in table metres, as `corners` gives them.
+ * A drawing within 2 % of the table's shape fills it, as before.
+ */
+export function fitCorners(table: { width: number; height: number }, drawing: { width: number; height: number } | null, quarters = 0): Corners {
+  const full: Corners = [[0, 0], [table.width, 0], [0, table.height]];
+  if (!drawing || !(drawing.width > 0) || !(drawing.height > 0)) return full;
+  const odd = Math.abs(Math.round(quarters)) % 2 === 1;
+  const aspect = odd ? drawing.height / drawing.width : drawing.width / drawing.height;
+  const tableAspect = table.width / table.height;
+  if (Math.abs(aspect / tableAspect - 1) < 0.02) return full;
+  const w = aspect > tableAspect ? table.width : table.height * aspect;
+  const h = aspect > tableAspect ? table.width / aspect : table.height;
+  const x = (table.width - w) / 2;
+  const y = (table.height - h) / 2;
+  return [[x, y], [x + w, y], [x, y + h]];
+}
+
+/** A drawing's own size from its viewBox, else its width and height attributes; null when it has neither. */
+export function drawingSize(svg: Element | null | undefined): { width: number; height: number } | null {
+  if (!svg) return null;
+  const box = (svg.getAttribute('viewBox') ?? '').split(/[\s,]+/).map(Number);
+  if (box.length === 4 && box[2]! > 0 && box[3]! > 0) return { width: box[2]!, height: box[3]! };
+  const width = parseFloat(svg.getAttribute('width') ?? '');
+  const height = parseFloat(svg.getAttribute('height') ?? '');
+  return width > 0 && height > 0 ? { width, height } : null;
+}
+
 /** Corners as the `corners` param writes them: "lon,lat; lon,lat; lon,lat", to about a centimetre. */
 export function formatCorners(corners: readonly (readonly [number, number])[]): string {
   return corners.map(([lon, lat]) => `${lon.toFixed(7)},${lat.toFixed(7)}`).join('; ');

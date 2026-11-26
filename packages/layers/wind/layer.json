@@ -29,7 +29,7 @@
     },
     { "id": "backdrop", "type": "range", "label": "Speed map underneath", "help": "How much of the speed map shows under the ribbons or particles.", "min": 0, "max": 1, "step": 0.05, "default": 0.25, "tier": "more" },
     { "id": "facades", "type": "toggle", "label": "Light the walls the wind hits", "help": "Walls facing into the wind light up.", "default": true, "tier": "more" },
-    { "id": "trees", "type": "toggle", "label": "Trees slow the wind", "help": "Trees in the table's data slow the wind as it passes.", "default": true, "tier": "more" },
+    { "id": "trees", "type": "toggle", "label": "Trees slow the wind", "help": "Trees in the table's data slow the wind as it passes, and their crowns show faintly over the air.", "default": true, "tier": "more" },
     {
       "id": "detail", "type": "select", "label": "Detail", "help": "Finer detail is sharper and needs more of the computer.", "default": "256", "tier": "more",
       "options": [
