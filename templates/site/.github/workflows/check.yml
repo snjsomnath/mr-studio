@@ -6,7 +6,7 @@ on:
 
 env:
   # The MR Studio version the studio computer runs. Raise it when the app there is updated.
-  MRSTUDIO_VERSION: "0.40.0"
+  MRSTUDIO_VERSION: "0.47.0"
 
 jobs:
   check:
