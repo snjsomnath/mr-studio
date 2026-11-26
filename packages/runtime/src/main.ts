@@ -21,6 +21,9 @@ import { Store } from './store.ts';
 import { collectProblems, Workbench } from './workbench.ts';
 import './style.css';
 
+/** How often a screen tells the host someone is touching it (#604), at most. */
+const INPUT_EVERY_MS = 5000;
+
 // A stylesheet that comes with code loaded later (the map's, with the table) can fail to load
 // while the page reloads or the host restarts; WebKit then failed the whole import and the table
 // stayed blank (#261's smoke). The code still runs, so the page carries on without it until the
@@ -229,6 +232,16 @@ async function main() {
   connection.on('disconnected', () => (status.hidden = false));
   connection.on('welcome', () => (status.hidden = true));
   document.body.append(status);
+  // Someone is at this screen (#604): the host keeps one idle timer for the whole table, so a
+  // touch anywhere (the controller, the table, the editor, a phone) holds off the idle reset.
+  let told = -Infinity;
+  const touched = () => {
+    const now = performance.now();
+    if (now - told < INPUT_EVERY_MS) return;
+    told = now;
+    void connection.request('session.input', {}).catch(() => {});
+  };
+  for (const kind of ['pointerdown', 'keydown', 'wheel'] as const) window.addEventListener(kind, touched, { capture: true, passive: true });
 
   // The site's theme also colours the controls, so the rail and the dashboard read as one screen.
   // It follows the setup guide live: a theme picked there restyles this screen at once.

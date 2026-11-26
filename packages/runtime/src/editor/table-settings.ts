@@ -276,7 +276,7 @@ export function welcomeSettings(host: TableSettingsHost): HTMLElement[] {
     field('Title', title),
     field('Welcome', welcome, 'Under the title when nobody is using the table.'),
     field('Logo', logo, 'Shown above the title on the controller’s welcome screen and on phones.'),
-    field('Back home after', idle),
+    field('Back home after', idle, 'The table goes back to its welcome when nobody has touched any screen or phone for this long. Set 0 to never go home, such as for a guided demo.'),
     field('Welcome loop', loop),
     field('Phones can switch layers', phones, 'Visitors turn layers on and off from their phones. Never while a slideshow is showing.'),
     field('Two layers at once', two, 'Hold a layer button, or Shift-click it, to add it to the open one, such as Wind over Sunlight.'),
