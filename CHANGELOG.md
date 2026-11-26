@@ -4,6 +4,30 @@ Every merge to main that carries a release note becomes a version. The newest is
 The app shows these notes, with their pictures, on Home when a newer version is out.
 How notes are written: docs/RELEASING.md.
 
+## 0.46.0 (2026-11-26)
+
+### New
+
+#### Mobility shows a map of values through the day, with or without trips (#486)
+
+Each Mobility layer can now pick its own datasets under its settings (**Trips from** and **Map of values from**), so one table can tell more than one mobility story. A layer with no trips plays its map of values a step at a time, and the controller names each step from the data (for example 08:00, or "All day") instead of a clock. This is what the Universeum slow walkers need: extra walking minutes per district for each departure time.
+
+![Slow walkers at 08:00 on the controller and the table](docs/screenshots/486-slow-walkers.png)
+
+#### Wind feels the buildings around the table (#488)
+
+A table can now bring in the buildings around it, up to 500 m past its edge (Add data, **Buildings around**). The wind simulation stands them around the table, so wind reaching the table has already passed real streets and blocks, as in a CFD run with a context ring. Nothing is drawn for them. Left: wind from the west arriving clean; right: the same wind after the buildings west of the table, with the gusts along the west edge gone.
+
+![Wind speed without and with the buildings around the table](docs/screenshots/488-wind-context.png)
+
+### Fixes
+
+#### Gauges fill along their track (#491)
+
+A gauge past half its range drew its fill on the wrong circle, detached from the track. It now fills along the half circle at every value, on tiles and chips. Above: before; below: after.
+
+![Gauges before and after](docs/screenshots/491-gauge.png)
+
 ## 0.45.2 (2026-11-25)
 
 ### Fixes
