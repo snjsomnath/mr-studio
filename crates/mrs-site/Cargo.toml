@@ -15,6 +15,7 @@ tiny-skia = { version = "0.11", default-features = false, features = ["std", "si
 quick-xml = "0.42"
 tiff = { version = "0.11", default-features = false, features = ["deflate", "lzw"] }
 zip = { version = "9", default-features = false, features = ["deflate-flate2"] }
+sha2 = "0.10"
 
 [dev-dependencies]
 serde_json.workspace = true

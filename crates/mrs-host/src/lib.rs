@@ -61,6 +61,10 @@ pub struct HostConfig {
     pub session: SessionOptions,
     /// The app's outside services and their keys (#41). The app shares one with its Sources page.
     pub sources: Arc<Sources>,
+    /// Whether the table's own programs run (#506): the services it starts and its layers'
+    /// code. With false the table opens as data: services are held and its own layers draw
+    /// nothing and say why. The app asks before a table from elsewhere runs its programs.
+    pub programs: bool,
 }
 
 pub struct AppState {
@@ -594,7 +598,7 @@ pub async fn start(config: HostConfig) -> anyhow::Result<RunningHost> {
     tracing::info!("twin: {} triangles", twin.triangle_count());
     let twin = Bytes::from(twin.encode());
     let calibration = Calibration::load(&site.dir);
-    let catalog = layers::load_catalog(&site, &config.layers_dir)?;
+    let catalog = layers::load_catalog(&site, &config.layers_dir, config.programs)?;
     let (incidents, mut incident_rx) = tokio::sync::mpsc::unbounded_channel();
     let engine = EngineHandle::spawn(config.backend, scene, site.manifest.origin, incidents)?;
     let info = engine.info().await?;
@@ -615,7 +619,7 @@ pub async fn start(config: HostConfig) -> anyhow::Result<RunningHost> {
     let hub = Hub::new(&site, catalog, addr.port(), join_base, config.session.clone())?;
     // The site's services start now and come up in the background; their incidents go to the operator log.
     let (service_incidents, mut service_incident_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
-    let services = services::Services::start(&site, move |message| {
+    let services = services::Services::start(&site, config.programs, move |message| {
         tracing::warn!("{message}");
         let _ = service_incidents.send(message);
     });

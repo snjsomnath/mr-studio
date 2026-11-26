@@ -65,6 +65,7 @@ async fn start(site_dir: PathBuf, options: SessionOptions) -> RunningHost {
         backend: Backend::Cpu,
         session: options,
         sources: std::sync::Arc::new(mrs_host::Sources::in_memory()),
+        programs: true,
     })
     .await
     .unwrap()
@@ -869,6 +870,7 @@ async fn calibration_is_saved_shared_and_survives_a_restart() {
             backend: Backend::Cpu,
             session: Default::default(),
             sources: std::sync::Arc::new(mrs_host::Sources::in_memory()),
+            programs: true,
         })
         .await
         .unwrap()

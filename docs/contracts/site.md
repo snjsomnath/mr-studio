@@ -254,9 +254,16 @@ Layers reach a service only through the host, from this computer, and name it in
 What the host does with them:
 
 - Starts each `run` service when the table opens, waits for `health`, and starts it again after a crash with a growing pause (1 s up to a minute). Each stop is in the operator log. It stops them when the table closes. A change to `services` takes effect when the table opens again.
-- `GET /api/services` gives each service's state (`installing`, `starting`, `up`, `down`, `remote`), why, and how often it restarted; `/api/services/<id>/log` the last lines it wrote.
+- `GET /api/services` gives each service's state (`installing`, `starting`, `up`, `down`, `remote`, or `held` when the table was opened without its programs, see below), why, and how often it restarted; `/api/services/<id>/log` the last lines it wrote.
 - `/api/services/<id>/call/<path>` forwards any method, with its body and query, to the service. The same request from several views of the table at once (the projector and the editor both run the layer) reaches the service once, and they share the answer, so a job starts once.
 - Every good answer is kept in `.mrstudio/services/<id>/`. When the service is down or fails, the kept answer to the same request is given instead, marked with `x-mrs-cached`, so a table without its model, or offline, still shows the last result. `.mrstable` exports leave this folder out.
+
+**Asking first (#506).** A table's `run` services and the built code of its own layers (`layers/<id>/dist/`) are programs that run on the computer that opens it. The desktop app asks before they run, naming each one: **Run them**, **Open without them** or **Cancel**.
+
+- A table made on this computer is never asked about. A folder opened by hand is asked about once. A table that arrived as a `.mrstable` file is asked about once, and again when an update brings other programs (the services' commands and files or the layers' code changed; `mrs_site::programs` fingerprints them, leaving out the venv, caches and logs).
+- A yes is remembered in `programs.json` in the app's own settings folder, never in the table's folder. "Open without them" holds until the app is closed, so the question comes back.
+- Opened without them (`HostConfig.programs: false`), the table still shows: no service is started and each is `held`, calls to it answer from what was kept or say why, and the table's own layers are listed without their code (`held: true` in the manifest, no `module`), draw nothing and report through layer health that the table was opened without its programs.
+- `mrstudio dev` runs them without asking: it is the developer's own command, on their own table. `mrstudio dev --without-programs` opens the table as data, and `mrstudio export` never runs them.
 
 In a layer, `ctx.service(id)` has `get(path)`, `post(path, body)` and `job(path, body, { onProgress })`: a job POST answers `{ "job": "<id>" }`, and the SDK polls `<path>/<id>` until `state` is done or failed, passing on `progress` and `message`. A finished job's result is kept too. While a call runs, the layer publishes `busy: { label, progress }` and the controller shows it under the layer's name. `samples/service-example` has a model and a layer to copy.
 

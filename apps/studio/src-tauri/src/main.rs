@@ -18,6 +18,7 @@ mod mail;
 mod models;
 mod operator;
 mod operator_mode;
+mod programs;
 mod sites;
 mod updates;
 mod waiting;
@@ -106,6 +107,9 @@ struct Shell {
     /// A table file the app was asked to open (a double click, or `mr-studio file.mrstable`)
     /// that Home has not picked up yet.
     opened_file: Mutex<Option<PathBuf>>,
+    /// Tables opened without their own programs in this run of the app (#506), with the
+    /// programs that were turned down: the question is not asked again until they change or the app restarts.
+    without_programs: Mutex<std::collections::HashMap<PathBuf, String>>,
     /// What happened while nobody watched: one file a day for the team (#79).
     operator: operator::OperatorLog,
     /// Operator mode (#394): while it is on, the ways to the editor lead to the operator window.
@@ -137,6 +141,20 @@ impl Shell {
 
     fn settings(&self) -> Settings {
         Settings::read(&self.settings_path())
+    }
+
+    /// Which tables may run their own programs (#506).
+    fn programs_path(&self) -> PathBuf {
+        self.config_dir.join("programs.json")
+    }
+
+    /// Changes the record of which tables may run their own programs.
+    fn allow(&self, change: impl FnOnce(&mut programs::Allowed)) {
+        let mut allowed = programs::Allowed::read(&self.programs_path());
+        change(&mut allowed);
+        if let Err(e) = allowed.write(&self.programs_path()) {
+            tracing::warn!("the answer about a table's programs was not saved: {e:#}");
+        }
     }
 }
 
@@ -271,6 +289,7 @@ fn main() -> anyhow::Result<()> {
                 file_debounce: file_menu::Debounce::new(),
                 sources: Arc::new(sources),
                 opened_file: Mutex::new(None),
+                without_programs: Default::default(),
                 operator: operator::OperatorLog::new(paths.app_log_dir().ok()),
                 operator_mode: Default::default(),
             });
@@ -452,6 +471,7 @@ async fn import_table(
             let imported =
                 tokio::task::spawn_blocking(move || mrs_site::package::import(&file, &into)).await.map_err(text)?.map_err(opened)?;
             tracing::info!("opened table file as {}", imported.dir.display());
+            shell.allow(|allowed| allowed.came_as_file(&sites::canonical(imported.dir.clone())));
             imported
         }
     };
@@ -668,6 +688,9 @@ async fn launch(app: &AppHandle, site: PathBuf, lan: bool) -> anyhow::Result<()>
         tracing::info!("upgraded {} from site format {} to {}: {}", site.display(), done.from, done.to, done.changes.join("; "));
     }
 
+    // A table from elsewhere runs its own programs only after someone said so (#506).
+    let run_programs = may_run_programs(app, &site).await?;
+
     let ip = if lan { [0, 0, 0, 0] } else { [127, 0, 0, 1] };
     // Keep the usual port when it is free, so phone links and bookmarks stay valid.
     let port = if std::net::TcpListener::bind(SocketAddr::from((ip, PORT))).is_ok() { PORT } else { 0 };
@@ -679,6 +702,7 @@ async fn launch(app: &AppHandle, site: PathBuf, lan: bool) -> anyhow::Result<()>
         backend: Backend::Auto,
         session: Default::default(),
         sources: shell.sources.clone(),
+        programs: run_programs,
     })
     .await?;
     let running = Running {
@@ -700,6 +724,62 @@ async fn launch(app: &AppHandle, site: PathBuf, lan: bool) -> anyhow::Result<()>
     *host = Some(started);
     *shell.running.lock().unwrap() = Some(running);
     Ok(())
+}
+
+/// Whether the table in `site` runs its own programs (#506): the services the host would start
+/// and its layers' code. A table of data, one made here and one already allowed run without
+/// a question. Otherwise the person is asked, naming the programs. An error when they cancel.
+async fn may_run_programs(app: &AppHandle, site: &Path) -> anyhow::Result<bool> {
+    let shell = app.state::<Shell>();
+    let site = sites::canonical(site.to_path_buf());
+    let found = {
+        let site = site.clone();
+        tokio::task::spawn_blocking(move || mrs_site::programs::Programs::of(&site)).await?
+    };
+    if programs::Allowed::read(&shell.programs_path()).allows(&site, &found) {
+        return Ok(true);
+    }
+    if shell.without_programs.lock().unwrap().get(&site) == Some(&found.fingerprint) {
+        return Ok(false);
+    }
+    let name = std::fs::read_to_string(site.join("site.json"))
+        .ok()
+        .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
+        .and_then(|site| site["name"].as_str().filter(|n| !n.trim().is_empty()).map(str::to_string))
+        .or_else(|| file_menu::name_from(&site))
+        .unwrap_or_else(|| "This table".into());
+    let asking = app
+        .dialog()
+        .message(programs::question(&name, &found))
+        .title(programs::TITLE)
+        .kind(tauri_plugin_dialog::MessageDialogKind::Warning)
+        .buttons(tauri_plugin_dialog::MessageDialogButtons::YesNoCancelCustom(
+            programs::RUN.into(),
+            programs::WITHOUT.into(),
+            programs::CANCEL.into(),
+        ));
+    use tauri_plugin_dialog::MessageDialogResult as Pressed;
+    let answer = match tokio::task::spawn_blocking(move || asking.blocking_show_with_result()).await? {
+        Pressed::Yes | Pressed::Ok => programs::Answer::Run,
+        Pressed::Custom(label) if label == programs::RUN => programs::Answer::Run,
+        Pressed::No => programs::Answer::Without,
+        Pressed::Custom(label) if label == programs::WITHOUT => programs::Answer::Without,
+        _ => programs::Answer::Cancel,
+    };
+    match answer {
+        programs::Answer::Run => {
+            shell.without_programs.lock().unwrap().remove(&site);
+            shell.allow(|allowed| allowed.said_run(&site, &found));
+            shell.operator.note(format!("'{name}' may run its own programs on this computer: {}.", found.lines().join("; ")));
+            Ok(true)
+        }
+        programs::Answer::Without => {
+            shell.without_programs.lock().unwrap().insert(site, found.fingerprint.clone());
+            shell.operator.note(format!("'{name}' was opened without its own programs: {}.", found.lines().join("; ")));
+            Ok(false)
+        }
+        programs::Answer::Cancel => anyhow::bail!("The table was not opened: its programs were not allowed to run."),
+    }
 }
 
 /// Stops the running table, with the host's lock held: its screens and views close, and the
@@ -742,6 +822,7 @@ async fn update_table(app: &AppHandle, file: PathBuf, table: PathBuf, present: b
         }
     }
     tracing::info!("updated {} from a table file", table.display());
+    shell.allow(|allowed| allowed.came_as_file(&sites::canonical(table.clone())));
     if let Some(was) = was {
         launch(app, was.site.clone(), was.lan).await?;
         if present {
@@ -792,6 +873,7 @@ fn working_copy(shell: &Shell, site: &Path) -> anyhow::Result<PathBuf> {
     if !copy.join("site.json").exists() {
         copy_dir(&site, &copy).with_context(|| format!("copying the example to {}", copy.display()))?;
         tracing::info!("copied the built-in site to {}", copy.display());
+        shell.allow(|allowed| allowed.made_here(&sites::canonical(copy.clone())));
     }
     Ok(copy)
 }
@@ -1436,6 +1518,7 @@ fn duplicate_table(shell: State<'_, Shell>, path: PathBuf) -> Result<PathBuf, St
     let target = folder.join(&copy);
     file_menu::copy_table(&path, &target, &copy).map_err(text)?;
     tracing::info!("duplicated '{name}' as '{copy}' in {}", target.display());
+    shell.allow(|allowed| allowed.copied(&path, &sites::canonical(target.clone())));
     // A copy outside the sites folder is remembered, so Home lists it.
     if !shell.sites_folders.iter().any(|f| f == &folder) {
         let mut settings = shell.settings();
@@ -1475,6 +1558,7 @@ async fn delete_table(app: AppHandle, shell: State<'_, Shell>, path: PathBuf) ->
     }
     sites::move_to_trash(&path).map_err(text)?;
     tracing::info!("moved {} to the trash", path.display());
+    shell.allow(|allowed| allowed.forget(&path));
     let mut settings = shell.settings();
     settings.sites.retain(|p| sites::canonical(p.clone()) != path);
     settings.recent.retain(|p| sites::canonical(p.clone()) != path);
@@ -1649,6 +1733,7 @@ fn create_site(shell: State<'_, Shell>, site: NewSite) -> Result<PathBuf, String
             return Err(text(error));
         }
     }
+    shell.allow(|allowed| allowed.made_here(&sites::canonical(dir.clone())));
     Ok(dir)
 }
 
@@ -2045,6 +2130,7 @@ async fn save_as(app: &AppHandle) -> anyhow::Result<()> {
     let target = target.with_file_name(&name);
     file_menu::copy_table(&running.site, &target, &name)?;
     tracing::info!("saved '{}' as '{name}' in {}", running.name, target.display());
+    shell.allow(|allowed| allowed.copied(&sites::canonical(running.site.clone()), &sites::canonical(target.clone())));
     // A copy outside the sites folder is remembered, so Home lists it.
     let mut settings = shell.settings();
     let in_sites_folder = shell.sites_folders.iter().any(|f| target.parent() == Some(f.as_path()));

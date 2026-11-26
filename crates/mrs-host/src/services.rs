@@ -18,6 +18,8 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::sync::watch;
 
 /// Where answers are kept, inside the site folder. Hidden, so a `.mrstable` export leaves it out.
+/// Why a held service is not running, in the operator's words.
+pub const HELD: &str = "not started: this table's own programs are not run on this computer";
 pub const CACHE_DIR: &str = ".mrstudio/services";
 /// The longest a crashed service waits before it is started again.
 const MAX_BACKOFF: Duration = Duration::from_secs(60);
@@ -36,6 +38,8 @@ pub enum ServiceState {
     Down,
     /// A remote service: the host forwards and does not start anything.
     Remote,
+    /// Not started: this table's programs are not run on this computer (#506).
+    Held,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -99,7 +103,8 @@ impl Drop for Services {
 impl Services {
     /// Starts the site's local services and returns at once; they come up in the background.
     /// `incident` is told when one stops by itself, for the operator log.
-    pub fn start(site: &Site, incident: impl Fn(String) + Send + Sync + 'static) -> Self {
+    /// With `run` false no program is started (#506): each local service is `held`.
+    pub fn start(site: &Site, run: bool, incident: impl Fn(String) + Send + Sync + 'static) -> Self {
         let (stop, stopped) = watch::channel(false);
         let incident = Arc::new(incident);
         let mut entries = BTreeMap::new();
@@ -109,15 +114,19 @@ impl Services {
                 status: Mutex::new(ServiceStatus {
                     id: spec.id.clone(),
                     name: spec.name.clone().unwrap_or_else(|| spec.id.clone()),
-                    state: if remote.is_some() { ServiceState::Remote } else { ServiceState::Starting },
-                    message: None,
+                    state: match (&remote, run) {
+                        (Some(_), _) => ServiceState::Remote,
+                        (None, true) => ServiceState::Starting,
+                        (None, false) => ServiceState::Held,
+                    },
+                    message: (remote.is_none() && !run).then(|| HELD.to_string()),
                     restarts: 0,
                     address: remote.map(|u| u.trim_end_matches('/').to_string()),
                 }),
                 spec: spec.clone(),
                 log: Default::default(),
             });
-            if let Some(run) = &spec.run {
+            if let Some(run) = spec.run.as_ref().filter(|_| run) {
                 if let Some(dir) = site.resolve(&run.cwd) {
                     let incident = incident.clone();
                     tokio::spawn(supervise(entry.clone(), dir, stopped.clone(), move |m| incident(m)));

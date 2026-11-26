@@ -18,6 +18,7 @@ pub mod model;
 pub mod osm;
 pub mod package;
 pub mod plan;
+pub mod programs;
 mod projection;
 pub mod sound;
 pub mod starter;

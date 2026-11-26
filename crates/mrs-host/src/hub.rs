@@ -2980,7 +2980,7 @@ mod tests {
     fn hub(options: SessionOptions) -> Hub {
         let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../sites/sample");
         let site = Site::load(dir).unwrap();
-        let catalog = crate::layers::load_catalog(&site, &site.dir.join("../../packages/layers")).unwrap();
+        let catalog = crate::layers::load_catalog(&site, &site.dir.join("../../packages/layers"), true).unwrap();
         Hub::new(&site, catalog, 4170, Some("http://10.0.0.5:4170/".into()), options).unwrap()
     }
 
@@ -3012,7 +3012,7 @@ mod tests {
         copy(&root.join("sites/sample"), &dir);
         edit(&dir);
         let site = Site::load(&dir).unwrap();
-        let catalog = crate::layers::load_catalog(&site, &root.join("packages/layers")).unwrap();
+        let catalog = crate::layers::load_catalog(&site, &root.join("packages/layers"), true).unwrap();
         Hub::new(&site, catalog, 4170, None, SessionOptions::default()).unwrap()
     }
 
@@ -3031,7 +3031,7 @@ mod tests {
         std::fs::write(package.join("layer.json"), manifest.to_string()).unwrap();
         let site = Site::load(&dir).unwrap();
         let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-        let catalog = crate::layers::load_catalog(&site, &root.join("packages/layers")).unwrap();
+        let catalog = crate::layers::load_catalog(&site, &root.join("packages/layers"), true).unwrap();
         let hub = Hub::new(&site, catalog, 4170, None, SessionOptions::default()).unwrap();
         let dev = |method: &str, p: Value| hub.request(Role::Dev, 0, method, &p);
         dev("scene.add", json!({ "use": "./layers/members" })).unwrap();
@@ -3093,7 +3093,7 @@ mod tests {
         std::fs::write(package.join("layer.json"), manifest.to_string()).unwrap();
         let site = Site::load(&dir).unwrap();
         let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-        let catalog = crate::layers::load_catalog(&site, &root.join("packages/layers")).unwrap();
+        let catalog = crate::layers::load_catalog(&site, &root.join("packages/layers"), true).unwrap();
         let hub = Hub::new(&site, catalog, 4170, None, SessionOptions::default()).unwrap();
         let dev = |method: &str, p: Value| hub.request(Role::Dev, 0, method, &p);
         dev("scene.add", json!({ "use": "./layers/planner" })).unwrap();

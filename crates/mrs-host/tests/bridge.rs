@@ -27,6 +27,7 @@ async fn host(join_page: Option<&str>) -> mrs_host::RunningHost {
         backend: Backend::Cpu,
         session: SessionOptions { join_page: join_page.map(String::from), peer_options: None, ..SessionOptions::default() },
         sources: std::sync::Arc::new(mrs_host::Sources::in_memory()),
+        programs: true,
     })
     .await
     .unwrap()

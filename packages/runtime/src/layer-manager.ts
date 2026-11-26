@@ -537,7 +537,11 @@ export class LayerManager {
     if (!module?.table) {
       // A layer made only of a controller stage (a map or panels in layer.json, #357, #374) has nothing to draw here.
       const stageOnly = typeof manifest?.stage === 'object' && manifest.stage !== null;
-      if (!module && !stageOnly) {
+      if (manifest?.held) {
+        // The table was opened without its own programs (#506): the layer's code is one of them.
+        console.warn(`layer '${layer}' is held: this table's own programs are not run on this computer`);
+        this.failed(id, 'this table was opened without its own programs, and this layer is one of them', false);
+      } else if (!module && !stageOnly) {
         console.warn(`layer '${layer}' is not part of this build`);
         this.failed(id, `the code for '${layer}' is not in this version of MR Studio`, false);
       }

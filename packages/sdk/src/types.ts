@@ -216,6 +216,11 @@ export interface LayerManifest {
    * host when `layers/<name>/dist/index.js` exists. Absent for core layers, which are bundled.
    */
   module?: string;
+  /**
+   * For a site's own code layer whose code is not run on this computer (#506): the table was
+   * opened without its programs. There is no `module` then; the layer draws nothing and says why.
+   */
+  held?: boolean;
   /** For a custom layer saved in the site: the recipe the runtime draws. Absent for a code layer. */
   custom?: CustomLayer;
   /** Rows of the layer's legend on the controller (docs/contracts/present.md). */

@@ -615,7 +615,9 @@ pub fn custom_def(id: &str, recipe: &mrs_site::CustomLayer) -> anyhow::Result<La
     Ok(def)
 }
 
-pub fn load_catalog(site: &Site, core_layers: &Path) -> anyhow::Result<Vec<LayerDef>> {
+/// With `code` false the site's own layers are offered without their code (#506): each
+/// manifest says `held`, and the table reports the layer as not running.
+pub fn load_catalog(site: &Site, core_layers: &Path, code: bool) -> anyhow::Result<Vec<LayerDef>> {
     let mut defs: Vec<LayerDef> = Vec::new();
     let mut folders: Vec<_> = match std::fs::read_dir(core_layers) {
         Ok(entries) => entries.filter_map(|e| e.ok()).map(|e| e.path()).filter(|p| p.join("layer.json").is_file()).collect(),
@@ -673,7 +675,11 @@ pub fn load_catalog(site: &Site, core_layers: &Path) -> anyhow::Result<Vec<Layer
             }
             def.source = used.to_string();
             if let Some(module) = module_url(used, &dir) {
-                def.manifest["module"] = Value::String(module);
+                if code {
+                    def.manifest["module"] = Value::String(module);
+                } else {
+                    def.manifest["held"] = Value::Bool(true);
+                }
             }
             Ok(def)
         });
@@ -779,7 +785,7 @@ mod tests {
     fn every_core_layer_speaks_swedish() {
         let repo = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
         let site = Site::load(repo.join("sites/sample")).unwrap();
-        let catalog = load_catalog(&site, &repo.join("packages/layers")).unwrap();
+        let catalog = load_catalog(&site, &repo.join("packages/layers"), true).unwrap();
         for def in catalog.iter().filter(|d| !d.source.starts_with(mrs_site::CUSTOM_PREFIX)) {
             let words = &def.manifest["locales"]["sv"];
             let name = def.manifest["name"].as_str().unwrap();
@@ -803,11 +809,11 @@ mod tests {
         let repo = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
         let mut site = Site::load(repo.join("sites/sample")).unwrap();
         assert!(site.manifest.layers.iter().any(|l| l.r#use == "cars"));
-        let catalog = load_catalog(&site, &repo.join("packages/layers")).unwrap();
+        let catalog = load_catalog(&site, &repo.join("packages/layers"), true).unwrap();
         // Traffic needs streets; without them the table opens, and Traffic says what it lacks.
         site.manifest.data.remove("roads");
         let data = site.data();
-        assert!(load_catalog(&site, &repo.join("packages/layers")).is_ok());
+        assert!(load_catalog(&site, &repo.join("packages/layers"), true).is_ok());
         let cars = catalog.iter().find(|d| d.id == "cars").unwrap();
         assert_eq!(cars.missing_data(&data).unwrap().as_deref(), Some("roads"));
     }
@@ -833,7 +839,7 @@ mod tests {
         // The sample site, looked for in another folder: only its layers come from there.
         let mut site = Site::load(repo.join("sites/sample")).unwrap();
         site.dir = tmp.clone();
-        let catalog = load_catalog(&site, &repo.join("packages/layers")).unwrap();
+        let catalog = load_catalog(&site, &repo.join("packages/layers"), true).unwrap();
         let rings = catalog.iter().find(|d| d.id == "rings").unwrap();
         assert_eq!(rings.source, "./layers/rings");
         let module = rings.manifest["module"].as_str().unwrap();
@@ -841,13 +847,19 @@ mod tests {
         let unbuilt = catalog.iter().find(|d| d.id == "unbuilt").unwrap();
         assert!(unbuilt.manifest.get("module").is_none());
         assert!(!catalog.iter().any(|d| d.id == "broken"));
+        // A table opened without its programs (#506): the layer is offered, its code is not.
+        let held = load_catalog(&site, &repo.join("packages/layers"), false).unwrap();
+        let rings = held.iter().find(|d| d.id == "rings").unwrap();
+        assert!(rings.manifest.get("module").is_none());
+        assert_eq!(rings.manifest["held"], true);
+        assert!(held.iter().find(|d| d.id == "unbuilt").unwrap().manifest.get("held").is_none());
         // In the scene, named either way, it is the same layer, listed once.
         site.manifest.layers.push(serde_json::from_value(json!({ "use": "./layers/rings", "id": "rings" })).unwrap());
-        let catalog = load_catalog(&site, &repo.join("packages/layers")).unwrap();
+        let catalog = load_catalog(&site, &repo.join("packages/layers"), true).unwrap();
         assert_eq!(catalog.iter().filter(|d| d.id == "rings").count(), 1);
         // A broken layer the scene uses stops the table, with the reason.
         site.manifest.layers.push(serde_json::from_value(json!({ "use": "./layers/broken", "id": "broken" })).unwrap());
-        assert!(load_catalog(&site, &repo.join("packages/layers")).is_err());
+        assert!(load_catalog(&site, &repo.join("packages/layers"), true).is_err());
         let _ = std::fs::remove_dir_all(&tmp);
     }
 

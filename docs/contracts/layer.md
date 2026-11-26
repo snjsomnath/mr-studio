@@ -583,6 +583,9 @@ sites/lindholmen/layers/energy-flows/
 - The host adds `module` to the package's manifest when `dist/index.js` exists (`/site/layers/<id>/dist/index.js?v=<time>`),
   and every surface but the phones imports it before it starts layers. A rebuilt layer is picked up when the
   surface reloads. Without a build the layer is still listed and draws nothing.
+- A site layer's code is a program on the computer that opens the table, so the desktop app asks before it runs
+  (#506, see "Asking first" in site.md). Opened without it, the manifest carries `held: true` and no `module`,
+  and the layer reports that it is not running.
 - A `.mrstable` export carries the packages with their `dist/`, without `node_modules`.
 
 The rules for layers above apply to site layers too. Anything a site layer needs from the core that the SDK does
