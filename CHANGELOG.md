@@ -4,6 +4,16 @@ Every merge to main that carries a release note becomes a version. The newest is
 The app shows these notes, with their pictures, on Home when a newer version is out.
 How notes are written: docs/RELEASING.md.
 
+## 0.47.1 (2026-11-26)
+
+### Fixes
+
+#### A template repository for a new table (#86)
+
+A team starts its own table from the [site template repository](https://github.com/snjsomnath/mr-studio-site-template) with **Use this template** on GitHub: `site.json`, `data/`, `layers/`, a README for the team and a check that validates the table on every push, now at MR Studio 0.47.0. A fresh copy opens in the editor as it is.
+
+![A fresh copy of the template open in the editor](docs/screenshots/86-site-template.png)
+
 ## 0.47.0 (2026-11-26)
 
 ### New
