@@ -115,6 +115,28 @@ async fn a_phone_joins_through_the_join_page_and_nothing_else_gets_in() {
     assert_eq!(get(&mut socket, 1, "GET", "/api/info").await, 200);
     assert_eq!(get(&mut socket, 2, "GET", "/api/sources").await, 403);
     assert_eq!(get(&mut socket, 3, "POST", "/api/site/place").await, 405);
+    // Nor read the table's private files or how this computer is doing (#504).
+    for (stream, path) in [
+        (10, "/site/site.json"),
+        (11, "/site/.mrstudio/history/r00000001.json"),
+        (12, "/site/%2Emrstudio/thumbnail.jpg"),
+        (13, "/site/calibration.json"),
+        (14, "/site/services/run.py"),
+    ] {
+        assert_eq!(get(&mut socket, stream, "GET", path).await, 404, "{path}");
+    }
+    for (stream, path) in [
+        (20, "/api/diagnostics"),
+        (21, "/api/performance"),
+        (22, "/api/services"),
+        (23, "/api/services/any/log"),
+        (24, "/api/services/any/kept?key=a"),
+        (25, "/api/wms?url=http://127.0.0.1:1/&layers=a"),
+    ] {
+        assert_eq!(get(&mut socket, stream, "GET", path).await, 403, "{path}");
+    }
+    // The table's data is still theirs to read.
+    assert_eq!(get(&mut socket, 30, "GET", "/site/data/buildings.geojson").await, 200);
 
     // A socket must start as a phone.
     let open = serde_json::to_vec(&OpenHead { path: "/ws".into() }).unwrap();

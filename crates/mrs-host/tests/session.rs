@@ -1441,3 +1441,82 @@ async fn windows_say_they_are_alive() {
     assert_eq!((windows[0].window.as_str(), windows[0].role.as_str(), windows[0].fps), ("surface-1-0-table", "table", 58.5));
     host.shutdown().await;
 }
+
+/// A hello over a socket that says which page it comes from, as a browser's does.
+async fn hello_from(host: &RunningHost, origin: &str, role: &str, code: Option<&str>) -> Value {
+    use tokio_tungstenite::tungstenite::client::IntoClientRequest;
+    let mut request = format!("ws://{}/ws", host.addr).into_client_request().unwrap();
+    request.headers_mut().insert("origin", origin.parse().unwrap());
+    let (mut socket, _) = tokio_tungstenite::connect_async(request).await.unwrap();
+    socket.send(Message::Text(json!({ "t": "hello", "protocol": 1, "role": role, "code": code }).to_string().into())).await.unwrap();
+    match socket.next().await.unwrap().unwrap() {
+        Message::Text(text) => serde_json::from_str(&text).unwrap(),
+        other => panic!("unexpected {other:?}"),
+    }
+}
+
+/// One request with an `Origin`, as a page in a browser on this computer sends it: its status.
+async fn status_from(host: &RunningHost, origin: &str, method: &str, path: &str) -> u16 {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let mut stream = tokio::net::TcpStream::connect(host.addr).await.unwrap();
+    let head = format!("{method} {path} HTTP/1.0\r\nHost: {}\r\nOrigin: {origin}\r\nContent-Length: 0\r\n\r\n", host.addr);
+    stream.write_all(head.as_bytes()).await.unwrap();
+    let mut response = Vec::new();
+    stream.read_to_end(&mut response).await.unwrap();
+    String::from_utf8_lossy(&response[9..12]).parse().unwrap()
+}
+
+/// #504: the table, the screens and the controller are MR Studio's own windows. A page from
+/// another site, open in a browser on this computer, is at most a phone, and changes nothing over HTTP.
+#[tokio::test(flavor = "multi_thread")]
+async fn only_this_computers_own_windows_are_screens_or_make_changes() {
+    let host = host().await;
+    let code = host.state.hub.session().code.clone();
+    let own = format!("http://{}", host.addr);
+    let other = "http://elsewhere.example";
+
+    for role in ["dev", "tv", "table"] {
+        let refused = hello_from(&host, other, role, None).await;
+        assert_eq!(refused["t"], "refused", "{role}");
+        assert!(refused["e"].as_str().unwrap().contains("own computer"), "{refused}");
+        assert_eq!(hello_from(&host, &own, role, None).await["t"], "welcome", "{role}");
+    }
+    // A visitor's page is still welcome as a phone, with the code.
+    assert_eq!(hello_from(&host, other, "phone", Some(&code)).await["t"], "welcome");
+
+    // The same page cannot move the table, add to it or replace its pictures.
+    for (method, path) in [
+        ("POST", "/api/site/place"),
+        ("POST", "/api/data/import?target=buildings"),
+        ("POST", "/api/data/osm?targets=buildings"),
+        ("POST", "/api/data/media"),
+        ("POST", "/api/data/sounds"),
+        ("POST", "/api/data/model"),
+        ("POST", "/api/site/thumbnail"),
+        ("PUT", "/api/layers/sunlight/view"),
+    ] {
+        assert_eq!(status_from(&host, other, method, path).await, 403, "{method} {path}");
+    }
+    // MR Studio's own page gets past the guard (this request writes nothing, and its empty body is turned down).
+    assert_ne!(status_from(&host, &own, "POST", "/api/data/inspect?target=buildings").await, 403);
+    // It may read what a phone may.
+    assert_eq!(status_from(&host, other, "GET", "/api/info").await, 200);
+    host.shutdown().await;
+}
+
+/// #504: a join code cannot be found by trying them all.
+#[tokio::test(flavor = "multi_thread")]
+async fn wrong_codes_run_out() {
+    let host = host().await;
+    let code = host.state.hub.session().code.clone();
+    let wrong = if code == "0000" { "0001" } else { "0000" };
+    for _ in 0..60 {
+        assert_eq!(Surface::join(&host, "phone", Some(wrong)).await.err().unwrap(), "wrong session code");
+    }
+    let refused = Surface::join(&host, "phone", Some(&code)).await.err().unwrap();
+    assert!(refused.contains("too many wrong codes"), "{refused}");
+    assert!(Surface::join(&host, "guide", Some("000000")).await.err().unwrap().contains("too many wrong codes"));
+    // The operator's own windows are not held up.
+    assert!(Surface::join(&host, "tv", None).await.is_ok());
+    host.shutdown().await;
+}
