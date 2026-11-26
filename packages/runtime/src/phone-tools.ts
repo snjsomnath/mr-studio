@@ -22,6 +22,14 @@ const LEAST: Record<ToolSpec['type'], number> = { point: 1, line: 2, polygon: 3 
 /** The most corners the pad lets one drawing have. The host's own limit is higher. */
 const MOST = 60;
 
+/** The field for an action's words (#462). */
+export function wordsField(words: { prompt?: string; max?: number }): HTMLInputElement {
+  const input = el('input', 'words');
+  Object.assign(input, { type: 'text', maxLength: words.max ?? 120, placeholder: t(words.prompt ?? 'A few words'), enterKeyHint: 'send', autocomplete: 'off' });
+  input.setAttribute('aria-label', t(words.prompt ?? 'A few words'));
+  return input;
+}
+
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, className?: string, text?: string): HTMLElementTagNameMap[K] {
   const node = document.createElement(tag);
   if (className) node.className = className;
@@ -497,6 +505,20 @@ export function toolSection(layer: string, manifest: LayerManifest, store: Store
   for (const control of presses) {
     const button = el('button', 'action', t(control.label));
     button.type = 'button';
+    if (control.type === 'action' && control.words) {
+      // Words with the press (#462): a comment on this phone's last mark.
+      const words = wordsField(control.words);
+      const form = el('form', 'action-words');
+      form.addEventListener('submit', (event) => {
+        event.preventDefault();
+        if (!words.value.trim()) return;
+        void connection.request('layer.action', { layer, action: control.id, words: words.value }).then(() => (words.value = '')).catch(() => {});
+      });
+      button.type = 'submit';
+      form.append(words, button);
+      row.append(form);
+      continue;
+    }
     button.addEventListener('click', () => void connection.request('layer.action', { layer, action: control.id }).catch(() => {}));
     row.append(button);
   }

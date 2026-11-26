@@ -8,6 +8,8 @@ export class Store {
   state: SessionState;
   manifests: LayerManifest[];
   surface: number;
+  /** A phone that joined a full table (#462): it looks, and joins again for a seat when one frees up. */
+  watching: boolean;
   /** Puts a manifest in the visitors' language (#80). Unset: as written, in English. */
   private translate: ((manifest: LayerManifest) => LayerManifest) | null = null;
   private translated = new WeakMap<LayerManifest, LayerManifest>();
@@ -24,6 +26,7 @@ export class Store {
     this.state = welcome.state;
     this.manifests = welcome.manifests;
     this.surface = welcome.surface;
+    this.watching = welcome.watching === true;
     connection.on('state.layer', (p: { layer: string; state: LayerState }) => this.setLayer(p.layer, p.state));
     connection.on('state.scene', (p: { scene: string[]; layers: Record<string, LayerState> }) => this.setScene(p.scene, p.layers));
     connection.on('state.participants', (p: { participants: Participant[] }) => {

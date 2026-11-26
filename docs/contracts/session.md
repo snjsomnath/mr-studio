@@ -312,7 +312,7 @@ Text frames are JSON. Binary frames are engine field frames (see engine.md).
 
 // host to surface
 { t: 'welcome', surface: number, state: SessionState, manifests: LayerManifest[], resume?: string }   // manifests: every layer that can be in a scene
-{ t: 'refused', e: string }                 // wrong code, session full, protocol mismatch; also sent later, see below
+{ t: 'refused', e: string }                 // wrong code, protocol mismatch; also sent later, see below
 { t: 'resync', state: SessionState, ... }   // the surface fell behind; replace all state
 { t: 'res', id: number, ok: true, r?: object } | { t: 'res', id: number, ok: false, e: string }
 { t: 'ev', m: string, p: object }
@@ -326,7 +326,7 @@ Requests:
 | `layer.activate` | `{ layer, active }` | table, tv, dev, phone | Turns a layer on or off. Phones only when `tv.phone_switch` is not false, the layer's `phone_switch` is not false, and no slideshow is showing; the host then broadcasts `phone.switched` (#335), unless `cue: false` (a layer closed to make way) |
 | `layer.intensity` | `{ layer, intensity }` | table, tv, dev | Sets how strongly the layer is drawn, clamped to 0..2. The runtime applies it to the layer's overlays and decorations; layers need no code |
 | `layer.set` | `{ layer, params }` | all (phones only for `phone: true` controls) | Validates, merges, broadcasts |
-| `layer.action` | `{ layer, action }` | all (phones only for `phone: true`) | Broadcast to the table, with `participant` (`{ slot, colour, avatar, mood, name }`) when a phone pressed it (#335) |
+| `layer.action` | `{ layer, action, words? }` | all (phones only for `phone: true`) | Broadcast to the table, with `participant` (`{ slot, colour, avatar, mood, name }`) when a phone pressed it (#335). An action with `words` in layer.json needs `words` (spaces tidied, at most its `max`), passed on as `words` (#462) |
 | `phones.pause` | `{ paused }` | tv, dev | Pauses the phones (#335): while `session.phones_paused` is true a phone's `layer.activate`, `layer.set`, `layer.action`, `tool.input`, `layer.entity`, `layer.select` and `layer.step` are refused; looking around, profiles and field walks go on. Sends `session.changed` |
 | `phones.release` | `{ slot? }` | tv, dev | Lets one phone go, or every phone without `slot` (the end of a round). Its connection is closed with "the operator ended this phone's turn" and its slot is free at once |
 | `phones.log` | `{}` | tv, dev | `{ log }`: what the phones did this session, oldest first, at most 2000 entries `{ at, slot, avatar, name, what, … }` where `what` is joined, left, released, turned on, turned off, set (a dragged slider is one entry), pressed or drew |
@@ -370,7 +370,7 @@ Events:
 | `state.layer` | `{ layer, state: LayerState }` after any change to a layer |
 | `state.scene` | `{ scene, layers }` after a layer was added, removed or moved: the new order and every layer's state |
 | `state.participants` | `{ participants }` |
-| `layer.action` | `{ layer, action, from }` |
+| `layer.action` | `{ layer, action, from, participant?, words? }` |
 | `catalog.changed` | `{ manifest }` after `custom.save`: a custom layer was added or changed |
 | `catalog.removed` | `{ id }` after `custom.remove` |
 | `palette.changed` | `{ palette }` after `palette.set` |

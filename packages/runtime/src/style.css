@@ -3346,7 +3346,8 @@ body[data-role='phone'] .layer-card > header {
   font-size: 0.85rem;
 }
 
-.phones-paused {
+.phones-paused,
+.phones-watching {
   margin: 0 1rem 0.5rem;
   padding: 0.625rem 0.75rem;
   border-radius: 0.625rem;
@@ -3355,7 +3356,8 @@ body[data-role='phone'] .layer-card > header {
   font-size: 0.85rem;
 }
 
-.phones-paused[hidden] {
+.phones-paused[hidden],
+.phones-watching[hidden] {
   display: none;
 }
 
@@ -3632,6 +3634,10 @@ body[data-role='tv'] .layer-button-card.is-second .layer-button[aria-pressed='tr
 .layer-pair button:hover,
 .layer-pair button:focus-visible {
   background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.phone-badge[hidden] {
+  display: none;
 }
 
 /* The ambient glow in the projector's blank space (#476): a small canvas the browser stretches smooth, under the ribbons. */

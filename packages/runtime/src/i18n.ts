@@ -128,6 +128,8 @@ const SV: Record<string, string> = {
   'Fit table': 'Hela bordet',
   'Full screen map': 'Karta i helskärm',
   'Close the full screen map': 'Stäng helskärmskartan',
+  'A few words': 'Några ord',
+  'Every seat at the table is taken. You can look around, and you get a seat when one frees up.': 'Alla platser vid bordet är tagna. Du kan titta runt, och du får en plats när någon blir ledig.',
   'The table is paused for a moment. You can look around; changes wait until it goes on.': 'Bordet är pausat en stund. Du kan titta runt; ändringar får vänta tills det fortsätter.',
   'Thanks for joining': 'Tack för att du var med',
   'Your turn at the table has ended.': 'Din tur vid bordet är slut.',

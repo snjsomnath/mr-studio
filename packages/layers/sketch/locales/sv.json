@@ -10,5 +10,12 @@
   "Mark places, draw and point out routes and areas on the table from a phone": "Markera platser, rita och visa vägar och områden på bordet från en mobil",
   "Pen": "Penna",
   "Arrow": "Pil",
-  "Take back my last mark": "Ta bort min senaste markering"
+  "Take back my last mark": "Ta bort min senaste markering",
+  "Add to my last mark": "Lägg till i min senaste markering",
+  "A few words about it": "Några ord om den",
+  "What they said": "Vad de sa",
+  "Words for the phone's last mark. The controller shows them; the table shows only a small ring that the mark has words.": "Ord till telefonens senaste markering. Kontrollen visar dem; bordet visar bara en liten ring där markeringen har ord.",
+  "A phone adds words to its own last mark only; there is no voting on marks yet": "En telefon lägger bara ord till sin egen senaste markering; det går inte att rösta på markeringar än",
+  "Show what the phones said": "Visa vad telefonerna skrev",
+  "The words phones add to their marks, on the controller. Off until someone running the table turns it on, as visitors' words go on a shared screen.": "Orden som telefonerna lägger till sina markeringar, på kontrollen. Av tills den som kör bordet slår på det, eftersom besökarnas ord visas på en gemensam skärm."
 }
