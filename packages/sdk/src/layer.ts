@@ -126,8 +126,11 @@ export interface MapHandle {
   addElement(): HTMLElement;
   /** A drawing in table metres at the layer's place in the scene. For layers that draw shapes or sprites themselves: base maps, ambient animation, media. */
   addDrawing(id: string, options?: { opacity?: number; /** Canvas width in pixels. Default 2048. */ resolution?: number }): DrawingOverlay;
-  /** A canvas above the scene, in CSS pixels, with a projection from WGS84. */
-  addCanvas(id: string, style?: { opacity?: number }): CanvasOverlay;
+  /**
+   * A canvas above the scene, in CSS pixels, with a projection from WGS84. With `top` it stays
+   * above the other canvases, the layer's own items included, as the Magnifier's glass must (#554).
+   */
+  addCanvas(id: string, style?: { opacity?: number; top?: boolean }): CanvasOverlay;
   /**
    * What the table shows, for a magnifier (#287): ask for a rectangle of the table view and it is
    * copied at the next frame, with everything drawn there except this layer's own canvases.

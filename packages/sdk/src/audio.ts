@@ -26,8 +26,12 @@ export interface SoundProps {
   width_mm: number;
   /** How readily a rise in loudness counts as a call that sends out a ring: 0 calm, 1 eager. */
   sensitivity: number;
+  /** A closed waveform round each point while it plays, drawn from the sound itself (#555). */
+  waveform: boolean;
+  /** How far the waveform swings out at the loudest, in table mm. */
+  wave_mm: number;
 }
-export const SOUND_DEFAULTS: SoundProps = { column: null, file: null, trigger: 'chorus', voices: 3, gap_s: 1.5, volume: 0.8, reach_mm: 45, width_mm: 2, sensitivity: 0.5 };
+export const SOUND_DEFAULTS: SoundProps = { column: null, file: null, trigger: 'chorus', voices: 3, gap_s: 1.5, volume: 0.8, reach_mm: 45, width_mm: 2, sensitivity: 0.5, waveform: true, wave_mm: 10 };
 
 /** Columns that look like they name sound files. */
 export function soundColumns(rows: readonly (Record<string, unknown> | undefined)[]): string[] {
@@ -93,6 +97,24 @@ export function analyseSound(samples: Float32Array, sampleRate: number, step = 0
   }
   if (loudest > 0) for (let w = 0; w < n; w++) loudness[w]! /= loudest;
   return { duration: samples.length / sampleRate, step, loudness, brightness };
+}
+
+/**
+ * The waveform the table draws round a playing point (#555): the sound's last `span` seconds
+ * before `at`, wrapped round a circle. The newest moment sits at the top and the past runs down
+ * both sides, so the ring closes without a seam. `n` values, each the loudness at that moment,
+ * with the zero crossings (brightness) as a fine ripple so high song shimmers and low sound swells.
+ */
+export function waveformRing(profile: SoundProfile, at: number, span: number, n: number, out: Float32Array = new Float32Array(n)): Float32Array {
+  const half = n / 2;
+  for (let j = 0; j < n; j++) {
+    const u = j <= half ? j / half : (n - j) / half;
+    const { loudness, brightness } = profileAt(profile, at - u * span);
+    const ripple = 1 + 0.3 * brightness * Math.sin(u * half * (0.9 + 2.2 * brightness));
+    // Square-rooted, so the quieter notes between calls still move the line.
+    out[j] = Math.max(0, Math.min(1.3, Math.sqrt(loudness) * ripple));
+  }
+  return out;
 }
 
 /** The profile at `t` seconds into the sound. */
@@ -312,6 +334,19 @@ export class SoundStage {
   /** Plays a point's sound now, once, whatever the trigger (a tap on it, its card, a step). */
   cue(point: number): void {
     this.cues.add(point);
+  }
+
+  /**
+   * The waveform round `point` at `time` (waveformRing), or null when it is not playing or its
+   * sound is not analysed yet. Call after `update` for the same frame.
+   */
+  waveform(point: number, time: number, span: number, n: number, out?: Float32Array): Float32Array | null {
+    const voice = this.voices.get(point);
+    const profile = voice && this.profiles.get(voice.path);
+    if (!voice || !profile) return null;
+    let at = time - voice.started;
+    if (voice.loop) at %= Math.max(0.05, profile.duration);
+    return waveformRing(profile, at, span, n, out);
   }
 
   /** Points playing now. */

@@ -10,7 +10,7 @@ import type { LayerManifest, PanelContext, RevealShape } from '@mrstudio/sdk';
 
 import manifest from '../layer.json';
 import { lensHero } from './hero.ts';
-import { drawGlass } from './glass.ts';
+import { drawGlass, drawHole } from './glass.ts';
 
 export interface Params {
   show: 'zoom' | 'under';
@@ -22,6 +22,8 @@ export interface Params {
   follow: boolean;
   /** Slow caustic light over the lines in the controller's glass (#415). */
   caustic: boolean;
+  /** How the X-ray looks on the table: a glass laid on it, or a hole cut in it (#554). */
+  look: 'glass' | 'hole';
   x: number;
   y: number;
 }
@@ -40,6 +42,9 @@ export function circleOf(params: Pick<Params, 'show' | 'size' | 'zoom'>, width: 
   return params.show === 'under' ? r : r / Math.max(1, params.zoom);
 }
 
+/** A step towards each edge of the table, in table metres (x across, y down). */
+const FRONT = { bottom: [0, 10], top: [0, -10], left: [-10, 0], right: [10, 0] } as const;
+
 /** Device pixels across the picture the table sends for the controller's glass. */
 const VIEW_PX = 1024;
 /** Milliseconds a sharp picture is kept while the glass stands still, as layers under it may move. */
@@ -54,9 +59,10 @@ export default defineLayer<Params>({
   table(ctx) {
     const frame = tableFrame(ctx.site);
     const { width, height } = frame;
+    const front = (ctx.site.table?.front ?? 'bottom') as keyof typeof FRONT;
     // Under the items: the map hidden inside the glass, for an X-ray. Above everything: the glass itself.
     const cover = ctx.map.addDrawing('cover', { resolution: 1024 });
-    const glass = ctx.map.addCanvas('glass');
+    const glass = ctx.map.addCanvas('glass', { top: true });
     const picture = ctx.map.addPicture();
     let centre: [number, number] = [ctx.params.x * width, ctx.params.y * height];
     let pinned = ctx.params.pinned;
@@ -133,6 +139,22 @@ export default defineLayer<Params>({
         }
       }
       glass.clear();
+      if (xray && ctx.params.look === 'hole') {
+        // Which way the visitors stand, as the canvas sees it (the map may be turned).
+        const ahead = glass.project(frame.toLonLat([centre[0] + FRONT[front][0], centre[1] + FRONT[front][1]]));
+        drawHole(glass.context, {
+          centre: at,
+          radius,
+          width: glass.width,
+          height: glass.height,
+          dim: ctx.params.dim,
+          time,
+          arrival: (performance.now() - shownAt) / 550,
+          line: Math.max(1, Math.min(glass.width, glass.height) / 900),
+          front: [ahead[0] - at[0], ahead[1] - at[1]],
+        });
+        return;
+      }
       drawGlass(glass.context, {
         centre: at,
         radius,

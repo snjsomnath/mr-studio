@@ -214,7 +214,7 @@ export class TableView {
         });
         return element;
       },
-      addCanvas: (id: string, style?: { opacity?: number }): CanvasOverlay => {
+      addCanvas: (id: string, style?: { opacity?: number; top?: boolean }): CanvasOverlay => {
         const overlay = new MapCanvasOverlay(this.map, this.container, `canvas:${instance}:${id}`, this.site, style);
         overlay.setGain(drawn.intensity);
         drawn.overlays.add(overlay);

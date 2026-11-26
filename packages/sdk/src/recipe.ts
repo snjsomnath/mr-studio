@@ -1152,6 +1152,10 @@ function placeArrivals(spots: readonly Spot[], stage: () => PlaceStage): TimeRev
 
 // ---- Sound on points (#150) ---------------------------------------------------------
 
+/** Seconds of sound the waveform round a playing point shows, and how many points draw it (#555). */
+const WAVE_SPAN_S = 1.2;
+const WAVE_POINTS = 96;
+
 /**
  * Rings that follow each point's sound: every call (a rise in loudness) sends one out, louder
  * calls are wider and brighter, and brighter (higher) sounds travel faster. A point that is
@@ -1165,6 +1169,7 @@ function soundLook(shapes: Shapes, motion: NonNullable<LookMotion['sound']>, pai
   stage.prepare(paths.filter((p): p is string => p !== null));
   const rings = shapes.spots.map(() => [] as { born: number; strength: number; life: number }[]);
   const glow = shapes.spots.map(() => 0);
+  const waves: (Float32Array | undefined)[] = shapes.spots.map(() => undefined);
   let last: number | null = null;
   let playing = new Set<number>();
   const labels = shapes.spots.map((s, i) => soundLabel(s.properties, paths[i] ?? null));
@@ -1207,6 +1212,38 @@ function soundLook(shapes: Shapes, motion: NonNullable<LookMotion['sound']>, pai
           pen.beginPath();
           pen.arc(x, y, r * (2 + 3 * glow[i]!), 0, Math.PI * 2);
           pen.fill();
+        }
+        if (o.waveform && glow[i]! > 0.01) {
+          // The sound itself, wrapped round the point (#555): loud moments swell out, and the
+          // shape scrolls as the song goes on. It turns slowly so a held note still lives.
+          const wave = stage.waveform(i, time, WAVE_SPAN_S, WAVE_POINTS, waves[i]);
+          if (wave) {
+            waves[i] = wave;
+            const base = r * 3;
+            const swing = Math.max(2, o.wave_mm * mm * view.scale);
+            const turn = time * 0.35;
+            pen.beginPath();
+            for (let j = 0; j <= WAVE_POINTS; j++) {
+              const k = j % WAVE_POINTS;
+              const angle = turn - Math.PI / 2 + (k / WAVE_POINTS) * Math.PI * 2;
+              const at = base + swing * wave[k]!;
+              const px = x + Math.cos(angle) * at;
+              const py = y + Math.sin(angle) * at;
+              if (j === 0) pen.moveTo(px, py);
+              else pen.lineTo(px, py);
+            }
+            pen.closePath();
+            const level = Math.min(1, 0.35 + glow[i]! * 1.6);
+            pen.fillStyle = css(colour, alpha * 0.12 * level);
+            pen.fill();
+            const line = Math.max(1.2, 0.6 * mm * view.scale);
+            for (const [w, a] of [[line * 4, 0.25], [line, 0.95]] as const) {
+              pen.strokeStyle = css(colour, alpha * a * level);
+              pen.lineWidth = w;
+              pen.lineJoin = 'round';
+              pen.stroke();
+            }
+          }
         }
         for (const ring of list) {
           const f = (time - ring.born) / ring.life;

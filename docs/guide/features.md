@@ -138,7 +138,7 @@ Name the parts of each phase by what they are (Boundary, Main axis, Routes, Arro
 
 ## Magnifier
 
-A glass people move over the table with the mouse, from the controller or from a phone. It shows what is under it larger, or, set to *X-ray: the layers inside it*, an X-ray of the layers placed inside it in the editor (Insert › Add inside…, or **X-ray glass** in the layer gallery) (pipes under the street, an old map, a plan), only inside the glass.
+A glass people move over the table with the mouse, from the controller or from a phone. It shows what is under it larger, or, set to *X-ray: the layers inside it*, an X-ray of the layers placed inside it in the editor (Insert › Add inside…, or **X-ray glass** in the layer gallery) (pipes under the street, an old map, a plan), only inside the glass. Set **The X-ray looks like** to *A hole in the table* and the glass becomes an opening into the ground, with dark walls and a lit far edge.
 
 Layer `lens`, analysis.
 

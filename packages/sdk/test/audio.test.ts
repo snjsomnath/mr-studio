@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { PeakFinder, SoundSchedule, SoundStage, SOUND_DEFAULTS, analyseSound, compileLook, profileAt, resolvePalette, soundColumns, soundLabel, soundPath } from '../src/index.ts';
+import { PeakFinder, SoundSchedule, SoundStage, SOUND_DEFAULTS, analyseSound, compileLook, profileAt, resolvePalette, soundColumns, soundLabel, soundPath, waveformRing } from '../src/index.ts';
 import type { Pen, Shapes, View } from '../src/index.ts';
 
 /** Two chirps (high) and a hum (low) with silence between, at 8 kHz. */
@@ -100,4 +100,18 @@ test('a sound is named by its point, else by its file', () => {
   assert.equal(soundLabel({ species: 'Turdus merula' }, 'data/sounds/x.mp3'), 'Turdus merula');
   assert.equal(soundLabel({}, 'data/sounds/great-tit.wav'), 'Great tit');
   assert.equal(soundLabel(undefined, null), 'Sound');
+});
+
+test('the waveform round a point follows the sound and closes without a seam (#555)', () => {
+  const profile = analyseSound(birdish(), 8000);
+  // Just after the first chirp: the newest moments are loud, a second back is silent.
+  const ring = waveformRing(profile, 0.34, 1, 64);
+  assert.equal(ring.length, 64);
+  assert.ok(ring[0]! > 0.4, 'the newest moment, at the top, is the chirp');
+  for (let j = 1; j < 32; j++) assert.ok(Math.abs(ring[j]! - ring[64 - j]!) < 1e-6, 'both sides mirror each other');
+  // Before any sound: a calm circle.
+  assert.ok(waveformRing(profile, 0.1, 1, 64).every((v) => v === 0));
+  // The stage gives nothing for a point that is not playing.
+  const stage = new SoundStage({ audible: false });
+  assert.equal(stage.waveform(0, 1, 1, 64), null);
 });
