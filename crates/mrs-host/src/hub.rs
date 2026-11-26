@@ -254,6 +254,29 @@ pub struct LayerState {
     /// data, and is trying again. Absent while it runs as it should. Cleared when it goes off.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub health: Option<LayerHealth>,
+    /// The layer's play head (#373), kept here so every view reads the same time. Absent until
+    /// the table sets one; cleared when the layer goes off.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub clock: Option<LayerClock>,
+}
+
+/// Where a layer's time is (#373): `value`, in the units of its `clock` time control, at the
+/// host's moment `at` (milliseconds since 1970), moving `rate` units a second (0 when it stands
+/// still). A view works out the time now from these, so the table sends a new one only when play
+/// starts, stops, jumps or changes pace.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+pub struct LayerClock {
+    pub value: f64,
+    pub rate: f64,
+    pub at: f64,
+}
+
+/// The fastest a play head runs, in its control's units a second.
+const MAX_CLOCK_RATE: f64 = 10_000.0;
+
+/// The host's time now, in milliseconds since 1970: what a play head's `at` counts in.
+pub fn host_millis() -> f64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0.0, |d| d.as_secs_f64() * 1000.0)
 }
 
 /// A layer that is on but not running as it should (#259), as the table reported it.
@@ -787,6 +810,7 @@ impl Hub {
             rest: false,
             selection: None,
             health: None,
+            clock: None,
         };
         let mut instance = Instance { id, def, parent, saved, state };
         instance.sync_rest();
@@ -1251,6 +1275,8 @@ impl Hub {
                 "participants": inner.participants(),
             },
             "manifests": self.catalog().iter().map(|d| &d.manifest).collect::<Vec<_>>(),
+            // The host's clock, so a view can tell where a play head is now (#373).
+            "time": host_millis(),
         });
         if let Some(seat) = inner.seats.iter().find(|s| s.participant.surface == surface) {
             welcome["resume"] = json!(seat.token);
@@ -1643,6 +1669,19 @@ impl Hub {
                     state.selection = selection;
                     self.emit_layer(layer, state);
                 }
+            }
+            "layer.clock" => {
+                // The table moves the play head (#373): where it is now and how fast it runs.
+                if !role.may_publish() {
+                    return Err("only the table moves a layer's play head".into());
+                }
+                let value = p["value"].as_f64().filter(|v| v.is_finite()).ok_or("missing value")?;
+                let rate = p["rate"].as_f64().filter(|v| v.is_finite()).unwrap_or(0.0);
+                if rate.abs() > MAX_CLOCK_RATE {
+                    return Err(format!("a play head runs at most {MAX_CLOCK_RATE} a second"));
+                }
+                state.clock = Some(LayerClock { value, rate, at: host_millis() });
+                self.emit_layer(layer, state);
             }
             "layer.publish" => {
                 if !role.may_publish() {
@@ -2434,6 +2473,7 @@ impl Hub {
             scene[index].state.step = None;
             scene[index].state.selection = None;
             scene[index].state.health = None;
+            scene[index].state.clock = None;
         }
         scene[index].state.active = active;
         if sequence && !active {
@@ -3107,6 +3147,29 @@ mod tests {
 
     fn layer(hub: &Hub, id: &str) -> Value {
         hub.welcome(0)["state"]["layers"][id].clone()
+    }
+
+    #[test]
+    fn the_table_keeps_a_play_head_every_view_reads() {
+        let hub = scratch_hub("clock");
+        let dev = |method: &str, p: Value| hub.request(Role::Dev, 0, method, &p);
+        dev("layer.activate", json!({ "layer": "sunlight", "active": true })).unwrap();
+        assert!(layer(&hub, "sunlight").get("clock").is_none());
+        let before = host_millis();
+        hub.request(Role::Table, 1, "layer.clock", &json!({ "layer": "sunlight", "value": 9.5, "rate": 0.4 })).unwrap();
+        let clock = layer(&hub, "sunlight")["clock"].clone();
+        assert_eq!((clock["value"].clone(), clock["rate"].clone()), (json!(9.5), json!(0.4)));
+        assert!(clock["at"].as_f64().unwrap() >= before && hub.welcome(0)["time"].as_f64().unwrap() >= clock["at"].as_f64().unwrap());
+        // Only the table moves it, with a sane pace.
+        assert!(hub.request(Role::Tv, 2, "layer.clock", &json!({ "layer": "sunlight", "value": 1 })).is_err());
+        assert!(hub.request(Role::Phone, 3, "layer.clock", &json!({ "layer": "sunlight", "value": 1 })).is_err());
+        assert!(dev("layer.clock", json!({ "layer": "sunlight", "value": "noon" })).is_err());
+        assert!(dev("layer.clock", json!({ "layer": "sunlight", "value": 1, "rate": 1e9 })).is_err());
+        // Stopping is a rate of 0, and closing the layer forgets it.
+        dev("layer.clock", json!({ "layer": "sunlight", "value": 10 })).unwrap();
+        assert_eq!(layer(&hub, "sunlight")["clock"]["rate"], json!(0.0));
+        dev("layer.activate", json!({ "layer": "sunlight", "active": false })).unwrap();
+        assert!(layer(&hub, "sunlight").get("clock").is_none());
     }
 
     #[test]

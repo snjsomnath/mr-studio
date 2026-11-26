@@ -1351,11 +1351,24 @@ export class Controller {
     // "More settings" closes the primary row when there is one, so it costs no height of its own.
     if (generated && moreRows.childElementCount > 0) (primary.childElementCount > 0 ? primary : body).append(more);
 
+    // The time slider and the stage's panels follow the play head between the table's updates (#373).
+    const stopClock = store.onClock((layer) => {
+      if (layer !== id || !store.state.layers[id]?.active) return;
+      followClock(store, id, widgets);
+      stagePanels?.sync();
+      try {
+        heroHandlers?.update?.();
+      } catch (error) {
+        console.error(`[${id}] hero`, error);
+      }
+    });
+
     let shown: string | undefined;
     return {
       element: card,
       body,
       dispose: () => {
+        stopClock();
         for (const cleanup of heroCleanups) cleanup();
         for (const cleanup of stageCleanups) cleanup();
         body.remove();
@@ -1391,7 +1404,7 @@ export class Controller {
         const stepped = Boolean(manifest.sequence && state.step);
         for (const w of widgets) {
           w.row.hidden = stepped || !isVisible(w.control, state.params) || Boolean(state.hide?.includes(w.control.id));
-          w.sync(state.params[w.control.id], state.params, state.shared);
+          w.sync(clockParam(store, id, w.control, state.params), state.params, state.shared);
         }
         more.hidden = ![...moreRows.children].some((row) => !(row as HTMLElement).hidden);
         // The stage's panels read the layer's values; one sync a frame is plenty (#357).
@@ -1854,6 +1867,7 @@ export class Controller {
     allowSwitch();
     const stopTv = phone ? store.onTv(allowSwitch) : () => {};
     const stopLayers = phone ? store.onLayer(allowSwitch) : () => {};
+    const stopClock = store.onClock((layer) => layer === id && followClock(store, id, widgets));
 
     return {
       element: card,
@@ -1861,6 +1875,7 @@ export class Controller {
         tools?.sync(false);
         stopTv();
         stopLayers();
+        stopClock();
         if (this.phoneOpen === id) this.openApp(null);
       },
       sync: (state) => {
@@ -1882,11 +1897,25 @@ export class Controller {
         } else body.hidden = !state.active;
         for (const w of widgets) {
           w.row.hidden = !isVisible(w.control, state.params) || (phone && Boolean(state.hide?.includes(w.control.id)));
-          w.sync(state.params[w.control.id], state.params, state.shared);
+          w.sync(clockParam(store, id, w.control, state.params), state.params, state.shared);
         }
         tools?.sync(state.active && (!phone || this.phoneOpen === id));
       },
     };
+  }
+}
+
+/** A control's value to show: for the layer's time control, the play head while it runs (#373). */
+function clockParam(store: Store, id: string, control: Control, params: Record<string, unknown>): unknown {
+  return control.clock === 'hour' || control.clock === 'progress' ? store.paramsNow(id)[control.id] : params[control.id];
+}
+
+/** Moves a layer's time slider to the play head (#373). A slider under a finger stays where it is. */
+function followClock(store: Store, id: string, widgets: Widget[]): void {
+  const state = store.state.layers[id];
+  if (!state) return;
+  for (const w of widgets) {
+    if (w.control.clock === 'hour' || w.control.clock === 'progress') w.sync(clockParam(store, id, w.control, state.params), state.params, state.shared);
   }
 }
 

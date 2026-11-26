@@ -311,7 +311,7 @@ Text frames are JSON. Binary frames are engine field frames (see engine.md).
 { t: 'error', message: string, stack?: string, layer?: string, window?: string }  // an error in the window, for the app's log (see Layers in trouble)
 
 // host to surface
-{ t: 'welcome', surface: number, state: SessionState, manifests: LayerManifest[], resume?: string }   // manifests: every layer that can be in a scene
+{ t: 'welcome', surface: number, state: SessionState, manifests: LayerManifest[], time: number, resume?: string }   // manifests: every layer that can be in a scene; time: the host's clock in ms since 1970, for play heads (#373)
 { t: 'refused', e: string }                 // wrong code, protocol mismatch; also sent later, see below
 { t: 'resync', state: SessionState, ... }   // the surface fell behind; replace all state
 { t: 'res', id: number, ok: true, r?: object } | { t: 'res', id: number, ok: false, e: string }
@@ -331,6 +331,7 @@ Requests:
 | `phones.release` | `{ slot? }` | tv, dev | Lets one phone go, or every phone without `slot` (the end of a round). Its connection is closed with "the operator ended this phone's turn" and its slot is free at once |
 | `phones.log` | `{}` | tv, dev | `{ log }`: what the phones did this session, oldest first, at most 2000 entries `{ at, slot, avatar, name, what, … }` where `what` is joined, left, released, turned on, turned off, set (a dragged slider is one entry), pressed or drew |
 | `layer.publish` | `{ layer, values }` | table, dev | Merges into `shared`, broadcasts |
+| `layer.clock` | `{ layer, value, rate? }` | table, dev | Moves the layer's play head (#373): its `clock` becomes `{ value, rate, at }`, where `value` is in the units of the layer's `clock` time control, `rate` is how many of those a second it moves (0 or left out when it stands still, at most 10000) and `at` is the host's time in milliseconds since 1970. Broadcast with the layer's state and cleared when the layer goes off. A view's time now is `value + rate × (now − at) / 1000`, with `now` from the welcome's `time` |
 | `layer.health` | `{ layer, status, reason?, retry_in? }` | table, dev | How a layer that is on is doing (#259). `status` is `retrying` or `failed` (with `reason` in words, and for `retrying` the seconds to the next try) or `running`. Kept as the layer's `health` (absent while it runs) and broadcast; ignored while it is off. Returns `{ incident }` when trouble starts or ends, which goes to the operator log |
 | `layer.retry` | `{ layer }` | tv, dev | Retry for a layer in trouble: the table starts it again now (event `layer.retry { layer }`) |
 | `tool.input` | `{ layer, tool, geometry }` | all | Checked, then forwarded to the table |

@@ -49,6 +49,7 @@ with the engine's projection and rotation.
 | Tables | `parseCsv`, `columns`, `joinRows`, `foldKey` | Attach rows to shapes by a key, tolerant of accents and case, and report what did not match |
 | Series | `sampleSeries`, `seriesPeak`, `sharedPeak`, `sumSeries`, `cumulative` | One value per step, sampled at a decimal position |
 | Clock | `Clock` | Play, pause, scrub and loop over a span. No timers; tick it from `ctx.onFrame` |
+| Shared play head | `clockAt`, `clockControl` | Where a layer's play head (`ctx.clock`, #373) is at a moment, from the host's anchor: a time of day wraps at midnight, a run stops at its end; and which control a layer's time runs on. `ctx.clock.now()` uses them, so a layer rarely needs them itself |
 | Flow networks | `nodeBalance`, `nodePulse` | Which way and how hard a node is working, from its links |
 | Geometry | `measurePath`, `pointAlong`, `arc`, `centroid`, `pointInPolygon`, `distanceToLine` | |
 

@@ -73,8 +73,17 @@ export function mountDashboard(root: HTMLElement, store: Store, connection: Conn
   store.onLayer(empty);
   store.onScene(empty);
 
-  // Many changes can land in one frame (a slider being dragged); one sync covers them.
+  // Many changes can land in one frame (a slider being dragged); one sync covers them. A running
+  // play head (#373) moves panels bound to the layer's time between the table's updates.
   let queued = false;
+  store.onClock(() => {
+    if (queued) return;
+    queued = true;
+    requestAnimationFrame(() => {
+      queued = false;
+      view.sync();
+    });
+  });
   store.onLayer(() => {
     if (queued) return;
     queued = true;
@@ -222,7 +231,8 @@ export function panelInput(store: Store, connection: Connection, layer: string |
     // A team widget's own words (#373), from the layer's locales first.
     say: (text, vars) => say(text, store.manifest(state()?.layer ?? ''), vars),
     source: () => ({
-      params: state()?.params ?? {},
+      // The time control reads the play head while it runs (#373).
+      params: store.paramsNow(id),
       // The words a layer publishes (a caption, a status) in the visitors' language (#80).
       shared: sayShared(state()?.shared ?? {}, store.manifest(state()?.layer ?? '')),
       site: store.state.site as unknown as Record<string, unknown>,

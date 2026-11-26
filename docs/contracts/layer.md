@@ -313,6 +313,7 @@ interface TableContext<P> {
   readonly steps: LayerSteps;           // sub-steps that the controller's Next reveals one at a time
   readonly reveal: LayerReveal;         // where the layers inside this one show, for a layer with "reveals": true (see Reveals)
   readonly view: LayerView;             // a picture for this layer's own controller: send(canvas) here, watch(cb) in its hero (#351)
+  readonly clock: TablePlayHead;        // the shared play head (#373): set(value, rate) here, now() on every view (see Play head)
   onFrame(cb: (dt: number) => void): void;   // every animation frame while the layer is on
   onCleanup(cb: () => void): void;      // extra teardown
 }
@@ -324,7 +325,20 @@ interface LayerSteps {
 // TableHandlers also has step?(revealed: number), called when Next or Previous changes `revealed`.
 
 
-// PanelContext has site, params, setParams, shared, onCleanup and `panel`, the id of the custom panel being drawn.
+// PanelContext has site, params, setParams, shared, clock (read only), onCleanup and `panel`, the id of the custom panel being drawn.
+
+### Play head
+
+A layer that plays through time (the day in Sunlight, a run of trips in Mobility) keeps one play head that every view reads (#373). The table runs the time itself and tells the host with `ctx.clock.set(value, rate)`: where the time is, in the units of the layer's `clock: hour` or `clock: progress` control, and how many of those units a second it moves (0 stands still). The host stamps it with its own time and keeps it as the layer's `clock { value, rate, at }`. Every view works out the time between updates, so the table may call it every frame: the runtime sends it on only when play starts, stops, jumps or changes pace by more than a few per cent, which the other views could not work out for themselves.
+
+`ctx.clock.now()` gives the time now on any view: the play head while it runs (a time of day wraps at midnight, a run stops at its end), otherwise the time control as set. `ctx.clock.running` says whether it moves. While it runs, the controller's and the phones' time slider, the controller's stage and hero, and TV panels bound to the time control (`params.hour`) follow it about ten times a second; a slider under a finger stays put. When play stops, the table sets the time control to where it stopped, so the setting and the play head agree. Scrubbing sets the time control as before; the table follows it and moves the play head.
+
+```ts
+ctx.onFrame((dt) => {
+  if (ctx.params.play) time += dt * rate;
+  ctx.clock.set(time, ctx.params.play ? rate : 0);   // sent on only when the views could not work it out; see packages/layers/mobility
+});
+```
 
 interface TablePointer {
   on(cb: (sample: PointerSample) => void): void;   // released with the layer

@@ -1,6 +1,6 @@
-import { EngineClient, VoiceBed, entityChanges, entityValues, hearsSound, onDataProblem, serviceClient, stepTransition, transitionGain } from '@mrstudio/sdk';
+import { EngineClient, VoiceBed, clockControl, entityChanges, entityValues, hearsSound, onDataProblem, serviceClient, stepTransition, transitionGain } from '@mrstudio/sdk';
 import type { LayerView, RevealShape } from '@mrstudio/sdk';
-import type { Connection, DataProblem, EntityChange, LayerHealth, LayerManifest, LayerModule, LayerState, PanelContext, Sender, StepTransitionKind, TableContext, TableHandlers, ToolInput } from '@mrstudio/sdk';
+import type { Connection, DataProblem, EntityChange, LayerHealth, LayerManifest, LayerModule, LayerPlayHead, LayerState, PanelContext, Sender, StepTransitionKind, TableContext, TableHandlers, TablePlayHead, ToolInput } from '@mrstudio/sdk';
 
 import { Cues } from './cues.ts';
 import { describe, reportError } from './diagnostics.ts';
@@ -131,7 +131,38 @@ export function entitySender(connection: Connection, layer: string): (set: strin
   };
 }
 
-type Base = Pick<PanelContext, 'site' | 'params' | 'shared' | 'setParams' | 'language' | 'say' | 'service' | 'selection' | 'select' | 'entity' | 'setEntity' | 'sendTool' | 'action' | 'view'>;
+type Base = Pick<PanelContext, 'site' | 'params' | 'shared' | 'setParams' | 'language' | 'say' | 'service' | 'selection' | 'select' | 'entity' | 'setEntity' | 'sendTool' | 'action' | 'view' | 'clock'>;
+
+/** A layer's play head as this view reads it (#373): the host's clock, carried on to now. */
+export function playHead(store: Store, layer: string): LayerPlayHead {
+  return {
+    // While it runs, the host's play head carried on to now; otherwise the time control as set.
+    now: () => {
+      const state = store.state.layers[layer];
+      if (state?.clock && state.clock.rate !== 0) return store.clockNow(layer);
+      const time = clockControl(store.manifest(state?.layer ?? ''));
+      const value = time ? state?.params[time.id] : undefined;
+      return typeof value === 'number' ? value : null;
+    },
+    get running() {
+      return (store.state.layers[layer]?.clock?.rate ?? 0) !== 0;
+    },
+  };
+}
+
+/** How far a play head may drift from what the views work out before the table sends it again (#373): a share of the control's range, and of the pace. */
+const CLOCK_DRIFT = 0.002;
+const CLOCK_PACE_DRIFT = 0.04;
+
+/** Whether a new play head says no more than the last one sent does, carried on to now. */
+function agrees(told: { value: number; rate: number; at: number }, value: number, rate: number, now: number, time: { min: number; max: number } | undefined): boolean {
+  if (rate === 0 || told.rate === 0 ? rate !== told.rate : Math.abs(rate - told.rate) > Math.abs(rate) * CLOCK_PACE_DRIFT) return false;
+  const span = time && time.max > time.min ? time.max - time.min : 0;
+  let gap = Math.abs(told.value + (told.rate * (now - told.at)) / 1000 - value);
+  // A time of day that wrapped at midnight is still where the views think.
+  if (span > 0) gap = Math.min(gap % span, span - (gap % span));
+  return gap <= Math.max(1e-9, span * CLOCK_DRIFT);
+}
 
 /** Fewest milliseconds between two pictures a table sends, and between two looks from a controller. */
 const VIEW_SEND_MS = 90;
@@ -218,6 +249,7 @@ export function baseContext(store: Store, connection: Connection, layer: string)
     },
     setParams: paramSender(connection, layer),
     view: layerView(layer),
+    clock: playHead(store, layer),
   };
 }
 
@@ -565,7 +597,24 @@ export class LayerManager {
       });
     }
     // The base context has live getters, so it is the prototype rather than a copy.
-    const ctx: TableContext = Object.assign(Object.create(baseContext(store, this.connection, id)), extras);
+    // The play head (#373): the table may set it every frame; the host hears only what the other
+    // views could not work out for themselves (a start, a stop, a jump, a change of pace).
+    const read = playHead(store, id);
+    let told: { value: number; rate: number; at: number } | null = null;
+    const clock: TablePlayHead = {
+      now: () => read.now(),
+      get running() {
+        return read.running;
+      },
+      set: (value, rate = 0) => {
+        if (!Number.isFinite(value) || !Number.isFinite(rate) || running.stopped) return;
+        const now = performance.now();
+        if (told && agrees(told, value, rate, now, clockControl(store.manifest(store.state.layers[id]?.layer ?? '')))) return;
+        told = { value, rate, at: now };
+        this.connection.request('layer.clock', { layer: id, value, rate }).catch(() => {});
+      },
+    };
+    const ctx: TableContext = Object.assign(Object.create(baseContext(store, this.connection, id)), extras, { clock });
     const before = { ...store.layer(id).params };
     this.starting.set(id, null);
     try {

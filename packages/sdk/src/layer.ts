@@ -251,6 +251,33 @@ interface ContextBase<P> {
    * table gets it in `action(id)`, so a controller stage can start an animation on the table.
    */
   action(id: string): Promise<void>;
+  /**
+   * The layer's play head (#373), the same on every view: where its time is now, in the units of
+   * its `clock: hour` or `clock: progress` control, moving between the table's updates.
+   */
+  readonly clock: LayerPlayHead;
+}
+
+/** A layer's play head as every view reads it (#373). */
+export interface LayerPlayHead {
+  /**
+   * The layer's time now, in its clock control's units: the play head while it runs (a time of day
+   * wraps at midnight, a run stops at its end), otherwise the control as set. Null for a layer
+   * without a `clock: hour` or `clock: progress` control.
+   */
+  now(): number | null;
+  /** It moves on its own: the table set a rate other than 0. */
+  readonly running: boolean;
+}
+
+/** The table's side of the play head (#373): it moves it, and every view follows. */
+export interface TablePlayHead extends LayerPlayHead {
+  /**
+   * Where the time is now and how many of the control's units a second it moves (0, the default,
+   * stands still). Call it every frame if that is easiest: every view works out the time in
+   * between, so it is sent on only when play starts, stops, jumps or changes pace.
+   */
+  set(value: number, rate?: number): void;
 }
 
 export interface TableContext<P = Params> extends ContextBase<P> {
@@ -259,6 +286,8 @@ export interface TableContext<P = Params> extends ContextBase<P> {
   /** The digital twin of the physical model: fields, lights and materials on its real surfaces. */
   readonly model: ModelHandle;
   readonly pointer: TablePointer;
+  /** The play head: the table moves it with `set`, and every view reads it (#373). */
+  readonly clock: TablePlayHead;
   /**
    * Plays the attention cue (#105) at a change, in WGS84: one bright burst that pulls eyes back
    * to the table. Tool inputs from a phone or the controller get one without any code; call this

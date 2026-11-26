@@ -516,6 +516,18 @@ export interface LayerState {
    * runs as it should. The runtime reports it from the table; the editor and controller show it.
    */
   health?: LayerHealth;
+  /** The layer's play head (#373), kept by the host: read it with `ctx.clock.now()`. Absent until the table sets one. */
+  clock?: LayerClock;
+}
+
+/**
+ * Where a layer's time is (#373): `value`, in the units of its `clock` time control, at the host's
+ * moment `at` (ms since 1970), moving `rate` units a second (0 while it stands still).
+ */
+export interface LayerClock {
+  value: number;
+  rate: number;
+  at: number;
 }
 
 /** A layer that is on but not running as it should (#259). */

@@ -1,5 +1,8 @@
-import { setSessionSound } from '@mrstudio/sdk';
+import { clockAt, clockControl, setSessionSound } from '@mrstudio/sdk';
 import type { Connection, LayerManifest, LayerState, Participant, SessionState, TvConfig, Welcome, DisplayQuality } from '@mrstudio/sdk';
+
+/** How often a running play head moves a slider or a panel (#373). */
+const CLOCK_TICK_MS = 100;
 
 type LayerListener = (layer: string, state: LayerState, previous: LayerState | undefined) => void;
 
@@ -21,8 +24,12 @@ export class Store {
   private displayListeners = new Set<(quality: DisplayQuality) => void>();
   private catalogListeners = new Set<(layer: string) => void>();
   private settingsListeners = new Set<() => void>();
+  private clockListeners = new Set<(layer: string) => void>();
+  private clockTimer = 0;
+  private readonly connection: Connection;
 
   constructor(connection: Connection, welcome: Welcome) {
+    this.connection = connection;
     this.state = welcome.state;
     this.manifests = welcome.manifests;
     this.surface = welcome.surface;
@@ -91,6 +98,48 @@ export class Store {
   /** This surface's own seat, when it is a phone. */
   me(): Participant | undefined {
     return this.state.participants.find((p) => p.surface === this.surface);
+  }
+
+  /** Where a layer's play head is now (#373), in its time control's units, or null without one. */
+  clockNow(layer: string): number | null {
+    const state = this.state.layers[layer];
+    return clockAt(state?.clock, this.connection.hostNow(), clockControl(this.manifest(state?.layer ?? '')));
+  }
+
+  /**
+   * A layer's params with its time control at the play head while that runs (#373), so a slider
+   * or a panel shows the time the table is at, not where play started.
+   */
+  paramsNow(layer: string): Record<string, unknown> {
+    const state = this.state.layers[layer];
+    const params = (state?.params ?? {}) as Record<string, unknown>;
+    if (!state?.clock || state.clock.rate === 0) return params;
+    const time = clockControl(this.manifest(state.layer));
+    const now = this.clockNow(layer);
+    return time && now !== null ? { ...params, [time.id]: Math.round(now / (time.step ?? 1e-6)) * (time.step ?? 1e-6) } : params;
+  }
+
+  /**
+   * Runs about ten times a second for each layer whose play head is running (#373), so a slider
+   * or a panel follows the time between the table's updates. Returns a function that stops it.
+   */
+  onClock(listener: (layer: string) => void): () => void {
+    this.clockListeners.add(listener);
+    if (!this.clockTimer) {
+      this.clockTimer = window.setInterval(() => {
+        for (const [layer, state] of Object.entries(this.state.layers)) {
+          if (!state.active || !state.clock || state.clock.rate === 0) continue;
+          for (const each of this.clockListeners) each(layer);
+        }
+      }, CLOCK_TICK_MS);
+    }
+    return () => {
+      this.clockListeners.delete(listener);
+      if (this.clockListeners.size === 0) {
+        clearInterval(this.clockTimer);
+        this.clockTimer = 0;
+      }
+    };
   }
 
   onLayer(listener: LayerListener): () => void {

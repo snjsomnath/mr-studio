@@ -33,9 +33,9 @@ const PLAY_HOURS_PER_SECOND = 1;
 /** The step of the `hour` control: the time the host is told is rounded to it. */
 const HOUR_STEP = 0.05;
 /**
- * While playing, the table runs its own clock and moves the sun and its shadows every frame (#302). The host, and
- * through it the controller and the TV, hears the time this often. Each time it hears costs a round trip and the
- * engine's tree shade, so the table must never wait for it to move.
+ * While playing, the table runs its own clock and moves the sun and its shadows every frame (#302). The engine hears
+ * the time this often for the trees' shade; the other views follow the shared play head (#373), which the table
+ * sets only when the pace changes. The table must never wait for either to move.
  */
 const PLAY_SYNC_SECONDS = 0.1;
 /** While playing, new shadow masks come every frame or two, so each eases in this fast and the shadows keep up with the sun. */
@@ -49,8 +49,9 @@ const GOLDEN_HOLD_SECONDS = 2.5;
 const atMoment = (mode: string) => mode === 'instant' || mode === 'golden';
 
 /** Kernel params for the layer's params. The site's time zone turns wall-clock time into UTC. */
-function kernelParams(ctx: TableContext<Params>) {
-  const { mode, date, hour, trees } = ctx.params;
+/** What the engine works the light out for. `hour` is the table's own time while the day plays. */
+function kernelParams(ctx: TableContext<Params>, hour = ctx.params.hour) {
+  const { mode, date, trees } = ctx.params;
   const time = zonedTimeToUtc(date, mode === 'day' ? 12 : hour, ctx.site.timezone);
   // In Sun hours, only the sun in the chosen window counts; an instant has none. Golden hour is an instant to the engine.
   return { mode: mode === 'golden' ? 'instant' : mode, time, trees, ...(mode === 'day' ? windowParams(ctx.site, date, ctx.params.window) : { from: null, until: null }) };
@@ -74,7 +75,7 @@ export default defineLayer<Params>({
     let clock: number | null = null;
     // The hours this table sent while playing, so their echoes from the host are told apart from someone scrubbing.
     const sent: number[] = [];
-    let sinceSync = 0;
+    let sinceShade = 0;
     const hourNow = () => clock ?? ctx.params.hour;
     const playing = () => ctx.params.play && atMoment(ctx.params.mode);
     const sunNow = () => sunAt(ctx.site, ctx.params.date, hourNow());
@@ -279,7 +280,7 @@ export default defineLayer<Params>({
       // The panel shows progress from the first moment, not the previous job's.
       percent = 0;
       ctx.publish({ progress: 0 });
-      const asked = kernelParams(ctx);
+      const asked = kernelParams(ctx, hourNow());
       const opened = await ctx.engine.open('sunlight', asked, [field, treeField]);
       if (mine !== generation) {
         // The mode changed again, or the layer was turned off, while this was opening.
@@ -289,7 +290,7 @@ export default defineLayer<Params>({
       stream = opened;
       // The time or day may have changed while the job was opening, which can take seconds while the
       // engine is still busy with a stopped day's sums (#121). Those changes had no stream to go to.
-      const now = kernelParams(ctx);
+      const now = kernelParams(ctx, hourNow());
       if (JSON.stringify(now) !== JSON.stringify(asked)) opened.set(now);
       dress();
       // With a shadow map, the engine's cells only fill in until the first mask is ready.
@@ -337,19 +338,34 @@ export default defineLayer<Params>({
     }
     const wasSent = (hour: number) => sent.some((h) => Math.abs(h - hour) < 1e-6);
 
+    /** The shared play head (#373): the runtime sends it on only when the pace changes or the time jumps. */
+    let clockRate = 0;
+    const syncClock = (rate: number) => {
+      clockRate = rate;
+      ctx.clock.set(hourNow(), rate);
+    };
+
     ctx.onFrame((dt) => {
       if (ctx.params.mode === 'seasons') seasons.tick(dt);
-      if (!playing()) return;
+      if (!playing()) {
+        if (clockRate !== 0) syncClock(0);
+        return;
+      }
+      let rate: number;
       if (golden()) {
-        if (!goldenTick(dt)) return;
+        if (!goldenTick(dt)) return syncClock(0);
+        rate = GOLDEN_HOURS_PER_SECOND;
       } else {
         // The clock moves by the frame's own time, so the sun moves the same distance on screen for the same time.
-        clock = (hourNow() + dt * PLAY_HOURS_PER_SECOND * playPace(sunNow().altitude)) % 24;
+        rate = PLAY_HOURS_PER_SECOND * playPace(sunNow().altitude);
+        clock = (hourNow() + dt * rate) % 24;
       }
-      sinceSync += dt;
-      if (sinceSync >= PLAY_SYNC_SECONDS) {
-        sinceSync = 0;
-        sync(hourNow());
+      syncClock(rate);
+      // The engine's tree shade follows the table's clock, a few times a second.
+      sinceShade += dt;
+      if (sinceShade >= PLAY_SYNC_SECONDS && ctx.params.mode !== 'day') {
+        sinceShade = 0;
+        stream?.set(kernelParams(ctx, hourNow()));
       }
       animate();
     });
@@ -433,7 +449,7 @@ export default defineLayer<Params>({
           seasons.update(changed);
         } else {
           dress();
-          if (changed.some((key) => key === 'date' || key === 'hour' || key === 'trees' || key === 'window')) stream?.set(kernelParams(ctx));
+          if (changed.some((key) => key === 'date' || key === 'hour' || key === 'trees' || key === 'window')) stream?.set(kernelParams(ctx, hourNow()));
         }
       },
     };
