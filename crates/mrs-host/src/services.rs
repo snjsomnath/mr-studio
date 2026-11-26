@@ -6,10 +6,11 @@
 //! table whose service is down or offline still shows the last answer to the same question.
 //! Contract in docs/contracts/site.md, "Services".
 
+use parking_lot::Mutex;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
 use mrs_site::{Service, Site};
@@ -64,12 +65,12 @@ struct Entry {
 
 impl Entry {
     fn set(&self, state: ServiceState, message: Option<String>) {
-        let mut status = self.status.lock().unwrap();
+        let mut status = self.status.lock();
         status.state = state;
         status.message = message;
     }
     fn note(&self, line: String) {
-        let mut log = self.log.lock().unwrap();
+        let mut log = self.log.lock();
         if log.len() == LOG_LINES {
             log.pop_front();
         }
@@ -138,18 +139,18 @@ impl Services {
     }
 
     pub fn statuses(&self) -> Vec<ServiceStatus> {
-        self.entries.values().map(|e| e.status.lock().unwrap().clone()).collect()
+        self.entries.values().map(|e| e.status.lock().clone()).collect()
     }
 
     /// The last lines a service wrote, newest last.
     pub fn log(&self, id: &str) -> Option<Vec<String>> {
-        self.entries.get(id).map(|e| e.log.lock().unwrap().iter().cloned().collect())
+        self.entries.get(id).map(|e| e.log.lock().iter().cloned().collect())
     }
 
     /// The address to forward a request for `id` to, when it is up or remote.
     pub fn address(&self, id: &str) -> Result<String, Refusal> {
         let entry = self.entries.get(id).ok_or(Refusal::Unknown)?;
-        let status = entry.status.lock().unwrap();
+        let status = entry.status.lock();
         match (&status.state, &status.address) {
             (ServiceState::Up | ServiceState::Remote, Some(address)) => Ok(address.clone()),
             _ => Err(Refusal::NotUp(status.state.clone(), status.message.clone())),
@@ -161,7 +162,7 @@ impl Services {
     pub async fn once(&self, key: PathBuf, ask: impl std::future::Future<Output = Answer> + Send + 'static) -> Answer {
         use futures_util::FutureExt;
         let pending = {
-            let mut asked = self.asked.lock().unwrap();
+            let mut asked = self.asked.lock();
             asked.retain(|_, (at, pending)| pending.peek().is_none() || at.elapsed() < SAME_REQUEST);
             match asked.get(&key) {
                 Some((_, pending)) => pending.clone(),
@@ -399,7 +400,7 @@ async fn supervise(entry: Arc<Entry>, dir: PathBuf, mut stopped: watch::Receiver
             if healthy && !up {
                 up = true;
                 backoff = Duration::from_secs(1);
-                let mut status = entry.status.lock().unwrap();
+                let mut status = entry.status.lock();
                 status.state = ServiceState::Up;
                 status.message = None;
                 status.address = Some(address.clone());
@@ -416,7 +417,7 @@ async fn supervise(entry: Arc<Entry>, dir: PathBuf, mut stopped: watch::Receiver
             None => format!("it did not answer {health} within {} s", start_within.as_secs()),
         };
         {
-            let mut status = entry.status.lock().unwrap();
+            let mut status = entry.status.lock();
             status.state = ServiceState::Down;
             status.message = Some(why.clone());
             status.address = None;

@@ -1522,3 +1522,25 @@ async fn wrong_codes_run_out() {
     assert!(Surface::join(&host, "tv", None).await.is_ok());
     host.shutdown().await;
 }
+
+/// #507: a request that fails inside the host, with the hub's lock held, costs that request
+/// only. The table answers the next one, new windows join, and the operator log hears of it.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_request_that_fails_inside_the_host_does_not_stop_the_table() {
+    let host = host().await;
+    let mut tv = Surface::join(&host, "tv", None).await.unwrap();
+    host.state.hub.inject_fault();
+    let refused = tv.request("layer.activate", json!({ "layer": "sunlight", "active": true })).await.unwrap_err();
+    assert!(refused.contains("could not be handled"), "{refused}");
+
+    // The same surface, and a new one, are answered as before.
+    tv.request("layer.activate", json!({ "layer": "sunlight", "active": true })).await.unwrap();
+    let mut table = Surface::join(&host, "table", None).await.unwrap();
+    assert_eq!(table.welcome["state"]["layers"]["sunlight"]["active"], true);
+    table.request("layer.activate", json!({ "layer": "sunlight", "active": false })).await.unwrap();
+    assert!(!http_get(&host, "/api/diagnostics").await.is_empty());
+
+    let (incidents, _) = host.state.health.incidents_after(0);
+    assert!(incidents.iter().any(|(_, message)| message.contains("layer.activate")), "{incidents:?}");
+    host.shutdown().await;
+}

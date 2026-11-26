@@ -5,7 +5,8 @@
 //!   if it was;
 //! - a table or controller window has not said it is alive for 30 s (a blank page, a crashed
 //!   or frozen renderer): it is reloaded, and after two reloads that did not help, all the
-//!   windows are opened again;
+//!   windows are opened again; when even that did not help within ten minutes, the fault is
+//!   not in the windows, and the table itself is started again (#507);
 //! - the engine recovered from a failure or a lost GPU: noted in the operator log (the host
 //!   already restarted it, and the windows reloaded themselves);
 //! - the nightly restart time came: the table is started anew.
@@ -30,6 +31,9 @@ const SILENT: Duration = Duration::from_secs(8);
 const SETTLE: Duration = Duration::from_secs(30);
 /// After this many reloads that did not bring a window back, every window is opened again.
 const RELOADS: u32 = 2;
+/// Windows that need opening again this soon after they were opened again are not the fault:
+/// the table is started again instead.
+const REOPENED_LATELY: Duration = Duration::from_secs(600);
 
 #[derive(Default)]
 struct Watch {
@@ -38,6 +42,8 @@ struct Watch {
     /// Host incidents already written to the operator log.
     seen: u64,
     windows: HashMap<String, WindowWatch>,
+    /// When the windows were last opened again because reloading did not help.
+    reopened: Option<Instant>,
     /// The day the nightly restart last ran, so it runs once.
     nightly: Option<chrono::NaiveDate>,
 }
@@ -60,7 +66,7 @@ pub async fn run(app: AppHandle) {
 
 async fn check(app: &AppHandle, watch: &mut Watch) {
     let shell = app.state::<Shell>();
-    let Some(running) = shell.running.lock().unwrap().clone() else {
+    let Some(running) = shell.running.lock().clone() else {
         watch.windows.clear();
         return;
     };
@@ -87,15 +93,19 @@ async fn check(app: &AppHandle, watch: &mut Watch) {
         return;
     }
     if presenting {
-        windows(app, &state, watch, &running).await;
+        if windows(app, &state, watch, &running).await {
+            restart(app, &running, true).await;
+            return;
+        }
     } else {
         watch.windows.clear();
     }
     nightly(app, watch, &running, presenting).await;
 }
 
-/// Reloads a table or controller window that stopped saying it is alive.
-async fn windows(app: &AppHandle, state: &AppState, watch: &mut Watch, running: &Running) {
+/// Reloads a table or controller window that stopped saying it is alive. True when that and
+/// opening the windows again did not help, and the table itself should be started again.
+async fn windows(app: &AppHandle, state: &AppState, watch: &mut Watch, running: &Running) -> bool {
     let shell = app.state::<Shell>();
     let now = Instant::now();
     let open: Vec<_> = app.webview_windows().into_iter().filter(|(label, _)| label.starts_with("surface-")).collect();
@@ -139,13 +149,21 @@ async fn windows(app: &AppHandle, state: &AppState, watch: &mut Watch, running: 
         entry.reloads += 1;
     }
     if reopen {
+        if watch.reopened.is_some_and(|at| now.duration_since(at) < REOPENED_LATELY) {
+            shell
+                .operator
+                .note(format!("A window still does not answer after the windows were opened again. Starting '{}' again.", running.name));
+            return true;
+        }
         shell.operator.note("A window still did not answer after two reloads. Opening the windows again.");
+        watch.reopened = Some(now);
         watch.windows.clear();
         match usual_displays(app).and_then(|displays| show(app, &displays)) {
             Ok(()) => {}
             Err(e) => shell.operator.note(format!("The windows could not be opened again: {e:#}")),
         }
     }
+    false
 }
 
 /// The nightly restart, for a table that runs for weeks: once a day, at the chosen minute.

@@ -1,8 +1,9 @@
 //! One WebSocket connection per surface. Wire protocol in `docs/contracts/session.md`.
 
+use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::net::{IpAddr, SocketAddr};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
@@ -46,12 +47,12 @@ impl Tries {
     }
 
     fn blocked(&self, from: IpAddr, now: Instant) -> bool {
-        let tries = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        let tries = self.0.lock();
         tries.get(&from).is_some_and(|(since, wrong)| now.duration_since(*since) < Self::WINDOW && *wrong >= Self::limit(from))
     }
 
     fn wrong(&self, from: IpAddr, now: Instant) {
-        let mut tries = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        let mut tries = self.0.lock();
         if tries.len() > 4096 {
             tries.retain(|_, (since, _)| now.duration_since(*since) < Self::WINDOW);
         }
@@ -273,6 +274,10 @@ async fn request(state: &AppState, role: Role, surface: u64, message: &Value, ou
     }
     if !method.starts_with("engine.") {
         let result = state.hub.request(role, surface, method, p);
+        // A request that failed inside the host (#507) goes to the operator log.
+        if let Some(fault) = result.as_ref().err().filter(|e| e.starts_with(crate::hub::FAULT)) {
+            state.health.note(fault.clone());
+        }
         // The field walk's Remove and Clear (#445) are named actions of its controller stage.
         if method == "layer.action" && result.is_ok() {
             state.field_action(role, p)?;

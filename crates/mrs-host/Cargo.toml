@@ -22,6 +22,7 @@ mrs-relay.workspace = true
 tokio-tungstenite = { version = "0.30", features = ["rustls-tls-webpki-roots"] }
 base64 = "0.22"
 tower = { version = "0.5", features = ["util"] }
+parking_lot = "0.12"
 
 [dev-dependencies]
 png = "0.18"

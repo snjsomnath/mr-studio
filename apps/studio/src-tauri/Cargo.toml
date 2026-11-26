@@ -17,6 +17,7 @@ mrs-engine.workspace = true
 mrs-host.workspace = true
 mrs-site.workspace = true
 anyhow.workspace = true
+parking_lot = "0.12"
 serde.workspace = true
 serde_json.workspace = true
 tauri = { version = "2", features = [] }

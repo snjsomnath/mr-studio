@@ -428,6 +428,11 @@ A table in an exhibition runs all day with nobody at the computer.
   table is started again. Every surface gets `engine.restarted { message, backend }`: the
   streams are gone, so the table and the controller reload. The incident goes to the
   operator log.
+- **Requests.** A request that fails inside the host (#507) costs that request only. The
+  surface gets `ok: false` with "Something went wrong inside MR Studio: '<method>' could not be
+  handled. The table carries on.", the incident goes to the operator log, and the next request
+  is handled as before: the host's locks do not poison. `Hub::inject_fault` makes the next
+  request fail this way, for tests.
 - **Windows.** Each table and controller sends `{ t: 'alive', window, fps, worst_ms, layers }`
   every 2 s. `window` is the label the desktop app gave it, as `window.__MRS_WINDOW__`, or the
   role (`table`, `tv`) in a browser. Phones' and the editor's beats are ignored. `worst_ms` and
@@ -435,7 +440,7 @@ A table in an exhibition runs all day with nobody at the computer.
 - **Watchdog.** The app's watchdog (apps/studio/src-tauri/src/watchdog.rs) checks every 2 s:
   - A window silent for 8 s is reloaded by navigation (a new or reloaded window gets 30 s to
     load first), which works even when the page's
-    script has stopped. After two reloads that did not help, every window is opened again.
+    script has stopped. After two reloads that did not help, every window is opened again. When the windows need that again within ten minutes, the fault is not theirs, and the table itself is started again (#507).
   - A server that stopped by itself is started again and presented again.
   - At the nightly restart time (`nightly_restart` in studio.json, "03:00"), a presented
     table is started anew.

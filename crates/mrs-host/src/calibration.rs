@@ -2,8 +2,8 @@
 //! Kept per machine and site in `<site>/calibration.json` under the `projector` key; other keys
 //! in that file are left alone. The surfaces solve and interpret it; the host stores and shares it.
 
+use parking_lot::Mutex;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
 
 use serde_json::{json, Map, Value};
 
@@ -37,13 +37,13 @@ impl Calibration {
 
     /// The current calibration, or null when the table is flat.
     pub fn projector(&self) -> Value {
-        self.projector.lock().unwrap().clone()
+        self.projector.lock().clone()
     }
 
     /// Replaces the calibration (null clears it) and writes the file.
     pub fn set_projector(&self, projector: &Value) -> Result<(), String> {
         check(projector)?;
-        let mut current = self.projector.lock().unwrap();
+        let mut current = self.projector.lock();
         let mut file = read(&self.path).unwrap_or_default();
         if projector.is_null() {
             file.remove("projector");

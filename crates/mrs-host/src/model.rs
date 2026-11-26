@@ -79,7 +79,7 @@ impl AppState {
         .map_err(|e| e.to_string())?;
         let (scene, twin, info, triangles, coverage) = rebuilt?;
         self.engine.load_scene(scene).await?;
-        *self.twin.write().unwrap() = twin;
+        *self.twin.write() = twin;
         self.hub.site_changed(info.clone());
         Ok(json!({ "site": info, "triangles": triangles, "coverage": coverage }))
     }

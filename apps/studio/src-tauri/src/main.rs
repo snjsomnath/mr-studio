@@ -24,11 +24,12 @@ mod updates;
 mod waiting;
 mod watchdog;
 
+use parking_lot::Mutex;
 use std::collections::BTreeMap;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Context;
@@ -349,7 +350,7 @@ fn is_table_file(path: &Path) -> bool {
 /// loads, or at once when it is already open.
 fn opened_table_file(app: &AppHandle, path: PathBuf) {
     tracing::info!("asked to open {}", path.display());
-    *app.state::<Shell>().opened_file.lock().unwrap() = Some(path);
+    *app.state::<Shell>().opened_file.lock() = Some(path);
     match app.get_webview_window(HOME) {
         Some(home) => {
             let _ = home.eval("window.dispatchEvent(new CustomEvent('mrs-opened-file'))");
@@ -362,7 +363,7 @@ fn opened_table_file(app: &AppHandle, path: PathBuf) {
 /// The table file waiting for Home, once.
 #[tauri::command]
 fn take_opened_file(shell: State<'_, Shell>) -> Option<PathBuf> {
-    shell.opened_file.lock().unwrap().take()
+    shell.opened_file.lock().take()
 }
 
 /// What opening a table file did, for Home to show.
@@ -440,7 +441,7 @@ async fn import_table(
     let same = (!id.is_empty())
         .then(|| sites::discover(&settings.sites, &shell.sites_folders, &shell.resources.join("sites")))
         .and_then(|found| found.into_iter().find(|s| s.id == id && s.problem.is_none() && s.source != "built in"));
-    let open = |same: &SiteEntry| shell.running.lock().unwrap().as_ref().is_some_and(|r| sites::canonical(r.site.clone()) == same.path);
+    let open = |same: &SiteEntry| shell.running.lock().as_ref().is_some_and(|r| sites::canonical(r.site.clone()) == same.path);
     let imported = match (same, mode.as_deref()) {
         (Some(same), None) => {
             let open = open(&same);
@@ -493,7 +494,7 @@ fn init_logging(log_dir: Option<&Path>) {
         std::fs::File::create(dir.join("mr-studio.log")).ok()
     });
     match file {
-        Some(file) => tracing_subscriber::fmt().with_target(false).with_ansi(false).with_writer(Mutex::new(file)).init(),
+        Some(file) => tracing_subscriber::fmt().with_target(false).with_ansi(false).with_writer(std::sync::Mutex::new(file)).init(),
         None => tracing_subscriber::fmt().with_target(false).init(),
     }
 }
@@ -522,7 +523,7 @@ async fn startup(app: AppHandle) {
         other => (other, None),
     };
     if let Some(file) = file {
-        *shell.opened_file.lock().unwrap() = Some(file);
+        *shell.opened_file.lock() = Some(file);
     }
     // Operator mode (#394): the last table goes on the screens and the operator window stands
     // in for the editor. Shift held at the start asks for this computer's password instead.
@@ -552,7 +553,7 @@ async fn startup(app: AppHandle) {
             Ok(()) => return,
             Err(e) => {
                 tracing::error!("could not start: {e:#}");
-                *shell.error.lock().unwrap() = Some(format!("{e:#}"));
+                *shell.error.lock() = Some(format!("{e:#}"));
             }
         }
     }
@@ -722,7 +723,7 @@ async fn launch(app: &AppHandle, site: PathBuf, lan: bool) -> anyhow::Result<()>
         }
     }
     *host = Some(started);
-    *shell.running.lock().unwrap() = Some(running);
+    *shell.running.lock() = Some(running);
     Ok(())
 }
 
@@ -739,7 +740,7 @@ async fn may_run_programs(app: &AppHandle, site: &Path) -> anyhow::Result<bool> 
     if programs::Allowed::read(&shell.programs_path()).allows(&site, &found) {
         return Ok(true);
     }
-    if shell.without_programs.lock().unwrap().get(&site) == Some(&found.fingerprint) {
+    if shell.without_programs.lock().get(&site) == Some(&found.fingerprint) {
         return Ok(false);
     }
     let name = std::fs::read_to_string(site.join("site.json"))
@@ -768,13 +769,13 @@ async fn may_run_programs(app: &AppHandle, site: &Path) -> anyhow::Result<bool> 
     };
     match answer {
         programs::Answer::Run => {
-            shell.without_programs.lock().unwrap().remove(&site);
+            shell.without_programs.lock().remove(&site);
             shell.allow(|allowed| allowed.said_run(&site, &found));
             shell.operator.note(format!("'{name}' may run its own programs on this computer: {}.", found.lines().join("; ")));
             Ok(true)
         }
         programs::Answer::Without => {
-            shell.without_programs.lock().unwrap().insert(site, found.fingerprint.clone());
+            shell.without_programs.lock().insert(site, found.fingerprint.clone());
             shell.operator.note(format!("'{name}' was opened without its own programs: {}.", found.lines().join("; ")));
             Ok(false)
         }
@@ -795,7 +796,7 @@ async fn stop_locked(app: &AppHandle, host: &mut Option<RunningHost>) -> anyhow:
             window.destroy()?;
         }
     }
-    *shell.running.lock().unwrap() = None;
+    *shell.running.lock() = None;
     if let Some(old) = host.take() {
         old.stop(Duration::from_secs(2)).await;
     }
@@ -807,7 +808,7 @@ async fn stop_locked(app: &AppHandle, host: &mut Option<RunningHost>) -> anyhow:
 /// back on the screens when `present` and in the editor when the editor is open (#401).
 async fn update_table(app: &AppHandle, file: PathBuf, table: PathBuf, present: bool) -> anyhow::Result<mrs_site::package::Imported> {
     let shell = app.state::<Shell>();
-    let was = shell.running.lock().unwrap().clone().filter(|r| sites::canonical(r.site.clone()) == table);
+    let was = shell.running.lock().clone().filter(|r| sites::canonical(r.site.clone()) == table);
     if was.is_some() {
         let mut host = shell.host.lock().await;
         stop_locked(app, &mut host).await?;
@@ -856,7 +857,7 @@ async fn ensure_running(app: &AppHandle, site: &Path, lan: bool) -> anyhow::Resu
     let shell = app.state::<Shell>();
     let site = sites::canonical(working_copy(&shell, site)?);
     let same = |r: &Running| r.lan == lan && r.site == site;
-    if !shell.running.lock().unwrap().as_ref().is_some_and(same) {
+    if !shell.running.lock().as_ref().is_some_and(same) {
         launch(app, site.clone(), lan).await?;
     }
     Ok(site)
@@ -899,7 +900,7 @@ fn copy_dir(from: &Path, to: &Path) -> std::io::Result<()> {
 /// Opens one surface of the running site in a normal window, for looking at it beside the editor.
 fn show_view(app: &AppHandle, role: &str) -> anyhow::Result<()> {
     anyhow::ensure!(["table", "tv", "dev", "phone", "help"].contains(&role), "'{role}' is not a view");
-    let running = app.state::<Shell>().running.lock().unwrap().clone().context("no site is open")?;
+    let running = app.state::<Shell>().running.lock().clone().context("no site is open")?;
     let label = format!("view-{role}");
     let window = match app.get_webview_window(&label) {
         Some(window) => window,
@@ -954,7 +955,7 @@ fn close_surfaces(app: &AppHandle) -> anyhow::Result<()> {
             window.destroy()?;
         }
     }
-    app.state::<Shell>().surfaces.lock().unwrap().clear();
+    app.state::<Shell>().surfaces.lock().clear();
     Ok(())
 }
 
@@ -965,7 +966,7 @@ fn is_presenting(app: &AppHandle) -> bool {
 /// Puts the running site on the displays: one window per entry of `displays`, replacing
 /// the ones that are open.
 fn show(app: &AppHandle, displays: &Displays) -> anyhow::Result<()> {
-    let port = app.state::<Shell>().running.lock().unwrap().as_ref().map(|r| r.port).context("no site is open")?;
+    let port = app.state::<Shell>().running.lock().as_ref().map(|r| r.port).context("no site is open")?;
     close_surfaces(app)?;
     open_surfaces(app, port, displays)
 }
@@ -987,7 +988,7 @@ fn open_editor(app: &AppHandle, page: &str) -> anyhow::Result<()> {
     if shell.operator_mode.is_on() {
         return operator_mode::open_window(app);
     }
-    let running = shell.running.lock().unwrap().clone().context("no site is open")?;
+    let running = shell.running.lock().clone().context("no site is open")?;
     let url: tauri::Url = format!("http://127.0.0.1:{}/{page}", running.port).parse().context("the editor's address")?;
     let title = if page == "new" { "MR Studio · New table".to_string() } else { format!("MR Studio · {}", running.name) };
     let stale = shell.editor_stale.swap(false, Ordering::Relaxed);
@@ -1124,12 +1125,12 @@ fn open_surfaces(app: &AppHandle, port: u16, displays: &Displays) -> anyhow::Res
             shell.table_fullscreen.store(spec.fullscreen, Ordering::Relaxed);
         }
         if let Some(d) = target {
-            shell.surfaces.lock().unwrap().push((label, d.index));
+            shell.surfaces.lock().push((label, d.index));
         }
         tracing::info!("{} window on display {:?}", spec.role, target.map(|d| (d.index, d.name.as_deref().unwrap_or(""))));
     }
     focus_surface(app, &connected);
-    let name = shell.running.lock().unwrap().as_ref().map(|r| r.name.clone()).unwrap_or_default();
+    let name = shell.running.lock().as_ref().map(|r| r.name.clone()).unwrap_or_default();
     let roles: Vec<&str> = displays.windows.iter().map(|w| w.role.as_str()).collect();
     shell.operator.note(format!("Presenting '{name}' ({}).", roles.join(", ")));
     Ok(())
@@ -1139,7 +1140,7 @@ fn open_surfaces(app: &AppHandle, port: u16, displays: &Displays) -> anyhow::Res
 /// and the shortcuts reach a surface rather than the editor hidden behind it (#295). Once the
 /// windows have settled, since full screen on macOS is applied after they are shown.
 fn focus_surface(app: &AppHandle, connected: &[Display]) {
-    let surfaces = app.state::<Shell>().surfaces.lock().unwrap().clone();
+    let surfaces = app.state::<Shell>().surfaces.lock().clone();
     let editor_display = app.get_webview_window(EDITOR).and_then(|editor| {
         let at = editor.outer_position().ok()?;
         let size = editor.outer_size().ok()?;
@@ -1288,7 +1289,7 @@ fn toggle_table_fullscreen(app: &AppHandle) -> anyhow::Result<()> {
     let Some(window) = table_window(app) else { return Ok(()) };
     let shell = app.state::<Shell>();
     let full = !shell.table_fullscreen.load(Ordering::Relaxed);
-    let index = shell.surfaces.lock().unwrap().iter().find(|(label, _)| label == window.label()).map(|(_, index)| *index);
+    let index = shell.surfaces.lock().iter().find(|(label, _)| label == window.label()).map(|(_, index)| *index);
     let display = index.and_then(|i| list_displays(app).ok()?.into_iter().find(|d| d.index == i));
     if full {
         match &display {
@@ -1314,9 +1315,9 @@ fn toggle_table_fullscreen(app: &AppHandle) -> anyhow::Result<()> {
 /// A window opened from the editor's "Open in a window" in or out of full screen (#420).
 fn toggle_view_fullscreen(app: &AppHandle, label: &str) -> anyhow::Result<()> {
     // macOS's simple full screen cannot be asked about, so the shell remembers which views it filled.
-    static FULL: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+    static FULL: parking_lot::Mutex<Vec<String>> = parking_lot::Mutex::new(Vec::new());
     let Some(window) = app.get_webview_window(label) else { return Ok(()) };
-    let mut full = FULL.lock().unwrap();
+    let mut full = FULL.lock();
     let on = !full.iter().any(|l| l == label);
     #[cfg(target_os = "macos")]
     window.set_simple_fullscreen(on)?;
@@ -1421,7 +1422,7 @@ fn text(e: impl std::fmt::Display) -> String {
 fn launcher_state(app: AppHandle, shell: State<'_, Shell>) -> Result<LauncherState, String> {
     let settings = shell.settings();
     let displays = list_displays(&app).map_err(text)?;
-    let mut error = shell.error.lock().unwrap().take();
+    let mut error = shell.error.lock().take();
     let saved = Displays::read(&shell.displays_path()).unwrap_or_else(|e| {
         error.get_or_insert(format!("displays.json could not be read ({e}). Choose the displays again."));
         None
@@ -1433,7 +1434,7 @@ fn launcher_state(app: AppHandle, shell: State<'_, Shell>) -> Result<LauncherSta
             w.display.resolve(&displays).or_else(|| displays.iter().find(|d| d.primary).filter(|_| w.display == Default::default()))?;
         Some(Assigned { display: display.index, role: w.role.clone(), fullscreen: w.fullscreen })
     });
-    let running = shell.running.lock().unwrap().clone();
+    let running = shell.running.lock().clone();
     let mut sites = sites::discover(&settings.sites, &shell.sites_folders, &shell.resources.join("sites"));
     // The sites opened last come first; the rest keep their order.
     let recency = |s: &SiteEntry| settings.recent.iter().position(|p| p == &s.path).unwrap_or(usize::MAX);
@@ -1544,14 +1545,14 @@ async fn delete_table(app: AppHandle, shell: State<'_, Shell>, path: PathBuf) ->
     if path.starts_with(sites::canonical(shell.resources.clone())) {
         return Err("The examples come with MR Studio and cannot be deleted.".into());
     }
-    let running = shell.running.lock().unwrap().as_ref().is_some_and(|r| r.site == path);
+    let running = shell.running.lock().as_ref().is_some_and(|r| r.site == path);
     if running {
         if app.get_webview_window(EDITOR).is_some() || is_presenting(&app) {
             return Err("This table is open. Close it first (File > Close table), then delete it.".into());
         }
         // Left, but its host still holds the folder: stop it, so the files are free to move.
         let mut host = shell.host.lock().await;
-        *shell.running.lock().unwrap() = None;
+        *shell.running.lock() = None;
         if let Some(old) = host.take() {
             old.stop(Duration::from_secs(2)).await;
         }
@@ -1681,7 +1682,7 @@ async fn new_table(app: AppHandle, shell: State<'_, Shell>) -> Result<bool, Stri
         return Ok(false);
     }
     // The wizard is a page of the host, and a host needs a site. Whatever is open will do.
-    if shell.running.lock().unwrap().is_none() {
+    if shell.running.lock().is_none() {
         let sample = shell.resources.join("sites").join("sample");
         launch(&app, sample, shell.settings().lan).await.map_err(text)?;
     }
@@ -1762,7 +1763,7 @@ fn presenting_state(app: AppHandle, shell: State<'_, Shell>) -> Result<Presentin
     });
     Ok(PresentingState {
         version: app.package_info().version.to_string(),
-        site: shell.running.lock().unwrap().clone(),
+        site: shell.running.lock().clone(),
         presenting: is_presenting(&app),
         windows: windows.collect(),
         displays,
@@ -1796,7 +1797,7 @@ async fn save_settings(
     if login_changed {
         start_with_computer(&app, autostart)?;
     }
-    let running = shell.running.lock().unwrap().clone();
+    let running = shell.running.lock().clone();
     if let Some(running) = running.filter(|r| r.lan != lan) {
         let presenting = is_presenting(&app);
         ensure_running(&app, &running.site, lan).await.map_err(text)?;
@@ -2076,7 +2077,7 @@ fn perform_file_action(app: &AppHandle, action: &str) {
             "export" => export_table(&app).await,
             "share" => share_table(&app).await,
             "reveal" => {
-                let site = app.state::<Shell>().running.lock().unwrap().as_ref().map(|r| r.site.join("site.json"));
+                let site = app.state::<Shell>().running.lock().as_ref().map(|r| r.site.join("site.json"));
                 match site {
                     Some(site) => app.opener().reveal_item_in_dir(site).map_err(anyhow::Error::from),
                     None => Ok(()),
@@ -2113,7 +2114,7 @@ fn close_focused(app: &AppHandle) -> anyhow::Result<()> {
 /// stays as it was.
 async fn save_as(app: &AppHandle) -> anyhow::Result<()> {
     let shell = app.state::<Shell>();
-    let Some(running) = shell.running.lock().unwrap().clone() else { return Ok(()) };
+    let Some(running) = shell.running.lock().clone() else { return Ok(()) };
     let folder = file_menu::default_folder(&running.site, &shell.sites_folders);
     let (send, receive) = tokio::sync::oneshot::channel();
     let mut dialog = app.dialog().file().set_title("Save table as").set_directory(&folder).set_file_name(format!("{} copy", running.name));
@@ -2147,7 +2148,7 @@ async fn save_as(app: &AppHandle) -> anyhow::Result<()> {
 /// The editor says where it went and which sources the other computer has to set up.
 async fn export_table(app: &AppHandle) -> anyhow::Result<()> {
     let shell = app.state::<Shell>();
-    let Some(running) = shell.running.lock().unwrap().clone() else { return Ok(()) };
+    let Some(running) = shell.running.lock().clone() else { return Ok(()) };
     let state = shell.host.lock().await.as_ref().map(|h| h.state.clone()).context("the table is not running")?;
     let (send, receive) = tokio::sync::oneshot::channel();
     let mut dialog = app
@@ -2196,7 +2197,7 @@ async fn export_table(app: &AppHandle) -> anyhow::Result<()> {
 /// opens, to drag it into. Big files are the mail app's call: Outlook offers a OneDrive link.
 async fn share_table(app: &AppHandle) -> anyhow::Result<()> {
     let shell = app.state::<Shell>();
-    let Some(running) = shell.running.lock().unwrap().clone() else { return Ok(()) };
+    let Some(running) = shell.running.lock().clone() else { return Ok(()) };
     let state = shell.host.lock().await.as_ref().map(|h| h.state.clone()).context("the table is not running")?;
     let folder = app.path().document_dir().context("this computer has no Documents folder")?.join("MR Studio").join("Shared");
     std::fs::create_dir_all(&folder).with_context(|| format!("could not make {}", folder.display()))?;
@@ -2260,7 +2261,7 @@ async fn mail_with(
 /// is made from the table's folder as it is now. An error goes back to the dialog.
 #[tauri::command]
 async fn starter_pack(app: AppHandle, options: mrs_site::starter::Options, how: String) -> Result<(), String> {
-    let running = app.state::<Shell>().running.lock().unwrap().clone().ok_or("No table is open.")?;
+    let running = app.state::<Shell>().running.lock().clone().ok_or("No table is open.")?;
     let file_name = format!("{} starter pack.zip", mrs_site::package::folder_name(&running.name));
     let target = if how == "email" {
         let folder = app.path().document_dir().map_err(|e| e.to_string())?.join("MR Studio").join("Shared");
@@ -2361,7 +2362,7 @@ struct Preset {
 #[tauri::command]
 async fn colour_state(app: AppHandle, shell: State<'_, Shell>) -> Result<ColourState, String> {
     let config = ColourConfig::read(&shell.colour_path());
-    let surfaces = shell.surfaces.lock().unwrap().clone();
+    let surfaces = shell.surfaces.lock().clone();
     let connected = list_displays(&app).map_err(text)?;
     let displays = connected.iter().map(|d| DisplayColour {
         display: d.index,
@@ -2395,7 +2396,7 @@ async fn colour_state(app: AppHandle, shell: State<'_, Shell>) -> Result<ColourS
 
 /// Runs a script in every surface window on a display.
 fn on_display(app: &AppHandle, display: usize, script: &str) {
-    let surfaces = app.state::<Shell>().surfaces.lock().unwrap().clone();
+    let surfaces = app.state::<Shell>().surfaces.lock().clone();
     for (label, _) in surfaces.iter().filter(|(_, index)| *index == display) {
         if let Some(window) = app.get_webview_window(label) {
             report(window.eval(script).map_err(Into::into));
@@ -2450,7 +2451,7 @@ fn test_card(app: AppHandle, display: usize, on: bool) {
 /// Sets how strongly a layer of the running session is drawn, and remembers it for the site.
 #[tauri::command]
 async fn set_layer_intensity(shell: State<'_, Shell>, layer: String, intensity: f64) -> Result<(), String> {
-    let site = shell.running.lock().unwrap().as_ref().map(|r| r.site_id.clone()).ok_or("Start a session first.")?;
+    let site = shell.running.lock().as_ref().map(|r| r.site_id.clone()).ok_or("Start a session first.")?;
     let host = shell.host.lock().await;
     let hub = &host.as_ref().ok_or("Start a session first.")?.state.hub;
     // The shell acts with the TV's rights; the host clamps and broadcasts.
@@ -2483,14 +2484,14 @@ struct CalibrationState {
 
 /// The surface window that shows the table, if any.
 fn table_window(app: &AppHandle) -> Option<WebviewWindow> {
-    let surfaces = app.state::<Shell>().surfaces.lock().unwrap().clone();
+    let surfaces = app.state::<Shell>().surfaces.lock().clone();
     let label = |role: &str| surfaces.iter().map(|(label, _)| label).find(|label| label.ends_with(role)).cloned();
     app.get_webview_window(&label("-table").or_else(|| label("-dev"))?)
 }
 
 #[tauri::command]
 async fn calibration_state(app: AppHandle, shell: State<'_, Shell>) -> Result<CalibrationState, String> {
-    let site = shell.running.lock().unwrap().as_ref().map(|r| r.name.clone());
+    let site = shell.running.lock().as_ref().map(|r| r.name.clone());
     let projector = match shell.host.lock().await.as_ref() {
         Some(host) => host.state.calibration.projector(),
         None => serde_json::Value::Null,
@@ -2554,7 +2555,7 @@ async fn look_for_updates(app: &AppHandle) {
         }
         Err(e) => tracing::warn!("update check failed: {e}"),
     }
-    *app.state::<Shell>().updates.lock().unwrap() = Some(result);
+    *app.state::<Shell>().updates.lock() = Some(result);
     let _ = app.emit_to(LAUNCHER, "updates", ());
     // Home shows what is new too.
     let _ = app.emit_to(HOME, "updates", ());
@@ -2562,7 +2563,7 @@ async fn look_for_updates(app: &AppHandle) {
 
 #[tauri::command]
 fn update_state(app: AppHandle, shell: State<'_, Shell>) -> UpdateState {
-    let (available, error) = match shell.updates.lock().unwrap().clone() {
+    let (available, error) = match shell.updates.lock().clone() {
         Some(Ok(found)) => (Some(found), None),
         Some(Err(e)) => (None, Some(e)),
         None => (None, None),
@@ -2608,7 +2609,7 @@ fn set_update_check(shell: State<'_, Shell>, automatic: bool) -> Result<(), Stri
 async fn install_update(app: AppHandle) -> Result<(), String> {
     let Some(key) = updates::public_key() else {
         // No signing key: the browser downloads this computer's installer of the newest version.
-        let latest = app.state::<Shell>().updates.lock().unwrap().clone().and_then(Result::ok).and_then(|a| a.latest);
+        let latest = app.state::<Shell>().updates.lock().clone().and_then(Result::ok).and_then(|a| a.latest);
         let url = latest.as_deref().map_or_else(|| updates::DOWNLOAD_PAGE.to_string(), updates::download_url);
         return app.opener().open_url(url, None::<&str>).map_err(text);
     };

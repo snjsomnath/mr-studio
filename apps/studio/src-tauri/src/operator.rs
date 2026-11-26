@@ -4,9 +4,9 @@
 //!
 //! It sits beside the app's technical log, as `operator-YYYY-MM-DD.log`, in local time.
 
+use parking_lot::Mutex;
 use std::io::Write;
 use std::path::PathBuf;
-use std::sync::Mutex;
 
 /// Days of logs kept; older files are removed when a new day starts.
 const KEEP_DAYS: usize = 90;
@@ -41,7 +41,7 @@ impl OperatorLog {
         if let Err(e) = written {
             tracing::warn!("the operator log could not be written: {e}");
         }
-        let mut last = self.day.lock().unwrap();
+        let mut last = self.day.lock();
         if *last != day {
             *last = day;
             prune(dir);

@@ -10,9 +10,9 @@
 //! host only does that for addresses on the connection's own server, so a key cannot be
 //! sent anywhere else, and changing a connection's server forgets its key.
 
+use parking_lot::{Mutex, RwLock};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, RwLock};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
@@ -315,14 +315,14 @@ pub struct MemoryVault(Mutex<HashMap<String, String>>);
 
 impl Vault for MemoryVault {
     fn get(&self, id: &str) -> Result<Option<String>, String> {
-        Ok(self.0.lock().unwrap().get(id).cloned())
+        Ok(self.0.lock().get(id).cloned())
     }
     fn set(&self, id: &str, secret: &str) -> Result<(), String> {
-        self.0.lock().unwrap().insert(id.into(), secret.into());
+        self.0.lock().insert(id.into(), secret.into());
         Ok(())
     }
     fn delete(&self, id: &str) -> Result<(), String> {
-        self.0.lock().unwrap().remove(id);
+        self.0.lock().remove(id);
         Ok(())
     }
 }
@@ -360,7 +360,7 @@ pub struct Sources {
 
 impl std::fmt::Debug for Sources {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Sources").field("path", &self.path).field("count", &self.list.read().unwrap().len()).finish()
+        f.debug_struct("Sources").field("path", &self.path).field("count", &self.list.read().len()).finish()
     }
 }
 
@@ -405,27 +405,27 @@ impl Sources {
     }
 
     pub fn connection(&self, id: &str) -> Option<Connection> {
-        self.list.read().unwrap().iter().find(|c| c.id == id).cloned()
+        self.list.read().iter().find(|c| c.id == id).cloned()
     }
 
     /// The key, read from the keychain once per run. The read runs off the async workers:
     /// a keychain prompt then holds up only the request that needs the key.
     async fn secret(&self, id: &str) -> Result<Option<String>, String> {
-        let known = self.secrets.lock().unwrap().get(id).cloned();
+        let known = self.secrets.lock().get(id).cloned();
         if let Some(known) = known {
             return Ok(known);
         }
         let vault = self.vault.clone();
         let owned = id.to_string();
         let secret = tokio::task::spawn_blocking(move || vault.get(&owned)).await.map_err(|e| e.to_string())??.filter(|s| !s.is_empty());
-        self.secrets.lock().unwrap().insert(id.into(), secret.clone());
+        self.secrets.lock().insert(id.into(), secret.clone());
         Ok(secret)
     }
 
     /// Every connection, without its secret.
     pub fn list(&self) -> Vec<View> {
-        let list = self.list.read().unwrap().clone();
-        let status = self.status.lock().unwrap().clone();
+        let list = self.list.read().clone();
+        let status = self.status.lock().clone();
         list.into_iter()
             .map(|connection| {
                 let ready = connection.auth == Auth::None || connection.keyed();
@@ -441,7 +441,7 @@ impl Sources {
 
     /// Adds or changes a connection, and stores or forgets its key.
     pub fn save(&self, change: Change) -> Result<View, String> {
-        let mut list = self.list.write().unwrap();
+        let mut list = self.list.write();
         let at = change.id.as_deref().and_then(|id| list.iter().position(|c| c.id == id));
         let mut connection = match at {
             Some(i) => list[i].clone(),
@@ -503,15 +503,15 @@ impl Sources {
                 return Err("that key is longer than any service uses".into());
             }
             self.vault.set(&connection.id, secret)?;
-            self.secrets.lock().unwrap().insert(connection.id.clone(), Some(secret.clone()));
+            self.secrets.lock().insert(connection.id.clone(), Some(secret.clone()));
             connection.has_secret = Some(true);
         } else if change.forget_secret || moved {
             self.vault.delete(&connection.id)?;
-            self.secrets.lock().unwrap().insert(connection.id.clone(), None);
+            self.secrets.lock().insert(connection.id.clone(), None);
             connection.has_secret = Some(false);
         }
         if new_secret.is_some() || change.forget_secret || moved || before != connection {
-            self.status.lock().unwrap().remove(&connection.id);
+            self.status.lock().remove(&connection.id);
         }
         self.tokens.try_lock().map(|mut t| t.remove(&connection.id)).ok();
 
@@ -526,15 +526,15 @@ impl Sources {
 
     /// Removes a connection and its key.
     pub fn remove(&self, id: &str) -> Result<(), String> {
-        let mut list = self.list.write().unwrap();
+        let mut list = self.list.write();
         let before = list.len();
         list.retain(|c| c.id != id);
         if list.len() == before {
             return Err(format!("there is no source called '{id}'"));
         }
         self.vault.delete(id)?;
-        self.secrets.lock().unwrap().remove(id);
-        self.status.lock().unwrap().remove(id);
+        self.secrets.lock().remove(id);
+        self.status.lock().remove(id);
         self.write(&list)
     }
 
@@ -669,7 +669,7 @@ impl Sources {
         };
         let at = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs());
         let status = Status { ok, message, at };
-        self.status.lock().unwrap().insert(connection.id.clone(), status.clone());
+        self.status.lock().insert(connection.id.clone(), status.clone());
         Ok(status)
     }
 

@@ -21,9 +21,10 @@ mod whatif;
 mod wms;
 mod ws;
 
+use parking_lot::RwLock;
 use std::net::{IpAddr, SocketAddr, UdpSocket};
 use std::path::PathBuf;
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 
 use anyhow::Context as _;
 use axum::body::Bytes;
@@ -84,10 +85,10 @@ pub struct AppState {
     imports: tokio::sync::Mutex<()>,
     /// Recent OpenStreetMap answers, one per layer and place, so Import brings in what the
     /// preview (or a fetch of everything, #310) got without asking again.
-    osm_cache: std::sync::Mutex<std::collections::HashMap<String, OsmFetch>>,
+    osm_cache: parking_lot::Mutex<std::collections::HashMap<String, OsmFetch>>,
     /// What an OpenStreetMap fetch is doing now, in words ("Asking overpass-api.de, part 2 of 4"), for
     /// `GET /api/data/osm/status` (#424). Empty when nothing is being asked.
-    osm_status: std::sync::Mutex<String>,
+    osm_status: parking_lot::Mutex<String>,
     /// The join page's WebRTC bridge (#275): at most one surface carries phones at a time.
     bridge: bridge::BridgeSlot,
     /// The host's own router, for answering phones that come through a relay or the bridge.
@@ -95,7 +96,7 @@ pub struct AppState {
     /// The site's outside compute (#278), started with the host and stopped with it.
     pub services: services::Services,
     /// The latest picture each layer's table sent for its controller (`ctx.view`, #351), by layer instance.
-    views: std::sync::Mutex<std::collections::HashMap<String, LayerView>>,
+    views: parking_lot::Mutex<std::collections::HashMap<String, LayerView>>,
     /// The field walk's spots, photos and sounds from visitors' phones (#445).
     pub field: field::Field,
     /// Wrong join codes by address, so a code cannot be guessed by trying them all (#504).
@@ -255,7 +256,7 @@ impl AppState {
     }
 
     fn osm_cached(&self, key: &str) -> Option<Vec<u8>> {
-        let mut cache = self.osm_cache.lock().unwrap();
+        let mut cache = self.osm_cache.lock();
         cache.retain(|_, f| f.at.elapsed() < OSM_REUSE);
         cache.get(key).map(|f| f.bytes.clone())
     }
@@ -263,21 +264,21 @@ impl AppState {
     /// One layer's share of an Overpass answer as GeoJSON, kept for the import; empty is a refusal.
     fn osm_keep(&self, target: &Target, layer: OsmLayer, key: String, answer: &Value) -> Result<Vec<u8>, Report> {
         let bytes = data::osm_collection(target, layer, answer)?;
-        self.osm_cache.lock().unwrap().insert(key, OsmFetch { at: std::time::Instant::now(), bytes: bytes.clone() });
+        self.osm_cache.lock().insert(key, OsmFetch { at: std::time::Instant::now(), bytes: bytes.clone() });
         Ok(bytes)
     }
 
     /// Asks Overpass in tiles (`data::ask_overpass`), keeping what it is doing for the status endpoint.
     async fn ask_overpass(&self, query_for: &(dyn Fn([f64; 4]) -> String + Sync), bounds: [f64; 4]) -> Result<Value, String> {
-        let say = |words: String| *self.osm_status.lock().unwrap() = words;
+        let say = |words: String| *self.osm_status.lock() = words;
         let answer = data::ask_overpass(query_for, bounds, &say).await;
-        self.osm_status.lock().unwrap().clear();
+        self.osm_status.lock().clear();
         answer
     }
 
     /// What an OpenStreetMap fetch is doing now, or "" (#424).
     pub fn osm_status(&self) -> String {
-        self.osm_status.lock().unwrap().clone()
+        self.osm_status.lock().clone()
     }
 
     /// Fetches free elevation around the table as a GeoTIFF (`data::elevation_for`).
@@ -300,7 +301,7 @@ impl AppState {
             }
             let what = import_words(&target);
             let history = history.clone();
-            let mut history = history.lock().unwrap();
+            let mut history = history.lock();
             let ((site, report), change) = history
                 .write(By::Import, format!("Brought in {what}"), None, || import::apply(&site, prepared))
                 .map_err(|e| e.to_string())?;
@@ -324,7 +325,7 @@ impl AppState {
         .map_err(|e| e.to_string())?;
         let (scene, twin, info) = rebuilt.map_err(|e| format!("the data was saved, but the scene could not be rebuilt: {e}"))?;
         self.engine.load_scene(scene).await?;
-        *self.twin.write().unwrap() = twin;
+        *self.twin.write() = twin;
         self.hub.site_changed(info);
         Ok(report)
     }
@@ -340,8 +341,7 @@ impl AppState {
         let rebuilt = tokio::task::spawn_blocking(move || -> Result<_, String> {
             let before = Site::load(&dir).map_err(|e| e.to_string())?;
             let summary = place_words(&before, &place);
-            let (site, change) =
-                history.lock().unwrap().write(By::Editor, summary, None, || before.place(&place)).map_err(|e| e.to_string())?;
+            let (site, change) = history.lock().write(By::Editor, summary, None, || before.place(&place)).map_err(|e| e.to_string())?;
             if let Some(change) = &change {
                 tracing::info!("history: {}", change.revision.summary);
             }
@@ -357,7 +357,7 @@ impl AppState {
             self.hub.history_changed(&change.revision, false);
         }
         self.engine.relocate(scene, origin).await?;
-        *self.twin.write().unwrap() = twin;
+        *self.twin.write() = twin;
         self.hub.site_changed(info.clone());
         Ok(info)
     }
@@ -412,7 +412,7 @@ impl AppState {
         if method == "history.get" {
             // A kept version and the one before it (#395): the editor shows what the change did.
             let rev = p["revision"].as_u64().ok_or("missing revision")?;
-            let (before, after) = self.hub.history().lock().unwrap().texts(rev).ok_or("that revision is no longer kept")?;
+            let (before, after) = self.hub.history().lock().texts(rev).ok_or("that revision is no longer kept")?;
             let parse = |t: &str| serde_json::from_str::<Value>(t).unwrap_or(Value::Null);
             return Ok(json!({ "revision": rev, "before": before.as_deref().map_or(Value::Null, parse), "after": parse(&after) }));
         }
@@ -427,7 +427,7 @@ impl AppState {
         let history = self.hub.history();
         let method_owned = method.to_string();
         let (change, from) = tokio::task::spawn_blocking(move || -> Result<(Change, u64), String> {
-            let mut history = history.lock().unwrap();
+            let mut history = history.lock();
             let from = history.head().rev;
             let change = match method_owned.as_str() {
                 "history.undo" => history.undo(),
@@ -442,7 +442,7 @@ impl AppState {
         if let Err(e) = self.apply_change(&change).await {
             // That version does not load as the table now is: leave site.json as it was.
             let history = self.hub.history();
-            let _ = tokio::task::spawn_blocking(move || history.lock().unwrap().step_back(from)).await;
+            let _ = tokio::task::spawn_blocking(move || history.lock().step_back(from)).await;
             return Err(format!("that version of the table could not be opened: {e}"));
         }
         self.hub.history_changed(&change.revision, method != "history.restore");
@@ -455,7 +455,7 @@ impl AppState {
     pub async fn check_outside(&self) {
         let Ok(_one) = self.imports.try_lock() else { return };
         let history = self.hub.history();
-        let Ok(Some(change)) = tokio::task::spawn_blocking(move || history.lock().unwrap().check_outside()).await else { return };
+        let Ok(Some(change)) = tokio::task::spawn_blocking(move || history.lock().check_outside()).await else { return };
         tracing::info!("history: {}", change.revision.summary);
         self.hub.history_changed(&change.revision, false);
         if let Err(e) = self.apply_change(&change).await {
@@ -485,7 +485,7 @@ impl AppState {
         self.hub.reload(&site, change).map_err(|e| format!("{e:#}"))?;
         if let Some((scene, twin)) = rebuilt {
             self.engine.relocate(scene, site.manifest.origin).await?;
-            *self.twin.write().unwrap() = twin;
+            *self.twin.write() = twin;
             self.hub.site_changed(site.info());
         }
         Ok(())
@@ -1141,7 +1141,7 @@ async fn diagnostics_page(State(state): State<Arc<AppState>>, Query(query): Quer
 
 /// The digital twin mesh. Layout in `docs/contracts/model.md`.
 async fn model(State(state): State<Arc<AppState>>) -> impl IntoResponse {
-    ([(header::CONTENT_TYPE, "application/octet-stream"), (header::CACHE_CONTROL, "no-cache")], state.twin.read().unwrap().clone())
+    ([(header::CONTENT_TYPE, "application/octet-stream"), (header::CACHE_CONTROL, "no-cache")], state.twin.read().clone())
 }
 
 #[derive(serde::Deserialize)]
@@ -1288,7 +1288,7 @@ async fn save_layer_view(
     if body.len() > MAX_VIEW_BYTES || id.len() > 128 {
         return (StatusCode::PAYLOAD_TOO_LARGE, Json(json!({ "error": "the picture is too large" }))).into_response();
     }
-    let mut views = state.views.lock().expect("views lock");
+    let mut views = state.views.lock();
     // A few layers at most; a table that keeps sending under new names cannot grow this without end.
     if !views.contains_key(&id) && views.len() >= 32 {
         views.clear();
@@ -1312,7 +1312,7 @@ async fn layer_view(
     axum::extract::Path(id): axum::extract::Path<String>,
     Query(query): Query<ViewQuery>,
 ) -> axum::response::Response {
-    let views = state.views.lock().expect("views lock");
+    let views = state.views.lock();
     match views.get(&id) {
         Some(view) if query.after.is_none_or(|after| view.revision > after) => (
             [

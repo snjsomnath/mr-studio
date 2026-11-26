@@ -5,8 +5,9 @@
 //! `layers` list of `site.json`, each layer followed by its items, and the `scene.*`
 //! requests edit both together.
 
+use parking_lot::{Mutex, RwLock};
 use std::hash::{BuildHasher, Hasher};
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use mrs_site::history::{By, Change, History, Revision};
@@ -618,7 +619,12 @@ pub struct Hub {
     history: Arc<Mutex<History>>,
     /// The revision the request being handled wrote, announced when it is done.
     recorded: Mutex<Vec<Revision>>,
+    /// Set by `inject_fault`: the next request fails inside the host.
+    fault: std::sync::atomic::AtomicBool,
 }
+
+/// How the answer to a request that failed inside the host starts (#507); the operator log hears of it.
+pub const FAULT: &str = "Something went wrong inside MR Studio:";
 
 /// Who sent a request that changes site.json, for the history.
 #[derive(Debug, Clone, Copy)]
@@ -740,10 +746,11 @@ impl Hub {
             events,
             history: Arc::new(Mutex::new(History::open(&site.dir))),
             recorded: Mutex::new(Vec::new()),
+            fault: Default::default(),
         };
         // A sequence that starts on shows its first step.
         {
-            let mut inner = hub.inner.lock().unwrap();
+            let mut inner = hub.inner.lock();
             for at in 0..inner.scene.len() {
                 if inner.scene[at].state.active && hub.is_sequence(&inner.scene[at]) {
                     hub.switch(&mut inner.scene, at, true);
@@ -833,12 +840,12 @@ impl Hub {
     /// Runs a write to site.json and records it in the history, as one step.
     fn saving(&self, who: Who, summary: impl Into<String>, write: impl FnOnce() -> Result<(), SiteError>) -> Result<(), String> {
         let change = {
-            let mut history = self.history.lock().unwrap();
+            let mut history = self.history.lock();
             let ((), change) = history.write(who.by, summary, who.surface, write).map_err(|e| format!("could not save site.json: {e}"))?;
             change
         };
         if let Some(change) = change {
-            self.recorded.lock().unwrap().push(change.revision);
+            self.recorded.lock().push(change.revision);
         }
         Ok(())
     }
@@ -847,7 +854,7 @@ impl Hub {
     /// An editor shows a notice when the change came from somewhere else.
     pub fn history_changed(&self, revision: &Revision, stepped: bool) {
         let (can_undo, can_redo, head) = {
-            let history = self.history.lock().unwrap();
+            let history = self.history.lock();
             (history.can_undo(), history.can_redo(), history.head().clone())
         };
         self.emit(
@@ -858,7 +865,7 @@ impl Hub {
 
     /// `history.list`: the kept revisions, newest first, and where undo and redo go.
     pub fn history_list(&self) -> Value {
-        let history = self.history.lock().unwrap();
+        let history = self.history.lock();
         let mut revisions = history.list();
         revisions.reverse();
         json!({
@@ -876,7 +883,7 @@ impl Hub {
     pub fn reload(&self, site: &Site, change: &Change) -> anyhow::Result<()> {
         let keys = &change.keys;
         let has = |k: &str| keys.iter().any(|x| x == k || x == "*");
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.inner.lock();
         let old_catalog = self.catalog();
         let catalog = if has("custom") {
             let mut next: Vec<LayerDef> = old_catalog.iter().filter(|d| !d.source.starts_with(mrs_site::CUSTOM_PREFIX)).cloned().collect();
@@ -916,7 +923,7 @@ impl Hub {
         }
         // The catalogue first, so a surface knows a layer before the scene uses it.
         if !Arc::ptr_eq(&catalog, &old_catalog) {
-            *self.catalog.write().unwrap() = catalog.clone();
+            *self.catalog.write() = catalog.clone();
             for old in old_catalog.iter().filter(|d| d.source.starts_with(mrs_site::CUSTOM_PREFIX)) {
                 if !catalog.iter().any(|d| d.source == old.source) {
                     self.emit("catalog.removed", json!({ "id": old.id }));
@@ -929,7 +936,7 @@ impl Hub {
             }
         }
         let info = site.info();
-        *self.info.write().unwrap() = info.clone();
+        *self.info.write() = info.clone();
         if has("palette") {
             self.emit("palette.changed", json!({ "palette": info.palette }));
         }
@@ -982,7 +989,7 @@ impl Hub {
     /// (`tv.phone_switch`, default true), the layer does (`phone_switch` in layer.json), and no
     /// slideshow or guided tour is running.
     fn phone_may_switch(&self, scene: &[Instance], index: usize) -> Result<(), String> {
-        let tv_allows = self.info.read().unwrap().tv.as_ref().is_none_or(|tv| tv["phone_switch"].as_bool() != Some(false));
+        let tv_allows = self.info.read().tv.as_ref().is_none_or(|tv| tv["phone_switch"].as_bool() != Some(false));
         if !tv_allows {
             return Err("this table does not let phones turn layers on or off".into());
         }
@@ -997,7 +1004,7 @@ impl Hub {
 
     /// The layer catalogue as it is now.
     fn catalog(&self) -> Arc<Vec<LayerDef>> {
-        self.catalog.read().unwrap().clone()
+        self.catalog.read().clone()
     }
 
     /// Where the guide's phone joins (#98): the code, and the address when phones can reach the host.
@@ -1009,14 +1016,14 @@ impl Hub {
 
     pub fn session(&self) -> SessionInfo {
         let mut session = self.session.clone();
-        session.language = self.language.read().unwrap().clone();
-        session.sound = *self.sound.read().unwrap();
-        session.ribbon = self.ribbon.read().unwrap().clone();
-        session.performance = *self.performance.read().unwrap();
-        session.phones_paused = *self.phones_paused.read().unwrap();
-        session.tables = self.drawing.lock().unwrap().len();
-        let relay = self.relay_join.read().unwrap().clone();
-        if let Some(base) = relay.or_else(|| self.bridge_join.read().unwrap().clone()) {
+        session.language = self.language.read().clone();
+        session.sound = *self.sound.read();
+        session.ribbon = self.ribbon.read().clone();
+        session.performance = *self.performance.read();
+        session.phones_paused = *self.phones_paused.read();
+        session.tables = self.drawing.lock().len();
+        let relay = self.relay_join.read().clone();
+        if let Some(base) = relay.or_else(|| self.bridge_join.read().clone()) {
             session.join_url = Some(format!("{}/phone?c={}", base.trim_end_matches('/'), session.code));
         }
         session
@@ -1030,19 +1037,19 @@ impl Hub {
     /// Phones join through the join page at `base` (`https://…/?t=<peer>#`), or not with None.
     /// A relay, when linked, still wins. Every surface gets `session.changed`.
     pub fn set_bridge(&self, base: Option<String>) {
-        *self.bridge_join.write().unwrap() = base;
+        *self.bridge_join.write() = base;
         self.emit("session.changed", json!({ "session": self.session() }));
     }
 
     /// Phones join through the relay at `base` (`https://relay.example/r/<room>`), or again at
     /// the local address with None. Every surface gets `session.changed` and redraws the QR code.
     pub fn set_relay(&self, base: Option<String>) {
-        *self.relay_join.write().unwrap() = base;
+        *self.relay_join.write() = base;
         self.emit("session.changed", json!({ "session": self.session() }));
     }
 
     pub fn site(&self) -> SiteInfo {
-        self.info.read().unwrap().clone()
+        self.info.read().clone()
     }
 
     /// Phones connected now, for the operator window (#394).
@@ -1052,7 +1059,7 @@ impl Hub {
 
     /// Every layer instance with whether it is on and how it is doing (#259), for diagnostics.
     pub fn layer_health(&self) -> Vec<Value> {
-        let inner = self.inner.lock().unwrap();
+        let inner = self.inner.lock();
         inner
             .scene
             .iter()
@@ -1062,7 +1069,7 @@ impl Hub {
 
     /// Takes the site as it is after its data changed, and tells every surface.
     pub fn site_changed(&self, info: SiteInfo) {
-        *self.info.write().unwrap() = info.clone();
+        *self.info.write() = info.clone();
         self.emit("site.changed", json!({ "site": info }));
     }
 
@@ -1081,7 +1088,7 @@ impl Hub {
     }
 
     fn join_at(&self, role: Role, code: Option<&str>, resume: Option<&str>, now: Instant) -> Result<Joined, String> {
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.inner.lock();
         if role == Role::Guide {
             // The guide's phone (#98) has its own code, which only the operator's screens are told.
             if code != Some(self.guide_code.as_str()) {
@@ -1095,7 +1102,7 @@ impl Hub {
             let surface = inner.next_surface;
             inner.next_surface += 1;
             if matches!(role, Role::Table | Role::Dev) {
-                self.drawing.lock().unwrap().push(surface);
+                self.drawing.lock().push(surface);
                 self.emit("session.changed", json!({ "session": self.session() }));
             }
             return Ok(Joined { surface, kick: None });
@@ -1163,9 +1170,9 @@ impl Hub {
     }
 
     fn leave_at(&self, surface: u64, now: Instant) -> Option<Hold> {
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.inner.lock();
         let drew = {
-            let mut drawing = self.drawing.lock().unwrap();
+            let mut drawing = self.drawing.lock();
             let before = drawing.len();
             drawing.retain(|s| *s != surface);
             drawing.len() != before
@@ -1187,7 +1194,7 @@ impl Hub {
 
     /// Releases a held seat, unless its phone came back in the meantime.
     pub fn expire(&self, hold: Hold) {
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.inner.lock();
         let before = inner.seats.len();
         inner.seats.retain(|s| !(s.participant.slot == hold.slot && s.epoch == hold.epoch && !s.participant.connected));
         if inner.seats.len() != before {
@@ -1205,7 +1212,7 @@ impl Hub {
         if let (Value::Object(entry), Value::Object(detail)) = (&mut entry, detail) {
             entry.extend(detail);
         }
-        let mut log = self.phone_log.lock().unwrap();
+        let mut log = self.phone_log.lock();
         // A dragged slider is one entry, its last value: the same phone setting the same controls again.
         if let Some(last) = log.back_mut() {
             let same = |e: &Value| {
@@ -1229,7 +1236,7 @@ impl Hub {
 
     /// Whether the operator let this phone go (#335), so its connection can say so. Asked once.
     pub fn was_released(&self, surface: u64) -> bool {
-        let mut released = self.released.lock().unwrap();
+        let mut released = self.released.lock();
         let before = released.len();
         released.retain(|s| *s != surface);
         released.len() != before
@@ -1247,7 +1254,7 @@ impl Hub {
 
     fn allow_at(&self, surface: u64, now: Instant) -> bool {
         let rate = self.options.phone_requests_per_second as f64;
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.inner.lock();
         let inner = &mut *inner;
         let (allowance, refilled) = match inner.seats.iter_mut().find(|s| s.participant.surface == surface) {
             Some(seat) => (&mut seat.allowance, &mut seat.refilled),
@@ -1267,14 +1274,14 @@ impl Hub {
 
     /// The `welcome` message for a surface. A phone's carries the token that resumes its seat.
     pub fn welcome(&self, surface: u64) -> Value {
-        let inner = self.inner.lock().unwrap();
+        let inner = self.inner.lock();
         let mut welcome = json!({
             "t": "welcome",
             "surface": surface,
             "state": {
                 "protocol": PROTOCOL,
                 "session": self.session(),
-                "site": &*self.info.read().unwrap(),
+                "site": &*self.info.read(),
                 "scene": inner.order(),
                 "layers": inner.layers(),
                 "participants": inner.participants(),
@@ -1294,18 +1301,35 @@ impl Hub {
 
     /// Handles a session request. Engine requests are handled by the connection.
     pub fn request(&self, role: Role, surface: u64, method: &str, p: &Value) -> Result<Value, String> {
-        let result = self.handle(role, surface, method, p);
+        // A request that fails inside the host (#507) costs that request only: the surface is
+        // told, the locks are free again (they do not poison), and the next request is handled.
+        let handled = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| self.handle(role, surface, method, p)));
+        let result = handled.unwrap_or_else(|panic| {
+            let why =
+                panic.downcast_ref::<&str>().map(|s| s.to_string()).or_else(|| panic.downcast_ref::<String>().cloned()).unwrap_or_default();
+            tracing::error!("the request '{method}' failed inside the host: {why}");
+            Err(format!("{FAULT} '{method}' could not be handled. The table carries on."))
+        });
         // A change to site.json is announced after what it did, so a surface already shows it.
-        let recorded = std::mem::take(&mut *self.recorded.lock().unwrap());
+        let recorded = std::mem::take(&mut *self.recorded.lock());
         for revision in recorded {
             self.history_changed(&revision, false);
         }
         result
     }
 
+    /// Makes the next request fail inside the host, with the hub's lock held, as a mistake in
+    /// its handling would. For tests and soak runs (#507), like the engine's `inject_fault`.
+    pub fn inject_fault(&self) {
+        self.fault.store(true, std::sync::atomic::Ordering::SeqCst);
+    }
+
     fn handle(&self, role: Role, surface: u64, method: &str, p: &Value) -> Result<Value, String> {
         // One lock for the whole request, so changes and their events keep one order.
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.inner.lock();
+        if self.fault.swap(false, std::sync::atomic::Ordering::SeqCst) {
+            panic!("a fault was injected");
+        }
         if method.starts_with("scene.") {
             if !role.may_compose() {
                 return Err("this surface cannot edit the scene".into());
@@ -1347,11 +1371,11 @@ impl Hub {
                 return Err("only the controller switches the table's language".into());
             }
             let language = p["language"].as_str().ok_or("say which language: en or sv")?;
-            let branding = self.info.read().unwrap().branding.clone();
+            let branding = self.info.read().branding.clone();
             if !offered(&branding).iter().any(|l| l == language) {
                 return Err(format!("this table does not offer '{language}'; turn it on in Table settings"));
             }
-            *self.language.write().unwrap() = language.to_string();
+            *self.language.write() = language.to_string();
             self.emit("session.changed", json!({ "session": self.session() }));
             return Ok(json!({ "language": language }));
         }
@@ -1360,7 +1384,7 @@ impl Hub {
                 return Err("only the controller turns the table's sound on or off".into());
             }
             let on = p["on"].as_bool().ok_or("say on: true or false")?;
-            *self.sound.write().unwrap() = on;
+            *self.sound.write() = on;
             self.emit("session.changed", json!({ "session": self.session() }));
             return Ok(json!({ "sound": on }));
         }
@@ -1369,7 +1393,7 @@ impl Hub {
                 return Err("only the operator shows or hides the frame meter".into());
             }
             let on = p["on"].as_bool().ok_or("say on: true or false")?;
-            *self.performance.write().unwrap() = on;
+            *self.performance.write() = on;
             self.emit("session.changed", json!({ "session": self.session() }));
             return Ok(json!({ "performance": on }));
         }
@@ -1380,7 +1404,7 @@ impl Hub {
             return Ok(match method {
                 "phones.pause" => {
                     let paused = p["paused"].as_bool().ok_or("say paused: true or false")?;
-                    *self.phones_paused.write().unwrap() = paused;
+                    *self.phones_paused.write() = paused;
                     self.emit("session.changed", json!({ "session": self.session() }));
                     json!({ "paused": paused })
                 }
@@ -1400,7 +1424,7 @@ impl Hub {
                     for surface in &gone {
                         self.note_phone(&inner.seats, *surface, "released", json!({}));
                     }
-                    self.released.lock().unwrap().extend(gone.iter().copied());
+                    self.released.lock().extend(gone.iter().copied());
                     for seat in inner.seats.iter().filter(|s| gone.contains(&s.participant.surface)) {
                         seat.kick.notify_one();
                     }
@@ -1408,7 +1432,7 @@ impl Hub {
                     self.emit("state.participants", json!({ "participants": inner.participants() }));
                     json!({ "released": gone.len() })
                 }
-                _ => json!({ "log": self.phone_log.lock().unwrap().iter().collect::<Vec<_>>() }),
+                _ => json!({ "log": self.phone_log.lock().iter().collect::<Vec<_>>() }),
             });
         }
         // Paused by the operator (#335), or watching while the table is full (#462), a phone can
@@ -1423,7 +1447,7 @@ impl Hub {
             return Err("watching: every seat at the table is taken".into());
         }
         if role == Role::Phone
-            && *self.phones_paused.read().unwrap()
+            && *self.phones_paused.read()
             && matches!(
                 method,
                 "layer.activate" | "layer.set" | "layer.action" | "tool.input" | "layer.entity" | "layer.select" | "layer.step"
@@ -1465,7 +1489,7 @@ impl Hub {
                 }
                 _ => return Err("say layer: an instance id, or null for Auto".into()),
             };
-            *self.ribbon.write().unwrap() = layer.clone();
+            *self.ribbon.write() = layer.clone();
             self.emit("session.changed", json!({ "session": self.session() }));
             return Ok(json!({ "ribbon": layer }));
         }
@@ -1795,7 +1819,7 @@ impl Hub {
     /// surface as `site.tv`, so a theme shows at once without a reload. `null` removes a key.
     fn set_tv(&self, p: &Value, who: Who) -> Result<Value, String> {
         let patch = p["tv"].as_object().ok_or("missing tv")?;
-        let mut tv = match self.info.read().unwrap().tv.clone() {
+        let mut tv = match self.info.read().tv.clone() {
             Some(Value::Object(tv)) => tv,
             _ => Map::new(),
         };
@@ -1827,7 +1851,7 @@ impl Hub {
         let tv = if tv.is_empty() { Value::Null } else { Value::Object(tv) };
         let what = patch.keys().map(|k| tv_words(k)).collect::<Vec<_>>().join(", ");
         self.saving(who, format!("Changed the controller's {what}"), || self.site.save_tv(tv.clone()))?;
-        self.info.write().unwrap().tv = if tv.is_null() { None } else { Some(tv.clone()) };
+        self.info.write().tv = if tv.is_null() { None } else { Some(tv.clone()) };
         self.emit("site.tv", json!({ "tv": tv }));
         Ok(json!({ "tv": tv }))
     }
@@ -1837,7 +1861,7 @@ impl Hub {
     /// re-bakes). A field left out stays; `null` clears an optional one. Saved to site.json and
     /// sent to every surface as `site.settings { name, timezone, branding }`.
     fn set_table(&self, p: &Value, who: Who) -> Result<Value, String> {
-        let current = self.info.read().unwrap().clone();
+        let current = self.info.read().clone();
         let mut name = current.name.clone();
         let mut timezone = current.timezone.clone();
         let mut branding = current.branding.clone();
@@ -1999,20 +2023,20 @@ impl Hub {
             // The table draws its ribbons from the site: every surface takes the new one.
             // `table_only` lets the editor take it in place instead of starting again.
             let info = {
-                let mut info = self.info.write().unwrap();
+                let mut info = self.info.write();
                 info.table = table;
                 info.clone()
             };
             self.emit("site.changed", json!({ "site": info, "table_only": true }));
         }
         let language = {
-            let mut info = self.info.write().unwrap();
+            let mut info = self.info.write();
             info.name = name;
             info.timezone = timezone;
             info.branding = branding;
             // A language no longer offered gives way to the first one.
             let offered = offered(&info.branding);
-            let mut language = self.language.write().unwrap();
+            let mut language = self.language.write();
             if !offered.contains(&language) {
                 *language = offered[0].clone();
                 true
@@ -2030,7 +2054,7 @@ impl Hub {
 
     /// The table settings `site.settings` carries.
     fn settings(&self) -> Value {
-        let info = self.info.read().unwrap();
+        let info = self.info.read();
         json!({ "name": info.name, "timezone": info.timezone, "branding": info.branding })
     }
 
@@ -2039,7 +2063,7 @@ impl Hub {
     /// The Sources page shows this as the table's own short list.
     /// The outside sources the table's layers use, as `site.sources` answers: for an export (#85).
     pub fn sources_in_use(&self) -> Value {
-        let inner = self.inner.lock().unwrap();
+        let inner = self.inner.lock();
         self.sources_used(&inner)
     }
 
@@ -2068,7 +2092,7 @@ impl Hub {
     /// render (#134). Saved to site.json and sent to every surface as `site.display`, which apply it at once.
     fn set_display(&self, p: &Value, who: Who) -> Result<Value, String> {
         let patch = p["display"].as_object().ok_or("missing display")?;
-        let mut display = match self.info.read().unwrap().display.clone() {
+        let mut display = match self.info.read().display.clone() {
             Some(Value::Object(display)) => display,
             _ => Map::new(),
         };
@@ -2087,7 +2111,7 @@ impl Hub {
         }
         let display = if display.is_empty() { Value::Null } else { Value::Object(display) };
         self.saving(who, "Changed the display quality", || self.site.save_display(display.clone()))?;
-        self.info.write().unwrap().display = if display.is_null() { None } else { Some(display.clone()) };
+        self.info.write().display = if display.is_null() { None } else { Some(display.clone()) };
         self.emit("site.display", json!({ "display": display }));
         Ok(json!({ "display": display }))
     }
@@ -2117,7 +2141,7 @@ impl Hub {
                 if parent.is_some() && !p["button"].is_null() {
                     return Err("an item has no button: it comes on with its layer".into());
                 }
-                if let Some(name) = self.catalog()[def].missing_data(&self.info.read().unwrap().data).map_err(|e| e.to_string())? {
+                if let Some(name) = self.catalog()[def].missing_data(&self.info.read().data).map_err(|e| e.to_string())? {
                     return Err(format!("this site has no '{name}' dataset, which the layer needs"));
                 }
                 let base = &self.catalog()[def].id;
@@ -2366,7 +2390,7 @@ impl Hub {
                     }
                 };
                 let next = Arc::new(next);
-                *self.catalog.write().unwrap() = next.clone();
+                *self.catalog.write() = next.clone();
                 self.emit("catalog.changed", json!({ "manifest": manifest }));
                 // Instances of it keep the params its controls still accept.
                 for instance in inner.scene.iter_mut().filter(|i| i.def == at) {
@@ -2404,7 +2428,7 @@ impl Hub {
                         instance.def -= 1;
                     }
                 }
-                *self.catalog.write().unwrap() = Arc::new(next);
+                *self.catalog.write() = Arc::new(next);
                 self.emit("catalog.removed", json!({ "id": id }));
                 Ok(json!({}))
             }
@@ -2449,7 +2473,7 @@ impl Hub {
                     return Err(format!("this table has no dataset '{name}' of its own"));
                 }
                 let info = {
-                    let mut info = self.info.write().unwrap();
+                    let mut info = self.info.write();
                     info.data.remove(&name);
                     info.clone()
                 };
@@ -2462,7 +2486,7 @@ impl Hub {
                     value => Some(serde_json::from_value(value.clone()).map_err(|e| format!("palette: {e}"))?),
                 };
                 self.saving(who, "Changed the palette", || self.site.save_palette(palette.as_ref()))?;
-                self.info.write().unwrap().palette = palette.clone();
+                self.info.write().palette = palette.clone();
                 self.emit("palette.changed", json!({ "palette": palette }));
                 Ok(json!({}))
             }
@@ -2526,7 +2550,7 @@ impl Hub {
         if params.get("reveal").and_then(Value::as_bool) == Some(false) {
             return None;
         }
-        let info = self.info.read().unwrap();
+        let info = self.info.read();
         let named = params.get("dataset").and_then(Value::as_str).unwrap_or_default();
         let path = if named.is_empty() {
             info.data.values().find(|p| p.to_lowercase().ends_with(".svg"))?.clone()
@@ -2770,7 +2794,7 @@ impl Hub {
     }
 
     fn tick_at(&self, now: Instant) {
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.inner.lock();
         let scene = &mut inner.scene;
         let due: Vec<String> = scene
             .iter()
@@ -2817,18 +2841,18 @@ impl Hub {
 
     /// The layer package an instance of the scene runs, and its params.
     pub fn instance_params(&self, instance: &str) -> Option<(String, Map<String, Value>)> {
-        let inner = self.inner.lock().unwrap();
+        let inner = self.inner.lock();
         inner.scene.iter().find(|i| i.id == instance).map(|i| (i.state.layer.clone(), i.state.params.clone()))
     }
 
     /// Whether the scene has an instance of this layer package (the field walk takes spots only then, #445).
     pub fn has_package(&self, package: &str) -> bool {
-        self.inner.lock().unwrap().scene.iter().any(|i| i.state.layer == package)
+        self.inner.lock().scene.iter().any(|i| i.state.layer == package)
     }
 
     /// The phone in this surface as the pages show it: colour, animal, fun name parts and name.
     pub fn participant_of(&self, surface: u64) -> Option<Value> {
-        let inner = self.inner.lock().unwrap();
+        let inner = self.inner.lock();
         let seat = inner.seats.iter().find(|s| s.participant.surface == surface)?;
         let p = &seat.participant;
         Some(json!({ "colour": p.colour, "avatar": p.avatar, "mood": p.mood, "name": p.name }))
@@ -2838,7 +2862,7 @@ impl Hub {
     /// surfaces, so the layer's table and controller hear of a change made outside the layer:
     /// the field walk's spots (#445) bump `revision`.
     pub fn poke(&self, package: &str, key: &str, value: Value) {
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.inner.lock();
         for instance in inner.scene.iter_mut().filter(|i| i.state.layer == package) {
             instance.state.params.insert(key.to_string(), value.clone());
             self.emit_layer(&instance.id, &instance.state);
@@ -3539,7 +3563,7 @@ mod tests {
     }
 
     fn slots(hub: &Hub) -> Vec<(usize, bool)> {
-        hub.inner.lock().unwrap().participants().iter().map(|p| (p.slot, p.connected)).collect()
+        hub.inner.lock().participants().iter().map(|p| (p.slot, p.connected)).collect()
     }
 
     fn token(hub: &Hub, surface: u64) -> String {
@@ -3559,7 +3583,7 @@ mod tests {
         let hub = hub(SessionOptions::default());
         let code = hub.session().code.clone();
         let phones: Vec<u64> = (0..8).map(|_| hub.join(Role::Phone, Some(&code), None).unwrap().surface).collect();
-        let people = hub.inner.lock().unwrap().participants();
+        let people = hub.inner.lock().participants();
         let animals: std::collections::HashSet<_> = people.iter().map(|p| p.avatar).collect();
         assert_eq!(animals.len(), 8, "no two phones share an animal");
         assert!(people.iter().all(|p| MOODS.contains(&p.mood) && p.name.is_none()));
@@ -3571,7 +3595,7 @@ mod tests {
         assert!(set(json!({ "avatar": "dragon" })).is_err(), "only the animals offered");
         assert!(set(json!({ "name": "x".repeat(33) })).is_err(), "names are short");
         set(json!({ "name": "" })).unwrap();
-        assert_eq!(hub.inner.lock().unwrap().participants()[0].name, None, "an empty name brings the fun name back");
+        assert_eq!(hub.inner.lock().participants()[0].name, None, "an empty name brings the fun name back");
         assert!(hub.request(Role::Tv, 0, "participant.profile", &json!({ "name": "TV" })).is_err());
     }
 
@@ -3789,7 +3813,7 @@ mod tests {
     fn the_controller_picks_the_ribbon() {
         let hub = scratch_hub("ribbon");
         assert_eq!(hub.session().ribbon, None, "a session starts on Auto");
-        let some = hub.inner.lock().unwrap().scene.first().map(|i| i.id.clone()).expect("the scratch table has layers");
+        let some = hub.inner.lock().scene.first().map(|i| i.id.clone()).expect("the scratch table has layers");
         assert!(hub.request(Role::Phone, 0, "session.ribbon", &json!({ "layer": some })).is_err());
         assert!(hub.request(Role::Table, 0, "session.ribbon", &json!({ "layer": some })).is_err());
         assert!(hub.request(Role::Tv, 0, "session.ribbon", &json!({ "layer": "nowhere" })).is_err());
