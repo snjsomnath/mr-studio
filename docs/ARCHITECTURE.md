@@ -1,6 +1,6 @@
 # MR Studio 2.0 architecture
 
-Status: v0.1, the working contract for everyone building MR Studio 2.0.
+Status: the working contract for everyone building MR Studio 2.0. It describes what is built; what is planned and not built is said so in place.
 Change a contract by editing its file in the same pull request as the code that needs it.
 
 ## What MR Studio is
@@ -63,6 +63,7 @@ crates/
   mrs-site/       site package format, validation, scene baking
   mrs-host/       local host: HTTP, WebSocket session hub, engine bridge
   mrs-cli/        `mrstudio` binary: dev, validate, new-site, prepare, bench
+  mrs-relay/      the phone relay (#89): carries phones to a table that is not on their network
 apps/
   studio/         Tauri shell (embeds mrs-host)
 packages/
@@ -70,11 +71,13 @@ packages/
   dashboard/      @mrstudio/dashboard: the TV panel grid, widgets, density budget, themes
   runtime/        @mrstudio/runtime: surfaces (table, tv, phone, dev), scene composer, layer manager, generated controls
   layers/         core layer packages: basemap, ambient (cars, building-lights, street-life, street-glow, transit, trees), slideshow, sunlight, sketch, then wind, stormwater, isovist, ...
+  join/           the join page on GitHub Pages that a QR code opens
   mcp/            @mrstudio/mcp: MCP server that lets a team's LLM assemble sites and draft core requests
 sites/
   sample/         small synthetic site used by tests and layer dev mode
   chalmers/       flagship reference site
-services/         Python data and research services (site prep, ECOM, CoolPaths)
+samples/          a kit of sample data, and service-example: a small Python service a site can bring (site.md, Services)
+templates/        site: the source of the site template repository
 docs/contracts/   the interface contracts below
 ```
 
@@ -112,7 +115,7 @@ What a team installs:
 
 | Thing | Form | For |
 | --- | --- | --- |
-| MR Studio app | Signed installer for Windows and macOS, with built-in update | Running a table. Contains the engine, host, runtime and core layers |
+| MR Studio app | Installer for Windows and macOS from the GitHub release, not code signed (#502). The app checks for a newer version and shows its notes; installing it is by hand ([RELEASING.md](RELEASING.md)) | Running a table. Contains the engine, host, runtime and core layers |
 | `mrstudio` CLI | Ships inside the app; **Install command line tool** in the app puts it on the PATH (#370); also `cargo install` | Creating, validating and previewing sites and layers |
 | `@mrstudio/sdk` | Inside the app: the code is supplied when a layer loads, and its types are written into each layer package (`types/mrstudio-sdk.d.ts`, #508). Not on npm | Writing custom layers and TV widgets |
 | MR Studio MCP server | One file inside the app, also npm `@mrstudio/mcp` | Building a site by talking to an LLM ([MCP.md](MCP.md)) |
@@ -129,13 +132,12 @@ Versioning. The app, CLI and SDK share one semantic version. What that version p
 - Additions are not breaks, so `format` and `api` do not say which app a table needs. A table carries the version of the newest app that changed it (`mrstudio.version`) and a site layer the oldest app it runs in (`requires.app`). An older app that cannot read the table refuses it and says which version to install; one that can read it says so and offers to open it anyway (#509).
 - Kernel results are part of the promise: the parity and physics tests guard them, and a change in output beyond the stated tolerance is a breaking change.
 
-Channels: `stable` for tables in use, `beta` for trying the next release, and nightly builds from `main` for development.
-A venue can pin a version, so a table does not change the day before an exhibition.
+There is one release line: every merge to `main` whose checks pass becomes a numbered release ([RELEASING.md](RELEASING.md)). A venue keeps a version by not installing the next one; the app never updates itself. Channels (`stable`, `beta`) and pinning a version are not built.
 
 A custom layer that proves useful to more than one team moves into the core through a pull request, and from then on reaches everyone through an app update.
 When a site needs a layer, block, kernel or setting the core lacks, the team files a module request (an issue from `.github/ISSUE_TEMPLATE/module-request.yml`, which the MCP server drafts) rather than writing its own copy.
 
-Built so far: releases from a version tag, the in-app update check with release notes and breaking changes, in-place install from signed files, and the site format migration pipeline; see [RELEASING.md](RELEASING.md). Not built: channels and pinning, operating system code signing and npm publishing of the SDK (a layer package gets the SDK's types from the app instead, #508).
+Built so far: a release from every merge, the in-app update check with release notes and breaking changes, the site format migration pipeline, the site template repository (#86) and the MCP server on npm; see [RELEASING.md](RELEASING.md). In-place install from signed update files exists in code but is not set up, by decision (no updater key). Not built: channels and pinning, operating system code signing (#502) and npm publishing of the SDK (a layer package gets the SDK's types from the app instead, #508).
 
 ## Work packages
 

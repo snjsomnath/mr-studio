@@ -6,6 +6,8 @@
 // It checks that:
 // - every core layer (packages/layers/*/layer.json) is in README.md, docs/ROADMAP.md and the Help's feature list, and says what it is for (about)
 //   (docs/guide/features.md), by id or name, and has its own Help page (docs/guide/layers/<id>.md);
+// - every request the host answers (a `"x.y" =>` arm in crates/mrs-host/src) is in docs/contracts (#517);
+// - every folder docs/ARCHITECTURE.md lists under Workspace exists (#517);
 // - every engine kernel (crates/mrs-engine/src/kernels/*) is in docs/contracts/engine.md;
 // - every site.json setting (the SiteManifest, Table and Branding structs in mrs-site) is in docs/contracts/site.md;
 // - every site.json setting is on a feature card the MCP server suggests, or in NOT_SUGGESTED (packages/mcp/src/suggest.ts);
@@ -51,6 +53,35 @@ for (const dir of dirs('packages', 'layers')) {
   }
   if (!layer.description) problems.push(`packages/layers/${dir}/layer.json has no "description"; the MCP server and the editor show it.`);
 }
+
+// Host requests (#517): every request the host answers is in a contract. A request arm in the
+// host's code looks like `"layer.activate" => {` or `"field.remove" | "field.clear" => {`.
+const contracts = readdirSync(join(root, 'docs', 'contracts')).filter((f) => f.endsWith('.md')).map((f) => read('docs', 'contracts', f)).join('\n');
+const requests = new Set();
+for (const file of readdirSync(join(root, 'crates', 'mrs-host', 'src')).filter((f) => f.endsWith('.rs'))) {
+  // Tests come last in a file and ask with made-up names.
+  const code = read('crates', 'mrs-host', 'src', file).split('#[cfg(test)]')[0];
+  for (const arm of code.matchAll(/^\s*((?:"[a-z_]+\.[a-z_.]+"\s*\|?\s*)+)(?:if [^=]*)?=>/gm)) {
+    for (const name of arm[1].matchAll(/"([a-z_]+\.[a-z_.]+)"/g)) requests.add(name[1]);
+  }
+  // And the ones asked for by name: `if method == "history.list"`, `Some("scene.add") =>`.
+  for (const name of code.matchAll(/(?:method == |Some\()"([a-z_]+\.[a-z_.]+)"/g)) requests.add(name[1]);
+}
+for (const name of [...requests].sort()) {
+  if (!contracts.includes(`\`${name}\``) && !contracts.includes(`\`${name} `)) problems.push(`docs/contracts does not describe the host request "${name}" (answered in crates/mrs-host/src). Add it to session.md, or to the contract it belongs to.`);
+}
+
+// The workspace (#517): every folder docs/ARCHITECTURE.md lists is there.
+const workspace = read('docs', 'ARCHITECTURE.md').match(/## Workspace[\s\S]*?```\n([\s\S]*?)```/)?.[1] ?? '';
+let parent = '';
+for (const line of workspace.split('\n')) {
+  const entry = line.match(/^(\s*)([\w.-]+)\/(\s|$)/);
+  if (!entry) continue;
+  if (entry[1] === '') parent = entry[2];
+  const path = entry[1] === '' ? [entry[2]] : [parent, entry[2]];
+  if (!existsSync(join(root, ...path))) problems.push(`docs/ARCHITECTURE.md lists the folder ${path.join('/')}/ under Workspace, and there is none. Correct the list.`);
+}
+if (!workspace) problems.push('docs/ARCHITECTURE.md has no "## Workspace" section with the list of folders.');
 
 // Kernels
 const engine = read('docs', 'contracts', 'engine.md');
