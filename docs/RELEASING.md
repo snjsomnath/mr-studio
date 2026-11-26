@@ -3,11 +3,12 @@
 Every merge to `main` that carries a release note is a release. Nobody tags or writes notes by hand.
 
 1. A pull request adds a release note to `changes/` (below). CI fails without one.
-2. When it merges, the "Desktop app" workflow turns the notes waiting in `changes/` into the next version: it raises `version` under `[workspace.package]` in `Cargo.toml` (with `Cargo.lock` and the `package.json` files), adds the version's section to [CHANGELOG.md](../CHANGELOG.md), removes the notes, commits "Release vX.Y.Z" to `main` and tags it.
-3. The same run builds the Windows installer and the macOS dmg from that tag and publishes the GitHub release, with the notes and their screenshots, and the MCP server of the same version (`mrstudio-mcp.mjs`, and `mr-studio.mcpb` for Claude Desktop). Once switched on, it also publishes the server to npm and the MCP Registry (below).
-4. Installed apps see it the next time they start: Home shows **What's new**.
+2. When it merges, the "Desktop app" workflow first runs the same checks a pull request gets (`ci.yml`) on the merged commit. Only when they pass does it go on (#505). When they fail, nothing is released: the notes wait in `changes/` and go out with the next merge whose checks pass, and the run's summary says so under "Nothing was released". When several pull requests merge close together, only the newest commit is checked and released, with all their notes.
+3. It then turns the notes waiting in `changes/` into the next version: it raises `version` under `[workspace.package]` in `Cargo.toml` (with `Cargo.lock` and the `package.json` files), adds the version's section to [CHANGELOG.md](../CHANGELOG.md), removes the notes, commits "Release vX.Y.Z" to `main` and tags it.
+4. The same run builds the Windows installer and the macOS dmg from that tag and publishes the GitHub release, with the notes and their screenshots, and the MCP server of the same version (`mrstudio-mcp.mjs`, and `mr-studio.mcpb` for Claude Desktop). Once switched on, it also publishes the server to npm and the MCP Registry (below).
+5. Installed apps see it the next time they start: Home shows **What's new**.
 
-`node scripts/release.mjs pending` prints the version the waiting notes would make. `node scripts/release.mjs apply` does step 2 on your computer, if you ever need to.
+`node scripts/release.mjs pending` prints the version the waiting notes would make. `node scripts/release.mjs apply` does step 3 on your computer, if you ever need to.
 
 ## Writing a release note
 
