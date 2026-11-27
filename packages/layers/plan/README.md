@@ -23,7 +23,7 @@ The Lindholmen artwork's three parts are settings of this layer, so another artw
 
 ## Placing it by hand (#301)
 
-With the Masterplan open in the editor, its frame is drawn over the map: drag inside it to move the drawing, a corner to scale it about its middle, the round handle to turn it (it snaps square to the table within 1.5°, and Shift turns in steps of 15°). Letting go writes `corners`. **Fit to the table again** empties them. Without corners a drawing is fitted inside the table at its own proportions (at its `turn`), centred, never stretched (#559); a drawing within 2 % of the table's shape fills it.
+With the Masterplan open in the editor, its frame is drawn over the map: drag inside it to move the drawing, a corner to scale it about its middle, the round handle to turn it (it snaps square to the table within 1.5°, and Shift turns in steps of 15°). Letting go writes `corners`. **Fit to table** empties them. Without corners a drawing is fitted inside the table at its own proportions (at its `turn`), centred, never stretched (#559); a drawing within 2 % of the table's shape fills it.
 
 `turn` (`0`, `90`, `180`, `270`, clockwise) shows a drawing that was drawn on its side the right way round. `corners` are then those of the drawing as shown, so they stay simple to type; changing `turn` in the editor swaps the frame's sides about its middle, so the drawing keeps its shape.
 

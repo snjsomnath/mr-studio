@@ -396,7 +396,7 @@ export class Editor {
       },
     });
 
-    body.append(left, centre, this.inspector);
+    body.append(left, centre, this.inspectorResize(), this.inspector);
     const invoke = desktop();
     this.displayTab = new DisplayTab(invoke, connection, this.canvas, () => void invoke?.('open_settings', { page: 'setup' }));
     this.displayTab.setQuality(this.store.state.site.display?.quality ?? 'good');
@@ -1926,6 +1926,69 @@ export class Editor {
     };
     window.setInterval(() => void check(), 5000);
     return note;
+  }
+
+  /**
+   * The inspector's left edge drags it wider or narrower (#639), from 260 px to just under half
+   * the window. The width is remembered on this computer, never saved in the table; a double
+   * click puts it back.
+   */
+  private inspectorResize(): HTMLElement {
+    const key = 'mrs-inspector-width';
+    const grip = el('div', 'ed-inspector-resize');
+    grip.setAttribute('role', 'separator');
+    grip.setAttribute('aria-orientation', 'vertical');
+    grip.ariaLabel = 'Resize the settings panel';
+    grip.title = 'Drag to make the settings panel wider or narrower. Double-click puts it back.';
+    grip.tabIndex = 0;
+    const clamp = (w: number) => Math.round(Math.min(Math.max(w, 260), Math.max(260, window.innerWidth * 0.45)));
+    const set = (w: number | null, keep = true) => {
+      if (w === null) this.shell.style.removeProperty('--ed-inspector-w');
+      else this.shell.style.setProperty('--ed-inspector-w', `${clamp(w)}px`);
+      if (!keep) return;
+      try {
+        if (w === null) localStorage.removeItem(key);
+        else localStorage.setItem(key, String(clamp(w)));
+      } catch {
+        // No storage: the width lasts until the editor closes.
+      }
+    };
+    try {
+      const saved = Number(localStorage.getItem(key));
+      if (saved > 0) set(saved, false);
+    } catch {
+      // Default width.
+    }
+    grip.addEventListener('pointerdown', (event) => {
+      if (event.button !== 0) return;
+      event.preventDefault();
+      const start = event.clientX;
+      const width = this.inspector.getBoundingClientRect().width;
+      grip.setPointerCapture(event.pointerId);
+      this.shell.classList.add('is-resizing');
+      const move = (e: PointerEvent) => set(width - (e.clientX - start), false);
+      const up = (e: PointerEvent) => {
+        grip.removeEventListener('pointermove', move);
+        grip.removeEventListener('pointerup', up);
+        grip.removeEventListener('pointercancel', up);
+        this.shell.classList.remove('is-resizing');
+        set(width - (e.clientX - start));
+      };
+      grip.addEventListener('pointermove', move);
+      grip.addEventListener('pointerup', up);
+      grip.addEventListener('pointercancel', up);
+    });
+    grip.addEventListener('dblclick', () => set(null));
+    // The keyboard: left makes it wider, right narrower.
+    grip.addEventListener('keydown', (event) => {
+      const step = event.shiftKey ? 64 : 16;
+      const width = this.inspector.getBoundingClientRect().width;
+      if (event.key === 'ArrowLeft') set(width + step);
+      else if (event.key === 'ArrowRight') set(width - step);
+      else return;
+      event.preventDefault();
+    });
+    return grip;
   }
 
   /** The status bar's note while layer buttons do not fit on the controller (#614). */

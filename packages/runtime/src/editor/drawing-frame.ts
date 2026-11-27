@@ -110,9 +110,9 @@ export class DrawingFrame {
   private readonly knob = svg('circle', { r: 7, class: 'ed-df-turn' });
   private readonly corners = [0, 1, 2, 3].map(() => svg('rect', { width: 12, height: 12, class: 'ed-df-corner' }));
   private readonly top = svg('text', { class: 'ed-df-top', 'text-anchor': 'middle' });
-  private readonly fill = Object.assign(document.createElement('button'), { type: 'button', className: 'ed-button', textContent: 'Fit to the table again' });
+  private readonly fill = Object.assign(document.createElement('button'), { type: 'button', className: 'ed-button', textContent: 'Fit to table' });
   private readonly snap = Object.assign(document.createElement('button'), { type: 'button', className: 'ed-button', textContent: 'Snap to buildings' });
-  private readonly hint = Object.assign(document.createElement('span'), { className: 'ed-df-hint-howto', textContent: 'Drag to move the drawing, a corner to scale it, the round handle to turn it. Arrow keys nudge it.' });
+  private readonly hint = Object.assign(document.createElement('span'), { className: 'ed-df-hint-howto', textContent: 'Drag to move, a corner to scale, the round handle to turn. Arrow keys nudge.' });
   /** The drawing itself, drawn into the frame while it moves (#405), so it follows the hand before the table redraws. */
   private readonly ghost = svg('g', { class: 'ed-df-ghost' });
   private readonly ghostImage = svg('image', { width: 1, height: 1, preserveAspectRatio: 'none' });
@@ -150,6 +150,7 @@ export class DrawingFrame {
     this.body.addEventListener('keydown', (e) => this.key(e));
     const bar = document.createElement('div');
     bar.className = 'ed-df-bar';
+    this.fill.title = 'Fit the drawing in the table again, at its own proportions.';
     this.snap.title = 'Move, turn and scale the drawing a little so its lines lie on the table\'s building footprints.';
     bar.append(this.hint, this.snap, this.fill);
     this.fill.addEventListener('click', () => this.host.place(''));
