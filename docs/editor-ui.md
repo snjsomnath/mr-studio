@@ -144,7 +144,7 @@ After that, **Present › Ready to present?** (#63) is the guide: each missing i
 - **Slides and layer items**: children under their layer in the list; select one, format it in the pane.
 - **Controller panels and widgets** (#155, #357): select a panel on the controller preview, edit it in the Format pane.
 - **The operator**: running a table at an exhibition (Present controls, a lock so visitors can't reach the editor, idle reset) is a different person from the author, and not designed yet.
-- **One place for messages**: saved state, live data sources, performance warnings (#262) and readiness report in the status bar; a change that can be undone shows one notice with Undo.
+- **One place for messages**: saved state, live data sources, performance warnings (#262), layer buttons that do not fit on the controller (#614) and readiness report in the status bar; a change that can be undone shows one notice with Undo.
 
 ## The user test
 

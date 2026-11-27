@@ -457,8 +457,8 @@ async function main() {
     if (second) app.append(second);
     // Every button stays reachable however many a side has (#576).
     if (second) {
-      fitRail(side, cards);
-      fitRail(second, rightCards);
+      fitRail(side, cards, 'left');
+      fitRail(second, rightCards, 'right');
     }
   }
 }
