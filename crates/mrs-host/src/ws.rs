@@ -313,6 +313,7 @@ async fn request(state: &AppState, role: Role, surface: u64, message: &Value, ou
                     Some(e) => Encoding::parse(e).ok_or("encoding must be 'u8' or 'f32'")?,
                 },
                 max_hz: p["maxHz"].as_f64().unwrap_or(30.0),
+                max_cells: p["maxCells"].as_u64().map_or(mrs_engine::DEFAULT_MAX_CELLS, |n| n.min(u32::MAX as u64) as u32),
                 out: out.clone(),
             };
             state.engine.open(request).await.map(|stream| json!({ "stream": stream }))

@@ -13,6 +13,7 @@ import { guideCode, guideDoor, guideScreen } from './guide.ts';
 import { browserLanguage, keepOwnLanguage, language, offered, ownLanguage, setLanguage, speak, t } from './i18n.ts';
 import type { Language } from './i18n.ts';
 import { joinPanel, pausedBanner, phonesPanel, watchingBanner } from './join.ts';
+import { recordingDot, recordPanel } from './record.ts';
 import { LayerManager, stackOrder } from './layer-manager.ts';
 import { loadSiteModules } from './registry.ts';
 import { fieldCard } from './field-phone.ts';
@@ -419,10 +420,14 @@ async function main() {
       // No Home button: pressing the open layer's button again closes it and leaves the map at rest (#74).
       if (second) second.append(rightCards);
       foot.append(joinPanel(store));
+      // While a session is recorded the controller, and only the controller, shows a red dot (#522).
+      if (role === 'tv') stage.append(recordingDot(store));
       // The session and the engine are for whoever runs the table: the developer page has them, the visitors' controller does not.
       if (role === 'dev') {
         // Looking after the phones (#335): pause, let one go, end the round, the session log.
         foot.append(phonesPanel(store, connection));
+        // Record this session (#522): the switch, chapters and the wrap-up.
+        foot.append(recordPanel(store, connection));
         const footer = el('footer', 'controller-footer');
         const info = await connection.request<{ backend: string; adapter: string | null }>('engine.info').catch(() => null);
         footer.append(el('span', '', `Session ${store.state.session.code}`), el('span', '', info ? `Engine: ${info.adapter ?? `${info.backend} reference`}` : ''));

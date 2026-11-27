@@ -132,7 +132,8 @@ impl Hub {
                     Value::Null => None,
                     value => Some(serde_json::from_value(value.clone()).map_err(|e| format!("palette: {e}"))?),
                 };
-                self.saving(who, "Changed the palette", || self.site.save_palette(palette.as_ref()))?;
+                let value = palette.as_ref().map(serde_json::to_value).transpose().map_err(|e| format!("palette: {e}"))?;
+                self.saving_later(who, "Changed the palette", vec![("palette", value)])?;
                 self.info.write().palette = palette.clone();
                 self.emit("palette.changed", json!({ "palette": palette }));
                 Ok(json!({}))

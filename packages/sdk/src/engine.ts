@@ -6,6 +6,12 @@ export interface OpenOptions {
   encoding?: 'u8' | 'f32';
   /** Upper bound on frames per second. Default 30. */
   maxHz?: number;
+  /**
+   * The most cells a frame carries (#535). A bigger field arrives shrunk, each side divided by
+   * the same whole number, each cell the mean of those it covers; read `width` and `height`
+   * from the frame. Default 2048 x 2048 cells; 0 sends every cell.
+   */
+  maxCells?: number;
 }
 
 /**
@@ -61,6 +67,7 @@ export class FieldStream {
       fields: this.fields,
       encoding: this.options.encoding ?? 'u8',
       maxHz: this.options.maxHz ?? 30,
+      ...(this.options.maxCells === undefined ? {} : { maxCells: this.options.maxCells }),
     });
     if (this.closed) {
       void this.connection.request('engine.close', { stream: result.stream }).catch(() => {});

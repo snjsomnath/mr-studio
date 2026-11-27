@@ -18,8 +18,12 @@ struct Params {
     canopy_t: f32,
     // 1 when the sun is up, 0 otherwise.
     lit: f32,
-    _pad: f32,
+    // Blocks across the grid (#533).
+    blocks_width: u32,
 }
+
+// Cells on a side of a block; BLOCK in mod.rs.
+const BLOCK: u32 = 32u;
 
 @group(0) @binding(0) var<uniform> p: Params;
 @group(0) @binding(1) var<storage, read> dsm: array<f32>;
@@ -28,6 +32,28 @@ struct Params {
 @group(0) @binding(4) var<storage, read_write> out: array<f32>;
 // Light taken by tree canopy from cells no building shades.
 @group(0) @binding(5) var<storage, read_write> tree_out: array<f32>;
+// The highest point in each block of cells (#533): a ray above it passes the whole block.
+@group(0) @binding(6) var<storage, read> blocks: array<f32>;
+
+// The last step surely still inside block (bx, by). Same as exit_step in cpu.rs.
+fn leave(pos: f32, d: f32, b: u32) -> f32 {
+    if (d > 1e-6) {
+        return (f32((b + 1u) * BLOCK) - pos) / d;
+    }
+    if (d < -1e-6) {
+        return (pos - f32(b * BLOCK)) / -d;
+    }
+    return 1e9;
+}
+
+fn exit_step(px: f32, py: f32, bx: u32, by: u32) -> u32 {
+    let t = min(leave(px, p.dir_col, bx), leave(py, p.dir_row, by));
+    let f = u32(floor(t));
+    if (f == 0u) {
+        return 0u;
+    }
+    return f - 1u;
+}
 
 @compute @workgroup_size(8, 8)
 fn main(@builtin(global_invocation_id) id: vec3<u32>) {
@@ -41,7 +67,11 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
         let h0 = dsm[i];
         let px = f32(id.x) + 0.5;
         let py = f32(id.y) + 0.5;
-        for (var s = 1u; s <= p.max_steps; s++) {
+        var s = 1u;
+        loop {
+            if (s > p.max_steps) {
+                break;
+            }
             let fs = f32(s);
             let z = h0 + fs * p.dz;
             if (z > p.max_height) {
@@ -51,6 +81,12 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
             let cy = i32(floor(py + fs * p.dir_row));
             if (cx < 0 || cy < 0 || cx >= i32(p.width) || cy >= i32(p.height)) {
                 break;
+            }
+            let bx = u32(cx) / BLOCK;
+            let by = u32(cy) / BLOCK;
+            if (blocks[by * p.blocks_width + bx] <= z) {
+                s = max(max(s, exit_step(px, py, bx, by)), s + 1u);
+                continue;
             }
             let j = u32(cy) * p.width + u32(cx);
             if (dsm[j] > z + 0.001) {
@@ -65,6 +101,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
                     break;
                 }
             }
+            s = s + 1u;
         }
     }
     var tree = 0.0;

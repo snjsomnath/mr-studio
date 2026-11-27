@@ -130,13 +130,13 @@ The host exposes the engine to surfaces through these requests (see session.md f
 | Method | Params | Result |
 | --- | --- | --- |
 | `engine.info` | | `{ backend, adapter, grid, kernels: KernelInfo[] }` |
-| `engine.open` | `{ kernel, params, fields: string[], encoding?: "u8" \| "f32", maxHz?: number }` | `{ stream }` |
+| `engine.open` | `{ kernel, params, fields: string[], encoding?: "u8" \| "f32", maxHz?: number, maxCells?: number }` | `{ stream }` |
 | `engine.set` | `{ stream, params }` | `{}` |
 | `engine.close` | `{ stream }` | `{}` |
 | `engine.probe` | `{ kernel, params, at: [lon, lat] }` | the kernel's answer for that place |
 | `engine.edit` | `{ edits: SceneEdit[] }` | `{}` |
 
-`engine.open` creates a job and subscribes the calling surface. The host steps the job and, whenever the job's revision changes, pushes an `engine.status` event followed by one binary frame per field, at most `maxHz` times per second (default 30). The final frame of a job is sent at once.
+`engine.open` creates a job and subscribes the calling surface. The host steps the job and, whenever the job's revision changes, pushes an `engine.status` event followed by one binary frame per field, at most `maxHz` times per second (default 30). The final frame of a job is sent at once. A field of more than `maxCells` cells (default 2048 x 2048; 0 for no limit) is sent shrunk (#535): each side divided by the same whole number, each cell the mean of the cells it covers, so a frame is never larger than a screen can show. The frame's `width` and `height` say its size.
 Streams belong to the connection and are closed when it drops. If a kernel accepts `lat` and `lon` and the caller omits them, the host fills them from the site origin.
 
 `engine.probe` asks a kernel about one place instead of the whole table, without a job (#252): a point question is cheap where a field is not. `at` is WGS84 and must be on the table. It is answered in the engine thread between job steps, so it waits for at most one step of a running job. Kernels without a probe answer with an error; so far only `sunlight` has one. Phones cannot call it; a layer's table code asks and publishes what the controller shows.
@@ -208,7 +208,7 @@ Algorithm: for each cell, march a ray across the `dsm` towards the sun in one-ce
 | `first_sun`, `last_sun` | Unix seconds of the first and last sample with at least half the light, or null |
 | `roof`, `height_m` | Whether the cell is on a building, and its `dsm - dtm` |
 
-The march is the simplest correct algorithm and costs one step per cell of shadow length. The planned speed-up is a max-height pyramid that lets the ray skip empty space; the parity and physics tests are what make that change safe.
+The march costs one step per cell of shadow length, except where it can jump (#533): the kernel keeps the highest point (top surface, or canopy where there are trees) of each block of 32 x 32 cells, and a ray already above a block's highest point jumps to the block's far side, since it rises as it goes and nothing in that block can shade or filter it. The result is the same as walking every step; a unit test compares the two cell by cell, and the GPU/CPU parity and physics tests are unchanged. On a made-up town of 1 to 2 km at 1 m cells this makes a low sun about twice as fast.
 
 ## Wind kernel
 

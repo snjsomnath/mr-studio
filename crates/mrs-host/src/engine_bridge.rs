@@ -37,6 +37,8 @@ pub struct OpenRequest {
     pub fields: Vec<String>,
     pub encoding: Encoding,
     pub max_hz: f64,
+    /// The most cells a frame carries (#535); 0 sends every cell.
+    pub max_cells: u32,
     pub out: tmpsc::Sender<Out>,
 }
 
@@ -103,6 +105,7 @@ struct Stream {
     job: JobId,
     fields: Vec<String>,
     encoding: Encoding,
+    max_cells: u32,
     interval: Duration,
     out: tmpsc::Sender<Out>,
     sent_revision: Option<u64>,
@@ -498,6 +501,7 @@ fn open(
             job,
             fields: request.fields,
             encoding: request.encoding,
+            max_cells: request.max_cells,
             interval: Duration::from_secs_f64(1.0 / hz),
             out: request.out,
             sent_revision: None,
@@ -522,6 +526,7 @@ fn send_frames(engine: &mut Engine, id: u32, stream: &Stream, status: &mrs_engin
     for (index, name) in stream.fields.iter().enumerate() {
         match engine.read_field(stream.job, name) {
             Ok(field) => {
+                let field = field.shrunk(stream.max_cells);
                 let frame = encode_frame(&field, stream.encoding, id, index as u32, status.revision as u32, status.progress);
                 if stream.out.try_send(Out::Binary(frame)).is_err() {
                     return false;

@@ -4,11 +4,18 @@ use super::*;
 
 impl Hub {
     pub(super) fn handle(&self, role: Role, surface: u64, method: &str, p: &Value) -> Result<Value, String> {
+        // Recording takes the hub's lock itself, for its start snapshot (#521).
+        if method.starts_with("recording.") {
+            return self.recording_request(role, method, p);
+        }
+        self.recording_limits();
         // One lock for the whole request, so changes and their events keep one order.
         let mut inner = self.inner.lock();
         if self.fault.swap(false, std::sync::atomic::Ordering::SeqCst) {
             panic!("a fault was injected");
         }
+        // In the log in the order the requests are handled (#521).
+        self.record_request(&inner, role, surface, method, p);
         if method.starts_with("scene.") {
             if !role.may_compose() {
                 return Err("this surface cannot edit the scene".into());

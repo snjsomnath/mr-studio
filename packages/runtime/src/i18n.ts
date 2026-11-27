@@ -47,6 +47,7 @@ const SV: Record<string, string> = {
   'Calibrate': 'Kalibrera',
   'Sound': 'Ljud',
   'Muted': 'Ljud av',
+  'Recording': 'Spelar in',
   'Ribbon': 'Remsa',
   'Auto': 'Auto',
   'Ribbon: {name}': 'Remsa: {name}',
