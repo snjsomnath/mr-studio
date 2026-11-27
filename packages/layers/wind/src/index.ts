@@ -36,7 +36,7 @@ export default defineLayer<Params>({
     let fieldMax = 2.5 * ctx.params.speed;
     const ramp = () => stretch(colormaps.speed, Number(ctx.params.scale) / fieldMax);
     // Under ribbons and particles the speed map is a quiet backdrop (#143), as strong as the author sets; 0 hides it.
-    const mapOpacity = () => ctx.params.opacity * (ctx.params.style === 'map' ? 1 : ctx.params.backdrop ?? 0.25);
+    const mapOpacity = () => ctx.params.opacity * (ctx.params.style === 'map' ? 1 : ctx.params.backdrop ?? 0.1);
     const flowStyle = () => ({
       mode: ctx.params.style === 'particles' ? ('particles' as const) : ('ribbons' as const),
       // Both styles are coloured by speed with white highlights, as in the Chalmers demo (#159).
@@ -71,15 +71,22 @@ export default defineLayer<Params>({
 
     // The trees the wind feels (#561): faint crowns over the moving air while "Trees slow the
     // wind" is on, so people see where and why it slows. Off, they go, and so does their drag.
-    const canopy = ctx.map.addDrawing('canopy', { resolution: 2048 });
+    // They fade with the layer, and step aside while a Trees layer inside this one draws the
+    // trees, so that layer's opacity fades the whole tree (#623).
+    const canopy = ctx.map.addDrawing('canopy', { resolution: 2048, opacity: ctx.params.opacity });
     const crowns = ((await readSiteGeometry(ctx.site, 'trees'))?.points ?? []).map(({ geometry: [x, y], properties }) => ({
       x,
       y,
       radius: 2 + (Number(properties.height) || 8) * 0.22,
     }));
+    const treesInside = () => ctx.items.some((item) => item.use === 'trees' && item.active);
+    let canopyShown: boolean | null = null;
     const drawCanopy = () => {
+      const show = Boolean(ctx.params.trees && crowns.length) && !treesInside();
+      if (show === canopyShown) return;
+      canopyShown = show;
       canopy.clear();
-      if (ctx.params.trees && crowns.length) {
+      if (show) {
         const g = canopy.ctx;
         g.fillStyle = 'rgb(96 178 112 / 0.16)';
         g.strokeStyle = 'rgb(150 220 160 / 0.5)';
@@ -95,6 +102,14 @@ export default defineLayer<Params>({
       canopy.commit();
     };
     drawCanopy();
+    // Items come and go without a change to this layer's params: look twice a second.
+    let sinceCheck = 0;
+    ctx.onFrame((dt) => {
+      sinceCheck += dt;
+      if (sinceCheck < 0.5) return;
+      sinceCheck = 0;
+      drawCanopy();
+    });
 
     const stream = await ctx.engine.open('wind', kernelParams(ctx), ['speed', 'u', 'v'], { maxHz: FIELD_HZ });
     stream.on('speed', (frame) => {
@@ -124,6 +139,7 @@ export default defineLayer<Params>({
         if (changed.some((key) => key === 'style' || key === 'scale' || key === 'opacity' || key === 'backdrop' || key === 'playback' || key === 'facades')) restyle();
         if (changed.some((key) => key === 'speed' || key === 'direction' || key === 'trees' || key === 'detail')) stream.set(kernelParams(ctx));
         if (changed.includes('trees')) drawCanopy();
+        if (changed.includes('opacity')) canopy.setOpacity(ctx.params.opacity);
       },
     };
   },

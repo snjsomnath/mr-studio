@@ -313,6 +313,7 @@ interface TableContext<P> {
   cue(at: ToolGeometry, options?: { colour?: string }): void;     // play the attention cue at a change (#105); tool inputs from other surfaces get one automatically
   readonly steps: LayerSteps;           // sub-steps that the controller's Next reveals one at a time
   readonly reveal: LayerReveal;         // where the layers inside this one show, for a layer with "reveals": true (see Reveals)
+  readonly items: readonly LayerItem[]; // the layers inside this one now, { id, use, active }, live (#623)
   readonly view: LayerView;             // a picture for this layer's own controller: send(canvas) here, watch(cb) in its hero (#351)
   readonly clock: TablePlayHead;        // the shared play head (#373): set(value, rate) here, now() on every view (see Play head)
   onFrame(cb: (dt: number) => void): void;   // every animation frame while the layer is on
