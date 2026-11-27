@@ -38,11 +38,11 @@ jobs:
     outputs:
       tag: ${{ steps.release.outputs.tag }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: main
           fetch-depth: 0
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
       # Only the commit whose checks just passed is released (#505). When main has moved on
@@ -107,17 +107,17 @@ jobs:
             bundle: target/universal-apple-darwin/release/bundle
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ needs.version.outputs.tag || github.ref }}
-      - uses: dtolnay/rust-toolchain@1.100.0
+      - uses: dtolnay/rust-toolchain@1.120.0
         with:
           targets: ${{ matrix.targets }}
       - uses: Swatinem/rust-cache@v2
         with:
           key: desktop
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
@@ -177,7 +177,7 @@ jobs:
           copy "$bundle/macos/*.app.tar.gz" "MR-Studio_${VERSION}_macos-universal.app.tar.gz"
           copy "$bundle/macos/*.app.tar.gz.sig" "MR-Studio_${VERSION}_macos-universal.app.tar.gz.sig"
           ls -l release
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.artifact }}
           path: release/*
@@ -193,10 +193,10 @@ jobs:
     env:
       TAG: ${{ needs.version.outputs.tag || github.ref_name }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ env.TAG }}
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: release
           merge-multiple: true
@@ -206,8 +206,8 @@ jobs:
         run: node scripts/update-feed.mjs release "${{ github.repository }}" "$TAG"
       # The MCP server of the same version (docs/MCP.md): one file for any AI app, and the
       # Claude Desktop extension, which installs with a double-click.
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
@@ -219,7 +219,7 @@ jobs:
       - name: Write the notes
         run: node scripts/release.mjs notes "$TAG" "${{ github.repository }}" > release-notes.md && cat release-notes.md
       # Published straight away: the app on Home and on the Updates tab shows it from now on.
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ env.TAG }}
           name: MR Studio ${{ env.TAG }}
