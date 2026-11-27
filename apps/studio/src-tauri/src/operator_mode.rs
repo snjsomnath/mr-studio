@@ -189,7 +189,6 @@ use tauri::{AppHandle, Manager, State, WebviewUrl, WebviewWindowBuilder};
 
 use crate::{
     is_presenting, launch, list_displays, open_editor, open_home_window, report, show, text, usual_displays, Shell, EDITOR, HOME, LAUNCHER,
-    SOURCES,
 };
 
 /// The operator window's label.
@@ -262,7 +261,7 @@ pub async fn open_operator(app: AppHandle, shell: State<'_, Shell>) -> Result<()
     shell.operator_mode.set(true);
     shell.operator.note("Operator mode opened.");
     open_window(&app).map_err(text)?;
-    for label in [HOME, LAUNCHER, SOURCES] {
+    for label in [HOME, LAUNCHER] {
         if let Some(window) = app.get_webview_window(label) {
             let _ = window.close();
         }

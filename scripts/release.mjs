@@ -15,6 +15,7 @@
 //   bump: minor            minor (something new, the default), patch (only fixes), major, or none
 //   issues: 267, 268       the issues it closes (optional)
 //   breaking: Older tables are upgraded when opened.   (optional; listed first, in red, in the app)
+//   audience: developers   (optional, #593: kept in the changelog under "For developers", left out of Home's What's new)
 //   ---
 //   ### A title people understand
 //
@@ -44,7 +45,7 @@ export function parseNote(text, file = 'note') {
     head[kv[1]] = kv[2].trim();
   }
   for (const key of Object.keys(head)) {
-    if (!['bump', 'issues', 'breaking'].includes(key)) throw new Error(`${file}: unknown "${key}:" (use bump, issues, breaking)`);
+    if (!['bump', 'issues', 'breaking', 'audience'].includes(key)) throw new Error(`${file}: unknown "${key}:" (use bump, issues, breaking, audience)`);
   }
   const bump = (head.bump || 'minor').toLowerCase();
   if (!BUMPS.includes(bump)) throw new Error(`${file}: bump must be one of ${BUMPS.join(', ')}, not "${head.bump}"`);
@@ -53,6 +54,8 @@ export function parseNote(text, file = 'note') {
     .map((s) => s.replace(/^#/, ''))
     .filter(Boolean);
   for (const n of issues) if (!/^\d+$/.test(n)) throw new Error(`${file}: issues must be numbers, not "${n}"`);
+  const audience = (head.audience || 'everyone').toLowerCase();
+  if (!['everyone', 'developers'].includes(audience)) throw new Error(`${file}: audience must be everyone or developers, not "${head.audience}"`);
   const body = match[2].trim();
   if (bump !== 'none') {
     if (!/^###\s+\S/m.test(body)) throw new Error(`${file}: give the change a title line that starts with ### `);
@@ -61,7 +64,7 @@ export function parseNote(text, file = 'note') {
       if (!existsSync(at(src))) throw new Error(`${file}: the picture ${src} is not in the repository (paths start at the repository root)`);
     }
   }
-  return { file, bump, issues: issues.map(Number), breaking: head.breaking || '', body };
+  return { file, bump, issues: issues.map(Number), breaking: head.breaking || '', audience, body };
 }
 
 export function readNotes() {
@@ -100,8 +103,10 @@ export function section(version, notes, date) {
     for (const n of breaking) out.push(`- ${n.breaking}${issues(n)}`);
     out.push('');
   }
-  for (const title of ['New', 'Fixes']) {
-    const group = notes.filter((n) => SECTIONS[n.bump] === title);
+  // Notes for people who write layers or run the build come last, under their own heading, which
+  // Home's What's new does not show (#593).
+  for (const title of ['New', 'Fixes', 'For developers']) {
+    const group = notes.filter((n) => (n.audience === 'developers' ? title === 'For developers' : SECTIONS[n.bump] === title));
     if (!group.length) continue;
     out.push(`### ${title}`, '');
     for (const n of group) {
@@ -185,7 +190,7 @@ export function notesFor(changelog, version, repository) {
   // The app and GitHub's release page show pictures from raw.githubusercontent.com.
   text = text.replace(/(!\[[^\]]*\]\()(?!https?:)\.?\/?([^)\s]+)/g, `$1https://raw.githubusercontent.com/${repository}/v${v}/$2`);
   // Change titles go back up to ###, the level the app looks for.
-  return text.replace(/^####\s/gm, '### ').replace(/^### (New|Fixes|Breaking changes)$/gm, '## $1') + '\n';
+  return text.replace(/^####\s/gm, '### ').replace(/^### (New|Fixes|Breaking changes|For developers)$/gm, '## $1') + '\n';
 }
 
 function check(base) {

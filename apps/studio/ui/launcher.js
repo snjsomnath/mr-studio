@@ -164,7 +164,6 @@ $('operator-start').addEventListener('change', async () => {
 });
 $('operator-open').addEventListener('click', () => invoke('open_operator').catch((e) => showError(String(e))));
 $('operator-log').addEventListener('click', () => invoke('open_operator_log').catch((e) => showError(String(e))));
-$('open-sources').addEventListener('click', () => invoke('open_sources').catch((e) => showError(String(e))));
 
 window.addEventListener('resize', () => screens && renderMap());
 // Plugging in a projector while this window is open should not need a restart.
@@ -178,4 +177,5 @@ if (mac) document.querySelectorAll('.keys kbd').forEach((key) => key.textContent
 document.querySelectorAll('[data-only="windows"]').forEach((node) => (node.hidden = !/Win/i.test(navigator.platform)));
 // A tab named in the address opens first, e.g. index.html#colour.
 const first = document.querySelector(`[role=tab][data-tab="${location.hash.slice(1)}"]`);
-if (first) queueMicrotask(() => first.click());
+// After every script has run: the tabs' handlers are set up in colour.js, which loads after this one.
+if (first) document.addEventListener('DOMContentLoaded', () => first.click());

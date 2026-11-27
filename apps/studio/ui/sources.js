@@ -228,7 +228,7 @@
         const change = { kind: template.kind };
         if (!template.single) {
           // A custom service starts with a name and an address to fill in on its card.
-          const n = document.querySelectorAll('.card').length + 1;
+          const n = document.querySelectorAll('.sources-page .card').length + 1;
           Object.assign(change, { name: `${template.name} ${n}`, url: template.kind === 'tiles' ? 'https://example.org/{z}/{x}/{y}.png' : 'https://example.org/service' });
         }
         const view = await api.save(change);
@@ -254,6 +254,6 @@
   load().catch(showError);
   // Another window (or a second Sources page) may have changed something.
   window.addEventListener('focus', () => {
-    if (!document.querySelector('.card button.primary:not(:disabled)')) load().catch(showError);
+    if (!document.querySelector('.sources-page .card button.primary:not(:disabled)')) load().catch(showError);
   });
 })();

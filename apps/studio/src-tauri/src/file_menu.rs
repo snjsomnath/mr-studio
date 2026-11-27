@@ -53,8 +53,8 @@ fn file_submenu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Submenu<R>> {
         .separator()
         .item(&item("close", "Close table", Some("CmdOrCtrl+W"))?);
     if cfg!(target_os = "macos") {
-        // Also here on a Mac (#470): people look under File first. ⌘, stays with the app menu's.
-        file = file.separator().item(&item("settings", "Settings…", None)?);
+        // On a Mac too it lives under File (#470), where people look first, and only there (#593).
+        file = file.separator().item(&item("settings", "Settings…", Some("CmdOrCtrl+,"))?);
     } else {
         // On macOS these live in the app menu, where people look for them.
         file = file
@@ -70,12 +70,11 @@ fn file_submenu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Submenu<R>> {
 /// work in a webview there), View and Window.
 pub fn app_menu(app: &AppHandle<Wry>) -> tauri::Result<Menu<Wry>> {
     let name = app.package_info().name.clone();
-    // App settings: this computer, every table (#73). Table settings are in the File menu.
-    let settings = MenuItemBuilder::with_id("settings", "Settings…").accelerator("CmdOrCtrl+,").build(app)?;
+    // App settings (this computer, every table, #73) are File › Settings… only (#593), so the
+    // app menu has the about box and the command line tool.
     let app_menu = SubmenuBuilder::new(app, &name)
         .item(&PredefinedMenuItem::about(app, None, None)?)
         .separator()
-        .item(&settings)
         .item(&MenuItemBuilder::with_id(INSTALL_CLI, "Install command line tool…").build(app)?)
         .separator()
         .item(&PredefinedMenuItem::services(app, None)?)

@@ -141,6 +141,16 @@ test('breaking changes come first in a version', () => {
   assert.equal(notesFor('# Changelog\n', '2.0.0', 'a/b'), null);
 });
 
+test('notes for developers sit last, under their own heading, which What\'s new leaves out (#593)', () => {
+  const dev = parseNote('---\nbump: minor\naudience: developers\n---\n### Layers get the SDK types\n', 'changes/dev.md');
+  assert.equal(dev.audience, 'developers');
+  assert.throws(() => parseNote('---\nbump: minor\naudience: robots\n---\n### X\n', 'changes/x.md'), /audience must be/);
+  const text = section('1.1.0', [dev, { bump: 'minor', issues: [], breaking: '', audience: 'everyone', body: '### A new layer' }], '2026-11-27');
+  assert.ok(text.indexOf('### New') < text.indexOf('### For developers'));
+  assert.ok(text.indexOf('#### A new layer') < text.indexOf('### For developers'));
+  assert.ok(text.indexOf('#### Layers get the SDK types') > text.indexOf('### For developers'));
+});
+
 test('a pull request without a note of its own fails the check, and with one passes', () => {
   const repo = repository({ old: note('patch', 'Already on main') });
   const git = (...args) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@example.org', '-c', 'commit.gpgsign=false', ...args], { cwd: repo.dir, encoding: 'utf8' });

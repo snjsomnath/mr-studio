@@ -79,7 +79,7 @@ In no tab: button names and words (Format pane of the button's layer), button si
 | Try it as a visitor | Present › Rehearse (on the canvas) | 3 windows |
 | Screens, calibration, colour | File › Settings › This computer (#393); Present › Screens and calibration… opens it, and holds them itself in a browser | 3 |
 | Drawing quality | Present › Screens and calibration… | 1 |
-| Sources and keys, updates, command line | File › Settings | 2 windows |
+| Sources and keys, updates, command line | File › Settings | 1 window (#593) |
 | Back to the list of tables | File › Open… (the logo runs it) | 3 |
 | Share with the studio PC | Share (title bar) | 0 (#372) |
 

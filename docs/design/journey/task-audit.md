@@ -23,7 +23,7 @@ Re-run on 2026-11-25 on main 0.32 plus #390 and #393.
 | Try it as a visitor | 3 windows | 1 | Present › Rehearse (on the canvas) | View › Open in a window is for real displays |
 | Screens, calibration, colour | 3 | 1 | File › Settings › This computer (#393); in a browser, Present › Screens and calibration… | Present › Screens and calibration… opens Settings in the app. See note 2 |
 | Drawing quality | 1 | 1 | Present › Screens and calibration… | |
-| Sources and keys | 2 windows | 1 | File › Settings › Sources and keys | Home's import message links there |
+| Sources and keys | 1 (a Settings page, #593) | 1 | File › Settings › Sources and keys | Home's import message links there |
 | App updates, command line tool | 1 (Displays and settings) | 1 | File › Settings | MR Studio › Install command line tool… on a Mac runs the same install |
 | Back to the list of tables | 3 (logo, All tables, File menu) | 1 | File › Open… | The logo runs File › Open… |
 | Check before presenting | 0 | 1 | Present › Ready to present? | The status bar's count opens the same list |
