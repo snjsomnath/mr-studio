@@ -185,6 +185,11 @@ function launch() {
     }
     now.close();
 
+    // Every core layer is more buttons than the controller's sides hold, so the editor warns
+    // (#614); the author keeps them and carries on.
+    const warning = editor.locator('dialog.ed-rail-warning');
+    if (await warning.isVisible()) await warning.locator('[data-choice="keep"]').click();
+
     // Present › Screens and calibration… (#382), as an author opens it to correct the colour.
     await editor.locator('.ed-tab[data-tab="present"]').click();
     await editor.locator('.ed-ribbon [data-command="dialog.screens"]').click();
