@@ -796,6 +796,18 @@ impl Site {
     }
 }
 
+/// The JSON Schema of `site.json` (#537), written from the types the app reads it into, so the
+/// MCP server and anyone else check a site against the same shape. Checked in as
+/// `docs/contracts/site.schema.json`; a test fails when that file is out of date.
+pub fn site_schema() -> serde_json::Value {
+    let mut schema = serde_json::to_value(schemars::schema_for!(SiteManifest)).unwrap_or_default();
+    if let Some(object) = schema.as_object_mut() {
+        object.insert("$id".into(), "https://github.com/snjsomnath/mr-studio/blob/main/docs/contracts/site.schema.json".into());
+        object.insert("title".into(), "MR Studio site.json".into());
+    }
+    schema
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -999,16 +1011,4 @@ mod tests {
                 .unwrap();
         assert_eq!(both.table.map(|t| t.zoom), Some(16.0));
     }
-}
-
-/// The JSON Schema of `site.json` (#537), written from the types the app reads it into, so the
-/// MCP server and anyone else check a site against the same shape. Checked in as
-/// `docs/contracts/site.schema.json`; a test fails when that file is out of date.
-pub fn site_schema() -> serde_json::Value {
-    let mut schema = serde_json::to_value(schemars::schema_for!(SiteManifest)).unwrap_or_default();
-    if let Some(object) = schema.as_object_mut() {
-        object.insert("$id".into(), "https://github.com/snjsomnath/mr-studio/blob/main/docs/contracts/site.schema.json".into());
-        object.insert("title".into(), "MR Studio site.json".into());
-    }
-    schema
 }
