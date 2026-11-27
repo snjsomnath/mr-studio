@@ -36,7 +36,7 @@ export default defineLayer<Params>({
     let fieldMax = 2.5 * ctx.params.speed;
     const ramp = () => stretch(colormaps.speed, Number(ctx.params.scale) / fieldMax);
     // Under ribbons and particles the speed map is a quiet backdrop (#143), as strong as the author sets; 0 hides it.
-    const mapOpacity = () => ctx.params.opacity * (ctx.params.style === 'map' ? 1 : ctx.params.backdrop ?? 0.25);
+    const mapOpacity = () => ctx.params.opacity * (ctx.params.style === 'map' ? 1 : ctx.params.backdrop ?? 0.1);
     const flowStyle = () => ({
       mode: ctx.params.style === 'particles' ? ('particles' as const) : ('ribbons' as const),
       // Both styles are coloured by speed with white highlights, as in the Chalmers demo (#159).

@@ -1,6 +1,6 @@
 ---
 bump: patch
-issues: 623
+issues: 623, 633
 ---
 ### Trees inside Wind fade as a whole
 
@@ -9,3 +9,7 @@ Wind's faint tree crowns now fade with Wind's opacity, and they step aside while
 Layer authors can read `ctx.items`: the layers inside theirs, with the layer each uses and whether it is on.
 
 ![Before and after: Wind at 30%, and Trees inside Wind at 100% and 10%](docs/screenshots/623-before-after.png)
+
+Wind's speed map under the ribbons and particles now starts at 10% instead of 25%, so the moving air reads first (#633). Tables that set it keep their value.
+
+![Before and after: the speed map underneath at 25% and at 10%](docs/screenshots/633-speed-map-10.png)
