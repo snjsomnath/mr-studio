@@ -193,7 +193,7 @@ What the player draws today (`packages/sdk/src/recipe.ts`; WMS and tiles data ar
 | look | `points` | `color`, `radius_mm`, `opacity`, `glow` (0–1), `core`, `stroke`, `stroke_mm`, `label` (a column; place names only), `shape` (`circle`, `square`, `diamond`, `triangle`, `ring`, `icon`), `icon` (a pictogram: `star`, `pin`, `flag`, `tree`, `person`, `house`, `bus`, `bolt`, `drop`, `heart`, `plus`, `sun`), `legend` |
 | look | `lines` | `color`, `width_mm`, `opacity`, `glow`, `casing`, `dash` (`solid`, `dashed`, `dotted`), `dash_mm`, `gap_mm`, `arrows` (`none`, `end`, `along`), `arrow_mm`, `arrow_gap_mm`, `legend` |
 | look | `fill` | `color`, `opacity`, `stroke`, `stroke_mm`, `edge_glow`, `shadow_mm` (a soft shadow instead of height), `hatch`, `legend` |
-| look | `raster` (#601, a GeoTIFF of values) | `color` (by `value`: ramp, classes, middle, or one colour), `opacity`, `hide_below`, `hide_above` (cells past them are left out; null hides none), `edge_glow` (0–1, a glow along the cut), `edge_color`, `unit` (for the legend). A control bound to `look.<id>.hide_below` is "Dig": the ground peels away as it moves |
+| look | `raster` (#601, a GeoTIFF of values) | `color` (by `value`: ramp, classes, middle, or one colour), `opacity`, `hide_below`, `hide_above` (cells past them are left out; null hides none), `edge_glow` (0–1, a glow along the cut), `edge_color`, `unit` (for the legend), `legend` (the heading over its legend rows). A control bound to `look.<id>.hide_below` is "Dig": the ground peels away as it moves |
 | motion | `pulse` (on points or fill) | `period_s`, `size_mm`, `rings`, `direction` (1 out, -1 in) |
 | motion | `draw-in` (on lines) | `duration_s`, `stagger` |
 | motion | `flow` (on lines) | `speed_mm` |
@@ -232,7 +232,7 @@ A step a row leaves out takes the step before it. Ids that match nothing are rep
 - Sizes are millimetres on the physical table (visualisation.md E5), turned into metres by `table.width_cm`.
 - A colour is a palette slot (`"@accent"`), `"#rrggbb"`, or driven by a column: `{ "by": "kind", "kind": "category", "scheme"?: "auto" | "palette" | "epc", "colors"?: { "<value>": "@cat2" } }` (six values shown, the rest grouped as Others; values that already have known colours, such as energy classes A to G, keep them and their order unless `scheme` is `palette`; `colors` wins over both, #207) or `{ "by": "population", "kind": "number", "ramp": "sun", "classes": "continuous" | "equal" | "quantile", "count": 5 }`. A size may be `{ "by": "<column>", "range": [2, 8] }`.
 - A data `path` or dataset may be GeoJSON, or a CSV of points with `lon` and `lat` columns.
-- The builder writes the legend the looks give into `legend`.
+- The builder writes the legend the looks give into `legend`. A recipe with no `legend` (written by hand, the MCP or the CLI) gets the same legend from the table while it shows (#622). When more than one look has a scale, each scale's rows sit under a heading (`group` on the rows): the look's `legend` prop, else its id in words; single swatches come first.
 
 ## Services
 

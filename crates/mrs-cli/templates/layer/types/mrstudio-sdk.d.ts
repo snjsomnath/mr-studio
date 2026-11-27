@@ -378,6 +378,8 @@ declare module "@mrstudio/sdk/types" {
         label: string;
         color?: string;
         shape?: 'line' | 'fill' | 'point' | string;
+        /** A heading over this row and the ones after it with the same group (#622): which scale the rows belong to. */
+        group?: string;
     }
     /** How Next moves through a layer, and a sequence's steps. */
     export interface Steps {
@@ -2381,6 +2383,8 @@ declare module "@mrstudio/sdk/layer" {
         label: string;
         color?: string;
         shape?: 'line' | 'fill' | 'point' | string;
+        /** A heading over this row and the ones after it with the same group (#622): which scale the rows belong to. */
+        group?: string;
     }
     export interface PanelHandlers {
         /** Params or shared values changed. */
@@ -4743,6 +4747,8 @@ declare module "@mrstudio/sdk/recipe" {
             edge_glow: number;
             edge_color: string;
             unit: string;
+            /** The heading over its legend rows when the layer has more than one scale (#622). */
+            legend: string;
         };
     };
     /** Motion blocks of this slice, by the geometry they act on. */
@@ -5005,6 +5011,16 @@ declare module "@mrstudio/sdk/recipe" {
     export function filterShapes<S extends Shapes>(shapes: S, filters: readonly ShapeFilter[] | undefined): S;
     /** The legend a recipe's looks give, for the controller (S2: every colour on the table has its swatch). */
     export function recipeLegend(looks: readonly CompiledLook[]): LegendItem[];
+    /**
+     * Each look's legend rows as one legend (#622). When more than one look has a scale (several
+     * rows), each scale gets a heading, so a soil-depth ramp and a rock-height ramp read as two
+     * legends: the look's `legend` prop, else its id in words. Single swatches come first, so
+     * none sits under a scale's heading.
+     */
+    export function lookLegend(parts: readonly {
+        block: RecipeBlock;
+        rows: readonly LegendItem[];
+    }[]): LegendItem[];
 }
 declare module "@mrstudio/sdk/raster-look" {
     import type { Paint } from "@mrstudio/sdk/recipe";

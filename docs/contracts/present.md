@@ -41,7 +41,7 @@ A fixed template with five zones (#76, #283). The layer fills them as data:
 
 ```ts
 // SDK, new
-ctx.legend.set(items: { id: string; label: string; color?: string; shape?: 'line' | 'fill' | 'point' }[]);
+ctx.legend.set(items: { id: string; label: string; color?: string; shape?: 'line' | 'fill' | 'point'; group?: string }[]); // group: a heading over the rows of one scale (#622)
 ctx.legend.highlight(id: string | null);   // the one just revealed on the table
 ctx.legend.show(ids: string[] | 'all');    // cumulative reveals show only what is on the table
 ```

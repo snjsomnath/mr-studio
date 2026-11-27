@@ -934,7 +934,8 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
           if (legend?.length) {
             saved.legend = legend;
             legendNote = ` The controller's legend has ${legend.length} row${legend.length === 1 ? '' : 's'}, worked out from the looks and their data.`;
-          } else if ((saved.look ?? []).length) legendNote = ' No legend yet: the looks\' data could not be read; save again once the data is in the site, or give legend yourself.';
+          } else if ((saved.look ?? []).some((block: any) => block?.block === 'raster')) legendNote = ' The table works out the legend from the looks while it shows the layer.';
+          else if ((saved.look ?? []).length) legendNote = ' No legend yet: the looks\' data could not be read; save again once the data is in the site, or give legend yourself.';
         }
         m.custom = { ...(m.custom ?? {}), [id]: saved };
         return { message: `Saved the custom layer '${id}'. Add it with add_layer use "${use}".${legendNote}` };

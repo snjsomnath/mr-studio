@@ -143,6 +143,8 @@ export const LOOK_DEFAULTS = {
     edge_glow: 0,
     edge_color: '@focus',
     unit: '',
+    /** The heading over its legend rows when the layer has more than one scale (#622). */
+    legend: '',
   },
 };
 
@@ -1360,4 +1362,27 @@ export function filterShapes<S extends Shapes>(shapes: S, filters: readonly Shap
 /** The legend a recipe's looks give, for the controller (S2: every colour on the table has its swatch). */
 export function recipeLegend(looks: readonly CompiledLook[]): LegendItem[] {
   return looks.flatMap((look) => look.legend);
+}
+
+/**
+ * Each look's legend rows as one legend (#622). When more than one look has a scale (several
+ * rows), each scale gets a heading, so a soil-depth ramp and a rock-height ramp read as two
+ * legends: the look's `legend` prop, else its id in words. Single swatches come first, so
+ * none sits under a scale's heading.
+ */
+export function lookLegend(parts: readonly { block: RecipeBlock; rows: readonly LegendItem[] }[]): LegendItem[] {
+  const shown = parts.filter((part) => part.rows.length > 0);
+  const scales = shown.filter((part) => part.rows.length > 1).length;
+  const rows = shown.flatMap(({ block, rows }) => {
+    const group = scales > 1 && rows.length > 1 ? legendHeading(block) : '';
+    return rows.map((row) => (group && !row.group ? { ...row, group } : { ...row }));
+  });
+  return scales > 1 ? [...rows.filter((row) => !row.group), ...rows.filter((row) => row.group)] : rows;
+}
+
+function legendHeading(block: RecipeBlock): string {
+  const own = block.props?.legend;
+  if (typeof own === 'string' && own.trim()) return own.trim();
+  const words = block.id.replace(/[-_]+/g, ' ').trim();
+  return words ? words[0]!.toUpperCase() + words.slice(1) : '';
 }
