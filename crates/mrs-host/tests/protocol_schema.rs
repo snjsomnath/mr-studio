@@ -25,6 +25,6 @@ fn the_contract_numbers_match_the_sdk() {
     let constant = |name: &str| {
         types.lines().find_map(|l| l.strip_prefix(&format!("export const {name} = "))).map(|v| v.trim_end_matches(';').to_string())
     };
-    assert_eq!(constant("PROTOCOL"), Some(mrs_host::PROTOCOL.to_string()), "PROTOCOL differs between hub.rs and types.ts");
+    assert_eq!(constant("PROTOCOL"), Some(mrs_host::PROTOCOL.to_string()), "PROTOCOL differs between hub/mod.rs and types.ts");
     assert_eq!(constant("LAYER_API"), Some(mrs_host::layers::LAYER_API.to_string()), "LAYER_API differs between layers.rs and types.ts");
 }
