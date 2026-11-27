@@ -4,6 +4,22 @@ Every merge to main that carries a release note becomes a version. The newest is
 The app shows these notes, with their pictures, on Home when a newer version is out.
 How notes are written: docs/RELEASING.md.
 
+## 0.56.0 (2026-11-27)
+
+### New
+
+#### Design the walk in a dialog of its own (#644)
+
+In the editor, the Field walk has a **Design the walk…** button. It opens a larger dialog with the kinds, the feeling and what a spot takes, beside a live preview of a visitor's phone. **Save the walk as data** is there too. Any layer can now give settings that need room a dialog like this (`dialogs` in layer.json).
+
+![Design the walk](docs/screenshots/644-dialog.png)
+
+### Fixes
+
+#### Open a table file works again (#648)
+
+Home's **Open a table file** said "Command import_table not allowed by ACL" and opened nothing. Double-clicking a `.mrstable`, **Duplicate** on a table card, **Update now** for a table waiting for the show to stop, and the editor's **Export starter pack** were refused the same way. The app had these commands but never gave the windows permission to use them. A test now checks that every command the app has is permitted, so a new one can't be missed again.
+
 ## 0.55.0 (2026-11-27)
 
 ### New

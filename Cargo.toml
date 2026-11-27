@@ -5,7 +5,7 @@ members = ["crates/mrs-engine", "crates/mrs-site", "crates/mrs-host", "crates/mr
 default-members = ["crates/mrs-engine", "crates/mrs-site", "crates/mrs-host", "crates/mrs-cli", "crates/mrs-relay"]
 
 [workspace.package]
-version = "0.55.0"
+version = "0.56.0"
 edition = "2021"
 license-file = "LICENSE"
 rust-version = "1.87"
