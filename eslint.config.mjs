@@ -38,4 +38,7 @@ export default tseslint.config(
       '@typescript-eslint/no-misused-promises': ['error', { checksVoidReturn: { arguments: false, attributes: false } }],
     },
   },
+  // The MCP server is driven by an LLM with nobody watching and writes into people's table folders:
+  // it reads site.json and layer.json through their types (#543), not as loose objects.
+  { files: ['packages/mcp/src/**/*.ts'], rules: { '@typescript-eslint/no-explicit-any': 'error' } },
 );

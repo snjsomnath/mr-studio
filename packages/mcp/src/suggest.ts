@@ -12,7 +12,7 @@
 
 import type { Capability, CapabilityStatus } from './capabilities.ts';
 import { rank } from './capabilities.ts';
-import type { SiteManifest } from './site.ts';
+import type { SceneEntry, SiteManifest } from './site.ts';
 
 /** What the table already has, read from site.json. */
 export interface SiteSignals {
@@ -42,14 +42,14 @@ export interface SiteSignals {
 export type LayerInfo = (use: string) => { data: string[]; category?: string };
 
 export function readSignals(m: SiteManifest, info: LayerInfo = () => ({ data: [] })): SiteSignals {
-  const scene: any[] = Array.isArray(m.layers) ? m.layers : [];
+  const scene: SceneEntry[] = Array.isArray(m.layers) ? m.layers : [];
   const all = scene.flatMap((l) => [l, ...(Array.isArray(l?.items) ? l.items : [])]);
   const layers = new Set<string>(all.map((l) => String(l?.use ?? '')).filter(Boolean));
-  const data = new Set<string>([...Object.keys(m.data ?? {}), ...['buildings', 'trees', 'terrain', 'mesh', 'water'].filter((k) => m.scene?.[k])]);
+  const data = new Set<string>([...Object.keys(m.data ?? {}), ...(['buildings', 'trees', 'terrain', 'mesh', 'water'] as const).filter((k) => m.scene?.[k])]);
   const named = new Set(all.flatMap((l) => info(String(l?.use ?? '')).data));
   // At rest: base and ambient layers. Every other top-level layer gets a controller button, set or not.
-  const atRest = (l: any) => ['base', 'ambient'].includes(info(String(l?.use ?? '')).category ?? '');
-  for (const c of Object.values(m.custom ?? {}) as any[]) for (const d of c?.data ?? []) if (d?.dataset) named.add(d.dataset);
+  const atRest = (l: SceneEntry) => ['base', 'ambient'].includes(info(String(l?.use ?? '')).category ?? '');
+  for (const c of Object.values(m.custom ?? {})) for (const d of c?.data ?? []) if (d?.dataset) named.add(d.dataset);
   const tw = Number(m.table?.width_cm), th = Number(m.table?.height_cm), ew = Number(m.extent?.width_m), eh = Number(m.extent?.height_m);
   let margin: SiteSignals['margin'] = null;
   if (tw > 0 && th > 0 && ew > 0 && eh > 0) {
@@ -65,7 +65,7 @@ export function readSignals(m: SiteManifest, info: LayerInfo = () => ({ data: []
     restLife: scene.filter((l) => atRest(l) && l?.active !== false && l?.use !== 'basemap').length,
     unusedData: Object.keys(m.data ?? {}).filter((d) => !named.has(d)),
     steps,
-    stepNotes: scene.some((l) => l?.steps?.sequence?.some((s: any) => s?.notes)),
+    stepNotes: scene.some((l) => l?.steps?.sequence?.some((s) => s?.notes)),
     languages,
     welcome: Boolean(m.branding?.welcome),
     logo: Boolean(m.branding?.logo),

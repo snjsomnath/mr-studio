@@ -103,19 +103,19 @@ function slug(text: string): string {
 
 function layerCapability(l: LayerEntry, catalog: Catalog, roadmap: RoadmapRow[]): Capability {
   const m = l.manifest;
-  const about = (m.about ?? {}) as { purpose?: string; questions?: string[]; pairs_with?: string[]; limits?: string[] };
-  const controls: any[] = m.controls ?? [];
-  const tools: any[] = m.tools ?? [];
-  const panels: any[] = m.panels ?? [];
+  const about = m.about ?? {};
+  const controls = m.controls ?? [];
+  const tools = m.tools ?? [];
+  const panels = m.panels ?? [];
   const requires: Requirement[] = [];
   for (const d of m.requires?.data ?? []) requires.push({ kind: 'data', what: d, how: `a '${d}' dataset in the site (scene.${d} or data.${d}): bring the file in with import_data (target ${['buildings', 'trees', 'walkways', 'trips', 'terrain'].includes(d) ? d : `data:${d}`}), or the editor's Add data` });
   for (const k of m.requires?.kernels ?? []) if (!catalog.kernels.includes(k)) requires.push({ kind: 'kernel', what: k, how: 'not in this core' });
   for (const s of m.requires?.services ?? []) requires.push({ kind: 'service', what: s, how: `a service '${s}' under "services" in site.json` });
   const keys = new Set<string>();
-  for (const c of controls) for (const s of c.sources ?? []) keys.add(s);
+  for (const c of controls) if (c.type === 'text') for (const s of c.sources ?? []) keys.add(s);
   // Every layer starts without a key (free maps, simulated vehicles); a key adds a live or signed-in source.
   for (const k of keys) requires.push({ kind: 'key', what: k, how: `a '${k}' source in the app's Sources and keys, only for the live or signed-in part; the layer works without it` });
-  for (const c of controls) if (c.media && c.mediaBy === 'path' && c.default === '' && !c.none) requires.push({ kind: 'file', what: `${c.label} (${(c.media as string[]).join(' or ')})`, how: 'a file added to the site (Insert, or data/media/)' });
+  for (const c of controls) if (c.type === 'text' && c.media && c.mediaBy === 'path' && c.default === '' && !c.none) requires.push({ kind: 'file', what: `${c.label} (${c.media.join(' or ')})`, how: 'a file added to the site (Insert, or data/media/)' });
 
   const phone = controls.filter((c) => c.phone).map((c) => c.label);
   const toolWords = tools.map((t) => `${t.type}: ${t.label ?? t.id}`);

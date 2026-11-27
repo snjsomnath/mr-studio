@@ -57,7 +57,7 @@ export function checkIdea(idea: LayerIdea, catalog: Catalog, extraLayers: LayerE
   const existing = [...catalog.layers, ...extraLayers]
     .map((l) => {
       const m = l.manifest;
-      const text = `${m.name ?? ''} ${m.description ?? ''} ${(m.controls ?? []).map((c: any) => c.label).join(' ')}`;
+      const text = `${m.name ?? ''} ${m.description ?? ''} ${(m.controls ?? []).map((c) => c.label).join(' ')}`;
       const shared = overlap(words, tokens(text));
       const kernelHit = (m.requires?.kernels ?? []).filter((k: string) => idea.kernels?.includes(k));
       return { l, shared, kernelHit, score: shared.length + 2 * kernelHit.length };

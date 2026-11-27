@@ -14,7 +14,7 @@ fn the_checked_in_site_schema_is_current() {
     let saved = std::fs::read_to_string(&path).unwrap_or_default();
     assert!(
         saved == fresh,
-        "docs/contracts/site.schema.json is not what the manifest types say. Run `UPDATE_SCHEMA=1 cargo test -p mrs-site --test schema` and commit it."
+        "docs/contracts/site.schema.json is not what the manifest types say. Run `UPDATE_SCHEMA=1 cargo test -p mrs-site --test schema`, then `pnpm --filter @mrstudio/mcp site-types`, and commit both."
     );
 }
 

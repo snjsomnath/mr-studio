@@ -10,8 +10,10 @@ import { delimiter, dirname, isAbsolute, join, relative, resolve } from 'node:pa
 
 import { readLayerDir, type Catalog, type LayerEntry } from './core.ts';
 import { checkSiteShape } from './schema.ts';
+import type { LayerItem, LayerRef, SiteJson } from './site-types.ts';
 import { checkRecipe, checkIcon } from './recipe.ts';
 import { KIND_LAYERS, readiness } from '../../sdk/src/readiness.ts';
+import type { Control, CustomLayer as SdkCustomLayer, LayerCategory } from '../../sdk/src/types.ts';
 
 export const SITE_FORMAT = 3;
 
@@ -21,7 +23,9 @@ export interface Issue {
   message: string;
 }
 
-export type SiteManifest = Record<string, any>;
+export type SiteManifest = SiteJson;
+/** A layer or an item of the scene: what moves between the two levels. */
+export type SceneEntry = LayerRef & Pick<LayerItem, 'stack'>;
 
 /** What `use` starts with for a custom layer saved in the site. */
 export const CUSTOM_PREFIX = 'custom:';
@@ -30,11 +34,12 @@ export const CUSTOM_PREFIX = 'custom:';
 export function customLayers(manifest: SiteManifest | null | undefined): LayerEntry[] {
   const custom = manifest?.custom;
   if (!custom || typeof custom !== 'object') return [];
-  return Object.entries(custom).map(([id, recipe]: [string, any]) => ({
+  return Object.entries(custom).map(([id, recipe]) => ({
     id,
     origin: 'custom' as const,
     use: `${CUSTOM_PREFIX}${id}`,
-    manifest: { api: 1, id, name: recipe?.name ?? id, description: recipe?.description ?? '', icon: recipe?.icon, category: recipe?.category ?? 'analysis', controls: recipe?.controls ?? [], custom: recipe },
+    // The SDK's CustomLayer is site.json's with undefined where site.json allows null.
+    manifest: { api: 1, id, name: recipe?.name ?? id, description: recipe?.description ?? '', icon: recipe?.icon ?? undefined, category: (recipe?.category ?? 'analysis') as LayerCategory, controls: (recipe?.controls ?? []) as Control[], custom: recipe as unknown as SdkCustomLayer },
   }));
 }
 
@@ -57,8 +62,8 @@ export function freeId(manifest: SiteManifest, use: string): string {
 
 /** Every instance id in the scene, layers and their items. */
 export function instanceIds(manifest: SiteManifest): string[] {
-  const layers: any[] = Array.isArray(manifest.layers) ? manifest.layers : [];
-  return layers.flatMap((l) => [l?.id, ...(Array.isArray(l?.items) ? l.items.map((i: any) => i?.id) : [])]).filter((id): id is string => typeof id === 'string');
+  const layers: SceneEntry[] = Array.isArray(manifest.layers) ? manifest.layers : [];
+  return layers.flatMap((l) => [l?.id, ...(Array.isArray(l?.items) ? l.items.map((i) => i?.id) : [])]).filter((id): id is string => typeof id === 'string');
 }
 
 export function sitePath(dir: string): string {
@@ -210,7 +215,7 @@ export interface ValueCheck {
   message?: string;
 }
 
-export function checkControlValue(control: Record<string, any>, value: unknown): ValueCheck {
+export function checkControlValue(control: Control, value: unknown): ValueCheck {
   switch (control.type) {
     case 'range': {
       if (typeof value !== 'number' || !Number.isFinite(value)) return { ok: false, message: 'must be a number' };
@@ -222,7 +227,7 @@ export function checkControlValue(control: Record<string, any>, value: unknown):
       return v === value ? { ok: true, value: v } : { ok: true, value: v, message: `will be stored as ${v} (range ${min} to ${max}, step ${step || 'any'})` };
     }
     case 'select': {
-      const options = (control.options ?? []).map((o: any) => (o && typeof o === 'object' && 'value' in o ? o.value : o));
+      const options = (control.options ?? []).map((o) => (o && typeof o === 'object' && 'value' in o ? o.value : o));
       return options.some((o: unknown) => o === value)
         ? { ok: true, value }
         : { ok: false, message: `is not one of the options: ${options.map((o: unknown) => JSON.stringify(o)).join(', ')}` };
@@ -242,7 +247,8 @@ export function checkControlValue(control: Record<string, any>, value: unknown):
     case 'action':
       return { ok: false, message: 'is an action button, it has no value' };
     default:
-      return { ok: false, message: `has unknown control type ${JSON.stringify(control.type)}` };
+      // A layer.json from another version can have a kind this one does not know.
+      return { ok: false, message: `has unknown control type ${JSON.stringify((control as { type?: unknown }).type)}` };
   }
 }
 
@@ -250,8 +256,8 @@ export function checkControlValue(control: Record<string, any>, value: unknown):
 export function checkParams(layer: LayerEntry, params: Record<string, unknown>, path: string): { issues: Issue[]; cleaned: Record<string, unknown> } {
   const issues: Issue[] = [];
   const cleaned: Record<string, unknown> = {};
-  const controls: any[] = layer.manifest.controls ?? [];
-  const sets: any[] = layer.manifest.entities ?? [];
+  const controls = layer.manifest.controls ?? [];
+  const sets = layer.manifest.entities ?? [];
   for (const [key, value] of Object.entries(params)) {
     // Entities' own values (#279): entities[set][entity][control], each checked like a control.
     if (key === 'entities' && sets.length > 0) {
@@ -266,7 +272,7 @@ export function checkParams(layer: LayerEntry, params: Record<string, unknown>, 
         }
         for (const [eid, values] of Object.entries((entities ?? {}) as Record<string, Record<string, unknown>>)) {
           for (const [cid, v] of Object.entries(values ?? {})) {
-            const control = (set.controls ?? []).find((c: any) => c.id === cid);
+            const control = (set.controls ?? []).find((c) => c.id === cid);
             const at = `${path}.entities.${sid}.${eid}.${cid}`;
             if (!control) {
               issues.push({ level: 'error', path: at, message: `'${sid}' entities have no control '${cid}'` });
@@ -340,7 +346,7 @@ export function validateManifest(manifest: SiteManifest, dir: string | null, cat
   const t = manifest.table;
   if (t !== undefined && t !== null) {
     if (!isNum(t.width_cm) || !isNum(t.height_cm) || t.width_cm <= 0 || t.height_cm <= 0) err('table', 'needs positive width_cm and height_cm');
-    if (t.front !== undefined && !['top', 'bottom', 'left', 'right'].includes(t.front)) err('table.front', "is the edge where visitors stand: 'bottom', 'top', 'left' or 'right'");
+    if (t.front != null && !['top', 'bottom', 'left', 'right'].includes(t.front)) err('table.front', "is the edge where visitors stand: 'bottom', 'top', 'left' or 'right'");
     else if (e && isNum(e.width_m) && isNum(e.height_m) && e.height_m > 0) {
       const a = e.width_m / e.height_m;
       const b = t.width_cm / t.height_cm;
@@ -382,13 +388,13 @@ export function validateManifest(manifest: SiteManifest, dir: string | null, cat
   // Layers: the scene, bottom to top. Each may hold items, and a sequence holds steps.
   const layers = manifest.layers;
   if (layers !== undefined && !Array.isArray(layers)) err('layers', 'must be a list');
-  const list: any[] = Array.isArray(layers) ? layers : [];
+  const list: LayerRef[] = Array.isArray(layers) ? layers : [];
   const seen = new Map<string, string>();
-  const siteData = new Set([...Object.keys(manifest.data ?? {}), ...['buildings', 'trees', 'terrain', 'mesh'].filter((k) => manifest.scene?.[k])]);
+  const siteData = new Set([...Object.keys(manifest.data ?? {}), ...(['buildings', 'trees', 'terrain', 'mesh'] as const).filter((k) => manifest.scene?.[k])]);
   // Params that name a file or dataset (controls with "media"): the file must be there (#321).
   const checkMediaParams = (layer: LayerEntry, params: Record<string, unknown>, at: string) => {
-    for (const control of (layer.manifest.controls ?? []) as any[]) {
-      if (!control?.media) continue;
+    for (const control of layer.manifest.controls ?? []) {
+      if (control?.type !== 'text' || !control.media) continue;
       const value = params[control.id];
       if (typeof value !== 'string' || !value) continue;
       if (control.mediaBy === 'path') {
@@ -399,7 +405,7 @@ export function validateManifest(manifest: SiteManifest, dir: string | null, cat
       } else if (!siteData.has(value)) warn(`${at}.${control.id}`, `'${value}' is not one of the site's datasets (${[...siteData].join(', ') || 'none yet'})`);
     }
   };
-  const checkInstance = (ref: any, at: string, item: boolean): LayerEntry | undefined => {
+  const checkInstance = (ref: SceneEntry, at: string, item: boolean): LayerEntry | undefined => {
     if (!ref || typeof ref.use !== 'string') {
       err(at, "needs 'use': a core layer id, ./layers/<name> or custom:<id>");
       return undefined;
@@ -430,7 +436,7 @@ export function validateManifest(manifest: SiteManifest, dir: string | null, cat
     for (const d of req.data ?? []) {
       if (!siteData.has(d)) warn(at, `layer '${layer.id}' reads site data '${d}', which this site does not have yet; it draws little or nothing until '${d}' is added (scene.${d} or data.${d})`);
     }
-    const services = new Set((Array.isArray(manifest.services) ? manifest.services : []).map((s: any) => s?.id));
+    const services = new Set((Array.isArray(manifest.services) ? manifest.services : []).map((s) => s?.id));
     for (const svc of req.services ?? []) if (!services.has(svc)) warn(at, `layer '${layer.id}' calls service '${svc}', which the site's "services" does not declare`);
     if (layer.origin === 'site' && dir && !existsSync(join(dir, ref.use, 'dist', 'index.js'))) {
       warn(at, `'${ref.use}' is a site layer whose code is not built yet; run \`mrstudio layer build --site <site folder>\` so the app can load it (#277)`);
@@ -445,7 +451,7 @@ export function validateManifest(manifest: SiteManifest, dir: string | null, cat
   const found = list.map((ref, i) => {
     const layer = checkInstance(ref, `layers[${i}]`, false);
     if (ref?.items !== undefined && !Array.isArray(ref.items)) err(`layers[${i}].items`, 'must be a list');
-    (Array.isArray(ref?.items) ? ref.items : []).forEach((child: any, j: number) => checkInstance(child, `layers[${i}].items[${j}]`, true));
+    (Array.isArray(ref?.items) ? ref.items : []).forEach((child, j) => checkInstance(child, `layers[${i}].items[${j}]`, true));
     return layer;
   });
   const TRANSITIONS = ['cut', 'fade', 'dip'];
@@ -455,26 +461,26 @@ export function validateManifest(manifest: SiteManifest, dir: string | null, cat
     if (steps === undefined) return;
     const at = `layers[${i}].steps`;
     if (!steps || typeof steps !== 'object' || Array.isArray(steps)) return err(at, 'must be an object');
-    if (steps.mode !== undefined && !['manual', 'timed'].includes(steps.mode)) err(`${at}.mode`, "is 'manual' or 'timed'");
-    if (steps.reveal !== undefined && !['stop', 'then-next'].includes(steps.reveal)) err(`${at}.reveal`, "is 'stop' or 'then-next'");
-    if (steps.transition !== undefined && !TRANSITIONS.includes(steps.transition)) err(`${at}.transition`, "is 'cut', 'fade' or 'dip'");
+    if (steps.mode != null && !['manual', 'timed'].includes(steps.mode)) err(`${at}.mode`, "is 'manual' or 'timed'");
+    if (steps.reveal != null && !['stop', 'then-next'].includes(steps.reveal)) err(`${at}.reveal`, "is 'stop' or 'then-next'");
+    if (steps.transition != null && !TRANSITIONS.includes(steps.transition)) err(`${at}.transition`, "is 'cut', 'fade' or 'dip'");
     if (steps.transition_s !== undefined && !(isNum(steps.transition_s) && steps.transition_s >= 0 && steps.transition_s <= 10)) err(`${at}.transition_s`, 'must be 0 to 10 seconds');
     if (steps.sequence === undefined) return;
     if (!Array.isArray(steps.sequence)) return err(`${at}.sequence`, 'must be a list of steps');
     if (steps.sequence.length && found[i] && found[i]!.manifest.sequence !== true) err(`${at}.sequence`, `only a sequence layer, such as the slideshow, shows other layers; '${ref.use}' is not one`);
-    steps.sequence.forEach((step: any, n: number) => {
+    steps.sequence.forEach((step, n) => {
       const here = `${at}.sequence[${n}]`;
-      const own = Array.isArray(ref.items) && ref.items.some((item: any) => item?.id === step?.layer);
+      const own = Array.isArray(ref.items) && ref.items.some((item) => item?.id === step?.layer);
       const top = list.find((l) => l?.id === step?.layer);
       if (typeof step?.layer !== 'string') return err(here, "needs 'layer': the id of the layer the step shows");
       if (step.layer === ref.id) return err(here, 'a sequence cannot show itself');
       if (sequences.has(step.layer)) return err(here, `'${step.layer}' is a sequence too; a step shows one layer`);
       if (!own && !top) return err(here, `shows '${step.layer}', which is neither a layer of the scene nor an item of this one`);
       if (step.duration_s !== undefined && !(isNum(step.duration_s) && step.duration_s > 0)) err(`${here}.duration_s`, 'must be a positive number of seconds');
-      if (step.transition !== undefined && !TRANSITIONS.includes(step.transition)) err(`${here}.transition`, "is 'cut', 'fade' or 'dip'");
+      if (step.transition != null && !TRANSITIONS.includes(step.transition)) err(`${here}.transition`, "is 'cut', 'fade' or 'dip'");
       if (step.transition_s !== undefined && !(isNum(step.transition_s) && step.transition_s >= 0 && step.transition_s <= 10)) err(`${here}.transition_s`, 'must be 0 to 10 seconds');
       if (step.notes !== undefined && typeof step.notes !== 'string') err(`${here}.notes`, "is the presenter's notes for this step, as text");
-      const shown = own ? ref.items.find((item: any) => item?.id === step.layer) : top;
+      const shown = own ? ref.items!.find((item) => item?.id === step.layer) : top;
       const layer = shown && findLayer(catalog, dir, shown.use, manifest);
       if (layer && step.params !== undefined) {
         issues.push(...checkParams(layer, step.params, `${here}.params`).issues);
@@ -484,8 +490,8 @@ export function validateManifest(manifest: SiteManifest, dir: string | null, cat
   });
 
   // Custom layers: recipes the layer editor saves.
-  const datasets = new Set([...Object.keys(manifest.data ?? {}), ...['buildings', 'trees', 'terrain'].filter((k) => manifest.scene?.[k])]);
-  for (const [id, recipe] of Object.entries((manifest.custom ?? {}) as Record<string, any>)) {
+  const datasets = new Set([...Object.keys(manifest.data ?? {}), ...(['buildings', 'trees', 'terrain'] as const).filter((k) => manifest.scene?.[k])]);
+  for (const [id, recipe] of Object.entries(manifest.custom ?? {})) {
     const at = `custom.${id}`;
     if (!/^[a-z0-9-]{1,40}$/.test(id)) err(at, 'a custom layer id is lowercase letters, digits and dashes');
     if (catalog.layers.some((l) => l.id === id)) err(at, `'${id}' is a core layer's id; give the custom layer another`);
@@ -495,11 +501,11 @@ export function validateManifest(manifest: SiteManifest, dir: string | null, cat
     }
     if (typeof recipe.name !== 'string' || !recipe.name.trim() || recipe.name.length > 40) err(`${at}.name`, 'is 1 to 40 characters');
     const sources = new Set<string>();
-    (Array.isArray(recipe.data) ? recipe.data : []).forEach((d: any, n: number) => {
+    (Array.isArray(recipe.data) ? recipe.data : []).forEach((d, n) => {
       const here = `${at}.data[${n}]`;
       if (typeof d?.id !== 'string') return err(here, "needs an 'id'");
       sources.add(d.id);
-      const kinds = ['dataset', 'path', 'wms', 'tiles'].filter((k) => d[k] !== undefined);
+      const kinds = (['dataset', 'path', 'wms', 'tiles'] as const).filter((k) => d[k] != null);
       if (kinds.length !== 1) err(here, 'give exactly one of dataset, path, wms and tiles');
       if (typeof d.dataset === 'string' && !datasets.has(d.dataset)) err(`${here}.dataset`, `the site has no dataset '${d.dataset}'`);
       if (typeof d.path === 'string' && dir) {
@@ -508,31 +514,31 @@ export function validateManifest(manifest: SiteManifest, dir: string | null, cat
       }
       if (d.wms !== undefined && !(typeof d.wms?.url === 'string' && /^https?:\/\//.test(d.wms.url) && typeof d.wms?.layers === 'string')) err(`${here}.wms`, 'needs an http(s) url and the names of its layers');
     });
-    const look = new Set((Array.isArray(recipe.look) ? recipe.look : []).map((b: any) => b?.id));
-    for (const stage of ['look', 'motion', 'interaction']) {
-      (Array.isArray(recipe[stage]) ? recipe[stage] : []).forEach((block: any, n: number) => {
+    const look = new Set((Array.isArray(recipe.look) ? recipe.look : []).map((b) => b?.id));
+    for (const stage of ['look', 'motion', 'interaction'] as const) {
+      (Array.isArray(recipe[stage]) ? recipe[stage] : []).forEach((block, n) => {
         const here = `${at}.${stage}[${n}]`;
         if (typeof block?.id !== 'string' || typeof block?.block !== 'string') return err(here, "needs an 'id' and a 'block' name");
-        if (block.data !== undefined && !sources.has(block.data)) err(`${here}.data`, `the layer has no data '${block.data}'`);
-        if (block.on !== undefined && !look.has(block.on)) err(`${here}.on`, `'${block.on}' is not one of its look blocks`);
+        if (block.data != null && !sources.has(block.data)) err(`${here}.data`, `the layer has no data '${block.data}'`);
+        if (block.on != null && !look.has(block.on)) err(`${here}.on`, `'${block.on}' is not one of its look blocks`);
       });
     }
     for (const issue of checkRecipe(recipe, at)) issues.push(issue);
   }
   // Ready to present? (#63): the same checks the editor's Checks button shows. Missing data is said above.
   {
-    const refs: any[] = Array.isArray(layers) ? layers : [];
+    const refs: LayerRef[] = Array.isArray(layers) ? layers : [];
     const ready = readiness({
       data: [...siteData],
       size: Boolean(manifest.table?.width_cm),
       timezone: manifest.timezone,
       calibrated: null,
       welcome: manifest.branding?.welcome,
-      layers: refs.flatMap((ref: any) => {
+      layers: refs.flatMap((ref) => {
         const entry = typeof ref?.use === 'string' ? findLayer(catalog, dir, ref.use, manifest) : undefined;
         const category = entry?.manifest?.category;
-        const top = { id: String(ref?.id ?? ref?.use), name: ref?.button?.name ?? entry?.manifest?.name ?? String(ref?.use), ambient: category === 'base' || category === 'ambient', hidden: Boolean(ref?.button?.hidden), side: ref?.button?.side, needs: [], noWords: !ref?.button?.description && (KIND_LAYERS.has(String(entry?.manifest?.id)) || !entry?.manifest?.description) };
-        return [top, ...(Array.isArray(ref?.items) ? ref.items : []).map((item: any) => ({ id: String(item?.id ?? item?.use), name: String(item?.use), ambient: true, parent: top.id }))];
+        const top = { id: String(ref?.id ?? ref?.use), name: ref?.button?.name ?? entry?.manifest?.name ?? String(ref?.use), ambient: category === 'base' || category === 'ambient', hidden: Boolean(ref?.button?.hidden), side: ref?.button?.side ?? undefined, needs: [], noWords: !ref?.button?.description && (KIND_LAYERS.has(String(entry?.manifest?.id)) || !entry?.manifest?.description) };
+        return [top, ...(Array.isArray(ref?.items) ? ref.items : []).map((item) => ({ id: String(item?.id ?? item?.use), name: String(item?.use), ambient: true, parent: top.id }))];
       }),
     });
     for (const check of ready) {
@@ -541,7 +547,7 @@ export function validateManifest(manifest: SiteManifest, dir: string | null, cat
     }
   }
   if (Array.isArray(layers) && layers.length === 0) note('layers', 'the scene is empty; add a layer');
-  if (Array.isArray(layers) && !layers.some((l: any) => l?.active)) note('layers', 'no layer starts active; the table will show only the base map until someone turns one on');
+  if (Array.isArray(layers) && !layers.some((l) => l?.active)) note('layers', 'no layer starts active; the table will show only the base map until someone turns one on');
 
   // A check above that says more about the same key stands in for the bare shape error.
   issues.unshift(...shape.filter((i) => !issues.some((j) => j.level === 'error' && j.path === i.path)));
@@ -572,12 +578,13 @@ export function findCli(catalog: Catalog): string | null {
 }
 
 /** Runs the CLI with `--json` and reads its answer; a refusal (exit 1) still carries its JSON. */
-export function runCliJson(cli: string, args: string[], timeoutMs = 300_000): Promise<{ ok: boolean; json: any | null; output: string }> {
+/** `T` is the answer's shape as the command documents it; it is read, not checked. */
+export function runCliJson<T>(cli: string, args: string[], timeoutMs = 300_000): Promise<{ ok: boolean; json: T | null; output: string }> {
   return new Promise((done) => {
     execFile(cli, [...args, '--json'], { timeout: timeoutMs, windowsHide: true, maxBuffer: 64 * 1024 * 1024, env: { ...process.env, NO_COLOR: '1', RUST_LOG: 'warn', RUST_BACKTRACE: '0' } }, (error, stdout, stderr) => {
-      let json: any = null;
+      let json: T | null = null;
       try {
-        json = JSON.parse(stdout.trim().split('\n').pop() ?? '');
+        json = JSON.parse(stdout.trim().split('\n').pop() ?? '') as T;
       } catch {
         json = null;
       }
@@ -739,13 +746,13 @@ export function newSiteManifest(spec: NewSite): SiteManifest {
     table: { width_cm: tableW, height_cm: tableH },
     scene: { cell_m: cell },
     basemap: { background: spec.background ?? '#0b0e14', style: null },
-    layers: [] as any[],
+    layers: [] as LayerRef[],
     branding: { title: spec.title ?? spec.name },
   };
   // Every entry gets its id, as the host writes them.
   for (const layer of spec.layers ?? [{ use: 'basemap', active: true }, { use: 'sunlight', active: true }]) {
     const { use, ...rest } = layer;
-    manifest.layers.push({ use, id: freeId(manifest, use), ...rest });
+    (manifest.layers ??= []).push({ use, id: freeId(manifest, use), ...rest });
   }
   return manifest;
 }

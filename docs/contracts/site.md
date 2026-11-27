@@ -126,6 +126,8 @@ Rules:
 
 [`site.schema.json`](site.schema.json) is the JSON Schema of this file: every key, its type and its limits (name and credit lengths, glow strength, palette colours). mrs-site writes it from its own types, so it is never edited by hand: after changing `crates/mrs-site/src/manifest.rs`, run `UPDATE_SCHEMA=1 cargo test -p mrs-site --test schema` and commit the file, or CI fails. An editor such as VS Code can map `site.json` to it (`json.schemas`) for completion while typing.
 
+The MCP server's TypeScript types for site.json (`packages/mcp/src/site-types.ts`) are written from it too: run `pnpm --filter @mrstudio/mcp site-types` after updating the schema.
+
 The MCP server checks a site against the same schema, then adds the rules a schema can't say (ids unique, files present, the table's aspect within 2% of the ground's). `crates/mrs-site/tests/fixtures/verdicts.json` holds sites with the verdict both must give; the app (`tests/verdicts.rs`) and the MCP server (`packages/mcp/test/verdicts.test.ts`) each run it, so a rule added to one side and not the other fails a test. Add a case there with every new rule.
 
 ## Which MR Studio a table needs (#509)

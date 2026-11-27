@@ -10,6 +10,8 @@ import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { fieldsOf, type JsonSchema } from './schema.ts';
+import type { LayerManifest } from '../../sdk/src/types.ts';
+import type { SiteJson } from './site-types.ts';
 import { parseSdk, type SdkExport } from './devlayer.ts';
 
 import { BLOCKS, type BlockDef } from './blocks.ts';
@@ -20,7 +22,7 @@ export interface LayerEntry {
   origin: 'core' | 'site' | 'custom';
   /** The value to put in site.json `use`: "sunlight", "./layers/artwork" or "custom:heat-walk". */
   use: string;
-  manifest: Record<string, any>;
+  manifest: LayerManifest;
 }
 
 export interface RoadmapRow {
@@ -108,8 +110,9 @@ function rel(root: string, path: string): string {
   return relative(root, path).replace(/\\/g, '/');
 }
 
-function readJson(path: string): any {
-  return JSON.parse(readFileSync(path, 'utf8'));
+/** A JSON file, as the shape the caller expects; it is read, not checked. */
+function readJson<T>(path: string): T {
+  return JSON.parse(readFileSync(path, 'utf8')) as T;
 }
 
 function subdirs(dir: string): string[] {
@@ -135,7 +138,7 @@ export function readLayerDir(dir: string, origin: 'core' | 'site'): LayerEntry[]
     const path = join(dir, name, 'layer.json');
     if (!existsSync(path)) continue;
     try {
-      const manifest = readJson(path);
+      const manifest = readJson<LayerManifest>(path);
       out.push({ id: String(manifest.id ?? name), origin, use: origin === 'core' ? String(manifest.id ?? name) : `./layers/${name}`, manifest });
     } catch {
       // A broken manifest is reported by validate_site, not here.
@@ -196,7 +199,7 @@ export function plannedKernelsFrom(roadmap: RoadmapRow[], built: string[], layer
 
 /** Builds the catalog from a core checkout. */
 export function loadLive(root: string): Catalog {
-  const pkg = existsSync(join(root, 'package.json')) ? readJson(join(root, 'package.json')) : {};
+  const pkg = existsSync(join(root, 'package.json')) ? readJson<{ version?: string }>(join(root, 'package.json')) : {};
   const layers = readLayerDir(join(root, 'packages', 'layers'), 'core');
 
   const docs: Record<string, string> = {};
@@ -224,15 +227,15 @@ export function loadLive(root: string): Catalog {
       const path = join(root, base, name, 'site.json');
       if (!existsSync(path)) continue;
       try {
-        const m = readJson(path);
-        const uses = (Array.isArray(m.layers) ? m.layers : []).flatMap((l: any) => [l?.use, ...(Array.isArray(l?.items) ? l.items.map((i: any) => i?.use) : [])]).filter((u: unknown): u is string => typeof u === 'string');
+        const m = readJson<SiteJson>(path);
+        const uses = (Array.isArray(m.layers) ? m.layers : []).flatMap((l) => [l?.use, ...(Array.isArray(l?.items) ? l.items.map((i) => i?.use) : [])]).filter((u: unknown): u is string => typeof u === 'string');
         const readme = join(root, base, name, 'README.md');
         examples.push({
           id: name,
           path: `${base}/${name}`,
           name: String(m.name ?? name),
           layers: [...new Set<string>(uses)],
-          steps: (Array.isArray(m.layers) ? m.layers : []).filter((l: any) => Array.isArray(l?.steps?.sequence)).reduce((n: number, l: any) => n + l.steps.sequence.length, 0),
+          steps: (Array.isArray(m.layers) ? m.layers : []).filter((l) => Array.isArray(l?.steps?.sequence)).reduce((n, l) => n + (l.steps?.sequence?.length ?? 0), 0),
           custom: Object.keys(m.custom ?? {}),
           about: existsSync(readme) ? readFileSync(readme, 'utf8').split(/\r?\n\r?\n/).find((p) => p.trim() && !p.startsWith('#'))?.trim().slice(0, 400) ?? '' : '',
         });

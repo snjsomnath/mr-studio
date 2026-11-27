@@ -5,6 +5,8 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { extname, join, relative, sep } from 'node:path';
 
+import type { SiteManifest } from './site.ts';
+
 export interface Column {
   name: string;
   type: 'number' | 'text' | 'mixed';
@@ -70,7 +72,7 @@ function extend(b: [number, number, number, number] | undefined, x: number, y: n
   return b ? [Math.min(b[0], x), Math.min(b[1], y), Math.max(b[2], x), Math.max(b[3], y)] : [x, y, x, y];
 }
 
-function coords(c: any, visit: (x: number, y: number) => void): void {
+function coords(c: unknown, visit: (x: number, y: number) => void): void {
   if (!Array.isArray(c)) return;
   if (typeof c[0] === 'number' && typeof c[1] === 'number') visit(c[0], c[1]);
   else for (const part of c) coords(part, visit);
@@ -94,16 +96,17 @@ function cells(line: string): string[] {
 }
 
 /** The site.json keys that name each path: scene.buildings, data.zones, a layer's params, a custom layer's data. */
-function uses(manifest: any): Map<string, string[]> {
+function uses(manifest: Partial<SiteManifest> | null): Map<string, string[]> {
   const found = new Map<string, string[]>();
   const add = (path: unknown, where: string) => {
     if (typeof path !== 'string') return;
     const p = path.replace(/^\.\//, '');
     found.set(p, [...(found.get(p) ?? []), where]);
   };
-  for (const [k, v] of Object.entries(manifest?.scene ?? {})) add(typeof v === 'object' && v ? (v as any).path ?? (v as any).file : v, `scene.${k}`);
-  for (const [k, v] of Object.entries(manifest?.data ?? {})) add(typeof v === 'object' && v ? (v as any).path : v, `data.${k}`);
-  const params = (entry: any, where: string) => {
+  const pathOf = (v: unknown) => (typeof v === 'object' && v ? ((v as { path?: unknown; file?: unknown }).path ?? (v as { file?: unknown }).file) : v);
+  for (const [k, v] of Object.entries(manifest?.scene ?? {})) add(pathOf(v), `scene.${k}`);
+  for (const [k, v] of Object.entries(manifest?.data ?? {})) add(pathOf(v), `data.${k}`);
+  const params = (entry: { params?: Record<string, unknown> }, where: string) => {
     for (const [k, v] of Object.entries(entry?.params ?? {})) add(v, `${where}.params.${k}`);
   };
   for (const l of manifest?.layers ?? []) {
@@ -111,12 +114,12 @@ function uses(manifest: any): Map<string, string[]> {
     for (const item of l.items ?? []) params(item, `${l.id}.${item.id}`);
     for (const [i, step] of (l.steps?.sequence ?? []).entries()) params(step, `${l.id}.steps[${i}]`);
   }
-  for (const [id, recipe] of Object.entries(manifest?.custom ?? {})) for (const d of (recipe as any)?.data ?? []) add(d?.path, `custom.${id}.data.${d.id}`);
+  for (const [id, recipe] of Object.entries(manifest?.custom ?? {})) for (const d of recipe?.data ?? []) add(d?.path, `custom.${id}.data.${d.id}`);
   if (manifest?.branding?.logo) add(manifest.branding.logo, 'branding.logo');
   return found;
 }
 
-export function listSiteFiles(dir: string, manifest: any, only?: SiteFile['kind']): SiteFile[] {
+export function listSiteFiles(dir: string, manifest: Partial<SiteManifest> | null, only?: SiteFile['kind']): SiteFile[] {
   const used = uses(manifest);
   const files: SiteFile[] = [];
   for (const full of walk(join(dir, 'data'))) {
@@ -126,13 +129,13 @@ export function listSiteFiles(dir: string, manifest: any, only?: SiteFile['kind'
     const file: SiteFile = { path, kind, bytes: statSync(full).size, used_by: used.get(path) ?? [] };
     try {
       if (kind === 'geojson' && file.bytes < 200 * 1024 * 1024) {
-        const json = JSON.parse(readFileSync(full, 'utf8'));
+        const json = JSON.parse(readFileSync(full, 'utf8')) as { type?: string; features?: { geometry?: { type?: string; coordinates?: unknown } | null; properties?: Record<string, unknown> | null }[] };
         if (json?.type !== 'FeatureCollection' || !Array.isArray(json.features)) {
           file.kind = 'other';
         } else {
           file.features = json.features.length;
-          file.geometry = [...new Set<string>(json.features.map((f: any) => f?.geometry?.type).filter(Boolean))];
-          file.columns = columns(json.features.map((f: any) => f?.properties ?? {}));
+          file.geometry = [...new Set(json.features.map((f) => f?.geometry?.type).filter((t): t is string => Boolean(t)))];
+          file.columns = columns(json.features.map((f) => f?.properties ?? {}));
           let b: [number, number, number, number] | undefined;
           for (const f of json.features) coords(f?.geometry?.coordinates, (x, y) => (b = extend(b, x, y)));
           if (b) file.bounds = b.map((v) => Math.round(v * 1e6) / 1e6) as [number, number, number, number];

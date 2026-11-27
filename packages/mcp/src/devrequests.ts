@@ -163,7 +163,18 @@ function ghToken(): Promise<string | null> {
   );
 }
 
-async function github(path: string, init: { method?: string; body?: unknown; token?: string | null } = {}): Promise<{ ok: true; data: any } | { ok: false; error: GitHubError }> {
+/** An issue as GitHub's REST API gives it, the parts read here. */
+interface GhIssue {
+  number: number;
+  title: string;
+  body?: string | null;
+  state: string;
+  html_url: string;
+  labels?: (string | { name: string })[];
+  pull_request?: unknown;
+}
+
+async function github(path: string, init: { method?: string; body?: unknown; token?: string | null } = {}): Promise<{ ok: true; data: unknown } | { ok: false; error: GitHubError }> {
   let res: Response;
   try {
     res = await fetch(`${API()}${path}`, {
@@ -213,16 +224,17 @@ export async function searchIssues(title: string, context = '', limit = 8): Prom
   // Search needs no sign-in on a public repository; a stale token should not stop it.
   if (!res.ok && token && res.error.code === 'github_not_signed_in') res = await github(`/search/issues?per_page=30&q=${encodeURIComponent(q)}`, {});
   if (!res.ok) return { issues: [], error: res.error };
-  const issues: Issue[] = (res.data.items ?? [])
-    .filter((i: any) => !i.pull_request)
-    .map((i: any) => {
+  const found = res.data as { items?: GhIssue[] };
+  const issues: Issue[] = (found.items ?? [])
+    .filter((i) => !i.pull_request)
+    .map((i) => {
       const s = similarity(terms.join(' '), String(i.title ?? ''), String(i.body ?? ''));
       return {
         number: i.number,
         title: i.title,
         state: i.state,
         url: i.html_url,
-        labels: (i.labels ?? []).map((l: any) => (typeof l === 'string' ? l : l.name)),
+        labels: (i.labels ?? []).map((l) => (typeof l === 'string' ? l : l.name)),
         similarity: Math.round(s.score * 100) / 100,
         why: s.shared.length ? `shares ${s.shared.slice(0, 6).join(', ')}` : 'found by GitHub search',
       };
@@ -245,11 +257,11 @@ export function readDevDraft(path: string): { title: string; labels: string[]; b
     const i = line.indexOf(':');
     if (i > 0) meta[line.slice(0, i).trim()] = line.slice(i + 1).trim();
   }
-  const parse = (v: string | undefined, fallback: any) => {
+  const parse = <T>(v: string | undefined, fallback: T): T => {
     try {
-      return v ? JSON.parse(v) : fallback;
+      return v ? (JSON.parse(v) as T) : fallback;
     } catch {
-      return v ?? fallback;
+      return (v as T) ?? fallback;
     }
   };
   return { title: String(parse(meta.title, '')), labels: parse(meta.labels, ['development-request']), body: m[2]!, status: meta.status ?? 'draft', kind: meta.kind ?? 'other' };
@@ -305,11 +317,12 @@ export async function submitDevDraft(path: string, notDuplicateOf: number[] = []
       error: { code: res.error.code, message: `Not sent. ${res.error.message}`, recoverable: true, next: ['Open issue_link to file it by hand, or check the account can open issues on the repository.'] },
     };
   }
-  const number = Number(res.data?.number);
-  const url = String(res.data?.html_url ?? '');
+  const created = res.data as { number?: number; html_url?: string; title?: string } | null;
+  const number = Number(created?.number);
+  const url = String(created?.html_url ?? '');
   if (!Number.isInteger(number) || !url.startsWith('http')) {
     return { path, submitted: false, issue_link: link, error: { code: 'github_failed', message: 'GitHub answered without an issue number; it may or may not have been created.', recoverable: true, next: [`Search ${CORE_REPO} issues for the title before sending again.`] } };
   }
   writeFileSync(path, readFileSync(path, 'utf8').replace(/^status: .*$/m, `status: submitted\nissue: ${url}`));
-  return { path, submitted: true, number, url, title: String(res.data.title ?? draft.title) };
+  return { path, submitted: true, number, url, title: String(created?.title ?? draft.title) };
 }

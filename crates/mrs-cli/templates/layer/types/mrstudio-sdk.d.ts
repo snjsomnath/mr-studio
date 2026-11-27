@@ -320,6 +320,13 @@ declare module "@mrstudio/sdk/types" {
             services?: string[];
             app?: string;
         };
+        /** For people choosing layers, read by the MCP server's find_capabilities: what it is for, the questions it answers, what it goes well with and its limits. */
+        about?: {
+            purpose?: string;
+            questions?: string[];
+            pairs_with?: string[];
+            limits?: string[];
+        };
         controls?: Control[];
         tools?: ToolSpec[];
         /**

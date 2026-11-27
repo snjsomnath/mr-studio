@@ -15,6 +15,7 @@ import { buildCapabilities, parsePatterns, rank } from '../src/capabilities.ts';
 import { loadLive, parseRoadmap, plannedKernelsFrom } from '../src/core.ts';
 import { checkPaint, checkRecipe } from '../src/recipe.ts';
 import { checkControlValue, previewPlan } from '../src/site.ts';
+import type { Control } from '../../sdk/src/types.ts';
 
 const pkg = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const bundle = join(pkg, 'dist', 'mrstudio-mcp.mjs');
@@ -47,14 +48,15 @@ async function call(client: Client, name: string, args: Record<string, unknown> 
 
 describe('unit', () => {
   test('controls follow the host rules', () => {
-    const range = { type: 'range', min: 0, max: 24, step: 0.25 };
+    const control = (c: object) => c as Control;
+    const range = control({ type: 'range', min: 0, max: 24, step: 0.25 });
     assert.deepEqual(checkControlValue(range, 12.5), { ok: true, value: 12.5 });
     assert.equal(checkControlValue(range, 30).value, 24);
     assert.equal(checkControlValue(range, 12.3).value, 12.25);
     assert.equal(checkControlValue(range, '12').ok, false);
-    assert.equal(checkControlValue({ type: 'select', options: [{ value: 'a' }] }, 'b').ok, false);
-    assert.equal(checkControlValue({ type: 'date' }, '2026-13-01').ok, false);
-    assert.equal(checkControlValue({ type: 'color' }, '#00ff00').ok, true);
+    assert.equal(checkControlValue(control({ type: 'select', options: [{ value: 'a' }] }), 'b').ok, false);
+    assert.equal(checkControlValue(control({ type: 'date' }), '2026-13-01').ok, false);
+    assert.equal(checkControlValue(control({ type: 'color' }), '#00ff00').ok, true);
   });
 
   test('site keys come from the schema the app writes (#537)', () => {
@@ -908,7 +910,7 @@ describe('suggesting features that fit an idea (#477)', () => {
 test('a layer.json-only layer with a map stage passes check_layer, and the map stage rules hold (#374)', async () => {
   const { checkLayerPackage } = await import('../src/devlayer.ts');
   const dir = join(pkg, '..', '..', 'samples', 'map-stage-example', 'layers', 'building-uses');
-  const site = { manifest: { scene: { buildings: { path: 'data/buildings.geojson' } }, layers: [] }, kernels: [] };
+  const site = { manifest: { scene: { cell_m: 1, buildings: { path: 'data/buildings.geojson' } }, layers: [] }, kernels: [] };
   const ok = checkLayerPackage(dir, site);
   assert.deepEqual(ok.issues.filter((i) => i.rule === 'code' || i.rule === 'build' || i.rule === 'stage'), [], JSON.stringify(ok.issues));
   const work = mkdtempSync(join(tmpdir(), 'mrstudio-stage-'));
