@@ -5716,6 +5716,8 @@ body[data-role='edit'] > .connection {
 
 .ed-rail-note[hidden] {
   display: none;
+}
+
 /* A layer's own dialog (#644): settings that need room, beside a preview of what visitors get. */
 .ed-dialog-open {
   display: flex;
