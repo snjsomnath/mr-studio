@@ -42,6 +42,13 @@
     { "id": "hour", "type": "range", "clock": "hour", "label": "Time of day", "help": "The moment the shadows are drawn for, in the table's own time zone.", "min": 0, "max": 24, "step": 0.05, "unit": "h", "default": 12, "phone": true, "visibleWhen": { "mode": ["instant", "golden"] }, "tier": "more" },
     { "id": "trails", "type": "toggle", "label": "Shadow trails over the day", "help": "Every shadow of the day at once, faint, so you see where shade sweeps across.", "default": false, "visibleWhen": { "mode": "instant" } },
     { "id": "play", "type": "toggle", "clock": "play", "label": "Animate the day", "help": "Runs through the day on its own, sunrise to sunset.", "default": false, "visibleWhen": { "mode": ["instant", "golden"] }, "tier": "more" },
+    { "id": "speed", "type": "select", "label": "Play speed", "help": "How fast the day plays. A winter day and night take about 13 seconds at Normal.", "default": "1", "visibleWhen": { "mode": ["instant", "golden"] }, "tier": "more",
+      "options": [
+        { "value": "0.5", "label": "Slow" },
+        { "value": "1", "label": "Normal" },
+        { "value": "2", "label": "Fast" },
+        { "value": "4", "label": "Fastest" }
+      ] },
     {
       "id": "window", "type": "select", "label": "Sun during", "help": "Which part of the day the sun hours count.", "default": "day", "visibleWhen": { "mode": ["day", "seasons"] },
       "options": [

@@ -104,9 +104,11 @@ export interface ModelHandle {
    * footprints raised to their roofs, the ground and any imported model, so edges stay crisp at any table size, unlike
    * a kernel field's cells. Resolves to null where there is no twin; use the kernel's field instead. `onChange` is
    * called when the mask for the same sun would come out differently (the table's quality changed), so the layer
-   * can ask again; the latest call's callback is the one kept.
+   * can ask again; the latest call's callback is the one kept. With `moving` (the sun is playing through the day) the
+   * mask has half the width and height, so a slower computer keeps its frame rate (#652); ask again without it when
+   * the sun stops.
    */
-  sunShadowMask(sun: { azimuth: number; altitude: number }, onChange?: () => void): Promise<FieldFrame | null>;
+  sunShadowMask(sun: { azimuth: number; altitude: number }, onChange?: () => void, options?: { moving?: boolean }): Promise<FieldFrame | null>;
   /** Changes how the picked surfaces look. A later call wins where two overlap. */
   setMaterial(target: SurfaceQuery, material: SurfaceMaterial): void;
   /** Dims everything except the picked surfaces. `null` ends the focus. */

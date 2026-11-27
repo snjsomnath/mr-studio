@@ -768,7 +768,7 @@ export class ModelView {
           remove,
         };
       },
-      sunShadowMask: async (sun: { azimuth: number; altitude: number }, onChange?: () => void): Promise<FieldFrame | null> => {
+      sunShadowMask: async (sun: { azimuth: number; altitude: number }, onChange?: () => void, options?: { moving?: boolean }): Promise<FieldFrame | null> => {
         if (onChange) {
           if (!view.sunMaskChanged.has(layer)) track(() => view.sunMaskChanged.delete(layer));
           view.sunMaskChanged.set(layer, onChange);
@@ -780,7 +780,7 @@ export class ModelView {
           view.sunMask = new SunMask(view.renderer, view.geometry, view.twin, corners, shadowDetail(view.quality));
           if (view.buildings) view.sunMask.setFootprints(view.footprints());
         }
-        return view.sunMask.render(sun.azimuth, sun.altitude);
+        return view.sunMask.render(sun.azimuth, sun.altitude, options?.moving);
       },
       setMaterial: (target: SurfaceQuery, material: SurfaceMaterial): void => {
         own();

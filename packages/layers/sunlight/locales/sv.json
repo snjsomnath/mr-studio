@@ -98,5 +98,11 @@
   "Tap where a new tree should stand.": "Tryck där ett nytt träd ska stå.",
   "Take a building or tree away": "Ta bort en byggnad eller ett träd",
   "Tap a building or tree to see the place without it.": "Tryck på en byggnad eller ett träd för att se platsen utan den.",
-  "Buildings and trees added or taken away from phones last until Sunlight closes; they are not saved": "Byggnader och träd som läggs till eller tas bort från telefoner finns kvar tills Solljus stängs; de sparas inte"
+  "Buildings and trees added or taken away from phones last until Sunlight closes; they are not saved": "Byggnader och träd som läggs till eller tas bort från telefoner finns kvar tills Solljus stängs; de sparas inte",
+  "Play speed": "Uppspelningshastighet",
+  "Slow": "Långsam",
+  "Normal": "Normal",
+  "Fast": "Snabb",
+  "Fastest": "Snabbast",
+  "How fast the day plays. A winter day and night take about 13 seconds at Normal.": "Hur fort dagen spelas upp. En vinterdag och natt tar ungefär 13 sekunder i Normal."
 }

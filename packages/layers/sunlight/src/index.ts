@@ -19,6 +19,8 @@ interface Params {
   date: string;
   hour: number;
   play: boolean;
+  /** How fast the play runs, as a multiple (#661): "0.5", "1", "2" or "4". */
+  speed?: string;
   trees: boolean;
   treeColor: boolean;
   threshold: number;
@@ -93,6 +95,14 @@ export default defineLayer<Params>({
     const hourNow = () => clock ?? ctx.params.hour;
     const playing = () => ctx.params.play && atMoment(ctx.params.mode);
     const sunNow = () => sunAt(ctx.site, ctx.params.date, hourNow());
+    // The day's highest sun decides how long the play lingers at the horizon (#661); worked out once a day.
+    let peakOf: { date: string; peak: number } | null = null;
+    const dayPeak = () => {
+      if (peakOf?.date !== ctx.params.date) peakOf = { date: ctx.params.date, peak: sunDay(ctx.site, ctx.params.date).peak.altitude };
+      return peakOf.peak;
+    };
+    // How fast the play runs, as picked on the controller (#661).
+    const playSpeed = () => (Number(ctx.params.speed) > 0 ? Math.min(8, Number(ctx.params.speed)) : 1);
     const golden = () => ctx.params.mode === 'golden';
     // Light and shade for a sun height, in the golden hour's own grade in that mode.
     const lightColormap = (altitude: number) => (golden() ? goldenColormap(altitude) : skyColormap(altitude));
@@ -156,7 +166,7 @@ export default defineLayer<Params>({
       let frame: FieldFrame | null;
       const started = performance.now();
       try {
-        frame = await ctx.model.sunShadowMask(sunNow(), () => void reshadow());
+        frame = await ctx.model.sunShadowMask(sunNow(), () => void reshadow(), { moving: playing() });
       } finally {
         masking = false;
         const now = performance.now();
@@ -403,12 +413,12 @@ export default defineLayer<Params>({
       }
       let rate: number;
       if (golden()) {
-        const goldenRate = goldenTick(dt);
+        const goldenRate = goldenTick(dt * playSpeed());
         if (goldenRate === null) return syncClock(0);
-        rate = goldenRate;
+        rate = goldenRate * playSpeed();
       } else {
         // The clock moves by the frame's own time, so the sun moves the same distance on screen for the same time.
-        rate = PLAY_HOURS_PER_SECOND * playPace(sunNow().altitude);
+        rate = PLAY_HOURS_PER_SECOND * playSpeed() * playPace(sunNow().altitude, dayPeak());
         clock = (hourNow() + dt * rate) % 24;
       }
       syncClock(rate);
