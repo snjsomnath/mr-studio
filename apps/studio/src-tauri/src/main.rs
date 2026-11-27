@@ -692,20 +692,27 @@ fn list_displays(app: &AppHandle) -> anyhow::Result<Vec<Display>> {
     let monitors = app.available_monitors()?;
     #[cfg(windows)]
     let models = models::models();
+    // macOS only gives "Monitor #<model number>" (#579): the system's own names and sizes instead (#612).
+    #[cfg(target_os = "macos")]
+    let screens = mac_displays::screens(app);
+    #[cfg(target_os = "macos")]
+    let screen = |name: Option<&String>| name.and_then(|n| mac_displays::model_number(n)).and_then(|model| screens.get(&model));
     let model = |name: Option<&String>| -> Option<String> {
         #[cfg(windows)]
         if let Some((_, model)) = models.iter().find(|(system, _)| Some(system) == name) {
             return Some(model.clone());
         }
-        // macOS only gives "Monitor #<model number>" (#579): say which one is the Mac's own.
         #[cfg(target_os = "macos")]
-        if let Some(friendly) = name.map(String::as_str).and_then(mac_displays::friendly) {
-            return Some(friendly);
+        if let Some(screen) = screen(name) {
+            return Some(screen.name.clone());
         }
         name.filter(|n| !n.is_empty() && !n.starts_with(r"\\.\") && !n.starts_with("Monitor #")).cloned()
     };
     let displays = monitors.iter().enumerate().map(|(index, m)| {
         let model = model(m.name());
+        let kind = model.as_deref().and_then(Kind::guess);
+        #[cfg(target_os = "macos")]
+        let kind = kind.or_else(|| screen(m.name()).and_then(mac_displays::kind_by_size));
         Display {
             index,
             name: m.name().cloned(),
@@ -715,7 +722,7 @@ fn list_displays(app: &AppHandle) -> anyhow::Result<Vec<Display>> {
             height: m.size().height,
             scale: m.scale_factor(),
             primary: is_primary(m),
-            kind: model.as_deref().and_then(Kind::guess),
+            kind,
             model,
         }
     });
@@ -725,28 +732,100 @@ fn list_displays(app: &AppHandle) -> anyhow::Result<Vec<Display>> {
 /// Names for macOS displays, which the window library calls "Monitor #<model number>" (#579).
 #[cfg(target_os = "macos")]
 mod mac_displays {
+    use std::collections::HashMap;
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    use objc2::rc::Retained;
+    use objc2::MainThreadMarker;
+    use objc2_app_kit::NSScreen;
+    use objc2_foundation::{ns_string, NSNumber};
+    use tauri::AppHandle;
+
+    use crate::config::Kind;
+
+    #[repr(C)]
+    struct CGSize {
+        width: f64,
+        height: f64,
+    }
+
     #[link(name = "CoreGraphics", kind = "framework")]
     extern "C" {
         fn CGGetActiveDisplayList(max: u32, displays: *mut u32, count: *mut u32) -> i32;
         fn CGDisplayModelNumber(display: u32) -> u32;
         fn CGDisplayIsBuiltin(display: u32) -> i32;
+        fn CGDisplayScreenSize(display: u32) -> CGSize;
     }
 
-    /// "Built-in display" for the Mac's own screen, "External display" for another one.
-    pub fn friendly(name: &str) -> Option<String> {
-        let model: u32 = name.strip_prefix("Monitor #")?.trim().parse().ok()?;
+    /// What macOS says about one display.
+    pub struct Screen {
+        /// The name the system shows, such as "LG TV SSCR2" or "EPSON PJ" (#612).
+        pub name: String,
+        /// Width in millimetres from the display's own data; 0 when it gives none.
+        pub width_mm: f64,
+    }
+
+    /// Every active display by model number. The names come from AppKit, which answers only
+    /// on the main thread, so from elsewhere the question is sent there and waited for briefly.
+    pub fn screens(app: &AppHandle) -> HashMap<u32, Screen> {
+        let names = match MainThreadMarker::new() {
+            Some(mtm) => names(mtm),
+            None => {
+                let (tx, rx) = mpsc::channel();
+                let asked = app.run_on_main_thread(move || {
+                    if let Some(mtm) = MainThreadMarker::new() {
+                        let _ = tx.send(names(mtm));
+                    }
+                });
+                if asked.is_ok() {
+                    rx.recv_timeout(Duration::from_secs(1)).unwrap_or_default()
+                } else {
+                    HashMap::new()
+                }
+            }
+        };
         let mut ids = [0u32; 16];
         let mut count = 0u32;
         // SAFETY: the list has room for the 16 displays asked for, and `count` says how many were written.
         if unsafe { CGGetActiveDisplayList(ids.len() as u32, ids.as_mut_ptr(), &mut count) } != 0 {
-            return None;
+            return HashMap::new();
         }
-        let ids = &ids[..(count as usize).min(ids.len())];
-        // SAFETY: plain queries on display ids the system just listed.
-        let id = *ids.iter().find(|&&id| unsafe { CGDisplayModelNumber(id) } == model)?;
-        // SAFETY: as above.
-        let builtin = unsafe { CGDisplayIsBuiltin(id) } != 0;
-        Some(if builtin { "Built-in display" } else { "External display" }.into())
+        let mut out = HashMap::new();
+        for &id in &ids[..(count as usize).min(ids.len())] {
+            // SAFETY: plain queries on display ids the system just listed.
+            let (model, builtin, size) = unsafe { (CGDisplayModelNumber(id), CGDisplayIsBuiltin(id) != 0, CGDisplayScreenSize(id)) };
+            let name = if builtin {
+                "Built-in display".to_string()
+            } else {
+                names.get(&id).filter(|n| !n.trim().is_empty()).cloned().unwrap_or_else(|| "External display".into())
+            };
+            out.insert(model, Screen { name, width_mm: if size.width.is_finite() { size.width } else { 0.0 } });
+        }
+        out
+    }
+
+    /// The system's display names by display id: what System Settings › Displays shows.
+    fn names(mtm: MainThreadMarker) -> HashMap<u32, String> {
+        let mut out = HashMap::new();
+        for screen in NSScreen::screens(mtm).iter() {
+            let description = screen.deviceDescription();
+            let Some(number) = description.objectForKey(ns_string!("NSScreenNumber")) else { continue };
+            let Ok(number) = Retained::downcast::<NSNumber>(number) else { continue };
+            out.insert(number.unsignedIntValue(), screen.localizedName().to_string());
+        }
+        out
+    }
+
+    /// The display's model number from the window library's "Monitor #<model number>".
+    pub fn model_number(name: &str) -> Option<u32> {
+        name.strip_prefix("Monitor #")?.trim().parse().ok()
+    }
+
+    /// When the name says nothing (#612): over a metre across is a TV. A projector reports
+    /// no size or a made-up one, so it is never guessed from size.
+    pub fn kind_by_size(screen: &Screen) -> Option<Kind> {
+        (screen.width_mm > 1000.0 && screen.name != "Built-in display").then_some(Kind::Tv)
     }
 }
 
@@ -1744,9 +1823,19 @@ async fn identify(app: AppHandle) -> Result<(), String> {
             .visible(false)
             .build()
             .map_err(text)?;
-        let x = f64::from(d.x) + (f64::from(d.width) - width * d.scale) / 2.0;
-        let y = f64::from(d.y) + (f64::from(d.height) - height * d.scale) / 2.0;
-        window.set_position(PhysicalPosition::new(x, y)).map_err(text)?;
+        // macOS places windows in points, so a number centred in physical pixels lands on the
+        // built-in Retina display when the others are at scale 1 (#611); Present does the same.
+        #[cfg(target_os = "macos")]
+        {
+            let (lx, ly, lw, lh) = logical_frame(&d);
+            window.set_position(tauri::LogicalPosition::new(lx + (lw - width) / 2.0, ly + (lh - height) / 2.0)).map_err(text)?;
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            let x = f64::from(d.x) + (f64::from(d.width) - width * d.scale) / 2.0;
+            let y = f64::from(d.y) + (f64::from(d.height) - height * d.scale) / 2.0;
+            window.set_position(PhysicalPosition::new(x, y)).map_err(text)?;
+        }
         window.show().map_err(text)?;
         windows.push(window);
     }
