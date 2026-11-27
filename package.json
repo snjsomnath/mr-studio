@@ -9,8 +9,9 @@
     "build": "pnpm --filter @mrstudio/runtime build",
     "typecheck": "pnpm -r typecheck",
     "test": "cargo test && pnpm -r typecheck && pnpm -r test",
-    "test:e2e": "pnpm build && cargo build -p mrs-cli && node scripts/e2e.cjs",
-    "test:editor": "pnpm build && cargo build -p mrs-cli && node scripts/e2e-editor.cjs",
+    "test:e2e": "pnpm build && cargo build -p mrs-cli && pnpm e2e",
+    "e2e": "playwright test -c scripts/e2e/playwright.config.cjs",
+    "e2e:shots": "playwright test -c scripts/e2e/playwright.config.cjs",
     "app": "pnpm build && cargo run -p mr-studio-app",
     "app:build": "pnpm build && pnpm --filter @mrstudio/studio exec tauri build",
     "mcp": "pnpm --filter @mrstudio/mcp build",
@@ -24,6 +25,7 @@
     ]
   },
   "devDependencies": {
+    "@playwright/test": "1.63.0",
     "eslint": "^9.39.5",
     "globals": "14.0.0",
     "jsqr": "^1.4.0",
