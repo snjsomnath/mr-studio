@@ -29,13 +29,16 @@
   "Pointing at a phase lights it": "Att peka på en etapp lyser upp den",
   "All together": "Alla tillsammans",
   "Parts of the drawing": "Delarna i ritningen",
-  "Move by what they are, when the drawing names them": "Rör sig efter vad de är, när ritningen namnger dem",
   "Appear as they are": "Visas som de är",
   "Seconds a phase takes to come to life": "Sekunder det tar för en etapp att vakna till liv",
   "Turn the drawing": "Vrid ritningen",
-  "As it is drawn": "Som den är ritad",
-  "A quarter turn clockwise": "Ett kvarts varv medurs",
   "Half a turn": "Ett halvt varv",
-  "A quarter turn anticlockwise": "Ett kvarts varv moturs",
-  "Place by its corners (lon,lat of top left; top right; bottom left), empty to fit it in the table": "Placera efter hörnen (lon,lat uppe till vänster; uppe till höger; nere till vänster), tomt passar in den i bordet"
+  "Move by what they are": "Rör sig efter vad de är",
+  "As drawn": "Som ritad",
+  "Place by its corners": "Placera efter hörnen",
+  "Longitude,latitude of the drawing's top left; top right; bottom left. Empty fits it in the table.": "Longitud,latitud för ritningens övre vänstra; övre högra; nedre vänstra hörn. Tomt passar in den i bordet.",
+  "When the drawing names its parts (roads, water, trees…), each comes to life in its own way.": "När ritningen namnger sina delar (vägar, vatten, träd…) får var och en liv på sitt eget sätt.",
+  "90° right": "90° höger",
+  "90° left": "90° vänster",
+  "Shows a drawing made on its side the right way round. Right is clockwise.": "Visar en ritning som ritats på sidan åt rätt håll. Höger är medurs."
 }

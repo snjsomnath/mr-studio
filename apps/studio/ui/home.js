@@ -119,7 +119,9 @@ async function load(fresh) {
         const look = el(
           'button',
           { type: 'button', className: 'remove', title: 'Open a copy of this table: nothing changed in the editor, on the controller or on phones is saved to it' },
-          'Open read-only',
+          // The short words where the card is narrow, so the three buttons keep to one row (#643).
+          el('span', { className: 'long' }, 'Open read-only'),
+          el('span', { className: 'short' }, 'Read-only'),
         );
         look.addEventListener('click', () => openTable(site.path, false, true));
         tools.append(look);
@@ -134,7 +136,10 @@ async function load(fresh) {
       }
       // Your own tables can be deleted, after a confirmation; the examples come with the app (#184).
       if (!example) {
-        const del = el('button', { type: 'button', className: 'remove danger', title: `Move this table's folder to the ${TRASH}` }, 'Delete…');
+        // A bin at the right end of the row, with the word in its tooltip and for screen readers (#643).
+        const del = el('button', { type: 'button', className: 'remove danger', title: `Delete…\nMove this table's folder to the ${TRASH}` });
+        del.setAttribute('aria-label', 'Delete…');
+        del.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3" /></svg>';
         del.addEventListener('click', () => confirmDelete(site, facts.dataset.size));
         tools.append(del);
       }
