@@ -8,7 +8,6 @@
   "Running water": "Rinnande vatten",
   "Pools": "Pölar",
   "Storm speed": "Skyfallets hastighet",
-  "Ground soaks up": "Marken tar upp",
   "Roofs drain to the ground": "Taken avvattnas till marken",
   "Ground under trees soaks up more": "Marken under träd tar upp mer",
   "Detail": "Detaljnivå",
@@ -27,5 +26,9 @@
   "Draining": "Rinner av",
   "{volume} m³ on the site": "{volume} m³ över området",
   "{area} m² deeper than 10 cm": "{area} m² djupare än 10 cm",
-  "Deepest {depth} cm": "Djupast {depth} cm"
+  "Deepest {depth} cm": "Djupast {depth} cm",
+  "Unmapped ground soaks up": "Okarterad mark tar upp",
+  "Open ground the table's data says nothing about. With surfaces off, all open ground.": "Öppen mark som bordets data inte säger något om. Med ytor avstängda all öppen mark.",
+  "Each surface soaks up its own way": "Varje yta tar upp vatten på sitt sätt",
+  "Asphalt sheds the rain, grass and sandy soil soak it up, rain gardens hold it and drains take it away. The surfaces come from the table's roads, paths, land cover and soil data.": "Asfalt leder bort regnet, gräs och sandig jord tar upp det, regnbäddar håller kvar det och brunnar för bort det. Ytorna kommer från bordets vägar, gångar, marktäcke och jordartsdata."
 }

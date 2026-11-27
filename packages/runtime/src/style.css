@@ -3466,6 +3466,61 @@ body[data-role='phone'] .control-presets > * {
   gap: 0.5rem;
 }
 
+.field-choose {
+  grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
+}
+
+.field-choose[hidden],
+.field-kinds[hidden],
+.field-feelings[hidden] {
+  display: none;
+}
+
+/* What it is, and how it feels (#628): the walk designer's kinds and faces. */
+.field-kinds {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.field-chip {
+  min-height: 2.75rem;
+  padding: 0 1rem;
+  border-radius: 999px;
+  border: 1px solid var(--line, #c9ccd1);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+}
+
+.field-chip[aria-checked='true'] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.field-feelings {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 0.3rem;
+}
+
+.field-face {
+  min-height: 3.25rem;
+  font-size: 1.9rem;
+  border-radius: 0.75rem;
+  border: 2px solid transparent;
+  background: color-mix(in srgb, currentColor 6%, transparent);
+  filter: grayscale(0.7);
+  opacity: 0.75;
+}
+
+.field-face[aria-checked='true'] {
+  border-color: var(--accent);
+  filter: none;
+  opacity: 1;
+}
+
 .field-kind {
   min-height: 3.5rem;
   font-size: 1.05rem;

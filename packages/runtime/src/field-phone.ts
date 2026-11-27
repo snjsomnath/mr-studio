@@ -27,9 +27,39 @@ const RETRY_MS = 8_000;
 /** GPS less sure than this many metres asks the visitor to tap the spot on the map. */
 const ROUGH_M = 30;
 
+/** What the host set up in the walk designer (#628): the Field walk layer's settings. */
+export interface WalkDesign {
+  /** Kinds to pick from; empty for none. */
+  kinds: string[];
+  /** Ask for a 1 to 5 feeling. */
+  feeling: boolean;
+  /** What a spot takes. */
+  media: 'both' | 'photo' | 'sound' | 'none';
+}
+
+const FACES = ['😣', '🙁', '😐', '🙂', '😍'];
+
+export function designOf(params: Record<string, unknown> | undefined): WalkDesign {
+  const seen = new Set<string>();
+  const kinds = String(params?.kinds ?? '')
+    .split(',')
+    .map((k) => k.trim())
+    .filter((k) => k && !seen.has(k.toLowerCase()) && seen.add(k.toLowerCase()));
+  const media = params?.media;
+  return {
+    kinds,
+    feeling: params?.feeling === true,
+    media: media === 'photo' || media === 'sound' || media === 'none' ? media : 'both',
+  };
+}
+
 interface Kept {
   id: string;
-  kind: 'photo' | 'sound';
+  kind: 'photo' | 'sound' | 'mark';
+  /** The kind the walker picked (#628). */
+  label?: string;
+  /** How they feel about it, 1 to 5 (#628). */
+  feeling?: number;
   at: number;
   lon: number;
   lat: number;
@@ -195,7 +225,8 @@ export function fieldCard(store: Store, connection: Connection): HTMLElement {
   const card = el('section', 'layer-card field-card');
   const header = el('header');
   const title = el('div', 'layer-title');
-  title.append(el('h2', undefined, t('Field walk')), el('p', undefined, t('Walk around and mark what you notice, with a photo or a sound.')));
+  const intro = el('p', undefined, '');
+  title.append(el('h2', undefined, t('Field walk')), intro);
   header.append(title);
   const mark = el('button', 'action primary field-mark', t('Mark a spot'));
   mark.type = 'button';
@@ -213,8 +244,16 @@ export function fieldCard(store: Store, connection: Connection): HTMLElement {
   let retry: number | undefined;
 
   const present = () => Object.values(store.state.layers).some((l) => (l as { layer?: string }).layer === PACKAGE);
+  const design = () => designOf((Object.values(store.state.layers).find((l) => (l as { layer?: string }).layer === PACKAGE) as { params?: Record<string, unknown> } | undefined)?.params);
+  const INTRO = {
+    both: 'Walk around and mark what you notice, with a photo or a sound.',
+    photo: 'Walk around and mark what you notice, with a photo.',
+    sound: 'Walk around and mark what you notice, with a sound.',
+    none: 'Walk around and mark what you notice on the map.',
+  } as const;
   const showCard = () => {
     card.hidden = !present() && !kept.some((k) => !k.sent && !k.refused);
+    intro.textContent = t(INTRO[design().media]);
   };
 
   async function refresh() {
@@ -239,13 +278,15 @@ export function fieldCard(store: Store, connection: Connection): HTMLElement {
         const row = el('li', 'field-row');
         const pic = el('span', 'field-thumb');
         if (spot.thumb) pic.style.backgroundImage = `url("${spot.thumb}")`;
-        else pic.textContent = spot.kind === 'sound' ? '♪' : '📷';
+        else pic.textContent = spot.kind === 'sound' ? '♪' : spot.kind === 'mark' ? (spot.feeling ? FACES[spot.feeling - 1]! : '📍') : '📷';
         const words = el('span', 'field-words');
         const time = new Date(spot.at).toLocaleTimeString(undefined, {
           hour: '2-digit',
           minute: '2-digit',
         });
-        words.append(el('b', undefined, `${spot.kind === 'photo' ? t('Photo') : t('Sound')} · ${time}`));
+        const what = spot.label ?? (spot.kind === 'photo' ? t('Photo') : spot.kind === 'sound' ? t('Sound') : t('Spot'));
+        const face = spot.feeling && spot.kind !== 'mark' ? ` ${FACES[spot.feeling - 1]}` : '';
+        words.append(el('b', undefined, `${what}${face} · ${time}`));
         const state = spot.sent
           ? t('On the table')
           : spot.refused
@@ -302,7 +343,7 @@ export function fieldCard(store: Store, connection: Connection): HTMLElement {
     clearTimeout(retry);
     try {
       for (const spot of await outbox.all()) {
-        if (spot.sent || spot.refused || !spot.blob) continue;
+        if (spot.sent || spot.refused || (!spot.blob && spot.kind !== 'mark')) continue;
         const me = store.me();
         const walker = {
           id: walkerId(),
@@ -315,6 +356,8 @@ export function fieldCard(store: Store, connection: Connection): HTMLElement {
             connection.request<{ have: number; done?: boolean }>('field.add', {
               id: spot.id,
               kind: spot.kind,
+              label: spot.label,
+              feeling: spot.feeling,
               at: spot.at,
               lon: spot.lon,
               lat: spot.lat,
@@ -327,7 +370,7 @@ export function fieldCard(store: Store, connection: Connection): HTMLElement {
               walker,
             }),
           );
-          while (!answer.done && answer.have < spot.bytes) {
+          while (!answer.done && spot.blob && answer.have < spot.bytes) {
             progress = { id: spot.id, share: answer.have / spot.bytes };
             renderList();
             const piece = spot.blob.slice(answer.have, answer.have + PIECE);
@@ -373,7 +416,7 @@ export function fieldCard(store: Store, connection: Connection): HTMLElement {
   store.onScene(showCard);
   mark.onclick = () =>
     document.body.append(
-      spotSheet(store.state.site, async (spot) => {
+      spotSheet(store.state.site, design(), async (spot) => {
         await outbox.put(spot);
         await refresh();
         void send();
@@ -387,7 +430,7 @@ export function fieldCard(store: Store, connection: Connection): HTMLElement {
 }
 
 /** The sheet that makes one spot: where, a photo or a sound, a note, Save. */
-function spotSheet(site: SiteInfo, save: (spot: Kept) => Promise<void>): HTMLElement {
+function spotSheet(site: SiteInfo, design: WalkDesign, save: (spot: Kept) => Promise<void>): HTMLElement {
   const sheet = el('div', 'profile-sheet field-sheet');
   sheet.setAttribute('role', 'dialog');
   sheet.setAttribute('aria-modal', 'true');
@@ -485,7 +528,46 @@ function spotSheet(site: SiteInfo, save: (spot: Kept) => Promise<void>): HTMLEle
   const photoButton = el('button', 'action field-kind', `📷  ${t('Photo')}`);
   const soundButton = el('button', 'action field-kind', `🎙  ${t('Sound')}`);
   for (const b of [photoButton, soundButton]) b.type = 'button';
-  choose.append(photoButton, soundButton);
+  if (design.media !== 'sound') choose.append(photoButton);
+  if (design.media !== 'photo') choose.append(soundButton);
+  choose.hidden = design.media === 'none';
+
+  // ---- What it is, and how it feels (#628) ----
+  let label: string | undefined;
+  let feeling: number | undefined;
+  const kinds = el('div', 'field-kinds');
+  kinds.hidden = design.kinds.length === 0;
+  kinds.setAttribute('role', 'radiogroup');
+  kinds.setAttribute('aria-label', t('What is it?'));
+  for (const name of design.kinds) {
+    const chip = el('button', 'field-chip', name);
+    chip.type = 'button';
+    chip.setAttribute('role', 'radio');
+    chip.setAttribute('aria-checked', 'false');
+    chip.onclick = () => {
+      label = label === name ? undefined : name;
+      for (const c of kinds.children) c.setAttribute('aria-checked', String(c === chip && label !== undefined));
+      check();
+    };
+    kinds.append(chip);
+  }
+  const feelings = el('div', 'field-feelings');
+  feelings.hidden = !design.feeling;
+  feelings.setAttribute('role', 'radiogroup');
+  feelings.setAttribute('aria-label', t('How do you like this spot?'));
+  FACES.forEach((face, i) => {
+    const button = el('button', 'field-face', face);
+    button.type = 'button';
+    button.setAttribute('role', 'radio');
+    button.setAttribute('aria-checked', 'false');
+    button.setAttribute('aria-label', t(['Don’t like it', 'Not much', 'It’s OK', 'Like it', 'Love it'][i]!));
+    button.onclick = () => {
+      feeling = feeling === i + 1 ? undefined : i + 1;
+      for (const b of feelings.children) b.setAttribute('aria-checked', String(b === button && feeling !== undefined));
+      check();
+    };
+    feelings.append(button);
+  });
   const preview = el('div', 'field-preview');
   const photoInput = el('input');
   Object.assign(photoInput, { type: 'file', accept: 'image/*', hidden: true });
@@ -596,8 +678,12 @@ function spotSheet(site: SiteInfo, save: (spot: Kept) => Promise<void>): HTMLEle
   for (const b of [cancel, keep]) b.type = 'button';
   actions.append(cancel, keep);
 
+  // A spot needs its place, and a photo or sound unless the walk takes neither. With kinds, a kind;
+  // with feelings, a feeling: what the walk is for.
   function check() {
-    keep.disabled = !media || !place || !onMap(place.lon, place.lat) || recorder !== null;
+    const taken = design.media === 'none' || media !== null;
+    const said = (design.kinds.length === 0 || label !== undefined) && (!design.feeling || feeling !== undefined);
+    keep.disabled = !taken || !said || !place || !onMap(place.lon, place.lat) || recorder !== null;
   }
   const close = () => {
     if (watch !== undefined) navigator.geolocation.clearWatch(watch);
@@ -606,29 +692,31 @@ function spotSheet(site: SiteInfo, save: (spot: Kept) => Promise<void>): HTMLEle
   };
   cancel.onclick = close;
   keep.onclick = async () => {
-    if (!media || !place) return;
+    if ((!media && design.media !== 'none') || !place) return;
     keep.disabled = true;
     await save({
       id: newId(),
-      kind: media.kind,
+      kind: media?.kind ?? 'mark',
+      label,
+      feeling,
       at: Date.now(),
       lon: place.lon,
       lat: place.lat,
       accuracy: place.accuracy,
       placed: place.placed,
       note: note.value.trim() || undefined,
-      mime: media.mime,
-      bytes: media.blob.size,
-      duration: media.duration,
-      blob: media.blob,
-      thumb: media.thumb,
+      mime: media?.mime ?? '',
+      bytes: media?.blob.size ?? 0,
+      duration: media?.duration,
+      blob: media?.blob,
+      thumb: media?.thumb,
       sent: false,
       have: 0,
     });
     close();
   };
 
-  card.append(el('h2', 'field-sheet-title', t('Mark a spot')), map, where, choose, photoInput, soundInput, preview, working, note, actions);
+  card.append(el('h2', 'field-sheet-title', t('Mark a spot')), map, where, kinds, feelings, choose, photoInput, soundInput, preview, working, note, actions);
   drawPlace();
   return sheet;
 }

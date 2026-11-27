@@ -114,6 +114,17 @@ impl GeoRaster {
         Ok(Self { width, height, data, crs, x0: tie[3] + (half - tie[0]) * dx, y0: tie[4] - (half - tie[1]) * dy, dx, dy })
     }
 
+    /// The pixel under a WGS84 position, unblended: for rasters of class codes (#624).
+    pub fn nearest(&self, lon: f64, lat: f64) -> Option<f32> {
+        let (x, y) = self.crs.forward(lon, lat);
+        let (fx, fy) = ((x - self.x0) / self.dx, (self.y0 - y) / self.dy);
+        let (col, row) = ((fx + 0.5).floor(), (fy + 0.5).floor());
+        if col < 0.0 || row < 0.0 || col >= self.width as f64 || row >= self.height as f64 {
+            return None;
+        }
+        Some(self.data[row as usize * self.width + col as usize]).filter(|v| v.is_finite())
+    }
+
     /// Bilinear sample at a WGS84 position. `None` outside the raster or where it has no data.
     pub fn sample(&self, lon: f64, lat: f64) -> Option<f32> {
         let (x, y) = self.crs.forward(lon, lat);

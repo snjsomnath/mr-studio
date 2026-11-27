@@ -35,7 +35,9 @@ sites/<id>/
     "mesh":      { "path": "data/model.stl", "anchor": { "lon": 11.972, "lat": 57.6826 }, "unit_m": 1 },   // optional
     "trees":     { "path": "data/trees.geojson", "height_property": "height", "crown_radius_m": 3 },  // optional, points
     "water":     { "path": "data/water.geojson" },  // optional: areas, or a GeoTIFF mask ("crs" if it names none)
-    "context":   { "path": "data/context.geojson", "reach_m": 500 }   // optional: footprints around the table, for the wind only
+    "context":   { "path": "data/context.geojson", "reach_m": 500 },  // optional: footprints around the table, for the wind only
+    "surfaces":  [ { "data": "roads" }, { "path": "data/nmd.tif", "classes": "nmd" },   // optional: what covers the ground
+                   { "data": "soil", "classes": "soil" }, { "data": "fieldwalk", "classes": "kind" } ]   // and the soil under it
   },
   "data": {                                        // optional, named datasets for layers
     "roads": "data/roads.geojson",
@@ -102,6 +104,13 @@ Rules:
   - Raw little-endian f32 elevations covering the extent, row-major with row 0 at the top, at any resolution. Needs `width` and `height`.
   - A GeoTIFF (`.tif`, `.tiff`): `{ "path": "data/terrain.tif" }`. It is placed by its own georeference, so it may be larger than the extent and on a national grid. Add `"crs": "EPSG:3006"` when the file does not name its coordinate system. See [Terrain from a GeoTIFF](#terrain-from-a-geotiff).
 - `water` (#343) says where there is water: GeoJSON areas, or a GeoTIFF mask whose cells above 0.5 are water (`"crs": "EPSG:3006"` when the file names no coordinate system). It is available to layers as the `water` dataset. Thermal comfort (CoolPaths) counts water as cool ground, stormwater lets runoff drain into it as it does at the table's edge, and the dark base map draws it.
+- `surfaces` (#624, #625) says what covers the ground and what soil lies under it, for stormwater: asphalt sheds rain, grass over sand soaks it up, a rain garden holds it, a drain takes it away. It is a list of sources, each a dataset of the site by name (`data`) or a file (`path`), read by its `classes`:
+  - `osm` (the default): GeoJSON with OpenStreetMap tags. `surface` (asphalt, paving_stones, gravel, grass…) wins; else `landuse`, `leisure`, `natural`, `amenity=parking`, `area:highway`, `manhole=drain`; else `highway` (paths and tracks are gravel, every other road and footway sealed). Lines are laid at their `width` tag or a width for their class (motorway 14 m, primary 12, secondary 10, tertiary 8, residential 6, service 4, footways and paths 2.5).
+  - `nmd`: a GeoTIFF of Naturvårdsverket's Nationella marktäckedata codes (51–53 sealed, 41 bare, 42, 3 and 2 grass, 111–128 woodland; `crs` when the file names none).
+  - `soil`: soil areas, by their `property`, else SGU's `jg2_tx`, else the first text that names a soil, in Swedish or English (lera clay, silt/mjäla, morän till, sand, grus gravel, torv peat, berg rock, fyllning fill). The SGU soil map (Jordarter 1:25 000–1:100 000, layer `grundlager`) reads as is.
+  - `kind`: a property (default `kind`) naming the surface in words, as a field walk's kinds do: `Rain garden`, `Drain`, `asphalt`, `grass`… (English or Swedish).
+
+  Points are laid as discs `size_m` across (default a drain 1 m, a rain garden 4 m, else 3 m). Finer data wins: every source's rasters first, then polygons, then lines, then points. Left out, `surfaces` reads the site's `roads`, `streets` and `walkways` datasets as `osm`; `[]` reads none. Ground no source covers keeps the stormwater layer's site-wide rate. Importing a dataset whose points or areas have a `kind` of rain garden or drain (a saved field walk, #628, or any file) adds it to `surfaces` as `kind`, writing out the default sources first when `surfaces` was left out.
 - `context` (#488) is footprints around the table: GeoJSON areas reaching past its edge, `reach_m` metres at most (default 500, up to 2000). Only the wind feels them: the wind kernel stands them in the padding around the table, so wind reaching the table has already passed real buildings, as in a CFD run with a context ring. Nothing draws them. They are the `context` dataset, and Add data brings them in as **Buildings around**.
 - `terrain.flatten_buildings` (#344, default `false`) is for a terrain that has the buildings raised in it (a surface model). The bake sets the ground under each footprint, and about 2 m around it, to the nearest ground beside it, so buildings stand on the ground instead of being part of it. Add data offers it when it sees raised footprints.
 - `mesh` is a 3D model of the top surface, for sites whose footprints have no heights. See [Buildings from a mesh](#buildings-from-a-mesh).
@@ -329,6 +338,7 @@ The host turns the sources into the rasters the engine loads, in memory at start
 3. `canopy`: each tree as a disc of `crown_radius_m` with the tree's height.
 4. `water`: 1 in the cells whose centres lie in a water area (or where the mask is above 0.5), else 0.
 5. `context`: a mask over the grid grown by `reach_m` on every side, at the grid's cell size and turn: 1 in the cells whose centres lie in a context footprint.
+6. `surface` and `soil` (#624): a class per cell (engine `Surface`: 0 unknown, 1 sealed, 2 paving, 3 gravel, 4 grass, 5 bare, 6 woodland, 7 rain garden, 8 drain; `Soil`: 0 unknown, 1 clay, 2 silt, 3 till, 4 sand, 5 gravel, 6 peat, 7 rock, 8 fill), from `surfaces` as above, by cell centre.
 
 With `terrain.flatten_buildings`, step 1 also sets the footprint cells (grown by about 2 m, at least one cell) to the nearest ground outside them.
 

@@ -710,6 +710,16 @@ pub fn apply(site: &Site, mut prepared: Prepared) -> Result<(Site, Report), Site
     if prepared.target == Target::Terrain && prepared.flatten {
         document["scene"]["terrain"]["flatten_buildings"] = json!(true);
     }
+    if let Target::Data(name) = &prepared.target {
+        if marks_water_features(content) {
+            add_surface_source(site, &mut document, name);
+            prepared.report.issues.push(Issue::new(
+                "surfaces.added",
+                Severity::Note,
+                "Stormwater treats the rain gardens and drains in it as such.",
+            ));
+        }
+    }
     let after = serde_json::to_string_pretty(&document).map_err(parse)? + "\n";
     write_atomically(&manifest_path, &after)?;
     match Site::load(&site.dir) {
@@ -796,6 +806,33 @@ fn forget_old_versions(site_dir: &Path, current: &str, manifests: &[&str]) {
 
 pub(crate) fn write_atomically(path: &Path, text: &str) -> Result<(), SiteError> {
     crate::files::replace(path, text).map_err(|source| SiteError::Io { path: path.to_path_buf(), source })
+}
+
+/// Whether a GeoJSON dataset marks rain gardens or drains by its `kind` (#625, #628): a field
+/// walk saved as data, or a gully map. Stormwater then reads it under `scene.surfaces`.
+fn marks_water_features(content: &[u8]) -> bool {
+    let Ok(document) = serde_json::from_slice::<Value>(content) else { return false };
+    document["features"].as_array().is_some_and(|features| {
+        features.iter().any(|f| {
+            f["properties"]["kind"]
+                .as_str()
+                .and_then(crate::surfaces::kind)
+                .is_some_and(|s| matches!(s, mrs_engine::Surface::RainGarden | mrs_engine::Surface::Drain))
+        })
+    })
+}
+
+/// Lists dataset `name` under `scene.surfaces` as `kind` classes, once. A site that left
+/// `surfaces` out reads its roads and paths by default; those are written out so they stay.
+fn add_surface_source(site: &Site, document: &mut Value, name: &str) {
+    if !document["scene"]["surfaces"].is_array() {
+        let defaults = crate::surfaces::sources(site);
+        document["scene"]["surfaces"] = serde_json::to_value(defaults).unwrap_or_else(|_| json!([]));
+    }
+    let list = document["scene"]["surfaces"].as_array_mut().expect("array");
+    if !list.iter().any(|s| s["data"] == name) {
+        list.push(json!({ "data": name, "classes": "kind" }));
+    }
 }
 
 /// Points the manifest at the imported file, keeping any settings already there.

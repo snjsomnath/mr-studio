@@ -15,7 +15,9 @@ use std::time::{Duration, Instant};
 use bytemuck::{Pod, Zeroable};
 use serde_json::{json, Value};
 
-use crate::{Backend, Context, EngineError, Field, FieldInfo, Job, JobState, JobStatus, Kernel, KernelInfo, KernelKind, Scene};
+use crate::{
+    Backend, Context, EngineError, Field, FieldInfo, Job, JobState, JobStatus, Kernel, KernelInfo, KernelKind, Scene, Soil, Surface,
+};
 
 /// Cell flags, shared with kernel.wgsl.
 pub(crate) const SOLID: u32 = 1;
@@ -27,8 +29,50 @@ const G: f32 = 9.81;
 const CFL: f32 = 0.35;
 const H_REFERENCE: f32 = 2.0;
 const DT_MAX: f32 = 1.0;
-/// Infiltration is this many times faster under a full tree canopy.
+/// Infiltration is this many times faster under a full tree canopy, and in woodland.
 const CANOPY_INFILTRATION: f32 = 3.0;
+/// Floats per lattice cell in `aux`: rain multiplier, loss rate (m/s), Manning n squared.
+pub(crate) const AUX: usize = 3;
+/// How deep a rain garden's dip is, metres: the water it holds before it overflows (#625).
+const RAIN_GARDEN_DEPTH: f32 = 0.15;
+/// How fast open ground soaks up rain on each soil, mm/h (#624): saturated rates for urban,
+/// somewhat compacted ground, from the SCS/HSG ranges (clay ~1, till ~8, sand ~30, gravel ~60).
+fn soil_mm_h(soil: Soil) -> Option<f32> {
+    Some(match soil {
+        Soil::Unknown => return None,
+        Soil::Clay => 1.0,
+        Soil::Silt => 5.0,
+        Soil::Till => 8.0,
+        Soil::Sand => 30.0,
+        Soil::Gravel => 60.0,
+        Soil::Peat => 5.0,
+        Soil::Rock => 0.5,
+        Soil::Fill => 10.0,
+    })
+}
+
+/// A surface's own infiltration (mm/h) where it does not depend on the soil, and its Manning n.
+/// `None` infiltration: the soil's rate (or the site-wide one) times the multiplier.
+struct SurfaceRates {
+    infiltration_mm_h: Option<f32>,
+    soil_factor: f32,
+    manning: Option<f32>,
+}
+
+fn surface_rates(surface: Surface) -> SurfaceRates {
+    let (infiltration_mm_h, soil_factor, manning) = match surface {
+        Surface::Unknown => (None, 1.0, None),
+        Surface::Sealed => (Some(0.5), 1.0, Some(0.013)),
+        Surface::Paving => (Some(3.0), 1.0, Some(0.015)),
+        Surface::Gravel => (None, 1.5, Some(0.025)),
+        Surface::Grass => (None, 1.0, Some(0.035)),
+        Surface::Bare => (None, 1.0, Some(0.03)),
+        Surface::Woodland => (None, CANOPY_INFILTRATION, Some(0.08)),
+        Surface::RainGarden => (Some(100.0), 1.0, Some(0.1)),
+        Surface::Drain => (Some(0.0), 1.0, Some(0.013)),
+    };
+    SurfaceRates { infiltration_mm_h, soil_factor, manning }
+}
 /// Checks (depth readback, settling, the time step) run this many steps apart.
 const CHECK_INTERVAL: u64 = 100;
 /// Settled when the mean depth changes by less than this share of the rain rate
@@ -70,7 +114,9 @@ impl Kernel for StormwaterKernel {
                     "resolution": { "type": "number", "minimum": 32, "maximum": 1024, "default": 384, "description": "Lattice cells along the longer side of the site" },
                     "roofs": { "type": "boolean", "default": true, "description": "Rain on roofs drains to the ground at the nearest wall" },
                     "trees": { "type": "boolean", "default": true, "description": "Ground under trees soaks up water faster" },
-                    "manning": { "type": "number", "minimum": 0.01, "maximum": 0.1, "default": 0.025, "description": "Manning roughness of the ground" },
+                    "manning": { "type": "number", "minimum": 0.01, "maximum": 0.1, "default": 0.025, "description": "Manning roughness of ground the site gives no surface for" },
+                    "surfaces": { "type": "boolean", "default": true, "description": "Each surface and soil soaks up and slows water its own way; off, all open ground is alike" },
+                    "drain_l_s": { "type": "number", "minimum": 0, "maximum": 100, "default": 15, "description": "Litres per second each drain cell takes into the pipes" },
                     "storm": { "type": "number", "default": 0, "description": "Changing it dries the site and starts the storm again" },
                     "pace": { "enum": ["realtime", "fast"], "default": "realtime", "description": "realtime follows the wall clock times speed; fast runs as fast as the budget allows" }
                 }
@@ -137,6 +183,8 @@ struct Params {
     roofs: bool,
     trees: bool,
     manning: f32,
+    surfaces: bool,
+    drain_l_s: f32,
     storm: f64,
     pace: Pace,
 }
@@ -151,6 +199,8 @@ impl Default for Params {
             roofs: true,
             trees: true,
             manning: 0.025,
+            surfaces: true,
+            drain_l_s: 15.0,
             storm: 0.0,
             pace: Pace::Realtime,
         }
@@ -175,6 +225,8 @@ impl Params {
                 "speed" => p.speed = (number(value, key)? as f32).clamp(1.0, 600.0),
                 "resolution" => p.resolution = (number(value, key)? as f32).round().clamp(32.0, 1024.0),
                 "manning" => p.manning = (number(value, key)? as f32).clamp(0.01, 0.1),
+                "drain_l_s" => p.drain_l_s = (number(value, key)? as f32).clamp(0.0, 100.0),
+                "surfaces" => p.surfaces = boolean(value, key)?,
                 "storm" => p.storm = number(value, key)?,
                 "roofs" => p.roofs = boolean(value, key)?,
                 "trees" => p.trees = boolean(value, key)?,
@@ -208,16 +260,29 @@ struct Geometry {
     vh: usize,
     factor: usize,
     cell_m: f32,
+    /// Scene cell size, metres, and the scene grid's width.
+    scene_cell_m: f32,
+    gw: usize,
     cells: Vec<u32>,
     bed: Vec<f32>,
-    /// Share of each cell under tree canopy.
-    coverage: Vec<f32>,
+    /// Per scene cell of open ground: its surface, soil and whether a tree stands over it, packed
+    /// by [`ground_code`]; [`NOT_GROUND`] for buildings and water.
+    ground: Vec<u16>,
     /// Ground cell each roof cell drains to, if any.
     drain: Vec<Option<usize>>,
-    /// Per cell: rain multiplier, infiltration multiplier.
+    /// Per cell: rain multiplier, loss rate (m/s: soaking in plus drains), Manning n squared.
     aux: Vec<f32>,
     /// Number of cells rain falls on (ground plus the roofs that drain to it).
     catchment: usize,
+    /// Share of the open ground under each surface and over each soil, for the status.
+    surface_share: Vec<f32>,
+    soil_share: Vec<f32>,
+}
+
+const NOT_GROUND: u16 = u16::MAX;
+
+fn ground_code(surface: u8, soil: u8, treed: bool) -> u16 {
+    (surface as u16 & 0xf) | ((soil as u16 & 0xf) << 4) | ((treed as u16) << 8)
 }
 
 impl Geometry {
@@ -230,13 +295,14 @@ impl Geometry {
         let (nx, ny) = (vw + 2, vh + 2);
         let mut cells = vec![0u32; nx * ny];
         let mut bed = vec![0.0f32; nx * ny];
-        let mut coverage = vec![0.0f32; nx * ny];
+        let mut ground = vec![NOT_GROUND; gw * gh];
+        let (mut surface_count, mut soil_count) = (vec![0u64; Surface::ALL.len()], vec![0u64; Soil::ALL.len()]);
         for j in 0..vh {
             for i in 0..vw {
                 // A lattice cell is a building when at least half of its scene cells are.
                 // Its bed is the mean ground of the open scene cells inside it.
-                let (mut total, mut built, mut treed, mut wet) = (0u32, 0u32, 0u32, 0u32);
-                let (mut ground, mut open, mut all) = (0.0f64, 0u32, 0.0f64);
+                let (mut total, mut built, mut wet, mut gardens) = (0u32, 0u32, 0u32, 0u32);
+                let (mut sum, mut open, mut all) = (0.0f64, 0u32, 0.0f64);
                 for row in (j * factor)..((j + 1) * factor).min(gh) {
                     for col in (i * factor)..((i + 1) * factor).min(gw) {
                         let index = row * gw + col;
@@ -244,11 +310,18 @@ impl Geometry {
                         all += scene.dtm[index] as f64;
                         if scene.is_solid(index) {
                             built += 1;
+                        } else if scene.water[index] != 0 {
+                            wet += 1;
+                            open += 1;
+                            sum += scene.dtm[index] as f64;
                         } else {
                             open += 1;
-                            ground += scene.dtm[index] as f64;
-                            treed += (scene.canopy[index] > 0.0) as u32;
-                            wet += (scene.water[index] != 0) as u32;
+                            sum += scene.dtm[index] as f64;
+                            let (surface, soil) = (scene.surface[index], scene.soil[index]);
+                            ground[index] = ground_code(surface, soil, scene.canopy[index] > 0.0);
+                            surface_count[surface as usize] += 1;
+                            soil_count[soil as usize] += 1;
+                            gardens += (surface == Surface::RainGarden as u8) as u32;
                         }
                     }
                 }
@@ -256,14 +329,15 @@ impl Geometry {
                 if total == 0 {
                     continue;
                 }
-                bed[n] = if open > 0 { (ground / open as f64) as f32 } else { (all / total as f64) as f32 };
+                bed[n] = if open > 0 { (sum / open as f64) as f32 } else { (all / total as f64) as f32 };
                 if built * 2 >= total {
                     cells[n] = SOLID;
                 } else if wet * 2 >= total {
                     // A river, a lake or the sea takes what runs into it, like the edge of the table (#343).
                     cells[n] = OUTFALL;
-                } else {
-                    coverage[n] = treed as f32 / total as f32;
+                } else if params.surfaces && gardens > 0 {
+                    // A rain garden is a dip that holds water before it overflows (#625).
+                    bed[n] -= RAIN_GARDEN_DEPTH * gardens as f32 / total as f32;
                 }
             }
         }
@@ -277,6 +351,10 @@ impl Geometry {
                 }
             }
         }
+        let share = |counts: Vec<u64>| {
+            let all = counts.iter().sum::<u64>().max(1) as f32;
+            counts.into_iter().map(|c| c as f32 / all).collect::<Vec<f32>>()
+        };
         let drain = drains(nx, ny, &cells);
         let mut geo = Self {
             nx,
@@ -285,30 +363,84 @@ impl Geometry {
             vh,
             factor,
             cell_m: scene.grid.cell_m * factor as f32,
+            scene_cell_m: scene.grid.cell_m,
+            gw,
             cells,
             bed,
-            coverage,
+            ground,
             drain,
-            aux: vec![0.0; nx * ny * 2],
+            aux: vec![0.0; nx * ny * AUX],
             catchment: 0,
+            surface_share: share(surface_count),
+            soil_share: share(soil_count),
         };
         geo.fill_aux(params);
         geo
     }
 
-    /// Rain and infiltration multipliers per cell.
+    /// Rain multiplier, loss rate and roughness per cell, from the surfaces and soils of the
+    /// scene cells inside it (#624): the mean loss rate and the mean of n squared over its open ground.
     fn fill_aux(&mut self, params: &Params) {
         self.aux.fill(0.0);
+        // Loss rate (m/s) and n squared of one scene cell, by its packed code.
+        let mut table = std::collections::HashMap::<u16, (f32, f32)>::new();
+        let drain_m_s = params.drain_l_s / 1000.0 / (self.scene_cell_m * self.scene_cell_m);
+        let mut rates = |code: u16| {
+            *table.entry(code).or_insert_with(|| {
+                let (surface, soil, treed) = if params.surfaces {
+                    (
+                        Surface::from_u8((code & 0xf) as u8).unwrap_or(Surface::Unknown),
+                        Soil::from_u8(((code >> 4) & 0xf) as u8).unwrap_or(Soil::Unknown),
+                        code & 0x100 != 0,
+                    )
+                } else {
+                    (Surface::Unknown, Soil::Unknown, code & 0x100 != 0)
+                };
+                let r = surface_rates(surface);
+                let base = soil_mm_h(soil).unwrap_or(params.infiltration_mm_h);
+                let mut mm_h_rate = r.infiltration_mm_h.unwrap_or(base * r.soil_factor);
+                // Trees open the ground with their roots, where water can reach it.
+                let under_trees = params.trees && treed && surface.is_open() && !matches!(surface, Surface::Woodland | Surface::RainGarden);
+                if under_trees {
+                    mm_h_rate *= CANOPY_INFILTRATION;
+                }
+                let mut loss = mm_h(mm_h_rate);
+                if surface == Surface::Drain {
+                    loss += drain_m_s;
+                }
+                let n = r.manning.unwrap_or(params.manning);
+                (loss, n * n)
+            })
+        };
+        let gh = self.ground.len() / self.gw.max(1);
         let mut catchment = 0;
         for n in 0..self.nx * self.ny {
             if self.cells[n] == 0 {
-                self.aux[n * 2] += 1.0;
+                self.aux[n * AUX] += 1.0;
                 catchment += 1;
-                let canopy = if params.trees { self.coverage[n] } else { 0.0 };
-                self.aux[n * 2 + 1] = 1.0 + (CANOPY_INFILTRATION - 1.0) * canopy;
+                let (i, j) = (n % self.nx - 1, n / self.nx - 1);
+                let (mut loss, mut n2, mut count) = (0.0f64, 0.0f64, 0u32);
+                for row in (j * self.factor)..((j + 1) * self.factor).min(gh) {
+                    for col in (i * self.factor)..((i + 1) * self.factor).min(self.gw) {
+                        let code = self.ground[row * self.gw + col];
+                        if code != NOT_GROUND {
+                            let (l, r) = rates(code);
+                            loss += l as f64;
+                            n2 += r as f64;
+                            count += 1;
+                        }
+                    }
+                }
+                if count > 0 {
+                    self.aux[n * AUX + 1] = (loss / count as f64) as f32;
+                    self.aux[n * AUX + 2] = (n2 / count as f64) as f32;
+                } else {
+                    self.aux[n * AUX + 1] = mm_h(params.infiltration_mm_h);
+                    self.aux[n * AUX + 2] = params.manning * params.manning;
+                }
             } else if self.cells[n] & SOLID != 0 && params.roofs {
                 if let Some(target) = self.drain[n] {
-                    self.aux[target * 2] += 1.0;
+                    self.aux[target * AUX] += 1.0;
                     catchment += 1;
                 }
             }
@@ -367,10 +499,11 @@ pub(crate) struct Pass {
     ny: u32,
     dt: f32,
     g: f32,
-    manning2: f32,
     cell_m: f32,
     rain: f32,
-    infiltration: f32,
+    /// Unused: kept so the uniform stays 32 bytes. Losses and roughness are per cell in `aux` (#624).
+    pad0: f32,
+    pad1: f32,
 }
 
 // ---- GPU -------------------------------------------------------------------
@@ -531,6 +664,11 @@ impl GpuState {
     }
 }
 
+/// `{ name: share }` for the shares above zero.
+fn shares<'a>(names: impl Iterator<Item = &'a str>, share: &[f32]) -> Value {
+    Value::Object(names.zip(share).filter(|(_, s)| **s > 0.0).map(|(n, s)| (n.to_string(), json!((s * 1000.0).round() / 1000.0))).collect())
+}
+
 // ---- Job -------------------------------------------------------------------
 
 struct StormJob {
@@ -631,10 +769,10 @@ impl StormJob {
             ny: self.geo.ny as u32,
             dt: self.dt,
             g: G,
-            manning2: self.params.manning * self.params.manning,
             cell_m: self.geo.cell_m,
             rain: mm_h(self.params.rain_mm_h),
-            infiltration: mm_h(self.params.infiltration_mm_h),
+            pad0: 0.0,
+            pad1: 0.0,
         }
     }
 
@@ -757,6 +895,8 @@ impl StormJob {
                 "steps_per_second": self.rate,
                 "realtime": self.realtime,
                 "lattice": { "width": self.geo.vw, "height": self.geo.vh, "cell_m": self.geo.cell_m, "factor": self.geo.factor },
+                "surfaces": shares(Surface::ALL.iter().map(|s| s.name()), &self.geo.surface_share),
+                "soils": shares(Soil::ALL.iter().map(|s| s.name()), &self.geo.soil_share),
             }),
         }
     }
@@ -770,7 +910,8 @@ impl Job for StormJob {
         }
         let previous = std::mem::replace(&mut self.params, next);
         let p = &self.params;
-        if p.resolution != previous.resolution {
+        // Rain gardens are dips in the bed only while surfaces count (#625).
+        if p.resolution != previous.resolution || p.surfaces != previous.surfaces {
             self.geo = Geometry::build(scene, &self.params);
             self.rebuild(ctx);
             return Ok(());
@@ -779,7 +920,12 @@ impl Job for StormJob {
             self.restart(ctx);
             return Ok(());
         }
-        if p.roofs != previous.roofs || p.trees != previous.trees {
+        if p.roofs != previous.roofs
+            || p.trees != previous.trees
+            || p.infiltration_mm_h != previous.infiltration_mm_h
+            || p.manning != previous.manning
+            || p.drain_l_s != previous.drain_l_s
+        {
             self.geo.fill_aux(&self.params);
             if let Some(gpu) = &self.gpu {
                 gpu.upload_aux(ctx, &self.geo);

@@ -13,12 +13,12 @@
 //!    face is limited to a quarter of the upstream cell's water per step, which
 //!    keeps every depth non-negative and the scheme mass-conserving.
 //! 2. Cells: each cell adds its rain, the net inflow through its four faces and
-//!    loses what infiltrates. It writes depth and velocity for the visible window.
+//!    loses what infiltrates or a drain takes, at its own rate. It writes depth and velocity for the visible window.
 //!
 //! Buildings are walls. The lattice has a ring of outfall cells around the site
 //! that always stay dry, so water reaching the edge drains away off the table.
 
-use super::{Pass, OUTFALL, SOLID};
+use super::{Pass, AUX, OUTFALL, SOLID};
 
 /// Water shallower than this on a face does not flow.
 pub const H_FLOW: f32 = 1e-3;
@@ -35,7 +35,8 @@ pub struct Lattice<'a> {
     pub cells: &'a [u32],
     /// Bed elevation per cell, metres.
     pub bed: &'a [f32],
-    /// Per cell: rain multiplier (1 plus the roof cells draining into it), infiltration multiplier.
+    /// Per cell: rain multiplier (1 plus the roof cells draining into it), loss rate in m/s
+    /// (soaking in, plus drains), Manning n squared (#624).
     pub aux: &'a [f32],
 }
 
@@ -52,7 +53,9 @@ pub fn face(lat: &Lattice, p: &Pass, h: &[f32], q: f32, a: usize, b: usize) -> f
         return 0.0;
     }
     let slope = (eb - ea) / p.cell_m;
-    let friction = 1.0 + p.g * p.dt * p.manning2 * q.abs() / depth.powf(7.0 / 3.0);
+    // The rougher side of the face slows the water (an outfall cell has none).
+    let manning2 = lat.aux[a * AUX + 2].max(lat.aux[b * AUX + 2]);
+    let friction = 1.0 + p.g * p.dt * manning2 * q.abs() / depth.powf(7.0 / 3.0);
     let next = (q - p.g * depth * p.dt * slope) / friction;
     // A face may take at most a quarter of the upstream cell's water in one step.
     let limit = p.cell_m / (4.0 * p.dt);
@@ -96,8 +99,8 @@ pub fn cells(lat: &Lattice, p: &Pass, h: &mut [f32], qx: &[f32], qy: &[f32], out
                 let west = if x > 0 { qx[c - 1] } else { 0.0 };
                 let north = if y > 0 { qy[c - nx] } else { 0.0 };
                 let inflow = west - qx[c] + north - qy[c];
-                let wet = *depth + p.dt * p.rain * lat.aux[c * 2] + p.dt * inflow / p.cell_m;
-                *depth = (wet - p.dt * p.infiltration * lat.aux[c * 2 + 1]).max(0.0);
+                let wet = *depth + p.dt * p.rain * lat.aux[c * AUX] + p.dt * inflow / p.cell_m;
+                *depth = (wet - p.dt * lat.aux[c * AUX + 1]).max(0.0);
                 if *depth > H_VELOCITY {
                     u = (0.5 * (west + qx[c]) / *depth).clamp(-V_MAX, V_MAX);
                     v = (0.5 * (north + qy[c]) / *depth).clamp(-V_MAX, V_MAX);

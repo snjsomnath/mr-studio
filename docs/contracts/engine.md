@@ -259,12 +259,14 @@ Kernel id `stormwater`, kind Iterative. Rain running off roofs and terrain, gath
 | Param | Type | Meaning |
 | --- | --- | --- |
 | `rain_mm_h` | number, 0 to 200, default 40 | Rain intensity. 0 stops the rain and lets the site drain; the water already there stays |
-| `infiltration_mm_h` | number, 0 to 100, default 5 | How fast open ground soaks water up; three times as fast under a full tree canopy when `trees` is on |
+| `infiltration_mm_h` | number, 0 to 100, default 5 | How fast open ground the site gives no soil for soaks water up (with `surfaces` off, all open ground); three times as fast under trees when `trees` is on |
 | `speed` | number, 1 to 600, default 60 | Simulated seconds per real second |
 | `resolution` | number, 32 to 1024, default 384 | Lattice cells along the longer side of the site |
 | `roofs` | boolean, default true | Rain on a roof comes down at the nearest open ground beside its building, like a downpipe. Off, roof rain is dropped (a green roof that keeps it) |
 | `trees` | boolean, default true | Ground under trees soaks up more |
-| `manning` | number, 0.01 to 0.1, default 0.025 | Manning roughness of the ground |
+| `manning` | number, 0.01 to 0.1, default 0.025 | Manning roughness of ground the site gives no surface for (with `surfaces` off, all ground) |
+| `surfaces` | boolean, default true | Each surface and soil of the scene (#624) soaks up and slows water its own way, rain gardens hold it and drains take it away (#625). Off, all open ground is alike |
+| `drain_l_s` | number, 0 to 100, default 15 | Litres per second each scene cell of drain takes into the pipes: a street gully takes about 10 to 20 |
 | `storm` | number | Any change dries the site and starts the storm again |
 | `pace` | `"realtime"` or `"fast"`, default `"realtime"` | `fast` ignores the clock and runs as many steps as the budget allows (tests, benchmarks) |
 
@@ -280,7 +282,23 @@ Velocity is reported only where the water is at least 5 mm deep, so dry ground a
 Algorithm: the local inertial form of the shallow water equations (Bates, Horritt and Fewtrell 2010, the scheme behind LISFLOOD-FP), explicit, on a staggered grid. Depth lives on cells, discharge per unit width on the faces between them. One step is two dispatches:
 
 1. Faces. Each cell updates the discharge through its east and south faces from the water-surface slope across the face, `q' = (q - g h_f dt dη/dx) / (1 + g dt n² |q| / h_f^(7/3))`, Manning friction applied semi-implicitly so thin sheets stay slow and stable. The flow depth `h_f` is the water above the higher of the two beds, so water does not climb a kerb it cannot reach over. A face carries no water when it is shallower than 1 mm, and may move at most a quarter of the upstream cell's water in one step, which keeps every depth non-negative and the scheme exactly mass-conserving.
-2. Cells. Each cell adds its rain (times its rain multiplier), the net inflow through its four faces, takes off infiltration, and writes depth and velocity for the visible window.
+2. Cells. Each cell adds its rain (times its rain multiplier), the net inflow through its four faces, takes off its own loss rate (soaking in, and what its drains take), and writes depth and velocity for the visible window.
+
+Surfaces and soils (#624, #625). The scene has a `surface` and a `soil` class per cell (site.md). With `surfaces` on, each open scene cell soaks up rain at a rate set by its surface, or by the soil under it where the surface lets water through:
+
+| Surface | Soaks up, mm/h | Manning n |
+| --- | --- | --- |
+| unknown | the soil's rate, else `infiltration_mm_h` | `manning` |
+| sealed (asphalt, concrete) | 0.5 | 0.013 |
+| paving (stones, setts) | 3 | 0.015 |
+| gravel | 1.5 × the soil's rate | 0.025 |
+| grass | the soil's rate | 0.035 |
+| bare | the soil's rate | 0.03 |
+| woodland | 3 × the soil's rate | 0.08 |
+| rain garden | 100, and the bed lies 0.15 m lower: a dip that holds water before it overflows | 0.1 |
+| drain | 0, plus `drain_l_s` per cell | 0.013 |
+
+Soils, mm/h (saturated rates for urban, somewhat compacted ground): clay 1, silt 5, till 8, sand 30, gravel 60, peat 5, rock 0.5, fill 10. A tree over open ground (unknown, gravel, grass, bare) triples the rate when `trees` is on. A lattice cell takes the mean loss rate and the mean n² of its open scene cells, and a rain garden lowers its bed by 0.15 m times the garden's share of it; a face takes the larger n² of its two cells. With `surfaces` off every open cell has `infiltration_mm_h` (tripled under trees) and `manning`, as before #624. Changing `infiltration_mm_h`, `manning`, `drain_l_s`, `trees` or `roofs` keeps the water; changing `surfaces` rebuilds the lattice and starts dry.
 
 The lattice is the scene grid coarsened by a whole factor chosen from `resolution`, with a one-cell ring of outfall cells around the site. A lattice cell is a building when at least half of its scene cells are solid; buildings are walls. The bed is the mean ground of the open scene cells in a lattice cell. The outfall ring sits level with the cell inside it and is kept dry, so water reaching the edge of the table leaves it. Each roof cell drains to the nearest open cell by steps through its building (breadth first), which adds one to that cell's rain multiplier.
 
@@ -288,7 +306,7 @@ The time step keeps a Courant number of 0.35 for gravity waves over the deeper o
 
 Every 100 steps the depths are read back: the totals, the next time step and how much the water still changes. The run has settled, and reports `Done`, after at least 300 simulated seconds once the mean depth changes by less than 1% of the rain rate (plus 1e-8 m/s) per second for five checks in a row: either steady (as much runs off and soaks in as falls) or drained. Any param change makes it run again; `resolution` rebuilds the lattice and `storm` starts dry, everything else keeps the water.
 
-Status `info` carries `steps`, `seconds` and `minutes` into the storm, `settled`, `change`, `dt`, `rain_mm` fallen per square metre, `rain_m3` fallen on the site (roofs included when they drain), `water_m3` on the ground, `deepest_m`, `flooded_m2` (deeper than 10 cm), `steps_per_second`, `realtime` and `lattice: { width, height, cell_m, factor }`.
+Status `info` carries `steps`, `seconds` and `minutes` into the storm, `settled`, `change`, `dt`, `rain_mm` fallen per square metre, `rain_m3` fallen on the site (roofs included when they drain), `water_m3` on the ground, `deepest_m`, `flooded_m2` (deeper than 10 cm), `steps_per_second`, `realtime`, `lattice: { width, height, cell_m, factor }`, and `surfaces` and `soils`: the share of the open ground under each surface and over each soil the scene names, `{ sealed: 0.31, grass: 0.12, … }` (#624).
 
 On Chalmers at the default resolution (417 x 250 cells of 3 m) the kernel runs about 180 times real time on llvmpipe, a software GPU, so any real GPU keeps up with the fastest storm speed and leaves room for `resolution` 1024.
 A zero budget in `fast` pace runs exactly one step, which is how the parity test keeps both backends on the same step.

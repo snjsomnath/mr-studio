@@ -20,6 +20,28 @@ Bringing what a group saw and heard outside back into the room, so people talk a
 4. Spots are kept on the phone and sent whenever the table can be reached, so walking out of Wi-Fi range or the screen going dark loses nothing. Keep the page open until the list says **On the table**.
 5. Back at the table, open **Field walk** on the controller. Pick a spot from the strip, with ‹ and ›, or click its dot on the table. A sound plays on the controller's speakers.
 
+## Design the walk
+
+Under **More settings** on the controller (or in the editor), the walk designer sets what a spot asks for (#628):
+
+- **Kinds to pick from**: a comma-separated list, such as `Rain garden, Drain, Puddle`. Each phone shows them as chips and a spot needs one. Left empty, visitors don't pick a kind.
+- **Ask how they feel**: a row of five faces, from 😣 (don't like it) to 😍 (love it). A spot needs one.
+- **What a spot takes**: a photo or a sound, only a photo, only a sound, or neither. With neither, a spot is just its place, kind and feeling, which is quick to make on a big walk.
+
+![The phone, with kinds and feelings](docs/screenshots/628-phone-sheet.png)
+
+**Colour the spots by** colours the dots on the table and the thumbnails on the controller by walker, by feeling (red to green) or by kind. The controller shows a key with how many spots each colour has.
+
+![The table coloured by feeling](docs/screenshots/628-table-feeling.png)
+
+![The controller's key and the save button](docs/screenshots/628-controller.png)
+
+## Keep the walk as data
+
+**Save the walk as data** on the controller writes every spot to the table's `fieldwalk` dataset as GeoJSON points, with its kind, feeling, note, walker and time. The walk is then data like any other: it is kept when the table is shared, other layers can use it, and it can be styled in the editor. Saving again replaces the dataset, and the earlier version stays in the table's history.
+
+Spots of the kinds **Rain garden** or **Drain** (also *regnbädd*, *brunn*, *dagvatten* and the like) count as surfaces for the stormwater layer: the first time a walk with them is saved, the table adds the `fieldwalk` dataset to `scene.surfaces`. Turn on **Stormwater** to see what the gardens and drains the visitors found do in a storm. See [Stormwater](stormwater.md).
+
 ## With other layers
 
 Field walk is a layer like any other: picking another layer closes it. To see the spots under a Reveal line or a Magnifier's X-ray, add Field walk inside that layer in the editor; it then opens with it.

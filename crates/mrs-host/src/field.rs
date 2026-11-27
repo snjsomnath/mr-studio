@@ -51,8 +51,14 @@ pub struct Walker {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Spot {
     pub id: String,
-    /// `photo` or `sound`.
+    /// `photo`, `sound`, or `mark` for a spot with neither (#628).
     pub kind: String,
+    /// What the walker says it is, from the kinds the host set up (#628): `Drain`, `Rain garden`…
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+    /// How the walker feels about the spot, 1 (dislike) to 5 (love), when the walk asks (#628).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub feeling: Option<u8>,
     /// When it was taken, milliseconds since 1970, by the phone's clock.
     pub at: f64,
     pub lon: f64,
@@ -64,7 +70,7 @@ pub struct Spot {
     pub placed: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
-    /// The file's name in the field folder.
+    /// The file's name in the field folder; empty for a mark.
     pub file: String,
     pub mime: String,
     pub bytes: u64,
@@ -187,10 +193,41 @@ impl Field {
         json!({ "revision": inner.saved.revision, "session": inner.saved.session, "spots": inner.saved.spots, "pending": pending })
     }
 
+    /// The walk as GeoJSON points (#628): one feature per spot with what the walker said about it
+    /// (`kind`, `feeling`, `note`), who and when. Media stay on this computer and are left out.
+    pub fn geojson(&self) -> Value {
+        let inner = self.inner.lock();
+        let features: Vec<Value> = inner
+            .saved
+            .spots
+            .iter()
+            .map(|s| {
+                let mut properties = serde_json::Map::new();
+                properties.insert("id".into(), json!(s.id));
+                if let Some(label) = &s.label {
+                    properties.insert("kind".into(), json!(label));
+                }
+                if let Some(feeling) = s.feeling {
+                    properties.insert("feeling".into(), json!(feeling));
+                }
+                if let Some(note) = &s.note {
+                    properties.insert("note".into(), json!(note));
+                }
+                properties.insert("media".into(), json!(s.kind));
+                if let Some(name) = &s.walker.name {
+                    properties.insert("walker".into(), json!(name));
+                }
+                properties.insert("at".into(), json!(s.at));
+                json!({ "type": "Feature", "properties": properties, "geometry": { "type": "Point", "coordinates": [s.lon, s.lat] } })
+            })
+            .collect();
+        json!({ "type": "FeatureCollection", "features": features })
+    }
+
     /// A field file's path, by its name as a spot has it. None for anything else.
     pub fn file(&self, name: &str) -> Option<PathBuf> {
         let inner = self.inner.lock();
-        inner.saved.spots.iter().any(|s| s.file == name).then(|| self.dir.join(name))
+        (!name.is_empty() && inner.saved.spots.iter().any(|s| s.file == name)).then(|| self.dir.join(name))
     }
 
     fn save(&self, saved: &Saved) -> Result<(), String> {
@@ -264,7 +301,7 @@ impl Field {
                     let at = inner.saved.spots.iter().position(|s| s.id == id).ok_or("no such spot")?;
                     vec![inner.saved.spots.remove(at)]
                 };
-                for spot in &gone {
+                for spot in gone.iter().filter(|s| !s.file.is_empty()) {
                     let _ = std::fs::remove_file(self.dir.join(&spot.file));
                 }
                 if method == "field.clear" {
@@ -299,10 +336,15 @@ impl Field {
         if inner.saved.spots.len() + inner.pending.len() >= MAX_SPOTS {
             return Err(format!("the walk is full ({MAX_SPOTS} spots); ask the guide to clear it"));
         }
-        let kind = p["kind"].as_str().filter(|k| matches!(*k, "photo" | "sound")).ok_or("a spot is a photo or a sound")?;
-        let mime = p["mime"].as_str().ok_or("missing mime")?;
-        let ext = extension(kind, mime).ok_or_else(|| format!("a {kind} of type '{mime}' cannot be kept"))?;
-        let bytes = p["bytes"].as_u64().filter(|b| (1..=MAX_BYTES).contains(b)).ok_or("a spot's file must be at most 8 MB")?;
+        let kind = p["kind"].as_str().filter(|k| matches!(*k, "photo" | "sound" | "mark")).ok_or("a spot is a photo, a sound or a mark")?;
+        let mark = kind == "mark";
+        let mime = if mark { "" } else { p["mime"].as_str().ok_or("missing mime")? };
+        let ext = if mark { "" } else { extension(kind, mime).ok_or_else(|| format!("a {kind} of type '{mime}' cannot be kept"))? };
+        let bytes = if mark {
+            0
+        } else {
+            p["bytes"].as_u64().filter(|b| (1..=MAX_BYTES).contains(b)).ok_or("a spot's file must be at most 8 MB")?
+        };
         let lon = p["lon"].as_f64().filter(|v| (-180.0..=180.0).contains(v)).ok_or("longitude must be between -180 and 180")?;
         let lat = p["lat"].as_f64().filter(|v| (-90.0..=90.0).contains(v)).ok_or("latitude must be between -90 and 90")?;
         if distance_km(self.centre, (lon, lat)) > MAX_KM {
@@ -322,9 +364,11 @@ impl Field {
             colour: short_text(&colour, 16).filter(|c| c.len() == 7 && c.starts_with('#') && c[1..].bytes().all(|b| b.is_ascii_hexdigit())),
         };
         let spot = Spot {
-            file: format!("{id}.{ext}"),
+            file: if mark { String::new() } else { format!("{id}.{ext}") },
             id: id.clone(),
             kind: kind.to_string(),
+            label: short_text(&p["label"], 40),
+            feeling: p["feeling"].as_u64().filter(|f| (1..=5).contains(f)).map(|f| f as u8),
             at: p["at"].as_f64().filter(|t| t.is_finite() && *t > 0.0).unwrap_or(0.0),
             lon: (lon * 1e7).round() / 1e7,
             lat: (lat * 1e7).round() / 1e7,
@@ -337,6 +381,13 @@ impl Field {
             walker,
         };
         std::fs::create_dir_all(&self.dir).map_err(|e| format!("could not keep the spot: {e}"))?;
+        if mark {
+            // Nothing to send: the spot is on the table now.
+            inner.saved.spots.push(spot);
+            inner.saved.revision += 1;
+            self.save(&inner.saved)?;
+            return Ok((json!({ "have": 0, "done": true }), Some(inner.saved.revision)));
+        }
         std::fs::write(self.dir.join(format!("{id}.part")), b"").map_err(|e| format!("could not keep the spot: {e}"))?;
         inner.pending.insert(id, Pending { spot, have: 0 });
         // The controller hears that a spot is on its way; the list's revision is unchanged on disk.
@@ -495,6 +546,31 @@ mod tests {
         assert_eq!(next.request(Role::Phone, "field.mine", &json!({ "walker": "walker-0001" }), None).unwrap().0["session"], "s2");
         assert!(dir.join(PREVIOUS).join("spot-00021.jpg").exists());
         assert!(!dir.join(DIR).join("spot-00021.jpg").exists());
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_mark_with_a_kind_and_a_feeling_needs_no_file() {
+        let dir = temp();
+        let field = Field::open(&dir, (11.97, 57.7), "s1");
+        let mut mark = add("spot-00031", 0);
+        mark["kind"] = json!("mark");
+        mark["label"] = json!("Rain garden");
+        mark["feeling"] = json!(4);
+        let (answer, rev) = field.request(Role::Phone, "field.add", &mark, None).unwrap();
+        assert_eq!((answer["done"].as_bool(), rev.is_some()), (Some(true), true));
+        let mut odd = add("spot-00032", 0);
+        odd["kind"] = json!("mark");
+        odd["feeling"] = json!(9);
+        field.request(Role::Phone, "field.add", &odd, None).unwrap();
+        let data = field.geojson();
+        let props = &data["features"][0]["properties"];
+        assert_eq!(
+            (props["kind"].as_str(), props["feeling"].as_u64(), props["media"].as_str()),
+            (Some("Rain garden"), Some(4), Some("mark"))
+        );
+        assert!(data["features"][1]["properties"]["feeling"].is_null(), "a feeling outside 1 to 5 is dropped");
+        assert!(field.file("").is_none());
         let _ = std::fs::remove_dir_all(dir);
     }
 
