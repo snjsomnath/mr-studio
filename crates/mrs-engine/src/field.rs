@@ -29,6 +29,43 @@ impl Encoding {
 
 pub const FRAME_HEADER_LEN: usize = 40;
 
+/// Cells a stream sends at most unless it asks otherwise (#535): 2048 x 2048, about twice
+/// what a projector or a 4K screen shows. Only a table bigger than about 2 km at 1 m cells
+/// is shrunk.
+pub const DEFAULT_MAX_CELLS: u32 = 2048 * 2048;
+
+impl Field {
+    /// The field with at most `max_cells` cells (#535): each side divided by the same whole
+    /// number, each new cell the mean of the cells it covers. A field already small enough,
+    /// or a `max_cells` of 0, comes back as it is.
+    pub fn shrunk(self, max_cells: u32) -> Field {
+        let cells = self.width as u64 * self.height as u64;
+        if max_cells == 0 || cells <= max_cells as u64 {
+            return self;
+        }
+        let mut k = ((cells as f64 / max_cells as f64).sqrt().ceil() as u32).max(2);
+        while (self.width.div_ceil(k) as u64) * (self.height.div_ceil(k) as u64) > max_cells as u64 {
+            k += 1;
+        }
+        let (width, height) = (self.width.div_ceil(k), self.height.div_ceil(k));
+        let mut data = vec![0.0f32; (width * height) as usize];
+        for y in 0..height {
+            for x in 0..width {
+                let (mut sum, mut n) = (0.0f32, 0u32);
+                for row in y * k..((y + 1) * k).min(self.height) {
+                    let start = (row * self.width) as usize;
+                    for col in x * k..((x + 1) * k).min(self.width) {
+                        sum += self.data[start + col as usize];
+                        n += 1;
+                    }
+                }
+                data[(y * width + x) as usize] = sum / n as f32;
+            }
+        }
+        Field { width, height, data, ..self }
+    }
+}
+
 /// Encodes a field as a binary frame. Layout in `docs/contracts/engine.md`.
 pub fn encode_frame(field: &Field, encoding: Encoding, stream: u32, field_index: u32, revision: u32, progress: f32) -> Vec<u8> {
     let n = field.data.len();
@@ -68,6 +105,21 @@ pub fn encode_frame(field: &Field, encoding: Encoding, stream: u32, field_index:
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_big_field_is_shrunk_by_whole_steps_to_its_means() {
+        let field = Field { width: 5, height: 4, units: "h", min: 0.0, max: 10.0, data: (0..20).map(|v| v as f32).collect() };
+        assert_eq!(field.clone().shrunk(0).data.len(), 20, "0 is no limit");
+        assert_eq!(field.clone().shrunk(20).data.len(), 20, "small enough");
+        let small = field.shrunk(6);
+        assert_eq!((small.width, small.height), (3, 2));
+        // The first cell is the mean of 0, 1, 5, 6; the last column has one cell across.
+        assert_eq!(small.data, vec![3.0, 5.0, 6.5, 13.0, 15.0, 16.5]);
+        assert_eq!((small.min, small.max, small.units), (0.0, 10.0, "h"));
+        let city =
+            Field { width: 4000, height: 4000, units: "", min: 0.0, max: 1.0, data: vec![0.5; 16_000_000] }.shrunk(DEFAULT_MAX_CELLS);
+        assert_eq!((city.width, city.height), (2000, 2000));
+    }
 
     #[test]
     fn frame_layout() {

@@ -1559,6 +1559,12 @@ declare module "@mrstudio/sdk/engine" {
         encoding?: 'u8' | 'f32';
         /** Upper bound on frames per second. Default 30. */
         maxHz?: number;
+        /**
+         * The most cells a frame carries (#535). A bigger field arrives shrunk, each side divided by
+         * the same whole number, each cell the mean of those it covers; read `width` and `height`
+         * from the frame. Default 2048 x 2048 cells; 0 sends every cell.
+         */
+        maxCells?: number;
     }
     /**
      * A running kernel job whose fields arrive as frames. Survives reconnects:

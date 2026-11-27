@@ -454,6 +454,20 @@ async fn engine_streams_push_frames_when_results_change() {
     };
     assert_eq!(exact.len(), 40 + 1000 * 600 * 4);
 
+    // A window that asks for fewer cells gets the field shrunk to fit (#535).
+    let opened = table
+        .request("engine.open", json!({ "kernel": "sunlight", "params": params, "fields": ["shadow"], "maxCells": 100_000 }))
+        .await
+        .unwrap();
+    let small = loop {
+        let frame = table.frame().await;
+        if u32_at(&frame, 8) as u64 == opened["stream"].as_u64().unwrap() {
+            break frame;
+        }
+    };
+    assert_eq!((u32_at(&small, 16), u32_at(&small, 20)), (334, 200), "each side divided by 3");
+    assert_eq!(small.len(), 40 + 334 * 200);
+
     // Bad requests are errors, and another surface cannot touch this stream.
     assert!(table.request("engine.open", json!({ "kernel": "nope", "params": {}, "fields": ["x"] })).await.is_err());
     assert!(table.request("engine.open", json!({ "kernel": "sunlight", "params": params, "fields": ["nope"] })).await.is_err());

@@ -20,7 +20,7 @@ mod twin;
 pub use context::{Backend, Context, Gpu};
 pub use engine::{Engine, EngineConfig, EngineInfo, JobId};
 pub use error::EngineError;
-pub use field::{encode_frame, Encoding, Field, FRAME_HEADER_LEN};
+pub use field::{encode_frame, Encoding, Field, DEFAULT_MAX_CELLS, FRAME_HEADER_LEN};
 pub use grid::Grid;
 pub use kernel::{FieldInfo, Job, JobState, JobStatus, Kernel, KernelInfo, KernelKind};
 pub use scene::{ContextRing, Scene, SceneData, Soil, Surface, SOLID_THRESHOLD_M};
