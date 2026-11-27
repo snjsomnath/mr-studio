@@ -1,4 +1,4 @@
-import { StreetGraph, defineLayer, highwayClass, readStreetGraph, seededRandom, streetLines } from '@mrstudio/sdk';
+import { SPRITE_FLOATS, StreetGraph, defineLayer, highwayClass, readStreetGraph, seededRandom, streetLines } from '@mrstudio/sdk';
 import type { DrawingOverlay, LayerManifest, XY } from '@mrstudio/sdk';
 
 import manifest from '../layer.json';
@@ -127,14 +127,19 @@ export default defineLayer<Params>({
 
     // Redrawing every street many times a second is what made the table crawl in WebKit, where a
     // 2D canvas is drawn on the processor (#596). The streets are drawn once, a group of kinds to a
-    // canvas, and only the flowing lights are drawn again.
+    // canvas, and the flowing lights are sprites the graphics card stamps (#609).
     const groups: Group[] = [];
     kinds.forEach((kind, i) => {
       kind.group = Math.min(i, GROUPS - 1);
       groups[kind.group] ??= { streets: ctx.map.addDrawing(`streets-${kind.group}`, { opacity: 0 }), kinds: [], shown: -1 };
       groups[kind.group]!.kinds.push(kind);
     });
-    const lights = ctx.map.addDrawing('street-glow', { opacity: ctx.params.opacity });
+    const lights = ctx.map.addSprites(
+      'street-glow',
+      kinds.map((kind) => kind.sprite),
+      { opacity: ctx.params.opacity, blend: 'add' },
+    );
+    let buffer = new Float32Array(0);
     function drawStreets() {
       for (const group of groups) {
         group.streets.clear();
@@ -218,10 +223,33 @@ export default defineLayer<Params>({
           particle.edge = next;
         }
       }
-      lights.clear();
-      paintLights(lights.ctx);
-      lights.commit();
+      placeLights();
     });
+
+    /** Hands the lights' places to the graphics card. */
+    function placeLights() {
+      const { width, reveal } = ctx.params;
+      const d = Math.max(2.5, width * 2.2) * 2;
+      if (buffer.length < particles.length * SPRITE_FLOATS) buffer = new Float32Array(particles.length * SPRITE_FLOATS);
+      let n = 0;
+      for (const particle of particles) {
+        const kind = kinds[particle.kind]!;
+        const network = kind.network;
+        if (network.edges.length === 0 || particle.s >= network.edges[particle.edge]!.length) continue;
+        const shown = reveal ? Math.max(0, Math.min(1, clock / REVEAL_S - kind.group)) : 1;
+        if (shown <= 0) continue;
+        const [x, y] = network.at(particle.edge, particle.s);
+        const o = n++ * SPRITE_FLOATS;
+        buffer[o] = x;
+        buffer[o + 1] = y;
+        buffer[o + 2] = d;
+        buffer[o + 3] = d;
+        buffer[o + 4] = 0;
+        buffer[o + 5] = particle.kind;
+        buffer[o + 6] = (0.6 + 0.4 * Math.sin(clock * 4 + particle.phase)) * shown;
+      }
+      lights.set(buffer, n);
+    }
 
     /** The lights flowing along the streets, each in its street's colour with a white-hot centre. */
     function paintLights(g: CanvasRenderingContext2D) {

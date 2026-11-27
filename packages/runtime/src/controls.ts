@@ -361,8 +361,19 @@ export function widget(control: Control, send: (value: unknown) => void, act: (w
     case 'toggle': {
       const input = el('input');
       Object.assign(input, { id, type: 'checkbox', className: 'switch' });
-      input.addEventListener('change', () => send(input.checked));
-      sync = (value) => (input.checked = value === true);
+      // Updates sent before the host took the change still carry the old value: they must not flip the switch back.
+      let wanted: boolean | null = null;
+      let until = 0;
+      input.addEventListener('change', () => {
+        wanted = input.checked;
+        until = performance.now() + 2000;
+        send(input.checked);
+      });
+      sync = (value) => {
+        if (wanted !== null && (value === true) !== wanted && performance.now() < until) return;
+        wanted = null;
+        input.checked = value === true;
+      };
       row.append(label, input);
       break;
     }

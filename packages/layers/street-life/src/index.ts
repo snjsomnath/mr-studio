@@ -1,5 +1,5 @@
-import { StreetGraph, byHighway, defineLayer, readStreetGraph, pointsAlong, seededRandom, streetLines, withAlpha } from '@mrstudio/sdk';
-import type { LayerManifest, Placed, XY } from '@mrstudio/sdk';
+import { SPRITE_FLOATS, StreetGraph, byHighway, defineLayer, readStreetGraph, pointsAlong, seededRandom, streetLines, withAlpha } from '@mrstudio/sdk';
+import type { LayerManifest, Placed, SpriteImage, XY } from '@mrstudio/sdk';
 
 import manifest from '../layer.json';
 
@@ -56,18 +56,12 @@ const MAX_BIKES = 400;
 const WALKER_PAINTS = ['#5d7186', '#6f8399', '#8195ab', '#64788c', '#7488a0', '#00c4c4', '#00c49e'];
 const BIKE_PAINTS = ['#00f2ff', '#00cc88', '#ff6688'];
 
-/**
- * Seconds between redraws: a full-table picture drawn every frame cost the presented table dearly
- * in WebKit (#596), and at a few pixels a second, movement 30 times a second looks the same.
- */
-const FRAME_S = 1 / 30;
 
 export default defineLayer<Params>({
   manifest: manifest as LayerManifest,
 
   async table(ctx) {
     const lights = ctx.map.addDrawing('streetlights', { opacity: ctx.params.opacity });
-    const people = ctx.map.addDrawing('people', { opacity: ctx.params.opacity });
     const lines = await streetLines(ctx.site);
     const random = seededRandom(31);
 
@@ -169,47 +163,29 @@ export default defineLayer<Params>({
       return true;
     }
     const alphaOf = (m: Mover) => Math.min(1, m.age / FADE_S, m.leaving === null ? 1 : Math.max(0, m.leaving / FADE_S));
-    const offscreen = (x: number, y: number) => x < -20 || y < -20 || x > people.width + 20 || y > people.height + 20;
+    const offscreen = (x: number, y: number) => x < -20 || y < -20 || x > ctx.site.extent.width_m + 20 || y > ctx.site.extent.height_m + 20;
 
-    let since = 0;
-    ctx.onFrame((frame) => {
-      since += frame;
-      if (since < FRAME_S) return;
-      const dt = Math.min(since, 0.25);
-      since = 0;
-      const { pace, size } = ctx.params;
-      for (let i = 0; i < walkers.length; i++) if (!move(walkers[i]!, walks, WALK_MS * pace, dt)) walkers[i] = spawnWalker();
-      for (let i = 0; i < bikes.length; i++) if (!move(bikes[i]!, rides, BIKE_MS * pace, dt)) bikes[i] = spawnBike();
-
-      const g = people.ctx;
-      people.clear();
-      // Walkers: soft dots that sway a little across their way, batched by colour.
-      const r = 0.75 * size;
-      for (const paint of WALKER_PAINTS) {
+    // Walkers and cyclists are pictures the graphics card stamps (#609): drawn once here, placed every frame.
+    const LOOK_PX = 16;
+    const bikeHalf: [number, number] = [5.3, 1.25];
+    const looks: SpriteImage[] = [
+      ...WALKER_PAINTS.map((paint) => {
+        const image = document.createElement('canvas');
+        image.width = image.height = Math.ceil(1.5 * LOOK_PX) + 2;
+        const g = image.getContext('2d')!;
         g.fillStyle = paint;
-        for (const m of walkers) {
-          if (m.paint !== paint) continue;
-          // Footways and paths are the network's main lines (`major`); on other streets, keep to the pavement.
-          const across = walks.edges[m.edge]!.major ? (m.side - 0.5) * 2 : 4 + m.side * 1.5;
-          const [x, y] = walks.at(m.edge, m.s, across + Math.sin(m.phase) * 0.4);
-          if (offscreen(x, y)) continue;
-          g.globalAlpha = alphaOf(m);
-          g.beginPath();
-          g.arc(x, y, r, 0, Math.PI * 2);
-          g.fill();
-        }
-      }
-      // Cyclists: a bright core in their colour, a short lamp beam ahead and a red rear light.
-      for (const m of bikes) {
-        const [x, y] = rides.at(m.edge, m.s, m.side);
-        if (offscreen(x, y)) continue;
-        const angle = rides.edges[m.edge]!.angle;
-        g.save();
-        g.globalAlpha = alphaOf(m);
-        g.translate(x, y);
-        g.rotate(angle);
-        g.scale(size, size);
-        g.globalCompositeOperation = 'lighter';
+        g.beginPath();
+        g.arc(image.width / 2, image.height / 2, 0.75 * LOOK_PX, 0, Math.PI * 2);
+        g.fill();
+        return image;
+      }),
+      ...BIKE_PAINTS.map((paint) => {
+        const image = document.createElement('canvas');
+        image.width = Math.ceil(bikeHalf[0] * 2 * LOOK_PX);
+        image.height = Math.ceil(bikeHalf[1] * 2 * LOOK_PX);
+        const g = image.getContext('2d')!;
+        g.setTransform(LOOK_PX, 0, 0, LOOK_PX, image.width / 2, image.height / 2);
+        // A bright core in its colour, a short lamp beam ahead and a red rear light.
         const beam = g.createLinearGradient(0.6, 0, 5, 0);
         beam.addColorStop(0, 'rgb(255 255 220 / 0.5)');
         beam.addColorStop(1, 'rgb(255 255 200 / 0)');
@@ -220,8 +196,7 @@ export default defineLayer<Params>({
         g.lineTo(5, 1.1);
         g.closePath();
         g.fill();
-        g.globalCompositeOperation = 'source-over';
-        g.fillStyle = m.paint;
+        g.fillStyle = paint;
         g.beginPath();
         g.ellipse(0, 0, 1, 0.55, 0, 0, Math.PI * 2);
         g.fill();
@@ -233,10 +208,46 @@ export default defineLayer<Params>({
         g.beginPath();
         g.arc(-1, 0, 0.25, 0, Math.PI * 2);
         g.fill();
-        g.restore();
+        return image;
+      }),
+    ];
+    const people = ctx.map.addSprites('people', looks, { opacity: ctx.params.opacity });
+    let buffer = new Float32Array(0);
+
+    ctx.onFrame((frame) => {
+      const dt = Math.min(frame, 0.25);
+      const { pace, size } = ctx.params;
+      for (let i = 0; i < walkers.length; i++) if (!move(walkers[i]!, walks, WALK_MS * pace, dt)) walkers[i] = spawnWalker();
+      for (let i = 0; i < bikes.length; i++) if (!move(bikes[i]!, rides, BIKE_MS * pace, dt)) bikes[i] = spawnBike();
+
+      const total = walkers.length + bikes.length;
+      if (buffer.length < total * SPRITE_FLOATS) buffer = new Float32Array(total * SPRITE_FLOATS);
+      let n = 0;
+      const put = (x: number, y: number, w: number, h: number, angle: number, image: number, alpha: number) => {
+        const o = n++ * SPRITE_FLOATS;
+        buffer[o] = x;
+        buffer[o + 1] = y;
+        buffer[o + 2] = w;
+        buffer[o + 3] = h;
+        buffer[o + 4] = angle;
+        buffer[o + 5] = image;
+        buffer[o + 6] = alpha;
+      };
+      // Walkers: soft dots that sway a little across their way.
+      const d = (1.5 + 2 / LOOK_PX) * size;
+      for (const m of walkers) {
+        // Footways and paths are the network's main lines (`major`); on other streets, keep to the pavement.
+        const across = walks.edges[m.edge]!.major ? (m.side - 0.5) * 2 : 4 + m.side * 1.5;
+        const [x, y] = walks.at(m.edge, m.s, across + Math.sin(m.phase) * 0.4);
+        if (offscreen(x, y)) continue;
+        put(x, y, d, d, 0, WALKER_PAINTS.indexOf(m.paint), alphaOf(m));
       }
-      g.globalAlpha = 1;
-      people.commit();
+      for (const m of bikes) {
+        const [x, y] = rides.at(m.edge, m.s, m.side);
+        if (offscreen(x, y)) continue;
+        put(x, y, bikeHalf[0] * 2 * size, bikeHalf[1] * 2 * size, rides.edges[m.edge]!.angle, WALKER_PAINTS.length + BIKE_PAINTS.indexOf(m.paint), alphaOf(m));
+      }
+      people.set(buffer, n);
       ctx.publish({ walkers: walkers.length, bikes: bikes.length });
     });
 

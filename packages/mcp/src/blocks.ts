@@ -45,6 +45,20 @@ export const BLOCKS: BlockDef[] = [
     unlocks: ['Wind comfort', 'Air quality plumes', 'Rain and stormwater', 'Mobility flows'],
   },
   {
+    id: 'sprites', group: 'visual', name: 'Moving sprites',
+    description: 'Many small pictures (lights, vehicles, people, crowns) stamped by the graphics card each frame; the fast way to animate thousands of things on the table.',
+    usage: "ctx.map.addSprites(id, images, { blend: 'add' }) then sprites.set(buffer) with SPRITE_FLOATS numbers per sprite",
+    detect: 'interface SpriteOverlay',
+    unlocks: ['Traffic and transit', 'Flowing street lights', 'Crowds'],
+  },
+  {
+    id: 'strokes', group: 'visual', name: 'Moving lines',
+    description: 'Lines that change every frame (trails behind vehicles, wakes), each with a width and alpha per point, drawn by the graphics card.',
+    usage: 'ctx.map.addStrokes(id) then strokes.set([{ points, colour, width, alpha }])',
+    detect: 'interface StrokeOverlay',
+    unlocks: ['Transit trails', 'Ferry wakes', 'Tracks behind moving things'],
+  },
+  {
     id: 'canvas-overlay', group: 'visual', name: 'Canvas overlay',
     description: 'A projected canvas in site coordinates for custom drawing of geometry from site data.',
     usage: 'ctx.map.addCanvas(...)',
