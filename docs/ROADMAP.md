@@ -124,7 +124,7 @@ The core layers in `packages/layers`, with the issue that made each one:
 | Isovist | `isovist` | none (SDK block) | view, green view and soundscape, Street View (#190, #82) |
 | Traffic | `cars` | none | headlights, taxis, buses, emergency vehicles (#195, #201) |
 | Public transport | `transit` | none | simulated or live from Västtrafik (#202) |
-| Street life | `street-life` | none | walkers, cyclists, streetlights (#195) |
+| Street life | `street-life` | none | walkers, cyclists, streetlights (#195), a street sound looping under it at rest |
 | Street glow | `street-glow` | none | streets glowing by kind (#195) |
 | Building lights | `building-lights` | none | lit windows |
 | Trees | `trees` | none | swaying crowns |

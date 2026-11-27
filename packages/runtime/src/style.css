@@ -3973,6 +3973,12 @@ body[data-role='tv'] .layer-button-card.is-second .layer-button[aria-pressed='tr
   display: none;
 }
 
+/* The opening fade (present.md, Opening): the ribbons and the glow wait until the layers are in, then come in themselves. */
+.is-fading-in .table-ribbon,
+.is-fading-in .table-glow {
+  opacity: 0;
+}
+
 /* Table size and place › Ambient glow (#476): switch, strength, colours on one row. */
 .ed-glow {
   display: flex;

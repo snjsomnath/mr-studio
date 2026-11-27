@@ -37,6 +37,21 @@ pub struct Table {
     /// A soft glow in the projector's blank space in the model's own colours (#476, present.md, Ambient glow).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub glow: Option<Glow>,
+    /// How the projected table opens when it starts and after the controller's Reset: the layers
+    /// fading in one after another (the default) or the zoom in from the city around it (#446).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub intro: Option<Intro>,
+}
+
+/// The projected table's opening (present.md, Opening).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Intro {
+    /// The layers at rest fade in one after another, bottom first, each part of a layer a moment after the one before.
+    #[default]
+    Fade,
+    /// The map starts zoomed out over the city around the table and slowly zooms in (#446).
+    Zoom,
 }
 
 /// The ambient glow around the model: the colours along the model's edges, or one colour for all of it.

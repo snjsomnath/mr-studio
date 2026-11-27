@@ -235,6 +235,17 @@ export function placeSettings(host: TableSettingsHost): HTMLElement[] {
   colours.addEventListener('change', () => table({ table: { glow: { colours: colours.value } } }));
   glow.append(on, strength, colours);
   physical.append(field('Ambient glow', glow, 'The blank space around the model glows softly in the model’s own colours, like the lights behind some televisions. The ribbons stay on top, and a layer can turn it off or give it a colour.'));
+
+  // How the projected table opens, when it starts and after Reset on the controller.
+  const intro = el('select');
+  intro.ariaLabel = 'How the table opens';
+  for (const [v, text] of [
+    ['fade', 'Layers fade in one by one'],
+    ['zoom', 'Zoom in from the city around it'],
+  ]) intro.append(Object.assign(el('option'), { value: v, textContent: text }));
+  intro.value = t.intro === 'zoom' ? 'zoom' : 'fade';
+  intro.addEventListener('change', () => table({ table: { intro: intro.value === 'fade' ? null : intro.value } }));
+  physical.append(field('Opening', setting('table.intro', 'dialog:place', intro), 'How the projected table comes in when it starts and after Reset on the controller: the layers at rest fading in one after another, bottom first, or the map zooming in from the city around the table.'));
   return [about, physical];
 }
 

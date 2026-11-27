@@ -402,7 +402,7 @@ Events:
 
 ### The session changing
 
-`table.intro {}` is sent to every surface after `layers.reset` (#446). The projected table (`/table`) plays its opening zoom on it: the map at rest jumps two zoom steps out over the surroundings, holds 0.9 s and eases back in over 6.5 s (through a projector calibration the model's picture grows into place instead). The table also plays it once when it starts; switching layers never does. `/table?intro=0` leaves it out, for scripted screenshots.
+`table.intro {}` is sent to every surface after `layers.reset` (#446). The projected table (`/table`) plays its opening on it, the one `table.intro` in site.json picks: the layers at rest fading in one after another (`"fade"`, the default) or the zoom in from the surroundings (`"zoom"`); see present.md, Opening. The table also plays it once when it starts; switching layers never does. `/table?intro=0` leaves it out, for scripted screenshots.
 
 `session.changed {session}` is sent to every surface when the session's details change after the welcome, such as the join address when the host links to or loses a phone relay (#89). Surfaces showing the QR code redraw it.
 

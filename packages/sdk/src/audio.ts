@@ -600,3 +600,111 @@ export class Soundscape {
     bed.gain = null;
   }
 }
+
+// ---- Ambient loop ------------------------------------------------------------------
+// One recording looping under the table while a layer shows, such as the city's sound under the
+// street life at rest, as the Chalmers demo had it.
+
+/** Seconds an ambient loop takes to come in or go. */
+export const AMBIENT_FADE_S = 1.5;
+
+/** Moves a volume towards `target` at a steady pace: from silence to full in `fade_s`. */
+export function stepVolume(current: number, target: number, dt: number, fade_s = AMBIENT_FADE_S): number {
+  const step = Math.max(0, dt) / Math.max(0.01, fade_s);
+  return current < target ? Math.min(target, current + step) : Math.max(target, current - step);
+}
+
+/**
+ * Plays one sound file of the site (`data/sounds/...`) on a loop, easing in when it starts and
+ * when its volume changes. `stop` lets it fade out by itself, so a layer can stop it as it closes.
+ * Nothing is heard until the page has had a gesture (the browser's autoplay rule) or on a page
+ * that is not `audible`.
+ */
+export class AmbientLoop {
+  private source: AudioBufferSourceNode | null = null;
+  private gain: GainNode | null = null;
+  private key = '';
+  private stopped = false;
+  private readonly url: (path: string) => string;
+  /** The volume now, after easing, 0 to 1. */
+  volume = 0;
+  audible: boolean;
+
+  constructor(options: { audible: boolean; url?: (path: string) => string }) {
+    this.audible = options.audible;
+    this.url = options.url ?? ((path) => `/site/${path}`);
+  }
+
+  /** Eases towards `target` (0 to 1) and (re)starts the loop when `file` changed; null plays nothing. Call once per frame. */
+  update(file: string | null, target: number, dt: number): void {
+    if (this.stopped) return;
+    const key = file ?? '';
+    if (key !== this.key) {
+      this.release(0);
+      this.key = key;
+      this.volume = 0;
+      if (file) void this.start(key, file);
+    }
+    this.volume = stepVolume(this.volume, file ? Math.min(1, Math.max(0, target)) : 0, dt);
+    if (this.gain) this.gain.gain.value = this.audible ? this.volume : 0;
+  }
+
+  /** Fades out over `fade_s` and stops. */
+  stop(fade_s = AMBIENT_FADE_S): void {
+    if (this.stopped) return;
+    this.stopped = true;
+    this.release(fade_s);
+  }
+
+  private async start(key: string, file: string): Promise<void> {
+    const ctx = context();
+    if (!ctx) return;
+    const buffer = (await loadSound(this.url(file)))?.buffer ?? null;
+    if (!buffer) {
+      console.warn(`[ambient] ${file} could not be played`);
+      return;
+    }
+    if (this.stopped || this.key !== key) return;
+    try {
+      const source = ctx.createBufferSource();
+      source.buffer = buffer;
+      source.loop = true;
+      const gain = ctx.createGain();
+      gain.gain.value = 0;
+      source.connect(gain).connect(ctx.destination);
+      source.start();
+      this.source = source;
+      this.gain = gain;
+    } catch {
+      // Seen but not heard.
+    }
+  }
+
+  private release(fade_s: number): void {
+    const { source, gain } = this;
+    this.source = null;
+    this.gain = null;
+    if (!source || !gain) return;
+    const ctx = gain.context;
+    const end = ctx.currentTime + Math.max(0, fade_s);
+    try {
+      gain.gain.cancelScheduledValues(ctx.currentTime);
+      gain.gain.setValueAtTime(gain.gain.value, ctx.currentTime);
+      gain.gain.linearRampToValueAtTime(0, end);
+      source.stop(end + 0.05);
+    } catch {
+      // Already stopped.
+    }
+    source.onended = () => {
+      source.disconnect();
+      gain.disconnect();
+    };
+  }
+}
+
+/** Where a sound named in a layer's setting is: a bare file name is one of the site's sounds (`data/sounds/`), else a path in the site. */
+export function soundFilePath(name: string | null | undefined): string | null {
+  const file = (name ?? '').trim();
+  if (!file || /^https?:|^\/|\.\./.test(file)) return null;
+  return file.includes('/') ? file : `data/sounds/${file}`;
+}

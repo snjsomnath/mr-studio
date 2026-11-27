@@ -13,7 +13,7 @@ import { guideCode, guideDoor, guideScreen } from './guide.ts';
 import { browserLanguage, keepOwnLanguage, language, offered, ownLanguage, setLanguage, speak, t } from './i18n.ts';
 import type { Language } from './i18n.ts';
 import { joinPanel, pausedBanner, phonesPanel, watchingBanner } from './join.ts';
-import { LayerManager } from './layer-manager.ts';
+import { LayerManager, stackOrder } from './layer-manager.ts';
 import { loadSiteModules } from './registry.ts';
 import { fieldCard } from './field-phone.ts';
 import { phoneBadge, phoneCode, refusedScreen, rememberSeat, rememberedSeat } from './phone.ts';
@@ -296,11 +296,17 @@ async function main() {
     const { installModel } = await import('./model/index.ts');
     await installModel(view, connection, role, { remoteCalibration: !editing });
     new LayerManager(store, connection, view);
-    // The projected table opens zoomed out over its surroundings and slowly zooms in (#446); the
-    // controller's Reset plays it again. `?intro=0` leaves it out, for scripted screenshots.
+    // The projected table opens with its layers fading in one after another, or, when the table
+    // says so, zoomed out over its surroundings and slowly zooming in (#446). The controller's
+    // Reset plays it again. `?intro=0` leaves it out, for scripted screenshots.
     if (role === 'table' && new URLSearchParams(location.search).get('intro') !== '0') {
-      view.playIntro();
-      connection.on('table.intro', () => view.playIntro());
+      const opening = () => {
+        if (store.state.site.table?.intro === 'zoom') return view.playIntro();
+        const { layers, scene } = store.state;
+        view.playFade(stackOrder(store, scene).filter((id) => layers[id]?.active));
+      };
+      opening();
+      connection.on('table.intro', opening);
     }
     // The ribbons in the projector's blank space around the model (#78). The projected table draws
     // them where the free space is; the editor and dev keep room beside the map and preview them there.

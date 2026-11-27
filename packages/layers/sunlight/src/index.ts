@@ -50,6 +50,8 @@ const PLAY_GLIDE_SECONDS = 0.06;
 const GOLDEN_HOURS_PER_SECOND = 0.085;
 /** Seconds the blue hour holds at the end of a golden hour before it starts again. */
 const GOLDEN_HOLD_SECONDS = 2.5;
+/** Seconds the sun takes to climb back to the top of the golden hour after the hold (#402). */
+const GOLDEN_REWIND_SECONDS = 2.5;
 
 /** Shadows at a moment: plain, or the golden hour's (#363). Both use the same shadows, sun and clock. */
 const atMoment = (mode: string) => mode === 'instant' || mode === 'golden';
@@ -106,6 +108,8 @@ export default defineLayer<Params>({
     };
     // Seconds left holding the blue hour before the golden hour starts again.
     let holding = 0;
+    // Seconds left of the sun's climb back to the top of the golden hour (#402).
+    let rewinding = 0;
     const overlay = ctx.map.addField('sunlight', {
       colormap: lightColormap(sunNow().altitude),
       opacity: ctx.params.opacity,
@@ -399,8 +403,9 @@ export default defineLayer<Params>({
       }
       let rate: number;
       if (golden()) {
-        if (!goldenTick(dt)) return syncClock(0);
-        rate = GOLDEN_HOURS_PER_SECOND;
+        const goldenRate = goldenTick(dt);
+        if (goldenRate === null) return syncClock(0);
+        rate = goldenRate;
       } else {
         // The clock moves by the frame's own time, so the sun moves the same distance on screen for the same time.
         rate = PLAY_HOURS_PER_SECOND * playPace(sunNow().altitude);
@@ -418,21 +423,27 @@ export default defineLayer<Params>({
 
     /**
      * One frame of the golden hour playing (#363): the sun sinks slowly through the window, the blue hour holds a
-     * moment, and the golden hour starts again. False while holding, when nothing moves.
+     * moment, the sun climbs smoothly back to the top (#402), and the golden hour starts again. The clock's rate
+     * in hours a second, or null while holding, when nothing moves.
      */
-    function goldenTick(dt: number): boolean {
+    function goldenTick(dt: number): number | null {
       const window = goldenWindow();
       if (!window) {
         clock = (hourNow() + dt * GOLDEN_HOURS_PER_SECOND) % 24;
-        return true;
+        return GOLDEN_HOURS_PER_SECOND;
       }
       if (holding > 0) {
         holding -= dt;
-        if (holding > 0) return false;
-        // Back to the top of the golden hour; the light eases in rather than snapping.
-        overlay.setStyle({ glide: GLIDE_SECONDS * 4 });
-        clock = window.from;
-        return true;
+        if (holding > 0) return null;
+        rewinding = GOLDEN_REWIND_SECONDS;
+      }
+      if (rewinding > 0) {
+        // Back to the top of the golden hour, eased at both ends: a jump there in one frame read as a glitch.
+        rewinding = Math.max(0, rewinding - dt);
+        const t = 1 - rewinding / GOLDEN_REWIND_SECONDS;
+        const eased = t * t * (3 - 2 * t);
+        clock = window.to + (window.from - window.to) * eased;
+        return rewinding > 0 ? (window.from - window.to) / GOLDEN_REWIND_SECONDS : GOLDEN_HOURS_PER_SECOND;
       }
       const now = hourNow();
       // A time outside the window, from a scrub or from Shadows, starts the play at the top of the golden hour.
@@ -442,13 +453,14 @@ export default defineLayer<Params>({
         clock = window.to;
         holding = GOLDEN_HOLD_SECONDS;
       }
-      return true;
+      return GOLDEN_HOURS_PER_SECOND;
     }
 
     /** Turning golden hour mode on starts its golden hour playing. */
     function enterGolden() {
       const window = goldenWindow();
       holding = 0;
+      rewinding = 0;
       ctx.setParams({ ...(window ? { hour: Math.round(window.from / HOUR_STEP) * HOUR_STEP } : {}), play: true });
     }
 

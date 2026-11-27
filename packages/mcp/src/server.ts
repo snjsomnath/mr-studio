@@ -602,7 +602,7 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
     {
       title: 'Update site settings',
       description:
-        `Change site settings other than the scene. Settable in this core: ${editable.join(', ')}. Among them: table (size, tile_cm, front, ribbons, glow: the ambient glow around the model), scene sources (buildings, terrain, trees, cell_m), basemap (style, black and white, brightness), branding (title, logo, welcome line, languages, translations), palette, display (quality) and tv. Objects are merged one level deep; null removes a key. The change is refused if it makes the site invalid. Use the layer tools for the scene.`,
+        `Change site settings other than the scene. Settable in this core: ${editable.join(', ')}. Among them: table (size, tile_cm, front, ribbons, glow: the ambient glow around the model, intro: fade or zoom, how the table opens), scene sources (buildings, terrain, trees, cell_m), basemap (style, black and white, brightness), branding (title, logo, welcome line, languages, translations), palette, display (quality) and tv. Objects are merged one level deep; null removes a key. The change is refused if it makes the site invalid. Use the layer tools for the scene.`,
       inputSchema: {
         site: z.string().describe('Site folder'),
         set: z.record(z.string(), z.unknown()).describe('e.g. { "branding": { "title": "Harbour 2040" }, "basemap": { "background": "#101418" } }'),
