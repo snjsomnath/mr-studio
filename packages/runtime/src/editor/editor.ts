@@ -20,6 +20,8 @@ import type { MediaItem } from '../media.ts';
 import type { BuilderHost } from './builder.ts';
 import { LAYER_ICONS, icon } from './icons.ts';
 import { HistoryControls } from './history.ts';
+import { SaveState } from './save-state.ts';
+import type { SaveWords } from './save-state.ts';
 import { Importer, targetFor } from './importer.ts';
 import { confirmLeave, actionFor, fileButton, keys as shortcut, mac } from './file-menu.ts';
 import { contextMenu, renameInline, typing } from './tree-tools.ts';
@@ -185,10 +187,6 @@ export class Editor {
   snapshot: (() => Promise<Blob | null>) | null = null;
   /** What drew under a point of the map, topmost first, and which layers read clicks themselves; set once the table is up (#425). */
   picker: { hits(clientX: number, clientY: number): string[]; listens(id: string): boolean } | null = null;
-  /** Changes sent to the host and not yet answered. */
-  private pending = 0;
-  /** Why the last change could not be saved, until one is. */
-  private problem: string | null = null;
   /** The last File action and when, so one asked for twice at once (menu and keys) runs once. */
   private lastFile: { action: string; at: number } | null = null;
 
@@ -255,6 +253,8 @@ export class Editor {
   private readonly next = el('div', 'ed-next');
   private readonly inspector = el('aside', 'ed-inspector');
   private readonly saved = el('button', 'ed-saved');
+  /** Changes on their way to the host, and what the saved button says about them (#68). */
+  private readonly saving = new SaveState((words) => this.drawSaved(words), readOnly);
   /** Undo, redo and the History panel, on the host's revision history (#57, #72). */
   private history!: HistoryControls;
   private readonly titleName = el('strong');
@@ -1117,49 +1117,31 @@ export class Editor {
   // ---- Requests -------------------------------------------------------------
 
   private async send(method: string, params: object): Promise<any> {
-    this.pending++;
-    // A change the host has not confirmed in a moment says so, rather than claiming it is saved (#68).
-    const slow = window.setTimeout(() => this.pending > 0 && this.setSaving(), 300);
-    try {
-      const result = await this.connection.request(method, params);
-      this.setSaved();
-      return result;
-    } catch (error) {
-      this.setSaved((error as Error).message);
-      return null;
-    } finally {
-      window.clearTimeout(slow);
-      this.pending--;
-    }
-  }
-
-  private setSaving(): void {
-    const spinner = el('span', 'ed-spinner');
-    spinner.setAttribute('aria-hidden', 'true');
-    this.saved.replaceChildren(spinner, el('span', undefined, 'Saving…'));
-    this.saved.title = 'Waiting for the table to confirm the change';
-    this.saved.classList.remove('is-error');
+    return this.saving.send(() => this.connection.request(method, params));
   }
 
   private setSaved(problem?: string): void {
-    this.problem = problem ?? null;
-    const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    // A read-only copy keeps changes only in the copy, so it never says Saved (#575).
-    const kept = readOnly() ? `Kept in the copy ${time}` : `Saved ${time}`;
-    this.saved.replaceChildren(icon(problem ? 'alert' : 'check', 14), el('span', undefined, problem ?? kept));
-    this.saved.title = problem
-      ? 'This change could not be saved. Click for the history.'
-      : readOnly()
-        ? `A read-only copy: changes stay in this copy and never reach the table. File › Save As… keeps them as a new table. Click for the history.`
-        : `Every change is saved as you make it. Last saved at ${time}. Click for the history.`;
-    this.saved.classList.toggle('is-error', Boolean(problem));
+    this.saving.saved(problem);
+  }
+
+  /** Draws the saved button: a spinner while saving, else its icon, and the words. */
+  private drawSaved(words: SaveWords): void {
+    let mark: Element;
+    if (words.icon) mark = icon(words.icon, 14);
+    else {
+      mark = el('span', 'ed-spinner');
+      mark.setAttribute('aria-hidden', 'true');
+    }
+    this.saved.replaceChildren(mark, el('span', undefined, words.text));
+    this.saved.title = words.title;
+    this.saved.classList.toggle('is-error', words.error);
   }
 
   // ---- File (#130) ----------------------------------------------------------
 
   /** Waits until every change sent to the host has been answered, for up to five seconds. */
   private async settled(): Promise<void> {
-    for (let waited = 0; this.pending > 0 && waited < 5000; waited += 50) await new Promise((r) => setTimeout(r, 50));
+    await this.saving.settled();
   }
 
   /** Stores a picture of the table for its card on Home. Never in the way of leaving. */
@@ -1193,8 +1175,8 @@ export class Editor {
       return;
     }
     if (action === 'save') {
-      if (this.pending > 0) this.setSaved('Still saving. Is the table connected?');
-      else if (this.problem) this.setSaved(this.problem);
+      if (this.saving.pending > 0) this.setSaved('Still saving. Is the table connected?');
+      else if (this.saving.problem) this.setSaved(this.saving.problem);
       else this.setSaved();
       this.saved.classList.remove('is-flash');
       void this.saved.offsetWidth;
@@ -1206,7 +1188,7 @@ export class Editor {
     if (!invoke) return;
     const leaving = action === 'close' || action === 'home' || action === 'open' || action === 'new' || action === 'save_as';
     if (leaving) {
-      const problem = this.pending > 0 ? 'it is still on its way to the table' : this.problem;
+      const problem = this.saving.pending > 0 ? 'it is still on its way to the table' : this.saving.problem;
       if (problem && !(await confirmLeave(problem))) return;
       await this.keepPicture();
     }
