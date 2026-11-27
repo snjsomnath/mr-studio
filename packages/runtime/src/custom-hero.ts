@@ -55,8 +55,12 @@ export function customHero(ctx: PanelContext, el: HTMLElement, recipe: () => Cus
     const palette = tablePalette(ctx.site);
     const next: Drawn[] = [];
     const found: { name: string; colour: string; kind?: string }[] = [];
-    for (const data of r.data ?? []) {
-      const url = dataUrl(data, ctx.site);
+    // Only what the table draws: each look over its data (#654). Data no look draws, such as a
+    // well's soil log read by tap-info, stays off the map, as it does on the table.
+    for (const block of r.look ?? []) {
+      if (block.block === 'raster') continue;
+      const data = (r.data ?? []).find((d) => d.id === block.data);
+      const url = data ? dataUrl(data, ctx.site) : null;
       if (!url) continue;
       let collection: GeoJsonCollection;
       try {
@@ -65,11 +69,10 @@ export function customHero(ctx: PanelContext, el: HTMLElement, recipe: () => Cus
         continue;
       }
       const shapes = readShapes(collection, frame);
-      const block = (r.look ?? []).find((b) => b.data === data.id);
       const rows = collection.features.map((f) => (f.properties ?? {}) as Props);
-      const scale = paintScale((block?.props as { color?: never } | undefined)?.color, rows, palette);
+      const scale = paintScale((block.props as { color?: never } | undefined)?.color, rows, palette);
       const colour = (p: Props) => css(scale.colour(p));
-      next.push({ shapes, colour, kind: block?.block ?? 'points' });
+      next.push({ shapes, colour, kind: block.block });
       for (const spot of shapes.spots) {
         const name = nameOf(spot.properties as Props);
         const props = spot.properties as Props;
