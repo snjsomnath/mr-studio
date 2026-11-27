@@ -14,7 +14,7 @@ Bringing what a group saw and heard outside back into the room, so people talk a
 
 ## Set it up
 
-1. Add **Field walk** to the table from **Add a layer**. Phones can't turn it on or off; only the controller does.
+1. Add **Field walk** to the table from **Insert › New layer**. Phones can't turn it on or off; only the controller does.
 2. Visitors join with the QR code as usual. At the top of their phone page a **Field walk** card has **Mark a spot**.
 3. Out on the walk, a phone finds itself by GPS, or the visitor taps where they are on the small map. They take a photo or record a sound (up to a minute), add a few words if they like, and **Save spot**.
 4. Spots are kept on the phone and sent whenever the table can be reached, so walking out of Wi-Fi range or the screen going dark loses nothing. Keep the page open until the list says **On the table**.

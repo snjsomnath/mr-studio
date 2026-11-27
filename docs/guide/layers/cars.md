@@ -13,7 +13,7 @@ Life on the map while nobody is using the table, and a feel for how busy the str
 ## Set it up
 
 1. The table needs its streets: Insert tab, **Data file**, **Streets**, **From OpenStreetMap**.
-2. Add **Traffic** from **Add a layer**. It goes under **Map**, so it runs while the table is at rest.
+2. Add **Traffic** from **Insert › New layer**. It goes under **Map**, so it runs while the table is at rest.
 3. Set **Cars per kilometre of street**. Around 10 looks lively without being crowded.
 
 ## Tips

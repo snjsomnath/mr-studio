@@ -14,7 +14,7 @@ Letting visitors experience a street at eye level while seeing where they are on
 
 1. Film the walk, and record the route (a GPS track, or draw the line afterwards).
 2. In **Add data**, bring in the video (MP4 works everywhere) and the route as GeoJSON. Name the route `walk` or `route` so the layer finds it.
-3. Adding a video puts a **Video walk** on the table, set to it. Otherwise, add it from **Add a layer** and choose the video and the path.
+3. Adding a video puts a **Video walk** on the table, set to it. Otherwise, add it from **Insert › New layer** and choose the video and the path.
 4. On the controller, visitors play, pause and scrub the film; the walker follows.
 
 ## Tips

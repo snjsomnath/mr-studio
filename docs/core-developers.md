@@ -17,19 +17,24 @@ crates/mrs-engine    compute engine: scene on the GPU, WGSL kernels, CPU referen
 crates/mrs-site      site.json, validation, scene baking
 crates/mrs-host      local host: surfaces, session hub, engine streams
 crates/mrs-cli       the `mrstudio` command
+crates/mrs-relay     the phone relay, for phones on another network (docs/relay.md)
 apps/studio          desktop shell (Tauri): one window per display
 packages/sdk         @mrstudio/sdk: layer API, connection, engine client
-packages/runtime     the surfaces: table, tv, phone, dev
+packages/runtime     the surfaces: table, tv, phone, dev, and the editor
+packages/dashboard   TV panels and widgets (docs/DASHBOARD.md)
 packages/layers      core layers (listed below)
 packages/mcp         MCP server: build a site by talking to an LLM
+packages/join        the join page on GitHub Pages that phones open from the QR code (docs/join-page.md)
 sites/sample         a small synthetic site for tests and dev mode
 sites/chalmers       the Chalmers campus, the flagship reference site
+samples              a kit of sample data, and small examples: a Python service, a controller map, a map stage
+templates/site       the source of the site template repository
 changes              release notes waiting for the next version (docs/RELEASING.md)
 ```
 
 ## Adding things
 
-- **A layer**: copy `packages/layers/sunlight`. A layer is `layer.json` (id, controls, tools) plus `src/index.ts`. The TV and phone controls are generated from the manifest. List the layer in a site's `site.json`. See [docs/contracts/layer.md](docs/contracts/layer.md).
+- **A layer**: copy `packages/layers/sunlight`. A layer is `layer.json` (id, controls, tools) plus `src/index.ts`. The TV and phone controls are generated from the manifest. List the layer in a site's `site.json`. See [docs/contracts/layer.md](docs/contracts/layer.md). Draw what stays still with `ctx.map.addDrawing` and what moves every frame with `ctx.map.addSprites` or `ctx.map.addStrokes` (on the graphics card, #609); WebKit on a Mac draws canvases on the processor.
 - **A kernel**: add `crates/mrs-engine/src/kernels/<id>/` with `kernel.wgsl`, `cpu.rs` and `mod.rs`, register it in `kernels/mod.rs`, and add `tests/<id>.rs` with physics tests on the CPU reference and a GPU/CPU parity test. See [docs/contracts/engine.md](docs/contracts/engine.md).
 - **A layer of your own site**: `mrstudio layer new <id> --site <site>`, then `mrstudio layer build`. It lives in the site's `layers/` folder and runs in the installed app, with no change to the core. See "Site layers" in [docs/contracts/layer.md](docs/contracts/layer.md#site-layers).
 - **A site**: `mrstudio new-site`, add data, `mrstudio validate`. See [docs/contracts/site.md](docs/contracts/site.md).

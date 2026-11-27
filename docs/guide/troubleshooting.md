@@ -5,12 +5,12 @@
 ## The projection does not line up with the model
 
 1. Add the **Table grid** layer and look at the model: the lines should sit on the seams between the tiles.
-2. If they do not, open the **Display** tab and press **Calibrate**. Drag each marker onto the matching corner of the physical model.
+2. If they do not, open **Present › Screens and calibration…** and press **Calibrate**. Follow the panel on the controller: move the cross of light onto each corner it names on the physical model, then **Save**.
 3. If the map is turned or mirrored, check the table's place and turn (Design tab, **Table size and place…**), and how the projector is mounted.
 
 ## The map or the controller opens on the wrong screen
 
-1. Open the **Display** tab and press **Identify**. Every screen shows its number.
+1. Open **Present › Screens and calibration…** and press **Identify**. Every screen shows its number.
 2. Under **Screens**, choose which number is the table (the projector) and which is the controller.
 3. If a screen is missing, check that the computer sees it in its own display settings, then open Present, **Screens and calibration…** again.
 
@@ -23,7 +23,7 @@
 
 ## OpenStreetMap takes a long time or fails
 
-OpenStreetMap's servers are shared and sometimes busy. MR Studio waits, tries again and moves to other servers by itself, which can take a minute. **Fetch everything from open data** asks OpenStreetMap once for all its datasets, which is kinder to the servers than one at a time. If it still fails, press **Try again** on that line later, or bring in a file of your own instead.
+OpenStreetMap's servers are shared and sometimes busy. MR Studio asks each one for a small share, waits for its turn when a server says when one frees, leaves a server alone for 30 seconds after it says "too many requests", and moves to the other public servers by itself, which can take a minute. Parts that already came back are kept, so trying again asks only for what is missing. **Fetch everything from open data** asks OpenStreetMap once for all its datasets, which is kinder to the servers than one at a time. If it still fails, press **Try again** on that line later, or bring in a file of your own instead.
 
 ## A terminal says "mrstudio: command not found"
 
@@ -47,7 +47,7 @@ The aerial photo, ready-made map styles, web maps and the pictures in this Help 
 
 ## The table is slow or jerky
 
-1. On the **Display** tab, set **Quality** to **Draft**.
+1. In **Present › Screens and calibration…**, set **Quality** to **Draft**.
 2. In heavy layers (Wind, Stormwater), set **Detail** to **Coarse** or lower the number of drops or particles.
 3. Close other programs, and keep the laptop on its charger: many computers slow down on battery.
 

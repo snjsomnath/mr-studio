@@ -8,13 +8,15 @@ A round glass that visitors move over the table. As a magnifier, the table marks
 
 ![The Magnifier as an X-ray](docs/screenshots/287-xray.png)
 
+![X-ray with two stacks: the surface around the glass, what is underneath inside it](docs/screenshots/606-xray-stacks.png)
+
 ## Good for
 
 Looking closely at one part of a detailed drawing, and revealing what lies under the ground or behind today's city, one spot at a time.
 
 ## Set it up
 
-1. Add **Magnifier** from **Add a layer**.
+1. Add **Magnifier** from **Insert › New layer**.
 2. For a magnifier, leave **The glass shows** on *The table, larger* and set **Magnification**.
 3. For an X-ray, pick **X-ray glass** in Insert › New layer, or set **The glass shows** to *X-ray: the layers inside it*. Then, with the Magnifier selected, choose **Insert › Add inside…** (also on its right-click menu and under *In this layer* in its settings) and pick the layers to show inside the glass, for example a Masterplan with an underground drawing.
 4. On the table the circle follows the mouse; a click keeps it where it is. On the controller, drag the circle on the small table picture beside the glass. Phones get a Move the glass tool.
@@ -23,4 +25,5 @@ Looking closely at one part of a detailed drawing, and revealing what lies under
 
 - **Darken the table around the glass** draws eyes to it; turn it down for a subtler look.
 - **Hide the map inside the glass** gives an X-ray a dark background, so what is inside reads clearly.
+- Each layer inside an X-ray has a **Stack**. Layers in **Stack 1** are the surface, shown everywhere around the glass; layers in **Stack 2** are what lies underneath, shown through it. With a surface stack, lower **Darken the table around the glass** so the surface stays bright. The Reveal line has the same two stacks, one on each side of the line.
 - A Masterplan drawing is drawn again sharply for the glass; other layers are a copy of the table's picture, so they look softer.

@@ -10,7 +10,7 @@ Workshops and dialogue: "show us where you walk", "mark where it feels unsafe".
 
 ## Set it up
 
-1. Add **Sketch** from **Add a layer**.
+1. Add **Sketch** from **Insert › New layer**.
 2. Visitors join with their phones by scanning the code on the controller (guide "Set up the controller, languages and phones").
 3. On the phone they open **Sketch**, choose **Place**, **Pen**, **Arrow**, **Route** or **Area** and draw on the map. Two fingers move and zoom the map; the corner button opens it full screen.
 4. **Take back my last mark** on a phone removes that phone's own last mark.

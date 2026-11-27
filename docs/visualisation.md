@@ -1,6 +1,6 @@
 # Visualisation: philosophy and framework
 
-Status: living document, v0.1 (2026-11-23). Update it as we learn from the physical table: add an entry to
+Status: living document, v0.2 (2026-11-27). Update it as we learn from the physical table: add an entry to
 [Learnings from the table](#12-learnings-from-the-table) and change the rule it affects in the same PR.
 
 Rules carry ids (`S1`, `E3`, `C2`, `M4`…) so issues, PRs and learnings can point at them. Values marked
@@ -240,6 +240,11 @@ abuse. It is how Dynamism (§3.2) is drawn.
   need no cue, because people are already looking there. The block is `drawCue` in `packages/sdk/src/blocks/cue.ts` (#105):
   the runtime plays it for every tool input from another surface (a tool can opt out with `cue: false`), and a layer
   plays it for other changes with `ctx.cue(geometry)`. (Learned from ECOM, 2026-11-23.)
+- **M10** **Motion must stay smooth.** A table that stutters reads as broken, and ambient motion that drops the
+  frame rate costs every other layer too. Whatever moves every frame is drawn by the graphics card
+  (`ctx.map.addSprites`, `ctx.map.addStrokes`, layer.md), never by redrawing a picture of the whole table (#596,
+  #609). Judge it on the studio's own computer, presented, not in a browser on a developer's machine.
+  (Learned on the Mac, 2026-11-26.)
 
 ## 8. The layer model and its building blocks
 
@@ -320,6 +325,17 @@ Change the rule in the same PR.
 - Seen: …
 - Rule: E5 changed from … to … (or: confirms C2)
 ```
+
+### 2026-11-26 · Chalmers, presented from a Mac (projector and controller)
+
+- Seen: the presented Chalmers table ran at about 4–5 frames a second. Its ambient layers (street glow, cars,
+  trees, lit windows, people, transit) redrew pictures of the whole site many times a second, and WebKit draws
+  those on the processor. In a browser on a fast machine it had looked fine.
+- Seen: during the same demo the table went back to its welcome every few minutes while people were using it,
+  because each controller page counted only its own touches (#604).
+- Rule: new M10. Moving parts became GPU sprites and strokes (#596, #609); one idle timer for the whole table now
+  counts input from every screen (present.md, Idle reset). Still to do: measure the frame rate on the Mac with
+  projector and TV after 0.53.0.
 
 ### 2026-11-23 · Attention cue for remote changes (from the ECOM layer)
 

@@ -10,7 +10,7 @@ Building blocks referred to below:
 - **Data**: site scene (terrain, buildings, trees), site datasets (GeoJSON, rasters), live feed, service (Python behind the gateway), kernel stream.
 - **Interaction**: time control (date, hour, play), table pointer (person marker, magnifier), phone tools (point, line, polygon), scenario switch.
 
-Status (2026-11-24): the kernels `sunlight`, `wind` and `stormwater` are built. The layers built so far are listed under [Built](#built) at the end; the tables below say what each planned layer reuses. `node scripts/check-docs.mjs` fails when a layer is added without appearing here.
+Status (2026-11-27): the kernels `sunlight`, `wind` and `stormwater` are built. The layers built so far are listed under [Built](#built) at the end; the tables below say what each planned layer reuses. `node scripts/check-docs.mjs` fails when a layer is added without appearing here.
 
 ## Climate
 
@@ -103,7 +103,7 @@ The model surface, calibration and relighting are built (see the state column in
 
 ## Sun study extras
 
-Planned additions to the sunlight layer: a point probe with a day timeline, seasons side by side, "where is it sunny at 5 pm", design thresholds as a pass and fail map, what-if edits from a phone, shadow trails over the day, a golden hour mode, and sun on facades.
+Built: sun at a spot with a day timeline (#252), three seasons side by side (#256), the daylight rule as a pass and fail map with Boverket by default and BRE switchable (#498), what-if buildings and trees from a phone (#500), shadow trails over the day, and a golden hour mode (#81). Still planned: sun on facades.
 
 ## What this adds up to
 
@@ -116,7 +116,7 @@ The core layers in `packages/layers`, with the issue that made each one:
 | Layer | Package | Kernel | Notes |
 | --- | --- | --- | --- |
 | Base map | `basemap` | none | free styles, Sources maps, black and white, brightness, offline tile store (#37) |
-| Sunlight | `sunlight` | `sunlight` | shadows, sun hours, three seasons side by side (#256), sun at a spot (#252) |
+| Sunlight | `sunlight` | `sunlight` | shadows, sun hours, three seasons side by side (#256), sun at a spot (#252), golden hour (#81), daylight rule pass/fail (#498), what-if from phones (#500) |
 | Wind | `wind` | `wind` | speed map, ribbons, particles, facade glow (#159, #174) |
 | Stormwater | `stormwater` | `stormwater` | live rain run-off and ponding (#189) |
 | Cool paths | `coolpaths` | `sunlight` | shortest and coolest walk by thermal comfort (PET, #196) |
@@ -131,8 +131,8 @@ The core layers in `packages/layers`, with the issue that made each one:
 | Table grid | `grid` | none | glowing tile seams (#191) |
 | Map data | `mapdata` | none | a dataset revealed by category |
 | Masterplan | `plan` | none | a plan drawing revealed phase by phase (#193); traced opening, turn to colour, placement by corners (#286), pointing lights a phase (#289) |
-| Magnifier | `lens` | none | a magnifier or an X-ray glass, from the mouse, the controller and phones (#287) |
-| Reveal line | `swipe` | none | a line that reveals the layers inside it on one side (#288) |
+| Magnifier | `lens` | none | a magnifier or an X-ray glass, from the mouse, the controller and phones (#287); a hole in the table (#554), two stacks: surface and underneath (#606) |
+| Reveal line | `swipe` | none | a line that reveals the layers inside it on one side (#288); two stacks: surface and underneath (#606) |
 | Video walk | `walkthrough` | none | a video and its walker on the table (#194) |
 | Field walk | `fieldwalk` | none | spots with photos and sounds from visitors' phones, walk by walker; shown or played on the controller (#445) |
 | Slideshow | `slideshow` | none | a sequence of layers and media; guided tours with presenter notes (#43, #98) |

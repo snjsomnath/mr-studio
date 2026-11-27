@@ -13,7 +13,7 @@ A striking look at rest, and showing the street hierarchy at a glance.
 ## Set it up
 
 1. The table needs its streets: Insert tab, **Data file**, **Streets**, **From OpenStreetMap**.
-2. Add **Street glow** from **Add a layer**.
+2. Add **Street glow** from **Insert › New layer**.
 3. Set **Brightness** and **Pulse**. **Lights flowing, per kilometre** sets how many lights travel along the streets.
 
 ## Tips

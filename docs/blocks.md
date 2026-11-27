@@ -79,6 +79,7 @@ constant or a function of the shape, which is how data drives the picture. Block
 | Test data | `TEST_DATA`, `makeTestData` | Random points, places (with activity, flows and links tables), lines or areas inside a table's extent, with columns to style by (test-data.ts). The New custom layer dialog offers them (#308) |
 | Street network | `StreetNetwork` | Lines snapped into a graph; shortest routes (`route`), a tree of routes to one place (`treeTo`, `follow`) and the nodes that reach it. Crowds walk the streets, not across buildings (M8) |
 | Particles | `Swarm`, `pullTowards`, `gravity`, `followField`, `pickWeighted`, `aroundRing`, `particleAlpha` | A crowd that is spawned, steered and retired. Steering is pluggable: to a target, by the pull of all attractors, or along any field |
+| Raster look with Dig | `rasterProps`, `rasterPicture`, `rasterSample` (raster-look.ts) | A GeoTIFF of values (soil depth, rock surface) coloured by value with the palette's ramps; `hide_below` and `hide_above` cut the ground away, a glow follows the cut, and a slider bound to `look.<id>.hide_below` is the Dig (#601) |
 | Data fields | `heatField`, `gravityField`, `siteRaster` | Rasters made from data, returned as a `FieldFrame` and drawn with `ctx.map.addField` like a kernel's |
 | Field readers | `sampleField`, `fieldGradient`, `contours` | Work on kernel frames and data fields alike |
 | Staging | `Sequence`, `stagger`, `revealedCount` | Named stages that run for a time or wait for "next". `sequence.level('stage')` feeds any style value |
@@ -97,6 +98,12 @@ ctx.onFrame((dt) => {
   drawAreas(view, buildings, { fill: (b) => demandColour(demandLevel(demandAt(b))) });
 });
 ```
+
+Anything that moves every frame draws through `ctx.map.addSprites` (many small pictures from one
+atlas, placed from a `Float32Array`) or `ctx.map.addStrokes` (lines with a width and alpha per point),
+not through a canvas or `addDrawing` (#609). Both are drawn by the graphics card in one draw per
+layer, which is what keeps the presented table smooth in WebKit on a Mac. A sprite's picture is a
+canvas the layer draws once. Contract: docs/contracts/layer.md.
 
 Rasters go through `ctx.map.addField`, so they are coloured on the GPU, sit under the building
 outlines, and get `soften` and `glide` for free. Vector blocks sit above the map on the layer's

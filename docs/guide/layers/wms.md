@@ -12,7 +12,7 @@ Then-and-now comparisons, official maps and plans, and data you do not want to d
 
 ## Set it up
 
-1. Add **Web map (WMS)** from **Add a layer**, or add it as a slide.
+1. Add **Web map (WMS)** from **Insert › New layer**, or add it as a slide.
 2. Under **Map**, choose one of the built-in Swedish maps. They need no key.
 3. For another service, choose **Your own service**, paste its **Service address**, and type the names of its **Layers** (comma separated). Its owner can tell you them.
 4. If the service needs a login, add it once under **Sources and keys** on Home and choose it under **Sign-in**.

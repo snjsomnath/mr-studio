@@ -5,9 +5,10 @@
 1. Open **View, Media library…**. It shows everything the table has: map data, drawings, pictures, video, sounds, the 3D model and the online sources set up on this computer. Each card shows what is inside, and **In use** when a layer uses it.
 2. Narrow the list with **Show** (Map data, Drawings, Pictures, Video, Sounds, 3D model, Online), or type part of a name in **Find**.
 3. Pick a card to see it on the right: a preview, its file and size, and the layers that use it. Choose a layer there to open it. **Show on the table** adds the layer that shows it: Map data for GIS data, Masterplan for a drawing, Picture or video for a picture or video, and Web map for a WMS or ArcGIS source.
-4. **Add media** brings in any file. GeoJSON, CSV, GeoTIFF and SVG go through the same check as Add data, so you see where the data lies against the table before it comes in. Pictures, video and sounds are kept as they are.
+4. **Add media** brings in any file. GeoJSON, CSV, GeoTIFF and SVG go through the same check as Add data (zipped shapefiles and GeoPackages come in through **Add data**), so you see where the data lies against the table before it comes in. Pictures, video and sounds are kept as they are.
 5. The files a table is made from (buildings, ground, trees, streets, walking paths, trips and the 3D model) are the same rows as the new-table guide's **Your place**. One that the table does not have yet waits at the top with a dashed outline; pick it to bring it in or fetch it from OpenStreetMap. Pick one the table has to replace it.
-6. **Set up sources** opens Sources, where WMS and ArcGIS services, map tiles, Mapbox, CARTO, Lantmäteriet and Västtrafik are added with their keys. Keys stay on this computer.
+6. The map tiles, map pictures and service answers the table keeps for offline use stay within a limit (500 MB of maps, 200 MB and 2000 answers per service); the oldest are removed first. The library says how much is kept, and **Clear** empties it. Your own files are never touched.
+7. **Set up sources** opens Sources, where WMS and ArcGIS services, map tiles, Mapbox, CARTO, Lantmäteriet and Västtrafik are added with their keys. Keys stay on this computer.
 
 ![The media library](docs/screenshots/382-media-library.png)
 

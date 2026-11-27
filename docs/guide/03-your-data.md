@@ -2,12 +2,12 @@
 
 *Show your own maps, points and areas without writing code: import the data, then style it in the layer builder.*
 
-1. On the **Edit** tab, choose **Add data**. Drop a file (GeoJSON, CSV with coordinates, GeoTIFF, a picture, an SVG plan) or pick one from your Sources.
+1. On the **Insert** tab, choose **Data file** (the **Add data** window). Drop a file (GeoJSON, a zip of shapefiles, a GeoPackage, CSV with coordinates, GeoTIFF, a picture, an SVG plan) or pick one from your Sources.
 2. MR Studio places it on the table and suggests what it is. A CSV without positions is kept as a table, for place motions.
 3. To make it a layer, choose **New layer** under **Make your own**. The builder has four parts: **Data**, **Look** (points, lines, zones, colours by a column), **Motion** (glow, pulses, particles, flows along streets) and **Interaction**.
 4. No data yet? In the New custom layer window, under **Or try it with test data**, choose **Random points**, **Random places**, **Random lines** or **Random areas**. They are made up on the spot inside the table, with columns to colour and size by, and become datasets of the table (`test-points` and so on) that you can remove later. **Random places** come with a day of activity, flows and links, and start with a place motion, so you can switch through every place motion, cultural gravity included, straight away.
 5. Colours come from the table's **Palette**, so a layer keeps matching the rest. Change the palette and every custom layer follows.
-6. Save it. The custom layer is stored in the table and appears under **Add a layer** like any other.
+6. Save it. The custom layer is stored in the table and appears in **Insert › New layer** like any other.
 
 ![The layer builder](docs/screenshots/161-builder.png)
 
@@ -79,6 +79,24 @@ GeoJSON lines along the middle of each street. An optional width in metres and a
 ### Walking paths (GeoJSON)
 
 GeoJSON lines along footpaths, pavements and squares people cross. Cool paths finds the shadiest way along them.
+
+### GIS files (zipped shapefiles or a GeoPackage)
+
+A zip of shapefiles, each with its `.shp`, `.dbf`, `.prj` and, if there is one, `.cpg`; or a GeoPackage (`.gpkg`). Add data lists the layers in the file with how many shapes of each lie on the table, and takes the one you choose; add the file again for another layer. Files in SWEREF99 TM, its local zones, UTM or WGS84 are placed on their own.
+
+![Add data lists the layers of a GeoPackage](docs/screenshots/600-import-layers.png)
+
+### Rasters of values (GeoTIFF)
+
+A GeoTIFF that holds a value in each cell rather than ground heights: soil depth, the height of the rock surface, noise. It comes in as data. In a custom layer, its look is **Raster**: coloured by value with the palette's ramps (the **Dig away** style is a good start). **Hide what is below** cuts away what is under a value and **Edge glow** lights the cut. Give visitors the **Dig** slider on the controller and they peel the ground away, so the layers under it show through. A GeoTIFF that does not say where it is gets placed the way ground heights are.
+
+![Dig: the raster cut at 55 m with a glowing edge](docs/screenshots/601-dig.png)
+
+### Well and borehole logs (CSV or GIS file)
+
+Points for the wells, and a second dataset with a row per layer of each well: which well, from what depth, to what depth, the material, and a remark if any. In the custom layer of the wells, under **Interaction**, tick **A tap on one shows it on the controller**, then under **A log of layers under each one** choose the log's dataset and its columns. A tap on a well then draws its layers on the controller from the top down, coloured by material (fill, clay, sand, rock, in Swedish or English), with the depths.
+
+![A well's log on the controller, under the Dig slider](docs/screenshots/602-well-log.png)
 
 ### Trips (trips.json)
 

@@ -12,7 +12,7 @@ A living city at rest, and showing how a place is connected.
 
 ## Set it up
 
-1. Add **Public transport** from **Add a layer**. Without any data, a few made-up lines run along the streets, so it is never empty.
+1. Add **Public transport** from **Insert › New layer**. Without any data, a few made-up lines run along the streets, so it is never empty.
 2. For your city's real routes and stops, bring them in with **Add data** as a dataset of your own named `transit`: a GeoJSON file with the routes as lines and the stops as points.
 3. For live vehicles in Gothenburg, add your Västtrafik key under **Sources and keys** on Home. Then set **Vehicles** to **Live feed** and choose Västtrafik under **Live data from**.
 4. Turn on **Routes** and **Stops** to draw the network itself.
