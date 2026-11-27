@@ -2,7 +2,7 @@
   "api": 1,
   "id": "fieldwalk",
   "name": "Field walk",
-  "description": "What visitors marked on their walk, with a photo or a sound at each spot",
+  "description": "What visitors marked on their walk: a photo or a sound, what it is and how they feel about it",
   "about": {
     "purpose": "Brings what a group noticed on a walk around the place back to the table: each person's spots, with their photos and sounds, so the group can talk about them together.",
     "questions": ["What did you notice out there, and where?", "Where does the place sound loud, calm or alive?", "Which spots did several people choose?"],
@@ -14,11 +14,31 @@
   "category": "media",
   "phone_switch": false,
   "controls": [
+    { "id": "kinds", "type": "text", "label": "What visitors mark", "default": "", "tier": "more", "help": "The kinds of spot visitors choose from on their phones, separated by commas, such as: Drain, Rain garden. Empty, every spot is just a spot. Kinds that say rain garden or drain reach the Stormwater layer when the walk is saved as data." },
+    { "id": "feeling", "type": "toggle", "label": "Ask how they feel about each spot", "default": false, "tier": "more", "help": "Visitors give each spot a smiley from 1 (don't like it) to 5 (love it)." },
+    {
+      "id": "media", "type": "select", "label": "Each spot takes", "default": "both", "tier": "more",
+      "options": [
+        { "value": "both", "label": "A photo or a sound" },
+        { "value": "photo", "label": "A photo" },
+        { "value": "sound", "label": "A sound" },
+        { "value": "none", "label": "Nothing: just the place" }
+      ]
+    },
+    {
+      "id": "colour", "type": "select", "label": "Colour the spots by", "default": "walker",
+      "options": [
+        { "value": "walker", "label": "Walker" },
+        { "value": "feeling", "label": "Feeling" },
+        { "value": "kind", "label": "Kind" }
+      ]
+    },
     { "id": "trails", "type": "toggle", "label": "Join each walker's spots", "default": true, "help": "A faint line through each person's spots in the order they were taken." },
     { "id": "opacity", "type": "range", "label": "Opacity", "min": 0.2, "max": 1, "step": 0.05, "default": 1, "tier": "more" },
     { "id": "shown", "type": "text", "label": "Spot on show", "default": "", "tier": "state" },
-    { "id": "revision", "type": "range", "label": "Spots received", "min": 0, "max": 1000000000, "step": 1, "default": 0, "tier": "state" }
+    { "id": "revision", "type": "range", "label": "Spots received", "min": 0, "max": 1000000000, "step": 1, "default": 0, "tier": "state" },
+    { "id": "saved", "type": "range", "label": "Walk saved at", "min": 0, "max": 1000000000, "step": 1, "default": 0, "tier": "state", "help": "The walk's revision when it was last saved as data, so the controller can say it is saved." }
   ],
-  "actions": [{ "id": "remove", "label": "Remove this spot" }, { "id": "clear", "label": "Clear the walk" }],
+  "actions": [{ "id": "remove", "label": "Remove this spot" }, { "id": "save", "label": "Save the walk as data" }, { "id": "clear", "label": "Clear the walk" }],
   "tools": []
 }

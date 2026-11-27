@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { nearest, ordered, step, tracks } from '../src/spots.ts';
+import { FEELING_COLOURS, UNSAID, kindsOf, legend, nearest, ordered, spotColour, step, tracks } from '../src/spots.ts';
 import type { Spot } from '../src/spots.ts';
 
 const spot = (id: string, walker: string, at: number, x = 0): Spot => ({
@@ -48,4 +48,20 @@ test('a tap picks the nearest spot within reach', () => {
   const xy = (s: Spot) => [s.lon, s.lat] as const;
   assert.equal(nearest(spots, [8, 0], 5, xy)!.id, 'b');
   assert.equal(nearest(spots, [50, 0], 5, xy), null);
+});
+
+test('a walk colours its spots by feeling or by kind, with a key (#628)', () => {
+  const kinds = kindsOf(' Drain, Rain garden ,drain,, ');
+  assert.deepEqual(kinds, ['Drain', 'Rain garden']);
+  const base = { at: 1, lon: 0, lat: 0, placed: 'map', file: '', mime: '', bytes: 0, walker: { id: 'w' } } as const;
+  const a = { ...base, id: 'a', kind: 'mark', label: 'rain garden', feeling: 5 } as const;
+  const b = { ...base, id: 'b', kind: 'photo', label: 'Drain' } as const;
+  assert.equal(spotColour(a, 'feeling', '#000000', kinds), FEELING_COLOURS[4]);
+  assert.equal(spotColour(b, 'feeling', '#000000', kinds), UNSAID);
+  assert.equal(spotColour(a, 'walker', '#123456', kinds), '#123456');
+  assert.notEqual(spotColour(a, 'kind', '', kinds), spotColour(b, 'kind', '', kinds));
+  const key = legend([a, b], 'kind', kinds);
+  assert.deepEqual(key.map((k) => [k.label, k.count]), [['Drain', 1], ['Rain garden', 1]]);
+  assert.equal(legend([a, b], 'feeling', kinds)[4]!.count, 1);
+  assert.deepEqual(legend([a, b], 'walker', kinds), []);
 });

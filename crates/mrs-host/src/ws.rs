@@ -281,6 +281,10 @@ async fn request(state: &AppState, role: Role, surface: u64, message: &Value, ou
         // The field walk's Remove and Clear (#445) are named actions of its controller stage.
         if method == "layer.action" && result.is_ok() {
             state.field_action(role, p)?;
+            // Save the walk as data (#628).
+            if let Some(report) = state.field_save(role, p).await? {
+                return Ok(json!({ "saved": report.path, "summary": report.summary }));
+            }
         }
         // A layer's trouble starting or ending goes to the operator log (#259).
         if method == "layer.health" {

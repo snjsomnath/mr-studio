@@ -1,5 +1,6 @@
 // Field walk (#445): visitors walk the place the table shows and mark spots from their phones,
-// each with a photo or a sound. On the table every spot is a dot in its walker's colour, each
+// each with a photo or a sound. The walk designer (#628, the layer's settings) adds kinds to pick
+// from and a 1 to 5 feeling; the dots can then be coloured by feeling or by kind. On the table every spot is a dot in its walker's colour, each
 // walker's spots joined faintly in the order they were taken; sound spots ripple. No words.
 // The controller's hero shows the spot on show large, or plays its sound, and picks another.
 //
@@ -11,14 +12,22 @@ import type { CanvasOverlay, LayerManifest } from '@mrstudio/sdk';
 
 import manifest from '../layer.json';
 import { fieldHero } from './hero.ts';
-import { fetchWalk, nearest, tracks } from './spots.ts';
-import type { Spot, Track } from './spots.ts';
+import { fetchWalk, kindsOf, nearest, spotColour, tracks } from './spots.ts';
+import type { ColourBy, Spot, Track } from './spots.ts';
 
 export interface Params {
+  /** The walk designer (#628): the kinds visitors pick from, a 1 to 5 feeling, what a spot takes. */
+  kinds: string;
+  feeling: boolean;
+  media: 'both' | 'photo' | 'sound' | 'none';
+  /** What the dots' colour says: who marked them, how they feel, or what they are. */
+  colour: ColourBy;
   trails: boolean;
   opacity: number;
   shown: string;
   revision: number;
+  /** The walk's revision when it was last saved as data (#628). */
+  saved: number;
 }
 
 /** Sizes in metres on the ground, kept at least so many pixels so they read on a small table. */
@@ -84,6 +93,8 @@ export default defineLayer<Params>({
       const dot = Math.max(MIN_DOT_PX, DOT_M * px);
       canvas.clear();
       const shown = ctx.params.shown;
+      const by = ctx.params.colour ?? 'walker';
+      const kinds = kindsOf(ctx.params.kinds);
       const anyShown = shown !== '' && spots.some((s) => s.id === shown);
 
       for (const track of walks) {
@@ -115,12 +126,13 @@ export default defineLayer<Params>({
           const on = spot.id === shown;
           const dim = anyShown && !on ? 0.45 : 1;
           const r = dot * k * (on ? 1.5 : 1);
+          const colour = spotColour(spot, by, track.colour, kinds);
           g.save();
           g.globalAlpha = dim;
           // Glow.
           const glow = g.createRadialGradient(x, y, 0, x, y, r * 3);
-          glow.addColorStop(0, withAlpha(track.colour, 0.55));
-          glow.addColorStop(1, withAlpha(track.colour, 0));
+          glow.addColorStop(0, withAlpha(colour, 0.55));
+          glow.addColorStop(1, withAlpha(colour, 0));
           g.fillStyle = glow;
           g.beginPath();
           g.arc(x, y, r * 3, 0, Math.PI * 2);
@@ -129,7 +141,7 @@ export default defineLayer<Params>({
           if (spot.kind === 'sound') {
             for (const offset of [0, 0.5]) {
               const t = (clock / 2.4 + offset + i * 0.13) % 1;
-              g.strokeStyle = withAlpha(track.colour, 0.7 * (1 - t));
+              g.strokeStyle = withAlpha(colour, 0.7 * (1 - t));
               g.lineWidth = Math.max(1, 0.18 * dot);
               g.beginPath();
               g.arc(x, y, r * (1.2 + 2.6 * t), 0, Math.PI * 2);
@@ -137,14 +149,14 @@ export default defineLayer<Params>({
             }
           }
           // The dot: a photo is a solid dot with a light rim, a sound a ring with a centre.
-          g.fillStyle = track.colour;
+          g.fillStyle = colour;
           g.beginPath();
           g.arc(x, y, r, 0, Math.PI * 2);
           g.fill();
           g.lineWidth = Math.max(1, 0.22 * dot);
-          g.strokeStyle = spot.kind === 'photo' ? 'rgb(255 255 255 / 0.9)' : 'rgb(10 12 20 / 0.85)';
+          g.strokeStyle = spot.kind === 'sound' ? 'rgb(10 12 20 / 0.85)' : 'rgb(255 255 255 / 0.9)';
           g.beginPath();
-          g.arc(x, y, spot.kind === 'photo' ? r : r * 0.55, 0, Math.PI * 2);
+          g.arc(x, y, spot.kind === 'sound' ? r * 0.55 : r, 0, Math.PI * 2);
           g.stroke();
           // The spot on show breathes.
           if (on) {

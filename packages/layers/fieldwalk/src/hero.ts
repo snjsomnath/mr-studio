@@ -5,7 +5,7 @@
 import type { PanelContext, PanelHandlers } from '@mrstudio/sdk';
 
 import type { Params } from './index.ts';
-import { clockTime, fetchWalk, mediaUrl, ordered, step, tracks } from './spots.ts';
+import { FEELINGS, clockTime, fetchWalk, kindsOf, legend, mediaUrl, ordered, spotColour, step, tracks } from './spots.ts';
 import type { Arriving, Spot, Track } from './spots.ts';
 
 const STYLE = `
@@ -13,6 +13,8 @@ const STYLE = `
 .fw [hidden] { display: none !important; }
 .fw-frame { position: relative; height: calc(clamp(16rem, 46vh, 34rem) * var(--mrs-hero-scale, 1)); border-radius: 1.125rem; overflow: hidden; background: #0b0d17;
   box-shadow: 0 1.25rem 3.75rem rgb(0 0 0 / 0.35), inset 0 0 0 1px rgb(255 255 255 / 0.06); }
+/* The colour key takes a row: the picture gives it up, so the tools stay in the hero's box. */
+.fw:has(.fw-key:not([hidden])) .fw-frame { height: calc(clamp(13rem, 35vh, 28rem) * var(--mrs-hero-scale, 1)); }
 .fw-blur { position: absolute; inset: -2rem; background-size: cover; background-position: center; filter: blur(2rem) brightness(0.55); }
 .fw-photo { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
 .fw-sound { position: absolute; inset: 0; display: grid; place-items: center; }
@@ -25,7 +27,7 @@ const STYLE = `
 .fw-who { flex: none; width: 3.25rem; height: 3.25rem; border-radius: 50%; display: grid; place-items: center; font-size: 1.7rem; box-shadow: 0 0 0 3px rgb(255 255 255 / 0.85); }
 .fw-words { min-width: 0; }
 .fw-words b { display: block; font-size: 1.35rem; font-weight: 600; }
-.fw-words span { display: block; font-size: 1.05rem; opacity: 0.88; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fw-words > span { display: block; font-size: 1.05rem; opacity: 0.88; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fw-count { margin-left: auto; font-size: 1rem; opacity: 0.8; font-variant-numeric: tabular-nums; }
 .fw-nav { position: absolute; top: 50%; width: 3.5rem; height: 3.5rem; margin-top: -1.75rem; border: 0; border-radius: 50%; color: #fff; cursor: pointer; font-size: 1.6rem; line-height: 1;
   background: rgb(255 255 255 / 0.14); backdrop-filter: blur(0.875rem); -webkit-backdrop-filter: blur(0.875rem); box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.25); }
@@ -45,6 +47,15 @@ const STYLE = `
 .fw-tools { display: flex; gap: 0.6rem; justify-content: flex-end; }
 .fw-tools button { border: 0; border-radius: 0.6rem; padding: 0.5rem 0.9rem; font: inherit; font-size: 0.95rem; cursor: pointer; color: inherit; background: rgb(127 127 127 / 0.16); }
 .fw-tools button[data-armed="true"] { background: #c92a2a; color: #fff; }
+.fw-tools .fw-said { margin-right: auto; align-self: center; font-size: 0.95rem; opacity: 0.85; }
+.fw-mark { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 0.75rem; text-align: center; }
+.fw-mark i { font-style: normal; font-size: calc(6rem * var(--mrs-hero-scale, 1)); line-height: 1; filter: drop-shadow(0 0.5rem 1.5rem rgb(0 0 0 / 0.4)); }
+.fw-mark b { font-size: 1.8rem; font-weight: 600; }
+.fw-tag { display: inline-flex; align-items: center; gap: 0.35rem; padding: 0.15rem 0.6rem; margin-right: 0.5rem; border-radius: 999px; font-size: 1rem; font-weight: 600; color: #0b0d17; background: var(--c); }
+.fw-key { display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; font-size: 1.05rem; }
+.fw-key span { display: inline-flex; align-items: center; gap: 0.45rem; }
+.fw-key i { width: 0.95rem; height: 0.95rem; border-radius: 50%; background: var(--c); box-shadow: 0 0 0.6rem var(--c); }
+.fw-key em { font-style: normal; opacity: 0.7; font-variant-numeric: tabular-nums; }
 `;
 
 const PLAY = '<svg viewBox="0 0 24 24" fill="currentColor" style="margin-left:0.25rem"><path d="M7 5l12 7-12 7z"/></svg>';
@@ -59,13 +70,15 @@ export function fieldHero(ctx: PanelContext<Params>, el: HTMLElement): PanelHand
       <div class="fw-blur"></div>
       <img class="fw-photo" alt="" hidden>
       <div class="fw-sound" hidden><canvas class="fw-wave"></canvas><button class="fw-play" type="button"></button></div>
+      <div class="fw-mark" hidden><i></i><b></b></div>
       <div class="fw-empty" hidden><b></b><span></span></div>
       <button class="fw-nav fw-prev" type="button">‹</button>
       <button class="fw-nav fw-next" type="button">›</button>
       <div class="fw-foot"><div class="fw-who"></div><div class="fw-words"><b></b><span></span></div><div class="fw-count"></div></div>
     </div>
+    <div class="fw-key" hidden></div>
     <div class="fw-strip" role="listbox"></div>
-    <div class="fw-tools"><button type="button" class="fw-remove"></button><button type="button" class="fw-clear"></button></div>`;
+    <div class="fw-tools"><span class="fw-said"></span><button type="button" class="fw-remove"></button><button type="button" class="fw-save"></button><button type="button" class="fw-clear"></button></div>`;
   el.append(root);
   const $ = <T extends Element>(s: string) => root.querySelector<T>(s)!;
   const blur = $<HTMLElement>('.fw-blur');
@@ -83,6 +96,10 @@ export function fieldHero(ctx: PanelContext<Params>, el: HTMLElement): PanelHand
   const count = $<HTMLElement>('.fw-count');
   const strip = $<HTMLElement>('.fw-strip');
   const remove = $<HTMLButtonElement>('.fw-remove');
+  const save = $<HTMLButtonElement>('.fw-save');
+  const said = $<HTMLElement>('.fw-said');
+  const mark = $<HTMLElement>('.fw-mark');
+  const key = $<HTMLElement>('.fw-key');
   const clear = $<HTMLButtonElement>('.fw-clear');
   $<HTMLElement>('.fw-empty b').textContent = ctx.say('No spots yet');
   $<HTMLElement>('.fw-empty span').textContent = ctx.say('Visitors mark spots on their phones: Field walk, at the top of the phone page. Each spot shows here as it arrives.');
@@ -90,6 +107,7 @@ export function fieldHero(ctx: PanelContext<Params>, el: HTMLElement): PanelHand
   next.setAttribute('aria-label', ctx.say('Next spot'));
   remove.textContent = ctx.say('Remove this spot');
   clear.textContent = ctx.say('Clear the walk');
+  save.textContent = ctx.say('Save the walk as data');
 
   const audio = new Audio();
   audio.preload = 'auto';
@@ -103,7 +121,8 @@ export function fieldHero(ctx: PanelContext<Params>, el: HTMLElement): PanelHand
 
   const show = (id: string) => ctx.setParams({ shown: id });
   const current = (): Spot | null => spots.find((s) => s.id === ctx.params.shown) ?? null;
-  const colourOf = (spot: Spot) => walks.find((t) => t.walker.id === spot.walker.id)?.colour ?? '#7fe7ff';
+  const walkerColour = (spot: Spot) => walks.find((t) => t.walker.id === spot.walker.id)?.colour ?? '#7fe7ff';
+  const colourOf = (spot: Spot) => spotColour(spot, ctx.params.colour ?? 'walker', walkerColour(spot), kindsOf(ctx.params.kinds));
 
   prev.onclick = () => {
     const s = step(spots, ctx.params.shown, -1);
@@ -119,6 +138,23 @@ export function fieldHero(ctx: PanelContext<Params>, el: HTMLElement): PanelHand
   };
   audio.onplay = audio.onpause = audio.onended = () => (play.innerHTML = audio.paused ? PLAY : PAUSE);
   remove.onclick = () => void ctx.action('remove').catch(() => {});
+  // The walk as an ordinary dataset of the table (#628): kinds and feelings with each spot.
+  // Saving re-reads the table's data, which reloads this screen: the saved revision is kept in the
+  // layer's settings, so the hero still says so afterwards, until the walk changes.
+  save.onclick = async () => {
+    save.disabled = true;
+    said.textContent = ctx.say('Saving…');
+    ctx.setParams({ saved: ctx.params.revision });
+    try {
+      await ctx.action('save');
+      said.textContent = ctx.say('Saved as the fieldwalk data: {n} spots.', { n: spots.length });
+    } catch (error) {
+      ctx.setParams({ saved: 0 });
+      said.textContent = (error as Error).message;
+    } finally {
+      save.disabled = false;
+    }
+  };
   // Clearing deletes everyone's photos and sounds: the button asks once more.
   let armed: number | undefined;
   clear.onclick = () => {
@@ -174,7 +210,7 @@ export function fieldHero(ctx: PanelContext<Params>, el: HTMLElement): PanelHand
         thumb.type = 'button';
         thumb.className = 'fw-thumb';
         thumb.dataset.id = spot.id;
-        thumb.style.setProperty('--c', track.colour);
+        thumb.style.setProperty('--c', colourOf(spot));
         thumb.setAttribute('role', 'option');
         thumb.setAttribute('aria-label', `${track.walker.name ?? ''} ${clockTime(spot.at, ctx.language)}`);
         if (spot.kind === 'photo') {
@@ -185,7 +221,7 @@ export function fieldHero(ctx: PanelContext<Params>, el: HTMLElement): PanelHand
           thumb.append(img);
         } else {
           const icon = document.createElement('i');
-          icon.textContent = '♪';
+          icon.textContent = spot.kind === 'sound' ? '♪' : spot.feeling ? FEELINGS[spot.feeling - 1]! : '●';
           thumb.append(icon);
         }
         thumb.onclick = () => show(spot.id);
@@ -206,11 +242,22 @@ export function fieldHero(ctx: PanelContext<Params>, el: HTMLElement): PanelHand
   }
 
   function render() {
+    if (!save.disabled) said.textContent = ctx.params.saved > 0 && ctx.params.saved === ctx.params.revision && spots.length > 0 ? ctx.say('Saved as the fieldwalk data: {n} spots.', { n: spots.length }) : '';
     const spot = current();
     const list = ordered(spots);
     empty.hidden = spots.length > 0 || arriving.length > 0;
     remove.hidden = !spot;
-    clear.hidden = spots.length === 0;
+    clear.hidden = save.hidden = spots.length === 0;
+    const items = legend(spots, ctx.params.colour ?? 'walker', kindsOf(ctx.params.kinds));
+    key.hidden = items.length === 0 || spots.length === 0;
+    key.replaceChildren(
+      ...items.map((item) => {
+        const entry = document.createElement('span');
+        entry.style.setProperty('--c', item.colour);
+        entry.append(document.createElement('i'), item.label, Object.assign(document.createElement('em'), { textContent: String(item.count) }));
+        return entry;
+      }),
+    );
     prev.hidden = next.hidden = spots.length < 2;
     foot.hidden = !spot;
     for (const thumb of strip.querySelectorAll<HTMLElement>('.fw-thumb')) {
@@ -236,12 +283,28 @@ export function fieldHero(ctx: PanelContext<Params>, el: HTMLElement): PanelHand
     who.style.background = colour;
     who.textContent = spot.walker.avatar ?? '';
     name.textContent = spot.walker.name ?? ctx.say('A walker');
-    line.textContent = [clockTime(spot.at, ctx.language), spot.note ?? ''].filter(Boolean).join(' · ');
+    line.replaceChildren();
+    if (spot.label) {
+      const tag = document.createElement('span');
+      tag.className = 'fw-tag';
+      tag.style.setProperty('--c', spotColour(spot, 'kind', '', kindsOf(ctx.params.kinds)));
+      tag.textContent = spot.label;
+      line.append(tag);
+    }
+    line.append([spot.feeling ? FEELINGS[spot.feeling - 1] : '', clockTime(spot.at, ctx.language), spot.note ?? ''].filter(Boolean).join(' · '));
     count.textContent = `${list.findIndex((s) => s.id === spot.id) + 1} / ${list.length}`;
     if (showing === spot.id) return;
     showing = spot.id;
     const url = mediaUrl(spot);
-    if (spot.kind === 'photo') {
+    mark.hidden = spot.kind !== 'mark';
+    if (spot.kind === 'mark') {
+      // Nothing was taken: what it is and how it feels, large.
+      audio.pause();
+      photo.hidden = sound.hidden = true;
+      blur.style.backgroundImage = `radial-gradient(circle at 50% 45%, ${colour}, #0b0d17 72%)`;
+      $<HTMLElement>('.fw-mark i').textContent = spot.feeling ? FEELINGS[spot.feeling - 1]! : '📍';
+      $<HTMLElement>('.fw-mark b').textContent = spot.label ?? '';
+    } else if (spot.kind === 'photo') {
       audio.pause();
       sound.hidden = true;
       photo.hidden = false;
@@ -298,7 +361,11 @@ export function fieldHero(ctx: PanelContext<Params>, el: HTMLElement): PanelHand
       if (ctx.params.revision !== revision) {
         revision = ctx.params.revision;
         void load();
-      } else render();
+      } else {
+        // The colouring or the kinds may have changed: the strip's colours with them.
+        buildStrip();
+        render();
+      }
     },
   };
 }

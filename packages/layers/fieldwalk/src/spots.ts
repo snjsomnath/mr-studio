@@ -11,7 +11,12 @@ export interface Walker {
 
 export interface Spot {
   id: string;
-  kind: 'photo' | 'sound';
+  /** What was taken: a photo, a sound, or neither (a mark, #628). */
+  kind: 'photo' | 'sound' | 'mark';
+  /** What the walker says it is, from the walk's kinds (#628). */
+  label?: string;
+  /** How the walker feels about it, 1 (don't like it) to 5 (love it) (#628). */
+  feeling?: number;
   /** When it was taken, Unix milliseconds by the phone's clock. */
   at: number;
   lon: number;
@@ -29,7 +34,7 @@ export interface Spot {
 /** A spot a phone has started sending and the table does not have all of yet. */
 export interface Arriving {
   id: string;
-  kind: 'photo' | 'sound';
+  kind: 'photo' | 'sound' | 'mark';
   walker: Walker;
   share: number;
 }
@@ -122,4 +127,52 @@ export function nearest(spots: readonly Spot[], point: readonly [number, number]
 export function clockTime(at: number, language = 'en'): string {
   if (!at) return '';
   return new Date(at).toLocaleTimeString(language === 'sv' ? 'sv-SE' : 'en-GB', { hour: '2-digit', minute: '2-digit' });
+}
+
+/** The five feelings, 1 to 5 (#628): faces, and a red-to-green scale for the table. */
+export const FEELINGS = ['😣', '🙁', '😐', '🙂', '😍'] as const;
+export const FEELING_COLOURS = ['#e8590c', '#f59f00', '#fcc419', '#94d82d', '#2fb344'] as const;
+/** Spots without a feeling, or without a kind, when the table colours by them. */
+export const UNSAID = '#868e96';
+
+/** The kinds a walk offers (#628), from the designer's comma-separated list. */
+export function kindsOf(text: string | undefined): string[] {
+  const seen = new Set<string>();
+  return (text ?? '')
+    .split(',')
+    .map((k) => k.trim())
+    .filter((k) => k && !seen.has(k.toLowerCase()) && seen.add(k.toLowerCase()));
+}
+
+export type ColourBy = 'walker' | 'feeling' | 'kind';
+
+/** A spot's colour on the table and the controller: its walker's, its feeling's or its kind's. */
+export function spotColour(spot: Spot, by: ColourBy, walkerColour: string, kinds: readonly string[]): string {
+  if (by === 'feeling') return spot.feeling ? FEELING_COLOURS[Math.min(5, Math.max(1, spot.feeling)) - 1]! : UNSAID;
+  if (by === 'kind') {
+    if (!spot.label) return UNSAID;
+    const label = spot.label.toLowerCase();
+    const at = kinds.findIndex((k) => k.toLowerCase() === label);
+    // A kind the walk no longer offers keeps a colour of its own, after the offered ones.
+    const index = at >= 0 ? at : kinds.length + ([...label].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7) % SPARE.length);
+    return SPARE[index % SPARE.length]!;
+  }
+  return walkerColour;
+}
+
+/** The key for colouring by feeling or kind: what each colour means, for what the walk holds. */
+export function legend(spots: readonly Spot[], by: ColourBy, kinds: readonly string[]): { colour: string; label: string; count: number }[] {
+  if (by === 'feeling') {
+    return FEELINGS.map((face, i) => ({ colour: FEELING_COLOURS[i]!, label: face, count: spots.filter((s) => s.feeling === i + 1).length }));
+  }
+  if (by === 'kind') {
+    const named = [...kinds];
+    for (const s of spots) if (s.label && !named.some((k) => k.toLowerCase() === s.label!.toLowerCase())) named.push(s.label);
+    return named.map((label) => ({
+      colour: spotColour({ label } as Spot, 'kind', '', kinds),
+      label,
+      count: spots.filter((s) => s.label?.toLowerCase() === label.toLowerCase()).length,
+    }));
+  }
+  return [];
 }

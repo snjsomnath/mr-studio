@@ -406,6 +406,30 @@ impl AppState {
         Ok(())
     }
 
+    /// `layer.action save` on a Field walk (#628): the walk becomes the table's `fieldwalk`
+    /// dataset, points with what walkers said about them (`kind`, `feeling`, `note`), through
+    /// Add data, so it is in the history and the data tree. Rain gardens and drains in it reach
+    /// stormwater (`scene.surfaces`). Saving again keeps the earlier walk as an older version.
+    pub async fn field_save(&self, role: hub::Role, p: &Value) -> Result<Option<Report>, String> {
+        let Some((package, _)) = p["layer"].as_str().and_then(|l| self.hub.instance_params(l)) else { return Ok(None) };
+        if package != field::PACKAGE || p["action"].as_str() != Some("save") {
+            return Ok(None);
+        }
+        if !matches!(role, hub::Role::Tv | hub::Role::Dev) {
+            return Err("only the controller saves the walk".into());
+        }
+        let walk = self.field.geojson();
+        if walk["features"].as_array().is_none_or(|f| f.is_empty()) {
+            return Err("the walk has no spots to save yet".into());
+        }
+        let bytes = serde_json::to_vec_pretty(&walk).map_err(|e| e.to_string())?;
+        let report = self.import_data("data:fieldwalk", "fieldwalk.geojson", bytes, Options::default(), true).await?;
+        if !report.ok {
+            return Err(report.issues.iter().map(|i| i.message.clone()).collect::<Vec<_>>().join(" "));
+        }
+        Ok(Some(report))
+    }
+
     pub async fn history_request(&self, role: Role, surface: u64, method: &str, p: &Value) -> Result<Value, String> {
         if role.from_a_phone() {
             return Err("phones cannot see the table's history".into());
