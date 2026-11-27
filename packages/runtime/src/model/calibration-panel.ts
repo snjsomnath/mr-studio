@@ -164,7 +164,7 @@ export class CalibrationPanel {
     this.element.hidden = !state.open;
     if (!state.open) return;
     this.title.textContent = `Corner ${state.index + 1} of ${state.count}`;
-    this.label.textContent = `${state.label}. Move the cross until its light sits on that corner of the model.`;
+    this.label.textContent = `${state.label}. Move the cross until its light sits on ${state.label.startsWith('Where the tiles meet') ? 'that point' : 'that corner'} of the model.`;
     if (this.plan && this.picture.src !== this.plan) this.picture.src = this.plan;
     this.corners.replaceChildren(
       ...state.done.map((done, index) => {
