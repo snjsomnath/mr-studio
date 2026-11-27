@@ -1,6 +1,7 @@
 {
   "name": "@mrstudio/runtime",
   "version": "0.54.0",
+  "license": "SEE LICENSE IN ../../LICENSE",
   "private": true,
   "type": "module",
   "scripts": {

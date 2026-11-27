@@ -3,6 +3,7 @@ name = "mrs-relay"
 description = "MR Studio phone relay: lets phones join a table from any network, through one outbound connection from the host"
 version.workspace = true
 edition.workspace = true
+license-file.workspace = true
 publish = false
 
 [[bin]]

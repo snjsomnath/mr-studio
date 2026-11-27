@@ -1,6 +1,7 @@
 {
   "name": "@mrstudio/layer-plan",
   "version": "0.54.0",
+  "license": "SEE LICENSE IN ../../../LICENSE",
   "private": true,
   "type": "module",
   "main": "src/index.ts",

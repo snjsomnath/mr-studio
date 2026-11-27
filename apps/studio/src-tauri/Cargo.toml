@@ -3,6 +3,7 @@ name = "mr-studio-app"
 description = "MR Studio desktop shell: embeds the host and places one window per display"
 version.workspace = true
 edition.workspace = true
+license-file.workspace = true
 publish = false
 
 [[bin]]
