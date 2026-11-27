@@ -21,6 +21,7 @@ import type { BuilderHost } from './builder.ts';
 import { LAYER_ICONS, icon } from './icons.ts';
 import { HistoryControls } from './history.ts';
 import { SaveState } from './save-state.ts';
+import { copyPlace, datasetRows, layerRowWords, listParts, railsOf, restRowWords, stackWords } from './layer-list.ts';
 import type { SaveWords } from './save-state.ts';
 import { Importer, targetFor } from './importer.ts';
 import { confirmLeave, actionFor, fileButton, keys as shortcut, mac } from './file-menu.ts';
@@ -2643,8 +2644,7 @@ export class Editor {
    * with it: make a layer from it, replace it with another file, or take it out of the table.
    */
   private dataRows(): HTMLElement[] {
-    const data = this.store.state.site.data ?? {};
-    const names = Object.keys(data).sort((a, b) => a.localeCompare(b));
+    const rows = datasetRows(this.store.state.site.data ?? {}, (name) => targetFor(name));
     const title = el('h2', 'ed-tree-title', 'Data');
     const plus = el('button', 'ed-icon-button');
     plus.type = 'button';
@@ -2654,21 +2654,9 @@ export class Editor {
     plus.addEventListener('click', () => this.addData());
     title.append(plus);
     const nodes: HTMLElement[] = [title];
-    if (names.length === 0) nodes.push(el('p', 'ed-empty', 'No data yet. Bring in a file or fetch it from OpenStreetMap with the + above.'));
-    const kindOf = (path: string): [string, string] => {
-      if (/\.geojson$/i.test(path)) return ['map', 'Map data'];
-      if (/\.json$/i.test(path)) return ['file', 'Data'];
-      if (/\.csv$/i.test(path)) return ['grid', 'Table'];
-      if (/\.tiff?$|\.f32$/i.test(path)) return ['contrast', 'Raster'];
-      if (/\.(mp4|mov|webm)$/i.test(path)) return ['video', 'Video'];
-      if (/\.svg$/i.test(path)) return ['plan', 'Drawing'];
-      return ['layers', 'File'];
-    };
-    for (const name of names) {
-      const path = data[name]!;
-      const known = targetFor(name);
-      const [iconName, kind] = kindOf(path);
-      const row = this.treeRow(known?.name ?? name, `${kind} \u00b7 ${path.split('/').pop()}`, known?.icon ?? iconName, false, () => this.dataMenu(row, name, path));
+    if (rows.length === 0) nodes.push(el('p', 'ed-empty', 'No data yet. Bring in a file or fetch it from OpenStreetMap with the + above.'));
+    for (const { name, path, label, detail, icon: iconName } of rows) {
+      const row = this.treeRow(label, detail, iconName, false, () => this.dataMenu(row, name, path));
       row.dataset.dataset = name;
       row.setAttribute('aria-haspopup', 'menu');
       nodes.push(row);
@@ -2743,8 +2731,7 @@ export class Editor {
     }
     this.treeWaiting = false;
     const { context } = this;
-    const ambient = instances.filter((i) => isAtRest(i.manifest, i.state) && !i.state.parent);
-    const layers = instances.filter((i) => !isAtRest(i.manifest, i.state) && !i.state.parent);
+    const { rest: ambient, layers, itemsOf } = listParts(instances, isAtRest);
     const nodes: HTMLElement[] = [];
 
     nodes.push(el('h2', 'ed-tree-title', 'Map'));
@@ -2795,9 +2782,8 @@ export class Editor {
           // Its items, indented under it: they show only while it is open.
           // A glass or a reveal line says which stack each item is in (#606).
           const stacked = Boolean(layer.manifest.reveals);
-          for (const item of instances.filter((i) => i.state.parent === id)) {
-            const stackWords = !stacked ? '' : item.state.stack === 1 ? 'Stack 1 · surface' : 'Stack 2 · underneath';
-            const child = this.treeRow(item.manifest.name, stackWords, item.manifest.icon, context.kind === 'layer' && context.id === id && this.layerItem === item.id, () =>
+          for (const item of itemsOf(id)) {
+            const child = this.treeRow(item.manifest.name, stackWords(stacked, item.state.stack), item.manifest.icon, context.kind === 'layer' && context.id === id && this.layerItem === item.id, () =>
               this.go({ kind: 'layer', id }, item.id),
             );
             child.classList.add('is-item');
@@ -2835,9 +2821,7 @@ export class Editor {
 
   /** The layer buttons down each rail of the controller, as visitors see them, with hidden ones on their side too. */
   private rails(layers: { id: string; manifest: LayerManifest; state: LayerState }[]): Record<'left' | 'right', string[]> {
-    const out: Record<'left' | 'right', string[]> = { left: [], right: [] };
-    for (const button of railButtons(this.store, true)) if (layers.some((l) => l.id === button.id)) out[button.side].push(button.id);
-    return out;
+    return railsOf(railButtons(this.store, true), layers);
   }
 
   /** One piece of map life under At rest: select it to see its settings; the eye turns it on or off. */
@@ -2864,8 +2848,9 @@ export class Editor {
       row.classList.toggle('is-off', !next.active);
       eye.replaceChildren(icon(next.active ? 'eye' : 'eye-off', 14));
       eye.setAttribute('aria-checked', String(next.active));
-      eye.ariaLabel = `${manifest.name} on the map at rest`;
-      eye.title = next.active ? `${manifest.name} shows on the map when no layer is open. Click to turn it off.` : `${manifest.name} is off. Click to show it on the map at rest.`;
+      const words = restRowWords(manifest.name, next.active);
+      eye.ariaLabel = words.eyeLabel;
+      eye.title = words.eyeTitle;
       markTrouble(row, next);
     };
     row.dataset.troubleTitle = '';
@@ -2941,9 +2926,10 @@ export class Editor {
       row.classList.toggle('is-hidden', hidden);
       eye.replaceChildren(icon(hidden ? 'eye-off' : 'eye', 14));
       eye.setAttribute('aria-checked', String(!hidden));
-      eye.ariaLabel = `${button.name} on the controller`;
-      eye.title = hidden ? 'Not on the controller or phones. The layer stays in the table. Click to show its button again.' : 'On the controller. Click to take its button off the controller and phones without removing the layer.';
-      row.title = `${button.name}: a button on the ${button.side} of the controller${hidden ? ', hidden' : ''}. Set its side in the Format pane, double-click to rename, right-click for more.`;
+      const words = layerRowWords(button.name, button.side, hidden);
+      eye.ariaLabel = words.eyeLabel;
+      eye.title = words.eyeTitle;
+      row.title = words.title;
       // A layer in trouble shows a red dot and says why (#259).
       row.dataset.troubleTitle = row.title;
       markTrouble(row, next);
@@ -2974,12 +2960,11 @@ export class Editor {
     const parent = state.parent ?? null;
     const siblings = this.siblings(parent);
     const name = layerButton(id, manifest, state).name;
-    const button = !parent && !isAmbient(manifest) ? { ...state.button, name: `${name} copy`.slice(0, 40), order: state.button?.order !== undefined ? state.button.order + 0.5 : undefined } : undefined;
+    const { index, button } = copyPlace(siblings, id, name, state, isAmbient(manifest));
     const result = await this.send('scene.add', {
       use: manifest.id,
       ...(parent ? { parent } : {}),
-      // A layer's copy goes below it on its rail (just under it in the scene); a piece of map life or an item, on top of it.
-      index: siblings.indexOf(id) + (parent || isAmbient(manifest) ? 1 : 0),
+      index,
       params: state.params,
       active: state.active,
       ...(button ? { button } : {}),
