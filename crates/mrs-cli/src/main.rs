@@ -133,10 +133,15 @@ enum Command {
         #[command(subcommand)]
         action: OperatorCommand,
     },
-    /// Time a kernel on a site with each backend.
+    /// Time each kernel on a site with each backend, one line per kernel (#532).
     Bench {
         #[arg(default_value = "sites/sample")]
         site: PathBuf,
+        /// Time a made-up town this many metres wide at 1 m cells instead of the site's own
+        /// grid, such as 1000 for a normal table and 4000 for a city-sized one. It stands at
+        /// the site's place, so the sun is the same.
+        #[arg(long, value_name = "METRES")]
+        town: Option<u32>,
     },
 }
 
@@ -269,7 +274,7 @@ async fn main() -> anyhow::Result<()> {
         Command::NewSite { dir, name, lon, lat, width_m, height_m, rotation_deg } => {
             new_site(&dir, name, lon, lat, width_m, height_m, rotation_deg)
         }
-        Command::Bench { site } => bench(&site),
+        Command::Bench { site, town } => bench(&site, town),
         Command::Operator { action: OperatorCommand::Off } => operator_off(&app_settings_path()?),
         Command::Layer { action: LayerCommand::New { id, site, name } } => {
             let dir = layer::new(&site, &id, name.as_deref())?;
@@ -450,9 +455,19 @@ fn new_site(dir: &Path, name: Option<String>, lon: f64, lat: f64, width_m: f64, 
     Ok(())
 }
 
-fn bench(dir: &Path) -> anyhow::Result<()> {
+fn bench(dir: &Path, town: Option<u32>) -> anyhow::Result<()> {
     let (site, scene) = validate(dir)?;
+    let scene = match town {
+        Some(metres) => {
+            let side = metres.clamp(100, 8000);
+            println!("  town       a made-up town of {side} x {side} cells at 1 m instead of the site");
+            mrs_engine::testing::town(side, side, 1.0, scene.grid.rotation_deg)
+        }
+        None => scene,
+    };
     let origin = site.manifest.origin;
+    let grid = format!("{} x {} cells", scene.grid.width, scene.grid.height);
+    println!("  kernel lines: what, time, grid, backend");
     for backend in [Backend::Gpu, Backend::Cpu] {
         let mut engine = match Engine::new(EngineConfig { backend }) {
             Ok(engine) => engine,
@@ -463,13 +478,18 @@ fn bench(dir: &Path) -> anyhow::Result<()> {
         };
         engine.load_scene(scene.clone())?;
         let adapter = engine.info().adapter.unwrap_or_else(|| format!("cpu reference, {} threads", engine.context().threads));
-        for (mode, field) in [("instant", "shadow"), ("day", "sun_hours")] {
-            let params = json!({ "mode": mode, "time": "2026-06-21T09:00:00Z", "lat": origin.lat, "lon": origin.lon });
+        // A high sun, a low one (winter noon in Sweden: long shadows) and a whole day.
+        for (what, mode, time, field) in [
+            ("sunlight at noon", "instant", "2026-06-21T11:00:00Z", "shadow"),
+            ("sunlight, low sun", "instant", "2026-12-21T09:00:00Z", "shadow"),
+            ("sun hours, a day", "day", "2026-06-21T09:00:00Z", "sun_hours"),
+        ] {
+            let params = json!({ "mode": mode, "time": time, "lat": origin.lat, "lon": origin.lon });
             let started = Instant::now();
             let job = engine.create_job("sunlight", &params)?;
             while engine.step(job, Duration::from_secs(1))?.state != JobState::Done {}
             engine.read_field(job, field)?;
-            println!("  sunlight {mode:8} {:>8.1} ms  [{adapter}]", started.elapsed().as_secs_f64() * 1e3);
+            println!("  {what:<18} {:>9.1} ms   {grid}  [{adapter}]", started.elapsed().as_secs_f64() * 1e3);
             engine.drop_job(job);
         }
         let job = engine.create_job("wind", &json!({}))?;
@@ -480,7 +500,7 @@ fn bench(dir: &Path) -> anyhow::Result<()> {
         }
         let rate = status.info["steps"].as_u64().unwrap_or(0) as f64 / started.elapsed().as_secs_f64();
         let domain = &status.info["lattice"]["domain"];
-        println!("  wind     {rate:>8.0} steps/s on a {} x {} lattice  [{adapter}]", domain[0], domain[1]);
+        println!("  {:<18} {rate:>9.0} steps/s   {} x {} lattice  [{adapter}]", "wind", domain[0], domain[1]);
         engine.drop_job(job);
         let job = engine.create_job("stormwater", &json!({ "pace": "fast" }))?;
         let started = Instant::now();
@@ -493,8 +513,8 @@ fn bench(dir: &Path) -> anyhow::Result<()> {
         let storm = status.info["seconds"].as_f64().unwrap_or(0.0) / elapsed;
         let lattice = &status.info["lattice"];
         println!(
-            "  storm    {rate:>8.0} steps/s, {storm:.0}x real time on a {} x {} lattice  [{adapter}]",
-            lattice["width"], lattice["height"]
+            "  {:<18} {rate:>9.0} steps/s   {storm:.0}x real time, {} x {} lattice  [{adapter}]",
+            "stormwater", lattice["width"], lattice["height"]
         );
         engine.drop_job(job);
     }
