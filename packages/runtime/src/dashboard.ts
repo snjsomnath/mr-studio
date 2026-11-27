@@ -1,11 +1,28 @@
 import { controlProblems, DashboardView, LOOK_ATTRIBUTES, resolveProps, themeVariables, validateLayerPanels, validatePage, validatePanel } from '@mrstudio/dashboard';
-import type { PanelInput, WidgetDefinition, WidgetHandle } from '@mrstudio/dashboard';
+import type { PanelInput, PanelOverflow, WidgetDefinition, WidgetHandle } from '@mrstudio/dashboard';
 import type { Connection, LayerManifest, PanelContext, PanelControls, PanelLayer, PanelSpec, StageLayout } from '@mrstudio/sdk';
 
 import { say, t } from './i18n.ts';
 import { baseContext, isAtRest, paramSender } from './layer-manager.ts';
 import { layerModule, widgets, withTeamWidgets } from './registry.ts';
 import type { Store } from './store.ts';
+
+/** The controller's word to the editor that panels spill out of their boxes (#681). */
+export interface PanelFit {
+  type: 'mrs-panel-fit';
+  /** Which canvas: `dashboard`, or `stage:<layer>` for a layer's stage of panels. */
+  from: string;
+  panels: PanelOverflow[];
+}
+
+/** Tells the page that embeds this one (the editor) which panels on a canvas do not fit. */
+function tellPanelFit(from: string): (panels: PanelOverflow[]) => void {
+  return (panels) => {
+    if (window.parent === window) return;
+    const report: PanelFit = { type: 'mrs-panel-fit', from, panels };
+    window.parent.postMessage(report, location.origin);
+  };
+}
 
 /**
  * The TV's dashboard canvas. Panels come from two places: each layer's manifest
@@ -15,7 +32,7 @@ import type { Store } from './store.ts';
 export function mountDashboard(root: HTMLElement, store: Store, connection: Connection, dev: boolean): DashboardView {
   const registry = widgets;
   const tv = store.state.site.tv ?? {};
-  const view = new DashboardView(root, { registry, dev, rotateS: tv.rotate_s, empty: t('Turn a layer on to see it here') });
+  const view = new DashboardView(root, { registry, dev, rotateS: tv.rotate_s, empty: t('Turn a layer on to see it here'), onOverflow: tellPanelFit('dashboard') });
   view.setTheme(tv.theme);
   store.onTv((next) => view.setTheme(next?.theme));
 
@@ -102,7 +119,7 @@ export function mountDashboard(root: HTMLElement, store: Store, connection: Conn
 export function mountStage(el: HTMLElement, store: Store, connection: Connection, id: string, layout: StageLayout): { sync(): void; dispose(): void } {
   if (layout.map) return mountMapStage(el, store, connection, id, layout);
   const manifest = store.manifest(store.state.layers[id]?.layer ?? '');
-  const view = new DashboardView(el, { registry: widgets, rotateS: 60, empty: '' });
+  const view = new DashboardView(el, { registry: widgets, rotateS: 60, empty: '', onOverflow: tellPanelFit(`stage:${id}`) });
   view.setTheme(store.state.site.tv?.theme);
   const panels = withTeamWidgets(manifest?.id ?? '', layout.panels ?? []);
   const placed = panels.every((spec) => spec.at);
@@ -115,6 +132,7 @@ export function mountStage(el: HTMLElement, store: Store, connection: Connection
     sync: () => view.sync(),
     dispose: () => {
       stopTheme();
+      tellPanelFit(`stage:${id}`)([]);
       view.destroy();
     },
   };

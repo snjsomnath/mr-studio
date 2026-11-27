@@ -136,6 +136,9 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps chromium
+      # Every core widget at every size, with its example and with the worst props the rules
+      # allow, must fit its panel: the dashboard never scrolls and never hides content (#681).
+      - run: pnpm --filter @mrstudio/dashboard fit
       - run: pnpm build
       - run: cargo build -p mrs-cli
       # The host, engine, every surface, the core layers, the phones and the editor (#261), as named
@@ -189,6 +192,9 @@ jobs:
       - run: pnpm build
       - run: cargo build -p mrs-cli
       - run: node scripts/smoke.cjs ${{ matrix.engine }} smoke-screenshots
+      # The panels fit in this engine's fonts and layout too (#681).
+      - run: pnpm --filter @mrstudio/dashboard fit ${{ matrix.engine }}
+        if: always()
       - uses: actions/upload-artifact@v7
         if: always()
         with:
