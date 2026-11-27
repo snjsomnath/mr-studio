@@ -250,11 +250,14 @@ export class TableView {
         const overlay = new MapSpriteOverlay(this.map, name, this.site, images, style);
         add(name, overlay);
         overlay.setGain(this.shown(instance, drawn));
+        overlay.setClip(this.clips.get(instance) ?? null);
+        drawn.cut.add(overlay);
         drawn.overlays.add(overlay);
         drawn.marks.add(overlay);
         track(() => {
           drawn.overlays.delete(overlay);
           drawn.marks.delete(overlay);
+          drawn.cut.delete(overlay);
           overlay.remove();
           forget(name);
         });
@@ -265,11 +268,14 @@ export class TableView {
         const overlay = new MapStrokeOverlay(this.map, name, this.site, style);
         add(name, overlay);
         overlay.setGain(this.shown(instance, drawn));
+        overlay.setClip(this.clips.get(instance) ?? null);
+        drawn.cut.add(overlay);
         drawn.overlays.add(overlay);
         drawn.marks.add(overlay);
         track(() => {
           drawn.overlays.delete(overlay);
           drawn.marks.delete(overlay);
+          drawn.cut.delete(overlay);
           overlay.remove();
           forget(name);
         });
@@ -476,7 +482,7 @@ export class TableView {
 
   private drawnBy(instance: string) {
     let drawn = this.drawn.get(instance);
-    if (!drawn) this.drawn.set(instance, (drawn = { overlays: new Set(), pictures: new Map(), surfaces: new Set(), elements: new Set(), canvases: new Map(), intensity: 1, clipped: new Set(), fields: new Set(), flows: new Set(), marks: new Set(), reclip: new Set(), compose: new Map() }));
+    if (!drawn) this.drawn.set(instance, (drawn = { overlays: new Set(), pictures: new Map(), surfaces: new Set(), elements: new Set(), canvases: new Map(), intensity: 1, clipped: new Set(), fields: new Set(), flows: new Set(), marks: new Set(), cut: new Set(), reclip: new Set(), compose: new Map() }));
     return drawn;
   }
 
@@ -504,6 +510,7 @@ export class TableView {
     if (!drawn) return;
     for (const reclip of drawn.reclip) reclip();
     for (const field of drawn.fields) field.setClip(shape);
+    for (const overlay of drawn.cut) overlay.setClip(shape);
     for (const element of drawn.clipped) this.clipElement(instance, element);
   }
 
@@ -994,6 +1001,8 @@ interface Drawn {
   flows: Set<MapFlowOverlay>;
   /** Sprites and lines the graphics card draws, in table metres, that a click can land on (#425, #609). */
   marks: Set<{ hit(x: number, y: number, radius: number): boolean }>;
+  /** Sprites and strokes, cut in their shaders to a revealing layer's shape (#619). */
+  cut: Set<{ setClip(shape: RevealShape | null): void }>;
   /** Makes each clipped drawing again after the shape changed. */
   reclip: Set<() => void>;
   /** By drawing: makes its clipped copy, before a commit. */

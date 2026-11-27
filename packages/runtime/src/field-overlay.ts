@@ -3,6 +3,23 @@ import type { Colormap, FieldFrame, FieldOverlay, FieldOverlayStyle, RevealShape
 import maplibregl from 'maplibre-gl';
 import type { CustomLayerInterface, CustomRenderMethodInput, Map as MapLibreMap } from 'maplibre-gl';
 
+/**
+ * Where a revealing layer's item shows (#287), in GLSL: `revealed(m)` for a point `m` in table
+ * metres, from `u_clipKind` and `u_clip` (see revealUniform in the SDK). Shared by every overlay
+ * the runtime clips in its shader: fields, sprites and strokes (#619).
+ */
+export const CLIP_GLSL = `
+uniform highp float u_clipKind; // 0 everywhere, 1 a circle, 2 one side of a line, 3 nowhere, 4 outside a circle
+uniform highp vec3 u_clip;      // in table metres
+bool revealed(highp vec2 m) {
+  if (u_clipKind < 0.5) return true;
+  if (u_clipKind > 2.5 && u_clipKind < 3.5) return false;
+  if (u_clipKind > 3.5) return distance(m, u_clip.xy) > u_clip.z;
+  if (u_clipKind < 1.5) return distance(m, u_clip.xy) <= u_clip.z;
+  highp float c = u_clip.x < 0.5 ? m.x : m.y;
+  return (c - u_clip.y) * u_clip.z >= 0.0;
+}`;
+
 const VERTEX = `#version 300 es
 uniform mat4 u_matrix;
 in vec2 a_position;
@@ -21,22 +38,12 @@ uniform vec2 u_range;   // offset and scale that take a texel to 0..1
 uniform float u_opacity;
 uniform float u_gain;    // the layer's intensity: below 1 fades, above 1 brightens
 uniform vec2 u_soften;  // blur radius in texture coordinates, 0 for none
-uniform float u_clipKind; // where the field shows (#287): 0 everywhere, 1 a circle, 2 one side of a line, 3 nowhere, 4 outside a circle
-uniform vec3 u_clip;      // in table metres, see revealUniform in the SDK
 uniform vec2 u_extent;    // the table's width and height in metres
+${CLIP_GLSL}
 in vec2 v_uv;
 out vec4 color;
-bool clipped() {
-  if (u_clipKind < 0.5) return false;
-  if (u_clipKind > 2.5 && u_clipKind < 3.5) return true;
-  vec2 m = v_uv * u_extent;
-  if (u_clipKind > 3.5) return distance(m, u_clip.xy) <= u_clip.z;
-  if (u_clipKind < 1.5) return distance(m, u_clip.xy) > u_clip.z;
-  float c = u_clip.x < 0.5 ? m.x : m.y;
-  return (c - u_clip.y) * u_clip.z < 0.0;
-}
 void main() {
-  if (clipped()) discard;
+  if (!revealed(v_uv * u_extent)) discard;
   float v = texture(u_field, v_uv).r;
   if (u_soften.x > 0.0) {
     // A 3 x 3 Gaussian over bilinear taps: nine fetches give a wide, smooth edge.
