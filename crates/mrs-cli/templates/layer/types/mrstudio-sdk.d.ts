@@ -577,6 +577,8 @@ declare module "@mrstudio/sdk/types" {
                 strength?: number;
                 colours?: 'edges' | 'one';
             };
+            /** How the projected table opens, at start and after Reset: the layers fading in (the default) or the zoom in (#446). */
+            intro?: 'fade' | 'zoom';
         } | null;
         basemap: {
             background: string;
