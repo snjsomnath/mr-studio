@@ -29,6 +29,7 @@ Walkers on the footways, cyclists on the cycleways and warm streetlights along t
 - `bump`: `minor` for something new (the default), `patch` for a fix only, `none` for a change nobody running a table notices (docs, CI, tests). `major` only on purpose. The biggest bump among the waiting notes decides the next version.
 - `issues` (optional): the issues the pull request closes. They are linked after the title.
 - `breaking` (optional): one sentence of what stops working the way it did and what people must do, for example `breaking: Tables saved by this version do not open in older versions; update the app on every computer.` Breaking changes are listed first, and the app shows them in red before anyone updates.
+- `audience` (optional, #593): `developers` for a change only people who write layers or build MR Studio notice, such as the SDK's types or the command line. It stays in the changelog and the app's full notes under **For developers**, and Home's What's new does not show it as a tile. Write everything else for the people who make and run tables.
 - The `###` line is the title the app shows on Home next to the first picture. Write it for the people who run a table, in their words.
 - Pictures are paths from the repository root, usually `docs/screenshots/<issue>-<what>.png`, committed in the same pull request. The check fails if a picture is missing. In the published notes they become links to the tagged commit, so they keep working.
 - A pull request with several separate changes may add several notes.

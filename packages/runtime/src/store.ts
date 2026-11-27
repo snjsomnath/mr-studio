@@ -216,8 +216,33 @@ export class Store {
     if (reordered) for (const listener of this.sceneListeners) listener(scene);
   }
 
+  /**
+   * A patch that stops a layer's play, with the time where its play head is now (#403). Whoever
+   * pressed pause says where the time stopped, so the table follows that time rather than sending
+   * its own a slow frame later, and a time set right after the stop is not overwritten.
+   */
+  withStopTime(layer: string, patch: Record<string, unknown>): Record<string, unknown> {
+    const state = this.state.layers[layer];
+    const manifest = this.manifest(state?.layer ?? '');
+    const play = manifest?.controls?.find((c) => c.clock === 'play');
+    const time = clockControl(manifest);
+    if (!state?.clock || state.clock.rate === 0 || !play || !time || patch[play.id] !== false || time.id in patch) return patch;
+    const now = this.clockNow(layer);
+    if (now === null) return patch;
+    const step = time.step ?? 1e-6;
+    return { ...patch, [time.id]: Math.round(now / step) * step };
+  }
+
   private setLayer(layer: string, state: LayerState): void {
     const previous = this.state.layers[layer];
+    // Paused, the time stands still here at once (#403): the table's own word that its play head
+    // stopped can come a slow frame later, and until then the time would run on on every view.
+    const play = this.manifest(state.layer)?.controls?.find((c) => c.clock === 'play');
+    if (play && state.params?.[play.id] === false && state.clock && state.clock.rate !== 0) {
+      const at = this.connection.hostNow();
+      const value = clockAt(state.clock, at, clockControl(this.manifest(state.layer)));
+      if (value !== null) state = { ...state, clock: { value, rate: 0, at } };
+    }
     this.state.layers[layer] = state;
     for (const listener of this.layerListeners) listener(layer, state, previous);
   }

@@ -29,6 +29,8 @@ const LONGEST_FRAME_MS = 5000;
 const LAYER_MS = 2500;
 /** What a mistake in a layer's code says when it is caught, as against missing data or a service that is away. */
 const CODE_FAULT = /is not a function|is not defined|is not iterable|is not a constructor|Cannot read prop|Cannot set prop|undefined is not|null is not|TypeError|ReferenceError|RangeError|kept failing while it ran/i;
+/** What the run is doing now, for page errors. */
+let step = 'loading';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /** A strong colour pass, so every part of the shell's colour.js is on. */
@@ -127,7 +129,8 @@ function launch() {
       await page.route(/basemaps\.cartocdn\.com|tile\.openstreetmap\.org|arcgisonline|api\.mapbox\.com/, (route) => route.fulfill({ status: 204 }));
       await page.addInitScript(FRAME_METER);
       // WebKit reports a ResizeObserver that settles over two frames as an error; it is not one (the spec only notes it).
-      page.on('pageerror', (e) => !/ResizeObserver loop/.test(e.message) && problems.push(`${url}: ${e.message}`));
+      // Which step was running, so an engine fault with no message of its own (a shader that will not compile) still points somewhere.
+      page.on('pageerror', (e) => !/ResizeObserver loop/.test(e.message) && problems.push(`${url} (${step}): ${e.message}`));
       // Which file did not load, and why: a failed import names neither.
       page.on('requestfailed', (r) => /\/assets\//.test(r.url()) && console.warn(`  ${url} could not load ${r.url().replace(base, '')}: ${r.failure()?.errorText}`));
       page.on('console', (m) => m.type() === 'error' && console.warn(`  ${url} console: ${m.text().slice(0, 200)}`));
@@ -162,6 +165,7 @@ function launch() {
     const layers = Object.entries(now.state.layers).filter(([, l]) => !l.parent);
     for (const [id, state] of layers) {
       const was = state.active;
+      step = `turning '${id}' ${was ? 'off' : 'on'}`;
       await dev.request('layer.activate', { layer: id, active: !was });
       await sleep(LAYER_MS);
       await frames(`with '${id}' ${was ? 'off' : 'on'}`);
@@ -191,6 +195,7 @@ function launch() {
     }
     now.close();
 
+    step = 'in Screens and calibration';
     // Present › Screens and calibration… (#382), as an author opens it to correct the colour.
     await editor.locator('.ed-tab[data-tab="present"]').click();
     await editor.locator('.ed-ribbon [data-command="dialog.screens"]').click();

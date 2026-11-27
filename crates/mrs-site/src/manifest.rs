@@ -1,16 +1,17 @@
 use std::collections::BTreeMap;
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct LonLat {
     pub lon: f64,
     pub lat: f64,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Extent {
     pub width_m: f64,
@@ -20,7 +21,7 @@ pub struct Extent {
     pub rotation_deg: f64,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Table {
     pub width_cm: f64,
@@ -44,7 +45,7 @@ pub struct Table {
 }
 
 /// The projected table's opening (present.md, Opening).
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum Intro {
     /// The layers at rest fade in one after another, bottom first, each part of a layer a moment after the one before.
@@ -55,13 +56,14 @@ pub enum Intro {
 }
 
 /// The ambient glow around the model: the colours along the model's edges, or one colour for all of it.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Glow {
     #[serde(default = "yes")]
     pub on: bool,
     /// 0 to 1: how bright the glow is at the model's edge.
     #[serde(default = "Glow::default_strength")]
+    #[schemars(range(min = 0.0, max = 1.0))]
     pub strength: f64,
     #[serde(default)]
     pub colours: GlowColours,
@@ -73,7 +75,7 @@ impl Glow {
     }
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum GlowColours {
     /// Each edge glows in the colours along it.
@@ -84,7 +86,7 @@ pub enum GlowColours {
 }
 
 /// A side of the projected image.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum TableSide {
     Top,
@@ -93,7 +95,7 @@ pub enum TableSide {
     Right,
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Ribbons {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -117,27 +119,27 @@ impl Ribbons {
 }
 
 /// One side's ribbon: `"off"`, `"auto"` (use the free band when there is one) or a size.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(untagged)]
 pub enum Ribbon {
     Mode(RibbonMode),
     Size(RibbonSize),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum RibbonMode {
     Off,
     Auto,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct RibbonSize {
     pub cm: f64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Buildings {
     pub path: String,
@@ -151,7 +153,7 @@ pub struct Buildings {
     pub extrude: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Trees {
     pub path: String,
@@ -166,7 +168,7 @@ pub struct Trees {
 /// Ground elevation. Either a GeoTIFF (`.tif`, `.tiff`), placed by its own georeference,
 /// or raw little-endian f32 elevations covering the extent, row 0 at the top, which
 /// need `width` and `height`.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Terrain {
     pub path: String,
@@ -192,7 +194,7 @@ impl Terrain {
 
 /// A 3D model of the site's top surface (ground and buildings), rasterised into the dsm.
 /// A mesh has no georeference of its own, so the manifest places it.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Mesh {
     /// An STL (binary or ASCII), OBJ or GLB file.
@@ -225,7 +227,7 @@ pub struct Mesh {
 }
 
 /// The up axis of a mesh file.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum Up {
     #[default]
@@ -255,7 +257,7 @@ impl Mesh {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SceneSpec {
     pub cell_m: f64,
@@ -282,7 +284,7 @@ pub struct SceneSpec {
 }
 
 /// One source of ground surfaces or soils (#624). Exactly one of `data` and `path`.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SurfaceSource {
     /// A dataset of the site, by its name in `data` (or `roads`, `trees`… of the scene).
@@ -314,7 +316,7 @@ impl SurfaceSource {
 }
 
 /// How a surface source names what is on the ground (#624).
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum SurfaceClasses {
     /// OpenStreetMap tags: `surface`, `landuse`, `leisure`, `natural`, `amenity`, `highway`. Roads and
@@ -330,7 +332,7 @@ pub enum SurfaceClasses {
 }
 
 /// Footprints around the table, for the wind kernel only (#488).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct WindContext {
     /// GeoJSON footprints. Those inside the table are left to `buildings`.
@@ -349,7 +351,7 @@ fn default_context_reach() -> f64 {
 }
 
 /// Where the water is: GeoJSON polygons, or a GeoTIFF mask (cells above 0.5 are water).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Water {
     pub path: String,
@@ -365,7 +367,7 @@ impl Water {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Basemap {
     #[serde(default = "default_background")]
@@ -381,7 +383,7 @@ impl Default for Basemap {
     }
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Branding {
     #[serde(default)]
@@ -405,7 +407,7 @@ pub struct Branding {
 /// The languages MR Studio's visitor screens speak (#80).
 pub const LANGUAGES: [&str; 2] = ["en", "sv"];
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct LayerRef {
     /// What the instance runs: a core layer id, a relative path to a site-only layer package,
@@ -435,7 +437,7 @@ pub struct LayerRef {
 
 /// An instance owned by a layer (public transport inside a sun study, a data visual on a
 /// slide). It has no button: it comes on and goes off with its layer.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct LayerItem {
     pub r#use: String,
@@ -455,7 +457,7 @@ pub struct LayerItem {
 }
 
 /// How Next moves through a layer (`docs/contracts/present.md`, Steps).
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Steps {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -478,14 +480,14 @@ pub struct Steps {
     pub sequence: Vec<SequenceStep>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum StepMode {
     Manual,
     Timed,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum Reveal {
     /// Next stops at the last sub-step; moving on needs Shift+Next (the Chalmers demo).
@@ -494,7 +496,7 @@ pub enum Reveal {
     ThenNext,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum Transition {
     Cut,
@@ -503,7 +505,7 @@ pub enum Transition {
 
 /// How a sequence goes from one step to the next (#43). `Fade` cross-fades the two layers;
 /// `Dip` fades the old one out to the empty map, then the new one in.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum StepTransition {
     Cut,
@@ -513,7 +515,7 @@ pub enum StepTransition {
 
 /// One step of a sequence. It shows another instance: a layer of the scene (which keeps its
 /// own button) or one of the sequence's own items (which exist only inside it).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SequenceStep {
     /// The instance id this step shows.
@@ -546,20 +548,24 @@ pub struct SequenceStep {
 
 /// The button that opens a layer on the controller: the words and icon the site's
 /// author chose for it, and where on the controller it sits.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct LayerButton {
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(length(min = 1, max = 40))]
     pub name: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(length(max = 200))]
     pub description: Option<String>,
     /// An icon name from the editor's set, such as `sun` or `route`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(regex(pattern = r"^[a-z0-9-]{1,40}$"))]
     pub icon: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub side: Option<ButtonSide>,
     /// The group of buttons it sits in on its rail, such as "Simulations".
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(length(min = 1, max = 40))]
     pub group: Option<String>,
     /// Its place in the rail; lower first. Buttons without one follow the scene order.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -570,6 +576,7 @@ pub struct LayerButton {
     /// Who made what the layer shows, as one line under its name on the controller (#659),
     /// such as "Artwork by Vishvi Rajakaruna and Fabio Latino".
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(length(max = 200))]
     pub credit: Option<String>,
     /// How the controller shows the layer's legend (#660). Without it, `auto`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -577,7 +584,7 @@ pub struct LayerButton {
 }
 
 /// How much of a layer's legend the controller shows (#660).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum LegendMode {
     /// Every row, in as many columns as it takes to fit the centre without scrolling.
@@ -590,7 +597,7 @@ pub enum LegendMode {
     Off,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum ButtonSide {
     Left,
@@ -636,7 +643,7 @@ impl LayerButton {
 
 /// A custom layer: a recipe of blocks the layer editor saves (#38), run by the runtime
 /// without code of its own. data, then look, motion and interaction, in that order.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct CustomLayer {
     pub name: String,
@@ -672,7 +679,7 @@ pub struct CustomLayer {
 }
 
 /// One source of a custom layer. Exactly one of `dataset`, `path`, `wms` and `tiles`.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct RecipeData {
     pub id: String,
@@ -697,7 +704,7 @@ impl RecipeData {
 
 /// A WMS map. Sign-in, when the service needs it, comes from the app's Sources manager by
 /// `source`; nothing secret is in the site.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Wms {
     pub url: String,
@@ -711,7 +718,7 @@ pub struct Wms {
 }
 
 /// One block in a custom layer's recipe. The block names are the SDK's (docs/blocks.md).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct RecipeBlock {
     /// Names the block so controls and other blocks can refer to it.
@@ -731,12 +738,14 @@ pub struct RecipeBlock {
 /// The table's palette: one of the built-in sets the SDK knows (`night` when missing) and
 /// the slots this table overrides, by slot name, as `#rrggbb`. Layers and custom layers
 /// refer to slots (`@accent`, `@cat3`), so changing the palette recolours them all.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Palette {
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(regex(pattern = r"^[a-z0-9-]{1,40}$"))]
     pub set: Option<String>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[schemars(extend("propertyNames" = { "pattern": "^[a-z0-9-]{1,40}$" }, "additionalProperties" = { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$" }))]
     pub slots: BTreeMap<String, String>,
 }
 
@@ -748,7 +757,7 @@ impl Palette {
 }
 
 /// One row of a layer's legend on the controller (present.md, Stage).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct LegendItem {
     pub id: String,
@@ -760,7 +769,7 @@ pub struct LegendItem {
 }
 
 /// The effect behind a layer on the controller's attract loop (present.md, Button).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Attract {
     pub effect: String,
@@ -787,7 +796,7 @@ pub fn is_instance_id(id: &str) -> bool {
     !id.is_empty() && id.len() <= 40 && id.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SiteManifest {
     pub format: u32,
@@ -829,14 +838,14 @@ pub struct SiteManifest {
 /// `calibration.json`: how the table window shows the site on the physical table.
 /// The host keeps the projector calibration of the model surface in the same file under
 /// `projector`; that key, and any other, is left to its owner.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct Calibration {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub table: Option<TableCalibration>,
 }
 
 /// The map view the projector needs for the image to land on the physical model.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct TableCalibration {
     pub center: LonLat,
@@ -849,7 +858,7 @@ pub struct TableCalibration {
     pub window: Option<WindowSize>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct WindowSize {
     pub width_px: f64,
@@ -882,7 +891,7 @@ fn default_background() -> String {
 }
 
 /// One outside service (#278). Exactly one of `run` and `url`. Contract in docs/contracts/site.md.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Service {
     /// What layers call it by: `requires.services` and `ctx.service(id)`.
@@ -902,7 +911,7 @@ pub struct Service {
 }
 
 /// How the host starts a service of this site.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ServiceRun {
     /// Its folder, relative to the site, for example `services/ecom`.

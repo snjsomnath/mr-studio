@@ -12,9 +12,10 @@ import { after, before, describe, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import { buildCapabilities, parsePatterns, rank } from '../src/capabilities.ts';
-import { loadLive, parseRoadmap, parseSiteSchema, plannedKernelsFrom } from '../src/core.ts';
+import { loadLive, parseRoadmap, plannedKernelsFrom } from '../src/core.ts';
 import { checkPaint, checkRecipe } from '../src/recipe.ts';
 import { checkControlValue, previewPlan } from '../src/site.ts';
+import type { Control } from '../../sdk/src/types.ts';
 
 const pkg = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const bundle = join(pkg, 'dist', 'mrstudio-mcp.mjs');
@@ -47,46 +48,24 @@ async function call(client: Client, name: string, args: Record<string, unknown> 
 
 describe('unit', () => {
   test('controls follow the host rules', () => {
-    const range = { type: 'range', min: 0, max: 24, step: 0.25 };
+    const control = (c: object) => c as Control;
+    const range = control({ type: 'range', min: 0, max: 24, step: 0.25 });
     assert.deepEqual(checkControlValue(range, 12.5), { ok: true, value: 12.5 });
     assert.equal(checkControlValue(range, 30).value, 24);
     assert.equal(checkControlValue(range, 12.3).value, 12.25);
     assert.equal(checkControlValue(range, '12').ok, false);
-    assert.equal(checkControlValue({ type: 'select', options: [{ value: 'a' }] }, 'b').ok, false);
-    assert.equal(checkControlValue({ type: 'date' }, '2026-13-01').ok, false);
-    assert.equal(checkControlValue({ type: 'color' }, '#00ff00').ok, true);
+    assert.equal(checkControlValue(control({ type: 'select', options: [{ value: 'a' }] }), 'b').ok, false);
+    assert.equal(checkControlValue(control({ type: 'date' }), '2026-13-01').ok, false);
+    assert.equal(checkControlValue(control({ type: 'color' }), '#00ff00').ok, true);
   });
 
-  test('site keys come from the core manifest structs', () => {
-    const schema = parseSiteSchema(`
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Mesh {
-    pub path: String,
-    #[serde(default)]
-    pub unit_m: f64,
-}
-pub struct SceneSpec {
-    pub cell_m: f64,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub mesh: Option<Mesh>,
-}
-pub struct LayerRef {
-    pub r#use: String,
-}
-pub struct SiteManifest {
-    pub id: String,
-    pub scene: SceneSpec,
-    #[serde(default)]
-    pub layers: Vec<LayerRef>,
-}
-impl Mesh {
-    pub fn area(&self) -> f64 { 0.0 }
-}
-`)!;
-    assert.deepEqual(schema[''], { fields: ['id', 'scene', 'layers'], required: ['id', 'scene'] });
-    assert.deepEqual(schema['scene.mesh'], { fields: ['path', 'unit_m'], required: ['path'] });
-    assert.deepEqual(schema['layers[]'], { fields: ['use'], required: ['use'] });
+  test('site keys come from the schema the app writes (#537)', () => {
+    const catalog = loadLive(resolve(pkg, '..', '..'));
+    const schema = catalog.siteSchema!;
+    assert.ok(schema['']!.fields.includes('scene') && schema['']!.required.includes('scene'));
+    assert.ok(schema['layers[]']!.required.includes('use'));
+    assert.ok(schema['layers[].button']!.fields.includes('legend'));
+    assert.ok(schema['scene.buildings']!.required.includes('path'));
   });
 
   test('roadmap tables become rows', () => {
@@ -931,7 +910,7 @@ describe('suggesting features that fit an idea (#477)', () => {
 test('a layer.json-only layer with a map stage passes check_layer, and the map stage rules hold (#374)', async () => {
   const { checkLayerPackage } = await import('../src/devlayer.ts');
   const dir = join(pkg, '..', '..', 'samples', 'map-stage-example', 'layers', 'building-uses');
-  const site = { manifest: { scene: { buildings: { path: 'data/buildings.geojson' } }, layers: [] }, kernels: [] };
+  const site = { manifest: { scene: { cell_m: 1, buildings: { path: 'data/buildings.geojson' } }, layers: [] }, kernels: [] };
   const ok = checkLayerPackage(dir, site);
   assert.deepEqual(ok.issues.filter((i) => i.rule === 'code' || i.rule === 'build' || i.rule === 'stage'), [], JSON.stringify(ok.issues));
   const work = mkdtempSync(join(tmpdir(), 'mrstudio-stage-'));

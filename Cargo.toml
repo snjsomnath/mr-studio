@@ -19,6 +19,7 @@ result_large_err = "allow"
 type_complexity = "allow"
 
 [workspace.dependencies]
+schemars = "1.2"
 mrs-engine = { path = "crates/mrs-engine" }
 mrs-site = { path = "crates/mrs-site" }
 mrs-host = { path = "crates/mrs-host" }

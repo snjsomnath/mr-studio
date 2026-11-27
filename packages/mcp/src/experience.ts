@@ -6,6 +6,7 @@
 import { closestIds, rank, tokens, type Capability } from './capabilities.ts';
 import { checkParams, freeId, instanceIds, type Issue, type SiteManifest } from './site.ts';
 import type { LayerEntry } from './core.ts';
+import type { LayerRef, SequenceStep } from './site-types.ts';
 
 export interface PlanStep {
   title: string;
@@ -268,12 +269,13 @@ export function buildExperience(m: SiteManifest, plan: ExperiencePlan, assessmen
   const skipped: { step: string; why: string }[] = [];
   const issues: Issue[] = [];
   const layerOf = (use: string) => layers.find((l) => (l.origin === 'core' ? l.id : l.use) === use || l.use === use);
-  const instanceOf = (use: string) => m.layers.find((l: any) => l.use === use);
-  const add = (use: string, extra: Record<string, unknown> = {}) => {
+  const scene = (m.layers ??= []);
+  const instanceOf = (use: string) => scene.find((l) => l.use === use);
+  const add = (use: string, extra: Partial<LayerRef> = {}): LayerRef => {
     const existing = instanceOf(use);
     if (existing) return existing;
-    const entry = { use, id: freeId(m, use), ...extra };
-    m.layers.push(entry);
+    const entry: LayerRef = { use, id: freeId(m, use), ...extra };
+    scene.push(entry);
     built.push(`${entry.id} (${use})`);
     return entry;
   };
@@ -287,7 +289,7 @@ export function buildExperience(m: SiteManifest, plan: ExperiencePlan, assessmen
     entry.active = true;
   }
 
-  const sequence: Record<string, unknown>[] = [];
+  const sequence: SequenceStep[] = [];
   assessment.steps.forEach((report, i) => {
     const step = plan.steps[i]!;
     if (!report.layer || report.status === 'needs_development' || report.status === 'unsupported') {
@@ -300,7 +302,7 @@ export function buildExperience(m: SiteManifest, plan: ExperiencePlan, assessmen
     issues.push(...checked.issues);
     for (const inner of report.with.filter((w) => w.ok)) {
       entry.items = Array.isArray(entry.items) ? entry.items : [];
-      if (!entry.items.some((it: any) => it.use === inner.use) && !instanceIds(m).includes(`${entry.id}-${inner.use}`)) {
+      if (!entry.items.some((it) => it.use === inner.use) && !instanceIds(m).includes(`${entry.id}-${inner.use}`)) {
         entry.items.push({ use: inner.use, id: `${entry.id}-${inner.use.replace(/[^a-z0-9-]/g, '')}` });
         built.push(`${entry.id}-${inner.use} inside ${entry.id}`);
       }
@@ -319,7 +321,7 @@ export function buildExperience(m: SiteManifest, plan: ExperiencePlan, assessmen
 
   const guided = plan.guided ?? plan.steps.length >= 2;
   if (guided && sequence.length) {
-    const story = m.layers.find((l: any) => l.use === 'slideshow' && l.button?.name === plan.title) ?? add('slideshow');
+    const story = scene.find((l) => l.use === 'slideshow' && l.button?.name === plan.title) ?? add('slideshow');
     story.button = { ...(story.button ?? {}), name: plan.title };
     story.steps = { mode: 'manual', ...(story.steps ?? {}), sequence };
   }

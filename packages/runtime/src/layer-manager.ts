@@ -85,9 +85,9 @@ interface Trouble {
 export function paramSender(
   connection: Connection,
   layer: string,
-  options: { method?: 'layer.set' | 'scene.set'; minInterval?: number } = {},
+  options: { method?: 'layer.set' | 'scene.set'; minInterval?: number; store?: Store } = {},
 ): (patch: Record<string, unknown>) => void {
-  const { method = 'layer.set', minInterval = 0 } = options;
+  const { method = 'layer.set', minInterval = 0, store } = options;
   let pending: Record<string, unknown> | null = null;
   let last = -Infinity;
   const flush = () => {
@@ -98,7 +98,9 @@ export function paramSender(
     last = performance.now();
     connection.request(method, { layer, params }).catch((error) => console.warn(`[${layer}] ${error.message}`));
   };
-  return (patch) => {
+  return (given) => {
+    // A pause carries the time it stopped at (#403).
+    const patch = store ? store.withStopTime(layer, given) : given;
     if (pending) {
       Object.assign(pending, patch);
       return;
@@ -255,7 +257,7 @@ export function baseContext(store: Store, connection: Connection, layer: string)
     get shared() {
       return store.layer(layer).shared;
     },
-    setParams: paramSender(connection, layer),
+    setParams: paramSender(connection, layer, { store }),
     view: layerView(layer),
     clock: playHead(store, layer),
   };
@@ -355,7 +357,12 @@ export class LayerManager {
     if (!state || !this.store.manifest(state.layer)?.hidesAtRest) return false;
     if (!state.steps?.sequence?.length) return true;
     const shown = Object.values(this.store.state.layers).filter((l) => l.shown_by === id && l.active);
-    return shown.length === 0 || shown.some((l) => this.store.manifest(l.layer)?.category === 'media');
+    if (shown.length > 0) return shown.some((l) => this.store.manifest(l.layer)?.category === 'media');
+    // Nothing on show yet, as when the slideshow has just opened: the map stays until the step it
+    // is about to show turns out to be a picture, so a tour of layers starts from the map, not black (#592).
+    const next = state.steps.sequence[state.step?.index ?? 0];
+    const target = next ? this.store.state.layers[next.layer] : undefined;
+    return !target || this.store.manifest(target.layer)?.category === 'media';
   }
 
   private applyIntensity(id: string): void {

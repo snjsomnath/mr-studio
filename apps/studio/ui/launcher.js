@@ -2,7 +2,9 @@
 // phones and startup), then the app's own pages. Colour, Calibration and Updates have scripts of their own.
 // It talks to the shell through the commands in src-tauri/src/main.rs.
 const { invoke } = window.__TAURI__.core;
+/** @type {(id: string) => any} An element by id; its kind is in the HTML. */
 const $ = (id) => document.getElementById(id);
+/** @type {<K extends keyof HTMLElementTagNameMap>(tag: K, props?: Record<string, unknown>, ...children: (Node | string)[]) => HTMLElementTagNameMap[K]} */
 const el = (tag, props = {}, ...children) => {
   const node = Object.assign(document.createElement(tag), props);
   node.append(...children);
@@ -164,7 +166,6 @@ $('operator-start').addEventListener('change', async () => {
 });
 $('operator-open').addEventListener('click', () => invoke('open_operator').catch((e) => showError(String(e))));
 $('operator-log').addEventListener('click', () => invoke('open_operator_log').catch((e) => showError(String(e))));
-$('open-sources').addEventListener('click', () => invoke('open_sources').catch((e) => showError(String(e))));
 
 window.addEventListener('resize', () => screens && renderMap());
 // Plugging in a projector while this window is open should not need a restart.
@@ -178,4 +179,5 @@ if (mac) document.querySelectorAll('.keys kbd').forEach((key) => key.textContent
 document.querySelectorAll('[data-only="windows"]').forEach((node) => (node.hidden = !/Win/i.test(navigator.platform)));
 // A tab named in the address opens first, e.g. index.html#colour.
 const first = document.querySelector(`[role=tab][data-tab="${location.hash.slice(1)}"]`);
-if (first) queueMicrotask(() => first.click());
+// After every script has run: the tabs' handlers are set up in colour.js, which loads after this one.
+if (first) document.addEventListener('DOMContentLoaded', () => first.click());

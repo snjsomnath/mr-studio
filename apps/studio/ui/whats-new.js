@@ -5,6 +5,7 @@
 (() => {
   const { invoke } = window.__TAURI__.core;
   const { listen } = window.__TAURI__.event;
+  /** @type {(id: string) => any} An element by id; its kind is in the HTML. */
   const $ = (id) => document.getElementById(id);
   const el = (tag, props = {}, ...children) => {
     const node = Object.assign(document.createElement(tag), props);
@@ -17,12 +18,15 @@
   function features(release) {
     const out = [];
     let current = null;
+    // Notes for layer writers (#593) are in the full notes, not on Home's tiles.
+    let developers = false;
     for (const raw of (release.notes || '').replace(/\r/g, '').replace(/<!--[\s\S]*?-->/g, '').split('\n')) {
       const heading = /^(#{2,4})\s+(.*)$/.exec(raw.trim());
       if (heading) {
         current = null;
         const title = heading[2].trim();
-        if (heading[1].length >= 3 && !GROUPS.test(title)) {
+        if (heading[1].length === 2) developers = /^for developers$/i.test(title);
+        if (heading[1].length >= 3 && !GROUPS.test(title) && !developers) {
           current = { title: title.replace(/\s*\((#\d+(?:,\s*#\d+)*)\)$/, ''), picture: null, text: '', release };
           out.push(current);
         }
@@ -39,7 +43,8 @@
   function tile(feature, open) {
     const thumb = el('span', { className: 'thumb' });
     if (feature.picture) {
-      const img = el('img', { src: feature.picture, alt: '', loading: 'lazy', draggable: false });
+      // Loaded at once: lazy pictures in Home's sideways list stayed grey until scrolled to (#593).
+      const img = el('img', { src: feature.picture, alt: '', draggable: false });
       img.onerror = () => img.remove();
       thumb.append(img);
     }

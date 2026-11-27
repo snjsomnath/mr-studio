@@ -50,6 +50,18 @@ pnpm lint        # promises nobody awaits or catches
 cargo fmt --check && cargo clippy --all-targets -- -D warnings
 ```
 
+What is written from what, and checked by the tests so neither side drifts alone:
+
+| Written file | From | Rewrite with |
+| --- | --- | --- |
+| `docs/contracts/site.schema.json` | mrs-site's types (#537) | `UPDATE_SCHEMA=1 cargo test -p mrs-site --test schema` |
+| `packages/mcp/src/site-types.ts` | `site.schema.json` (#543) | `pnpm --filter @mrstudio/mcp site-types` |
+| `docs/contracts/protocol.schema.json` | the host's types (#538) | `UPDATE_SCHEMA=1 cargo test -p mrs-host --test protocol_schema` |
+| `apps/studio/ui/app-commands.d.ts` | the commands in `apps/studio/src-tauri/build.rs` (#544) | `pnpm --filter @mrstudio/studio app-commands` |
+| `crates/mrs-cli/templates/layer/types/mrstudio-sdk.d.ts` | the SDK's types | `pnpm --filter @mrstudio/sdk types` |
+
+The app's own pages (`apps/studio/ui/*.js` and the scripts the shell puts into windows) are type-checked as JavaScript, so calling an app command that does not exist fails `pnpm typecheck`.
+
 CI runs all of these on every pull request: the end-to-end check in Chromium on Linux, and the engine smoke with WebKit on macOS (as the Mac app draws) and Edge on Windows (as WebView2 does). The smoke fails on any error a page throws, a frame slower than 5 s, and known engine traps such as large SVG filters, which WebKit draws in software. Dependabot opens grouped dependency updates weekly, and a weekly security audit warns about known advisories.
 
 Measured on an Apple M4 Pro (Metal), 2026-11-14, sunlight kernel:

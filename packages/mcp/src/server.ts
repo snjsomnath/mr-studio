@@ -5,7 +5,7 @@ import { existsSync } from 'node:fs';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 import { z } from 'zod';
 
-import { changelogVersions, loadCatalog, type Catalog, type CoreOptions } from './core.ts';
+import { changelogVersions, loadCatalog, type Catalog, type CoreOptions, type LayerEntry } from './core.ts';
 import { buildCapabilities, closestIds, parsePatterns, rank, withSite, type Capability } from './capabilities.ts';
 import { assessExperience, buildExperience, type BuildResult, type ExperiencePlan } from './experience.ts';
 import { DEV_KINDS, DUPLICATE_AT, KIND_ALIASES, searchIssues, submitDevDraft, writeDevDraft, type DevKind, type DevRequest, type SubmitOutcome } from './devrequests.ts';
@@ -37,8 +37,11 @@ import {
   validateSiteDir,
   writeSite,
   type Issue,
+  type SceneEntry,
   type SiteManifest,
 } from './site.ts';
+import type { CustomLayer, LayerRef, Service } from './site-types.ts';
+import type { Control } from '../../sdk/src/types.ts';
 
 // The package version (the core release it was built with), stamped in by scripts/build.mjs.
 declare const __MRSTUDIO_SERVER_VERSION__: string | undefined;
@@ -151,7 +154,17 @@ function counts(issues: Issue[]): string {
   return e ? `${e} error${e > 1 ? 's' : ''}, ${w} warning${w === 1 ? '' : 's'}` : w ? `valid, ${w} warning${w > 1 ? 's' : ''}` : 'valid';
 }
 
-function layerSummary(l: { id: string; origin: string; use: string; manifest: any }) {
+/** What `mrstudio import --json` answers. */
+interface ImportReport {
+  ok?: boolean;
+  error?: string;
+  summary?: string;
+  issues?: { severity: string; message: string; fix?: string }[];
+  preview?: unknown;
+  [key: string]: unknown;
+}
+
+function layerSummary(l: LayerEntry) {
   const m = l.manifest;
   return {
     use: l.use,
@@ -161,9 +174,9 @@ function layerSummary(l: { id: string; origin: string; use: string; manifest: an
     category: m.category,
     kernels: m.requires?.kernels ?? [],
     data: m.requires?.data ?? [],
-    controls: (m.controls ?? []).map((c: any) => c.id),
-    tools: (m.tools ?? []).map((t: any) => t.id ?? t.type),
-    panels: (m.panels ?? []).map((p: any) => p.id),
+    controls: (m.controls ?? []).map((c) => c.id),
+    tools: (m.tools ?? []).map((t) => t.id ?? t.type),
+    panels: (m.panels ?? []).map((p) => p.id),
   };
 }
 
@@ -175,6 +188,9 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
   const server = new McpServer({ name: 'mrstudio', title: 'MR Studio', version: SERVER_VERSION }, { instructions: serverInstructions(catalog) });
 
   // Every tool gets its annotations from ANNOTATIONS and the shared result schema (#325).
+  // The SDK types each tool's callback from its own input schema; this wrapper serves every tool, so it
+  // cannot name one. These are the only loose types left in the server (#543).
+  /* eslint-disable @typescript-eslint/no-explicit-any */
   const tool: typeof server.registerTool = (name, config, cb) => {
     const annotations = ANNOTATIONS[name];
     if (!annotations) throw new Error(`Tool '${name}' has no entry in ANNOTATIONS`);
@@ -215,6 +231,8 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
       return out;
     };
   }
+  /* eslint-enable @typescript-eslint/no-explicit-any */
+
 
   // ---- Knowledge ----
 
@@ -341,8 +359,8 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
     try {
       const m = readSite(dir);
       return {
-        data: new Set<string>([...Object.keys(m.data ?? {}), ...['buildings', 'trees', 'terrain', 'mesh'].filter((k) => m.scene?.[k])]),
-        services: new Set<string>((Array.isArray(m.services) ? m.services : []).map((x: any) => x?.id).filter(Boolean)),
+        data: new Set<string>([...Object.keys(m.data ?? {}), ...(['buildings', 'trees', 'terrain', 'mesh'] as const).filter((k) => m.scene?.[k])]),
+        services: new Set<string>((Array.isArray(m.services) ? m.services : []).map((x) => x?.id).filter(Boolean)),
       };
     } catch {
       return null;
@@ -427,7 +445,11 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
         return fail(`No capability '${id}'.`, { similar: near }, { code: 'unknown_capability', next: ['Use one of the similar ids, or find_capabilities with a goal.'] });
       }
       const layer = c.kind === 'layer' && c.use ? findLayer(catalog, site ? at(site) : null, c.use) : undefined;
-      const controls = layer ? (layer.manifest.controls ?? []).map((x: any) => ({ id: x.id, type: x.type, label: x.label, default: x.default, ...(x.phone ? { phone: true } : {}), ...(x.options ? { options: x.options.map((o: any) => o?.value ?? o) } : {}), ...(x.min !== undefined ? { min: x.min, max: x.max } : {}) })) : undefined;
+      const controls = layer ? (layer.manifest.controls ?? []).map((control) => {
+        // Whichever kind of control it is: the fields some kinds have.
+        const x = control as Control & { default?: unknown; options?: { value: string }[]; min?: number; max?: number };
+        return { id: x.id, type: x.type, label: x.label, default: x.default, ...(x.phone ? { phone: true } : {}), ...(x.options ? { options: x.options.map((o) => o?.value ?? o) } : {}), ...(x.min !== undefined ? { min: x.min, max: x.max } : {}) };
+      }) : undefined;
       const examples = (catalog.examples ?? []).filter((e) => c.examples.includes(e.path));
       return reply(`${c.name} (${c.id}): ${c.status}.`, { ...c, ...(controls ? { controls } : {}), example_sites: examples });
     },
@@ -510,7 +532,7 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
       let result: BuildResult | undefined;
       const out = editScene(site, (m) => {
         result = buildExperience(m, plan as ExperiencePlan, a, availableLayers(catalog, at(site)));
-        if (!result.built.length && !m.layers.length) return 'Nothing in this plan can be built yet; see assess_experience for the gaps.';
+        if (!result.built.length && !m.layers?.length) return 'Nothing in this plan can be built yet; see assess_experience for the gaps.';
         return { message: result.message, issues: result.issues };
       });
       const sc = out.structuredContent as Record<string, unknown> | undefined;
@@ -577,16 +599,16 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
       const dir = at(site);
       const { manifest, issues } = validateSiteDir(dir, catalog);
       if (!manifest) return fail(issues[0]!.message, undefined, { code: 'no_site', next: ['Check the folder, or create the site with create_site.'] });
-      const describe = (ref: any) => {
+      const describe = (ref: SceneEntry) => {
         const layer = findLayer(catalog, dir, ref.use, manifest);
-        const defaults = Object.fromEntries((layer?.manifest.controls ?? []).filter((c: any) => c.type !== 'action').map((c: any) => [c.id, c.default]));
+        const defaults = Object.fromEntries((layer?.manifest.controls ?? []).filter((c) => c.type !== 'action').map((c) => [c.id, c.default]));
         return { id: ref.id, use: ref.use, name: layer?.manifest.name ?? '(unknown layer)', active: ref.active !== false && (ref.active === true || ref.items === undefined), params: { ...defaults, ...(ref.params ?? {}) }, overrides: ref.params ?? {} };
       };
-      const scene = (manifest.layers ?? []).map((ref: any, index: number) => ({
+      const scene = (manifest.layers ?? []).map((ref, index) => ({
         index,
         ...describe(ref),
         active: Boolean(ref.active),
-        ...(ref.items?.length ? { items: ref.items.map((item: any) => ({ ...describe(item), active: item.active !== false })) } : {}),
+        ...(ref.items?.length ? { items: ref.items.map((item) => ({ ...describe(item), active: item.active !== false })) } : {}),
         ...(ref.steps ? { steps: ref.steps } : {}),
       }));
       return reply(`${manifest.name}: ${scene.length} layer${scene.length === 1 ? '' : 's'}, ${counts(issues)}.`, { scene, issues, manifest });
@@ -624,14 +646,19 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
         if (!editable.includes(key)) {
           return fail(`'${key}' is not a site.json setting in format ${SITE_FORMAT}. Settable: ${editable.join(', ')}.`, undefined, { code: 'unknown_setting', next: ['If the site really needs it, it is a core change: find_related_issues, then draft_development_request (kind "site-setting").'] });
         }
-        if (value === null) delete next[key];
-        else if (value && typeof value === 'object' && !Array.isArray(value) && next[key] && typeof next[key] === 'object') {
-          next[key] = { ...next[key] };
+        // Any top-level setting by name, checked as a whole by validateManifest below.
+        const bag = next as unknown as Record<string, unknown>;
+        const isPlain = (v: unknown): v is Record<string, unknown> => Boolean(v) && typeof v === 'object' && !Array.isArray(v);
+        const old = bag[key];
+        if (value === null) delete bag[key];
+        else if (isPlain(value) && isPlain(old)) {
+          const merged: Record<string, unknown> = { ...old };
           for (const [k, v] of Object.entries(value)) {
-            if (v === null && key !== 'basemap') delete next[key][k];
-            else next[key][k] = v;
+            if (v === null && key !== 'basemap') delete merged[k];
+            else merged[k] = v;
           }
-        } else next[key] = value;
+          bag[key] = merged;
+        } else bag[key] = value;
       }
       const issues = validateManifest(next, dir, catalog);
       const before = new Set(validateManifest(manifest, dir, catalog).filter((i) => i.level === 'error').map((i) => `${i.path}|${i.message}`));
@@ -679,14 +706,14 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
     use: z.string().optional().describe('Layer id, if it appears once in the scene'),
   };
   /** Where an entry is: the list that holds it (the scene, or a layer's items), its index there, and its layer for an item. */
-  type Place = { list: any[]; i: number; parent?: any };
+  type Place = { list: SceneEntry[]; i: number; parent?: LayerRef };
   function locate(manifest: SiteManifest, id?: string, index?: number, use?: string): Place | string {
-    const layers: any[] = manifest.layers ?? [];
+    const layers: SceneEntry[] = (manifest.layers ??= []);
     if (id !== undefined) {
       for (const [i, layer] of layers.entries()) {
         if (layer?.id === id) return { list: layers, i };
-        const j = Array.isArray(layer?.items) ? layer.items.findIndex((item: any) => item?.id === id) : -1;
-        if (j >= 0) return { list: layer.items, i: j, parent: layer };
+        const j = Array.isArray(layer?.items) ? layer.items.findIndex((item) => item?.id === id) : -1;
+        if (j >= 0) return { list: layer.items!, i: j, parent: layer };
       }
       return `No layer or item '${id}'. Ids: ${instanceIds(manifest).join(', ') || 'none'}.`;
     }
@@ -694,7 +721,7 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
     if (!use) return 'Give id, index or use.';
     const hits = layers.map((l, i) => (l.use === use ? i : -1)).filter((i) => i >= 0);
     if (hits.length === 1) return { list: layers, i: hits[0]! };
-    return hits.length ? `'${use}' appears ${hits.length} times; give its id (${hits.map((i) => layers[i].id).join(', ')}).` : `'${use}' is not in the scene (${layers.map((l) => l.use).join(', ') || 'empty'}).`;
+    return hits.length ? `'${use}' appears ${hits.length} times; give its id (${hits.map((i) => layers[i]!.id).join(', ')}).` : `'${use}' is not in the scene (${layers.map((l) => l.use).join(', ') || 'empty'}).`;
   }
 
   function editScene(site: string, edit: (manifest: SiteManifest) => string | { message: string; issues?: Issue[] }): Content {
@@ -719,7 +746,7 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
     if (errors.length) return fail('Not saved: the change would leave the scene invalid.', { attempted: result.message, issues: errors }, { code: 'would_invalidate', next });
     writeSite(dir, manifest, result.message.replace(/\.$/, ''));
     const scene = manifest.layers.map(
-      (l: any, i: number) => `${i}: ${l.id} (${l.use})${l.active ? ' active' : ''}${l.items?.length ? `, items ${l.items.map((item: any) => item.id).join(', ')}` : ''}${l.steps?.sequence?.length ? `, ${l.steps.sequence.length} steps` : ''}`,
+      (l, i) => `${i}: ${l.id} (${l.use})${l.active ? ' active' : ''}${l.items?.length ? `, items ${l.items.map((item) => item.id).join(', ')}` : ''}${l.steps?.sequence?.length ? `, ${l.steps.sequence.length} steps` : ''}`,
     );
     return reply(`${result.message} Site is ${counts(issues)}.`, { scene_bottom_to_top: scene, issues: [...(result.issues ?? []), ...issues.filter((i) => i.level !== 'note')] });
   }
@@ -748,16 +775,16 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
         const checked = params ? checkParams(layer, params, 'params') : { issues: [], cleaned: undefined };
         const name = id ?? freeId(m, use);
         if (instanceIds(m).includes(name)) return `'${name}' is already the id of a layer or item; give another id.`;
-        const entry: Record<string, unknown> = { use, id: name };
+        const entry: SceneEntry = { use, id: name };
         if (active !== undefined && !(parent && active)) entry.active = active;
         if (checked.cleaned && Object.keys(checked.cleaned).length) entry.params = checked.cleaned;
         if (stack === 1) {
           if (!parent) return 'Only an item inside a layer has a stack: give parent too.';
           entry.stack = 1;
         }
-        let list: any[] = m.layers;
+        let list: SceneEntry[] = (m.layers ??= []);
         if (parent) {
-          const owner = m.layers.find((l: any) => l.id === parent);
+          const owner = list.find((l) => l.id === parent);
           if (!owner) return `No layer '${parent}' in the scene to hold it (items cannot hold items).`;
           owner.items = Array.isArray(owner.items) ? owner.items : [];
           list = owner.items;
@@ -787,7 +814,7 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
       editScene(site, (m) => {
         const place = locate(m, id, index, use);
         if (typeof place === 'string') return place;
-        const entry = place.list[place.i];
+        const entry = place.list[place.i]!;
         const layer = findLayer(catalog, at(site), entry.use, m);
         if (!layer) return `Layer '${entry.use}' ('${entry.id}') is unknown; remove it or fix its use.`;
         let issues: Issue[] = [];
@@ -838,18 +865,18 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
       editScene(site, (m) => {
         const place = locate(m, id, index, use);
         if (typeof place === 'string') return place;
-        const entry = place.list[place.i];
-        let list: any[] = place.list;
-        if (parent === null) list = m.layers;
+        const entry = place.list[place.i]!;
+        let list: SceneEntry[] = place.list;
+        if (parent === null) list = m.layers ??= [];
         else if (parent !== undefined) {
-          const owner = m.layers.find((l: any) => l.id === parent);
+          const owner = (m.layers ?? []).find((l) => l.id === parent);
           if (!owner || owner === entry) return `No other layer '${parent}' in the scene to hold it.`;
           if (entry.items?.length || entry.steps || entry.button) return `'${entry.id}' has items, steps or a button, so it cannot become an item.`;
           owner.items = Array.isArray(owner.items) ? owner.items : [];
           list = owner.items;
         }
         place.list.splice(place.i, 1);
-        if (place.parent && !place.parent.items.length) delete place.parent.items;
+        if (place.parent && !place.parent.items?.length) delete place.parent.items;
         const dest = Math.max(0, Math.min(list.length, to));
         list.splice(dest, 0, entry);
         return { message: `Moved '${entry.id}' to ${dest}${parent ? ` inside '${parent}'` : parent === null ? ' in the scene' : ''}.` };
@@ -867,15 +894,16 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
       editScene(site, (m) => {
         const place = locate(m, id, index, use);
         if (typeof place === 'string') return place;
-        const [entry] = place.list.splice(place.i, 1);
-        if (place.parent && !place.parent.items.length) delete place.parent.items;
-        const gone = new Set([entry.id, ...(entry.items ?? []).map((item: any) => item.id)]);
+        const entry = place.list.splice(place.i, 1)[0]!;
+        if (place.parent && !place.parent.items?.length) delete place.parent.items;
+        const gone = new Set([entry.id, ...(entry.items ?? []).map((item) => item.id)]);
         let dropped = 0;
-        for (const layer of m.layers) {
-          const sequence = layer.steps?.sequence;
-          if (!Array.isArray(sequence)) continue;
-          layer.steps.sequence = sequence.filter((step: any) => !gone.has(step?.layer));
-          dropped += sequence.length - layer.steps.sequence.length;
+        for (const layer of m.layers ?? []) {
+          const steps = layer.steps;
+          if (!steps || !Array.isArray(steps.sequence)) continue;
+          const before = steps.sequence.length;
+          steps.sequence = steps.sequence.filter((step) => !gone.has(step?.layer));
+          dropped += before - steps.sequence.length;
         }
         return { message: `Removed '${entry.id}' (${entry.use})${dropped ? ` and ${dropped} step${dropped === 1 ? '' : 's'} that showed it` : ''}.` };
       }),
@@ -897,8 +925,8 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
       editScene(site, (m) => {
         const place = locate(m, id, index, use);
         if (typeof place === 'string') return place;
-        if (place.parent) return `'${place.list[place.i].id}' is an item; items have no steps.`;
-        const entry = place.list[place.i];
+        if (place.parent) return `'${place.list[place.i]!.id}' is an item; items have no steps.`;
+        const entry = place.list[place.i]!;
         if (steps === null) delete entry.steps;
         else entry.steps = steps;
         return { message: steps === null ? `Cleared the steps of '${entry.id}'.` : `Set the steps of '${entry.id}'.` };
@@ -921,21 +949,22 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
       editScene(site, (m) => {
         const use = `${CUSTOM_PREFIX}${id}`;
         if (recipe === null) {
-          const users = m.layers.flatMap((l: any) => [l, ...(l.items ?? [])]).filter((e: any) => e?.use === use).map((e: any) => e.id);
+          const users = (m.layers ?? []).flatMap((l): SceneEntry[] => [l, ...(l.items ?? [])]).filter((e) => e?.use === use).map((e) => e.id);
           if (users.length) return `The custom layer '${id}' is used by ${users.join(', ')}; remove those first.`;
           if (!m.custom?.[id]) return `There is no custom layer '${id}'.`;
           delete m.custom[id];
           if (!Object.keys(m.custom).length) delete m.custom;
           return { message: `Removed the custom layer '${id}'.` };
         }
-        const saved: Record<string, any> = { ...recipe };
+        // As the caller gave it; editScene checks the whole site before it is written.
+        const saved = { ...recipe } as unknown as CustomLayer;
         let legendNote = '';
         if (saved.legend === undefined) {
           const legend = legendFor(saved, at(site), m.data ?? {}, m.palette);
           if (legend?.length) {
             saved.legend = legend;
             legendNote = ` The controller's legend has ${legend.length} row${legend.length === 1 ? '' : 's'}, worked out from the looks and their data.`;
-          } else if ((saved.look ?? []).some((block: any) => block?.block === 'raster')) legendNote = ' The table works out the legend from the looks while it shows the layer.';
+          } else if ((saved.look ?? []).some((block) => block?.block === 'raster')) legendNote = ' The table works out the legend from the looks while it shows the layer.';
           else if ((saved.look ?? []).length) legendNote = ' No legend yet: the looks\' data could not be read; save again once the data is in the site, or give legend yourself.';
         }
         m.custom = { ...(m.custom ?? {}), [id]: saved };
@@ -982,13 +1011,13 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
       if (swap) args.push('--swap');
       if (crs) args.push('--crs', crs);
       if (layer) args.push('--layer', layer);
-      const run = await runCliJson(cli, args);
+      const run = await runCliJson<ImportReport>(cli, args);
       const report = run.json;
       if (!report || report.error) return fail(report?.error ?? `The command line failed: ${run.output.slice(-400)}`, undefined, { code: 'import_failed', next: [] });
       const { preview: _preview, ...rest } = report;
-      const blockers = (report.issues ?? []).filter((i: any) => i.severity === 'blocker');
+      const blockers = (report.issues ?? []).filter((i) => i.severity === 'blocker');
       if (!report.ok) {
-        return fail(`Not brought in: ${report.summary}`, { report: rest }, { code: 'import_refused', next: blockers.map((b: any) => (b.fix ? `${b.message} Try again with ${b.fix}: true.` : b.message)).concat(['Nothing was written.']) });
+        return fail(`Not brought in: ${report.summary}`, { report: rest }, { code: 'import_refused', next: blockers.map((b) => (b.fix ? `${b.message} Try again with ${b.fix}: true.` : b.message)).concat(['Nothing was written.']) });
       }
       return reply(write ? `Brought in ${target}: ${report.summary}. site.json now points at it.` : `Checked ${target}: ${report.summary}. Nothing written; call again with write true to save it.`, { written: Boolean(write), report: rest });
     },
@@ -997,7 +1026,7 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
   const keepFile = (kind: 'media' | 'sound') => async ({ site, file }: { site: string; file: string }) => {
     const cli = findCli(catalog);
     if (!cli) return noCli();
-    const run = await runCliJson(cli, ['data', kind, at(site), at(file)]);
+    const run = await runCliJson<{ path?: string; error?: string }>(cli, ['data', kind, at(site), at(file)]);
     if (run.json?.path) {
       const use = kind === 'media' ? `Use it as the file of a media layer or slide step (params.file: "${run.json.path}").` : `Name it in a points dataset column used by a sound motion ("${run.json.path}").`;
       return reply(`Saved ${run.json.path}. ${use}`, { path: run.json.path });
@@ -1048,7 +1077,7 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
       if (apps?.length) args.push('--apps', apps.join(','));
       if (canvas) args.push('--canvas', canvas);
       if (px_per_cm) args.push('--px-per-cm', String(px_per_cm));
-      const run = await runCliJson(cli, args);
+      const run = await runCliJson<{ ok?: boolean; error?: string; path: string; written: { files: string[]; picture: [number, number]; notes: string[] } }>(cli, args);
       const result = run.json;
       if (!result?.ok) return fail(result?.error ?? `The command line failed: ${run.output.slice(-400)}`, undefined, { code: 'starter_pack_failed', next: ['Check that the site loads (validate_site) and that at least one chosen feature exists.'] });
       const w = result.written;
@@ -1125,10 +1154,10 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
   // ---- For layer developers (#284): site code layers (#277) and services (#278) ----
 
   const layerDir = (site: string, id: string) => join(at(site), 'layers', id);
-  const sceneUses = (manifest: any, id: string) =>
-    (Array.isArray(manifest?.layers) ? manifest.layers : []).some((l: any) => l?.use === `./layers/${id}` || (Array.isArray(l?.items) && l.items.some((i: any) => i?.use === `./layers/${id}`)));
+  const sceneUses = (manifest: SiteManifest | null, id: string) =>
+    (Array.isArray(manifest?.layers) ? manifest.layers : []).some((l) => l?.use === `./layers/${id}` || (Array.isArray(l?.items) && l.items.some((i) => i?.use === `./layers/${id}`)));
   const checkFor = (site: string, id: string) => {
-    let manifest: any = null;
+    let manifest: SiteManifest | null = null;
     try {
       manifest = readSite(at(site));
     } catch {
@@ -1250,7 +1279,7 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
       const built = !issues.some((i) => i.rule === 'build' && /missing/.test(i.message));
       const used = sceneUses(m, id);
       const before = [...(built ? [] : [`build_layer { id: "${id}" } (unbuilt layers draw nothing)`]), ...(used ? [] : [`add_layer { use: "./layers/${id}", active: true } (only layers in the scene run)`])];
-      const dev = (plan as any).urls?.dev;
+      const dev = plan.urls?.dev;
       return reply(`${before.length ? `First: ${before.join('; ')}. Then: ` : ''}${plan.summary}${dev ? ` Open ${dev} to see the layer with its controls and panels.` : ''}`, { ...plan, built, used_by_scene: used, before });
     },
   );
@@ -1283,9 +1312,10 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
       const issues: Issue[] = [];
       if (cwd && !existsSync(join(at(site), cwd))) issues.push({ level: 'warning', path: `services.${id}.run.cwd`, message: `${cwd} does not exist in the site yet; put the service's code there` });
       if (command && !command.some((a) => a.includes('{port}')) && !Object.values(env ?? {}).some((v) => v.includes('{port}'))) issues.push({ level: 'warning', path: `services.${id}.run.command`, message: 'nothing says {port}; the host picks the port and the service must listen on it' });
-      return editScene(site, (m: any) => {
-        const entry: any = { id, ...(name ? { name } : {}), ...(url ? { url } : { run: { cwd, command, ...(venv ? { venv } : {}), ...(requirements ? { requirements } : {}), ...(env && Object.keys(env).length ? { env } : {}), ...(start_s ? { start_s } : {}) } }), ...(health ? { health } : {}) };
-        const list: any[] = Array.isArray(m.services) ? m.services : [];
+      return editScene(site, (m) => {
+        // Without url, cwd and command were checked above.
+        const entry: Service = { id, ...(name ? { name } : {}), ...(url ? { url } : { run: { cwd: cwd!, command: command!, ...(venv ? { venv } : {}), ...(requirements ? { requirements } : {}), ...(env && Object.keys(env).length ? { env } : {}), ...(start_s ? { start_s } : {}) } }), ...(health ? { health } : {}) };
+        const list: Service[] = Array.isArray(m.services) ? m.services : [];
         const at_ = list.findIndex((s) => s?.id === id);
         if (at_ >= 0) list[at_] = entry;
         else list.push(entry);

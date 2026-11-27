@@ -1,0 +1,38 @@
+{
+  "about": "One verdict per site.json, shared by mrs-site (tests/verdicts.rs) and the MCP server (packages/mcp/test/verdicts.test.ts): both must accept or refuse each one (#537). Each case is the base site with the keys in `set` put in their place (null removes one).",
+  "base": {
+    "format": 3,
+    "id": "verdict-table",
+    "name": "Verdict table",
+    "origin": { "lon": 11.9746, "lat": 57.7089 },
+    "extent": { "width_m": 1000, "height_m": 600 },
+    "timezone": "Europe/Stockholm",
+    "table": { "width_cm": 100, "height_cm": 60 },
+    "scene": { "cell_m": 2 },
+    "layers": [{ "use": "sunlight", "id": "sun", "active": true }]
+  },
+  "cases": [
+    { "why": "the base site", "valid": true, "set": {} },
+    { "why": "no table at all", "valid": true, "set": { "table": null } },
+    { "why": "aspect within 2%", "valid": true, "set": { "table": { "width_cm": 101, "height_cm": 60 } } },
+    { "why": "a button with a credit and a legend mode", "valid": true, "set": { "layers": [{ "use": "sunlight", "id": "sun", "active": true, "button": { "name": "Sun", "credit": "Data: SMHI", "legend": "compact" } }] } },
+    { "why": "a glow and a palette", "valid": true, "set": { "table": { "width_cm": 100, "height_cm": 60, "glow": { "on": true, "strength": 0.5 } }, "palette": { "slots": { "accent": "#ff8800" } } } },
+    { "why": "an unknown top-level key", "valid": false, "set": { "colour": "#ffffff" } },
+    { "why": "an unknown key on a button", "valid": false, "set": { "layers": [{ "use": "sunlight", "id": "sun", "button": { "name": "Sun", "colour": "red" } }] } },
+    { "why": "an unknown key on the scene", "valid": false, "set": { "scene": { "cell_m": 2, "roads": "roads.geojson" } } },
+    { "why": "no scene", "valid": false, "set": { "scene": null } },
+    { "why": "no origin", "valid": false, "set": { "origin": null } },
+    { "why": "an upper-case id", "valid": false, "set": { "id": "Verdict" } },
+    { "why": "a latitude off the map", "valid": false, "set": { "origin": { "lon": 11.97, "lat": 91 } } },
+    { "why": "the table's aspect 5% off the ground's", "valid": false, "set": { "table": { "width_cm": 105, "height_cm": 60 } } },
+    { "why": "width_m written as text", "valid": false, "set": { "extent": { "width_m": "1000", "height_m": 600 } } },
+    { "why": "a legend mode that does not exist", "valid": false, "set": { "layers": [{ "use": "sunlight", "id": "sun", "button": { "legend": "huge" } }] } },
+    { "why": "a credit over 200 characters", "valid": false, "set": { "layers": [{ "use": "sunlight", "id": "sun", "button": { "credit": "Photo xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" } }] } },
+    { "why": "glow strength above 1", "valid": false, "set": { "table": { "width_cm": 100, "height_cm": 60, "glow": { "strength": 2 } } } },
+    { "why": "a palette colour that is not #rrggbb", "valid": false, "set": { "palette": { "slots": { "accent": "orange" } } } },
+    { "why": "a negative cell", "valid": false, "set": { "scene": { "cell_m": -1 } } },
+    { "why": "a layer with no use", "valid": false, "set": { "layers": [{ "id": "sun" }] } },
+    { "why": "two layers with one id", "valid": false, "set": { "layers": [{ "use": "sunlight", "id": "sun" }, { "use": "sunlight", "id": "sun" }] } },
+    { "why": "a ground too large for the app", "valid": false, "set": { "extent": { "width_m": 10000, "height_m": 6000 }, "scene": { "cell_m": 0.5 } } }
+  ]
+}

@@ -87,7 +87,7 @@ const types = declarations();
 if (process.argv.includes('--check')) {
   let current = '';
   try {
-    current = readFileSync(target, 'utf8');
+    current = readFileSync(target, 'utf8').replaceAll('\r\n', '\n'); // CRLF on a Windows checkout
   } catch {
     // Missing: reported below.
   }

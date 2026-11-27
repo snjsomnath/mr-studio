@@ -10,6 +10,7 @@ publish = false
 mrs-engine.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+schemars.workspace = true
 thiserror.workspace = true
 png = "0.18"
 tiny-skia = { version = "0.11", default-features = false, features = ["std", "simd"] }

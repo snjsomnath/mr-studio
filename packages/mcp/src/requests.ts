@@ -125,11 +125,11 @@ export function readDraft(path: string): { title: string; labels: string[]; body
     const i = line.indexOf(':');
     if (i > 0) meta[line.slice(0, i).trim()] = line.slice(i + 1).trim();
   }
-  const parse = (v: string | undefined, fallback: any) => {
+  const parse = <T>(v: string | undefined, fallback: T): T => {
     try {
-      return v ? JSON.parse(v) : fallback;
+      return v ? (JSON.parse(v) as T) : fallback;
     } catch {
-      return v ?? fallback;
+      return (v as T) ?? fallback;
     }
   };
   return { title: String(parse(meta.title, '')), labels: parse(meta.labels, ['module-request']), body: m[2]!, status: meta.status ?? 'draft' };

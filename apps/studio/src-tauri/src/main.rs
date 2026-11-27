@@ -55,7 +55,6 @@ const HOME: &str = "home";
 /// Displays, colour, calibration and updates.
 const LAUNCHER: &str = "launcher";
 /// The Sources page: outside services and their keys (#41). It alone may change them.
-const SOURCES: &str = "sources";
 /// The window where a site is authored: the host's `/edit` page. It may call the few
 /// commands listed in `capabilities/editor.json`.
 const EDITOR: &str = "editor";
@@ -653,21 +652,9 @@ fn open_launcher_at(app: &AppHandle, page: Option<&str>) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Sources and keys (#41) is a page of Settings, opened in place like the others (#593).
 fn open_sources_window(app: &AppHandle) -> anyhow::Result<()> {
-    let window = match app.get_webview_window(SOURCES) {
-        Some(window) => window,
-        None => WebviewWindowBuilder::new(app, SOURCES, WebviewUrl::App("sources.html".into()))
-            .title("MR Studio · Sources")
-            .inner_size(1000.0, 720.0)
-            .min_inner_size(720.0, 520.0)
-            .center()
-            .build()?,
-    };
-    window.set_always_on_top(is_presenting(app))?;
-    window.unminimize()?;
-    window.show()?;
-    window.set_focus()?;
-    Ok(())
+    open_launcher_at(app, Some("sources"))
 }
 
 /// The size File › Settings opens at (#558): where it was last left, else most of the display it

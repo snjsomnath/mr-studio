@@ -7,7 +7,10 @@ import { ARROWS, ICON_NAMES as MARK_ICONS, POINT_SHAPES } from '../../sdk/src/ma
 import { PALETTE_SETS, PALETTE_SLOTS } from '../../sdk/src/palette.ts';
 import { PLACE_MOTION_IDS } from '../../sdk/src/place-motions.ts';
 import { LOOK_DEFAULTS, MOTION_DEFAULTS, MOTIONS_FOR, compileLook, lookLegend } from '../../sdk/src/recipe.ts';
-import { readShapes } from '../../sdk/src/blocks/sources.ts';
+import { readShapes, type GeoJsonCollection } from '../../sdk/src/blocks/sources.ts';
+import type { TableFrame } from '../../sdk/src/blocks/geo.ts';
+import type { LegendItem, RecipeBlock as SdkRecipeBlock } from '../../sdk/src/types.ts';
+import type { CustomLayer, Palette } from './site-types.ts';
 import { resolvePalette } from '../../sdk/src/palette.ts';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -43,7 +46,7 @@ export function checkPaint(value: unknown, nullable = false): string | null {
   if (value === null && nullable) return null;
   if (typeof value === 'string') {
     if (HEX.test(value)) return null;
-    if (value.startsWith('@')) return PALETTE_SLOTS.includes(value.slice(1) as any) ? null : `'${value}' is not a palette slot (${PALETTE_SLOTS.map((s) => `@${s}`).join(', ')})`;
+    if (value.startsWith('@')) return (PALETTE_SLOTS as readonly string[]).includes(value.slice(1)) ? null : `'${value}' is not a palette slot (${PALETTE_SLOTS.map((s) => `@${s}`).join(', ')})`;
     return `'${value}' is not a colour: use a palette slot such as "@accent", "#rrggbb", or { "by": "<column>", "kind": "category" | "number" }`;
   }
   if (value && typeof value === 'object' && !Array.isArray(value)) {
@@ -72,19 +75,19 @@ export function checkIcon(value: unknown): string | null {
 }
 
 /** Checks a recipe's blocks and props against the player. Data and `on` references are checked by the caller. */
-export function checkRecipe(recipe: Record<string, any>, at: string): Issue[] {
+export function checkRecipe(recipe: CustomLayer, at: string): Issue[] {
   const issues: Issue[] = [];
   const err = (path: string, message: string) => issues.push({ level: 'error', path, message });
   const warn = (path: string, message: string) => issues.push({ level: 'warning', path, message });
 
-  if (recipe.icon !== undefined) {
+  if (recipe.icon != null) {
     const why = checkIcon(recipe.icon);
     if (why) warn(`${at}.icon`, why);
   }
-  if (recipe.enter !== undefined && !RECIPE_VOCABULARY.enter.includes(recipe.enter)) err(`${at}.enter`, "is 'cut' or 'fade'");
+  if (recipe.enter != null && !RECIPE_VOCABULARY.enter.includes(recipe.enter)) err(`${at}.enter`, "is 'cut' or 'fade'");
 
   const kinds = new Map<string, Look>();
-  (Array.isArray(recipe.look) ? recipe.look : []).forEach((block: any, n: number) => {
+  (Array.isArray(recipe.look) ? recipe.look : []).forEach((block, n) => {
     const here = `${at}.look[${n}]`;
     if (typeof block?.block !== 'string') return;
     if (block.block === 'raster') return warn(`${here}.block`, "a raster look (a WMS or tile map) is saved, but the recipe player does not draw it yet; show the map with the wms layer instead");
@@ -106,21 +109,21 @@ export function checkRecipe(recipe: Record<string, any>, at: string): Issue[] {
       } else if (key === 'stroke') {
         const why = checkPaint(value, true);
         if (why) err(p, why);
-      } else if (key === 'shape' && !POINT_SHAPES.includes(value as any)) err(p, `is one of ${POINT_SHAPES.join(', ')}`);
+      } else if (key === 'shape' && !(POINT_SHAPES as readonly unknown[]).includes(value)) err(p, `is one of ${POINT_SHAPES.join(', ')}`);
       else if (key === 'icon' && !MARK_ICONS.includes(String(value))) err(p, `'${value}' is not a pictogram; they are ${MARK_ICONS.join(', ')}`);
       else if (key === 'dash' && !RECIPE_VOCABULARY.dash.includes(String(value))) err(p, `is one of ${RECIPE_VOCABULARY.dash.join(', ')}`);
-      else if (key === 'arrows' && !ARROWS.includes(value as any)) err(p, `is one of ${ARROWS.join(', ')}`);
+      else if (key === 'arrows' && !(ARROWS as readonly unknown[]).includes(value)) err(p, `is one of ${ARROWS.join(', ')}`);
       else if (['opacity', 'glow', 'edge_glow'].includes(key) && !(typeof value === 'number' && value >= 0 && value <= 1)) err(p, 'is a number from 0 to 1');
     }
   });
 
-  (Array.isArray(recipe.motion) ? recipe.motion : []).forEach((block: any, n: number) => {
+  (Array.isArray(recipe.motion) ? recipe.motion : []).forEach((block, n) => {
     const here = `${at}.motion[${n}]`;
     if (typeof block?.block !== 'string') return;
     const known = RECIPE_VOCABULARY.motion[block.block];
     if (!known) return err(`${here}.block`, `'${block.block}' is not a motion block; the motions are ${Object.keys(MOTION_DEFAULTS).join(', ')}`);
     const look = typeof block.on === 'string' ? kinds.get(block.on) : undefined;
-    if (look && !MOTIONS_FOR[look].includes(block.block)) err(`${here}.block`, `'${block.block}' does not act on a ${look} look; a ${look} look takes ${MOTIONS_FOR[look].join(', ')}`);
+    if (look && !(MOTIONS_FOR[look] as readonly string[]).includes(block.block)) err(`${here}.block`, `'${block.block}' does not act on a ${look} look; a ${look} look takes ${MOTIONS_FOR[look].join(', ')}`);
     const props = block.props ?? {};
     if (!props || typeof props !== 'object' || Array.isArray(props)) return err(`${here}.props`, 'must be an object');
     if (block.block === 'place') {
@@ -137,7 +140,7 @@ export function checkRecipe(recipe: Record<string, any>, at: string): Issue[] {
 }
 
 /** GeoJSON (or a CSV of points) from a site file, or null when it cannot be read. */
-function readGeo(file: string): any | null {
+function readGeo(file: string): GeoJsonCollection | null {
   try {
     const text = readFileSync(file, 'utf8');
     if (/\.csv$/i.test(file)) {
@@ -148,10 +151,10 @@ function readGeo(file: string): any | null {
       if (lon < 0 || lat < 0) return null;
       return {
         type: 'FeatureCollection',
-        features: rows.map((r) => r.split(',')).map((cells) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [Number(cells[lon]), Number(cells[lat])] }, properties: Object.fromEntries(keys.map((k, i) => [k, cells[i]])) })),
+        features: rows.map((r) => r.split(',')).map((cells) => ({ type: 'Feature' as const, geometry: { type: 'Point', coordinates: [Number(cells[lon]), Number(cells[lat])] }, properties: Object.fromEntries(keys.map((k, i) => [k, cells[i]])) })),
       };
     }
-    const parsed = JSON.parse(text);
+    const parsed = JSON.parse(text) as GeoJsonCollection | null;
     return parsed?.type === 'FeatureCollection' && Array.isArray(parsed.features) ? parsed : null;
   } catch {
     return null;
@@ -164,12 +167,14 @@ function readGeo(file: string): any | null {
  * no look could be read (data missing, a WMS map, or no looks), or when a look is a raster:
  * the table works that legend out from the raster itself (#622).
  */
-export function legendFor(recipe: Record<string, any>, dir: string, siteData: Record<string, unknown> = {}, palette?: unknown): { id: string; label: string; color?: string; shape?: string }[] | null {
-  const data: any[] = Array.isArray(recipe.data) ? recipe.data : [];
-  const frame = { toTable: (c: [number, number]) => c } as any;
-  const blocks: any[] = Array.isArray(recipe.look) ? recipe.look : [];
+export function legendFor(recipe: CustomLayer, dir: string, siteData: Record<string, unknown> = {}, palette?: Palette | null): { id: string; label: string; color?: string; shape?: string }[] | null {
+  const data = Array.isArray(recipe.data) ? recipe.data : [];
+  // Legend rows need only the values, not where they are: positions stay in lon/lat.
+  const frame = { toTable: (c: [number, number]) => c } as TableFrame;
+  // site.json's blocks are the SDK's, with null where the SDK leaves a field out.
+  const blocks = (Array.isArray(recipe.look) ? recipe.look : []) as unknown as SdkRecipeBlock[];
   if (blocks.some((block) => block?.block === 'raster')) return null;
-  const parts: { block: any; rows: any[] }[] = [];
+  const parts: { block: SdkRecipeBlock; rows: LegendItem[] }[] = [];
   for (const block of blocks) {
     if (!block || !(block.block in LOOK_DEFAULTS)) continue;
     const entry = data.find((d) => d?.id === block.data);
@@ -178,12 +183,12 @@ export function legendFor(recipe: Record<string, any>, dir: string, siteData: Re
     const geo = readGeo(join(dir, path));
     if (!geo) continue;
     try {
-      const look = compileLook(block, readShapes(geo, frame), resolvePalette(palette as any), 1);
+      const look = compileLook(block, readShapes(geo, frame), resolvePalette(palette ? { set: palette.set ?? undefined, slots: palette.slots } : null), 1);
       if (look) parts.push({ block, rows: look.legend });
     } catch {
       // A look the player cannot compile gives no swatch; checkRecipe reports why.
     }
   }
   if (!parts.length) return null;
-  return lookLegend(parts).slice(0, 12) as any;
+  return lookLegend(parts).slice(0, 12);
 }

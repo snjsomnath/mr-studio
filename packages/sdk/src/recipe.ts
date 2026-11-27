@@ -406,7 +406,9 @@ export function paintScale(paint: Paint | undefined, rows: readonly Props[], pal
     const n = typeof v === 'number' ? v : Number(v);
     return v === null || v === undefined || v === '' || !Number.isFinite(n) ? null : n;
   };
-  const format = (n: number) => (Math.abs(n) >= 100 ? Math.round(n).toLocaleString('en') : String(Math.round(n * 10) / 10));
+  // Years read as years: 1930, not 1,930 (#592).
+  const years = values.length > 0 && values.every((v) => Number.isInteger(v) && v >= 1000 && v <= 2200);
+  const format = (n: number) => (years ? String(Math.round(n)) : Math.abs(n) >= 100 ? Math.round(n).toLocaleString('en') : String(Math.round(n * 10) / 10));
   const classes = paint.classes ?? 'continuous';
   const mid = paint.mid !== undefined && paint.mid > lo && paint.mid < hi ? paint.mid : undefined;
   if (classes === 'continuous') {

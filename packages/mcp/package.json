@@ -40,7 +40,8 @@
     "build": "node scripts/build.mjs",
     "start": "node dist/mrstudio-mcp.mjs",
     "typecheck": "tsc --noEmit",
-    "test": "node scripts/build.mjs && node --test --experimental-strip-types test/*.test.ts",
+    "test": "node scripts/site-types.mjs --check && node scripts/build.mjs && node --test --experimental-strip-types test/*.test.ts",
+    "site-types": "node scripts/site-types.mjs",
     "bundle": "node scripts/build.mjs && node scripts/pack.mjs"
   },
   "devDependencies": {

@@ -1,0 +1,1326 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/snjsomnath/mr-studio/blob/main/docs/contracts/protocol.schema.json",
+  "title": "SessionState",
+  "description": "The state a view is welcomed with (welcome.state), as the host writes it.",
+  "type": "object",
+  "properties": {
+    "protocol": {
+      "type": "integer",
+      "const": 1
+    },
+    "session": {
+      "$ref": "#/$defs/SessionInfo"
+    },
+    "site": {
+      "$ref": "#/$defs/SiteInfo"
+    },
+    "scene": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "layers": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/LayerState"
+      }
+    },
+    "participants": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Participant"
+      }
+    }
+  },
+  "required": [
+    "protocol",
+    "session",
+    "site",
+    "scene",
+    "layers",
+    "participants"
+  ],
+  "$defs": {
+    "SessionInfo": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "code": {
+          "type": "string"
+        },
+        "port": {
+          "type": "integer",
+          "format": "uint16",
+          "minimum": 0,
+          "maximum": 65535
+        },
+        "join_url": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "What the TV's QR code points at. None when phones cannot reach the host."
+        },
+        "language": {
+          "type": "string",
+          "description": "The language the visitors' screens speak now (#80): `en` or `sv`. The controller\nswitches it; a phone may keep its own."
+        },
+        "sound": {
+          "type": "boolean",
+          "description": "Whether the table's layers may be heard (#282). The controller's sound switch turns it\noff for the session; a new session starts with sound on."
+        },
+        "ribbon": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "The layer whose ribbon the table shows, chosen on the controller when more than one\nopen layer has ribbon panels (#231). None is Auto: the layer turned on last."
+        },
+        "performance": {
+          "type": "boolean",
+          "description": "Whether the table and the controller show their frame meter (#262): frames per second,\nthe worst frame, and what each layer costs. Off when a session starts."
+        },
+        "phones_paused": {
+          "type": "boolean",
+          "description": "Whether the operator paused the phones (#335): they can look but not change the table."
+        },
+        "tables": {
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0,
+          "description": "How many views draw the table and run its layers now (#412). With none, no layer\npublishes its live values and the controller says so."
+        }
+      },
+      "required": [
+        "id",
+        "code",
+        "port",
+        "join_url",
+        "language",
+        "sound",
+        "ribbon",
+        "performance",
+        "phones_paused",
+        "tables"
+      ]
+    },
+    "SiteInfo": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "origin": {
+          "$ref": "#/$defs/LonLat"
+        },
+        "extent": {
+          "$ref": "#/$defs/Extent"
+        },
+        "grid": {
+          "$ref": "#/$defs/Grid"
+        },
+        "corners": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "number",
+              "format": "double"
+            },
+            "minItems": 2,
+            "maxItems": 2
+          },
+          "minItems": 4,
+          "maxItems": 4,
+          "description": "Extent corners in WGS84 `[lon, lat]`: top left, top right, bottom right, bottom left."
+        },
+        "timezone": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "table": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Table"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "basemap": {
+          "$ref": "#/$defs/Basemap"
+        },
+        "branding": {
+          "$ref": "#/$defs/Branding"
+        },
+        "calibration": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TableCalibration"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The calibrated table view, when the site has a `calibration.json`."
+        },
+        "data": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Datasets layers may read, by name, as site-relative paths served under `/site/`.\nHolds the scene's `buildings` and `trees` and everything in the manifest's `data`."
+        },
+        "tv": {
+          "description": "The site's TV dashboard settings (theme, pages), as written. Validated on the TV by `@mrstudio/dashboard`."
+        },
+        "display": {
+          "description": "How the table's surfaces render (#134), as written: `quality` is `draft`, `good` or `best`."
+        },
+        "palette": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Palette"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The table's palette (#93), as written. Surfaces resolve it against the SDK's sets."
+        },
+        "mesh": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MeshInfo"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The 3D model of the site (`scene.mesh`), for the editor to place it again."
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "origin",
+        "extent",
+        "grid",
+        "corners",
+        "timezone",
+        "table",
+        "basemap",
+        "branding",
+        "calibration",
+        "data",
+        "tv"
+      ],
+      "description": "What surfaces need to know about the site."
+    },
+    "LonLat": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "lon": {
+          "type": "number",
+          "format": "double"
+        },
+        "lat": {
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "required": [
+        "lon",
+        "lat"
+      ]
+    },
+    "Extent": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "width_m": {
+          "type": "number",
+          "format": "double"
+        },
+        "height_m": {
+          "type": "number",
+          "format": "double"
+        },
+        "rotation_deg": {
+          "type": "number",
+          "format": "double",
+          "description": "Bearing of the table's \"up\" edge, clockwise from north.",
+          "default": 0.0
+        }
+      },
+      "required": [
+        "width_m",
+        "height_m",
+        "rotation_deg"
+      ]
+    },
+    "Grid": {
+      "type": "object",
+      "properties": {
+        "width": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0,
+          "description": "Number of columns."
+        },
+        "height": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0,
+          "description": "Number of rows."
+        },
+        "cell_m": {
+          "type": "number",
+          "format": "float",
+          "description": "Cell size in metres."
+        },
+        "rotation_deg": {
+          "type": "number",
+          "format": "float",
+          "description": "Compass bearing of the grid's \"up\" direction (towards row 0), clockwise from north."
+        }
+      },
+      "required": [
+        "width",
+        "height",
+        "cell_m",
+        "rotation_deg"
+      ],
+      "description": "The regular grid all engine data lives on. See `docs/contracts/engine.md`."
+    },
+    "Table": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "width_cm": {
+          "type": "number",
+          "format": "double"
+        },
+        "height_cm": {
+          "type": "number",
+          "format": "double"
+        },
+        "tile_cm": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "front": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TableSide"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The edge of the projected image where visitors stand. At-a-glance info goes there first,\nbecause for a viewer at the front the model hides what is projected on the far side."
+        },
+        "ribbons": {
+          "$ref": "#/$defs/Ribbons",
+          "description": "What the projector's blank space around the model shows, per side (present.md, Ribbon)."
+        },
+        "glow": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Glow"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "A soft glow in the projector's blank space in the model's own colours (#476, present.md, Ambient glow)."
+        },
+        "intro": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Intro"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "How the projected table opens when it starts and after the controller's Reset: the layers\nfading in one after another (the default) or the zoom in from the city around it (#446)."
+        }
+      },
+      "required": [
+        "width_cm",
+        "height_cm"
+      ]
+    },
+    "TableSide": {
+      "type": "string",
+      "enum": [
+        "top",
+        "bottom",
+        "left",
+        "right"
+      ],
+      "description": "A side of the projected image."
+    },
+    "Ribbons": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "top": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Ribbon"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "bottom": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Ribbon"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "left": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Ribbon"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "right": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Ribbon"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "Ribbon": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/RibbonMode"
+        },
+        {
+          "$ref": "#/$defs/RibbonSize"
+        }
+      ],
+      "description": "One side's ribbon: `\"off\"`, `\"auto\"` (use the free band when there is one) or a size."
+    },
+    "RibbonMode": {
+      "type": "string",
+      "enum": [
+        "off",
+        "auto"
+      ]
+    },
+    "RibbonSize": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "cm": {
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "required": [
+        "cm"
+      ]
+    },
+    "Glow": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "on": {
+          "type": "boolean",
+          "default": true
+        },
+        "strength": {
+          "type": "number",
+          "format": "double",
+          "description": "0 to 1: how bright the glow is at the model's edge.",
+          "minimum": 0.0,
+          "maximum": 1.0,
+          "default": 0.5
+        },
+        "colours": {
+          "$ref": "#/$defs/GlowColours",
+          "default": "edges"
+        }
+      },
+      "required": [
+        "on",
+        "strength",
+        "colours"
+      ],
+      "description": "The ambient glow around the model: the colours along the model's edges, or one colour for all of it."
+    },
+    "GlowColours": {
+      "oneOf": [
+        {
+          "type": "string",
+          "const": "edges",
+          "description": "Each edge glows in the colours along it."
+        },
+        {
+          "type": "string",
+          "const": "one",
+          "description": "The whole margin glows in the model's dominant colour."
+        }
+      ]
+    },
+    "Intro": {
+      "oneOf": [
+        {
+          "type": "string",
+          "const": "fade",
+          "description": "The layers at rest fade in one after another, bottom first, each part of a layer a moment after the one before."
+        },
+        {
+          "type": "string",
+          "const": "zoom",
+          "description": "The map starts zoomed out over the city around the table and slowly zooms in (#446)."
+        }
+      ],
+      "description": "The projected table's opening (present.md, Opening)."
+    },
+    "Basemap": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "background": {
+          "type": "string",
+          "default": "#0b0e14"
+        },
+        "style": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "A MapLibre style URL, or null for no basemap.",
+          "default": null
+        }
+      },
+      "required": [
+        "background",
+        "style"
+      ]
+    },
+    "Branding": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "title": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "logo": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "welcome": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "The line under the title on the controller's home screen, for visitors (#73)."
+        },
+        "languages": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "The languages visitors can switch between (#80), the first the table starts in:\n`[\"en\", \"sv\"]`. Empty or one language: no switch."
+        },
+        "translations": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "description": "The site's own words in other languages, by language and then by the English text:\n`{ \"sv\": { \"Sample district\": \"Exempelstadsdelen\" } }`. Titles, the welcome line, button\nnames, slide titles and the like. A layer's own words are in its package (`locales/`)."
+        }
+      },
+      "required": [
+        "title",
+        "logo"
+      ]
+    },
+    "TableCalibration": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "center": {
+          "$ref": "#/$defs/LonLat"
+        },
+        "zoom": {
+          "type": "number",
+          "format": "double",
+          "description": "Web map zoom (512 px tiles) at the window size the table was calibrated at."
+        },
+        "bearing": {
+          "type": "number",
+          "format": "double",
+          "description": "Compass bearing of the window's \"up\", clockwise from north."
+        },
+        "window": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WindowSize"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The window size the zoom belongs to. With it, the view survives a change of resolution."
+        }
+      },
+      "required": [
+        "center",
+        "zoom",
+        "bearing"
+      ],
+      "description": "The map view the projector needs for the image to land on the physical model."
+    },
+    "WindowSize": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "width_px": {
+          "type": "number",
+          "format": "double"
+        },
+        "height_px": {
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "required": [
+        "width_px",
+        "height_px"
+      ]
+    },
+    "Palette": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "set": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[a-z0-9-]{1,40}$"
+        },
+        "slots": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "pattern": "^#[0-9a-fA-F]{6}$"
+          },
+          "propertyNames": {
+            "pattern": "^[a-z0-9-]{1,40}$"
+          }
+        }
+      },
+      "description": "The table's palette: one of the built-in sets the SDK knows (`night` when missing) and\nthe slots this table overrides, by slot name, as `#rrggbb`. Layers and custom layers\nrefer to slots (`@accent`, `@cat3`), so changing the palette recolours them all."
+    },
+    "MeshInfo": {
+      "type": "object",
+      "description": "`scene.mesh` as written, and whether the footprints are still raised beside it.",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "An STL (binary or ASCII), OBJ or GLB file."
+        },
+        "up": {
+          "$ref": "#/$defs/Up",
+          "description": "Which of the file's axes points up. CAD and 3D printing use Z, glTF and many modelling tools Y."
+        },
+        "mirror": {
+          "type": "boolean",
+          "description": "Whether the model is a mirror image (its X axis is flipped), as some exports are."
+        },
+        "offset": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "minItems": 2,
+          "maxItems": 2,
+          "description": "A model in map coordinates (#344): this point of the file, in its own units with the\nup axis made Z, is taken as its origin, so the numbers stay small. The anchor is where it lies."
+        },
+        "anchor": {
+          "$ref": "#/$defs/LonLat",
+          "description": "Where the mesh's own origin (0, 0) is, after `offset`."
+        },
+        "unit_m": {
+          "type": "number",
+          "format": "double",
+          "description": "Metres per mesh unit.",
+          "default": 1.0
+        },
+        "bearing_deg": {
+          "type": "number",
+          "format": "double",
+          "description": "Compass bearing of the mesh's +Y axis, clockwise from north. +X is 90 degrees clockwise from +Y.",
+          "default": 0.0
+        },
+        "base_m": {
+          "type": "number",
+          "format": "double",
+          "description": "Elevation of the mesh's z = 0, in the terrain's height datum.",
+          "default": 0.0
+        },
+        "ground_tolerance_m": {
+          "type": "number",
+          "format": "double",
+          "description": "The mesh's ground never matches the terrain exactly. Cells where the mesh is less\nthan this above the terrain stay ground instead of becoming low obstacles.",
+          "default": 1.0
+        },
+        "extrude": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "path",
+        "anchor",
+        "unit_m",
+        "bearing_deg",
+        "base_m",
+        "ground_tolerance_m",
+        "extrude"
+      ]
+    },
+    "Up": {
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "z"
+          ]
+        },
+        {
+          "type": "string",
+          "const": "y",
+          "description": "Y up, Z towards the viewer: read as (x, -z, y)."
+        }
+      ],
+      "description": "The up axis of a mesh file."
+    },
+    "LayerState": {
+      "type": "object",
+      "properties": {
+        "layer": {
+          "type": "string",
+          "description": "The layer package this instance runs."
+        },
+        "active": {
+          "type": "boolean"
+        },
+        "intensity": {
+          "type": "number",
+          "format": "double",
+          "description": "How strongly the layer is drawn on the table, 0 to 2. 1 is as the layer intends."
+        },
+        "params": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "shared": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "button": {
+          "$ref": "#/$defs/LayerButton",
+          "description": "How the site offers the layer on the controller. Empty fields fall back to the layer package."
+        },
+        "hide": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Ids of the controls the controller and phones leave out."
+        },
+        "parent": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "For an item: the layer it belongs to. It has no button and comes on with that layer."
+        },
+        "stack": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint8",
+          "minimum": 0,
+          "maximum": 255,
+          "description": "For an item of a revealing layer (#606): 1 the surface stack, 2 (or none) the stack underneath."
+        },
+        "steps": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Steps"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "How Next moves through the layer, and a sequence's steps, as site.json has them."
+        },
+        "step": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StepState"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Where Next is, while the layer is on: a sequence's current step, or the sub-steps a\nlayer reported (`layer.substeps`)."
+        },
+        "shown_by": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "For the layer a sequence is showing as its current step: that sequence."
+        },
+        "rest": {
+          "type": "boolean",
+          "description": "Part of the map at rest although its package is not a base or ambient layer: a layer\nof the scene that site.json starts on and gives no button, such as a Map data layer\ncolouring the streets (#204). It has no button on the controller and stays on while\nthe button layers open and close."
+        },
+        "selection": {
+          "description": "The entity picked on the table or the controller (#279): `{ set, id }`. Cleared when the layer goes off."
+        },
+        "health": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LayerHealth"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Trouble the table reported while the layer is on (#259): it could not start or lost its\ndata, and is trying again. Absent while it runs as it should. Cleared when it goes off."
+        },
+        "clock": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LayerClock"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The layer's play head (#373), kept here so every view reads the same time. Absent until\nthe table sets one; cleared when the layer goes off."
+        }
+      },
+      "required": [
+        "layer",
+        "active",
+        "intensity",
+        "params",
+        "shared",
+        "button"
+      ]
+    },
+    "LayerButton": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "description": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 200
+        },
+        "icon": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "An icon name from the editor's set, such as `sun` or `route`.",
+          "pattern": "^[a-z0-9-]{1,40}$"
+        },
+        "side": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ButtonSide"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "group": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "The group of buttons it sits in on its rail, such as \"Simulations\".",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "order": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double",
+          "description": "Its place in the rail; lower first. Buttons without one follow the scene order."
+        },
+        "hidden": {
+          "type": "boolean",
+          "description": "Kept off the controller and phones without taking the layer out of the table (#58)."
+        },
+        "credit": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Who made what the layer shows, as one line under its name on the controller (#659),\nsuch as \"Artwork by Vishvi Rajakaruna and Fabio Latino\".",
+          "maxLength": 200
+        },
+        "legend": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LegendMode"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "How the controller shows the layer's legend (#660). Without it, `auto`."
+        }
+      },
+      "description": "The button that opens a layer on the controller: the words and icon the site's\nauthor chose for it, and where on the controller it sits."
+    },
+    "ButtonSide": {
+      "type": "string",
+      "enum": [
+        "left",
+        "right"
+      ]
+    },
+    "LegendMode": {
+      "oneOf": [
+        {
+          "type": "string",
+          "const": "auto",
+          "description": "Every row, in as many columns as it takes to fit the centre without scrolling."
+        },
+        {
+          "type": "string",
+          "const": "full",
+          "description": "Every row, one under the other."
+        },
+        {
+          "type": "string",
+          "const": "compact",
+          "description": "Small swatches in columns, for a long legend."
+        },
+        {
+          "type": "string",
+          "const": "off",
+          "description": "No legend on the controller."
+        }
+      ],
+      "description": "How much of a layer's legend the controller shows (#660)."
+    },
+    "Steps": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StepMode"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "loop": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "After the last step, back to the first."
+        },
+        "reveal": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Reveal"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "What Next does when a step's sub-steps (category reveals, staged builds) are done."
+        },
+        "transition": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StepTransition"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "How a sequence goes from one step to the next, unless a step says otherwise (#43)."
+        },
+        "transition_s": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double",
+          "description": "How long that transition takes."
+        },
+        "sequence": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/SequenceStep"
+          },
+          "description": "The steps of a sequence: other instances shown one after another. Only for layers\nwhose layer.json says `\"sequence\": true`, such as the slideshow."
+        }
+      },
+      "description": "How Next moves through a layer (`docs/contracts/present.md`, Steps)."
+    },
+    "StepMode": {
+      "type": "string",
+      "enum": [
+        "manual",
+        "timed"
+      ]
+    },
+    "Reveal": {
+      "oneOf": [
+        {
+          "type": "string",
+          "const": "stop",
+          "description": "Next stops at the last sub-step; moving on needs Shift+Next (the Chalmers demo)."
+        },
+        {
+          "type": "string",
+          "const": "then-next",
+          "description": "Next moves on to the next step after the last sub-step."
+        }
+      ]
+    },
+    "StepTransition": {
+      "type": "string",
+      "enum": [
+        "cut",
+        "fade",
+        "dip"
+      ],
+      "description": "How a sequence goes from one step to the next (#43). `Fade` cross-fades the two layers;\n`Dip` fades the old one out to the empty map, then the new one in."
+    },
+    "SequenceStep": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "layer": {
+          "type": "string",
+          "description": "The instance id this step shows."
+        },
+        "params": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "Params the instance takes for this step only, such as another hour of the day."
+        },
+        "duration_s": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double",
+          "description": "How long the step stays in timed mode."
+        },
+        "transition": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StepTransition"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "transition_s": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "next": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Reveal"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Overrides the sequence's `reveal` for this step."
+        },
+        "title": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "For the controller's info strip. The table never shows them."
+        },
+        "description": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "source": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "notes": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "What the guide says at this step (#98). Shown on the guide's phone and in the editor,\nnever on the table or the visitors' controller."
+        }
+      },
+      "required": [
+        "layer"
+      ],
+      "description": "One step of a sequence. It shows another instance: a layer of the scene (which keeps its\nown button) or one of the sequence's own items (which exist only inside it)."
+    },
+    "StepState": {
+      "type": "object",
+      "properties": {
+        "index": {
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        },
+        "count": {
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        },
+        "sub": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SubSteps"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "playing": {
+          "type": "boolean",
+          "description": "Moving on by itself: timed mode, or sub-steps played one after another."
+        },
+        "title": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "description": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "source": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "titles": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "For sub-steps: what each one is called, for the controller's legend."
+        }
+      },
+      "required": [
+        "index",
+        "count",
+        "playing"
+      ],
+      "description": "Where Next is in a layer (`docs/contracts/present.md`, Steps). For a sequence, `index`\nand `count` count its steps and `sub` is the shown layer's sub-steps. For any other\nlayer they count its sub-steps: `index` is how many are revealed, 0 to `count`."
+    },
+    "SubSteps": {
+      "type": "object",
+      "properties": {
+        "index": {
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        },
+        "count": {
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "index",
+        "count"
+      ]
+    },
+    "LayerHealth": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "type": "string",
+          "description": "`retrying`: it failed and starts again by itself in `retry_in` seconds. `failed`: it\nfailed and waits for Retry."
+        },
+        "reason": {
+          "type": "string",
+          "description": "What went wrong, in words."
+        },
+        "retry_in": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        }
+      },
+      "required": [
+        "status",
+        "reason"
+      ],
+      "description": "A layer that is on but not running as it should (#259), as the table reported it."
+    },
+    "LayerClock": {
+      "type": "object",
+      "properties": {
+        "value": {
+          "type": "number",
+          "format": "double"
+        },
+        "rate": {
+          "type": "number",
+          "format": "double"
+        },
+        "at": {
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "required": [
+        "value",
+        "rate",
+        "at"
+      ],
+      "description": "Where a layer's time is (#373): `value`, in the units of its `clock` time control, at the\nhost's moment `at` (milliseconds since 1970), moving `rate` units a second (0 when it stands\nstill). A view works out the time now from these, so the table sends a new one only when play\nstarts, stops, jumps or changes pace."
+    },
+    "Participant": {
+      "type": "object",
+      "properties": {
+        "surface": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0,
+          "description": "The surface currently in the slot. It changes when the phone reconnects; the slot does not."
+        },
+        "slot": {
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        },
+        "colour": {
+          "type": "string"
+        },
+        "connected": {
+          "type": "boolean",
+          "description": "False while the slot is held for a phone that dropped."
+        },
+        "avatar": {
+          "type": "string",
+          "description": "One of `AVATARS` (#339)."
+        },
+        "mood": {
+          "type": "string",
+          "description": "One of `MOODS`: with the avatar, the fun name the pages show (\"Sunny Fox\")."
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "The name the visitor gave themselves, instead of the fun name."
+        }
+      },
+      "required": [
+        "surface",
+        "slot",
+        "colour",
+        "connected",
+        "avatar",
+        "mood",
+        "name"
+      ]
+    }
+  }
+}

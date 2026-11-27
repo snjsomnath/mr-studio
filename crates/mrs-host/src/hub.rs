@@ -12,6 +12,7 @@ use std::time::{Duration, Instant};
 
 use mrs_site::history::{By, Change, History, Revision};
 use mrs_site::{is_instance_id, LayerButton, LayerItem, LayerRef, Reveal, Site, SiteError, SiteInfo, StepMode, Steps};
+use schemars::JsonSchema;
 use serde::Serialize;
 use serde_json::{json, Map, Value};
 use tokio::sync::{broadcast, Notify};
@@ -215,7 +216,7 @@ impl Role {
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, JsonSchema)]
 pub struct LayerState {
     /// The layer package this instance runs.
     pub layer: String,
@@ -268,11 +269,41 @@ pub struct LayerState {
 /// host's moment `at` (milliseconds since 1970), moving `rate` units a second (0 when it stands
 /// still). A view works out the time now from these, so the table sends a new one only when play
 /// starts, stops, jumps or changes pace.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, JsonSchema)]
 pub struct LayerClock {
     pub value: f64,
     pub rate: f64,
     pub at: f64,
+}
+
+/// The JSON Schema of the state a view is welcomed with (#538): `state` of the `welcome` message,
+/// with the session, the site, each layer and each phone, as the host writes them. Checked in as
+/// `docs/contracts/protocol.schema.json`; the SDK's tests compare `SessionState` in
+/// `packages/sdk/src/types.ts` with it, so a field renamed on one side alone fails a test.
+pub fn protocol_schema() -> Value {
+    let mut generator = schemars::generate::SchemaSettings::draft2020_12().for_serialize().into_generator();
+    let session = generator.subschema_for::<SessionInfo>();
+    let site = generator.subschema_for::<SiteInfo>();
+    let layer = generator.subschema_for::<LayerState>();
+    let participant = generator.subschema_for::<Participant>();
+    let defs: Map<String, Value> = generator.take_definitions(true).into_iter().collect();
+    json!({
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "https://github.com/snjsomnath/mr-studio/blob/main/docs/contracts/protocol.schema.json",
+        "title": "SessionState",
+        "description": "The state a view is welcomed with (welcome.state), as the host writes it.",
+        "type": "object",
+        "properties": {
+            "protocol": { "type": "integer", "const": PROTOCOL },
+            "session": session,
+            "site": site,
+            "scene": { "type": "array", "items": { "type": "string" } },
+            "layers": { "type": "object", "additionalProperties": layer },
+            "participants": { "type": "array", "items": participant },
+        },
+        "required": ["protocol", "session", "site", "scene", "layers", "participants"],
+        "$defs": defs,
+    })
 }
 
 /// The fastest a play head runs, in its control's units a second.
@@ -284,7 +315,7 @@ pub fn host_millis() -> f64 {
 }
 
 /// A layer that is on but not running as it should (#259), as the table reported it.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, JsonSchema)]
 pub struct LayerHealth {
     /// `retrying`: it failed and starts again by itself in `retry_in` seconds. `failed`: it
     /// failed and waits for Retry.
@@ -301,7 +332,7 @@ const MAX_HEALTH_REASON: usize = 300;
 /// Where Next is in a layer (`docs/contracts/present.md`, Steps). For a sequence, `index`
 /// and `count` count its steps and `sub` is the shown layer's sub-steps. For any other
 /// layer they count its sub-steps: `index` is how many are revealed, 0 to `count`.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, JsonSchema)]
 pub struct StepState {
     pub index: usize,
     pub count: usize,
@@ -323,7 +354,7 @@ pub struct StepState {
     due: Option<Instant>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, JsonSchema)]
 pub struct SubSteps {
     pub index: usize,
     pub count: usize,
@@ -361,7 +392,7 @@ impl StepTo {
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, JsonSchema)]
 pub struct Participant {
     /// The surface currently in the slot. It changes when the phone reconnects; the slot does not.
     pub surface: u64,
@@ -377,7 +408,7 @@ pub struct Participant {
     pub name: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, JsonSchema)]
 pub struct SessionInfo {
     pub id: String,
     pub code: String,
