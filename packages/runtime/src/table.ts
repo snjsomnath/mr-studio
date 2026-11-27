@@ -102,7 +102,7 @@ export class TableView {
         const id = `field:${instance}:${name}`;
         const overlay = new MapFieldOverlay(map, id, this.site, style);
         add(id, overlay);
-        overlay.setGain(drawn.intensity);
+        overlay.setGain(this.shown(instance, drawn));
         overlay.setClip(this.clips.get(instance) ?? null);
         drawn.overlays.add(overlay);
         drawn.fields.add(overlay);
@@ -165,7 +165,7 @@ export class TableView {
         map.addSource(id, { type: 'canvas', canvas: shown, coordinates: this.site.corners, animate: false });
         // The layer's own opacity, which its intensity scales.
         drawn.canvases.set(id, options.opacity ?? 1);
-        add(id, { id, type: 'raster', source: id, paint: { 'raster-opacity': canvasOpacity(options.opacity ?? 1, drawn.intensity), 'raster-fade-duration': 0 } });
+        add(id, { id, type: 'raster', source: id, paint: { 'raster-opacity': canvasOpacity(options.opacity ?? 1, this.shown(instance, drawn)), 'raster-fade-duration': 0 } });
         let removed = false;
         const remove = () => {
           if (removed) return;
@@ -194,7 +194,7 @@ export class TableView {
           setOpacity: (opacity) => {
             if (removed) return;
             drawn.canvases.set(id, opacity);
-            map.setPaintProperty(id, 'raster-opacity', canvasOpacity(opacity, drawn.intensity));
+            map.setPaintProperty(id, 'raster-opacity', canvasOpacity(opacity, this.shown(instance, drawn)));
           },
           remove,
         };
@@ -205,7 +205,7 @@ export class TableView {
         element.className = 'table-decoration';
         element.dataset.layer = instance;
         this.container.append(element);
-        styleElement(element, drawn.intensity);
+        styleElement(element, this.shown(instance, drawn));
         drawn.elements.add(element);
         drawn.clipped.add(element);
         this.clipElement(instance, element);
@@ -218,7 +218,7 @@ export class TableView {
       },
       addCanvas: (id: string, style?: { opacity?: number; top?: boolean }): CanvasOverlay => {
         const overlay = new MapCanvasOverlay(this.map, this.container, `canvas:${instance}:${id}`, this.site, style);
-        overlay.setGain(drawn.intensity);
+        overlay.setGain(this.shown(instance, drawn));
         drawn.overlays.add(overlay);
         drawn.clipped.add(overlay.element);
         drawn.surfaces.add(overlay.element);
@@ -234,7 +234,7 @@ export class TableView {
       addFlow: (id: string, style: FlowOverlayStyle & { colormap: Colormap }): FlowOverlay => {
         const overlay = new MapFlowOverlay(this.map, `flow:${instance}:${id}`, this.site, style);
         add(`flow:${instance}:${id}`, overlay);
-        overlay.setGain(drawn.intensity);
+        overlay.setGain(this.shown(instance, drawn));
         drawn.overlays.add(overlay);
         drawn.flows.add(overlay);
         track(() => {
@@ -249,7 +249,7 @@ export class TableView {
         const name = `sprites:${instance}:${id}`;
         const overlay = new MapSpriteOverlay(this.map, name, this.site, images, style);
         add(name, overlay);
-        overlay.setGain(drawn.intensity);
+        overlay.setGain(this.shown(instance, drawn));
         drawn.overlays.add(overlay);
         drawn.marks.add(overlay);
         track(() => {
@@ -264,7 +264,7 @@ export class TableView {
         const name = `strokes:${instance}:${id}`;
         const overlay = new MapStrokeOverlay(this.map, name, this.site, style);
         add(name, overlay);
-        overlay.setGain(drawn.intensity);
+        overlay.setGain(this.shown(instance, drawn));
         drawn.overlays.add(overlay);
         drawn.marks.add(overlay);
         track(() => {
@@ -292,7 +292,7 @@ export class TableView {
         if (glow) this.glowWishes.set(instance, glow);
       },
       addShapes: (name: string, style?: { opacity?: number }): ShapeOverlay => {
-        const overlay = this.shapes(`shapes:${instance}:${name}`, style?.opacity ?? 1, add, forget, drawn.intensity);
+        const overlay = this.shapes(`shapes:${instance}:${name}`, style?.opacity ?? 1, add, forget, this.shown(instance, drawn));
         drawn.overlays.add(overlay);
         track(() => {
           drawn.overlays.delete(overlay);
@@ -445,10 +445,33 @@ export class TableView {
   setIntensity(instance: string, intensity: number): void {
     const drawn = this.drawnBy(instance);
     drawn.intensity = intensity;
-    for (const overlay of drawn.overlays) overlay.setGain(intensity);
-    for (const element of drawn.elements) styleElement(element, intensity);
-    for (const [id, opacity] of drawn.canvases) this.map.setPaintProperty(id, 'raster-opacity', canvasOpacity(opacity, intensity));
-    this.model?.setIntensity(instance, intensity);
+    this.applyGains(instance, drawn);
+  }
+
+  /**
+   * Puts a layer's intensity on each thing it has drawn. While the opening fade brings the layer
+   * in, each part has its own share of it: the first part a layer drew comes first, the next a
+   * moment later, so the base map's ground, water, streets and buildings appear one after another.
+   */
+  private applyGains(instance: string, drawn: Drawn): void {
+    let part = 0;
+    for (const overlay of drawn.overlays) overlay.setGain(this.shown(instance, drawn, part++));
+    for (const [id, opacity] of drawn.canvases) this.map.setPaintProperty(id, 'raster-opacity', canvasOpacity(opacity, this.shown(instance, drawn, part++)));
+    for (const element of drawn.elements) styleElement(element, this.shown(instance, drawn, part++));
+    this.model?.setIntensity(instance, this.shown(instance, drawn, 0));
+  }
+
+  /**
+   * A layer's intensity as its part number `part` shows it: lower while the opening fade brings
+   * the layer in. Without `part`, the part the layer draws next.
+   */
+  private shown(instance: string, drawn: Drawn, part = drawn.overlays.size + drawn.canvases.size + drawn.elements.size): number {
+    const fade = this.fading;
+    if (!fade) return drawn.intensity;
+    const rank = fade.ranks.get(instance);
+    if (rank === undefined) return drawn.intensity;
+    const progress = (performance.now() - fade.start - FADE_HOLD_MS - rank * FADE_LAYER_GAP_MS) / FADE_LAYER_MS;
+    return drawn.intensity * partShare(progress, part);
   }
 
   private drawnBy(instance: string) {
@@ -640,7 +663,7 @@ export class TableView {
     try {
       this.model = await ModelView.create(this.container, this.site, this.map);
       this.model.setQuality(this.quality);
-      for (const [layer, drawn] of this.drawn) this.model.setIntensity(layer, drawn.intensity);
+      for (const [layer, drawn] of this.drawn) this.model.setIntensity(layer, this.shown(layer, drawn, 0));
     } catch (error) {
       console.warn('model surface is off; the table stays flat:', (error as Error).message);
     }
@@ -872,6 +895,49 @@ export class TableView {
     };
   }
 
+  /**
+   * The opening fade, the table's default opening (present.md, Opening): the table starts empty
+   * on its background and the layers at rest come in one after another, the bottom one first.
+   * Within a layer each part it drew comes a moment after the one before, so the base map's
+   * ground, water, streets and buildings build up in turn. The ribbons and the ambient glow come
+   * last. It plays when the table starts and when the controller's Reset puts the table back.
+   * `layers` are the layers at rest in stacking order, bottom first; a layer opened while it plays
+   * shows at once.
+   */
+  playFade(layers: readonly string[]): void {
+    this.endIntro();
+    const start = performance.now();
+    const fade = { start, ranks: new Map(layers.map((id, rank) => [id, rank])), frame: 0, end: start + FADE_HOLD_MS + Math.max(0, layers.length - 1) * FADE_LAYER_GAP_MS + FADE_LAYER_MS };
+    this.fading = fade;
+    this.container.classList.add('is-fading-in');
+    const apply = () => {
+      for (const id of fade.ranks.keys()) {
+        const drawn = this.drawn.get(id);
+        if (drawn) this.applyGains(id, drawn);
+      }
+    };
+    const finish = () => {
+      cancelAnimationFrame(fade.frame);
+      if (this.fading !== fade) return;
+      this.fading = null;
+      apply();
+      this.container.classList.remove('is-fading-in');
+      for (const element of this.container.querySelectorAll<HTMLElement>('.table-ribbon, .table-glow')) {
+        element.animate([{ opacity: 0 }, { opacity: 1 }], { duration: FADE_MARGIN_MS, easing: 'ease-out', fill: 'backwards' });
+      }
+    };
+    const tick = () => {
+      if (this.fading !== fade) return;
+      if (performance.now() >= fade.end) return finish();
+      apply();
+      fade.frame = requestAnimationFrame(tick);
+    };
+    tick();
+    this.cancelIntro = finish;
+  }
+
+  /** While the opening fade plays: when it started, each layer's place in it, and when it ends. */
+  private fading: { start: number; ranks: Map<string, number>; frame: number; end: number } | null = null;
   private cancelIntro: (() => void) | null = null;
   private viewListeners = new Set<() => void>();
 
@@ -893,6 +959,26 @@ const INTRO_ZOOM_OUT = 2;
 const INTRO_HOLD_MS = 900;
 const INTRO_MS = 6500;
 const easeInOutCubic = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2);
+
+/** The opening fade: how long the table stays empty, how far apart the layers start, and how long each takes. */
+const FADE_HOLD_MS = 600;
+const FADE_LAYER_GAP_MS = 850;
+const FADE_LAYER_MS = 3000;
+/** How long the ribbons and the ambient glow take to come in once the layers are in. */
+const FADE_MARGIN_MS = 1200;
+/** Where in its layer's fade each part starts: a step later than the part before, the last ones together. */
+const FADE_PART_STEP = 0.12;
+const FADE_PART_LAST = 0.6;
+
+/**
+ * How much of part `part` of a layer shows when the layer's fade is at `progress` (0 to 1, and
+ * beyond): 0 before its turn, easing to 1, and every part fully in when the layer's fade ends.
+ */
+export function partShare(progress: number, part: number): number {
+  const from = Math.min(part * FADE_PART_STEP, FADE_PART_LAST);
+  const t = Math.min(1, Math.max(0, (progress - from) / (1 - FADE_PART_LAST)));
+  return t * t * (3 - 2 * t);
+}
 
 interface Drawn {
   overlays: Set<{ setGain(gain: number): void }>;

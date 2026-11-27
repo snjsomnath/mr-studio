@@ -1193,7 +1193,7 @@ mod tests {
     fn ribbons_follow_the_runtime_rules() {
         let mut site = sample();
         site.manifest.table =
-            Some(crate::Table { width_cm: 100.0, height_cm: 60.0, tile_cm: None, front: None, ribbons: Default::default(), glow: None });
+            Some(crate::Table { width_cm: 100.0, height_cm: 60.0, tile_cm: None, front: None, ribbons: Default::default(), glow: None, intro: None });
         let area = rect(-5.0, -5.0, 110.0, 80.0);
         // Only the front (bottom) is auto; 15 cm free below, so it gets the full 9 cm.
         let bands = ribbon_bands(&site, (100.0, 60.0), &area, false);

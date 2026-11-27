@@ -2083,6 +2083,15 @@ impl Hub {
                             };
                             changed.push("ambient glow");
                         }
+                        // How the table opens: the layers fading in (the default, also for null) or the zoom in.
+                        "intro" => {
+                            t.intro = if value.is_null() {
+                                None
+                            } else {
+                                Some(serde_json::from_value(value.clone()).map_err(|_| "the opening is fade or zoom".to_string())?)
+                            };
+                            changed.push("opening");
+                        }
                         other => return Err(format!("'{other}' is not a table setting here; the size and tiles change with the place")),
                     }
                 }
@@ -4081,6 +4090,18 @@ mod tests {
         assert!(dev("site.table", json!({ "table": { "glow": { "colours": "rainbow" } } })).is_err());
         dev("site.table", json!({ "table": { "glow": null } })).unwrap();
         assert!(hub.site().table.unwrap().glow.is_none());
+    }
+
+    #[test]
+    fn the_opening_is_a_table_setting() {
+        let hub = scratch_hub("table-intro");
+        let dev = |method: &str, p: Value| hub.request(Role::Dev, 0, method, &p);
+        assert_eq!(hub.site().table.unwrap().intro, None, "a table without the setting fades in");
+        dev("site.table", json!({ "table": { "intro": "zoom" } })).unwrap();
+        assert_eq!(Site::load(&hub.site.dir).unwrap().manifest.table.unwrap().intro, Some(mrs_site::Intro::Zoom));
+        assert!(dev("site.table", json!({ "table": { "intro": "spin" } })).is_err());
+        dev("site.table", json!({ "table": { "intro": null } })).unwrap();
+        assert_eq!(hub.site().table.unwrap().intro, None);
     }
 
     #[test]
