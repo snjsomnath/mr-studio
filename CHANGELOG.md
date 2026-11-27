@@ -4,6 +4,100 @@ Every merge to main that carries a release note becomes a version. The newest is
 The app shows these notes, with their pictures, on Home when a newer version is out.
 How notes are written: docs/RELEASING.md.
 
+## 0.57.0 (2026-11-27)
+
+### New
+
+#### A credit line under a layer's name, and a Legend setting (#659, #660)
+
+A layer button can carry a credit line, such as "Artwork by …", shown in small type under the layer's name on the controller (Credit line, under the layer button in the editor).
+
+Each layer also has a Legend setting: Auto (the default), Full, Compact or Off. In Auto, a legend that would make the controller scroll switches to small swatches in columns. When a legend still does not fit, the editor's status bar says so and how to fix it.
+
+![A credit line under the layer's name](docs/screenshots/659-credit-line.png)
+
+![Full (left) and Auto (right) on a 46" controller](docs/screenshots/660-legend-fits.png)
+
+![The editor says when a legend does not fit](docs/screenshots/660-legend-warning.png)
+
+#### A magnifying glass inside a drawing, on one button (#658)
+
+A Magnifier (or a Reveal line) can now sit inside another layer, such as a Masterplan drawing, and opens with it: the table shows the drawing with the glass over it, and the controller shows the glass and its navigator under the drawing's step strip. This is how the Lindholmen artwork worked on the original table, now built from the existing layers.
+
+![A sample drawing with a glass inside it: the table (left) and the controller (right)](docs/screenshots/658-glass-inside-drawing.png)
+
+#### Sources and keys is a page of Settings, and Settings is in one menu (#593)
+
+Sources and keys now opens inside Settings like every other page, from Settings itself, from Home and from the editor. Settings… is only in the File menu, on a Mac too (⌘,). Opening Settings at a page from the editor (Present › Screens and calibration…) now lands on that page the first time too.
+
+What's new on Home shows changes for the people who make and run tables. Release notes for layer writers go under For developers in the full notes, and the tiles' pictures load straight away.
+
+![Sources and keys inside Settings](docs/screenshots/593-sources-in-settings.png)
+
+#### Sun study plays without stalls, and a speed button (#652, #661)
+
+While the day plays, the shadows are worked out at a quarter of the pixels, so the studio PC no longer stalls between frames; they sharpen again the moment it stops. A winter day and night in Gothenburg now take about 13 seconds instead of 33: night and the low winter sun pass faster. A new speed button above play (and a Speed setting on the layer) picks ½×, 1×, 2× or 4×.
+
+On Windows, MR Studio now asks for the fast graphics card on laptops with two, so the projector on the NVIDIA output draws without flicker.
+
+![The speed button above play](docs/screenshots/661-play-speed.png)
+
+#### Calibrate with the points where the model's tiles meet (#651)
+
+On a table built from tiles (`table.tile_cm`, 20 cm at Chalmers and Lindholmen), calibration now also offers the points where four tiles meet, after the base and roof corners. They are exact on the physical table and spread over all of it, so the projector is fitted across the whole surface, not only where the buildings are. Crossings under a building are left out, and the plan on the controller shows the tile seams.
+
+![A tile crossing to calibrate against, with the seams on the plan](docs/screenshots/651-tile-crossings.png)
+
+### Fixes
+
+#### "Projector is not calibrated" goes away once you calibrate (#657)
+
+The Ready to present list now reads the projector calibration that MR Studio 2.0 saves, and clears the warning as soon as a calibration is saved, without a reload.
+
+![Ready to present with a projector calibration: no calibration warning](docs/screenshots/657-calibrated-checks.png)
+
+#### The controller map of a custom layer matches the table (#654)
+
+A custom layer's small map on the controller drew every data file as blue dots, also data the layer only uses for clicks. It now draws only what the layer's looks draw, in their colours.
+
+![Before (above) and after (below)](docs/screenshots/654-controller-map-colours.png)
+
+#### Drawn layers line up with the model through the projector (#650)
+
+Layers drawn on a 2D canvas (custom layers such as Campus growth and Under Chalmers, Isovist's highlight, the table grid) now go through the projector calibration, as the base map and buildings already did. Before, they stayed where the flat map would put them, about 10 px off the model.
+
+![Before and after: a custom layer's footprints through a projector calibration](docs/screenshots/650-overlays-follow-projector.png)
+
+#### Pause stops the time at once (#403)
+
+On a slow table, the time on the controller kept running for seconds after Pause, and a time picked right after could be lost. Now Pause stops the time on every screen at once, at the time shown when it was pressed, and the table follows that time.
+
+![The controller's clock after Pause, before and after](docs/screenshots/403-pause-holds.png)
+
+#### A tour of layers starts from the map, and year legends read as years (#592)
+
+A slideshow whose first step is a layer (such as the Feature Showcase) no longer blanks the base map while that layer starts: the map stays until the step turns out to be a picture or video. Legends of years now say 1930 – 1962, not 1,930 – 1,962. The controller's small map of a custom layer already uses the table's colours (#654).
+
+![Campus growth by year: the table (left) and the controller (right) in the same colours](docs/screenshots/592-growth-colours.png)
+
+#### Closing the editor while presenting asks "Stop presenting too?" (#656)
+
+Closing the editor window while the table is presenting now asks whether to stop presenting too, keep presenting, or cancel. Before, the table kept presenting with no editor to stop it.
+
+#### Pause on the TV works when another window covers it (#655)
+
+On Windows a covered window stops drawing, and the controller's settings waited for the next drawn frame, so Pause (and other controls) on the TV never reached the table. They are now sent within 50 ms whether the window draws or not, and MR Studio asks Windows not to pause its windows when covered.
+
+![Pause on the TV reaches the table](docs/screenshots/655-tv-pause.png)
+
+### For developers
+
+#### One set of rules for site.json, shared by the app and the MCP server (#537)
+
+`docs/contracts/site.schema.json` is the JSON Schema of site.json, written by the app from its own types, with the limits it checks (button name, description and credit lengths, glow strength, palette names and colours). The MCP server checks sites against it in place of its own copy of the keys, so it now says exactly which key is wrong and what type it should be. A shared set of example sites (`crates/mrs-site/tests/fixtures/verdicts.json`) runs in both test suites; it found three rules the MCP server didn't have (credit length, glow strength, palette colours) and two it was softer on (the table's aspect is an error above 2%, as in the app, and a ground too large for the app is an error).
+
+![The MCP server pointing at the exact key](docs/screenshots/537-site-schema.png)
+
 ## 0.56.0 (2026-11-27)
 
 ### New

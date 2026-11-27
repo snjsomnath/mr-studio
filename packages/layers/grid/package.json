@@ -1,6 +1,6 @@
 {
   "name": "@mrstudio/layer-grid",
-  "version": "0.56.0",
+  "version": "0.57.0",
   "license": "SEE LICENSE IN ../../../LICENSE",
   "private": true,
   "type": "module",
