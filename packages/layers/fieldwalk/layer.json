@@ -40,5 +40,15 @@
     { "id": "saved", "type": "range", "label": "Walk saved at", "min": 0, "max": 1000000000, "step": 1, "default": 0, "tier": "state", "help": "The walk's revision when it was last saved as data, so the controller can say it is saved." }
   ],
   "actions": [{ "id": "remove", "label": "Remove this spot" }, { "id": "save", "label": "Save the walk as data" }, { "id": "clear", "label": "Clear the walk" }],
+  "dialogs": [
+    {
+      "id": "design",
+      "label": "Design the walk",
+      "lead": "What visitors pick and say at each spot, and what it takes. The phone beside it shows what they get.",
+      "controls": ["kinds", "feeling", "media"],
+      "actions": ["save"],
+      "preview": "phone-spot"
+    }
+  ],
   "tools": []
 }

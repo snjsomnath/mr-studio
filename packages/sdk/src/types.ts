@@ -199,6 +199,21 @@ export interface EntityChange {
 /** Palette groups in the scene composer. */
 export type LayerCategory = 'base' | 'ambient' | 'analysis' | 'media';
 
+/** A dialog of a layer's settings in the editor (#644), opened from a button in its settings. */
+export interface LayerDialog {
+  id: string;
+  /** The button and the dialog's title, such as "Design the walk". */
+  label: string;
+  /** A line under the title. */
+  lead?: string;
+  /** The ids of the controls it holds, in order. */
+  controls: string[];
+  /** Named actions (`actions` in layer.json) it offers as buttons, such as saving. */
+  actions?: string[];
+  /** A live preview beside the controls: `phone-spot` is the phone's Mark a spot sheet. */
+  preview?: 'phone-spot';
+}
+
 export interface LayerManifest {
   api: number;
   id: string;
@@ -238,6 +253,12 @@ export interface LayerManifest {
   panels?: PanelSpec[];
   /** The layer is a sequence: its instances may have `steps.sequence` that show other layers (the slideshow). */
   sequence?: boolean;
+  /**
+   * Larger panels for the editor (#644): a button in the layer's settings opens a dialog with these
+   * controls and actions, so settings that need room (a walk's design) get it. In the editor they live
+   * only there; the controller lists them as usual.
+   */
+  dialogs?: LayerDialog[];
   /** The layer reveals its items through a shape it sets with `ctx.reveal` (the Magnifier, the Reveal line, #287). Default false. */
   reveals?: boolean;
   /**

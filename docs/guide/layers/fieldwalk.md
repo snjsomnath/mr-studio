@@ -22,11 +22,13 @@ Bringing what a group saw and heard outside back into the room, so people talk a
 
 ## Design the walk
 
-Under **More settings** on the controller (or in the editor), the walk designer sets what a spot asks for (#628):
+In the editor, select **Field walk** and press **Design the walk…** in its settings (#644). The dialog sets what a spot asks for (#628), beside a phone showing what visitors will get, and has **Save the walk as data**. On the controller the same settings are under **More settings**.
 
 - **Kinds to pick from**: a comma-separated list, such as `Rain garden, Drain, Puddle`. Each phone shows them as chips and a spot needs one. Left empty, visitors don't pick a kind.
 - **Ask how they feel**: a row of five faces, from 😣 (don't like it) to 😍 (love it). A spot needs one.
 - **What a spot takes**: a photo or a sound, only a photo, only a sound, or neither. With neither, a spot is just its place, kind and feeling, which is quick to make on a big walk.
+
+![Design the walk, in the editor](docs/screenshots/644-dialog.png)
 
 ![The phone, with kinds and feelings](docs/screenshots/628-phone-sheet.png)
 
