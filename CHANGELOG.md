@@ -4,6 +4,55 @@ Every merge to main that carries a release note becomes a version. The newest is
 The app shows these notes, with their pictures, on Home when a newer version is out.
 How notes are written: docs/RELEASING.md.
 
+## 0.54.0 (2026-11-27)
+
+### New
+
+#### The table opens with its layers fading in one by one (#615)
+
+When the table starts, and after Reset on the controller, it now begins dark and its layers come up one after another: the base map first, then the layers on at rest, the ribbons last. The zoom in from the city around it is still there as the other choice, in Design › Table size and place › Opening.
+
+![The opening fade at 1.5, 2.8, 4.2 and 9 seconds: the ground and buildings first, then the trees and the sun study](docs/screenshots/615-intro-fade.png)
+
+#### Street life can play a street sound (#616)
+
+Street life has a Street sound setting (under More) that loops one of the table's sounds, such as a city recording, while the table is at rest. It eases in and out with the street life, and the controller's sound switch mutes it.
+
+### Fixes
+
+#### A new session starts a new field walk (#627)
+
+A field walk now lasts one session. While the table runs, phones and the table keep every spot; when the table starts again, the walk starts empty on the table and on every phone, so last time's photos no longer come back. Visitors can delete their own spots with ×, also once they are on the table, and a spot the guide removes goes from the phone too.
+
+![A phone's field walk card, with × on spots already on the table](docs/screenshots/627-phone.png)
+
+#### The golden hour starts again without a jump (#402)
+
+After the blue hour's pause, the sun now climbs smoothly back to the top of the golden hour over a couple of seconds, instead of jumping there in one frame.
+
+#### Custom layers show their legend, one heading per colour scale (#622, #637)
+
+A custom layer written by hand, by the MCP or from the command line had no legend on the
+controller, because only the editor saved one. The table now works the legend out from the
+layer's looks, rasters included, whenever the layer has none of its own. When a layer has more
+than one colour scale, such as Dig's soil depth and rock surface, each scale gets its own
+heading. A look's `legend` prop names its heading.
+
+![Two raster scales and a soil scale, each under its heading](docs/screenshots/622-legend-groups.png)
+
+An X-ray glass or a Reveal line has no legend of its own, so it now shows its items' legends,
+each under the item's name: the surface stack and the stack underneath.
+
+![A Reveal line's two stacks, each with its legend](docs/screenshots/637-reveal-line-legend.png)
+
+#### On a Mac, screens show their real names, and Show numbers lands on each screen (#611, #612)
+
+The screen lists now show each display's own name from macOS, such as "EPSON PJ" or "LG TV", where they used to say only "External display". That lets the app tell the projector from the TV when it picks screens itself. A screen more than a metre across that gives no telling name counts as a TV (#612). Show numbers now puts each number on its own screen, where before every number appeared on the built-in display next to a TV and a projector (#611).
+
+#### A masterplan drawing copied in by hand plays its phases (#617)
+
+A plan drawing put in the table folder without Add data used to show all at once, with no steps, because its groups were never marked as phases. The table now marks it the way Add data does the first time the layer opens, and keeps the file as it was beside it as `<name>.original.svg`.
+
 ## 0.53.0 (2026-11-27)
 
 ### New
