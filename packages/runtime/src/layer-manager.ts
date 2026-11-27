@@ -580,6 +580,7 @@ export class LayerManager {
     };
     const published: Record<string, unknown> = {};
     const { store, engine } = this;
+    const itemsOf = (parent: string) => this.itemsOf(parent);
     let edited = false;
     const extras: Omit<TableContext, keyof Base> = {
       engine: {
@@ -639,6 +640,12 @@ export class LayerManager {
           this.revealItem(id, index, shape);
         },
       },
+      get items() {
+        return itemsOf(id).map((item) => {
+          const state = store.state.layers[item];
+          return { id: item, use: state?.layer ?? '', active: Boolean(state?.active) };
+        });
+      },
       onFrame: (callback) => running.frames.push(callback),
       onCleanup: track,
     };
@@ -666,7 +673,9 @@ export class LayerManager {
         this.connection.request('layer.clock', { layer: id, value, rate }).catch(() => {});
       },
     };
-    const ctx: TableContext = Object.assign(Object.create(baseContext(store, this.connection, id)), extras, { clock });
+    // Descriptors, not Object.assign, so getters such as `items` stay live.
+    const ctx = Object.create(baseContext(store, this.connection, id)) as TableContext;
+    Object.defineProperties(ctx, { ...Object.getOwnPropertyDescriptors(extras), ...Object.getOwnPropertyDescriptors({ clock }) });
     const before = { ...store.layer(id).params };
     this.starting.set(id, null);
     try {

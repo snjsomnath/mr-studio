@@ -831,7 +831,7 @@ function drawLines(view: View, paths: readonly Path[], o: LinesDraw): void {
         pen.lineWidth = width + 2 * Math.max(1, o.px(1.5));
       } else if (pass === 'glow') {
         pen.setLineDash([]);
-        pen.strokeStyle = css(colour, alpha * 0.22 * o.props.glow + 0.04);
+        pen.strokeStyle = css(colour, alpha * (0.22 * o.props.glow + 0.04));
         pen.lineWidth = width * (2 + 4 * o.props.glow);
       } else {
         const lineDash = flowDash && o.flow ? flowDash : dash;
