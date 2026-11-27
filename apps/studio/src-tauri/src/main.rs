@@ -10,6 +10,8 @@
 
 mod cli_tool;
 mod colour;
+#[cfg(test)]
+mod command_permissions;
 mod config;
 mod diagnostics;
 mod file_menu;
