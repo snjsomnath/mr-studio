@@ -6,11 +6,12 @@ import { formatHour, formatUnit } from '@mrstudio/sdk';
 import type { PanelContext, PanelHandlers } from '@mrstudio/sdk';
 
 import { goldenWindows, sunAt, sunDay } from './look.ts';
+import { PLAY_SPEEDS } from './pace.ts';
 import type { SunDay } from './look.ts';
 import type { SpotDay } from './spot.ts';
 import { nearestTrail, trailCss, trailHours } from './trails.ts';
 
-type Params = { mode: string; date: string; hour: number; play: boolean; trails?: boolean; golden?: string };
+type Params = { mode: string; date: string; hour: number; play: boolean; speed?: string; trails?: boolean; golden?: string };
 
 /** Shadows at a moment, plain or in the golden hour (#363): both have a time to scrub. */
 const atMoment = (mode: string) => mode === 'instant' || mode === 'golden';
@@ -47,6 +48,10 @@ const STYLE = `
   background: linear-gradient(#ffd97a, #ffc23d); color: #1c1505; box-shadow: 0 0.375rem 1.125rem rgb(255 194 61 / 0.35); }
 .sun-hero-play svg { position: static; width: 1.625rem; height: 1.625rem; }
 .sun-hero-play:focus-visible { outline: 3px solid #fff; outline-offset: 3px; }
+.sun-hero-speed { position: absolute; left: 2.5rem; bottom: 5.75rem; width: 3.5rem; height: 2rem; padding: 0; border-radius: 1rem; cursor: pointer;
+  border: 1px solid rgb(255 217 122 / 0.7); background: rgb(10 13 20 / 0.55); color: #ffd97a; font-family: inherit; font-size: 1rem; font-weight: 600; font-variant-numeric: tabular-nums;
+  backdrop-filter: blur(0.375rem); -webkit-backdrop-filter: blur(0.375rem); }
+.sun-hero-speed:focus-visible { outline: 3px solid #fff; outline-offset: 2px; }
 `;
 
 function node<K extends keyof SVGElementTagNameMap>(name: K, attrs: Record<string, string | number>, parent: Element): SVGElementTagNameMap[K] {
@@ -119,7 +124,11 @@ export function sunlightHero(ctx: PanelContext<Params>, el: HTMLElement): PanelH
   const play = document.createElement('button');
   play.type = 'button';
   play.className = 'sun-hero-play';
-  root.append(clock, facts, band, play);
+  // How fast the day plays (#661): a tap steps through the speeds, beside the play button.
+  const speed = document.createElement('button');
+  speed.type = 'button';
+  speed.className = 'sun-hero-speed';
+  root.append(clock, facts, band, play, speed);
   const scrub = node('svg', {}, band);
 
   let day: SunDay | null = null;
@@ -284,6 +293,11 @@ export function sunlightHero(ctx: PanelContext<Params>, el: HTMLElement): PanelH
     height.textContent = now.altitude > 0 ? `${Math.round(now.altitude)}°` : ctx.say('Below');
     from.textContent = ctx.say(COMPASS[Math.round((((now.azimuth % 360) + 360) % 360) / 45) % 8]!);
     play.hidden = !instant;
+    speed.hidden = !instant;
+    const pace = Number(ctx.params.speed) > 0 ? Number(ctx.params.speed) : 1;
+    speed.textContent = `${pace === 0.5 ? '½' : pace}×`;
+    speed.setAttribute('aria-label', ctx.say('Play speed'));
+    speed.title = ctx.say('Play speed');
     play.setAttribute('aria-label', ctx.params.play ? ctx.say('Pause the day') : ctx.say('Animate the day'));
     play.innerHTML = ctx.params.play
       ? '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z"/></svg>'
@@ -298,7 +312,7 @@ export function sunlightHero(ctx: PanelContext<Params>, el: HTMLElement): PanelH
   // Drag anywhere on the sky or the band to set the time, to the nearest five minutes.
   const toHour = (event: PointerEvent) => Math.round(scale().hour(event.clientX - root.getBoundingClientRect().left) * 12) / 12;
   root.addEventListener('pointerdown', (event) => {
-    if (!atMoment(ctx.params.mode) || (event.target as Element).closest('.sun-hero-play')) return;
+    if (!atMoment(ctx.params.mode) || (event.target as Element).closest('.sun-hero-play, .sun-hero-speed')) return;
     root.setPointerCapture(event.pointerId);
     dragged = toHour(event);
     ctx.setParams({ hour: dragged, play: false });
@@ -322,6 +336,11 @@ export function sunlightHero(ctx: PanelContext<Params>, el: HTMLElement): PanelH
     ctx.setParams({ hour: Math.min(24, Math.max(0, (ctx.clock.now() ?? ctx.params.hour) + step)) });
   });
   play.addEventListener('click', () => ctx.setParams({ play: !ctx.params.play }));
+  speed.addEventListener('click', () => {
+    const now = Number(ctx.params.speed) > 0 ? Number(ctx.params.speed) : 1;
+    const next = PLAY_SPEEDS[(PLAY_SPEEDS.indexOf(now) + 1) % PLAY_SPEEDS.length] ?? 1;
+    ctx.setParams({ speed: String(next) });
+  });
 
   const resize = new ResizeObserver(() => draw());
   resize.observe(root);

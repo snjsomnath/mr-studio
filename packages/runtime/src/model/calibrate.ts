@@ -490,6 +490,28 @@ export class CalibrationTool {
         g.fill();
       }
     }
+    // The model's tile seams (#651), so a crossing on the plan reads as one on the table.
+    const table = this.site.table;
+    if (table?.tile_cm && table.width_cm && table.height_cm) {
+      const across = Math.round(table.width_cm / table.tile_cm);
+      const down = Math.round(table.height_cm / table.tile_cm);
+      const [left, top] = [PLAN_MARGIN, PLAN_MARGIN];
+      const [w, h] = [width_m * scale, height_m * scale];
+      g.strokeStyle = 'rgba(160, 176, 204, 0.35)';
+      g.lineWidth = 1;
+      g.setLineDash([3, 3]);
+      g.beginPath();
+      for (let i = 1; i < across; i++) {
+        g.moveTo(left + (i * w) / across, top);
+        g.lineTo(left + (i * w) / across, top + h);
+      }
+      for (let j = 1; j < down; j++) {
+        g.moveTo(left, top + (j * h) / down);
+        g.lineTo(left + w, top + (j * h) / down);
+      }
+      g.stroke();
+      g.setLineDash([]);
+    }
     this.targets.forEach((t, index) => {
       if (index === this.current) return;
       const [x, y] = xy(t.point[0], t.point[1]);

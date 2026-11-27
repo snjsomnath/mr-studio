@@ -26,6 +26,14 @@ import { contextMenu, renameInline, typing } from './tree-tools.ts';
 import { CanvasTools } from './canvas-tools.ts';
 import { fitRibbon } from './ribbon-fit.ts';
 import type { RailFit } from '../rail-fit.ts';
+
+/** The controller's word that an open layer's controls scroll because of its legend (#660). */
+interface LegendFit {
+  type: 'mrs-legend-fit';
+  layer: string;
+  scrolls: boolean;
+  mode: string;
+}
 import { FIRST_TAB, RIBBON } from './layout.ts';
 import type { WidgetId } from './layout.ts';
 import { columns, drawTab, menuItem, ribbonGroup, searchable } from './ribbon-layout.ts';
@@ -263,6 +271,8 @@ export class Editor {
   private resumeStep: number | null = null;
   /** While held, a change of site waits to reload the page; `true` once one came in. */
   private held = false;
+  /** The projector calibration (calibration.json `projector`) is saved on this computer (#657). */
+  private projectorCalibrated = false;
   private reloadWaiting = false;
   private lastAction: { action: string; at: number; from: string } | null = null;
   /** Rehearse (#97): the table as a visitor sees it, from here, with nothing saved. */
@@ -275,6 +285,8 @@ export class Editor {
    */
   private readonly railNote = el('button', 'ed-rail-note');
   private railFits: Partial<Record<'left' | 'right', RailFit>> = {};
+  /** The open layers whose controls scroll on the controller because of their legend (#660). */
+  private legendScrolls = new Map<string, string>();
   /** How many were out of sight when the author was last told, so a warning comes once, and again only if it gets worse. */
   private railWarned = 0;
   private railRetry = 0;
@@ -487,6 +499,17 @@ export class Editor {
       if (location.hash) this.goTo(location.hash);
       if (dialog === 'place' || dialog === 'media' || dialog === 'model') this.openDialog(dialog);
     }
+    // The 2.0 calibration lives under `projector` in calibration.json, kept by the host (#657):
+    // asked once and followed on every save, so the readiness warning clears without a reload.
+    const projectorCalibrated = (p: { projector?: unknown } | null | undefined): void => {
+      const now = Boolean(p?.projector);
+      if (now === this.projectorCalibrated) return;
+      this.projectorCalibrated = now;
+      this.renderNext();
+    };
+    connection.on('calibration', projectorCalibrated);
+    connection.on('welcome', () => void connection.request<{ projector?: unknown }>('calibration.get', {}).then(projectorCalibrated, () => {}));
+    void connection.request<{ projector?: unknown }>('calibration.get', {}).then(projectorCalibrated, () => {});
     connection.on('site.changed', (p: { site?: { table?: unknown }; table_only?: boolean }) => {
       // The table's front edge or ribbons (#62): taken in place, the projector redraws on its own.
       if (p?.table_only && p.site) {
@@ -1003,13 +1026,21 @@ export class Editor {
       this.preview.append(frame);
       // The controller says how its rails fit (#614); a reload of the frame asks again.
       window.addEventListener('message', (event) => {
-        const data = event.data as RailFit | null;
-        if (event.source !== frame.contentWindow || event.origin !== location.origin || data?.type !== 'mrs-rail-fit') return;
+        const data = event.data as RailFit | LegendFit | null;
+        if (event.source !== frame.contentWindow || event.origin !== location.origin) return;
+        if (data?.type === 'mrs-legend-fit') {
+          if (data.scrolls) this.legendScrolls.set(data.layer, data.mode);
+          else this.legendScrolls.delete(data.layer);
+          this.checkRails();
+          return;
+        }
+        if (data?.type !== 'mrs-rail-fit') return;
         this.railFits[data.side] = data;
         this.checkRails();
       });
       frame.addEventListener('load', () => {
         this.railFits = {};
+        this.legendScrolls.clear();
         frame.contentWindow?.postMessage({ type: 'mrs-rail-fit?' }, location.origin);
       });
       // The controller is laid out for a full screen; it is scaled down to fit.
@@ -2009,10 +2040,20 @@ export class Editor {
   private checkRails(): void {
     const sides = this.overflowing();
     const out = sides.reduce((n, r) => n + r.buttons - r.fits, 0);
-    this.railNote.hidden = out === 0;
+    const legends = [...this.legendScrolls].filter(([layer]) => Boolean(this.store.state.layers[layer]));
+    this.railNote.hidden = out === 0 && legends.length === 0;
     if (out > 0) {
       this.railNote.replaceChildren(icon('alert', 12), el('span', undefined, out === 1 ? '1 button does not fit on the controller' : `${out} buttons do not fit on the controller`));
       this.railNote.title = 'Visitors have to scroll a side of the controller to find them. Click for more.';
+    } else if (legends.length > 0) {
+      // A legend that does not fit (#660): the fix is the layer's Legend setting, under its button.
+      const [layer, mode] = legends[0]!;
+      const name = this.store.state.layers[layer]?.button?.name ?? layer;
+      this.railNote.replaceChildren(icon('alert', 12), el('span', undefined, `${name}'s legend does not fit on the controller`));
+      this.railNote.title =
+        mode === 'full'
+          ? 'Visitors have to scroll to see all of it. Set its Legend to Auto or Compact under the layer button, or turn it off.'
+          : 'Even with small swatches visitors have to scroll. Turn the legend off under the layer button, or show fewer rows.';
     }
     if (out === 0) this.railWarned = 0;
     // Not over the setup guide or another dialog: the status bar keeps it until then.
@@ -2128,7 +2169,7 @@ export class Editor {
       data: Object.keys(site.data ?? {}),
       size: Boolean(site.table?.width_cm),
       timezone: site.timezone,
-      calibrated: shell() ? Boolean(site.calibration) : null,
+      calibrated: shell() ? Boolean(site.calibration) || this.projectorCalibrated : null,
       welcome: site.branding.welcome,
       layers: this.instances().map(({ id, manifest, state }) => {
         const b = layerButton(id, manifest, state, defaultSideOf(this.store, id) ?? defaultSide);
@@ -3100,6 +3141,21 @@ export class Editor {
     });
     group.addEventListener('change', () => set({ group: group.value.trim() || null }));
 
+    // Who made what the layer shows (#659), under its words on the controller.
+    const credit = setting('button.credit', 'format:button', el('input'));
+    Object.assign(credit, { type: 'text', maxLength: 200, placeholder: 'None, for example Artwork by …' });
+    credit.addEventListener('change', () => set({ credit: credit.value.trim() || null }));
+
+    // How much of the legend the controller shows (#660).
+    const legend = setting('button.legend', 'format:button', el('select'));
+    for (const [value, label] of [
+      ['auto', 'Fit the screen (smaller when long)'],
+      ['full', 'Full size, one under the other'],
+      ['compact', 'Small, in columns'],
+      ['off', 'No legend'],
+    ] as const) legend.append(Object.assign(el('option', undefined, label), { value }));
+    legend.addEventListener('change', () => set({ legend: legend.value === 'auto' ? null : legend.value }));
+
     const side = setting('button.side', 'format:button', el('div', 'segmented'));
     side.setAttribute('role', 'radiogroup');
     side.setAttribute('aria-label', 'Side of the controller');
@@ -3146,11 +3202,11 @@ export class Editor {
     fold.open = this.opened('button');
     fold.addEventListener('toggle', () => this.opened('button', fold.open));
     const summary = el('summary', undefined, 'Button on the controller');
-    fold.append(summary, preview, field('Name', name), field('Description', description), field('Group', group), known, row, iconRow);
+    fold.append(summary, preview, field('Name', name), field('Description', description), field('Credit line', credit), field('Group', group), known, field('Legend', legend), row, iconRow);
     section.append(fold);
 
     const previous = this.sync.get(id);
-    const seen: Record<'name' | 'description' | 'group', string> = { name: '', description: '', group: '' };
+    const seen: Record<'name' | 'description' | 'group' | 'credit', string> = { name: '', description: '', group: '', credit: '' };
     this.sync.set(id, (state) => {
       previous?.(state);
       const button = layerButton(id, manifest, state, defaultSideOf(this.store, id));
@@ -3159,6 +3215,7 @@ export class Editor {
         [name, 'name', 'name'],
         [description, 'description', 'description'],
         [group, 'group', 'group'],
+        [credit, 'credit', 'credit line'],
       ] as const) {
         const theirs = state.button?.[key] ?? '';
         if (document.activeElement !== input) {
@@ -3174,6 +3231,7 @@ export class Editor {
         seen[key] = theirs;
         input.dataset.synced = theirs;
       }
+      legend.value = state.button?.legend ?? 'auto';
       for (const [value, option] of sides) option.setAttribute('aria-checked', String(value === button.side));
       for (const [value, option] of choices) option.setAttribute('aria-checked', String(value === button.icon));
       previewIcon.replaceChildren(icon(button.icon, 18));

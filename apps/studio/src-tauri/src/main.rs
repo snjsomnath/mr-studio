@@ -15,6 +15,8 @@ mod command_permissions;
 mod config;
 mod diagnostics;
 mod file_menu;
+#[cfg(windows)]
+mod gpu;
 mod mail;
 #[cfg(windows)]
 mod models;
@@ -165,6 +167,9 @@ impl Shell {
 }
 
 fn main() -> anyhow::Result<()> {
+    // Before any window: laptops with two graphics chips draw on the fast one (#652).
+    #[cfg(windows)]
+    gpu::prefer_fast_gpu();
     tauri::Builder::default()
         // A second start (a double click too many) brings up the Home page of the first.
         .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
@@ -1247,9 +1252,11 @@ fn open_editor(app: &AppHandle, page: &str) -> anyhow::Result<()> {
                     None => true,
                 })
                 .build()?;
-            // Closing the editor leads back to Home, as closing a document does, unless the
-            // table is being presented. The page first gets a moment to keep a picture of
-            // the map for the table's card on Home (#131).
+            // Closing the editor leads back to Home, as closing a document does. While the table
+            // is being presented it asks whether the show stops too (#656): the projector and the
+            // controller would otherwise keep running with no window left that names them. In
+            // operator mode the show only stops with the PIN, so nothing is asked. The page first
+            // gets a moment to keep a picture of the map for the table's card on Home (#131).
             let handle = app.clone();
             window.on_window_event(move |event| {
                 let tauri::WindowEvent::CloseRequested { api, .. } = event else { return };
@@ -1259,6 +1266,17 @@ fn open_editor(app: &AppHandle, page: &str) -> anyhow::Result<()> {
                 let handle = handle.clone();
                 tauri::async_runtime::spawn(async move {
                     tokio::time::sleep(Duration::from_millis(700)).await;
+                    if is_presenting(&handle) && !handle.state::<Shell>().operator_mode.is_on() {
+                        match ask_stop_presenting(&handle).await {
+                            CloseChoice::Cancel => return,
+                            CloseChoice::Keep => {}
+                            CloseChoice::Stop => {
+                                if let Err(e) = stop_presenting(handle.clone()).await {
+                                    tracing::warn!("could not stop presenting: {e}");
+                                }
+                            }
+                        }
+                    }
                     if !is_presenting(&handle) {
                         report(open_home_window(&handle));
                     }
@@ -1274,6 +1292,42 @@ fn open_editor(app: &AppHandle, page: &str) -> anyhow::Result<()> {
     window.show()?;
     window.set_focus()?;
     Ok(())
+}
+
+/// What the person picked when the editor closed during a show (#656).
+enum CloseChoice {
+    Stop,
+    Keep,
+    Cancel,
+}
+
+const CLOSE_TITLE: &str = "Stop presenting too?";
+const CLOSE_STOP: &str = "Stop presenting";
+const CLOSE_KEEP: &str = "Keep presenting";
+const CLOSE_CANCEL: &str = "Cancel";
+
+/// Asks, when the editor closes while the table is on the screens, whether the show stops too.
+async fn ask_stop_presenting(app: &AppHandle) -> CloseChoice {
+    let name = app.state::<Shell>().running.lock().as_ref().map(|r| r.name.clone()).unwrap_or_else(|| "The table".into());
+    let mut asking = app
+        .dialog()
+        .message(format!(
+            "{name} is still on the projector and the controller.\n\nStop presenting closes them and goes back to Home. Keep presenting leaves the show running on its own: press Esc on the projector or the controller, or Ctrl+Shift+E, to bring the editor back."
+        ))
+        .title(CLOSE_TITLE)
+        .kind(tauri_plugin_dialog::MessageDialogKind::Info)
+        .buttons(tauri_plugin_dialog::MessageDialogButtons::YesNoCancelCustom(CLOSE_STOP.into(), CLOSE_KEEP.into(), CLOSE_CANCEL.into()));
+    if let Some(editor) = app.get_webview_window(EDITOR) {
+        asking = asking.parent(&editor);
+    }
+    use tauri_plugin_dialog::MessageDialogResult as Pressed;
+    match tokio::task::spawn_blocking(move || asking.blocking_show_with_result()).await {
+        Ok(Pressed::Yes) => CloseChoice::Stop,
+        Ok(Pressed::No) => CloseChoice::Keep,
+        Ok(Pressed::Custom(label)) if label == CLOSE_STOP => CloseChoice::Stop,
+        Ok(Pressed::Custom(label)) if label == CLOSE_KEEP => CloseChoice::Keep,
+        _ => CloseChoice::Cancel,
+    }
 }
 
 /// Closes the shell's own pages once a site is in front.

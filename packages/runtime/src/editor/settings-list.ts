@@ -73,6 +73,8 @@ export const SETTINGS = {
   'layer.order': { label: 'Drawing order and button order', owner: 'layer', home: 'list:move' },
   'button.words': { label: 'A button’s name, description and group', owner: 'button', home: 'format:button' },
   'button.icon': { label: 'A button’s icon', owner: 'button', home: 'format:button' },
+  'button.credit': { label: 'A layer’s credit line on the controller', owner: 'button', home: 'format:button' },
+  'button.legend': { label: 'How a layer’s legend shows on the controller', owner: 'button', home: 'format:button' },
   'button.side': { label: 'A button’s side of the controller', owner: 'button', home: 'format:button' },
   'button.hidden': { label: 'A button on the controller or not', owner: 'button', home: 'list:eye' },
   'computer.screens': { label: 'Which screen shows what', owner: 'computer', home: 'app:settings' },

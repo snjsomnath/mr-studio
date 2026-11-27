@@ -91,7 +91,9 @@ export function paramSender(
   let pending: Record<string, unknown> | null = null;
   let last = -Infinity;
   const flush = () => {
-    const params = pending!;
+    // Sent already, by the other of the two timers below.
+    if (!pending) return;
+    const params = pending;
     pending = null;
     last = performance.now();
     connection.request(method, { layer, params }).catch((error) => console.warn(`[${layer}] ${error.message}`));
@@ -104,7 +106,12 @@ export function paramSender(
     pending = { ...patch };
     const wait = last + minInterval - performance.now();
     if (wait > 0) setTimeout(flush, wait);
-    else requestAnimationFrame(flush);
+    else {
+      // Changes made in one frame go as one request. A window the browser thinks is hidden gets no
+      // frames (a controller on a second screen of a Windows laptop, #655), so a timer sends it anyway.
+      requestAnimationFrame(flush);
+      setTimeout(flush, 50);
+    }
   };
 }
 

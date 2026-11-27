@@ -23,6 +23,7 @@ import type { Map as MapLibreMap } from 'maplibre-gl';
 import * as THREE from 'three';
 
 import { cssColor } from './colour.ts';
+import { cssMatrix, homography } from './homography.ts';
 import { ModelFieldOverlay, premultipliedOver } from './field.ts';
 import { SunMask, type Footprint } from './sun-shadows.ts';
 import { pixelRatio, shadowDetail } from '../quality.ts';
@@ -132,6 +133,7 @@ export class ModelView {
   private readonly renderer: THREE.WebGLRenderer;
   private readonly scene = new THREE.Scene();
   private readonly camera = new THREE.Camera();
+  private groundZ: number | null = null;
   private readonly geometry = new THREE.BufferGeometry();
   private readonly base: THREE.Mesh;
   private readonly baseMaterial: THREE.MeshLambertMaterial;
@@ -304,6 +306,44 @@ export class ModelView {
     const plane = tangentPlane(this.site.origin);
     const corners = this.site.corners.map(([lon, lat]) => this.project([...plane.toLocal(lon, lat), ground]));
     return corners.every((corner) => corner !== null) ? (corners as [number, number][]) : null;
+  }
+
+  /**
+   * The CSS transform that carries a page element drawn in the flat map's pixels (a layer's 2D
+   * canvas, a decoration) to where the projector puts the same ground on the model (#650).
+   * Through a calibration the map is draped on the twin and seen through the projector's camera,
+   * so an overlay left in map pixels lands beside the buildings. The ground is a plane at the
+   * twin's typical ground height, so the transform is exact there: a homography from the four
+   * corners of the surface. Null without a calibration, when map pixels are surface pixels.
+   */
+  overlayTransform(): string | null {
+    if (!this.calibrated) return null;
+    const width = Math.max(1, this.container.clientWidth);
+    const height = Math.max(1, this.container.clientHeight);
+    const plane = tangentPlane(this.site.origin);
+    const ground = this.groundHeight();
+    const from: [number, number][] = [[0, 0], [width, 0], [width, height], [0, height]];
+    const to: [number, number][] = [];
+    for (const [x, y] of from) {
+      const lonLat = this.map.unproject([x, y]);
+      const landed = this.project([...plane.toLocal(lonLat.lng, lonLat.lat), ground]);
+      if (!landed) return null;
+      to.push(landed);
+    }
+    const matrix = homography(from, to);
+    return matrix ? cssMatrix(matrix) : null;
+  }
+
+  /** The twin's typical ground height: the median of its ground vertices, worked out once. */
+  private groundHeight(): number {
+    if (this.groundZ !== null) return this.groundZ;
+    const { positions, kinds } = this.twin;
+    const heights: number[] = [];
+    const step = Math.max(1, Math.floor(kinds.length / 20000));
+    for (let i = 0; i < kinds.length; i += step) if (kinds[i] === 0) heights.push(positions[i * 3 + 2]!);
+    heights.sort((a, b) => a - b);
+    this.groundZ = heights.length ? heights[Math.floor(heights.length / 2)]! : this.twin.minZ;
+    return this.groundZ;
   }
 
   /** Where a model point lands on the surface, in CSS pixels from its top left corner. Null when it is behind the camera. */
@@ -728,7 +768,7 @@ export class ModelView {
           remove,
         };
       },
-      sunShadowMask: async (sun: { azimuth: number; altitude: number }, onChange?: () => void): Promise<FieldFrame | null> => {
+      sunShadowMask: async (sun: { azimuth: number; altitude: number }, onChange?: () => void, options?: { moving?: boolean }): Promise<FieldFrame | null> => {
         if (onChange) {
           if (!view.sunMaskChanged.has(layer)) track(() => view.sunMaskChanged.delete(layer));
           view.sunMaskChanged.set(layer, onChange);
@@ -740,7 +780,7 @@ export class ModelView {
           view.sunMask = new SunMask(view.renderer, view.geometry, view.twin, corners, shadowDetail(view.quality));
           if (view.buildings) view.sunMask.setFootprints(view.footprints());
         }
-        return view.sunMask.render(sun.azimuth, sun.altitude);
+        return view.sunMask.render(sun.azimuth, sun.altitude, options?.moving);
       },
       setMaterial: (target: SurfaceQuery, material: SurfaceMaterial): void => {
         own();
@@ -774,3 +814,4 @@ export class ModelView {
     };
   }
 }
+

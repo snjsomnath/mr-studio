@@ -3139,6 +3139,17 @@ fn button_patch(mut button: LayerButton, patch: &Value) -> Result<LayerButton, S
             "name" => button.name = text,
             "description" => button.description = text,
             "icon" => button.icon = text,
+            "credit" => button.credit = text,
+            "legend" => {
+                button.legend = match text.as_deref() {
+                    None => None,
+                    Some("auto") => Some(mrs_site::LegendMode::Auto),
+                    Some("full") => Some(mrs_site::LegendMode::Full),
+                    Some("compact") => Some(mrs_site::LegendMode::Compact),
+                    Some("off") => Some(mrs_site::LegendMode::Off),
+                    Some(other) => return Err(format!("button.legend is 'auto', 'full', 'compact' or 'off', not '{other}'")),
+                }
+            }
             "side" => {
                 button.side = match text.as_deref() {
                     None => None,
@@ -3558,6 +3569,19 @@ mod tests {
         // An item comes on with its layer, never at rest.
         dev("scene.add", json!({ "use": "trees", "parent": "slideshow", "id": "slide-trees" })).unwrap();
         assert_eq!(layer(&hub, "slide-trees")["rest"], Value::Null);
+    }
+
+    #[test]
+    fn a_button_carries_a_credit_line_and_a_legend_setting() {
+        let hub = scratch_hub("credit-659");
+        let dev = |method: &str, p: Value| hub.request(Role::Dev, 0, method, &p);
+        dev("scene.set", json!({ "layer": "wind", "button": { "credit": "Data by SMHI", "legend": "compact" } })).unwrap();
+        assert_eq!(layer(&hub, "wind")["button"]["credit"], "Data by SMHI");
+        assert_eq!(layer(&hub, "wind")["button"]["legend"], "compact");
+        assert!(dev("scene.set", json!({ "layer": "wind", "button": { "legend": "tiny" } })).is_err());
+        assert!(dev("scene.set", json!({ "layer": "wind", "button": { "credit": "x".repeat(201) } })).is_err());
+        dev("scene.set", json!({ "layer": "wind", "button": { "credit": null, "legend": null } })).unwrap();
+        assert_eq!(layer(&hub, "wind")["button"]["credit"], Value::Null);
     }
 
     #[test]

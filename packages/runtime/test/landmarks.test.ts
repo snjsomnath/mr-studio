@@ -3,7 +3,7 @@ import { test } from 'node:test';
 
 import type { SiteInfo, TwinMesh } from '@mrstudio/sdk';
 
-import { footprintCorners, proposeLandmarks } from '../src/model/landmarks.ts';
+import { footprintCorners, proposeLandmarks, tileCrossings } from '../src/model/landmarks.ts';
 import type { Footprint } from '../src/model/sun-shadows.ts';
 
 // A 200 x 200 m table. The twin's roofs are raster steps: each building's roof vertices sit a
@@ -78,4 +78,37 @@ test('with footprints the proposed roof corners are real footprint corners, with
 
   const without = proposeLandmarks(mesh, site, 6, null).slice(4);
   assert.ok(without.some((l) => !real.has(`${l.point[0]},${l.point[1]}`)), 'the old way picks raster steps');
+});
+
+test('a table of 20 cm tiles offers the crossings of its seams, not those under buildings (#651)', () => {
+  const mesh = twin();
+  const tiled = { ...site, table: { width_cm: 100, height_cm: 100, tile_cm: 20 } } as unknown as SiteInfo;
+  const roofs = new Map<number, number[]>([
+    [1, [4, 5, 6, 7, 8]],
+    [2, [9, 10, 11, 12]],
+    [3, [13, 14]],
+  ]);
+  const crossings = tileCrossings(mesh, tiled, [0, 1, 2, 3], roofs);
+  const at = crossings.map((c) => `${Math.round(c.point[0])},${Math.round(c.point[1])}`);
+  // 4 x 4 seams cross inside the table; two of the crossings are under a roof.
+  assert.equal(crossings.length, 14);
+  for (const hidden of ['-20,20', '60,-60']) assert.ok(!at.includes(hidden), `${hidden} is under a building`);
+  assert.ok(at.includes('-60,-60') && at.includes('60,60'));
+  assert.match(crossings[0]!.label, /^Where the tiles meet, 1 tile from the left and 4 from the top/);
+  assert.equal(crossings[0]!.point[2], 0);
+
+  // A table not made of whole tiles has none, and nor does one with no tile size.
+  assert.equal(tileCrossings(mesh, { ...tiled, table: { width_cm: 110, height_cm: 100, tile_cm: 20 } } as unknown as SiteInfo, [0, 1, 2, 3], roofs).length, 0);
+  assert.equal(tileCrossings(mesh, site, [0, 1, 2, 3], roofs).length, 0);
+
+  // A footprint hides the crossings it covers, even where the twin has no roof vertex near.
+  const square: Footprint = { number: 9, rings: [[[10, -30], [30, -30], [30, -10], [10, -10]]] };
+  const withSquare = tileCrossings(mesh, tiled, [0, 1, 2, 3], roofs, [square]).map((c) => `${Math.round(c.point[0])},${Math.round(c.point[1])}`);
+  assert.equal(withSquare.length, 13);
+  assert.ok(!withSquare.includes('20,-20'));
+
+  // Proposed after the base and roof corners, spread out.
+  const proposed = proposeLandmarks(mesh, tiled, 6, [lShape, block, offTable], 4);
+  assert.equal(proposed.length, 14);
+  assert.ok(proposed.slice(10).every((l) => l.label.startsWith('Where the tiles meet')));
 });

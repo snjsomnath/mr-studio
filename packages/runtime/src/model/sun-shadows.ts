@@ -30,10 +30,9 @@ export class SunMask {
   private readonly scene = new THREE.Scene();
   private readonly light = new THREE.DirectionalLight(0xffffff, 1);
   private readonly camera: THREE.OrthographicCamera;
-  private readonly target: THREE.WebGLRenderTarget;
-  private readonly width: number;
-  private readonly height: number;
-  private readonly pixels: Uint8Array;
+  /** The full-detail mask, and a quarter of its pixels for while the day plays (#652), made when first asked for. */
+  private readonly fine: Plate;
+  private coarse: Plate | null = null;
   private readonly materials: THREE.Material[];
   private readonly geometries = new Set<THREE.BufferGeometry>();
   private readonly prisms: THREE.Mesh;
@@ -60,10 +59,7 @@ export class SunMask {
     const centre = tr!.clone().add(bl!).multiplyScalar(0.5);
     const max = Math.min(detail.maxSize, renderer.capabilities.maxTextureSize);
     const scale = Math.min(1 / detail.metres, max / widthM, max / heightM);
-    this.width = Math.max(1, Math.round(widthM * scale));
-    this.height = Math.max(1, Math.round(heightM * scale));
-    this.pixels = new Uint8Array(this.width * this.height * 4);
-    this.target = new THREE.WebGLRenderTarget(this.width, this.height, { depthBuffer: true });
+    this.fine = plate(Math.max(1, Math.round(widthM * scale)), Math.max(1, Math.round(heightM * scale)));
 
     if (!geometry.boundingSphere) geometry.computeBoundingSphere();
     const sphere = geometry.boundingSphere!;
@@ -194,8 +190,8 @@ export class SunMask {
    * The pixels come back from the GPU without stalling the frame (#302): a play through the day asks for a mask
    * every frame, and a blocking read would stall each one while the GPU finished. One render runs at a time.
    */
-  render(azimuth: number, altitude: number): Promise<FieldFrame> {
-    const run = this.queue.then(() => this.draw(azimuth, altitude));
+  render(azimuth: number, altitude: number, coarse = false): Promise<FieldFrame> {
+    const run = this.queue.then(() => this.draw(azimuth, altitude, coarse ? this.coarsePlate() : this.fine));
     this.queue = run.then(
       () => undefined,
       () => undefined,
@@ -205,8 +201,19 @@ export class SunMask {
 
   private queue: Promise<void> = Promise.resolve();
 
-  private async draw(azimuth: number, altitude: number): Promise<FieldFrame> {
-    const data = new Uint8Array(this.width * this.height);
+  /**
+   * Half the width and height of the full mask: what a play through the day draws (#652). Moving shadows
+   * need less detail than still ones, and a slower computer spends a quarter of the time reading, turning
+   * and uploading each one, so it keeps its frame rate. The full mask comes back when the play stops.
+   */
+  private coarsePlate(): Plate {
+    if (!this.coarse) this.coarse = plate(Math.max(1, Math.round(this.fine.width / 2)), Math.max(1, Math.round(this.fine.height / 2)));
+    return this.coarse;
+  }
+
+  private async draw(azimuth: number, altitude: number, plate: Plate): Promise<FieldFrame> {
+    const { width, height, pixels, target } = plate;
+    const data = new Uint8Array(width * height);
     if (altitude > 0) {
       const a = (azimuth * Math.PI) / 180;
       const h = (altitude * Math.PI) / 180;
@@ -219,30 +226,31 @@ export class SunMask {
       const previous = renderer.getRenderTarget();
       const clear = renderer.getClearColor(new THREE.Color());
       const clearAlpha = renderer.getClearAlpha();
-      renderer.setRenderTarget(this.target);
+      renderer.setRenderTarget(target);
       renderer.setClearColor(0xffffff, 1);
       renderer.clear();
       renderer.render(this.scene, this.camera);
       renderer.setRenderTarget(previous);
       renderer.setClearColor(clear, clearAlpha);
-      const read = renderer.readRenderTargetPixelsAsync(this.target, 0, 0, this.width, this.height, this.pixels);
+      const read = renderer.readRenderTargetPixelsAsync(target, 0, 0, width, height, pixels);
       await read;
 
       // The target's rows run bottom up, four bytes a pixel; the red byte is the low one of each word.
-      const words = new Uint32Array(this.pixels.buffer, this.pixels.byteOffset, this.width * this.height);
-      for (let y = 0; y < this.height; y++) {
-        const from = (this.height - 1 - y) * this.width;
-        const to = y * this.width;
-        for (let x = 0; x < this.width; x++) data[to + x] = words[from + x]! & 0xff;
+      const words = new Uint32Array(pixels.buffer, pixels.byteOffset, width * height);
+      for (let y = 0; y < height; y++) {
+        const from = (height - 1 - y) * width;
+        const to = y * width;
+        for (let x = 0; x < width; x++) data[to + x] = words[from + x]! & 0xff;
       }
     }
-    return { stream: -1, field: 0, width: this.width, height: this.height, revision: ++this.revision, min: 0, max: 1, progress: 1, data };
+    return { stream: -1, field: 0, width, height, revision: ++this.revision, min: 0, max: 1, progress: 1, data };
   }
 
   dispose(): void {
     for (const geometry of this.geometries) geometry.dispose();
     for (const material of this.materials) material.dispose();
-    this.target.dispose();
+    this.fine.target.dispose();
+    this.coarse?.target.dispose();
     this.light.shadow.map?.dispose();
     this.light.dispose();
   }
@@ -252,4 +260,16 @@ export class SunMask {
     mesh.geometry = geometry;
     this.geometries.add(geometry);
   }
+}
+
+/** A mask's size, its render target and the buffer its pixels come back in. */
+interface Plate {
+  width: number;
+  height: number;
+  pixels: Uint8Array;
+  target: THREE.WebGLRenderTarget;
+}
+
+function plate(width: number, height: number): Plate {
+  return { width, height, pixels: new Uint8Array(width * height * 4), target: new THREE.WebGLRenderTarget(width, height, { depthBuffer: true }) };
 }

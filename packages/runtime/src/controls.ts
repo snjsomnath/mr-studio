@@ -754,6 +754,17 @@ function shownBy(store: Store, sequence: string): string | undefined {
   return store.state.scene.find((other) => store.state.layers[other]?.shown_by === sequence);
 }
 
+/**
+ * An item a visitor steers, such as a Magnifier's glass or a Reveal line, inside an open layer
+ * (#658): its hero and controls show under the layer's, as the Lindholmen artwork had its glass.
+ */
+function steeredItem(store: Store, parent: string): string | undefined {
+  return store.state.scene.find((other) => {
+    const item = store.state.layers[other];
+    return item?.parent === parent && item.active && Boolean(store.manifest(item.layer)?.reveals);
+  });
+}
+
 /** A layer's legend rows: what it published (`ctx.legend`), otherwise its layer.json's. */
 function legendRows(store: Store, id: string): LegendRow[] {
   const state = store.state.layers[id];
@@ -780,6 +791,43 @@ function legendZone(id: string, store: Store): { element: HTMLElement; sync(stat
   zone.setAttribute('aria-label', t('Legend'));
   zone.hidden = true;
   let drawn = '';
+  // In `auto` a legend that would make the centre scroll gets small swatches in columns (#660),
+  // so a 46" controller shows the whole layer at once.
+  // Once small it stays small until the rows or the screen change, so it does not flicker.
+  const fit = (again: boolean) => {
+    if (zone.dataset.mode !== 'auto') {
+      zone.classList.toggle('is-compact', zone.dataset.mode === 'compact');
+      return;
+    }
+    if (again) zone.classList.remove('is-compact');
+    const box = zone.closest<HTMLElement>('.open-layers');
+    if (!box || zone.hidden || zone.classList.contains('is-compact')) return;
+    if (box.scrollHeight > box.clientHeight + 1) zone.classList.add('is-compact');
+  };
+  // Tells the editor when the open layer's controls still scroll (#660), so the author can pick a
+  // smaller legend or fewer rows. The controller in the editor is laid out like the TV.
+  let told = '';
+  const tell = () => {
+    const box = zone.closest<HTMLElement>('.open-layers');
+    if (!box || box.clientHeight === 0 || window.parent === window) return;
+    const report = { type: 'mrs-legend-fit', layer: id, scrolls: !zone.hidden && box.scrollHeight > box.clientHeight + 1, mode: zone.dataset.mode ?? 'auto' };
+    const key = JSON.stringify(report);
+    if (key === told) return;
+    told = key;
+    window.parent.postMessage(report, location.origin);
+  };
+  let fitting = 0;
+  let again = false;
+  const queueFit = (fresh = false) => {
+    again ||= fresh;
+    clearTimeout(fitting);
+    fitting = window.setTimeout(() => {
+      fit(again);
+      again = false;
+      tell();
+    }, 0);
+  };
+  window.addEventListener('resize', () => queueFit(true));
   return {
     element: zone,
     sync(state) {
@@ -807,10 +855,15 @@ function legendZone(id: string, store: Store): { element: HTMLElement; sync(stat
         const waiting = listed ? !listed.has(key(row)) : partial && index >= revealed;
         return { row, waiting, current: current !== undefined && (key(row) === current || row.label === current) };
       });
-      zone.hidden = rows.length === 0;
+      // The table's choice for this layer (#660): the shown layer's own, else the open one's.
+      const mode = from?.button?.legend ?? state.button?.legend ?? 'auto';
+      zone.hidden = rows.length === 0 || mode === 'off';
+      zone.dataset.mode = mode;
       // When the rows name the sub-steps, the legend shows the reveal and the strip's row of names steps aside.
       const follows = rows.some((row) => titles.includes(row.label));
-      const next = JSON.stringify(look);
+      const next = JSON.stringify([look, mode]);
+      // The centre may have grown since (a hero drew, a panel opened): check again, without starting over.
+      queueFit(next !== drawn);
       if (next === drawn) return follows;
       drawn = next;
       // Rows of one scale sit under its heading (#622): two ramps read as two legends.
@@ -1124,12 +1177,14 @@ function guestZone(id: string, store: Store, connection: Connection): { element:
   return {
     element: zone,
     sync(state) {
-      const shown = state.active && store.manifest(state.layer)?.sequence ? shownBy(store, id) : undefined;
+      const shown = !state.active ? undefined : store.manifest(state.layer)?.sequence ? shownBy(store, id) : steeredItem(store, id);
       if (guest?.id !== shown) {
         guest?.dispose();
         guest = shown ? build(shown) : undefined;
       }
       zone.hidden = !guest;
+      // A steered item's glass stands in for the layer's own picture, so the glass gets the room (#658).
+      zone.toggleAttribute('data-steered', Boolean(guest && !store.manifest(state.layer)?.sequence));
       guest?.sync();
     },
     dispose() {
@@ -1404,10 +1459,13 @@ export class Controller {
     body.classList.toggle('is-alongside', Boolean(manifest.alongside));
     const heading = el('h2', 'layer-open-name');
     const about = el('p', 'layer-about');
+    // Who made what the layer shows (#659), small under its words.
+    const credit = el('p', 'layer-credit');
+    credit.hidden = true;
     const words = el('header', 'layer-open-head');
     const mark = el('span', 'layer-button-icon');
     const text = el('div');
-    text.append(heading, about);
+    text.append(heading, about, credit);
     words.append(mark, text);
     // While the layer is in trouble (#259) the centre says so above its controls.
     const troubleLine = el('p', 'layer-trouble', t('Not available right now. It is starting again by itself.'));
@@ -1546,6 +1604,8 @@ export class Controller {
         shown = button.icon;
         about.textContent = button.description;
         about.hidden = !button.description;
+        credit.textContent = state.button?.credit ? t(state.button.credit) : '';
+        credit.hidden = !credit.textContent;
         // A layer the slideshow is showing is part of the slideshow: its button is marked, not pressed,
         // and the slideshow's strip speaks for it in the centre.
         const open = state.active && !state.shown_by;

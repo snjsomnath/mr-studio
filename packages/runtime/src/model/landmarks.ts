@@ -33,7 +33,13 @@ export function tableAxes(site: SiteInfo): (east: number, north: number) => [rig
  * footprints, raised to the building's roof: the corners a person can find on the physical
  * model. Without them they come from the twin, whose roofs are steps of the height raster.
  */
-export function proposeLandmarks(twin: TwinMesh, site: SiteInfo, roofCorners = 6, footprints: readonly Footprint[] | null = null): Landmark[] {
+export function proposeLandmarks(
+  twin: TwinMesh,
+  site: SiteInfo,
+  roofCorners = 6,
+  footprints: readonly Footprint[] | null = null,
+  crossings = 6,
+): Landmark[] {
   const axes = tableAxes(site);
   const at = (i: number): ModelPoint => [twin.positions[i * 3]!, twin.positions[i * 3 + 1]!, twin.positions[i * 3 + 2]!];
   const extreme = (vertices: number[], right: number, up: number): number => {
@@ -95,7 +101,68 @@ export function proposeLandmarks(twin: TwinMesh, site: SiteInfo, roofCorners = 6
     });
     chosen.push(candidates.splice(best, 1)[0]!);
   }
+  // Where the model's tiles meet (#651): exact on the physical table and spread over all of it.
+  // The ones farthest from the corners already chosen come first.
+  const seams = tileCrossings(twin, site, ground, roofs, footprints);
+  const flat = (a: ModelPoint, b: ModelPoint) => Math.hypot(a[0] - b[0], a[1] - b[1]);
+  for (let n = 0; n < crossings && seams.length > 0; n++) {
+    let best = 0;
+    let bestScore = -Infinity;
+    seams.forEach((candidate, index) => {
+      const score = Math.min(...chosen.map((c) => flat(c.point, candidate.point)));
+      if (score > bestScore) [best, bestScore] = [index, score];
+    });
+    chosen.push(seams.splice(best, 1)[0]!);
+  }
   return chosen;
+}
+
+/**
+ * The points inside the table where four of the physical model's tiles meet (#651), from the
+ * table's size and its tile size (`table.tile_cm`), at the ground's height there. A crossing
+ * under a building is left out: its seams are hidden.
+ */
+export function tileCrossings(
+  twin: TwinMesh,
+  site: SiteInfo,
+  ground: readonly number[],
+  roofs: Map<number, number[]>,
+  footprints: readonly Footprint[] | null = null,
+): Landmark[] {
+  const table = site.table;
+  if (!table?.tile_cm || !table.width_cm || !table.height_cm || ground.length === 0) return [];
+  const across = Math.round(table.width_cm / table.tile_cm);
+  const down = Math.round(table.height_cm / table.tile_cm);
+  // Only a table made of whole tiles has seams that line up with its edges.
+  if (Math.abs(across * table.tile_cm - table.width_cm) > 0.5 || Math.abs(down * table.tile_cm - table.height_cm) > 0.5) return [];
+  const { width_m, height_m } = site.extent;
+  const r = (site.grid.rotation_deg * Math.PI) / 180;
+  const [cos, sin] = [Math.cos(r), Math.sin(r)];
+  // The inverse of tableAxes: metres right and up on the table to east and north.
+  const local = (right: number, up: number): [number, number] => [right * cos + up * sin, -right * sin + up * cos];
+  const clear = Math.max(3, 1.5 * (site.grid.cell_m || 0));
+  const roofVertices = [...roofs.values()].flat();
+  const out: Landmark[] = [];
+  for (let i = 1; i < across; i++) {
+    for (let j = 1; j < down; j++) {
+      const [east, north] = local(-width_m / 2 + (i * width_m) / across, -height_m / 2 + (j * height_m) / down);
+      const covered =
+        roofVertices.some((v) => Math.hypot(twin.positions[v * 3]! - east, twin.positions[v * 3 + 1]! - north) < clear) ||
+        (footprints ?? []).some((f) => f.rings.some((ring) => near(ring, east, north, clear)));
+      if (covered) continue;
+      let z = twin.minZ;
+      let nearest = Infinity;
+      for (const v of ground) {
+        const d = Math.hypot(twin.positions[v * 3]! - east, twin.positions[v * 3 + 1]! - north);
+        if (d < nearest) [nearest, z] = [d, twin.positions[v * 3 + 2]!];
+      }
+      out.push({
+        point: [east, north, z],
+        label: `Where the tiles meet, ${i} ${i === 1 ? 'tile' : 'tiles'} from the left and ${down - j} from the top, marked on the plan`,
+      });
+    }
+  }
+  return out;
 }
 
 /** The smallest turn (degrees) that counts as a corner, and the largest: a spike is no easier to find. */
@@ -165,6 +232,20 @@ export function footprintCorners(
     });
   }
   return out;
+}
+
+/** Whether a point is inside a ring or within `clear` metres of its edge. */
+function near(ring: readonly [number, number][], x: number, y: number, clear: number): boolean {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [xi, yi] = ring[i]!;
+    const [xj, yj] = ring[j]!;
+    if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+    const [dx, dy] = [xi - xj, yi - yj];
+    const t = Math.max(0, Math.min(1, ((x - xj) * dx + (y - yj) * dy) / (dx * dx + dy * dy || 1)));
+    if (Math.hypot(x - xj - t * dx, y - yj - t * dy) < clear) return true;
+  }
+  return inside;
 }
 
 /** Which corner of a building a point is, from the building's middle, as the table is seen. */

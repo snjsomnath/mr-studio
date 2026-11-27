@@ -773,7 +773,7 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
     {
       title: 'Change a layer in the scene',
       description:
-        "Set params, the start state and the controller button of a layer or item already in the scene. Params merge into the existing overrides (null removes one) unless replace_params is true. The button's fields (name, description, icon, side, group, order) merge the same way; items have no button.",
+        "Set params, the start state and the controller button of a layer or item already in the scene. Params merge into the existing overrides (null removes one) unless replace_params is true. The button's fields (name, description, icon, side, group, order, credit: a credit line under its name, legend: auto, full, compact or off) merge the same way; items have no button.",
       inputSchema: {
         site: z.string(),
         ...target,
@@ -809,7 +809,8 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
           if (place.parent) return `'${entry.id}' is an item of '${place.parent.id}': it has no button and comes on with its layer.`;
           const next: Record<string, unknown> = { ...(entry.button ?? {}) };
           for (const [k, v] of Object.entries(button)) {
-            if (!['name', 'description', 'icon', 'side', 'group', 'order'].includes(k)) return `A button has no '${k}' (name, description, icon, side, group, order).`;
+            if (!['name', 'description', 'icon', 'side', 'group', 'order', 'credit', 'legend'].includes(k)) return `A button has no '${k}' (name, description, icon, side, group, order, credit, legend).`;
+            if (k === 'legend' && v !== null && !['auto', 'full', 'compact', 'off'].includes(String(v))) return `button.legend is 'auto', 'full', 'compact' or 'off'.`;
             if (v === null) delete next[k];
             else next[k] = v;
           }
