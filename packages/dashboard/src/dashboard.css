@@ -256,6 +256,8 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  /* Tall enough for descenders in every system font: at 1.1 Windows' cut off the tails of g and y (#681). */
+  line-height: 1.3;
 }
 
 .mrs-bar-value {
