@@ -763,6 +763,14 @@ declare module "@mrstudio/sdk/types" {
         order?: number;
         /** Kept off the controller and phones, without taking the layer out of the table (#58). */
         hidden?: boolean;
+        /** Who made what the layer shows, one line under its name on the controller (#659). */
+        credit?: string;
+        /**
+         * How the controller shows the layer's legend (#660): `auto` (the default) fits every row in the
+         * centre without scrolling, in more columns or smaller as it needs; `full` lists them one under the
+         * other; `compact` always uses small swatches in columns; `off` shows no legend.
+         */
+        legend?: 'auto' | 'full' | 'compact' | 'off';
     }
     export interface Participant {
         /** The surface in the slot. It changes when the phone reconnects; the slot does not. */
@@ -1721,12 +1729,16 @@ declare module "@mrstudio/sdk/model" {
          * footprints raised to their roofs, the ground and any imported model, so edges stay crisp at any table size, unlike
          * a kernel field's cells. Resolves to null where there is no twin; use the kernel's field instead. `onChange` is
          * called when the mask for the same sun would come out differently (the table's quality changed), so the layer
-         * can ask again; the latest call's callback is the one kept.
+         * can ask again; the latest call's callback is the one kept. With `moving` (the sun is playing through the day) the
+         * mask has half the width and height, so a slower computer keeps its frame rate (#652); ask again without it when
+         * the sun stops.
          */
         sunShadowMask(sun: {
             azimuth: number;
             altitude: number;
-        }, onChange?: () => void): Promise<FieldFrame | null>;
+        }, onChange?: () => void, options?: {
+            moving?: boolean;
+        }): Promise<FieldFrame | null>;
         /** Changes how the picked surfaces look. A later call wins where two overlap. */
         setMaterial(target: SurfaceQuery, material: SurfaceMaterial): void;
         /** Dims everything except the picked surfaces. `null` ends the focus. */
