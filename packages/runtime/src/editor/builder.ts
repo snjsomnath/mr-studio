@@ -18,7 +18,7 @@ import {
   profileColumns,
   projectionWarning,
   readShapes,
-  recipeLegend,
+  lookLegend,
   resolvePalette,
   tableFrame,
   ICONS,
@@ -731,29 +731,31 @@ export function builderSection(host: BuilderHost, manifest: LayerManifest, butto
   // The legend follows the looks (S2): every colour on the table has its swatch on the controller.
   const legendBox = el('div', 'lb-legend');
   const updateLegend = async () => {
-    const looks = [];
-    const rasterRows: LegendItem[] = [];
+    const parts: { block: RecipeBlock; rows: LegendItem[] }[] = [];
     for (const block of recipe.look!) {
       if (block.block === 'raster') {
         const field = await rasterField(block);
-        if (field) rasterRows.push(...rasterPicture(field, rasterProps(block.props), palette()).legend.map((row) => ({ ...row, id: `${block.id}-${row.id}` })));
+        if (field) parts.push({ block, rows: rasterPicture(field, rasterProps(block.props), palette()).legend.map((row) => ({ ...row, id: `${block.id}-${row.id}` })) });
         continue;
       }
       const s = await shapes(block);
       const look = s && compileLook(block, s, palette(), 1);
-      if (look) looks.push(look);
+      if (look) parts.push({ block, rows: look.legend });
     }
-    recipe.legend = [...rasterRows, ...recipeLegend(looks)].slice(0, 12);
+    recipe.legend = lookLegend(parts).slice(0, 12);
     if (recipe.legend.length === 0) delete recipe.legend;
     drawLegend();
   };
   const drawLegend = () => {
-    const rows = (recipe.legend ?? []).map((item) => {
+    let group: string | undefined;
+    const rows = (recipe.legend ?? []).flatMap((item) => {
+      const heading = item.group && item.group !== group ? el('div', 'lb-legend-group', item.group) : null;
+      group = item.group;
       const row = el('div', 'lb-legend-row');
       const sw = el('span', `lb-legend-swatch is-${item.shape ?? 'fill'}`);
       sw.style.setProperty('--c', item.color ?? '#999');
       row.append(sw, el('span', undefined, item.label));
-      return row;
+      return heading ? [heading, row] : [row];
     });
     legendBox.replaceChildren(...(rows.length ? rows : [el('p', 'ed-empty', 'A single colour has no legend rows. Colour by a column to get one, or give the look a legend name.')]));
   };

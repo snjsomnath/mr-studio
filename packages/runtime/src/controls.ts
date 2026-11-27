@@ -791,8 +791,12 @@ function legendZone(id: string, store: Store): { element: HTMLElement; sync(stat
       const next = JSON.stringify(look);
       if (next === drawn) return follows;
       drawn = next;
+      // Rows of one scale sit under its heading (#622): two ramps read as two legends.
+      let group: string | undefined;
       zone.replaceChildren(
-        ...look.map(({ row, waiting, current: now }) => {
+        ...look.flatMap(({ row, waiting, current: now }) => {
+          const heading = row.group && row.group !== group ? el('li', 'legend-group', say(row.group, from ? store.manifest(from.layer) : undefined)) : null;
+          group = row.group;
           const item = el('li', 'legend-row');
           item.classList.toggle('is-waiting', waiting);
           item.classList.toggle('is-current', now);
@@ -800,7 +804,7 @@ function legendZone(id: string, store: Store): { element: HTMLElement; sync(stat
           swatch.dataset.shape = row.shape ?? 'fill';
           if (row.color) swatch.style.setProperty('--swatch', row.color);
           item.append(swatch, el('span', 'legend-label', say(row.label, from ? store.manifest(from.layer) : undefined)));
-          return item;
+          return heading ? [heading, item] : [item];
         }),
       );
       return follows;

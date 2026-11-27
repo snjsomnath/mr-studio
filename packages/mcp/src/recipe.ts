@@ -6,7 +6,7 @@
 import { ARROWS, ICON_NAMES as MARK_ICONS, POINT_SHAPES } from '../../sdk/src/marks.ts';
 import { PALETTE_SETS, PALETTE_SLOTS } from '../../sdk/src/palette.ts';
 import { PLACE_MOTION_IDS } from '../../sdk/src/place-motions.ts';
-import { LOOK_DEFAULTS, MOTION_DEFAULTS, MOTIONS_FOR, compileLook, recipeLegend } from '../../sdk/src/recipe.ts';
+import { LOOK_DEFAULTS, MOTION_DEFAULTS, MOTIONS_FOR, compileLook, lookLegend } from '../../sdk/src/recipe.ts';
 import { readShapes } from '../../sdk/src/blocks/sources.ts';
 import { resolvePalette } from '../../sdk/src/palette.ts';
 import { existsSync, readFileSync } from 'node:fs';
@@ -161,13 +161,16 @@ function readGeo(file: string): any | null {
 /**
  * The legend the controller shows for a recipe, worked out as the editor's layer builder does:
  * each look compiled against its data, so every colour on the table has its swatch. Null when
- * no look could be read (data missing, a WMS map, or no looks).
+ * no look could be read (data missing, a WMS map, or no looks), or when a look is a raster:
+ * the table works that legend out from the raster itself (#622).
  */
 export function legendFor(recipe: Record<string, any>, dir: string, siteData: Record<string, unknown> = {}, palette?: unknown): { id: string; label: string; color?: string; shape?: string }[] | null {
   const data: any[] = Array.isArray(recipe.data) ? recipe.data : [];
   const frame = { toTable: (c: [number, number]) => c } as any;
-  const looks = [];
-  for (const block of Array.isArray(recipe.look) ? recipe.look : []) {
+  const blocks: any[] = Array.isArray(recipe.look) ? recipe.look : [];
+  if (blocks.some((block) => block?.block === 'raster')) return null;
+  const parts: { block: any; rows: any[] }[] = [];
+  for (const block of blocks) {
     if (!block || !(block.block in LOOK_DEFAULTS)) continue;
     const entry = data.find((d) => d?.id === block.data);
     const path = entry?.dataset ? siteData[entry.dataset] : entry?.path;
@@ -176,11 +179,11 @@ export function legendFor(recipe: Record<string, any>, dir: string, siteData: Re
     if (!geo) continue;
     try {
       const look = compileLook(block, readShapes(geo, frame), resolvePalette(palette as any), 1);
-      if (look) looks.push(look);
+      if (look) parts.push({ block, rows: look.legend });
     } catch {
       // A look the player cannot compile gives no swatch; checkRecipe reports why.
     }
   }
-  if (!looks.length) return null;
-  return recipeLegend(looks).slice(0, 12) as any;
+  if (!parts.length) return null;
+  return lookLegend(parts).slice(0, 12) as any;
 }
