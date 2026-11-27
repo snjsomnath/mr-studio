@@ -1,6 +1,6 @@
 ---
 bump: patch
-issues: [622]
+issues: 622
 ---
 
 ### Custom layers show their legend, one heading per colour scale
