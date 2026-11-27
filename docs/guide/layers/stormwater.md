@@ -13,7 +13,7 @@ Where a cloudburst floods, how green ground and trees soak up rain, and where wa
 ## Set it up
 
 1. The table needs its ground heights and buildings. In **Add data**, choose **Ground** and fetch free elevation data, or import your own terrain (GeoTIFF).
-2. Add **Stormwater** from **Add a layer**.
+2. Add **Stormwater** from **Insert › New layer**.
 3. Set the **Rain** in millimetres per hour. Around 40 is a heavy shower; above 100 is a cloudburst.
 4. **Start the storm again** clears the water and begins from dry ground.
 5. Under **Show**, choose running water, pools, or both.

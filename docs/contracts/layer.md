@@ -375,7 +375,9 @@ interface MapHandle {
   addElement(): HTMLElement;        // a layer-owned element covering the table, for SVG or canvas decorations
   addCanvas(id: string, style?: { opacity?: number }): CanvasOverlay;      // a canvas above the scene, in CSS pixels, with a projection
   addShapes(id: string, style?: { opacity?: number }): ShapeOverlay;   // points, lines and areas
-  addDrawing(id: string, options?: { opacity?: number; resolution?: number }): DrawingOverlay;
+  addDrawing(id: string, options?: { opacity?: number; resolution?: number }): DrawingOverlay;   // still pictures; not for things that move every frame
+  addSprites(id: string, images: SpriteImage[], style?: SpriteStyle): SpriteOverlay;   // many small moving pictures, on the GPU (#609)
+  addStrokes(id: string, style?: { opacity?: number }): StrokeOverlay;               // lines that change every frame, on the GPU (#609)
   addPicture(): TablePicture;       // a copy of what the table shows now, for a magnifier (#287)
   addDetail(render: (g: CanvasRenderingContext2D, scale: number) => void): void;  // draw this layer again sharply for a magnifier, in table metres (#351)
   setGlow(glow: 'off' | string | null): void;  // the ambient glow while this layer is on: off, a fixed '#rrggbb', or null for the model's own colours (#476)
@@ -402,6 +404,27 @@ interface DrawingOverlay {
   readonly scale: number;                    // canvas pixels per metre
   clear(): void;
   commit(): void;                            // show what was drawn; nothing is uploaded until then
+  setOpacity(opacity: number): void;
+  remove(): void;
+}
+
+// Many small pictures stamped by the graphics card in one instanced draw, from one mipmapped atlas
+// of `images` (canvases, images or bitmaps the layer draws once): lights along streets, cars,
+// people, tree crowns, lit windows. Each frame costs a small buffer upload, not a picture of the table.
+type SpriteImage = HTMLCanvasElement | HTMLImageElement | ImageBitmap | OffscreenCanvas;
+const SPRITE_FLOATS = 7;   // per sprite: x, y (table metres), width, height (metres), angle (radians, clockwise), image index, alpha (0 hides it)
+interface SpriteStyle { opacity?: number; blend?: 'over' | 'add' }   // 'add' adds light (glows, lamps); default 'over'
+interface SpriteOverlay {
+  set(sprites: Float32Array, count?: number): void;   // count defaults to every sprite in the buffer
+  setImages(images: SpriteImage[]): void;
+  setOpacity(opacity: number): void;
+  remove(): void;
+}
+
+// Lines that change every frame (trails, wakes), each one strip with a width and alpha per point.
+interface Stroke { points: [number, number][]; colour: string; width: number | number[]; alpha: number | number[] }   // metres
+interface StrokeOverlay {
+  set(strokes: Stroke[]): void;   // replaces every line
   setOpacity(opacity: number): void;
   remove(): void;
 }
@@ -456,7 +479,9 @@ interface FlowOverlayStyle {
 }
 ```
 
-Fields, flows, shapes and drawings (`addDrawing`) are drawn at the layer's place in the scene: above the layers before it in `site.json` and below those after it.
+Use `addDrawing` for what stays still and `addSprites` or `addStrokes` for what moves (#609). A drawing is a picture of the whole table: in WebKit (macOS) it is drawn on the processor, and each `commit` uploads all of it, so a drawing redrawn every frame cost the Mac table most of its frame rate. Sprites and strokes are cut at the table's edge in the shader, and they answer the editor's clicks on the map (#425) like a drawing does. Street glow, cars, trees, building lights, street life and transit draw their moving parts this way; `packages/layers/street-glow` uses both a drawing (the streets) and sprites (the lights).
+
+Fields, flows, shapes, drawings, sprites and strokes are drawn at the layer's place in the scene: above the layers before it in `site.json` and below those after it.
 A layer can be in a scene more than once. Each copy runs `table` on its own, with its own params, so state must live in the closure.
 
 Helpers in `@mrstudio/sdk` for drawing layers: `tableSpace(site)` turns WGS84 into table metres, `readSiteData(site, name)` and `siteDataUrl(site, name)` read a named dataset, `geojsonLines`, `geojsonPolygons` and `geojsonPoints` convert GeoJSON, `streetLines(site)` gives the `roads` dataset (none when the site has none: nothing is made up), `readStreetGraph(site, spec)` and `readWalkNetwork(site, name)` give street graphs built in the data worker and kept per file (#484), `track`, `along` and `nearestAlong` move things along a polyline, and `seededRandom` keeps "random" scenes the same on every table.
@@ -543,8 +568,8 @@ side and its second on the other, then and now (#349).
 Places are table metres. Until the layer sets a shape its items show nowhere. The runtime does the
 clipping, so the items need no code of their own: drawings (`addDrawing`) are composed through the
 shape, canvases and elements (`addCanvas`, `addElement`) get a CSS clip that follows the map, and
-fields (`addField`) are cut in their shader. Shapes (`addShapes`), flows (`addFlow`) and fields on the
-model are not clipped yet. `revealPath(g, shape, w, h)` traces the same shape on a canvas, for a cover
+fields (`addField`) are cut in their shader. Shapes (`addShapes`), flows (`addFlow`), sprites and strokes
+(`addSprites`, `addStrokes`) and fields on the model are not clipped yet. `revealPath(g, shape, w, h)` traces the same shape on a canvas, for a cover
 under the items or a rim. The Magnifier (`packages/layers/lens`) and the Reveal line
 (`packages/layers/swipe`) are the reference layers.
 

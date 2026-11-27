@@ -15,7 +15,7 @@ Presenting a masterplan or a vision step by step, as the Chalmers campus demo do
 1. Draw or export the plan as an **SVG** from Illustrator or Inkscape. Put each phase on its own layer and name the layers as you want them shown ("Primary routes", "New housing").
 2. Draw it to the table's shape: its top is the table's top.
 3. In **Add data**, bring in the SVG.
-4. Add **Masterplan** from **Add a layer** and choose the drawing under **Drawing**.
+4. Add **Masterplan** from **Insert › New layer** and choose the drawing under **Drawing**.
 5. Press **Next** on the controller to bring in each phase. **Previous** takes it back out.
 
 ## Tips

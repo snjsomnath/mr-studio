@@ -13,7 +13,7 @@ Heat on summer days, the value of shade and trees, and planning walks for people
 ## Set it up
 
 1. The table needs its buildings and its walking paths. In **Add data**, choose **Walking paths** and fetch them from OpenStreetMap.
-2. Add **Cool paths** from **Add a layer**.
+2. Add **Cool paths** from **Insert › New layer**.
 3. Set the **Date** and **Time of day**. A hot afternoon in July shows the biggest difference.
 4. **Longest detour** sets how much longer the cool walk may be (50% means half as long again).
 5. Choose **Start of the walk** and **End of the walk** on a phone, or click two points on the table. **Try another walk** picks two for you.

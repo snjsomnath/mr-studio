@@ -13,7 +13,7 @@ Comfort on squares and paths, the effect of a tall building, and why some corner
 ## Set it up
 
 1. The table needs buildings (Insert tab, **Data file**). Trees make it more real.
-2. Add **Wind** from **Add a layer**.
+2. Add **Wind** from **Insert › New layer**.
 3. Set **Wind speed** and **Wind from** (the direction it blows from, in degrees: 270 is west).
 4. Under **Show**, choose **Ribbons** (flowing lines), **Particles** or a **Speed map**.
 5. On a slower computer, set **Detail** to **Coarse**.

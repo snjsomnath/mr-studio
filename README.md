@@ -35,11 +35,13 @@ pnpm app:build    # make an installer for this computer (target/release/bundle)
 ```
 
 The app opens on Home: your tables, **New table** (a short wizard: name, place, size, then the editor takes you through the map, the layers and the controller) and **Open a folder**. A table opens in the editor; **Present** there puts it on the displays you chose under Displays and settings, one borderless fullscreen window each.
-The display choice is remembered, and a table can be set to start by itself. While presenting, Ctrl+Shift+E goes back to the editor, Ctrl+Shift+S brings the launcher back and Ctrl+Shift+Q quits.
-The launcher's Colour tab boosts or corrects the colours of each display (saturation, contrast, brightness, gamma, white balance), live on the running table, with presets and a test card.
-The Calibration tab starts the projector calibration tool on the table.
-The Command line tab puts the `mrstudio` command that ships inside the app on the PATH (also MR Studio > Install command line tool on a Mac, File > Install command line tool on Windows), for validating tables, bringing data in and building site layers from a terminal, a script or an AI assistant.
-Every merge to `main` is a numbered release (see [CHANGELOG.md](CHANGELOG.md)): each pull request writes a release note with screenshots in `changes/`, and the "Desktop app" workflow raises the version, builds the Windows and macOS installers and publishes them with the notes. Home shows **What's new** when a newer version is out, each new feature with its picture, and a button that downloads the installer for this computer; after an update it shows what the new version brought, once. The Updates tab under Displays and settings has the full notes and the build stamp. See [docs/RELEASING.md](docs/RELEASING.md).
+The display choice is remembered, and a table can be set to start by itself. While presenting, Ctrl+Shift+E goes back to the editor, Ctrl+Shift+S brings the Settings window and Ctrl+Shift+Q quits.
+Settings (File › Settings…, or **Screens and calibration…** on the editor's Present tab) picks the screens. Its Colour page boosts or corrects the colours of each display (saturation, contrast, brightness, gamma, white balance), live on the running table, with presets and a test card.
+Its Calibration page starts the projector calibration: the table shows a cross of light, and the panel that names the corner to find, with its plan and a nudge pad, is on the controller (K shows it on the table when there is no controller). With building footprints the corners are real building corners at roof height.
+**Operator mode** (Phones and startup page, the Present tab or Home) runs an exhibition computer with a small operator window in place of the editor, behind a PIN. **Open read-only** on Home opens a copy of a table for a demo, so nothing changed reaches the table itself.
+**Share** at the top right of the editor packs the table into one `.mrstable` file and attaches it to a new email; another computer opens it and asks before it updates a table it already has. A table names the MR Studio version it needs (`mrstudio.version`) and asks before it runs programs it brought with it.
+The Command line page puts the `mrstudio` command that ships inside the app on the PATH (also MR Studio > Install command line tool on a Mac, File > Install command line tool on Windows), for validating tables, bringing data in and building site layers from a terminal, a script or an AI assistant.
+Every merge to `main` is a numbered release (see [CHANGELOG.md](CHANGELOG.md)): each pull request writes a release note with screenshots in `changes/`, and the "Desktop app" workflow raises the version, builds the Windows and macOS installers and publishes them with the notes. Home shows **What's new** when a newer version is out, each new feature with its picture, and a button that downloads the installer for this computer; after an update it shows what the new version brought, once. The Updates page in Settings has the full notes and the build stamp. See [docs/RELEASING.md](docs/RELEASING.md).
 Pull request builds attach their installers to the run as artifacts.
 The installers are not signed yet: Windows SmartScreen asks once ("More info", "Run anyway"), and on macOS open the app the first time with right click, Open.
 
@@ -91,22 +93,22 @@ How work is done here (issues first, release notes, screenshots, what belongs in
 
 ## Status
 
-As of 2026-11-24. What changed release by release is in [CHANGELOG.md](CHANGELOG.md).
+As of 2026-11-27 (0.53.0). What changed release by release is in [CHANGELOG.md](CHANGELOG.md).
 
 | Part | State |
 | --- | --- |
 | Engine: scene, jobs, kernels on GPU and CPU with parity tests: `sunlight`, `wind`, `stormwater`; point questions (`engine.probe`) | Working |
-| Site format 3, validation, migration, bake from footprints, meshes (STL), 3D models, terrain (raw or GeoTIFF) and trees; one-file `.mrstable` export; starter packs for QGIS, Illustrator, Photoshop and PowerPoint (`mrstudio starter-pack`) | Working |
-| Host: session state, roles, validated params, field streaming, revision history with undo and redo | Working |
-| Phones: QR join on the local network, through the join page on GitHub Pages over WebRTC (eduroam, mobile data; no server of our own), or through the relay, point, line and polygon tools, the guide's phone | Working; tested in desktop browsers, not yet on a real phone |
+| Site format 3, validation, migration, bake from footprints, meshes (STL), 3D models, terrain (raw or GeoTIFF) and trees; GeoJSON, CSV, zipped shapefiles, GeoPackages and rasters of values; OpenStreetMap fetches through three Overpass servers with kept parts; one-file `.mrstable` export; starter packs for QGIS, Illustrator, Photoshop and PowerPoint (`mrstudio starter-pack`) | Working |
+| Host: session state, roles, validated params, field streaming, revision history with undo and redo, one idle timer for the whole table, a shared play head (`layer.clock`) | Working |
+| Phones: QR join on the local network, through the join page on GitHub Pages over WebRTC (eduroam, mobile data; no server of our own), or through the relay, point, line and polygon tools, field walk spots with a photo or a sound, the guide's phone | Working; tested in desktop browsers, not yet on a real phone |
 | Controller: layer rails, stage with heroes and legends, attract loop and idle reset, map controls, credits, Swedish and English | Working |
-| Table: projector calibration, colour per display, ribbons in the blank margins, table grid | Working |
-| Editor (`/edit`): Home, New table wizard, layers, buttons, slideshows and tours, custom layer builder, styling, history, Display and Table settings | Working; the main authoring tool |
+| Table: projector calibration (panel on the controller, footprint corners), colour per display, ribbons in the blank margins, table grid; everything that moves drawn on the GPU (`addSprites`, `addStrokes`) | Working; on a Mac the presented Chalmers table is still to be measured after 0.53.0 |
+| Editor (`/edit`): Home, New table wizard, layers, buttons, slideshows and tours, custom layer builder (incl. raster looks with Dig, well logs, two-stack X-rays), media library, styling, history, Screens and calibration, Table settings, Share | Working; the main authoring tool |
 | Core layers (table above) | Working |
 | Base map tiles: free styles, Sources maps (Mapbox, CARTO, Lantmäteriet, WMS, ArcGIS), offline tile store | Working |
 | Sources and keys (OS keychain, host-signed requests) | Working |
-| Desktop app: Home, editor window, fullscreen per display, unattended running (watchdog, nightly restart, start at login), What's new | Working on Linux and on macOS (Apple M4 Pro); the first run on the Windows studio PC is still to do |
+| Desktop app: Home, editor window, fullscreen per display, unattended running (watchdog, nightly restart, start at login), operator mode, read-only open, What's new | Working on Linux and on macOS (Apple M4 Pro); the first run on the Windows studio PC is still to do |
 | Releases: a version per merge to main, notes with screenshots, installers for Windows and macOS | Working; the installers are not code-signed |
 | MCP server for building sites with an LLM | Working; CI runs it on Linux, Windows and macOS |
-| Lindholmen and Universeum site packages | Not started |
+| Lindholmen and Universeum tables | Built as tables of their own (`.mrstable`), outside this repository; only Chalmers and the sample are in `sites/` |
 | Python services gateway (ECOM) | Not started; ECOM is left for later |

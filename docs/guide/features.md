@@ -138,7 +138,7 @@ Name the parts of each phase by what they are (Boundary, Main axis, Routes, Arro
 
 ## Magnifier
 
-A glass people move over the table with the mouse, from the controller or from a phone. It shows what is under it larger, or, set to *X-ray: the layers inside it*, an X-ray of the layers placed inside it in the editor (Insert › Add inside…, or **X-ray glass** in the layer gallery) (pipes under the street, an old map, a plan), only inside the glass. Set **The X-ray looks like** to *A hole in the table* and the glass becomes an opening into the ground, with dark walls and a lit far edge.
+A glass people move over the table with the mouse, from the controller or from a phone. It shows what is under it larger, or, set to *X-ray: the layers inside it*, an X-ray of the layers placed inside it in the editor (Insert › Add inside…, or **X-ray glass** in the layer gallery) (pipes under the street, an old map, a plan), only inside the glass. Set **The X-ray looks like** to *A hole in the table* and the glass becomes an opening into the ground, with dark walls and a lit far edge. Layers inside go in two stacks: the surface, shown around the glass, and what lies underneath, shown through it.
 
 Layer `lens`, analysis.
 
@@ -146,7 +146,7 @@ Layer `lens`, analysis.
 
 ## Reveal line
 
-A line across the table people drag, from the table, the controller or a phone. On one side of it the layers placed inside it show, such as what is under the ground; on the other the table stays as it is. Left alone it sweeps slowly to invite people in.
+A line across the table people drag, from the table, the controller or a phone. On one side of it the layers placed inside it show, such as what is under the ground; on the other the table stays as it is. Left alone it sweeps slowly to invite people in. Like the Magnifier, its layers go in two stacks: the surface on one side, what lies underneath on the other.
 
 Layer `swipe`, analysis.
 
@@ -206,6 +206,8 @@ Layer `blocks-demo`.
 
 ## Your own layers
 
-The layer builder (Insert tab, Custom layer) combines data, look, motion and interaction into a custom layer saved in the table: points, lines and zones coloured by your data, place motions such as pulses and circular waves, particles and flows along streets.
+The layer builder (Insert tab, Custom layer) combines data, look, motion and interaction into a custom layer saved in the table: points, lines and zones coloured by your data, rasters of values (soil depth, rock surface) with a **Dig** slider that peels the ground away, a well's or borehole's log on the controller when one is tapped, place motions such as pulses and circular waves, particles and flows along streets. Data comes from GeoJSON, CSV, zipped shapefiles, GeoPackages and GeoTIFFs (see **Bring in your own data**).
+
+![Dig: a raster cut away with a glowing edge](docs/screenshots/601-dig.png)
 
 ![Place motions](docs/screenshots/161-place-motions.png)

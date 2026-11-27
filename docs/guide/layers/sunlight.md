@@ -13,7 +13,7 @@ Showing where a courtyard gets sun, how a new building shades its neighbours, an
 ## Set it up
 
 1. Make sure the table has buildings (and ground heights and trees if you have them): Insert tab, **Data file**.
-2. Add **Sunlight** from **Add a layer**. It gets a button on the controller.
+2. Add **Sunlight** from **Insert › New layer**. It gets a button on the controller.
 3. Under **Show**, pick **Shadows**, **Golden hour**, **Sun hours**, **Seasons** or **Daylight rule**.
 4. Set the **Day** and the **Time of day**. **Animate the day** plays the sun from morning to evening.
 5. To flag spots that get too little sun, set **Flag areas with less sun than** a number of hours.

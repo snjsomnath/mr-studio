@@ -14,7 +14,7 @@ Comparing ways of getting somewhere, showing how long a journey really takes, an
 
 1. Prepare a **trips** file: each trip with its group and its legs, each leg with a start time, a length and its route. The format is in the layer's documentation (packages/layers/mobility/README.md); a researcher or a script usually makes it.
 2. In **Add data**, choose **Trips** and bring the file in. A map of values per area goes in as a dataset named **trip_cells**.
-3. Add **Mobility** from **Add a layer**.
+3. Add **Mobility** from **Insert › New layer**.
 4. Press **Play**. **Speed** sets how fast time passes; **Time** jumps to a moment.
 
 ## Tips

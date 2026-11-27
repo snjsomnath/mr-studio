@@ -12,7 +12,7 @@ Telling a story in steps, and guided tours where a guide moves on with Next.
 
 ## Set it up
 
-1. Add **Slideshow** from **Add a layer** and select it.
+1. Add **Slideshow** from **Insert › New layer** and select it.
 2. Press **Add a slide** and choose what it shows: a layer in the table, a picture or video, map data, or a web map.
 3. Give each slide a title and text for the controller, and notes for the guide.
 4. Choose how each slide moves on: by hand with Next, or after some seconds.

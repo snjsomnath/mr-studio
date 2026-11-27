@@ -12,7 +12,7 @@ Seeing what the building blocks can do before you make a layer of your own. It i
 
 ## Set it up
 
-1. Add **Building blocks** from **Add a layer**.
+1. Add **Building blocks** from **Insert › New layer**.
 2. Choose a **Scene**. **Next step** moves "Places that pull" on.
 3. Choose what the **Pointer on the table** does: read values, walk a person, magnify or X-ray.
 
