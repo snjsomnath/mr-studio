@@ -23,10 +23,12 @@ in vec4 a_uv;             // the picture's rectangle in the atlas
 in float a_alpha;
 out vec2 v_uv;
 out float v_alpha;
+out vec2 v_table;         // 0 to 1 inside the table
 void main() {
   vec2 local = a_corner * a_box.zw;
   vec2 p = a_box.xy + vec2(local.x * a_turn.x - local.y * a_turn.y, local.x * a_turn.y + local.y * a_turn.x);
   vec2 uv = p / u_size;
+  v_table = uv;
   gl_Position = u_matrix * vec4(u_origin + uv.x * u_right + uv.y * u_down, 0.0, 1.0);
   v_uv = mix(a_uv.xy, a_uv.zw, a_corner + 0.5);
   v_alpha = a_alpha * u_opacity;
@@ -37,8 +39,11 @@ precision mediump float;
 uniform sampler2D u_atlas;
 in vec2 v_uv;
 in float v_alpha;
+in vec2 v_table;
 out vec4 color;
 void main() {
+  // Nothing outside the table, as a drawing is cut at its edges.
+  if (any(lessThan(v_table, vec2(0.0))) || any(greaterThan(v_table, vec2(1.0)))) discard;
   color = texture(u_atlas, v_uv) * v_alpha;   // the atlas is premultiplied, as MapLibre blends
 }`;
 
@@ -153,6 +158,21 @@ export class MapSpriteOverlay implements SpriteOverlay, CustomLayerInterface {
     this.count = k / GPU_FLOATS;
     this.dataDirty = true;
     this.map.triggerRepaint();
+  }
+
+  /** Whether a sprite covers the point (table metres) within `radius`, for a click on the map (#425). Its picture's soft edge does not count. */
+  hit(x: number, y: number, radius: number): boolean {
+    if (this.opacity * this.gain <= 0) return false;
+    const d = this.data;
+    for (let k = 0; k < this.count * GPU_FLOATS; k += GPU_FLOATS) {
+      if (d[k + 10]! < 0.1) continue;
+      const dx = x - d[k]!;
+      const dy = y - d[k + 1]!;
+      const cos = d[k + 4]!;
+      const sin = d[k + 5]!;
+      if (Math.abs(dx * cos + dy * sin) <= d[k + 2]! * 0.3 + radius && Math.abs(-dx * sin + dy * cos) <= d[k + 3]! * 0.3 + radius) return true;
+    }
+    return false;
   }
 
   setImages(images: SpriteImage[]): void {

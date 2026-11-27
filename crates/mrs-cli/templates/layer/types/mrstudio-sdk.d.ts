@@ -2089,6 +2089,24 @@ declare module "@mrstudio/sdk/layer" {
         setOpacity(opacity: number): void;
         remove(): void;
     }
+    /** One line for a stroke overlay: points in table metres, with a width (metres) and alpha per point or for all. */
+    export interface Stroke {
+        points: [number, number][];
+        /** A CSS hex or rgb() colour. */
+        colour: string;
+        width: number | number[];
+        alpha: number | number[];
+    }
+    /**
+     * Lines that change every frame (trails behind vehicles, wakes), drawn by the graphics card (#609).
+     * Each line is one strip with its width and alpha per point, so a tapering trail needs no pieces.
+     */
+    export interface StrokeOverlay {
+        /** Replaces every line the overlay shows. */
+        set(strokes: Stroke[]): void;
+        setOpacity(opacity: number): void;
+        remove(): void;
+    }
     /** What a layer may draw on the table. Everything sits at the layer's place in the scene's draw order. */
     export interface MapHandle {
         addField(id: string, style: FieldOverlayStyle & {
@@ -2102,6 +2120,10 @@ declare module "@mrstudio/sdk/layer" {
         }): ShapeOverlay;
         /** Sprites stamped from `images` on the graphics card: see `SpriteOverlay`. */
         addSprites(id: string, images: SpriteImage[], style?: SpriteStyle): SpriteOverlay;
+        /** Moving lines drawn on the graphics card: see `StrokeOverlay`. */
+        addStrokes(id: string, style?: {
+            opacity?: number;
+        }): StrokeOverlay;
         /**
          * An element covering the table, above everything the scene draws, for decorations a layer draws itself
          * (a sun path, a compass). It ignores pointer input and is removed with the layer.

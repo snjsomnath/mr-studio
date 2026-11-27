@@ -1,5 +1,5 @@
 import { fitTable, revealPath, revealPolygon, sameReveal, tableFrame } from '@mrstudio/sdk';
-import type { CanvasOverlay, DrawingOverlay, Colormap, FieldOverlay, FieldOverlayStyle, FlowOverlay, FlowOverlayStyle, MapHandle, ModelHandle, PixelRect, RevealShape, Shape, ShapeOverlay, SiteInfo, SpriteImage, SpriteOverlay, SpriteStyle, TablePicture, TablePointer, DisplayQuality } from '@mrstudio/sdk';
+import type { CanvasOverlay, DrawingOverlay, Colormap, FieldOverlay, FieldOverlayStyle, FlowOverlay, FlowOverlayStyle, MapHandle, ModelHandle, PixelRect, RevealShape, Shape, ShapeOverlay, SiteInfo, SpriteImage, SpriteOverlay, SpriteStyle, StrokeOverlay, TablePicture, TablePointer, DisplayQuality } from '@mrstudio/sdk';
 import maplibregl from 'maplibre-gl';
 
 type DetailRenderer = (g: CanvasRenderingContext2D, scale: number) => void;
@@ -10,6 +10,7 @@ import { MapCanvasOverlay } from './canvas-overlay.ts';
 import { MapFieldOverlay } from './field-overlay.ts';
 import { MapFlowOverlay } from './flow-overlay.ts';
 import { MapSpriteOverlay } from './sprite-overlay.ts';
+import { MapStrokeOverlay } from './stroke-overlay.ts';
 import { ModelView } from './model/view.ts';
 import { pixelRatio } from './quality.ts';
 import { tablePointer } from './table-pointer.ts';
@@ -250,8 +251,25 @@ export class TableView {
         add(name, overlay);
         overlay.setGain(drawn.intensity);
         drawn.overlays.add(overlay);
+        drawn.marks.add(overlay);
         track(() => {
           drawn.overlays.delete(overlay);
+          drawn.marks.delete(overlay);
+          overlay.remove();
+          forget(name);
+        });
+        return overlay;
+      },
+      addStrokes: (id: string, style?: { opacity?: number }): StrokeOverlay => {
+        const name = `strokes:${instance}:${id}`;
+        const overlay = new MapStrokeOverlay(this.map, name, this.site, style);
+        add(name, overlay);
+        overlay.setGain(drawn.intensity);
+        drawn.overlays.add(overlay);
+        drawn.marks.add(overlay);
+        track(() => {
+          drawn.overlays.delete(overlay);
+          drawn.marks.delete(overlay);
           overlay.remove();
           forget(name);
         });
@@ -408,6 +426,10 @@ export class TableView {
         if (hit) break;
         hit = inked(canvas, metres[0] * scale, metres[1] * scale, (slop / fit.scale) * scale);
       }
+      for (const mark of drawn.marks) {
+        if (hit) break;
+        hit = mark.hit(metres[0], metres[1], slop / fit.scale);
+      }
       if (!hit) {
         const vector = (this.owned.get(instance) ?? []).filter((id) => VECTOR.has(this.map.getLayer(id)?.type ?? ''));
         hit = vector.length > 0 && this.map.queryRenderedFeatures(box, { layers: vector }).length > 0;
@@ -431,7 +453,7 @@ export class TableView {
 
   private drawnBy(instance: string) {
     let drawn = this.drawn.get(instance);
-    if (!drawn) this.drawn.set(instance, (drawn = { overlays: new Set(), pictures: new Map(), surfaces: new Set(), elements: new Set(), canvases: new Map(), intensity: 1, clipped: new Set(), fields: new Set(), flows: new Set(), reclip: new Set(), compose: new Map() }));
+    if (!drawn) this.drawn.set(instance, (drawn = { overlays: new Set(), pictures: new Map(), surfaces: new Set(), elements: new Set(), canvases: new Map(), intensity: 1, clipped: new Set(), fields: new Set(), flows: new Set(), marks: new Set(), reclip: new Set(), compose: new Map() }));
     return drawn;
   }
 
@@ -884,6 +906,8 @@ interface Drawn {
   clipped: Set<HTMLElement>;
   fields: Set<MapFieldOverlay>;
   flows: Set<MapFlowOverlay>;
+  /** Sprites and lines the graphics card draws, in table metres, that a click can land on (#425, #609). */
+  marks: Set<{ hit(x: number, y: number, radius: number): boolean }>;
   /** Makes each clipped drawing again after the shape changed. */
   reclip: Set<() => void>;
   /** By drawing: makes its clipped copy, before a commit. */

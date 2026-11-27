@@ -1,5 +1,6 @@
 import { along, defineLayer, geojsonLines, geojsonPoints, readSiteData, nearestAlong, streetLines, tableSpace, traceLine, track, withAlpha } from '@mrstudio/sdk';
-import type { LayerManifest, XY, Track } from '@mrstudio/sdk';
+import { SPRITE_FLOATS } from '@mrstudio/sdk';
+import type { LayerManifest, Stroke, XY, Track } from '@mrstudio/sdk';
 
 import manifest from '../layer.json';
 
@@ -113,7 +114,13 @@ export default defineLayer<Params>({
   manifest: manifest as LayerManifest,
 
   async table(ctx) {
+    // Lines and stops change only with the controls, so they are a drawing; trails, wakes and
+    // vehicles move every frame, so the graphics card draws them (#609).
     const canvas = ctx.map.addDrawing('transit', { opacity: ctx.params.opacity });
+    const strokes = ctx.map.addStrokes('transit-trails', { opacity: ctx.params.opacity });
+    const markers = ctx.map.addSprites('transit-vehicles', [], { opacity: ctx.params.opacity });
+    /** Pixels per metre the vehicle pictures are painted at: a 2048-pixel table, as the drawing was. */
+    const SCALE = 2048 / ctx.site.extent.width_m;
     const space = tableSpace(ctx.site);
     const data = await readSiteData(ctx.site, 'transit');
 
@@ -271,14 +278,19 @@ export default defineLayer<Params>({
     }
 
     /** Circle, glow and line number, painted once per look at the canvas's own resolution and reused. */
-    const sprites = new Map<string, { image: HTMLCanvasElement; half: number }>();
+    const sprites = new Map<string, { image: HTMLCanvasElement; half: number; index: number }>();
+    let looks: HTMLCanvasElement[] = [];
+    let looksChanged = false;
     function sprite(v: Vehicle, k: number, label: boolean) {
       const text = label ? v.line : '';
       const key = [v.colour, v.textColour, text, k].join('|');
       let found = sprites.get(key);
       if (found) return found;
-      if (sprites.size >= 128) sprites.delete(sprites.keys().next().value!);
-      const px = PX * k * canvas.scale; // canvas pixels per old projector pixel
+      if (sprites.size >= 128) {
+        sprites.clear();
+        looks = [];
+      }
+      const px = PX * k * SCALE; // picture pixels per old projector pixel
       const radius = MARKER_PX * px;
       const glow = GLOW_PX * px;
       const half = Math.ceil(Math.max(glow, radius + SHADOW_PX * px)) + 2;
@@ -311,7 +323,9 @@ export default defineLayer<Params>({
         g.fillStyle = v.textColour;
         g.fillText(text, half, half + px);
       }
-      found = { image, half: half / canvas.scale };
+      found = { image, half: half / SCALE, index: looks.length };
+      looks.push(image);
+      looksChanged = true;
       sprites.set(key, found);
       return found;
     }
@@ -411,21 +425,102 @@ export default defineLayer<Params>({
       }
     }
 
+    /** A trail as one tapering line: thin and faint at its tail, full into the vehicle. */
+    function trailStroke(v: Vehicle, k: number): Stroke | null {
+      const n = v.trail.length;
+      if (n < 2) return null;
+      const full = TRAIL_PX * PX * k;
+      const points: XY[] = [...v.trail, [v.x, v.y]];
+      const width = points.map((_, i) => (i >= n ? full : full * (0.3 + 0.7 * (i / n))));
+      const alpha = points.map((_, i) => (i >= n ? 0xcc / 255 : TRAIL_ALPHA * (i / n)));
+      return { points, colour: v.colour, width, alpha };
+    }
+
+    /** A ferry's wake as lines: the ribbon, the two arms, the centre and the cross-ripples. */
+    function wakeStrokes(v: Vehicle, into: Stroke[]) {
+      const samples = v.wake;
+      const points = samples.map((p, i) => {
+        const a = samples[Math.max(0, i - 1)]!;
+        const b = samples[Math.min(samples.length - 1, i + 1)]!;
+        const length = Math.hypot(b.x - a.x, b.y - a.y);
+        if (length < 0.01) return null;
+        const age = Math.max(0, clock - p.t);
+        const spread = Math.min(WAKE_SPREAD_M, 0.5 + age * 0.65);
+        const nx = -(b.y - a.y) / length;
+        const ny = (b.x - a.x) / length;
+        return {
+          t: p.t,
+          spread,
+          alpha: (1 - age / WAKE_S) ** 2,
+          center: [p.x, p.y] as XY,
+          left: [p.x + nx * spread, p.y + ny * spread] as XY,
+          right: [p.x - nx * spread, p.y - ny * spread] as XY,
+        };
+      }).filter((p) => p !== null);
+      if (points.length < 2) return;
+      const alpha = points.map((p) => p.alpha);
+      into.push({ points: points.map((p) => p.center), colour: 'rgb(168,220,234)', width: points.map((p) => p.spread * 2), alpha: alpha.map((a) => a * 0.055) });
+      for (const side of ['left', 'right', 'center'] as const) {
+        const centre = side === 'center';
+        into.push({ points: points.map((p) => p[side]), colour: 'rgb(213,242,250)', width: (centre ? 0.8 : 1.15) * PX, alpha: alpha.map((a) => a * (centre ? 0.1 : 0.36)) });
+      }
+      for (let i = 1; i < points.length; i++) {
+        const a = points[i - 1]!;
+        const b = points[i]!;
+        if (Math.floor(a.t / 1.4) !== Math.floor(b.t / 1.4)) {
+          into.push({ points: [b.left, b.right], colour: 'rgb(224,245,250)', width: 0.7 * PX, alpha: Math.min(a.alpha, b.alpha) * 0.18 });
+        }
+      }
+    }
+
+    /** Lines and stops: redrawn only when the controls or the network change. */
+    let networkKey = '';
+    function drawNetwork() {
+      const key = [ctx.params.routes, ctx.params.stops, ctx.params.source].join('|');
+      if (key === networkKey) return;
+      networkKey = key;
+      canvas.clear();
+      paintNetwork(canvas.ctx);
+      canvas.commit();
+    }
+
     /** The vehicles last drawn, for a magnifier's sharp picture. */
     let shown: Vehicle[] = [];
+    let buffer = new Float32Array(64 * SPRITE_FLOATS);
 
     function draw(vehicles: Vehicle[]) {
       for (const v of vehicles) record(v);
       shown = vehicles;
-      canvas.clear();
-      paint(canvas.ctx, vehicles);
-      canvas.commit();
+      drawNetwork();
+      const { size, labels, trails } = ctx.params;
+      const k = size / 2;
+      const lines: Stroke[] = [];
+      if (trails) {
+        for (const v of vehicles) {
+          if (v.mode === 'ferry') wakeStrokes(v, lines);
+          else {
+            const line = trailStroke(v, k);
+            if (line) lines.push(line);
+          }
+        }
+      }
+      strokes.set(lines);
+      if (buffer.length < vehicles.length * SPRITE_FLOATS) buffer = new Float32Array(vehicles.length * SPRITE_FLOATS * 2);
+      let n = 0;
+      for (const v of vehicles) {
+        const { half, index } = sprite(v, k, labels);
+        buffer.set([v.x, v.y, half * 2, half * 2, 0, index, 1], n * SPRITE_FLOATS);
+        n++;
+      }
+      if (looksChanged) {
+        looksChanged = false;
+        markers.setImages(looks);
+      }
+      markers.set(buffer, n);
     }
 
     /** Draws the lines, stops, trails and vehicles into `g`, in table metres: the table, and a magnifier's sharp picture (#413). */
-    function paint(g: CanvasRenderingContext2D, vehicles: Vehicle[]) {
-      const { size, labels, trails } = ctx.params;
-      const k = size / 2;
+    function paintNetwork(g: CanvasRenderingContext2D) {
       g.lineCap = 'round';
       g.lineJoin = 'round';
       // Made-up lines are only for simulated vehicles. Under live vehicles they would be streets no real line runs on.
@@ -453,6 +548,14 @@ export default defineLayer<Params>({
           }
         }
       }
+    }
+
+    function paint(g: CanvasRenderingContext2D, vehicles: Vehicle[]) {
+      const { size, labels, trails } = ctx.params;
+      const k = size / 2;
+      paintNetwork(g);
+      g.lineCap = 'round';
+      g.lineJoin = 'round';
       // Every trail and wake first, then every vehicle, so no trail crosses a vehicle.
       for (const v of vehicles) {
         if (!trails) continue;
@@ -469,19 +572,13 @@ export default defineLayer<Params>({
       paint(g, shown);
     });
 
-    let since = Infinity;
     ctx.onFrame((dt) => {
       clock += dt;
       const isLive = ctx.params.source === 'live';
       if (isLive) stepLive(dt);
       else stepSimulated(dt);
       const vehicles = isLive ? [...live.values()] : simulated;
-      // Drawn up to 30 times a second: a full-table picture every frame cost the presented table dearly in WebKit (#596).
-      since += dt;
-      if (since >= 1 / 30) {
-        since = 0;
-        draw(vehicles);
-      }
+      draw(vehicles);
       ctx.publish({
         vehicles: vehicles.length,
         status: isLive
@@ -497,7 +594,12 @@ export default defineLayer<Params>({
 
     return {
       update(changed) {
-        if (changed.includes('opacity')) canvas.setOpacity(ctx.params.opacity);
+        if (changed.includes('opacity')) {
+          canvas.setOpacity(ctx.params.opacity);
+          strokes.setOpacity(ctx.params.opacity);
+          markers.setOpacity(ctx.params.opacity);
+        }
+        if (changed.includes('routes') || changed.includes('stops') || changed.includes('source')) networkKey = '';
         if (changed.includes('vehicles')) seed();
         if (changed.includes('feed') || changed.includes('provider') || changed.includes('source')) {
           live.clear();

@@ -1,4 +1,4 @@
-import { drainSteps, inSlices, readSiteGeometry, defineLayer, seededRandom, tableSpace } from '@mrstudio/sdk';
+import { SPRITE_FLOATS, drainSteps, inSlices, readSiteGeometry, defineLayer, seededRandom, tableSpace } from '@mrstudio/sdk';
 import type { LayerManifest } from '@mrstudio/sdk';
 
 import manifest from '../layer.json';
@@ -57,6 +57,28 @@ const FRAME_S = 1 / 15;
 const LINE_M = 1.4;
 const GLOW_M = 5;
 const WHITE = '#ffffff';
+/** Pixels per metre of the window dash picture, and the clear margin around it. */
+const DASH_PX = 16;
+const DASH_PAD_M = 0.25;
+
+/** A lit window seen from above: a short round-ended dash, in the control's colour and in white. */
+function dashes(color: string): HTMLCanvasElement[] {
+  return [color, WHITE].map((paint) => {
+    const image = document.createElement('canvas');
+    image.width = Math.ceil((WINDOW_M + LINE_M + DASH_PAD_M * 2) * DASH_PX);
+    image.height = Math.ceil((LINE_M + DASH_PAD_M * 2) * DASH_PX);
+    const g = image.getContext('2d')!;
+    g.setTransform(DASH_PX, 0, 0, DASH_PX, image.width / 2, image.height / 2);
+    g.strokeStyle = paint;
+    g.lineWidth = LINE_M;
+    g.lineCap = 'round';
+    g.beginPath();
+    g.moveTo(-WINDOW_M / 2, 0);
+    g.lineTo(WINDOW_M / 2, 0);
+    g.stroke();
+    return image;
+  });
+}
 
 export default defineLayer<Params>({
   manifest: manifest as LayerManifest,
@@ -65,7 +87,8 @@ export default defineLayer<Params>({
     // The soft glow under the facades changes only with the controls, so it is a picture of its own,
     // drawn once, and only the windows are drawn again (#596).
     const glowCanvas = ctx.map.addDrawing('glow', { opacity: ctx.params.opacity });
-    const canvas = ctx.map.addDrawing('windows', { opacity: ctx.params.opacity });
+    // The windows are a dash picture the graphics card stamps for every lit window (#609).
+    const windows = ctx.map.addSprites('windows', dashes(ctx.params.color), { opacity: ctx.params.opacity, blend: 'add' });
     const space = tableSpace(ctx.site);
     const random = seededRandom(23);
     const footprints = (await readSiteGeometry(ctx.site, 'buildings'))?.polygons ?? [];
@@ -133,10 +156,28 @@ export default defineLayer<Params>({
         light.level += (light.target - light.level) * Math.min(1, step * 2.5);
       }
       showGlow();
-      canvas.clear();
-      paint(canvas.ctx, true);
-      canvas.commit();
+      placeWindows();
     });
+
+    let buffer = new Float32Array(0);
+    /** Hands every lit window to the graphics card: a dash along its facade, as bright as it is lit. */
+    function placeWindows() {
+      if (buffer.length < lights.length * SPRITE_FLOATS) buffer = new Float32Array(lights.length * SPRITE_FLOATS);
+      let n = 0;
+      for (const light of lights) {
+        const building = buildings[light.building]!;
+        if (light.level < 0.02 || building.dark > 0) continue;
+        const o = n++ * SPRITE_FLOATS;
+        buffer[o] = (light.x0 + light.x1) / 2;
+        buffer[o + 1] = (light.y0 + light.y1) / 2;
+        buffer[o + 2] = WINDOW_M + LINE_M + DASH_PAD_M * 2;
+        buffer[o + 3] = LINE_M + DASH_PAD_M * 2;
+        buffer[o + 4] = Math.atan2(light.y1 - light.y0, light.x1 - light.x0);
+        buffer[o + 5] = building.white ? 1 : 0;
+        buffer[o + 6] = Math.min(1, light.level * building.brightness);
+      }
+      windows.set(buffer, n);
+    }
 
     const outline = (building: Building): Path2D => {
       if (building.outline) return building.outline;
@@ -204,18 +245,18 @@ export default defineLayer<Params>({
     }
 
     /**
-     * Draws the lit facades as they are now into `g`, in table metres: the table (`table`, whose glow
-     * is a picture of its own) and a magnifier's sharp picture (#413). Windows of the same colour and
-     * brightness go in one stroke (#483).
+     * Draws the lit facades as they are now into `g`, in table metres, for a magnifier's sharp picture
+     * (#413); the table itself has the glow's picture and the window sprites. Windows of the same
+     * colour and brightness go in one stroke (#483).
      */
-    function paint(g: CanvasRenderingContext2D, table = false) {
+    function paint(g: CanvasRenderingContext2D) {
       const { lit } = ctx.params;
       g.save();
       g.globalCompositeOperation = 'lighter';
       g.lineCap = 'round';
       g.lineJoin = 'round';
       // A soft glow along every lit building's outline, so the facades read as lit from within.
-      if (lit > 0 && !table) drainSteps(glowSteps(g, true));
+      if (lit > 0) drainSteps(glowSteps(g, true));
       // The windows themselves: dashes along the facade that come on and go off.
       const windows = buckets();
       for (const light of lights) {
@@ -237,9 +278,10 @@ export default defineLayer<Params>({
     return {
       update(changed) {
         if (changed.includes('opacity')) {
-          canvas.setOpacity(ctx.params.opacity);
+          windows.setOpacity(ctx.params.opacity);
           glowCanvas.setOpacity(ctx.params.opacity);
         }
+        if (changed.includes('color')) windows.setImages(dashes(ctx.params.color));
         // Respond to the slider now rather than as each window's timer runs out.
         if (changed.includes('lit')) for (const light of lights) light.wait = Math.min(light.wait, random() * 1.5);
       },
