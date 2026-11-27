@@ -3,6 +3,7 @@ name = "mrs-site"
 description = "MR Studio site package format: site.json, validation, scene baking"
 version.workspace = true
 edition.workspace = true
+license-file.workspace = true
 publish = false
 
 [dependencies]

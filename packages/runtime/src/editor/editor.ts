@@ -25,6 +25,7 @@ import { confirmLeave, actionFor, fileButton, keys as shortcut, mac } from './fi
 import { contextMenu, renameInline, typing } from './tree-tools.ts';
 import { CanvasTools } from './canvas-tools.ts';
 import { fitRibbon } from './ribbon-fit.ts';
+import type { RailFit } from '../rail-fit.ts';
 import { FIRST_TAB, RIBBON } from './layout.ts';
 import type { WidgetId } from './layout.ts';
 import { columns, drawTab, menuItem, ribbonGroup, searchable } from './ribbon-layout.ts';
@@ -268,6 +269,15 @@ export class Editor {
   private rehearsal!: Rehearsal;
   /** Ready to present? (#63): the count of what is left to check, and the list behind it. */
   private readonly checksButton = el('button', 'ed-checks');
+  /**
+   * Buttons that do not fit on a side of the controller (#614), as the live controller in the
+   * canvas measures them: it is laid out like the TV, so it fits as many as the TV does.
+   */
+  private readonly railNote = el('button', 'ed-rail-note');
+  private railFits: Partial<Record<'left' | 'right', RailFit>> = {};
+  /** How many were out of sight when the author was last told, so a warning comes once, and again only if it gets worse. */
+  private railWarned = 0;
+  private railRetry = 0;
   /** In a narrow window the inspector is a drawer over the right of the map, opened from here (#66). */
   private readonly drawerToggle = el('button', 'ed-button ed-drawer-toggle');
 
@@ -386,7 +396,7 @@ export class Editor {
       },
     });
 
-    body.append(left, centre, this.inspector);
+    body.append(left, centre, this.inspectorResize(), this.inspector);
     const invoke = desktop();
     this.displayTab = new DisplayTab(invoke, connection, this.canvas, () => void invoke?.('open_settings', { page: 'setup' }));
     this.displayTab.setQuality(this.store.state.site.display?.quality ?? 'good');
@@ -944,6 +954,8 @@ export class Editor {
     this.show(null);
     this.render();
     this.startTour();
+    // A warning held back while the guide was open (#614).
+    this.checkRails();
   }
 
   /**
@@ -989,6 +1001,17 @@ export class Editor {
       frame.src = '/tv';
       frame.title = 'The controller, live';
       this.preview.append(frame);
+      // The controller says how its rails fit (#614); a reload of the frame asks again.
+      window.addEventListener('message', (event) => {
+        const data = event.data as RailFit | null;
+        if (event.source !== frame.contentWindow || event.origin !== location.origin || data?.type !== 'mrs-rail-fit') return;
+        this.railFits[data.side] = data;
+        this.checkRails();
+      });
+      frame.addEventListener('load', () => {
+        this.railFits = {};
+        frame.contentWindow?.postMessage({ type: 'mrs-rail-fit?' }, location.origin);
+      });
       // The controller is laid out for a full screen; it is scaled down to fit.
       const fit = (): void => {
         const scale = Math.min((this.preview.clientWidth - 32) / 1600, (this.preview.clientHeight - 32) / 900);
@@ -1516,9 +1539,9 @@ export class Editor {
   }
 
   /** A small question in a dialog. Resolves to the chosen id, or null when it is closed with Escape or ×. */
-  private ask(title: string, text: string, choices: { id: string; label: string; primary?: boolean }[]): Promise<string | null> {
+  private ask(title: string, text: string, choices: { id: string; label: string; primary?: boolean }[], kind?: string): Promise<string | null> {
     return new Promise((resolve) => {
-      const dialog = el('dialog', 'im-dialog ed-ask');
+      const dialog = el('dialog', `im-dialog ed-ask${kind ? ` ${kind}` : ''}`);
       dialog.ariaLabel = title;
       const head = el('header', 'im-dialog-head');
       const close = el('button', 'ed-icon-button', '\u00d7');
@@ -1868,7 +1891,7 @@ export class Editor {
           : shell()
             ? 'Changes are saved as you make them. File > Save As makes a copy.'
             : 'Changes are saved as you make them',
-      ), el('span', 'ed-grow'), work, this.checksButton, phones, engine, connected, el('span', undefined, `${Math.round(width_m)} × ${Math.round(height_m)} m`));
+      ), el('span', 'ed-grow'), work, this.railFit(), this.checksButton, phones, engine, connected, el('span', undefined, `${Math.round(width_m)} × ${Math.round(height_m)} m`));
     return bar;
   }
 
@@ -1903,6 +1926,129 @@ export class Editor {
     };
     window.setInterval(() => void check(), 5000);
     return note;
+  }
+
+  /**
+   * The inspector's left edge drags it wider or narrower (#639), from 260 px to just under half
+   * the window. The width is remembered on this computer, never saved in the table; a double
+   * click puts it back.
+   */
+  private inspectorResize(): HTMLElement {
+    const key = 'mrs-inspector-width';
+    const grip = el('div', 'ed-inspector-resize');
+    grip.setAttribute('role', 'separator');
+    grip.setAttribute('aria-orientation', 'vertical');
+    grip.ariaLabel = 'Resize the settings panel';
+    grip.title = 'Drag to make the settings panel wider or narrower. Double-click puts it back.';
+    grip.tabIndex = 0;
+    const clamp = (w: number) => Math.round(Math.min(Math.max(w, 260), Math.max(260, window.innerWidth * 0.45)));
+    const set = (w: number | null, keep = true) => {
+      if (w === null) this.shell.style.removeProperty('--ed-inspector-w');
+      else this.shell.style.setProperty('--ed-inspector-w', `${clamp(w)}px`);
+      if (!keep) return;
+      try {
+        if (w === null) localStorage.removeItem(key);
+        else localStorage.setItem(key, String(clamp(w)));
+      } catch {
+        // No storage: the width lasts until the editor closes.
+      }
+    };
+    try {
+      const saved = Number(localStorage.getItem(key));
+      if (saved > 0) set(saved, false);
+    } catch {
+      // Default width.
+    }
+    grip.addEventListener('pointerdown', (event) => {
+      if (event.button !== 0) return;
+      event.preventDefault();
+      const start = event.clientX;
+      const width = this.inspector.getBoundingClientRect().width;
+      grip.setPointerCapture(event.pointerId);
+      this.shell.classList.add('is-resizing');
+      const move = (e: PointerEvent) => set(width - (e.clientX - start), false);
+      const up = (e: PointerEvent) => {
+        grip.removeEventListener('pointermove', move);
+        grip.removeEventListener('pointerup', up);
+        grip.removeEventListener('pointercancel', up);
+        this.shell.classList.remove('is-resizing');
+        set(width - (e.clientX - start));
+      };
+      grip.addEventListener('pointermove', move);
+      grip.addEventListener('pointerup', up);
+      grip.addEventListener('pointercancel', up);
+    });
+    grip.addEventListener('dblclick', () => set(null));
+    // The keyboard: left makes it wider, right narrower.
+    grip.addEventListener('keydown', (event) => {
+      const step = event.shiftKey ? 64 : 16;
+      const width = this.inspector.getBoundingClientRect().width;
+      if (event.key === 'ArrowLeft') set(width + step);
+      else if (event.key === 'ArrowRight') set(width - step);
+      else return;
+      event.preventDefault();
+    });
+    return grip;
+  }
+
+  /** The status bar's note while layer buttons do not fit on the controller (#614). */
+  private railFit(): HTMLElement {
+    const note = this.railNote;
+    note.type = 'button';
+    note.hidden = true;
+    note.addEventListener('click', () => void this.warnRails());
+    return note;
+  }
+
+  /** The sides of the controller with buttons out of sight. */
+  private overflowing(): RailFit[] {
+    return (['left', 'right'] as const).map((side) => this.railFits[side]).filter((r): r is RailFit => Boolean(r && r.buttons > r.fits));
+  }
+
+  /** Updates the status bar, and warns once when buttons stop fitting or more of them do not fit. */
+  private checkRails(): void {
+    const sides = this.overflowing();
+    const out = sides.reduce((n, r) => n + r.buttons - r.fits, 0);
+    this.railNote.hidden = out === 0;
+    if (out > 0) {
+      this.railNote.replaceChildren(icon('alert', 12), el('span', undefined, out === 1 ? '1 button does not fit on the controller' : `${out} buttons do not fit on the controller`));
+      this.railNote.title = 'Visitors have to scroll a side of the controller to find them. Click for more.';
+    }
+    if (out === 0) this.railWarned = 0;
+    // Not over the setup guide or another dialog: the status bar keeps it until then.
+    if (out <= this.railWarned) return;
+    if (this.wizard || this.dialog || document.querySelector('dialog[open]')) {
+      window.clearTimeout(this.railRetry);
+      this.railRetry = window.setTimeout(() => this.checkRails(), 1000);
+      return;
+    }
+    this.railWarned = out;
+    void this.warnRails();
+  }
+
+  /** The warning: which side, how many fit, which buttons are out of sight, and the way to fix it. */
+  private async warnRails(): Promise<void> {
+    const sides = this.overflowing();
+    if (sides.length === 0 || document.querySelector('dialog.ed-rail-warning')) return;
+    const words = (r: RailFit): string => {
+      const names = r.hidden.filter(Boolean);
+      const list = names.length > 3 ? `${names.slice(0, 3).join(', ')} and ${names.length - 3} more` : names.join(', ');
+      return `The ${r.side} side has room for ${r.fits} ${r.fits === 1 ? 'button' : 'buttons'} and has ${r.buttons}${list ? `, so ${list} ${names.length === 1 ? 'is' : 'are'} out of sight` : ''}.`;
+    };
+    const out = sides.reduce((n, r) => n + r.buttons - r.fits, 0);
+    const choice = await this.ask(
+      out === 1 ? 'A layer button does not fit on the controller' : `${out} layer buttons do not fit on the controller`,
+      `${sides.map(words).join(' ')} Visitors have to scroll the side to find ${out === 1 ? 'it' : 'them'}. Move buttons to the other side, put some in a group, or hide the ones visitors need least.`,
+      [
+        { id: 'keep', label: 'Keep it' },
+        { id: 'arrange', label: 'Arrange the buttons', primary: true },
+      ],
+      'ed-rail-warning',
+    );
+    if (choice === 'arrange') {
+      if (this.wizard) this.closeWizard();
+      this.go({ kind: 'controller' });
+    }
   }
 
   // ---- Render ---------------------------------------------------------------

@@ -10,3 +10,6 @@ Closes #
 - [ ] `changes/<name>.md` added, with a screenshot
 
 ## Screenshots
+
+<!-- Link pictures by full commit SHA or main, never by this PR's branch: it is deleted on merge.
+     https://raw.githubusercontent.com/snjsomnath/mr-studio/<sha>/docs/screenshots/<issue>-<what>.png -->

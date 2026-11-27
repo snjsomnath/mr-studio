@@ -1,6 +1,10 @@
 // The types of @mrstudio/sdk, written by MR Studio (`mrstudio layer new`, `mrstudio layer build`).
 // Do not edit: the next build writes it again from the installed app. The code itself comes
 // from the app that loads the layer.
+//
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Nodal Works AB. These type definitions are licensed under the MIT License
+// (https://opensource.org/license/mit), unlike the rest of MR Studio.
 
 declare module "@mrstudio/sdk/voices" {
     /** A value fixed, or mapped from a published one: `params.x` or `shared.x`, from a range to a range. */
@@ -2344,6 +2348,12 @@ declare module "@mrstudio/sdk/layer" {
          * layers' calls do nothing.
          */
         readonly reveal: LayerReveal;
+        /**
+         * The layers inside this one (#453), in site.json order, as they are now: read it when you
+         * need it (it is live). A layer that draws something an item may also draw, such as Wind's
+         * faint tree crowns under a Trees item, can leave its own out while that item is on (#623).
+         */
+        readonly items: readonly LayerItem[];
         /** Runs every animation frame while the layer is active. `dt` is seconds since the last call. */
         onFrame(callback: (dt: number) => void): void;
         /** Registers cleanup to run when the layer is turned off. */
@@ -2379,6 +2389,13 @@ declare module "@mrstudio/sdk/layer" {
      * and inside a slideshow moves on to the next slide after the last one (or stops there,
      * as the slide's Next behaviour says).
      */
+    /** A layer inside another one (#453): its instance id, the layer it uses and whether it is on. */
+    export interface LayerItem {
+        readonly id: string;
+        /** The layer it is an instance of, such as `trees` or `custom:aerial-1960`. */
+        readonly use: string;
+        readonly active: boolean;
+    }
     export interface LayerSteps {
         /** Declares `count` sub-steps, with a name for each for the controller. 0 removes them. */
         define(count: number, titles?: string[]): void;

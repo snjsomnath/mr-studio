@@ -27,7 +27,7 @@
         { "value": "40", "label": "40 m/s" }
       ]
     },
-    { "id": "backdrop", "type": "range", "label": "Speed map underneath", "help": "How much of the speed map shows under the ribbons or particles.", "min": 0, "max": 1, "step": 0.05, "default": 0.25, "tier": "more" },
+    { "id": "backdrop", "type": "range", "label": "Speed map underneath", "help": "How much of the speed map shows under the ribbons or particles.", "min": 0, "max": 1, "step": 0.05, "default": 0.1, "tier": "more" },
     { "id": "facades", "type": "toggle", "label": "Light the walls the wind hits", "help": "Walls facing into the wind light up.", "default": true, "tier": "more" },
     { "id": "trees", "type": "toggle", "label": "Trees slow the wind", "help": "Trees in the table's data slow the wind as it passes, and their crowns show faintly over the air.", "default": true, "tier": "more" },
     {

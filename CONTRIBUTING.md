@@ -36,6 +36,18 @@ Making a table for your own place needs none of this: start from the
   against: `pnpm --filter @mrstudio/sdk types`.
 - **Tests are fixed, not skipped.** A check that fails is not disabled to get a green run.
 - **An issue is closed with a comment that shows the result**, with a screenshot.
+- **Screenshots link by commit SHA or `main`, never by a PR branch.** A pull request's branch is
+  deleted when it merges, so `raw.githubusercontent.com/snjsomnath/mr-studio/claude/<branch>/…`
+  breaks. Link to the full commit SHA that holds the picture
+  (`…/mr-studio/<sha>/docs/screenshots/<issue>-<what>.png`), or to `main` once it has merged.
+  This holds for pull request descriptions and issue comments alike.
+
+## Licence of contributions
+
+MR Studio is licensed under the Business Source License 1.1 by Nodal Works AB (see the
+[README](README.md#licence)). By opening a pull request, you agree that Nodal Works AB may distribute your
+contribution under the licences of this repository, including the MIT parts, the Change License and
+commercial licences.
 
 ## Code
 

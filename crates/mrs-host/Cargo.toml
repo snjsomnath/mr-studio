@@ -3,6 +3,7 @@ name = "mrs-host"
 description = "MR Studio local host: serves surfaces, runs the session hub, fronts the compute engine"
 version.workspace = true
 edition.workspace = true
+license-file.workspace = true
 publish = false
 
 [dependencies]

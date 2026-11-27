@@ -26,7 +26,7 @@ Six regions. Their places never change, whatever tab is open or whatever is sele
 | Ribbon | Commands, grouped by tab. Galleries (themes, layers). Buttons that open dialogs, with a trailing … | Fields you type into, toggles that duplicate a list row, panels |
 | Left list | The map's stack: At rest (the base map and map life) above the layers, in drawing order. Below it, its own group: Controller and Phones | Button order or sides, files, settings |
 | Canvas | What the visitor sees: the map, the controller, or both (View tab), live. In Both, Shrink controller on the controller's header docks it as a small live thumbnail (#388). A click on the map selects the layer that drew there, topmost first; a layer that reads clicks itself (CoolPaths, Sunlight) keeps them while it is open (#425). Rehearse runs here. | Forms, galleries, file lists, hints |
-| Format pane (right) | The settings of what is selected, and the only place they are edited | Anything about something not selected |
+| Format pane (right) | The settings of what is selected, and the only place they are edited. Its left edge drags it wider (#639), remembered on this computer; a double click puts it back. Text settings have their name above the box | Anything about something not selected |
 | Status bar | Saved, connection, engine, "N things to check before presenting" | Actions that change the table |
 
 ## The rules
@@ -144,7 +144,7 @@ After that, **Present › Ready to present?** (#63) is the guide: each missing i
 - **Slides and layer items**: children under their layer in the list; select one, format it in the pane.
 - **Controller panels and widgets** (#155, #357): select a panel on the controller preview, edit it in the Format pane.
 - **The operator**: running a table at an exhibition (Present controls, a lock so visitors can't reach the editor, idle reset) is a different person from the author, and not designed yet.
-- **One place for messages**: saved state, live data sources, performance warnings (#262) and readiness report in the status bar; a change that can be undone shows one notice with Undo.
+- **One place for messages**: saved state, live data sources, performance warnings (#262), layer buttons that do not fit on the controller (#614) and readiness report in the status bar; a change that can be undone shows one notice with Undo.
 
 ## The user test
 

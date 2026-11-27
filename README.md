@@ -112,3 +112,18 @@ As of 2026-11-27 (0.53.0). What changed release by release is in [CHANGELOG.md](
 | MCP server for building sites with an LLM | Working; CI runs it on Linux, Windows and macOS |
 | Lindholmen and Universeum tables | Built as tables of their own (`.mrstable`), outside this repository; only Chalmers and the sample are in `sites/` |
 | Python services gateway (ECOM) | Not started; ECOM is left for later |
+
+## Licence
+
+From version 0.55.0, MR Studio is licensed under the [Business Source License 1.1](LICENSE) by
+Nodal Works AB. Use for teaching, research at a university or non-profit research organisation, personal
+use, evaluation, development and testing is free. Other production use, such as a table in regular use
+at a municipality, museum or company, needs a commercial licence from Nodal Works AB. Four years after
+each version is released, that version becomes available under the MIT License.
+
+Versions 0.54.0 and earlier were released under the MIT License and remain under it.
+
+These parts are licensed under MIT, each with its own LICENSE file: the MCP server
+([packages/mcp](packages/mcp/LICENSE)), the SDK type definitions written into a layer package
+(`mrstudio-sdk.d.ts`), the contracts ([docs/contracts](docs/contracts/LICENSE)), the site template
+([templates/site](templates/site/LICENSE)) and the samples ([samples](samples/LICENSE)).

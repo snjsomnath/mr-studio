@@ -599,8 +599,61 @@ button.ed-saved:hover {
 }
 
 .ed-inspector {
-  width: 296px;
+  width: var(--ed-inspector-w, 296px);
   border-left: 1px solid var(--ed-line);
+}
+
+/* The inspector's left edge, dragged to make it wider (#639). It sits over the border. */
+.ed-inspector-resize {
+  flex: none;
+  order: 2;
+  position: relative;
+  z-index: 5;
+  width: 7px;
+  margin: 0 -4px 0 -3px;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.ed-inspector-resize::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 2px;
+  width: 3px;
+  background: transparent;
+  transition: background 0.12s;
+}
+
+.ed-inspector-resize:hover::after,
+.ed-inspector-resize:focus-visible::after,
+.ed.is-resizing .ed-inspector-resize::after {
+  background: var(--ed-accent);
+}
+
+.ed-inspector-resize:focus-visible {
+  outline: none;
+}
+
+.ed.is-resizing,
+.ed.is-resizing * {
+  cursor: col-resize !important;
+  user-select: none;
+}
+
+/* The map and controller frames do not take the pointer while the edge is dragged. */
+.ed.is-resizing iframe,
+.ed.is-resizing canvas {
+  pointer-events: none;
+}
+
+/* Text settings in the inspector put their name above the box, so a long name never squeezes
+   into a column beside it (#639). */
+.ed-inspector .control-text {
+  grid-template-columns: minmax(0, 1fr);
+  align-items: stretch;
+  gap: 4px;
 }
 
 .ed-left-head {
@@ -1170,6 +1223,7 @@ body[data-role='edit'] .table-surface {
 .ed.is-setup .ed-ribbon,
 .ed.is-setup .ed-left,
 .ed.is-setup .ed-inspector,
+.ed.is-setup .ed-inspector-resize,
 .ed.is-setup .ed-canvas-head,
 .ed.is-setup .ed-next,
 .ed.is-setup .ed-notice {
@@ -2870,7 +2924,8 @@ body[data-role='edit'] .ed-surface .table-frame {
 /* ---- Setup tabs: Name and place, At rest, Design (#311, #312, #313) ---- */
 
 /* The tab's step of the guide takes the inspector's place, beside the map. */
-.ed.is-panel .ed-inspector {
+.ed.is-panel .ed-inspector,
+.ed.is-panel .ed-inspector-resize {
   display: none;
 }
 
@@ -4192,7 +4247,7 @@ body[data-role='edit'] > .connection {
   }
 
   .ed-inspector {
-    width: 280px;
+    width: var(--ed-inspector-w, 280px);
   }
 }
 
@@ -4233,7 +4288,7 @@ body[data-role='edit'] > .connection {
     top: 0;
     right: 0;
     bottom: 0;
-    width: min(320px, 85vw);
+    width: min(var(--ed-inspector-w, 320px), 85vw);
     box-shadow: -12px 0 32px rgb(20 24 34 / 16%);
     transform: translateX(100%);
     visibility: hidden;
@@ -4250,6 +4305,11 @@ body[data-role='edit'] > .connection {
 
   .ed-drawer-toggle {
     display: inline-flex;
+  }
+
+  /* The drawer slides over the map; its edge is not dragged. */
+  .ed-inspector-resize {
+    display: none;
   }
 
   .ed-drawer-toggle[aria-expanded='true'] {
@@ -4442,6 +4502,7 @@ body[data-role='edit'] > .connection {
 .ed.is-rehearse .ed-ribbon,
 .ed.is-rehearse .ed-left,
 .ed.is-rehearse .ed-inspector,
+.ed.is-rehearse .ed-inspector-resize,
 .ed.is-rehearse .ed-canvas-head,
 .ed.is-rehearse .ed-next,
 .ed.is-rehearse .ed-notice,
@@ -4668,6 +4729,25 @@ body[data-role='edit'] > .connection {
 
 .ed-df-bar .ed-button[hidden] {
   display: none;
+}
+
+/* The hint gives way before the buttons do (#638): the buttons keep their words on one line,
+   and in a narrow canvas they go under the hint rather than squeezing it. */
+.ed-df-bar {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  row-gap: 0.3rem;
+}
+
+.ed-df-hint-howto {
+  flex: 1 1 22em;
+  min-width: 0;
+  line-height: 1.35;
+}
+
+.ed-df-bar .ed-button {
+  flex: none;
+  white-space: nowrap;
 }
 
 /* ---- Dialogs of whole-table and this-computer settings (#382, rule 5 of docs/editor-ui.md) ---- */
@@ -5618,6 +5698,24 @@ body[data-role='edit'] > .connection {
   font-weight: 600;
 }
 
+/* Layer buttons that do not fit on the controller (#614): beside Checks, in its "should fix" colours. */
+.ed-rail-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 18px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 9px;
+  background: #fff4e0;
+  color: #8a5300;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.ed-rail-note[hidden] {
+  display: none;
 /* A layer's own dialog (#644): settings that need room, beside a preview of what visitors get. */
 .ed-dialog-open {
   display: flex;
