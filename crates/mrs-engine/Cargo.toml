@@ -3,6 +3,7 @@ name = "mrs-engine"
 description = "MR Studio compute engine: one GPU scene per site, WGSL kernels, CPU reference implementations"
 version.workspace = true
 edition.workspace = true
+license-file.workspace = true
 publish = false
 
 [dependencies]

@@ -37,6 +37,13 @@ Making a table for your own place needs none of this: start from the
 - **Tests are fixed, not skipped.** A check that fails is not disabled to get a green run.
 - **An issue is closed with a comment that shows the result**, with a screenshot.
 
+## Licence of contributions
+
+MR Studio is licensed under the Business Source License 1.1 by Nodal Works AB (see the
+[README](README.md#licence)). By opening a pull request, you agree that Nodal Works AB may distribute your
+contribution under the licences of this repository, including the MIT parts, the Change License and
+commercial licences.
+
 ## Code
 
 - Rust is formatted with the pinned toolchain, and clippy warnings are errors:

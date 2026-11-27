@@ -1,6 +1,10 @@
 // The types of @mrstudio/sdk, written by MR Studio (`mrstudio layer new`, `mrstudio layer build`).
 // Do not edit: the next build writes it again from the installed app. The code itself comes
 // from the app that loads the layer.
+//
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Nodal Works AB. These type definitions are licensed under the MIT License
+// (https://opensource.org/license/mit), unlike the rest of MR Studio.
 
 declare module "@mrstudio/sdk/voices" {
     /** A value fixed, or mapped from a published one: `params.x` or `shared.x`, from a range to a range. */

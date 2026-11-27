@@ -3,6 +3,7 @@ name = "mrs-cli"
 description = "mrstudio command line: dev, validate, new-site, bench"
 version.workspace = true
 edition.workspace = true
+license-file.workspace = true
 publish = false
 
 [[bin]]
