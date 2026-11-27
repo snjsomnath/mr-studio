@@ -90,7 +90,7 @@ pub struct Place {
 }
 
 /// What surfaces need to know about the site.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, schemars::JsonSchema)]
 pub struct SiteInfo {
     pub id: String,
     pub name: String,
@@ -122,7 +122,7 @@ pub struct SiteInfo {
 }
 
 /// `scene.mesh` as written, and whether the footprints are still raised beside it.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, schemars::JsonSchema)]
 pub struct MeshInfo {
     #[serde(flatten)]
     pub mesh: Mesh,

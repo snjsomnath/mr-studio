@@ -46,7 +46,7 @@ use tower_http::set_header::SetResponseHeader;
 
 pub use calibration::Calibration;
 pub use engine_bridge::EngineHandle;
-pub use hub::{Hub, Role, SessionOptions};
+pub use hub::{protocol_schema, Hub, Role, SessionOptions, PROTOCOL};
 pub use layers::{Control, ControlKind, LayerDef, Tool, ToolKind};
 pub use sources::Sources;
 

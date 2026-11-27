@@ -319,6 +319,8 @@ Text frames are JSON. Binary frames are engine field frames (see engine.md).
 { t: 'ev', m: string, p: object }
 ```
 
+`SessionState` is written down twice: by the host in Rust and in `packages/sdk/src/types.ts` for the views and layer authors. [`protocol.schema.json`](protocol.schema.json) is its JSON Schema, written by the host from its own types (#538). After changing one of them (`LayerState`, `SessionInfo`, `Participant`, `SiteInfo` and what they hold), run `UPDATE_SCHEMA=1 cargo test -p mrs-host --test protocol_schema`; the SDK's test (`packages/sdk/test/protocol.test.ts`) then names every field that one side has and the other doesn't, down to `site.table.glow.strength`. Another test keeps `PROTOCOL` and `LAYER_API` the same in both languages.
+
 ### Who may be what (#504)
 
 The table, the screens and the controller (`table`, `tv`, `dev`) are MR Studio's own windows on the studio computer. The host admits those roles only from this computer (the loopback address), and only when the socket says nothing about where it comes from (a program) or comes from the host's own pages (`Origin` equal to `http://<Host>`, with `Host` being `127.0.0.1`, `localhost` or `[::1]`). Any other socket, from the network, through the relay or the join page, or from another site's page in a browser on this computer, can only be a `phone` or the `guide`, and is `refused` otherwise.
