@@ -138,7 +138,13 @@ function launch() {
     const table = await open('/table?intro=0', { width: 1500, height: 800 }, { path: path.join(root, 'apps/studio/src-tauri/src/colour.js') });
     await table.evaluate((s) => window.__mrsColour(s), COLOUR);
     const tv = await open('/tv', { width: 1920, height: 1080 });
-    const editor = await open('/edit', { width: 1440, height: 900 });
+    // With every core layer the controller's sides can run out of room, for example when a
+    // layer that cannot start shows a note under its name, and the editor warns (#614). The
+    // author keeps the buttons and carries on: a modal left over the editor's map for the rest
+    // of the run costs Edge's software renderer the frames the table then misses.
+    const editor = await open('/edit', { width: 1440, height: 900 }, {
+      content: `new MutationObserver(() => document.querySelector('dialog.ed-rail-warning [data-choice="keep"]')?.click()).observe(document, { childList: true, subtree: true });`,
+    });
     await sleep(4000);
 
     const pages = { table, tv, editor };
@@ -184,11 +190,6 @@ function launch() {
       await sleep(500);
     }
     now.close();
-
-    // Every core layer is more buttons than the controller's sides hold, so the editor warns
-    // (#614); the author keeps them and carries on.
-    const warning = editor.locator('dialog.ed-rail-warning');
-    if (await warning.isVisible()) await warning.locator('[data-choice="keep"]').click();
 
     // Present › Screens and calibration… (#382), as an author opens it to correct the colour.
     await editor.locator('.ed-tab[data-tab="present"]').click();

@@ -70,7 +70,16 @@ export function fitRail(rail: HTMLElement, cards: HTMLElement, side: 'left' | 'r
   cards.addEventListener('scroll', edges, { passive: true });
   // The rail, and the list in it: the list shrinks when the core buttons and the join panel
   // arrive under it after the layer buttons, which left the left rail cut off untightened (#614).
-  const resized = new ResizeObserver(() => fit());
+  // Only a change of height is a reason to fit again: a classic scrollbar (Windows) comes and
+  // goes as the steps are tried and changes the list's width, which would fit it again every
+  // frame and starve the other pages of the graphics card.
+  let heights = '';
+  const resized = new ResizeObserver(() => {
+    const now = `${rail.clientHeight}:${cards.clientHeight}`;
+    if (now === heights) return;
+    heights = now;
+    fit();
+  });
   resized.observe(rail);
   resized.observe(cards);
   // Buttons come and go as layers are added, moved or hidden.
