@@ -1,5 +1,5 @@
 import { fitTable, revealPath, revealPolygon, sameReveal, tableFrame } from '@mrstudio/sdk';
-import type { CanvasOverlay, DrawingOverlay, Colormap, FieldOverlay, FieldOverlayStyle, FlowOverlay, FlowOverlayStyle, MapHandle, ModelHandle, PixelRect, RevealShape, Shape, ShapeOverlay, SiteInfo, TablePicture, TablePointer, DisplayQuality } from '@mrstudio/sdk';
+import type { CanvasOverlay, DrawingOverlay, Colormap, FieldOverlay, FieldOverlayStyle, FlowOverlay, FlowOverlayStyle, MapHandle, ModelHandle, PixelRect, RevealShape, Shape, ShapeOverlay, SiteInfo, SpriteImage, SpriteOverlay, SpriteStyle, TablePicture, TablePointer, DisplayQuality } from '@mrstudio/sdk';
 import maplibregl from 'maplibre-gl';
 
 type DetailRenderer = (g: CanvasRenderingContext2D, scale: number) => void;
@@ -9,6 +9,7 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import { MapCanvasOverlay } from './canvas-overlay.ts';
 import { MapFieldOverlay } from './field-overlay.ts';
 import { MapFlowOverlay } from './flow-overlay.ts';
+import { MapSpriteOverlay } from './sprite-overlay.ts';
 import { ModelView } from './model/view.ts';
 import { pixelRatio } from './quality.ts';
 import { tablePointer } from './table-pointer.ts';
@@ -240,6 +241,19 @@ export class TableView {
           drawn.flows.delete(overlay);
           overlay.remove();
           forget(`flow:${instance}:${id}`);
+        });
+        return overlay;
+      },
+      addSprites: (id: string, images: SpriteImage[], style?: SpriteStyle): SpriteOverlay => {
+        const name = `sprites:${instance}:${id}`;
+        const overlay = new MapSpriteOverlay(this.map, name, this.site, images, style);
+        add(name, overlay);
+        overlay.setGain(drawn.intensity);
+        drawn.overlays.add(overlay);
+        track(() => {
+          drawn.overlays.delete(overlay);
+          overlay.remove();
+          forget(name);
         });
         return overlay;
       },

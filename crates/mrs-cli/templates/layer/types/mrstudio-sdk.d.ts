@@ -2062,6 +2062,33 @@ declare module "@mrstudio/sdk/layer" {
         setOpacity(opacity: number): void;
         remove(): void;
     }
+    /** A picture a sprite overlay stamps: drawn once by the layer, at any size. */
+    export type SpriteImage = HTMLCanvasElement | HTMLImageElement | ImageBitmap | OffscreenCanvas;
+    /** Numbers per sprite in the buffer given to `SpriteOverlay.set`. */
+    export const SPRITE_FLOATS = 7;
+    export interface SpriteStyle {
+        opacity?: number;
+        /** `add` adds the sprites' light to what is below (glows, lamps); `over` paints them on it. Default `over`. */
+        blend?: 'over' | 'add';
+    }
+    /**
+     * Many small pictures moving on the table, stamped by the graphics card in one draw (#609): lights
+     * flowing along streets, cars, people, tree crowns. Give it every sprite each time they move; it
+     * costs a small buffer upload, not a picture of the whole table, so use it rather than a drawing for
+     * anything that moves every frame.
+     */
+    export interface SpriteOverlay {
+        /**
+         * Shows `count` sprites (default: all in `sprites`), `SPRITE_FLOATS` numbers each: centre x and y
+         * in table metres, width and height in metres, angle in radians (clockwise, as a canvas's
+         * `rotate`), the index of its picture, and its alpha (0 to 1; 0 hides it).
+         */
+        set(sprites: Float32Array, count?: number): void;
+        /** Replaces the pictures, keeping their indices' meaning up to the layer. */
+        setImages(images: SpriteImage[]): void;
+        setOpacity(opacity: number): void;
+        remove(): void;
+    }
     /** What a layer may draw on the table. Everything sits at the layer's place in the scene's draw order. */
     export interface MapHandle {
         addField(id: string, style: FieldOverlayStyle & {
@@ -2073,13 +2100,19 @@ declare module "@mrstudio/sdk/layer" {
         addShapes(id: string, style?: {
             opacity?: number;
         }): ShapeOverlay;
+        /** Sprites stamped from `images` on the graphics card: see `SpriteOverlay`. */
+        addSprites(id: string, images: SpriteImage[], style?: SpriteStyle): SpriteOverlay;
         /**
          * An element covering the table, above everything the scene draws, for decorations a layer draws itself
          * (a sun path, a compass). It ignores pointer input and is removed with the layer.
          * The table's up direction is `site.extent.rotation_deg`.
          */
         addElement(): HTMLElement;
-        /** A drawing in table metres at the layer's place in the scene. For layers that draw shapes or sprites themselves: base maps, ambient animation, media. */
+        /**
+         * A drawing in table metres at the layer's place in the scene, for what a layer draws itself: base maps,
+         * media, glows that change only with the controls. Each `commit` sends the whole picture to the graphics
+         * card, so draw anything that moves every frame with `addSprites` instead (#609).
+         */
         addDrawing(id: string, options?: {
             opacity?: number; /** Canvas width in pixels. Default 2048. */
             resolution?: number;

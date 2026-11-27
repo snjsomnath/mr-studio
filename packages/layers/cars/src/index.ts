@@ -1,5 +1,5 @@
-import { StreetGraph, defineLayer, seededRandom } from '@mrstudio/sdk';
-import type { LayerManifest } from '@mrstudio/sdk';
+import { SPRITE_FLOATS, StreetGraph, defineLayer, seededRandom } from '@mrstudio/sdk';
+import type { LayerManifest, SpriteImage } from '@mrstudio/sdk';
 
 import manifest from '../layer.json';
 import { carNetworks } from './network.ts';
@@ -59,12 +59,14 @@ const EMERGENCY_GAP_S: [number, number] = [10, 20];
  * in WebKit (#596), and at a few pixels a second, movement 30 times a second looks the same.
  */
 const FRAME_S = 1 / 30;
+/** Pixels per metre in a vehicle's picture: sharp at a table's scale, small for the graphics card. */
+const LOOK_PX = 10;
 
 export default defineLayer<Params>({
   manifest: manifest as LayerManifest,
 
   async table(ctx) {
-    const canvas = ctx.map.addDrawing('cars', { opacity: ctx.params.opacity });
+    const sprites = ctx.map.addSprites('cars', [], { opacity: ctx.params.opacity });
     // No streets, no cars: the editor offers to bring streets in (requires.data).
     const networks = await carNetworks(ctx.site);
     const roads = networks?.cars ?? new StreetGraph([]);
@@ -135,25 +137,43 @@ export default defineLayer<Params>({
       return true;
     }
 
-    function draw(v: Vehicle, network: StreetGraph) {
-      const { size, headlights } = ctx.params;
-      const g = canvas.ctx;
-      const [x, y] = network.at(v.edge, v.s, LANE_M);
-      if (x < -60 || y < -60 || x > canvas.width + 60 || y > canvas.height + 60) return;
-      const alpha = Math.min(1, v.age / FADE_S, v.leaving === null ? 1 : Math.max(0, v.leaving / FADE_S));
-      const { length, width } = SIZE_M[v.kind];
-      const flash = Math.floor(clock * 8) % 2;
+    // Each look of a vehicle is drawn once, as a picture the graphics card stamps for every vehicle
+    // that has it (#609): nothing is drawn on the processor while they drive.
+    const looks: SpriteImage[] = [];
+    const lookOf = new Map<string, { image: number; w: number; h: number }>();
+    function look(kind: Kind, paint: string, headlights: boolean, flash: number) {
+      const key = `${kind}|${paint}|${headlights}|${flash}`;
+      let found = lookOf.get(key);
+      if (!found) {
+        const { length, width } = SIZE_M[kind];
+        const reach = headlights ? (kind === 'bus' ? 14 : 11) : 0;
+        const w = 2 * (length / 2 + reach + 1) + (kind === 'emergency' ? 28 : 0);
+        const h = 2 * Math.max(width * 1.2 + 0.5, kind === 'emergency' ? 2.5 + 14 : 0);
+        const image = document.createElement('canvas');
+        image.width = Math.ceil(w * LOOK_PX);
+        image.height = Math.ceil(h * LOOK_PX);
+        const g = image.getContext('2d')!;
+        g.setTransform(LOOK_PX, 0, 0, LOOK_PX, image.width / 2, image.height / 2);
+        paintVehicle(g, kind, paint, headlights, flash);
+        found = { image: looks.length, w, h };
+        looks.push(image);
+        lookOf.set(key, found);
+        if (ready) sprites.setImages(looks);
+      }
+      return found;
+    }
 
-      g.save();
-      g.globalAlpha = alpha;
-      g.translate(x, y);
-      if (v.kind === 'emergency') {
+    /** One vehicle, heading along +x, centred at the origin, in metres. */
+    function paintVehicle(g: CanvasRenderingContext2D, kind: Kind, paint: string, headlights: boolean, flash: number) {
+      const { length, width } = SIZE_M[kind];
+      if (kind === 'emergency') {
         // Red and blue halos taking turns, added to what is below so they light the street.
         g.globalCompositeOperation = 'lighter';
         for (const [colour, on, side] of [['255 40 40', flash === 0, -1], ['40 90 255', flash === 1, 1]] as const) {
-          const r = 14 * size * (on ? 1 : 0.6);
-          const cx = Math.cos(v.angle + Math.PI / 2) * side * 2.5;
-          const cy = Math.sin(v.angle + Math.PI / 2) * side * 2.5;
+          // Beside the vehicle, one on each side.
+          const r = 14 * (on ? 1 : 0.6);
+          const cx = 0;
+          const cy = side * 2.5;
           const halo = g.createRadialGradient(cx, cy, 0, cx, cy, r);
           halo.addColorStop(0, `rgb(${colour} / ${on ? 0.75 : 0.18})`);
           halo.addColorStop(0.4, `rgb(${colour} / ${on ? 0.25 : 0.05})`);
@@ -165,12 +185,10 @@ export default defineLayer<Params>({
         }
         g.globalCompositeOperation = 'source-over';
       }
-      g.rotate(v.angle);
-      g.scale(size, size);
       if (headlights) {
         // Two beams ahead, added to whatever is below so they read as light.
         g.globalCompositeOperation = 'lighter';
-        const reach = v.kind === 'bus' ? 14 : 11;
+        const reach = kind === 'bus' ? 14 : 11;
         const beam = g.createLinearGradient(length / 2, 0, length / 2 + reach, 0);
         beam.addColorStop(0, 'rgb(255 244 214 / 0.45)');
         beam.addColorStop(1, 'rgb(255 244 214 / 0)');
@@ -183,19 +201,19 @@ export default defineLayer<Params>({
         g.fill();
         g.globalCompositeOperation = 'source-over';
       }
-      g.fillStyle = v.paint;
+      g.fillStyle = paint;
       g.beginPath();
-      g.roundRect(-length / 2, -width / 2, length, width, v.kind === 'bus' ? 0.5 : 0.6);
+      g.roundRect(-length / 2, -width / 2, length, width, kind === 'bus' ? 0.5 : 0.6);
       g.fill();
-      if (v.kind === 'bus') {
+      if (kind === 'bus') {
         // The window band, seen from above as a dark roof strip.
         g.fillStyle = 'rgb(26 26 46 / 0.85)';
         g.fillRect(-length / 2 + 1, -width / 2 + 0.45, length - 2, width - 0.9);
-      } else if (v.kind === 'taxi') {
+      } else if (kind === 'taxi') {
         // The roof sign, green when free.
         g.fillStyle = '#00ff88';
         g.fillRect(-0.5, -0.45, 1, 0.9);
-      } else if (v.kind === 'emergency') {
+      } else if (kind === 'emergency') {
         // The light bar across the roof, half red, half blue.
         g.fillStyle = flash === 0 ? '#ff3333' : '#802020';
         g.fillRect(-0.35, -width / 2 + 0.2, 0.7, width / 2 - 0.2);
@@ -210,7 +228,35 @@ export default defineLayer<Params>({
         g.fillRect(length / 2 - 0.4, -width / 2, 0.6, 0.5);
         g.fillRect(length / 2 - 0.4, width / 2 - 0.5, 0.6, 0.5);
       }
-      g.restore();
+    }
+
+    // Every look up front, so the pictures go to the graphics card once.
+    let ready = false;
+    for (const headlights of [false, true]) {
+      for (const paint of PAINTS) look('car', paint, headlights, 0);
+      for (const paint of TAXI_PAINTS) look('taxi', paint, headlights, 0);
+      for (const paint of BUS_PAINTS) look('bus', paint, headlights, 0);
+      for (const flash of [0, 1]) look('emergency', '#f2f4f8', headlights, flash);
+    }
+    sprites.setImages(looks);
+    ready = true;
+
+    let buffer = new Float32Array(0);
+    let n = 0;
+    function place(v: Vehicle, network: StreetGraph) {
+      const { size, headlights } = ctx.params;
+      const [x, y] = network.at(v.edge, v.s, LANE_M);
+      if (x < -60 || y < -60 || x > ctx.site.extent.width_m + 60 || y > ctx.site.extent.height_m + 60) return;
+      const alpha = Math.min(1, v.age / FADE_S, v.leaving === null ? 1 : Math.max(0, v.leaving / FADE_S));
+      const { image, w, h } = look(v.kind, v.paint, headlights, v.kind === 'emergency' ? Math.floor(clock * 8) % 2 : 0);
+      const o = n++ * SPRITE_FLOATS;
+      buffer[o] = x;
+      buffer[o + 1] = y;
+      buffer[o + 2] = w * size;
+      buffer[o + 3] = h * size;
+      buffer[o + 4] = v.angle;
+      buffer[o + 5] = image;
+      buffer[o + 6] = alpha;
     }
 
     let since = 0;
@@ -230,17 +276,19 @@ export default defineLayer<Params>({
       }
       if (siren && !ctx.params.emergency) siren = null;
 
-      canvas.clear();
-      for (const v of traffic) draw(v, roads);
-      for (const v of buses) draw(v, busRoads);
-      if (siren) draw(siren, roads);
-      canvas.commit();
+      const total = traffic.length + buses.length + 1;
+      if (buffer.length < total * SPRITE_FLOATS) buffer = new Float32Array(total * SPRITE_FLOATS);
+      n = 0;
+      for (const v of traffic) place(v, roads);
+      for (const v of buses) place(v, busRoads);
+      if (siren) place(siren, roads);
+      sprites.set(buffer, n);
       ctx.publish({ cars: traffic.length, buses: buses.length, emergency: siren !== null });
     });
 
     return {
       update(changed) {
-        if (changed.includes('opacity')) canvas.setOpacity(ctx.params.opacity);
+        if (changed.includes('opacity')) sprites.setOpacity(ctx.params.opacity);
         if (changed.includes('density') || changed.includes('buses')) resize();
       },
     };
