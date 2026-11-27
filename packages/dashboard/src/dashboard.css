@@ -256,8 +256,12 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  /* Tall enough for descenders in every system font: at 1.1 Windows' cut off the tails of g and y (#681). */
-  line-height: 1.3;
+  /*
+   * The clip reaches past the line by a little, so descenders show in every system font: at a
+   * line height of 1.1, Windows' fonts lost the tails of g and y (#681). The layout is unchanged.
+   */
+  padding-block: 0.12em;
+  margin-block: -0.12em;
 }
 
 .mrs-bar-value {
