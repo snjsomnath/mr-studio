@@ -49,7 +49,7 @@ interface Window {
 if (process.argv.includes('--check')) {
   let saved = '';
   try {
-    saved = readFileSync(out, 'utf8');
+    saved = readFileSync(out, 'utf8').replaceAll('\r\n', '\n'); // CRLF on a Windows checkout
   } catch {}
   if (saved !== text) {
     console.error('apps/studio/ui/app-commands.d.ts is out of date: run `node scripts/app-commands.mjs`');

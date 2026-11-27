@@ -70,7 +70,8 @@ ${defs.join('\n\n')}
 `;
 
 if (process.argv.includes('--check')) {
-  const saved = readFileSync(out, 'utf8');
+  // A Windows checkout may have turned the line ends into CRLF.
+  const saved = readFileSync(out, 'utf8').replaceAll('\r\n', '\n');
   if (saved !== text) {
     console.error('packages/mcp/src/site-types.ts is out of date: run `node packages/mcp/scripts/site-types.mjs`');
     process.exit(1);

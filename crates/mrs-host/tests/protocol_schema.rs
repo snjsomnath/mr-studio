@@ -11,7 +11,8 @@ fn the_checked_in_protocol_schema_is_current() {
         std::fs::write(&path, &fresh).unwrap();
         return;
     }
-    let saved = std::fs::read_to_string(&path).unwrap_or_default();
+    // A Windows checkout may have turned the line ends into CRLF.
+    let saved = std::fs::read_to_string(&path).unwrap_or_default().replace("\r\n", "\n");
     assert!(
         saved == fresh,
         "docs/contracts/protocol.schema.json is not what the host's types say. Run `UPDATE_SCHEMA=1 cargo test -p mrs-host --test protocol_schema` and commit it, then make packages/sdk/src/types.ts agree."
