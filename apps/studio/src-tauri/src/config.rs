@@ -361,7 +361,8 @@ mod tests {
         let plain = [display(0, "HDMI-1", false), display(1, "eDP-1", true)];
         assert_eq!(roles(&plain), [("table".to_string(), 0), ("tv".to_string(), 1)]);
         // A TV first and a projector that does not say so: the table skips the TV (#612).
-        let mut unnamed = [display(0, "Built-in display", true), display(1, "External display", false), display(2, "External display", false)];
+        let mut unnamed =
+            [display(0, "Built-in display", true), display(1, "External display", false), display(2, "External display", false)];
         unnamed[1].kind = Some(Kind::Tv);
         assert_eq!(roles(&unnamed), [("table".to_string(), 2), ("tv".to_string(), 1)]);
     }
