@@ -53,8 +53,8 @@ export const SOURCE_KINDS: Record<string, string> = {
 
 /** The file types Add media takes, and where each goes. */
 export const ACCEPT = {
-  /** Through the shared importer, as a dataset (#71). */
-  dataset: ['.geojson', '.json', '.csv', '.svg', '.tif', '.tiff'],
+  /** Through the shared importer, as a dataset (#71); zipped shapefiles and GeoPackages pick a layer there (#600, #620). */
+  dataset: ['.geojson', '.json', '.csv', '.svg', '.tif', '.tiff', '.zip', '.gpkg'],
   /** Kept as they came, under data/media. */
   media: ['.png', '.jpg', '.jpeg', '.webp', '.gif', '.mp4', '.webm', '.mov', '.m4v'],
   /** Kept as they came, under data/sounds. */
@@ -73,7 +73,7 @@ export function routeOf(file: string): keyof typeof ACCEPT | null {
 /** The kinds of media a file of this name becomes. */
 export function kindOf(file: string): MediaKind {
   const extension = /\.([^.]+)$/.exec(file.toLowerCase())?.[1] ?? '';
-  if (extension === 'geojson' || extension === 'json') return 'map';
+  if (extension === 'geojson' || extension === 'json' || extension === 'zip' || extension === 'gpkg') return 'map';
   if (extension === 'csv') return 'table';
   if (extension === 'tif' || extension === 'tiff') return 'raster';
   if (extension === 'svg') return 'drawing';

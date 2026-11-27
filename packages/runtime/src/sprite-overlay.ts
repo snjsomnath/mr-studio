@@ -1,8 +1,8 @@
-import { SPRITE_FLOATS } from '@mrstudio/sdk';
-import type { SiteInfo, SpriteImage, SpriteOverlay, SpriteStyle } from '@mrstudio/sdk';
+import { SPRITE_FLOATS, revealContains, revealUniform } from '@mrstudio/sdk';
+import type { RevealShape, SiteInfo, SpriteImage, SpriteOverlay, SpriteStyle } from '@mrstudio/sdk';
 import type { CustomLayerInterface, CustomRenderMethodInput, Map as MapLibreMap } from 'maplibre-gl';
 
-import { link, matrixAt, mercatorExtent } from './field-overlay.ts';
+import { CLIP_GLSL, link, matrixAt, mercatorExtent } from './field-overlay.ts';
 
 // Many small pictures stamped on the graphics card in one instanced draw (#609), as deck.gl's
 // IconLayer does: the layer hands over a buffer of positions each frame, nothing is drawn on the
@@ -39,11 +39,14 @@ precision mediump float;
 uniform sampler2D u_atlas;
 in vec2 v_uv;
 in float v_alpha;
-in vec2 v_table;
+in highp vec2 v_table;
+uniform highp vec2 u_size;
+${CLIP_GLSL}
 out vec4 color;
 void main() {
-  // Nothing outside the table, as a drawing is cut at its edges.
-  if (any(lessThan(v_table, vec2(0.0))) || any(greaterThan(v_table, vec2(1.0)))) discard;
+  // Nothing outside the table, as a drawing is cut at its edges, and inside a Magnifier or a
+  // Reveal line only where its shape shows (#619).
+  if (any(lessThan(v_table, vec2(0.0))) || any(greaterThan(v_table, vec2(1.0))) || !revealed(v_table * u_size)) discard;
   color = texture(u_atlas, v_uv) * v_alpha;   // the atlas is premultiplied, as MapLibre blends
 }`;
 
@@ -116,6 +119,7 @@ export class MapSpriteOverlay implements SpriteOverlay, CustomLayerInterface {
   private opacity: number;
   private add: boolean;
   private gain = 1;
+  private clip: RevealShape | null = null;
 
   constructor(map: MapLibreMap, id: string, site: SiteInfo, images: SpriteImage[], style: SpriteStyle = {}) {
     this.map = map;
@@ -161,8 +165,15 @@ export class MapSpriteOverlay implements SpriteOverlay, CustomLayerInterface {
   }
 
   /** Whether a sprite covers the point (table metres) within `radius`, for a click on the map (#425). The outer part of its box, mostly soft edge, does not count. */
+  /** Where it shows, set by the runtime for the items of a Magnifier or a Reveal line (#619). Not part of the layer API. */
+  setClip(shape: RevealShape | null): void {
+    this.clip = shape;
+    this.map.triggerRepaint();
+  }
+
   hit(x: number, y: number, radius: number): boolean {
     if (this.opacity * this.gain <= 0) return false;
+    if (!revealContains(this.clip, [x, y])) return false;
     const d = this.data;
     for (let k = 0; k < this.count * GPU_FLOATS; k += GPU_FLOATS) {
       if (d[k + 10]! < 0.1) continue;
@@ -201,7 +212,7 @@ export class MapSpriteOverlay implements SpriteOverlay, CustomLayerInterface {
     this.gl = gl;
     const program = link(gl, VERTEX, FRAGMENT);
     this.program = program;
-    for (const name of ['u_matrix', 'u_size', 'u_origin', 'u_right', 'u_down', 'u_opacity', 'u_atlas']) this.uniforms[name] = gl.getUniformLocation(program, name);
+    for (const name of ['u_matrix', 'u_size', 'u_origin', 'u_right', 'u_down', 'u_opacity', 'u_clipKind', 'u_clip', 'u_atlas']) this.uniforms[name] = gl.getUniformLocation(program, name);
     this.vao = gl.createVertexArray();
     this.corner = gl.createBuffer();
     this.instances = gl.createBuffer();
@@ -267,6 +278,9 @@ export class MapSpriteOverlay implements SpriteOverlay, CustomLayerInterface {
     gl.uniform2f(this.uniforms.u_right!, tr[0] - tl[0], tr[1] - tl[1]);
     gl.uniform2f(this.uniforms.u_down!, bl[0] - tl[0], bl[1] - tl[1]);
     gl.uniform1f(this.uniforms.u_opacity!, Math.min(1, opacity));
+    const clip = revealUniform(this.clip);
+    gl.uniform1f(this.uniforms.u_clipKind!, clip.kind);
+    gl.uniform3f(this.uniforms.u_clip!, ...clip.values);
     gl.uniform1i(this.uniforms.u_atlas!, 0);
     gl.bindVertexArray(this.vao);
     gl.bindBuffer(gl.ARRAY_BUFFER, this.instances);

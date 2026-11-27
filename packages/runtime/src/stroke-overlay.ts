@@ -1,7 +1,8 @@
-import type { SiteInfo, Stroke, StrokeOverlay } from '@mrstudio/sdk';
+import { revealContains, revealUniform } from '@mrstudio/sdk';
+import type { RevealShape, SiteInfo, Stroke, StrokeOverlay } from '@mrstudio/sdk';
 import type { CustomLayerInterface, CustomRenderMethodInput, Map as MapLibreMap } from 'maplibre-gl';
 
-import { link, matrixAt, mercatorExtent } from './field-overlay.ts';
+import { CLIP_GLSL, link, matrixAt, mercatorExtent } from './field-overlay.ts';
 
 // Lines that change every frame (trails behind vehicles), drawn by the graphics card (#609): each
 // line is one triangle strip with its width and alpha per point, so a tapering trail is one strip
@@ -32,10 +33,13 @@ precision mediump float;
 uniform float u_opacity;
 in vec4 v_color;
 in float v_side;
-in vec2 v_table;
+in highp vec2 v_table;
+uniform highp vec2 u_size;
+${CLIP_GLSL}
 out vec4 color;
 void main() {
-  if (any(lessThan(v_table, vec2(0.0))) || any(greaterThan(v_table, vec2(1.0)))) discard;
+  // Inside the table, and inside a Magnifier or a Reveal line only where its shape shows (#619).
+  if (any(lessThan(v_table, vec2(0.0))) || any(greaterThan(v_table, vec2(1.0))) || !revealed(v_table * u_size)) discard;
   // A soft last fifth on each side keeps thin lines smooth without multisampling.
   float a = v_color.a * u_opacity * clamp((1.0 - abs(v_side)) * 5.0, 0.0, 1.0);
   color = vec4(v_color.rgb * a, a);
@@ -85,6 +89,7 @@ export class MapStrokeOverlay implements StrokeOverlay, CustomLayerInterface {
   private dirty = false;
   private opacity: number;
   private gain = 1;
+  private clip: RevealShape | null = null;
 
   constructor(map: MapLibreMap, id: string, site: SiteInfo, style: { opacity?: number } = {}) {
     this.map = map;
@@ -155,8 +160,15 @@ export class MapStrokeOverlay implements StrokeOverlay, CustomLayerInterface {
   }
 
   /** Whether a line passes within `radius` of the point (table metres), for a click on the map (#425). */
+  /** Where it shows, set by the runtime for the items of a Magnifier or a Reveal line (#619). Not part of the layer API. */
+  setClip(shape: RevealShape | null): void {
+    this.clip = shape;
+    this.map.triggerRepaint();
+  }
+
   hit(x: number, y: number, radius: number): boolean {
     if (this.opacity * this.gain <= 0) return false;
+    if (!revealContains(this.clip, [x, y])) return false;
     const d = this.data;
     const index = this.index;
     // Each quad's first triangle is q, q+1, q+2: the two sides of one point and one side of the next.
@@ -199,7 +211,7 @@ export class MapStrokeOverlay implements StrokeOverlay, CustomLayerInterface {
     this.gl = gl;
     const program = link(gl, VERTEX, FRAGMENT);
     this.program = program;
-    for (const name of ['u_matrix', 'u_size', 'u_origin', 'u_right', 'u_down', 'u_opacity']) this.uniforms[name] = gl.getUniformLocation(program, name);
+    for (const name of ['u_matrix', 'u_size', 'u_origin', 'u_right', 'u_down', 'u_opacity', 'u_clipKind', 'u_clip']) this.uniforms[name] = gl.getUniformLocation(program, name);
     this.vao = gl.createVertexArray();
     this.vertices = gl.createBuffer();
     this.indices = gl.createBuffer();
@@ -242,6 +254,9 @@ export class MapStrokeOverlay implements StrokeOverlay, CustomLayerInterface {
     gl.uniform2f(this.uniforms.u_right!, tr[0] - tl[0], tr[1] - tl[1]);
     gl.uniform2f(this.uniforms.u_down!, bl[0] - tl[0], bl[1] - tl[1]);
     gl.uniform1f(this.uniforms.u_opacity!, Math.min(1, opacity));
+    const clip = revealUniform(this.clip);
+    gl.uniform1f(this.uniforms.u_clipKind!, clip.kind);
+    gl.uniform3f(this.uniforms.u_clip!, ...clip.values);
     gl.bindVertexArray(this.vao);
     if (this.dirty) {
       gl.bindBuffer(gl.ARRAY_BUFFER, this.vertices);

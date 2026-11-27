@@ -568,8 +568,9 @@ side and its second on the other, then and now (#349).
 Places are table metres. Until the layer sets a shape its items show nowhere. The runtime does the
 clipping, so the items need no code of their own: drawings (`addDrawing`) are composed through the
 shape, canvases and elements (`addCanvas`, `addElement`) get a CSS clip that follows the map, and
-fields (`addField`) are cut in their shader. Shapes (`addShapes`), flows (`addFlow`), sprites and strokes
-(`addSprites`, `addStrokes`) and fields on the model are not clipped yet. `revealPath(g, shape, w, h)` traces the same shape on a canvas, for a cover
+fields (`addField`) are cut in their shader. Sprites and strokes (`addSprites`,
+`addStrokes`) are cut in their shaders too (#619). Shapes (`addShapes`), flows (`addFlow`) and fields on the
+model are not clipped yet. `revealPath(g, shape, w, h)` traces the same shape on a canvas, for a cover
 under the items or a rim. The Magnifier (`packages/layers/lens`) and the Reveal line
 (`packages/layers/swipe`) are the reference layers.
 
