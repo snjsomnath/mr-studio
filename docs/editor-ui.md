@@ -159,7 +159,7 @@ Where it lives in the code (`packages/runtime/src/editor/`):
 | File | Holds | Change it to |
 | --- | --- | --- |
 | `layout.ts` | The tabs, their groups and which command sits in each | Move a command, add a tab, try another layout |
-| `commands-list.ts` | Every command once: name, icon, tooltip, search words | Add a command (then give it a handler in `editor.ts`; TypeScript says if one is missing) |
+| `commands-list.ts` | Every command once: name, icon, tooltip, search words | Add a command (then give it a handler in `ribbon-commands.ts`; TypeScript says if one is missing) |
 | `settings-list.ts` | Every setting once: owner and its one home | Add a setting. Fields are tagged `setting(id, home, field)`; the type only accepts the setting's own home |
 | `ribbon-layout.ts` | Draws a command wherever it appears: ribbon, right-click, ⌘K | Change how commands look or behave everywhere |
 
