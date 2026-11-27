@@ -180,7 +180,11 @@ impl Displays {
         let primary = displays.iter().find(|d| d.primary).or(displays.first());
         let is_primary = |d: &Display| Some(d.index) == primary.map(|p| p.index);
         let projector = displays.iter().filter(|d| d.kind == Some(Kind::Projector)).min_by_key(|d| is_primary(d));
-        let table = projector.or_else(|| displays.iter().find(|d| !is_primary(d))).or(primary);
+        // With no projector recognised, the table goes on another screen that is not a TV (#612).
+        let table = projector
+            .or_else(|| displays.iter().find(|d| !is_primary(d) && d.kind != Some(Kind::Tv)))
+            .or_else(|| displays.iter().find(|d| !is_primary(d)))
+            .or(primary);
         let others = || displays.iter().filter(|d| Some(d.index) != table.map(|t| t.index));
         let tv = others()
             .filter(|d| d.kind == Some(Kind::Tv))
@@ -356,6 +360,11 @@ mod tests {
         // Names that say nothing: as before, the table on the other display.
         let plain = [display(0, "HDMI-1", false), display(1, "eDP-1", true)];
         assert_eq!(roles(&plain), [("table".to_string(), 0), ("tv".to_string(), 1)]);
+        // A TV first and a projector that does not say so: the table skips the TV (#612).
+        let mut unnamed =
+            [display(0, "Built-in display", true), display(1, "External display", false), display(2, "External display", false)];
+        unnamed[1].kind = Some(Kind::Tv);
+        assert_eq!(roles(&unnamed), [("table".to_string(), 2), ("tv".to_string(), 1)]);
     }
 
     fn wanted(name: Option<&str>, index: Option<usize>) -> DisplayRef {
