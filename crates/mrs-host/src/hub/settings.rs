@@ -149,7 +149,7 @@ impl Hub {
         }
         let tv = if tv.is_empty() { Value::Null } else { Value::Object(tv) };
         let what = patch.keys().map(|k| tv_words(k)).collect::<Vec<_>>().join(", ");
-        self.saving(who, format!("Changed the controller's {what}"), || self.site.save_tv(tv.clone()))?;
+        self.saving_later(who, format!("Changed the controller's {what}"), vec![("tv", (!tv.is_null()).then(|| tv.clone()))])?;
         self.info.write().tv = if tv.is_null() { None } else { Some(tv.clone()) };
         self.emit("site.tv", json!({ "tv": tv }));
         Ok(json!({ "tv": tv }))
@@ -418,7 +418,7 @@ impl Hub {
             }
         }
         let display = if display.is_empty() { Value::Null } else { Value::Object(display) };
-        self.saving(who, "Changed the display quality", || self.site.save_display(display.clone()))?;
+        self.saving_later(who, "Changed the display quality", vec![("display", (!display.is_null()).then(|| display.clone()))])?;
         self.info.write().display = if display.is_null() { None } else { Some(display.clone()) };
         self.emit("site.display", json!({ "display": display }));
         Ok(json!({ "display": display }))
@@ -460,6 +460,43 @@ mod tests {
         );
         // No pages: the controller lays out the open layers' panels again.
         assert!(dev("site.tv", json!({ "tv": { "pages": null } })).unwrap()["tv"]["pages"].is_null());
+    }
+
+    #[test]
+    fn a_slow_save_holds_up_no_other_surface_and_saves_keep_their_order() {
+        // #536: with every write to site.json taking 500 ms, as on a busy network disk.
+        let hub = std::sync::Arc::new(scratch_hub("slow-saves"));
+        hub.slow_saves(500);
+        let saved_tv = |hub: &Hub| {
+            let json: Value = serde_json::from_str(&std::fs::read_to_string(hub.site.dir.join("site.json")).unwrap()).unwrap();
+            json["tv"]["idle_reset_s"].clone()
+        };
+        let editor = |value: u64| {
+            let hub = hub.clone();
+            std::thread::spawn(move || {
+                let started = Instant::now();
+                hub.request(Role::Dev, 1, "site.tv", &json!({ "tv": { "idle_reset_s": value } })).unwrap();
+                started.elapsed()
+            })
+        };
+        let first = editor(60);
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        let second = editor(90);
+        std::thread::sleep(std::time::Duration::from_millis(100));
+
+        // The controller is answered at once while both are being saved.
+        let pressed = Instant::now();
+        hub.request(Role::Tv, 2, "session.sound", &json!({ "on": false })).unwrap();
+        assert!(pressed.elapsed() < std::time::Duration::from_millis(100), "a press waited {:?} for a save", pressed.elapsed());
+        // The hub already holds the newest change.
+        assert_eq!(hub.site().tv.unwrap()["idle_reset_s"], 90);
+
+        // Each editor is answered once its own change is on disk, and the newer one wins.
+        assert!(first.join().unwrap() >= std::time::Duration::from_millis(500));
+        assert!(second.join().unwrap() >= std::time::Duration::from_millis(800), "the second save waited for the first");
+        assert_eq!(saved_tv(&hub), 90);
+        let history = hub.history_list().to_string();
+        assert!(history.contains("Changed the controller's idle reset"), "the history has the change: {history}");
     }
 
     #[test]

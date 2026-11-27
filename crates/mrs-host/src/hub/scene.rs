@@ -401,7 +401,8 @@ impl Hub {
             }
             other => return Err(format!("unknown method '{other}'")),
         }
-        self.saving(who, summary, || self.site.save_layers(&saved_layers(&scene)))?;
+        let layers = serde_json::to_value(saved_layers(&scene)).map_err(|e| e.to_string())?;
+        self.saving_later(who, summary, vec![("layers", Some(layers))])?;
         inner.scene = scene;
         match changed_layer {
             Some((index, Some(active))) => {

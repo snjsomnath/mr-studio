@@ -669,9 +669,22 @@ impl Site {
     }
 
     /// Rewrites several top-level keys of site.json as one change.
-    fn save_keys(&self, changes: &[(&str, Option<serde_json::Value>)]) -> Result<(), SiteError> {
+    pub fn save_keys(&self, changes: &[(&str, Option<serde_json::Value>)]) -> Result<(), SiteError> {
+        let value = self.with_keys(changes)?;
         let path = self.dir.join("site.json");
-        let io = |source| SiteError::Io { path: path.clone(), source };
+        let text = serde_json::to_string_pretty(&value).map_err(|e| self.parse_error(e))? + "\n";
+        files::replace(&path, text).map_err(|source| SiteError::Io { path: path.clone(), source })
+    }
+
+    /// Whether site.json would still load with these keys rewritten (#536), without writing
+    /// it: the host checks a change at once and writes it a moment later.
+    pub fn check_keys(&self, changes: &[(&str, Option<serde_json::Value>)]) -> Result<(), SiteError> {
+        self.with_keys(changes).map(|_| ())
+    }
+
+    /// site.json with these keys rewritten, checked.
+    fn with_keys(&self, changes: &[(&str, Option<serde_json::Value>)]) -> Result<serde_json::Value, SiteError> {
+        let path = self.dir.join("site.json");
         let mut value = self.read_document()?;
         let object =
             value.as_object_mut().ok_or_else(|| SiteError::Parse { path: path.clone(), message: "site.json is not an object".into() })?;
@@ -691,8 +704,7 @@ impl Site {
         if !problems.is_empty() {
             return Err(SiteError::Invalid(problems));
         }
-        let text = serde_json::to_string_pretty(&value).map_err(|e| self.parse_error(e))? + "\n";
-        files::replace(&path, text).map_err(io)
+        Ok(value)
     }
 
     /// Renames the table, moves it, resizes or turns it: rewrites `name`, `origin` and `extent`

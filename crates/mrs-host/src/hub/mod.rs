@@ -494,6 +494,51 @@ impl Inner {
     }
 }
 
+/// A save to site.json left for after the request (#536).
+struct Later {
+    turn: u64,
+    who: Who,
+    summary: String,
+    write: Box<dyn FnOnce() -> Result<(), SiteError> + Send>,
+}
+
+thread_local! {
+    /// The saves of the request being handled on this thread. A request is handled on one
+    /// thread from start to end, so they are its own.
+    static LATER: std::cell::RefCell<Vec<Later>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// Turns for saving site.json (#536). A turn is taken while the change is made, under the
+/// hub's lock, so turns follow the order of the changes; the writes then wait for their turn.
+#[derive(Default)]
+struct SaveTurns {
+    /// (next turn to give out, turns finished)
+    state: Mutex<(u64, u64)>,
+    finished: parking_lot::Condvar,
+}
+
+impl SaveTurns {
+    fn take(&self) -> u64 {
+        let mut state = self.state.lock();
+        state.0 += 1;
+        state.0 - 1
+    }
+
+    fn wait(&self, turn: u64) {
+        let mut state = self.state.lock();
+        while state.1 < turn {
+            self.finished.wait(&mut state);
+        }
+    }
+
+    fn done(&self, turn: u64) {
+        let mut state = self.state.lock();
+        debug_assert_eq!(state.1, turn, "saves finish in turn");
+        state.1 = turn + 1;
+        self.finished.notify_all();
+    }
+}
+
 pub struct Hub {
     site: Site,
     /// Replaced when data is imported into the site.
@@ -533,6 +578,10 @@ pub struct Hub {
     history: Arc<Mutex<History>>,
     /// The revision the request being handled wrote, announced when it is done.
     recorded: Mutex<Vec<Revision>>,
+    /// Saves to site.json take turns in the order their changes were made (#536).
+    saves: SaveTurns,
+    /// For tests (#536): every write to site.json takes this much longer, as on a slow disk.
+    slow_saves: std::sync::atomic::AtomicU64,
     /// Set by `inject_fault`: the next request fails inside the host.
     fault: std::sync::atomic::AtomicBool,
     /// When a person last did something on any surface (#604), for the idle reset.
@@ -638,6 +687,8 @@ impl Hub {
             history: Arc::new(Mutex::new(History::open(&site.dir))),
             recorded: Mutex::new(Vec::new()),
             fault: Default::default(),
+            saves: SaveTurns::default(),
+            slow_saves: Default::default(),
             last_input: Mutex::new(Instant::now()),
             controllers: Mutex::new(Vec::new()),
         };
@@ -661,8 +712,36 @@ impl Hub {
         self.history.clone()
     }
 
-    /// Runs a write to site.json and records it in the history, as one step.
+    /// Runs a write to site.json and records it in the history, as one step, now: for a
+    /// change whose request needs what was written (#536). It waits for the saves before it,
+    /// holding the hub's lock, as every save did before #536.
     fn saving(&self, who: Who, summary: impl Into<String>, write: impl FnOnce() -> Result<(), SiteError>) -> Result<(), String> {
+        let turn = self.saves.take();
+        self.saves.wait(turn);
+        let written = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| self.write_now(who, summary.into(), write)));
+        self.saves.done(turn);
+        written.unwrap_or_else(|panic| std::panic::resume_unwind(panic))
+    }
+
+    /// Saves top-level keys of site.json once the request is handled and the hub's lock is
+    /// free (#536), so a slow disk never holds up another surface. The change is checked now,
+    /// so a change site.json would refuse is still refused before the hub takes it. Saves keep
+    /// the order their changes were made in, and the request is answered after its own save,
+    /// so "saved" still means on disk.
+    fn saving_later(&self, who: Who, summary: impl Into<String>, changes: Vec<(&'static str, Option<Value>)>) -> Result<(), String> {
+        self.site.check_keys(&changes).map_err(|e| format!("could not save site.json: {e}"))?;
+        let site = self.site.clone();
+        let turn = self.saves.take();
+        let write = move || site.save_keys(&changes);
+        LATER.with(|later| later.borrow_mut().push(Later { turn, who, summary: summary.into(), write: Box::new(write) }));
+        Ok(())
+    }
+
+    fn write_now(&self, who: Who, summary: String, write: impl FnOnce() -> Result<(), SiteError>) -> Result<(), String> {
+        let slow = self.slow_saves.load(std::sync::atomic::Ordering::Relaxed);
+        if slow > 0 {
+            std::thread::sleep(std::time::Duration::from_millis(slow));
+        }
         let change = {
             let mut history = self.history.lock();
             let ((), change) = history.write(who.by, summary, who.surface, write).map_err(|e| format!("could not save site.json: {e}"))?;
@@ -672,6 +751,27 @@ impl Hub {
             self.recorded.lock().push(change.revision);
         }
         Ok(())
+    }
+
+    /// Writes the saves a request left for later, in turn. After a request failed inside the
+    /// host, its saves are skipped, but their turns are still given up.
+    fn write_later(&self, failed: bool) -> Result<(), String> {
+        let later = LATER.with(|later| std::mem::take(&mut *later.borrow_mut()));
+        let mut result = Ok(());
+        for Later { turn, who, summary, write } in later {
+            self.saves.wait(turn);
+            if !failed && result.is_ok() {
+                let written = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| self.write_now(who, summary, write)));
+                result = written.unwrap_or_else(|_| Err(format!("{FAULT} site.json could not be saved.")));
+            }
+            self.saves.done(turn);
+        }
+        result
+    }
+
+    /// For tests (#536): makes every save to site.json take `ms` longer.
+    pub fn slow_saves(&self, ms: u64) {
+        self.slow_saves.store(ms, std::sync::atomic::Ordering::Relaxed);
     }
 
     /// Tells every surface the history moved on: a new revision, or an undo, redo or restore.
@@ -776,6 +876,9 @@ impl Hub {
         // A request that fails inside the host (#507) costs that request only: the surface is
         // told, the locks are free again (they do not poison), and the next request is handled.
         let handled = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| self.handle(role, surface, method, p)));
+        // The hub's lock is free again: now the request's own saves are written (#536).
+        let saved = self.write_later(handled.is_err());
+        let handled = handled.map(|result| result.and_then(|answer| saved.map(|()| answer)));
         let result = handled.unwrap_or_else(|panic| {
             let why =
                 panic.downcast_ref::<&str>().map(|s| s.to_string()).or_else(|| panic.downcast_ref::<String>().cloned()).unwrap_or_default();
