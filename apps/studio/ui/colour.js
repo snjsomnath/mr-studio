@@ -1,6 +1,7 @@
 // The Colour tab: the final colour pass per display. Commands in src-tauri/src/main.rs,
 // the pass itself in src-tauri/src/colour.js.
 (() => {
+  /** @type {[key: string, label: string, min: number, max: number, neutral: number][]} */
   const SLIDERS = [
     ['saturation', 'Saturation', 0, 2.5, 1],
     ['contrast', 'Contrast', 0.5, 2, 1],
@@ -55,7 +56,7 @@
         };
         range.addEventListener('input', () => change(Number(range.value)));
         range.addEventListener('dblclick', () => {
-          range.value = neutral;
+          range.value = String(neutral);
           change(neutral);
         });
         return [el('label', {}, label), range, output];
@@ -78,7 +79,7 @@
         };
         range.addEventListener('input', () => change(Number(range.value)));
         range.addEventListener('dblclick', () => {
-          range.value = 1;
+          range.value = '1';
           change(1);
         });
         return [el('label', {}, layer.active ? layer.name : `${layer.name} (off)`), range, output];

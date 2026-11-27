@@ -4,9 +4,12 @@
   "license": "SEE LICENSE IN ../../LICENSE",
   "private": true,
   "scripts": {
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "typecheck": "node ../../scripts/app-commands.mjs --check && tsc -p .",
+    "app-commands": "node ../../scripts/app-commands.mjs"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "^2.0.0"
+    "@tauri-apps/cli": "^2.0.0",
+    "typescript": "^5.9.0"
   }
 }

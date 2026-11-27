@@ -1,0 +1,15 @@
+{
+  // The app's own pages (#544): plain scripts, checked so a wrong command name or a misspelt
+  // property fails `pnpm typecheck` instead of failing when someone clicks.
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "moduleDetection": "force",
+    "strict": false,
+    "skipLibCheck": true
+  },
+  "include": ["ui/*.js", "ui/*.d.ts", "src-tauri/src/*.js"]
+}

@@ -27,6 +27,8 @@
         open: (url) => window.open(url, '_blank', 'noopener'),
       };
 
+  /** @type {(id: string) => any} An element by id; its kind is in the HTML. */
+
   const $ = (id) => document.getElementById(id);
   function el(tag, props = {}, ...children) {
     const node = Object.assign(document.createElement(tag), props);

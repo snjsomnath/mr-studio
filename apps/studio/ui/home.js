@@ -1,7 +1,9 @@
 // The Home page: the first window. Pick a table to open in the editor, or start a new one.
 // Talks to the shell through the commands in src-tauri/src/main.rs.
 const { invoke } = window.__TAURI__.core;
+/** @type {(id: string) => any} An element by id; its kind is in the HTML. */
 const $ = (id) => document.getElementById(id);
+/** @type {<K extends keyof HTMLElementTagNameMap>(tag: K, props?: Record<string, unknown>, ...children: (Node | string)[]) => HTMLElementTagNameMap[K]} */
 const el = (tag, props = {}, ...children) => {
   const node = Object.assign(document.createElement(tag), props);
   node.append(...children);
@@ -364,9 +366,9 @@ function readPlace() {
 }
 
 function readSize() {
-  const choice = document.querySelector('input[name="width"]:checked').value;
+  const choice = /** @type {HTMLInputElement} */ (document.querySelector('input[name="width"]:checked')).value;
   const width = choice === 'custom' ? Number($('new-width-custom').value) : Number(choice);
-  const shape = Number(document.querySelector('input[name="shape"]:checked').value);
+  const shape = Number(/** @type {HTMLInputElement} */ (document.querySelector('input[name="shape"]:checked')).value);
   const ok = Number.isFinite(width) && width >= 50 && width <= 20000;
   const height = ok ? Math.round(width / shape) : 0;
   $('size-read').textContent = ok ? `The table shows ${width} × ${height} metres.` : 'Give a width between 50 and 20 000 metres.';
@@ -386,7 +388,7 @@ function drawStep() {
 $('new-place').addEventListener('input', readPlace);
 $('new-form').addEventListener('change', readSize);
 $('new-width-custom').addEventListener('input', () => {
-  document.querySelector('input[name="width"][value="custom"]').checked = true;
+  /** @type {HTMLInputElement} */ (document.querySelector('input[name="width"][value="custom"]')).checked = true;
   readSize();
 });
 $('new-prev').addEventListener('click', () => {

@@ -2,7 +2,9 @@
 // phones and startup), then the app's own pages. Colour, Calibration and Updates have scripts of their own.
 // It talks to the shell through the commands in src-tauri/src/main.rs.
 const { invoke } = window.__TAURI__.core;
+/** @type {(id: string) => any} An element by id; its kind is in the HTML. */
 const $ = (id) => document.getElementById(id);
+/** @type {<K extends keyof HTMLElementTagNameMap>(tag: K, props?: Record<string, unknown>, ...children: (Node | string)[]) => HTMLElementTagNameMap[K]} */
 const el = (tag, props = {}, ...children) => {
   const node = Object.assign(document.createElement(tag), props);
   node.append(...children);

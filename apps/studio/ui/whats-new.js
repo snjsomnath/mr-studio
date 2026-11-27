@@ -5,6 +5,7 @@
 (() => {
   const { invoke } = window.__TAURI__.core;
   const { listen } = window.__TAURI__.event;
+  /** @type {(id: string) => any} An element by id; its kind is in the HTML. */
   const $ = (id) => document.getElementById(id);
   const el = (tag, props = {}, ...children) => {
     const node = Object.assign(document.createElement(tag), props);
