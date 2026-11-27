@@ -13,7 +13,7 @@ edited.
 
 ## A recording's folder
 
-`recordings/<YYYY-MM-DD>-<6 hex>/` holds three files.
+`recordings/<YYYY-MM-DD>-<6 hex>/` holds four files.
 
 ### `recording.json`: the catalogue
 
@@ -55,11 +55,31 @@ written. Every line has `t`, milliseconds since the start, and `k`, what it is:
 Requests that failed are in the log too: played again they fail the same way and change
 nothing.
 
+### `checkpoints.jsonl`: the state now and then (#524)
+
+One line per checkpoint: `{ t, after, state }`. `after` is how many lines of `log.jsonl` came
+before it, and `state` is `{ session, scene, layers, participants }`, as in the start snapshot
+less the site. A checkpoint is written with the first request after each minute
+(`CHECKPOINT_EVERY`) and at each chapter mark, while the hub's lock is held, so it always falls
+between two log lines.
+
+What a checkpoint does not hold is what lives only inside a layer, such as a stormwater
+simulation that has run for ten minutes. A layer like that starts again from the restored
+params when seeking. Phone sketches, votes, words, field walk spots and published values come
+through requests, so they are in the log, and a checkpoint keeps what the host holds of them.
+
 ## Playing a log again
 
 `mrs_host::replay(hub, log, until)` sends the logged requests to a hub started from the
 snapshot's `site.json`, up to `until` milliseconds. A test records a controller and two
 phones, then rebuilds the final layers and scene from the snapshot and the log alone.
+
+`mrs_host::seek(hub, folder, until)` jumps to any time, forwards or backwards (#524). It puts
+back the nearest checkpoint at or before `until` with `Hub::restore` (the start snapshot when
+there is none) and replays only the log lines after it, so at most about a minute of events.
+A line an older or newer app cannot make sense of fails and changes nothing, and the next
+checkpoint puts the state right again. A test seeks to each checkpoint, back to the start and
+to the end, and compares the state with replaying every event from the start.
 
 A recording stops by itself after 8 hours, or when its log cannot be written, and the
 surfaces are sent `recording.stopped { why }`.

@@ -13,7 +13,7 @@ use std::time::{Duration, Instant};
 use mrs_site::history::{By, Change, History, Revision};
 use mrs_site::{is_instance_id, LayerButton, LayerItem, LayerRef, Reveal, Site, SiteError, SiteInfo, StepMode, Steps};
 use schemars::JsonSchema;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 use tokio::sync::{broadcast, Notify};
 
@@ -36,7 +36,9 @@ use seats::*;
 use settings::*;
 use tools::*;
 
-pub use recording::{default_recordings_dir, list_recordings, replay, Catalogue, Chapter, RecordingInfo, MAX_RECORDING, RECORDING_FORMAT};
+pub use recording::{
+    default_recordings_dir, list_recordings, replay, seek, Catalogue, Chapter, RecordingInfo, MAX_RECORDING, RECORDING_FORMAT,
+};
 
 pub const PROTOCOL: u32 = 1;
 pub const MAX_PHONES: usize = 8;
@@ -226,7 +228,7 @@ pub struct LayerState {
 /// host's moment `at` (milliseconds since 1970), moving `rate` units a second (0 when it stands
 /// still). A view works out the time now from these, so the table sends a new one only when play
 /// starts, stops, jumps or changes pace.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct LayerClock {
     pub value: f64,
     pub rate: f64,
@@ -289,7 +291,7 @@ const MAX_HEALTH_REASON: usize = 300;
 /// Where Next is in a layer (`docs/contracts/present.md`, Steps). For a sequence, `index`
 /// and `count` count its steps and `sub` is the shown layer's sub-steps. For any other
 /// layer they count its sub-steps: `index` is how many are revealed, 0 to `count`.
-#[derive(Debug, Clone, Serialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct StepState {
     pub index: usize,
     pub count: usize,
@@ -304,14 +306,14 @@ pub struct StepState {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
     /// For sub-steps: what each one is called, for the controller's legend.
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub titles: Vec<String>,
     /// When a playing layer moves on next.
     #[serde(skip)]
     due: Option<Instant>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct SubSteps {
     pub index: usize,
     pub count: usize,

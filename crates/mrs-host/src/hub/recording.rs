@@ -8,6 +8,9 @@
 //!   state every surface was sent.
 //! - `log.jsonl`: one line per timed event, appended as it happens, so a crash loses at
 //!   most the line being written.
+//! - `checkpoints.jsonl` (#524): the session state about once a minute and at each chapter
+//!   mark, with how many log lines came before it. Seeking starts from the nearest one and
+//!   replays only the lines after it.
 //!
 //! The format is in `docs/contracts/recording.md`. Every request a surface sends passes
 //! through the hub, so the log taps that: a new layer or request is recorded with no code of
@@ -26,6 +29,9 @@ pub const RECORDING_FORMAT: u32 = 1;
 
 /// A recording stops by itself after this long (#522) and says so.
 pub const MAX_RECORDING: Duration = Duration::from_secs(8 * 60 * 60);
+
+/// How often a checkpoint of the session state is written while requests come in (#524).
+pub const CHECKPOINT_EVERY: Duration = Duration::from_secs(60);
 
 /// Requests that only read, or that are about recording itself: not in the log.
 const NOT_LOGGED: &[&str] = &["site.sources", "history.list", "phones.log"];
@@ -91,6 +97,9 @@ pub(super) struct Recording {
     dir: PathBuf,
     started: Instant,
     log: std::fs::File,
+    checkpoints: std::fs::File,
+    /// When the last checkpoint was written, in ms from the start (#524).
+    last_checkpoint: u64,
     catalogue: Catalogue,
     /// Set when writing the log failed: the recording stops at the next request.
     failed: Option<String>,
@@ -109,6 +118,20 @@ impl Recording {
             return;
         }
         self.catalogue.events += 1;
+    }
+
+    /// Appends the session state as it is now after `events` log lines (#524).
+    fn checkpoint(&mut self, state: Value) {
+        let t = self.ms();
+        let line = json!({ "t": t, "after": self.catalogue.events, "state": state }).to_string() + "\n";
+        if let Err(e) = self.checkpoints.write_all(line.as_bytes()) {
+            self.failed.get_or_insert_with(|| format!("a checkpoint could not be written: {e}"));
+        }
+        self.last_checkpoint = t;
+    }
+
+    fn checkpoint_due(&self) -> bool {
+        self.ms().saturating_sub(self.last_checkpoint) >= CHECKPOINT_EVERY.as_millis() as u64
     }
 
     fn info(&self) -> RecordingInfo {
@@ -203,10 +226,67 @@ impl Hub {
         if NOT_LOGGED.contains(&method) || method.starts_with("recording.") {
             return;
         }
-        let mut recording = self.recording.lock();
-        let Some(recording) = recording.as_mut() else { return };
-        let slot = inner.seats.iter().find(|s| s.participant.surface == surface).map(|s| s.participant.slot);
-        recording.write(json!({ "k": "request", "role": role.name(), "surface": surface, "slot": slot, "m": method, "p": p }));
+        let due = {
+            let mut recording = self.recording.lock();
+            let Some(recording) = recording.as_mut() else { return };
+            let slot = inner.seats.iter().find(|s| s.participant.surface == surface).map(|s| s.participant.slot);
+            recording.write(json!({ "k": "request", "role": role.name(), "surface": surface, "slot": slot, "m": method, "p": p }));
+            recording.checkpoint_due()
+        };
+        if due {
+            self.write_checkpoint(inner);
+        }
+    }
+
+    /// The state a checkpoint keeps (#524): what the start snapshot keeps, less the site.
+    fn checkpoint_state(&self, inner: &Inner) -> Value {
+        // session() takes the recording lock itself, so this runs before it is taken.
+        let mut session = self.session();
+        session.recording = None;
+        json!({ "session": session, "scene": inner.order(), "layers": inner.layers(), "participants": inner.participants() })
+    }
+
+    /// Writes a checkpoint now, while the hub's lock is held so it falls between two log lines.
+    fn write_checkpoint(&self, inner: &Inner) {
+        let state = self.checkpoint_state(inner);
+        if let Some(recording) = self.recording.lock().as_mut() {
+            recording.checkpoint(state);
+        }
+    }
+
+    /// Puts a hub's layers and session back as a checkpoint has them (#524): which layers are
+    /// on, their order, params, shared values, steps, picks and play heads, and the language,
+    /// sound and ribbon. The layers themselves come from the hub's own site, so a layer the
+    /// checkpoint names and the site no longer has is left out.
+    pub fn restore(&self, state: &Value) {
+        let mut inner = self.inner.lock();
+        let order: Vec<&str> = state["scene"].as_array().map(|a| a.iter().filter_map(Value::as_str).collect()).unwrap_or_default();
+        inner.scene.sort_by_key(|i| order.iter().position(|id| *id == i.id).unwrap_or(usize::MAX));
+        for instance in inner.scene.iter_mut() {
+            let Some(saved) = state["layers"].get(&instance.id) else { continue };
+            let s = &mut instance.state;
+            s.active = saved["active"].as_bool().unwrap_or(s.active);
+            s.intensity = saved["intensity"].as_f64().unwrap_or(s.intensity);
+            if let Some(params) = saved["params"].as_object() {
+                s.params = params.clone();
+            }
+            s.shared = saved["shared"].as_object().cloned().unwrap_or_default();
+            s.step = serde_json::from_value(saved["step"].clone()).unwrap_or(None);
+            s.shown_by = saved["shown_by"].as_str().map(str::to_string);
+            s.selection = saved.get("selection").filter(|v| !v.is_null()).cloned();
+            s.clock = serde_json::from_value(saved["clock"].clone()).unwrap_or(None);
+        }
+        let session = &state["session"];
+        if let Some(language) = session["language"].as_str() {
+            *self.language.write() = language.to_string();
+        }
+        if let Some(sound) = session["sound"].as_bool() {
+            *self.sound.write() = sound;
+        }
+        *self.ribbon.write() = session["ribbon"].as_str().map(str::to_string);
+        self.emit("state.scene", json!({ "scene": inner.order(), "layers": inner.layers() }));
+        drop(inner);
+        self.emit("session.changed", json!({ "session": self.session() }));
     }
 
     /// Writes a phone joining or leaving to the log.
@@ -242,14 +322,19 @@ impl Hub {
             "recording.start" => self.start_recording(p),
             "recording.chapter" => {
                 let title = text(p, "title", 80)?;
+                let inner = self.inner.lock();
+                let state = self.checkpoint_state(&inner);
                 let info = {
                     let mut recording = self.recording.lock();
                     let recording = recording.as_mut().ok_or("nothing is being recorded")?;
                     let chapter = Chapter { t: recording.ms(), title: (!title.is_empty()).then_some(title) };
                     recording.catalogue.chapters.push(chapter.clone());
                     recording.write(json!({ "k": "chapter", "title": chapter.title }));
+                    // Each chapter is a place to jump to, so it gets a checkpoint (#524).
+                    recording.checkpoint(state);
                     recording.info()
                 };
+                drop(inner);
                 self.emit("session.changed", json!({ "session": self.session() }));
                 Ok(json!({ "recording": info }))
             }
@@ -330,8 +415,10 @@ impl Hub {
             layers,
         };
         write_json(&dir.join("recording.json"), &catalogue).map_err(io)?;
-        let log = std::fs::OpenOptions::new().create(true).append(true).open(dir.join("log.jsonl")).map_err(io)?;
-        let new = Recording { dir, started: Instant::now(), log, catalogue, failed: None };
+        let open = |name: &str| std::fs::OpenOptions::new().create(true).append(true).open(dir.join(name));
+        let log = open("log.jsonl").map_err(io)?;
+        let checkpoints = open("checkpoints.jsonl").map_err(io)?;
+        let new = Recording { dir, started: Instant::now(), log, checkpoints, last_checkpoint: 0, catalogue, failed: None };
         let info = new.info();
         *recording = Some(new);
         drop(recording);
@@ -419,6 +506,30 @@ pub fn replay(hub: &Hub, log: &str, until: Option<u64>) -> usize {
     replayed
 }
 
+/// Shows a recording at `until` milliseconds on a hub opened on its table (#524): puts back
+/// the nearest checkpoint at or before that time (the start snapshot when there is none) and
+/// replays only the log lines after it. Works forwards and backwards. A line an older or newer
+/// app cannot make sense of fails and changes nothing, and the next checkpoint puts the state
+/// right again. Returns how many requests were replayed.
+pub fn seek(hub: &Hub, folder: &Path, until: u64) -> Result<usize, String> {
+    let read = |name: &str| std::fs::read_to_string(folder.join(name)).map_err(|e| format!("{name} could not be read: {e}"));
+    let start: Value = serde_json::from_str(&read("start.json")?).map_err(|e| format!("start.json: {e}"))?;
+    let checkpoints = read("checkpoints.jsonl").unwrap_or_default();
+    let nearest = checkpoints
+        .lines()
+        .filter_map(|l| serde_json::from_str::<Value>(l).ok())
+        .take_while(|c| c["t"].as_u64().unwrap_or(u64::MAX) <= until)
+        .last();
+    let (state, after) = match &nearest {
+        Some(c) => (&c["state"], c["after"].as_u64().unwrap_or(0) as usize),
+        None => (&start["state"], 0),
+    };
+    hub.restore(state);
+    let log = read("log.jsonl")?;
+    let rest: String = log.lines().skip(after).map(|l| format!("{l}\n")).collect();
+    Ok(replay(hub, &rest, Some(until)))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -503,5 +614,59 @@ mod tests {
         assert!(hub.request(Role::Tv, 1, "recording.wrapup", &json!({ "id": "../x" })).is_err());
         hub.request(Role::Tv, 1, "recording.wrapup", &json!({ "id": id, "discard": true })).unwrap();
         assert!(!folder.exists());
+    }
+
+    #[test]
+    fn seeking_to_a_checkpoint_shows_what_replaying_everything_shows() {
+        // #524's done-when: the state at each checkpoint, reached by seeking forwards and
+        // backwards, equals the state from replaying every event from the start to that time.
+        let dir = scratch_dir("seek");
+        let mut hub = scratch_hub("seek");
+        hub.options.recordings_dir = Some(dir.clone());
+        let tv = |method: &str, p: Value| {
+            std::thread::sleep(Duration::from_millis(3));
+            hub.request(Role::Tv, 1, method, &p).unwrap()
+        };
+        let id = tv("recording.start", json!({}))["recording"]["id"].as_str().unwrap().to_string();
+        tv("layer.activate", json!({ "layer": "sunlight", "active": true }));
+        tv("layer.set", json!({ "layer": "sunlight", "params": { "hour": 9.5 } }));
+        tv("recording.chapter", json!({ "title": "Morning" }));
+        tv("layer.set", json!({ "layer": "sunlight", "params": { "hour": 12 } }));
+        tv("layer.activate", json!({ "layer": "trees", "active": false }));
+        tv("session.language", json!({ "language": "sv" }));
+        tv("recording.chapter", json!({ "title": "Noon" }));
+        tv("layer.set", json!({ "layer": "sunlight", "params": { "hour": 17 } }));
+        tv("layer.activate", json!({ "layer": "sunlight", "active": false }));
+        let end = tv("recording.stop", json!({}))["recording"]["length"].as_u64().unwrap();
+        let folder = dir.join(&id);
+        let checkpoints: Vec<Value> =
+            std::fs::read_to_string(folder.join("checkpoints.jsonl")).unwrap().lines().map(|l| serde_json::from_str(l).unwrap()).collect();
+        assert_eq!(checkpoints.len(), 2, "one at each chapter");
+        let log = std::fs::read_to_string(folder.join("log.jsonl")).unwrap();
+        let start: Value = serde_json::from_str(&std::fs::read_to_string(folder.join("start.json")).unwrap()).unwrap();
+        let site = |dir: &std::path::Path| std::fs::write(dir.join("site.json"), start["site"].to_string()).unwrap();
+        let state = |hub: &Hub| {
+            let w = hub.welcome(0)["state"].clone();
+            (w["scene"].clone(), w["layers"].clone(), w["session"]["language"].clone())
+        };
+
+        let player = scratch_hub_with("seek-player", site);
+        let mut times: Vec<u64> = checkpoints.iter().map(|c| c["t"].as_u64().unwrap()).collect();
+        times.extend([end, 1, times[0] - 1, times[1], times[0], 0]);
+        for (n, t) in times.into_iter().enumerate() {
+            let replayed = seek(&player, &folder, t).unwrap();
+            let fresh = scratch_hub_with(&format!("seek-fresh-{n}"), site);
+            let everything = replay(&fresh, &log, Some(t));
+            assert!(replayed <= everything, "a checkpoint saves replaying");
+            assert_eq!(state(&player), state(&fresh), "at {t} ms");
+        }
+        assert_eq!(state(&player).2, "en", "back at the start");
+        seek(&player, &folder, checkpoints[1]["t"].as_u64().unwrap()).unwrap();
+        assert_eq!(state(&player).2, "sv");
+        assert_eq!(layer_of(&player, "trees")["active"], false);
+    }
+
+    fn layer_of(hub: &Hub, id: &str) -> Value {
+        hub.welcome(0)["state"]["layers"][id].clone()
     }
 }
