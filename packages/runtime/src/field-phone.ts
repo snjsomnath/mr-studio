@@ -14,6 +14,8 @@ import type { Store } from './store.ts';
 
 const PACKAGE = 'fieldwalk';
 const WALKER_KEY = 'mrstudio.walker';
+/** The table session this phone's spots belong to (#627): a new session starts a new walk. */
+const SESSION_KEY = 'mrstudio.field.session';
 /** Raw bytes per piece: 96 kB is 128 kB of base64, well under the host's limit and the 256 kB a WebRTC message may be. */
 const PIECE = 96 * 1024;
 /** Photos are scaled to at most this many pixels on their long side, as JPEG. */
@@ -114,6 +116,22 @@ class Outbox {
   async remove(id: string): Promise<void> {
     this.memory.delete(id);
     await this.run('readwrite', (s) => s.delete(id));
+  }
+}
+
+function keptSession(): string | null {
+  try {
+    return localStorage.getItem(SESSION_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function keepSession(session: string): void {
+  try {
+    localStorage.setItem(SESSION_KEY, session);
+  } catch {
+    // Private browsing: the walk then lasts as long as the page.
   }
 }
 
@@ -237,19 +255,44 @@ export function fieldCard(store: Store, connection: Connection): HTMLElement {
               : t('Waiting to send');
         words.append(el('span', spot.sent ? 'is-sent' : spot.refused ? 'is-refused' : undefined, state + (spot.note ? ` · ${spot.note}` : '')));
         row.append(pic, words);
-        if (!spot.sent) {
-          const drop = el('button', 'field-drop', '×');
-          drop.type = 'button';
-          drop.setAttribute('aria-label', t('Delete this spot'));
-          drop.onclick = async () => {
-            await outbox.remove(spot.id);
-            await refresh();
-          };
-          row.append(drop);
-        }
+        // Any of one's own spots can be taken back, also once it is on the table (#627).
+        const drop = el('button', 'field-drop', '×');
+        drop.type = 'button';
+        drop.setAttribute('aria-label', t('Delete this spot'));
+        drop.onclick = async () => {
+          if (spot.sent) {
+            try {
+              await withTimeout(connection.request('field.remove', { id: spot.id, walker: walkerId() }));
+            } catch {
+              status.textContent = t('The table can’t be reached. Try again when it can.');
+              return;
+            }
+          }
+          await outbox.remove(spot.id);
+          await refresh();
+        };
+        row.append(drop);
         return row;
       }),
     );
+  }
+
+  /**
+   * Brings the phone's list in line with the table (#627). A new session of the table starts a
+   * new walk, so everything kept from an earlier one goes; within a session, spots the guide
+   * removed or cleared go too. Spots still waiting to send, or turned down, stay.
+   */
+  async function reconcile() {
+    const answer = await withTimeout(connection.request<{ session: string; spots: string[] }>('field.mine', { walker: walkerId() }));
+    const fresh = keptSession() !== answer.session;
+    const have = new Set(answer.spots);
+    for (const spot of await outbox.all()) {
+      if (fresh || (spot.sent && !have.has(spot.id))) {
+        await outbox.remove(spot.id);
+      }
+    }
+    keepSession(answer.session);
+    await refresh();
   }
 
   /** Sends every spot the table does not have yet, one piece at a time, going on where it stopped. */
@@ -320,7 +363,9 @@ export function fieldCard(store: Store, connection: Connection): HTMLElement {
   });
   connection.on('welcome', () => {
     online = true;
-    void send();
+    void reconcile()
+      .catch(() => undefined)
+      .then(send);
   });
   window.addEventListener('online', () => void send());
   document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && void send());
@@ -334,7 +379,10 @@ export function fieldCard(store: Store, connection: Connection): HTMLElement {
         void send();
       }),
     );
-  void refresh().then(send);
+  void refresh()
+    .then(reconcile)
+    .catch(() => undefined)
+    .then(send);
   return card;
 }
 

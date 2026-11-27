@@ -619,8 +619,8 @@ pub async fn start(config: HostConfig) -> anyhow::Result<RunningHost> {
         Some(base) => tracing::info!("phones join at {base}/phone"),
         None => tracing::info!("listening on this computer only; phones cannot join"),
     }
-    let field = field::Field::open(&site.dir, (site.manifest.origin.lon, site.manifest.origin.lat));
     let hub = Hub::new(&site, catalog, addr.port(), join_base, config.session.clone())?;
+    let field = field::Field::open(&site.dir, (site.manifest.origin.lon, site.manifest.origin.lat), &hub.session().id);
     // The site's services start now and come up in the background; their incidents go to the operator log.
     let (service_incidents, mut service_incident_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
     let services = services::Services::start(&site, config.programs, move |message| {

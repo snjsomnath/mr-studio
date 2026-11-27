@@ -77,8 +77,15 @@ pub struct Spot {
 #[derive(Default, Serialize, Deserialize)]
 struct Saved {
     revision: u64,
+    /// The session the walk belongs to (#627). A new session starts a new walk.
+    #[serde(default)]
+    session: String,
     spots: Vec<Spot>,
 }
+
+/// Where the walk of the session before is put aside when a new session starts (#627), in case
+/// the host was restarted by mistake. Only the last one is kept; nothing reads it.
+pub const PREVIOUS: &str = ".mrstudio/field-previous";
 
 struct Pending {
     spot: Spot,
@@ -150,9 +157,21 @@ fn distance_km(a: (f64, f64), b: (f64, f64)) -> f64 {
 
 impl Field {
     /// Opens the field walk of the table in `site_dir`, whose centre is `centre` (lon, lat).
-    pub fn open(site_dir: &Path, centre: (f64, f64)) -> Self {
+    /// A walk belongs to one session (#627): the spots of an earlier session are put aside in
+    /// [`PREVIOUS`], and the walk starts empty on the table and, once they connect, on the phones.
+    pub fn open(site_dir: &Path, centre: (f64, f64), session: &str) -> Self {
         let dir = site_dir.join(DIR);
-        let saved = std::fs::read(dir.join("spots.json")).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default();
+        let mut saved: Saved = std::fs::read(dir.join("spots.json")).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default();
+        if saved.session != session {
+            if dir.exists() {
+                let previous = site_dir.join(PREVIOUS);
+                let _ = std::fs::remove_dir_all(&previous);
+                if std::fs::rename(&dir, &previous).is_err() {
+                    let _ = std::fs::remove_dir_all(&dir);
+                }
+            }
+            saved = Saved { revision: saved.revision, session: session.to_string(), spots: Vec::new() };
+        }
         Self { dir, centre, inner: Mutex::new(Inner { saved, pending: HashMap::new() }) }
     }
 
@@ -165,7 +184,7 @@ impl Field {
             .values()
             .map(|p| json!({ "id": p.spot.id, "kind": p.spot.kind, "walker": p.spot.walker, "share": p.have as f64 / p.spot.bytes as f64 }))
             .collect();
-        json!({ "revision": inner.saved.revision, "spots": inner.saved.spots, "pending": pending })
+        json!({ "revision": inner.saved.revision, "session": inner.saved.session, "spots": inner.saved.spots, "pending": pending })
     }
 
     /// A field file's path, by its name as a spot has it. None for anything else.
@@ -196,11 +215,47 @@ impl Field {
                     self.part(p)
                 }
             }
+            "field.mine" => {
+                // Which of a walker's spots the table still has (#627): the phone drops the rest.
+                let walker = clean_id(&p["walker"])?;
+                let inner = self.inner.lock();
+                let have: Vec<&str> = inner
+                    .saved
+                    .spots
+                    .iter()
+                    .map(|s| (s.id.as_str(), &s.walker.id))
+                    .chain(inner.pending.values().map(|p| (p.spot.id.as_str(), &p.spot.walker.id)))
+                    .filter(|(_, w)| **w == walker)
+                    .map(|(id, _)| id)
+                    .collect();
+                Ok((json!({ "session": inner.saved.session, "spots": have, "revision": inner.saved.revision }), None))
+            }
             "field.remove" | "field.clear" => {
-                if !matches!(role, Role::Tv | Role::Dev) {
+                // A phone may take back its own spot (#627); the controller removes any, or clears the walk.
+                let own = role == Role::Phone && method == "field.remove";
+                if !matches!(role, Role::Tv | Role::Dev) && !own {
                     return Err("only the controller removes spots".into());
                 }
                 let mut inner = self.inner.lock();
+                if own {
+                    let id = clean_id(&p["id"])?;
+                    let walker = clean_id(&p["walker"])?;
+                    if let Some(at) = inner.saved.spots.iter().position(|s| s.id == id) {
+                        if inner.saved.spots[at].walker.id != walker {
+                            return Err("that spot is someone else's".into());
+                        }
+                    } else {
+                        // Gone already (the guide cleared it) or still on its way: nothing to keep.
+                        let pending = inner.pending.get(&id).is_some_and(|p| p.spot.walker.id == walker);
+                        if pending {
+                            inner.pending.remove(&id);
+                            let _ = std::fs::remove_file(self.dir.join(format!("{id}.part")));
+                            inner.saved.revision += 1;
+                            return Ok((json!({ "removed": 1 }), Some(inner.saved.revision)));
+                        }
+                        return Ok((json!({ "removed": 0 }), None));
+                    }
+                }
                 let gone: Vec<Spot> = if method == "field.clear" {
                     inner.pending.clear();
                     std::mem::take(&mut inner.saved.spots)
@@ -327,7 +382,7 @@ impl Field {
 pub fn is_field_path(path: &str) -> bool {
     let decoded = percent_decode(path).to_ascii_lowercase().replace('\\', "/");
     let parts: Vec<&str> = decoded.split('/').filter(|p| !p.is_empty() && *p != ".").collect();
-    parts.windows(2).any(|w| w[0] == ".mrstudio" && w[1] == "field")
+    parts.windows(2).any(|w| w[0] == ".mrstudio" && (w[1] == "field" || w[1] == "field-previous"))
 }
 
 pub(crate) fn percent_decode(s: &str) -> String {
@@ -371,7 +426,7 @@ mod tests {
     #[test]
     fn a_spot_arrives_in_pieces_and_resumes() {
         let dir = temp();
-        let field = Field::open(&dir, (11.97, 57.7));
+        let field = Field::open(&dir, (11.97, 57.7), "s1");
         assert_eq!(field.request(Role::Phone, "field.add", &add("spot-00001", 6), None).unwrap().0["have"], 0);
         assert_eq!(field.list()["pending"][0]["walker"]["name"], "Ada");
         let (r, rev) =
@@ -389,7 +444,7 @@ mod tests {
         // Sent again after it arrived: already done.
         assert_eq!(field.request(Role::Phone, "field.add", &add("spot-00001", 6), None).unwrap().0["done"], true);
         // Kept across a restart.
-        let again = Field::open(&dir, (11.97, 57.7));
+        let again = Field::open(&dir, (11.97, 57.7), "s1");
         assert_eq!(again.list()["spots"][0]["walker"]["name"], "Ada");
         assert!(again.file("spot-00001.jpg").is_some() && again.file("spots.json").is_none());
         // Only the controller removes.
@@ -401,9 +456,52 @@ mod tests {
     }
 
     #[test]
+    fn a_phone_learns_what_the_table_cleared_and_takes_back_its_own() {
+        let dir = temp();
+        let field = Field::open(&dir, (11.97, 57.69), "s1");
+        for id in ["spot-00011", "spot-00012"] {
+            field.request(Role::Phone, "field.add", &add(id, 3), None).unwrap();
+            field.request(Role::Phone, "field.part", &json!({ "id": id, "offset": 0, "data": b64(b"abc") }), None).unwrap();
+        }
+        let mine = |field: &Field| field.request(Role::Phone, "field.mine", &json!({ "walker": "walker-0001" }), None).unwrap().0;
+        assert_eq!(mine(&field)["spots"], json!(["spot-00011", "spot-00012"]));
+        assert_eq!(field.request(Role::Phone, "field.mine", &json!({ "walker": "walker-0002" }), None).unwrap().0["spots"], json!([]));
+        // Someone else's spot stays; one's own goes.
+        let theirs = json!({ "id": "spot-00011", "walker": "walker-0002" });
+        assert!(field.request(Role::Phone, "field.remove", &theirs, None).is_err());
+        let own = json!({ "id": "spot-00011", "walker": "walker-0001" });
+        assert_eq!(field.request(Role::Phone, "field.remove", &own, None).unwrap().0["removed"], 1);
+        assert_eq!(field.request(Role::Phone, "field.remove", &own, None).unwrap().0["removed"], 0, "twice is harmless");
+        assert!(field.request(Role::Phone, "field.clear", &json!({}), None).is_err());
+        field.request(Role::Tv, "field.clear", &json!({}), None).unwrap();
+        assert_eq!(mine(&field)["spots"], json!([]));
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_new_session_starts_a_new_walk() {
+        let dir = temp();
+        let field = Field::open(&dir, (11.97, 57.7), "s1");
+        field.request(Role::Phone, "field.add", &add("spot-00021", 3), None).unwrap();
+        field.request(Role::Phone, "field.part", &json!({ "id": "spot-00021", "offset": 0, "data": b64(b"abc") }), None).unwrap();
+        drop(field);
+        // The same session (the host's pages reloaded) keeps the walk.
+        let same = Field::open(&dir, (11.97, 57.7), "s1");
+        assert_eq!(same.list()["spots"].as_array().unwrap().len(), 1);
+        drop(same);
+        // A new session starts empty, tells phones its session, and puts the old walk aside.
+        let next = Field::open(&dir, (11.97, 57.7), "s2");
+        assert_eq!(next.list()["spots"], json!([]));
+        assert_eq!(next.request(Role::Phone, "field.mine", &json!({ "walker": "walker-0001" }), None).unwrap().0["session"], "s2");
+        assert!(dir.join(PREVIOUS).join("spot-00021.jpg").exists());
+        assert!(!dir.join(DIR).join("spot-00021.jpg").exists());
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
     fn refuses_what_does_not_belong() {
         let dir = temp();
-        let field = Field::open(&dir, (11.97, 57.7));
+        let field = Field::open(&dir, (11.97, 57.7), "s1");
         let mut far = add("spot-00002", 6);
         far["lon"] = json!(12.5);
         assert!(field.request(Role::Phone, "field.add", &far, None).is_err());
@@ -422,9 +520,14 @@ mod tests {
 
     #[test]
     fn field_paths_are_found_however_spelt() {
-        for path in
-            ["/.mrstudio/field/a.jpg", "/.MRStudio/Field/spots.json", "/%2emrstudio/field/x", "//.mrstudio//field", "/./.mrstudio/./field/"]
-        {
+        for path in [
+            "/.mrstudio/field/a.jpg",
+            "/.MRStudio/Field/spots.json",
+            "/%2emrstudio/field/x",
+            "//.mrstudio//field",
+            "/./.mrstudio/./field/",
+            "/.mrstudio/field-previous/a.jpg",
+        ] {
             assert!(is_field_path(path), "{path}");
         }
         for path in ["/data/field/x.tif", "/.mrstudio/history/r1.json", "/field/a.jpg"] {
