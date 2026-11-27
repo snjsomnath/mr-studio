@@ -46,7 +46,10 @@ use tower_http::set_header::SetResponseHeader;
 
 pub use calibration::Calibration;
 pub use engine_bridge::EngineHandle;
-pub use hub::{protocol_schema, Hub, Role, SessionOptions, PROTOCOL};
+pub use hub::{
+    default_recordings_dir, list_recordings, protocol_schema, replay, Catalogue, Chapter, Hub, RecordingInfo, Role, SessionOptions,
+    MAX_RECORDING, PROTOCOL, RECORDING_FORMAT,
+};
 pub use layers::{Control, ControlKind, LayerDef, Tool, ToolKind};
 pub use sources::Sources;
 

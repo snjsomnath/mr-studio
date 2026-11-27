@@ -29,6 +29,7 @@ impl Hub {
         session.performance = *self.performance.read();
         session.phones_paused = *self.phones_paused.read();
         session.tables = self.drawing.lock().len();
+        session.recording = self.recording();
         let relay = self.relay_join.read().clone();
         if let Some(base) = relay.or_else(|| self.bridge_join.read().clone()) {
             session.join_url = Some(format!("{}/phone?c={}", base.trim_end_matches('/'), session.code));
@@ -129,6 +130,8 @@ impl Hub {
         }
         inner.next_surface += 1;
         self.note_phone(&inner.seats, surface, "joined", json!({}));
+        let slot = inner.seats.iter().find(|s| s.participant.surface == surface).map(|s| s.participant.slot);
+        self.record_phone("join", surface, slot);
         self.emit("state.participants", json!({ "participants": inner.participants() }));
         Ok(Joined { surface, kick: Some(kick) })
     }
@@ -159,6 +162,7 @@ impl Hub {
         seat.epoch += 1;
         let hold = Hold { slot: seat.participant.slot, epoch: seat.epoch };
         self.note_phone(&inner.seats, surface, "left", json!({}));
+        self.record_phone("leave", surface, Some(hold.slot));
         self.emit("state.participants", json!({ "participants": inner.participants() }));
         Some(hold)
     }

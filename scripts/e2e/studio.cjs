@@ -130,7 +130,7 @@ const test = base.test.extend({
       path.join(root, 'target', 'debug', process.platform === 'win32' ? 'mrstudio.exe' : 'mrstudio'),
       ['dev', '--site', site, '--web', 'packages/runtime/dist', '--port', String(port), '--backend', 'cpu', '--public-url', url],
       // Phones join on the local address here; the join page over WebRTC (#275) needs the internet.
-      { cwd: root, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, MRS_JOIN_PAGE: 'off' } },
+      { cwd: root, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, MRS_JOIN_PAGE: 'off', MRS_RECORDINGS_DIR: `${site}-recordings` } },
     );
     let log = '';
     host.stdout.on('data', (d) => (log += d));
@@ -175,6 +175,8 @@ const test = base.test.extend({
         await target.screenshot({ path: file });
       },
       shots: Boolean(shotsDir),
+      /** Where this host keeps recorded sessions (#520). */
+      recordings: `${site}-recordings`,
     };
 
     await use(studio);

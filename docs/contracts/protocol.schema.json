@@ -93,6 +93,17 @@
           "format": "uint",
           "minimum": 0,
           "description": "How many views draw the table and run its layers now (#412). With none, no layer\npublishes its live values and the controller says so."
+        },
+        "recording": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RecordingInfo"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The recording running now (#522): the controller shows a red dot and its time."
         }
       },
       "required": [
@@ -105,8 +116,59 @@
         "ribbon",
         "performance",
         "phones_paused",
-        "tables"
+        "tables",
+        "recording"
       ]
+    },
+    "RecordingInfo": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "started": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0,
+          "description": "When it started, Unix milliseconds."
+        },
+        "chapters": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Chapter"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "started",
+        "chapters"
+      ],
+      "description": "What the controller shows while a recording runs: the red dot and the time (#522)."
+    },
+    "Chapter": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "title": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "t"
+      ],
+      "description": "A chapter mark: milliseconds since the start, and an optional title."
     },
     "SiteInfo": {
       "type": "object",

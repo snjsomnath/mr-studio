@@ -21,6 +21,7 @@ use crate::layers::{LayerDef, ToolKind};
 
 mod custom;
 mod load;
+mod recording;
 mod requests;
 mod scene;
 mod seats;
@@ -34,6 +35,8 @@ use scene::*;
 use seats::*;
 use settings::*;
 use tools::*;
+
+pub use recording::{default_recordings_dir, list_recordings, replay, Catalogue, Chapter, RecordingInfo, MAX_RECORDING, RECORDING_FORMAT};
 
 pub const PROTOCOL: u32 = 1;
 pub const MAX_PHONES: usize = 8;
@@ -72,6 +75,8 @@ pub struct SessionOptions {
     /// PeerJS options for the WebRTC link (signalling server, `config.iceServers` for a TURN
     /// server), handed to the table's bridge and, through the QR link, to the join page.
     pub peer_options: Option<serde_json::Value>,
+    /// Where recorded sessions are kept (#520). None is the desktop app's data folder.
+    pub recordings_dir: Option<std::path::PathBuf>,
 }
 
 /// Where phones join over the internet when nothing else is set (#275).
@@ -101,6 +106,7 @@ impl Default for SessionOptions {
             public_url: None,
             join_page,
             peer_options,
+            recordings_dir: None,
         }
     }
 }
@@ -383,6 +389,8 @@ pub struct SessionInfo {
     /// How many views draw the table and run its layers now (#412). With none, no layer
     /// publishes its live values and the controller says so.
     pub tables: usize,
+    /// The recording running now (#522): the controller shows a red dot and its time.
+    pub recording: Option<RecordingInfo>,
 }
 
 /// A phone's place in the session. It outlives the connection by `resume_hold`.
@@ -588,6 +596,8 @@ pub struct Hub {
     last_input: Mutex<Instant>,
     /// The controller screens connected now (#604): the idle reset runs only while there is one.
     controllers: Mutex<Vec<u64>>,
+    /// The session being recorded (#521). Taken after `inner` when both are needed.
+    recording: Mutex<Option<recording::Recording>>,
 }
 
 /// The controller goes home after this many seconds with nobody at the table (#74), unless `tv.idle_reset_s` says otherwise.
@@ -656,6 +666,7 @@ impl Hub {
             performance: false,
             phones_paused: false,
             tables: 0,
+            recording: None,
         };
         // Six digits, never the phones' code.
         let guide_code = loop {
@@ -691,6 +702,7 @@ impl Hub {
             slow_saves: Default::default(),
             last_input: Mutex::new(Instant::now()),
             controllers: Mutex::new(Vec::new()),
+            recording: Mutex::new(None),
         };
         // A sequence that starts on shows its first step.
         {

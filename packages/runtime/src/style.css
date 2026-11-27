@@ -4064,3 +4064,173 @@ body[data-role='tv'] .layer-button-card.is-second .layer-button[aria-pressed='tr
 .layer-open:has(> .stage-guest[data-steered]:not([hidden]) > .layer-hero) > .layer-hero {
   display: none;
 }
+
+/* Record this session (#522): the operator's panel on the Developer window. */
+.record-panel {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.75rem 1.25rem;
+  border-top: 1px solid var(--line);
+}
+
+.record-panel h2 {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.record-panel h3 {
+  margin: 0.25rem 0 0;
+  font-size: 0.8rem;
+}
+
+.record-body {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.record-hint,
+.record-saved {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.record-problem {
+  margin: 0;
+  font-size: 0.8rem;
+  color: #ff8a80;
+}
+
+.record-field {
+  display: grid;
+  gap: 0.2rem;
+  font-size: 0.8rem;
+}
+
+.record-field input,
+.record-field textarea,
+.record-row input {
+  min-width: 0;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 0.85rem;
+}
+
+.record-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.record-row input {
+  flex: 1;
+}
+
+.record-on {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.record-time,
+.recording-time {
+  font-variant-numeric: tabular-nums;
+}
+
+.record-dot {
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 50%;
+  background: #e5484d;
+  box-shadow: 0 0 0 0.2rem rgb(229 72 77 / 25%);
+  animation: record-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes record-pulse {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+.record-chapters {
+  display: grid;
+  gap: 0.25rem;
+  margin: 0;
+  padding-left: 1.1rem;
+  font-size: 0.8rem;
+}
+
+.record-chapters.is-editing {
+  padding: 0;
+  list-style: none;
+}
+
+.record-chapters.is-editing li {
+  display: grid;
+  grid-template-columns: 3.5rem 1fr auto;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+.record-chapters.is-editing input {
+  min-width: 0;
+  padding: 0.25rem 0.4rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+}
+
+.record-at {
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+
+.record-remove {
+  border: 0;
+  background: none;
+  color: inherit;
+  font-size: 1.1rem;
+  cursor: pointer;
+}
+
+/* The controller's red dot (#522): small, in a corner, over everything. */
+.recording-dot {
+  position: fixed;
+  top: 0.4rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.3rem 0.7rem;
+  border-radius: 999px;
+  background: rgb(0 0 0 / 55%);
+  color: #fff;
+  font-size: 0.8rem;
+  pointer-events: none;
+}
+
+.recording-dot[hidden] {
+  display: none;
+}
+
+.record-panel .action.is-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-text, #000);
+}
+
+.record-panel .action.is-danger {
+  border-color: #e5484d;
+  color: #ff8a80;
+}
