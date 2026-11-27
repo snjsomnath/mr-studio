@@ -71,8 +71,16 @@ h2 { margin: 26px 0 10px; font-size: 14px; }
 .tables li.broken small { color: var(--danger); white-space: normal; }
 .tables li.fresh { outline: 2px solid var(--accent); outline-offset: 2px; }
 /* The card's actions are always there, not only on hover, so a touch screen and a newcomer see them; Delete stands apart (#587). */
-.tables .card-tools { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 12px 11px; margin-top: auto; }
-.tables button.remove { all: unset; cursor: default; padding: 2px 9px; border: 1px solid var(--line); border-radius: 10px; background: #fff; color: var(--text); font-size: 11px; font-weight: 500; }
+/* One row, on the same line on every card (#643): the two actions on the left, a bin on the right. */
+.tables .card-tools { display: flex; flex-wrap: nowrap; align-items: center; gap: 6px; padding: 0 12px 11px; margin-top: auto; container-type: inline-size; }
+.tables button.remove { all: unset; cursor: default; flex: none; display: inline-flex; align-items: center; height: 20px; padding: 0 9px; border: 1px solid var(--line); border-radius: 10px; background: #fff; color: var(--text); font-size: 11px; font-weight: 500; white-space: nowrap; box-sizing: border-box; }
+.tables button.remove .short { display: none; }
+@container (max-width: 212px) {
+  .tables button.remove .long { display: none; }
+  .tables button.remove .short { display: inline; }
+}
+.tables button.remove.danger { justify-content: center; width: 26px; padding: 0; }
+.tables button.remove.danger svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .tables button.remove:hover { border-color: #9aa4b8; }
 .tables button.remove.danger { margin-left: auto; color: var(--danger); }
 .tables button.remove.danger:hover { border-color: var(--danger); }
