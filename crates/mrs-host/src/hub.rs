@@ -536,6 +536,26 @@ fn count_phases(svg: &str) -> usize {
     seen.len()
 }
 
+/// A drawing copied into the table folder by hand never went through the plan import, so its
+/// groups carry no phase marks and it would show all at once with no steps (#617). It is marked
+/// now the way the import does (crates/mrs-site/src/plan.rs), with the file as it was kept beside
+/// it as `<name>.original.svg`. The text as it now is comes back; unchanged when it can't be read
+/// as a plan or saved.
+fn mark_phases(file: &std::path::Path, text: String) -> String {
+    let Ok(plan) = mrs_site::plan::read(&text) else { return text };
+    if plan.phases.is_empty() || count_phases(&plan.svg) == 0 {
+        return text;
+    }
+    let kept = file.with_extension("original.svg");
+    let saved = (kept.exists() || std::fs::write(&kept, &text).is_ok()) && std::fs::write(file, &plan.svg).is_ok();
+    if !saved {
+        tracing::warn!("{} has no phase marks and could not be marked", file.display());
+        return text;
+    }
+    tracing::info!("{} had no phase marks: marked {} phases, the file as it was is {}", file.display(), plan.phases.len(), kept.display());
+    plan.svg
+}
+
 /// A base or ambient package: part of the map at rest whatever its button says.
 fn is_map_life(layer: &LayerDef) -> bool {
     matches!(layer.manifest["category"].as_str(), Some("base" | "ambient"))
@@ -2666,7 +2686,11 @@ impl Hub {
             info.data.get(named)?.clone()
         };
         drop(info);
-        let text = std::fs::read_to_string(self.site.dir.join(path)).ok()?;
+        let file = self.site.dir.join(path);
+        let mut text = std::fs::read_to_string(&file).ok()?;
+        if count_phases(&text) == 0 {
+            text = mark_phases(&file, text);
+        }
         let phases = count_phases(&text);
         if phases == 0 {
             return None;
@@ -3608,6 +3632,28 @@ mod tests {
         tv("layer.activate", json!({ "layer": "vision", "active": true })).unwrap();
         assert_eq!(layer(&hub, "vision")["step"]["count"], 4);
         assert_eq!(count_phases(r#"<g data-mrs-phase="0"></g><g data-mrs-phase='1'><g data-mrs-phase="1"></g></g>"#), 2);
+    }
+
+    #[test]
+    fn a_drawing_copied_in_by_hand_is_marked_into_phases() {
+        // Campus Vision (#617): the SVG was copied into data/ without the import, so no marks.
+        let hub = scratch_hub_with("plan-unmarked", |dir| {
+            let svg = r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><g id="projektgräns"><path d="M0 0L1 1"/></g><g id="LEVANDE-CAMPUS"><path d="M0 0L2 2"/></g><g id="Gröna-mötesplatser"><path d="M0 0L3 3"/></g></svg>"#;
+            std::fs::write(dir.join("data/campus.svg"), svg).unwrap();
+            let path = dir.join("site.json");
+            let mut site: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+            site["data"]["campus"] = json!("data/campus.svg");
+            std::fs::write(&path, serde_json::to_string_pretty(&site).unwrap()).unwrap();
+        });
+        let dev = |method: &str, p: Value| hub.request(Role::Dev, 0, method, &p);
+        dev("scene.add", json!({ "use": "plan", "id": "vision", "params": { "dataset": "campus" }, "button": { "name": "Vision" } }))
+            .unwrap();
+        dev("layer.activate", json!({ "layer": "vision", "active": true })).unwrap();
+        assert_eq!(layer(&hub, "vision")["step"]["count"], 3);
+        let marked = std::fs::read_to_string(hub.site.dir.join("data/campus.svg")).unwrap();
+        assert_eq!(count_phases(&marked), 3, "the file itself is marked, so the table draws the phases too");
+        let kept = std::fs::read_to_string(hub.site.dir.join("data/campus.original.svg")).unwrap();
+        assert_eq!(count_phases(&kept), 0, "the file as it was is kept");
     }
 
     #[test]
