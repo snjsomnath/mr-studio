@@ -27,7 +27,7 @@ mrs-relay = { path = "crates/mrs-relay" }
 anyhow = "1"
 bytemuck = { version = "1", features = ["derive"] }
 clap = { version = "4", features = ["derive"] }
-pollster = "0.4"
+pollster = "1.0"
 serde = { version = "1", features = ["derive"] }
 # preserve_order keeps the key order of site.json when the host rewrites its layer list.
 serde_json = { version = "1", features = ["preserve_order"] }
