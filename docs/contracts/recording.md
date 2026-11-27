@@ -55,6 +55,14 @@ written. Every line has `t`, milliseconds since the start, and `k`, what it is:
 Requests that failed are in the log too: played again they fail the same way and change
 nothing.
 
+### Names (#530)
+
+A recording knows a phone by its seat: slot, animal, mood and colour. The name a visitor
+typed is left out of `start.json`, the checkpoints and the logged `participant.profile`
+requests, unless the organiser ticks "Keep the names people type" when starting
+(`recording.start { keep_names: true }`, kept as `keep_names` in `recording.json`). No address,
+device or browser details are logged.
+
 ### `checkpoints.jsonl`: the state now and then (#524)
 
 One line per checkpoint: `{ t, after, state }`. `after` is how many lines of `log.jsonl` came

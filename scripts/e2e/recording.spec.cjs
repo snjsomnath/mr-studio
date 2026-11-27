@@ -14,9 +14,11 @@ test.describe('recorded sessions', () => {
     assert.equal(await dot.isHidden(), true, 'no dot before recording');
 
     await panel.getByRole('button', { name: 'Record this session…' }).click();
-    assert.match(await panel.getByLabel('Name').inputValue(), /\d{4}-\d{2}-\d{2}$/, 'the name starts as the table and today');
+    assert.match(await panel.getByLabel('Name', { exact: true }).inputValue(), /\d{4}-\d{2}-\d{2}$/, 'the name starts as the table and today');
     await panel.getByLabel('Facilitator').fill('Sanjay');
     await panel.getByLabel('Purpose').fill('Where the new benches go');
+    const keepNames = panel.getByLabel('Keep the names people type on their phones');
+    assert.equal(await keepNames.isChecked(), false, 'names are left out unless kept (#530)');
     await studio.shot(dev.locator('.record-panel'), 'recording/522-form');
     await panel.getByRole('button', { name: 'Start recording' }).click();
     await panel.locator('.record-on').waitFor();

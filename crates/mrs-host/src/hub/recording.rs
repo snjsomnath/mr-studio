@@ -73,6 +73,10 @@ pub struct Catalogue {
     pub tags: Vec<String>,
     #[serde(default)]
     pub chapters: Vec<Chapter>,
+    /// Whether the names visitors type are kept (#530). Off by default: the log knows a phone
+    /// only by its seat (animal, mood, colour).
+    #[serde(default)]
+    pub keep_names: bool,
     /// Unix milliseconds.
     pub started: u64,
     /// Length in milliseconds; 0 while it runs.
@@ -142,6 +146,16 @@ impl Recording {
             chapters: self.catalogue.chapters.clone(),
         }
     }
+}
+
+/// The phones in a snapshot or checkpoint: without the names they typed unless the organiser
+/// keeps names (#530).
+fn seats(inner: &Inner, keep_names: bool) -> Value {
+    let mut list = inner.participants();
+    if !keep_names {
+        list.iter_mut().for_each(|p| p.name = None);
+    }
+    json!(list)
 }
 
 fn unix_ms() -> u64 {
@@ -230,6 +244,13 @@ impl Hub {
             let mut recording = self.recording.lock();
             let Some(recording) = recording.as_mut() else { return };
             let slot = inner.seats.iter().find(|s| s.participant.surface == surface).map(|s| s.participant.slot);
+            let mut p = p.clone();
+            if !recording.catalogue.keep_names && method == "participant.profile" {
+                // A phone is known by its seat only, unless the organiser keeps names (#530).
+                if let Some(p) = p.as_object_mut() {
+                    p.remove("name");
+                }
+            }
             recording.write(json!({ "k": "request", "role": role.name(), "surface": surface, "slot": slot, "m": method, "p": p }));
             recording.checkpoint_due()
         };
@@ -243,7 +264,8 @@ impl Hub {
         // session() takes the recording lock itself, so this runs before it is taken.
         let mut session = self.session();
         session.recording = None;
-        json!({ "session": session, "scene": inner.order(), "layers": inner.layers(), "participants": inner.participants() })
+        let keep = self.recording.lock().as_ref().is_some_and(|r| r.catalogue.keep_names);
+        json!({ "session": session, "scene": inner.order(), "layers": inner.layers(), "participants": seats(inner, keep) })
     }
 
     /// Writes a checkpoint now, while the hub's lock is held so it falls between two log lines.
@@ -351,6 +373,7 @@ impl Hub {
 
     fn start_recording(&self, p: &Value) -> Result<Value, String> {
         let name = text(p, "name", 120)?;
+        let keep_names = p["keep_names"].as_bool().unwrap_or(false);
         let (facilitator, purpose, notes) = (text(p, "facilitator", 120)?, text(p, "purpose", 400)?, text(p, "notes", 4000)?);
         let started = unix_ms();
         let date = match text(p, "date", 10)? {
@@ -391,7 +414,7 @@ impl Hub {
                 "site": info,
                 "scene": inner.order(),
                 "layers": inner.layers(),
-                "participants": inner.participants(),
+                "participants": seats(&inner, keep_names),
             },
         });
         write_json(&dir.join("start.json"), &start).map_err(io)?;
@@ -405,6 +428,7 @@ impl Hub {
             notes,
             tags: Vec::new(),
             chapters: Vec::new(),
+            keep_names,
             started,
             length: 0,
             events: 0,
@@ -664,6 +688,34 @@ mod tests {
         seek(&player, &folder, checkpoints[1]["t"].as_u64().unwrap()).unwrap();
         assert_eq!(state(&player).2, "sv");
         assert_eq!(layer_of(&player, "trees")["active"], false);
+    }
+
+    #[test]
+    fn a_recording_knows_phones_by_their_seat_unless_names_are_kept() {
+        // #530: the names visitors type are left out of the log and the snapshots by default.
+        for keep in [false, true] {
+            let dir = scratch_dir(&format!("names-{keep}"));
+            let mut hub = scratch_hub(&format!("names-{keep}"));
+            hub.options.recordings_dir = Some(dir.clone());
+            let code = hub.session().code;
+            let early = hub.join(Role::Phone, Some(&code), None).unwrap().surface;
+            hub.request(Role::Phone, early, "participant.profile", &json!({ "name": "Ada Lovelace" })).unwrap();
+            let id = hub.request(Role::Tv, 1, "recording.start", &json!({ "keep_names": keep })).unwrap()["recording"]["id"]
+                .as_str()
+                .unwrap()
+                .to_string();
+            hub.request(Role::Phone, early, "participant.profile", &json!({ "name": "Grace Hopper", "avatar": "whale" })).unwrap();
+            hub.request(Role::Tv, 1, "recording.chapter", &json!({})).unwrap();
+            hub.request(Role::Tv, 1, "recording.stop", &json!({})).unwrap();
+            let folder = dir.join(&id);
+            let all: String = ["start.json", "log.jsonl", "checkpoints.jsonl", "recording.json"]
+                .iter()
+                .map(|f| std::fs::read_to_string(folder.join(f)).unwrap())
+                .collect();
+            assert_eq!(all.contains("Ada Lovelace"), keep, "the start snapshot");
+            assert_eq!(all.contains("Grace Hopper"), keep, "the log and the checkpoint");
+            assert!(all.contains("whale"), "the seat itself is kept");
+        }
     }
 
     fn layer_of(hub: &Hub, id: &str) -> Value {

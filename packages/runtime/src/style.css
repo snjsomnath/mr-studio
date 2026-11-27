@@ -4101,6 +4101,14 @@ body[data-role='tv'] .layer-button-card.is-second .layer-button[aria-pressed='tr
   color: #ff8a80;
 }
 
+.record-check {
+  display: flex;
+  font-size: 0.8rem;
+  gap: 0.5em;
+  align-items: center;
+  margin: 0.4rem 0 0;
+}
+
 .record-field {
   display: grid;
   gap: 0.2rem;

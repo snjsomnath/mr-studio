@@ -106,6 +106,11 @@ export function recordPanel(store: Store, connection: Connection): HTMLElement {
     const facilitator = input('', 'Who leads the session');
     const purpose = input('', 'What the session is for');
     const notes = area('', 'Anything to know when it is watched again');
+    // #530: phones are known by their seat (animal, mood, colour) unless names are kept.
+    const keepNames = el('input');
+    keepNames.type = 'checkbox';
+    const keep = el('label', 'record-check');
+    keep.append(keepNames, el('span', '', 'Keep the names people type on their phones'));
     const go = button('Start recording', 'action is-primary');
     const cancel = button('Cancel');
     cancel.addEventListener('click', idle);
@@ -117,6 +122,7 @@ export function recordPanel(store: Store, connection: Connection): HTMLElement {
         facilitator: facilitator.value,
         purpose: purpose.value,
         notes: notes.value,
+        keep_names: keepNames.checked,
       });
       go.disabled = false;
       if (answer) show();
@@ -129,6 +135,8 @@ export function recordPanel(store: Store, connection: Connection): HTMLElement {
       field('Facilitator', facilitator),
       field('Purpose', purpose),
       field('Context notes', notes),
+      keep,
+      el('p', 'record-hint', 'Without names, the recording knows each phone only by its animal and colour.'),
       row,
     );
     name.focus();
