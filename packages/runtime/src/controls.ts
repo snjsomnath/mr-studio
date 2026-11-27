@@ -754,6 +754,17 @@ function shownBy(store: Store, sequence: string): string | undefined {
   return store.state.scene.find((other) => store.state.layers[other]?.shown_by === sequence);
 }
 
+/**
+ * An item a visitor steers, such as a Magnifier's glass or a Reveal line, inside an open layer
+ * (#658): its hero and controls show under the layer's, as the Lindholmen artwork had its glass.
+ */
+function steeredItem(store: Store, parent: string): string | undefined {
+  return store.state.scene.find((other) => {
+    const item = store.state.layers[other];
+    return item?.parent === parent && item.active && Boolean(store.manifest(item.layer)?.reveals);
+  });
+}
+
 /** A layer's legend rows: what it published (`ctx.legend`), otherwise its layer.json's. */
 function legendRows(store: Store, id: string): LegendRow[] {
   const state = store.state.layers[id];
@@ -1166,12 +1177,14 @@ function guestZone(id: string, store: Store, connection: Connection): { element:
   return {
     element: zone,
     sync(state) {
-      const shown = state.active && store.manifest(state.layer)?.sequence ? shownBy(store, id) : undefined;
+      const shown = !state.active ? undefined : store.manifest(state.layer)?.sequence ? shownBy(store, id) : steeredItem(store, id);
       if (guest?.id !== shown) {
         guest?.dispose();
         guest = shown ? build(shown) : undefined;
       }
       zone.hidden = !guest;
+      // A steered item's glass stands in for the layer's own picture, so the glass gets the room (#658).
+      zone.toggleAttribute('data-steered', Boolean(guest && !store.manifest(state.layer)?.sequence));
       guest?.sync();
     },
     dispose() {

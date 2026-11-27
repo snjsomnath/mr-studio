@@ -7,6 +7,8 @@ A glass people move over the table (#287, #351): with the mouse on the table, by
 
 With `look: hole` (#554) the X-ray is drawn as a hole cut in the table instead of a glass: the walls darken towards the rim, the near edge (the table's `front`) throws shade across the front of the hole, the far lip catches the light, and there is no halo. The glass is drawn on a `top` canvas, so it stays above the layers inside it.
 
+**Inside another layer** (#658): put the Magnifier in a layer's `items`, such as a Masterplan drawing, and that layer's button opens both, as the Lindholmen artwork did. The controller then shows the glass and its navigator in place of the layer's own picture, under the layer's step strip.
+
 With `follow` the circle follows the mouse and a click keeps it where it is (`pinned`); without it a press or drag places it. Where it is lives in the host (`x`, `y`, fractions of the table), so the projector, the editor and the controller agree.
 
 Params: `show`, `look` (`glass` or `hole`, for the X-ray), `zoom`, `size` (the glass's width as a share of the table's shorter side; the circle on the table is `size / zoom`), `pinned`, `dim`, `cover`, `caustic` (slow rings of light over the lines in the controller's glass, every 8 s; on by default, off when the viewer asks for less motion, #415), `follow`, `x`, `y`. Tool: `move` (a point).

@@ -4088,3 +4088,8 @@ body[data-role='tv'] .layer-button-card.is-second .layer-button[aria-pressed='tr
   flex: 1;
   min-width: 90px;
 }
+
+/* An open layer with a glass or line visitors steer inside it (#658): the glass takes the picture's place. */
+.layer-open:has(> .stage-guest[data-steered]:not([hidden]) > .layer-hero) > .layer-hero {
+  display: none;
+}
