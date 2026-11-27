@@ -4,6 +4,80 @@ Every merge to main that carries a release note becomes a version. The newest is
 The app shows these notes, with their pictures, on Home when a newer version is out.
 How notes are written: docs/RELEASING.md.
 
+## 0.55.0 (2026-11-27)
+
+### New
+
+#### New licence: Business Source License 1.1 (#641)
+
+From this version MR Studio is licensed under the Business Source License 1.1 by Nodal Works AB. Teaching, research, personal use and trying it out stay free; other permanent use needs a commercial licence. Each version becomes MIT four years after its release. Earlier versions stay MIT, and the MCP server, SDK types, contracts, site template and samples stay MIT.
+
+![The parameters of the new licence](docs/screenshots/641-licence.png)
+
+#### A wider settings panel, and settings that do not squeeze (#638, #639)
+
+Drag the left edge of the settings panel on the right to make it wider or narrower. The width is remembered on this computer; double-click the edge to put it back. Text settings now put their name above the box, so a long name no longer runs down the panel one word a line, and the Masterplan's longest names are shorter (the detail moved to their tooltips).
+
+![The settings panel made wider by dragging its edge](docs/screenshots/639-wider.png)
+
+The bar under a drawing being placed has a shorter hint, and its **Snap to buildings** and **Fit to table** buttons keep their words on one line.
+
+![The placing bar under a drawing](docs/screenshots/638-after.png)
+
+#### Design the field walk: kinds, a feeling, and saving the walk as data (#628)
+
+The Field walk layer has a walk designer. Visitors can pick from kinds the host lists (such as *Rain garden, Drain, Puddle*), rate each spot from 😣 to 😍, and give a photo, a sound or neither. The table and the controller colour the spots by walker, by feeling or by kind, with a key. **Save the walk as data** keeps the walk as the table's `fieldwalk` dataset. Rain gardens and drains found on the walk then count as surfaces for Stormwater.
+
+![The phone, with kinds and feelings](docs/screenshots/628-phone-sheet.png)
+
+#### The editor warns when layer buttons do not fit on the controller (#614)
+
+When a side of the controller has more layer buttons than it can show, the editor says so in a dialog, naming the buttons that are out of sight, with **Arrange the buttons** to fix it. The status bar keeps a note ("5 buttons do not fit on the controller") until it is fixed, and clicking it opens the same dialog. How many fit is measured on the live controller, which is laid out like the TV beside the table, so it counts the core buttons and the join code too.
+
+The controller's left rail also tightens its buttons again when it is crowded: it had stayed roomy and cut off its last button.
+
+![The warning in the editor](docs/screenshots/614-warning.png)
+
+![The note in the status bar](docs/screenshots/614-status-bar.png)
+
+#### Stormwater knows asphalt from grass, and rain gardens from drains (#624, #625)
+
+Rain now soaks in by what covers the ground and the soil under it: asphalt and concrete shed it, paving lets a little through, grass and woodland soak it up as fast as the soil allows (clay slowly, sand fast), rain gardens hold it in a shallow dip, and drains take it into the pipes. The table's own roads and paths are read as surfaces without any setup; land cover (Naturvårdsverket's NMD, or OpenStreetMap land use), SGU's soil map and any points or areas marked as rain gardens or drains can be added under `scene.surfaces`. A new switch, **Each surface soaks up its own way**, compares with one rate for all ground.
+
+![Lindholmen in a two-hour storm: with surfaces, the streets carry the runoff](docs/screenshots/624-surfaces-on.jpg)
+
+### Fixes
+
+#### Tidy buttons on the table cards on Home (#643)
+
+Each table's card on Home has its buttons on one row: **Duplicate** and **Read-only** on the left and a bin to delete the table on the right, at the same height on every card.
+
+![The table cards on Home](docs/screenshots/643-after.png)
+
+#### Moving layers stay inside an X-ray glass and a Reveal line again (#619, #620)
+
+Trees, traffic, lit windows, street life, street glow and public transport placed inside a Magnifier's X-ray or a Reveal line showed over the whole table again since 0.53.0 (#619), because their moving parts are now drawn by the graphics card and were not cut to the glass or the line. They are cut again, in both stacks, and a click on the map finds them only where they show.
+
+![Before: the X-ray's trees and traffic spill over the whole table](docs/screenshots/619-xray-before.png)
+
+![After: they show only inside the glass](docs/screenshots/619-xray-after.png)
+
+![A Reveal line with trees and traffic in the surface stack (right) and lights and transit underneath (left)](docs/screenshots/619-line-stacks.png)
+
+**Add media** in the media library and in every file list now takes zipped shapefiles and GeoPackages too, and asks which of their layers to bring in, as Add data does (#620).
+
+#### Trees inside Wind fade as a whole (#623, #633)
+
+Wind's faint tree crowns now fade with Wind's opacity, and they step aside while a Trees layer inside Wind is on, so that layer's opacity fades the whole tree, outline included (#623). The trees still slow the wind. A custom layer's lines no longer keep a faint glow when their opacity is turned down.
+
+Layer authors can read `ctx.items`: the layers inside theirs, with the layer each uses and whether it is on.
+
+![Before and after: Wind at 30%, and Trees inside Wind at 100% and 10%](docs/screenshots/623-before-after.png)
+
+Wind's speed map under the ribbons and particles now starts at 10% instead of 25%, so the moving air reads first (#633). Tables that set it keep their value.
+
+![Before and after: the speed map underneath at 25% and at 10%](docs/screenshots/633-speed-map-10.png)
+
 ## 0.54.0 (2026-11-27)
 
 ### New
