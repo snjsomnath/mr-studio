@@ -357,7 +357,12 @@ export class LayerManager {
     if (!state || !this.store.manifest(state.layer)?.hidesAtRest) return false;
     if (!state.steps?.sequence?.length) return true;
     const shown = Object.values(this.store.state.layers).filter((l) => l.shown_by === id && l.active);
-    return shown.length === 0 || shown.some((l) => this.store.manifest(l.layer)?.category === 'media');
+    if (shown.length > 0) return shown.some((l) => this.store.manifest(l.layer)?.category === 'media');
+    // Nothing on show yet, as when the slideshow has just opened: the map stays until the step it
+    // is about to show turns out to be a picture, so a tour of layers starts from the map, not black (#592).
+    const next = state.steps.sequence[state.step?.index ?? 0];
+    const target = next ? this.store.state.layers[next.layer] : undefined;
+    return !target || this.store.manifest(target.layer)?.category === 'media';
   }
 
   private applyIntensity(id: string): void {
