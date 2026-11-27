@@ -122,6 +122,12 @@ Rules:
 - Vector data is GeoJSON in WGS84 (CRS84). Site prep reprojects from national grids.
 - Nothing in `site.json` is a secret. Credentials for services live in the app's own config.
 
+### The schema (#537)
+
+[`site.schema.json`](site.schema.json) is the JSON Schema of this file: every key, its type and its limits (name and credit lengths, glow strength, palette colours). mrs-site writes it from its own types, so it is never edited by hand: after changing `crates/mrs-site/src/manifest.rs`, run `UPDATE_SCHEMA=1 cargo test -p mrs-site --test schema` and commit the file, or CI fails. An editor such as VS Code can map `site.json` to it (`json.schemas`) for completion while typing.
+
+The MCP server checks a site against the same schema, then adds the rules a schema can't say (ids unique, files present, the table's aspect within 2% of the ground's). `crates/mrs-site/tests/fixtures/verdicts.json` holds sites with the verdict both must give; the app (`tests/verdicts.rs`) and the MCP server (`packages/mcp/test/verdicts.test.ts`) each run it, so a rule added to one side and not the other fails a test. Add a case there with every new rule.
+
 ## Which MR Studio a table needs (#509)
 
 `format` changes only when a site.json from before would no longer load. Between two formats the app gains layers, widgets and settings, and a table that uses them does not open in an app from before. So a table carries the version of the newest app that changed it:

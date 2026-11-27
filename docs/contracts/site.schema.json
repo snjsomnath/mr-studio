@@ -1,0 +1,1549 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "MR Studio site.json",
+  "type": "object",
+  "properties": {
+    "format": {
+      "type": "integer",
+      "format": "uint32",
+      "minimum": 0
+    },
+    "id": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "origin": {
+      "$ref": "#/$defs/LonLat"
+    },
+    "extent": {
+      "$ref": "#/$defs/Extent"
+    },
+    "timezone": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "default": null
+    },
+    "table": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Table"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "scene": {
+      "$ref": "#/$defs/SceneSpec"
+    },
+    "data": {
+      "description": "Named datasets for layers (`requires.data`), as site-relative paths.",
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "basemap": {
+      "$ref": "#/$defs/Basemap",
+      "default": {
+        "background": "#0b0e14",
+        "style": null
+      }
+    },
+    "layers": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/LayerRef"
+      },
+      "default": []
+    },
+    "custom": {
+      "description": "Custom layers saved in this site, by id. A scene uses one as `custom:<id>`.",
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/CustomLayer"
+      }
+    },
+    "palette": {
+      "description": "The table's colours (#93): a built-in set and the slots this table changes.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Palette"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "tv": {
+      "default": null
+    },
+    "services": {
+      "description": "Outside compute the table's layers reach through the host (#278): programs the host\nstarts beside the table (a Python model in its own venv) or addresses it forwards to.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Service"
+      }
+    },
+    "display": {
+      "description": "How the table's surfaces render (#134): `{ \"quality\": \"draft\" | \"good\" | \"best\" }`."
+    },
+    "branding": {
+      "$ref": "#/$defs/Branding",
+      "default": {
+        "title": null,
+        "logo": null
+      }
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "format",
+    "id",
+    "name",
+    "origin",
+    "extent",
+    "scene"
+  ],
+  "$defs": {
+    "LonLat": {
+      "type": "object",
+      "properties": {
+        "lon": {
+          "type": "number",
+          "format": "double"
+        },
+        "lat": {
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "lon",
+        "lat"
+      ]
+    },
+    "Extent": {
+      "type": "object",
+      "properties": {
+        "width_m": {
+          "type": "number",
+          "format": "double"
+        },
+        "height_m": {
+          "type": "number",
+          "format": "double"
+        },
+        "rotation_deg": {
+          "description": "Bearing of the table's \"up\" edge, clockwise from north.",
+          "type": "number",
+          "format": "double",
+          "default": 0.0
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "width_m",
+        "height_m"
+      ]
+    },
+    "Table": {
+      "type": "object",
+      "properties": {
+        "width_cm": {
+          "type": "number",
+          "format": "double"
+        },
+        "height_cm": {
+          "type": "number",
+          "format": "double"
+        },
+        "tile_cm": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "front": {
+          "description": "The edge of the projected image where visitors stand. At-a-glance info goes there first,\nbecause for a viewer at the front the model hides what is projected on the far side.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TableSide"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ribbons": {
+          "description": "What the projector's blank space around the model shows, per side (present.md, Ribbon).",
+          "$ref": "#/$defs/Ribbons"
+        },
+        "glow": {
+          "description": "A soft glow in the projector's blank space in the model's own colours (#476, present.md, Ambient glow).",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Glow"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "intro": {
+          "description": "How the projected table opens when it starts and after the controller's Reset: the layers\nfading in one after another (the default) or the zoom in from the city around it (#446).",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Intro"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "width_cm",
+        "height_cm"
+      ]
+    },
+    "TableSide": {
+      "description": "A side of the projected image.",
+      "type": "string",
+      "enum": [
+        "top",
+        "bottom",
+        "left",
+        "right"
+      ]
+    },
+    "Ribbons": {
+      "type": "object",
+      "properties": {
+        "top": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Ribbon"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "bottom": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Ribbon"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "left": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Ribbon"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "right": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Ribbon"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "Ribbon": {
+      "description": "One side's ribbon: `\"off\"`, `\"auto\"` (use the free band when there is one) or a size.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/RibbonMode"
+        },
+        {
+          "$ref": "#/$defs/RibbonSize"
+        }
+      ]
+    },
+    "RibbonMode": {
+      "type": "string",
+      "enum": [
+        "off",
+        "auto"
+      ]
+    },
+    "RibbonSize": {
+      "type": "object",
+      "properties": {
+        "cm": {
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "cm"
+      ]
+    },
+    "Glow": {
+      "description": "The ambient glow around the model: the colours along the model's edges, or one colour for all of it.",
+      "type": "object",
+      "properties": {
+        "on": {
+          "type": "boolean",
+          "default": true
+        },
+        "strength": {
+          "description": "0 to 1: how bright the glow is at the model's edge.",
+          "type": "number",
+          "format": "double",
+          "minimum": 0.0,
+          "maximum": 1.0,
+          "default": 0.5
+        },
+        "colours": {
+          "$ref": "#/$defs/GlowColours",
+          "default": "edges"
+        }
+      },
+      "additionalProperties": false
+    },
+    "GlowColours": {
+      "oneOf": [
+        {
+          "description": "Each edge glows in the colours along it.",
+          "type": "string",
+          "const": "edges"
+        },
+        {
+          "description": "The whole margin glows in the model's dominant colour.",
+          "type": "string",
+          "const": "one"
+        }
+      ]
+    },
+    "Intro": {
+      "description": "The projected table's opening (present.md, Opening).",
+      "oneOf": [
+        {
+          "description": "The layers at rest fade in one after another, bottom first, each part of a layer a moment after the one before.",
+          "type": "string",
+          "const": "fade"
+        },
+        {
+          "description": "The map starts zoomed out over the city around the table and slowly zooms in (#446).",
+          "type": "string",
+          "const": "zoom"
+        }
+      ]
+    },
+    "SceneSpec": {
+      "type": "object",
+      "properties": {
+        "cell_m": {
+          "type": "number",
+          "format": "double"
+        },
+        "buildings": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Buildings"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "terrain": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Terrain"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "mesh": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Mesh"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "trees": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Trees"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "water": {
+          "description": "Water: a river, a lake, the sea (#343). Cool ground for thermal comfort, and a sink for stormwater.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Water"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "context": {
+          "description": "Buildings around the table that only shape the wind (#488): footprints reaching past the\ntable's edge. Nothing draws them.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WindContext"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "surfaces": {
+          "description": "What covers the ground and the soil under it (#624): where stormwater soaks in, runs fast\nor drains away. Left out, the site's `roads`, `streets` and `walkways` datasets are read\nas OpenStreetMap surfaces; `[]` reads none.",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/$defs/SurfaceSource"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "cell_m"
+      ]
+    },
+    "Buildings": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "height_property": {
+          "type": "string",
+          "default": "height"
+        },
+        "default_height_m": {
+          "type": "number",
+          "format": "double",
+          "default": 12.0
+        },
+        "extrude": {
+          "description": "Whether the footprints are raised into the top surface. Turn off when a mesh\nprovides the building shapes and the footprints are only drawn.",
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "path"
+      ]
+    },
+    "Terrain": {
+      "description": "Ground elevation. Either a GeoTIFF (`.tif`, `.tiff`), placed by its own georeference,\nor raw little-endian f32 elevations covering the extent, row 0 at the top, which\nneed `width` and `height`.",
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "width": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0
+        },
+        "height": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0
+        },
+        "crs": {
+          "description": "`EPSG:<code>` of a GeoTIFF that does not name its coordinate system itself.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "flatten_buildings": {
+          "description": "The terrain has the buildings raised in it (a surface model, #344): the ground under each\nfootprint, and one cell around it, is set back to the ground beside it when baking.",
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "path"
+      ]
+    },
+    "Mesh": {
+      "description": "A 3D model of the site's top surface (ground and buildings), rasterised into the dsm.\nA mesh has no georeference of its own, so the manifest places it.",
+      "type": "object",
+      "properties": {
+        "path": {
+          "description": "An STL (binary or ASCII), OBJ or GLB file.",
+          "type": "string"
+        },
+        "up": {
+          "description": "Which of the file's axes points up. CAD and 3D printing use Z, glTF and many modelling tools Y.",
+          "$ref": "#/$defs/Up"
+        },
+        "mirror": {
+          "description": "Whether the model is a mirror image (its X axis is flipped), as some exports are.",
+          "type": "boolean"
+        },
+        "offset": {
+          "description": "A model in map coordinates (#344): this point of the file, in its own units with the\nup axis made Z, is taken as its origin, so the numbers stay small. The anchor is where it lies.",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "anchor": {
+          "description": "Where the mesh's own origin (0, 0) is, after `offset`.",
+          "$ref": "#/$defs/LonLat"
+        },
+        "unit_m": {
+          "description": "Metres per mesh unit.",
+          "type": "number",
+          "format": "double",
+          "default": 1.0
+        },
+        "bearing_deg": {
+          "description": "Compass bearing of the mesh's +Y axis, clockwise from north. +X is 90 degrees clockwise from +Y.",
+          "type": "number",
+          "format": "double",
+          "default": 0.0
+        },
+        "base_m": {
+          "description": "Elevation of the mesh's z = 0, in the terrain's height datum.",
+          "type": "number",
+          "format": "double",
+          "default": 0.0
+        },
+        "ground_tolerance_m": {
+          "description": "The mesh's ground never matches the terrain exactly. Cells where the mesh is less\nthan this above the terrain stay ground instead of becoming low obstacles.",
+          "type": "number",
+          "format": "double",
+          "default": 1.0
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "anchor"
+      ]
+    },
+    "Up": {
+      "description": "The up axis of a mesh file.",
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "z"
+          ]
+        },
+        {
+          "description": "Y up, Z towards the viewer: read as (x, -z, y).",
+          "type": "string",
+          "const": "y"
+        }
+      ]
+    },
+    "Trees": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "height_property": {
+          "type": "string",
+          "default": "height"
+        },
+        "default_height_m": {
+          "type": "number",
+          "format": "double",
+          "default": 8.0
+        },
+        "crown_radius_m": {
+          "type": "number",
+          "format": "double",
+          "default": 3.0
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "path"
+      ]
+    },
+    "Water": {
+      "description": "Where the water is: GeoJSON polygons, or a GeoTIFF mask (cells above 0.5 are water).",
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "crs": {
+          "description": "`EPSG:<code>` of a GeoTIFF mask that does not name its coordinate system itself.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "path"
+      ]
+    },
+    "WindContext": {
+      "description": "Footprints around the table, for the wind kernel only (#488).",
+      "type": "object",
+      "properties": {
+        "path": {
+          "description": "GeoJSON footprints. Those inside the table are left to `buildings`.",
+          "type": "string"
+        },
+        "reach_m": {
+          "description": "How far past the table's edge they count, in metres.",
+          "type": "number",
+          "format": "double",
+          "default": 500.0
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "path"
+      ]
+    },
+    "SurfaceSource": {
+      "description": "One source of ground surfaces or soils (#624). Exactly one of `data` and `path`.",
+      "type": "object",
+      "properties": {
+        "data": {
+          "description": "A dataset of the site, by its name in `data` (or `roads`, `trees`… of the scene).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "path": {
+          "description": "Or a file in the site folder: GeoJSON, or a GeoTIFF of class codes.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "classes": {
+          "description": "How to read it. Default `osm`.",
+          "$ref": "#/$defs/SurfaceClasses",
+          "default": "osm"
+        },
+        "property": {
+          "description": "The property that names the surface or soil, for `kind` (default `kind`) and `soil`\n(default: SGU's `jg2_tx`, else the first text property that names a soil).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "size_m": {
+          "description": "How wide a point is on the ground, metres. Default by surface: a drain 1, a rain garden 4, else 3.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "crs": {
+          "description": "`EPSG:<code>` of a GeoTIFF that does not name its coordinate system itself.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "SurfaceClasses": {
+      "description": "How a surface source names what is on the ground (#624).",
+      "oneOf": [
+        {
+          "description": "OpenStreetMap tags: `surface`, `landuse`, `leisure`, `natural`, `amenity`, `highway`. Roads and\npaths (lines) are laid at a width for their class, or their `width` tag.",
+          "type": "string",
+          "const": "osm"
+        },
+        {
+          "description": "Naturvårdsverket's Nationella marktäckedata: a GeoTIFF of NMD class codes.",
+          "type": "string",
+          "const": "nmd"
+        },
+        {
+          "description": "Soil types under the surface: SGU's soil map (Jordarter, `jg2_tx`), or soil names in English.",
+          "type": "string",
+          "const": "soil"
+        },
+        {
+          "description": "A property naming the surface outright: `rain garden`, `drain`, `asphalt`, `grass`… (a field walk's kinds).",
+          "type": "string",
+          "const": "kind"
+        }
+      ]
+    },
+    "Basemap": {
+      "type": "object",
+      "properties": {
+        "background": {
+          "type": "string",
+          "default": "#0b0e14"
+        },
+        "style": {
+          "description": "A MapLibre style URL, or null for no basemap.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        }
+      },
+      "additionalProperties": false
+    },
+    "LayerRef": {
+      "type": "object",
+      "properties": {
+        "use": {
+          "description": "What the instance runs: a core layer id, a relative path to a site-only layer package,\nor `custom:<id>` for a custom layer saved in the site's `custom`.",
+          "type": "string"
+        },
+        "id": {
+          "description": "Names this instance. Unique in the whole scene, items included; steps and the session refer to it.",
+          "type": "string"
+        },
+        "active": {
+          "description": "Whether the layer starts active.",
+          "type": "boolean",
+          "default": false
+        },
+        "params": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "button": {
+          "description": "How the layer is offered on the controller. What is left out comes from the layer package.",
+          "$ref": "#/$defs/LayerButton"
+        },
+        "hide": {
+          "description": "Ids of the layer's controls that the controller and phones do not show. The editor still does.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "items": {
+          "description": "Instances that belong to this layer: shown while it is open, gone when it closes.\nDrawn on top of it, in this order.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/LayerItem"
+          }
+        },
+        "steps": {
+          "description": "How Next moves through the layer, and for a sequence (a slideshow) the steps themselves.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Steps"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "use",
+        "id"
+      ]
+    },
+    "LayerButton": {
+      "description": "The button that opens a layer on the controller: the words and icon the site's\nauthor chose for it, and where on the controller it sits.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "description": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 200
+        },
+        "icon": {
+          "description": "An icon name from the editor's set, such as `sun` or `route`.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[a-z0-9-]{1,40}$"
+        },
+        "side": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ButtonSide"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "group": {
+          "description": "The group of buttons it sits in on its rail, such as \"Simulations\".",
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "order": {
+          "description": "Its place in the rail; lower first. Buttons without one follow the scene order.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "hidden": {
+          "description": "Kept off the controller and phones without taking the layer out of the table (#58).",
+          "type": "boolean"
+        },
+        "credit": {
+          "description": "Who made what the layer shows, as one line under its name on the controller (#659),\nsuch as \"Artwork by Vishvi Rajakaruna and Fabio Latino\".",
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 200
+        },
+        "legend": {
+          "description": "How the controller shows the layer's legend (#660). Without it, `auto`.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LegendMode"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "ButtonSide": {
+      "type": "string",
+      "enum": [
+        "left",
+        "right"
+      ]
+    },
+    "LegendMode": {
+      "description": "How much of a layer's legend the controller shows (#660).",
+      "oneOf": [
+        {
+          "description": "Every row, in as many columns as it takes to fit the centre without scrolling.",
+          "type": "string",
+          "const": "auto"
+        },
+        {
+          "description": "Every row, one under the other.",
+          "type": "string",
+          "const": "full"
+        },
+        {
+          "description": "Small swatches in columns, for a long legend.",
+          "type": "string",
+          "const": "compact"
+        },
+        {
+          "description": "No legend on the controller.",
+          "type": "string",
+          "const": "off"
+        }
+      ]
+    },
+    "LayerItem": {
+      "description": "An instance owned by a layer (public transport inside a sun study, a data visual on a\nslide). It has no button: it comes on and goes off with its layer.",
+      "type": "object",
+      "properties": {
+        "use": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "active": {
+          "description": "Whether it comes on when its layer opens.",
+          "type": "boolean"
+        },
+        "params": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "hide": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "stack": {
+          "description": "For an item of a revealing layer (an X-ray glass, a Reveal line, #606): `1` puts it in the\nsurface stack, shown outside the glass or on the other side of the line; `2` (or none) in\nthe stack underneath, shown through it.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint8",
+          "minimum": 0,
+          "maximum": 255
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "use",
+        "id"
+      ]
+    },
+    "Steps": {
+      "description": "How Next moves through a layer (`docs/contracts/present.md`, Steps).",
+      "type": "object",
+      "properties": {
+        "mode": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StepMode"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "loop": {
+          "description": "After the last step, back to the first.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "reveal": {
+          "description": "What Next does when a step's sub-steps (category reveals, staged builds) are done.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Reveal"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "transition": {
+          "description": "How a sequence goes from one step to the next, unless a step says otherwise (#43).",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StepTransition"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "transition_s": {
+          "description": "How long that transition takes.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "sequence": {
+          "description": "The steps of a sequence: other instances shown one after another. Only for layers\nwhose layer.json says `\"sequence\": true`, such as the slideshow.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/SequenceStep"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "StepMode": {
+      "type": "string",
+      "enum": [
+        "manual",
+        "timed"
+      ]
+    },
+    "Reveal": {
+      "oneOf": [
+        {
+          "description": "Next stops at the last sub-step; moving on needs Shift+Next (the Chalmers demo).",
+          "type": "string",
+          "const": "stop"
+        },
+        {
+          "description": "Next moves on to the next step after the last sub-step.",
+          "type": "string",
+          "const": "then-next"
+        }
+      ]
+    },
+    "StepTransition": {
+      "description": "How a sequence goes from one step to the next (#43). `Fade` cross-fades the two layers;\n`Dip` fades the old one out to the empty map, then the new one in.",
+      "type": "string",
+      "enum": [
+        "cut",
+        "fade",
+        "dip"
+      ]
+    },
+    "SequenceStep": {
+      "description": "One step of a sequence. It shows another instance: a layer of the scene (which keeps its\nown button) or one of the sequence's own items (which exist only inside it).",
+      "type": "object",
+      "properties": {
+        "layer": {
+          "description": "The instance id this step shows.",
+          "type": "string"
+        },
+        "params": {
+          "description": "Params the instance takes for this step only, such as another hour of the day.",
+          "type": "object",
+          "additionalProperties": true
+        },
+        "duration_s": {
+          "description": "How long the step stays in timed mode.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "transition": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StepTransition"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "transition_s": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "next": {
+          "description": "Overrides the sequence's `reveal` for this step.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Reveal"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "title": {
+          "description": "For the controller's info strip. The table never shows them.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "description": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "source": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "notes": {
+          "description": "What the guide says at this step (#98). Shown on the guide's phone and in the editor,\nnever on the table or the visitors' controller.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "layer"
+      ]
+    },
+    "CustomLayer": {
+      "description": "A custom layer: a recipe of blocks the layer editor saves (#38), run by the runtime\nwithout code of its own. data, then look, motion and interaction, in that order.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "icon": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "category": {
+          "description": "`base`, `ambient`, `analysis` (the default) or `media`, as in layer.json.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "data": {
+          "description": "What it shows: datasets of the site, files in the site, or map services.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/RecipeData"
+          }
+        },
+        "look": {
+          "description": "How each dataset is drawn (2D only): points, lines, fills, rasters and their styles.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/RecipeBlock"
+          }
+        },
+        "motion": {
+          "description": "What moves: reveals, pulses, particles, attractors, time.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/RecipeBlock"
+          }
+        },
+        "interaction": {
+          "description": "What a visitor can do: tap, step, pointer.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/RecipeBlock"
+          }
+        },
+        "enter": {
+          "description": "How the layer comes onto the table and leaves it.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Transition"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "controls": {
+          "description": "Controls, as in layer.json. A control's `bind` names the block prop it drives: `look.<block id>.<prop>`.",
+          "type": "array",
+          "items": true
+        },
+        "legend": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/LegendItem"
+          }
+        },
+        "attract": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Attract"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "name"
+      ]
+    },
+    "RecipeData": {
+      "description": "One source of a custom layer. Exactly one of `dataset`, `path`, `wms` and `tiles`.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "dataset": {
+          "description": "A named dataset of the site (`data`, or the scene's buildings, trees and terrain).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "path": {
+          "description": "A file in the site folder: GeoJSON, GeoTIFF, CSV points, an image or a video.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "wms": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Wms"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "tiles": {
+          "description": "An XYZ tile URL template with `{z}`, `{x}` and `{y}`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id"
+      ]
+    },
+    "Wms": {
+      "description": "A WMS map. Sign-in, when the service needs it, comes from the app's Sources manager by\n`source`; nothing secret is in the site.",
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string"
+        },
+        "layers": {
+          "type": "string"
+        },
+        "styles": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "format": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "source": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "url",
+        "layers"
+      ]
+    },
+    "RecipeBlock": {
+      "description": "One block in a custom layer's recipe. The block names are the SDK's (docs/blocks.md).",
+      "type": "object",
+      "properties": {
+        "id": {
+          "description": "Names the block so controls and other blocks can refer to it.",
+          "type": "string"
+        },
+        "block": {
+          "description": "Which block: `points`, `lines`, `fill`, `raster`, `glow`, `pulse`, `particles`, `tap-info`…",
+          "type": "string"
+        },
+        "data": {
+          "description": "The data it draws or reads, by `data[].id`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "on": {
+          "description": "For motion and interaction: the look block it acts on.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "props": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "block"
+      ]
+    },
+    "Transition": {
+      "type": "string",
+      "enum": [
+        "cut",
+        "fade"
+      ]
+    },
+    "LegendItem": {
+      "description": "One row of a layer's legend on the controller (present.md, Stage).",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "color": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "shape": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "label"
+      ]
+    },
+    "Attract": {
+      "description": "The effect behind a layer on the controller's attract loop (present.md, Button).",
+      "type": "object",
+      "properties": {
+        "effect": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "effect"
+      ]
+    },
+    "Palette": {
+      "description": "The table's palette: one of the built-in sets the SDK knows (`night` when missing) and\nthe slots this table overrides, by slot name, as `#rrggbb`. Layers and custom layers\nrefer to slots (`@accent`, `@cat3`), so changing the palette recolours them all.",
+      "type": "object",
+      "properties": {
+        "set": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[a-z0-9-]{1,40}$"
+        },
+        "slots": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "pattern": "^#[0-9a-fA-F]{6}$"
+          },
+          "propertyNames": {
+            "pattern": "^[a-z0-9-]{1,40}$"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "Service": {
+      "description": "One outside service (#278). Exactly one of `run` and `url`. Contract in docs/contracts/site.md.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "description": "What layers call it by: `requires.services` and `ctx.service(id)`.",
+          "type": "string"
+        },
+        "name": {
+          "description": "Its name for people, in the operator's view. Default: the id.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "run": {
+          "description": "A program the host starts with the table and keeps running.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ServiceRun"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "url": {
+          "description": "A service that runs elsewhere, such as `https://ecom.example.org`. The host forwards to it.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "health": {
+          "description": "The path that answers 200 when the service is ready. Default `/`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id"
+      ]
+    },
+    "ServiceRun": {
+      "description": "How the host starts a service of this site.",
+      "type": "object",
+      "properties": {
+        "cwd": {
+          "description": "Its folder, relative to the site, for example `services/ecom`.",
+          "type": "string"
+        },
+        "command": {
+          "description": "The program and its arguments. `{port}` is the port the host picked for it, and\n`{python}` the Python of `venv` (or of this computer when there is none).",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "venv": {
+          "description": "A virtual environment, relative to `cwd`, for example `.venv`. The host makes it on the\nfirst start when it is missing, and installs `requirements` into it.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "requirements": {
+          "description": "A requirements file, relative to `cwd`, installed when the venv is made or the file changed.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "env": {
+          "description": "Extra environment variables. `{port}` is filled in here too. Keys go in Sources and keys, never here.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "start_s": {
+          "description": "Seconds the service may take to answer its health path after it starts. Default 60.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "cwd",
+        "command"
+      ]
+    },
+    "Branding": {
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "logo": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "welcome": {
+          "description": "The line under the title on the controller's home screen, for visitors (#73).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "languages": {
+          "description": "The languages visitors can switch between (#80), the first the table starts in:\n`[\"en\", \"sv\"]`. Empty or one language: no switch.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "translations": {
+          "description": "The site's own words in other languages, by language and then by the English text:\n`{ \"sv\": { \"Sample district\": \"Exempelstadsdelen\" } }`. Titles, the welcome line, button\nnames, slide titles and the like. A layer's own words are in its package (`locales/`).",
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "$id": "https://github.com/snjsomnath/mr-studio/blob/main/docs/contracts/site.schema.json"
+}

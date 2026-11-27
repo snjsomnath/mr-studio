@@ -12,7 +12,7 @@ import { after, before, describe, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import { buildCapabilities, parsePatterns, rank } from '../src/capabilities.ts';
-import { loadLive, parseRoadmap, parseSiteSchema, plannedKernelsFrom } from '../src/core.ts';
+import { loadLive, parseRoadmap, plannedKernelsFrom } from '../src/core.ts';
 import { checkPaint, checkRecipe } from '../src/recipe.ts';
 import { checkControlValue, previewPlan } from '../src/site.ts';
 
@@ -57,36 +57,13 @@ describe('unit', () => {
     assert.equal(checkControlValue({ type: 'color' }, '#00ff00').ok, true);
   });
 
-  test('site keys come from the core manifest structs', () => {
-    const schema = parseSiteSchema(`
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Mesh {
-    pub path: String,
-    #[serde(default)]
-    pub unit_m: f64,
-}
-pub struct SceneSpec {
-    pub cell_m: f64,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub mesh: Option<Mesh>,
-}
-pub struct LayerRef {
-    pub r#use: String,
-}
-pub struct SiteManifest {
-    pub id: String,
-    pub scene: SceneSpec,
-    #[serde(default)]
-    pub layers: Vec<LayerRef>,
-}
-impl Mesh {
-    pub fn area(&self) -> f64 { 0.0 }
-}
-`)!;
-    assert.deepEqual(schema[''], { fields: ['id', 'scene', 'layers'], required: ['id', 'scene'] });
-    assert.deepEqual(schema['scene.mesh'], { fields: ['path', 'unit_m'], required: ['path'] });
-    assert.deepEqual(schema['layers[]'], { fields: ['use'], required: ['use'] });
+  test('site keys come from the schema the app writes (#537)', () => {
+    const catalog = loadLive(resolve(pkg, '..', '..'));
+    const schema = catalog.siteSchema!;
+    assert.ok(schema['']!.fields.includes('scene') && schema['']!.required.includes('scene'));
+    assert.ok(schema['layers[]']!.required.includes('use'));
+    assert.ok(schema['layers[].button']!.fields.includes('legend'));
+    assert.ok(schema['scene.buildings']!.required.includes('path'));
   });
 
   test('roadmap tables become rows', () => {

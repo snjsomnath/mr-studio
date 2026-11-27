@@ -9,6 +9,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { fieldsOf, type JsonSchema } from './schema.ts';
 import { parseSdk, type SdkExport } from './devlayer.ts';
 
 import { BLOCKS, type BlockDef } from './blocks.ts';
@@ -50,7 +51,7 @@ export interface Example {
   about: string;
 }
 
-/** Keys allowed at each path of site.json, read from mrs-site's manifest structs. "layers[]" is a layer entry. */
+/** Keys allowed at each path of site.json, read from docs/contracts/site.schema.json. "layers[]" is a layer entry. */
 export type SiteSchema = Record<string, { fields: string[]; required: string[] }>;
 
 export interface Catalog {
@@ -64,6 +65,8 @@ export interface Catalog {
   roadmap: RoadmapRow[];
   docs: Record<string, string>;
   siteSchema: SiteSchema | null;
+  /** docs/contracts/site.schema.json, written by mrs-site from its own types (#537): the shape the app accepts. */
+  siteJsonSchema?: JsonSchema | null;
   /** CHANGELOG.md: one section per released version, newest first. */
   changelog?: string;
   /** Release notes merged since the last version, waiting in changes/ (live checkouts only). */
@@ -83,54 +86,6 @@ export function changelogVersions(changelog: string): { version: string; date: s
     if (head) out.push({ version: head[1]!, date: head[2] ?? '', text: `## ${part}`.trim() });
   }
   return out;
-}
-
-/**
- * Reads the serde structs in crates/mrs-site/src/manifest.rs into the keys each level of
- * site.json accepts, so the server follows the core's format without a copy of it.
- */
-export function parseSiteSchema(rust: string): SiteSchema | null {
-  const structs = new Map<string, { name: string; type: string; required: boolean }[]>();
-  let current: { name: string; type: string; required: boolean }[] | null = null;
-  let hasDefault = false;
-  for (const raw of rust.split(/\r?\n/)) {
-    const line = raw.trim();
-    const start = /^pub struct (\w+)\s*\{/.exec(line);
-    if (start) {
-      current = [];
-      structs.set(start[1]!, current);
-      hasDefault = false;
-      continue;
-    }
-    if (!current) continue;
-    if (raw.startsWith('}')) {
-      current = null;
-      continue;
-    }
-    if (/^#\[serde\(.*\bdefault\b/.test(line)) hasDefault = true;
-    const field = /^pub (?:r#)?(\w+):\s*(.+?),?$/.exec(line);
-    if (field) {
-      const type = field[2]!;
-      current.push({ name: field[1]!, type, required: !hasDefault && !type.startsWith('Option<') });
-      hasDefault = false;
-    }
-  }
-  if (!structs.has('SiteManifest')) return null;
-  const schema: SiteSchema = {};
-  const visit = (struct: string, path: string, depth: number) => {
-    const fields = structs.get(struct);
-    if (!fields || depth > 6) return;
-    schema[path] = { fields: fields.map((f) => f.name), required: fields.filter((f) => f.required).map((f) => f.name) };
-    for (const f of fields) {
-      const vec = /^(?:Option<)?Vec<(\w+)>/.exec(f.type);
-      const inner = /^(?:Option<)?(\w+)/.exec(f.type)?.[1];
-      const sub = path ? `${path}.${f.name}` : f.name;
-      if (vec && structs.has(vec[1]!)) visit(vec[1]!, `${sub}[]`, depth + 1);
-      else if (inner && structs.has(inner)) visit(inner, sub, depth + 1);
-    }
-  };
-  visit('SiteManifest', '', 0);
-  return schema;
 }
 
 declare const __MRSTUDIO_CATALOG__: string | undefined;
@@ -298,8 +253,9 @@ export function loadLive(root: string): Catalog {
     .filter((p) => !/readme\.md$/i.test(p))
     .map((p) => readFileSync(p, 'utf8').replace(/^---[\s\S]*?---\s*/, '').trim());
 
-  const manifestRs = join(root, 'crates', 'mrs-site', 'src', 'manifest.rs');
-  const siteSchema = existsSync(manifestRs) ? parseSiteSchema(readFileSync(manifestRs, 'utf8')) : null;
+  const schemaPath = join(root, 'docs', 'contracts', 'site.schema.json');
+  const siteJsonSchema: JsonSchema | null = existsSync(schemaPath) ? JSON.parse(readFileSync(schemaPath, 'utf8')) : null;
+  const siteSchema = siteJsonSchema ? fieldsOf(siteJsonSchema) : null;
 
   return {
     version: String(pkg.version ?? '0.0.0'),
@@ -312,6 +268,7 @@ export function loadLive(root: string): Catalog {
     roadmap,
     docs,
     siteSchema,
+    siteJsonSchema,
     changelog,
     pending,
     examples,

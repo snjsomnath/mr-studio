@@ -8,7 +8,8 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, w
 import { createServer } from 'node:net';
 import { delimiter, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 
-import { readLayerDir, type Catalog, type LayerEntry, type SiteSchema } from './core.ts';
+import { readLayerDir, type Catalog, type LayerEntry } from './core.ts';
+import { checkSiteShape } from './schema.ts';
 import { checkRecipe, checkIcon } from './recipe.ts';
 import { KIND_LAYERS, readiness } from '../../sdk/src/readiness.ts';
 
@@ -21,28 +22,6 @@ export interface Issue {
 }
 
 export type SiteManifest = Record<string, any>;
-
-// The keys mrs-site accepts. Unknown keys are an error there. The catalog normally carries the
-// schema read from the core's own manifest.rs; this copy of format 3 is the fallback.
-const FALLBACK_SCHEMA: SiteSchema = {
-  '': { fields: ['format', 'id', 'name', 'origin', 'extent', 'timezone', 'table', 'scene', 'data', 'basemap', 'layers', 'custom', 'tv', 'branding', 'palette', 'services', 'display'], required: ['format', 'id', 'name', 'origin', 'extent', 'scene'] },
-  origin: { fields: ['lon', 'lat'], required: ['lon', 'lat'] },
-  extent: { fields: ['width_m', 'height_m', 'rotation_deg'], required: ['width_m', 'height_m'] },
-  table: { fields: ['width_cm', 'height_cm', 'tile_cm', 'front', 'ribbons', 'glow', 'intro'], required: ['width_cm', 'height_cm'] },
-  'table.ribbons': { fields: ['top', 'bottom', 'left', 'right'], required: [] },
-  'table.glow': { fields: ['on', 'strength', 'colours'], required: [] },
-  scene: { fields: ['cell_m', 'buildings', 'terrain', 'trees'], required: ['cell_m'] },
-  'scene.buildings': { fields: ['path', 'height_property', 'default_height_m'], required: ['path'] },
-  'scene.terrain': { fields: ['path', 'width', 'height'], required: ['path', 'width', 'height'] },
-  'scene.trees': { fields: ['path', 'height_property', 'default_height_m', 'crown_radius_m'], required: ['path'] },
-  basemap: { fields: ['background', 'style'], required: [] },
-  branding: { fields: ['title', 'logo', 'welcome'], required: [] },
-  'layers[]': { fields: ['use', 'id', 'active', 'params', 'button', 'hide', 'items', 'steps'], required: ['use', 'id'] },
-  'layers[].button': { fields: ['name', 'description', 'icon', 'side', 'group', 'order', 'hidden', 'credit', 'legend'], required: [] },
-  'layers[].items[]': { fields: ['use', 'id', 'active', 'params', 'hide'], required: ['use', 'id'] },
-  'layers[].steps': { fields: ['mode', 'loop', 'reveal', 'transition', 'transition_s', 'sequence'], required: [] },
-  'layers[].steps.sequence[]': { fields: ['layer', 'params', 'duration_s', 'transition', 'transition_s', 'next', 'title', 'description', 'source', 'notes'], required: ['layer'] },
-};
 
 /** What `use` starts with for a custom layer saved in the site. */
 export const CUSTOM_PREFIX = 'custom:';
@@ -320,29 +299,6 @@ export function checkParams(layer: LayerEntry, params: Record<string, unknown>, 
 
 // ---- Whole-site validation ----
 
-/** Unknown and missing keys at every level the schema knows, as mrs-site would refuse them. */
-function checkKeys(obj: unknown, at: string, shown: string, schema: SiteSchema, issues: Issue[]): void {
-  if (Array.isArray(obj) && schema[`${at}[]`]) {
-    obj.forEach((item, i) => checkKeys(item, `${at}[]`, `${shown}[${i}]`, schema, issues));
-    return;
-  }
-  const level = schema[at];
-  if (!level || !obj || typeof obj !== 'object' || Array.isArray(obj)) return;
-  for (const key of level.required) {
-    if (!(key in obj)) issues.push({ level: 'error', path: shown ? `${shown}.${key}` : key, message: `'${key}' is required` });
-  }
-  for (const key of Object.keys(obj)) {
-    const path = shown ? `${shown}.${key}` : key;
-    if (!level.fields.includes(key)) {
-      issues.push({
-        level: 'error',
-        path,
-        message: `'${key}' is not allowed here in site format ${SITE_FORMAT} (allowed: ${level.fields.join(', ')}). If the site needs it, it is a core change: draft a module request.`,
-      });
-    } else checkKeys((obj as any)[key], at ? `${at}.${key}` : key, path, schema, issues);
-  }
-}
-
 const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 
 export function validateManifest(manifest: SiteManifest, dir: string | null, catalog: Catalog): Issue[] {
@@ -355,7 +311,8 @@ export function validateManifest(manifest: SiteManifest, dir: string | null, cat
     err('', 'site.json must be an object');
     return issues;
   }
-  checkKeys(manifest, '', '', catalog.siteSchema ?? FALLBACK_SCHEMA, issues);
+  // The shape (every key, every type) comes from the app's own types (#537).
+  const shape = catalog.siteJsonSchema ? checkSiteShape(manifest, catalog.siteJsonSchema) : [];
 
   if (typeof manifest.format === 'number' && manifest.format < SITE_FORMAT) err('format', `this site is in the older site format ${manifest.format}; run \`mrstudio migrate <site folder>\` (or open it once in the MR Studio app) to bring it to format ${SITE_FORMAT}, then try again`);
   else if (manifest.format !== SITE_FORMAT) err('format', `must be ${SITE_FORMAT}; this core reads site format ${SITE_FORMAT}`);
@@ -387,7 +344,8 @@ export function validateManifest(manifest: SiteManifest, dir: string | null, cat
     else if (e && isNum(e.width_m) && isNum(e.height_m) && e.height_m > 0) {
       const a = e.width_m / e.height_m;
       const b = t.width_cm / t.height_cm;
-      if (Math.abs(a - b) / b > 0.03) warn('table', `aspect ${b.toFixed(3)} does not match the extent's ${a.toFixed(3)}; the map will be letterboxed or cropped`);
+      // The app refuses a site whose ground and table differ by more than 2% (mrs-site problems()).
+      if (Math.abs(a / b - 1) > 0.02) err('table', `aspect ${b.toFixed(3)} does not match the extent's ${a.toFixed(3)}; the app opens a site only when they are within 2%. Change table.width_cm/height_cm or extent.width_m/height_m`);
     }
   }
 
@@ -397,7 +355,8 @@ export function validateManifest(manifest: SiteManifest, dir: string | null, cat
     if (!isNum(s.cell_m) || s.cell_m <= 0) err('scene.cell_m', 'must be a positive number of metres');
     else if (e && isNum(e.width_m) && isNum(e.height_m)) {
       const cells = Math.round(e.width_m / s.cell_m) * Math.round(e.height_m / s.cell_m);
-      if (cells > 4_000_000) warn('scene.cell_m', `gives ${cells.toLocaleString('en')} cells; above about 4 million, kernels slow down. Use a larger cell`);
+      if (cells > 64e6) err('scene.cell_m', `gives ${Math.round(cells / 1e6)} million cells, more than the app can hold; use a larger cell or show less ground`);
+      else if (cells > 4_000_000) warn('scene.cell_m', `gives ${cells.toLocaleString('en')} cells; above about 4 million, kernels slow down. Use a larger cell`);
     }
     for (const key of ['buildings', 'terrain', 'trees'] as const) {
       const src = s[key];
@@ -584,6 +543,8 @@ export function validateManifest(manifest: SiteManifest, dir: string | null, cat
   if (Array.isArray(layers) && layers.length === 0) note('layers', 'the scene is empty; add a layer');
   if (Array.isArray(layers) && !layers.some((l: any) => l?.active)) note('layers', 'no layer starts active; the table will show only the base map until someone turns one on');
 
+  // A check above that says more about the same key stands in for the bare shape error.
+  issues.unshift(...shape.filter((i) => !issues.some((j) => j.level === 'error' && j.path === i.path)));
   return issues;
 }
 
