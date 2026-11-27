@@ -1,5 +1,6 @@
 ---
 bump: patch
+issues: 648
 ---
 ### Open a table file works again
 
