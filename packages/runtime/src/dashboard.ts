@@ -290,7 +290,7 @@ function controlIds(manifest: LayerManifest | undefined): string[] {
 /** A layer's controls and named actions as an input widget reaches them (#354). */
 function panelControls(store: Store, connection: Connection, layer: string, touch: boolean): PanelControls {
   const manifest = () => store.manifest(store.state.layers[layer]?.layer ?? '');
-  const send = paramSender(connection, layer);
+  const send = paramSender(connection, layer, { store });
   return {
     touch,
     find(id) {

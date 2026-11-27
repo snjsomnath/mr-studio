@@ -85,9 +85,9 @@ interface Trouble {
 export function paramSender(
   connection: Connection,
   layer: string,
-  options: { method?: 'layer.set' | 'scene.set'; minInterval?: number } = {},
+  options: { method?: 'layer.set' | 'scene.set'; minInterval?: number; store?: Store } = {},
 ): (patch: Record<string, unknown>) => void {
-  const { method = 'layer.set', minInterval = 0 } = options;
+  const { method = 'layer.set', minInterval = 0, store } = options;
   let pending: Record<string, unknown> | null = null;
   let last = -Infinity;
   const flush = () => {
@@ -98,7 +98,9 @@ export function paramSender(
     last = performance.now();
     connection.request(method, { layer, params }).catch((error) => console.warn(`[${layer}] ${error.message}`));
   };
-  return (patch) => {
+  return (given) => {
+    // A pause carries the time it stopped at (#403).
+    const patch = store ? store.withStopTime(layer, given) : given;
     if (pending) {
       Object.assign(pending, patch);
       return;
@@ -255,7 +257,7 @@ export function baseContext(store: Store, connection: Connection, layer: string)
     get shared() {
       return store.layer(layer).shared;
     },
-    setParams: paramSender(connection, layer),
+    setParams: paramSender(connection, layer, { store }),
     view: layerView(layer),
     clock: playHead(store, layer),
   };

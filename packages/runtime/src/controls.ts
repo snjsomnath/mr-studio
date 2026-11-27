@@ -1125,7 +1125,7 @@ function guestZone(id: string, store: Store, connection: Connection): { element:
         console.error(`[${shown}] hero`, error);
       }
     }
-    const send = paramSender(connection, shown);
+    const send = paramSender(connection, shown, { store });
     const widgets = visibleControls(manifest.controls)
       .filter((control) => (control.tier ?? 'secondary') !== 'more')
       .map((control) =>
@@ -1470,7 +1470,7 @@ export class Controller {
     // While the layer is in trouble (#259) the centre says so above its controls.
     const troubleLine = el('p', 'layer-trouble', t('Not available right now. It is starting again by itself.'));
     troubleLine.hidden = true;
-    const send = paramSender(connection, id);
+    const send = paramSender(connection, id, { store });
     const widgets = visibleControls(manifest.controls).map((control) =>
       widget(
         control,
@@ -2039,7 +2039,7 @@ export class Controller {
     card.append(header);
 
     const body = el('div', 'layer-body');
-    const send = paramSender(connection, id, { minInterval: phone ? PHONE_SEND_INTERVAL : 0 });
+    const send = paramSender(connection, id, { minInterval: phone ? PHONE_SEND_INTERVAL : 0, store });
     // On a phone, the layer's tools: a map of the table to tap and draw on, with the buttons that act on it.
     const tools = phone && manifest.tools?.length ? toolSection(id, manifest, store, connection) : null;
     const widgets = visibleControls(manifest.controls)
