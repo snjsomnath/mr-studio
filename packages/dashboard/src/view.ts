@@ -265,7 +265,7 @@ export class DashboardView {
     }
     for (const key of [...this.spills.keys()]) if (!this.mounted.has(key)) this.spills.delete(key);
     const found = [...this.spills].map(([key, spill]) => ({ key, ...spill }));
-    this.overflowIssues = found.map((f) => ({ path: f.key, rule: 'overflow', message: `does not fit its panel: ${f.what} reaches ${f.px}px past the edge` }));
+    this.overflowIssues = found.map((f) => ({ path: f.key, rule: 'overflow', message: f.side === 'inside' ? `does not fit its panel: ${f.what} cuts off ${f.px}px of what it holds` : `does not fit its panel: ${f.what} reaches ${f.px}px past its ${f.side} edge` }));
     const told = JSON.stringify(found);
     if (told !== this.overflowTold) {
       this.overflowTold = told;

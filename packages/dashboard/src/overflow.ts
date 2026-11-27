@@ -11,6 +11,8 @@ export interface Overflow {
   what: string;
   /** How far past the panel's edge it reaches, in px. */
   px: number;
+  /** Which way: past the panel's `top`, `bottom`, `left` or `right` edge, or `inside` a box that clips it. */
+  side: 'top' | 'bottom' | 'left' | 'right' | 'inside';
 }
 
 function describe(node: Element): string {
@@ -29,11 +31,12 @@ export function panelOverflow(panel: HTMLElement): Overflow | null {
   const frame = panel.getBoundingClientRect();
   if (frame.width === 0 || frame.height === 0) return null;
   let worst: Overflow | null = null;
-  const note = (node: Element, px: number) => {
-    if (px > SLACK && (!worst || px > worst.px)) worst = { what: describe(node), px: Math.round(px) };
+  const note = (node: Element, px: number, side: Overflow['side']) => {
+    if (px > SLACK && (!worst || px > worst.px)) worst = { what: describe(node), px: Math.round(px), side };
   };
   // The panel itself: content taller or wider than it is cut off at its edge.
-  note(panel, Math.max(panel.scrollHeight - panel.clientHeight, panel.scrollWidth - panel.clientWidth));
+  note(panel, panel.scrollHeight - panel.clientHeight, 'bottom');
+  note(panel, panel.scrollWidth - panel.clientWidth, 'right');
   for (const node of panel.querySelectorAll('*')) {
     // Inside an SVG, the SVG's own box is what counts: a stroke may reach past a point.
     if (node instanceof SVGElement && !(node instanceof SVGSVGElement)) continue;
@@ -41,14 +44,17 @@ export function panelOverflow(panel: HTMLElement): Overflow | null {
     if (box.width === 0 && box.height === 0) continue;
     const style = getComputedStyle(node);
     if (style.display === 'none' || style.visibility === 'hidden' || style.position === 'fixed') continue;
-    note(node, Math.max(frame.top - box.top, box.bottom - frame.bottom, frame.left - box.left, box.right - frame.right));
+    note(node, frame.top - box.top, 'top');
+    note(node, box.bottom - frame.bottom, 'bottom');
+    note(node, frame.left - box.left, 'left');
+    note(node, box.right - frame.right, 'right');
     if (node instanceof HTMLElement && clips(style)) {
       // Text cut short with an ellipsis is fitted on purpose: across with `text-overflow`, down
       // with a line clamp. The box itself must still sit inside the panel (checked above).
       const clamp = style.getPropertyValue('-webkit-line-clamp');
       const tall = clamp && clamp !== 'none' ? 0 : node.scrollHeight - node.clientHeight;
       const wide = style.textOverflow === 'ellipsis' ? 0 : node.scrollWidth - node.clientWidth;
-      note(node, Math.max(tall, wide));
+      note(node, Math.max(tall, wide), 'inside');
     }
   }
   return worst;
