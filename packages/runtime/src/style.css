@@ -490,9 +490,6 @@ body[data-role='tv'] .controller .cards.is-more-above.is-more-below {
 }
 
 /* A rail with nothing on it gives its width to the centre. */
-body[data-role='tv'] .controller-right:not(:has(.layer-button-card, .join-qr, .home-button, .rail-actions)) {
-  display: none;
-}
 
 /* In a narrow rail the join card is the code to scan and the code to type. */
 body[data-role='tv'] .controller .join {
@@ -884,14 +881,6 @@ body[data-role='tv'] .dash {
   content: '▴';
 }
 
-.home-button {
-  width: auto;
-  margin: 0 1rem 0.75rem;
-  justify-content: center;
-  border: 1px solid var(--line);
-  background: var(--card);
-}
-
 .controller-header {
   padding: 1.25rem 1.25rem 0.75rem;
   display: flex;
@@ -1115,24 +1104,6 @@ button.action {
 :focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
-}
-
-.icon-button {
-  flex: none;
-  width: 2rem;
-  height: 2rem;
-  border: 1px solid var(--line);
-  border-radius: 0.5rem;
-  background: var(--panel);
-  color: var(--text);
-  font: inherit;
-  font-size: 1.1rem;
-  line-height: 1;
-  cursor: pointer;
-}
-
-.icon-button:hover {
-  border-color: var(--accent);
 }
 
 body.is-dragging,

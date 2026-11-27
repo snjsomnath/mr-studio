@@ -387,15 +387,6 @@
   color: var(--ed-text-2);
 }
 
-.lb-soon {
-  font-size: 12px;
-  color: var(--ed-text-2);
-}
-
-.lb-soon strong {
-  color: var(--ed-text);
-}
-
 /* ---- New custom layer ---- */
 
 .lb-data-list {
