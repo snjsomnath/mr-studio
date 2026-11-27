@@ -3,7 +3,7 @@
 // publishes (a click copies a binding), the controller at its real size, what passes between the
 // controller, the table and the phones, and everything the rules refused.
 
-import { DashboardView, examplePanel, SCREEN, SIZES, validatePanel } from '@mrstudio/dashboard';
+import { DashboardView, examplePanel, SCREEN, SIZES, validatePanel, worstCasePanel } from '@mrstudio/dashboard';
 import type { DashboardView as View } from '@mrstudio/dashboard';
 import type { Connection, ConnectionTrace, LayerState, PanelSpec, WidgetDefinition } from '@mrstudio/sdk';
 
@@ -125,6 +125,8 @@ export class Workbench {
   // ---- Widgets: each one at every size it takes, with its own made-up data and what it costs.
 
   private chosenWidget = 'stat';
+  /** Whether the gallery fills every text to the limit the rules allow (#681). */
+  private longest = false;
 
   private renderWidgets(): void {
     const list = el('ul', 'workbench-widgets');
@@ -165,7 +167,8 @@ export class Workbench {
     table.append(row('th', ['Size', 'Grid', 'Reads', 'Budget', '']));
     const specs: PanelSpec[] = [];
     for (const size of widget.sizes) {
-      const spec = examplePanel(widget, size, example);
+      // "Longest text" fills every text to the rules' limit (#681): it must still fit its panel.
+      const spec = this.longest ? worstCasePanel(widget, size, example) : examplePanel(widget, size, example);
       const props = spec.props ?? {};
       const issues = validatePanel(spec, widgets, size);
       let reads = '';
@@ -178,6 +181,16 @@ export class Workbench {
       if (!issues.length) specs.push(spec);
     }
     root.append(table);
+    const longest = el('label', 'workbench-note');
+    const box = el('input');
+    box.type = 'checkbox';
+    box.checked = this.longest;
+    box.addEventListener('change', () => {
+      this.longest = box.checked;
+      this.render();
+    });
+    longest.append(box, document.createTextNode(' Longest text: every word and list at the rules\' limit. A panel that spills is outlined and listed under the canvas.'));
+    root.append(longest);
     root.append(el('p', 'workbench-note', `A screen holds ${SCREEN.panels} panels and ${SCREEN.reads} reads. ${layer ? `Shown on the layer '${layer}'.` : 'Turn a layer on to see the map and control widgets with its data.'}`));
     const canvas = el('div', 'workbench-canvas');
     root.append(canvas);

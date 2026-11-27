@@ -16,3 +16,18 @@ export function slotColor(slot: unknown, fallback = 1): string {
   const n = Number.isInteger(slot) && (slot as number) >= 1 && (slot as number) <= 6 ? slot : fallback;
   return `var(--mrs-data-${n})`;
 }
+
+/**
+ * Fits `box` to its width (#681): sets `data-fit` to each of `steps` in turn, roomiest first,
+ * until what it holds is no wider than it is. The CSS draws each step smaller, down to the
+ * smallest type allowed. Nothing happens to a box that is not on screen.
+ */
+export function fitSteps(box: HTMLElement, steps: readonly string[]): void {
+  if (!box.isConnected || box.clientWidth === 0) return;
+  const fits = () => box.scrollWidth <= box.clientWidth + 1;
+  delete box.dataset.fit;
+  for (const step of steps) {
+    if (fits()) return;
+    box.dataset.fit = step;
+  }
+}

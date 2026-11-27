@@ -50,7 +50,18 @@ export const series = defineWidget({
     axis.append(start, end);
     wrap.append(legend, plot, axis);
     el.append(wrap);
+    // The scale's labels sit left of the plot. A long top value with its unit widens the gutter
+    // rather than running out of the panel (#681).
+    const fit = () => {
+      if (!wrap.isConnected || wrap.clientWidth === 0) return;
+      wrap.style.removeProperty('--mrs-plot-gutter');
+      const gutter = Math.max(top.offsetWidth, bottom.offsetWidth);
+      const room = plot.getBoundingClientRect().left - wrap.getBoundingClientRect().left;
+      const gap = parseFloat(getComputedStyle(top).marginRight) || 0;
+      if (gutter + gap > room) wrap.style.setProperty('--mrs-plot-gutter', `${Math.ceil(gutter + gap)}px`);
+    };
     return {
+      fit,
       update(props) {
         const lines = (props.series ?? []) as { label?: string; values?: number[]; slot?: number }[];
         const all = lines.flatMap((line) => line.values ?? []);
@@ -84,6 +95,7 @@ export const series = defineWidget({
         setText(start, props.start ?? '');
         setText(end, props.end ?? '');
         axis.hidden = props.start === undefined && props.end === undefined;
+        fit();
       },
     };
   },

@@ -198,6 +198,24 @@
   color: var(--mrs-muted);
 }
 
+/* A number too wide for its panel beside its unit steps down (#681), never below the label size. */
+.mrs-stat-row {
+  min-width: 0;
+}
+.mrs-stat-row[data-fit='s'] .mrs-number {
+  font-size: var(--mrs-type-number-s);
+}
+.mrs-stat-row[data-fit='xs'] {
+  gap: calc(0.6 * var(--mrs-u));
+}
+.mrs-stat-row[data-fit='xs'] .mrs-number {
+  font-size: calc(3.4 * var(--mrs-u));
+}
+.mrs-stat-row[data-fit='xs'] .mrs-unit,
+.mrs-stat-row[data-fit='xs'] .mrs-delta {
+  font-size: var(--mrs-type-label);
+}
+
 .mrs-caption {
   /* Keeps its line even when empty, so numbers in a row of tiles share a baseline. */
   min-height: 1.3em;
@@ -436,7 +454,7 @@
   flex: 1;
   min-height: 0;
   position: relative;
-  margin-left: calc(11 * var(--mrs-u));
+  margin-left: var(--mrs-plot-gutter, calc(11 * var(--mrs-u)));
   border-block: 1px solid var(--mrs-line);
 }
 
@@ -487,7 +505,7 @@
 .mrs-plot-axis {
   display: flex;
   justify-content: space-between;
-  margin-left: calc(11 * var(--mrs-u));
+  margin-left: var(--mrs-plot-gutter, calc(11 * var(--mrs-u)));
   color: var(--mrs-muted);
   font-size: var(--mrs-type-label);
   line-height: 1;
@@ -637,6 +655,12 @@
   display: grid;
   place-items: center;
   color: var(--mrs-muted);
+}
+
+/* In dev mode a panel whose content spills out of it is marked (#681); visitors never see this. */
+.mrs-dash.mrs-dev .mrs-overflows {
+  outline: 2px dashed var(--mrs-bad);
+  outline-offset: -2px;
 }
 
 .mrs-issues {
@@ -864,6 +888,16 @@
 .mrs-gauge-chip .mrs-number {
   font-size: var(--mrs-type-number-s);
 }
+/* A value too long for the chip steps down with its arc (#681). */
+.mrs-gauge[data-fit='xs'] .mrs-number {
+  font-size: calc(3.4 * var(--mrs-u));
+}
+.mrs-gauge[data-fit='xs'] .mrs-unit {
+  font-size: var(--mrs-type-label);
+}
+.mrs-gauge-chip[data-fit='xs'] .mrs-gauge-arc {
+  height: calc(3.4 * var(--mrs-u) * 0.8);
+}
 
 /* List and the donut's key (#356): a mark, a name, a number. */
 .mrs-list,
@@ -913,6 +947,7 @@
   gap: calc(2 * var(--mrs-u));
 }
 .mrs-donut-hole {
+  /* Sized by the widget's fit (#681): a square no wider than the key leaves room for. */
   flex: none;
   height: 100%;
   aspect-ratio: 1;
@@ -936,6 +971,7 @@
 }
 .mrs-donut-key {
   flex: 1;
+  min-width: 0;
 }
 
 /* Picture or video (#356). */

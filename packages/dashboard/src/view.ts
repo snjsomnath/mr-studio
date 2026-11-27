@@ -9,6 +9,8 @@ import { pack } from './pack.ts';
 import type { Page } from './pack.ts';
 import type { WidgetDefinition, WidgetHandle, WidgetRegistry } from './registry.ts';
 import { GRID, ROTATE_S } from './rules.ts';
+import { panelOverflow } from './overflow.ts';
+import type { Overflow } from './overflow.ts';
 import { LOOK_ATTRIBUTES, themeVariables } from './theme.ts';
 import { panelReads, validatePanel } from './validate.ts';
 import type { Issue } from './validate.ts';
@@ -52,7 +54,20 @@ export interface DashboardOptions {
   rotateS?: number;
   /** Shown when no panel is up. */
   empty?: string;
+  /**
+   * Called when the panels that spill out of their box change (#681): a key and what spilled,
+   * empty when everything fits again. The issues are in `issues` too, with the rule `overflow`.
+   */
+  onOverflow?(panels: PanelOverflow[]): void;
 }
+
+/** A panel whose content spills out of its box: its key, what spilled and by how much. */
+export interface PanelOverflow extends Overflow {
+  key: string;
+}
+
+/** How long after a change the panels are measured, so a burst of updates is measured once. */
+const MEASURE_MS = 250;
 
 interface Mounted {
   input: PanelInput;
@@ -86,6 +101,10 @@ export class DashboardView {
   private mounted = new Map<string, Mounted>();
   private themeIssues: Issue[] = [];
   private panelIssues: Issue[] = [];
+  private overflowIssues: Issue[] = [];
+  private readonly spills = new Map<string, Overflow>();
+  private overflowTold = '';
+  private measureTimer: ReturnType<typeof setTimeout> | undefined;
   private current = 0;
   private timer: ReturnType<typeof setInterval> | undefined;
   private rotateS: number;
@@ -100,6 +119,7 @@ export class DashboardView {
     this.registry = options.registry ?? coreWidgets();
     this.rotateS = Math.min(ROTATE_S.max, Math.max(ROTATE_S.min, options.rotateS ?? ROTATE_S.default));
     root.classList.add('mrs-dash');
+    root.classList.toggle('mrs-dev', Boolean(options.dev));
     this.pagesEl = h('div', 'mrs-pages');
     this.pager = h('div', 'mrs-pager');
     this.empty = h('p', 'mrs-empty', options.empty ?? '');
@@ -110,7 +130,10 @@ export class DashboardView {
     root.append(this.pagesEl, this.empty, this.pager, this.problems, this.probe);
     this.setTheme(null);
     if (typeof ResizeObserver !== 'undefined') {
-      this.resize = new ResizeObserver(() => this.measure());
+      this.resize = new ResizeObserver(() => {
+        this.measure();
+        this.checkSoon();
+      });
       this.resize.observe(root);
     }
   }
@@ -217,10 +240,50 @@ export class DashboardView {
     this.root.classList.toggle('mrs-no-room', shown.length > 0 && this.pages.length === 0);
     this.turn(Math.min(this.current, Math.max(0, this.pages.length - 1)));
     this.report();
+    this.checkSoon();
+  }
+
+  /**
+   * Measures the panels on show and reports each one whose content spills out of its box (#681).
+   * Nothing on a dashboard scrolls, so what spills is lost; it is a fault in the panel, never
+   * something to scroll to. Panels on pages out of sight are measured when their page is up.
+   */
+  checkOverflow(): PanelOverflow[] {
+    for (const [key, mounted] of this.mounted) {
+      const page = mounted.el.parentElement;
+      // Out of sight: what was last measured for it stands until its page is up.
+      if (!page || page.hidden) continue;
+      try {
+        mounted.handle.fit?.();
+      } catch (error) {
+        console.error(`[${key}] panel failed to fit`, error);
+      }
+      const spill = panelOverflow(mounted.el);
+      mounted.el.classList.toggle('mrs-overflows', Boolean(spill));
+      if (spill) this.spills.set(key, spill);
+      else this.spills.delete(key);
+    }
+    for (const key of [...this.spills.keys()]) if (!this.mounted.has(key)) this.spills.delete(key);
+    const found = [...this.spills].map(([key, spill]) => ({ key, ...spill }));
+    this.overflowIssues = found.map((f) => ({ path: f.key, rule: 'overflow', message: `does not fit its panel: ${f.what} reaches ${f.px}px past the edge` }));
+    const told = JSON.stringify(found);
+    if (told !== this.overflowTold) {
+      this.overflowTold = told;
+      this.options.onOverflow?.(found);
+    }
+    this.report();
+    return found;
+  }
+
+  private checkSoon(): void {
+    if (typeof window === 'undefined') return;
+    clearTimeout(this.measureTimer);
+    this.measureTimer = setTimeout(() => requestAnimationFrame(() => this.checkOverflow()), MEASURE_MS);
   }
 
   destroy(): void {
     clearInterval(this.timer);
+    clearTimeout(this.measureTimer);
     this.resize?.disconnect();
     for (const key of [...this.mounted.keys()]) this.unmount(key);
     this.root.replaceChildren();
@@ -266,6 +329,7 @@ export class DashboardView {
     this.pager.hidden = count < 2;
     if (this.pager.children.length !== count) this.pager.replaceChildren(...Array.from({ length: count }, () => h('i', '')));
     [...this.pager.children].forEach((dot, i) => dot.classList.toggle('is-current', i === index));
+    this.checkSoon();
     if (count < 2) {
       clearInterval(this.timer);
       this.timer = undefined;
@@ -275,7 +339,7 @@ export class DashboardView {
   }
 
   private report(): void {
-    const issues = [...this.themeIssues, ...this.panelIssues];
+    const issues = [...this.themeIssues, ...this.panelIssues, ...this.overflowIssues];
     const changed = JSON.stringify(issues) !== JSON.stringify(this.issues);
     this.issues = issues;
     if (!changed) return;

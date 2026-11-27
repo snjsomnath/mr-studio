@@ -4,6 +4,8 @@
 //   ?view=auto     panels from layers, laid out automatically; too many for one page
 //   ?view=refused  what dev mode shows for panels that break the rules
 //   ?view=gauges   gauges at several values, tile and chip (#491)
+//   ?view=fit      every core widget at every size it takes, measured for overflow (#681);
+//                  &case=worst fills every text to its limit (fit.mjs runs this in CI)
 //   &theme=light   a site's restyle     &still   freeze the clock     &rail=none
 import type { PanelSpec } from '@mrstudio/sdk';
 
@@ -11,7 +13,7 @@ import energy from '../examples/energy-page.json';
 import light from '../examples/light-theme.json';
 import sunlight from '../../layers/sunlight/layer.json';
 import '../src/dashboard.css';
-import { DashboardView } from '../src/index.ts';
+import { coreWidgets, DashboardView, examplePanel, worstCasePanel } from '../src/index.ts';
 import type { PanelInput } from '../src/index.ts';
 
 const query = new URLSearchParams(location.search);
@@ -68,7 +70,10 @@ const input = (layer: string, spec: PanelSpec, page?: number): PanelInput => ({
 });
 
 const which = query.get('view') ?? 'energy';
-if (which === 'energy') {
+if (which === 'fit') {
+  view.destroy();
+  fitGallery(query.get('case') === 'worst' ? 'worst' : 'example');
+} else if (which === 'energy') {
   view.setPanels((energy.panels as PanelSpec[]).map((spec) => input('energy', spec, 0)));
 } else if (which === 'auto') {
   // Two layers on at once: more than one screen may hold, so the layout makes a second page.
@@ -90,7 +95,44 @@ if (which === 'energy') {
   view.setTheme({ 'color.text': '#4a5060', 'type.label': '10px' });
 }
 
-if (!query.has('still')) {
+/**
+ * Every core widget at every size, each alone on a canvas the size of the TV's, measured for
+ * content that spills out of its panel (#681). The results go to `window.__fit` for fit.mjs.
+ * The widgets that need a table (map, control) or a layer's code (custom) are left out.
+ */
+function fitGallery(which: 'example' | 'worst'): void {
+  const box = document.getElementById('tv')!;
+  box.style.cssText = 'display:block;height:auto;overflow:auto';
+  box.replaceChildren();
+  document.documentElement.style.overflow = 'auto';
+  document.body.style.overflow = 'auto';
+  const views: DashboardView[] = [];
+  const skip = new Set(['map', 'control', 'custom']);
+  for (const widget of coreWidgets().list()) {
+    if (skip.has(widget.type)) continue;
+    for (const size of widget.sizes) {
+      const spec = which === 'worst' ? worstCasePanel(widget, size) : examplePanel(widget, size);
+      const canvas = document.createElement('div');
+      // The TV's canvas: the screen less the control rail's share.
+      canvas.style.cssText = 'width:78vw;height:100vh;margin-left:22vw';
+      canvas.dataset.case = `${widget.type}/${size}`;
+      box.append(canvas);
+      const dash = new DashboardView(canvas, { dev: true });
+      dash.setPanels([{ ...input(widget.type, { ...spec, at: { col: 1, row: 1 } }, 0), key: `${widget.type}/${size}` }]);
+      views.push(dash);
+    }
+  }
+  // Fonts and the first layout settle before anything is measured.
+  void document.fonts.ready.then(() =>
+    requestAnimationFrame(() => {
+      const found = views.flatMap((dash) => dash.checkOverflow());
+      const refused = views.flatMap((dash) => dash.issues.filter((issue) => issue.rule !== 'overflow'));
+      (window as unknown as { __fit: unknown }).__fit = { cases: views.length, overflow: found, refused };
+    }),
+  );
+}
+
+if (!query.has('still') && which !== 'fit') {
   setInterval(() => {
     hour = (hour + 0.25) % 24;
     view.sync();

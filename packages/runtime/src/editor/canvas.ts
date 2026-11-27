@@ -6,6 +6,7 @@ import { el, isAtRest, layerButton } from '../controls.ts';
 import { returnCorners } from './drawing-frame.ts';
 import { icon } from './icons.ts';
 import type { RailFit } from '../rail-fit.ts';
+import type { PanelFit } from '../dashboard.ts';
 import { AT_REST } from './wizard.ts';
 import type { Editor, LegendFit } from './editor.ts';
 import { checkRails } from './chrome.ts';
@@ -107,8 +108,14 @@ export function showController(ed: Editor, only: boolean): void {
     ed.preview.append(frame);
     // The controller says how its rails fit (#614); a reload of the frame asks again.
     window.addEventListener('message', (event) => {
-      const data = event.data as RailFit | LegendFit | null;
+      const data = event.data as RailFit | LegendFit | PanelFit | null;
       if (event.source !== frame.contentWindow || event.origin !== location.origin) return;
+      if (data?.type === 'mrs-panel-fit') {
+        if (data.panels.length) ed.panelSpills.set(data.from, data.panels);
+        else ed.panelSpills.delete(data.from);
+        checkRails(ed);
+        return;
+      }
       if (data?.type === 'mrs-legend-fit') {
         if (data.scrolls) ed.legendScrolls.set(data.layer, data.mode);
         else ed.legendScrolls.delete(data.layer);
@@ -122,6 +129,7 @@ export function showController(ed: Editor, only: boolean): void {
     frame.addEventListener('load', () => {
       ed.railFits = {};
       ed.legendScrolls.clear();
+      ed.panelSpills.clear();
       frame.contentWindow?.postMessage({ type: 'mrs-rail-fit?' }, location.origin);
     });
     // The controller is laid out for a full screen; it is scaled down to fit.

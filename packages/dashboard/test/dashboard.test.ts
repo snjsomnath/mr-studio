@@ -6,9 +6,9 @@ import type { EntityFeature, PanelSpec, Position } from '@mrstudio/sdk';
 
 import { clip, formatValue, resolveProps } from '../src/bind.ts';
 import { pack } from '../src/pack.ts';
-import { GRID, SCREEN, SIZES } from '../src/rules.ts';
+import { GRID, SCREEN, SIZES, TEXT } from '../src/rules.ts';
 import { contrast, STYLE_TOKENS, themeVariables, validateTheme } from '../src/theme.ts';
-import { controlProblems, panelReads, validateLayerPanels, validatePage, validatePanel, validateRibbon } from '../src/validate.ts';
+import { controlProblems, panelReads, validateLayerPanels, validatePage, validatePanel, validateRibbon, worstCasePanel } from '../src/validate.ts';
 import { defineWidget } from '../src/registry.ts';
 import { colourFeatures, rampColour, valueOf } from '../src/widgets/map.ts';
 import { coreWidgets, donutParts, entityAt, gaugeArc, gaugeShare, mediaUrl } from '../src/widgets/index.ts';
@@ -358,4 +358,15 @@ test('a whole list binds, its items checked as they arrive; bound yes/no and num
   assert.deepEqual(read('true', '12.5'), { on: true, n: 12.5 });
   assert.deepEqual(read('false', 3), { on: false, n: 3 });
   assert.deepEqual(read('maybe', 'many'), {});
+});
+
+test('the worst case of every core widget is still a panel the rules allow (#681)', () => {
+  const registry = coreWidgets();
+  for (const widget of registry.list()) {
+    for (const size of widget.sizes) {
+      const spec = worstCasePanel(widget, size);
+      assert.deepEqual(validatePanel(spec, registry, `${widget.type}/${size}`), [], `${widget.type}/${size}`);
+      assert.ok([...spec.title!].length > TEXT.title - 8, `${widget.type}/${size}: a long title`);
+    }
+  }
 });

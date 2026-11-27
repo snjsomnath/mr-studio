@@ -21,11 +21,12 @@ Density is not a matter of taste or review. It is a number the code checks.
 1. **One grid.** Every panel sits on the same 12 by 6 grid. Nothing floats, overlaps or is positioned by hand in pixels.
 2. **A closed set of sizes.** A panel is one of eight sizes. There are no custom spans, so panels always line up and a layout is always a tiling.
 3. **Reading is budgeted.** Each panel size holds a fixed number of *reads*. Each widget states what it costs. The screen has a total. Over budget is an error, not a warning.
-4. **Nothing shrinks.** Text has a minimum size tied to the screen. When there is too much, the answer is another page or a larger panel, never smaller type, tighter spacing or a scroll bar.
+4. **Nothing shrinks.** Text has a minimum size tied to the screen. When there is too much, the answer is another page or a larger panel, never smaller type, tighter spacing or a scroll bar. The one give is a headline number: beside a long unit it may step down to the small number size, never below the label size, so it stays inside its panel (#681).
 5. **One widget per panel.** Panels do not nest. Nesting is how a "small addition" hides inside an existing box.
 6. **Panels are data.** A panel is a JSON object: a widget type, a size, props and bindings. Layers do not write layout code, and a visual editor can produce the same JSON later.
 7. **Rules are core, looks are per site.** A site can change colours, typefaces, corners and the panel treatment. It cannot change the grid, the sizes, the type scale or the budgets.
 8. **Live data obeys the same limits.** A bound value that is too long is cut, and a bound list that is too long loses its tail, so data arriving at run time cannot break a layout that passed the checks.
+9. **Nothing scrolls and nothing spills (#681).** What a panel holds stays inside its box. Text cut short with an ellipsis is drawn to fit; anything else that reaches past the panel's edge is a fault in the panel, measured on screen and reported, never something to scroll to.
 
 ## The screen
 
@@ -91,6 +92,8 @@ Panels on a second page are still full size.
 - **In tests and CI.** `validateLayerPanels`, `validatePage` and `validateTheme` are pure functions. The dashboard tests run them over every panel and theme in the repo.
 - **On the TV.** The canvas checks every panel before mounting it. A panel that breaks a rule is not shown; in dev mode the reason is listed on the canvas, on the TV it goes to the console.
 - **In the page.** Grid tracks never grow, panels clip their content, there is no scrolling, and widgets only use the type tokens. Even a `custom` panel cannot push its neighbours.
+- **On screen (#681).** After each change the canvas measures the panels on show and reports any whose content spills out of its box: in the console and `issues` (rule `overflow`), outlined in dev mode, in the Developer window's Problems, and in the editor's status bar while the live controller shows it.
+- **In CI, in every engine (#681).** `pnpm --filter @mrstudio/dashboard fit` draws every core widget at every size it takes, with its example props and with the worst the rules allow (`worstCasePanel`: every text at its limit in long Swedish words, lists as long as the size takes), on a 1080p and a 720p screen, and fails on any spill. It runs in Chromium, and in WebKit and Edge in the engine smoke jobs.
 - **In a future editor.** The same functions decide whether a drop is allowed and what the budget meter shows.
 
 ## Widgets
