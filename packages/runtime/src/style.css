@@ -2053,6 +2053,48 @@ body[data-role='tv'][data-surface='glass'] .step-strip {
   font-weight: 650;
 }
 
+/* A long legend, small (#660): in columns, so the centre fits without scrolling. */
+.stage-legend.is-compact {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(10.5rem, 1fr));
+  gap: 0 1rem;
+}
+
+.stage-legend.is-compact .legend-row {
+  gap: 0.5rem;
+  padding: 0.0625rem 0.5rem 0.0625rem 0.25rem;
+  font-size: 0.875rem;
+}
+
+.stage-legend.is-compact .legend-group {
+  grid-column: 1 / -1;
+  margin: 0.25rem 0 0;
+  font-size: 0.8125rem;
+}
+
+.stage-legend.is-compact .legend-swatch {
+  width: 1rem;
+  height: 1rem;
+  border-radius: 0.25rem;
+}
+
+.stage-legend.is-compact .legend-swatch[data-shape='line'] {
+  height: 0.25rem;
+}
+
+.stage-legend.is-compact .legend-swatch[data-shape='point'] {
+  width: 0.75rem;
+  height: 0.75rem;
+}
+
+/* Who made what the layer shows (#659): a quiet line under its words. */
+.layer-credit {
+  margin: 0.375rem 0 0;
+  font-size: 0.875rem;
+  font-style: italic;
+  opacity: 0.7;
+}
+
 /* An action marked primary is one large button, the stage's main thing to press (#76). */
 .controls-primary button.action {
   min-height: 4rem;

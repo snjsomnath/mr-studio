@@ -567,6 +567,27 @@ pub struct LayerButton {
     /// Kept off the controller and phones without taking the layer out of the table (#58).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub hidden: bool,
+    /// Who made what the layer shows, as one line under its name on the controller (#659),
+    /// such as "Artwork by Vishvi Rajakaruna and Fabio Latino".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub credit: Option<String>,
+    /// How the controller shows the layer's legend (#660). Without it, `auto`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub legend: Option<LegendMode>,
+}
+
+/// How much of a layer's legend the controller shows (#660).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum LegendMode {
+    /// Every row, in as many columns as it takes to fit the centre without scrolling.
+    Auto,
+    /// Every row, one under the other.
+    Full,
+    /// Small swatches in columns, for a long legend.
+    Compact,
+    /// No legend on the controller.
+    Off,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -579,6 +600,7 @@ pub enum ButtonSide {
 impl LayerButton {
     pub const MAX_NAME: usize = 40;
     pub const MAX_DESCRIPTION: usize = 200;
+    pub const MAX_CREDIT: usize = 200;
 
     pub fn is_empty(&self) -> bool {
         *self == Self::default()
@@ -592,6 +614,9 @@ impl LayerButton {
         }
         if length(&self.name) > Self::MAX_NAME {
             return Some(format!("a button name is at most {} characters", Self::MAX_NAME));
+        }
+        if length(&self.credit) > Self::MAX_CREDIT {
+            return Some(format!("a credit line is at most {} characters", Self::MAX_CREDIT));
         }
         if length(&self.description) > Self::MAX_DESCRIPTION {
             return Some(format!("a button description is at most {} characters", Self::MAX_DESCRIPTION));

@@ -642,6 +642,14 @@ export interface LayerButton {
   order?: number;
   /** Kept off the controller and phones, without taking the layer out of the table (#58). */
   hidden?: boolean;
+  /** Who made what the layer shows, one line under its name on the controller (#659). */
+  credit?: string;
+  /**
+   * How the controller shows the layer's legend (#660): `auto` (the default) fits every row in the
+   * centre without scrolling, in more columns or smaller as it needs; `full` lists them one under the
+   * other; `compact` always uses small swatches in columns; `off` shows no legend.
+   */
+  legend?: 'auto' | 'full' | 'compact' | 'off';
 }
 
 export interface Participant {
