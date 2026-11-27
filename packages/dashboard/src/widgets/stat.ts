@@ -1,7 +1,7 @@
 import { formatValue } from '../bind.ts';
 import { defineWidget } from '../registry.ts';
 import { TEXT } from '../rules.ts';
-import { h, setText } from './dom.ts';
+import { fitSteps, h, setText } from './dom.ts';
 
 /** One headline number. The panel's title is its label. */
 export const stat = defineWidget({
@@ -28,7 +28,10 @@ export const stat = defineWidget({
     const caption = h('div', 'mrs-caption');
     row.append(number, unit, delta);
     el.append(row, caption);
+    // A long number beside a long unit steps down rather than running out of the panel (#681).
+    const fit = () => fitSteps(row, ['s', 'xs']);
     return {
+      fit,
       update(props) {
         setText(number, formatValue(props.value, props));
         setText(unit, props.format === 'number' || props.format === undefined ? (props.unit ?? '') : '');
@@ -40,6 +43,7 @@ export const stat = defineWidget({
           delta.dataset.direction = change > 0 ? 'up' : change < 0 ? 'down' : 'flat';
         }
         setText(caption, props.caption ?? '');
+        fit();
       },
     };
   },

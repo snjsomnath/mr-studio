@@ -1,7 +1,7 @@
 import { formatValue } from '../bind.ts';
 import { defineWidget } from '../registry.ts';
 import { TEXT } from '../rules.ts';
-import { h, setText } from './dom.ts';
+import { fitSteps, h, setText } from './dom.ts';
 
 const NS = 'http://www.w3.org/2000/svg';
 const svg = (tag: string, attrs: Record<string, string>) => {
@@ -61,7 +61,10 @@ export const gauge = defineWidget({
     words.append(number, unit);
     box.append(picture, words);
     el.append(box);
+    // A chip's arc and number share one line; a long value steps down to fit it (#681).
+    const fit = () => fitSteps(box, ['s', 'xs']);
     return {
+      fit,
       update(props) {
         const share = gaugeShare(props.value, props.min ?? 0, props.max);
         fill.setAttribute('d', arc(0, Math.max(0.001, share ?? 0)));
@@ -76,6 +79,7 @@ export const gauge = defineWidget({
         }
         setText(number, formatValue(props.value, props));
         setText(unit, props.format === 'percent' ? '' : (props.unit ?? ''));
+        fit();
       },
     };
   },

@@ -9,9 +9,12 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "node --test --experimental-strip-types test/*.test.ts",
-    "gallery": "vite gallery"
+    "gallery": "vite gallery",
+    "fit": "node fit.mjs"
   },
-  "dependencies": { "@mrstudio/sdk": "workspace:*" },
+  "dependencies": {
+    "@mrstudio/sdk": "workspace:*"
+  },
   "devDependencies": {
     "typescript": "^5.9.0",
     "@types/node": "^22.0.0",
