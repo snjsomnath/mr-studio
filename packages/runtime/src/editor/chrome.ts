@@ -322,7 +322,8 @@ export function checkRails(ed: Editor): void {
   const sides = overflowing(ed);
   const out = sides.reduce((n, r) => n + r.buttons - r.fits, 0);
   const legends = [...ed.legendScrolls].filter(([layer]) => Boolean(ed.store.state.layers[layer]));
-  ed.railNote.hidden = out === 0 && legends.length === 0;
+  const spills = [...ed.panelSpills.values()].flat();
+  ed.railNote.hidden = out === 0 && legends.length === 0 && spills.length === 0;
   if (out > 0) {
     ed.railNote.replaceChildren(icon('alert', 12), el('span', undefined, out === 1 ? '1 button does not fit on the controller' : `${out} buttons do not fit on the controller`));
     ed.railNote.title = 'Visitors have to scroll a side of the controller to find them. Click for more.';
@@ -335,6 +336,10 @@ export function checkRails(ed: Editor): void {
       mode === 'full'
         ? 'Visitors have to scroll to see all of it. Set its Legend to Auto or Compact under the layer button, or turn it off.'
         : 'Even with small swatches visitors have to scroll. Turn the legend off under the layer button, or show fewer rows.';
+  } else if (spills.length > 0) {
+    // A panel whose content spills out of its box (#681): what spills is cut off on the TV.
+    ed.railNote.replaceChildren(icon('alert', 12), el('span', undefined, spills.length === 1 ? 'A panel does not fit on the controller' : `${spills.length} panels do not fit on the controller`));
+    ed.railNote.title = `Part of ${spills.map((s) => `'${s.key}'`).join(', ')} is cut off on the screen. Give it a bigger size, shorter words or fewer items.`;
   }
   if (out === 0) ed.railWarned = 0;
   // Not over the setup guide or another dialog: the status bar keeps it until then.

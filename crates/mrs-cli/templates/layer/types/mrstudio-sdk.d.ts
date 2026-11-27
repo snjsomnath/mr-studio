@@ -1917,6 +1917,12 @@ declare module "@mrstudio/sdk/widgets" {
     export interface WidgetHandle {
         /** Draws the resolved props. Called on every change, so it must be cheap. */
         update(props: Record<string, any>): void;
+        /**
+         * Optional: fits what it draws to its box again, after the panel changed size (#681). A widget
+         * whose content depends on its width (a headline number beside its unit) steps its type down
+         * here, never below the smallest size allowed. The canvas calls it before it measures panels.
+         */
+        fit?(): void;
         destroy?(): void;
     }
     /** What a widget gets when it is mounted. */

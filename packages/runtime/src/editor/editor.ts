@@ -22,6 +22,7 @@ import type { SaveWords } from './save-state.ts';
 import { CanvasTools } from './canvas-tools.ts';
 import { fitRibbon } from './ribbon-fit.ts';
 import type { RailFit } from '../rail-fit.ts';
+import type { PanelFit } from '../dashboard.ts';
 
 /** The controller's word that an open layer's controls scroll because of its legend (#660). */
 export interface LegendFit {
@@ -277,6 +278,8 @@ export class Editor {
   railFits: Partial<Record<'left' | 'right', RailFit>> = {};
   /** The open layers whose controls scroll on the controller because of their legend (#660). */
   legendScrolls = new Map<string, string>();
+  /** Panels on the live controller whose content spills out of their box, by canvas (#681). */
+  panelSpills = new Map<string, PanelFit['panels']>();
   /** How many were out of sight when the author was last told, so a warning comes once, and again only if it gets worse. */
   railWarned = 0;
   railRetry = 0;

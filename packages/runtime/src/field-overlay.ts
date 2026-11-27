@@ -1,6 +1,6 @@
 import { lut, revealUniform } from '@mrstudio/sdk';
 import type { Colormap, FieldFrame, FieldOverlay, FieldOverlayStyle, RevealShape, SiteInfo } from '@mrstudio/sdk';
-import maplibregl from 'maplibre-gl';
+import maplibregl from './maplibre';
 import type { CustomLayerInterface, CustomRenderMethodInput, Map as MapLibreMap } from 'maplibre-gl';
 
 /**

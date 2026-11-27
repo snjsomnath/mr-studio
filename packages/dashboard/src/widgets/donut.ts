@@ -52,7 +52,20 @@ export const donut = defineWidget({
     const key = h('ul', 'mrs-donut-key');
     box.append(hole, key);
     el.append(box);
+    // The ring is as big as the panel allows once the key has the width its names and shares
+    // need (up to 60% of the panel), so the key is never pushed out of the panel (#681).
+    const fit = () => {
+      if (!box.isConnected || box.clientWidth === 0) return;
+      key.style.cssText = 'flex: none; width: max-content';
+      const need = key.offsetWidth;
+      key.style.cssText = '';
+      const gap = parseFloat(getComputedStyle(box).columnGap) || 0;
+      const width = box.clientWidth;
+      const side = Math.floor(Math.max(width * 0.3, Math.min(box.clientHeight, width - gap - Math.min(need, width * 0.6))));
+      hole.style.width = hole.style.height = `${side}px`;
+    };
     return {
+      fit,
       update(props) {
         const items = (props.items ?? []) as { label?: string; value?: number; slot?: number }[];
         const parts = donutParts(items.map((i) => i.value));
@@ -71,6 +84,7 @@ export const donut = defineWidget({
           setText(label!, item.label ?? '');
           setText(share!, `${Math.round((parts[i]!.to - parts[i]!.from) * 100)}%`);
         });
+        fit();
       },
     };
   },

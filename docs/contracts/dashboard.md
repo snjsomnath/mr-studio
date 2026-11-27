@@ -75,12 +75,23 @@ pages or their time change.
 | `budget` | The panel's reads fit its size; lists within their limits. A bound list is charged in full |
 | `grid` | Site pages: inside 12 by 6, no overlap, a position for every panel. Layers: no position |
 | `screen` | Site pages: at most 24 reads and 8 panels |
+| `overflow` | Measured on screen (#681): nothing in a panel reaches past its edge, and no box inside it clips its content, except text cut short with an ellipsis or a line clamp |
 
 A panel that fails is not mounted. The automatic layout never fails on `screen`: it adds pages.
 
 **Short canvases.** The unit is 1% of the canvas height, but a host may set `--mrs-u-floor` on the canvas so text never gets smaller than that (the controller sets 0.8% of the screen height). A canvas too short for six rows of at least 8 units (so a tile holds its title, number and caption) then gets fewer rows, never shorter ones: the automatic layout packs into the rows there are, turns pages for the rest, and leaves out a panel taller than the canvas. A site's hand-made pages always get all six rows.
-A `custom` panel's drawing starts under its title and is cut at the bottom when it does not fit.
+A `custom` panel's drawing starts under its title and is cut at the bottom when it does not fit, which the `overflow` check reports.
 Live values are cut to the same limits at run time.
+
+**Nothing scrolls or spills (#681).** `DashboardView` measures the panels on show 250 ms after a change
+(`checkOverflow()`, `panelOverflow(el)`) and reports each one whose content spills: in `issues` with the
+rule `overflow`, through the `onOverflow` option, and in dev mode with a dashed outline. Before it measures,
+it calls the widget handle's optional `fit()`, where a widget whose content depends on its width fits it
+(the stat and gauge step their number down to the small number size; the series widens its scale's gutter;
+the donut keeps its key at least half the width). The controller tells the editor which panels spill
+(`{ type: 'mrs-panel-fit', from, panels }`), and the editor's status bar says so.
+`worstCasePanel(widget, size)` is the widget's panel with the worst props the rules allow; every core widget
+fits it at every size in CI (`pnpm --filter @mrstudio/dashboard fit [webkit|msedge]`).
 
 ## API
 
@@ -172,6 +183,8 @@ export const gauge = defineWidget({
 ```
 
 A widget uses only the type and colour tokens in `dashboard.css`, states an honest cost, and is added to `coreWidgets`.
+It fits its sizes with its example props and with `worstCasePanel` (#681): `fit.mjs` checks core widgets, and the
+Developer window's **Longest text** checks a team's.
 Every prop needs a `label`, because an editor will draw a form from the schema.
 
 **Core or a team's own (#353).** Widgets that most tables need are core: they live here, work without

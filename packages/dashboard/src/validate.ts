@@ -10,8 +10,8 @@ import { DATA_SLOTS, GRID, PANEL_SIZES, RIBBON, SCREEN, SIZES, TEXT } from './ru
 export interface Issue {
   /** Where: `panels.time.props.caption`. */
   path: string;
-  /** Which rule: `size`, `budget`, `text`, `schema`, `binding`, `grid`, `screen`. */
-  rule: 'size' | 'budget' | 'text' | 'schema' | 'binding' | 'grid' | 'screen';
+  /** Which rule: `size`, `budget`, `text`, `schema`, `binding`, `grid`, `screen`, or `overflow` (measured on screen, #681). */
+  rule: 'size' | 'budget' | 'text' | 'schema' | 'binding' | 'grid' | 'screen' | 'overflow';
   message: string;
 }
 
@@ -256,5 +256,70 @@ export function examplePanel(widget: WidgetDefinition, size: PanelSize, props: R
   const optional = Object.keys(widget.props).filter((key) => !widget.props[key]!.required && key in out);
   const spec: PanelSpec = { id: size, widget: widget.type, size, title: size, props: out };
   while (optional.length && panelReads(spec, widget) > SIZES[size].reads) delete out[optional.pop()!];
+  return spec;
+}
+
+/** Text props that name something rather than show words. */
+const NAMES = new Set(['control', 'entities', 'tool', 'tap_action', 'path', 'labels', 'fill_by', 'stroke_by']);
+
+/** Long but real words, Swedish included, for filling text props to their limit (#681). */
+const LONG_WORDS = ['Solcellsparken', 'fjärrvärme', 'Lindholmen', 'grannskapet', 'eftermiddag', 'Universeum', 'elnätet'];
+
+function longText(max: number): string {
+  let out = '';
+  for (let i = 0; ; i++) {
+    const next = out ? `${out} ${LONG_WORDS[i % LONG_WORDS.length]}` : LONG_WORDS[0]!;
+    if ([...next].length > max) return out || next.slice(0, max);
+    out = next;
+  }
+}
+
+function worstValue(prop: PropSpec, example: unknown, most?: number): unknown {
+  switch (prop.kind) {
+    case 'text':
+      return longText(prop.max);
+    case 'number':
+      // Numbers mean different things (an hour, a target, a count), so the example's stands;
+      // the wide numbers are in `value` props, which are what a panel shows big.
+      return typeof example === 'number' ? example : (prop.max ?? 98765.4);
+    case 'value':
+      return typeof example === 'string' ? longText(TEXT.value) : 98765.4;
+    case 'numbers':
+      return Array.from({ length: prop.maxLength }, (_, i) => 1000 + ((i * 7919) % 9000));
+    case 'list': {
+      const items = Array.isArray(example) ? example : [];
+      const count = Math.min(most ?? prop.max, prop.max);
+      return Array.from({ length: count }, (_, i) => {
+        const base = (items[i % Math.max(1, items.length)] ?? {}) as Record<string, unknown>;
+        const item: Record<string, unknown> = { ...base };
+        for (const [key, spec] of Object.entries(prop.item)) {
+          // Colours, shapes and choices keep the example's: only words and numbers grow.
+          if (spec.kind === 'text' || spec.kind === 'number' || spec.kind === 'value' || spec.kind === 'numbers') item[key] = worstValue(spec, base[key]);
+        }
+        return item;
+      });
+    }
+    default:
+      return example;
+  }
+}
+
+/**
+ * A panel of `widget` at `size` with the worst props the rules allow (#681): every text at its
+ * limit in long words, lists as long as the size takes, wide numbers, and the longest title.
+ * It must still fit its box: `pnpm --filter @mrstudio/dashboard fit` measures every widget at every size.
+ */
+export function worstCasePanel(widget: WidgetDefinition, size: PanelSize, example: Record<string, unknown> = widget.example ?? {}): PanelSpec {
+  const props: Record<string, unknown> = { ...example };
+  for (const [key, prop] of Object.entries(widget.props)) {
+    if (!(key in example) && !prop.required) continue;
+    // Names of things (a control, an entity set, a file) stay as they are: they are not shown.
+    if (NAMES.has(key)) continue;
+    // Bound values stay bound: they are filled from the source, not the props.
+    if (example[key] && typeof example[key] === 'object' && 'bind' in (example[key] as object)) continue;
+    props[key] = worstValue(prop, example[key], widget.listMax?.(key, size));
+  }
+  const spec = examplePanel(widget, size, props);
+  spec.title = longText(TEXT.title);
   return spec;
 }

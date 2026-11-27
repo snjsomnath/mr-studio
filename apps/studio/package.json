@@ -9,7 +9,7 @@
     "app-commands": "node ../../scripts/app-commands.mjs"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "^2.0.0",
+    "@tauri-apps/cli": "^2.12.6",
     "typescript": "^5.9.0"
   }
 }
