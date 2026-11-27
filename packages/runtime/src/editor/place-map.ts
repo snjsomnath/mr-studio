@@ -1,4 +1,4 @@
-import maplibregl from 'maplibre-gl';
+import maplibregl from '../maplibre';
 import type { GeoJSONSource, RasterTileSource, StyleSpecification } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 
