@@ -133,7 +133,15 @@ export function phonesPanel(store: Store, connection: Connection): HTMLElement {
   const box = document.createElement('input');
   box.type = 'checkbox';
   box.className = 'switch';
-  box.addEventListener('change', () => void connection.request('phones.pause', { paused: box.checked }).catch(() => (box.checked = !box.checked)));
+  // While the host has not answered, a participants update still carries the old state, so it must not flip the switch back.
+  let asking = 0;
+  box.addEventListener('change', () => {
+    asking++;
+    void connection
+      .request('phones.pause', { paused: box.checked })
+      .catch(() => (box.checked = !box.checked))
+      .finally(() => asking--);
+  });
   pause.append(box, el('span', '', t('Pause the phones')));
   const list = el('ul', 'phones-list');
   const tools = el('div', 'phones-tools');
@@ -171,7 +179,7 @@ export function phonesPanel(store: Store, connection: Connection): HTMLElement {
   });
   tools.append(end, log);
   const show = () => {
-    box.checked = store.state.session.phones_paused === true;
+    if (asking === 0) box.checked = store.state.session.phones_paused === true;
     const here = store.state.participants;
     list.replaceChildren(
       ...here.map((p) => {

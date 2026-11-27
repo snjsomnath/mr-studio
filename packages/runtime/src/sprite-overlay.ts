@@ -160,7 +160,7 @@ export class MapSpriteOverlay implements SpriteOverlay, CustomLayerInterface {
     this.map.triggerRepaint();
   }
 
-  /** Whether a sprite covers the point (table metres) within `radius`, for a click on the map (#425). Its picture's soft edge does not count. */
+  /** Whether a sprite covers the point (table metres) within `radius`, for a click on the map (#425). The outer part of its box, mostly soft edge, does not count. */
   hit(x: number, y: number, radius: number): boolean {
     if (this.opacity * this.gain <= 0) return false;
     const d = this.data;
@@ -170,7 +170,7 @@ export class MapSpriteOverlay implements SpriteOverlay, CustomLayerInterface {
       const dy = y - d[k + 1]!;
       const cos = d[k + 4]!;
       const sin = d[k + 5]!;
-      if (Math.abs(dx * cos + dy * sin) <= d[k + 2]! * 0.3 + radius && Math.abs(-dx * sin + dy * cos) <= d[k + 3]! * 0.3 + radius) return true;
+      if (Math.abs(dx * cos + dy * sin) <= d[k + 2]! * 0.45 + radius && Math.abs(-dx * sin + dy * cos) <= d[k + 3]! * 0.45 + radius) return true;
     }
     return false;
   }
