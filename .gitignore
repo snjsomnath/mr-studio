@@ -3,6 +3,9 @@ node_modules/
 dist/
 .DS_Store
 *.log
+# What a failed end-to-end case leaves behind (#545), and the screenshots e2e:shots keeps.
+e2e-results/
+e2e-screenshots/
 sites/*/scene/
 # Each table keeps its revision history here (#72); it never goes in a repository.
 .mrstudio/

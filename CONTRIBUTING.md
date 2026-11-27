@@ -77,7 +77,7 @@ real surfaces.
 ```bash
 pnpm test             # cargo test, type checks, SDK, runtime and MCP tests
 pnpm test:e2e         # a real browser against the real host (Playwright with Chromium)
-pnpm test:editor      # the same for the editor
+pnpm e2e -g "editor"  # only the end-to-end cases whose names match, after a build
 pnpm smoke chromium   # every core layer on and off in one engine: chromium, webkit or msedge
 ```
 

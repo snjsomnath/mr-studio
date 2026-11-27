@@ -7,7 +7,7 @@
 //   pnpm build && cargo build -p mrs-cli && node scripts/smoke.cjs [chromium|webkit|msedge] [screenshot-dir]
 //
 // CI runs it with WebKit on macOS (the Mac app's WKWebView) and with Edge on Windows (WebView2's
-// engine); scripts/e2e.cjs covers the rest in Chromium. When an engine trap is found, add a check
+// engine); the cases in scripts/e2e/ cover the rest in Chromium. When an engine trap is found, add a check
 // for it under "Known engine traps".
 const { spawn } = require('node:child_process');
 const fs = require('node:fs');
@@ -128,17 +128,33 @@ function launch() {
       // Map tiles come from the internet, which a test may not reach.
       await page.route(/basemaps\.cartocdn\.com|tile\.openstreetmap\.org|arcgisonline|api\.mapbox\.com/, (route) => route.fulfill({ status: 204 }));
       await page.addInitScript(FRAME_METER);
+      // A lost WebGL context is what an empty "Could not compile fragment shader" usually is:
+      // say so, with the canvas, so a failure names its cause rather than a blank shader log.
+      await page.addInitScript(() => {
+        addEventListener('webglcontextlost', (e) => console.error(`[smoke] WebGL context lost on canvas.${String(e.target?.className || '?').replace(/\s+/g, '.')}`), true);
+      });
       // WebKit reports a ResizeObserver that settles over two frames as an error; it is not one (the spec only notes it).
       // Which step was running, so an engine fault with no message of its own (a shader that will not compile) still points somewhere.
       page.on('pageerror', (e) => !/ResizeObserver loop/.test(e.message) && problems.push(`${url} (${step}): ${e.message}`));
       // Which file did not load, and why: a failed import names neither.
       page.on('requestfailed', (r) => /\/assets\//.test(r.url()) && console.warn(`  ${url} could not load ${r.url().replace(base, '')}: ${r.failure()?.errorText}`));
-      page.on('console', (m) => m.type() === 'error' && console.warn(`  ${url} console: ${m.text().slice(0, 200)}`));
+      page.on('console', (m) => {
+        if (m.type() !== 'error') return;
+        if (m.text().startsWith('[smoke] ')) problems.push(`${url} (${step}): ${m.text().slice(8)}`);
+        else console.warn(`  ${url} console: ${m.text().slice(0, 200)}`);
+      });
       await page.goto(base + url);
       return page;
     };
     // The desktop app's colour pass, exactly as the shell injects it on a surface.
     const table = await open('/table?intro=0', { width: 1500, height: 800 }, { path: path.join(root, 'apps/studio/src-tauri/src/colour.js') });
+    // What draws WebGL here: on a runner without a graphics card it is a software renderer.
+    const renderer = await table.evaluate(() => {
+      const gl = document.createElement('canvas').getContext('webgl2');
+      const info = gl?.getExtension('WEBGL_debug_renderer_info');
+      return gl ? String(info ? gl.getParameter(info.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER)) : 'no WebGL 2';
+    });
+    console.log(`  WebGL: ${renderer}`);
     await table.evaluate((s) => window.__mrsColour(s), COLOUR);
     const tv = await open('/tv', { width: 1920, height: 1080 });
     // With every core layer the controller's sides can run out of room, for example when a

@@ -138,16 +138,26 @@ jobs:
       - run: pnpm exec playwright install --with-deps chromium
       - run: pnpm build
       - run: cargo build -p mrs-cli
-      # The host, engine, every surface, the core layers, the editor and a phone (#261).
-      - run: node scripts/e2e.cjs e2e-screenshots
-      # The editor's flows (#67, #426): navigation, the list, the Format pane, dialogs, the tour.
-      - run: node scripts/e2e-editor.cjs e2e-screenshots/editor
+      # The host, engine, every surface, the core layers, the phones and the editor (#261), as named
+      # cases that each start from a fresh table and fail one by one (#545). The screenshots the
+      # release notes and the docs use are kept too.
+      - run: pnpm e2e
+        env:
+          E2E_SHOTS: e2e-screenshots
       - run: node scripts/smoke.cjs chromium e2e-screenshots
+        if: always()
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: e2e-screenshots
           path: e2e-screenshots
+          if-no-files-found: ignore
+      # A failed case's screenshots, trace and host log: `npx playwright show-trace <trace.zip>`.
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: e2e-results
+          path: e2e-results
           if-no-files-found: ignore
 
   smoke:

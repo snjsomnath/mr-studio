@@ -93,7 +93,7 @@ const numbers = {
     [['packages', 'mcp', 'src', 'devlayer.ts'], /export const LAYER_API = (\d+);/],
   ],
   PROTOCOL: [
-    [['crates', 'mrs-host', 'src', 'hub.rs'], /pub const PROTOCOL: u32 = (\d+);/],
+    [['crates', 'mrs-host', 'src', 'hub', 'mod.rs'], /pub const PROTOCOL: u32 = (\d+);/],
     [['packages', 'sdk', 'src', 'types.ts'], /export const PROTOCOL = (\d+);/],
   ],
 };

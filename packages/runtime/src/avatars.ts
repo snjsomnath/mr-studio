@@ -3,7 +3,7 @@
 import type { Participant } from '@mrstudio/sdk';
 import { t } from './i18n.ts';
 
-/** The host's animals (AVATARS in hub.rs), each with its picture and its name. */
+/** The host's animals (AVATARS in mrs-host hub/mod.rs), each with its picture and its name. */
 export const ANIMALS: Record<string, { emoji: string; name: string }> = {
   fox: { emoji: '🦊', name: 'Fox' },
   octopus: { emoji: '🐙', name: 'Octopus' },
@@ -19,7 +19,7 @@ export const ANIMALS: Record<string, { emoji: string; name: string }> = {
   bee: { emoji: '🐝', name: 'Bee' },
 };
 
-/** The host's moods (MOODS in hub.rs). */
+/** The host's moods (MOODS in mrs-host hub/mod.rs). */
 const MOODS: Record<string, string> = {
   curious: 'Curious',
   cosmic: 'Cosmic',
