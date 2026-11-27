@@ -754,6 +754,21 @@ function shownBy(store: Store, sequence: string): string | undefined {
   return store.state.scene.find((other) => store.state.layers[other]?.shown_by === sequence);
 }
 
+/** A layer's legend rows: what it published (`ctx.legend`), otherwise its layer.json's. */
+function legendRows(store: Store, id: string): LegendRow[] {
+  const state = store.state.layers[id];
+  if (!state) return [];
+  const published = (state.shared as { legend?: unknown } | undefined)?.legend;
+  const rows = Array.isArray(published) && published.length > 0 ? (published as LegendRow[]) : (store.manifest(state.layer)?.legend ?? []);
+  return rows.filter((row) => row && typeof row.label === 'string');
+}
+
+/** What an item is called on the controller: its button's name, else its layer's. */
+function itemName(store: Store, id: string): string {
+  const state = store.state.layers[id];
+  return String(state?.button?.name || (state ? store.manifest(state.layer)?.name : '') || '');
+}
+
 /**
  * The legend zone of the stage (#76): big swatches for what is on the table. The rows come
  * from what the layer published (`ctx.legend`, or a `legend` list in `shared`), otherwise from
@@ -771,8 +786,15 @@ function legendZone(id: string, store: Store): { element: HTMLElement; sync(stat
       const source = (store.manifest(state.layer)?.sequence ? shownBy(store, id) : undefined) ?? id;
       const from = source ? store.state.layers[source] : undefined;
       const shared = (from?.shared ?? {}) as { legend?: unknown; legend_highlight?: unknown; legend_shown?: unknown };
-      const published = Array.isArray(shared.legend) ? (shared.legend as LegendRow[]) : [];
-      const rows = (published.length > 0 ? published : (from ? store.manifest(from.layer)?.legend : undefined) ?? []).filter((row) => row && typeof row.label === 'string');
+      const own = source ? legendRows(store, source) : [];
+      // A layer of items with no legend of its own (an X-ray glass, a Reveal line, #637) shows its
+      // items' legends, each under the item's name when more than one has rows.
+      const items = own.length > 0 || !source ? [] : store.state.scene.filter((other) => store.state.layers[other]?.parent === source);
+      const parts = items.map((item) => ({ name: itemName(store, item), rows: legendRows(store, item) })).filter((part) => part.rows.length > 0);
+      const rows =
+        own.length > 0 || parts.length === 0
+          ? own
+          : parts.flatMap(({ name, rows }) => rows.map((row) => (parts.length > 1 && name ? { ...row, id: `${name}/${row.id ?? row.label}`, group: row.group ? `${name}: ${row.group}` : name } : row)));
       const key = (row: LegendRow) => row.id ?? row.label;
       // The reveal: sub-steps named like the rows say which rows are on the table yet.
       const titles = from?.step?.titles ?? [];
@@ -1185,6 +1207,8 @@ export class Controller {
       this.creditMaps();
       // The slideshow's stage speaks for the layer it shows: its legend and step names follow that layer.
       if (state.shown_by && store.state.layers[state.shown_by]) this.cards.get(state.shown_by)?.sync(store.state.layers[state.shown_by]!);
+      // An X-ray glass or a Reveal line shows its items' legends (#637): they follow the items.
+      if (state.parent && store.state.layers[state.parent]) this.cards.get(state.parent)?.sync(store.state.layers[state.parent]!);
       // A button moves when its author changes its side, and the buttons shared out around it may move too.
       if (this.right && this.sides.has(id) && this.layoutKey() !== this.shown) this.arrange();
     });
