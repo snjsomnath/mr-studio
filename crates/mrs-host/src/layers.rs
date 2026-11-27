@@ -196,6 +196,25 @@ impl LayerDef {
             }
             actions.push(aid.to_string());
         }
+        // Editor dialogs (#644) hold controls and actions the layer has.
+        for d in manifest["dialogs"].as_array().map(Vec::as_slice).unwrap_or(&[]) {
+            let did = d["id"].as_str().filter(|s| !s.is_empty()).ok_or_else(|| anyhow!("a dialog has no id"))?;
+            if d["label"].as_str().is_none_or(str::is_empty) {
+                bail!("dialog '{did}' needs a label");
+            }
+            for c in d["controls"].as_array().map(Vec::as_slice).unwrap_or(&[]) {
+                let cid = c.as_str().unwrap_or_default();
+                if !controls.iter().any(|x| x.id == cid) {
+                    bail!("dialog '{did}' lists '{cid}', which is not one of the layer's controls");
+                }
+            }
+            for a in d["actions"].as_array().map(Vec::as_slice).unwrap_or(&[]) {
+                let aid = a.as_str().unwrap_or_default();
+                if !actions.iter().any(|x| x == aid) {
+                    bail!("dialog '{did}' lists the action '{aid}', which the layer does not have");
+                }
+            }
+        }
         check_voices(&manifest["sound"])?;
         match &manifest["stage"] {
             Value::Null => {}
@@ -997,6 +1016,16 @@ mod tests {
             json!({ "api": 1, "id": "t", "controls": [{ "id": "x", "type": "select", "options": [{ "value": "a" }], "default": "b" }] })
         )
         .is_err());
+        // A dialog (#644) holds the layer's own controls and actions only.
+        let with = |dialog: Value| {
+            LayerDef::parse(
+                json!({ "api": 1, "id": "t", "controls": [{ "id": "x", "type": "toggle", "default": true }], "actions": [{ "id": "go" }], "dialogs": [dialog] }),
+            )
+        };
+        assert!(with(json!({ "id": "d", "label": "Design", "controls": ["x"], "actions": ["go"] })).is_ok());
+        assert!(with(json!({ "id": "d", "label": "Design", "controls": ["y"] })).is_err());
+        assert!(with(json!({ "id": "d", "label": "Design", "actions": ["stop"] })).is_err());
+        assert!(with(json!({ "id": "d", "controls": ["x"] })).is_err());
     }
 
     #[test]

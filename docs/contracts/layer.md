@@ -165,6 +165,26 @@ picking on the table and the controls on the controller, so the layer writes no 
 
 `samples/service-example` has a layer with entities that asks a model again when a building changes.
 
+## Editor dialogs
+
+Settings that need room can open in a dialog of their own in the editor (#644), from one button
+in the layer's settings. The Field walk's walk designer is one:
+
+```jsonc
+"dialogs": [{
+  "id": "design",
+  "label": "Design the walk",                 // the button ("Design the walk…") and the title
+  "lead": "What visitors pick and say at each spot.",
+  "controls": ["kinds", "feeling", "media"],  // the layer's own controls, in order
+  "actions": ["save"],                        // named actions (see below), as buttons
+  "preview": "phone-spot"                     // optional: the phone's Mark a spot sheet, live
+}]
+```
+
+In the editor, the listed controls live only in the dialog, so each setting has one home there.
+The controller lists them as it would without the dialog. Every control and action must be the
+layer's own; the host refuses the layer otherwise.
+
 ## The controller stage
 
 A layer can have its own app in the controller's centre (#283), such as a map to choose on, whose

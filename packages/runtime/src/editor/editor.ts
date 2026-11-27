@@ -3272,10 +3272,91 @@ export class Editor {
       return { row, eye, reset, w, fallback };
     });
     // Long lists are split as the controller splits them: the main settings, then "More settings" (#64).
-    const main = rows.filter((r) => r.w.control.tier !== 'more' && r.w.control.tier !== 'state');
-    const more = rows.filter((r) => r.w.control.tier === 'more');
+    // Settings that need room live in a dialog of their own (#644), opened from one button here.
+    const dialogs = manifest.dialogs ?? [];
+    const inDialog = new Set(dialogs.flatMap((d) => d.controls));
+    const main = rows.filter((r) => !inDialog.has(r.w.control.id) && r.w.control.tier !== 'more' && r.w.control.tier !== 'state');
+    const more = rows.filter((r) => !inDialog.has(r.w.control.id) && r.w.control.tier === 'more');
     const controls = el('div', 'controls');
     controls.append(shown, stackRow, ...main.map((r) => r.row));
+    const previews: (() => void)[] = [];
+    for (const spec of dialogs) {
+      const open = button('ed-dialog-open', `${spec.label}\u2026`, spec.preview === 'phone-spot' ? 'phone' : 'settings');
+      open.dataset.dialog = spec.id;
+      const box = el('dialog', `ed-dialog is-layer-dialog is-${spec.id}`);
+      box.ariaLabel = spec.label;
+      const head = el('header', 'ed-dialog-head');
+      const close = el('button', 'ed-icon-button', '\u00d7');
+      close.type = 'button';
+      close.ariaLabel = 'Close';
+      close.addEventListener('click', () => box.close());
+      const words = el('div');
+      words.append(el('h2', undefined, spec.label));
+      if (spec.lead) words.append(el('p', 'wz-lead', spec.lead));
+      head.append(words, close);
+      const body = el('div', 'ed-dialog-body ed-layer-dialog');
+      body.dataset.home = `dialog:${id}:${spec.id}`;
+      const list = el('div', 'controls');
+      for (const cid of spec.controls) {
+        const r = rows.find((x) => x.w.control.id === cid);
+        if (r) list.append(r.row);
+      }
+      const side = el('div', 'ed-layer-dialog-main');
+      side.append(list);
+      const labels = new Map((manifest.actions ?? []).map((a) => [a.id, a.label ?? a.id]));
+      if (spec.actions?.length) {
+        const bar = el('div', 'ed-layer-dialog-actions');
+        const said = el('p', 'ed-layer-dialog-said');
+        said.setAttribute('role', 'status');
+        for (const aid of spec.actions) {
+          const act = button('ed-button', labels.get(aid) ?? aid, aid === 'save' ? 'save' : undefined);
+          act.dataset.action = aid;
+          act.addEventListener('click', async () => {
+            act.disabled = true;
+            said.textContent = 'Working\u2026';
+            try {
+              const answer = await this.connection.request<{ saved?: string; summary?: string } | null>('layer.action', { layer: id, action: aid });
+              said.textContent = answer?.saved ? `Saved as ${answer.saved}${answer.summary ? `: ${answer.summary}` : ''}.` : 'Done.';
+            } catch (error) {
+              said.textContent = (error as Error).message;
+            } finally {
+              act.disabled = false;
+            }
+          });
+          bar.append(act);
+        }
+        bar.append(said);
+        side.append(bar);
+      }
+      body.append(side);
+      if (spec.preview === 'phone-spot') {
+        const frame = el('figure', 'ed-phone-preview');
+        const screen = el('div', 'ed-phone-screen');
+        frame.append(screen, el('figcaption', undefined, 'What a visitor\u2019s phone shows'));
+        body.append(frame);
+        let last = '';
+        const draw = () => {
+          const site = this.store.state.site;
+          const params = this.store.state.layers[id]?.params;
+          const key = JSON.stringify(params ?? {});
+          if (!box.open || !site || key === last) return;
+          last = key;
+          void import('../field-phone.ts').then(({ spotPreview }) => screen.replaceChildren(spotPreview(site, params)));
+        };
+        previews.push(draw);
+        box.addEventListener('close', () => (last = ''));
+      }
+      box.addEventListener('cancel', (event) => {
+        event.preventDefault();
+        box.close();
+      });
+      box.append(head, body);
+      open.addEventListener('click', () => {
+        box.showModal();
+        for (const draw of previews) draw();
+      });
+      controls.append(open, box);
+    }
     const heading = el('h3', 'ed-settings-head', title);
     const tools = el('span', 'ed-settings-tools');
     if (rows.some((r) => r.fallback !== undefined)) {
@@ -3318,6 +3399,7 @@ export class Editor {
     this.sync.set(id, (state) => {
       previous?.(state);
       power.checked = item ? this.comesOn(id) : state.active;
+      for (const draw of previews) draw();
       for (const { row, eye, reset, w, fallback } of rows) {
         row.hidden = !isVisible(w.control, state.params);
         const value = state.params[w.control.id];

@@ -430,7 +430,7 @@ export function fieldCard(store: Store, connection: Connection): HTMLElement {
 }
 
 /** The sheet that makes one spot: where, a photo or a sound, a note, Save. */
-function spotSheet(site: SiteInfo, design: WalkDesign, save: (spot: Kept) => Promise<void>): HTMLElement {
+function spotSheet(site: SiteInfo, design: WalkDesign, save: (spot: Kept) => Promise<void>, options: { preview?: boolean } = {}): HTMLElement {
   const sheet = el('div', 'profile-sheet field-sheet');
   sheet.setAttribute('role', 'dialog');
   sheet.setAttribute('aria-modal', 'true');
@@ -491,7 +491,7 @@ function spotSheet(site: SiteInfo, design: WalkDesign, save: (spot: Kept) => Pro
     check();
   };
   let watch: number | undefined;
-  if (navigator.geolocation && window.isSecureContext) {
+  if (!options.preview && navigator.geolocation && window.isSecureContext) {
     watch = navigator.geolocation.watchPosition(
       (p) => {
         if (place?.placed === 'map') return;
@@ -717,6 +717,20 @@ function spotSheet(site: SiteInfo, design: WalkDesign, save: (spot: Kept) => Pro
   };
 
   card.append(el('h2', 'field-sheet-title', t('Mark a spot')), map, where, kinds, feelings, choose, photoInput, soundInput, preview, working, note, actions);
+  if (options.preview) {
+    const [lon, lat] = tableToLonLat(site, 0.42, 0.45);
+    place = { lon, lat, placed: 'map' };
+  }
   drawPlace();
+  return sheet;
+}
+
+/**
+ * The Mark a spot sheet as a visitor's phone shows it for a walk designed with these Field walk
+ * settings (#644): for the editor's walk designer to show beside the settings. It does nothing.
+ */
+export function spotPreview(site: SiteInfo, params: Record<string, unknown> | undefined): HTMLElement {
+  const sheet = spotSheet(site, designOf(params), async () => {}, { preview: true });
+  sheet.inert = true;
   return sheet;
 }
