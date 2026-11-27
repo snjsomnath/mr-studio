@@ -354,7 +354,7 @@ export class TableView {
     return {
       set: (shapes: Shape[]) => {
         if (removed) return;
-        (map.getSource(source) as maplibregl.GeoJSONSource).setData({
+        void (map.getSource(source) as maplibregl.GeoJSONSource).setData({
           type: 'FeatureCollection',
           features: shapes.map((shape) => ({ type: 'Feature', geometry: shape.geometry, properties: shape.colour ? { colour: shape.colour } : {} })),
         });

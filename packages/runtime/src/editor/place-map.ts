@@ -281,7 +281,7 @@ export class PlaceMap {
   /** Draws the 3D-printing tile grid, `tile_m` metres of ground on a side; null hides it. */
   tiles(tile_m: number | null): void {
     this.tile_m = tile_m && tile_m > 0 ? tile_m : null;
-    (this.map.getSource('tiles') as GeoJSONSource | undefined)?.setData(this.tileGeojson());
+    void (this.map.getSource('tiles') as GeoJSONSource | undefined)?.setData(this.tileGeojson());
   }
 
   private tileGeojson(): { type: 'FeatureCollection'; features: { type: 'Feature'; properties: object; geometry: { type: 'MultiLineString'; coordinates: [number, number][][] } }[] } {
@@ -303,8 +303,8 @@ export class PlaceMap {
     } else this.place = { ...this.place, ...patch };
     if (redraw) this.draw();
     else {
-      (this.map.getSource('table') as GeoJSONSource | undefined)?.setData(this.geojson());
-      (this.map.getSource('tiles') as GeoJSONSource | undefined)?.setData(this.tileGeojson());
+      void (this.map.getSource('table') as GeoJSONSource | undefined)?.setData(this.geojson());
+      void (this.map.getSource('tiles') as GeoJSONSource | undefined)?.setData(this.tileGeojson());
     }
     this.onChange(this.place);
   }
@@ -317,8 +317,8 @@ export class PlaceMap {
   }
 
   private draw(): void {
-    (this.map.getSource('table') as GeoJSONSource | undefined)?.setData(this.geojson());
-    (this.map.getSource('tiles') as GeoJSONSource | undefined)?.setData(this.tileGeojson());
+    void (this.map.getSource('table') as GeoJSONSource | undefined)?.setData(this.geojson());
+    void (this.map.getSource('tiles') as GeoJSONSource | undefined)?.setData(this.tileGeojson());
     const place = this.place;
     const markers = [this.centre, this.corner];
     if (!place) {
