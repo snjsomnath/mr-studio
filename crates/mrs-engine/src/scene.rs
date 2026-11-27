@@ -15,6 +15,10 @@ pub struct SceneData {
     pub canopy: Vec<f32>,
     /// 1 where the ground is water (a river, a lake, the sea), else 0 (#343).
     pub water: Vec<u8>,
+    /// What covers the ground, one [`Surface`] per cell; 0 where the site does not say (#624).
+    pub surface: Vec<u8>,
+    /// The soil under it, one [`Soil`] per cell; 0 where the site does not say (#624).
+    pub soil: Vec<u8>,
     /// Buildings around the table that only shape the wind (#488). Nothing draws them.
     pub context: Option<ContextRing>,
 }
@@ -22,7 +26,16 @@ pub struct SceneData {
 impl SceneData {
     pub fn flat(grid: Grid) -> Self {
         let n = grid.len();
-        Self { grid, dtm: vec![0.0; n], dsm: vec![0.0; n], canopy: vec![0.0; n], water: vec![0; n], context: None }
+        Self {
+            grid,
+            dtm: vec![0.0; n],
+            dsm: vec![0.0; n],
+            canopy: vec![0.0; n],
+            water: vec![0; n],
+            surface: vec![0; n],
+            soil: vec![0; n],
+            context: None,
+        }
     }
 }
 
@@ -64,6 +77,10 @@ pub struct Scene {
     pub canopy: Vec<f32>,
     /// 1 where the ground is water.
     pub water: Vec<u8>,
+    /// What covers the ground, one [`Surface`] per cell (#624).
+    pub surface: Vec<u8>,
+    /// The soil under it, one [`Soil`] per cell (#624).
+    pub soil: Vec<u8>,
     /// Buildings around the table, for the wind only (#488).
     pub context: Option<ContextRing>,
     /// Highest point of the top surface or canopy.
@@ -91,6 +108,18 @@ impl Scene {
         if data.water.len() != n {
             return Err(EngineError::InvalidScene(format!("water has {} values, grid has {n}", data.water.len())));
         }
+        if data.surface.len() != n {
+            return Err(EngineError::InvalidScene(format!("surface has {} values, grid has {n}", data.surface.len())));
+        }
+        if let Some(bad) = data.surface.iter().find(|&&s| Surface::from_u8(s).is_none()) {
+            return Err(EngineError::InvalidScene(format!("surface {bad} is not a known surface")));
+        }
+        if data.soil.len() != n {
+            return Err(EngineError::InvalidScene(format!("soil has {} values, grid has {n}", data.soil.len())));
+        }
+        if let Some(bad) = data.soil.iter().find(|&&s| Soil::from_u8(s).is_none()) {
+            return Err(EngineError::InvalidScene(format!("soil {bad} is not a known soil")));
+        }
         if let Some(ring) = &data.context {
             let want = ContextRing::len_for(&data.grid, ring.margin);
             if ring.solid.len() != want {
@@ -113,6 +142,8 @@ impl Scene {
             dsm: data.dsm,
             canopy: data.canopy,
             water: data.water,
+            surface: data.surface,
+            soil: data.soil,
             context: data.context,
             max_height,
             min_height,
@@ -123,5 +154,117 @@ impl Scene {
 
     pub fn is_solid(&self, index: usize) -> bool {
         self.dsm[index] - self.dtm[index] > SOLID_THRESHOLD_M
+    }
+}
+
+/// What covers the ground of a cell (#624, #625). The value is what `SceneData::surface` stores.
+/// Stormwater gives each its own infiltration and roughness; `Unknown` takes the kernel's site-wide values.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(u8)]
+pub enum Surface {
+    Unknown = 0,
+    /// Asphalt, concrete, roofs at ground level, sealed paving: almost nothing soaks in.
+    Sealed = 1,
+    /// Paving stones, setts, cobbles: a little soaks in through the joints.
+    Paving = 2,
+    /// Gravel and compacted ground.
+    Gravel = 3,
+    /// Lawns, parks, meadows, fields.
+    Grass = 4,
+    /// Bare earth, sand, open ground without plants.
+    Bare = 5,
+    /// Woodland and scrub.
+    Woodland = 6,
+    /// A planted dip built to hold rain and let it soak in.
+    RainGarden = 7,
+    /// A gully or inlet that takes water into a pipe.
+    Drain = 8,
+}
+
+impl Surface {
+    pub const ALL: [Surface; 9] = [
+        Surface::Unknown,
+        Surface::Sealed,
+        Surface::Paving,
+        Surface::Gravel,
+        Surface::Grass,
+        Surface::Bare,
+        Surface::Woodland,
+        Surface::RainGarden,
+        Surface::Drain,
+    ];
+
+    pub fn from_u8(value: u8) -> Option<Self> {
+        Self::ALL.get(value as usize).copied()
+    }
+
+    /// The name site files, params and status use.
+    pub fn name(self) -> &'static str {
+        match self {
+            Surface::Unknown => "unknown",
+            Surface::Sealed => "sealed",
+            Surface::Paving => "paving",
+            Surface::Gravel => "gravel",
+            Surface::Grass => "grass",
+            Surface::Bare => "bare",
+            Surface::Woodland => "woodland",
+            Surface::RainGarden => "rain_garden",
+            Surface::Drain => "drain",
+        }
+    }
+
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|s| s.name() == name)
+    }
+
+    /// Whether water can soak through it into the soil below.
+    pub fn is_open(self) -> bool {
+        !matches!(self, Surface::Sealed | Surface::Paving | Surface::Drain)
+    }
+}
+
+/// The soil under a cell's surface (#624): how fast open ground soaks up rain. The value is what
+/// `SceneData::soil` stores.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(u8)]
+pub enum Soil {
+    Unknown = 0,
+    Clay = 1,
+    Silt = 2,
+    /// Till (morän): a mix of everything from clay to stones.
+    Till = 3,
+    Sand = 4,
+    Gravel = 5,
+    Peat = 6,
+    /// Bedrock at the surface.
+    Rock = 7,
+    /// Made ground: fill under streets and yards.
+    Fill = 8,
+}
+
+impl Soil {
+    pub const ALL: [Soil; 9] =
+        [Soil::Unknown, Soil::Clay, Soil::Silt, Soil::Till, Soil::Sand, Soil::Gravel, Soil::Peat, Soil::Rock, Soil::Fill];
+
+    pub fn from_u8(value: u8) -> Option<Self> {
+        Self::ALL.get(value as usize).copied()
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Soil::Unknown => "unknown",
+            Soil::Clay => "clay",
+            Soil::Silt => "silt",
+            Soil::Till => "till",
+            Soil::Sand => "sand",
+            Soil::Gravel => "gravel",
+            Soil::Peat => "peat",
+            Soil::Rock => "rock",
+            Soil::Fill => "fill",
+        }
+    }
+
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|s| s.name() == name)
     }
 }

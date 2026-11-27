@@ -259,6 +259,59 @@ pub struct SceneSpec {
     /// table's edge. Nothing draws them.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub context: Option<WindContext>,
+    /// What covers the ground and the soil under it (#624): where stormwater soaks in, runs fast
+    /// or drains away. Left out, the site's `roads`, `streets` and `walkways` datasets are read
+    /// as OpenStreetMap surfaces; `[]` reads none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub surfaces: Option<Vec<SurfaceSource>>,
+}
+
+/// One source of ground surfaces or soils (#624). Exactly one of `data` and `path`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct SurfaceSource {
+    /// A dataset of the site, by its name in `data` (or `roads`, `trees`… of the scene).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub data: Option<String>,
+    /// Or a file in the site folder: GeoJSON, or a GeoTIFF of class codes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+    /// How to read it. Default `osm`.
+    #[serde(default)]
+    pub classes: SurfaceClasses,
+    /// The property that names the surface or soil, for `kind` (default `kind`) and `soil`
+    /// (default: SGU's `jg2_tx`, else the first text property that names a soil).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub property: Option<String>,
+    /// How wide a point is on the ground, metres. Default by surface: a drain 1, a rain garden 4, else 3.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub size_m: Option<f64>,
+    /// `EPSG:<code>` of a GeoTIFF that does not name its coordinate system itself.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub crs: Option<String>,
+}
+
+impl SurfaceSource {
+    pub fn is_geotiff(path: &str) -> bool {
+        let path = path.to_ascii_lowercase();
+        path.ends_with(".tif") || path.ends_with(".tiff")
+    }
+}
+
+/// How a surface source names what is on the ground (#624).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SurfaceClasses {
+    /// OpenStreetMap tags: `surface`, `landuse`, `leisure`, `natural`, `amenity`, `highway`. Roads and
+    /// paths (lines) are laid at a width for their class, or their `width` tag.
+    #[default]
+    Osm,
+    /// Naturvårdsverket's Nationella marktäckedata: a GeoTIFF of NMD class codes.
+    Nmd,
+    /// Soil types under the surface: SGU's soil map (Jordarter, `jg2_tx`), or soil names in English.
+    Soil,
+    /// A property naming the surface outright: `rain garden`, `drain`, `asphalt`, `grass`… (a field walk's kinds).
+    Kind,
 }
 
 /// Footprints around the table, for the wind kernel only (#488).

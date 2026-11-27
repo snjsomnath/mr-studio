@@ -23,5 +23,5 @@ pub use error::EngineError;
 pub use field::{encode_frame, Encoding, Field, FRAME_HEADER_LEN};
 pub use grid::Grid;
 pub use kernel::{FieldInfo, Job, JobState, JobStatus, Kernel, KernelInfo, KernelKind};
-pub use scene::{ContextRing, Scene, SceneData, SOLID_THRESHOLD_M};
+pub use scene::{ContextRing, Scene, SceneData, Soil, Surface, SOLID_THRESHOLD_M};
 pub use twin::{SurfaceKind, TwinMesh, TwinOptions, TWIN_HEADER_LEN, TWIN_MAGIC, TWIN_VERSION};

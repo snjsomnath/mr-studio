@@ -387,6 +387,13 @@ fn validate(dir: &Path) -> anyhow::Result<(Site, mrs_engine::SceneData)> {
     if site.manifest.scene.water.is_some() {
         println!("  water      {:.1}% of cells", stats.water_fraction * 100.0);
     }
+    if stats.surface_fraction > 0.0 || stats.soil_fraction > 0.0 {
+        println!(
+            "  surfaces   {:.1}% of cells have a surface, {:.1}% a soil, for stormwater",
+            stats.surface_fraction * 100.0,
+            stats.soil_fraction * 100.0
+        );
+    }
     if let Some(context) = &site.manifest.scene.context {
         println!("  context    {} buildings within {} m of the table, for the wind", stats.context_buildings, context.reach_m);
     }

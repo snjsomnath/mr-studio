@@ -2,7 +2,7 @@
 
 use std::time::{Duration, Instant};
 
-use mrs_engine::{testing, Backend, Engine, EngineConfig, EngineError, Field, Grid, JobId, JobState, JobStatus, SceneData};
+use mrs_engine::{testing, Backend, Engine, EngineConfig, EngineError, Field, Grid, JobId, JobState, JobStatus, SceneData, Soil, Surface};
 use serde_json::{json, Value};
 
 fn engine(backend: Backend, scene: SceneData) -> Option<Engine> {
@@ -192,6 +192,96 @@ fn infiltration_soaks_up_light_rain_and_a_dry_site_settles() {
     assert!(status.info["seconds"].as_f64().unwrap() >= 300.0);
 }
 
+/// A flat site, half sealed (columns left of the middle) and half something else, with no edge to run off.
+fn halves(right: Surface, soil: Soil) -> SceneData {
+    let mut scene = ground(32, 32, 2.0, |_, _| 1.0);
+    for row in 0..32usize {
+        for col in 0..32usize {
+            let i = row * 32 + col;
+            // A wall all round keeps the water in.
+            if row == 0 || col == 0 || row == 31 || col == 31 || col == 16 {
+                scene.dsm[i] = 5.0;
+            }
+            scene.surface[i] = if col < 16 { Surface::Sealed as u8 } else { right as u8 };
+            scene.soil[i] = soil as u8;
+        }
+    }
+    scene
+}
+
+#[test]
+fn each_surface_soaks_up_its_own_way() {
+    // 20 mm/h on asphalt stays; on grass over sand (30 mm/h) it all soaks in.
+    let mut engine = engine(Backend::Cpu, halves(Surface::Grass, Soil::Sand)).unwrap();
+    let job = engine.create_job("stormwater", &json!({ "pace": "fast", "rain_mm_h": 20, "resolution": 32, "roofs": false })).unwrap();
+    let status = run(&mut engine, job, 3000);
+    let depth = engine.read_field(job, "depth").unwrap();
+    assert!(at(&depth, 8, 16) > 0.0, "asphalt should hold the rain");
+    assert_eq!(at(&depth, 24, 16), 0.0, "grass over sand should soak it all up");
+    assert!(status.info["surfaces"]["sealed"].as_f64().unwrap() > 0.4);
+    assert!(status.info["soils"]["sand"].as_f64().unwrap() > 0.9);
+    // Grass over clay (1 mm/h) cannot keep up.
+    let mut engine = engine_for(halves(Surface::Grass, Soil::Clay));
+    let job = engine.create_job("stormwater", &json!({ "pace": "fast", "rain_mm_h": 20, "resolution": 32, "roofs": false })).unwrap();
+    run(&mut engine, job, 3000);
+    assert!(at(&engine.read_field(job, "depth").unwrap(), 24, 16) > 0.0, "clay should not keep up with 20 mm/h");
+    // With surfaces off, both halves soak up the site-wide 30 mm/h.
+    let mut engine = engine_for(halves(Surface::Grass, Soil::Clay));
+    let job = engine
+        .create_job(
+            "stormwater",
+            &json!({ "pace": "fast", "rain_mm_h": 20, "resolution": 32, "roofs": false, "surfaces": false, "infiltration_mm_h": 30 }),
+        )
+        .unwrap();
+    run(&mut engine, job, 3000);
+    assert!(engine.read_field(job, "depth").unwrap().data.iter().all(|&d| d == 0.0));
+}
+
+fn engine_for(scene: SceneData) -> Engine {
+    engine(Backend::Cpu, scene).unwrap()
+}
+
+#[test]
+fn a_drain_empties_a_pool_and_a_rain_garden_holds_one() {
+    // A bowl with a drain at the bottom ends up with far less water than without.
+    let with_drain = |drain: bool| {
+        let mut scene = bowl(32);
+        if drain {
+            // Three by three gullies at the bottom.
+            for row in 15..18 {
+                for col in 15..18 {
+                    scene.surface[row * 32 + col] = Surface::Drain as u8;
+                }
+            }
+        }
+        let mut engine = engine_for(scene);
+        let job = engine.create_job("stormwater", &fast(json!({ "rain_mm_h": 60, "resolution": 32 }))).unwrap();
+        run_exactly(&mut engine, job, 2000);
+        volume(&engine.read_field(job, "depth").unwrap(), 2.0)
+    };
+    let (kept, drained) = (with_drain(false), with_drain(true));
+    assert!(drained < 0.5 * kept, "a drain should take the pool away: {drained} m³ vs {kept} m³");
+    // A rain garden is a dip: in a storm on a flat site, its water is deeper than the ground around it.
+    let mut scene = ground(32, 32, 2.0, |_, _| 1.0);
+    for row in 12..20usize {
+        for col in 12..20usize {
+            scene.surface[row * 32 + col] = Surface::RainGarden as u8;
+        }
+    }
+    let mut engine = engine_for(scene.clone());
+    let job = engine.create_job("stormwater", &fast(json!({ "rain_mm_h": 150, "resolution": 32 }))).unwrap();
+    let status = run_exactly(&mut engine, job, 5000);
+    let depth = engine.read_field(job, "depth").unwrap();
+    assert!(at(&depth, 16, 16) > at(&depth, 4, 16) + 0.01, "the garden's dip should gather water");
+    assert!(status.info["surfaces"]["rain_garden"].as_f64().unwrap() > 0.05);
+    // Without surfaces it is plain ground again.
+    let mut engine = engine_for(scene);
+    let job = engine.create_job("stormwater", &fast(json!({ "rain_mm_h": 150, "resolution": 32, "surfaces": false }))).unwrap();
+    run_exactly(&mut engine, job, 5000);
+    let depth = engine.read_field(job, "depth").unwrap();
+    assert!((at(&depth, 16, 16) - at(&depth, 4, 16)).abs() < 0.005);
+}
+
 #[test]
 fn params_are_validated_and_a_new_storm_starts_dry() {
     let mut engine = engine(Backend::Cpu, bowl(64)).unwrap();
@@ -239,13 +329,22 @@ fn realtime_pace_follows_the_wall_clock() {
 #[test]
 fn gpu_matches_cpu_reference() {
     const STEPS: u64 = 400;
-    let cases: [(f32, Value); 3] = [
+    let cases: [(f32, Value); 4] = [
         (0.0, fast(json!({ "rain_mm_h": 150, "resolution": 160 }))),
         (-92.6, fast(json!({ "rain_mm_h": 80, "resolution": 120, "infiltration_mm_h": 8, "manning": 0.05 }))),
         (0.0, fast(json!({ "rain_mm_h": 200, "resolution": 80, "roofs": false, "trees": false }))),
+        // Surfaces and soils (#624), with rain gardens and drains (#625): the town's surfaces are painted below.
+        (1.0, fast(json!({ "rain_mm_h": 120, "resolution": 160, "infiltration_mm_h": 6 }))),
     ];
     for (rotation, params) in cases {
-        let scene = testing::town(160, 96, 4.0, rotation);
+        let mut scene = testing::town(160, 96, 4.0, if rotation == 1.0 { 0.0 } else { rotation });
+        if rotation == 1.0 {
+            for (i, (surface, soil)) in scene.surface.iter_mut().zip(scene.soil.iter_mut()).enumerate() {
+                let (col, row) = (i % 160, i / 160);
+                *surface = Surface::ALL[(col / 7 + row / 5) % Surface::ALL.len()] as u8;
+                *soil = Soil::ALL[(col / 11 + row / 3) % Soil::ALL.len()] as u8;
+            }
+        }
         let Some(mut gpu) = engine(Backend::Gpu, scene.clone()) else { return };
         let mut cpu = engine(Backend::Cpu, scene).unwrap();
         let (gj, cj) = (gpu.create_job("stormwater", &params).unwrap(), cpu.create_job("stormwater", &params).unwrap());

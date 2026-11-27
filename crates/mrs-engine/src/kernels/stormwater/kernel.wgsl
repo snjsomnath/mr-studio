@@ -7,17 +7,17 @@ struct Pass {
     ny: u32,
     dt: f32,
     g: f32,
-    manning2: f32,
     cell_m: f32,
     rain: f32,
-    infiltration: f32,
+    pad0: f32,
+    pad1: f32,
 }
 
 @group(0) @binding(0) var<uniform> p: Pass;
 // Per cell: bit 0 solid, bit 1 outfall.
 @group(0) @binding(1) var<storage, read> flags: array<u32>;
 @group(0) @binding(2) var<storage, read> bed: array<f32>;
-// Per cell: rain multiplier, infiltration multiplier.
+// Per cell: rain multiplier, loss rate (m/s: soaking in plus drains), Manning n squared.
 @group(0) @binding(3) var<storage, read> aux: array<f32>;
 @group(0) @binding(4) var<storage, read_write> h: array<f32>;
 @group(0) @binding(5) var<storage, read_write> qx: array<f32>;
@@ -44,7 +44,8 @@ fn face(q: f32, a: u32, b: u32) -> f32 {
         return 0.0;
     }
     let slope = (eb - ea) / p.cell_m;
-    let friction = 1.0 + p.g * p.dt * p.manning2 * abs(q) / pow(depth, 7.0 / 3.0);
+    let manning2 = max(aux[a * 3u + 2u], aux[b * 3u + 2u]);
+    let friction = 1.0 + p.g * p.dt * manning2 * abs(q) / pow(depth, 7.0 / 3.0);
     let next = (q - p.g * depth * p.dt * slope) / friction;
     let limit = p.cell_m / (4.0 * p.dt);
     if (next > 0.0) {
@@ -94,8 +95,8 @@ fn cells(@builtin(global_invocation_id) id: vec3<u32>) {
             north = qy[c - p.nx];
         }
         let inflow = west - qx[c] + north - qy[c];
-        let wet = h[c] + p.dt * p.rain * aux[c * 2u] + p.dt * inflow / p.cell_m;
-        depth = max(wet - p.dt * p.infiltration * aux[c * 2u + 1u], 0.0);
+        let wet = h[c] + p.dt * p.rain * aux[c * 3u] + p.dt * inflow / p.cell_m;
+        depth = max(wet - p.dt * aux[c * 3u + 1u], 0.0);
         if (depth > H_VELOCITY) {
             u = clamp(0.5 * (west + qx[c]) / depth, -V_MAX, V_MAX);
             v = clamp(0.5 * (north + qy[c]) / depth, -V_MAX, V_MAX);

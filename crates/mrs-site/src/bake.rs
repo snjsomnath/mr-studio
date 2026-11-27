@@ -28,6 +28,9 @@ pub struct BakeStats {
     pub water_fraction: f32,
     /// Footprints around the table that shape the wind (#488).
     pub context_buildings: usize,
+    /// Share of cells whose surface, and whose soil, the site's data gives (#624).
+    pub surface_fraction: f32,
+    pub soil_fraction: f32,
 }
 
 pub fn bake(site: &Site) -> Result<(SceneData, BakeStats), SiteError> {
@@ -205,6 +208,10 @@ pub fn bake(site: &Site) -> Result<(SceneData, BakeStats), SiteError> {
         }
     }
 
+    let painted = crate::surfaces::paint(site, &mut scene)?;
+    stats.surface_fraction = painted.surface_cells as f32 / grid.len() as f32;
+    stats.soil_fraction = painted.soil_cells as f32 / grid.len() as f32;
+
     let solid = (0..grid.len()).filter(|&i| scene.dsm[i] - scene.dtm[i] > mrs_engine::SOLID_THRESHOLD_M).count();
     stats.solid_fraction = solid as f32 / grid.len() as f32;
     stats.max_height_m = scene.dsm.iter().copied().fold(f32::MIN, f32::max);
@@ -266,7 +273,7 @@ fn fill_building(rings: &[Vec<(f64, f64)>], height: f32, scene: &mut SceneData) 
 }
 
 /// The cells whose centres a polygon (rings in cell coordinates, even-odd) covers.
-fn polygon_cells(rings: &[Vec<(f64, f64)>], width: usize, rows: usize) -> Vec<usize> {
+pub(crate) fn polygon_cells(rings: &[Vec<(f64, f64)>], width: usize, rows: usize) -> Vec<usize> {
     let (mut min_row, mut max_row) = (f64::MAX, f64::MIN);
     for &(_, y) in rings.iter().flatten() {
         min_row = min_row.min(y);

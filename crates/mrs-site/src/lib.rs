@@ -25,6 +25,7 @@ pub mod programs;
 mod projection;
 pub mod sound;
 pub mod starter;
+pub mod surfaces;
 mod twin;
 pub mod version;
 pub mod video;
@@ -213,6 +214,7 @@ impl Site {
                 out.push(format!("scene.water.crs: '{crs}' is not supported; use one of {}", Crs::SUPPORTED));
             }
         }
+        crate::surfaces::check(self, &mut out);
         if let Some(c) = &m.scene.context {
             check(&mut out, "scene.context.path", &c.path);
             if !(c.reach_m > 0.0 && c.reach_m <= manifest::CONTEXT_REACH_MAX_M) {

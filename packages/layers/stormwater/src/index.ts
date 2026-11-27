@@ -14,6 +14,7 @@ interface Params {
   show: 'both' | 'flow' | 'pools';
   pace: number;
   infiltration: number;
+  surfaces: boolean;
   roofs: boolean;
   trees: boolean;
   detail: string;
@@ -29,8 +30,8 @@ const FAST = 1.2;
 const STILL = 0.03;
 
 function kernelParams(ctx: TableContext<Params>, storm?: number) {
-  const { rain, infiltration, pace, roofs, trees, detail } = ctx.params;
-  const params: Record<string, unknown> = { rain_mm_h: rain, infiltration_mm_h: infiltration, speed: pace, roofs, trees, resolution: Number(detail) };
+  const { rain, infiltration, pace, surfaces, roofs, trees, detail } = ctx.params;
+  const params: Record<string, unknown> = { rain_mm_h: rain, infiltration_mm_h: infiltration, speed: pace, surfaces, roofs, trees, resolution: Number(detail) };
   if (storm !== undefined) params.storm = storm;
   return params;
 }
@@ -100,7 +101,7 @@ export default defineLayer<Params>({
     return {
       update(changed) {
         if (changed.some((key) => key === 'show' || key === 'opacity' || key === 'drops' || key === 'pace')) restyle();
-        if (changed.some((key) => key === 'rain' || key === 'pace' || key === 'infiltration' || key === 'roofs' || key === 'trees' || key === 'detail')) {
+        if (changed.some((key) => key === 'rain' || key === 'pace' || key === 'infiltration' || key === 'surfaces' || key === 'roofs' || key === 'trees' || key === 'detail')) {
           stream.set(kernelParams(ctx));
         }
       },
