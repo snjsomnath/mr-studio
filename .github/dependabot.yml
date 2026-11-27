@@ -10,6 +10,10 @@ updates:
     groups:
       actions:
         patterns: ['*']
+    ignore:
+      # The action's tag is the Rust version itself. Dependabot proposed 1.120.0, which does
+      # not exist, and every job failed (PR 428). Bump the Rust version by hand.
+      - dependency-name: dtolnay/rust-toolchain
 
   - package-ecosystem: cargo
     directory: /
