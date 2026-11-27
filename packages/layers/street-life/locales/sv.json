@@ -11,5 +11,9 @@
   "Streetlight colour": "Gatlyktornas färg",
   "Size": "Storlek",
   "Opacity": "Opacitet",
-  "× real": "× verklig"
+  "× real": "× verklig",
+  "Street sound": "Gatuljud",
+  "A recording that loops quietly while the street life is on, and fades out when another layer opens. A sound of the table's, such as city.mp3.": "En inspelning som spelas tyst i slinga medan gatulivet visas och tonar ut när ett annat lager öppnas. Ett av bordets ljud, till exempel city.mp3.",
+  "No sound": "Inget ljud",
+  "Street sound volume": "Gatuljudets volym"
 }

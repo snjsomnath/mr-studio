@@ -4372,6 +4372,38 @@ declare module "@mrstudio/sdk/audio" {
         private start;
         private release;
     }
+    /** Seconds an ambient loop takes to come in or go. */
+    export const AMBIENT_FADE_S = 1.5;
+    /** Moves a volume towards `target` at a steady pace: from silence to full in `fade_s`. */
+    export function stepVolume(current: number, target: number, dt: number, fade_s?: number): number;
+    /**
+     * Plays one sound file of the site (`data/sounds/...`) on a loop, easing in when it starts and
+     * when its volume changes. `stop` lets it fade out by itself, so a layer can stop it as it closes.
+     * Nothing is heard until the page has had a gesture (the browser's autoplay rule) or on a page
+     * that is not `audible`.
+     */
+    export class AmbientLoop {
+        private source;
+        private gain;
+        private key;
+        private stopped;
+        private readonly url;
+        /** The volume now, after easing, 0 to 1. */
+        volume: number;
+        audible: boolean;
+        constructor(options: {
+            audible: boolean;
+            url?: (path: string) => string;
+        });
+        /** Eases towards `target` (0 to 1) and (re)starts the loop when `file` changed; null plays nothing. Call once per frame. */
+        update(file: string | null, target: number, dt: number): void;
+        /** Fades out over `fade_s` and stops. */
+        stop(fade_s?: number): void;
+        private start;
+        private release;
+    }
+    /** Where a sound named in a layer's setting is: a bare file name is one of the site's sounds (`data/sounds/`), else a path in the site. */
+    export function soundFilePath(name: string | null | undefined): string | null;
 }
 declare module "@mrstudio/sdk/place-motions" {
     import type { View } from "@mrstudio/sdk/blocks/view";

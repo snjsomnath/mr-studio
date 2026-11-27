@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { PeakFinder, SoundSchedule, SoundStage, SOUND_DEFAULTS, analyseSound, compileLook, profileAt, resolvePalette, soundColumns, soundLabel, soundPath, waveformRing } from '../src/index.ts';
+import { AmbientLoop, PeakFinder, soundFilePath, stepVolume, SoundSchedule, SoundStage, SOUND_DEFAULTS, analyseSound, compileLook, profileAt, resolvePalette, soundColumns, soundLabel, soundPath, waveformRing } from '../src/index.ts';
 import type { Pen, Shapes, View } from '../src/index.ts';
 
 /** Two chirps (high) and a hum (low) with silence between, at 8 kHz. */
@@ -114,4 +114,20 @@ test('the waveform round a point follows the sound and closes without a seam (#5
   // The stage gives nothing for a point that is not playing.
   const stage = new SoundStage({ audible: false });
   assert.equal(stage.waveform(0, 1, 1, 64), null);
+});
+
+test('an ambient loop eases in and out at a steady pace, and names a site sound by its file', () => {
+  // From silence to full in 1.5 s, and back.
+  assert.equal(stepVolume(0, 0.5, 0.75), 0.5);
+  assert.ok(Math.abs(stepVolume(0, 1, 0.75) - 0.5) < 1e-9);
+  assert.equal(stepVolume(0.5, 0, 1.5), 0);
+  assert.equal(stepVolume(0.3, 0.3, 1), 0.3);
+  assert.equal(soundFilePath('city.mp3'), 'data/sounds/city.mp3');
+  assert.equal(soundFilePath('data/showcase/birds.mp3'), 'data/showcase/birds.mp3');
+  for (const no of ['', '  ', null, '../x.mp3', '/etc/x.mp3', 'https://example.org/x.mp3']) assert.equal(soundFilePath(no), null);
+  // Without a browser's audio it is worked out but never heard; no file plays nothing.
+  const loop = new AmbientLoop({ audible: false });
+  loop.update(null, 0.5, 1);
+  assert.equal(loop.volume, 0);
+  loop.stop();
 });

@@ -1,4 +1,4 @@
-import { SPRITE_FLOATS, StreetGraph, byHighway, defineLayer, readStreetGraph, pointsAlong, seededRandom, streetLines, withAlpha } from '@mrstudio/sdk';
+import { AmbientLoop, SPRITE_FLOATS, StreetGraph, hearsSound, soundFilePath, byHighway, defineLayer, readStreetGraph, pointsAlong, seededRandom, streetLines, withAlpha } from '@mrstudio/sdk';
 import type { LayerManifest, Placed, SpriteImage, XY } from '@mrstudio/sdk';
 
 import manifest from '../layer.json';
@@ -14,6 +14,9 @@ interface Params {
   lightColor: string;
   size: number;
   opacity: number;
+  /** A recording looping under the street life while it shows (the Chalmers demo's city sound); empty for none. */
+  sound: string;
+  soundVolume: number;
 }
 
 interface Mover {
@@ -214,9 +217,16 @@ export default defineLayer<Params>({
     const people = ctx.map.addSprites('people', looks, { opacity: ctx.params.opacity });
     let buffer = new Float32Array(0);
 
+    // The street sound: it comes in with the street life and fades out when the layer stops, as it
+    // does when another layer opens over the table at rest.
+    const street = new AmbientLoop({ audible: hearsSound() });
+    ctx.onCleanup(() => street.stop());
+
     ctx.onFrame((frame) => {
       const dt = Math.min(frame, 0.25);
       const { pace, size } = ctx.params;
+      street.audible = hearsSound();
+      street.update(soundFilePath(ctx.params.sound), ctx.params.soundVolume, dt);
       for (let i = 0; i < walkers.length; i++) if (!move(walkers[i]!, walks, WALK_MS * pace, dt)) walkers[i] = spawnWalker();
       for (let i = 0; i < bikes.length; i++) if (!move(bikes[i]!, rides, BIKE_MS * pace, dt)) bikes[i] = spawnBike();
 
