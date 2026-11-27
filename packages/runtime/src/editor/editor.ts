@@ -263,6 +263,8 @@ export class Editor {
   private resumeStep: number | null = null;
   /** While held, a change of site waits to reload the page; `true` once one came in. */
   private held = false;
+  /** The projector calibration (calibration.json `projector`) is saved on this computer (#657). */
+  private projectorCalibrated = false;
   private reloadWaiting = false;
   private lastAction: { action: string; at: number; from: string } | null = null;
   /** Rehearse (#97): the table as a visitor sees it, from here, with nothing saved. */
@@ -487,6 +489,17 @@ export class Editor {
       if (location.hash) this.goTo(location.hash);
       if (dialog === 'place' || dialog === 'media' || dialog === 'model') this.openDialog(dialog);
     }
+    // The 2.0 calibration lives under `projector` in calibration.json, kept by the host (#657):
+    // asked once and followed on every save, so the readiness warning clears without a reload.
+    const projectorCalibrated = (p: { projector?: unknown } | null | undefined): void => {
+      const now = Boolean(p?.projector);
+      if (now === this.projectorCalibrated) return;
+      this.projectorCalibrated = now;
+      this.renderNext();
+    };
+    connection.on('calibration', projectorCalibrated);
+    connection.on('welcome', () => void connection.request<{ projector?: unknown }>('calibration.get', {}).then(projectorCalibrated, () => {}));
+    void connection.request<{ projector?: unknown }>('calibration.get', {}).then(projectorCalibrated, () => {});
     connection.on('site.changed', (p: { site?: { table?: unknown }; table_only?: boolean }) => {
       // The table's front edge or ribbons (#62): taken in place, the projector redraws on its own.
       if (p?.table_only && p.site) {
@@ -2128,7 +2141,7 @@ export class Editor {
       data: Object.keys(site.data ?? {}),
       size: Boolean(site.table?.width_cm),
       timezone: site.timezone,
-      calibrated: shell() ? Boolean(site.calibration) : null,
+      calibrated: shell() ? Boolean(site.calibration) || this.projectorCalibrated : null,
       welcome: site.branding.welcome,
       layers: this.instances().map(({ id, manifest, state }) => {
         const b = layerButton(id, manifest, state, defaultSideOf(this.store, id) ?? defaultSide);

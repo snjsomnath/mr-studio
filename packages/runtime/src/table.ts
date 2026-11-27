@@ -209,6 +209,7 @@ export class TableView {
         drawn.elements.add(element);
         drawn.clipped.add(element);
         this.clipElement(instance, element);
+        if (this.model?.calibrated && !this.intro) this.placeOverlay(element);
         track(() => {
           drawn.elements.delete(element);
           drawn.clipped.delete(element);
@@ -223,6 +224,7 @@ export class TableView {
         drawn.clipped.add(overlay.element);
         drawn.surfaces.add(overlay.element);
         this.clipElement(instance, overlay.element);
+        if (this.model?.calibrated) this.placeOverlay(overlay.element);
         track(() => {
           drawn.overlays.delete(overlay);
           drawn.surfaces.delete(overlay.element);
@@ -377,7 +379,9 @@ export class TableView {
   /** Pointer input on the table surface for one layer. */
   /** A canvas above every layer, for what the runtime itself draws (the attention cue). */
   topCanvas(id: string): CanvasOverlay {
-    return new MapCanvasOverlay(this.map, this.container, id, this.site);
+    const overlay = new MapCanvasOverlay(this.map, this.container, id, this.site);
+    if (this.model?.calibrated) this.placeOverlay(overlay.element);
+    return overlay;
   }
 
   pointer(track: (cleanup: () => void) => void, instance?: string): TablePointer {
@@ -671,10 +675,31 @@ export class TableView {
       this.model = await ModelView.create(this.container, this.site, this.map);
       this.model.setQuality(this.quality);
       for (const [layer, drawn] of this.drawn) this.model.setIntensity(layer, this.shown(layer, drawn, 0));
+      // 2D canvases and decorations follow the projector's camera, as the draped map does (#650).
+      this.model.onCalibrationChange(() => this.placeOverlays());
+      this.map.on('move', () => this.placeOverlays());
+      new ResizeObserver(() => this.placeOverlays()).observe(this.container);
+      this.placeOverlays();
     } catch (error) {
       console.warn('model surface is off; the table stays flat:', (error as Error).message);
     }
     return this.model;
+  }
+
+  /**
+   * Puts every page element drawn in the map's pixels (layer canvases, decorations, the runtime's
+   * own canvases) where the projector shows that ground (#650). Without a calibration they stay as
+   * they are: then map pixels are the surface's pixels.
+   */
+  placeOverlays(): void {
+    if (this.intro) return;
+    const transform = this.model?.overlayTransform() ?? '';
+    for (const element of this.container.querySelectorAll<HTMLElement>(':scope > canvas[data-overlay], :scope > .table-decoration')) this.placeOverlay(element, transform);
+  }
+
+  private placeOverlay(element: HTMLElement, transform = this.model?.overlayTransform() ?? ''): void {
+    element.style.transformOrigin = transform ? '0 0' : '';
+    element.style.transform = transform;
   }
 
   /** A layer's `ctx.model`. Without a twin, fields go to the flat map and the rest does nothing. */
@@ -858,13 +883,15 @@ export class TableView {
     const decorations = () => [...this.container.querySelectorAll<HTMLElement>(':scope > .table-decoration')];
     const follow = () => {
       const scale = 2 ** (this.map.getZoom() - target.zoom);
-      for (const element of decorations()) element.style.transform = scale === 1 ? '' : `scale(${scale})`;
+      for (const element of decorations()) element.style.transform = scale === 1 ? (this.model?.overlayTransform() ?? '') : `scale(${scale})`;
+      for (const element of decorations()) element.style.transformOrigin = scale === 1 ? '0 0' : '';
     };
     const land = () => {
       if (this.intro !== intro) return;
       this.intro = null;
       this.map.off('move', follow);
       for (const element of decorations()) element.style.transform = '';
+      this.placeOverlays();
       if (intro.resized) this.map.jumpTo(this.view());
       // The ribbons find their place again now the zoom has landed.
       for (const listener of this.viewListeners) listener();
@@ -873,7 +900,18 @@ export class TableView {
       const xs = footprint.map(([x]) => x);
       const ys = footprint.map(([, y]) => y);
       const origin = `${(Math.min(...xs) + Math.max(...xs)) / 2}px ${(Math.min(...ys) + Math.max(...ys)) / 2}px`;
-      const animations = [projected, ...decorations()].map((element) => {
+      // Decorations keep the projector transform they carry (#650) and grow around the same point.
+      const [ox, oy] = origin.split(' ');
+      const placed = this.model?.overlayTransform() ?? '';
+      const decorationAnimations = decorations().map((element) =>
+        element.animate([{ transform: `translate(${ox}, ${oy}) scale(${2 ** -INTRO_ZOOM_OUT}) translate(-${ox}, -${oy}) ${placed}` }, { transform: `translate(0, 0) scale(1) translate(0, 0) ${placed}` }], {
+          duration: INTRO_MS,
+          delay: INTRO_HOLD_MS,
+          easing: 'cubic-bezier(0.65, 0, 0.35, 1)',
+          fill: 'backwards',
+        }),
+      );
+      const animations = [projected].map((element) => {
         element.style.transformOrigin = origin;
         return element.animate([{ transform: `scale(${2 ** -INTRO_ZOOM_OUT})` }, { transform: 'scale(1)' }], {
           duration: INTRO_MS,
@@ -884,6 +922,7 @@ export class TableView {
       });
       animations[0]!.onfinish = land;
       animations[0]!.oncancel = land;
+      animations.push(...decorationAnimations);
       this.cancelIntro = () => animations.forEach((animation) => animation.cancel());
       return;
     }
