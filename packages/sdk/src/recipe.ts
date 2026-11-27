@@ -31,6 +31,10 @@ import type { PlaceStage } from './place-motions.ts';
 import { NETWORK_DEFAULTS, networkData, networkLook, networkPosition } from './networks.ts';
 import type { NetworkInputs, NetworkProps } from './networks.ts';
 import type { CustomLayer, LegendItem, RecipeBlock, SiteInfo } from './types.ts';
+import { compileExpression, expression } from './expression.ts';
+import type { ExpressionScope } from './expression.ts';
+
+type Properties = Record<string, any>;
 
 // ---- Style values ------------------------------------------------------------
 
@@ -1359,6 +1363,53 @@ export function filterShapes<S extends Shapes>(shapes: S, filters: readonly Shap
     paths: shapes.paths.filter((p) => keep(p.properties)),
     spots: shapes.spots.filter((s) => keep(s.properties)),
   };
+}
+
+/**
+ * A look's own worked-out columns and "where" rule (#669), in its props:
+ * `"columns": { "kwh_per_m2": ["/", ["get", "kwh"], ["get", "area"]] }` adds a column to every
+ * feature, which the look can then paint, size, label and filter by like any other, and
+ * `"where": [">", ["get", "year"], ["bind", "params.year"]]` keeps only the features it holds for.
+ * Columns are worked out in order, so a later one may use an earlier one. The same object comes
+ * back when the look has neither.
+ */
+export function applyLookExpressions<S extends Shapes>(shapes: S, props: Record<string, unknown> | undefined, vars: ExpressionScope['vars'] = {}): S {
+  const columns = props?.columns && typeof props.columns === 'object' && !Array.isArray(props.columns) ? Object.entries(props.columns as Record<string, unknown>).map(([name, expr]) => [name, expression(expr)] as const) : [];
+  const where = props?.where !== undefined ? expression(props.where) : null;
+  if (!columns.length && !where) return shapes;
+  const work = <T extends { properties: Properties }>(list: T[]): T[] => {
+    const out: T[] = [];
+    for (const shape of list) {
+      let item: Properties = shape.properties ?? {};
+      if (columns.length) {
+        item = { ...item };
+        for (const [name, compiled] of columns) item[name] = compiled.evaluate({ item, vars });
+      }
+      if (where) {
+        const keep = where.evaluate({ item, vars });
+        if (keep === null || keep === false || keep === 0 || keep === '') continue;
+      }
+      out.push(columns.length ? { ...shape, properties: item } : shape);
+    }
+    return out;
+  };
+  return { ...shapes, areas: work(shapes.areas), paths: work(shapes.paths), spots: work(shapes.spots) };
+}
+
+/** What is wrong with a look's `columns` and `where` (#669), for the editor, the checks and the MCP. */
+export function lookExpressionProblems(block: RecipeBlock): string[] {
+  const out: string[] = [];
+  const props = block.props ?? {};
+  if (props.columns !== undefined) {
+    if (typeof props.columns !== 'object' || props.columns === null || Array.isArray(props.columns)) out.push(`look '${block.id}': columns is { "name": expression }`);
+    else
+      for (const [name, expr] of Object.entries(props.columns as Record<string, unknown>)) {
+        if (!/^[A-Za-z_][A-Za-z0-9_]{0,39}$/.test(name)) out.push(`look '${block.id}': column '${name}' needs a plain name (letters, digits, _)`);
+        for (const problem of compileExpression(expr).problems) out.push(`look '${block.id}' column '${name}': ${problem}`);
+      }
+  }
+  if (props.where !== undefined) for (const problem of compileExpression(props.where).problems) out.push(`look '${block.id}' where: ${problem}`);
+  return out;
 }
 
 /** The legend a recipe's looks give, for the controller (S2: every colour on the table has its swatch). */

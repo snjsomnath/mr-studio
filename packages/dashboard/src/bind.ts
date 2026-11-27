@@ -2,7 +2,7 @@
 // layer's state, and live values are held to the same limits as literals. A
 // value that is too long is cut, and a list that is too long loses its tail.
 
-import { formatCompact, formatDecimal, formatHour } from '@mrstudio/sdk';
+import { expression, formatCompact, formatDecimal, formatHour, isExpressionValue } from '@mrstudio/sdk';
 import type { PanelSize } from '@mrstudio/sdk';
 
 import type { PropSpec, WidgetDefinition } from './registry.ts';
@@ -32,7 +32,8 @@ function read(source: BindSource, path: string): unknown {
 }
 
 function resolve(spec: PropSpec, raw: unknown, source: BindSource, limit?: number): unknown {
-  const value = isBinding(raw) ? read(source, raw.bind) : raw;
+  // A live value, a value worked out from live values (#669), or a literal.
+  const value = isBinding(raw) ? read(source, raw.bind) : isExpressionValue(raw) ? expression(raw.expr).evaluate({ vars: source }) : raw;
   if (value === undefined || value === null) return undefined;
   switch (spec.kind) {
     case 'text':

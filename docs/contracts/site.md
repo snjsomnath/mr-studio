@@ -148,7 +148,7 @@ A layer is data plus animation plus interaction. In the scene, an entry of `laye
 | --- | --- | --- |
 | `sunlight` | A core layer: a package with code | The app |
 | `./layers/artwork` | A site-only layer package | The site folder |
-| `custom:heat-walk` | A custom layer: a recipe of blocks, no code | `custom` in this site.json |
+| `custom:heat-walk` | A custom layer: a recipe of blocks, no code. A look may add worked-out `columns` and a `where` rule ([expressions.md](expressions.md), #669) | `custom` in this site.json |
 
 A template in the New layer gallery (#59) is not a definition. Adding one writes an ordinary instance with the template's params and button, and nothing refers back to the template.
 

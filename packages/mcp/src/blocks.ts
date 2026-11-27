@@ -145,6 +145,12 @@ export const BLOCKS: BlockDef[] = [
     detect: 'export function compileLook',
   },
   {
+    id: 'expressions', group: 'data', name: 'Safe expressions',
+    description: "A small formula language in JSON (#669), no code: work out a value from a feature's columns or the layer's live values (\"kWh per m²\", \"newer than the year on the slider\"), pick a colour by thresholds, or keep only some features. Panels take { \"expr\": [...] } wherever a value can be bound; custom layer looks take 'columns' and 'where'.",
+    usage: "panel props { \"expr\": [\"/\", [\"bind\", \"shared.kwh\"], [\"bind\", \"site.area\"]] }; look props columns { name: expr } and where: expr (docs/contracts/expressions.md); evaluateExpression() in a layer",
+    detect: 'export function compileExpression',
+  },
+  {
     id: 'raster-look', group: 'visual', name: 'Raster look with Dig',
     description: 'A GeoTIFF of values (soil depth, rock surface, noise) coloured by value on the table grid, with cut-offs a slider moves so the ground peels away, and a glow along the cut.',
     usage: "a custom layer look block 'raster' on a data:<name> GeoTIFF; bind a range control to look.<id>.hide_below",

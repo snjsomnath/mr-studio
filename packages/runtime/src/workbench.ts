@@ -348,7 +348,9 @@ function row(cell: 'td' | 'th', values: string[]): HTMLTableRowElement {
 }
 
 function bindings(props: unknown, out: string[] = []): string[] {
-  if (Array.isArray(props)) for (const item of props) bindings(item, out);
+  // An expression's ["bind", "shared.x"] reads a live value too (#669).
+  if (Array.isArray(props) && props[0] === 'bind' && typeof props[1] === 'string') out.push(props[1]);
+  else if (Array.isArray(props)) for (const item of props) bindings(item, out);
   else if (props && typeof props === 'object') {
     const bind = (props as { bind?: unknown }).bind;
     if (typeof bind === 'string') out.push(bind);

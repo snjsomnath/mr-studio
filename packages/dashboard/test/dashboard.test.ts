@@ -370,3 +370,18 @@ test('the worst case of every core widget is still a panel the rules allow (#681
     }
   }
 });
+
+test('a bindable prop may be worked out by an expression (#669)', () => {
+  const registry = coreWidgets();
+  const stat = registry.get('stat')!;
+  const spec: PanelSpec = { id: 'per-m2', widget: 'stat', size: 'tile', title: 'Use per m²', props: { value: { expr: ['round', ['/', ['bind', 'shared.kwh'], ['bind', 'site.area']], 1] }, unit: 'kWh/m²' } };
+  assert.deepEqual(validatePanel(spec, registry), []);
+  const props = resolveProps(stat, spec.props, 'tile', { params: {}, shared: { kwh: 1000 }, site: { area: 300 } });
+  assert.equal(props.value, 3.3);
+  // Not where a prop cannot be bound, and not a faulty one.
+  const bad = validatePanel({ ...spec, props: { value: { expr: ['nope'] }, unit: { expr: 'kWh' } } }, registry);
+  assert.ok(bad.some((i) => i.path.endsWith('.value') && i.message.includes('not an operator')));
+  assert.ok(bad.some((i) => i.path.endsWith('.unit') && i.message.includes('only props that can be bound')));
+  // A faulty expression shows nothing rather than breaking the panel.
+  assert.equal(resolveProps(stat, { value: { expr: ['/', 1, 0] } }, 'tile', { params: {}, shared: {}, site: {} }).value, undefined);
+});

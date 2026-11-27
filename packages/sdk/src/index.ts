@@ -48,3 +48,4 @@ export * from './drawing-reveal.ts';
 export * from './drawing-roles.ts';
 export * from './readiness.ts';
 export * from './widgets.ts';
+export * from './expression.ts';

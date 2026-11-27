@@ -70,7 +70,7 @@ pages or their time change.
 | --- | --- |
 | `size` | The size exists and the widget comes in it |
 | `schema` | Props match the widget's schema; no unknown fields |
-| `binding` | Only bindable props are bound, to `params.`, `shared.` or `site.` paths. A `list` prop may always be bound as a whole: its items are held to the item schema and the list limit as they arrive (#373) |
+| `binding` | Only bindable props are bound or worked out by an expression (`{ "expr": … }`, [expressions.md](expressions.md), #669), to `params.`, `shared.` or `site.` paths. A `list` prop may always be bound as a whole: its items are held to the item schema and the list limit as they arrive (#373) |
 | `text` | Titles, labels, captions, units and values within their character limits; theme contrast |
 | `budget` | The panel's reads fit its size; lists within their limits. A bound list is charged in full |
 | `grid` | Site pages: inside 12 by 6, no overlap, a position for every panel. Layers: no position |

@@ -2,6 +2,7 @@
 // same checks run in tests, on the TV before a panel is shown, and in an editor
 // before a drop is accepted.
 
+import { compileExpression, isExpressionValue } from '@mrstudio/sdk';
 import type { Binding, PanelSize, PanelSpec } from '@mrstudio/sdk';
 
 import type { PropSpec, WidgetDefinition, WidgetRegistry } from './registry.ts';
@@ -28,6 +29,13 @@ export function listLimit(widget: WidgetDefinition, prop: string, spec: Extract<
 
 function checkProp(path: string, spec: PropSpec, value: unknown, limit: number | undefined, issues: Issue[]): void {
   const fail = (rule: Issue['rule'], message: string) => issues.push({ path, rule, message });
+  if (isExpressionValue(value)) {
+    // A value worked out by an expression (#669) may stand wherever a live value may.
+    if (!spec.bindable) fail('binding', 'cannot be worked out by an expression (only props that can be bound)');
+    for (const problem of compileExpression(value.expr).problems) fail('binding', problem);
+    for (const read of compileExpression(value.expr).reads.values) if (!BIND_PATH.test(read)) fail('binding', `'${read}' is not params.<id>, shared.<key> or site.<field>`);
+    return;
+  }
   if (isBinding(value)) {
     // A whole list may be bound: its items are held to the item schema as they arrive (#373).
     if (!spec.bindable && spec.kind !== 'list') fail('binding', 'cannot be bound to a live value');
