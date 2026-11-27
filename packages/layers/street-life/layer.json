@@ -17,7 +17,9 @@
     { "id": "lightRadius", "type": "range", "label": "Streetlight glow", "min": 5, "max": 60, "step": 1, "default": 30, "unit": "m", "tier": "more" },
     { "id": "lightColor", "type": "color", "label": "Streetlight colour", "default": "#ffd296", "tier": "more" },
     { "id": "size", "type": "range", "label": "Size", "min": 0.5, "max": 4, "step": 0.25, "default": 2, "tier": "more" },
-    { "id": "opacity", "type": "range", "label": "Opacity", "min": 0.1, "max": 1, "step": 0.05, "default": 1, "tier": "more" }
+    { "id": "opacity", "type": "range", "label": "Opacity", "min": 0.1, "max": 1, "step": 0.05, "default": 1, "tier": "more" },
+    { "id": "sound", "type": "text", "label": "Street sound", "help": "A recording that loops quietly while the street life is on, and fades out when another layer opens. A sound of the table's, such as city.mp3.", "default": "", "none": "No sound", "media": ["sound"], "mediaBy": "path", "tier": "more" },
+    { "id": "soundVolume", "type": "range", "label": "Street sound volume", "min": 0, "max": 1, "step": 0.05, "default": 0.5, "tier": "more" }
   ],
   "tools": []
 }

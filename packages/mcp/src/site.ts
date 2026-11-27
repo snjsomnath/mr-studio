@@ -28,7 +28,7 @@ const FALLBACK_SCHEMA: SiteSchema = {
   '': { fields: ['format', 'id', 'name', 'origin', 'extent', 'timezone', 'table', 'scene', 'data', 'basemap', 'layers', 'custom', 'tv', 'branding', 'palette', 'services', 'display'], required: ['format', 'id', 'name', 'origin', 'extent', 'scene'] },
   origin: { fields: ['lon', 'lat'], required: ['lon', 'lat'] },
   extent: { fields: ['width_m', 'height_m', 'rotation_deg'], required: ['width_m', 'height_m'] },
-  table: { fields: ['width_cm', 'height_cm', 'tile_cm', 'front', 'ribbons', 'glow'], required: ['width_cm', 'height_cm'] },
+  table: { fields: ['width_cm', 'height_cm', 'tile_cm', 'front', 'ribbons', 'glow', 'intro'], required: ['width_cm', 'height_cm'] },
   'table.ribbons': { fields: ['top', 'bottom', 'left', 'right'], required: [] },
   'table.glow': { fields: ['on', 'strength', 'colours'], required: [] },
   scene: { fields: ['cell_m', 'buildings', 'terrain', 'trees'], required: ['cell_m'] },

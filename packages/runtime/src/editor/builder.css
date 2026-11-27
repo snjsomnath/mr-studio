@@ -331,6 +331,16 @@
   color: #9aa3b2;
 }
 
+.lb-legend-group {
+  margin-top: 4px;
+  font-weight: 600;
+  color: #9aa3b2;
+}
+
+.lb-legend-group:first-child {
+  margin-top: 0;
+}
+
 .lb-legend-row {
   display: flex;
   align-items: center;

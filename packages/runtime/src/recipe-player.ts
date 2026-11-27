@@ -23,11 +23,12 @@ import {
   rasterPicture,
   rasterProps,
   loadSiteField,
+  lookLegend,
   readShapes,
   resolvePalette,
   tableFrame,
 } from '@mrstudio/sdk';
-import type { CompiledLook, CustomLayer, FieldFrame, FieldOverlay, GeoJsonCollection, LayerManifest, LayerModule, RecipeData, Shapes, SiteInfo, TableContext } from '@mrstudio/sdk';
+import type { CompiledLook, CustomLayer, FieldFrame, FieldOverlay, GeoJsonCollection, LayerManifest, LegendItem, LayerModule, RecipeData, Shapes, SiteInfo, TableContext } from '@mrstudio/sdk';
 
 const EMPTY: Shapes = { areas: [], paths: [], spots: [] };
 
@@ -131,7 +132,7 @@ export function recipeModule(current: () => LayerManifest | undefined, watch: (c
       /** Rasters of values on the table's grid (#601), by data entry id. */
       let fields = new Map<string, FieldFrame>();
       /** Each raster look's coloured field and the glow along its cut, by look id. */
-      const rasters = new Map<string, { main: FieldOverlay; edge: FieldOverlay; key: string }>();
+      const rasters = new Map<string, { main: FieldOverlay; edge: FieldOverlay; key: string; legend: LegendItem[] }>();
       const fadeOf = () => (recipe.enter === 'fade' ? ease(time / FADE_S) : 1);
       /** Draws the raster looks again: only when their props, the palette or the data changed. */
       const drawRasters = (overrides: Record<string, Record<string, unknown>>) => {
@@ -148,6 +149,7 @@ export function recipeModule(current: () => LayerManifest | undefined, watch: (c
               main: ctx.map.addField(`raster-${block.id}`, { colormap: { stops: [[0, 0, 0, 0, 0], [1, 0, 0, 0, 0]] }, opacity: 0, smooth: false }),
               edge: ctx.map.addField(`raster-${block.id}-edge`, { colormap: { stops: [[0, 0, 0, 0, 0], [1, 0, 0, 0, 0]] }, opacity: 0, smooth: true, soften: 1.5 }),
               key: '',
+              legend: [],
             };
             rasters.set(block.id, overlay);
           }
@@ -156,6 +158,7 @@ export function recipeModule(current: () => LayerManifest | undefined, watch: (c
           if (key === overlay.key) continue;
           overlay.key = key;
           const picture = rasterPicture(field, props, palette);
+          overlay.legend = picture.legend.map((row) => ({ ...row, id: `${block.id}-${row.id}` }));
           overlay.main.setStyle({ colormap: picture.colormap, opacity: props.opacity * fadeOf(), smooth: false });
           overlay.main.set(picture.frame);
           overlay.edge.setStyle({ colormap: picture.edgeColormap, opacity: picture.edge ? fadeOf() : 0 });
@@ -332,6 +335,7 @@ export function recipeModule(current: () => LayerManifest | undefined, watch: (c
           })
           .filter((look): look is CompiledLook => look !== null);
         drawRasters(overrides.look);
+        publishLegend();
         if (!(recipe.motion ?? []).some((m) => m.block === 'sound')) sounds.stop();
         // A place motion that steps: Next shows the places, then starts the motion (#341).
         const stepping = (recipe.motion ?? []).find((m) => m.block === 'place' && { ...m.props, ...overrides.motion[m.id] }.reveal === true);
@@ -340,6 +344,24 @@ export function recipeModule(current: () => LayerManifest | undefined, watch: (c
           placeSteps = JSON.stringify(titles);
           ctx.steps.define(titles.length, titles);
         }
+      };
+
+      // The legend the looks give (#622), for a recipe written by hand or by a tool: one the
+      // author saved in the recipe wins, and is already in the manifest.
+      let legendKey = '';
+      const publishLegend = () => {
+        const rows = recipe.legend?.length
+          ? []
+          : lookLegend(
+              (recipe.look ?? []).map((block) => ({
+                block,
+                rows: block.block === 'raster' ? (rasters.get(block.id)?.legend ?? []) : (looks.find((look) => look.id === block.id)?.legend ?? []),
+              })),
+            ).slice(0, 12);
+        const key = JSON.stringify(rows);
+        if (key === legendKey) return;
+        legendKey = key;
+        ctx.legend.set(rows);
       };
 
       const stop = watch(() => {

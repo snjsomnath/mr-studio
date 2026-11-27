@@ -435,6 +435,8 @@ export interface LegendRow {
   label: string;
   color?: string;
   shape?: 'line' | 'fill' | 'point' | string;
+  /** A heading over this row and the ones after it with the same group (#622): which scale the rows belong to. */
+  group?: string;
 }
 
 export interface PanelHandlers {

@@ -162,6 +162,7 @@ const SV: Record<string, string> = {
   'Sending {p}%': 'Skickar {p} %',
   'Waiting to send': 'Väntar på att skickas',
   'Delete this spot': 'Ta bort platsen',
+  'The table can’t be reached. Try again when it can.': 'Bordet går inte att nå. Försök igen när det går.',
   'Finding you… or tap where you are on the map.': 'Letar efter dig… eller tryck där du är på kartan.',
   'Tap where you are on the map.': 'Tryck där du är på kartan.',
   'You are outside the table’s map. Walk closer, or tap where the spot is.': 'Du är utanför bordets karta. Gå närmare, eller tryck där platsen är.',

@@ -44,3 +44,23 @@ test('cut-offs read from controls as numbers, and an empty one hides nothing', (
   const picture = rasterPicture(field(), rasterProps({}, { hide_above: 2 }), resolvePalette());
   assert.deepEqual([...picture.frame.data].slice(3).filter((v) => v > 0), []);
 });
+
+test('two scales in one layer read as two legends, each under its heading (#622)', async () => {
+  const { lookLegend } = await import('../src/recipe.ts');
+  const palette = resolvePalette();
+  const depth = rasterPicture(field(), rasterProps({ unit: 'm of soil', legend: 'Soil depth' }), palette).legend;
+  const rock = rasterPicture(field(), rasterProps({ unit: 'm above sea', color: { by: 'value', kind: 'number', ramp: 'ice', classes: 'continuous' } }), palette).legend;
+  const rows = lookLegend([
+    { block: { id: 'depth', block: 'raster', props: { legend: 'Soil depth' } }, rows: depth },
+    { block: { id: 'rock-surface', block: 'raster' }, rows: rock },
+    { block: { id: 'wells', block: 'points', props: { legend: 'Energy well' } }, rows: [{ id: 'wells', label: 'Energy well', color: '#ff7a45', shape: 'point' }] },
+  ]);
+  assert.deepEqual(
+    rows.map((row) => row.group ?? null),
+    [null, ...depth.map(() => 'Soil depth'), ...rock.map(() => 'Rock surface')],
+    'the legend prop names a scale, else the look id in words; a single swatch needs no heading and comes first',
+  );
+  assert.ok(depth.length > 1 && rows.length === depth.length + rock.length + 1);
+  // One scale alone needs no heading.
+  assert.ok(lookLegend([{ block: { id: 'depth', block: 'raster' }, rows: depth }]).every((row) => row.group === undefined));
+});

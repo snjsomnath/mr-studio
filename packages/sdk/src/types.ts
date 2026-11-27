@@ -292,6 +292,8 @@ export interface LegendItem {
   label: string;
   color?: string;
   shape?: 'line' | 'fill' | 'point' | string;
+  /** A heading over this row and the ones after it with the same group (#622): which scale the rows belong to. */
+  group?: string;
 }
 
 /** How Next moves through a layer, and a sequence's steps. */
@@ -472,6 +474,8 @@ export interface SiteInfo {
     ribbons?: Partial<Record<'top' | 'bottom' | 'left' | 'right', 'off' | 'auto' | { cm: number }>>;
     /** The ambient glow in the projector's blank space, in the model's own colours (#476). */
     glow?: { on?: boolean; strength?: number; colours?: 'edges' | 'one' };
+    /** How the projected table opens, at start and after Reset: the layers fading in (the default) or the zoom in (#446). */
+    intro?: 'fade' | 'zoom';
   } | null;
   basemap: { background: string; style: string | null };
   /** Table settings (#73): the controller's title, logo and the welcome line under the title. */

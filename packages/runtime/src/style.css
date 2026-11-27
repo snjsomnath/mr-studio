@@ -2008,6 +2008,20 @@ body[data-role='tv'][data-surface='glass'] .step-strip {
   transition: opacity 300ms ease, border-color 300ms ease, background 300ms ease;
 }
 
+/* The name of a scale when a layer shows more than one (#622): a line of its own over its rows. */
+.legend-group {
+  flex-basis: 100%;
+  margin: 0.5rem 0 -0.25rem;
+  font-size: 0.9375rem;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+  opacity: 0.75;
+}
+
+.legend-group:first-child {
+  margin-top: 0;
+}
+
 .legend-swatch {
   --swatch: var(--accent);
   flex: none;
@@ -3957,6 +3971,12 @@ body[data-role='tv'] .layer-button-card.is-second .layer-button[aria-pressed='tr
 
 .table-glow[hidden] {
   display: none;
+}
+
+/* The opening fade (present.md, Opening): the ribbons and the glow wait until the layers are in, then come in themselves. */
+.is-fading-in .table-ribbon,
+.is-fading-in .table-glow {
+  opacity: 0;
 }
 
 /* Table size and place › Ambient glow (#476): switch, strength, colours on one row. */

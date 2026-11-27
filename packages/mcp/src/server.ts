@@ -602,7 +602,7 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
     {
       title: 'Update site settings',
       description:
-        `Change site settings other than the scene. Settable in this core: ${editable.join(', ')}. Among them: table (size, tile_cm, front, ribbons, glow: the ambient glow around the model), scene sources (buildings, terrain, trees, cell_m), basemap (style, black and white, brightness), branding (title, logo, welcome line, languages, translations), palette, display (quality) and tv. Objects are merged one level deep; null removes a key. The change is refused if it makes the site invalid. Use the layer tools for the scene.`,
+        `Change site settings other than the scene. Settable in this core: ${editable.join(', ')}. Among them: table (size, tile_cm, front, ribbons, glow: the ambient glow around the model, intro: fade or zoom, how the table opens), scene sources (buildings, terrain, trees, cell_m), basemap (style, black and white, brightness), branding (title, logo, welcome line, languages, translations), palette, display (quality) and tv. Objects are merged one level deep; null removes a key. The change is refused if it makes the site invalid. Use the layer tools for the scene.`,
       inputSchema: {
         site: z.string().describe('Site folder'),
         set: z.record(z.string(), z.unknown()).describe('e.g. { "branding": { "title": "Harbour 2040" }, "basemap": { "background": "#101418" } }'),
@@ -934,7 +934,8 @@ export function createServer(options: ServerOptions = {}): { server: McpServer; 
           if (legend?.length) {
             saved.legend = legend;
             legendNote = ` The controller's legend has ${legend.length} row${legend.length === 1 ? '' : 's'}, worked out from the looks and their data.`;
-          } else if ((saved.look ?? []).length) legendNote = ' No legend yet: the looks\' data could not be read; save again once the data is in the site, or give legend yourself.';
+          } else if ((saved.look ?? []).some((block: any) => block?.block === 'raster')) legendNote = ' The table works out the legend from the looks while it shows the layer.';
+          else if ((saved.look ?? []).length) legendNote = ' No legend yet: the looks\' data could not be read; save again once the data is in the site, or give legend yourself.';
         }
         m.custom = { ...(m.custom ?? {}), [id]: saved };
         return { message: `Saved the custom layer '${id}'. Add it with add_layer use "${use}".${legendNote}` };

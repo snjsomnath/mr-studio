@@ -28,4 +28,6 @@ Field walk is a layer like any other: picking another layer closes it. To see th
 
 - GPS and recording need the phone page over HTTPS: the join page (the default QR code) or a relay. On plain local Wi-Fi, phones tap the map and pick a recording from the phone instead.
 - Photos and sounds stay on the studio computer, in the table folder's hidden `.mrstudio/field`, and are left out when the table is shared. **Clear the walk** deletes them all (press it twice); **Remove this spot** deletes one.
+- A walk lasts one session. While the table keeps running, phones and the table keep every spot, also across reloads. When the table starts again it starts a new, empty walk, and each phone empties its list the next time it connects. The last session's walk is put aside in `.mrstudio/field-previous` in case the table was restarted by mistake; the session after that replaces it.
+- Visitors can delete any of their own spots on the phone with ×, also once it is on the table. A spot the guide removed or cleared goes from the visitor's phone too.
 - Only spots on the table's map can be saved.

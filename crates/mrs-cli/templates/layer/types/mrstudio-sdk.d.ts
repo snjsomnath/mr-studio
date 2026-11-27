@@ -378,6 +378,8 @@ declare module "@mrstudio/sdk/types" {
         label: string;
         color?: string;
         shape?: 'line' | 'fill' | 'point' | string;
+        /** A heading over this row and the ones after it with the same group (#622): which scale the rows belong to. */
+        group?: string;
     }
     /** How Next moves through a layer, and a sequence's steps. */
     export interface Steps {
@@ -577,6 +579,8 @@ declare module "@mrstudio/sdk/types" {
                 strength?: number;
                 colours?: 'edges' | 'one';
             };
+            /** How the projected table opens, at start and after Reset: the layers fading in (the default) or the zoom in (#446). */
+            intro?: 'fade' | 'zoom';
         } | null;
         basemap: {
             background: string;
@@ -2381,6 +2385,8 @@ declare module "@mrstudio/sdk/layer" {
         label: string;
         color?: string;
         shape?: 'line' | 'fill' | 'point' | string;
+        /** A heading over this row and the ones after it with the same group (#622): which scale the rows belong to. */
+        group?: string;
     }
     export interface PanelHandlers {
         /** Params or shared values changed. */
@@ -4372,6 +4378,38 @@ declare module "@mrstudio/sdk/audio" {
         private start;
         private release;
     }
+    /** Seconds an ambient loop takes to come in or go. */
+    export const AMBIENT_FADE_S = 1.5;
+    /** Moves a volume towards `target` at a steady pace: from silence to full in `fade_s`. */
+    export function stepVolume(current: number, target: number, dt: number, fade_s?: number): number;
+    /**
+     * Plays one sound file of the site (`data/sounds/...`) on a loop, easing in when it starts and
+     * when its volume changes. `stop` lets it fade out by itself, so a layer can stop it as it closes.
+     * Nothing is heard until the page has had a gesture (the browser's autoplay rule) or on a page
+     * that is not `audible`.
+     */
+    export class AmbientLoop {
+        private source;
+        private gain;
+        private key;
+        private stopped;
+        private readonly url;
+        /** The volume now, after easing, 0 to 1. */
+        volume: number;
+        audible: boolean;
+        constructor(options: {
+            audible: boolean;
+            url?: (path: string) => string;
+        });
+        /** Eases towards `target` (0 to 1) and (re)starts the loop when `file` changed; null plays nothing. Call once per frame. */
+        update(file: string | null, target: number, dt: number): void;
+        /** Fades out over `fade_s` and stops. */
+        stop(fade_s?: number): void;
+        private start;
+        private release;
+    }
+    /** Where a sound named in a layer's setting is: a bare file name is one of the site's sounds (`data/sounds/`), else a path in the site. */
+    export function soundFilePath(name: string | null | undefined): string | null;
 }
 declare module "@mrstudio/sdk/place-motions" {
     import type { View } from "@mrstudio/sdk/blocks/view";
@@ -4743,6 +4781,8 @@ declare module "@mrstudio/sdk/recipe" {
             edge_glow: number;
             edge_color: string;
             unit: string;
+            /** The heading over its legend rows when the layer has more than one scale (#622). */
+            legend: string;
         };
     };
     /** Motion blocks of this slice, by the geometry they act on. */
@@ -5005,6 +5045,16 @@ declare module "@mrstudio/sdk/recipe" {
     export function filterShapes<S extends Shapes>(shapes: S, filters: readonly ShapeFilter[] | undefined): S;
     /** The legend a recipe's looks give, for the controller (S2: every colour on the table has its swatch). */
     export function recipeLegend(looks: readonly CompiledLook[]): LegendItem[];
+    /**
+     * Each look's legend rows as one legend (#622). When more than one look has a scale (several
+     * rows), each scale gets a heading, so a soil-depth ramp and a rock-height ramp read as two
+     * legends: the look's `legend` prop, else its id in words. Single swatches come first, so
+     * none sits under a scale's heading.
+     */
+    export function lookLegend(parts: readonly {
+        block: RecipeBlock;
+        rows: readonly LegendItem[];
+    }[]): LegendItem[];
 }
 declare module "@mrstudio/sdk/raster-look" {
     import type { Paint } from "@mrstudio/sdk/recipe";

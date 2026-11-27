@@ -201,7 +201,7 @@ export const FEATURE_CARDS: FeatureCard[] = [
 ];
 
 /** site.json settings that are set up, not suggested; check-docs needs every other one on a card. */
-export const NOT_SUGGESTED = ['format', 'id', 'name', 'origin', 'extent', 'timezone', 'table', 'scene', 'data', 'basemap', 'layers', 'services', 'display', 'tv', 'branding', 'table.width_cm', 'table.height_cm', 'table.tile_cm'];
+export const NOT_SUGGESTED = ['format', 'id', 'name', 'origin', 'extent', 'timezone', 'table', 'scene', 'data', 'basemap', 'layers', 'services', 'display', 'tv', 'branding', 'table.width_cm', 'table.height_cm', 'table.tile_cm', 'table.intro'];
 
 /** Layers no one would pick for an idea: the base map is always there, the demo is a demo. */
 const NOT_LAYER_CARDS = new Set(['basemap', 'blocks-demo']);
