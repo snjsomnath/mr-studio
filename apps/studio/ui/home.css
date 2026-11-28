@@ -108,6 +108,13 @@ dialog .choice { display: flex; gap: 8px; align-items: flex-start; margin: 6px 0
 .recordings li.none { padding: 14px; color: var(--muted); border-style: dashed; }
 .tables button.recorded { all: unset; cursor: default; margin: -6px 12px 9px; color: var(--accent); font-size: 12px; font-weight: 500; }
 .tables button.recorded:hover { text-decoration: underline; }
+.tables button.git-update { all: unset; cursor: pointer; margin: -6px 12px 9px; color: var(--accent); font-size: 12px; font-weight: 600; }
+.tables button.git-update:hover { text-decoration: underline; }
+.tables .git-from { color: var(--muted); }
+.hint button.link { all: unset; cursor: pointer; color: var(--accent); }
+.hint button.link:hover { text-decoration: underline; }
+dialog .field { display: grid; gap: 4px; margin: 10px 0; }
+dialog .field input { padding: 6px 9px; border: 1px solid var(--line); border-radius: 7px; font: inherit; }
 #recordings-filter button.link { all: unset; cursor: default; color: var(--accent); text-decoration: underline; }
 dialog.confirm .recording-edit { display: grid; gap: 8px; }
 dialog.confirm .recording-edit label { display: grid; gap: 3px; font-size: 12px; color: var(--muted); }

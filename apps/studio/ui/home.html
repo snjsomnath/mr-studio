@@ -56,7 +56,7 @@
       <!-- A returning author's tables come first; what's new follows (#587). -->
       <h2>Your tables</h2>
       <ul id="tables" class="tables"></ul>
-      <p id="tables-hint" class="hint"></p>
+      <p class="hint"><span id="tables-hint"></span> <button type="button" id="git-get" class="link" title="For teams that keep a table in a GitHub or GitLab repository">Get a table from a git repository…</button></p>
 
       <!-- Recorded sessions (#525): kept apart from the tables, in the app's own data folder. -->
       <div class="recordings-head" id="recordings-head">
@@ -110,6 +110,17 @@
         <div class="actions">
           <button type="button" id="recording-delete-cancel">Cancel</button>
           <button type="button" id="recording-delete-confirm" class="danger">Move to Trash</button>
+        </div>
+      </dialog>
+      <dialog id="git-dialog" class="confirm" aria-labelledby="git-title">
+        <h2 id="git-title">Get a table from a git repository</h2>
+        <p>Paste the repository's address, as its Clone button shows it. The table is kept in your tables folder and follows the repository: press Update on its card when a new version is published. Signing in is git's own.</p>
+        <label class="field">Address <input id="git-remote" placeholder="https://git.chalmers.se/group/chalmers-table.git" spellcheck="false" autocomplete="off" /></label>
+        <p id="git-progress" class="hint" hidden>Getting the table… a large one with videos takes a while.</p>
+        <p id="git-error" class="error" role="alert" hidden></p>
+        <div class="actions">
+          <button type="button" id="git-cancel">Cancel</button>
+          <button type="button" id="git-confirm" class="primary">Get the table</button>
         </div>
       </dialog>
       <dialog id="recording-export-dialog" class="confirm" aria-labelledby="recording-export-title">

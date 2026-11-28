@@ -166,6 +166,31 @@ async function load(fresh) {
           if (example) facts.textContent = `Comes with MR Studio · ${size(details.bytes)}`;
         })
         .catch(() => {});
+      // A table that follows a git repository (#570) says where from, and offers new versions.
+      if (!example && !site.problem) {
+        invoke('table_git_state', { path: site.path })
+          .then((git) => {
+            if (!git) return;
+            const from = el('small', { className: 'path git-from', title: git.problem ?? '' }, `From ${git.remote}${git.problem ? ' · could not reach it' : ''}`);
+            open.querySelector('.text')?.append(from);
+            if (!git.behind) return;
+            const update = el('button', { type: 'button', className: 'git-update', title: 'Take the newest version from the repository' }, `Update from the repository (${git.behind} new)`);
+            update.addEventListener('click', async () => {
+              update.disabled = true;
+              showError();
+              try {
+                await invoke('table_git_update', { path: site.path });
+                showNotice(`“${site.name}” is now the repository's newest version.`);
+                await load();
+              } catch (e) {
+                showError(e);
+                update.disabled = false;
+              }
+            });
+            open.after(update);
+          })
+          .catch(() => {});
+      }
       return row;
     }),
   );
@@ -357,6 +382,33 @@ $('recordings-open').addEventListener('click', async () => {
   } catch (e) {
     showError(e);
   }
+});
+
+/** Get a table from a git repository… (#570). */
+$('git-get').addEventListener('click', () => {
+  const dialog = $('git-dialog');
+  showError(undefined, 'git-error');
+  $('git-progress').hidden = true;
+  $('git-cancel').onclick = () => dialog.close();
+  $('git-confirm').onclick = async () => {
+    const remote = /** @type {HTMLInputElement} */ ($('git-remote')).value;
+    $('git-confirm').toggleAttribute('disabled', true);
+    $('git-progress').hidden = false;
+    showError(undefined, 'git-error');
+    try {
+      const got = await invoke('table_from_git', { remote });
+      dialog.close();
+      await load(got.path);
+      showNotice(`Got “${got.name}” from its repository.`);
+    } catch (e) {
+      showError(e, 'git-error');
+    } finally {
+      $('git-progress').hidden = true;
+      $('git-confirm').toggleAttribute('disabled', false);
+    }
+  };
+  dialog.showModal();
+  $('git-remote').focus();
 });
 
 $('recordings-find').addEventListener('input', showRecordings);
