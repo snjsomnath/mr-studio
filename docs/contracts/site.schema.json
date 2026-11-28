@@ -868,7 +868,7 @@
           "type": "boolean"
         },
         "credit": {
-          "description": "Who made what the layer shows, as one line under its name on the controller (#659),\nsuch as \"Artwork by Vishvi Rajakaruna and Fabio Latino\".",
+          "description": "Who made what the layer shows, as one line under its name on the controller (#659),\nsuch as \"Drawings by the original artist\".",
           "type": [
             "string",
             "null"

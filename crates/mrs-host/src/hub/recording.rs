@@ -778,10 +778,10 @@ mod tests {
         assert_eq!(list["recordings"][0]["facilitator"], "Sanjay");
         assert!(hub.request(Role::Tv, 1, "recording.wrapup", &json!({ "id": "../x" })).is_err());
         // Home's Edit details (#525) changes the catalogue only; the phones taking part are counted.
-        let edited = edit_recording(&dir, &id, &json!({ "facilitator": "Vishvi", "tags": ["open day"], "chapters": null }), false).unwrap();
+        let edited = edit_recording(&dir, &id, &json!({ "facilitator": "Guide", "tags": ["open day"], "chapters": null }), false).unwrap();
         assert_eq!(
             (edited.facilitator.as_str(), edited.tags.clone(), edited.chapters.len()),
-            ("Vishvi", vec!["open day".to_string()], wrapped["recording"]["chapters"].as_array().unwrap().len())
+            ("Guide", vec!["open day".to_string()], wrapped["recording"]["chapters"].as_array().unwrap().len())
         );
         assert_eq!(edited.phones, 2, "two phones joined");
         assert!(edit_recording(&dir, "../etc", &json!({}), false).is_err());

@@ -241,7 +241,7 @@ export interface LayerButton {
   /** Kept off the controller and phones without taking the layer out of the table (#58). */
   hidden?: boolean;
   /** Who made what the layer shows, as one line under its name on the controller (#659),
-   * such as "Artwork by Vishvi Rajakaruna and Fabio Latino". */
+   * such as "Drawings by the original artist". */
   credit?: string | null;
   /** How the controller shows the layer's legend (#660). Without it, `auto`. */
   legend?: LegendMode | null;

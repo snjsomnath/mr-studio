@@ -579,7 +579,7 @@ pub struct LayerButton {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub hidden: bool,
     /// Who made what the layer shows, as one line under its name on the controller (#659),
-    /// such as "Artwork by Vishvi Rajakaruna and Fabio Latino".
+    /// such as "Drawings by the original artist".
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(length(max = 200))]
     pub credit: Option<String>,
