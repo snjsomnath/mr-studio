@@ -814,7 +814,9 @@ declare module "@mrstudio/sdk/types" {
                 chapters: {
                     t: number;
                     title?: string;
-                }[];
+                }[]; /** Phones are asked first (#530): they see a notice and pick Join or Just watch. */
+                consent: boolean; /** The organiser's own words for that notice. */
+                notice?: string;
             } | null;
         };
         site: SiteInfo;

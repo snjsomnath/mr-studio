@@ -48,6 +48,13 @@ const SV: Record<string, string> = {
   'Sound': 'Ljud',
   'Muted': 'Ljud av',
   'Recording': 'Spelar in',
+  'Just watch': 'Bara titta',
+  'This session is being recorded': 'Det här passet spelas in',
+  'The organisers record this session to look at it again afterwards.': 'Arrangörerna spelar in passet för att kunna titta på det igen efteråt.',
+  'What is kept: what you draw, vote and write, and your photos and sounds, under your animal name. Nothing about your phone itself.':
+    'Det som sparas: det du ritar, röstar och skriver, och dina foton och ljud, under ditt djurnamn. Inget om själva telefonen.',
+  'Just watch: look around without a seat. Nothing from this phone is kept.': 'Bara titta: titta runt utan plats. Inget från den här telefonen sparas.',
+  'You are watching. Nothing from this phone is recorded.': 'Du tittar. Inget från den här telefonen spelas in.',
   'Ribbon': 'Remsa',
   'Auto': 'Auto',
   'Ribbon: {name}': 'Remsa: {name}',

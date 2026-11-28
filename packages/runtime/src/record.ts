@@ -111,6 +111,13 @@ export function recordPanel(store: Store, connection: Connection): HTMLElement {
     keepNames.type = 'checkbox';
     const keep = el('label', 'record-check');
     keep.append(keepNames, el('span', '', 'Keep the names people type on their phones'));
+    // #530: phones see a notice and pick Join or Just watch before anything from them is kept.
+    const askPhones = el('input');
+    askPhones.type = 'checkbox';
+    askPhones.checked = true;
+    const askRow = el('label', 'record-check');
+    askRow.append(askPhones, el('span', '', 'Ask phones before recording them'));
+    const notice = area('', 'Your own words for the phones’ notice (optional)');
     const go = button('Start recording', 'action is-primary');
     const cancel = button('Cancel');
     cancel.addEventListener('click', idle);
@@ -123,6 +130,8 @@ export function recordPanel(store: Store, connection: Connection): HTMLElement {
         purpose: purpose.value,
         notes: notes.value,
         keep_names: keepNames.checked,
+        consent: askPhones.checked,
+        notice: notice.value,
       });
       go.disabled = false;
       if (answer) show();
@@ -137,6 +146,8 @@ export function recordPanel(store: Store, connection: Connection): HTMLElement {
       field('Context notes', notes),
       keep,
       el('p', 'record-hint', 'Without names, the recording knows each phone only by its animal and colour.'),
+      askRow,
+      field('Notice for phones', notice),
       row,
     );
     name.focus();

@@ -140,13 +140,22 @@
           "items": {
             "$ref": "#/$defs/Chapter"
           }
+        },
+        "consent": {
+          "type": "boolean",
+          "description": "Whether phones are asked first (#530): each phone sees the notice and picks Join or Just\nwatch, and nothing from it is kept until it picks Join."
+        },
+        "notice": {
+          "type": "string",
+          "description": "The organiser's own words for the notice, shown under the standard ones. Empty: none."
         }
       },
       "required": [
         "id",
         "name",
         "started",
-        "chapters"
+        "chapters",
+        "consent"
       ],
       "description": "What the controller shows while a recording runs: the red dot and the time (#522)."
     },

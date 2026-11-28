@@ -63,6 +63,18 @@ requests, unless the organiser ticks "Keep the names people type" when starting
 (`recording.start { keep_names: true }`, kept as `keep_names` in `recording.json`). No address,
 device or browser details are logged.
 
+### Asking phones first (#530)
+
+With `consent` on (the default; the Record form's "Ask phones before recording them"), each
+phone sees a notice before anything else, also when recording starts mid-session: that the
+session is recorded, what is kept, the organiser's own `notice` if any, and **Join** or **Just
+watch** (`recording.consent`). Until a phone answers, its changes are refused and nothing from
+it is in the log; its `join` line is written when it picks Join. Just watch gives up its seat
+and the phone only looks around, as at a full table (#462). The phone remembers its answer for
+that recording, so a reload does not ask again. The wording is a placeholder until it has been
+agreed (it may need a GDPR review); the strings are in `packages/runtime/src/join.ts` and
+`i18n.ts`.
+
 ### `checkpoints.jsonl`: the state now and then (#524)
 
 One line per checkpoint: `{ t, after, state }`. `after` is how many lines of `log.jsonl` came

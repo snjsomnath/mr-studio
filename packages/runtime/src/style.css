@@ -3748,6 +3748,58 @@ body[data-role='phone'] .layer-card > header {
   display: none;
 }
 
+/* The recording notice (#530): over everything on a phone until it is answered. */
+.recording-notice {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: rgb(0 0 0 / 55%);
+}
+
+.recording-notice[hidden] {
+  display: none;
+}
+
+.recording-notice-card {
+  max-width: 26rem;
+  padding: 1.25rem;
+  border-radius: 1rem;
+  background: #fff;
+  color: #1d1d1f;
+  font-size: 0.95rem;
+  line-height: 1.4;
+}
+
+.recording-notice-card h2 {
+  margin: 0 0 0.5rem;
+  font-size: 1.15rem;
+}
+
+.recording-notice-own {
+  padding-left: 0.75rem;
+  border-left: 3px solid #d0d4da;
+}
+
+.recording-notice-hint,
+.recording-notice-problem {
+  color: #5f6670;
+  font-size: 0.85rem;
+}
+
+.recording-notice-row {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.recording-notice-row .action {
+  flex: 1;
+  min-height: 2.75rem;
+}
+
 /* The map: a light base map, the table's edge, buttons floating in its corner. */
 .tool-frame {
   position: relative;
