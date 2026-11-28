@@ -2,6 +2,8 @@
 //! and contrast than a monitor, and every projector differs, so the settings are kept per
 //! display in `colour.json` in the app's config folder. The shell applies them to each
 //! surface window as a CSS filter (see `colour.js`); surfaces and layers know nothing about it.
+//! The same file keeps each display's size: how large the controller's text and controls are
+//! drawn there (#682).
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -10,7 +12,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::config::{write_json, Display};
 
-/// Injected into every surface window. Defines `__mrsColour(settings)` and `__mrsTestCard(on)`.
+/// Injected into every surface window. Defines `__mrsColour(settings)`, `__mrsSize(size)` and `__mrsTestCard(on)`.
 pub const SCRIPT: &str = include_str!("colour.js");
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -54,6 +56,23 @@ impl Colour {
     }
 }
 
+/// The smallest and largest size a display can have, as a share of the designed size. Below
+/// 80% the controller's smallest text would be too small to read across a room.
+pub const SIZE_RANGE: (f64, f64) = (0.8, 1.5);
+
+/// Keeps a size inside [`SIZE_RANGE`] in steps of 5%, and turns NaN into 1.
+pub fn clamp_size(size: f64) -> f64 {
+    if !size.is_finite() {
+        return 1.0;
+    }
+    ((size.clamp(SIZE_RANGE.0, SIZE_RANGE.1) * 20.0).round() / 20.0).clamp(SIZE_RANGE.0, SIZE_RANGE.1)
+}
+
+/// The call that applies a size in a surface window.
+pub fn size_script(size: f64) -> String {
+    format!("window.__mrsSize && window.__mrsSize({});", clamp_size(size))
+}
+
 /// Starting points that ship with the app. They cannot be deleted or overwritten.
 pub fn built_in_presets() -> Vec<(&'static str, Colour)> {
     let neutral = Colour::default();
@@ -75,6 +94,9 @@ pub struct ColourConfig {
     /// How strongly each layer is drawn (0 to 2), by site id and then layer id. Only values
     /// that differ from 1 are kept. The shell hands them to the host when a session starts.
     pub layers: BTreeMap<String, BTreeMap<String, f64>>,
+    /// The controller's size per display, by `key`, as a share of the designed size (#682).
+    /// Only sizes that differ from 1 are kept.
+    pub sizes: BTreeMap<String, f64>,
 }
 
 impl ColourConfig {
@@ -94,6 +116,10 @@ impl ColourConfig {
 
     pub fn for_display(&self, display: &Display) -> Colour {
         self.displays.get(&key(display)).copied().unwrap_or_default().clamped()
+    }
+
+    pub fn size_for(&self, display: &Display) -> f64 {
+        self.sizes.get(&key(display)).copied().map(clamp_size).unwrap_or(1.0)
     }
 }
 
@@ -147,6 +173,22 @@ mod tests {
         // A file from an older version may miss fields.
         let partial: Colour = serde_json::from_str(r#"{ "saturation": 1.3 }"#).unwrap();
         assert_eq!(partial, Colour { saturation: 1.3, ..Colour::default() });
+    }
+
+    #[test]
+    fn sizes_are_kept_per_display_in_steps_within_range() {
+        let tv = display(0, Some("LG TV"));
+        let mut config = ColourConfig::default();
+        assert_eq!(config.size_for(&tv), 1.0);
+        config.sizes.insert(key(&tv), 1.234);
+        assert_eq!(config.size_for(&tv), 1.25);
+        assert_eq!(clamp_size(0.3), 0.8);
+        assert_eq!(clamp_size(9.0), 1.5);
+        assert_eq!(clamp_size(f64::NAN), 1.0);
+        assert_eq!(size_script(1.1), "window.__mrsSize && window.__mrsSize(1.1);");
+        // A file from before sizes existed still reads.
+        let old: ColourConfig = serde_json::from_str(r#"{ "displays": {} }"#).unwrap();
+        assert!(old.sizes.is_empty());
     }
 
     #[test]

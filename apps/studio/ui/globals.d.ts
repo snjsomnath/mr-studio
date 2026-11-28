@@ -18,6 +18,7 @@ interface Window {
   loadCalibration(): Promise<void>;
   // What the shell's scripts (src-tauri/src/*.js) put on the windows they go into.
   __mrsColour(settings: unknown): void;
+  __mrsSize(size: number): void;
   __mrsTestCard(on: boolean): void;
   mrsShellControls?: HTMLElement;
   __MRS_EXIT_QUIET__?: boolean;

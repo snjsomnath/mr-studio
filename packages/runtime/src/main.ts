@@ -91,6 +91,9 @@ async function main() {
   // The editor has its own Present, Stop and Sites controls, so the desktop app adds no bar of its own.
   if (editing) (window as { mrsShellControls?: boolean }).mrsShellControls = true;
   document.body.dataset.role = editing ? 'edit' : role;
+  // ?size=1.2 draws the controller larger in a browser, as the app's per-display setting does (#682).
+  const size = Number(new URLSearchParams(location.search).get('size'));
+  if (size >= 0.8 && size <= 1.5 && size !== 1) document.documentElement.style.setProperty('--mrs-ui-scale', String(size));
 
   const phone = role === 'phone';
   // The guide's phone (#98) has a code of its own, from the operator's screens.
