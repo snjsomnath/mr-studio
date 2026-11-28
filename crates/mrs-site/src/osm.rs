@@ -150,6 +150,13 @@ pub fn tiles(bounds: [f64; 4], side_m: f64) -> Vec<[f64; 4]> {
     out
 }
 
+/// `tile` (south, west, north, east) cut in four, south-west first (#603 follow-up).
+pub fn quarters(tile: [f64; 4]) -> [[f64; 4]; 4] {
+    let [s, w, n, e] = tile;
+    let (lat, lon) = ((s + n) / 2.0, (w + e) / 2.0);
+    [[s, w, lat, lon], [s, lon, lat, e], [lat, w, n, lon], [lat, lon, n, e]]
+}
+
 /// Overpass answers for neighbouring tiles as one answer: an element that crosses a tile edge
 /// comes back from both tiles and is kept once.
 #[derive(Default)]
