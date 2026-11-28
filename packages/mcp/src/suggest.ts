@@ -204,7 +204,7 @@ export const FEATURE_CARDS: FeatureCard[] = [
 export const NOT_SUGGESTED = ['format', 'id', 'name', 'origin', 'extent', 'timezone', 'table', 'scene', 'data', 'basemap', 'layers', 'services', 'display', 'tv', 'branding', 'table.width_cm', 'table.height_cm', 'table.tile_cm', 'table.intro'];
 
 /** Layers no one would pick for an idea: the base map is always there, the demo is a demo. */
-const NOT_LAYER_CARDS = new Set(['basemap', 'blocks-demo']);
+const NOT_LAYER_CARDS = new Set(['basemap']);
 
 /** Cards for layers, generated from their capability (layer.json: description, about, requires). */
 export function layerCards(caps: Capability[]): FeatureCard[] {

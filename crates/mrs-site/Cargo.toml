@@ -12,6 +12,7 @@ serde.workspace = true
 serde_json.workspace = true
 schemars.workspace = true
 thiserror.workspace = true
+tracing.workspace = true
 png = "0.18"
 tiny-skia = { version = "0.12", default-features = false, features = ["std", "simd"] }
 quick-xml = "0.42"

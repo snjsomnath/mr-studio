@@ -108,6 +108,44 @@ fn upgrade_with(document: &mut Value, steps: &[Step], target: u32) -> Result<Opt
     Ok(Some(Upgrade { from, to: target, changes }))
 }
 
+/// Core layers that were removed from MR Studio. A table that still uses one opens without
+/// it, instead of being refused: the layer and the sequence steps that show it are left out
+/// as the site is read (#739). Saving the table then drops them for good.
+pub const RETIRED_LAYERS: &[(&str, &str)] = &[("blocks-demo", "the building blocks demo, removed in #739")];
+
+/// Leaves out the layers of `RETIRED_LAYERS` and the steps that show them. Gives a line per
+/// layer left out, for the log; empty when the site uses none of them.
+pub fn leave_out_retired(document: &mut Value) -> Vec<String> {
+    let Some(layers) = document.get_mut("layers").and_then(Value::as_array_mut) else { return Vec::new() };
+    let retired = |used: &Value| RETIRED_LAYERS.iter().find(|(id, _)| used == *id).map(|(_, why)| *why);
+    let mut gone = Vec::new();
+    let mut said = Vec::new();
+    layers.retain(|layer| match retired(&layer["use"]) {
+        Some(why) => {
+            gone.push(layer["id"].as_str().unwrap_or_default().to_string());
+            said.push(format!("layer '{}' is left out: it used {why}", layer["id"].as_str().unwrap_or("?")));
+            false
+        }
+        None => true,
+    });
+    for layer in layers.iter_mut() {
+        if let Some(items) = layer.get_mut("items").and_then(Value::as_array_mut) {
+            items.retain(|item| match retired(&item["use"]) {
+                Some(why) => {
+                    gone.push(item["id"].as_str().unwrap_or_default().to_string());
+                    said.push(format!("item '{}' is left out: it used {why}", item["id"].as_str().unwrap_or("?")));
+                    false
+                }
+                None => true,
+            });
+        }
+        if let Some(sequence) = layer.pointer_mut("/steps/sequence").and_then(Value::as_array_mut) {
+            sequence.retain(|step| !step["layer"].as_str().is_some_and(|l| gone.iter().any(|g| g == l)));
+        }
+    }
+    said
+}
+
 /// Upgrades the `site.json` of a site folder on disk. The original is kept beside it as
 /// `site.format-<n>.json`. `Ok(None)` when the file is already current, and then nothing is written.
 pub fn upgrade_site(dir: &Path) -> Result<Option<Upgrade>, SiteError> {
@@ -247,5 +285,21 @@ mod tests {
     fn the_sample_site_is_current_and_is_not_rewritten() {
         let sample = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../sites/sample");
         assert_eq!(upgrade_site(&sample).unwrap(), None);
+    }
+    #[test]
+    fn a_retired_layer_is_left_out_with_its_steps() {
+        let mut site = json!({ "format": 3, "layers": [
+            { "use": "basemap", "id": "basemap" },
+            { "use": "blocks-demo", "id": "blocks" },
+            { "use": "slideshow", "id": "tour", "steps": { "sequence": [{ "layer": "blocks" }, { "layer": "basemap" }] } }
+        ]});
+        let said = leave_out_retired(&mut site);
+        assert_eq!(said.len(), 1, "{said:?}");
+        let ids: Vec<_> = site["layers"].as_array().unwrap().iter().map(|l| l["id"].as_str().unwrap()).collect();
+        assert_eq!(ids, ["basemap", "tour"]);
+        assert_eq!(site["layers"][1]["steps"]["sequence"], json!([{ "layer": "basemap" }]));
+
+        let mut current = json!({ "format": 3, "layers": [{ "use": "sunlight", "id": "sun" }] });
+        assert!(leave_out_retired(&mut current).is_empty());
     }
 }

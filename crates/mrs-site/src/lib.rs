@@ -147,6 +147,9 @@ impl Site {
         let parse = |message: String| SiteError::Parse { path: path.clone(), message };
         let mut document: serde_json::Value = serde_json::from_str(&text).map_err(|e| parse(e.to_string()))?;
         migrate::upgrade(&mut document).map_err(parse)?;
+        for line in migrate::leave_out_retired(&mut document) {
+            tracing::warn!("{}: {line}", path.display());
+        }
         let manifest: SiteManifest = serde_json::from_value(document).map_err(|e| parse(e.to_string()))?;
         let path = dir.join("calibration.json");
         let calibration = match std::fs::read_to_string(&path) {

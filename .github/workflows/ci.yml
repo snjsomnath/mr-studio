@@ -112,6 +112,14 @@ jobs:
       - run: pnpm lint
       # Every package with tests, including the density budget: every panel and theme in the repo is checked against the dashboard rules.
       - run: pnpm -r test
+      # How much of each package the unit tests reach, in the job summary (#742). Never fails.
+      - name: Unit test coverage
+        run: |
+          echo "### Unit test coverage (lines, of the files the tests load)" >> "$GITHUB_STEP_SUMMARY"
+          for p in sdk runtime dashboard; do
+            line=$(cd "packages/$p" && node --test --experimental-strip-types --experimental-test-coverage test/*.test.ts 2>/dev/null | grep 'all files' | awk -F'|' '{gsub(/ /,"",$2); print $2}')
+            echo "- $p: ${line:-?} %" >> "$GITHUB_STEP_SUMMARY"
+          done
       - run: pnpm build
 
   mcp:

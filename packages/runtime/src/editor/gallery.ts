@@ -6,7 +6,7 @@
 import { paletteHex, resolvePalette } from '@mrstudio/sdk';
 import type { LayerManifest, Shapes } from '@mrstudio/sdk';
 
-import { el, isAmbient, isOffered } from '../controls.ts';
+import { el, isAmbient } from '../controls.ts';
 import type { Store } from '../store.ts';
 import { icon } from './icons.ts';
 import { targetFor } from './importer.ts';
@@ -364,7 +364,7 @@ export function openGallery(host: GalleryHost, start?: GallerySection): void {
   }
 
   // ---- Core layers and saved custom layers, each in its section.
-  const offered = store.manifests.filter(isOffered).sort((a, b) => {
+  const offered = [...store.manifests].sort((a, b) => {
     const rank = (m: LayerManifest) => (ORDER.indexOf(m.id) + 1 || ORDER.length + 1);
     return rank(a) - rank(b) || a.name.localeCompare(b.name);
   });

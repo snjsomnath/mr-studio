@@ -2,7 +2,7 @@
 // shortcuts, the menu actions, the command search and adding layers. Moved from editor.ts as
 // functions of the one editor state; no change in behaviour.
 import type { LayerManifest } from '@mrstudio/sdk';
-import { defaultSideOf, isAmbient, isOffered, layerButton } from '../controls.ts';
+import { defaultSideOf, isAmbient, layerButton } from '../controls.ts';
 import { confirmLeave, actionFor, keys as shortcut, mac } from './file-menu.ts';
 import { typing } from './tree-tools.ts';
 import { RIBBON } from './layout.ts';
@@ -302,13 +302,13 @@ export function commands(ed: Editor): Command[] {
   );
   // Every command of the ribbon, by the same name and with the same reason when it is greyed out (#392).
   list.push(...searchable(ed.handlers));
-  for (const manifest of ed.store.manifests.filter((m) => !isAmbient(m) && isOffered(m))) {
+  for (const manifest of ed.store.manifests.filter((m) => !isAmbient(m))) {
     list.push({ id: `add:${manifest.id}`, label: `Add ${manifest.name}`, group: 'Add a layer', icon: manifest.icon, also: `new ${manifest.description ?? ''}`, run: () => {
       if (ed.wizard) closeWizard(ed);
       void addChecked(ed, manifest);
     } });
   }
-  for (const manifest of ed.store.manifests.filter((m) => isAmbient(m) && isOffered(m))) {
+  for (const manifest of ed.store.manifests.filter((m) => isAmbient(m))) {
     list.push({ id: `life:${manifest.id}`, label: `Add ${manifest.name} at rest`, group: 'Map life', icon: manifest.icon, also: 'ambient home', run: () => {
       if (ed.wizard) closeWizard(ed);
       void addChecked(ed, manifest);
