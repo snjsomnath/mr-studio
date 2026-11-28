@@ -86,6 +86,40 @@ h2 { margin: 26px 0 10px; font-size: 14px; }
 .tables button.remove.danger:hover { border-color: var(--danger); }
 .tables button.remove:focus-visible { outline: 2px solid var(--accent); }
 
+/* Recorded sessions (#525): a library of its own under the tables. */
+.recordings-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; max-width: 960px; margin-top: 28px; }
+.recordings-head h2 { margin: 0 auto 0 0; }
+.recordings-head input[type='search'] { width: 240px; max-width: 100%; padding: 5px 9px; border: 1px solid var(--line); border-radius: 7px; font: inherit; }
+.recordings-head select { padding: 5px 8px; border: 1px solid var(--line); border-radius: 7px; font: inherit; background: #fff; }
+.recordings { margin-top: 12px; }
+.recordings .card-tools { flex-wrap: wrap; row-gap: 6px; }
+.recordings-head .link-button { padding: 5px 10px; border: 1px solid var(--line); border-radius: 7px; background: #fff; font: inherit; cursor: pointer; }
+.notice { margin: 0 0 14px; padding: 8px 10px; border-radius: 6px; background: #ecfdf3; color: #05603a; border: 1px solid #abefc6; }
+dialog .choice { display: flex; gap: 8px; align-items: flex-start; margin: 6px 0; }
+.recordings li.recording button.open { cursor: pointer; }
+.recordings .play-glyph { position: absolute; inset: 0; display: grid; place-items: center; color: rgba(255, 255, 255, 0.85); font-size: 28px; }
+.recordings li.recording button.open:hover .play-glyph { color: #fff; }
+.recordings .recording-thumb { aspect-ratio: 16 / 6; background: linear-gradient(135deg, #1b2438, #2b3a5e); }
+.recordings .recording-thumb::after { content: none !important; }
+.recordings .rec-dot { position: absolute; top: 10px; right: 10px; width: 10px; height: 10px; border-radius: 50%; background: #e5484d; box-shadow: 0 0 0 3px rgba(229, 72, 77, 0.25); }
+.recordings .tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.recordings .tags:empty { display: none; }
+.recordings .chip { padding: 0 7px; border-radius: 9px; background: #eef1f6; color: var(--text); font-size: 11px; }
+.recordings li.none { padding: 14px; color: var(--muted); border-style: dashed; }
+.tables button.recorded { all: unset; cursor: default; margin: -6px 12px 9px; color: var(--accent); font-size: 12px; font-weight: 500; }
+.tables button.recorded:hover { text-decoration: underline; }
+.tables button.git-update { all: unset; cursor: pointer; margin: -6px 12px 9px; color: var(--accent); font-size: 12px; font-weight: 600; }
+.tables button.git-update:hover { text-decoration: underline; }
+.tables .git-from { color: var(--muted); }
+.hint button.link { all: unset; cursor: pointer; color: var(--accent); }
+.hint button.link:hover { text-decoration: underline; }
+dialog .field { display: grid; gap: 4px; margin: 10px 0; }
+dialog .field input { padding: 6px 9px; border: 1px solid var(--line); border-radius: 7px; font: inherit; }
+#recordings-filter button.link { all: unset; cursor: default; color: var(--accent); text-decoration: underline; }
+dialog.confirm .recording-edit { display: grid; gap: 8px; }
+dialog.confirm .recording-edit label { display: grid; gap: 3px; font-size: 12px; color: var(--muted); }
+dialog.confirm .recording-edit input, dialog.confirm .recording-edit textarea { padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; font: 13px/1.4 inherit; color: var(--text); }
+
 /* Asking before a table is deleted (#184). */
 dialog.confirm { width: 440px; max-width: calc(100vw - 32px); padding: 20px 22px 18px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); color: var(--text); box-shadow: 0 18px 48px rgba(16, 24, 40, 0.22); }
 dialog.confirm::backdrop { background: rgba(16, 24, 40, 0.3); }

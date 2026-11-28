@@ -20,7 +20,9 @@ use tokio::sync::{broadcast, Notify};
 use crate::layers::{LayerDef, ToolKind};
 
 mod custom;
+pub mod feeds;
 mod load;
+mod playback;
 mod recording;
 mod requests;
 mod scene;
@@ -36,8 +38,10 @@ use seats::*;
 use settings::*;
 use tools::*;
 
+pub use playback::{playback_table, PlaybackInfo};
 pub use recording::{
-    default_recordings_dir, list_recordings, replay, seek, Catalogue, Chapter, RecordingInfo, MAX_RECORDING, RECORDING_FORMAT,
+    default_recordings_dir, edit_recording, list_recordings, recording_folder, replay, seek, Catalogue, Chapter, RecordingInfo,
+    MAX_RECORDING, RECORDING_FORMAT,
 };
 
 pub const PROTOCOL: u32 = 1;
@@ -79,6 +83,9 @@ pub struct SessionOptions {
     pub peer_options: Option<serde_json::Value>,
     /// Where recorded sessions are kept (#520). None is the desktop app's data folder.
     pub recordings_dir: Option<std::path::PathBuf>,
+    /// A recording to play back (#526): the host opens read-only on it, phones cannot join,
+    /// and only the playback room's `playback.*` moves the session.
+    pub playback: Option<std::path::PathBuf>,
 }
 
 /// Where phones join over the internet when nothing else is set (#275).
@@ -109,6 +116,7 @@ impl Default for SessionOptions {
             join_page,
             peer_options,
             recordings_dir: None,
+            playback: None,
         }
     }
 }
@@ -393,6 +401,9 @@ pub struct SessionInfo {
     pub tables: usize,
     /// The recording running now (#522): the controller shows a red dot and its time.
     pub recording: Option<RecordingInfo>,
+    /// The recording this host plays (#526): the controller says so, and phones cannot join.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub playback: Option<PlaybackInfo>,
 }
 
 /// A phone's place in the session. It outlives the connection by `resume_hold`.
@@ -600,6 +611,8 @@ pub struct Hub {
     controllers: Mutex<Vec<u64>>,
     /// The session being recorded (#521). Taken after `inner` when both are needed.
     recording: Mutex<Option<recording::Recording>>,
+    /// The recording this host plays back (#526), when it was opened on one.
+    playback: Mutex<Option<playback::Playback>>,
 }
 
 /// The controller goes home after this many seconds with nobody at the table (#74), unless `tv.idle_reset_s` says otherwise.
@@ -669,6 +682,7 @@ impl Hub {
             phones_paused: false,
             tables: 0,
             recording: None,
+            playback: None,
         };
         // Six digits, never the phones' code.
         let guide_code = loop {
@@ -705,6 +719,7 @@ impl Hub {
             last_input: Mutex::new(Instant::now()),
             controllers: Mutex::new(Vec::new()),
             recording: Mutex::new(None),
+            playback: Mutex::new(None),
         };
         // A sequence that starts on shows its first step.
         {
@@ -715,6 +730,7 @@ impl Hub {
                 }
             }
         }
+        hub.start_playback().map_err(|e| anyhow::anyhow!("the recording could not be opened: {e}"))?;
         Ok(hub)
     }
 

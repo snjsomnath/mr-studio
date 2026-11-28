@@ -16,6 +16,7 @@ mod commands;
 mod config;
 mod diagnostics;
 mod file_menu;
+mod git_tables;
 #[cfg(windows)]
 mod gpu;
 mod licence;
@@ -242,6 +243,16 @@ fn main() -> anyhow::Result<()> {
             file_action,
             starter_pack,
             table_details,
+            recordings_list,
+            recording_update,
+            recording_delete,
+            recording_reveal,
+            recording_open,
+            table_from_git,
+            table_git_state,
+            table_git_update,
+            recording_import,
+            recording_export,
             open_sources,
             sources_page,
             sources_save,

@@ -227,3 +227,98 @@ export function pausedBanner(store: Store): HTMLElement {
   store.onParticipants(show);
   return banner;
 }
+
+/**
+ * The notice a phone sees while the session is recorded (#530), before anything else: what is
+ * kept, and Join or Just watch. Just watch gives up the seat; nothing from the phone is kept.
+ * The answer is remembered for this recording, so a reload does not ask again.
+ */
+export function recordingNotice(store: Store, connection: Connection): HTMLElement {
+  const overlay = el('div', 'recording-notice');
+  overlay.setAttribute('role', 'dialog');
+  overlay.setAttribute('aria-modal', 'true');
+  const watchBanner = el('p', 'phones-watching', t('You are watching. Nothing from this phone is recorded.'));
+  watchBanner.setAttribute('role', 'status');
+  const key = (id: string) => `mrs-recording-answer-${id}`;
+  const answerOf = (id: string): string | null => {
+    try {
+      return sessionStorage.getItem(key(id));
+    } catch {
+      return null;
+    }
+  };
+  const remember = (id: string, answer: string) => {
+    try {
+      sessionStorage.setItem(key(id), answer);
+    } catch {
+      // A private window keeps nothing; the phone is asked again after a reload.
+    }
+  };
+  let giving = false;
+  const show = () => {
+    const recording = store.state.session.recording;
+    if (!recording?.consent) {
+      overlay.hidden = true;
+      watchBanner.hidden = true;
+      return;
+    }
+    const earlier = answerOf(recording.id);
+    if (earlier === 'watch') {
+      // Reloaded after Just watch: the new connection was given a seat, so give it up again.
+      overlay.hidden = true;
+      watchBanner.hidden = false;
+      if (!giving) {
+        giving = true;
+        void connection.request('recording.consent', { join: false }).catch(() => {});
+      }
+      return;
+    }
+    if (store.watching || earlier === 'join') {
+      overlay.hidden = true;
+      return;
+    }
+    if (!overlay.hidden && overlay.dataset.id === recording.id) return;
+    overlay.dataset.id = recording.id;
+    const card = el('div', 'recording-notice-card');
+    const join = el('button', 'action is-primary', t('Join')) as HTMLButtonElement;
+    const watch = el('button', 'action', t('Just watch')) as HTMLButtonElement;
+    const problem = el('p', 'recording-notice-problem');
+    problem.hidden = true;
+    const answer = async (yes: boolean) => {
+      join.disabled = watch.disabled = true;
+      try {
+        await connection.request('recording.consent', { join: yes });
+        remember(recording.id, yes ? 'join' : 'watch');
+        giving = !yes;
+        overlay.hidden = true;
+        watchBanner.hidden = yes;
+      } catch (error) {
+        problem.textContent = error instanceof Error ? error.message : String(error);
+        problem.hidden = false;
+        join.disabled = watch.disabled = false;
+      }
+    };
+    join.addEventListener('click', () => void answer(true));
+    watch.addEventListener('click', () => void answer(false));
+    const row = el('div', 'recording-notice-row');
+    row.append(join, watch);
+    card.append(
+      el('h2', '', t('This session is being recorded')),
+      el('p', '', t('The organisers record this session to look at it again afterwards.')),
+      el('p', '', t('What is kept: what you draw, vote and write, and your photos and sounds, under your animal name. Nothing about your phone itself.')),
+      ...(recording.notice ? [el('p', 'recording-notice-own', recording.notice)] : []),
+      el('p', 'recording-notice-hint', t('Just watch: look around without a seat. Nothing from this phone is kept.')),
+      row,
+      problem,
+    );
+    overlay.replaceChildren(card);
+    overlay.hidden = false;
+  };
+  overlay.hidden = true;
+  watchBanner.hidden = true;
+  show();
+  store.onParticipants(show);
+  const wrap = el('div', 'recording-notice-wrap');
+  wrap.append(overlay, watchBanner);
+  return wrap;
+}

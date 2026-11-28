@@ -4,9 +4,16 @@ use super::*;
 
 impl Hub {
     pub(super) fn handle(&self, role: Role, surface: u64, method: &str, p: &Value) -> Result<Value, String> {
+        // A host playing a recording back changes nothing but by its log (#526).
+        if self.refused_in_playback(role, method) {
+            return Err("this is a recorded session, read only: nothing can be changed".into());
+        }
+        if method.starts_with("playback.") {
+            return self.playback_request(role, method, p);
+        }
         // Recording takes the hub's lock itself, for its start snapshot (#521).
         if method.starts_with("recording.") {
-            return self.recording_request(role, method, p);
+            return self.recording_request(role, surface, method, p);
         }
         self.recording_limits();
         // One lock for the whole request, so changes and their events keep one order.
@@ -131,6 +138,22 @@ impl Hub {
             )
         {
             return Err("watching: every seat at the table is taken".into());
+        }
+        if role == Role::Phone
+            && matches!(
+                method,
+                "layer.activate"
+                    | "layer.set"
+                    | "layer.action"
+                    | "tool.input"
+                    | "layer.entity"
+                    | "layer.select"
+                    | "layer.step"
+                    | "participant.profile"
+            )
+            && self.awaits_consent(&inner, surface)
+        {
+            return Err("this session is being recorded: answer the notice first".into());
         }
         if role == Role::Phone
             && *self.phones_paused.read()

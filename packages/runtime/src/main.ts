@@ -12,7 +12,7 @@ import { mountDashboard } from './dashboard.ts';
 import { guideCode, guideDoor, guideScreen } from './guide.ts';
 import { browserLanguage, keepOwnLanguage, language, offered, ownLanguage, setLanguage, speak, t } from './i18n.ts';
 import type { Language } from './i18n.ts';
-import { joinPanel, pausedBanner, phonesPanel, watchingBanner } from './join.ts';
+import { joinPanel, pausedBanner, phonesPanel, recordingNotice, watchingBanner } from './join.ts';
 import { recordingDot, recordPanel } from './record.ts';
 import { LayerManager, stackOrder } from './layer-manager.ts';
 import { loadSiteModules } from './registry.ts';
@@ -136,6 +136,12 @@ async function main() {
     return;
   }
   const store = new Store(connection, welcome);
+  // The playback room (#526): a recording played back, read only, beside its timeline.
+  if (segment === 'playback') {
+    const { playbackRoom } = await import('./playback.ts');
+    await playbackRoom(app, store, connection);
+    return;
+  }
   // The controller (or, without one, the table) carries phones in from the join page on GitHub
   // Pages (#275), for venues where they cannot reach this computer. The host takes one bridge
   // and decides whether it is on. The controller goes first: it draws less than the table, so
@@ -400,7 +406,7 @@ async function main() {
       );
     }
     side.append(header);
-    if (phone) side.append(watchingBanner(store), pausedBanner(store));
+    if (phone) side.append(watchingBanner(store), pausedBanner(store), recordingNotice(store, connection));
     const cards = el('div', 'cards');
     if (phone) {
       // A field walk (#445) sits above the layers, outside the cards the controller redraws.
@@ -419,7 +425,8 @@ async function main() {
       const foot = second ?? side;
       // No Home button: pressing the open layer's button again closes it and leaves the map at rest (#74).
       if (second) second.append(rightCards);
-      foot.append(joinPanel(store));
+      // A recording played back takes no phones, so it shows no way to join (#528).
+      if (!store.state.session.playback) foot.append(joinPanel(store));
       // While a session is recorded the controller, and only the controller, shows a red dot (#522).
       if (role === 'tv') stage.append(recordingDot(store));
       // The session and the engine are for whoever runs the table: the developer page has them, the visitors' controller does not.

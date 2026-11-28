@@ -44,6 +44,12 @@ pub struct RecordingInfo {
     /// When it started, Unix milliseconds.
     pub started: u64,
     pub chapters: Vec<Chapter>,
+    /// Whether phones are asked first (#530): each phone sees the notice and picks Join or Just
+    /// watch, and nothing from it is kept until it picks Join.
+    pub consent: bool,
+    /// The organiser's own words for the notice, shown under the standard ones. Empty: none.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub notice: String,
 }
 
 /// A chapter mark: milliseconds since the start, and an optional title.
@@ -77,6 +83,12 @@ pub struct Catalogue {
     /// only by its seat (animal, mood, colour).
     #[serde(default)]
     pub keep_names: bool,
+    /// Whether phones were asked before anything from them was kept (#530).
+    #[serde(default)]
+    pub consent: bool,
+    /// The organiser's own words shown to phones with the notice.
+    #[serde(default)]
+    pub notice: String,
     /// Unix milliseconds.
     pub started: u64,
     /// Length in milliseconds; 0 while it runs.
@@ -85,6 +97,9 @@ pub struct Catalogue {
     /// Events in the log.
     #[serde(default)]
     pub events: u64,
+    /// How many phones took part (picked Join, or joined when phones were not asked).
+    #[serde(default)]
+    pub phones: usize,
     /// False until it is stopped. A recording left unfinished by a crash is offered to keep.
     #[serde(default)]
     pub finished: bool,
@@ -102,11 +117,17 @@ pub(super) struct Recording {
     started: Instant,
     log: std::fs::File,
     checkpoints: std::fs::File,
+    /// The seats (slots) that picked Join on the notice (#530). Only these are in the log.
+    joined: std::collections::HashSet<usize>,
+    /// The seats seen joining, for the library's count of phones (#525).
+    seen: std::collections::HashSet<usize>,
     /// When the last checkpoint was written, in ms from the start (#524).
     last_checkpoint: u64,
     catalogue: Catalogue,
     /// Set when writing the log failed: the recording stops at the next request.
     failed: Option<String>,
+    /// Bytes of outside answers kept so far (#523).
+    pub(super) feed_bytes: u64,
 }
 
 impl Recording {
@@ -114,8 +135,22 @@ impl Recording {
         self.started.elapsed().as_millis() as u64
     }
 
+    pub(super) fn now_ms(&self) -> u64 {
+        self.ms()
+    }
+
+    pub(super) fn dir(&self) -> &std::path::Path {
+        &self.dir
+    }
+
     fn write(&mut self, mut line: Value) {
         line["t"] = json!(self.ms());
+        if line["k"] == "join" {
+            if let Some(slot) = line["slot"].as_u64() {
+                self.seen.insert(slot as usize);
+                self.catalogue.phones = self.seen.len();
+            }
+        }
         let text = line.to_string() + "\n";
         if let Err(e) = self.log.write_all(text.as_bytes()) {
             self.failed.get_or_insert_with(|| format!("the session log could not be written: {e}"));
@@ -144,7 +179,14 @@ impl Recording {
             name: self.catalogue.name.clone(),
             started: self.catalogue.started,
             chapters: self.catalogue.chapters.clone(),
+            consent: self.catalogue.consent,
+            notice: self.catalogue.notice.clone(),
         }
+    }
+
+    /// Whether what this seat sends may be kept (#530).
+    fn keeps(&self, slot: Option<usize>) -> bool {
+        !self.catalogue.consent || slot.is_some_and(|slot| self.joined.contains(&slot))
     }
 }
 
@@ -244,6 +286,10 @@ impl Hub {
             let mut recording = self.recording.lock();
             let Some(recording) = recording.as_mut() else { return };
             let slot = inner.seats.iter().find(|s| s.participant.surface == surface).map(|s| s.participant.slot);
+            if matches!(role, Role::Phone) && !recording.keeps(slot) {
+                // A phone that has not picked Join leaves nothing in the log (#530).
+                return;
+            }
             let mut p = p.clone();
             if !recording.catalogue.keep_names && method == "participant.profile" {
                 // A phone is known by its seat only, unless the organiser keeps names (#530).
@@ -308,14 +354,54 @@ impl Hub {
         *self.ribbon.write() = session["ribbon"].as_str().map(str::to_string);
         self.emit("state.scene", json!({ "scene": inner.order(), "layers": inner.layers() }));
         drop(inner);
+        if state.get("participants").is_some() {
+            self.restore_seats(&state["participants"]);
+        }
         self.emit("session.changed", json!({ "session": self.session() }));
     }
 
     /// Writes a phone joining or leaving to the log.
     pub(super) fn record_phone(&self, what: &str, surface: u64, slot: Option<usize>) {
         if let Some(recording) = self.recording.lock().as_mut() {
-            recording.write(json!({ "k": what, "role": "phone", "surface": surface, "slot": slot }));
+            if recording.keeps(slot) {
+                recording.write(json!({ "k": what, "role": "phone", "surface": surface, "slot": slot }));
+            }
         }
+    }
+
+    /// Whether a phone must answer the recording notice before it may change anything (#530).
+    pub(super) fn awaits_consent(&self, inner: &Inner, surface: u64) -> bool {
+        let recording = self.recording.lock();
+        let Some(recording) = recording.as_ref() else { return false };
+        let slot = inner.seats.iter().find(|s| s.participant.surface == surface).map(|s| s.participant.slot);
+        slot.is_some() && !recording.keeps(slot)
+    }
+
+    /// A phone's answer to the notice (#530): Join keeps what it sends from now on; Just watch
+    /// gives up its seat and it looks around, as a phone at a full table does (#462).
+    fn consent(&self, surface: u64, p: &Value) -> Result<Value, String> {
+        let join = p["join"].as_bool().ok_or("say join: true or false")?;
+        let mut inner = self.inner.lock();
+        let slot = inner.seats.iter().find(|s| s.participant.surface == surface).map(|s| s.participant.slot);
+        {
+            let mut recording = self.recording.lock();
+            let recording = recording.as_mut().ok_or("nothing is being recorded")?;
+            if join {
+                let slot = slot.ok_or("this phone has no seat")?;
+                if recording.joined.insert(slot) {
+                    recording.write(json!({ "k": "join", "role": "phone", "surface": surface, "slot": slot }));
+                }
+                return Ok(json!({ "joined": true }));
+            }
+        }
+        if let Some(at) = inner.seats.iter().position(|s| s.participant.surface == surface) {
+            // The connection stays open: only the seat goes.
+            inner.seats.remove(at);
+            let now = Instant::now();
+            inner.watching.push(Watcher { surface, allowance: self.options.phone_requests_per_second as f64, refilled: now });
+            self.emit("state.participants", json!({ "participants": inner.participants() }));
+        }
+        Ok(json!({ "watching": true }))
     }
 
     /// Stops a recording that ran too long or whose log cannot be written, and says why.
@@ -336,7 +422,13 @@ impl Hub {
     }
 
     /// `recording.*` requests (#521, #522). Only the operator's screens record.
-    pub(super) fn recording_request(&self, role: Role, method: &str, p: &Value) -> Result<Value, String> {
+    pub(super) fn recording_request(&self, role: Role, surface: u64, method: &str, p: &Value) -> Result<Value, String> {
+        if method == "recording.consent" {
+            if role != Role::Phone {
+                return Err("only a phone answers the recording notice".into());
+            }
+            return self.consent(surface, p);
+        }
         if !matches!(role, Role::Tv | Role::Dev | Role::Guide) {
             return Err("only the operator records a session".into());
         }
@@ -374,6 +466,9 @@ impl Hub {
     fn start_recording(&self, p: &Value) -> Result<Value, String> {
         let name = text(p, "name", 120)?;
         let keep_names = p["keep_names"].as_bool().unwrap_or(false);
+        // Phones are asked first unless the organiser turns it off (#530).
+        let consent = p["consent"].as_bool().unwrap_or(true);
+        let notice = text(p, "notice", 600)?;
         let (facilitator, purpose, notes) = (text(p, "facilitator", 120)?, text(p, "purpose", 400)?, text(p, "notes", 4000)?);
         let started = unix_ms();
         let date = match text(p, "date", 10)? {
@@ -429,9 +524,12 @@ impl Hub {
             tags: Vec::new(),
             chapters: Vec::new(),
             keep_names,
+            consent,
+            notice,
             started,
             length: 0,
             events: 0,
+            phones: 0,
             finished: false,
             wrapped: false,
             table: json!({ "id": info.id, "name": info.name }),
@@ -442,7 +540,19 @@ impl Hub {
         let open = |name: &str| std::fs::OpenOptions::new().create(true).append(true).open(dir.join(name));
         let log = open("log.jsonl").map_err(io)?;
         let checkpoints = open("checkpoints.jsonl").map_err(io)?;
-        let new = Recording { dir, started: Instant::now(), log, checkpoints, last_checkpoint: 0, catalogue, failed: None };
+        let joined = std::collections::HashSet::new();
+        let new = Recording {
+            dir,
+            started: Instant::now(),
+            log,
+            checkpoints,
+            joined,
+            seen: std::collections::HashSet::new(),
+            last_checkpoint: 0,
+            catalogue,
+            failed: None,
+            feed_bytes: 0,
+        };
         let info = new.info();
         *recording = Some(new);
         drop(recording);
@@ -468,46 +578,70 @@ impl Hub {
     /// `discard: true` to delete it (#522).
     fn wrap_up(&self, p: &Value) -> Result<Value, String> {
         let id = p["id"].as_str().ok_or("say which recording: id")?;
-        if id.contains(['/', '\\']) || id.starts_with('.') {
-            return Err("not a recording".into());
-        }
         if self.recording.lock().as_ref().is_some_and(|r| r.catalogue.id == id) {
             return Err("stop the recording first".into());
         }
-        let dir = self.recordings_dir().join(id);
-        let file = dir.join("recording.json");
-        let mut catalogue: Catalogue = std::fs::read_to_string(&file)
-            .ok()
-            .and_then(|t| serde_json::from_str(&t).ok())
-            .ok_or_else(|| format!("no recording '{id}'"))?;
+        let dir = self.recordings_dir();
         if p["discard"] == true {
-            std::fs::remove_dir_all(&dir).map_err(|e| format!("the recording could not be deleted: {e}"))?;
+            let folder = recording_folder(&dir, id)?;
+            std::fs::remove_dir_all(&folder).map_err(|e| format!("the recording could not be deleted: {e}"))?;
             return Ok(json!({ "discarded": id }));
         }
-        if !p["name"].is_null() {
-            let name = text(p, "name", 120)?;
-            if !name.is_empty() {
-                catalogue.name = name;
-            }
-        }
-        if !p["notes"].is_null() {
-            catalogue.notes = text(p, "notes", 8000)?;
-        }
-        if let Some(tags) = p.get("tags").filter(|t| !t.is_null()) {
-            let tags: Vec<String> = serde_json::from_value(tags.clone()).map_err(|_| "tags is a list of words".to_string())?;
-            catalogue.tags = tags.into_iter().map(|t| t.trim().to_string()).filter(|t| !t.is_empty()).take(20).collect();
-        }
-        if let Some(chapters) = p.get("chapters").filter(|c| !c.is_null()) {
-            let chapters: Vec<Chapter> =
-                serde_json::from_value(chapters.clone()).map_err(|_| "chapters is a list of { t, title }".to_string())?;
-            catalogue.chapters = chapters.into_iter().filter(|c| catalogue.length == 0 || c.t <= catalogue.length).collect();
-            catalogue.chapters.sort_by_key(|c| c.t);
-        }
-        catalogue.finished = true;
-        catalogue.wrapped = true;
-        write_json(&file, &catalogue).map_err(|e| format!("the recording could not be saved: {e}"))?;
+        let catalogue = edit_recording(&dir, id, p, true)?;
         Ok(json!({ "recording": catalogue }))
     }
+}
+
+/// The folder of recording `id` in `dir`, refusing ids that would reach outside it.
+pub fn recording_folder(dir: &Path, id: &str) -> Result<PathBuf, String> {
+    if id.is_empty() || id.contains(['/', '\\']) || id.starts_with('.') {
+        return Err("not a recording".into());
+    }
+    let folder = dir.join(id);
+    if !folder.join("recording.json").is_file() {
+        return Err(format!("no recording '{id}'"));
+    }
+    Ok(folder)
+}
+
+/// Changes a recording's catalogue (#522, #525): any of `name`, `facilitator`, `purpose`,
+/// `notes`, `tags` and `chapters` in `p`. `wrapped` marks the wrap-up as saved. The catalogue
+/// is the only part of a recording that changes after it is made.
+pub fn edit_recording(dir: &Path, id: &str, p: &Value, wrapped: bool) -> Result<Catalogue, String> {
+    let file = recording_folder(dir, id)?.join("recording.json");
+    let mut catalogue: Catalogue =
+        std::fs::read_to_string(&file).ok().and_then(|t| serde_json::from_str(&t).ok()).ok_or_else(|| format!("no recording '{id}'"))?;
+    if !p["name"].is_null() {
+        let name = text(p, "name", 120)?;
+        if !name.is_empty() {
+            catalogue.name = name;
+        }
+    }
+    if !p["facilitator"].is_null() {
+        catalogue.facilitator = text(p, "facilitator", 120)?;
+    }
+    if !p["purpose"].is_null() {
+        catalogue.purpose = text(p, "purpose", 400)?;
+    }
+    if !p["notes"].is_null() {
+        catalogue.notes = text(p, "notes", 8000)?;
+    }
+    if let Some(tags) = p.get("tags").filter(|t| !t.is_null()) {
+        let tags: Vec<String> = serde_json::from_value(tags.clone()).map_err(|_| "tags is a list of words".to_string())?;
+        catalogue.tags = tags.into_iter().map(|t| t.trim().to_string()).filter(|t| !t.is_empty()).take(20).collect();
+    }
+    if let Some(chapters) = p.get("chapters").filter(|c| !c.is_null()) {
+        let chapters: Vec<Chapter> =
+            serde_json::from_value(chapters.clone()).map_err(|_| "chapters is a list of { t, title }".to_string())?;
+        catalogue.chapters = chapters.into_iter().filter(|c| catalogue.length == 0 || c.t <= catalogue.length).collect();
+        catalogue.chapters.sort_by_key(|c| c.t);
+    }
+    if wrapped {
+        catalogue.finished = true;
+        catalogue.wrapped = true;
+    }
+    write_json(&file, &catalogue).map_err(|e| format!("the recording could not be saved: {e}"))?;
+    Ok(catalogue)
 }
 
 /// Replays a recording's log onto a hub started from its snapshot, as far as `until`
@@ -519,6 +653,10 @@ pub fn replay(hub: &Hub, log: &str, until: Option<u64>) -> usize {
         let Ok(event) = serde_json::from_str::<Value>(line) else { continue };
         if until.is_some_and(|until| event["t"].as_u64().unwrap_or(0) > until) {
             break;
+        }
+        if event["k"] == "join" || event["k"] == "leave" {
+            hub.replay_seat(&event);
+            continue;
         }
         if event["k"] != "request" {
             continue;
@@ -588,6 +726,9 @@ mod tests {
         assert!(hub.request(Role::Tv, 1, "recording.start", &json!({})).is_err(), "one at a time");
 
         let phone_b = hub.join(Role::Phone, Some(&code), None).unwrap().surface;
+        for phone in [phone_a, phone_b] {
+            hub.request(Role::Phone, phone, "recording.consent", &json!({ "join": true })).unwrap();
+        }
         hub.request(Role::Tv, 1, "layer.activate", &json!({ "layer": "sunlight", "active": true })).unwrap();
         hub.request(Role::Tv, 1, "layer.set", &json!({ "layer": "sunlight", "params": { "hour": 9.5 } })).unwrap();
         hub.request(Role::Tv, 1, "recording.chapter", &json!({ "title": "Morning" })).unwrap();
@@ -636,6 +777,14 @@ mod tests {
         assert_eq!(list["recordings"][0]["id"], id.as_str());
         assert_eq!(list["recordings"][0]["facilitator"], "Sanjay");
         assert!(hub.request(Role::Tv, 1, "recording.wrapup", &json!({ "id": "../x" })).is_err());
+        // Home's Edit details (#525) changes the catalogue only; the phones taking part are counted.
+        let edited = edit_recording(&dir, &id, &json!({ "facilitator": "Vishvi", "tags": ["open day"], "chapters": null }), false).unwrap();
+        assert_eq!(
+            (edited.facilitator.as_str(), edited.tags.clone(), edited.chapters.len()),
+            ("Vishvi", vec!["open day".to_string()], wrapped["recording"]["chapters"].as_array().unwrap().len())
+        );
+        assert_eq!(edited.phones, 2, "two phones joined");
+        assert!(edit_recording(&dir, "../etc", &json!({}), false).is_err());
         hub.request(Role::Tv, 1, "recording.wrapup", &json!({ "id": id, "discard": true })).unwrap();
         assert!(!folder.exists());
     }
@@ -704,6 +853,7 @@ mod tests {
                 .as_str()
                 .unwrap()
                 .to_string();
+            hub.request(Role::Phone, early, "recording.consent", &json!({ "join": true })).unwrap();
             hub.request(Role::Phone, early, "participant.profile", &json!({ "name": "Grace Hopper", "avatar": "whale" })).unwrap();
             hub.request(Role::Tv, 1, "recording.chapter", &json!({})).unwrap();
             hub.request(Role::Tv, 1, "recording.stop", &json!({})).unwrap();
@@ -716,6 +866,45 @@ mod tests {
             assert_eq!(all.contains("Grace Hopper"), keep, "the log and the checkpoint");
             assert!(all.contains("whale"), "the seat itself is kept");
         }
+    }
+
+    #[test]
+    fn a_phone_is_asked_first_and_just_watching_leaves_nothing_in_the_log() {
+        // #530: while recording, a phone changes nothing and is not logged until it picks Join;
+        // Just watch frees its seat and it only looks around.
+        let dir = scratch_dir("consent");
+        let mut hub = scratch_hub("consent");
+        hub.options.recordings_dir = Some(dir.clone());
+        let code = hub.session().code;
+        let started = hub.request(Role::Tv, 1, "recording.start", &json!({ "notice": "Workshop for the new square" })).unwrap();
+        assert_eq!(started["recording"]["consent"], true, "asked by default");
+        assert_eq!(hub.session().recording.unwrap().notice, "Workshop for the new square");
+        let id = started["recording"]["id"].as_str().unwrap().to_string();
+        let (joins, watches) =
+            (hub.join(Role::Phone, Some(&code), None).unwrap().surface, hub.join(Role::Phone, Some(&code), None).unwrap().surface);
+        let on = |phone: u64| hub.request(Role::Phone, phone, "layer.activate", &json!({ "layer": "trees", "active": false }));
+        assert!(on(joins).unwrap_err().contains("answer the notice"));
+        assert!(hub.request(Role::Tv, 1, "recording.consent", &json!({ "join": true })).is_err(), "phones only");
+
+        hub.request(Role::Phone, joins, "recording.consent", &json!({ "join": true })).unwrap();
+        on(joins).unwrap();
+        let answer = hub.request(Role::Phone, watches, "recording.consent", &json!({ "join": false })).unwrap();
+        assert_eq!(answer["watching"], true);
+        assert_eq!(hub.welcome(0)["state"]["participants"].as_array().unwrap().len(), 1, "the watcher gave up its seat");
+        assert!(on(watches).is_err(), "a watcher changes nothing");
+        assert_eq!(hub.welcome(watches)["watching"], true);
+        hub.request(Role::Tv, 1, "recording.stop", &json!({})).unwrap();
+
+        let log = std::fs::read_to_string(dir.join(&id).join("log.jsonl")).unwrap();
+        let phone_lines: Vec<&str> = log.lines().filter(|l| l.contains("\"role\":\"phone\"")).collect();
+        assert_eq!(phone_lines.len(), 2, "the Join and the one change: {phone_lines:?}");
+        assert!(phone_lines.iter().all(|l| l.contains(&format!("\"surface\":{joins}"))), "nothing from the watcher");
+
+        // Without asking, phones are kept as before.
+        let quiet = hub.request(Role::Tv, 1, "recording.start", &json!({ "consent": false })).unwrap();
+        assert_eq!(quiet["recording"]["consent"], false);
+        on(joins).unwrap();
+        hub.request(Role::Tv, 1, "recording.stop", &json!({})).unwrap();
     }
 
     fn layer_of(hub: &Hub, id: &str) -> Value {

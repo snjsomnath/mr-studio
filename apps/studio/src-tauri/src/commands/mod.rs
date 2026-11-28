@@ -5,12 +5,16 @@ use super::*;
 
 mod calibration;
 mod files;
+mod git;
 mod launcher;
+mod recordings;
 mod settings;
 mod update_commands;
 
 pub(crate) use calibration::*;
 pub(crate) use files::*;
+pub(crate) use git::*;
 pub(crate) use launcher::*;
+pub(crate) use recordings::*;
 pub(crate) use settings::*;
 pub(crate) use update_commands::*;

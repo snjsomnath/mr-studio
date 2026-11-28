@@ -816,8 +816,16 @@ declare module "@mrstudio/sdk/types" {
                 chapters: {
                     t: number;
                     title?: string;
-                }[];
-            } | null;
+                }[]; /** Phones are asked first (#530): they see a notice and pick Join or Just watch. */
+                consent: boolean; /** The organiser's own words for that notice. */
+                notice?: string;
+            } | null; /** The recording this host plays back (#526): read only, and phones cannot join. Length in milliseconds. */
+            playback?: {
+                id: string;
+                name: string;
+                date: string;
+                length: number;
+            };
         };
         site: SiteInfo;
         /** Layer instance ids in draw order, bottom first. */
