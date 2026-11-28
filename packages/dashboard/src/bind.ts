@@ -5,6 +5,13 @@
 import { dataQueryProblems, expression, formatCompact, formatDecimal, formatHour, isDataQuery, isExpressionValue, runDataQuery } from '@mrstudio/sdk';
 import type { DataQuery, DataResult, DataRow, PanelSize } from '@mrstudio/sdk';
 
+/** The parts of a panel's spec that decide whether it is empty. */
+export interface EmptyCheck {
+  props?: Record<string, unknown>;
+  size: PanelSize;
+  hideWhenEmpty?: boolean;
+}
+
 import type { PropSpec, WidgetDefinition } from './registry.ts';
 import { TEXT } from './rules.ts';
 import { isBinding, listLimit } from './validate.ts';
@@ -107,6 +114,25 @@ function resolveAll(specs: Record<string, PropSpec>, props: unknown, source: Bin
 /** The props a widget draws, for the current state. */
 export function resolveProps(widget: WidgetDefinition, props: Record<string, unknown> | undefined, size: PanelSize, source: BindSource): Record<string, any> {
   return resolveAll(widget.props, props, source, (key, spec) => (spec.kind === 'list' ? listLimit(widget, key, spec, size) : undefined));
+}
+
+/** The prop a panel is about: its widget's first required prop that can be bound (a stat's value, a list's items). */
+export function mainProp(widget: WidgetDefinition): string | undefined {
+  const props = Object.entries(widget.props);
+  return (props.find(([, spec]) => spec.required && spec.bindable) ?? props.find(([, spec]) => spec.required))?.[0];
+}
+
+/**
+ * Whether a panel with `hideWhenEmpty` has nothing to show (#752): its main value is missing,
+ * empty, zero, or an empty list. Such a panel is left out of the layout, so the canvas never
+ * shows an empty card.
+ */
+export function panelIsEmpty(widget: WidgetDefinition, spec: EmptyCheck, source: BindSource): boolean {
+  if (!spec.hideWhenEmpty) return false;
+  const key = mainProp(widget);
+  if (!key) return false;
+  const value = resolveProps(widget, spec.props, spec.size, source)[key];
+  return value === undefined || value === null || value === '' || value === 0 || (Array.isArray(value) && value.length === 0);
 }
 
 export type ValueFormat = 'number' | 'hour' | 'percent';

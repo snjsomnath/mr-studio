@@ -1,4 +1,4 @@
-import { controlProblems, DashboardView, LOOK_ATTRIBUTES, resolveProps, themeVariables, validateLayerPanels, validatePage, validatePanel } from '@mrstudio/dashboard';
+import { controlProblems, DashboardView, LOOK_ATTRIBUTES, panelIsEmpty, resolveProps, themeVariables, validateLayerPanels, validatePage, validatePanel } from '@mrstudio/dashboard';
 import type { PanelInput, PanelOverflow, WidgetDefinition, WidgetHandle } from '@mrstudio/dashboard';
 import type { Connection, LayerManifest, PanelContext, PanelControls, PanelLayer, PanelSpec, StageLayout } from '@mrstudio/sdk';
 
@@ -204,7 +204,7 @@ function mountMapStage(el: HTMLElement, store: Store, connection: Connection, id
     for (const { input, widget, handle, el: panel } of mounted) {
       const source = input.source();
       const when = input.spec.visibleWhen;
-      panel.hidden = when ? !Object.entries(when).every(([k, v]) => (Array.isArray(v) ? v.includes(source.params[k]) : source.params[k] === v)) : false;
+      panel.hidden = (when ? !Object.entries(when).every(([k, v]) => (Array.isArray(v) ? v.includes(source.params[k]) : source.params[k] === v)) : false) || panelIsEmpty(widget, input.spec, source);
       if (panel.hidden) continue;
       try {
         handle.update(resolveProps(widget, input.spec.props, input.spec.size, source));

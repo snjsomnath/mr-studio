@@ -4,7 +4,7 @@ import { test } from 'node:test';
 
 import type { EntityFeature, PanelSpec, Position } from '@mrstudio/sdk';
 
-import { clip, formatValue, resolveProps } from '../src/bind.ts';
+import { clip, formatValue, mainProp, panelIsEmpty, resolveProps } from '../src/bind.ts';
 import { pack } from '../src/pack.ts';
 import { GRID, SCREEN, SIZES, TEXT } from '../src/rules.ts';
 import { contrast, STYLE_TOKENS, themeVariables, validateTheme } from '../src/theme.ts';
@@ -417,4 +417,21 @@ test('a panel may read a table dataset and reduce it (#670)', () => {
   assert.ok(bad.some((i) => i.path.endsWith('.items') && i.message.includes('needs group_by')));
   assert.ok(bad.some((i) => i.path.endsWith('.unit') && i.message.includes('only props that can be bound')));
   assert.ok(asked >= 2);
+});
+
+test('a panel with hideWhenEmpty is left out while its main value is empty (#752)', () => {
+  const registry = coreWidgets();
+  const stat = registry.get('stat')!;
+  const spec: PanelSpec = { id: 'marks', widget: 'stat', size: 'tile', title: 'Marks', hideWhenEmpty: true, props: { value: { bind: 'shared.count' }, caption: 'From the phones' } };
+  assert.deepEqual(validatePanel(spec, registry), []);
+  assert.equal(mainProp(stat), 'value');
+  const source = (count: unknown) => ({ params: {}, shared: { count }, site: {} });
+  assert.equal(panelIsEmpty(stat, spec, source(undefined)), true);
+  assert.equal(panelIsEmpty(stat, spec, source(0)), true);
+  assert.equal(panelIsEmpty(stat, spec, source(3)), false);
+  assert.equal(panelIsEmpty(stat, { ...spec, hideWhenEmpty: false }, source(0)), false);
+  const bars = registry.get('bars')!;
+  assert.equal(mainProp(bars), 'items');
+  assert.equal(panelIsEmpty(bars, { size: 'wide', hideWhenEmpty: true, props: { items: { bind: 'shared.rows' } } }, { params: {}, shared: { rows: [] }, site: {} }), true);
+  assert.ok(validatePanel({ ...spec, hideWhenEmpty: 'yes' as unknown as boolean }, registry).some((i) => i.path.endsWith('hideWhenEmpty')));
 });

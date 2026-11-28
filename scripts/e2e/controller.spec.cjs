@@ -60,18 +60,19 @@ test.describe('controller', () => {
     assert.equal(await sunlight.locator('.controls-primary [role="radio"]', { hasText: 'Midsummer' }).count(), 1);
     assert.equal(await sunlight.getByText('Opacity').isVisible(), false, 'the finer settings wait behind More settings');
     // The TV is a rail of controls beside the dashboard canvas, and the layer's panels sit on the grid.
-    // The hero shows the time, so Sunlight brings two panels (tree shade and the colour key) and the sketch layer one.
+    // The hero shows the time, so Sunlight brings two panels (tree shade and the colour key). The sketch's
+    // marks card stays off while nothing is drawn (#752).
     await tv.locator('[data-panel="sunlight/key"]').waitFor();
-    await tv.waitForFunction(() => document.querySelectorAll('.mrs-panel').length === 3);
+    await tv.waitForFunction(() => document.querySelectorAll('.mrs-panel').length === 2);
     // Under the hero the canvas is short, so it has fewer rows, not tiny text (#137): the titles stay
-    // readable, all three panels share the one page, and nothing spills out of its panel.
+    // readable, both panels share the one page, and nothing spills out of its panel.
     const fit = await tv.evaluate(() => ({
       title: Math.min(...[...document.querySelectorAll('.mrs-panel-title')].map((t) => parseFloat(getComputedStyle(t).fontSize))),
       shown: [...document.querySelectorAll('.mrs-panel')].filter((p) => p.closest('.mrs-page:not([hidden])')).length,
       spills: [...document.querySelectorAll('.mrs-panel-body')].filter((b) => b.scrollHeight > b.clientHeight + 1).length,
     }));
     assert.ok(fit.title >= 16, `panel titles are ${fit.title}px`);
-    assert.deepEqual([fit.shown, fit.spills], [3, 0]);
+    assert.deepEqual([fit.shown, fit.spills], [2, 0]);
     const band = await tv.locator('[data-panel="sunlight/key"]').boundingBox();
     const canvas = await tv.locator('.mrs-dash').boundingBox();
     assert.ok(band.width > canvas.width * 0.9 && band.y + band.height > canvas.y + canvas.height * 0.9, 'the colour key spans the bottom row');

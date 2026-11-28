@@ -15,7 +15,7 @@
     { "id": "clear", "type": "action", "label": "Clear the sketch", "tier": "more" }
   ],
   "panels": [
-    { "id": "marks", "widget": "stat", "size": "tile", "title": "Marks on the table", "props": { "value": { "bind": "shared.count" }, "caption": "From the phones" } },
+    { "id": "marks", "widget": "stat", "size": "tile", "title": "Marks on the table", "hideWhenEmpty": true, "props": { "value": { "bind": "shared.count" }, "caption": "From the phones" } },
     { "id": "words", "widget": "text", "size": "wide", "title": "What they said", "visibleWhen": { "show_words": true }, "props": { "body": { "bind": "shared.words" } } }
   ],
   "tools": [

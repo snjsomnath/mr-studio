@@ -182,6 +182,7 @@ A layer lists its panels in `layer.json`. It does not place them, and it needs n
 
 - `{ "bind": "params.x" }` reads one of the layer's controls. `{ "bind": "shared.x" }` reads a value the layer's table code published with `ctx.publish`. `{ "bind": "site.x" }` reads the site.
 - `visibleWhen` works as it does for controls.
+- `"hideWhenEmpty": true` leaves a panel out while its main value is missing, empty, 0 or an empty list (#752).
 - `priority` decides who gets the first page when several layers are on.
 - The layer computes and words its values in its table code and publishes them. Panels only display.
 
