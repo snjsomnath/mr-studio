@@ -372,6 +372,11 @@ pub(crate) fn open_editor(app: &AppHandle, page: &str) -> anyhow::Result<()> {
                 .min_inner_size(960.0, 600.0)
                 .center()
                 .initialization_script(EDITOR_BAR)
+                // Licence reminders (#729): only when licensing is shown and there is one.
+                .initialization_script(format!(
+                    "window.__MRS_LICENCE_REMINDER__ = {};\n{LICENCE_BANNER}",
+                    serde_json::to_string(&licence::editor_reminder(&app.state::<Shell>())).unwrap_or_else(|_| "null".into())
+                ))
                 .on_navigation(move |url| match url.path().strip_prefix("/__shell/") {
                     Some(action) => {
                         shell_action(&handle, action);
@@ -754,6 +759,8 @@ pub(crate) fn shell_action(app: &AppHandle, action: &str) {
     match action {
         // Off the event loop: creating a window from inside a webview callback can deadlock on Windows.
         "setup" => drop(tauri::async_runtime::spawn(async move { report(open_launcher(&app)) })),
+        // The editor's licence reminder (#729).
+        "licence" => drop(tauri::async_runtime::spawn(async move { report(open_launcher_at(&app, Some("licence"))) })),
         // Back from the table to the editor.
         "edit" => drop(tauri::async_runtime::spawn(async move {
             // The editor first: with the surfaces gone and no other window, the app would quit.

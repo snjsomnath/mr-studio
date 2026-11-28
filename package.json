@@ -13,7 +13,7 @@
     "e2e": "playwright test -c scripts/e2e/playwright.config.cjs",
     "e2e:shots": "playwright test -c scripts/e2e/playwright.config.cjs",
     "app": "pnpm build && cargo run -p mr-studio-app",
-    "app:build": "pnpm build && pnpm --filter @mrstudio/studio exec tauri build",
+    "app:build": "pnpm build && node scripts/third-party-notices.mjs && pnpm --filter @mrstudio/studio exec tauri build",
     "mcp": "pnpm --filter @mrstudio/mcp build",
     "test:release": "node --test scripts/release.test.mjs",
     "lint": "eslint",

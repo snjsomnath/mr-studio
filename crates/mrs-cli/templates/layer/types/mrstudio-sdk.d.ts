@@ -654,6 +654,8 @@ declare module "@mrstudio/sdk/types" {
         } | null;
         /** The 3D model of the site (`scene.mesh`, docs/contracts/site.md), and whether footprints are raised beside it. */
         mesh?: SiteMesh;
+        /** The credit lines the table's data asks for (#731), each once, for the Credits page. */
+        attributions?: string[];
     }
     /** A placed 3D model: a file in the site folder and the numbers that put it on the ground. */
     export interface SiteMesh {

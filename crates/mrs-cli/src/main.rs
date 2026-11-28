@@ -12,6 +12,7 @@ use mrs_site::Site;
 use serde_json::json;
 
 mod layer;
+mod licence;
 
 #[derive(Parser)]
 #[command(name = "mrstudio", version, about = "MR Studio command line")]
@@ -132,6 +133,12 @@ enum Command {
     Operator {
         #[command(subcommand)]
         action: OperatorCommand,
+    },
+    /// Licences (#725): make the licensor key, issue and check licence files, and show this
+    /// computer's install code. Licensing is switched off in the app for now.
+    Licence {
+        #[command(subcommand)]
+        action: licence::LicenceCommand,
     },
     /// Time each kernel on a site with each backend, one line per kernel (#532).
     Bench {
@@ -276,6 +283,10 @@ async fn main() -> anyhow::Result<()> {
         }
         Command::Bench { site, town } => bench(&site, town),
         Command::Operator { action: OperatorCommand::Off } => operator_off(&app_settings_path()?),
+        Command::Licence { action } => {
+            let settings = app_settings_path()?;
+            licence::run(action, settings.parent().context("the app's settings folder")?)
+        }
         Command::Layer { action: LayerCommand::New { id, site, name } } => {
             let dir = layer::new(&site, &id, name.as_deref())?;
             println!("Made {}. Build it with `mrstudio layer build {id} --site {}`.", dir.display(), site.display());

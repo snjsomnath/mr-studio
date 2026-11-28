@@ -311,6 +311,8 @@ pub(crate) fn chosen_displays(app: &AppHandle, windows: &[Assigned]) -> Result<D
 pub(crate) async fn open_site(app: AppHandle, shell: State<'_, Shell>, path: PathBuf, welcome: Option<bool>) -> Result<(), String> {
     let mut settings = shell.settings();
     let path = ensure_running(&app, &path, settings.lan).await.map_err(text)?;
+    // What the licence would say about this table; it only logs (#726).
+    licence::note_opened(&shell, &path);
     settings.opened(&path);
     settings.write(&shell.settings_path()).map_err(text)?;
     open_editor(&app, if welcome == Some(true) { "edit?welcome=1" } else { "edit" }).map_err(text)?;

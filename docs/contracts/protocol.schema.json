@@ -270,6 +270,13 @@
             }
           ],
           "description": "The 3D model of the site (`scene.mesh`), for the editor to place it again."
+        },
+        "attributions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "The credit lines the table's data asks for (#731), each once: the controller's Credits\npage shows them. From the files' own `source` and `data_licences`."
         }
       },
       "required": [

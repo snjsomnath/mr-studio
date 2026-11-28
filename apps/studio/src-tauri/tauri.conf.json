@@ -28,7 +28,8 @@
     "resources": {
       "staged/web": "web",
       "staged/layers": "layers",
-      "staged/sites": "sites"
+      "staged/sites": "sites",
+      "staged/notices": "notices"
     },
     "fileAssociations": [
       {
@@ -39,6 +40,15 @@
         "description": "An MR Studio table, to open on another computer",
         "role": "Editor",
         "mimeType": "application/x-mrstable"
+      },
+      {
+        "ext": [
+          "mrslicence"
+        ],
+        "name": "MR Studio licence",
+        "description": "A licence for MR Studio from Nodal Works",
+        "role": "Viewer",
+        "mimeType": "application/x-mrslicence"
       }
     ],
     "macOS": {

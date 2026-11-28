@@ -17,6 +17,7 @@ tauri-build = { version = "2", features = [] }
 mrs-engine.workspace = true
 mrs-host.workspace = true
 mrs-site.workspace = true
+mrs-licence.workspace = true
 anyhow.workspace = true
 parking_lot = "0.13"
 serde.workspace = true

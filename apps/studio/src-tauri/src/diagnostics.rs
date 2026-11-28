@@ -33,6 +33,7 @@ pub async fn report(app: &AppHandle) -> String {
     let _ = writeln!(out, "\nApp");
     let _ = writeln!(out, "  MR Studio {} (commit {}, built {})", app.package_info().version, commit.unwrap_or("-"), built.unwrap_or("-"));
     let _ = writeln!(out, "  {} {}", std::env::consts::OS, std::env::consts::ARCH);
+    let _ = writeln!(out, "  {}", crate::licence::diagnostics_line(&shell));
     if let Some(running) = shell.running.lock().clone() {
         let _ = writeln!(
             out,

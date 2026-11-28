@@ -62,7 +62,12 @@ type AppCommand =
   | 'operator_set_pin'
   | 'operator_exit'
   | 'operator_password'
-  | 'set_operator_start';
+  | 'set_operator_start'
+  | 'licence_state'
+  | 'licence_set_use'
+  | 'licence_add'
+  | 'licence_remove'
+  | 'licence_notices';
 
 interface Window {
   __TAURI__: {

@@ -4,6 +4,7 @@
 mod bake;
 pub mod create;
 mod crs;
+mod data_licences;
 pub mod detail;
 pub mod elevation;
 pub mod field;
@@ -39,6 +40,7 @@ use thiserror::Error;
 
 pub use bake::BakeStats;
 pub use crs::Crs;
+pub use data_licences::{attributions, data_sources, restricted, share_of, DataLicence, DataSource, Share};
 pub use manifest::*;
 pub use projection::Projection;
 
@@ -119,6 +121,10 @@ pub struct SiteInfo {
     /// The 3D model of the site (`scene.mesh`), for the editor to place it again.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mesh: Option<MeshInfo>,
+    /// The credit lines the table's data asks for (#731), each once: the controller's Credits
+    /// page shows them. From the files' own `source` and `data_licences`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub attributions: Vec<String>,
 }
 
 /// `scene.mesh` as written, and whether the footprints are still raised beside it.
@@ -560,6 +566,7 @@ impl Site {
             display: m.display.clone(),
             palette: m.palette.clone(),
             mesh: m.scene.mesh.clone().map(|mesh| MeshInfo { mesh, extrude: m.scene.buildings.as_ref().is_none_or(|b| b.extrude) }),
+            attributions: attributions(&data_sources(self)),
         }
     }
 

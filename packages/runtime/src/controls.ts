@@ -1810,6 +1810,8 @@ export class Controller {
     if (!line) return;
     const { state } = this.store;
     const credits = new Set<string>();
+    // The credits the table's own data asks for (#731): OpenStreetMap, Lantmäteriet…
+    for (const line of state.site.attributions ?? []) if (line.trim()) credits.add(line.trim());
     for (const id of state.scene) {
       const layer = state.layers[id];
       const source = layer?.active ? layer.shared?.source : undefined;
