@@ -134,7 +134,8 @@ test.describe('phones', () => {
     // The controller clears the sketch, from the sketch's More settings.
     await tv.locator('.layer-open', { hasText: 'Mark places' }).locator('summary', { hasText: 'More settings' }).click();
     await tv.getByRole('button', { name: 'Clear the sketch' }).click();
-    await marks(0);
+    // With no marks left, the marks card leaves the canvas (#752).
+    await tv.locator('[data-panel$="/marks"]').waitFor({ state: 'detached' });
   });
 
   test('a second phone types the code and gets the next slot; a reload keeps the first phone\'s own', async ({ studio }) => {
