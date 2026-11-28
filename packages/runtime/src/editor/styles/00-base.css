@@ -1,0 +1,55 @@
+/*
+ * The editor: light chrome around a dark table. Sizes follow the editor's design
+ * system: controls 12 px, body 13 px, rows 24 px, buttons 28 px, a 4 px grid.
+ */
+
+body[data-role='edit'] {
+  background: #f6f7f9;
+  color-scheme: light;
+}
+
+.ed {
+  --ed-accent: #3557d4;
+  --ed-accent-soft: #e9eefc;
+  --ed-panel: #ffffff;
+  --ed-window: #f6f7f9;
+  --ed-chrome: #f2f3f6;
+  --ed-line: #dcdfe5;
+  --ed-text: #1b1f27;
+  --ed-text-2: #565d6a;
+  /* The generated controls read these. */
+  --bg: #ffffff;
+  --panel: #f2f3f6;
+  --card: #ffffff;
+  --line: #dcdfe5;
+  --text: #1b1f27;
+  --muted: #565d6a;
+  --accent: #3557d4;
+  --accent-ink: #ffffff;
+
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  font-family: -apple-system, 'Segoe UI Variable', 'Segoe UI', Inter, system-ui, sans-serif;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--ed-text);
+  background: var(--ed-window);
+}
+
+.ed button {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.ed button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.ed :focus-visible {
+  outline: 2px solid var(--ed-accent);
+  outline-offset: 1px;
+}

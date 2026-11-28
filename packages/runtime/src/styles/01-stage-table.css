@@ -1,0 +1,59 @@
+/* ---- Stage: the table, the dashboard, or in dev both ---- */
+
+.stage {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.dash {
+  flex: 1;
+  min-height: 0;
+}
+
+/* In dev the dashboard is a small preview of the TV; open /tv for the real size. */
+body[data-role='dev'] .table-frame {
+  flex: 1;
+}
+
+body[data-role='dev'] .dash {
+  flex: 1;
+  border-top: 1px solid var(--line);
+}
+
+/* ---- Table ---- */
+
+.table-frame {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  place-items: center;
+  background: #000;
+}
+
+.table-surface {
+  max-width: 100%;
+  max-height: 100%;
+  width: 100%;
+  background: var(--bg);
+}
+
+/* The projected table fills its window; calibration decides what it shows. */
+body[data-role='table'] .table-surface {
+  height: 100%;
+  aspect-ratio: auto !important;
+}
+
+/* In dev the table keeps the site's aspect ratio and fits whichever side is tight. */
+body[data-role='dev'] .table-frame {
+  padding: 1.5rem;
+  container-type: size;
+}
+
+body[data-role='dev'] .table-surface {
+  width: min(100cqw, 100cqh * var(--aspect, 1.6667));
+  border-radius: 0.375rem;
+  overflow: hidden;
+  box-shadow: 0 0 0 1px var(--line);
+}

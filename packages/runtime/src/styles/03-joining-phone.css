@@ -1,0 +1,227 @@
+/* ---- Joining ---- */
+
+.join {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.875rem 1.25rem;
+  border-top: 1px solid var(--line);
+}
+
+.join-qr {
+  flex: none;
+  width: 8.25rem;
+  border-radius: 0.5rem;
+  overflow: hidden;
+  line-height: 0;
+}
+
+/* The TV is read from across the room. */
+body[data-role='tv'] .join-qr {
+  width: 13.75rem;
+}
+
+.join-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.join h2 {
+  margin: 0 0 0.25rem;
+  font-size: 1rem;
+}
+
+.join p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.join b {
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.join-code {
+  font-size: 1.15em;
+  letter-spacing: 0.12em;
+  font-variant-numeric: tabular-nums;
+}
+
+.join-crowd {
+  flex: none;
+  display: grid;
+  gap: 0.375rem;
+  justify-items: end;
+}
+
+.join-people {
+  display: grid;
+  grid-template-columns: repeat(4, auto);
+  gap: 0.3125rem;
+}
+
+.join-person,
+.phone-badge i {
+  display: grid;
+  place-items: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 50%;
+  color: #10131a;
+  font-size: 0.8rem;
+  font-weight: 700;
+  font-style: normal;
+}
+
+/* A phone's animal (#339) fills its round badge. */
+.join-person {
+  font-size: 0.95rem;
+  line-height: 1;
+}
+
+.join-person.is-away {
+  opacity: 0.35;
+}
+
+/* ---- Phone ---- */
+
+.phone-badge i {
+  width: 1.9rem;
+  height: 1.9rem;
+  font-size: 1.15rem;
+  line-height: 1;
+}
+
+.phone-badge {
+  font: inherit;
+  background: none;
+  cursor: pointer;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.3125rem 0.75rem 0.3125rem 0.375rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.door {
+  margin: auto;
+  box-sizing: border-box;
+  width: min(100%, 22.5rem);
+  padding: 1.5rem;
+  display: grid;
+  gap: 0.875rem;
+  text-align: center;
+}
+
+.door h1 {
+  margin: 0;
+  font-size: 1.3rem;
+}
+
+.door p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.door form {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.door input {
+  min-width: 0;
+  height: 3.5rem;
+  border: 1px solid var(--line);
+  border-radius: 0.75rem;
+  background: var(--card);
+  color: var(--text);
+  font: inherit;
+  font-size: 1.8rem;
+  letter-spacing: 0.3em;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 600;
+}
+
+button.action:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.door button {
+  min-height: 3rem;
+}
+
+.layer-card[hidden] {
+  display: none;
+}
+
+.tools {
+  display: grid;
+  gap: 0.625rem;
+}
+
+.tool-pad {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.tool-map {
+  display: block;
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+  background: var(--bg);
+  /* Fingers draw here; the page must not scroll or zoom under them. */
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: crosshair;
+}
+
+.tool-buildings {
+  fill: rgb(255 255 255 / 0.1);
+  stroke: rgb(255 255 255 / 0.4);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.tool-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.tool-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr 2fr;
+  gap: 0.5rem;
+}
+
+.tool-actions[hidden] {
+  display: none;
+}
+
+.tool-actions button {
+  min-height: 2.75rem;
+}
+
+/* Decorations layers draw over the table (see MapHandle.addElement). */
+.table-decoration {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  overflow: hidden;
+}

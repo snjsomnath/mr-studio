@@ -1,0 +1,1177 @@
+/* ---- Placing a drawing by hand (#301) ---- */
+
+.ed-drawing-frame {
+  position: absolute;
+  z-index: 6;
+  pointer-events: none;
+}
+
+.ed-drawing-frame > svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.ed-df-body {
+  fill: rgb(59 130 246 / 0.06);
+  stroke: #3b82f6;
+  stroke-width: 1.5;
+  stroke-dasharray: 6 4;
+  cursor: move;
+  pointer-events: all;
+}
+
+.ed-drawing-frame.is-dragging .ed-df-body {
+  fill: rgb(59 130 246 / 0.14);
+}
+
+.ed-df-stem {
+  stroke: #3b82f6;
+  stroke-width: 1.5;
+}
+
+.ed-df-corner,
+.ed-df-turn {
+  fill: #fff;
+  stroke: #3b82f6;
+  stroke-width: 2;
+  pointer-events: all;
+}
+
+.ed-df-corner {
+  cursor: nwse-resize;
+}
+
+.ed-df-turn {
+  cursor: grab;
+}
+
+.ed-df-top {
+  fill: #93c5fd;
+  font: 600 11px/1 var(--ed-font, system-ui, sans-serif);
+  letter-spacing: 0.04em;
+  pointer-events: none;
+}
+
+.ed-df-bar {
+  position: absolute;
+  left: 50%;
+  /* Below the table (#405), so it never covers the frame's lower handles. */
+  top: calc(100% + 0.5rem);
+  transform: translateX(-50%);
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  padding: 0.3rem 0.4rem 0.3rem 0.7rem;
+  border-radius: 0.4rem;
+  background: rgb(255 255 255 / 0.94);
+  color: #1f2937;
+  font-size: 12px;
+  width: max-content;
+  max-width: calc(100% - 1rem);
+  box-sizing: border-box;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.25);
+  pointer-events: auto;
+}
+
+.ed-df-bar .ed-button[hidden] {
+  display: none;
+}
+
+/* The hint gives way before the buttons do (#638): the buttons keep their words on one line,
+   and in a narrow canvas they go under the hint rather than squeezing it. */
+.ed-df-bar {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  row-gap: 0.3rem;
+}
+
+.ed-df-hint-howto {
+  flex: 1 1 22em;
+  min-width: 0;
+  line-height: 1.35;
+}
+
+.ed-df-bar .ed-button {
+  flex: none;
+  white-space: nowrap;
+}
+
+/* ---- Dialogs of whole-table and this-computer settings (#382, rule 5 of docs/editor-ui.md) ---- */
+
+.ed-dialog {
+  display: flex;
+  flex-direction: column;
+  /* One size for every dialog (#457): wide enough for a form beside its notes, never a sliver. */
+  width: min(800px, calc(100vw - 32px));
+  min-height: min(420px, calc(100vh - 48px));
+  max-height: calc(100vh - 48px);
+  padding: 0;
+  border: 1px solid #d5d9e0;
+  border-radius: 12px;
+  background: var(--ed-window);
+  color: var(--ed-text);
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.25);
+}
+
+.ed-dialog:not([open]) {
+  display: none;
+}
+
+.ed-dialog::backdrop {
+  background: rgba(15, 23, 42, 0.3);
+}
+
+.ed-dialog-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 18px 10px;
+  border-bottom: 1px solid var(--ed-line);
+}
+
+.ed-dialog-head h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.ed-dialog-head .wz-lead {
+  margin: 2px 0 0;
+}
+
+.ed-dialog-body {
+  /* Grows from its content, not from 0: in WebKit a `flex: 1` (basis 0%) body in a dialog of
+     no set height collapsed to a 20-pixel strip (Screens and calibration on the Mac, #573). */
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 4px 18px 18px;
+}
+
+/* Table size and place: the guide's place form and its map, then the table in the room. */
+.ed-dialog.is-place {
+  /* Room for the map and the fields side by side (#470). */
+  width: min(1000px, calc(100vw - 32px));
+  min-height: min(640px, calc(100vh - 48px));
+}
+
+.ed-dialog.is-place .wz.is-panel {
+  width: auto;
+  border: 0;
+  order: initial;
+}
+
+.ed-dialog.is-place .wz-body {
+  padding: 0;
+}
+
+/* Screens and calibration: a dialog of the usual size (#457); colour is set in File › Settings (#393). */
+.ed-dialog.is-screens {
+  min-height: 0;
+}
+
+/* Lists of sources and files get the large size (#457), and so do the welcome and its translations (#468). */
+.ed-dialog.is-open-data,
+.ed-dialog.is-model,
+.ed-dialog.is-welcome {
+  width: min(1000px, calc(100vw - 32px));
+}
+
+.ed-dialog.is-open-data,
+.ed-dialog.is-welcome {
+  min-height: min(600px, calc(100vh - 48px));
+}
+
+/* A tick box sits at the start of its column, like every other field (#468). */
+.ed-dialog.is-welcome input[type='checkbox'] {
+  justify-self: start;
+  margin-left: 0;
+}
+
+/* The model importer grows with its preview once a file is chosen. */
+.ed-dialog.is-model {
+  min-height: 0;
+}
+
+.ed-dialog-ribbon {
+  border: 0;
+  padding: 0;
+  background: transparent;
+}
+
+/* The media library: tools, the list and the selected file. */
+.ed-dialog.is-media {
+  width: min(1200px, calc(100vw - 32px));
+  height: calc(100vh - 64px);
+}
+
+.ed-dialog.is-media .ed-dialog-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 340px);
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 0 12px;
+  overflow: hidden;
+  padding: 0;
+}
+
+.ed-dialog.is-media .ed-dialog-ribbon {
+  grid-column: 1 / -1;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--ed-line);
+}
+
+.ed-dialog.is-media .ed-media {
+  display: block;
+  overflow-y: auto;
+  padding: 4px 16px 24px;
+}
+
+.ed-dialog.is-media .ed-media-inspector {
+  display: block;
+  width: auto;
+  overflow-y: auto;
+  border-left: 1px solid var(--ed-line);
+}
+
+/* Map life under At rest in the list (#382): the eye is the switch, and stays in view when it is off. */
+.ed-rest .ed-row.is-rest .ed-row-eye {
+  opacity: 1;
+  color: var(--ed-text-3, #8a909c);
+}
+
+.ed-rest .ed-row.is-rest.is-off .ed-row-label,
+.ed-rest .ed-row.is-rest.is-off .ed-row-icon {
+  color: #8a909c;
+}
+
+.ed-rest .ed-row.is-rest .ed-row-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.ed-actions .ed-button[hidden] {
+  display: none;
+}
+
+/* The dialog names itself: the guide step's own heading and lead are left out. */
+.ed-dialog.is-place .wz-body > h2,
+.ed-dialog.is-place .wz-body > h2 + .wz-lead {
+  display: none;
+}
+
+/* Export starter pack (#450): choices on the left, the pack's drawing on the right. */
+.ed-starter {
+  width: min(1040px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  padding: 0;
+  border: 1px solid var(--ed-line, #dcdfe5);
+  border-radius: 10px;
+  color: var(--ed-text, #1b1f27);
+  background: var(--ed-panel, #ffffff);
+  font: 13px/1.4 Inter, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  box-shadow: 0 16px 40px rgba(16, 24, 40, 0.2);
+}
+
+.ed-starter[open] {
+  display: flex;
+  flex-direction: column;
+}
+
+.ed-starter::backdrop {
+  background: rgba(16, 24, 40, 0.25);
+}
+
+.ed-starter-head {
+  padding: 16px 20px 10px;
+  border-bottom: 1px solid var(--ed-line, #dcdfe5);
+}
+
+.ed-starter-head h2 {
+  margin: 0 0 4px;
+  font-size: 15px;
+}
+
+.ed-starter-head p {
+  margin: 0;
+  color: var(--ed-text-2, #565d6a);
+}
+
+.ed-starter-body {
+  display: grid;
+  grid-template-columns: 270px minmax(0, 1fr);
+  min-height: 0;
+  overflow: auto;
+}
+
+.ed-starter-side {
+  padding: 12px 16px;
+  border-right: 1px solid var(--ed-line, #dcdfe5);
+  background: var(--ed-window, #f6f7f9);
+}
+
+.ed-starter-group {
+  margin: 0 0 12px;
+  padding: 0;
+  border: 0;
+}
+
+.ed-starter-group legend {
+  margin-bottom: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--ed-text-2, #565d6a);
+}
+
+.ed-starter-check,
+.ed-starter-radio {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 3px 0;
+  cursor: pointer;
+}
+
+.ed-starter-check input,
+.ed-starter-radio input {
+  margin: 2px 0 0;
+}
+
+.ed-starter-check > span:not(.ed-starter-count),
+.ed-starter-radio > span {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.ed-starter-check small,
+.ed-starter-radio small {
+  color: var(--ed-text-2, #565d6a);
+}
+
+.ed-starter-count {
+  color: var(--ed-text-2, #565d6a);
+  font-variant-numeric: tabular-nums;
+}
+
+.ed-starter-select {
+  width: 100%;
+}
+
+.ed-starter-view {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px;
+  min-width: 0;
+}
+
+.ed-starter-frame {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 300px;
+  padding: 12px;
+  border: 1px solid var(--ed-line, #dcdfe5);
+  border-radius: 6px;
+  background: #fff;
+}
+
+.ed-starter-frame svg {
+  width: 100%;
+  height: auto;
+  max-height: 56vh;
+}
+
+.ed-starter-facts {
+  margin: 0;
+  color: var(--ed-text-2, #565d6a);
+}
+
+.ed-starter-notes {
+  margin: 0;
+  padding-left: 18px;
+  color: #9a5b00;
+}
+
+.ed-starter-foot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 20px;
+  border-top: 1px solid var(--ed-line, #dcdfe5);
+}
+
+.ed-starter-status {
+  flex: 1;
+  color: var(--ed-text-2, #565d6a);
+}
+
+@media (max-width: 720px) {
+  .ed-starter-body {
+    grid-template-columns: 1fr;
+  }
+  .ed-starter-side {
+    border-right: 0;
+    border-bottom: 1px solid var(--ed-line, #dcdfe5);
+  }
+}
+
+/* Start from… (#390): the starter tables, like PowerPoint's templates. */
+.wz-starters {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.wz-starter {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--ed-line);
+  border-radius: 10px;
+  background: var(--ed-panel);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.wz-starter:hover:not(:disabled) {
+  border-color: #b9c0cd;
+}
+
+.wz-starter[aria-checked='true'] {
+  border-color: var(--ed-accent);
+  box-shadow: 0 0 0 1px var(--ed-accent);
+}
+
+.wz-starter:disabled {
+  cursor: progress;
+  opacity: 0.7;
+}
+
+.wz-starter-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+}
+
+.wz-starter p {
+  margin: 0;
+  color: var(--ed-text-2);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.wz-starter-parts {
+  margin: 0;
+  padding-left: 16px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.wz-starter-lacking {
+  color: #9a5b00;
+}
+
+.wz-starter .wz-theme-swatch {
+  height: 34px;
+  margin-top: auto;
+}
+
+/* The editor tour (#451): a spotlight on one region and a card beside it. */
+.ed-tour {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+}
+
+.ed-tour-spot {
+  position: fixed;
+  border: 2px solid var(--ed-accent);
+  border-radius: 8px;
+  box-shadow: 0 0 0 9999px rgb(20 24 33 / 45%);
+  transition: all 0.2s ease;
+  pointer-events: none;
+}
+
+.ed-tour-card {
+  position: fixed;
+  width: 320px;
+  padding: 14px 16px 12px;
+  border-radius: 10px;
+  background: var(--ed-panel);
+  box-shadow: 0 10px 30px rgb(0 0 0 / 25%);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.ed-tour-card header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 14px;
+}
+
+.ed-tour-count {
+  color: var(--ed-text-2);
+  font-size: 12px;
+}
+
+.ed-tour-card p {
+  margin: 6px 0 10px;
+}
+
+.ed-tour-start {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ed-text-2);
+  font-size: 12px;
+}
+
+.ed-tour-card footer {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.ed-tour-card footer .ed-link {
+  margin-right: auto;
+}
+
+/* Shrink controller (#388): in Both, the controller docks as a small live picture in the corner. */
+.ed-surfaces {
+  position: relative;
+}
+
+.ed-surface-shrink {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  padding: 2px 8px;
+  border: 1px solid var(--ed-line);
+  border-radius: 6px;
+  background: var(--ed-panel);
+  color: var(--ed-text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.ed-surface-shrink:hover {
+  border-color: #b9c0cd;
+}
+
+.ed-surface-enlarge {
+  display: none;
+}
+
+.ed-surfaces.is-map-only .ed-surface-shrink,
+.ed-surfaces.is-controller-only .ed-surface-shrink {
+  display: none;
+}
+
+.ed-surfaces.is-controller-small:not(.is-map-only, .is-controller-only) .ed-surface.is-controller {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  z-index: 5;
+  flex: none;
+  width: max(240px, 24%);
+  aspect-ratio: 16 / 10.4;
+  border: 1px solid var(--ed-line);
+  border-radius: 10px;
+  background: var(--ed-panel);
+  box-shadow: 0 10px 28px rgb(15 23 42 / 18%);
+  overflow: hidden;
+}
+
+.ed-surfaces.is-controller-small:not(.is-map-only, .is-controller-only) .ed-surface.is-controller .ed-surface-caption {
+  padding: 6px 8px;
+}
+
+.ed-surfaces.is-controller-small:not(.is-map-only, .is-controller-only) .ed-surface.is-controller .ed-surface-caption > span {
+  display: none;
+}
+
+.ed-surfaces.is-controller-small:not(.is-map-only, .is-controller-only) .ed-surface-enlarge {
+  display: block;
+  position: absolute;
+  inset: 34px 0 0;
+  border: 0;
+  background: transparent;
+  cursor: zoom-in;
+}
+
+/* View › Phone (#389): a visitor's phone in a column at the right of the canvas. */
+.ed-surface.is-phone {
+  display: none;
+}
+
+.ed-surfaces.has-phone {
+  padding-right: 220px;
+}
+
+.ed-surfaces.has-phone .ed-surface.is-phone {
+  display: flex;
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 220px;
+  padding-bottom: 16px;
+}
+
+.ed-surfaces.has-phone.is-controller-small:not(.is-map-only, .is-controller-only) .ed-surface.is-controller {
+  right: 236px;
+}
+
+.ed-phone-screen {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  overflow: hidden;
+  margin: 8px 16px 0 0;
+}
+
+.ed-phone-screen iframe {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  width: 390px;
+  height: 800px;
+  transform-origin: top center;
+  border: 8px solid #1b1f27;
+  border-radius: 22px;
+  background: #0e1218;
+}
+
+/* Several rows selected (#399). */
+.ed-row.is-also {
+  background: #e8edfb;
+  box-shadow: inset 2px 0 0 var(--ed-accent);
+}
+
+/* An empty table (#399): one card on the map with the way to its first layer. */
+.ed-surface.is-map {
+  position: relative;
+}
+
+.ed-canvas-empty {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 18px 24px;
+  border: 1px solid var(--ed-line);
+  border-radius: 12px;
+  background: var(--ed-panel);
+  box-shadow: 0 10px 28px rgb(15 23 42 / 14%);
+  font-size: 13px;
+  text-align: center;
+}
+
+.ed-canvas-empty[hidden] {
+  display: none;
+}
+
+.ed-canvas-empty > span {
+  color: var(--ed-text-2);
+}
+
+.ed-canvas-empty .ed-button {
+  margin-top: 6px;
+}
+
+.ed-inspector-many {
+  margin: 8px 12px 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #e8edfb;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+/* The drawing follows the frame while it moves (#405); the table redraws it when it is let go. */
+.ed-df-ghost {
+  display: none;
+  opacity: 0.85;
+  pointer-events: none;
+}
+
+.ed-drawing-frame.is-dragging .ed-df-ghost {
+  display: inline;
+}
+
+.ed-df-body:focus-visible {
+  outline: none;
+  stroke-width: 2.5;
+  stroke-dasharray: none;
+}
+
+/* Once the drawing has been moved, the how-to line gives way. */
+.ed-drawing-frame.is-moved .ed-df-bar > span:empty,
+.ed-drawing-frame.is-moved .ed-df-hint-howto {
+  display: none;
+}
+
+/* What one version changed (#395). */
+.ed-history .ed-history-what {
+  align-self: flex-start;
+  margin-top: 2px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ed-accent);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.ed-history .ed-history-what:hover {
+  text-decoration: underline;
+}
+
+.ed-history-detail {
+  margin: 4px 0 2px;
+  padding-left: 16px;
+  color: var(--ed-text-2);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+/* What the columns of a file hold (#52), in the import report. */
+.im-columns { display: grid; gap: 6px; margin: 4px 0 2px; }
+.im-columns-title { margin: 0; font-size: 12px; font-weight: 600; color: var(--ed-text-2, #5b6472); }
+.im-columns-list { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.im-column { display: inline-flex; align-items: baseline; gap: 6px; padding: 2px 8px; border: 1px solid var(--ed-line, #dde1e7); border-radius: 999px; font-size: 12px; line-height: 18px; background: var(--ed-surface, #fff); }
+.im-column strong { font-weight: 600; }
+.im-column span { color: var(--ed-text-2, #5b6472); }
+.im-column.is-id { border-color: #9fb3e8; }
+.im-column.is-time { border-color: #e3b46b; }
+.im-column.is-place { border-color: #8ccaa3; }
+
+/* Design › Controller pages… (#155): pages, the grid, the panel's settings. Nothing is dragged. */
+.ed-dialog.is-pages {
+  width: min(1280px, calc(100vw - 32px));
+  min-height: min(640px, calc(100vh - 48px));
+}
+
+.pe {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr) 280px;
+  gap: 20px;
+  align-items: start;
+}
+
+.pe h3 {
+  margin: 0 0 8px;
+  font-size: 13px;
+}
+
+.pe-pages,
+.pe-inspector {
+  display: grid;
+  gap: 10px;
+}
+
+.pe-page-list {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pe-page {
+  width: 100%;
+  padding: 6px 10px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: none;
+  color: var(--ed-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.pe-page:hover {
+  background: var(--ed-chrome);
+}
+
+.pe-page.is-current {
+  border-color: var(--ed-accent);
+  background: var(--ed-accent-soft);
+  font-weight: 600;
+}
+
+.pe-empty,
+.pe-start {
+  color: var(--ed-text-2);
+}
+
+.pe-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.pe-middle {
+  display: grid;
+  gap: 10px;
+}
+
+.pe-budget {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--ed-text-2);
+}
+
+.pe-budget b {
+  color: var(--ed-text);
+  white-space: nowrap;
+}
+
+.pe-bar {
+  flex: 1;
+  height: 6px;
+  border-radius: 3px;
+  background: linear-gradient(90deg, var(--ed-accent) calc(var(--used) * 100%), var(--ed-chrome) 0);
+}
+
+.pe-budget.is-over .pe-bar {
+  background: linear-gradient(90deg, #c4320a calc(var(--used) * 100%), var(--ed-chrome) 0);
+}
+
+/* The controller's 12 by 6 canvas, at its own 16:9. */
+.pe-grid {
+  display: grid;
+  grid-template-columns: repeat(var(--cols), minmax(0, 1fr));
+  grid-template-rows: repeat(var(--rows), minmax(0, 1fr));
+  gap: 4px;
+  aspect-ratio: 16 / 8;
+  padding: 6px;
+  border: 1px solid var(--ed-line);
+  border-radius: 8px;
+  background: #11151f;
+}
+
+.pe-cell {
+  border: 1px dashed #2b3345;
+  border-radius: 4px;
+  background: none;
+  cursor: default;
+}
+
+.pe-cell.can-take {
+  border-color: #6f8ef0;
+  background: rgba(111, 142, 240, 0.12);
+  cursor: pointer;
+}
+
+.pe-cell.can-take:hover {
+  background: rgba(111, 142, 240, 0.3);
+}
+
+.pe-panel {
+  z-index: 1;
+  display: grid;
+  align-content: start;
+  gap: 2px;
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid #344058;
+  border-radius: 6px;
+  background: #1c2333;
+  color: #e9edf5;
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.pe-panel b,
+.pe-panel span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pe-panel span {
+  color: #9aa6bd;
+}
+
+.pe-panel.is-selected {
+  border-color: #f3ad3d;
+  box-shadow: 0 0 0 2px #f3ad3d;
+}
+
+.pe-add {
+  display: flex;
+  gap: 8px;
+}
+
+.pe-note {
+  margin: 0;
+  color: #b54708;
+}
+
+.pe-problems {
+  margin: 0;
+  padding-left: 18px;
+  color: #b42318;
+}
+
+.pe-prop {
+  display: grid;
+  gap: 4px;
+}
+
+.pe-prop textarea {
+  width: 100%;
+  font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.pe-bind {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ed-text-2);
+  font-size: 12px;
+}
+
+.pe-nudge .ed-button {
+  min-width: 32px;
+  justify-content: center;
+}
+
+.pe-inspector .ed-field {
+  grid-template-columns: 1fr;
+}
+
+.pe-panel b {
+  color: #ffffff;
+}
+
+/* Analysis detail (#513): how fine the grid under sun, wind and shade is. */
+.wz-detail {
+  margin-top: 4px;
+}
+
+.wz-detail select {
+  height: 32px;
+  max-width: 50%;
+  padding: 0 8px;
+  border: 1px solid var(--ed-line, #d5d9e0);
+  border-radius: 6px;
+  background: var(--ed-surface, #fff);
+  color: inherit;
+  font: inherit;
+  font-weight: 400;
+}
+
+/* Kept for offline use (#516): a quiet line under the media library. */
+.ed-media-kept {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  align-items: center;
+  margin-top: 24px;
+  padding: 12px 14px;
+  border: 1px solid var(--ed-line, #d5d9e0);
+  border-radius: 8px;
+  color: var(--ed-text-2);
+}
+
+.ed-media-kept p {
+  flex: 1 1 320px;
+  margin: 0;
+}
+
+.ed-media-kept strong {
+  color: var(--ed-text, inherit);
+}
+
+.ed-media-kept-ask {
+  display: flex;
+  flex: 1 1 100%;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.ed-media-kept-ask span {
+  flex: 1 1 280px;
+}
+
+.ed-media-kept .is-danger {
+  border-color: currentColor;
+  color: var(--ed-danger, #b3261e);
+}
+
+/* The calibration's panel in the guide's third step (#594) takes the step's whole width. */
+.dt-step-actions > .calibration-remote {
+  flex: 1 1 100%;
+  margin-top: 4px;
+}
+
+/* The two stacks of a glass or a reveal line (#606): the surface, and what is underneath. */
+.ed-stack-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  margin: 0.625rem 0 0.25rem;
+  font-size: 0.8125rem;
+}
+
+.ed-stack-head strong {
+  font-weight: 600;
+}
+
+/* Layer buttons that do not fit on the controller (#614): beside Checks, in its "should fix" colours. */
+.ed-rail-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 18px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 9px;
+  background: #fff4e0;
+  color: #8a5300;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.ed-rail-note[hidden] {
+  display: none;
+}
+
+/* A layer's own dialog (#644): settings that need room, beside a preview of what visitors get. */
+.ed-dialog-open {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  height: 34px;
+  margin: 6px 0 2px;
+  border: 1px solid var(--ed-line);
+  border-radius: 6px;
+  background: var(--ed-panel);
+  color: var(--ed-text);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.ed-dialog-open:hover {
+  border-color: var(--ed-accent);
+}
+
+.ed-dialog.is-layer-dialog {
+  width: min(960px, calc(100vw - 32px));
+}
+
+.ed-layer-dialog {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: 24px;
+  padding-top: 16px;
+}
+
+.ed-layer-dialog-main {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.ed-layer-dialog-main .controls {
+  display: grid;
+  gap: 14px;
+}
+
+.ed-layer-dialog-main .control-label {
+  font-weight: 600;
+}
+
+.ed-layer-dialog-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: auto;
+  padding-top: 14px;
+  border-top: 1px solid var(--ed-line);
+}
+
+.ed-layer-dialog-said {
+  margin: 0;
+  color: var(--ed-muted, #5d6879);
+}
+
+/* The phone, in the phone's own light theme. The transform keeps the sheet's fixed layout inside it. */
+.ed-phone-preview {
+  margin: 0;
+  display: grid;
+  gap: 8px;
+  justify-items: center;
+}
+
+.ed-phone-preview figcaption {
+  font-size: 12px;
+  color: var(--ed-muted, #5d6879);
+}
+
+.ed-phone-screen {
+  --bg: #f4f5f8;
+  --panel: #ffffff;
+  --card: #ffffff;
+  --line: #dfe3ea;
+  --text: #17202e;
+  --muted: #5d6879;
+  --accent: #f2b233;
+  --accent-ink: #1c1505;
+  position: relative;
+  width: 300px;
+  height: 560px;
+  overflow: hidden;
+  border: 8px solid #1f2430;
+  border-radius: 28px;
+  background: var(--bg);
+  color: var(--text);
+  transform: translateZ(0);
+  font-size: 14px;
+}
+
+.ed-phone-screen .profile-sheet {
+  position: absolute;
+  /* A phone's sizes, at the size of the frame: about 360 px wide, as most phones are. */
+  zoom: 0.79;
+  background: rgba(0, 0, 0, 0.12);
+}
+
+.ed-phone-screen .field-sheet-card {
+  max-height: 100%;
+}

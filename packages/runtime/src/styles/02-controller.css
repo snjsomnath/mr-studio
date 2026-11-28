@@ -1,0 +1,1034 @@
+/* ---- Controller ---- */
+
+.controller {
+  width: 23.75rem;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  border-left: 1px solid var(--line);
+}
+
+body[data-role='phone'] .controller {
+  width: 100%;
+  max-width: 45rem;
+  margin: 0 auto;
+  border: 0;
+}
+
+body[data-role='phone'] {
+  background: var(--panel);
+}
+
+/* The controller screen: layer buttons down both sides of the dashboard canvas. */
+body[data-role='tv'] .controller {
+  order: -1;
+  width: 7.5rem;
+  border-left: 0;
+  border-right: 1px solid var(--line);
+}
+
+body[data-role='tv'] .controller-right {
+  order: 1;
+  border-right: 0;
+  border-left: 1px solid var(--line);
+}
+
+body[data-role='tv'] .controller-right .cards {
+  padding-top: 1.25rem;
+}
+
+body[data-role='tv'][data-rail='none'] .controller {
+  display: none;
+}
+
+.layer-button {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  min-height: 3.5rem;
+  padding: 0.5rem 0.875rem;
+  border: 0;
+  border-radius: 0.75rem;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 1rem;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.layer-button-icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 50%;
+  background: var(--panel);
+  color: var(--muted);
+}
+
+/* Icons are drawn with a px size; let them grow with the text on a large screen. */
+.layer-button-icon svg {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+.layer-open-head .layer-button-icon svg {
+  width: 1.5rem;
+  height: 1.5rem;
+}
+
+.layer-button[aria-pressed='true'] .layer-button-icon {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+/*
+ * The rails on the controller screen: narrow columns of square icon buttons, as on the
+ * Chalmers campus demo, so the centre gets almost the whole width. The name sits under the
+ * icon in small type. The site's title is shown in the centre, not in the rail.
+ */
+body[data-role='tv'] .controller-header {
+  display: none;
+}
+
+body[data-role='tv'] .controller .cards {
+  padding: 1.25rem 0.5rem;
+  gap: 1rem;
+  justify-items: center;
+}
+
+body[data-role='tv'] .layer-button {
+  flex-direction: column;
+  gap: 0.375rem;
+  min-height: 0;
+  padding: 0.25rem;
+  border-radius: 0.5rem;
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1.2;
+  text-align: center;
+}
+
+/* A layer that is on but not running (#259): dimmed, with a short note; it recovers by itself. */
+.layer-button-card.is-trouble .layer-button {
+  opacity: 0.55;
+}
+
+.layer-trouble {
+  margin: 0.5rem 0 0;
+  padding: 0.625rem 0.875rem;
+  border-radius: 0.5rem;
+  background: color-mix(in srgb, #e0564f 18%, transparent);
+  color: var(--text);
+  font-size: 0.9375rem;
+}
+
+.layer-trouble[hidden] {
+  display: none;
+}
+
+.layer-button-note {
+  font-size: 0.6875rem;
+  font-weight: 500;
+  line-height: 1.2;
+  color: var(--muted);
+}
+
+.layer-button-note[hidden] {
+  display: none;
+}
+
+body[data-role='tv'] .layer-button-name {
+  display: -webkit-box;
+  max-width: 6.25rem;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+body[data-role='tv'] .layer-button .layer-button-icon {
+  width: 3.25rem;
+  height: 3.25rem;
+  border: 2px solid var(--line);
+  border-radius: 0.5rem;
+  background: var(--card);
+  color: var(--text);
+  transition:
+    background 0.2s,
+    border-color 0.2s,
+    box-shadow 0.2s;
+}
+
+body[data-role='tv'] .layer-button .layer-button-icon svg {
+  width: 1.625rem;
+  height: 1.625rem;
+}
+
+body[data-role='tv'] .layer-button[aria-pressed='true'] {
+  color: var(--text);
+}
+
+body[data-role='tv'] .layer-button[aria-pressed='true'] .layer-button-icon {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-ink);
+  box-shadow: 0 0 0.875rem color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
+body[data-role='tv'] .layer-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Groups down a rail: a gap, then the group's name in small capitals. */
+body[data-role='tv'] .rail-gap {
+  height: 0.5rem;
+}
+
+body[data-role='tv'] .rail-group {
+  max-width: 6.5rem;
+  margin-bottom: -0.25rem;
+  color: var(--muted);
+  font-size: 0.625rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  line-height: 1.2;
+  text-align: center;
+  text-transform: uppercase;
+  overflow-wrap: anywhere;
+}
+
+/* The core's own buttons at the foot of a rail, dashed so they read as actions, not layers (#75). */
+body[data-role='tv'] .rail-actions {
+  display: grid;
+  gap: 0.75rem;
+  justify-items: center;
+  padding: 0.75rem 0.5rem 1.25rem;
+}
+
+body[data-role='tv'] .action-button .layer-button-icon {
+  border-style: dashed;
+  background: transparent;
+  color: var(--muted);
+}
+
+body[data-role='tv'] .action-button:hover .layer-button-icon {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+body[data-role='tv'] .rail-actions .rail-group {
+  margin: 0.25rem 0 -0.25rem;
+}
+
+body[data-role='tv'] .action-button[aria-pressed='true'] .layer-button-icon {
+  border-style: solid;
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+/* The About page in the centre: the logos, the site's words, then who made it. */
+.about-logos {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.about-map {
+  margin-top: 1.75rem;
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+.about-logo {
+  height: 4.5rem;
+  max-width: 16rem;
+  object-fit: contain;
+}
+
+.about-page .layer-about {
+  max-width: 50rem;
+  font-size: 1.125rem;
+  line-height: 1.5;
+}
+
+.about-credits {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+  gap: 1.25rem 2rem;
+  margin: 1.5rem 0 0;
+}
+
+.about-credit dt {
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.about-credit dd {
+  margin: 0.25rem 0 0;
+  font-size: 1.125rem;
+  font-weight: 600;
+}
+
+.about-credit .about-note {
+  color: var(--muted);
+  font-size: 0.875rem;
+  font-weight: 400;
+}
+
+/*
+ * The labelled rail style (`tv.rail_style: "labelled"`): a wider rail, each button's icon
+ * with its name beside it, for tables where names matter more than width.
+ */
+body[data-role='tv'][data-rail-style='labelled'] .controller {
+  width: 14rem;
+}
+
+body[data-role='tv'][data-rail-style='labelled'] .controller .cards,
+body[data-role='tv'][data-rail-style='labelled'] .rail-actions {
+  justify-items: stretch;
+  gap: 0.5rem;
+}
+
+body[data-role='tv'][data-rail-style='labelled'] .layer-button {
+  flex-direction: row;
+  gap: 0.75rem;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.9375rem;
+  text-align: left;
+}
+
+body[data-role='tv'][data-rail-style='labelled'] .layer-button .layer-button-icon {
+  width: 2.75rem;
+  height: 2.75rem;
+}
+
+body[data-role='tv'][data-rail-style='labelled'] .layer-button-name {
+  max-width: none;
+}
+
+body[data-role='tv'][data-rail-style='labelled'] .rail-group {
+  max-width: none;
+  padding-left: 0.5rem;
+  text-align: left;
+}
+
+/*
+ * A rail with more buttons than its height (#576): smaller buttons first, then tighter ones
+ * with one-line names; past that the list scrolls and fades where more buttons are.
+ */
+body[data-role='tv'] .controller[data-fit] .cards {
+  gap: 0.5rem;
+  padding-top: 0.75rem;
+  padding-bottom: 0.75rem;
+}
+
+body[data-role='tv'] .controller[data-fit] .layer-button .layer-button-icon {
+  width: 2.625rem;
+  height: 2.625rem;
+}
+
+body[data-role='tv'] .controller[data-fit] .layer-button .layer-button-icon svg {
+  width: 1.375rem;
+  height: 1.375rem;
+}
+
+body[data-role='tv'] .controller[data-fit] .rail-gap {
+  height: 0.25rem;
+}
+
+body[data-role='tv'] .controller[data-fit] .rail-actions {
+  gap: 0.5rem;
+  padding: 0.5rem 0.5rem 0.75rem;
+}
+
+body[data-role='tv'] .controller[data-fit='tight'] .cards,
+body[data-role='tv'] .controller[data-fit='tight'] .rail-actions {
+  gap: 0.25rem;
+}
+
+body[data-role='tv'] .controller[data-fit='tight'] .layer-button {
+  gap: 0.2rem;
+  font-size: 0.6875rem;
+}
+
+body[data-role='tv'] .controller[data-fit='tight'] .layer-button .layer-button-icon {
+  width: 2.25rem;
+  height: 2.25rem;
+}
+
+body[data-role='tv'] .controller[data-fit='tight'] .layer-button-name {
+  -webkit-line-clamp: 1;
+}
+
+body[data-role='tv'] .controller .cards.is-more-below {
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 3rem), transparent);
+}
+
+body[data-role='tv'] .controller .cards.is-more-above {
+  mask-image: linear-gradient(to top, #000 calc(100% - 3rem), transparent);
+}
+
+body[data-role='tv'] .controller .cards.is-more-above.is-more-below {
+  mask-image: linear-gradient(to bottom, transparent, #000 3rem, #000 calc(100% - 3rem), transparent);
+}
+
+/* A rail with nothing on it gives its width to the centre. */
+
+/* In a narrow rail the join card is the code to scan and the code to type. */
+body[data-role='tv'] .controller .join {
+  flex-direction: column;
+  gap: 0.375rem;
+  padding: 0.75rem 0.5rem;
+  text-align: center;
+}
+
+body[data-role='tv'] .controller .join-qr {
+  width: 6.5rem;
+}
+
+body[data-role='tv'] .controller .join-text h2,
+body[data-role='tv'] .controller .join-text p:not(.join-address),
+body[data-role='tv'] .controller .join-address b:not(.join-code) {
+  display: none;
+}
+
+body[data-role='tv'] .controller .join-crowd {
+  justify-items: center;
+}
+
+body[data-role='tv'] .controller .join-address {
+  font-size: 0;
+}
+
+body[data-role='tv'] .controller .join-address .join-code {
+  font-size: 1rem;
+}
+
+/* Who changed the map from a phone (#335): a dot in that phone's colour and a few words. */
+.phone-cue {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.45rem 0.9rem;
+  border-radius: 999px;
+  background: rgba(127, 127, 127, 0.16);
+  font-size: 1rem;
+}
+
+.phone-cue[hidden] {
+  display: none;
+}
+
+.phone-cue-dot {
+  display: grid;
+  place-items: center;
+  min-width: 0.8rem;
+  min-height: 0.8rem;
+  border-radius: 50%;
+  flex: none;
+  font-size: 1.1rem;
+  line-height: 1;
+}
+
+.phone-cue-dot:not(:empty) {
+  width: 1.9rem;
+  height: 1.9rem;
+}
+
+/* The open layer, in the centre of the controller screen. */
+.open-layers {
+  flex: none;
+  max-height: 46%;
+  overflow-y: auto;
+  padding: 1.75rem 2rem 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.layer-card.layer-open {
+  border: 0;
+  background: none;
+  padding: 0;
+}
+
+.layer-card.layer-open > header {
+  justify-content: flex-start;
+  padding: 0;
+}
+
+.layer-open[hidden],
+.layer-welcome[hidden] {
+  display: none;
+}
+
+.layer-open-head {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.layer-open-head .layer-button-icon {
+  width: 3rem;
+  height: 3rem;
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.layer-open-name,
+.layer-welcome h2 {
+  margin: 0;
+  font-size: 1.7rem;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.layer-about,
+.layer-welcome p {
+  margin: 2px 0 0;
+  color: var(--muted);
+  font-size: 1rem;
+}
+
+.layer-open .controls {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(16.25rem, 1fr));
+  gap: 0.875rem 2rem;
+  align-items: start;
+}
+
+/* Five or more choices in a row need the room of a whole row, or their words wrap. */
+.layer-open .controls > .control:has(.segmented[data-columns='3']) {
+  grid-column: 1 / -1;
+  max-width: 44rem;
+}
+
+/*
+ * Tiers (#137): the hero, then the primary choices in one row of large segmented buttons,
+ * then the rest, then "More settings", closed. Sized for a 46-inch screen at 2 m.
+ */
+/* A tool kept alongside: a small name and its settings on one line. */
+.layer-open.is-alongside {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1.5rem;
+}
+
+.layer-open.is-alongside .layer-open-head {
+  margin: 0;
+  gap: 0.625rem;
+}
+
+.layer-open.is-alongside .layer-open-head .layer-button-icon {
+  width: 2rem;
+  height: 2rem;
+}
+
+.layer-open.is-alongside .layer-open-name {
+  font-size: 1.125rem;
+}
+
+.layer-open.is-alongside .layer-about {
+  font-size: 0.875rem;
+}
+
+.layer-open.is-alongside .controls-more {
+  margin: 0;
+}
+
+.layer-open.is-alongside .controls-more[open] {
+  flex-basis: 100%;
+}
+
+/* An alongside tool with a viewer of its own (the field walk) leads while no other layer is open. */
+.layer-open.is-alongside.is-lead:not([hidden]) {
+  display: block;
+}
+
+/*
+ * On the controller the dashboard's text never gets smaller than the controls beside it
+ * (the unit is at least 0.8% of the screen's height, the demo's scale for a 46-inch TV),
+ * so a layer's hero leaves the panels fewer rows, not tiny ones.
+ */
+body[data-role='tv'] .dash {
+  --mrs-u-floor: min(0.8vh, 0.5vw);
+}
+
+/* A layer with a hero takes most of the height; its panels share what is left. */
+.open-layers:has(.layer-open:not([hidden]) .layer-hero:not([hidden])) {
+  max-height: 72%;
+}
+
+.layer-hero {
+  margin-bottom: 1.375rem;
+}
+
+.layer-hero[hidden] {
+  display: none;
+}
+
+/*
+ * A slideshow step's own layer (#552) sits under the step strip, so its hero is drawn smaller
+ * and the slideshow may take more of the height: its option rows stay whole (#577). Heroes
+ * scale their height by --mrs-hero-scale.
+ */
+.stage-guest .layer-hero {
+  --mrs-hero-scale: 0.75;
+  margin-bottom: 1rem;
+}
+
+/* (Doubled class: it outranks the hero rule above.) */
+.open-layers.open-layers:has(.layer-open:not([hidden]) .stage-guest:not([hidden])) {
+  max-height: 84%;
+}
+
+/* A custom layer's hero (#342): its data on a small map, and its places by name. */
+.custom-hero {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 1.5rem;
+  align-items: start;
+}
+
+.custom-hero:has(.custom-hero-places[hidden]) {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.custom-hero-cell {
+  min-width: 0;
+}
+
+.custom-hero-map {
+  display: block;
+  border-radius: 0.75rem;
+  border: 1px solid var(--line);
+}
+
+.custom-hero-places {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
+  align-content: start;
+  gap: 0.25rem 1rem;
+  max-height: 36vh;
+  overflow-y: auto;
+  font-size: 1rem;
+}
+
+.custom-hero-places li {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0.375rem 0.625rem;
+  border-radius: 0.5rem;
+  color: var(--muted);
+}
+
+.custom-hero-places li i {
+  align-self: flex-start;
+  margin-top: 0.375rem;
+  width: 0.75rem;
+  height: 0.75rem;
+  border-radius: 50%;
+  flex: none;
+}
+
+.custom-hero-places li small {
+  display: block;
+  font-size: 0.8125rem;
+  opacity: 0.7;
+}
+
+.custom-hero-places li.is-current {
+  background: var(--card);
+  color: var(--text);
+  font-weight: 600;
+}
+
+.layer-open .controls-primary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem 2.5rem;
+  margin-bottom: 1.25rem;
+}
+
+.controls-primary .control {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.controls-primary .controls-more {
+  align-self: flex-end;
+  margin: 0 0 0 auto;
+}
+
+.controls-primary .controls-more[open] {
+  flex-basis: 100%;
+  margin-left: 0;
+}
+
+/* A slider among the primary choices: long enough to scrub, its value easy to read. */
+.controls-primary .control-range {
+  min-width: 20rem;
+  align-items: stretch;
+}
+
+.controls-primary .control-range .control-head {
+  align-items: baseline;
+  gap: 1rem;
+}
+
+.controls-primary .control-range .control-value {
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+.controls-primary .control-label {
+  margin-bottom: 0.5rem;
+  color: var(--muted);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.controls-primary .segmented {
+  flex-wrap: wrap;
+  border-radius: 0.75rem;
+  padding: 0.25rem;
+}
+
+.controls-primary .segmented button {
+  flex: none;
+  min-height: 3rem;
+  padding: 0 1.375rem;
+  border-radius: 0.5625rem;
+  font-size: 1.125rem;
+  font-weight: 600;
+}
+
+.control-presets {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.controls-primary .control-date-more {
+  height: 3.5rem;
+  font-size: 1rem;
+}
+
+.controls-more {
+  margin-top: 0.5rem;
+}
+
+.controls-more[hidden] {
+  display: none;
+}
+
+.controls-more > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1.125rem;
+  border: 1px solid var(--line);
+  border-radius: 0.625rem;
+  color: var(--muted);
+  font-size: 1rem;
+  cursor: pointer;
+  list-style: none;
+}
+
+.controls-more > summary::-webkit-details-marker {
+  display: none;
+}
+
+.controls-more > summary::after {
+  content: '▾';
+  font-size: 0.8em;
+}
+
+.controls-more[open] > summary {
+  margin-bottom: 1rem;
+  color: var(--text);
+}
+
+.controls-more[open] > summary::after {
+  content: '▴';
+}
+
+.controller-header {
+  padding: 1.25rem 1.25rem 0.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.controller-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.controller-logo {
+  height: 2.25rem;
+  max-width: 6rem;
+  object-fit: contain;
+  flex: none;
+}
+
+.controller-header h1 {
+  margin: 0;
+  font-size: 1.1rem;
+  letter-spacing: 0.02em;
+}
+
+.controller-header p {
+  margin: 2px 0 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.cards {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0.5rem 1rem 1rem;
+  display: grid;
+  gap: 0.75rem;
+  align-content: start;
+  /* The column is the screen's width: a wide tool picker or map never pushes the cards off a phone. */
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.controller-footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.625rem 1.25rem;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.layer-card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 0.75rem;
+}
+
+.layer-card.is-active {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
+}
+
+.layer-card > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.875rem 1rem;
+}
+
+.layer-title h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.layer-title p {
+  margin: 2px 0 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.layer-body {
+  padding: 0.25rem 1rem 1rem;
+  display: grid;
+  gap: 1rem;
+}
+
+.controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.875rem;
+}
+
+.control {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.375rem;
+}
+
+.control[hidden],
+.layer-body[hidden] {
+  display: none;
+}
+
+.control-label,
+.control-head {
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.control-head {
+  display: flex;
+  justify-content: space-between;
+}
+
+.control-value {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.control-toggle,
+.control-date,
+.control-color,
+.control-text {
+  grid-template-columns: 1fr auto;
+  align-items: center;
+}
+
+input[type='range'] {
+  width: 100%;
+  accent-color: var(--accent);
+  height: 1.75rem;
+  margin: 0;
+}
+
+input[type='date'],
+input[type='text'],
+select.control-source {
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+  padding: 0.375rem 0.625rem;
+  font: inherit;
+}
+
+.segmented {
+  display: flex;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 0.625rem;
+  padding: 0.1875rem;
+  gap: 0.1875rem;
+}
+
+.segmented button {
+  flex: 1;
+  min-width: 0;
+  min-height: 2.125rem;
+  border: 0;
+  border-radius: 0.4375rem;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.segmented button[aria-checked='true'] {
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 600;
+}
+
+button.action {
+  min-height: 2.375rem;
+  border: 1px solid var(--line);
+  border-radius: 0.625rem;
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.switch {
+  appearance: none;
+  flex: none;
+  width: 2.75rem;
+  height: 1.625rem;
+  margin: 0;
+  border-radius: 0.8125rem;
+  background: var(--line);
+  position: relative;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.switch::after {
+  content: '';
+  position: absolute;
+  top: 0.1875rem;
+  left: 0.1875rem;
+  width: 1.25rem;
+  height: 1.25rem;
+  border-radius: 50%;
+  background: var(--text);
+  transition: transform 0.15s;
+}
+
+.switch:checked {
+  background: var(--accent);
+}
+
+.switch:checked::after {
+  transform: translateX(1.125rem);
+  background: var(--accent-ink);
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+body.is-dragging,
+body.is-dragging * {
+  cursor: grabbing !important;
+}
+
+.notice {
+  margin: auto;
+  color: var(--muted);
+}
+
+.connection {
+  position: fixed;
+  top: 0.75rem;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 0.375rem 0.875rem;
+  border-radius: 999px;
+  background: #5a2a2a;
+  font-size: 0.85rem;
+}
+
+.connection[hidden] {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .switch,
+  .switch::after {
+    transition: none;
+  }
+}
