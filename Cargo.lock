@@ -2898,7 +2898,7 @@ version = "0.58.1"
 dependencies = [
  "base64 0.23.1",
  "ed25519-dalek",
- "getrandom 0.3.4",
+ "getrandom 0.4.3",
  "serde",
  "serde_json",
  "sha2 0.10.9",
