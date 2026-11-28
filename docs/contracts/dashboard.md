@@ -169,6 +169,38 @@ A bound value arrives as the layer published it, then is read for the prop's kin
 number or a number written as text. A widget says its own words in the visitors' language with
 `env.say(text, vars?)`: the layer's `locales`, then the site's, then the runtime's.
 
+### Text boxes with live values (#671)
+
+A `text` panel's `body` may write values in. `{{name}}` is one of its `values`, and `**words**` are
+bold; nothing else is markup. Each value is bound, worked out (`{ "expr": … }`) or a literal, and is
+written in the visitors' language (5,0 in Swedish, 5.0 in English) with its unit.
+
+```json
+{
+  "id": "today", "widget": "text", "size": "wide", "title": "Today",
+  "props": {
+    "body": "The roofs made **{{kwh}}** today, {{delta}} more than a year ago.",
+    "values": [
+      { "name": "kwh", "value": { "bind": "shared.kwh" }, "unit": "kWh", "accent": true },
+      { "name": "delta", "value": { "bind": "shared.delta" }, "format": "percent" }
+    ]
+  }
+}
+```
+
+| Value field | |
+| --- | --- |
+| `name` | What `{{name}}` in the text refers to |
+| `value` | A number or a short word: literal, `{ "bind" }` or `{ "expr" }` |
+| `format` | `number` (default), `percent` (0.12 is 12 %), `compact` (12k) or `hour` (14:30) |
+| `decimals` | 0 to 3 |
+| `unit` | Up to 6 characters, written after the number |
+| `accent` | Draws the value in the theme's accent colour |
+
+The box size sets how much it holds: a tile holds 64 characters and two values, a wide box 128 and
+four, counting each value at its longest (8 characters and its unit). Every `{{name}}` needs a value
+and every value must be used. Longer text is refused when the panel is checked, never drawn smaller.
+
 ### A map on a panel (#355)
 
 A `map` panel is the site's map with no code: the same map a layer's own stage gets from

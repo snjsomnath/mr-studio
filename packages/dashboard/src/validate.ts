@@ -7,6 +7,7 @@ import type { Binding, PanelSize, PanelSpec } from '@mrstudio/sdk';
 
 import type { PropSpec, WidgetDefinition, WidgetRegistry } from './registry.ts';
 import { DATA_SLOTS, GRID, PANEL_SIZES, RIBBON, SCREEN, SIZES, TEXT } from './rules.ts';
+import { templateProblems, worstText } from './widgets/text.ts';
 
 export interface Issue {
   /** Where: `panels.time.props.caption`. */
@@ -166,6 +167,10 @@ export function validatePanel(spec: PanelSpec, registry: WidgetRegistry, path = 
     const p = widget.props[prop];
     return p?.kind === 'list' ? listLimit(widget, prop, p, spec.size) : undefined;
   });
+  // A text box's words and its values go together (#671).
+  if (issues.length === before && widget.type === 'text' && !isBinding(spec.props?.body)) {
+    for (const message of templateProblems(spec.props?.body, spec.props?.values, spec.size, isBinding(spec.props?.values))) issues.push({ path: `${path}.props.body`, rule: 'text', message });
+  }
   // The budget is only meaningful once the props are well-formed.
   if (issues.length === before) {
     const reads = panelReads(spec, widget);
@@ -337,6 +342,8 @@ export function worstCasePanel(widget: WidgetDefinition, size: PanelSize, exampl
     if (example[key] && typeof example[key] === 'object' && 'bind' in (example[key] as object)) continue;
     props[key] = worstValue(prop, example[key], widget.listMax?.(key, size));
   }
+  // A text box's words and values go together (#671): its worst case is a full box of both.
+  if (widget.type === 'text' && !isBinding(example.body)) Object.assign(props, worstText(Array.isArray(example.values) ? (example.values as Record<string, unknown>[]) : [], size, longText));
   const spec = examplePanel(widget, size, props);
   spec.title = longText(TEXT.title);
   return spec;

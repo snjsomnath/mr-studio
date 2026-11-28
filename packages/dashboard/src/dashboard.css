@@ -642,6 +642,16 @@
   -webkit-line-clamp: 5;
 }
 
+/* A text box's live values (#671): the same type, a little weight, the accent when asked. */
+.mrs-note-value,
+.mrs-note-bold {
+  font-weight: 650;
+  color: var(--mrs-text);
+}
+.mrs-note-accent {
+  color: var(--mrs-accent);
+}
+
 /* ---- Pages, empty state, dev ---- */
 
 .mrs-pager {

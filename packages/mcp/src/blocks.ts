@@ -157,6 +157,12 @@ export const BLOCKS: BlockDef[] = [
     detect: 'export function runDataQuery',
   },
   {
+    id: 'text-values', group: 'data', name: 'Text with live values',
+    description: "A note panel that writes live numbers into a sentence (#671): \"The roofs made {{kwh}} today, {{delta}} more than last year\", with units, decimals, percent and the visitors' number style. **Bold** and an accent colour for emphasis; the box size caps the words.",
+    usage: "panel { widget: 'text', props: { body: '... {{kwh}} ...', values: [{ name: 'kwh', value: { bind: 'shared.kwh' }, unit: 'kWh', accent: true }] } } (docs/contracts/dashboard.md, Text boxes with live values)",
+    detect: 'export function parseTemplate',
+  },
+  {
     id: 'raster-look', group: 'visual', name: 'Raster look with Dig',
     description: 'A GeoTIFF of values (soil depth, rock surface, noise) coloured by value on the table grid, with cut-offs a slider moves so the ground peels away, and a glow along the cut.',
     usage: "a custom layer look block 'raster' on a data:<name> GeoTIFF; bind a range control to look.<id>.hide_below",

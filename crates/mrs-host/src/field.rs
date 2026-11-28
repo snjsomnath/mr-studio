@@ -464,7 +464,11 @@ mod tests {
         dir
     }
     fn rand_id() -> u64 {
-        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos() as u64
+        // A counter as well as the clock: macOS's clock steps in microseconds, so two tests running
+        // side by side could get the same folder, and one's clean-up removed the other's walk.
+        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        (std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos() as u64).wrapping_add(n << 48)
     }
     fn add(id: &str, bytes: u64) -> Value {
         json!({ "id": id, "kind": "photo", "mime": "image/jpeg", "bytes": bytes, "lon": 11.97, "lat": 57.7, "at": 1.0e12,
