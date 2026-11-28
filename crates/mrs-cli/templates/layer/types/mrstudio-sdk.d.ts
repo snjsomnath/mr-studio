@@ -654,6 +654,8 @@ declare module "@mrstudio/sdk/types" {
         } | null;
         /** The 3D model of the site (`scene.mesh`, docs/contracts/site.md), and whether footprints are raised beside it. */
         mesh?: SiteMesh;
+        /** The credit lines the table's data asks for (#731), each once, for the Credits page. */
+        attributions?: string[];
     }
     /** A placed 3D model: a file in the site folder and the numbers that put it on the ground. */
     export interface SiteMesh {
@@ -814,8 +816,16 @@ declare module "@mrstudio/sdk/types" {
                 chapters: {
                     t: number;
                     title?: string;
-                }[];
-            } | null;
+                }[]; /** Phones are asked first (#530): they see a notice and pick Join or Just watch. */
+                consent: boolean; /** The organiser's own words for that notice. */
+                notice?: string;
+            } | null; /** The recording this host plays back (#526): read only, and phones cannot join. Length in milliseconds. */
+            playback?: {
+                id: string;
+                name: string;
+                date: string;
+                length: number;
+            };
         };
         site: SiteInfo;
         /** Layer instance ids in draw order, bottom first. */

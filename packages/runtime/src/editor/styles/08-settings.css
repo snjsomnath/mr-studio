@@ -1,0 +1,281 @@
+/* ---- Table settings (#73, #62) ---- */
+
+.ed-table-name {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  margin: -4px;
+  padding: 4px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--ed-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ed-table-name svg {
+  flex: none;
+  color: var(--ed-text-2);
+}
+
+.ed-table-name:hover {
+  background: var(--ed-chrome);
+}
+
+.ed-field-wrap {
+  margin-bottom: 8px;
+}
+
+.ed-field-wrap .ed-field {
+  margin-bottom: 0;
+}
+
+.ed-field-wrap .ed-hint {
+  margin-left: 96px;
+  font-size: 11px;
+}
+
+.ed-field select {
+  height: 24px;
+  padding: 0 6px;
+  border: 1px solid var(--ed-line);
+  border-radius: 4px;
+  background: var(--ed-panel);
+  color: var(--ed-text);
+  font: inherit;
+  font-size: 12px;
+}
+
+.ed-number {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ed-number input {
+  width: 72px;
+}
+
+.ed-number input {
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--ed-line);
+  border-radius: 4px;
+  background: var(--ed-panel);
+  color: var(--ed-text);
+  font: inherit;
+  font-size: 12px;
+}
+
+.ed-slide-notes {
+  flex: 1 1 100%;
+  resize: vertical;
+  min-height: 2.6em;
+  font: inherit;
+  font-size: 12px;
+}
+
+/* The guide's phone (#98). */
+.ed-guide {
+  margin-top: 12px;
+  border: 1px solid var(--ed-line, #e4e4e7);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+.ed-guide summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.ed-guide-body {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  margin-top: 8px;
+}
+.ed-guide-qr {
+  flex: 0 0 112px;
+}
+.ed-guide-qr svg {
+  display: block;
+  width: 112px;
+  height: 112px;
+}
+.ed-guide-text p {
+  margin: 0 0 6px;
+}
+.ed-guide-address {
+  color: var(--ed-text-2);
+}
+.ed-guide-code {
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+}
+
+/* The table's own words in Swedish (#80). */
+.ed-translations {
+  display: grid;
+  gap: 6px;
+}
+.ed-translation {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  font-size: 12px;
+}
+.ed-translation span {
+  color: var(--ed-text-2);
+  overflow-wrap: anywhere;
+}
+
+/* ---- Setup tabs: Name and place, At rest, Design (#311, #312, #313) ---- */
+
+/* The tab's step of the guide takes the inspector's place, beside the map. */
+.ed.is-panel .ed-inspector,
+.ed.is-panel .ed-inspector-resize {
+  display: none;
+}
+
+.wz.is-panel {
+  order: 3;
+  width: clamp(340px, 30vw, 440px);
+  border-right: 0;
+  border-left: 1px solid var(--ed-line);
+}
+
+.ed-body > .ed-left { order: 0; }
+.ed-body > .ed-centre { order: 1; }
+.ed-body > .ed-inspector { order: 2; }
+
+.wz.is-panel.is-place {
+  width: clamp(400px, 36vw, 560px);
+}
+
+.wz-notes h3 {
+  margin: 16px 0 6px;
+  font-size: 13px;
+}
+
+/* "Fetch everything from open data" at the top of Your place (#310). */
+.fa {
+  margin-bottom: 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--ed-accent-soft);
+  border-radius: 8px;
+  background: var(--ed-panel);
+}
+
+.fa-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.fa-head > div {
+  flex: 1;
+  min-width: 0;
+}
+
+.fa-head p {
+  margin: 2px 0 8px;
+  color: var(--ed-text-2);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.fa-list {
+  display: flex;
+  flex-direction: column;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--ed-line);
+}
+
+.fa-row {
+  display: grid;
+  grid-template-columns: minmax(130px, auto) minmax(0, 1fr);
+  align-items: center;
+  gap: 4px 10px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--ed-line);
+  font-size: 13px;
+}
+
+.fa-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.fa-name > span {
+  display: flex;
+  flex-direction: column;
+}
+
+.fa-from {
+  color: var(--ed-text-2);
+  font-size: 11px;
+}
+
+.fa-status svg {
+  vertical-align: -1px;
+}
+
+.fa-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  color: var(--ed-text-2);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.fa-row.is-done .fa-status {
+  color: #1d7a46;
+}
+
+.fa-row.is-empty .fa-status {
+  color: #8a5a00;
+}
+
+.fa-row.is-failed .fa-status {
+  color: #a4281b;
+}
+
+.fa .wz-report-actions > .ed-button {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.fa-clock {
+  align-self: center;
+  color: var(--ed-text-2);
+  font-size: 12px;
+}
+
+/* Pickers in the inspector (#306): the editor's 24 px rows. */
+.ed .picker-field input.picker-input {
+  height: 24px;
+}
+.ed .picker-toggle {
+  width: 24px;
+  border-radius: 0 4px 4px 0;
+}
+.ed .picker-list {
+  border-radius: 6px;
+  font-size: 12px;
+}
+.ed .control-pick {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}

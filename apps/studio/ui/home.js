@@ -17,6 +17,15 @@ function showError(message, where = 'error') {
   $(where).hidden = !message;
 }
 
+/** A short "done" line above the tables, gone after a while. */
+let noticeTimer = 0;
+function showNotice(message) {
+  $('notice').textContent = message;
+  $('notice').hidden = false;
+  clearTimeout(noticeTimer);
+  noticeTimer = setTimeout(() => ($('notice').hidden = true), 12000);
+}
+
 // ---- Home ------------------------------------------------------------------
 
 /** "Edited 10 minutes ago", "Edited yesterday", "Edited 21 Nov". */
@@ -97,6 +106,7 @@ async function load(fresh) {
       );
       open.addEventListener('click', () => openTable(site.path));
       const row = el('li', { className: site.problem ? 'broken' : fresh && site.path === fresh ? 'fresh' : '' }, open);
+      row.dataset.id = site.id;
       const tools = el('span', { className: 'card-tools' });
       // Duplicate (#99): a copy to change, the way to start from an example or from another table.
       if (!site.problem) {
@@ -156,11 +166,253 @@ async function load(fresh) {
           if (example) facts.textContent = `Comes with MR Studio · ${size(details.bytes)}`;
         })
         .catch(() => {});
+      // A table that follows a git repository (#570) says where from, and offers new versions.
+      if (!example && !site.problem) {
+        invoke('table_git_state', { path: site.path })
+          .then((git) => {
+            if (!git) return;
+            const from = el('small', { className: 'path git-from', title: git.problem ?? '' }, `From ${git.remote}${git.problem ? ' · could not reach it' : ''}`);
+            open.querySelector('.text')?.append(from);
+            if (!git.behind) return;
+            const update = el('button', { type: 'button', className: 'git-update', title: 'Take the newest version from the repository' }, `Update from the repository (${git.behind} new)`);
+            update.addEventListener('click', async () => {
+              update.disabled = true;
+              showError();
+              try {
+                await invoke('table_git_update', { path: site.path });
+                showNotice(`“${site.name}” is now the repository's newest version.`);
+                await load();
+              } catch (e) {
+                showError(e);
+                update.disabled = false;
+              }
+            });
+            open.after(update);
+          })
+          .catch(() => {});
+      }
       return row;
     }),
   );
   $('tables-hint').textContent = state.sites_folder ? `New tables are kept in ${state.sites_folder}.` : '';
+  tables = state.sites;
+  await loadRecordings();
 }
+
+// ---- Recorded sessions (#525) ----------------------------------------------------------------
+
+/** @type {any[]} */
+let recordings = [];
+/** @type {any[]} */
+let tables = [];
+/** A table's id when its card's "recorded sessions" link was pressed: the library shows only those. */
+let onlyTable = null;
+
+/** 1:05:09 or 5:09. */
+function clock(ms) {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  const two = (n) => String(n).padStart(2, '0');
+  const [h, m, sec] = [Math.floor(s / 3600), Math.floor((s % 3600) / 60), s % 60];
+  return h > 0 ? `${h}:${two(m)}:${two(sec)}` : `${m}:${two(sec)}`;
+}
+
+async function loadRecordings() {
+  recordings = await invoke('recordings_list').catch(() => []);
+  // A table's card counts its recordings, and the count opens the library at them.
+  for (const row of document.querySelectorAll('#tables li[data-id]')) {
+    const count = recordings.filter((r) => r.table?.id === row.dataset.id).length;
+    row.querySelector('.recorded')?.remove();
+    if (!count) continue;
+    const link = el('button', { type: 'button', className: 'recorded', title: 'Show this table’s recorded sessions' }, `${count} recorded session${count === 1 ? '' : 's'}`);
+    link.addEventListener('click', () => {
+      onlyTable = row.dataset.id;
+      showRecordings();
+      $('recordings-title').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+    row.querySelector('.text')?.after(link);
+  }
+  showRecordings();
+}
+
+function showRecordings() {
+  // Open a recorded session… is always there; finding and sorting only once there are some.
+  $('recordings-find').hidden = $('recordings-sort').hidden = recordings.length === 0;
+  const words = $('recordings-find').value.trim().toLowerCase();
+  const matches = (r) =>
+    !words || [r.name, r.facilitator, ...(r.tags ?? [])].some((text) => (text ?? '').toLowerCase().includes(words));
+  const shown = recordings
+    .filter((r) => !onlyTable || r.table?.id === onlyTable)
+    .filter(matches)
+    .sort((a, b) => ($('recordings-sort').value === 'old' ? a.started - b.started : b.started - a.started));
+  const filter = $('recordings-filter');
+  filter.hidden = !onlyTable;
+  if (onlyTable) {
+    const name = tables.find((t) => t.id === onlyTable)?.name ?? recordings.find((r) => r.table?.id === onlyTable)?.table?.name ?? onlyTable;
+    const all = el('button', { type: 'button', className: 'link' }, 'Show all');
+    all.addEventListener('click', () => {
+      onlyTable = null;
+      showRecordings();
+    });
+    filter.replaceChildren(`Recorded on “${name}”. `, all);
+  }
+  $('recordings').replaceChildren(
+    ...shown.map((r) => {
+      const facts = [r.date, r.length ? clock(r.length) : 'not stopped', `${r.phones ?? 0} phone${r.phones === 1 ? '' : 's'}`].join(' · ');
+      const who = [r.facilitator, r.table?.name].filter(Boolean).join(' · ');
+      const tags = el('span', { className: 'tags' }, ...(r.tags ?? []).map((tag) => el('span', { className: 'chip' }, tag)));
+      // Pressing a recording plays it back, read only (#526).
+      const card = el(
+        'button',
+        { type: 'button', className: 'open', title: `Play back${r.purpose ? `: ${r.purpose}` : ''}` },
+        el('span', { className: 'thumb recording-thumb' }, el('span', { className: 'rec-dot' }), el('span', { className: 'play-glyph', ariaHidden: 'true' }, '▶')),
+        el('span', { className: 'text' }, el('b', {}, r.name), el('small', { className: 'facts' }, facts), el('small', {}, who), tags),
+        el('span', { className: 'tag' }, r.wrapped ? '' : r.finished ? 'Needs its notes' : 'Cut short'),
+      );
+      card.addEventListener('click', async () => {
+        card.disabled = true;
+        try {
+          await invoke('recording_open', { id: r.id });
+        } catch (e) {
+          showError(e);
+        } finally {
+          card.disabled = false;
+        }
+      });
+      const row = el('li', { className: 'recording' }, card);
+      const tools = el('span', { className: 'card-tools' });
+      const edit = el('button', { type: 'button', className: 'remove' }, 'Edit details');
+      edit.addEventListener('click', () => editRecording(r));
+      const reveal = el('button', { type: 'button', className: 'remove', title: 'Show the recording’s folder' }, 'Show in folder');
+      reveal.addEventListener('click', () => invoke('recording_reveal', { id: r.id }).catch(showError));
+      const del = el('button', { type: 'button', className: 'remove danger', title: `Delete…\nMove this recording to the ${TRASH}` });
+      del.setAttribute('aria-label', 'Delete…');
+      del.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3" /></svg>';
+      del.addEventListener('click', () => deleteRecording(r));
+      const share = el('button', { type: 'button', className: 'remove', title: 'Save as one .mrsession file to take to another computer' }, 'Export…');
+      share.addEventListener('click', () => exportRecording(r));
+      tools.append(edit, share, reveal, del);
+      row.append(tools);
+      return row;
+    }),
+  );
+  if (recordings.length && !shown.length) $('recordings').append(el('li', { className: 'none' }, 'No recorded session matches.'));
+}
+
+function editRecording(r) {
+  const dialog = $('recording-edit-dialog');
+  $('recording-edit-name').value = r.name;
+  $('recording-edit-facilitator').value = r.facilitator ?? '';
+  $('recording-edit-purpose').value = r.purpose ?? '';
+  $('recording-edit-tags').value = (r.tags ?? []).join(', ');
+  $('recording-edit-notes').value = r.notes ?? '';
+  showError(undefined, 'recording-edit-error');
+  $('recording-edit-cancel').onclick = () => dialog.close();
+  $('recording-edit-save').onclick = async () => {
+    const details = {
+      name: $('recording-edit-name').value,
+      facilitator: $('recording-edit-facilitator').value,
+      purpose: $('recording-edit-purpose').value,
+      notes: $('recording-edit-notes').value,
+      tags: $('recording-edit-tags').value.split(',').map((t) => t.trim()).filter(Boolean),
+    };
+    try {
+      await invoke('recording_update', { id: r.id, details });
+      dialog.close();
+      await loadRecordings();
+    } catch (e) {
+      showError(e, 'recording-edit-error');
+    }
+  };
+  dialog.showModal();
+  $('recording-edit-name').focus();
+}
+
+function deleteRecording(r) {
+  const dialog = $('recording-delete-dialog');
+  $('recording-delete-title').textContent = `Delete “${r.name}”?`;
+  for (const node of document.querySelectorAll('.trash-name')) node.textContent = TRASH;
+  $('recording-delete-confirm').textContent = `Move to ${TRASH}`;
+  showError(undefined, 'recording-delete-error');
+  $('recording-delete-cancel').onclick = () => dialog.close();
+  $('recording-delete-confirm').onclick = async () => {
+    try {
+      await invoke('recording_delete', { id: r.id });
+      dialog.close();
+      await loadRecordings();
+    } catch (e) {
+      showError(e, 'recording-delete-error');
+    }
+  };
+  dialog.showModal();
+  $('recording-delete-cancel').focus();
+}
+
+/** Export… (#529): with everything, or without videos and large pictures. */
+function exportRecording(r) {
+  const dialog = $('recording-export-dialog');
+  $('recording-export-title').textContent = `Export “${r.name}”`;
+  showError(undefined, 'recording-export-error');
+  $('recording-export-cancel').onclick = () => dialog.close();
+  $('recording-export-save').onclick = async () => {
+    const chosen = /** @type {HTMLInputElement | null} */ (document.querySelector('input[name="recording-export-media"]:checked'));
+    const media = chosen?.value !== 'lean';
+    try {
+      const done = await invoke('recording_export', { id: r.id, media });
+      if (!done) return;
+      dialog.close();
+      const size = done.bytes > 1048576 ? `${(done.bytes / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(done.bytes / 1024))} KB`;
+      const left = done.left_out.length ? ` Left out: ${done.left_out.join(', ')}.` : '';
+      showNotice(`Exported “${r.name}” (${size}).${left}`);
+    } catch (e) {
+      showError(e, 'recording-export-error');
+    }
+  };
+  dialog.showModal();
+  $('recording-export-save').focus();
+}
+
+/** Open a recorded session… (#529): it joins Recorded sessions, never Your tables. */
+$('recordings-open').addEventListener('click', async () => {
+  showError();
+  try {
+    const opened = await invoke('recording_import', {});
+    if (!opened) return;
+    await loadRecordings();
+    showNotice(`“${opened.name}” is now in Recorded sessions. Press it to play it back.`);
+  } catch (e) {
+    showError(e);
+  }
+});
+
+/** Get a table from a git repository… (#570). */
+$('git-get').addEventListener('click', () => {
+  const dialog = $('git-dialog');
+  showError(undefined, 'git-error');
+  $('git-progress').hidden = true;
+  $('git-cancel').onclick = () => dialog.close();
+  $('git-confirm').onclick = async () => {
+    const remote = /** @type {HTMLInputElement} */ ($('git-remote')).value;
+    $('git-confirm').toggleAttribute('disabled', true);
+    $('git-progress').hidden = false;
+    showError(undefined, 'git-error');
+    try {
+      const got = await invoke('table_from_git', { remote });
+      dialog.close();
+      await load(got.path);
+      showNotice(`Got “${got.name}” from its repository.`);
+    } catch (e) {
+      showError(e, 'git-error');
+    } finally {
+      $('git-progress').hidden = true;
+      $('git-confirm').toggleAttribute('disabled', false);
+    }
+  };
+  dialog.showModal();
+  $('git-remote').focus();
+});
+
+$('recordings-find').addEventListener('input', showRecordings);
+$('recordings-sort').addEventListener('change', showRecordings);
 
 // On success the shell closes this window.
 async function openTable(path, welcome = false, readOnly = false) {

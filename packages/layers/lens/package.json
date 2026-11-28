@@ -1,6 +1,6 @@
 {
   "name": "@mrstudio/layer-lens",
-  "version": "0.58.0",
+  "version": "0.59.0",
   "license": "SEE LICENSE IN ../../../LICENSE",
   "private": true,
   "type": "module",

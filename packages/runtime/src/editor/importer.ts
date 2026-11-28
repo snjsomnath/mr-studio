@@ -759,6 +759,18 @@ export class Importer {
     let done = false;
     try {
       const file = this.source.kind === 'file' ? this.source.file : null;
+      // OpenStreetMap is asked first on the route that keeps talking while it waits (#706): the
+      // app window gives up on a request that is silent for a minute. The check below then uses
+      // what this fetched, or this fetch's refusal is the report.
+      if (this.source.kind === 'osm' && !write) {
+        const refused = await this.askOsm(query.get('target') ?? '');
+        if (refused) {
+          this.report = refused;
+          this.busy = false;
+          this.render();
+          return false;
+        }
+      }
       const response = await fetch(`/api/data/${write ? 'import' : 'inspect'}?${query}`, {
         method: 'POST',
         headers: file ? { 'X-Filename': encodeURIComponent(file.name) } : {},
@@ -776,6 +788,15 @@ export class Importer {
     if (done) this.source = null;
     this.render();
     return done;
+  }
+
+  /** Fetches one dataset from OpenStreetMap ahead of its check; its refusal, or null when it came. */
+  private async askOsm(target: string): Promise<ImportReport | null> {
+    const response = await fetch(`/api/data/osm?${new URLSearchParams({ targets: target })}`, { method: 'POST', body: '' });
+    if (!response.ok) return null;
+    const answer = (await response.json()) as { datasets?: { ok: boolean; report?: ImportReport }[] };
+    const dataset = answer.datasets?.[0];
+    return dataset && !dataset.ok && dataset.report ? dataset.report : null;
   }
 
   /** The columns of the file, each with what MR Studio reads it as: the row's name, a value, kinds, when, where. */

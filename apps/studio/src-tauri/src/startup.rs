@@ -40,6 +40,15 @@ pub(crate) async fn startup(app: AppHandle) {
     if let Some(file) = file {
         *shell.opened_file.lock() = Some(file);
     }
+    // `mr-studio Universeum.mrslicence` (#727): the licence is checked and kept, then the app
+    // starts as it would have.
+    let explicit = match explicit {
+        Some(path) if path.extension().is_some_and(|e| e.eq_ignore_ascii_case(mrs_licence::EXTENSION)) => {
+            licence::opened_licence_file(&app, path);
+            return;
+        }
+        other => other,
+    };
     // Operator mode (#394): the last table goes on the screens and the operator window stands
     // in for the editor. Shift held at the start asks for this computer's password instead.
     let operator = settings.operator_start && !setup;

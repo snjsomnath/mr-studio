@@ -1,11 +1,11 @@
 [workspace]
 resolver = "2"
-members = ["crates/mrs-engine", "crates/mrs-site", "crates/mrs-host", "crates/mrs-cli", "crates/mrs-relay", "apps/studio/src-tauri"]
+members = ["crates/mrs-engine", "crates/mrs-site", "crates/mrs-licence", "crates/mrs-host", "crates/mrs-cli", "crates/mrs-relay", "apps/studio/src-tauri"]
 # The desktop shell needs system webview libraries; build it on purpose with `-p mr-studio-app`.
-default-members = ["crates/mrs-engine", "crates/mrs-site", "crates/mrs-host", "crates/mrs-cli", "crates/mrs-relay"]
+default-members = ["crates/mrs-engine", "crates/mrs-site", "crates/mrs-licence", "crates/mrs-host", "crates/mrs-cli", "crates/mrs-relay"]
 
 [workspace.package]
-version = "0.58.0"
+version = "0.59.0"
 edition = "2021"
 license-file = "LICENSE"
 rust-version = "1.87"
@@ -22,6 +22,7 @@ type_complexity = "allow"
 schemars = "1.2"
 mrs-engine = { path = "crates/mrs-engine" }
 mrs-site = { path = "crates/mrs-site" }
+mrs-licence = { path = "crates/mrs-licence" }
 mrs-host = { path = "crates/mrs-host" }
 mrs-relay = { path = "crates/mrs-relay" }
 anyhow = "1"

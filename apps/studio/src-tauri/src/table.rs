@@ -152,6 +152,16 @@ pub(crate) async fn import_table(
 /// Stops whatever is running, then runs `site`. No window is opened: `show` puts it on
 /// the displays and `open_editor` opens it for authoring.
 pub(crate) async fn launch(app: &AppHandle, site: PathBuf, lan: bool) -> anyhow::Result<()> {
+    launch_with(app, site, lan, None).await
+}
+
+/// Runs a recorded session played back (#526): a copy of its table as it was, on this
+/// computer only, moved only by the playback room. No programs and no services start.
+pub(crate) async fn launch_playback(app: &AppHandle, copy: PathBuf, recording: PathBuf) -> anyhow::Result<()> {
+    launch_with(app, copy, false, Some(recording)).await
+}
+
+async fn launch_with(app: &AppHandle, site: PathBuf, lan: bool, playback: Option<PathBuf>) -> anyhow::Result<()> {
     let shell = app.state::<Shell>();
     // One start at a time.
     let mut host = shell.host.lock().await;
@@ -170,8 +180,9 @@ pub(crate) async fn launch(app: &AppHandle, site: PathBuf, lan: bool) -> anyhow:
     // A table changed by a newer MR Studio opens only when someone says so (#509).
     may_open_newer(app, &site).await?;
 
-    // A table from elsewhere runs its own programs only after someone said so (#506).
-    let run_programs = may_run_programs(app, &site).await?;
+    // A table from elsewhere runs its own programs only after someone said so (#506). A
+    // recording played back runs none (#526).
+    let run_programs = playback.is_none() && may_run_programs(app, &site).await?;
 
     let ip = if lan { [0, 0, 0, 0] } else { [127, 0, 0, 1] };
     // Keep the usual port when it is free, so phone links and bookmarks stay valid.
@@ -182,7 +193,7 @@ pub(crate) async fn launch(app: &AppHandle, site: PathBuf, lan: bool) -> anyhow:
         web_dir: Some(shell.resources.join("web")),
         bind: SocketAddr::from((ip, port)),
         backend: Backend::Auto,
-        session: Default::default(),
+        session: mrs_host::SessionOptions { playback, ..Default::default() },
         sources: shell.sources.clone(),
         programs: run_programs,
     })

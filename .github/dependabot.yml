@@ -46,3 +46,8 @@ updates:
         patterns: ['three', '@types/three']
       tauri-js:
         patterns: ['@tauri-apps/*']
+    ignore:
+      # typescript-eslint needs TypeScript below 6.1 for its type-aware rules (PR 686).
+      # Move to a new major version by hand once typescript-eslint supports it.
+      - dependency-name: typescript
+        update-types: ['version-update:semver-major']

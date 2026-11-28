@@ -16,7 +16,7 @@ export default tseslint.config(
   },
   // The Displays and settings window loads several files into one page: these names come from launcher.js.
   {
-    files: ['apps/studio/ui/colour.js', 'apps/studio/ui/calibration.js', 'apps/studio/ui/updates.js', 'apps/studio/ui/cli.js'],
+    files: ['apps/studio/ui/colour.js', 'apps/studio/ui/calibration.js', 'apps/studio/ui/updates.js', 'apps/studio/ui/cli.js', 'apps/studio/ui/licence.js'],
     languageOptions: { globals: { $: 'readonly', el: 'readonly', invoke: 'readonly', showError: 'readonly' } },
   },
   {

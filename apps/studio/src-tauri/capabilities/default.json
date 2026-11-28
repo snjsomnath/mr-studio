@@ -49,11 +49,26 @@
     "allow-open-settings",
     "allow-new-table",
     "allow-table-details",
+    "allow-recordings-list",
+    "allow-recording-update",
+    "allow-recording-delete",
+    "allow-recording-reveal",
+    "allow-recording-open",
+    "allow-table-from-git",
+    "allow-table-git-state",
+    "allow-table-git-update",
+    "allow-recording-import",
+    "allow-recording-export",
     "allow-open-sources",
     "allow-open-operator-log",
     "allow-diagnostics-report",
     "allow-save-diagnostics",
     "allow-open-operator",
-    "allow-set-operator-start"
+    "allow-set-operator-start",
+    "allow-licence-state",
+    "allow-licence-set-use",
+    "allow-licence-add",
+    "allow-licence-remove",
+    "allow-licence-notices"
   ]
 }

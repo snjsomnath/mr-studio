@@ -1,0 +1,324 @@
+/* ---- Two layers at once (#473) ---- */
+
+/* Holding a layer button: a ring grows round its icon; the layer joins the open one when it closes. */
+@property --mrs-hold {
+  syntax: '<angle>';
+  inherits: false;
+  initial-value: 0deg;
+}
+
+.layer-button .layer-button-icon {
+  position: relative;
+}
+
+.layer-button.is-holding .layer-button-icon::after {
+  content: '';
+  position: absolute;
+  inset: -7px;
+  padding: 3px;
+  border-radius: 0.75rem;
+  background: conic-gradient(var(--accent) var(--mrs-hold), transparent 0);
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box exclude,
+    linear-gradient(#000 0 0);
+  animation: mrs-hold 570ms linear forwards;
+  pointer-events: none;
+}
+
+@keyframes mrs-hold {
+  to {
+    --mrs-hold: 360deg;
+  }
+}
+
+/* The older of two open layers: still lit, with a smaller mark. */
+body[data-role='tv'] .layer-button-card.is-second .layer-button[aria-pressed='true'] .layer-button-icon {
+  background: color-mix(in srgb, var(--accent) 30%, var(--card));
+  color: var(--text);
+  box-shadow: none;
+}
+
+/* The other open layer, above the front one's controls: press to swap, × to close it. */
+.layer-pair {
+  flex: none;
+  display: flex;
+  align-items: stretch;
+  align-self: flex-start;
+  gap: 0;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--card);
+  overflow: hidden;
+}
+
+.layer-pair[hidden] {
+  display: none;
+}
+
+.layer-pair button {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 3rem;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.layer-pair-swap {
+  padding: 0 0.75rem 0 1.1rem;
+}
+
+.layer-pair-plus {
+  color: var(--accent);
+  font-size: 1.25rem;
+}
+
+.layer-pair-icon {
+  display: grid;
+  color: var(--muted);
+}
+
+.layer-pair-close {
+  padding: 0 1rem 0 0.75rem;
+  border-left: 1px solid var(--line) !important;
+  color: var(--muted) !important;
+}
+
+.layer-pair button:hover,
+.layer-pair button:focus-visible {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.phone-badge[hidden] {
+  display: none;
+}
+
+/* The ambient glow in the projector's blank space (#476): a small canvas the browser stretches smooth, under the ribbons. */
+.table-glow {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 4;
+  pointer-events: none;
+}
+
+.table-glow[hidden] {
+  display: none;
+}
+
+/* The opening fade (present.md, Opening): the ribbons and the glow wait until the layers are in, then come in themselves. */
+.is-fading-in .table-ribbon,
+.is-fading-in .table-glow {
+  opacity: 0;
+}
+
+/* Table size and place › Ambient glow (#476): switch, strength, colours on one row. */
+.ed-glow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.ed-glow input[type='range'] {
+  flex: 1;
+  min-width: 90px;
+}
+
+/* An open layer with a glass or line visitors steer inside it (#658): the glass takes the picture's place. */
+.layer-open:has(> .stage-guest[data-steered]:not([hidden]) > .layer-hero) > .layer-hero {
+  display: none;
+}
+
+/* Record this session (#522): the operator's panel on the Developer window. */
+.record-panel {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.75rem 1.25rem;
+  border-top: 1px solid var(--line);
+}
+
+.record-panel h2 {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.record-panel h3 {
+  margin: 0.25rem 0 0;
+  font-size: 0.8rem;
+}
+
+.record-body {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.record-hint,
+.record-saved {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.record-problem {
+  margin: 0;
+  font-size: 0.8rem;
+  color: #ff8a80;
+}
+
+.record-check {
+  display: flex;
+  font-size: 0.8rem;
+  gap: 0.5em;
+  align-items: center;
+  margin: 0.4rem 0 0;
+}
+
+.record-field {
+  display: grid;
+  gap: 0.2rem;
+  font-size: 0.8rem;
+}
+
+.record-field input,
+.record-field textarea,
+.record-row input {
+  min-width: 0;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 0.85rem;
+}
+
+.record-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.record-row input {
+  flex: 1;
+}
+
+.record-on {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.record-time,
+.recording-time {
+  font-variant-numeric: tabular-nums;
+}
+
+.record-dot {
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 50%;
+  background: #e5484d;
+  box-shadow: 0 0 0 0.2rem rgb(229 72 77 / 25%);
+  animation: record-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes record-pulse {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+.record-chapters {
+  display: grid;
+  gap: 0.25rem;
+  margin: 0;
+  padding-left: 1.1rem;
+  font-size: 0.8rem;
+}
+
+.record-chapters.is-editing {
+  padding: 0;
+  list-style: none;
+}
+
+.record-chapters.is-editing li {
+  display: grid;
+  grid-template-columns: 3.5rem 1fr auto;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+.record-chapters.is-editing input {
+  min-width: 0;
+  padding: 0.25rem 0.4rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+}
+
+.record-at {
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+
+.record-remove {
+  border: 0;
+  background: none;
+  color: inherit;
+  font-size: 1.1rem;
+  cursor: pointer;
+}
+
+/* The controller's red dot (#522): small, in a corner, over everything. */
+.recording-dot {
+  position: fixed;
+  top: 0.4rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.3rem 0.7rem;
+  border-radius: 999px;
+  background: rgb(0 0 0 / 55%);
+  color: #fff;
+  font-size: 0.8rem;
+  pointer-events: none;
+}
+
+.recording-dot[hidden] {
+  display: none;
+}
+
+.record-panel .action.is-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-text, #000);
+}
+
+.record-panel .action.is-danger {
+  border-color: #e5484d;
+  color: #ff8a80;
+}
+
+/* A recording played back (#526): the controller says what it is. */
+.recording-dot.is-playback {
+  background: rgb(23 32 46 / 80%);
+}

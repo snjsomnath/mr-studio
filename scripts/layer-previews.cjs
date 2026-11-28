@@ -48,7 +48,7 @@ const SETTLE = { mobility: 8, wind: 8, stormwater: 14, transit: 8, cars: 8, 'str
  * Layers that have no picture of their own: they need a service, a video or a walk the sample
  * has not got, or they show only where a hand is (the magnifier).
  */
-const SKIP = new Set(['blocks-demo', 'wms', 'walkthrough', 'fieldwalk', 'lens']);
+const SKIP = new Set(['wms', 'walkthrough', 'fieldwalk', 'lens']);
 
 function connect() {
   return new Promise((resolve, reject) => {

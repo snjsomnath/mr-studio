@@ -73,7 +73,6 @@ The installers are not signed yet: Windows SmartScreen asks once ("More info", "
 | Picture or video | A picture or video of the site over the whole table: a simulation, an old photo, a film of a sun study | `media` |
 | Web map (WMS) | A map from a WMS or ArcGIS service laid over the table | `wms` |
 | Sketch | Places, routes and areas marked from a phone | `sketch` |
-| Building blocks | A demo of two scenes assembled from the SDK's building blocks | `blocks-demo` |
 
 Custom layers made in the editor's layer builder (data, look, motion and interaction blocks) are saved in the table itself, not as packages.
 

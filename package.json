@@ -2,7 +2,7 @@
   "name": "mr-studio",
   "private": true,
   "license": "SEE LICENSE IN LICENSE",
-  "version": "0.58.0",
+  "version": "0.59.0",
   "packageManager": "pnpm@10.0.0",
   "scripts": {
     "dev": "node scripts/dev.mjs",
@@ -13,7 +13,7 @@
     "e2e": "playwright test -c scripts/e2e/playwright.config.cjs",
     "e2e:shots": "playwright test -c scripts/e2e/playwright.config.cjs",
     "app": "pnpm build && cargo run -p mr-studio-app",
-    "app:build": "pnpm build && pnpm --filter @mrstudio/studio exec tauri build",
+    "app:build": "pnpm build && node scripts/third-party-notices.mjs && pnpm --filter @mrstudio/studio exec tauri build",
     "mcp": "pnpm --filter @mrstudio/mcp build",
     "test:release": "node --test scripts/release.test.mjs",
     "lint": "eslint",
@@ -26,10 +26,11 @@
   },
   "devDependencies": {
     "@playwright/test": "1.65.1",
-    "eslint": "^9.39.5",
-    "globals": "14.0.0",
+    "eslint": "^10.15.0",
+    "globals": "17.14.0",
     "jsqr": "^1.4.0",
     "playwright": "1.65.1",
+    "typescript": "^5.9.0",
     "typescript-eslint": "^8.74.0"
   }
 }

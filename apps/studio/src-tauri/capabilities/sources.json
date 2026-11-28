@@ -1,9 +1,9 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "sources",
-  "description": "The Sources page lists, adds, changes, tests and removes outside services and their keys (#41). Keys go in and are never read back out. Only this window may do that.",
+  "description": "The Sources page lists, adds, changes, tests and removes outside services and their keys (#41). Keys go in and are never read back out. Only the Settings window, where the page lives since #593, may do that.",
   "windows": [
-    "sources"
+    "launcher"
   ],
   "permissions": [
     "allow-sources-page",

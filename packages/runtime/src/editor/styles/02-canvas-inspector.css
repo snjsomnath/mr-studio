@@ -1,0 +1,300 @@
+/* ---- Canvas ---- */
+
+.ed-centre {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+.ed-canvas-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--ed-line);
+}
+
+.ed-canvas-head span:last-child {
+  color: var(--ed-text-2);
+}
+
+.ed-next {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 16px;
+  background-color: var(--ed-accent-soft);
+  border-bottom: 1px solid var(--ed-line);
+}
+
+.ed-next[hidden] {
+  display: none;
+}
+
+.ed-next strong {
+  color: var(--ed-accent);
+}
+
+.ed-next > span {
+  flex: 1;
+}
+
+.ed-canvas {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  background-color: #eceef2;
+  background-image: radial-gradient(#d5d9e0 1px, transparent 1px);
+  background-size: 16px 16px;
+}
+
+body[data-role='edit'] .table-frame {
+  padding: 32px;
+  container-type: size;
+  background: transparent;
+}
+
+/* The table itself stays dark, whatever the chrome around it. */
+body[data-role='edit'] .table-surface {
+  --bg: #0e1218;
+  --panel: #131722;
+  --card: #1a2030;
+  --line: #2a3246;
+  --text: #e8ecf4;
+  --muted: #94a0b8;
+  --accent: #f3ad3d;
+  --accent-ink: #1c1505;
+  width: min(100cqw, 100cqh * var(--aspect, 1.6667));
+  border-radius: 8px;
+  overflow: hidden;
+  background: #0e1218;
+  color: #e8ecf4;
+  box-shadow: 0 12px 32px rgba(27, 31, 39, 0.24);
+}
+
+.ed-notice {
+  position: absolute;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  width: min(480px, calc(100% - 48px));
+  padding: 12px 16px;
+  border: 1px solid var(--ed-line);
+  border-radius: 8px;
+  background: var(--ed-panel);
+  color: var(--ed-text-2);
+  box-shadow: 0 4px 16px rgba(27, 31, 39, 0.12);
+}
+
+/* ---- Inspector ---- */
+
+.ed-inspector-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+  border-bottom: 1px solid var(--ed-line);
+}
+
+.ed-inspector-head span {
+  color: var(--ed-text-2);
+}
+
+.ed-section {
+  padding: 12px;
+  border-bottom: 1px solid var(--ed-line);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ed-section > * {
+  min-width: 0;
+}
+
+.ed-section h3 {
+  margin: 0 0 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ed-text-2);
+}
+
+/* A layer's settings heading, with its Help page beside it (#291). */
+.ed-settings-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.ed-help-link {
+  all: unset;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ed-accent, #3557d4);
+  cursor: default;
+}
+.ed-help-link:hover { background: var(--ed-accent-soft, #e9eefc); }
+.ed-help-link:focus-visible { outline: 2px solid var(--ed-accent, #3557d4); }
+
+/* The generated controls, at the editor's density. */
+.ed .controls {
+  gap: 10px;
+}
+
+.ed .control-label,
+.ed .control-head {
+  font-size: 12px;
+}
+
+.ed input[type='range'] {
+  height: 20px;
+}
+
+.ed input[type='date'],
+.ed input[type='text'],
+.ed select.control-source {
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 4px;
+  background: var(--ed-panel);
+  font-size: 12px;
+}
+
+.ed input[type='color'] {
+  width: 32px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--ed-line);
+  border-radius: 4px;
+  background: var(--ed-panel);
+}
+
+.ed .segmented {
+  padding: 2px;
+  gap: 2px;
+  border-radius: 6px;
+  border-color: transparent;
+  /* Choices share the panel's width evenly, so a long label wraps inside its own
+     button instead of pushing the panel past its right edge (#178). */
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+}
+
+/* Four or more choices go in rows (controls.ts sets data-columns): 2 × 2 for four,
+   three across for more, like the base map's six styles. */
+.ed .segmented[data-columns] {
+  grid-auto-flow: row;
+}
+
+.ed .segmented[data-columns='2'] {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.ed .segmented[data-columns='3'] {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+/* Named days take the full width, the date for any other day goes under them. */
+.ed .control-presets {
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.ed .control-presets > .segmented {
+  flex: 1 1 100%;
+}
+
+.ed .segmented button {
+  min-width: 0;
+  min-height: 22px;
+  padding: 3px 6px;
+  border-radius: 4px;
+  font-size: 12px;
+  line-height: 1.25;
+}
+
+.ed .segmented button[aria-checked='true'] {
+  background: var(--ed-panel);
+  color: var(--ed-text);
+  box-shadow: 0 0 0 1px var(--ed-line);
+}
+
+.ed button.action {
+  min-height: 28px;
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.ed .switch {
+  width: 32px;
+  height: 18px;
+  border-radius: 9px;
+}
+
+.ed .switch::after {
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  background: #fff;
+}
+
+.ed .switch:checked::after {
+  transform: translateX(14px);
+  background: #fff;
+}
+
+/* ---- Status bar ---- */
+
+.ed-status {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  height: 24px;
+  padding: 0 12px;
+  border-top: 1px solid var(--ed-line);
+  background: var(--ed-chrome);
+  font-size: 11px;
+  color: var(--ed-text-2);
+}
+
+.ed-grow {
+  flex: 1;
+}
+
+.ed-connected::before {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: #1f8a5b;
+}
+
+.ed-connected.is-off::before {
+  background: #c8372d;
+}
+
+/* The table draws slowly (#262). */
+.ed-slow {
+  border: 0;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: #fde8e4;
+  color: #9a2a1d;
+  font: inherit;
+  cursor: pointer;
+}
+.ed-slow[hidden] {
+  display: none;
+}

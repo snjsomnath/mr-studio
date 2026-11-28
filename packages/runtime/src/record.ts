@@ -111,6 +111,13 @@ export function recordPanel(store: Store, connection: Connection): HTMLElement {
     keepNames.type = 'checkbox';
     const keep = el('label', 'record-check');
     keep.append(keepNames, el('span', '', 'Keep the names people type on their phones'));
+    // #530: phones see a notice and pick Join or Just watch before anything from them is kept.
+    const askPhones = el('input');
+    askPhones.type = 'checkbox';
+    askPhones.checked = true;
+    const askRow = el('label', 'record-check');
+    askRow.append(askPhones, el('span', '', 'Ask phones before recording them'));
+    const notice = area('', 'Your own words for the phones’ notice (optional)');
     const go = button('Start recording', 'action is-primary');
     const cancel = button('Cancel');
     cancel.addEventListener('click', idle);
@@ -123,6 +130,8 @@ export function recordPanel(store: Store, connection: Connection): HTMLElement {
         purpose: purpose.value,
         notes: notes.value,
         keep_names: keepNames.checked,
+        consent: askPhones.checked,
+        notice: notice.value,
       });
       go.disabled = false;
       if (answer) show();
@@ -137,6 +146,8 @@ export function recordPanel(store: Store, connection: Connection): HTMLElement {
       field('Context notes', notes),
       keep,
       el('p', 'record-hint', 'Without names, the recording knows each phone only by its animal and colour.'),
+      askRow,
+      field('Notice for phones', notice),
       row,
     );
     name.focus();
@@ -262,6 +273,14 @@ export function recordPanel(store: Store, connection: Connection): HTMLElement {
 
 /** The controller's red dot and time while a recording runs (#522). Nothing on the table or phones. */
 export function recordingDot(store: Store): HTMLElement {
+  // A recording played back (#526) says so instead: nothing on this controller changes the table.
+  const playback = store.state.session.playback;
+  if (playback) {
+    const banner = el('div', 'recording-dot is-playback');
+    banner.setAttribute('role', 'status');
+    banner.append(el('span', 'recording-label', t('Recorded session, read only')), el('span', 'recording-time', playback.name));
+    return banner;
+  }
   const dot = el('div', 'recording-dot');
   dot.setAttribute('role', 'status');
   const time = el('span', 'recording-time');

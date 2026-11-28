@@ -12,6 +12,7 @@ use mrs_site::Site;
 use serde_json::json;
 
 mod layer;
+mod licence;
 
 #[derive(Parser)]
 #[command(name = "mrstudio", version, about = "MR Studio command line")]
@@ -51,6 +52,24 @@ enum Command {
         /// Open the table as data (#506): do not start its services or run its own layers' code.
         #[arg(long)]
         without_programs: bool,
+    },
+    /// Play a recorded session back (#526): the host opens read-only on a copy of the table as
+    /// it was, and /playback is the room with the timeline.
+    Play {
+        /// The recording's folder (the one with recording.json).
+        recording: PathBuf,
+        /// The table it was recorded on. Only copied; it is never changed. Default: the table
+        /// inside the recording (an opened .mrsession file), else sites/sample.
+        #[arg(long)]
+        site: Option<PathBuf>,
+        #[arg(long, default_value = "packages/layers")]
+        layers: PathBuf,
+        #[arg(long)]
+        web: Option<PathBuf>,
+        #[arg(long, default_value_t = 4170)]
+        port: u16,
+        #[arg(long, default_value = "auto")]
+        backend: String,
     },
     /// Rewrite a site's site.json for this version's site format. The original is kept beside it.
     Migrate { site: PathBuf },
@@ -132,6 +151,12 @@ enum Command {
     Operator {
         #[command(subcommand)]
         action: OperatorCommand,
+    },
+    /// Licences (#725): make the licensor key, issue and check licence files, and show this
+    /// computer's install code. Licensing is switched off in the app for now.
+    Licence {
+        #[command(subcommand)]
+        action: licence::LicenceCommand,
     },
     /// Time each kernel on a site with each backend, one line per kernel (#532).
     Bench {
@@ -263,6 +288,31 @@ async fn main() -> anyhow::Result<()> {
             }
             Ok(())
         }
+        Command::Play { recording, site, layers, web, port, backend } => {
+            let backend = Backend::parse(&backend).context("backend must be auto, gpu or cpu")?;
+            let copy = std::env::temp_dir().join(format!("mrstudio-playback-{}", std::process::id()));
+            let inside = recording.join(mrs_site::session_file::TABLE);
+            let site = site.unwrap_or_else(|| if inside.join("site.json").is_file() { inside } else { PathBuf::from("sites/sample") });
+            let copy = mrs_host::playback_table(&recording, &site, &copy).map_err(anyhow::Error::msg)?;
+            let host = mrs_host::start(HostConfig {
+                site_dir: copy,
+                layers_dir: layers,
+                web_dir: web,
+                bind: SocketAddr::from(([127, 0, 0, 1], port)),
+                backend,
+                session: mrs_host::SessionOptions { playback: Some(recording), ..Default::default() },
+                sources: std::sync::Arc::new(open_sources()),
+                // Nothing outside is reached, and no service starts (#526).
+                programs: false,
+            })
+            .await?;
+            tracing::info!("playing back on http://{}/playback", host.addr);
+            tokio::select! {
+                _ = tokio::signal::ctrl_c() => {}
+                _ = host.wait() => {}
+            }
+            Ok(())
+        }
         Command::Migrate { site } => migrate(&site),
         Command::Export { site, out, layers } => export(site, &out, layers).await,
         Command::Import { file, into } => import(&file, &into),
@@ -276,6 +326,10 @@ async fn main() -> anyhow::Result<()> {
         }
         Command::Bench { site, town } => bench(&site, town),
         Command::Operator { action: OperatorCommand::Off } => operator_off(&app_settings_path()?),
+        Command::Licence { action } => {
+            let settings = app_settings_path()?;
+            licence::run(action, settings.parent().context("the app's settings folder")?)
+        }
         Command::Layer { action: LayerCommand::New { id, site, name } } => {
             let dir = layer::new(&site, &id, name.as_deref())?;
             println!("Made {}. Build it with `mrstudio layer build {id} --site {}`.", dir.display(), site.display());

@@ -45,6 +45,10 @@ pub struct About {
     /// these up in Sources and keys; the package never carries the keys themselves.
     #[serde(default)]
     pub sources: Vec<SourceNeed>,
+    /// The licence it was exported under (#732): the licence id, its kind and the exporting
+    /// computer's random install code, so a copy can be traced back. Nothing personal.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub licence: Option<serde_json::Value>,
 }
 
 /// One outside source the table uses, as the exporting computer knew it.
@@ -103,7 +107,7 @@ pub enum PackageError {
     Refused(String),
 }
 
-fn refused(message: impl Into<String>) -> PackageError {
+pub(crate) fn refused(message: impl Into<String>) -> PackageError {
     PackageError::Refused(message.into())
 }
 
@@ -133,7 +137,7 @@ fn secret_looking(name: &str) -> bool {
 }
 
 /// Already-compressed files are stored as they are: packing them again only costs time.
-fn stored(name: &str) -> bool {
+pub(crate) fn stored(name: &str) -> bool {
     let lower = name.to_ascii_lowercase();
     [
         "png", "jpg", "jpeg", "webp", "gif", "avif", "mp4", "m4v", "mov", "webm", "mp3", "m4a", "ogg", "zip", "gz", "pmtiles", "mbtiles",
@@ -144,7 +148,7 @@ fn stored(name: &str) -> bool {
 }
 
 /// Every file of the table, relative to `dir`, with '/' between parts, in a stable order.
-fn table_files(dir: &Path, prefix: &str, files: &mut Vec<(String, PathBuf)>, left_out: &mut Vec<String>) -> io::Result<()> {
+pub(crate) fn table_files(dir: &Path, prefix: &str, files: &mut Vec<(String, PathBuf)>, left_out: &mut Vec<String>) -> io::Result<()> {
     let mut entries: Vec<_> = std::fs::read_dir(dir)?.collect::<Result<_, _>>()?;
     entries.sort_by_key(std::fs::DirEntry::file_name);
     for entry in entries {
@@ -173,6 +177,17 @@ fn table_files(dir: &Path, prefix: &str, files: &mut Vec<(String, PathBuf)>, lef
 /// `site.sources`). The file is written beside `out` first and moved into place when complete,
 /// so a failed export never leaves half a file under the chosen name.
 pub fn export(dir: &Path, out: &Path, sources: Vec<SourceNeed>, app: &str) -> Result<Exported, PackageError> {
+    export_stamped(dir, out, sources, app, None)
+}
+
+/// [`export`], with the licence it is exported under written into the package (#732).
+pub fn export_stamped(
+    dir: &Path,
+    out: &Path,
+    sources: Vec<SourceNeed>,
+    app: &str,
+    licence: Option<serde_json::Value>,
+) -> Result<Exported, PackageError> {
     let site = Site::load(dir).map_err(|e| refused(e.to_string()))?;
     let dir = &site.dir;
     if out.starts_with(dir) && out.parent().is_some_and(|p| p != dir) {
@@ -198,6 +213,7 @@ pub fn export(dir: &Path, out: &Path, sources: Vec<SourceNeed>, app: &str) -> Re
         exported: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0),
         app: app.to_string(),
         sources: sources.clone(),
+        licence,
     };
 
     let partial = out.with_extension(format!("{EXTENSION}.partial"));
@@ -438,7 +454,7 @@ fn copy_all(from: &Path, to: &Path) -> io::Result<()> {
     Ok(())
 }
 
-fn unpack<R: Read + Seek>(zip: &mut ZipArchive<R>, to: &Path) -> Result<usize, PackageError> {
+pub(crate) fn unpack<R: Read + Seek>(zip: &mut ZipArchive<R>, to: &Path) -> Result<usize, PackageError> {
     std::fs::create_dir_all(to)?;
     let mut total = 0u64;
     let mut files = 0;

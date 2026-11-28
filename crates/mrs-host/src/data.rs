@@ -124,17 +124,28 @@ pub async fn ask_overpass(
     bounds: [f64; 4],
     say: &(dyn Fn(String) + Send + Sync),
 ) -> Result<Value, String> {
-    let urls = overpass_urls();
+    ask_servers(overpass_urls(), query_for, bounds, say).await
+}
+
+/// `ask_overpass` on the servers `urls`, in turn.
+async fn ask_servers(
+    urls: Vec<String>,
+    query_for: &(dyn Fn([f64; 4]) -> String + Sync),
+    bounds: [f64; 4],
+    say: &(dyn Fn(String) + Send + Sync),
+) -> Result<Value, String> {
     if urls.is_empty() {
         return Err("no Overpass server is set".into());
     }
     let client =
         reqwest::Client::builder().user_agent(OVERPASS_AGENT).connect_timeout(OVERPASS_CONNECT).build().map_err(|e| e.to_string())?;
-    let tiles = osm::tiles(bounds, osm::TILE_M);
+    // Parts still to ask, with how many times each was halved; the first is asked first.
+    let mut todo: std::collections::VecDeque<([f64; 4], u32)> = osm::tiles(bounds, osm::TILE_M).into_iter().map(|t| (t, 0)).collect();
     let mut merged = osm::Merge::default();
     let mut servers = Servers::new(urls);
-    for (i, tile) in tiles.iter().enumerate() {
-        let query = query_for(*tile);
+    let mut done = 0;
+    while let Some((tile, halved)) = todo.pop_front() {
+        let query = query_for(tile);
         let kept = {
             let mut answers = OVERPASS_ANSWERS.lock();
             answers.retain(|_, (at, _)| at.elapsed() < OVERPASS_KEEP);
@@ -143,15 +154,51 @@ pub async fn ask_overpass(
         let answer = match kept {
             Some(answer) => answer,
             None => {
-                let part = if tiles.len() > 1 { format!(", part {} of {}", i + 1, tiles.len()) } else { String::new() };
-                let answer = ask_one(&client, &mut servers, &query, &|words| say(format!("{words}{part}"))).await?;
-                OVERPASS_ANSWERS.lock().insert(query, (std::time::Instant::now(), answer.clone()));
-                answer
+                let total = done + 1 + todo.len();
+                let part = if total > 1 { format!(", part {} of {total}", done + 1) } else { String::new() };
+                match ask_one(&client, &mut servers, &query, &|words| say(format!("{words}{part}"))).await {
+                    Ok(answer) => {
+                        OVERPASS_ANSWERS.lock().insert(query, (std::time::Instant::now(), answer.clone()));
+                        answer
+                    }
+                    // Too much for the budget the query declared (#603 follow-up): ask for each
+                    // quarter on its own, so every part stays small enough for a busy server.
+                    Err(Failure::TooBig(why)) if halved < OVERPASS_HALVINGS => {
+                        tracing::info!("OpenStreetMap: {why}; asking for the part in quarters");
+                        for quarter in osm::quarters(tile).into_iter().rev() {
+                            todo.push_front((quarter, halved + 1));
+                        }
+                        continue;
+                    }
+                    Err(Failure::TooBig(why) | Failure::Down(why)) => return Err(why),
+                }
             }
         };
+        done += 1;
         merged.add(answer);
     }
     Ok(merged.answer())
+}
+
+/// Why one Overpass query gave no answer.
+#[derive(Debug)]
+enum Failure {
+    /// The server ran it and stopped: the query needed more time or memory than it declared.
+    TooBig(String),
+    /// No server answered it.
+    Down(String),
+}
+
+/// How many times a part that is too big for its declared budget is cut in quarters (1.2 km,
+/// 600 m, 300 m a side).
+const OVERPASS_HALVINGS: u32 = 2;
+
+/// The error Overpass puts in a successful answer when it stopped a query part-way (#603
+/// follow-up): `"remark": "runtime error: Query run out of memory ..."` or `"... timed out ..."`.
+/// The elements are then missing or cut short, so the answer must not be used.
+pub fn runtime_error(answer: &Value) -> Option<String> {
+    let remark = answer.get("remark")?.as_str()?;
+    remark.contains("runtime error").then(|| remark.trim().to_string())
 }
 
 /// The Overpass servers of one fetch, and when each may be asked again (#603).
@@ -226,7 +273,7 @@ async fn ask_one(
     servers: &mut Servers,
     query: &str,
     say: &(dyn Fn(String) + Send + Sync),
-) -> Result<Value, String> {
+) -> Result<Value, Failure> {
     let mut last = String::new();
     for attempt in 0..OVERPASS_TRIES {
         let (index, resting) = servers.next();
@@ -252,6 +299,9 @@ async fn ask_one(
             {
                 Ok(Ok(value)) => {
                     servers.current = index;
+                    if let Some(error) = runtime_error(&value) {
+                        return Err(Failure::TooBig(format!("{server} stopped the query: {error}")));
+                    }
                     return Ok(value);
                 }
                 Ok(Err(e)) => {
@@ -279,7 +329,7 @@ async fn ask_one(
         }
         tracing::info!("OpenStreetMap try {} of {OVERPASS_TRIES} failed: {last}", attempt + 1);
     }
-    Err(last)
+    Err(Failure::Down(last))
 }
 
 /// Fetches free elevation around the table (Terrarium tiles on AWS, no key) as a GeoTIFF
@@ -457,5 +507,46 @@ mod tests {
         assert!(started.elapsed() >= std::time::Duration::from_secs(2), "waited for the slot");
         assert_eq!(asked.load(std::sync::atomic::Ordering::SeqCst), 1);
         assert!(said.lock().iter().any(|w| w.starts_with("Waiting 2 s for a free turn at 127.0.0.1")), "{:?}", said.lock());
+    }
+
+    #[test]
+    fn a_query_stopped_part_way_is_not_an_answer() {
+        let stopped = serde_json::json!({ "remark": "runtime error: Query run out of memory using about 64 MB of RAM.", "elements": [] });
+        assert!(runtime_error(&stopped).unwrap().contains("out of memory"));
+        assert_eq!(runtime_error(&serde_json::json!({ "elements": [] })), None);
+        assert_eq!(runtime_error(&serde_json::json!({ "remark": "runtime remark: Timeout is 60 seconds.", "elements": [] })), None);
+    }
+
+    #[tokio::test]
+    async fn a_part_too_big_for_its_budget_is_asked_in_quarters() {
+        // Runs out of memory for anything wider than 0.005 degrees; answers smaller parts with one
+        // node each, whose id says which part asked.
+        let asked = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let count = asked.clone();
+        let app = axum::Router::new().route(
+            "/api/interpreter",
+            axum::routing::post(move |body: String| {
+                let count = count.clone();
+                async move {
+                    let n = count.fetch_add(1, std::sync::atomic::Ordering::SeqCst) as i64;
+                    let query = body.replace("%28", "(").replace("%29", ")").replace("%2C", ",");
+                    let inside = query.split_once('(').and_then(|(_, rest)| rest.split_once(')')).map(|(b, _)| b.to_string()).unwrap_or_default();
+                    let b: Vec<f64> = inside.split(',').filter_map(|v| v.parse().ok()).collect();
+                    if b.len() == 4 && b[3] - b[1] > 0.005 {
+                        return axum::Json(serde_json::json!({ "remark": "runtime error: Query run out of memory using about 64 MB of RAM.", "elements": [] }));
+                    }
+                    axum::Json(serde_json::json!({ "elements": [{ "type": "node", "id": n, "lat": 0.0, "lon": 0.0 }] }))
+                }
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/api/interpreter", listener.local_addr().unwrap());
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        // About 550 m a side: one tile, too big; its quarters (about 0.004 degrees wide) fit.
+        let bounds = [57.700, 11.970, 57.705, 11.979];
+        let query_for = |b: [f64; 4]| format!("[out:json];node({:.6},{:.6},{:.6},{:.6});out;", b[0], b[1], b[2], b[3]);
+        let answer = ask_servers(vec![url], &query_for, bounds, &|_| {}).await.unwrap();
+        assert_eq!(answer["elements"].as_array().unwrap().len(), 4, "{answer}");
+        assert_eq!(asked.load(std::sync::atomic::Ordering::SeqCst), 5, "the whole part once, then each quarter");
     }
 }

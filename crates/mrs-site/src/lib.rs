@@ -4,6 +4,7 @@
 mod bake;
 pub mod create;
 mod crs;
+mod data_licences;
 pub mod detail;
 pub mod elevation;
 pub mod field;
@@ -23,6 +24,7 @@ pub mod package;
 pub mod plan;
 pub mod programs;
 mod projection;
+pub mod session_file;
 pub mod sound;
 pub mod starter;
 pub mod surfaces;
@@ -39,6 +41,7 @@ use thiserror::Error;
 
 pub use bake::BakeStats;
 pub use crs::Crs;
+pub use data_licences::{attributions, data_sources, restricted, share_of, DataLicence, DataSource, Share};
 pub use manifest::*;
 pub use projection::Projection;
 
@@ -119,6 +122,10 @@ pub struct SiteInfo {
     /// The 3D model of the site (`scene.mesh`), for the editor to place it again.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mesh: Option<MeshInfo>,
+    /// The credit lines the table's data asks for (#731), each once: the controller's Credits
+    /// page shows them. From the files' own `source` and `data_licences`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub attributions: Vec<String>,
 }
 
 /// `scene.mesh` as written, and whether the footprints are still raised beside it.
@@ -147,6 +154,9 @@ impl Site {
         let parse = |message: String| SiteError::Parse { path: path.clone(), message };
         let mut document: serde_json::Value = serde_json::from_str(&text).map_err(|e| parse(e.to_string()))?;
         migrate::upgrade(&mut document).map_err(parse)?;
+        for line in migrate::leave_out_retired(&mut document) {
+            tracing::warn!("{}: {line}", path.display());
+        }
         let manifest: SiteManifest = serde_json::from_value(document).map_err(|e| parse(e.to_string()))?;
         let path = dir.join("calibration.json");
         let calibration = match std::fs::read_to_string(&path) {
@@ -560,6 +570,7 @@ impl Site {
             display: m.display.clone(),
             palette: m.palette.clone(),
             mesh: m.scene.mesh.clone().map(|mesh| MeshInfo { mesh, extrude: m.scene.buildings.as_ref().is_none_or(|b| b.extrude) }),
+            attributions: attributions(&data_sources(self)),
         }
     }
 

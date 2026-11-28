@@ -1,0 +1,412 @@
+/* ---- The layer list (#58): the controller's two rails, drag, rename, eye ---- */
+
+.ed-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0 -4px;
+  padding: 2px 4px 6px;
+  border-radius: 8px;
+}
+
+.ed-rail-name {
+  margin: 2px 4px 0;
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--ed-text-2);
+}
+
+.ed-rail-empty {
+  margin: 0 4px;
+  padding: 6px 8px;
+  border: 1px dashed var(--ed-line);
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ed-text-2);
+}
+
+.ed-row.is-layer {
+  position: relative;
+  cursor: default;
+  user-select: none;
+}
+
+.ed-row.is-layer:hover {
+  background: var(--ed-chrome);
+}
+
+.ed-row.is-layer[aria-current='true'] {
+  background: var(--ed-accent-soft);
+}
+
+.ed-row.is-layer .ed-row-text {
+  flex: 1;
+}
+
+.ed-row-eye {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--ed-text-2);
+  opacity: 0;
+}
+
+.ed-row.is-layer:hover .ed-row-eye,
+.ed-row.is-layer:focus-within .ed-row-eye,
+.ed-row.is-layer[aria-current='true'] .ed-row-eye,
+.ed-row.is-hidden .ed-row-eye {
+  opacity: 1;
+}
+
+.ed-row-eye:hover {
+  background: rgba(27, 31, 39, 0.08);
+  color: var(--ed-text);
+}
+
+.ed-row.is-hidden .ed-row-label,
+.ed-row.is-hidden .ed-row-icon {
+  color: #8a909c;
+  text-decoration: line-through;
+  text-decoration-color: rgba(138, 144, 156, 0.6);
+}
+
+.ed-rename {
+  flex: 1;
+  min-width: 0;
+  height: 22px;
+  padding: 0 6px;
+  border: 1px solid var(--ed-accent);
+  border-radius: 4px;
+  font: inherit;
+  background: #fff;
+  color: var(--ed-text);
+}
+
+.ed-context {
+  z-index: 60;
+  min-width: 220px;
+}
+
+.ed-context-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ed-file-item.is-danger:not(:disabled):hover,
+.ed-file-item.is-danger:focus-visible {
+  background: #c8372d;
+}
+
+/* ---- The canvas toolbar (#60): map, controller or both; zoom; the table outline ---- */
+
+.ed-canvas-head > .ed-canvas-detail {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ed-text-2);
+}
+
+.ed-canvas-tools {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-left: auto;
+}
+
+.ed-canvas-views {
+  display: flex;
+  padding: 2px;
+  border-radius: 6px;
+  background: var(--ed-chrome);
+}
+
+.ed-canvas-view {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  font-size: 12px;
+  color: var(--ed-text-2);
+}
+
+.ed-canvas-view[aria-checked='true'] {
+  background: var(--ed-panel);
+  color: var(--ed-text);
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.12);
+}
+
+.ed-canvas-group {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.ed-canvas-group[hidden] {
+  display: none;
+}
+
+.ed-canvas-tool {
+  width: 24px;
+  height: 24px;
+}
+
+.ed-canvas-tool.is-toggle[aria-pressed='true'] {
+  background: var(--ed-accent-soft);
+  color: var(--ed-accent);
+}
+
+.ed-zoom-label {
+  min-width: 52px;
+  height: 24px;
+  padding: 0 6px;
+  border: 1px solid var(--ed-line);
+  border-radius: 4px;
+  background: var(--ed-panel);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.ed-surfaces.is-map-only .ed-surface.is-controller {
+  display: none;
+}
+
+body[data-role='edit'] .table-frame.is-zoomed {
+  display: flex;
+  overflow: auto;
+  place-items: normal;
+}
+
+body[data-role='edit'] .table-frame.is-zoomed .table-surface {
+  flex: none;
+  margin: auto !important;
+  width: var(--zoom-width) !important;
+  max-width: none;
+  max-height: none;
+}
+
+.table-frame.is-zoomed .table-ribbon {
+  display: none;
+}
+
+.ed-canvas.is-panning {
+  cursor: grab;
+}
+
+.ed-canvas.is-grabbing {
+  cursor: grabbing;
+}
+
+.ed-outline {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.ed-outline .is-seam {
+  stroke: rgba(255, 255, 255, 0.45);
+  stroke-width: 1;
+  stroke-dasharray: 4 4;
+}
+
+.ed-outline .is-edge {
+  fill: none;
+  stroke: #f3ad3d;
+  stroke-width: 3;
+}
+
+/* ---- Inspector polish (#64): typed values, reset, the screen column, folds, the button preview ---- */
+
+.ed .control-value.is-exact {
+  padding: 0 4px;
+  margin-right: -4px;
+  border-radius: 4px;
+  cursor: text;
+  font-variant-numeric: tabular-nums;
+}
+
+.ed .control-value.is-exact:hover {
+  background: var(--ed-chrome);
+  box-shadow: inset 0 0 0 1px var(--ed-line);
+}
+
+.ed .control-exact {
+  width: 84px;
+  height: 20px;
+  padding: 0 6px;
+  border: 1px solid var(--ed-accent);
+  border-radius: 4px;
+  font: inherit;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.ed-reset {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  margin-top: 2px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--ed-accent);
+  opacity: 0.55;
+}
+
+.ed-reset[hidden] {
+  display: grid;
+  visibility: hidden;
+}
+
+.ed-setting:hover .ed-reset:not([hidden]),
+.ed-reset:focus-visible {
+  opacity: 1;
+}
+
+.ed-reset:hover {
+  background: var(--ed-accent-soft);
+}
+
+.ed-settings-tools {
+  display: inline-flex;
+  gap: 2px;
+}
+
+.ed-settings-cols {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  margin: -4px 2px 4px;
+  font-size: 11px;
+  line-height: 14px;
+  color: var(--ed-text-2);
+  cursor: help;
+}
+
+.ed-more,
+.ed-fold {
+  margin-top: 8px;
+}
+
+.ed-fold {
+  margin-top: 0;
+}
+
+.ed-more > summary,
+.ed-fold > summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ed-text-2);
+  cursor: default;
+  list-style: none;
+}
+
+.ed-more > summary::-webkit-details-marker,
+.ed-fold > summary::-webkit-details-marker {
+  display: none;
+}
+
+.ed-more > summary::before,
+.ed-fold > summary::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(-45deg);
+  transition: transform 120ms ease;
+}
+
+.ed-more[open] > summary::before,
+.ed-fold[open] > summary::before {
+  transform: rotate(45deg);
+}
+
+.ed-more > summary:hover,
+.ed-fold > summary:hover {
+  color: var(--ed-text);
+}
+
+/* The controller's button, previewed as the fields change. */
+.ed-button-preview {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #131722;
+  color: #e8ecf4;
+}
+
+.ed-button-preview[data-side='right'] {
+  flex-direction: row-reverse;
+  text-align: right;
+}
+
+.ed-button-preview.is-hidden {
+  opacity: 0.45;
+}
+
+.ed-button-preview-icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: #f3ad3d;
+  color: #1c1505;
+}
+
+.ed-button-preview-text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.ed-button-preview-text strong {
+  font-size: 13px;
+}
+
+.ed-button-preview-text span {
+  font-size: 11px;
+  line-height: 14px;
+  color: #94a0b8;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.ed-section textarea {
+  resize: none;
+  overflow: hidden;
+  field-sizing: content;
+  min-height: 3lh;
+}

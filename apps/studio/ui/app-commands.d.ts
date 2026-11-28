@@ -44,6 +44,16 @@ type AppCommand =
   | 'open_link'
   | 'file_action'
   | 'table_details'
+  | 'recordings_list'
+  | 'recording_update'
+  | 'recording_delete'
+  | 'recording_reveal'
+  | 'recording_open'
+  | 'table_from_git'
+  | 'table_git_state'
+  | 'table_git_update'
+  | 'recording_import'
+  | 'recording_export'
   | 'open_sources'
   | 'cli_state'
   | 'install_cli'
@@ -62,7 +72,12 @@ type AppCommand =
   | 'operator_set_pin'
   | 'operator_exit'
   | 'operator_password'
-  | 'set_operator_start';
+  | 'set_operator_start'
+  | 'licence_state'
+  | 'licence_set_use'
+  | 'licence_add'
+  | 'licence_remove'
+  | 'licence_notices';
 
 interface Window {
   __TAURI__: {

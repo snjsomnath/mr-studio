@@ -24,6 +24,9 @@ export interface SiteJson {
   /** How the table's surfaces render (#134): `{ "quality": "draft" | "good" | "best" }`. */
   display?: unknown;
   branding?: Branding;
+  /** Where the table's data came from and on what terms (#731): sources, licences, credits
+   * and whether a file may travel with the table. See `data_licences.rs`. */
+  data_licences?: DataLicence[];
 }
 
 export interface LonLat {
@@ -436,3 +439,21 @@ export interface Branding {
    * names, slide titles and the like. A layer's own words are in its package (`locales/`). */
   translations?: Record<string, Record<string, string>>;
 }
+
+/** A `site.json` `data_licences` entry: the terms of some of the table's files. */
+export interface DataLicence {
+  /** Site-relative paths. A path ending in `/` or `*` covers everything under it. */
+  files: string[];
+  /** Who it came from, such as "Lantmäteriet" or "SGU". */
+  source: string;
+  /** The licence, such as "CC0", "ODbL-1.0", "CC BY 4.0" or "FUK". */
+  licence?: string | null;
+  /** The credit to show, such as "© Lantmäteriet". */
+  attribution?: string | null;
+  /** Whether it may travel with the table. Worked out from the licence when left out. */
+  share?: Share | null;
+  note?: string | null;
+}
+
+/** Whether a file may leave this computer with the table. */
+export type Share = 'open' | 'attribution' | 'restricted';

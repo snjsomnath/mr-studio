@@ -196,14 +196,6 @@ Mark places, routes and areas on the table from a phone.
 
 Layer `sketch`.
 
-## Building blocks
-
-Two scenes assembled from the SDK's building blocks, with pointer interactions.
-
-Layer `blocks-demo`.
-
-![Building blocks](docs/screenshots/163-lit-blocks.png)
-
 ## Your own layers
 
 The layer builder (Insert tab, Custom layer) combines data, look, motion and interaction into a custom layer saved in the table: points, lines and zones coloured by your data, rasters of values (soil depth, rock surface) with a **Dig** slider that peels the ground away, a well's or borehole's log on the controller when one is tapped, place motions such as pulses and circular waves, particles and flows along streets. Data comes from GeoJSON, CSV, zipped shapefiles, GeoPackages and GeoTIFFs (see **Bring in your own data**).

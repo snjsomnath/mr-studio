@@ -16,8 +16,10 @@ mod commands;
 mod config;
 mod diagnostics;
 mod file_menu;
+mod git_tables;
 #[cfg(windows)]
 mod gpu;
+mod licence;
 mod mail;
 #[cfg(windows)]
 mod models;
@@ -72,6 +74,9 @@ const PORT: u16 = 4170;
 /// asking to navigate to a path the shell intercepts (see `open_surfaces`).
 /// The editor page's link to the shell until it has a Present button of its own.
 const EDITOR_BAR: &str = include_str!("editor-bar.js");
+
+/// The editor's quiet licence reminder (#729), only while licensing is shown.
+const LICENCE_BANNER: &str = include_str!("licence-banner.js");
 
 /// The way back from a presentation, on the screens people look at up close. Never on
 /// the table: nothing of the app's own is projected onto the model.
@@ -183,10 +188,12 @@ fn main() -> anyhow::Result<()> {
             let app = app.clone();
             // Windows and Linux hand a double-clicked table file to a second start.
             let file = args.iter().skip(1).map(PathBuf::from).find(|p| is_table_file(p));
+            let licence_file = args.iter().skip(1).map(PathBuf::from).find(|p| licence::is_licence_file(p));
             tauri::async_runtime::spawn(async move {
-                match file {
-                    Some(file) => opened_table_file(&app, file),
-                    None => report(open_home_window(&app)),
+                match (file, licence_file) {
+                    (Some(file), _) => opened_table_file(&app, file),
+                    (None, Some(file)) => licence::opened_licence_file(&app, file),
+                    (None, None) => report(open_home_window(&app)),
                 }
             });
         }))
@@ -236,6 +243,16 @@ fn main() -> anyhow::Result<()> {
             file_action,
             starter_pack,
             table_details,
+            recordings_list,
+            recording_update,
+            recording_delete,
+            recording_reveal,
+            recording_open,
+            table_from_git,
+            table_git_state,
+            table_git_update,
+            recording_import,
+            recording_export,
             open_sources,
             sources_page,
             sources_save,
@@ -256,7 +273,12 @@ fn main() -> anyhow::Result<()> {
             operator_mode::operator_set_pin,
             operator_mode::operator_exit,
             operator_mode::operator_password,
-            operator_mode::set_operator_start
+            operator_mode::set_operator_start,
+            licence::licence_state,
+            licence::licence_set_use,
+            licence::licence_add,
+            licence::licence_remove,
+            licence::licence_notices
         ])
         .on_menu_event(|app, event| {
             let id = event.id().as_ref();
@@ -343,6 +365,8 @@ fn main() -> anyhow::Result<()> {
                     if let Ok(path) = url.to_file_path() {
                         if is_table_file(&path) {
                             opened_table_file(app, path);
+                        } else if licence::is_licence_file(&path) {
+                            licence::opened_licence_file(app, path);
                         }
                     }
                 }

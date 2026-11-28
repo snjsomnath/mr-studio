@@ -41,6 +41,15 @@ jobs:
       # No style sheet keeps rules for class names nothing uses (#546).
       - name: No unused CSS
         run: node scripts/unused-css.mjs
+      # No new file over 1,500 lines, no big pictures on main; lines per package in the summary (#738).
+      - name: Size guard
+        if: github.event_name == 'pull_request'
+        run: node scripts/size-guard.mjs "origin/${{ github.base_ref }}"
+      - name: Lines of code per package
+        if: github.event_name != 'pull_request'
+        run: node scripts/size-guard.mjs --report
+      - name: The size guard does what it says
+        run: node --test scripts/size-guard.test.mjs
 
   rust:
     name: Engine, site, host and CLI
@@ -103,6 +112,14 @@ jobs:
       - run: pnpm lint
       # Every package with tests, including the density budget: every panel and theme in the repo is checked against the dashboard rules.
       - run: pnpm -r test
+      # How much of each package the unit tests reach, in the job summary (#742). Never fails.
+      - name: Unit test coverage
+        run: |
+          echo "### Unit test coverage (lines, of the files the tests load)" >> "$GITHUB_STEP_SUMMARY"
+          for p in sdk runtime dashboard; do
+            line=$(cd "packages/$p" && node --test --experimental-strip-types --experimental-test-coverage test/*.test.ts 2>/dev/null | grep 'all files' | awk -F'|' '{gsub(/ /,"",$2); print $2}')
+            echo "- $p: ${line:-?} %" >> "$GITHUB_STEP_SUMMARY"
+          done
       - run: pnpm build
 
   mcp:

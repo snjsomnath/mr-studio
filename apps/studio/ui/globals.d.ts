@@ -13,6 +13,7 @@ interface Window {
   renderMarkdown(text: string): Node;
   loadUpdates(): void;
   loadCli(): void;
+  loadLicence(): void;
   loadWhatsNew(): void;
   loadCalibration(): Promise<void>;
   // What the shell's scripts (src-tauri/src/*.js) put on the windows they go into.
@@ -20,6 +21,8 @@ interface Window {
   __mrsTestCard(on: boolean): void;
   mrsShellControls?: HTMLElement;
   __MRS_EXIT_QUIET__?: boolean;
+  /** The editor's licence reminder (#729), set by the shell. */
+  __MRS_LICENCE_REMINDER__?: string | null;
 }
 
 // These pages query only HTML elements, so a query by selector gives an HTMLElement (the DOM

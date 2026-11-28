@@ -12,4 +12,5 @@ Closes #
 ## Screenshots
 
 <!-- Link pictures by full commit SHA or main, never by this PR's branch: it is deleted on merge.
-     https://raw.githubusercontent.com/snjsomnath/mr-studio/<sha>/docs/screenshots/<issue>-<what>.png -->
+     Only the release note's picture goes in docs/screenshots (under 1 MB); the rest go on the
+     screenshots branch (CONTRIBUTING.md): https://raw.githubusercontent.com/snjsomnath/mr-studio/<sha>/<issue>-<what>.png -->

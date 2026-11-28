@@ -29,9 +29,16 @@
       <h1>Start a table</h1>
       <p class="lead">Make a new interactive table in a few steps, or pick up where you left off.</p>
       <p id="error" class="error" role="alert" hidden></p>
+      <p id="notice" class="notice" role="status" hidden></p>
       <div id="waiting" class="waiting" role="status" hidden>
         <p id="waiting-text"></p>
         <button type="button" id="waiting-now">Stop and update now</button>
+      </div>
+
+      <!-- Licence reminder (#729), only while licensing is shown. home-licence.js fills it. -->
+      <div id="licence-reminder" class="waiting licence-note" role="status" hidden>
+        <p id="licence-reminder-text"></p>
+        <button type="button" id="licence-reminder-open">Licence…</button>
       </div>
 
       <div class="cards">
@@ -55,7 +62,20 @@
       <!-- A returning author's tables come first; what's new follows (#587). -->
       <h2>Your tables</h2>
       <ul id="tables" class="tables"></ul>
-      <p id="tables-hint" class="hint"></p>
+      <p class="hint"><span id="tables-hint"></span> <button type="button" id="git-get" class="link" title="For teams that keep a table in a GitHub or GitLab repository">Get a table from a git repository…</button></p>
+
+      <!-- Recorded sessions (#525): kept apart from the tables, in the app's own data folder. -->
+      <div class="recordings-head" id="recordings-head">
+        <h2 id="recordings-title">Recorded sessions</h2>
+        <input type="search" id="recordings-find" placeholder="Find by name, tag or facilitator" aria-label="Find a recorded session" />
+        <select id="recordings-sort" aria-label="Sort recorded sessions">
+          <option value="new">Newest first</option>
+          <option value="old">Oldest first</option>
+        </select>
+        <button type="button" id="recordings-open" class="link-button" title="Add a .mrsession file someone sent you to your recorded sessions">Open a recorded session…</button>
+      </div>
+      <p id="recordings-filter" class="hint" hidden></p>
+      <ul id="recordings" class="tables recordings" aria-labelledby="recordings-title"></ul>
 
       <section id="whats-new" class="news" aria-labelledby="news-title" hidden>
         <header>
@@ -89,6 +109,52 @@
           <button type="button" id="delete-confirm" class="danger">Move to Trash</button>
         </div>
       </dialog>
+      <dialog id="recording-delete-dialog" class="confirm" aria-labelledby="recording-delete-title">
+        <h2 id="recording-delete-title">Delete this recording?</h2>
+        <p>All of it moves to the <span class="trash-name">Trash</span>, with everything phones sent during it. You can put it back from there until the <span class="trash-name">Trash</span> is emptied.</p>
+        <p id="recording-delete-error" class="error" role="alert" hidden></p>
+        <div class="actions">
+          <button type="button" id="recording-delete-cancel">Cancel</button>
+          <button type="button" id="recording-delete-confirm" class="danger">Move to Trash</button>
+        </div>
+      </dialog>
+      <dialog id="git-dialog" class="confirm" aria-labelledby="git-title">
+        <h2 id="git-title">Get a table from a git repository</h2>
+        <p>Paste the repository's address, as its Clone button shows it. The table is kept in your tables folder and follows the repository: press Update on its card when a new version is published. Signing in is git's own.</p>
+        <label class="field">Address <input id="git-remote" placeholder="https://git.chalmers.se/group/chalmers-table.git" spellcheck="false" autocomplete="off" /></label>
+        <p id="git-progress" class="hint" hidden>Getting the table… a large one with videos takes a while.</p>
+        <p id="git-error" class="error" role="alert" hidden></p>
+        <div class="actions">
+          <button type="button" id="git-cancel">Cancel</button>
+          <button type="button" id="git-confirm" class="primary">Get the table</button>
+        </div>
+      </dialog>
+      <dialog id="recording-export-dialog" class="confirm" aria-labelledby="recording-export-title">
+        <h2 id="recording-export-title">Export this recording</h2>
+        <p>One .mrsession file with the recording and a copy of its table as it was, so it plays on a computer that never had the table. Keys and passwords never go in it.</p>
+        <label class="choice"><input type="radio" name="recording-export-media" value="all" checked /> Everything, so it plays exactly as recorded</label>
+        <label class="choice"><input type="radio" name="recording-export-media" value="lean" /> Without media: videos and large pictures stay behind, and are missing in playback</label>
+        <p id="recording-export-error" class="error" role="alert" hidden></p>
+        <div class="actions">
+          <button type="button" id="recording-export-cancel">Cancel</button>
+          <button type="button" id="recording-export-save" class="primary">Export…</button>
+        </div>
+      </dialog>
+      <dialog id="recording-edit-dialog" class="confirm" aria-labelledby="recording-edit-title">
+        <h2 id="recording-edit-title">Recording details</h2>
+        <form id="recording-edit-form" class="recording-edit" method="dialog">
+          <label>Name <input id="recording-edit-name" required maxlength="120" /></label>
+          <label>Facilitator <input id="recording-edit-facilitator" maxlength="120" /></label>
+          <label>Purpose <input id="recording-edit-purpose" maxlength="400" /></label>
+          <label>Tags <input id="recording-edit-tags" placeholder="workshop, Lindholmen, round 2" /></label>
+          <label>Notes <textarea id="recording-edit-notes" rows="4"></textarea></label>
+        </form>
+        <p id="recording-edit-error" class="error" role="alert" hidden></p>
+        <div class="actions">
+          <button type="button" id="recording-edit-cancel">Cancel</button>
+          <button type="button" id="recording-edit-save" class="primary">Save</button>
+        </div>
+      </dialog>
       <dialog id="same-dialog" class="confirm" aria-labelledby="same-title">
         <h2 id="same-title">This table is already on this computer</h2>
         <p id="same-what">The file is another version of it. Update it to show what the file has; this computer's calibration stays as it is, and the version here goes to the <span class="trash-name">Trash</span>.</p>
@@ -115,6 +181,16 @@
         <div class="actions">
           <button type="button" id="import-sources-button">Sources and keys…</button>
           <button type="button" id="import-open" class="primary">Open the table</button>
+        </div>
+      </dialog>
+      <!-- First start (#728), only while licensing is shown. -->
+      <dialog id="use-dialog" class="confirm use-dialog" aria-labelledby="use-title">
+        <h2 id="use-title">How will you use MR Studio?</h2>
+        <p>So MR Studio knows which licence applies here. You can change it later in Settings, Licence.</p>
+        <div id="use-choices" class="use-choices" role="radiogroup" aria-labelledby="use-title"></div>
+        <p id="use-note" class="hint"></p>
+        <div class="actions">
+          <button type="button" id="use-confirm" class="primary" disabled>Continue</button>
         </div>
       </dialog>
     </main>
@@ -168,5 +244,6 @@
     <script src="markdown.js"></script>
     <script src="home.js"></script>
     <script src="whats-new.js"></script>
+    <script src="home-licence.js"></script>
   </body>
 </html>

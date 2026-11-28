@@ -184,6 +184,7 @@
       if (tab.dataset.tab === 'calibration') window.loadCalibration();
       if (tab.dataset.tab === 'updates') window.loadUpdates();
       if (tab.dataset.tab === 'cli') window.loadCli();
+      if (tab.dataset.tab === 'licence') window.loadLicence();
     });
   }
   // Never leave the test card up behind a closed launcher.

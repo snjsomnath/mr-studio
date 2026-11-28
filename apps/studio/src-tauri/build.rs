@@ -11,7 +11,7 @@ fn main() {
     let root = app.join("../../..");
     let staged = app.join("staged");
     stage(&root, &staged).expect("staging the app's resources");
-    for watched in ["packages/runtime/dist", "packages/layers", "sites/sample"] {
+    for watched in ["packages/runtime/dist", "packages/layers", "sites/sample", "target/third-party-notices.json"] {
         println!("cargo:rerun-if-changed={}", root.join(watched).display());
     }
     // The updater's public key is compiled in; see src/updates.rs.
@@ -60,6 +60,16 @@ fn main() {
         "open_link",
         "file_action",
         "table_details",
+        "recordings_list",
+        "recording_update",
+        "recording_delete",
+        "recording_reveal",
+        "recording_open",
+        "table_from_git",
+        "table_git_state",
+        "table_git_update",
+        "recording_import",
+        "recording_export",
         "open_sources",
         "cli_state",
         "install_cli",
@@ -79,6 +89,11 @@ fn main() {
         "operator_exit",
         "operator_password",
         "set_operator_start",
+        "licence_state",
+        "licence_set_use",
+        "licence_add",
+        "licence_remove",
+        "licence_notices",
     ]);
     tauri_build::try_build(tauri_build::Attributes::new().app_manifest(commands)).expect("the Tauri build step");
 }
@@ -113,6 +128,22 @@ fn stage(root: &Path, staged: &Path) -> io::Result<()> {
                 sync_dir(&dir.join("locales"), &staged_layer.join("locales"), &|path| path.extension().is_some_and(|e| e == "json"))?;
             }
         }
+    }
+
+    // The open-source notices (#730), when scripts/third-party-notices.mjs has made them.
+    // Release builds run it first; a plain build goes without and says so on the Licence page.
+    // They are bundled as the `notices` folder, which always exists so the bundle step finds it.
+    let notices = root.join("target/third-party-notices.json");
+    let staged_notices = staged.join("notices");
+    if notices.exists() {
+        write_if_changed(&staged_notices.join("third-party-notices.json"), &fs::read(notices)?)?;
+        let _ = fs::remove_file(staged_notices.join("README.txt"));
+    } else {
+        let _ = fs::remove_file(staged_notices.join("third-party-notices.json"));
+        write_if_changed(
+            &staged_notices.join("README.txt"),
+            b"Run scripts/third-party-notices.mjs before building to bundle the open-source notices.\n",
+        )?;
     }
 
     // The sample site, so the app has something to show on first start.
