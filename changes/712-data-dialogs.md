@@ -1,6 +1,6 @@
 ---
 bump: patch
-issues: [712]
+issues: 712
 ---
 
 ### Calmer data dialogs

@@ -1,6 +1,6 @@
 ---
 bump: patch
-issues: [713]
+issues: 713
 ---
 
 ### A quiet status bar in plain words

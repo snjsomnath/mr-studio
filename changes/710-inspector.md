@@ -1,6 +1,6 @@
 ---
 bump: patch
-issues: [710]
+issues: 710
 ---
 
 ### Calmer settings in the inspector

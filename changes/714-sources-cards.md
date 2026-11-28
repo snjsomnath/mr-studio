@@ -1,6 +1,6 @@
 ---
 bump: patch
-issues: [714]
+issues: 714
 ---
 
 ### Solid source cards with an icon for each kind of service

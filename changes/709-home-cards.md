@@ -1,6 +1,6 @@
 ---
 bump: minor
-issues: [709]
+issues: 709
 ---
 
 ### Calmer Home cards that look like their tables
