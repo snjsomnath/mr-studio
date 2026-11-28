@@ -41,6 +41,22 @@ Making a table for your own place needs none of this: start from the
   breaks. Link to the full commit SHA that holds the picture
   (`…/mr-studio/<sha>/docs/screenshots/<issue>-<what>.png`), or to `main` once it has merged.
   This holds for pull request descriptions and issue comments alike.
+- **Only release-note pictures go on main** (#737). A picture a `changes/` note shows goes in
+  `docs/screenshots/`, under 1 MB (save it at 1x, or as JPEG). Every other screenshot for an issue
+  or a pull request goes on the `screenshots` branch, which holds nothing but pictures, and is
+  linked by that branch's commit SHA:
+
+  ```sh
+  git fetch origin screenshots && git worktree add ../shots screenshots
+  cp my-picture.png ../shots/<issue>-<what>.png
+  git -C ../shots add . && git -C ../shots commit -m "Screenshots for #<issue>" && git -C ../shots push
+  git -C ../shots rev-parse HEAD   # link …/mr-studio/<this sha>/<issue>-<what>.png
+  ```
+
+  The pictures already in `docs/screenshots/` stay: issues and release notes link them.
+- **Keep files under 1,500 lines** (#738). CI fails a pull request that adds a file over that, or
+  grows one past it, and fails pictures over 1 MB or more than 5 MB of them. A file already over
+  the limit only gets a warning: split it when you next work in it (#542).
 
 ## Licence of contributions
 

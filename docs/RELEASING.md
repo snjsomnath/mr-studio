@@ -31,7 +31,7 @@ Walkers on the footways, cyclists on the cycleways and warm streetlights along t
 - `breaking` (optional): one sentence of what stops working the way it did and what people must do, for example `breaking: Tables saved by this version do not open in older versions; update the app on every computer.` Breaking changes are listed first, and the app shows them in red before anyone updates.
 - `audience` (optional, #593): `developers` for a change only people who write layers or build MR Studio notice, such as the SDK's types or the command line. It stays in the changelog and the app's full notes under **For developers**, and Home's What's new does not show it as a tile. Write everything else for the people who make and run tables.
 - The `###` line is the title the app shows on Home next to the first picture. Write it for the people who run a table, in their words.
-- Pictures are paths from the repository root, usually `docs/screenshots/<issue>-<what>.png`, committed in the same pull request. The check fails if a picture is missing. In the published notes they become links to the tagged commit, so they keep working.
+- Pictures are paths from the repository root, usually `docs/screenshots/<issue>-<what>.png`, committed in the same pull request. The check fails if a picture is missing. In the published notes they become links to the tagged commit, so they keep working. Keep each under 1 MB (CI's size guard fails bigger ones, #738). Other screenshots for the pull request go on the `screenshots` branch, not in `docs/screenshots` (CONTRIBUTING.md).
 - A pull request with several separate changes may add several notes.
 
 ## What people with the app installed see

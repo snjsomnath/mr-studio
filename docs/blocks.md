@@ -6,11 +6,9 @@ rebuilding ECOM and Cultural Gravity from them.
 
 Everything here is in `@mrstudio/sdk` under `packages/sdk/src/blocks/`, is plain TypeScript with no
 map library and no DOM (except `canvasSurface`), and is covered by `packages/sdk/test/blocks.test.ts`.
-`packages/layers/blocks-demo` on `sites/blocks` assembles two scenes from nothing but these blocks:
-
-```
-mrstudio dev --site sites/blocks      # then open /dev
-```
+Layers and custom layers (the layer builder) put them together. The building blocks demo layer
+that first showed them was removed in #739; its two scenes live on in the history of
+`packages/layers/blocks-demo`.
 
 ## What the old layers are made of
 
@@ -172,7 +170,7 @@ does now.
 
 ### What this unlocks
 
-Built now as proofs in `blocks-demo`: many pointers each owning a person (`PerPointer` of `Agent`),
+Built as proofs in the former `blocks-demo` layer (#739): many pointers each owning a person (`PerPointer` of `Agent`),
 the magnifier, the X-ray lens that shows the other scene inside its circle, and dwell to read.
 
 Designed for, not built. Each needs only a new source or a new behaviour, not a change to layers:
@@ -220,7 +218,7 @@ composition. Old line counts are from `main`.
 | Isovist, green view and soundscape (#190) | `isovist` block (isovist.ts): `viewScene` indexes footprints and tree crowns, `isovist` casts the demo's 180 rays (cone or all round) and counts open sky, trees and buildings by type, `outsideBuildings`, `follow`, `compassBearing`, `viewMoved`. Audio: `Soundscape` mixes a nature and a city bed by green view (`soundscapeMix`, `easeVolume`), with built-in beds from `synthBed` until a site adds recordings |
 
 What remains ECOM-specific is small: the palette, the wording, the mapping from the dispatch
-result to series, and the roof panel geometry. The `energy` scene in `blocks-demo` is about
+result to series, and the roof panel geometry. The `energy` scene of the former `blocks-demo` layer was about
 70 lines and already shows demand, solar, flows, lights, rings, the battery level and readouts.
 
 ## Cultural Gravity, reassembled
@@ -240,7 +238,7 @@ result to series, and the roof panel geometry. The `energy` scene in `blocks-dem
 New things that fall out of the blocks: the combined pull of all places as a field under the
 crowd (`gravityField` through `addField`), particles that follow that field instead of one target
 (`gravity` or `followField`), a probe on each place, and an X-ray lens onto another layer.
-The `gravity` scene in `blocks-demo` is about 45 lines.
+The `gravity` scene of the former `blocks-demo` layer was about 45 lines.
 
 ## Contract changes in this work
 
@@ -253,8 +251,6 @@ Not changed: `layer.json`, `site.json`, the wire protocol, `hub.rs`.
 
 Open points for other threads:
 
-- `blocks-demo` reads `/site/data/<file>` directly. It should move to named site datasets
-  (`loadSiteData`) when the CoolPaths thread's PR lands.
 - `blocks/geo.ts` `tableFrame` and that PR's `siteProjection` implement the same projection.
   Whichever merges second should call the other.
 - The table pointer assumes the extent is fitted and centred in the surface (`fitTable`), which is

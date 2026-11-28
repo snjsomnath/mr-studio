@@ -4,7 +4,11 @@ import { LAYER_API, type LayerManifest, type LayerModule, type PanelSpec } from 
 import { describe, reportError } from './diagnostics.ts';
 
 // Core layers are bundled with the runtime. Each package's default export is a LayerModule.
-const found = import.meta.glob<{ default: LayerModule }>('../../layers/*/src/index.ts', { eager: true });
+// Vite fills in `import.meta.env` and the glob when it builds; under plain Node (the unit tests,
+// #742) neither exists, so the modules that import this one load with no core layers.
+const found: Record<string, { default: LayerModule }> = import.meta.env
+  ? import.meta.glob<{ default: LayerModule }>('../../layers/*/src/index.ts', { eager: true })
+  : {};
 
 const modules = new Map<string, LayerModule>();
 for (const [path, module] of Object.entries(found)) {

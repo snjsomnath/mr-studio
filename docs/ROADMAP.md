@@ -139,5 +139,4 @@ The core layers in `packages/layers`, with the issue that made each one:
 | Picture or video | `media` | none | a picture or video over the whole table; slides with transitions (#197) |
 | Web map (WMS) | `wms` | none | WMS and ArcGIS maps (#42) |
 | Sketch | `sketch` | none | phone tools: points, routes, areas |
-| Building blocks | `blocks-demo` | none | a demo of the SDK's blocks |
 

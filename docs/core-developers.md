@@ -63,9 +63,11 @@ What is written from what, and checked by the tests so neither side drifts alone
 
 The app's own pages (`apps/studio/ui/*.js` and the scripts the shell puts into windows) are type-checked as JavaScript, so calling an app command that does not exist fails `pnpm typecheck`.
 
+Unit tests run under plain Node (`node --test --experimental-strip-types`), with no browser. Every runtime module loads there; `registry.ts` then has no core layers, since Vite's `import.meta.glob` exists only in a build (#742). Put rules that need no page, such as which rail a button goes on, where a unit test can reach them.
+
 The end-to-end cases are in `scripts/e2e/`, one file per area: the controller, the table and its layers, the phones, the editor's scene list, the editor's flows, the setup guide, and import and new tables. Every case starts its own host on a fresh copy of `sites/sample`, so no case depends on another and they run side by side (`E2E_WORKERS` sets how many). A failed case keeps a screenshot of each page it had open, a trace and the host's log in `e2e-results/`, and the others still run. `pnpm e2e:shots` also keeps the screenshots the release notes and the docs use, in `e2e-screenshots/`.
 
-CI runs all of these on every pull request: the end-to-end check in Chromium on Linux, and the engine smoke with WebKit on macOS (as the Mac app draws) and Edge on Windows (as WebView2 does). The smoke fails on any error a page throws, a frame slower than 5 s, and known engine traps such as large SVG filters, which WebKit draws in software. Dependabot opens grouped dependency updates weekly, and a weekly security audit warns about known advisories.
+CI runs all of these on every pull request: the end-to-end check in Chromium on Linux, and the engine smoke with WebKit on macOS (as the Mac app draws) and Edge on Windows (as WebView2 does). The smoke fails on any error a page throws, a frame slower than 5 s, and known engine traps such as large SVG filters, which WebKit draws in software. A size guard (`scripts/size-guard.mjs`, #738) fails a pull request that adds a file over 1,500 lines or grows one past it, or adds a picture over 1 MB to `docs/screenshots`, and writes lines of code per package to the job summary; `node scripts/size-guard.mjs --report` prints the same table. Dependabot opens grouped dependency updates weekly, and a weekly security audit warns about known advisories.
 
 Measured on an Apple M4 Pro (Metal), 2026-11-14, sunlight kernel:
 
