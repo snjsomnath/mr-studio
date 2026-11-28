@@ -66,7 +66,7 @@ The editor window is the only remote page with access to the shell, and only to 
 | `open_site { path, welcome? }` | Runs that table and shows it in the editor window, at `/edit`, or `/edit?welcome=1` when `welcome` is true |
 | `open_home` | Opens the launcher |
 | `quit` | Quits the app |
-| `colour_state`, `set_colour { display, colour }`, `save_preset { name, colour }`, `delete_preset { name }`, `test_card { display, on }`, `set_layer_intensity { layer, intensity }` | The colour pass of each display and how strongly each layer is drawn, the same commands as the Colour tab of Displays and settings. Used by the editor's Display ribbon tab (#151) |
+| `colour_state`, `set_colour { display, colour }`, `set_size { display, size }`, `save_preset { name, colour }`, `delete_preset { name }`, `test_card { display, on }`, `set_layer_intensity { layer, intensity }` | The colour pass of each display and how strongly each layer is drawn, the same commands as the Colour tab of Displays and settings. Used by the editor's Display ribbon tab (#151) |
 | `calibration_state`, `calibration_mode { active }`, `calibration_clear` | Whether a window shows the table, and opening or closing the calibration tool there (#153) |
 
 The shell adds a small bar to the editor window with Present, Stop presenting and "Sites and displays". When the page has an element with `data-shell-present` (its own Present button) the bar leaves Present to the page and shows Stop only while presenting. A page that sets `window.mrsShellControls = true` before it finishes loading gets no bar. The editor at `/edit` does this: its title bar has Present, which becomes Stop presenting, and Home. The page must work without `window.__TAURI__` too, for an editor opened in a browser.
@@ -98,12 +98,15 @@ The launcher's Colour tab edits it live, with a test card, and saves it in `colo
     "EPSON PJ": { "saturation": 1.35, "brightness": 1, "contrast": 1.12, "gamma": 1.1, "temperature": 0, "tint": 0 }
   },
   "presets": { "Evening demo": { "saturation": 1.6, "contrast": 1.2 } },  // saved on this machine, besides the built-in ones
-  "layers": { "chalmers": { "sunlight": 1.4 } }                            // layer intensity by site id and layer id
+  "layers": { "chalmers": { "sunlight": 1.4 } },                           // layer intensity by site id and layer id
+  "sizes": { "LG TV": 1.25 }                                                // controller size by display, only when not 1
 }
 ```
 
 Ranges: `saturation` 0 to 2.5, `brightness` 0.5 to 1.5, `contrast` 0.5 to 2, `gamma` 0.5 to 2.5 (above 1 lifts midtones), `temperature` and `tint` -1 to 1 (white balance, applied as channel gains that never exceed 1). Missing values are neutral.
 The pass is one CSS filter on the page's root element, injected by the shell, in the order saturation, white balance, gamma, contrast, brightness. Surfaces and layers do not know about it and must not set a filter on the root element themselves. It is per display, not per layer.
+
+The same tab has the controller's size on each display (#682), for a smaller monitor or a larger TV: 0.8 to 1.5 in steps of 0.05, 1 as designed for a 46-inch TV at 1080p. The shell sets it as `--mrs-ui-scale` on the root element of every window on that display (`set_size { display, size }` applies it live). The controller's `rem` and the dashboard's unit are multiplied by it, so text, controls and panels grow together; a larger unit gives the dashboard fewer rows and more pages, never a panel that spills (#681). The table ignores it, since its text is measured on the model. In a browser, `?size=1.2` in a surface's address does the same.
 
 The same tab has a slider per layer of the running session for `LayerState.intensity`. The shell sends `layer.intensity` to the host with the TV's rights, saves values other than 1 under `layers`, and sends them again when that site next starts.
 

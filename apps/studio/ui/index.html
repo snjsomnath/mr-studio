@@ -84,13 +84,20 @@
 
       <main id="tab-colour" hidden>
         <h1>Colour</h1>
-        <p class="lead">The final colour pass for each display. A projector washes colours out, so a little more saturation and contrast usually helps. The same settings are in the editor's Display tab.</p>
+        <p class="lead">The final colour pass for each display. A projector washes colours out, so a little more saturation and contrast usually helps. The same settings are in the editor's Display tab. Each display also keeps the controller's size.</p>
         <div class="split">
           <section class="panel">
             <h2>Display</h2>
             <ul id="colour-displays" class="choices"></ul>
             <label class="check"><input id="test-card" type="checkbox" /> Show the test card on this display</label>
             <p class="hint">Each display keeps its own colour, saved as you change it.</p>
+            <h2>Controller size</h2>
+            <div class="sliders">
+              <label for="ui-size">Text and controls</label>
+              <input id="ui-size" type="range" min="0.8" max="1.5" step="0.05" value="1" aria-label="Controller size" />
+              <output id="ui-size-value">100%</output>
+            </div>
+            <p class="hint">How large the controller is drawn on this display, for a smaller monitor or a larger TV. Dashboard panels that no longer fit move to another page. The table keeps its size on the model. Double-click to put it back.</p>
           </section>
           <section class="panel">
             <div class="section-head">
