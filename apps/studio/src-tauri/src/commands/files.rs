@@ -156,13 +156,18 @@ pub(crate) async fn export_table(app: &AppHandle) -> anyhow::Result<()> {
         let _ = send.send(path);
     });
     let Some(target) = receive.await.ok().flatten() else { return Ok(()) };
+    if !licence::may_leave(app, &running.site, "Export").await? {
+        return Ok(());
+    }
     let mut target = target.into_path().context("the chosen place is not a folder on this computer")?;
     if !target.extension().is_some_and(|e| e.eq_ignore_ascii_case(mrs_site::package::EXTENSION)) {
         target.set_extension(mrs_site::package::EXTENSION);
     }
     let version = app.package_info().version.to_string();
     let out = target.clone();
-    let exported = tokio::task::spawn_blocking(move || state.export_table(&out, &version)).await?.map_err(anyhow::Error::msg)?;
+    let stamp = licence::export_stamp(&shell);
+    let exported =
+        tokio::task::spawn_blocking(move || state.export_table_stamped(&out, &version, stamp)).await?.map_err(anyhow::Error::msg)?;
     tracing::info!("exported '{}' to {} ({} files, {} bytes)", running.name, target.display(), exported.files, exported.bytes);
     let file = target.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
     let detail = if exported.sources.is_empty() {
@@ -188,13 +193,18 @@ pub(crate) async fn share_table(app: &AppHandle) -> anyhow::Result<()> {
     let shell = app.state::<Shell>();
     let Some(running) = shell.running.lock().clone() else { return Ok(()) };
     let state = shell.host.lock().await.as_ref().map(|h| h.state.clone()).context("the table is not running")?;
+    if !licence::may_leave(app, &running.site, "Share").await? {
+        return Ok(());
+    }
     let folder = app.path().document_dir().context("this computer has no Documents folder")?.join("MR Studio").join("Shared");
     std::fs::create_dir_all(&folder).with_context(|| format!("could not make {}", folder.display()))?;
     let target = folder.join(format!("{}.{}", mrs_site::package::folder_name(&running.name), mrs_site::package::EXTENSION));
     file_menu::tell_editor(app, EDITOR, json!({ "action": "sharing", "message": format!("Packing {}…", running.name) }));
     let version = app.package_info().version.to_string();
     let out = target.clone();
-    let exported = tokio::task::spawn_blocking(move || state.export_table(&out, &version)).await?.map_err(anyhow::Error::msg)?;
+    let stamp = licence::export_stamp(&shell);
+    let exported =
+        tokio::task::spawn_blocking(move || state.export_table_stamped(&out, &version, stamp)).await?.map_err(anyhow::Error::msg)?;
     tracing::info!("shared '{}' as {} ({} bytes)", running.name, target.display(), exported.bytes);
     let size = megabytes(exported.bytes);
     // Ask before any mail window opens (#578): the size, and for a big table a way that is

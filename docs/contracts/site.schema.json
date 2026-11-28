@@ -99,6 +99,13 @@
         "title": null,
         "logo": null
       }
+    },
+    "data_licences": {
+      "description": "Where the table's data came from and on what terms (#731): sources, licences, credits\nand whether a file may travel with the table. See `data_licences.rs`.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/DataLicence"
+      }
     }
   },
   "additionalProperties": false,
@@ -1543,6 +1550,79 @@
         }
       },
       "additionalProperties": false
+    },
+    "DataLicence": {
+      "description": "A `site.json` `data_licences` entry: the terms of some of the table's files.",
+      "type": "object",
+      "properties": {
+        "files": {
+          "description": "Site-relative paths. A path ending in `/` or `*` covers everything under it.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "source": {
+          "description": "Who it came from, such as \"Lantmäteriet\" or \"SGU\".",
+          "type": "string"
+        },
+        "licence": {
+          "description": "The licence, such as \"CC0\", \"ODbL-1.0\", \"CC BY 4.0\" or \"FUK\".",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "attribution": {
+          "description": "The credit to show, such as \"© Lantmäteriet\".",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "share": {
+          "description": "Whether it may travel with the table. Worked out from the licence when left out.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Share"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "note": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "files",
+        "source"
+      ]
+    },
+    "Share": {
+      "description": "Whether a file may leave this computer with the table.",
+      "oneOf": [
+        {
+          "description": "Free to share.",
+          "type": "string",
+          "const": "open"
+        },
+        {
+          "description": "Free to share, with its credit shown wherever the table is shown.",
+          "type": "string",
+          "const": "attribution"
+        },
+        {
+          "description": "Not to be shared: it stays on this computer (an FUK agreement, a private dataset).",
+          "type": "string",
+          "const": "restricted"
+        }
+      ]
     }
   },
   "$id": "https://github.com/snjsomnath/mr-studio/blob/main/docs/contracts/site.schema.json"

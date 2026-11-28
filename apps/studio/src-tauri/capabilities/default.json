@@ -54,6 +54,11 @@
     "allow-diagnostics-report",
     "allow-save-diagnostics",
     "allow-open-operator",
-    "allow-set-operator-start"
+    "allow-set-operator-start",
+    "allow-licence-state",
+    "allow-licence-set-use",
+    "allow-licence-add",
+    "allow-licence-remove",
+    "allow-licence-notices"
   ]
 }

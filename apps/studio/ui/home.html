@@ -34,6 +34,12 @@
         <button type="button" id="waiting-now">Stop and update now</button>
       </div>
 
+      <!-- Licence reminder (#729), only while licensing is shown. home-licence.js fills it. -->
+      <div id="licence-reminder" class="waiting licence-note" role="status" hidden>
+        <p id="licence-reminder-text"></p>
+        <button type="button" id="licence-reminder-open">Licence…</button>
+      </div>
+
       <div class="cards">
         <button type="button" class="card primary" id="card-new">
           <span class="art"><img class="table-art" src="art/new-table.svg" alt="" draggable="false" /></span>
@@ -117,6 +123,16 @@
           <button type="button" id="import-open" class="primary">Open the table</button>
         </div>
       </dialog>
+      <!-- First start (#728), only while licensing is shown. -->
+      <dialog id="use-dialog" class="confirm use-dialog" aria-labelledby="use-title">
+        <h2 id="use-title">How will you use MR Studio?</h2>
+        <p>So MR Studio knows which licence applies here. You can change it later in Settings, Licence.</p>
+        <div id="use-choices" class="use-choices" role="radiogroup" aria-labelledby="use-title"></div>
+        <p id="use-note" class="hint"></p>
+        <div class="actions">
+          <button type="button" id="use-confirm" class="primary" disabled>Continue</button>
+        </div>
+      </dialog>
     </main>
 
     <main id="view-new" hidden>
@@ -168,5 +184,6 @@
     <script src="markdown.js"></script>
     <script src="home.js"></script>
     <script src="whats-new.js"></script>
+    <script src="home-licence.js"></script>
   </body>
 </html>

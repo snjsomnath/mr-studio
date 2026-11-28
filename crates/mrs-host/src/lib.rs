@@ -138,6 +138,16 @@ impl AppState {
     /// Packs the running table into one `.mrstable` file at `out` (#85). The package lists the
     /// outside sources its layers use, named as this computer knows them, and never their keys.
     pub fn export_table(&self, out: &std::path::Path, app: &str) -> Result<mrs_site::package::Exported, String> {
+        self.export_table_stamped(out, app, None)
+    }
+
+    /// [`Self::export_table`], with the licence it is exported under written in (#732).
+    pub fn export_table_stamped(
+        &self,
+        out: &std::path::Path,
+        app: &str,
+        licence: Option<serde_json::Value>,
+    ) -> Result<mrs_site::package::Exported, String> {
         let known = self.sources.list();
         let used = self.hub.sources_in_use();
         let needs = used["sources"]
@@ -158,7 +168,7 @@ impl AppState {
                 }
             })
             .collect();
-        mrs_site::package::export(&self.site.dir, out, needs, app).map_err(|e| e.to_string())
+        mrs_site::package::export_stamped(&self.site.dir, out, needs, app, licence).map_err(|e| e.to_string())
     }
 }
 

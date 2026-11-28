@@ -45,6 +45,10 @@ pub struct About {
     /// these up in Sources and keys; the package never carries the keys themselves.
     #[serde(default)]
     pub sources: Vec<SourceNeed>,
+    /// The licence it was exported under (#732): the licence id, its kind and the exporting
+    /// computer's random install code, so a copy can be traced back. Nothing personal.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub licence: Option<serde_json::Value>,
 }
 
 /// One outside source the table uses, as the exporting computer knew it.
@@ -173,6 +177,17 @@ fn table_files(dir: &Path, prefix: &str, files: &mut Vec<(String, PathBuf)>, lef
 /// `site.sources`). The file is written beside `out` first and moved into place when complete,
 /// so a failed export never leaves half a file under the chosen name.
 pub fn export(dir: &Path, out: &Path, sources: Vec<SourceNeed>, app: &str) -> Result<Exported, PackageError> {
+    export_stamped(dir, out, sources, app, None)
+}
+
+/// [`export`], with the licence it is exported under written into the package (#732).
+pub fn export_stamped(
+    dir: &Path,
+    out: &Path,
+    sources: Vec<SourceNeed>,
+    app: &str,
+    licence: Option<serde_json::Value>,
+) -> Result<Exported, PackageError> {
     let site = Site::load(dir).map_err(|e| refused(e.to_string()))?;
     let dir = &site.dir;
     if out.starts_with(dir) && out.parent().is_some_and(|p| p != dir) {
@@ -198,6 +213,7 @@ pub fn export(dir: &Path, out: &Path, sources: Vec<SourceNeed>, app: &str) -> Re
         exported: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0),
         app: app.to_string(),
         sources: sources.clone(),
+        licence,
     };
 
     let partial = out.with_extension(format!("{EXTENSION}.partial"));

@@ -833,6 +833,10 @@ pub struct SiteManifest {
     pub display: Option<Value>,
     #[serde(default)]
     pub branding: Branding,
+    /// Where the table's data came from and on what terms (#731): sources, licences, credits
+    /// and whether a file may travel with the table. See `data_licences.rs`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub data_licences: Vec<crate::DataLicence>,
 }
 
 /// `calibration.json`: how the table window shows the site on the physical table.
