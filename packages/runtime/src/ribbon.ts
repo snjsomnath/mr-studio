@@ -6,7 +6,7 @@
 // `table.ribbons`, defaulting to the front edge (`table.front`) on auto. What: the open layer's
 // ribbon panels, otherwise the home ribbon (the join QR). Every ribbon faces its own edge.
 
-import { LOOK_ATTRIBUTES, panelIsEmpty, resolveProps, themeVariables, validateRibbon } from '@mrstudio/dashboard';
+import { LOOK_ATTRIBUTES, panelIsEmpty, resolveProps, stylePanel, themeVariables, validateRibbon } from '@mrstudio/dashboard';
 import type { PanelInput, WidgetDefinition, WidgetHandle } from '@mrstudio/dashboard';
 import type { Connection } from '@mrstudio/sdk';
 
@@ -246,6 +246,7 @@ export class Ribbons {
       const panel = title.parentElement!;
       panel.hidden = (input.active && !input.active()) || (when ? !Object.entries(when).every(([k, v]) => (Array.isArray(v) ? v.includes(source.params[k]) : source.params[k] === v)) : false) || panelIsEmpty(widget, input.spec, source);
       if (panel.hidden) continue;
+      stylePanel(panel, input.spec, source);
       try {
         handle.update(resolveProps(widget, input.spec.props, input.spec.size, source));
       } catch (error) {

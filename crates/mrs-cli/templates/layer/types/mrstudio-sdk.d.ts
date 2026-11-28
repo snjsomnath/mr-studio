@@ -82,6 +82,54 @@ declare module "@mrstudio/sdk/voices" {
         private start;
     }
 }
+declare module "@mrstudio/sdk/expression" {
+    /** An expression: a literal, or `[operator, ...arguments]`. */
+    export type Expression = number | string | boolean | null | readonly [string, ...unknown[]];
+    /** What an expression reads: the feature or row it is about, and the layer's live values. */
+    export interface ExpressionScope {
+        /** The feature's properties or the row: `["get", "kwh"]`. Dotted names reach inside (`ecom.kwh`). */
+        item?: Readonly<Record<string, unknown>>;
+        /** The live values: `["bind", "shared.import_kw"]`, `params.year`, `site.name`. */
+        vars?: Readonly<{
+            params?: Record<string, unknown>;
+            shared?: Record<string, unknown>;
+            site?: Record<string, unknown>;
+        }>;
+    }
+    /** A panel prop or look setting worked out by an expression: `{ "expr": [...] }`. */
+    export interface ExpressionValue {
+        expr: Expression;
+    }
+    /** How deep an expression may nest, and how many parts it may have, so it is always cheap. */
+    export const EXPRESSION_LIMITS: {
+        readonly depth: 24;
+        readonly nodes: 500;
+    };
+    /** The operators, with one line on each, for the docs, the editor and the MCP. */
+    export const EXPRESSION_OPERATORS: Readonly<Record<string, string>>;
+    /** A compiled expression: evaluate it as often as needed. It never throws. */
+    export interface CompiledExpression {
+        evaluate(scope?: ExpressionScope): unknown;
+        /** What is wrong with it; empty when it is fine. A faulty expression evaluates to null. */
+        problems: string[];
+        /** The feature properties it reads with `get` or `has`, and the live values it reads with `bind`. */
+        reads: {
+            properties: string[];
+            values: string[];
+        };
+    }
+    /**
+     * Checks and compiles an expression. A faulty one comes back with its problems and evaluates to
+     * null, so a mistake shows as an empty value and a message, never as a broken table.
+     */
+    export function compileExpression(expr: unknown): CompiledExpression;
+    /** Whether a value is `{ "expr": ... }`. */
+    export function isExpressionValue(value: unknown): value is ExpressionValue;
+    /** Compiles once per distinct expression, so evaluating per frame or per feature costs nothing more. */
+    export function expression(expr: unknown): CompiledExpression;
+    /** Evaluates an expression once: for a value read now and then, not per feature. */
+    export function evaluateExpression(expr: unknown, scope?: ExpressionScope): unknown;
+}
 declare module "@mrstudio/sdk/types" {
     export const PROTOCOL = 1;
     export const LAYER_API = 1;
@@ -498,6 +546,17 @@ declare module "@mrstudio/sdk/types" {
         visibleWhen?: Record<string, unknown>;
         /** Leave the panel out while its main value (its first required bindable prop) is empty, missing or zero (#752). */
         hideWhenEmpty?: boolean;
+        /**
+         * The panel's colour from the theme (#672): `good`, `warn`, `bad`, `accent`, `muted` or `data-1`
+         * to `data-6`, or `{ "expr": … }` that works one out, such as `["step", value, "good", 0.8, "warn"]`.
+         * Never a raw colour.
+         */
+        tone?: string | import("@mrstudio/sdk/expression").ExpressionValue;
+        /**
+         * Shown only while this expression is true (#672), such as `{ "expr": [">", ["bind", "shared.kw"], 0] }`.
+         * A hidden panel keeps its place, so nothing on the canvas moves.
+         */
+        showIf?: import("@mrstudio/sdk/expression").ExpressionValue;
         /** Higher is placed first by the automatic layout. Default 0. */
         priority?: number;
         /** Fixed position on the grid, 1-based. Only in a site's pages; layers never choose positions. */
@@ -3030,54 +3089,6 @@ declare module "@mrstudio/sdk/table-space" {
      * margin (#203). Wrap the drawing in `context.save()` and `context.restore()`.
      */
     export function clipToTable(canvas: Pick<CanvasOverlay, 'context' | 'project'>, site: Pick<SiteInfo, 'corners'>): void;
-}
-declare module "@mrstudio/sdk/expression" {
-    /** An expression: a literal, or `[operator, ...arguments]`. */
-    export type Expression = number | string | boolean | null | readonly [string, ...unknown[]];
-    /** What an expression reads: the feature or row it is about, and the layer's live values. */
-    export interface ExpressionScope {
-        /** The feature's properties or the row: `["get", "kwh"]`. Dotted names reach inside (`ecom.kwh`). */
-        item?: Readonly<Record<string, unknown>>;
-        /** The live values: `["bind", "shared.import_kw"]`, `params.year`, `site.name`. */
-        vars?: Readonly<{
-            params?: Record<string, unknown>;
-            shared?: Record<string, unknown>;
-            site?: Record<string, unknown>;
-        }>;
-    }
-    /** A panel prop or look setting worked out by an expression: `{ "expr": [...] }`. */
-    export interface ExpressionValue {
-        expr: Expression;
-    }
-    /** How deep an expression may nest, and how many parts it may have, so it is always cheap. */
-    export const EXPRESSION_LIMITS: {
-        readonly depth: 24;
-        readonly nodes: 500;
-    };
-    /** The operators, with one line on each, for the docs, the editor and the MCP. */
-    export const EXPRESSION_OPERATORS: Readonly<Record<string, string>>;
-    /** A compiled expression: evaluate it as often as needed. It never throws. */
-    export interface CompiledExpression {
-        evaluate(scope?: ExpressionScope): unknown;
-        /** What is wrong with it; empty when it is fine. A faulty expression evaluates to null. */
-        problems: string[];
-        /** The feature properties it reads with `get` or `has`, and the live values it reads with `bind`. */
-        reads: {
-            properties: string[];
-            values: string[];
-        };
-    }
-    /**
-     * Checks and compiles an expression. A faulty one comes back with its problems and evaluates to
-     * null, so a mistake shows as an empty value and a message, never as a broken table.
-     */
-    export function compileExpression(expr: unknown): CompiledExpression;
-    /** Whether a value is `{ "expr": ... }`. */
-    export function isExpressionValue(value: unknown): value is ExpressionValue;
-    /** Compiles once per distinct expression, so evaluating per frame or per feature costs nothing more. */
-    export function expression(expr: unknown): CompiledExpression;
-    /** Evaluates an expression once: for a value read now and then, not per feature. */
-    export function evaluateExpression(expr: unknown, scope?: ExpressionScope): unknown;
 }
 declare module "@mrstudio/sdk/data-query" {
     import type { Expression, ExpressionScope } from "@mrstudio/sdk/expression";

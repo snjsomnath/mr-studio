@@ -405,6 +405,17 @@ export interface PanelSpec {
   visibleWhen?: Record<string, unknown>;
   /** Leave the panel out while its main value (its first required bindable prop) is empty, missing or zero (#752). */
   hideWhenEmpty?: boolean;
+  /**
+   * The panel's colour from the theme (#672): `good`, `warn`, `bad`, `accent`, `muted` or `data-1`
+   * to `data-6`, or `{ "expr": … }` that works one out, such as `["step", value, "good", 0.8, "warn"]`.
+   * Never a raw colour.
+   */
+  tone?: string | import('./expression.ts').ExpressionValue;
+  /**
+   * Shown only while this expression is true (#672), such as `{ "expr": [">", ["bind", "shared.kw"], 0] }`.
+   * A hidden panel keeps its place, so nothing on the canvas moves.
+   */
+  showIf?: import('./expression.ts').ExpressionValue;
   /** Higher is placed first by the automatic layout. Default 0. */
   priority?: number;
   /** Fixed position on the grid, 1-based. Only in a site's pages; layers never choose positions. */

@@ -163,6 +163,12 @@ export const BLOCKS: BlockDef[] = [
     detect: 'export function parseTemplate',
   },
   {
+    id: 'panel-tones', group: 'visual', name: 'Panel colour and visibility by rule',
+    description: "A panel's colour follows thresholds (#672): green under 80 %, amber above, red over 100 %, from the theme's good/warn/bad/accent/muted/data slots, never raw colours. showIf holds a panel back while a rule is false and keeps its cell, so the page never moves.",
+    usage: "panel { tone: { expr: ['step', ['bind', 'shared.load'], 'good', 0.8, 'warn', 1, 'bad'] }, showIf: { expr: ['>', ['bind', 'shared.kw'], 0] } } (docs/contracts/dashboard.md, Colour and visibility by rule)",
+    detect: 'export function panelTone',
+  },
+  {
     id: 'raster-look', group: 'visual', name: 'Raster look with Dig',
     description: 'A GeoTIFF of values (soil depth, rock surface, noise) coloured by value on the table grid, with cut-offs a slider moves so the ground peels away, and a glow along the cut.',
     usage: "a custom layer look block 'raster' on a data:<name> GeoTIFF; bind a range control to look.<id>.hide_below",

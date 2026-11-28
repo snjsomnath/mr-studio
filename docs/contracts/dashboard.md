@@ -14,6 +14,8 @@ interface PanelSpec {
   props?: Record<string, unknown>; // per the widget's schema; literals or bindings
   visibleWhen?: Record<string, unknown>;   // as for controls, against the layer's params
   hideWhenEmpty?: boolean;         // left out while its main value is missing, empty, 0 or [] (#752)
+  tone?: Tone | { expr: Expression };      // a theme colour by threshold (#672)
+  showIf?: { expr: Expression };   // held back while false; its cell stays empty (#672)
   priority?: number;               // automatic layout: higher is placed first
   ribbon?: boolean;                // on the table's ribbon instead of the TV (#78): chip, tile or wide only, at most 4 panels and 10 reads; see present.md, Ribbon
   at?: { col: number; row: number };       // site pages only, 1-based
@@ -200,6 +202,26 @@ written in the visitors' language (5,0 in Swedish, 5.0 in English) with its unit
 The box size sets how much it holds: a tile holds 64 characters and two values, a wide box 128 and
 four, counting each value at its longest (8 characters and its unit). Every `{{name}}` needs a value
 and every value must be used. Longer text is refused when the panel is checked, never drawn smaller.
+
+### Colour and visibility by rule (#672)
+
+`tone` gives a panel a colour from the theme: `good`, `warn`, `bad`, `accent`, `muted` or `data-1`
+to `data-6`. Never a raw colour. An expression (#669) works it out from live values, so one rule
+covers thresholds:
+
+```json
+{ "tone": { "expr": ["step", ["bind", "shared.load"], "good", 0.8, "warn", 1, "bad"] } }
+```
+
+A toned panel takes a tint and a stripe on its left edge. Its headline number and a gauge's arc
+take the colour, and so does whatever the widget draws in the accent. An expression that gives
+anything else draws no tone.
+
+`showIf` holds a panel back while its expression is false, such as
+`{ "expr": [">", ["bind", "shared.export_kw"], 0] }`. Unlike `visibleWhen` and `hideWhenEmpty`, the
+panel keeps its cell, so nothing on the canvas moves when it comes and goes. Its reads count
+towards the budget whether it shows or not. Both work on the TV, a layer's stage, a map stage and
+the table's ribbon.
 
 ### A map on a panel (#355)
 

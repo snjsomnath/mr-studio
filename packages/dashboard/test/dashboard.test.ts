@@ -4,7 +4,7 @@ import { test } from 'node:test';
 
 import type { EntityFeature, PanelSpec, Position } from '@mrstudio/sdk';
 
-import { clip, formatValue, mainProp, panelIsEmpty, resolveProps } from '../src/bind.ts';
+import { clip, formatValue, mainProp, panelIsEmpty, panelShown, panelTone, resolveProps } from '../src/bind.ts';
 import { pack } from '../src/pack.ts';
 import { GRID, SCREEN, SIZES, TEXT } from '../src/rules.ts';
 import { contrast, STYLE_TOKENS, themeVariables, validateTheme } from '../src/theme.ts';
@@ -464,4 +464,32 @@ test('a text box writes live values into its words (#671)', () => {
   const four = { body: '{{a}} {{b}} {{c}} {{d}}', values: ['a', 'b', 'c', 'd'].map((name) => ({ name, value: 1 })) };
   assert.ok(validatePanel({ ...spec, props: four }, registry).some((i) => i.rule === 'budget'));
   assert.deepEqual(validatePanel({ ...spec, size: 'wide', props: four }, registry), []);
+});
+
+test('a panel takes a tone by threshold and shows only while showIf holds (#672)', () => {
+  const registry = coreWidgets();
+  const spec: PanelSpec = {
+    id: 'load',
+    widget: 'stat',
+    size: 'tile',
+    title: 'Grid load',
+    tone: { expr: ['step', ['bind', 'shared.load'], 'good', 0.8, 'warn', 1, 'bad'] },
+    showIf: { expr: ['>', ['bind', 'shared.load'], 0] },
+    props: { value: { bind: 'shared.load' } },
+  };
+  assert.deepEqual(validatePanel(spec, registry), []);
+  const at = (load: unknown) => ({ params: {}, shared: { load }, site: {} });
+  assert.equal(panelTone(spec, at(0.5)), 'good');
+  assert.equal(panelTone(spec, at(0.9)), 'warn');
+  assert.equal(panelTone(spec, at(1.2)), 'bad');
+  assert.equal(panelTone({ tone: 'warn' }, at(0)), 'warn');
+  // Only theme slots: a raw colour worked out by an expression draws no tone at all.
+  assert.equal(panelTone({ tone: { expr: '#ff0000' } }, at(0)), undefined);
+  assert.equal(panelShown(spec, at(0.5)), true);
+  assert.equal(panelShown(spec, at(0)), false);
+  assert.equal(panelShown({}, at(0)), true);
+  const problems = validatePanel({ ...spec, tone: '#ff0000', showIf: true as never }, registry).map((i) => i.path);
+  assert.deepEqual(problems, ['panels.load.tone', 'panels.load.showIf']);
+  // A panel held back by showIf still counts towards the budget: its cell is kept.
+  assert.equal(panelReads(spec, registry.get('stat')!), panelReads({ ...spec, showIf: undefined }, registry.get('stat')!));
 });

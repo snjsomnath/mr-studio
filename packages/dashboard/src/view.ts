@@ -3,7 +3,7 @@
 
 import type { PanelControls, PanelLayer, PanelSpec } from '@mrstudio/sdk';
 
-import { panelIsEmpty, resolveProps } from './bind.ts';
+import { panelIsEmpty, panelShown, panelTone, resolveProps } from './bind.ts';
 import type { BindSource } from './bind.ts';
 import { pack } from './pack.ts';
 import type { PackItem, Page } from './pack.ts';
@@ -87,6 +87,18 @@ function visible(input: PanelInput, source: BindSource, widget: WidgetDefinition
   if (when && !Object.entries(when).every(([key, value]) => (Array.isArray(value) ? value.includes(source.params[key]) : source.params[key] === value))) return false;
   // An empty card is not shown (#752).
   return !widget || !panelIsEmpty(widget, input.spec, source);
+}
+
+/**
+ * A panel's conditional style and visibility (#672), on any surface that draws panels: its tone
+ * as `data-tone`, and `mrs-held` while its `showIf` is false. A held panel keeps its cell, so
+ * nothing moves.
+ */
+export function stylePanel(el: HTMLElement, spec: PanelSpec, source: BindSource): void {
+  const tone = panelTone(spec, source);
+  if (tone) el.dataset.tone = tone;
+  else delete el.dataset.tone;
+  el.classList.toggle('mrs-held', !panelShown(spec, source));
 }
 
 export class DashboardView {
@@ -257,6 +269,7 @@ export class DashboardView {
         mounted.el.style.gridColumn = `${placed.col} / span ${placed.cols}`;
         mounted.el.style.gridRow = `${placed.row} / span ${placed.rows}`;
         setText(mounted.title, input.spec.title ?? '');
+        stylePanel(mounted.el, input.spec, sources.get(input.key)!);
         try {
           mounted.handle.update(resolveProps(mounted.widget, input.spec.props, input.spec.size, sources.get(input.key)!));
         } catch (error) {
