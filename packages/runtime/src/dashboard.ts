@@ -6,6 +6,7 @@ import { say, t } from './i18n.ts';
 import { baseContext, isAtRest, paramSender } from './layer-manager.ts';
 import { layerModule, widgets, withTeamWidgets } from './registry.ts';
 import type { Store } from './store.ts';
+import { onPanelRows, panelRows } from './panel-data.ts';
 
 /** The controller's word to the editor that panels spill out of their boxes (#681). */
 export interface PanelFit {
@@ -93,22 +94,18 @@ export function mountDashboard(root: HTMLElement, store: Store, connection: Conn
   // Many changes can land in one frame (a slider being dragged); one sync covers them. A running
   // play head (#373) moves panels bound to the layer's time between the table's updates.
   let queued = false;
-  store.onClock(() => {
+  store.onClock(() => queue());
+  const queue = () => {
     if (queued) return;
     queued = true;
     requestAnimationFrame(() => {
       queued = false;
       view.sync();
     });
-  });
-  store.onLayer(() => {
-    if (queued) return;
-    queued = true;
-    requestAnimationFrame(() => {
-      queued = false;
-      view.sync();
-    });
-  });
+  };
+  store.onLayer(queue);
+  // A dataset a panel reduces has been read (#670).
+  onPanelRows(queue);
   return view;
 }
 
@@ -128,10 +125,12 @@ export function mountStage(el: HTMLElement, store: Store, connection: Connection
   for (const problem of controlProblems(panels, controlIds(manifest))) console.warn(`[${id}] stage ${problem}`);
   view.setPanels(panels.map((spec) => panelInput(store, connection, id, spec, `${id}/stage/${spec.id}`, placed ? 0 : undefined)));
   const stopTheme = store.onTv((tv) => view.setTheme(tv?.theme));
+  const stopRows = onPanelRows(() => view.sync());
   return {
     sync: () => view.sync(),
     dispose: () => {
       stopTheme();
+      stopRows();
       tellPanelFit(`stage:${id}`)([]);
       view.destroy();
     },
@@ -216,10 +215,12 @@ function mountMapStage(el: HTMLElement, store: Store, connection: Connection, id
     strip.hidden = !mounted.some((m) => m.el.parentElement === strip && !m.el.hidden);
   };
   sync();
+  const stopRows = onPanelRows(sync);
   return {
     sync,
     dispose: () => {
       stopTheme();
+      stopRows();
       for (const { input, handle } of mounted.splice(0)) {
         try {
           handle.destroy?.();
@@ -254,6 +255,8 @@ export function panelInput(store: Store, connection: Connection, layer: string |
       // The words a layer publishes (a caption, a status) in the visitors' language (#80).
       shared: sayShared(state()?.shared ?? {}, store.manifest(state()?.layer ?? '')),
       site: store.state.site as unknown as Record<string, unknown>,
+      // A table dataset, for panels that reduce one (#670).
+      rows: (name) => panelRows(name, store.state.site.data as Record<string, unknown> | undefined),
     }),
     // A panel that reads a layer is only up while that layer is on. A slideshow made of layers
     // has nothing of its own to show: the controller's step strip speaks for it (#43).

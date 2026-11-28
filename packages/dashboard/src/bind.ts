@@ -2,8 +2,8 @@
 // layer's state, and live values are held to the same limits as literals. A
 // value that is too long is cut, and a list that is too long loses its tail.
 
-import { expression, formatCompact, formatDecimal, formatHour, isExpressionValue } from '@mrstudio/sdk';
-import type { PanelSize } from '@mrstudio/sdk';
+import { dataQueryProblems, expression, formatCompact, formatDecimal, formatHour, isDataQuery, isExpressionValue, runDataQuery } from '@mrstudio/sdk';
+import type { DataQuery, DataResult, DataRow, PanelSize } from '@mrstudio/sdk';
 
 import type { PropSpec, WidgetDefinition } from './registry.ts';
 import { TEXT } from './rules.ts';
@@ -14,6 +14,11 @@ export interface BindSource {
   params: Record<string, unknown>;
   shared: Record<string, unknown>;
   site: Record<string, unknown>;
+  /**
+   * A table dataset's rows, for props that reduce one (#670): undefined while it loads or when
+   * there is no such dataset. The host shows the panel again once it has loaded.
+   */
+  rows?: (data: string) => readonly DataRow[] | undefined;
 }
 
 /** Cuts text to a number of characters, with an ellipsis. */
@@ -31,9 +36,35 @@ function read(source: BindSource, path: string): unknown {
   return value;
 }
 
+// Results kept per dataset, by the query and the live values it reads, so a panel redrawn many
+// times a second reduces its rows again only when something it reads has changed.
+const results = new WeakMap<readonly DataRow[], Map<string, DataResult>>();
+const queryReads = new Map<string, string[]>();
+function query(raw: DataQuery, source: BindSource): DataResult | undefined {
+  const rows = source.rows?.(raw.data);
+  if (!rows) return undefined;
+  const text = JSON.stringify(raw);
+  let reads = queryReads.get(text);
+  if (!reads) {
+    if (queryReads.size > 500) queryReads.clear();
+    queryReads.set(text, (reads = dataQueryProblems(raw).reads));
+  }
+  const key = `${text}|${JSON.stringify(reads.map((path) => read(source, path)))}`;
+  let kept = results.get(rows);
+  if (!kept) results.set(rows, (kept = new Map()));
+  if (!kept.has(key)) {
+    if (kept.size > 200) kept.clear();
+    kept.set(key, runDataQuery(rows, raw, source));
+  }
+  return kept.get(key);
+}
+
 function resolve(spec: PropSpec, raw: unknown, source: BindSource, limit?: number): unknown {
-  // A live value, a value worked out from live values (#669), or a literal.
-  const value = isBinding(raw) ? read(source, raw.bind) : isExpressionValue(raw) ? expression(raw.expr).evaluate({ vars: source }) : raw;
+  // A live value, a value worked out from live values (#669), a dataset reduced (#670), or a literal.
+  let value = isBinding(raw) ? read(source, raw.bind) : isExpressionValue(raw) ? expression(raw.expr).evaluate({ vars: source }) : isDataQuery(raw) ? query(raw, source) : raw;
+  if (value === undefined || value === null) return undefined;
+  // A grouped query read as one value or a series: its first value, or its values in order.
+  if (isDataQuery(raw) && Array.isArray(value) && spec.kind !== 'list') value = spec.kind === 'numbers' ? value.map((item) => item.value) : value[0]?.value;
   if (value === undefined || value === null) return undefined;
   switch (spec.kind) {
     case 'text':

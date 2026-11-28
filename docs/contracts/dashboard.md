@@ -20,9 +20,37 @@ interface PanelSpec {
 }
 
 type Binding = { bind: string };   // params.<control> | shared.<key> | site.<field>
+// A bindable prop may also be { expr: … } (expressions.md) or { data: …, sum: … } (below).
 ```
 
 A panel is plain JSON. Unknown fields and unknown props are errors.
+
+### Panels from a dataset (#670)
+
+A prop that can be bound may instead read one of the table's datasets and reduce it, with no layer on and no code.
+`data` names a dataset in site.json `data`, or a `.csv`, `.geojson` or `.json` file in the site folder; a GeoJSON
+file's rows are its features' properties.
+
+```jsonc
+{ "data": "energy", "sum": "kwh" }                                        // one number
+{ "data": "energy", "average": "kwh", "where": [">=", ["get", "year"], ["bind", "params.year"]] }
+{ "data": "energy", "sum": "kwh", "group_by": "building" }                // a list for bars, list or donut
+{ "data": "energy", "latest": "kwh", "time": "hour", "at": ["bind", "params.hour"] }  // follows the play head
+```
+
+| Field | Meaning |
+| --- | --- |
+| `sum`, `average`, `min`, `max` | A column, reduced. Exactly one reduction is given. Cells that are not numbers are skipped; an empty sum is 0, an empty average, min or max has no value |
+| `count` | `true` counts the rows; a column counts the rows where it has a value |
+| `latest` | The column's value in the last row, or with `time`, in the row with the greatest time at or before `at` |
+| `where` | An [expression](expressions.md): only rows for which it is `true`. `["get", "col"]` reads the row, `["bind", …]` the panel's live values |
+| `group_by` | One value per distinct value of this column: `[{ label, value }]`, cut to the panel's list limit. A list prop needs it. A single value or a series reads the first value or all values in order |
+| `order` | With `group_by`: `highest` (the default), `lowest` or `name` (numbers in names sort as numbers) |
+| `time`, `at` | Together: a time column, and an expression for where the time is now. Only rows at or before `at` count. `["bind", "params.hour"]` follows the shared play head while it runs (#373) |
+
+The file is read once per controller, in the SDK's data worker when there is one (`rowsInWorker`), and the panel shows
+nothing until it has arrived. Reducing it is one pass over the rows on the page, kept until a value it reads changes.
+`runDataQuery(rows, query, vars)` and `dataQueryProblems(query)` are in the SDK for layers that want the same.
 
 ## Where panels come from
 
@@ -70,7 +98,7 @@ pages or their time change.
 | --- | --- |
 | `size` | The size exists and the widget comes in it |
 | `schema` | Props match the widget's schema; no unknown fields |
-| `binding` | Only bindable props are bound or worked out by an expression (`{ "expr": … }`, [expressions.md](expressions.md), #669), to `params.`, `shared.` or `site.` paths. A `list` prop may always be bound as a whole: its items are held to the item schema and the list limit as they arrive (#373) |
+| `binding` | Only bindable props are bound, worked out by an expression (`{ "expr": … }`, [expressions.md](expressions.md), #669) or read from a dataset (`{ "data": … }`, below, #670), to `params.`, `shared.` or `site.` paths. A `list` prop may always be bound as a whole: its items are held to the item schema and the list limit as they arrive (#373) |
 | `text` | Titles, labels, captions, units and values within their character limits; theme contrast |
 | `budget` | The panel's reads fit its size; lists within their limits. A bound list is charged in full |
 | `grid` | Site pages: inside 12 by 6, no overlap, a position for every panel. Layers: no position |

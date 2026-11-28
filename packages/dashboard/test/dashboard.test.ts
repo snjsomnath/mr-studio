@@ -385,3 +385,36 @@ test('a bindable prop may be worked out by an expression (#669)', () => {
   // A faulty expression shows nothing rather than breaking the panel.
   assert.equal(resolveProps(stat, { value: { expr: ['/', 1, 0] } }, 'tile', { params: {}, shared: {}, site: {} }).value, undefined);
 });
+
+test('a panel may read a table dataset and reduce it (#670)', () => {
+  const registry = coreWidgets();
+  const rows = [
+    { building: 'Library', year: 2030, kwh: 200 },
+    { building: 'School', year: 2030, kwh: 120 },
+    { building: 'School', year: 2020, kwh: 90 },
+  ];
+  let asked = 0;
+  const source = { params: { year: 2030 }, shared: {}, site: {}, rows: (name: string) => (asked++, name === 'energy' ? rows : undefined) };
+  const total: PanelSpec = { id: 'total', widget: 'stat', size: 'tile', title: 'Energy', props: { value: { data: 'energy', sum: 'kwh', where: ['==', ['get', 'year'], ['bind', 'params.year']] }, unit: 'kWh' } };
+  assert.deepEqual(validatePanel(total, registry), []);
+  assert.equal(resolveProps(registry.get('stat')!, total.props, 'tile', source).value, 320);
+  // Asked again with nothing changed, the result is kept.
+  resolveProps(registry.get('stat')!, total.props, 'tile', source);
+  assert.equal(resolveProps(registry.get('stat')!, total.props, 'tile', { ...source, params: { year: 2020 } }).value, 90);
+
+  const bars: PanelSpec = { id: 'by', widget: 'bars', size: 'wide', title: 'By building', props: { items: { data: 'energy', sum: 'kwh', group_by: 'building' }, unit: 'kWh' } };
+  assert.deepEqual(validatePanel(bars, registry), []);
+  assert.deepEqual(resolveProps(registry.get('bars')!, bars.props, 'wide', source).items, [
+    { label: 'School', value: 210 },
+    { label: 'Library', value: 200 },
+  ]);
+  // Counted as full for the budget, like a bound list.
+  assert.equal(panelReads(bars, registry.get('bars')!), 4);
+  // Nothing while the dataset loads.
+  assert.equal(resolveProps(registry.get('stat')!, { value: { data: 'other', sum: 'kwh' } }, 'tile', source).value, undefined);
+
+  const bad = validatePanel({ ...bars, props: { items: { data: 'energy', sum: 'kwh' }, unit: { data: 'energy', count: true } } }, registry);
+  assert.ok(bad.some((i) => i.path.endsWith('.items') && i.message.includes('needs group_by')));
+  assert.ok(bad.some((i) => i.path.endsWith('.unit') && i.message.includes('only props that can be bound')));
+  assert.ok(asked >= 2);
+});

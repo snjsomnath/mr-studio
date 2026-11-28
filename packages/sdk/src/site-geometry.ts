@@ -4,6 +4,8 @@
 // SDK's data worker, and kept per file and per place of the table, so the second layer that reads
 // the buildings, or the same layer turned off and on again, doesn't parse them again.
 
+import { rowsOf } from './data-query.ts';
+import type { DataRow } from './data-query.ts';
 import { dataProblem, fetchFromHost } from './data.ts';
 import { packGeojson, unpackGeometry } from './geo-pack.ts';
 import type { PackedGeometry, SiteGeometry, SitePlacement } from './geo-pack.ts';
@@ -77,6 +79,20 @@ export async function packInWorker(bytes: ArrayBuffer, place: SitePlacement, kee
     }
   }
   return packGeojson(bytes, plain);
+}
+
+/** A CSV's rows, or a GeoJSON file's feature properties, read in the data worker when there is one (#670). */
+export async function rowsInWorker(bytes: ArrayBuffer, csv: boolean): Promise<DataRow[]> {
+  const copy = bytes.slice(0);
+  const job = inWorker<DataRow[]>({ kind: 'rows', bytes: copy, csv }, [copy]);
+  if (job) {
+    try {
+      return await job;
+    } catch (error) {
+      if (/JSON|Unexpected|token|not a CSV/i.test((error as Error).message)) throw error;
+    }
+  }
+  return rowsOf(new TextDecoder().decode(bytes), csv);
 }
 
 // ---- Kept results -----------------------------------------------------------
