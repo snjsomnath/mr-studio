@@ -4727,6 +4727,54 @@ declare module "@mrstudio/sdk/networks" {
         streets?: string;
     };
 }
+declare module "@mrstudio/sdk/expression" {
+    /** An expression: a literal, or `[operator, ...arguments]`. */
+    export type Expression = number | string | boolean | null | readonly [string, ...unknown[]];
+    /** What an expression reads: the feature or row it is about, and the layer's live values. */
+    export interface ExpressionScope {
+        /** The feature's properties or the row: `["get", "kwh"]`. Dotted names reach inside (`ecom.kwh`). */
+        item?: Readonly<Record<string, unknown>>;
+        /** The live values: `["bind", "shared.import_kw"]`, `params.year`, `site.name`. */
+        vars?: Readonly<{
+            params?: Record<string, unknown>;
+            shared?: Record<string, unknown>;
+            site?: Record<string, unknown>;
+        }>;
+    }
+    /** A panel prop or look setting worked out by an expression: `{ "expr": [...] }`. */
+    export interface ExpressionValue {
+        expr: Expression;
+    }
+    /** How deep an expression may nest, and how many parts it may have, so it is always cheap. */
+    export const EXPRESSION_LIMITS: {
+        readonly depth: 24;
+        readonly nodes: 500;
+    };
+    /** The operators, with one line on each, for the docs, the editor and the MCP. */
+    export const EXPRESSION_OPERATORS: Readonly<Record<string, string>>;
+    /** A compiled expression: evaluate it as often as needed. It never throws. */
+    export interface CompiledExpression {
+        evaluate(scope?: ExpressionScope): unknown;
+        /** What is wrong with it; empty when it is fine. A faulty expression evaluates to null. */
+        problems: string[];
+        /** The feature properties it reads with `get` or `has`, and the live values it reads with `bind`. */
+        reads: {
+            properties: string[];
+            values: string[];
+        };
+    }
+    /**
+     * Checks and compiles an expression. A faulty one comes back with its problems and evaluates to
+     * null, so a mistake shows as an empty value and a message, never as a broken table.
+     */
+    export function compileExpression(expr: unknown): CompiledExpression;
+    /** Whether a value is `{ "expr": ... }`. */
+    export function isExpressionValue(value: unknown): value is ExpressionValue;
+    /** Compiles once per distinct expression, so evaluating per frame or per feature costs nothing more. */
+    export function expression(expr: unknown): CompiledExpression;
+    /** Evaluates an expression once: for a value read now and then, not per feature. */
+    export function evaluateExpression(expr: unknown, scope?: ExpressionScope): unknown;
+}
 declare module "@mrstudio/sdk/recipe" {
     import type { Rgba } from "@mrstudio/sdk/blocks/scale";
     import type { Shapes } from "@mrstudio/sdk/blocks/sources";
@@ -4740,6 +4788,7 @@ declare module "@mrstudio/sdk/recipe" {
     import type { PlaceStage } from "@mrstudio/sdk/place-motions";
     import type { NetworkInputs, NetworkProps } from "@mrstudio/sdk/networks";
     import type { CustomLayer, LegendItem, RecipeBlock, SiteInfo } from "@mrstudio/sdk/types";
+    import type { ExpressionScope } from "@mrstudio/sdk/expression";
     /** A colour: `@slot`, `#rrggbb`, or driven by a column. */
     export type Paint = string | PaintBy;
     export interface PaintBy {
@@ -5130,6 +5179,17 @@ declare module "@mrstudio/sdk/recipe" {
     export function boundFilters(recipe: Pick<CustomLayer, 'controls'>, params: Record<string, unknown>): Record<string, ShapeFilter[]>;
     /** The shapes that pass every rule. The same object when there are no rules, so nothing is copied. */
     export function filterShapes<S extends Shapes>(shapes: S, filters: readonly ShapeFilter[] | undefined): S;
+    /**
+     * A look's own worked-out columns and "where" rule (#669), in its props:
+     * `"columns": { "kwh_per_m2": ["/", ["get", "kwh"], ["get", "area"]] }` adds a column to every
+     * feature, which the look can then paint, size, label and filter by like any other, and
+     * `"where": [">", ["get", "year"], ["bind", "params.year"]]` keeps only the features it holds for.
+     * Columns are worked out in order, so a later one may use an earlier one. The same object comes
+     * back when the look has neither.
+     */
+    export function applyLookExpressions<S extends Shapes>(shapes: S, props: Record<string, unknown> | undefined, vars?: ExpressionScope['vars']): S;
+    /** What is wrong with a look's `columns` and `where` (#669), for the editor, the checks and the MCP. */
+    export function lookExpressionProblems(block: RecipeBlock): string[];
     /** The legend a recipe's looks give, for the controller (S2: every colour on the table has its swatch). */
     export function recipeLegend(looks: readonly CompiledLook[]): LegendItem[];
     /**
@@ -5867,4 +5927,5 @@ declare module "@mrstudio/sdk" {
     export * from "@mrstudio/sdk/drawing-roles";
     export * from "@mrstudio/sdk/readiness";
     export * from "@mrstudio/sdk/widgets";
+    export * from "@mrstudio/sdk/expression";
 }

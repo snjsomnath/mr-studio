@@ -6,6 +6,7 @@
 // the table stays live and nothing replays unless the data changed.
 
 import {
+  applyLookExpressions,
   boundFilters,
   boundOverrides,
   filterShapes,
@@ -299,6 +300,7 @@ export function recipeModule(current: () => LayerManifest | undefined, watch: (c
         const overrides = boundOverrides(recipe, ctx.params);
         // "Show only" on the controller (#38): the features each look keeps.
         const filters = boundFilters(recipe, ctx.params);
+        const vars = { params: ctx.params as Record<string, unknown>, shared: ctx.shared as Record<string, unknown>, site: ctx.site as unknown as Record<string, unknown> };
         looks = (recipe.look ?? [])
           .map((block) => {
             const motion = motionFor(recipe, block.id, overrides.motion);
@@ -331,7 +333,9 @@ export function recipeModule(current: () => LayerManifest | undefined, watch: (c
                 stage: () => placeStage,
               };
             }
-            return compileLook(block, filterShapes((block.data && shapes.get(block.data)) || EMPTY, filters[block.id]), palette, mm, motion, overrides.look[block.id]);
+            // A look's own worked-out columns and "where" rule (#669), then the controller's "show only".
+            const own = applyLookExpressions((block.data && shapes.get(block.data)) || EMPTY, block.props, vars);
+            return compileLook(block, filterShapes(own, filters[block.id]), palette, mm, motion, overrides.look[block.id]);
           })
           .filter((look): look is CompiledLook => look !== null);
         drawRasters(overrides.look);

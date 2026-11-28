@@ -6,7 +6,8 @@
 import { ARROWS, ICON_NAMES as MARK_ICONS, POINT_SHAPES } from '../../sdk/src/marks.ts';
 import { PALETTE_SETS, PALETTE_SLOTS } from '../../sdk/src/palette.ts';
 import { PLACE_MOTION_IDS } from '../../sdk/src/place-motions.ts';
-import { LOOK_DEFAULTS, MOTION_DEFAULTS, MOTIONS_FOR, compileLook, lookLegend } from '../../sdk/src/recipe.ts';
+import { LOOK_DEFAULTS, MOTION_DEFAULTS, MOTIONS_FOR, compileLook, lookExpressionProblems, lookLegend } from '../../sdk/src/recipe.ts';
+import { EXPRESSION_OPERATORS } from '../../sdk/src/expression.ts';
 import { readShapes, type GeoJsonCollection } from '../../sdk/src/blocks/sources.ts';
 import type { TableFrame } from '../../sdk/src/blocks/geo.ts';
 import type { LegendItem, RecipeBlock as SdkRecipeBlock } from '../../sdk/src/types.ts';
@@ -24,7 +25,10 @@ const RAMPS = [...new Set(PALETTE_SETS.flatMap((set) => Object.keys(set.ramps)))
 
 /** The recipe vocabulary, for the schema resource and for messages. */
 export const RECIPE_VOCABULARY = {
-  look: Object.fromEntries(Object.entries(LOOK_DEFAULTS).map(([k, v]) => [k, [...Object.keys(v), 'legend']])) as Record<Look, string[]>,
+  // `columns` and `where` are a look's own worked-out columns and filter, as expressions (#669).
+  look: Object.fromEntries(Object.entries(LOOK_DEFAULTS).map(([k, v]) => [k, [...Object.keys(v), 'legend', 'columns', 'where']])) as Record<Look, string[]>,
+  /** Safe expressions (#669): each operator with one line on what it does. */
+  expression_operators: EXPRESSION_OPERATORS,
   motion: Object.fromEntries(Object.entries(MOTION_DEFAULTS).map(([k, v]) => [k, Object.keys(v)])) as Record<string, string[]>,
   motions_for: MOTIONS_FOR as Record<Look, string[]>,
   place_motions: [...PLACE_MOTION_IDS],
@@ -103,7 +107,9 @@ export function checkRecipe(recipe: CustomLayer, at: string): Issue[] {
         err(p, `a ${kind} look has no '${key}'; its props are ${known.join(', ')}`);
         continue;
       }
-      if (key === 'color') {
+      if (key === 'columns' || key === 'where') {
+        for (const problem of lookExpressionProblems({ id: String(block.id), block: block.block, props: { [key]: value } })) err(p, problem);
+      } else if (key === 'color') {
         const why = checkPaint(value);
         if (why) err(p, why);
       } else if (key === 'stroke') {
