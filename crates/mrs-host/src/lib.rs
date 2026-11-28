@@ -1306,17 +1306,37 @@ async fn fetch_osm_all(
     if targets.is_empty() {
         return (StatusCode::BAD_REQUEST, Json(json!({ "error": "targets must name at least one dataset" }))).into_response();
     }
-    let datasets: Vec<Value> = state
-        .fetch_osm_all(&targets)
-        .await
-        .into_iter()
-        .map(|(target, result)| match result {
-            Ok(count) => json!({ "dataset": target.name(), "ok": true, "count": count }),
-            Err(report) => json!({ "dataset": target.name(), "ok": false, "report": report }),
-        })
-        .collect();
-    Json(json!({ "datasets": datasets })).into_response()
+    // The fetch can take minutes when OpenStreetMap is busy. The answer starts at once and a space
+    // goes out every few seconds until the JSON follows (JSON allows leading spaces), so the app
+    // window's web view, which gives up on a request that is silent for a minute, keeps waiting
+    // (#706). The fetch goes on, and is kept, even if the page goes away.
+    let fetch = tokio::spawn(async move {
+        let datasets: Vec<Value> = state
+            .fetch_osm_all(&targets)
+            .await
+            .into_iter()
+            .map(|(target, result)| match result {
+                Ok(count) => json!({ "dataset": target.name(), "ok": true, "count": count }),
+                Err(report) => json!({ "dataset": target.name(), "ok": false, "report": report }),
+            })
+            .collect();
+        json!({ "datasets": datasets })
+    });
+    let body = futures_util::stream::unfold(Some(fetch), |fetch| async move {
+        let mut fetch = fetch?;
+        tokio::select! {
+            answer = &mut fetch => {
+                let answer = answer.unwrap_or_else(|e| json!({ "error": format!("the fetch stopped: {e}") }));
+                Some((Ok::<_, std::convert::Infallible>(Bytes::from(answer.to_string())), None))
+            }
+            _ = tokio::time::sleep(OSM_KEEP_ALIVE) => Some((Ok(Bytes::from_static(b" ")), Some(fetch))),
+        }
+    });
+    ([(header::CONTENT_TYPE, "application/json"), (header::CACHE_CONTROL, "no-store")], axum::body::Body::from_stream(body)).into_response()
 }
+
+/// How often a long OpenStreetMap fetch sends a space to say it is still working (#706).
+const OSM_KEEP_ALIVE: std::time::Duration = std::time::Duration::from_secs(5);
 
 /// `POST /api/site/place`, `{ name?, origin: { lon, lat }, extent: { width_m, height_m, rotation_deg } }`:
 /// renames, moves, resizes or turns the table. Answers with the site as surfaces see it.
