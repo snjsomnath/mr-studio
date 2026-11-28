@@ -75,6 +75,20 @@ that recording, so a reload does not ask again. The wording is a placeholder unt
 agreed (it may need a GDPR review); the strings are in `packages/runtime/src/join.ts` and
 `i18n.ts`.
 
+### `feeds.jsonl` and `feeds/`: what the outside answered (#523)
+
+While a session records, every answer the host passes on from outside is kept: public
+transport (`/api/transit/...`), WMS map pictures (`/api/wms`), a source's tiles and proxied
+requests (`/api/sources/{id}/tile/...`, `/api/sources/{id}/proxy`) and a table's own services
+(`/api/services/{id}/call...`), for GET requests. `feeds.jsonl` has one line per answer,
+`{ t, url, status, type, file }` (`url` with its query), and `feeds/` holds each different
+answer once. At most 512 MB per recording; past that, nothing new is kept.
+
+A host playing the recording answers those addresses from there: the last answer kept at or
+before the playback time, else the first one after. An address the recording has no answer for
+gets 404, so playback never reaches outside. Not yet: a seeded `ctx.random` for ambient layers,
+the recording's own time for `ctx.clock`, and picture checkpoints.
+
 ### `checkpoints.jsonl`: the state now and then (#524)
 
 One line per checkpoint: `{ t, after, state }`. `after` is how many lines of `log.jsonl` came

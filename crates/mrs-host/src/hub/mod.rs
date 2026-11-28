@@ -20,6 +20,7 @@ use tokio::sync::{broadcast, Notify};
 use crate::layers::{LayerDef, ToolKind};
 
 mod custom;
+pub mod feeds;
 mod load;
 mod playback;
 mod recording;

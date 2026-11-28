@@ -852,9 +852,54 @@ fn router(state: Arc<AppState>, web_dir: Option<PathBuf>) -> Router {
         )),
         None => app.fallback(|| async { "MR Studio host is running. Surfaces are not built; run the web dev server or pass --web." }),
     };
+    // Outside answers are kept while recording and answered from the recording in playback (#523).
+    app = app.layer(axum::middleware::from_fn_with_state(state.clone(), feeds_kept));
     // What only this computer may read or change is settled here, before any route (#504).
     app = app.layer(axum::middleware::from_fn(guard));
     app.with_state(state)
+}
+
+/// What the outside answered, kept with a recording and given back in its playback (#523).
+async fn feeds_kept(
+    State(state): State<Arc<AppState>>,
+    request: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    let path = request.uri().path();
+    if request.method() != axum::http::Method::GET || !hub::feeds::is_feed(path) {
+        return next.run(request).await;
+    }
+    let url = request.uri().path_and_query().map_or_else(|| path.to_string(), |p| p.as_str().to_string());
+    if let Some(played) = state.hub.feed_played(&url) {
+        // A recording played back reaches nothing outside: what it kept, or nothing.
+        let kept = match played {
+            Some((status, kind, file)) => tokio::fs::read(&file).await.ok().map(|body| (status, kind, body)),
+            None => None,
+        };
+        return match kept {
+            Some((status, kind, body)) => (
+                StatusCode::from_u16(status).unwrap_or(StatusCode::OK),
+                [(header::CONTENT_TYPE, kind), (header::CACHE_CONTROL, "no-store".to_string())],
+                body,
+            )
+                .into_response(),
+            None => (StatusCode::NOT_FOUND, "this recording has no answer kept for it").into_response(),
+        };
+    }
+    let response = next.run(request).await;
+    if !state.hub.is_recording() {
+        return response;
+    }
+    let (parts, body) = response.into_parts();
+    let Ok(bytes) = axum::body::to_bytes(body, 64 * 1024 * 1024).await else {
+        return (StatusCode::BAD_GATEWAY, "the answer from outside was too large").into_response();
+    };
+    if let Some((folder, t)) = state.hub.feed_to_keep(bytes.len() as u64) {
+        let kind = parts.headers.get(header::CONTENT_TYPE).and_then(|v| v.to_str().ok()).unwrap_or("").to_string();
+        let (status, body) = (parts.status.as_u16(), bytes.clone());
+        tokio::task::spawn_blocking(move || hub::feeds::keep(&folder, t, &url, status, &kind, &body));
+    }
+    axum::response::Response::from_parts(parts, axum::body::Body::from(bytes))
 }
 
 /// Whether a request that says where it comes from comes from one of the host's own pages, at

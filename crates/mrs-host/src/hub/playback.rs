@@ -25,13 +25,15 @@ pub struct PlaybackInfo {
 }
 
 pub(super) struct Playback {
-    folder: PathBuf,
+    pub(super) folder: PathBuf,
     catalogue: Catalogue,
     /// The log's lines, parsed.
     lines: Vec<Value>,
     /// Where the hub is now, in milliseconds, and how many log lines are applied.
-    at: u64,
+    pub(super) at: u64,
     applied: usize,
+    /// What the outside answered while it was recorded (#523).
+    pub(super) feeds: Vec<super::feeds::FeedLine>,
 }
 
 /// One thing that happened, in words for the room's event list and timeline (#526, #527).
@@ -82,7 +84,8 @@ impl Playback {
         let catalogue: Catalogue = serde_json::from_str(&read("recording.json")?).map_err(|e| format!("recording.json: {e}"))?;
         let start: Value = serde_json::from_str(&read("start.json")?).map_err(|e| format!("start.json: {e}"))?;
         let lines = read("log.jsonl")?.lines().filter_map(|l| serde_json::from_str(l).ok()).collect();
-        let playback = Playback { folder: folder.to_path_buf(), catalogue, lines, at: 0, applied: 0 };
+        let feeds = super::feeds::read(folder);
+        let playback = Playback { folder: folder.to_path_buf(), catalogue, lines, at: 0, applied: 0, feeds };
         Ok((playback, start["state"].clone()))
     }
 

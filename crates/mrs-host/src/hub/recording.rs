@@ -126,11 +126,21 @@ pub(super) struct Recording {
     catalogue: Catalogue,
     /// Set when writing the log failed: the recording stops at the next request.
     failed: Option<String>,
+    /// Bytes of outside answers kept so far (#523).
+    pub(super) feed_bytes: u64,
 }
 
 impl Recording {
     fn ms(&self) -> u64 {
         self.started.elapsed().as_millis() as u64
+    }
+
+    pub(super) fn now_ms(&self) -> u64 {
+        self.ms()
+    }
+
+    pub(super) fn dir(&self) -> &std::path::Path {
+        &self.dir
     }
 
     fn write(&mut self, mut line: Value) {
@@ -541,6 +551,7 @@ impl Hub {
             last_checkpoint: 0,
             catalogue,
             failed: None,
+            feed_bytes: 0,
         };
         let info = new.info();
         *recording = Some(new);

@@ -236,3 +236,57 @@ async fn a_table_opened_without_its_programs_starts_nothing() {
     host.shutdown().await;
     std::fs::remove_dir_all(&dir).unwrap();
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_recording_keeps_what_a_service_answered_and_its_playback_gives_it_back() {
+    // #523: while recording, the host keeps outside answers; playback answers from them and
+    // reaches nothing outside (here, no service runs at all).
+    let dir = site_with_service("feeds");
+    let recordings = dir.with_extension("recordings");
+    let host = mrs_host::start(HostConfig {
+        site_dir: dir.clone(),
+        layers_dir: repo().join("packages/layers"),
+        web_dir: None,
+        bind: "127.0.0.1:0".parse().unwrap(),
+        backend: Backend::Cpu,
+        session: mrs_host::SessionOptions { recordings_dir: Some(recordings.clone()), ..Default::default() },
+        sources: std::sync::Arc::new(mrs_host::Sources::in_memory()),
+        programs: true,
+    })
+    .await
+    .unwrap();
+    let base = format!("http://{}", host.addr);
+    until(&base, "up").await;
+    let hub = &host.state.hub;
+    let started = hub.request(mrs_host::Role::Dev, 0, "recording.start", &json!({ "consent": false })).unwrap();
+    let id = started["recording"]["id"].as_str().unwrap().to_string();
+    let live: Value = reqwest::get(format!("{base}/api/services/adder/call/now?x=1")).await.unwrap().json().await.unwrap();
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    hub.request(mrs_host::Role::Dev, 0, "recording.stop", &json!({})).unwrap();
+    host.shutdown().await;
+    let folder = recordings.join(&id);
+    assert!(folder.join("feeds.jsonl").is_file(), "the answer was kept");
+
+    let copy = mrs_host::playback_table(&folder, &dir, &dir.with_extension("playback")).unwrap();
+    let played = mrs_host::start(HostConfig {
+        site_dir: copy.clone(),
+        layers_dir: repo().join("packages/layers"),
+        web_dir: None,
+        bind: "127.0.0.1:0".parse().unwrap(),
+        backend: Backend::Cpu,
+        session: mrs_host::SessionOptions { playback: Some(folder.clone()), ..Default::default() },
+        sources: std::sync::Arc::new(mrs_host::Sources::in_memory()),
+        programs: false,
+    })
+    .await
+    .unwrap();
+    let base = format!("http://{}", played.addr);
+    let again: Value = reqwest::get(format!("{base}/api/services/adder/call/now?x=1")).await.unwrap().json().await.unwrap();
+    assert_eq!(again, live, "the same answer, from the recording");
+    let missing = reqwest::get(format!("{base}/api/services/adder/call/other")).await.unwrap();
+    assert_eq!(missing.status(), 404, "nothing outside is reached");
+    played.shutdown().await;
+    for d in [dir.clone(), recordings, copy] {
+        let _ = std::fs::remove_dir_all(d);
+    }
+}
