@@ -474,7 +474,7 @@
               "type": "null"
             }
           ],
-          "description": "How the projected table opens when it starts and after the controller's Reset: the layers\nfading in one after another (the default) or the zoom in from the city around it (#446)."
+          "description": "How the projected table opens when it starts and after the controller's Reset: the place\nbuilding itself from its streets, buildings and trees (the default, #697), the layers fading\nin one after another, or the zoom in from the city around it (#446)."
         }
       },
       "required": [
@@ -613,6 +613,11 @@
     },
     "Intro": {
       "oneOf": [
+        {
+          "type": "string",
+          "const": "build",
+          "description": "The place builds itself on a dark table: streets trace in from the middle, then the\nbuildings and trees, and the layers at rest fade in as the dark lifts (#697). A table\nwithout streets or buildings fades instead."
+        },
         {
           "type": "string",
           "const": "fade",
