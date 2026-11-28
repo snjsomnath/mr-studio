@@ -67,3 +67,11 @@ Shot $hwnd '4-installed-later'
 Next $hwnd; Start-Sleep -Seconds 2
 Shot $hwnd '5-finish'
 Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+
+# TEMPORARY (#695): print the pictures into the log, for a reviewer who can't download artifacts.
+Get-ChildItem $Out -Filter *.png | ForEach-Object {
+  Write-Host "MRS-SHOT-BEGIN $($_.Name)"
+  $b64 = [Convert]::ToBase64String([IO.File]::ReadAllBytes($_.FullName))
+  for ($i = 0; $i -lt $b64.Length; $i += 8000) { Write-Host ("MRS-B64 " + $b64.Substring($i, [Math]::Min(8000, $b64.Length - $i))) }
+  Write-Host "MRS-SHOT-END $($_.Name)"
+}
