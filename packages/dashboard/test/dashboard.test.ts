@@ -12,6 +12,7 @@ import { controlProblems, panelReads, validateLayerPanels, validatePage, validat
 import { defineWidget } from '../src/registry.ts';
 import { colourFeatures, rampColour, valueOf } from '../src/widgets/map.ts';
 import { coreWidgets, donutParts, entityAt, gaugeArc, gaugeShare, mediaUrl } from '../src/widgets/index.ts';
+import { parseTemplate, writeValue } from '../src/widgets/text.ts';
 
 const json = (path: string) => JSON.parse(readFileSync(new URL(path, import.meta.url), 'utf8'));
 const registry = coreWidgets();
@@ -434,4 +435,33 @@ test('a panel with hideWhenEmpty is left out while its main value is empty (#752
   assert.equal(mainProp(bars), 'items');
   assert.equal(panelIsEmpty(bars, { size: 'wide', hideWhenEmpty: true, props: { items: { bind: 'shared.rows' } } }, { params: {}, shared: { rows: [] }, site: {} }), true);
   assert.ok(validatePanel({ ...spec, hideWhenEmpty: 'yes' as unknown as boolean }, registry).some((i) => i.path.endsWith('hideWhenEmpty')));
+});
+
+test('a text box writes live values into its words (#671)', () => {
+  const registry = coreWidgets();
+  const widget = registry.get('text')!;
+  assert.deepEqual(parseTemplate('**{{kwh}}** today, {{ delta }} more'), [{ slot: 'kwh', bold: true }, { text: ' today, ' }, { slot: 'delta' }, { text: ' more' }]);
+  const spec: PanelSpec = {
+    id: 'energy-note',
+    widget: 'text',
+    size: 'tile',
+    title: 'Today',
+    props: { body: '{{kwh}} today, {{delta}} more than last year', values: [{ name: 'kwh', value: { bind: 'shared.kwh' }, unit: 'kWh' }, { name: 'delta', value: { bind: 'shared.delta' }, format: 'percent' }] },
+  };
+  assert.deepEqual(validatePanel(spec, registry), []);
+  const props = resolveProps(widget, spec.props, 'tile', { params: {}, shared: { kwh: 1234.4, delta: 0.12 }, site: {} });
+  assert.equal(writeValue(props.values[0]), '1,234\u00a0kWh');
+  assert.equal(writeValue(props.values[1]), '12\u00a0%');
+  assert.equal(writeValue({ name: 'x' }), '–');
+  // A slot with no value, a value never used, and three values in a tile are all refused.
+  const bad = validatePanel({ ...spec, props: { body: '{{kwh}} and {{oops}}', values: [{ name: 'kwh', value: 1 }, { name: 'spare', value: 2 }, { name: 'third', value: 3 }] } }, registry).map((i) => i.message).join(' | ');
+  assert.match(bad, /\{\{oops\}\} is not one of its values/);
+  assert.match(bad, /'spare' is not used/);
+  // Too many words once the values are in: refused, not shrunk.
+  const long = validatePanel({ ...spec, props: { body: `${'word '.repeat(23)}{{kwh}}`, values: [{ name: 'kwh', value: 1 }] } }, registry);
+  assert.ok(long.some((i) => /text box holds/.test(i.message)));
+  // Two values fit a tile's budget, four need a wide box.
+  const four = { body: '{{a}} {{b}} {{c}} {{d}}', values: ['a', 'b', 'c', 'd'].map((name) => ({ name, value: 1 })) };
+  assert.ok(validatePanel({ ...spec, props: four }, registry).some((i) => i.rule === 'budget'));
+  assert.deepEqual(validatePanel({ ...spec, size: 'wide', props: four }, registry), []);
 });

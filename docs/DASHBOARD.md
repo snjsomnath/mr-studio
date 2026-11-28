@@ -116,7 +116,7 @@ A widget is a kind of panel content. Each has a schema for its props, the sizes 
 | `series` | Up to three lines over time on one scale, optional marker for now | wide, block, hero, strip | 1 per line, +1 for the scale |
 | `ramp` | The colour key of the field on the table and what its ends mean | tile, band | 2 |
 | `timeline` | A span of hours, the part played, daylight shaded, a marker on now | band | 2 |
-| `text` | One or two sentences | tile, wide | 2 |
+| `text` | One or two sentences, with up to four live values written in: `{{name}}` is a value, `**words**` are bold (#671). A tile holds 64 characters, a wide box 128, counting each value at its longest | tile (2 values), wide (4 values) | 2, +1 per two values |
 | `custom` | Whatever the layer's own code draws | all | Declared by the layer, 1 to 10 |
 
 Things that are deliberately missing: tables, pie charts, a second y-axis, free HTML and icons-as-data.
