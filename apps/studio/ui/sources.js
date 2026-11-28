@@ -223,8 +223,29 @@
     return form;
   }
 
+  // One plain drawing per kind of service (#714): transit, aerial photos, maps, street view, the phone relay.
+  const KIND_ICONS = {
+    transit: 'M7 3h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2ZM5 11h14M8 14.500h.01M16 14.500h.01M8 17l-2 4M16 17l2 4',
+    aerial: 'M3 7l9-4 9 4-9 4zM3 12l9 4 9-4M3 17l9 4 9-4',
+    map: 'M9 4 3 6v14l6-2 6 2 6-2V4l-6 2zM9 4v14M15 6v14',
+    street: 'M12 3a3 3 0 1 1 0 6 3 3 0 0 1 0-6ZM8 21v-6l-2-1 2-4h8l2 4-2 1v6',
+    relay: 'M12 3a9 9 0 1 1 0 18 9 9 0 0 1 0-18ZM3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18',
+  };
+  const KIND_OF = { vasttrafik: 'transit', lantmateriet: 'aerial', streetview: 'street', relay: 'relay' };
+  function kindIcon(kind) {
+    const ns = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(ns, 'svg');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('aria-hidden', 'true');
+    const path = document.createElementNS(ns, 'path');
+    path.setAttribute('d', KIND_ICONS[/** @type {keyof typeof KIND_ICONS} */ (KIND_OF[/** @type {keyof typeof KIND_OF} */ (kind)] ?? 'map')]);
+    svg.append(path);
+    return svg;
+  }
+
   function adder(template) {
-    const button = el('button', { type: 'button' }, el('b', { textContent: template.single ? template.name : `${template.name}…` }), el('span', { textContent: template.purpose }));
+    const button = el('button', { type: 'button' }, kindIcon(template.kind), el('b', { textContent: template.name }), el('span', { textContent: template.purpose }));
+    button.title = template.single ? `Add ${template.name}` : `Add a ${template.name} source; you can add more than one`;
     button.addEventListener('click', async () => {
       try {
         const change = { kind: template.kind };
