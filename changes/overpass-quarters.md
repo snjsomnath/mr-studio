@@ -2,6 +2,6 @@
 bump: patch
 issues: 706
 ---
-### OpenStreetMap no longer comes back empty for busy city centres
+### OpenStreetMap fetches no longer time out on the Mac, or come back empty
 
-Sometimes OpenStreetMap stops a request part-way because the area holds more than one small request may ask for. MR Studio used to take that cut-short answer as the whole data, so buildings or streets came back empty or with gaps (#706). Now it notices and asks for that part in quarters, each small enough for a busy server.
+On the Mac, the app window gave up on an OpenStreetMap fetch that took more than a minute, and showed "timed out", even though MR Studio was still waiting its turn at a busy server (#706). The fetch now tells the window it is still working every few seconds, so the window waits as long as the fetch needs. When OpenStreetMap stops a request part-way because the area holds more than one small request may ask for, MR Studio no longer takes the cut-short answer as the whole data. It asks for that part in quarters instead.
