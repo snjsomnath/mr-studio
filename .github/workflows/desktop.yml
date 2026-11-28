@@ -164,6 +164,22 @@ jobs:
       - name: The app starts
         shell: bash
         run: node scripts/launch-check.mjs "${{ matrix.program }}"
+      # Pull requests: pictures of the setup pages and their slideshow (#695), attached to the
+      # run as "installer-pages". It never fails the build.
+      - name: Pictures of the setup pages
+        if: ${{ github.event_name == 'pull_request' && runner.os == 'Windows' }}
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $setup = Get-ChildItem "${{ matrix.bundle }}/nsis/*-setup.exe" | Select-Object -First 1
+          ./scripts/installer-shots.ps1 -Setup $setup.FullName -Out installer-pages
+      - if: ${{ github.event_name == 'pull_request' && runner.os == 'Windows' }}
+        uses: actions/upload-artifact@v7
+        continue-on-error: true
+        with:
+          name: installer-pages
+          path: installer-pages/*
+          if-no-files-found: ignore
       # Release files get names without spaces, so their download links are predictable.
       - name: Collect the files
         shell: bash
