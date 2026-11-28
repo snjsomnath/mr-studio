@@ -24,6 +24,7 @@ mod licence;
 mod mail;
 #[cfg(windows)]
 mod models;
+mod notify;
 mod operator;
 mod operator_mode;
 mod programs;
@@ -204,6 +205,8 @@ fn main() -> anyhow::Result<()> {
         // start by the system; the saved settings decide what is presented.
         .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, Some(vec!["--at-login"])))
         .plugin(tauri_plugin_opener::init())
+        // A notification when a long job finishes while the app is not in front (#702).
+        .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             launcher_state,
@@ -248,6 +251,7 @@ fn main() -> anyhow::Result<()> {
             table_reveal,
             about::about_info,
             about::open_about,
+            notify::job_finished,
             recordings_list,
             recording_update,
             recording_delete,
@@ -323,6 +327,7 @@ fn main() -> anyhow::Result<()> {
                 Sources::in_memory()
             });
 
+            app.manage(notify::Waiting::default());
             app.manage(Shell {
                 config_dir,
                 resources,
@@ -387,6 +392,8 @@ fn main() -> anyhow::Result<()> {
                 report(operator_mode::open_window(app));
             }
             tauri::RunEvent::Exit => app.state::<Shell>().operator.note("MR Studio quit."),
+            // Coming back from a notification brings its window forward (#702).
+            tauri::RunEvent::WindowEvent { label, event: tauri::WindowEvent::Focused(true), .. } => notify::focused(app, &label),
             _ => {}
         });
     Ok(())

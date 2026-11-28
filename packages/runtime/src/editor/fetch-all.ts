@@ -4,6 +4,7 @@ import { el } from '../controls.ts';
 import { icon } from './icons.ts';
 import { TARGETS } from './importer.ts';
 import type { ImportReport } from './importer.ts';
+import { shell } from './editor.ts';
 
 /**
  * "Fetch everything from open data" (#310), at the top of the wizard's "Your place": every
@@ -14,6 +15,9 @@ import type { ImportReport } from './importer.ts';
  */
 
 /** What the card needs from the window around it. */
+/** A fetch shorter than this needs no notification: the person is still looking (#702). */
+const NOTIFY_AFTER_MS = 10_000;
+
 export interface FetchAllHost {
   site(): SiteInfo;
   /** Holds back the reload that `site.changed` causes, until released, so that all the imports land as one. */
@@ -249,6 +253,13 @@ export class FetchAll {
         // As above: the list is lost with the reload, and the rows below still show what is on the table.
       }
       this.render();
+      // Bringing data in can take minutes: the computer says when it is done, if the person went elsewhere (#702).
+      if (Date.now() - this.since > NOTIFY_AFTER_MS) {
+        const done = rows.filter((r) => r.status === 'done').length;
+        const failed = rows.filter((r) => r.status === 'failed').length;
+        const body = failed ? `${done} of ${rows.length} came in. ${failed} could not be fetched.` : `${done} of ${rows.length} came in.`;
+        shell()?.('job_finished', { title: 'Data is in', body }).catch(() => {});
+      }
       // One reload for everything that came in.
       this.host.hold(false);
     }

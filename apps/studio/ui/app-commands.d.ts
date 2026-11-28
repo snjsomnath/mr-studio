@@ -47,6 +47,7 @@ type AppCommand =
   | 'table_reveal'
   | 'about_info'
   | 'open_about'
+  | 'job_finished'
   | 'recordings_list'
   | 'recording_update'
   | 'recording_delete'
