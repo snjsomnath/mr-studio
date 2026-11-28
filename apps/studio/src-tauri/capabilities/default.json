@@ -53,6 +53,7 @@
     "allow-recording-update",
     "allow-recording-delete",
     "allow-recording-reveal",
+    "allow-recording-open",
     "allow-open-sources",
     "allow-open-operator-log",
     "allow-diagnostics-report",

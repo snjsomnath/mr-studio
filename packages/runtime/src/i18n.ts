@@ -48,6 +48,7 @@ const SV: Record<string, string> = {
   'Sound': 'Ljud',
   'Muted': 'Ljud av',
   'Recording': 'Spelar in',
+  'Recorded session, read only': 'Inspelad session, kan inte ändras',
   'Just watch': 'Bara titta',
   'This session is being recorded': 'Det här passet spelas in',
   'The organisers record this session to look at it again afterwards.': 'Arrangörerna spelar in passet för att kunna titta på det igen efteråt.',

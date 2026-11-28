@@ -344,6 +344,9 @@ impl Hub {
         *self.ribbon.write() = session["ribbon"].as_str().map(str::to_string);
         self.emit("state.scene", json!({ "scene": inner.order(), "layers": inner.layers() }));
         drop(inner);
+        if state.get("participants").is_some() {
+            self.restore_seats(&state["participants"]);
+        }
         self.emit("session.changed", json!({ "session": self.session() }));
     }
 
@@ -639,6 +642,10 @@ pub fn replay(hub: &Hub, log: &str, until: Option<u64>) -> usize {
         let Ok(event) = serde_json::from_str::<Value>(line) else { continue };
         if until.is_some_and(|until| event["t"].as_u64().unwrap_or(0) > until) {
             break;
+        }
+        if event["k"] == "join" || event["k"] == "leave" {
+            hub.replay_seat(&event);
+            continue;
         }
         if event["k"] != "request" {
             continue;

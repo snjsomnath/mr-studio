@@ -225,13 +225,24 @@ function showRecordings() {
       const facts = [r.date, r.length ? clock(r.length) : 'not stopped', `${r.phones ?? 0} phone${r.phones === 1 ? '' : 's'}`].join(' · ');
       const who = [r.facilitator, r.table?.name].filter(Boolean).join(' · ');
       const tags = el('span', { className: 'tags' }, ...(r.tags ?? []).map((tag) => el('span', { className: 'chip' }, tag)));
+      // Pressing a recording plays it back, read only (#526).
       const card = el(
-        'div',
-        { className: 'open', title: r.purpose || r.name },
-        el('span', { className: 'thumb recording-thumb' }, el('span', { className: 'rec-dot' })),
+        'button',
+        { type: 'button', className: 'open', title: `Play back${r.purpose ? `: ${r.purpose}` : ''}` },
+        el('span', { className: 'thumb recording-thumb' }, el('span', { className: 'rec-dot' }), el('span', { className: 'play-glyph', ariaHidden: 'true' }, '▶')),
         el('span', { className: 'text' }, el('b', {}, r.name), el('small', { className: 'facts' }, facts), el('small', {}, who), tags),
         el('span', { className: 'tag' }, r.wrapped ? '' : r.finished ? 'Needs its notes' : 'Cut short'),
       );
+      card.addEventListener('click', async () => {
+        card.disabled = true;
+        try {
+          await invoke('recording_open', { id: r.id });
+        } catch (e) {
+          showError(e);
+        } finally {
+          card.disabled = false;
+        }
+      });
       const row = el('li', { className: 'recording' }, card);
       const tools = el('span', { className: 'card-tools' });
       const edit = el('button', { type: 'button', className: 'remove' }, 'Edit details');

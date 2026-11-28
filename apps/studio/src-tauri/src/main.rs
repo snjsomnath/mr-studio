@@ -240,6 +240,7 @@ fn main() -> anyhow::Result<()> {
             recording_update,
             recording_delete,
             recording_reveal,
+            recording_open,
             open_sources,
             sources_page,
             sources_save,

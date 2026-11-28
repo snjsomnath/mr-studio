@@ -52,6 +52,23 @@ enum Command {
         #[arg(long)]
         without_programs: bool,
     },
+    /// Play a recorded session back (#526): the host opens read-only on a copy of the table as
+    /// it was, and /playback is the room with the timeline.
+    Play {
+        /// The recording's folder (the one with recording.json).
+        recording: PathBuf,
+        /// The table it was recorded on. Only copied; it is never changed.
+        #[arg(long, default_value = "sites/sample")]
+        site: PathBuf,
+        #[arg(long, default_value = "packages/layers")]
+        layers: PathBuf,
+        #[arg(long)]
+        web: Option<PathBuf>,
+        #[arg(long, default_value_t = 4170)]
+        port: u16,
+        #[arg(long, default_value = "auto")]
+        backend: String,
+    },
     /// Rewrite a site's site.json for this version's site format. The original is kept beside it.
     Migrate { site: PathBuf },
     /// Pack a table into one .mrstable file to open on another computer. No keys go with it.
@@ -257,6 +274,29 @@ async fn main() -> anyhow::Result<()> {
             }
             let code = host.state.hub.session().code;
             tracing::info!("host listening on http://{} (session code {code})", host.addr);
+            tokio::select! {
+                _ = tokio::signal::ctrl_c() => {}
+                _ = host.wait() => {}
+            }
+            Ok(())
+        }
+        Command::Play { recording, site, layers, web, port, backend } => {
+            let backend = Backend::parse(&backend).context("backend must be auto, gpu or cpu")?;
+            let copy = std::env::temp_dir().join(format!("mrstudio-playback-{}", std::process::id()));
+            let copy = mrs_host::playback_table(&recording, &site, &copy).map_err(anyhow::Error::msg)?;
+            let host = mrs_host::start(HostConfig {
+                site_dir: copy,
+                layers_dir: layers,
+                web_dir: web,
+                bind: SocketAddr::from(([127, 0, 0, 1], port)),
+                backend,
+                session: mrs_host::SessionOptions { playback: Some(recording), ..Default::default() },
+                sources: std::sync::Arc::new(open_sources()),
+                // Nothing outside is reached, and no service starts (#526).
+                programs: false,
+            })
+            .await?;
+            tracing::info!("playing back on http://{}/playback", host.addr);
             tokio::select! {
                 _ = tokio::signal::ctrl_c() => {}
                 _ = host.wait() => {}

@@ -96,7 +96,42 @@ tags. Find searches the name, tags and facilitator; sort by date. On a card: **E
 (`mrs_host::edit_recording`: name, facilitator, purpose, tags, notes), **Show in folder**, and
 **Delete**, which moves the whole folder to the Trash or Recycle Bin after asking. A table's
 card says how many recordings it has, and that link shows only those. The app's commands are
-`recordings_list`, `recording_update`, `recording_delete` and `recording_reveal`.
+`recordings_list`, `recording_update`, `recording_delete`, `recording_reveal` and `recording_open`.
+
+## The playback room (#526, #527)
+
+Pressing a recording on Home plays it back. `recording_open` finds the table it was recorded
+on (by `table.id`, the table's own folder before the copy that ships with the app), copies it
+into the app's cache with `mrs_host::playback_table` (site.json as it was, from `start.json`;
+no history, cache or scene), and runs that copy with `SessionOptions.playback` set to the
+recording's folder, on this computer only, with no programs. The editor window opens on
+`/playback`. From the command line: `mrstudio play <recording folder> --site <table>`.
+
+A host playing a recording:
+
+- starts at the start snapshot, and moves only by `playback.seek`;
+- refuses every request that would change something, from any page, with "this is a recorded
+  session, read only"; phones cannot join, and the table page keeps drawing;
+- says so in `session.playback` (`{ id, name, date, length }`), and the controller shows
+  "Recorded session, read only" instead of the red dot.
+
+The room shows the table and the controller (drawn at 1920 × 1080 and shrunk) side by side, the
+events in words, and the organiser's notes, over a timeline with play and pause, 0.5× to 8×,
+the previous and next chapter, chapter marks, event ticks and note marks. Space plays and
+pauses, ← and → move 5 seconds, Shift with them moves to the event before or after. While it
+plays the room sends `playback.seek` as it goes, one at a time.
+
+| Method | Params | Who | What |
+|---|---|---|---|
+| `playback.info` | `{}` | tv, dev | `{ recording, length, at, events, notes }`. `events` are `{ t, kind, who, slot, text }` in words ("Controller opened sunlight", "Phone 2 drew or marked on sketch"); `kind` is layers, sketches, people, settings or chapters. The table's own requests and presence pings are left out |
+| `playback.seek` | `{ t }` | tv, dev | Moves to `t` milliseconds and sends `playback.at { at }`. Backwards, or more than a checkpoint ahead, it goes through `seek` (the nearest checkpoint, then the lines after it); otherwise it applies only the lines in between |
+| `playback.note` | `{ t, text }`, `{ id, text }`, `{ id, remove: true }` | tv, dev | Adds, changes or removes one organiser's note (#527). Answers `{ notes }`, sorted by time |
+
+Notes are kept in `notes.json` beside the recording (`[{ id, t, text }]`), never in its log:
+they are the reviewer's, not the session's. The event list filters by who (everyone, the
+controller, one phone) and by kind; the same filter thins the ticks on the timeline. **Save
+notes and events as text** and **Save as CSV** (`time, seconds, kind, who, text`) take the
+review away with the notes, chapters and the events the filter shows.
 
 ## Playing a log again
 

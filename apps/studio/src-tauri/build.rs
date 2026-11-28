@@ -64,6 +64,7 @@ fn main() {
         "recording_update",
         "recording_delete",
         "recording_reveal",
+        "recording_open",
         "open_sources",
         "cli_state",
         "install_cli",

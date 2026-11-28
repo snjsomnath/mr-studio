@@ -92,7 +92,9 @@ h2 { margin: 26px 0 10px; font-size: 14px; }
 .recordings-head input[type='search'] { width: 240px; max-width: 100%; padding: 5px 9px; border: 1px solid var(--line); border-radius: 7px; font: inherit; }
 .recordings-head select { padding: 5px 8px; border: 1px solid var(--line); border-radius: 7px; font: inherit; background: #fff; }
 .recordings { margin-top: 12px; }
-.recordings li.recording div.open { display: flex; flex-direction: column; min-width: 0; }
+.recordings li.recording button.open { cursor: pointer; }
+.recordings .play-glyph { position: absolute; inset: 0; display: grid; place-items: center; color: rgba(255, 255, 255, 0.85); font-size: 28px; }
+.recordings li.recording button.open:hover .play-glyph { color: #fff; }
 .recordings .recording-thumb { aspect-ratio: 16 / 6; background: linear-gradient(135deg, #1b2438, #2b3a5e); }
 .recordings .recording-thumb::after { content: none !important; }
 .recordings .rec-dot { position: absolute; top: 10px; right: 10px; width: 10px; height: 10px; border-radius: 50%; background: #e5484d; box-shadow: 0 0 0 3px rgba(229, 72, 77, 0.25); }

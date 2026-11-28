@@ -4,6 +4,13 @@ use super::*;
 
 impl Hub {
     pub(super) fn handle(&self, role: Role, surface: u64, method: &str, p: &Value) -> Result<Value, String> {
+        // A host playing a recording back changes nothing but by its log (#526).
+        if self.refused_in_playback(role, method) {
+            return Err("this is a recorded session, read only: nothing can be changed".into());
+        }
+        if method.starts_with("playback.") {
+            return self.playback_request(role, method, p);
+        }
         // Recording takes the hub's lock itself, for its start snapshot (#521).
         if method.starts_with("recording.") {
             return self.recording_request(role, surface, method, p);

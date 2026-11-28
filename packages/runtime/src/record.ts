@@ -273,6 +273,14 @@ export function recordPanel(store: Store, connection: Connection): HTMLElement {
 
 /** The controller's red dot and time while a recording runs (#522). Nothing on the table or phones. */
 export function recordingDot(store: Store): HTMLElement {
+  // A recording played back (#526) says so instead: nothing on this controller changes the table.
+  const playback = store.state.session.playback;
+  if (playback) {
+    const banner = el('div', 'recording-dot is-playback');
+    banner.setAttribute('role', 'status');
+    banner.append(el('span', 'recording-label', t('Recorded session, read only')), el('span', 'recording-time', playback.name));
+    return banner;
+  }
   const dot = el('div', 'recording-dot');
   dot.setAttribute('role', 'status');
   const time = el('span', 'recording-time');

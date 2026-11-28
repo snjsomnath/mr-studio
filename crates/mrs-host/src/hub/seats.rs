@@ -30,6 +30,7 @@ impl Hub {
         session.phones_paused = *self.phones_paused.read();
         session.tables = self.drawing.lock().len();
         session.recording = self.recording();
+        session.playback = self.playback();
         let relay = self.relay_join.read().clone();
         if let Some(base) = relay.or_else(|| self.bridge_join.read().clone()) {
             session.join_url = Some(format!("{}/phone?c={}", base.trim_end_matches('/'), session.code));
@@ -80,6 +81,9 @@ impl Hub {
         }
         if code != Some(self.session.code.as_str()) {
             return Err("wrong session code".into());
+        }
+        if self.options.playback.is_some() {
+            return Err("this is a recorded session: phones cannot join it".into());
         }
         // Holds that ran out are free, whether or not their timer has fired yet.
         let hold = self.options.resume_hold;

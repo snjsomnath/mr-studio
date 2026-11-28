@@ -104,6 +104,17 @@
             }
           ],
           "description": "The recording running now (#522): the controller shows a red dot and its time."
+        },
+        "playback": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PlaybackInfo"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The recording this host plays (#526): the controller says so, and phones cannot join."
         }
       },
       "required": [
@@ -178,6 +189,33 @@
         "t"
       ],
       "description": "A chapter mark: milliseconds since the start, and an optional title."
+    },
+    "PlaybackInfo": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "date": {
+          "type": "string"
+        },
+        "length": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0,
+          "description": "Milliseconds."
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "date",
+        "length"
+      ],
+      "description": "What the pages are told about the recording being played (#526): the controller shows a\nbanner, and phones cannot join."
     },
     "SiteInfo": {
       "type": "object",

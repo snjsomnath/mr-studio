@@ -136,6 +136,12 @@ async function main() {
     return;
   }
   const store = new Store(connection, welcome);
+  // The playback room (#526): a recording played back, read only, beside its timeline.
+  if (segment === 'playback') {
+    const { playbackRoom } = await import('./playback.ts');
+    await playbackRoom(app, store, connection);
+    return;
+  }
   // The controller (or, without one, the table) carries phones in from the join page on GitHub
   // Pages (#275), for venues where they cannot reach this computer. The host takes one bridge
   // and decides whether it is on. The controller goes first: it draws less than the table, so

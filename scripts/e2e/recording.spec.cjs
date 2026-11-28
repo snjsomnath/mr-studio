@@ -91,4 +91,65 @@ test.describe('recorded sessions', () => {
     assert.equal(new Set(phones.map((e) => e.slot)).size, 1, `only the phone that joined is in the log: ${JSON.stringify(phones)}`);
     remote.close();
   });
+
+  test('a recording plays back read only, with its events, chapters and notes (#526, #527)', async ({ studio }) => {
+    const { press } = await controller(studio);
+    const remote = await studio.join('dev');
+    const started = await remote.request('recording.start', { name: 'Benches workshop', consent: false });
+    await press('Sunlight', true);
+    await new Promise((r) => setTimeout(r, 600));
+    await remote.request('recording.chapter', { title: 'Wind' });
+    await press('Sunlight', false);
+    await press('Wind', true);
+    await new Promise((r) => setTimeout(r, 1500));
+    await remote.request('recording.stop');
+    remote.close();
+
+    const base = await studio.play(path.join(studio.recordings, started.recording.id));
+    const room = await studio.open(`${base}/playback`, { width: 1600, height: 900 });
+    await room.getByText('Recorded session, read only').first().waitFor();
+    await room.getByText('Benches workshop').first().waitFor();
+    const events = room.locator('.pb-events');
+    await events.getByText('Controller opened sunlight').waitFor();
+    await events.getByText('Chapter: Wind').waitFor();
+    const tv = room.frameLocator('.pb-tv iframe');
+    await tv.locator('.recording-dot.is-playback').waitFor();
+    const pressed = (name) => tv.locator('.layer-button[aria-pressed="true"]', { hasText: name });
+
+    // A click on an event moves the table and the controller there.
+    await events.getByText('Controller opened sunlight').click();
+    await pressed('Sunlight').waitFor();
+    await events.getByText('Controller closed sunlight').click();
+    await pressed('Sunlight').waitFor({ state: 'detached' });
+    await room.getByRole('button', { name: 'Chapter ▶' }).click();
+    await pressed('Wind').waitFor();
+    // Backwards too, from a checkpoint: the chapter was marked while the sun was on.
+    await room.getByRole('button', { name: '◀ Chapter' }).click();
+    await pressed('Wind').waitFor({ state: 'detached' });
+    await pressed('Sunlight').waitFor();
+
+    // The organiser's notes stay with the recording, beside its log.
+    await room.locator('.pb-chapter', { hasText: 'Wind' }).click();
+    await room.getByPlaceholder('A note at this moment').fill('They chose the square here');
+    await room.getByRole('button', { name: 'Add a note here' }).click();
+    await room.locator('.pb-notes .pb-item', { hasText: 'They chose the square here' }).waitFor();
+    await room.locator('.pb-note-mark').waitFor();
+    const notes = JSON.parse(fs.readFileSync(path.join(studio.recordings, started.recording.id, 'notes.json'), 'utf8'));
+    assert.equal(notes[0].text, 'They chose the square here');
+    await studio.shot(room, 'recording/526-playback-room');
+
+    // Filters: only the controller's layer presses.
+    await room.getByLabel('Chapters').uncheck();
+    assert.equal(await events.getByText('Chapter: Wind').count(), 0);
+    const [file] = await Promise.all([room.waitForEvent('download'), room.getByRole('button', { name: 'Save as CSV' }).click()]);
+    const csv = fs.readFileSync(await file.path(), 'utf8');
+    assert.match(csv, /note,"Organiser","They chose the square here"/);
+    assert.match(csv, /layers,"Controller","Controller opened sunlight"/);
+    await studio.shot(room.locator('.pb-side'), 'recording/527-events-notes');
+
+    // Nothing in a recording can be changed from its pages.
+    const viewer = await studio.join('tv', Number(new URL(base).port));
+    await assert.rejects(viewer.request('layer.activate', { layer: 'wind', active: true }), /read only/);
+    viewer.close();
+  });
 });

@@ -143,6 +143,7 @@ const test = base.test.extend({
 
     const errors = [];
     const pages = [];
+    const players = [];
     const saved = () => JSON.parse(fs.readFileSync(file, 'utf8'));
     const studio = {
       base: url,
@@ -153,7 +154,7 @@ const test = base.test.extend({
       savedLayers: () => saved().layers,
       layerIds: () => saved().layers.map((l) => l.id ?? l.use),
       savedLayer: (id) => saved().layers.find((l) => (l.id ?? l.use) === id),
-      join: (role) => joinAt(port, role),
+      join: (role, at = port) => joinAt(at, role),
       /** A new page on `address`, with the map tiles answered locally and its errors kept. */
       async open(address, viewport, { goto = true, init } = {}) {
         const page = await browser.newPage({ viewport });
@@ -164,7 +165,7 @@ const test = base.test.extend({
         page.on('pageerror', (e) => errors.push(`${address}: ${e.message}`));
         if (consoleErrors) page.on('console', (m) => m.type() === 'error' && errors.push(`${address}: ${m.text()}`));
         if (init) await page.addInitScript(init);
-        if (goto) await page.goto(url + address);
+        if (goto) await page.goto(/^https?:/.test(address) ? address : url + address);
         return page;
       },
       /** Keeps a screenshot for the release notes and the docs, when E2E_SHOTS asks for them. */
@@ -177,6 +178,24 @@ const test = base.test.extend({
       shots: Boolean(shotsDir),
       /** Where this host keeps recorded sessions (#520). */
       recordings: `${site}-recordings`,
+      /** A second host playing a recording back, read only (#526); its address. */
+      async play(recording) {
+        const playPort = await freePort();
+        const player = spawn(
+          path.join(root, 'target', 'debug', process.platform === 'win32' ? 'mrstudio.exe' : 'mrstudio'),
+          ['play', recording, '--site', site, '--web', 'packages/runtime/dist', '--port', String(playPort), '--backend', 'cpu'],
+          { cwd: root, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, MRS_JOIN_PAGE: 'off' } },
+        );
+        players.push(player);
+        let said = '';
+        player.stdout.on('data', (d) => (said += d));
+        player.stderr.on('data', (d) => (said += d));
+        for (let i = 0; !/playing back on/.test(said); i++) {
+          if (i > 200 || player.exitCode !== null) throw new Error(`playback host did not start:\n${said}`);
+          await new Promise((r) => setTimeout(r, 50));
+        }
+        return `http://127.0.0.1:${playPort}`;
+      },
     };
 
     await use(studio);
@@ -193,6 +212,7 @@ const test = base.test.extend({
     }
     if (failed) await info.attach('host.log', { body: log.slice(-20_000), contentType: 'text/plain' });
     host.kill();
+    for (const player of players) player.kill();
     fs.rmSync(site, { recursive: true, force: true });
     // A refused file answers 422 and a wrong code is turned away, which the browser logs on its own;
     // so does a WebSocket a page closes as it goes.
