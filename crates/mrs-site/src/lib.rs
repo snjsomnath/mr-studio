@@ -23,6 +23,7 @@ pub mod package;
 pub mod plan;
 pub mod programs;
 mod projection;
+pub mod session_file;
 pub mod sound;
 pub mod starter;
 pub mod surfaces;

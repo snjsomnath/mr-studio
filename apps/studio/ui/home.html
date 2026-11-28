@@ -29,6 +29,7 @@
       <h1>Start a table</h1>
       <p class="lead">Make a new interactive table in a few steps, or pick up where you left off.</p>
       <p id="error" class="error" role="alert" hidden></p>
+      <p id="notice" class="notice" role="status" hidden></p>
       <div id="waiting" class="waiting" role="status" hidden>
         <p id="waiting-text"></p>
         <button type="button" id="waiting-now">Stop and update now</button>
@@ -58,13 +59,14 @@
       <p id="tables-hint" class="hint"></p>
 
       <!-- Recorded sessions (#525): kept apart from the tables, in the app's own data folder. -->
-      <div class="recordings-head" id="recordings-head" hidden>
+      <div class="recordings-head" id="recordings-head">
         <h2 id="recordings-title">Recorded sessions</h2>
         <input type="search" id="recordings-find" placeholder="Find by name, tag or facilitator" aria-label="Find a recorded session" />
         <select id="recordings-sort" aria-label="Sort recorded sessions">
           <option value="new">Newest first</option>
           <option value="old">Oldest first</option>
         </select>
+        <button type="button" id="recordings-open" class="link-button" title="Add a .mrsession file someone sent you to your recorded sessions">Open a recorded session…</button>
       </div>
       <p id="recordings-filter" class="hint" hidden></p>
       <ul id="recordings" class="tables recordings" aria-labelledby="recordings-title"></ul>
@@ -108,6 +110,17 @@
         <div class="actions">
           <button type="button" id="recording-delete-cancel">Cancel</button>
           <button type="button" id="recording-delete-confirm" class="danger">Move to Trash</button>
+        </div>
+      </dialog>
+      <dialog id="recording-export-dialog" class="confirm" aria-labelledby="recording-export-title">
+        <h2 id="recording-export-title">Export this recording</h2>
+        <p>One .mrsession file with the recording and a copy of its table as it was, so it plays on a computer that never had the table. Keys and passwords never go in it.</p>
+        <label class="choice"><input type="radio" name="recording-export-media" value="all" checked /> Everything, so it plays exactly as recorded</label>
+        <label class="choice"><input type="radio" name="recording-export-media" value="lean" /> Without media: videos and large pictures stay behind, and are missing in playback</label>
+        <p id="recording-export-error" class="error" role="alert" hidden></p>
+        <div class="actions">
+          <button type="button" id="recording-export-cancel">Cancel</button>
+          <button type="button" id="recording-export-save" class="primary">Export…</button>
         </div>
       </dialog>
       <dialog id="recording-edit-dialog" class="confirm" aria-labelledby="recording-edit-title">

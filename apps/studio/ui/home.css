@@ -92,6 +92,10 @@ h2 { margin: 26px 0 10px; font-size: 14px; }
 .recordings-head input[type='search'] { width: 240px; max-width: 100%; padding: 5px 9px; border: 1px solid var(--line); border-radius: 7px; font: inherit; }
 .recordings-head select { padding: 5px 8px; border: 1px solid var(--line); border-radius: 7px; font: inherit; background: #fff; }
 .recordings { margin-top: 12px; }
+.recordings .card-tools { flex-wrap: wrap; row-gap: 6px; }
+.recordings-head .link-button { padding: 5px 10px; border: 1px solid var(--line); border-radius: 7px; background: #fff; font: inherit; cursor: pointer; }
+.notice { margin: 0 0 14px; padding: 8px 10px; border-radius: 6px; background: #ecfdf3; color: #05603a; border: 1px solid #abefc6; }
+dialog .choice { display: flex; gap: 8px; align-items: flex-start; margin: 6px 0; }
 .recordings li.recording button.open { cursor: pointer; }
 .recordings .play-glyph { position: absolute; inset: 0; display: grid; place-items: center; color: rgba(255, 255, 255, 0.85); font-size: 28px; }
 .recordings li.recording button.open:hover .play-glyph { color: #fff; }

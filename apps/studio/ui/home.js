@@ -17,6 +17,15 @@ function showError(message, where = 'error') {
   $(where).hidden = !message;
 }
 
+/** A short "done" line above the tables, gone after a while. */
+let noticeTimer = 0;
+function showNotice(message) {
+  $('notice').textContent = message;
+  $('notice').hidden = false;
+  clearTimeout(noticeTimer);
+  noticeTimer = setTimeout(() => ($('notice').hidden = true), 12000);
+}
+
 // ---- Home ------------------------------------------------------------------
 
 /** "Edited 10 minutes ago", "Edited yesterday", "Edited 21 Nov". */
@@ -201,7 +210,8 @@ async function loadRecordings() {
 }
 
 function showRecordings() {
-  $('recordings-head').hidden = recordings.length === 0;
+  // Open a recorded session… is always there; finding and sorting only once there are some.
+  $('recordings-find').hidden = $('recordings-sort').hidden = recordings.length === 0;
   const words = $('recordings-find').value.trim().toLowerCase();
   const matches = (r) =>
     !words || [r.name, r.facilitator, ...(r.tags ?? [])].some((text) => (text ?? '').toLowerCase().includes(words));
@@ -253,7 +263,9 @@ function showRecordings() {
       del.setAttribute('aria-label', 'Delete…');
       del.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3" /></svg>';
       del.addEventListener('click', () => deleteRecording(r));
-      tools.append(edit, reveal, del);
+      const share = el('button', { type: 'button', className: 'remove', title: 'Save as one .mrsession file to take to another computer' }, 'Export…');
+      share.addEventListener('click', () => exportRecording(r));
+      tools.append(edit, share, reveal, del);
       row.append(tools);
       return row;
     }),
@@ -309,6 +321,42 @@ function deleteRecording(r) {
   dialog.showModal();
   $('recording-delete-cancel').focus();
 }
+
+/** Export… (#529): with everything, or without videos and large pictures. */
+function exportRecording(r) {
+  const dialog = $('recording-export-dialog');
+  $('recording-export-title').textContent = `Export “${r.name}”`;
+  showError(undefined, 'recording-export-error');
+  $('recording-export-cancel').onclick = () => dialog.close();
+  $('recording-export-save').onclick = async () => {
+    const media = document.querySelector('input[name="recording-export-media"]:checked')?.value !== 'lean';
+    try {
+      const done = await invoke('recording_export', { id: r.id, media });
+      if (!done) return;
+      dialog.close();
+      const size = done.bytes > 1048576 ? `${(done.bytes / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(done.bytes / 1024))} KB`;
+      const left = done.left_out.length ? ` Left out: ${done.left_out.join(', ')}.` : '';
+      showNotice(`Exported “${r.name}” (${size}).${left}`);
+    } catch (e) {
+      showError(e, 'recording-export-error');
+    }
+  };
+  dialog.showModal();
+  $('recording-export-save').focus();
+}
+
+/** Open a recorded session… (#529): it joins Recorded sessions, never Your tables. */
+$('recordings-open').addEventListener('click', async () => {
+  showError();
+  try {
+    const opened = await invoke('recording_import', {});
+    if (!opened) return;
+    await loadRecordings();
+    showNotice(`“${opened.name}” is now in Recorded sessions. Press it to play it back.`);
+  } catch (e) {
+    showError(e);
+  }
+});
 
 $('recordings-find').addEventListener('input', showRecordings);
 $('recordings-sort').addEventListener('change', showRecordings);

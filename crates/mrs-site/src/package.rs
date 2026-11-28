@@ -103,7 +103,7 @@ pub enum PackageError {
     Refused(String),
 }
 
-fn refused(message: impl Into<String>) -> PackageError {
+pub(crate) fn refused(message: impl Into<String>) -> PackageError {
     PackageError::Refused(message.into())
 }
 
@@ -133,7 +133,7 @@ fn secret_looking(name: &str) -> bool {
 }
 
 /// Already-compressed files are stored as they are: packing them again only costs time.
-fn stored(name: &str) -> bool {
+pub(crate) fn stored(name: &str) -> bool {
     let lower = name.to_ascii_lowercase();
     [
         "png", "jpg", "jpeg", "webp", "gif", "avif", "mp4", "m4v", "mov", "webm", "mp3", "m4a", "ogg", "zip", "gz", "pmtiles", "mbtiles",
@@ -144,7 +144,7 @@ fn stored(name: &str) -> bool {
 }
 
 /// Every file of the table, relative to `dir`, with '/' between parts, in a stable order.
-fn table_files(dir: &Path, prefix: &str, files: &mut Vec<(String, PathBuf)>, left_out: &mut Vec<String>) -> io::Result<()> {
+pub(crate) fn table_files(dir: &Path, prefix: &str, files: &mut Vec<(String, PathBuf)>, left_out: &mut Vec<String>) -> io::Result<()> {
     let mut entries: Vec<_> = std::fs::read_dir(dir)?.collect::<Result<_, _>>()?;
     entries.sort_by_key(std::fs::DirEntry::file_name);
     for entry in entries {
@@ -438,7 +438,7 @@ fn copy_all(from: &Path, to: &Path) -> io::Result<()> {
     Ok(())
 }
 
-fn unpack<R: Read + Seek>(zip: &mut ZipArchive<R>, to: &Path) -> Result<usize, PackageError> {
+pub(crate) fn unpack<R: Read + Seek>(zip: &mut ZipArchive<R>, to: &Path) -> Result<usize, PackageError> {
     std::fs::create_dir_all(to)?;
     let mut total = 0u64;
     let mut files = 0;

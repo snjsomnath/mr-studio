@@ -133,6 +133,27 @@ controller, one phone) and by kind; the same filter thins the ticks on the timel
 notes and events as text** and **Save as CSV** (`time, seconds, kind, who, text`) take the
 review away with the notes, chapters and the events the filter shows.
 
+## A recording as one file: `.mrsession` (#529)
+
+**Export…** on a recording's card on Home writes one `<name>.mrsession` file
+(`mrs_site::session_file::export`): a zip with `mrsession.json` at the top (`format`, `id`,
+`name`, `table_id`, `table_name`, `app`, `exported`, `media`, `left_out`), the recording's own
+files beside it, and a frozen copy of its table under `table/`, so it plays on a computer that
+never had the table. The same rules as a `.mrstable` keep out hidden files, history and
+anything named like a secret. **Without media** leaves out videos and pictures over 4 MB and
+names them in `left_out`; playback shows the table without them.
+
+**Open a recorded session…** on Home (`recording_import`, `mrs_site::session_file::open`)
+unpacks one into the recordings folder under its own id, never over a recording already there,
+and never as a table: the copy stays at `<recording>/table/`, is not listed in Your tables and
+is not opened in the editor. Playback uses that copy before looking for the table on this
+computer; `mrstudio play <folder>` does the same. A file from a newer format is refused with
+the app version that made it. The app's commands are `recording_export { id, media }` and
+`recording_import { path? }`.
+
+Not yet: a linked export (without the table copy, naming its revision), Share by email, and
+double-clicking a `.mrsession` file (the file type is registered with the installer work).
+
 ## Playing a log again
 
 `mrs_host::replay(hub, log, until)` sends the logged requests to a hub started from the

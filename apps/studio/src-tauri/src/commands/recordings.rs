@@ -2,6 +2,7 @@
 //! tables. A recording is never listed as a table, and nothing here opens the editor.
 
 use super::*;
+use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_opener::OpenerExt;
 
 /// Every recording in the app's data folder, newest first.
@@ -42,19 +43,8 @@ pub(crate) async fn recording_reveal(app: AppHandle, id: String) -> Result<(), S
 #[tauri::command]
 pub(crate) async fn recording_open(app: AppHandle, shell: State<'_, Shell>, id: String) -> Result<(), String> {
     let folder = mrs_host::recording_folder(&mrs_host::default_recordings_dir(), &id)?;
-    let catalogue: mrs_host::Catalogue = std::fs::read(folder.join("recording.json"))
-        .ok()
-        .and_then(|b| serde_json::from_slice(&b).ok())
-        .ok_or("This recording could not be read.")?;
-    let table_id = catalogue.table["id"].as_str().unwrap_or_default();
-    let settings = shell.settings();
-    let tables = sites::discover(&settings.sites, &shell.sites_folders, &shell.resources.join("sites"));
-    // The table's own folder first; the copy that ships with the app only when there is none.
-    let table =
-        tables.iter().filter(|t| t.id == table_id && t.problem.is_none()).min_by_key(|t| t.source == "built in").ok_or_else(|| {
-            let name = catalogue.table["name"].as_str().unwrap_or(table_id);
-            format!("The table this was recorded on ({name}) is not on this computer. Add it on Home, then play the recording again.")
-        })?;
+    let catalogue = read_catalogue(&folder)?;
+    let table = recording_table(&shell, &folder, &catalogue)?;
     let root = read_only_root(&app).ok_or("The app's cache folder could not be found.")?;
     let running = shell.running.lock().as_ref().map(|r| r.site.clone());
     // Earlier playback copies go, except the one running.
@@ -67,10 +57,112 @@ pub(crate) async fn recording_open(app: AppHandle, shell: State<'_, Shell>, id: 
         }
     }
     let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or_default();
-    let copy = mrs_host::playback_table(&folder, &table.path, &root.join(format!("playback-{stamp}")))?;
-    tracing::info!("playing back {} on a copy of {}", folder.display(), table.path.display());
+    let copy = mrs_host::playback_table(&folder, &table, &root.join(format!("playback-{stamp}")))?;
+    tracing::info!("playing back {} on a copy of {}", folder.display(), table.display());
     table::launch_playback(&app, copy, folder).await.map_err(text)?;
     open_editor(&app, "playback").map_err(text)?;
     close_shell_pages(&app);
     Ok(())
+}
+
+fn read_catalogue(folder: &Path) -> Result<mrs_host::Catalogue, String> {
+    std::fs::read(folder.join("recording.json"))
+        .ok()
+        .and_then(|b| serde_json::from_slice(&b).ok())
+        .ok_or_else(|| "This recording could not be read.".to_string())
+}
+
+/// The table a recording plays on: the copy that came inside its .mrsession file (#529), else
+/// the table it was recorded on, its own folder before the copy that ships with the app.
+fn recording_table(shell: &Shell, folder: &Path, catalogue: &mrs_host::Catalogue) -> Result<PathBuf, String> {
+    let inside = folder.join(mrs_site::session_file::TABLE);
+    if inside.join("site.json").is_file() {
+        return Ok(inside);
+    }
+    let table_id = catalogue.table["id"].as_str().unwrap_or_default();
+    let settings = shell.settings();
+    let tables = sites::discover(&settings.sites, &shell.sites_folders, &shell.resources.join("sites"));
+    tables
+        .iter()
+        .filter(|t| t.id == table_id && t.problem.is_none())
+        .min_by_key(|t| t.source == "built in")
+        .map(|t| t.path.clone())
+        .ok_or_else(|| {
+            let name = catalogue.table["name"].as_str().unwrap_or(table_id);
+            format!("The table this was recorded on ({name}) is not on this computer. Add it on Home, then play the recording again.")
+        })
+}
+
+/// Export… (#529): the recording and a frozen copy of its table as one .mrsession file, with
+/// or without its videos and large pictures. Answers what was written, or nothing when cancelled.
+#[tauri::command]
+pub(crate) async fn recording_export(
+    app: AppHandle,
+    shell: State<'_, Shell>,
+    id: String,
+    media: bool,
+) -> Result<Option<mrs_site::session_file::SessionExported>, String> {
+    let folder = mrs_host::recording_folder(&mrs_host::default_recordings_dir(), &id)?;
+    let catalogue = read_catalogue(&folder)?;
+    let table = recording_table(&shell, &folder, &catalogue)?;
+    let name = mrs_site::package::folder_name(&catalogue.name);
+    let (send, receive) = tokio::sync::oneshot::channel();
+    let mut dialog = app
+        .dialog()
+        .file()
+        .set_title("Export recorded session")
+        .set_file_name(format!("{name}.{}", mrs_site::session_file::EXTENSION))
+        .add_filter("MR Studio recorded session", &[mrs_site::session_file::EXTENSION]);
+    if let Ok(documents) = app.path().document_dir() {
+        dialog = dialog.set_directory(documents);
+    }
+    dialog.save_file(move |path| {
+        let _ = send.send(path);
+    });
+    let Some(out) = receive.await.ok().flatten() else { return Ok(None) };
+    let mut out = out.into_path().map_err(|_| "The chosen place is not a folder on this computer.".to_string())?;
+    if out.extension().is_none_or(|e| e != mrs_site::session_file::EXTENSION) {
+        out.set_extension(mrs_site::session_file::EXTENSION);
+    }
+    let about = mrs_site::session_file::SessionAbout {
+        id: catalogue.id.clone(),
+        name: catalogue.name.clone(),
+        table_id: catalogue.table["id"].as_str().unwrap_or_default().into(),
+        table_name: catalogue.table["name"].as_str().unwrap_or_default().into(),
+        app: env!("CARGO_PKG_VERSION").into(),
+        ..Default::default()
+    };
+    let exported = tokio::task::spawn_blocking(move || mrs_site::session_file::export(&folder, &table, &out, about, media))
+        .await
+        .map_err(text)?
+        .map_err(text)?;
+    tracing::info!("exported recording {id} to {} ({} bytes)", exported.path.display(), exported.bytes);
+    Ok(Some(exported))
+}
+
+/// Open a recorded session… (#529): a .mrsession file joins Recorded sessions. Its table copy
+/// stays inside the recording: it is never listed with the tables or opened in the editor.
+#[tauri::command]
+pub(crate) async fn recording_import(app: AppHandle, path: Option<PathBuf>) -> Result<Option<mrs_host::Catalogue>, String> {
+    let file = match path {
+        Some(path) => path,
+        None => {
+            let (send, receive) = tokio::sync::oneshot::channel();
+            app.dialog()
+                .file()
+                .set_title("Open a recorded session")
+                .add_filter("MR Studio recorded session", &[mrs_site::session_file::EXTENSION])
+                .pick_file(move |path| {
+                    let _ = send.send(path);
+                });
+            let Some(file) = receive.await.ok().flatten() else { return Ok(None) };
+            file.into_path().map_err(|_| "That file is not on this computer.".to_string())?
+        }
+    };
+    let opened = tokio::task::spawn_blocking(move || mrs_site::session_file::open(&file, &mrs_host::default_recordings_dir()))
+        .await
+        .map_err(text)?
+        .map_err(|e| format!("This recorded session could not be opened: {e}"))?;
+    tracing::info!("opened recorded session '{}' into {}", opened.about.name, opened.dir.display());
+    read_catalogue(&opened.dir).map(Some)
 }

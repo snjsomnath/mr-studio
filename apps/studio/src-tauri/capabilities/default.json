@@ -54,6 +54,8 @@
     "allow-recording-delete",
     "allow-recording-reveal",
     "allow-recording-open",
+    "allow-recording-import",
+    "allow-recording-export",
     "allow-open-sources",
     "allow-open-operator-log",
     "allow-diagnostics-report",

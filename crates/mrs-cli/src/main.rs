@@ -57,9 +57,10 @@ enum Command {
     Play {
         /// The recording's folder (the one with recording.json).
         recording: PathBuf,
-        /// The table it was recorded on. Only copied; it is never changed.
-        #[arg(long, default_value = "sites/sample")]
-        site: PathBuf,
+        /// The table it was recorded on. Only copied; it is never changed. Default: the table
+        /// inside the recording (an opened .mrsession file), else sites/sample.
+        #[arg(long)]
+        site: Option<PathBuf>,
         #[arg(long, default_value = "packages/layers")]
         layers: PathBuf,
         #[arg(long)]
@@ -283,6 +284,8 @@ async fn main() -> anyhow::Result<()> {
         Command::Play { recording, site, layers, web, port, backend } => {
             let backend = Backend::parse(&backend).context("backend must be auto, gpu or cpu")?;
             let copy = std::env::temp_dir().join(format!("mrstudio-playback-{}", std::process::id()));
+            let inside = recording.join(mrs_site::session_file::TABLE);
+            let site = site.unwrap_or_else(|| if inside.join("site.json").is_file() { inside } else { PathBuf::from("sites/sample") });
             let copy = mrs_host::playback_table(&recording, &site, &copy).map_err(anyhow::Error::msg)?;
             let host = mrs_host::start(HostConfig {
                 site_dir: copy,

@@ -241,6 +241,8 @@ fn main() -> anyhow::Result<()> {
             recording_delete,
             recording_reveal,
             recording_open,
+            recording_import,
+            recording_export,
             open_sources,
             sources_page,
             sources_save,
