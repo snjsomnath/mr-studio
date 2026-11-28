@@ -85,6 +85,11 @@ test('a typed value is read in its unit, as a time of day for hours, inside the 
   const hour = { type: 'range', id: 'h', min: 0, max: 24, step: 0.25, unit: 'h' } as never;
   assert.equal(parseValue('13:30', hour), 13.5);
   assert.equal(parseValue('9', hour), 9);
+  // A share from 0 to 1 is typed as a percentage (#710).
+  const opacity = { type: 'range', id: 'o', min: 0.1, max: 1, step: 0.05 } as never;
+  assert.equal(parseValue('85', opacity), 0.85);
+  assert.equal(parseValue('85 %', opacity), 0.85);
+  assert.equal(parseValue('2', opacity), 0.1);
 });
 
 test('people see all controls but state ones; phones get primary ones unless the layer says', () => {

@@ -45,6 +45,7 @@ type AppCommand =
   | 'open_link'
   | 'file_action'
   | 'table_details'
+  | 'table_reveal'
   | 'recordings_list'
   | 'recording_update'
   | 'recording_delete'

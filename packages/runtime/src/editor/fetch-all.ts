@@ -102,6 +102,7 @@ export class FetchAll {
     for (const row of this.rows) {
       const item = el('li', `fa-row is-${row.status}`);
       item.dataset.dataset = row.dataset;
+      item.dataset.from = row.from;
       const tick = el('input');
       Object.assign(tick, { type: 'checkbox', checked: row.picked, disabled: this.busy, ariaLabel: `Fetch ${row.name.toLowerCase()}` });
       tick.addEventListener('change', () => {
@@ -187,7 +188,7 @@ export class FetchAll {
   private clock(): HTMLElement {
     const line = el('span', 'fa-clock');
     line.setAttribute('role', 'status');
-    // Which server and part the host is asking now (#424), e.g. "Asking overpass-api.de, part 2 of 4".
+    // Which server and part the host is asking now (#424), e.g. "Asking OpenStreetMap, part 2 of 4".
     let asking = '';
     const say = () => {
       const seconds = Math.floor((Date.now() - this.since) / 1000);
@@ -199,7 +200,11 @@ export class FetchAll {
           .catch(() => undefined);
       }
       const slow = osm && seconds >= 15 ? 'OpenStreetMap is busy, so this can take a minute. It tries the next server if one does not answer. ' : '';
-      line.textContent = osm && asking ? `${slow}${asking}… ${seconds} s` : slow ? `${slow}${seconds} s` : seconds >= 2 ? `${seconds} s` : '';
+      // Each OpenStreetMap row being fetched says what is happening to it now (#712); the line under the list keeps the time.
+      if (osm && asking) {
+        for (const words of this.element.querySelectorAll<HTMLElement>('.fa-row.is-fetching[data-from="osm"] .fa-status > span:last-child')) words.textContent = `${asking}…`;
+      }
+      line.textContent = slow ? `${slow}${seconds} s` : seconds >= 2 ? `${seconds} s` : '';
     };
     say();
     const timer = setInterval(() => (line.isConnected && this.busy ? say() : clearInterval(timer)), 1000);

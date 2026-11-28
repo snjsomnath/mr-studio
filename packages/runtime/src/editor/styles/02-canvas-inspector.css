@@ -154,6 +154,23 @@ body[data-role='edit'] .table-surface {
   font-size: 12px;
 }
 
+/* Calmer settings (#710): a label keeps to one line (its full words on hover), and values line up. */
+.ed .control-head {
+  gap: 8px;
+}
+
+.ed .control-head > .control-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ed .control-value {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+
 .ed input[type='range'] {
   height: 20px;
 }

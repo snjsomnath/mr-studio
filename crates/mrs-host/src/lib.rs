@@ -91,7 +91,7 @@ pub struct AppState {
     /// Recent OpenStreetMap answers, one per layer and place, so Import brings in what the
     /// preview (or a fetch of everything, #310) got without asking again.
     osm_cache: parking_lot::Mutex<std::collections::HashMap<String, OsmFetch>>,
-    /// What an OpenStreetMap fetch is doing now, in words ("Asking overpass-api.de, part 2 of 4"), for
+    /// What an OpenStreetMap fetch is doing now, in words ("Asking OpenStreetMap, part 2 of 4"), for
     /// `GET /api/data/osm/status` (#424). Empty when nothing is being asked.
     osm_status: parking_lot::Mutex<String>,
     /// The join page's WebRTC bridge (#275): at most one surface carries phones at a time.

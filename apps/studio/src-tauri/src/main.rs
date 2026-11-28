@@ -28,6 +28,7 @@ mod operator_mode;
 mod programs;
 mod screens;
 mod sites;
+mod sketch;
 mod startup;
 mod table;
 mod updates;
@@ -244,6 +245,7 @@ fn main() -> anyhow::Result<()> {
             file_action,
             starter_pack,
             table_details,
+            table_reveal,
             recordings_list,
             recording_update,
             recording_delete,

@@ -50,6 +50,7 @@
     "allow-open-settings",
     "allow-new-table",
     "allow-table-details",
+    "allow-table-reveal",
     "allow-recordings-list",
     "allow-recording-update",
     "allow-recording-delete",
