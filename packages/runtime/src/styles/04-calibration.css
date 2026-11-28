@@ -1,0 +1,536 @@
+/* ---- Model surface ---- */
+
+/* The twin, drawn over the flat map through the projector's camera. */
+.table-model {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 1;
+  pointer-events: none;
+}
+
+/* ---- Projector calibration ---- */
+
+.calibration {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  cursor: crosshair;
+  touch-action: none;
+  user-select: none;
+  color: #e8ecf4;
+  font-size: 0.875rem;
+}
+
+/* Until the camera is solved the surface is dark, so only the marker's light falls on the model. */
+.calibration:not(.shows-model) {
+  background: #000;
+}
+
+.calibration-marker,
+.calibration-dot {
+  position: absolute;
+  left: 0;
+  top: 0;
+  pointer-events: none;
+}
+
+.calibration-marker i {
+  position: absolute;
+  background: #fff;
+}
+
+.calibration-marker i:nth-child(1) {
+  left: -22px;
+  top: -0.5px;
+  width: 2.75rem;
+  height: 1px;
+}
+
+.calibration-marker i:nth-child(2) {
+  left: -0.5px;
+  top: -22px;
+  width: 1px;
+  height: 2.75rem;
+}
+
+.calibration-marker b {
+  position: absolute;
+  left: -9px;
+  top: -9px;
+  width: 1.125rem;
+  height: 1.125rem;
+  border: 1px solid #ffd24a;
+  border-radius: 50%;
+}
+
+.calibration-marker:not(.is-placed) {
+  opacity: 0.6;
+}
+
+.calibration-dot {
+  margin: -9px 0 0 -9px;
+  width: 1.125rem;
+  height: 1.125rem;
+  border-radius: 50%;
+  border: 1px solid #4ade80;
+  color: #4ade80;
+  font-size: 0.625rem;
+  line-height: 1rem;
+  text-align: center;
+}
+
+/*
+ * The calibration's words and buttons (#594): in the controller's centre, in the editor's guide,
+ * and on the table only when K asks for it. Colours follow the text, so the panel suits any theme.
+ */
+.calibration-remote {
+  --cp-line: color-mix(in srgb, currentColor 18%, transparent);
+  --cp-fill: color-mix(in srgb, currentColor 8%, transparent);
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+  grid-template-areas: 'head head' 'look work';
+  gap: 1rem 1.75rem;
+  align-items: start;
+}
+
+.calibration-remote[hidden] {
+  display: none;
+}
+
+.calibration-remote.is-compact {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: 'head' 'look' 'work';
+  gap: 0.625rem;
+}
+
+.cp-head {
+  grid-area: head;
+}
+
+.cp-title {
+  margin: 0;
+  font-size: 1.75rem;
+  font-weight: 600;
+}
+
+.is-compact .cp-title {
+  font-size: 1rem;
+}
+
+.cp-look {
+  grid-area: look;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.cp-work {
+  grid-area: work;
+  display: grid;
+  gap: 0.875rem;
+}
+
+.is-compact .cp-work {
+  gap: 0.625rem;
+}
+
+.cp-plan {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 0.5rem;
+}
+
+.cp-corners {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+}
+
+.cp-corner {
+  min-width: 2.25rem;
+  height: 2.25rem;
+  padding: 0 0.5rem;
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  color: inherit;
+  background: var(--cp-fill);
+  border: 1px solid var(--cp-line);
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.cp-corner.is-done {
+  border-color: #4ade80;
+  color: #16a34a;
+}
+
+.cp-corner.is-current {
+  border-color: #ffd24a;
+  background: #ffd24a;
+  color: #14171d;
+  font-weight: 600;
+}
+
+.is-compact .cp-corner {
+  min-width: 1.75rem;
+  height: 1.75rem;
+  font-size: 0.75rem;
+}
+
+.cp-label {
+  margin: 0;
+  font-size: 1.25rem;
+  line-height: 1.4;
+}
+
+.is-compact .cp-label {
+  font-size: inherit;
+}
+
+.cp-status {
+  margin: 0;
+  line-height: 1.4;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.85;
+}
+
+.cp-status.is-problem {
+  color: #e5484d;
+  opacity: 1;
+}
+
+.cp-help {
+  margin: 0;
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  opacity: 0.6;
+}
+
+.cp-help[hidden] {
+  display: none;
+}
+
+.cp-row {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.cp-button {
+  flex: 1;
+  min-height: 3rem;
+  padding: 0.5rem 0.75rem;
+  font: inherit;
+  color: inherit;
+  background: var(--cp-fill);
+  border: 1px solid var(--cp-line);
+  border-radius: 0.5rem;
+  cursor: pointer;
+}
+
+.is-compact .cp-button {
+  min-height: 2.25rem;
+  padding: 0.375rem 0.5rem;
+}
+
+.cp-button.is-primary {
+  background: #ffd24a;
+  border-color: #ffd24a;
+  color: #14171d;
+  font-weight: 600;
+}
+
+.cp-button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* The nudge pad: one pixel next to the middle, ten pixels on the outside. */
+.cp-pad {
+  display: grid;
+  grid-template-columns: repeat(5, 3.25rem);
+  grid-template-rows: repeat(5, 3.25rem);
+  grid-template-areas: '. . uu . .' '. . u . .' 'll l . r rr' '. . d . .' '. . dd . .';
+  gap: 0.25rem;
+  justify-content: center;
+}
+
+.is-compact .cp-pad {
+  grid-template-columns: repeat(5, 2.25rem);
+  grid-template-rows: repeat(5, 2.25rem);
+}
+
+.cp-nudge {
+  min-height: 0;
+  padding: 0;
+  font-size: 1.25rem;
+}
+
+/* While calibrating, the controller's centre is the panel alone. */
+.open-layers.is-calibrating {
+  max-height: 92%;
+}
+
+.open-layers.is-calibrating > :not(.calibration-remote) {
+  display: none !important;
+}
+
+/* K on the table: the same panel in a corner of the surface, for a table without a controller. */
+.calibration-remote.is-on-table {
+  position: absolute;
+  right: 1rem;
+  bottom: 1rem;
+  width: 20rem;
+  max-height: calc(100% - 2rem);
+  overflow: auto;
+  padding: 1rem;
+  cursor: default;
+  font-size: 0.875rem;
+  background: rgb(14 18 26 / 0.94);
+  border: 1px solid rgb(255 255 255 / 0.14);
+  border-radius: 0.625rem;
+}
+
+/* Layers' own decorations would only distract from the markers. */
+.is-calibrating .table-decoration {
+  visibility: hidden;
+}
+
+/*
+ * ---- Looks (#126) ----
+ * A theme sets more than colours: the surface (filled, outlined, glass or plain), the layer
+ * buttons (tiles or bare icons) and the chrome (comfortable or minimal). main.ts copies them
+ * from the site's theme to data attributes on the body.
+ */
+
+/* Glass: frosted rails and controls over a soft glow of the accent. */
+body[data-role='tv'][data-surface='glass'] {
+  background:
+    radial-gradient(70% 60% at 20% 0%, color-mix(in srgb, var(--accent) 20%, transparent), transparent 70%),
+    radial-gradient(60% 70% at 100% 100%, color-mix(in srgb, var(--accent) 12%, transparent), transparent 70%),
+    var(--bg);
+}
+
+body[data-role='tv'][data-surface='glass'] .controller,
+body[data-role='tv'][data-surface='glass'] .segmented,
+body[data-role='tv'][data-surface='glass'] .controls-more > summary,
+body[data-role='tv'][data-surface='glass'] input[type='date'],
+body[data-role='tv'][data-surface='glass'] .layer-button .layer-button-icon {
+  background: color-mix(in srgb, var(--panel) 45%, transparent);
+  border-color: color-mix(in srgb, var(--text) 14%, transparent);
+  backdrop-filter: blur(1.25rem);
+  -webkit-backdrop-filter: blur(1.25rem);
+}
+
+body[data-role='tv'][data-surface='glass'] .layer-button[aria-pressed='true'] .layer-button-icon {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+body[data-role='tv'][data-surface='glass'] .dash.mrs-dash {
+  background: transparent;
+}
+
+/* Outlined: lines, no filled surfaces. */
+body[data-role='tv'][data-surface='outlined'] .segmented,
+body[data-role='tv'][data-surface='outlined'] .layer-button:not([aria-pressed='true']) .layer-button-icon {
+  background: transparent;
+}
+
+/* Bare layer buttons: just the icon and its name; the open layer's icon takes the accent, with a bar under it. */
+body[data-role='tv'][data-rail-look='bare'] .layer-button .layer-button-icon {
+  border-color: transparent;
+  background: transparent;
+  backdrop-filter: none;
+}
+
+body[data-role='tv'][data-rail-look='bare'] .layer-button[aria-pressed='true'] .layer-button-icon {
+  border-color: transparent;
+  background: transparent;
+  color: var(--accent);
+  box-shadow: inset 0 -0.1875rem 0 var(--accent);
+  border-radius: 0;
+}
+
+body[data-role='tv'][data-rail-look='bare'] .action-button .layer-button-icon {
+  border-color: var(--line);
+}
+
+/* Minimal: no rail surfaces or dividers, no group labels, quieter choices. */
+body[data-role='tv'][data-density='minimal'] .controller {
+  background: transparent;
+  border-color: transparent;
+}
+
+body[data-role='tv'][data-density='minimal'] .rail-group {
+  display: none;
+}
+
+body[data-role='tv'][data-density='minimal'] .segmented {
+  background: transparent;
+  border-color: transparent;
+  padding: 0;
+  gap: 0.5rem;
+}
+
+body[data-role='tv'][data-density='minimal'] .segmented button:not([aria-checked='true']) {
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+
+body[data-role='tv'][data-density='minimal'] .controls-more > summary {
+  border-color: transparent;
+  padding-inline: 0;
+}
+
+body[data-role='tv'][data-density='minimal'] .layer-open-head .layer-button-icon {
+  background: transparent;
+  color: var(--accent);
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+/*
+ * ---- Steps on the controller (#43, #76) ----
+ * A slideshow, or a layer that reveals its parts, gets ◀ ▶ and play beside an info strip:
+ * which step, its title, one line and its source; then the sub-steps as a row of names.
+ */
+.step-strip {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 0.75rem 1.75rem;
+  margin-bottom: 1.25rem;
+  padding: 1.25rem 1.5rem;
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+  background: var(--card);
+}
+
+.step-strip[hidden] {
+  display: none;
+}
+
+.step-nav {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+}
+
+.step-button {
+  display: grid;
+  place-items: center;
+  width: 3.5rem;
+  height: 3.5rem;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: var(--panel);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.step-button svg {
+  width: 1.625rem;
+  height: 1.625rem;
+}
+
+.step-button.is-play {
+  width: 4.25rem;
+  height: 4.25rem;
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.step-button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.step-words {
+  min-width: 0;
+}
+
+.step-count {
+  color: var(--muted);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.step-title {
+  margin: 0.25rem 0 0;
+  font-size: 1.5rem;
+  font-weight: 650;
+  line-height: 1.2;
+}
+
+.step-line {
+  margin: 0.25rem 0 0;
+  color: var(--text);
+  font-size: 1.0625rem;
+  line-height: 1.4;
+}
+
+.step-source {
+  margin: 0.375rem 0 0;
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+.step-title[hidden],
+.step-line[hidden],
+.step-source[hidden],
+.step-subs[hidden] {
+  display: none;
+}
+
+.step-subs {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.step-sub {
+  padding: 0.375rem 0.875rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 0.9375rem;
+}
+
+.step-sub.is-shown {
+  color: var(--text);
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
+}
+
+.step-sub.is-current {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 600;
+}
+
+/* A layer the slideshow is showing: its button is marked with a ring of the accent. */
+body[data-role='tv'] .layer-button.is-shown .layer-button-icon {
+  border-color: var(--accent);
+  border-style: dashed;
+}
+
+body[data-role='tv'][data-density='minimal'] .step-strip {
+  padding-inline: 0;
+  border-color: transparent;
+  background: transparent;
+}
+
+body[data-role='tv'][data-surface='glass'] .step-strip {
+  background: color-mix(in srgb, var(--panel) 45%, transparent);
+  border-color: color-mix(in srgb, var(--text) 14%, transparent);
+  backdrop-filter: blur(1.25rem);
+  -webkit-backdrop-filter: blur(1.25rem);
+}

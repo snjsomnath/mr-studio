@@ -1,0 +1,245 @@
+/* ---- The importer (#71): Your place rows and the Add data dialog ---- */
+.im-help {
+  margin-left: 6px;
+  background: transparent;
+  color: inherit;
+  font-family: inherit;
+  cursor: pointer;
+  vertical-align: 2px;
+  appearance: none;
+}
+
+.im-busy {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--ed-text-2);
+}
+
+.im-spinner {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--ed-accent-soft);
+  border-top-color: var(--ed-accent);
+  border-radius: 50%;
+  animation: im-spin 0.8s linear infinite;
+}
+
+@keyframes im-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .im-spinner {
+    animation-duration: 2.4s;
+  }
+}
+
+.im-help[aria-expanded='true'] {
+  border-color: var(--ed-accent);
+  color: var(--ed-accent);
+}
+
+.im-example {
+  margin: 6px 0 8px;
+  padding: 8px 10px;
+  background: #f4f6f9;
+  border-radius: 6px;
+  font: 11.5px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  white-space: pre-wrap;
+  color: #3b4250;
+}
+
+.im-help-box .im-example {
+  margin-bottom: 4px;
+}
+
+.im-download {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 8px;
+  color: var(--ed-accent);
+  font-size: 12px;
+  text-decoration: none;
+}
+
+.im-download:hover {
+  text-decoration: underline;
+}
+
+.im-preview {
+  margin: 8px 0;
+  border-radius: 6px;
+  overflow: hidden;
+  background: #0b0e14;
+}
+
+.im-map {
+  display: block;
+  width: 100%;
+  max-height: 220px;
+}
+
+.im-map-ground {
+  fill: #0b0e14;
+}
+
+.im-map-data path.is-area {
+  fill: rgba(96, 138, 255, 0.45);
+  stroke: #8fb0ff;
+}
+
+.im-map-data path.is-line {
+  fill: none;
+  stroke: #8fb0ff;
+}
+
+.im-map-data circle {
+  fill: #7fdc9a;
+}
+
+.im-map-table {
+  fill: none;
+  stroke: #f3ad3d;
+  stroke-dasharray: 6 4;
+  vector-effect: non-scaling-stroke;
+}
+
+.im-map-data path {
+  vector-effect: non-scaling-stroke;
+}
+
+.im-map-label {
+  fill: #f3ad3d;
+}
+
+.im-move {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.im-credit {
+  margin-top: 6px;
+  font-size: 11px;
+  color: #6b7280;
+}
+
+.im-dialog {
+  width: min(560px, calc(100vw - 32px));
+  max-height: calc(100vh - 64px);
+  border: 1px solid #d5d9e0;
+  border-radius: 12px;
+  padding: 16px 20px 20px;
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.25);
+}
+
+.im-dialog::backdrop {
+  background: rgba(15, 23, 42, 0.3);
+}
+
+.im-dialog-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.im-dialog-head h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.im-kind {
+  display: grid;
+  gap: 8px;
+  margin: 8px 0;
+}
+
+.im-about {
+  margin: 4px 0;
+}
+
+.im-map-data path {
+  stroke-width: 1px;
+}
+
+.im-map-table {
+  stroke-width: 2px;
+}
+
+.im-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.im-dialog select {
+  height: 32px;
+  padding: 0 8px;
+  border: 1px solid var(--ed-line);
+  border-radius: 6px;
+  background: var(--ed-panel, #fff);
+  font: inherit;
+}
+
+.wz-issue.im-move {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-start;
+  text-align: left;
+  gap: 6px 8px;
+}
+
+.wz-issue.im-move .ed-button {
+  margin: 0;
+}
+
+/* The controller's look in the setup guide (#126): theme cards, then the button style. */
+
+.wz-theme-swatch {
+  display: block;
+  padding: 8px;
+  border-radius: 5px;
+}
+
+.wz-theme-panel {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 6px 8px;
+  align-items: center;
+  padding: 6px;
+  border: 1px solid;
+  border-radius: 4px;
+}
+
+.wz-theme-line {
+  height: 4px;
+  border-radius: 2px;
+  opacity: 0.85;
+}
+
+.wz-theme-accent {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+}
+
+.wz-theme-data {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: 4px;
+}
+
+.wz-theme-data i {
+  flex: 1;
+  height: 4px;
+  border-radius: 2px;
+}

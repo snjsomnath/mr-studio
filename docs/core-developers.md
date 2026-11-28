@@ -63,6 +63,8 @@ What is written from what, and checked by the tests so neither side drifts alone
 
 The app's own pages (`apps/studio/ui/*.js` and the scripts the shell puts into windows) are type-checked as JavaScript, so calling an app command that does not exist fails `pnpm typecheck`.
 
+The runtime's styles are split into parts: `packages/runtime/src/styles/` for the table, controller, TV and phone pages, and `packages/runtime/src/editor/styles/` for the editor (#741). `style.css` and `editor.css` only import them, and the order of the imports is the order of the cascade, so a new part goes where it belongs rather than at the end.
+
 Unit tests run under plain Node (`node --test --experimental-strip-types`), with no browser. Every runtime module loads there; `registry.ts` then has no core layers, since Vite's `import.meta.glob` exists only in a build (#742). Put rules that need no page, such as which rail a button goes on, where a unit test can reach them.
 
 The end-to-end cases are in `scripts/e2e/`, one file per area: the controller, the table and its layers, the phones, the editor's scene list, the editor's flows, the setup guide, and import and new tables. Every case starts its own host on a fresh copy of `sites/sample`, so no case depends on another and they run side by side (`E2E_WORKERS` sets how many). A failed case keeps a screenshot of each page it had open, a trace and the host's log in `e2e-results/`, and the others still run. `pnpm e2e:shots` also keeps the screenshots the release notes and the docs use, in `e2e-screenshots/`.
