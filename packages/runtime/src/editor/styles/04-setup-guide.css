@@ -638,13 +638,34 @@ body[data-role='edit'] .ed-surface .table-frame {
   opacity: 1;
 }
 
-.ed-phones.is-off,
+/* Quiet status items (#713): an icon and a word; the plain explanation is on hover. */
+.ed-phones,
 .ed-engine {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   color: inherit;
 }
 
-.ed-phones.is-off {
+.ed-phones.is-off,
+.ed-engine.is-off {
   color: #9a5b00;
+}
+
+.ed-fix {
+  margin-left: 2px;
+  padding: 0 8px;
+  border: 1px solid currentColor;
+  border-radius: 10px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  line-height: 18px;
+  cursor: pointer;
+}
+
+.ed-fix:hover {
+  background: #fff4e0;
 }
 
 .wz-place.is-wanted > .wz-choice {

@@ -33,6 +33,26 @@ test.describe('editor', () => {
     await studio.shot(page, 'editor/editor');
   });
 
+  test('the status bar says phones and simulations in plain words, with a Fix that opens the phones setting (#713)', async ({ studio }) => {
+    const page = await studio.open('/edit', { width: 1440, height: 900 }, {
+      init: () => {
+        window.calls = [];
+        window.__TAURI__ = { core: { invoke: async (command, args) => (window.calls.push([command, args]), {}) } };
+      },
+    });
+    const bar = page.locator('footer.ed-status');
+    await bar.locator('.ed-engine svg').waitFor();
+    const text = await bar.innerText();
+    for (const word of ['Engine:', 'llvmpipe', 'Vulkan', 'cannot join']) assert.ok(!text.includes(word), `the status bar says "${word}"`);
+    assert.match(await bar.locator('.ed-engine').innerText(), /^(Fast|Slower) simulations$/);
+    const phones = bar.locator('.ed-phones');
+    if (await phones.evaluate((p) => p.classList.contains('is-off'))) {
+      await phones.getByRole('button', { name: 'Fix' }).click();
+      assert.deepEqual(await page.evaluate(() => window.calls.find(([c]) => c === 'open_settings')), ['open_settings', { page: 'startup' }]);
+    } else assert.match(await phones.innerText(), /^Phones: /);
+    await studio.shot(bar, 'editor/713-status-bar');
+  });
+
   test('Back returns to the layer before (#47)', async ({ studio }) => {
     const { page, inspector, row } = await editorAt(studio, '#layer=wind');
     await until(async () => (await inspector()) === 'Wind', 'Wind in the inspector');

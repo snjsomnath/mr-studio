@@ -11,6 +11,9 @@ const PATHS: Record<string, string> = {
   muted: 'M4 9h4l5-4v14l-5-4H4zM16 9l5 6M21 9l-5 6',
   // Share by email (#372): an arrow leaving a tray.
   share: 'M12 15V4M8 8l4-4 4 4M5 12v7a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-7',
+  // The status bar's engine item (#713): a chip when simulations use the graphics card, a clock when they run slower.
+  chip: 'M7 7h10v10H7zM10 10h4v4h-4zM9 4v3M12 4v3M15 4v3M9 17v3M12 17v3M15 17v3M4 9h3M4 12h3M4 15h3M17 9h3M17 12h3M17 15h3',
+  clock: 'M12 3a9 9 0 1 1 0 18 9 9 0 0 1 0-18ZM12 7v5l3 2',
   // Operator mode (#394): a padlock.
   lock: 'M6 11h12v9H6zM8.500 11V8a3.500 3.500 0 0 1 7 0v3',
   folder: 'M3 6a1 1 0 0 1 1-1h5l2 2h9a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z',
