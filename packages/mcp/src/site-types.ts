@@ -21,7 +21,7 @@ export interface SiteJson {
   /** Outside compute the table's layers reach through the host (#278): programs the host
    * starts beside the table (a Python model in its own venv) or addresses it forwards to. */
   services?: Service[];
-  /** How the table's surfaces render (#134): `{ "quality": "draft" | "good" | "best" }`. */
+  /** How the table's surfaces render (#134): `{ "quality": "draft" | "good" | "best", "sounds": 0..1 }`. */
   display?: unknown;
   branding?: Branding;
   /** Where the table's data came from and on what terms (#731): sources, licences, credits
@@ -52,8 +52,9 @@ export interface Table {
   ribbons?: Ribbons;
   /** A soft glow in the projector's blank space in the model's own colours (#476, present.md, Ambient glow). */
   glow?: Glow | null;
-  /** How the projected table opens when it starts and after the controller's Reset: the layers
-   * fading in one after another (the default) or the zoom in from the city around it (#446). */
+  /** How the projected table opens when it starts and after the controller's Reset: the place
+   * building itself from its streets, buildings and trees (the default, #697), the layers fading
+   * in one after another, or the zoom in from the city around it (#446). */
   intro?: Intro | null;
 }
 
@@ -87,7 +88,7 @@ export interface Glow {
 export type GlowColours = 'edges' | 'one';
 
 /** The projected table's opening (present.md, Opening). */
-export type Intro = 'fade' | 'zoom';
+export type Intro = 'build' | 'fade' | 'zoom';
 
 export interface SceneSpec {
   cell_m: number;

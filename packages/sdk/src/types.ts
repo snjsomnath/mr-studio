@@ -497,8 +497,8 @@ export interface SiteInfo {
     ribbons?: Partial<Record<'top' | 'bottom' | 'left' | 'right', 'off' | 'auto' | { cm: number }>>;
     /** The ambient glow in the projector's blank space, in the model's own colours (#476). */
     glow?: { on?: boolean; strength?: number; colours?: 'edges' | 'one' };
-    /** How the projected table opens, at start and after Reset: the layers fading in (the default) or the zoom in (#446). */
-    intro?: 'fade' | 'zoom';
+    /** How the projected table opens, at start and after Reset: the place building itself (the default, #697), the layers fading in, or the zoom in (#446). */
+    intro?: 'build' | 'fade' | 'zoom';
   } | null;
   basemap: { background: string; style: string | null };
   /** Table settings (#73): the controller's title, logo and the welcome line under the title. */

@@ -91,7 +91,7 @@
       }
     },
     "display": {
-      "description": "How the table's surfaces render (#134): `{ \"quality\": \"draft\" | \"good\" | \"best\" }`."
+      "description": "How the table's surfaces render (#134): `{ \"quality\": \"draft\" | \"good\" | \"best\", \"sounds\": 0..1 }`."
     },
     "branding": {
       "$ref": "#/$defs/Branding",
@@ -205,7 +205,7 @@
           ]
         },
         "intro": {
-          "description": "How the projected table opens when it starts and after the controller's Reset: the layers\nfading in one after another (the default) or the zoom in from the city around it (#446).",
+          "description": "How the projected table opens when it starts and after the controller's Reset: the place\nbuilding itself from its streets, buildings and trees (the default, #697), the layers fading\nin one after another, or the zoom in from the city around it (#446).",
           "anyOf": [
             {
               "$ref": "#/$defs/Intro"
@@ -349,6 +349,11 @@
     "Intro": {
       "description": "The projected table's opening (present.md, Opening).",
       "oneOf": [
+        {
+          "description": "The place builds itself on a dark table: streets trace in from the middle, then the\nbuildings and trees, and the layers at rest fade in as the dark lifts (#697). A table\nwithout streets or buildings fades instead.",
+          "type": "string",
+          "const": "build"
+        },
         {
           "description": "The layers at rest fade in one after another, bottom first, each part of a layer a moment after the one before.",
           "type": "string",
