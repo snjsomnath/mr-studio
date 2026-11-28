@@ -44,7 +44,7 @@ Check how much LFS space the group has first. GitLab's check fetches LFS files b
 
 ## Share it with the studio computer
 
-On the studio computer, Home's **Get a table from a git repository…** (under Your tables) takes
+On the studio computer (MR Studio 0.59 or later), Home's **Get a table from a git repository…** (under Your tables) takes
 this repository's address and keeps the table in its tables folder. When you push a new
 version, the table's card there says **Update from the repository (N new)**. The studio
 computer only follows: a table changed there is not updated over, and nothing updates while it
