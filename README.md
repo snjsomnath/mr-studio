@@ -22,7 +22,7 @@ To join from a real phone, run `pnpm dev -- --lan` and scan the QR code shown on
 
 ```bash
 cargo run -p mrs-cli -- validate sites/sample      # check a site and report its scene
-pnpm dev -- --site sites/chalmers                  # the Chalmers campus instead of the sample
+pnpm dev -- --site ../mr-studio-site-chalmers     # the Chalmers campus (its own repository) instead of the sample
 cargo run -p mrs-cli -- new-site sites/mysite --lon 11.94 --lat 57.706
 cargo run --release -p mrs-cli -- bench sites/sample   # time the kernels on GPU and CPU (--town 4000: a city-sized made-up town)
 ```
@@ -109,7 +109,7 @@ As of 2026-11-27 (0.53.0). What changed release by release is in [CHANGELOG.md](
 | Desktop app: Home, editor window, fullscreen per display, unattended running (watchdog, nightly restart, start at login), operator mode, read-only open, What's new | Working on Linux and on macOS (Apple M4 Pro); the first run on the Windows studio PC is still to do |
 | Releases: a version per merge to main, notes with screenshots, installers for Windows and macOS | Working; the installers are not code-signed |
 | MCP server for building sites with an LLM | Working; CI runs it on Linux, Windows and macOS |
-| Lindholmen and Universeum tables | Built as tables of their own (`.mrstable`), outside this repository; only Chalmers and the sample are in `sites/` |
+| Lindholmen and Universeum tables | Built as tables of their own (`.mrstable`), outside this repository; the Chalmers campus has its own repository too (`mr-studio-site-chalmers`, #740); only the sample is in `sites/` |
 | Python services gateway (ECOM) | Not started; ECOM is left for later |
 
 ## Licence
