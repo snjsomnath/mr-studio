@@ -53,7 +53,7 @@ function rust() {
 }
 
 function npm() {
-  const list = JSON.parse(execFileSync('pnpm', ['licenses', 'list', '--prod', '--json', '--recursive'], { cwd: root, maxBuffer: 256 << 20, encoding: 'utf8' }));
+  const list = JSON.parse(execFileSync('pnpm', ['licenses', 'list', '--prod', '--json', '--recursive'], { cwd: root, maxBuffer: 256 << 20, encoding: 'utf8', shell: process.platform === 'win32' }));
   const packages = [];
   for (const [licence, entries] of Object.entries(list)) {
     for (const entry of entries) {
