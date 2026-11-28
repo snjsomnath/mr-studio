@@ -13,7 +13,7 @@ export interface EmptyCheck {
 }
 
 import type { PropSpec, WidgetDefinition } from './registry.ts';
-import { TEXT } from './rules.ts';
+import { PANEL_TONES, TEXT } from './rules.ts';
 import { isBinding, listLimit } from './validate.ts';
 
 /** What bindings read from: the state of the panel's layer, and the site. */
@@ -133,6 +133,19 @@ export function panelIsEmpty(widget: WidgetDefinition, spec: EmptyCheck, source:
   if (!key) return false;
   const value = resolveProps(widget, spec.props, spec.size, source)[key];
   return value === undefined || value === null || value === '' || value === 0 || (Array.isArray(value) && value.length === 0);
+}
+
+/** The panel's tone now (#672): a theme slot from its `tone`, worked out when it is an expression. */
+export function panelTone(spec: { tone?: unknown }, source: BindSource): string | undefined {
+  const raw = isExpressionValue(spec.tone) ? expression(spec.tone.expr).evaluate({ vars: source }) : spec.tone;
+  return typeof raw === 'string' && (PANEL_TONES as readonly string[]).includes(raw) ? raw : undefined;
+}
+
+/** Whether a panel with `showIf` is shown now (#672). One without is always shown. */
+export function panelShown(spec: { showIf?: unknown }, source: BindSource): boolean {
+  if (!isExpressionValue(spec.showIf)) return true;
+  const value = expression(spec.showIf.expr).evaluate({ vars: source });
+  return value !== null && value !== undefined && value !== false && value !== 0 && value !== '';
 }
 
 export type ValueFormat = 'number' | 'hour' | 'percent';

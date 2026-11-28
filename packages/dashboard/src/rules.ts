@@ -41,3 +41,6 @@ export const ROTATE_S = { default: 12, min: 6, max: 60 } as const;
  * beside the model. It is read in passing, standing at the table, so it holds less than a screen.
  */
 export const RIBBON = { sizes: ['chip', 'tile', 'wide'] as PanelSize[], panels: 4, reads: 10 } as const;
+
+/** The colours a panel's tone may take (#672): theme slots only, never a raw colour. */
+export const PANEL_TONES = ['accent', 'good', 'warn', 'bad', 'muted', 'data-1', 'data-2', 'data-3', 'data-4', 'data-5', 'data-6'] as const;

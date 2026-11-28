@@ -91,6 +91,39 @@
   contain: layout paint;
 }
 
+/* A panel's tone (#672): a theme colour by threshold. The panel takes a tint and a stripe, its
+   headline number takes the colour, and whatever it draws in the accent follows. */
+.mrs-panel[data-tone]:not([data-tone='accent']) {
+  --mrs-accent: var(--mrs-tone);
+}
+.mrs-panel[data-tone] {
+  background: color-mix(in srgb, var(--mrs-tone) 14%, var(--mrs-panel));
+  box-shadow: inset calc(0.45 * var(--mrs-u)) 0 0 var(--mrs-tone);
+}
+.mrs-panel[data-tone] .mrs-number {
+  color: var(--mrs-tone);
+}
+/* A gauge's arc is drawn in its data colour inline; a tone wins. */
+.mrs-panel[data-tone] .mrs-gauge-fill {
+  stroke: var(--mrs-tone) !important;
+}
+.mrs-panel[data-tone='accent'] { --mrs-tone: var(--mrs-accent); }
+.mrs-panel[data-tone='good'] { --mrs-tone: var(--mrs-good); }
+.mrs-panel[data-tone='warn'] { --mrs-tone: var(--mrs-warn); }
+.mrs-panel[data-tone='bad'] { --mrs-tone: var(--mrs-bad); }
+.mrs-panel[data-tone='muted'] { --mrs-tone: var(--mrs-muted); }
+.mrs-panel[data-tone='data-1'] { --mrs-tone: var(--mrs-data-1); }
+.mrs-panel[data-tone='data-2'] { --mrs-tone: var(--mrs-data-2); }
+.mrs-panel[data-tone='data-3'] { --mrs-tone: var(--mrs-data-3); }
+.mrs-panel[data-tone='data-4'] { --mrs-tone: var(--mrs-data-4); }
+.mrs-panel[data-tone='data-5'] { --mrs-tone: var(--mrs-data-5); }
+.mrs-panel[data-tone='data-6'] { --mrs-tone: var(--mrs-data-6); }
+
+/* Held back by its showIf (#672): the cell stays, empty, so the grid never moves. */
+.mrs-panel.mrs-held {
+  visibility: hidden;
+}
+
 .mrs-dash[data-panel-style='outlined'] .mrs-panel {
   background: transparent;
   box-shadow: inset 0 0 0 1px var(--mrs-line);

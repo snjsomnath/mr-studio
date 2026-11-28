@@ -88,6 +88,24 @@ if (which === 'fit') {
     { id: `chip-${value * 100}`, widget: 'gauge', size: 'chip', title: `Chip`, props: { value, max: 1, format: 'percent' } },
   ]) as PanelSpec[];
   view.setPanels(gauges.map((spec) => input('demo', spec)));
+} else if (which === 'tones') {
+  // Conditional style and visibility (#672): one rule, coloured by where each value falls.
+  const load = (id: string, value: number): PanelSpec => ({
+    id,
+    widget: 'gauge',
+    size: 'tile',
+    title: `Feeder ${id.toUpperCase()}`,
+    tone: { expr: ['step', value, 'good', 0.8, 'warn', 1, 'bad'] },
+    props: { value, max: 1.2, format: 'percent' },
+  });
+  view.setPanels([
+    input('demo', load('a', 0.42)),
+    input('demo', load('b', 0.86)),
+    input('demo', load('c', 1.08)),
+    input('demo', { id: 'goal', widget: 'stat', size: 'tile', title: 'Self-sufficiency', tone: { expr: ['case', ['>=', ['bind', 'shared.selfSufficiency'], 0.5], 'good', 'muted'] }, props: { value: { bind: 'shared.selfSufficiency' }, format: 'percent', caption: 'Goal: half of what we use' } }),
+    input('demo', { id: 'held', widget: 'stat', size: 'tile', title: 'Exporting now', showIf: { expr: ['>', ['bind', 'shared.solar'], 1000] }, props: { value: 1 } }),
+    input('demo', { id: 'after', widget: 'stat', size: 'tile', title: 'Battery', tone: 'data-1', props: { value: { bind: 'shared.battery' }, format: 'percent' } }),
+  ]);
 } else {
   view.setPanels([
     input('demo', { id: 'ok', widget: 'stat', size: 'tile', title: 'This one is fine', props: { value: 42, unit: 'kW' } }),

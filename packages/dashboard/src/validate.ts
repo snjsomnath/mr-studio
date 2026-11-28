@@ -6,7 +6,7 @@ import { compileExpression, dataQueryProblems, isDataQuery, isExpressionValue } 
 import type { Binding, PanelSize, PanelSpec } from '@mrstudio/sdk';
 
 import type { PropSpec, WidgetDefinition, WidgetRegistry } from './registry.ts';
-import { DATA_SLOTS, GRID, PANEL_SIZES, RIBBON, SCREEN, SIZES, TEXT } from './rules.ts';
+import { DATA_SLOTS, GRID, PANEL_SIZES, PANEL_TONES, RIBBON, SCREEN, SIZES, TEXT } from './rules.ts';
 import { templateProblems, worstText } from './widgets/text.ts';
 
 export interface Issue {
@@ -159,7 +159,16 @@ export function validatePanel(spec: PanelSpec, registry: WidgetRegistry, path = 
   else if ([...spec.title].length > TEXT.title) issues.push({ path: `${path}.title`, rule: 'text', message: `is ${[...spec.title].length} characters, the limit is ${TEXT.title}` });
 
   for (const key of Object.keys(spec)) {
-    if (!['id', 'widget', 'size', 'title', 'props', 'visibleWhen', 'hideWhenEmpty', 'priority', 'at', 'layer', 'ribbon'].includes(key)) issues.push({ path: `${path}.${key}`, rule: 'schema', message: 'is not a panel field' });
+    if (!['id', 'widget', 'size', 'title', 'props', 'visibleWhen', 'hideWhenEmpty', 'tone', 'showIf', 'priority', 'at', 'layer', 'ribbon'].includes(key)) issues.push({ path: `${path}.${key}`, rule: 'schema', message: 'is not a panel field' });
+  }
+  // A tone is a theme slot or an expression that works one out; showIf is an expression (#672).
+  if (spec.tone !== undefined) {
+    if (isExpressionValue(spec.tone)) for (const problem of compileExpression(spec.tone.expr).problems) issues.push({ path: `${path}.tone`, rule: 'schema', message: problem });
+    else if (typeof spec.tone !== 'string' || !(PANEL_TONES as readonly string[]).includes(spec.tone)) issues.push({ path: `${path}.tone`, rule: 'schema', message: `is one of ${PANEL_TONES.join(', ')}, or { "expr": … } that works one out; never a raw colour` });
+  }
+  if (spec.showIf !== undefined) {
+    if (!isExpressionValue(spec.showIf)) issues.push({ path: `${path}.showIf`, rule: 'schema', message: 'is { "expr": … }, such as { "expr": [">", ["bind", "shared.kw"], 0] }' });
+    else for (const problem of compileExpression(spec.showIf.expr).problems) issues.push({ path: `${path}.showIf`, rule: 'schema', message: problem });
   }
   if (spec.hideWhenEmpty !== undefined && typeof spec.hideWhenEmpty !== 'boolean') issues.push({ path: `${path}.hideWhenEmpty`, rule: 'schema', message: 'must be true or false' });
   const before = issues.length;
