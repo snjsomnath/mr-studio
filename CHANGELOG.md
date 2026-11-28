@@ -4,6 +4,74 @@ Every merge to main that carries a release note becomes a version. The newest is
 The app shows these notes, with their pictures, on Home when a newer version is out.
 How notes are written: docs/RELEASING.md.
 
+## 0.61.0 (2026-11-28)
+
+### New
+
+#### Panels that read a dataset (#670)
+
+A TV or controller panel can now read one of the table's CSV or GeoJSON files and work out its number straight from it, with no layer and no code. It can add up a column, average it, take its smallest or largest value, count rows, or show the latest value. It can keep only some rows with a formula, and group them into a list for bars, a list or a donut. With a time column, it follows the play head, for example energy used so far today. Files are read in the background, so the controller stays smooth.
+
+![A page of numbers from energy.csv and buildings.geojson: counts, an average, bars and a donut grouped by use, and a curve through the day](docs/screenshots/670-dataset-panels.png)
+
+#### Controller size for each screen (#682)
+
+The controller can now be drawn larger or smaller on each screen, from 80% to 150%, for a smaller monitor or a bigger TV. Find it in Settings › Colour under Controller size. Text, buttons and dashboard panels grow together. Dashboard panels that no longer fit move to another page instead of spilling. The fit test checks every widget at 150%. The table keeps its size on the model. In a browser, add `?size=1.2` to a screen's address.
+
+![The controller at 100% and at 130% on the same TV, and the Controller size slider in Settings](docs/screenshots/682-controller-size.png)
+
+#### Calmer Home cards that look like their tables (#709)
+
+Until a table has a picture from a last visit, its card on Home is now drawn from the table's own streets and buildings, so it no longer shows the same striped placeholder as every other table. The Duplicate, Open read-only and Delete pills are gone from every card. They are now in a ⋯ menu, which also opens with a right-click and adds Show in folder. Clicking a card still opens the table. The folder path shows only on hover. The sidebar no longer repeats the three start cards, and Open a folder and Open a table file now have illustrations that match New table.
+
+![Home with a drawn table card and its menu](docs/screenshots/709-home-cards.png)
+
+#### Empty cards stay off the screen (#752)
+
+A panel can now say `"hideWhenEmpty": true`. While its main value is missing, empty, zero or an empty list, it is left out, and the other panels close the gap. Sketch's "Marks on the table" uses it, so the controller no longer shows a big "0" before anyone has drawn.
+
+![Before, an empty Marks card with 0; after, the card is left out](docs/screenshots/752-hide-empty-cards.png)
+
+### Fixes
+
+#### The controller finds the signage screen at the studio PC (#612)
+
+Choosing screens automatically now treats a signage screen (such as LG SIGNAGE at the studio PC) as the TV, and with three screens and no TV recognised it puts the controller on the other external screen rather than the laptop's own panel (#612). The Mac already shows the screens' real names.
+
+#### Calmer settings in the inspector (#710)
+
+A setting from 0 to 1, such as opacity, volume or a share, now reads and is typed as a percentage: "40 %" instead of 0.40. Its value stays the same. Labels keep to one line, and a label cut short shows its full words on hover. Values use figures of one width, so they line up. The small screen icon on each row now shows only on hover, or when a setting is kept from visitors. The column heading says once what the icon means.
+
+![The inspector with percentages and quiet rows](docs/screenshots/710-inspector.png)
+
+#### Times on the 24-hour clock everywhere (#711)
+
+"Saved 12:52 PM" in the editor, the history list, the field walk's list on phones, Home and calibration now use the 24-hour clock (12:52, 07:06), as the table and the controller already did (#711).
+
+#### Calmer data dialogs (#712)
+
+Add data uses the editor's own list for what the file holds, the layer of a file with several layers, and Colour by. It has type-ahead and the same look as every other choice in the editor, in place of the browser's dropdown. Add data also no longer shows a code sample to everyone. The file format is folded behind "Show the file format". The OpenStreetMap wait line now names the service rather than a server: "Waiting for a free turn at OpenStreetMap (8 s)", "Asking OpenStreetMap" or "Asking an OpenStreetMap mirror". In Fetch everything, each row being fetched says what is happening to it, instead of one line under the list. The dialogs' close × no longer draws an odd ring when a dialog opens; it shows a clean ring only when you reach it with the keyboard.
+
+![Add data with the editor's own list](docs/screenshots/712-add-data.png)
+
+#### A quiet status bar in plain words (#713)
+
+The editor's status bar no longer shows engine jargon such as graphics adapter names. It shows two quiet items, each with an icon: "Phones: 2938" (or "Phones off") and "Fast simulations" (or "Slower simulations"). Hovering explains each one in plain words. When phones cannot join, a Fix button opens File › Settings › Phones and startup. Graphics card details stay in Help › Copy diagnostics.
+
+![The status bar with phones and simulations as quiet icons](docs/screenshots/713-status-bar.png)
+
+#### Solid source cards with an icon for each kind of service (#714)
+
+In File › Settings › Sources, the "Add a source" cards were dashed, so they looked like empty drop zones. They are now solid cards with an icon for each kind of service: transit, aerial photos, maps, street view and the phone relay. Their titles are consistent, so none ends in "…" any more. Hovering says whether you can add more than one source of that kind.
+
+![The Add a source cards in Settings](docs/screenshots/714-sources-cards.png)
+
+#### Panels fit on the controller too (#715)
+
+On the controller, the dashboard under an open layer is shorter than on a TV. Its panels were squeezed into rows smaller than they were designed for, and some text was drawn for the whole screen's height. So wide panels with four bars or rows, the donut's ring and some chips spilled out of their boxes. Now rows are as tall as a TV's unless that would push panels onto another page, and text is sized to the canvas. The overflow test now also checks every widget on the controller's canvas.
+
+![Bars, a list, a donut and a chip on the controller, before and after](docs/screenshots/715-controller-fit.png)
+
 ## 0.60.0 (2026-11-28)
 
 ### New
