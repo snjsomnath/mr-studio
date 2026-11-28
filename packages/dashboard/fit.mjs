@@ -1,7 +1,7 @@
 // The dashboard never scrolls and never hides what a panel holds (#681). This opens the
 // gallery's fit view in a real browser and fails when any core widget, at any size it takes,
 // spills out of its panel: with its example props and with the worst props the rules allow,
-// on a 1080p TV and on a 720p screen.
+// on a 1080p TV and on a 720p screen, on the TV's full canvas and on the controller's shorter one.
 //   pnpm --filter @mrstudio/dashboard fit            Chromium
 //   pnpm --filter @mrstudio/dashboard fit webkit     the engine of the Mac app
 //   pnpm --filter @mrstudio/dashboard fit msedge     the engine of the Windows app (CI on Windows)
@@ -23,14 +23,14 @@ const screens = [
 let failed = 0;
 try {
   for (const viewport of screens) {
-    for (const props of ['example', 'worst']) {
+    for (const [props, shape] of ['example', 'worst'].flatMap((props) => ['tv', 'controller'].map((shape) => [props, shape]))) {
       const page = await browser.newPage({ viewport });
       const errors = [];
       page.on('pageerror', (error) => errors.push(error.message));
-      await page.goto(`${url}?view=fit&case=${props}&still`);
+      await page.goto(`${url}?view=fit&case=${props}&shape=${shape}&still`);
       await page.waitForFunction(() => window.__fit, null, { timeout: 60_000 });
       const fit = await page.evaluate(() => window.__fit);
-      const name = `${which} ${viewport.width}x${viewport.height} ${props}`;
+      const name = `${which} ${viewport.width}x${viewport.height} ${shape} ${props}`;
       const problems = [...fit.overflow.map((o) => `${o.key}: ${o.what} ${o.side === 'inside' ? `cuts off ${o.px}px` : `reaches ${o.px}px past the panel's ${o.side} edge`}`), ...fit.refused.map((i) => `${i.path}: refused, ${i.message}`), ...errors.map((e) => `page error: ${e}`)];
       console.log(`${problems.length ? 'FAIL' : 'ok  '} ${name}: ${fit.cases} panels${problems.length ? `, ${problems.length} problems` : ''}`);
       for (const p of problems) console.log(`       ${p}`);

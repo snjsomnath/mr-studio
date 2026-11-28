@@ -32,8 +32,17 @@
   background: var(--mrs-bg);
   color: var(--mrs-text);
   font-family: var(--mrs-font);
-  font-size: var(--mrs-type-body);
   line-height: 1.25;
+}
+
+/*
+ * The body size is set on what the canvas holds, not on the canvas: on the canvas itself the
+ * unit's container units would measure the screen rather than the canvas, and every text that
+ * inherits it would be drawn for the whole screen's height. On the controller's shorter canvas
+ * that made inherited text a quarter too big, and lists spilled (#715).
+ */
+.mrs-dash > * {
+  font-size: var(--mrs-type-body);
 }
 
 .mrs-dash [hidden] {
@@ -55,12 +64,12 @@
   padding: var(--mrs-margin);
 }
 
-/* Measures the unit for view.ts. */
+/* Measures the unit (its height) and the margin (its width) for view.ts. */
 .mrs-probe {
   position: absolute;
   visibility: hidden;
   pointer-events: none;
-  width: 0;
+  width: var(--mrs-margin);
   height: var(--mrs-u);
 }
 

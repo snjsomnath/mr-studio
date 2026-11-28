@@ -61,7 +61,8 @@ export const donut = defineWidget({
       key.style.cssText = '';
       const gap = parseFloat(getComputedStyle(box).columnGap) || 0;
       const width = box.clientWidth;
-      const side = Math.floor(Math.max(width * 0.3, Math.min(box.clientHeight, width - gap - Math.min(need, width * 0.6))));
+      // Never taller than the panel: a wide panel on the controller's canvas is wider for its height (#715).
+      const side = Math.floor(Math.min(box.clientHeight, Math.max(width * 0.3, width - gap - Math.min(need, width * 0.6))));
       hole.style.width = hole.style.height = `${side}px`;
     };
     return {

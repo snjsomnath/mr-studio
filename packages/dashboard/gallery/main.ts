@@ -6,6 +6,7 @@
 //   ?view=gauges   gauges at several values, tile and chip (#491)
 //   ?view=fit      every core widget at every size it takes, measured for overflow (#681);
 //                  &case=worst fills every text to its limit (fit.mjs runs this in CI)
+//                  &shape=controller on the controller's shorter canvas, under a layer's hero (#715)
 //   &theme=light   a site's restyle     &still   freeze the clock     &rail=none
 import type { PanelSpec } from '@mrstudio/sdk';
 
@@ -72,7 +73,7 @@ const input = (layer: string, spec: PanelSpec, page?: number): PanelInput => ({
 const which = query.get('view') ?? 'energy';
 if (which === 'fit') {
   view.destroy();
-  fitGallery(query.get('case') === 'worst' ? 'worst' : 'example');
+  fitGallery(query.get('case') === 'worst' ? 'worst' : 'example', query.get('shape') === 'controller');
 } else if (which === 'energy') {
   view.setPanels((energy.panels as PanelSpec[]).map((spec) => input('energy', spec, 0)));
 } else if (which === 'auto') {
@@ -100,7 +101,7 @@ if (which === 'fit') {
  * content that spills out of its panel (#681). The results go to `window.__fit` for fit.mjs.
  * The widgets that need a table (map, control) or a layer's code (custom) are left out.
  */
-function fitGallery(which: 'example' | 'worst'): void {
+function fitGallery(which: 'example' | 'worst', controller: boolean): void {
   const box = document.getElementById('tv')!;
   box.style.cssText = 'display:block;height:auto;overflow:auto';
   box.replaceChildren();
@@ -113,8 +114,10 @@ function fitGallery(which: 'example' | 'worst'): void {
     for (const size of widget.sizes) {
       const spec = which === 'worst' ? worstCasePanel(widget, size) : examplePanel(widget, size);
       const canvas = document.createElement('div');
-      // The TV's canvas: the screen less the control rail's share.
-      canvas.style.cssText = 'width:78vw;height:100vh;margin-left:22vw';
+      // The TV's canvas: the screen less the control rail's share. The controller's is narrower
+      // (a rail of layers on each side) and short (a layer's hero above it), and its unit never
+      // drops below the controls' (runtime style.css, --mrs-u-floor).
+      canvas.style.cssText = controller ? 'width:87.5vw;height:52vh;margin-left:6.25vw;--mrs-u-floor:min(0.8vh,0.5vw);--mrs-margin:calc(1.5 * var(--mrs-u))' : 'width:78vw;height:100vh;margin-left:22vw';
       canvas.dataset.case = `${widget.type}/${size}`;
       box.append(canvas);
       const dash = new DashboardView(canvas, { dev: true });
@@ -122,13 +125,14 @@ function fitGallery(which: 'example' | 'worst'): void {
       views.push(dash);
     }
   }
-  // Fonts and the first layout settle before anything is measured.
+  // Fonts, the first layout and the canvas's rows (set once its size is known) settle before
+  // anything is measured.
   void document.fonts.ready.then(() =>
-    requestAnimationFrame(() => {
+    setTimeout(() => {
       const found = views.flatMap((dash) => dash.checkOverflow());
       const refused = views.flatMap((dash) => dash.issues.filter((issue) => issue.rule !== 'overflow'));
       (window as unknown as { __fit: unknown }).__fit = { cases: views.length, overflow: found, refused };
-    }),
+    }, 400),
   );
 }
 

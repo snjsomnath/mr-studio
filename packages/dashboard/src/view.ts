@@ -40,11 +40,11 @@ export interface PanelInput {
   page?: number;
 }
 
-/** The grid's margin, gap and smallest row, in units (see dashboard.css). */
-const MARGIN_U = 3;
+/** The grid's gap and smallest row, in units (see dashboard.css). The margin is measured: a host may set it. */
 const GAP_U = 1.5;
-// A row is at least this tall, so a tile (two rows) holds a title, a headline number and its caption (#137).
-const MIN_ROW_U = 8;
+// A row is never shorter than the rows of a full screen (14.4 units at 16:9), less a little, so a
+// panel always gets the room it was designed for. A short canvas gets fewer rows instead (#715).
+const MIN_ROW_U = 14;
 
 export interface DashboardOptions {
   registry?: WidgetRegistry;
@@ -144,10 +144,10 @@ export class DashboardView {
    * fit goes to the next page.
    */
   private measure(): void {
-    const unit = this.probe.getBoundingClientRect().height;
+    const { height: unit, width: margin } = this.probe.getBoundingClientRect();
     const height = this.root.clientHeight;
     if (!unit || !height) return;
-    const [margin, gap] = [MARGIN_U * unit, GAP_U * unit];
+    const gap = GAP_U * unit;
     const rows = Math.max(1, Math.min(GRID.rows, Math.floor((height - 2 * margin + gap) / (MIN_ROW_U * unit + gap))));
     if (rows === this.rows) return;
     this.rows = rows;
@@ -210,6 +210,12 @@ export class DashboardView {
     const keep = new Set<string>();
     this.pages.forEach((page, index) => {
       const pageEl = this.pagesEl.children[index] as HTMLElement;
+      // A site's hand-made page keeps the rows it was written with, down to its lowest panel, so a
+      // panel is never laid into rows the grid does not have (#715). On a canvas too short for them
+      // the rows are shorter, and the overflow check says which panels no longer fit.
+      const lowest = Math.max(0, ...page.panels.filter((p) => p.item.spec.at).map((p) => p.row + p.rows - 1));
+      if (lowest > this.rows) pageEl.style.setProperty('--mrs-rows', String(lowest));
+      else pageEl.style.removeProperty('--mrs-rows');
       for (const placed of page.panels) {
         const input = placed.item;
         keep.add(input.key);
