@@ -13,7 +13,7 @@ use std::time::{Duration, Instant};
 use mrs_site::history::{By, Change, History, Revision};
 use mrs_site::{is_instance_id, LayerButton, LayerItem, LayerRef, Reveal, Site, SiteError, SiteInfo, StepMode, Steps};
 use schemars::JsonSchema;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 use tokio::sync::{broadcast, Notify};
 
@@ -21,6 +21,7 @@ use crate::layers::{LayerDef, ToolKind};
 
 mod custom;
 mod load;
+mod recording;
 mod requests;
 mod scene;
 mod seats;
@@ -34,6 +35,10 @@ use scene::*;
 use seats::*;
 use settings::*;
 use tools::*;
+
+pub use recording::{
+    default_recordings_dir, list_recordings, replay, seek, Catalogue, Chapter, RecordingInfo, MAX_RECORDING, RECORDING_FORMAT,
+};
 
 pub const PROTOCOL: u32 = 1;
 pub const MAX_PHONES: usize = 8;
@@ -72,6 +77,8 @@ pub struct SessionOptions {
     /// PeerJS options for the WebRTC link (signalling server, `config.iceServers` for a TURN
     /// server), handed to the table's bridge and, through the QR link, to the join page.
     pub peer_options: Option<serde_json::Value>,
+    /// Where recorded sessions are kept (#520). None is the desktop app's data folder.
+    pub recordings_dir: Option<std::path::PathBuf>,
 }
 
 /// Where phones join over the internet when nothing else is set (#275).
@@ -101,6 +108,7 @@ impl Default for SessionOptions {
             public_url: None,
             join_page,
             peer_options,
+            recordings_dir: None,
         }
     }
 }
@@ -220,7 +228,7 @@ pub struct LayerState {
 /// host's moment `at` (milliseconds since 1970), moving `rate` units a second (0 when it stands
 /// still). A view works out the time now from these, so the table sends a new one only when play
 /// starts, stops, jumps or changes pace.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct LayerClock {
     pub value: f64,
     pub rate: f64,
@@ -283,7 +291,7 @@ const MAX_HEALTH_REASON: usize = 300;
 /// Where Next is in a layer (`docs/contracts/present.md`, Steps). For a sequence, `index`
 /// and `count` count its steps and `sub` is the shown layer's sub-steps. For any other
 /// layer they count its sub-steps: `index` is how many are revealed, 0 to `count`.
-#[derive(Debug, Clone, Serialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct StepState {
     pub index: usize,
     pub count: usize,
@@ -298,14 +306,14 @@ pub struct StepState {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
     /// For sub-steps: what each one is called, for the controller's legend.
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub titles: Vec<String>,
     /// When a playing layer moves on next.
     #[serde(skip)]
     due: Option<Instant>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct SubSteps {
     pub index: usize,
     pub count: usize,
@@ -383,6 +391,8 @@ pub struct SessionInfo {
     /// How many views draw the table and run its layers now (#412). With none, no layer
     /// publishes its live values and the controller says so.
     pub tables: usize,
+    /// The recording running now (#522): the controller shows a red dot and its time.
+    pub recording: Option<RecordingInfo>,
 }
 
 /// A phone's place in the session. It outlives the connection by `resume_hold`.
@@ -494,6 +504,51 @@ impl Inner {
     }
 }
 
+/// A save to site.json left for after the request (#536).
+struct Later {
+    turn: u64,
+    who: Who,
+    summary: String,
+    write: Box<dyn FnOnce() -> Result<(), SiteError> + Send>,
+}
+
+thread_local! {
+    /// The saves of the request being handled on this thread. A request is handled on one
+    /// thread from start to end, so they are its own.
+    static LATER: std::cell::RefCell<Vec<Later>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// Turns for saving site.json (#536). A turn is taken while the change is made, under the
+/// hub's lock, so turns follow the order of the changes; the writes then wait for their turn.
+#[derive(Default)]
+struct SaveTurns {
+    /// (next turn to give out, turns finished)
+    state: Mutex<(u64, u64)>,
+    finished: parking_lot::Condvar,
+}
+
+impl SaveTurns {
+    fn take(&self) -> u64 {
+        let mut state = self.state.lock();
+        state.0 += 1;
+        state.0 - 1
+    }
+
+    fn wait(&self, turn: u64) {
+        let mut state = self.state.lock();
+        while state.1 < turn {
+            self.finished.wait(&mut state);
+        }
+    }
+
+    fn done(&self, turn: u64) {
+        let mut state = self.state.lock();
+        debug_assert_eq!(state.1, turn, "saves finish in turn");
+        state.1 = turn + 1;
+        self.finished.notify_all();
+    }
+}
+
 pub struct Hub {
     site: Site,
     /// Replaced when data is imported into the site.
@@ -533,12 +588,18 @@ pub struct Hub {
     history: Arc<Mutex<History>>,
     /// The revision the request being handled wrote, announced when it is done.
     recorded: Mutex<Vec<Revision>>,
+    /// Saves to site.json take turns in the order their changes were made (#536).
+    saves: SaveTurns,
+    /// For tests (#536): every write to site.json takes this much longer, as on a slow disk.
+    slow_saves: std::sync::atomic::AtomicU64,
     /// Set by `inject_fault`: the next request fails inside the host.
     fault: std::sync::atomic::AtomicBool,
     /// When a person last did something on any surface (#604), for the idle reset.
     last_input: Mutex<Instant>,
     /// The controller screens connected now (#604): the idle reset runs only while there is one.
     controllers: Mutex<Vec<u64>>,
+    /// The session being recorded (#521). Taken after `inner` when both are needed.
+    recording: Mutex<Option<recording::Recording>>,
 }
 
 /// The controller goes home after this many seconds with nobody at the table (#74), unless `tv.idle_reset_s` says otherwise.
@@ -607,6 +668,7 @@ impl Hub {
             performance: false,
             phones_paused: false,
             tables: 0,
+            recording: None,
         };
         // Six digits, never the phones' code.
         let guide_code = loop {
@@ -638,8 +700,11 @@ impl Hub {
             history: Arc::new(Mutex::new(History::open(&site.dir))),
             recorded: Mutex::new(Vec::new()),
             fault: Default::default(),
+            saves: SaveTurns::default(),
+            slow_saves: Default::default(),
             last_input: Mutex::new(Instant::now()),
             controllers: Mutex::new(Vec::new()),
+            recording: Mutex::new(None),
         };
         // A sequence that starts on shows its first step.
         {
@@ -661,8 +726,36 @@ impl Hub {
         self.history.clone()
     }
 
-    /// Runs a write to site.json and records it in the history, as one step.
+    /// Runs a write to site.json and records it in the history, as one step, now: for a
+    /// change whose request needs what was written (#536). It waits for the saves before it,
+    /// holding the hub's lock, as every save did before #536.
     fn saving(&self, who: Who, summary: impl Into<String>, write: impl FnOnce() -> Result<(), SiteError>) -> Result<(), String> {
+        let turn = self.saves.take();
+        self.saves.wait(turn);
+        let written = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| self.write_now(who, summary.into(), write)));
+        self.saves.done(turn);
+        written.unwrap_or_else(|panic| std::panic::resume_unwind(panic))
+    }
+
+    /// Saves top-level keys of site.json once the request is handled and the hub's lock is
+    /// free (#536), so a slow disk never holds up another surface. The change is checked now,
+    /// so a change site.json would refuse is still refused before the hub takes it. Saves keep
+    /// the order their changes were made in, and the request is answered after its own save,
+    /// so "saved" still means on disk.
+    fn saving_later(&self, who: Who, summary: impl Into<String>, changes: Vec<(&'static str, Option<Value>)>) -> Result<(), String> {
+        self.site.check_keys(&changes).map_err(|e| format!("could not save site.json: {e}"))?;
+        let site = self.site.clone();
+        let turn = self.saves.take();
+        let write = move || site.save_keys(&changes);
+        LATER.with(|later| later.borrow_mut().push(Later { turn, who, summary: summary.into(), write: Box::new(write) }));
+        Ok(())
+    }
+
+    fn write_now(&self, who: Who, summary: String, write: impl FnOnce() -> Result<(), SiteError>) -> Result<(), String> {
+        let slow = self.slow_saves.load(std::sync::atomic::Ordering::Relaxed);
+        if slow > 0 {
+            std::thread::sleep(std::time::Duration::from_millis(slow));
+        }
         let change = {
             let mut history = self.history.lock();
             let ((), change) = history.write(who.by, summary, who.surface, write).map_err(|e| format!("could not save site.json: {e}"))?;
@@ -672,6 +765,27 @@ impl Hub {
             self.recorded.lock().push(change.revision);
         }
         Ok(())
+    }
+
+    /// Writes the saves a request left for later, in turn. After a request failed inside the
+    /// host, its saves are skipped, but their turns are still given up.
+    fn write_later(&self, failed: bool) -> Result<(), String> {
+        let later = LATER.with(|later| std::mem::take(&mut *later.borrow_mut()));
+        let mut result = Ok(());
+        for Later { turn, who, summary, write } in later {
+            self.saves.wait(turn);
+            if !failed && result.is_ok() {
+                let written = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| self.write_now(who, summary, write)));
+                result = written.unwrap_or_else(|_| Err(format!("{FAULT} site.json could not be saved.")));
+            }
+            self.saves.done(turn);
+        }
+        result
+    }
+
+    /// For tests (#536): makes every save to site.json take `ms` longer.
+    pub fn slow_saves(&self, ms: u64) {
+        self.slow_saves.store(ms, std::sync::atomic::Ordering::Relaxed);
     }
 
     /// Tells every surface the history moved on: a new revision, or an undo, redo or restore.
@@ -776,6 +890,9 @@ impl Hub {
         // A request that fails inside the host (#507) costs that request only: the surface is
         // told, the locks are free again (they do not poison), and the next request is handled.
         let handled = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| self.handle(role, surface, method, p)));
+        // The hub's lock is free again: now the request's own saves are written (#536).
+        let saved = self.write_later(handled.is_err());
+        let handled = handled.map(|result| result.and_then(|answer| saved.map(|()| answer)));
         let result = handled.unwrap_or_else(|panic| {
             let why =
                 panic.downcast_ref::<&str>().map(|s| s.to_string()).or_else(|| panic.downcast_ref::<String>().cloned()).unwrap_or_default();

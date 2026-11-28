@@ -1,6 +1,6 @@
 import { fitTable, revealPath, revealPolygon, sameReveal, tableFrame } from '@mrstudio/sdk';
 import type { CanvasOverlay, DrawingOverlay, Colormap, FieldOverlay, FieldOverlayStyle, FlowOverlay, FlowOverlayStyle, MapHandle, ModelHandle, PixelRect, RevealShape, Shape, ShapeOverlay, SiteInfo, SpriteImage, SpriteOverlay, SpriteStyle, StrokeOverlay, TablePicture, TablePointer, DisplayQuality } from '@mrstudio/sdk';
-import maplibregl from 'maplibre-gl';
+import maplibregl from './maplibre';
 
 type DetailRenderer = (g: CanvasRenderingContext2D, scale: number) => void;
 import type { StyleSpecification } from 'maplibre-gl';
@@ -354,7 +354,7 @@ export class TableView {
     return {
       set: (shapes: Shape[]) => {
         if (removed) return;
-        (map.getSource(source) as maplibregl.GeoJSONSource).setData({
+        void (map.getSource(source) as maplibregl.GeoJSONSource).setData({
           type: 'FeatureCollection',
           features: shapes.map((shape) => ({ type: 'Feature', geometry: shape.geometry, properties: shape.colour ? { colour: shape.colour } : {} })),
         });

@@ -24,7 +24,7 @@ To join from a real phone, run `pnpm dev -- --lan` and scan the QR code shown on
 cargo run -p mrs-cli -- validate sites/sample      # check a site and report its scene
 pnpm dev -- --site sites/chalmers                  # the Chalmers campus instead of the sample
 cargo run -p mrs-cli -- new-site sites/mysite --lon 11.94 --lat 57.706
-cargo run --release -p mrs-cli -- bench sites/sample   # time the kernels on GPU and CPU
+cargo run --release -p mrs-cli -- bench sites/sample   # time the kernels on GPU and CPU (--town 4000: a city-sized made-up town)
 ```
 
 ## The desktop app

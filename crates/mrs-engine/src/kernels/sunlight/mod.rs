@@ -16,6 +16,37 @@ use crate::{Backend, Context, EngineError, Field, FieldInfo, Job, JobState, JobS
 const MIN_ALTITUDE_DEG: f64 = 0.5;
 /// Light lost per metre of tree canopy crossed.
 const CANOPY_EXTINCTION_PER_M: f32 = 0.15;
+/// Cells on a side of the blocks a ray can jump over (#533). Measured on a made-up town of
+/// 1 and 2 km at 1 m cells: 8 gained nothing, 32 made a low sun about twice as fast, and two
+/// sizes together were no better than 32 alone.
+pub(crate) const BLOCK: u32 = 32;
+
+/// The highest point in each block of cells: of the top surface, and of the canopy where
+/// there are trees (#533). A ray above it can pass the whole block.
+pub(crate) struct Blocks {
+    width: u32,
+    top: Vec<f32>,
+}
+
+impl Blocks {
+    fn new(scene: &Scene) -> Self {
+        let (w, h) = (scene.grid.width, scene.grid.height);
+        let (width, height) = (w.div_ceil(BLOCK), h.div_ceil(BLOCK));
+        let mut top = vec![f32::MIN; (width * height) as usize];
+        for row in 0..h {
+            for col in 0..w {
+                let i = (row * w + col) as usize;
+                let mut high = scene.dsm[i];
+                if scene.canopy[i] > 0.0 {
+                    high = high.max(scene.dtm[i] + scene.canopy[i]);
+                }
+                let b = ((row / BLOCK) * width + col / BLOCK) as usize;
+                top[b] = top[b].max(high);
+            }
+        }
+        Self { width, top }
+    }
+}
 
 const FIELDS: &[FieldInfo] = &[
     FieldInfo { name: "shadow", units: "0..1", description: "1 where the cell is lit at `time`, 0 in shadow or at night (instant mode)" },
@@ -59,8 +90,9 @@ impl Kernel for SunlightKernel {
 
     fn create(&self, ctx: &Context, scene: &Scene, params: &Value) -> Result<Box<dyn Job>, EngineError> {
         let params = Params::default().merged(params)?;
+        let blocks = Blocks::new(scene);
         let gpu = match ctx.backend {
-            Backend::Gpu => Some(GpuState::new(ctx, scene)),
+            Backend::Gpu => Some(GpuState::new(ctx, scene, &blocks)),
             _ => None,
         };
         let mut job = SunlightJob {
@@ -68,6 +100,7 @@ impl Kernel for SunlightKernel {
             out: vec![0.0; scene.grid.len()],
             tree: vec![0.0; scene.grid.len()],
             gpu,
+            blocks,
             samples: Vec::new(),
             cursor: 0,
             revision: 0,
@@ -89,13 +122,14 @@ impl Kernel for SunlightKernel {
         let step_hours = (step / 3600.0) as f32;
         let start = solar_day_start(time, lon);
         let count = (86400.0 / step).round() as usize;
+        let blocks = Blocks::new(scene);
         let (mut light, mut tree, mut altitude) = (Vec::with_capacity(count), Vec::with_capacity(count), Vec::with_capacity(count));
         let (mut first, mut last) = (None, None);
         for k in 0..count {
             let at = start + (k as f64 + 0.5) * step;
             let sun = sun_position(at, lat, lon);
             let ray = Ray::new(scene, sun, params.trees, 1.0, false);
-            let (lit, shaded) = cpu::cell_light(scene, &ray, col, row);
+            let (lit, shaded) = cpu::cell_light(scene, &blocks, &ray, col, row);
             if lit >= 0.5 {
                 first.get_or_insert(at);
                 last = Some(at);
@@ -221,7 +255,8 @@ pub(crate) struct Ray {
     weight: f32,
     canopy_t: f32,
     lit: f32,
-    _pad: f32,
+    /// Blocks across the grid (#533).
+    blocks_width: u32,
 }
 
 impl Ray {
@@ -243,7 +278,7 @@ impl Ray {
             weight,
             canopy_t: if trees { (-CANOPY_EXTINCTION_PER_M * grid.cell_m).exp() } else { 1.0 },
             lit: if up { 1.0 } else { 0.0 },
-            _pad: 0.0,
+            blocks_width: grid.width.div_ceil(BLOCK),
         }
     }
 }
@@ -256,8 +291,14 @@ struct GpuState {
     bind_group: wgpu::BindGroup,
 }
 
+struct Bound {
+    out: wgpu::Buffer,
+    tree: wgpu::Buffer,
+    bind_group: wgpu::BindGroup,
+}
+
 impl GpuState {
-    fn new(ctx: &Context, scene: &Scene) -> Self {
+    fn new(ctx: &Context, scene: &Scene, blocks: &Blocks) -> Self {
         let gpu = ctx.gpu();
         let module = gpu.device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("sunlight"),
@@ -277,20 +318,16 @@ impl GpuState {
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        let (out, tree, bind_group) = Self::bind(ctx, scene, &pipeline, &uniforms);
+        let Bound { out, tree, bind_group } = Self::bind(ctx, scene, blocks, &pipeline, &uniforms);
         Self { pipeline, uniforms, out, tree, bind_group }
     }
 
-    fn bind(
-        ctx: &Context,
-        scene: &Scene,
-        pipeline: &wgpu::ComputePipeline,
-        uniforms: &wgpu::Buffer,
-    ) -> (wgpu::Buffer, wgpu::Buffer, wgpu::BindGroup) {
+    fn bind(ctx: &Context, scene: &Scene, blocks: &Blocks, pipeline: &wgpu::ComputePipeline, uniforms: &wgpu::Buffer) -> Bound {
         let gpu = ctx.gpu();
         let rasters = scene.gpu.as_ref().expect("scene is not on the gpu");
         let out = gpu.storage_f32("sunlight.out", &vec![0.0; scene.grid.len()]);
         let tree = gpu.storage_f32("sunlight.tree", &vec![0.0; scene.grid.len()]);
+        let top = gpu.storage_f32("sunlight.blocks", &blocks.top);
         fn entry(binding: u32, buffer: &wgpu::Buffer) -> wgpu::BindGroupEntry<'_> {
             wgpu::BindGroupEntry { binding, resource: buffer.as_entire_binding() }
         }
@@ -304,13 +341,14 @@ impl GpuState {
                 entry(3, &rasters.canopy),
                 entry(4, &out),
                 entry(5, &tree),
+                entry(6, &top),
             ],
         });
-        (out, tree, bind_group)
+        Bound { out, tree, bind_group }
     }
 
-    fn rebind(&mut self, ctx: &Context, scene: &Scene) {
-        let (out, tree, bind_group) = Self::bind(ctx, scene, &self.pipeline, &self.uniforms);
+    fn rebind(&mut self, ctx: &Context, scene: &Scene, blocks: &Blocks) {
+        let Bound { out, tree, bind_group } = Self::bind(ctx, scene, blocks, &self.pipeline, &self.uniforms);
         self.out = out;
         self.tree = tree;
         self.bind_group = bind_group;
@@ -336,6 +374,8 @@ struct SunlightJob {
     out: Vec<f32>,
     tree: Vec<f32>,
     gpu: Option<GpuState>,
+    /// The highest point of each block of cells, for rays to jump over (#533).
+    blocks: Blocks,
     /// Sun positions still to evaluate, in order.
     samples: Vec<SunPosition>,
     cursor: usize,
@@ -414,8 +454,9 @@ impl Job for SunlightJob {
     fn scene_changed(&mut self, ctx: &Context, scene: &Scene) -> Result<(), EngineError> {
         self.out = vec![0.0; scene.grid.len()];
         self.tree = vec![0.0; scene.grid.len()];
+        self.blocks = Blocks::new(scene);
         if let Some(gpu) = &mut self.gpu {
-            gpu.rebind(ctx, scene);
+            gpu.rebind(ctx, scene, &self.blocks);
         }
         self.plan(scene);
         Ok(())
@@ -438,7 +479,7 @@ impl Job for SunlightJob {
                     // Submission is asynchronous; wait so the budget measures real work.
                     ctx.gpu().wait()?;
                 }
-                None => cpu::march(scene, &ray, &mut self.out, &mut self.tree, ctx.threads),
+                None => cpu::march(scene, &self.blocks, &ray, &mut self.out, &mut self.tree, ctx.threads),
             }
             self.cursor += 1;
             if started.elapsed() >= budget {

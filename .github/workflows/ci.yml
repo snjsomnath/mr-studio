@@ -20,10 +20,10 @@ jobs:
     name: Release note and docs
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
       # Every pull request adds a note to changes/; merging it makes the next version (docs/RELEASING.md).
@@ -38,12 +38,15 @@ jobs:
       # Every layer, kernel and site setting is covered by the docs and the MCP server.
       - name: Docs and MCP server know what is built
         run: node scripts/check-docs.mjs
+      # No style sheet keeps rules for class names nothing uses (#546).
+      - name: No unused CSS
+        run: node scripts/unused-css.mjs
 
   rust:
     name: Engine, site, host and CLI
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # The version the lint uses, so a new Rust release never turns an unrelated pull request red.
       - uses: dtolnay/rust-toolchain@1.100.0
       - uses: Swatinem/rust-cache@v2
@@ -62,7 +65,7 @@ jobs:
         os: [windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@1.100.0
       - uses: Swatinem/rust-cache@v2
       - run: cargo test -p mrs-site -p mrs-host -p mrs-cli -p mrs-relay
@@ -71,7 +74,7 @@ jobs:
     name: Rust format and lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # A fixed version, so a new Rust release's new lints never turn an unrelated pull request red.
       # Raise it on purpose, fixing what the new clippy finds in the same pull request.
       - uses: dtolnay/rust-toolchain@1.100.0
@@ -86,9 +89,9 @@ jobs:
     name: SDK, runtime and layers
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
@@ -110,9 +113,9 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
@@ -126,11 +129,11 @@ jobs:
     name: End-to-end (Chromium)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@1.100.0
       - uses: Swatinem/rust-cache@v2
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
@@ -149,14 +152,14 @@ jobs:
           E2E_SHOTS: e2e-screenshots
       - run: node scripts/smoke.cjs chromium e2e-screenshots
         if: always()
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: e2e-screenshots
           path: e2e-screenshots
           if-no-files-found: ignore
       # A failed case's screenshots, trace and host log: `npx playwright show-trace <trace.zip>`.
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: failure()
         with:
           name: e2e-results
@@ -177,11 +180,11 @@ jobs:
             engine: msedge
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@1.100.0
       - uses: Swatinem/rust-cache@v2
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
@@ -195,7 +198,7 @@ jobs:
       # The panels fit in this engine's fonts and layout too (#681).
       - run: pnpm --filter @mrstudio/dashboard fit ${{ matrix.engine }}
         if: always()
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: smoke-${{ matrix.engine }}

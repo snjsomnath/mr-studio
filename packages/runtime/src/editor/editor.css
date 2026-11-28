@@ -1341,16 +1341,7 @@ body[data-role='edit'] .table-surface {
   color: var(--ed-accent);
 }
 
-.wz-surfaces,
-.wz-choices {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.wz-surface,
-.wz-choice,
-.wz-button {
+.wz-choice {
   display: flex;
   align-items: center;
   gap: 12px;
@@ -1373,13 +1364,11 @@ body[data-role='edit'] .table-surface {
   opacity: 0.6;
 }
 
-.wz-surface div,
 .wz-choice div {
   flex: 1;
   min-width: 0;
 }
 
-.wz-surface p,
 .wz-choice p {
   margin: 2px 0 0;
   color: var(--ed-text-2);
@@ -1387,19 +1376,6 @@ body[data-role='edit'] .table-surface {
   line-height: 1.35;
 }
 
-.wz-button {
-  margin-bottom: 8px;
-}
-
-.wz-button-fields {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.wz-button-fields input,
 .wz-form input {
   width: 100%;
   height: 28px;
@@ -1411,21 +1387,10 @@ body[data-role='edit'] .table-surface {
   font: inherit;
 }
 
-.wz-button-fields input:first-child {
-  font-weight: 600;
-}
-
 .wz-facts {
   margin: 0 0 20px;
   padding-left: 18px;
   line-height: 1.7;
-}
-
-.wz-big {
-  width: 100%;
-  height: 36px;
-  justify-content: center;
-  margin-bottom: 8px;
 }
 
 .wz-foot {
@@ -1901,10 +1866,6 @@ body[data-role='edit'] .ed-surface .table-frame {
   color: #9a5b00;
 }
 
-.wz-bring {
-  margin-top: 6px;
-}
-
 .wz-place.is-wanted > .wz-choice {
   outline: 2px solid var(--ed-accent);
   outline-offset: -2px;
@@ -2123,45 +2084,6 @@ body[data-role='edit'] .ed-surface .table-frame {
 }
 
 /* The controller's look in the setup guide (#126): theme cards, then the button style. */
-.wz-look {
-  margin: 4px 0 16px;
-}
-
-.wz-look h3 {
-  margin: 0 0 8px;
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.wz-themes {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 8px;
-}
-
-.wz-theme {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 6px;
-  border: 1px solid var(--ed-line);
-  border-radius: 8px;
-  background: var(--ed-panel);
-  color: inherit;
-  font: inherit;
-  font-size: 12px;
-  text-align: left;
-  cursor: pointer;
-}
-
-.wz-theme:hover {
-  border-color: #b9c0cd;
-}
-
-.wz-theme[aria-checked='true'] {
-  border-color: var(--ed-accent);
-  box-shadow: 0 0 0 1px var(--ed-accent);
-}
 
 .wz-theme-swatch {
   display: block;
@@ -2201,13 +2123,6 @@ body[data-role='edit'] .ed-surface .table-frame {
   flex: 1;
   height: 4px;
   border-radius: 2px;
-}
-
-.wz-look-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-top: 10px;
 }
 
 /* ---- A slideshow's slides (#43) ---- */
@@ -2403,36 +2318,6 @@ body[data-role='edit'] .ed-surface .table-frame {
 
 /* ---- A layer's style under its row in the guide (the base map at rest) ---- */
 
-.wz-style {
-  margin: -2px 0 4px;
-  padding: 12px 14px;
-  border: 1px solid var(--ed-line, #d5d9e0);
-  border-radius: 8px;
-  background: var(--ed-panel-2, #f7f8fa);
-}
-
-.wz-style .wz-field {
-  margin-bottom: 6px;
-}
-
-.wz-style select {
-  height: 32px;
-  padding: 0 8px;
-  border: 1px solid var(--ed-line, #d5d9e0);
-  border-radius: 6px;
-  background: #fff;
-  font: inherit;
-  font-weight: 400;
-}
-
-.wz-style p {
-  margin: 0;
-}
-
-.wz-style p:empty {
-  display: none;
-}
-
 /* Colour a dataset as it comes in (#94). */
 .im-colour {
   display: grid;
@@ -2483,51 +2368,6 @@ body[data-role='edit'] .ed-surface .table-frame {
   justify-content: flex-start;
 }
 
-.dt-row {
-  display: flex;
-  gap: 2px;
-}
-
-.dt-select,
-.dt-input {
-  height: 22px;
-  width: 168px;
-  padding: 0 6px;
-  border: 1px solid var(--ed-line);
-  border-radius: 4px;
-  background: var(--ed-panel);
-  font: inherit;
-  font-size: 12px;
-  color: var(--ed-text);
-}
-
-.dt-slider {
-  display: grid;
-  grid-template-columns: 92px 112px 32px;
-  align-items: center;
-  gap: 6px;
-  height: 22px;
-  font-size: 12px;
-}
-
-.dt-slider input[type='range'] {
-  width: 100%;
-  height: 16px;
-  margin: 0;
-  accent-color: var(--ed-accent);
-}
-
-.dt-slider output {
-  font-variant-numeric: tabular-nums;
-  color: var(--ed-text-2);
-  text-align: right;
-}
-
-.dt-slider-label {
-  color: var(--ed-text-2);
-  white-space: nowrap;
-}
-
 .dt-note {
   max-width: 260px;
   margin: 0;
@@ -2555,31 +2395,6 @@ body[data-role='edit'] .ed-surface .table-frame {
 
 .ed-group .dt-status.is-error {
   text-align: center;
-}
-
-.dt-popover {
-  position: fixed;
-  z-index: 50;
-  width: 328px;
-  max-height: 60vh;
-  overflow: auto;
-  padding: 12px;
-  border: 1px solid var(--ed-line, #dcdfe5);
-  border-radius: 8px;
-  background: #ffffff;
-  box-shadow: 0 12px 32px rgba(27, 31, 39, 0.18);
-  font-family: -apple-system, 'Segoe UI Variable', 'Segoe UI', Inter, system-ui, sans-serif;
-  font-size: 12px;
-  color: #1b1f27;
-}
-
-.dt-popover p {
-  margin: 4px 0 8px;
-  color: #565d6a;
-}
-
-.dt-popover .dt-slider {
-  grid-template-columns: 128px 1fr 32px;
 }
 
 /* ---- The calibration guide (#181) ---- */
@@ -2747,13 +2562,6 @@ body[data-role='edit'] .ed-surface .table-frame {
 }
 
 /* Screens group (#188): Table and Controller pickers. */
-.dt-picker {
-  grid-template-columns: 64px 184px;
-}
-
-.dt-picker .dt-select {
-  width: 100%;
-}
 
 /* ---- Table settings (#73, #62) ---- */
 
@@ -2807,14 +2615,6 @@ body[data-role='edit'] .ed-surface .table-frame {
   font-size: 12px;
 }
 
-.ed-place {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 6px;
-  color: var(--ed-text);
-}
-
 .ed-number {
   display: flex;
   align-items: center;
@@ -2823,29 +2623,6 @@ body[data-role='edit'] .ed-surface .table-frame {
 
 .ed-number input {
   width: 72px;
-}
-
-.ed-sources-used {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-bottom: 8px;
-}
-
-.ed-source-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 12px;
-}
-
-.ed-source-row div {
-  display: flex;
-  flex-direction: column;
-}
-
-.ed-source-row span {
-  color: var(--ed-text-2);
 }
 
 .ed-number input {

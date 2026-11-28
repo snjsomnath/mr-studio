@@ -380,7 +380,7 @@ interface PointerSample {
 }
 
 interface EngineClient {
-  open(kernel: string, params: object, fields: string[], opts?: { encoding?: 'u8' | 'f32'; maxHz?: number }): Promise<FieldStream>;
+  open(kernel: string, params: object, fields: string[], opts?: { encoding?: 'u8' | 'f32'; maxHz?: number; maxCells?: number }): Promise<FieldStream>;
 }
 
 interface FieldStream {

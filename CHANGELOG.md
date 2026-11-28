@@ -4,6 +4,87 @@ Every merge to main that carries a release note becomes a version. The newest is
 The app shows these notes, with their pictures, on Home when a newer version is out.
 How notes are written: docs/RELEASING.md.
 
+## 0.58.0 (2026-11-27)
+
+### New
+
+#### Record this session (#521, #522)
+
+The operator can now record a workshop at the table (#520). **Record this session…** sits under Phones in the Developer window. It asks for a name (the table's name and today's date to start with), the date, the facilitator, the purpose and context notes. While it records, the controller shows a small red dot with the time, and nothing shows on the table or the phones. **Mark a chapter** drops a chapter mark, with a title if you type one. **Stop recording** opens the wrap-up: notes, tags, and the chapters to rename or remove. Then **Save the recording**, or **Discard**, pressed twice.
+
+Under it, the host keeps a log of the session (#521): a snapshot of the table and the session state at the start, then every request from the controller, the editor, the guide and each phone, and every phone joining or leaving, each with its time. The log is written line by line, so a crash loses at most the last moment. Recordings are kept in the app's own data folder, never in the table's folder, and a recording cut short by a crash is offered to finish next time. A recording stops by itself after 8 hours. The format is in `docs/contracts/recording.md`. A test replays a log onto a fresh table and gets the same layers and scene.
+
+Playing a recording back, the library on Home and export come next (#523 to #530).
+
+![The form, recording with two chapters, and the wrap-up](docs/screenshots/522-record-panel.png)
+
+![The controller's red dot while recording](docs/screenshots/522-controller-dot.png)
+
+#### Panels never spill or scroll (#681)
+
+Everything a panel on the controller or TV holds now stays inside its box. The dashboard measures its panels on screen and reports any that spill: the editor's status bar says which panel doesn't fit, and the Developer window outlines it and lists it under Problems. Every widget is tested at every size with the longest text the rules allow, in Chromium, WebKit and Edge. That test found the donut's key cut off at the edge, and long numbers and units in the stat, gauge and series running out of their panels. All of these are fixed. The Developer window's widget gallery has a new **Longest text** switch for testing a team's own widgets.
+
+![A donut whose key was cut off, now fitting, and the stat, gauge and series with the longest text](docs/screenshots/681-panels-fit.png)
+
+### Fixes
+
+#### A recording knows phones by their seat, not their names (#530)
+
+While a session is recorded, the names visitors type on their phones are no longer kept (#530). The recording knows each phone only by its seat: its animal, mood and colour. If the organiser wants the names, they tick "Keep the names people type on their phones" when they start recording. No address, device or browser details are logged. The consent notice on joining, Just watch, and removing a participant are still to come, after the wording is agreed.
+
+![The Record form with Keep names off](docs/screenshots/530-keep-names.png)
+
+#### Long shadows are worked out about twice as fast (#533)
+
+At a low sun the sunlight kernel walked from every cell towards the sun one cell at a time, hundreds of steps per cell. It now keeps the highest point of each block of 32 by 32 cells, and a ray already above a block jumps to its far side, since it only climbs and nothing in that block can shade it (#533).
+
+The picture is exactly the same: a test compares every cell with the old walk at many sun positions, and the GPU and CPU still agree. On a made-up town of 1 to 2 km at 1 m cells, a winter or evening sun is about twice as fast, and Sun hours gains the same way.
+
+![Every step walked against jumping, on a 1 km and a 2 km town](docs/screenshots/533-sun-jump.png)
+
+#### Analysis frames are never larger than a screen can show (#535)
+
+When an analysis such as Sunlight or Wind changes, the host sends its whole grid to every window. On a city-sized table at 1 m cells that was 16 MB per frame, per window, up to 30 times a second. Now a field of more than 2048 by 2048 cells is sent shrunk: each side divided by the same whole number, each cell the mean of the cells it covers (#535). That is still about twice what a 4K screen shows, so the picture looks the same, and tables up to about 2 km at 1 m cells are not touched.
+
+A layer can ask for fewer cells, or for every cell, with `maxCells` when it opens a stream.
+
+![Frame sizes before and after on a normal and a city-sized table](docs/screenshots/535-frame-size.png)
+
+#### A slow disk no longer holds up the controller while the editor saves (#536)
+
+Until now every change the editor saved held up every other screen until `site.json` was written, read back for the history and its revision file written. On a busy disk, such as a table folder on OneDrive or a network drive, a slider dragged in the editor made the controller and the phones wait (#536).
+
+Now the host takes the change at once, checks that `site.json` would still load with it, and writes it after it lets go of the table's state. Saves still happen in the order the changes were made, and the editor hears "saved" only once its change is on disk. Layer settings, controller settings, display quality and the palette save this way. Rarer changes that need what was written first (custom layers, removing a dataset, the table's own settings) save as before.
+
+![A controller press answered at once while two slow saves wait their turn](docs/screenshots/536-slow-saves.png)
+
+#### Calibrating no longer redraws the table every frame (#594)
+
+While the calibration tool is open on a projected table, moving map life (cars, people, windows) no longer makes the table redraw the 3D model 60 times a second underneath the tool. The tool hides the map while it runs, so those redraws were wasted and made the tool slow on a weaker computer. When the tool closes, the map comes back at once. This also fixes the calibration end-to-end test, which failed on main when the page was too busy.
+
+![Before and after](docs/screenshots/calibration-quiet.png)
+
+### For developers
+
+#### A recording keeps checkpoints, so playback can jump to any time (#524)
+
+While a session is recorded, the host now writes the session state about once a minute and at each chapter mark into `checkpoints.jsonl` (#524). `mrs_host::seek` jumps to any time in a recording, forwards or backwards. It puts back the nearest checkpoint and replays only the events after it, so it never replays more than about a minute of events. A test checks that the state after seeking to each checkpoint, to the start and to the end matches the state from replaying every event from the start. This is the base for the playback room (#526). The format is in `docs/contracts/recording.md`.
+
+![The seek test and two checkpoint lines](docs/screenshots/524-checkpoints.png)
+
+#### Dependencies updated: MapLibre 6, three.js 0.187, Vite 8 and the rest
+
+The eleven open dependency updates are folded into one change:
+
+- **MapLibre GL 5 → 6.** MapLibre 6 has no default export and looks for its worker file next to its own module, which the bundle does not keep. `packages/runtime/src/maplibre.ts` now imports it, ships the worker as an asset and points MapLibre at it. Every module imports MapLibre from there.
+- three.js and its types 0.180 → 0.187, Vite 7 → 8, Playwright 1.63 → 1.65, the Tauri CLI, Tauri and tauri-build patch releases.
+- Rust: tower-http 0.6 → 0.7, pollster 0.4 → 1.0, base64 0.22 → 0.23, and patch releases of anyhow, clap and zip.
+- GitHub Actions: checkout, setup-node, pnpm setup, upload/download artifact, Pages and the release action to their current majors. The Rust toolchain stays at 1.100.0: Dependabot proposed 1.120.0, which does not exist, and it now leaves that action alone.
+
+Nothing behaves differently on a table. The unit tests, the type checks and the end-to-end run pass.
+
+![The table drawn with MapLibre 6](docs/screenshots/deps-maplibre6-table.png)
+
 ## 0.57.0 (2026-11-27)
 
 ### New

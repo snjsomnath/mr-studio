@@ -253,8 +253,10 @@ export class ModelView {
     map.on('move', () => this.updateCamera());
     map.on('resize', () => this.updateCamera());
     // The map's drawing buffer only holds its picture during this event, so the copy is taken here.
+    // While a tool has the surface to itself (calibration), the draped map is hidden, so the
+    // map life animating underneath does not redraw the twin each frame.
     map.on('render', () => {
-      if (!this.draped) return;
+      if (!this.draped || this.solo !== null) return;
       this.mapTexture.needsUpdate = true;
       this.renderer.initTexture(this.mapTexture);
       this.invalidate();
@@ -455,8 +457,11 @@ export class ModelView {
 
   /** Gives the surface to one layer: everything other layers added, and the flat map, is hidden until `null`. */
   setSolo(layer: string | null): void {
+    const was = this.solo;
     this.solo = layer;
     this.refreshMode();
+    // The draped map was not copied while hidden: take a fresh picture of it.
+    if (was !== null && layer === null && this.draped) this.map.triggerRepaint();
   }
 
   /** Applies a layer's intensity to the fields and lights it has added and will add. */
