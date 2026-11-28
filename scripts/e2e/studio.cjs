@@ -100,8 +100,13 @@ function joinAt(port, role) {
   });
 }
 
-/** Polls until `check` holds: the host saves a moment after the page asks. */
-async function until(check, what, ms = 5000) {
+/**
+ * Polls until `check` holds: the host saves a moment after the page asks. The CI runner is about
+ * four times slower than a laptop, and a change that goes from one editor through the host to a
+ * second one, each drawing its map in software, took over 5 s there (#760). A passing check
+ * returns at once, so the long default only costs time when something is really wrong.
+ */
+async function until(check, what, ms = 15000) {
   const end = Date.now() + ms;
   for (;;) {
     if (await check()) return;
