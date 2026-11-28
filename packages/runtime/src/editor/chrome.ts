@@ -173,15 +173,28 @@ export function statusBar(ed: Editor): HTMLElement {
     drawWork();
   });
   const { width_m, height_m } = ed.store.state.site.extent;
-  // What only the operator needs to know lives here, never on the visitors' controller.
+  // What only the operator needs to know lives here, never on the visitors' controller (#713):
+  // quiet icons, plain words on hover, and a Fix button that opens the right setting when something is wrong.
+  // Adapter names and backends stay in Help › Copy diagnostics.
+  const host = shell();
   const phones = el('span', 'ed-phones');
   const showPhones = (): void => {
     const { join_url: url, code } = ed.store.state.session;
-    phones.textContent = url ? `Phones join with ${code}` : 'Phones cannot join';
+    const label = el('span', undefined, url ? `Phones: ${code}` : 'Phones off');
+    phones.replaceChildren(icon('phone'), label);
     phones.title = url
-      ? `Visitors join at ${url}`
-      : 'Phones on this network cannot join yet. Turn on "Let phones on this network join" in File › Settings › Phones and startup, or start with --lan from the command line.';
+      ? `Visitors join at ${url} with the code ${code}`
+      : host
+        ? 'Phones on this network cannot join yet. Fix opens the setting that lets them.'
+        : 'Phones on this network cannot join yet. Start with --lan from the command line to let them.';
     phones.classList.toggle('is-off', !url);
+    if (!url && host) {
+      const fix = el('button', 'ed-fix', 'Fix');
+      fix.type = 'button';
+      fix.title = 'Open File › Settings › Phones and startup';
+      fix.addEventListener('click', () => void host('open_settings', { page: 'startup' }));
+      phones.append(fix);
+    }
   };
   showPhones();
   ed.store.onParticipants(showPhones);
@@ -189,8 +202,12 @@ export function statusBar(ed: Editor): HTMLElement {
   void ed.connection
     .request<{ backend: string; adapter: string | null }>('engine.info')
     .then((info) => {
-      engine.textContent = info.adapter ? `Engine: ${info.adapter}` : 'Engine: CPU, slower';
-      engine.title = info.adapter ? 'Simulations run on this graphics card' : 'No graphics card the engine can use was found, so simulations run on the processor and take longer. Visitors are not told.';
+      const gpu = Boolean(info.adapter) && !/llvmpipe|swiftshader|software|microsoft basic/i.test(info.adapter ?? '');
+      engine.replaceChildren(icon(gpu ? 'chip' : 'clock'), el('span', undefined, gpu ? 'Fast simulations' : 'Slower simulations'));
+      engine.classList.toggle('is-off', !gpu);
+      engine.title = gpu
+        ? 'Simulations run on the graphics card. Help › Copy diagnostics names it.'
+        : 'No graphics card the simulations can use was found, so they run on the processor and take longer. Visitors are not told. Help › Copy diagnostics has the details.';
     })
     .catch(() => {});
   ed.checksButton.type = 'button';

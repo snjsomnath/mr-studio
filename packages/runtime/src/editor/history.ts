@@ -64,7 +64,7 @@ export function ago(at: number, now = Date.now() / 1000): string {
   if (s < 45) return 'just now';
   if (s < 3600) return `${Math.round(s / 60)} min ago`;
   const date = new Date(at * 1000);
-  const time = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const time = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
   const today = new Date(now * 1000);
   if (date.toDateString() === today.toDateString()) return time;
   const yesterday = new Date((now - 86400) * 1000);

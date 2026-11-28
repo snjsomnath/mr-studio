@@ -249,7 +249,7 @@ pub fn slot_wait(status: &str) -> Option<u64> {
 
 /// Waits for a free slot when the server says when one frees (#603), instead of asking blind and
 /// getting 429. A server without the status page, or one that does not answer it, is just asked.
-async fn wait_for_slot(client: &reqwest::Client, url: &str, server: &str, say: &(dyn Fn(String) + Send + Sync)) {
+async fn wait_for_slot(client: &reqwest::Client, url: &str, server: &str, plain: &str, say: &(dyn Fn(String) + Send + Sync)) {
     let Some(status_url) = url.strip_suffix("/interpreter").map(|base| format!("{base}/status")) else { return };
     let ask = client.get(&status_url).timeout(std::time::Duration::from_secs(5)).send();
     let Ok(Ok(response)) = tokio::time::timeout(std::time::Duration::from_secs(6), ask).await else { return };
@@ -259,7 +259,7 @@ async fn wait_for_slot(client: &reqwest::Client, url: &str, server: &str, say: &
     let Ok(text) = response.text().await else { return };
     if let Some(seconds) = slot_wait(&text) {
         let seconds = seconds.min(OVERPASS_SLOT_WAIT) + 1;
-        say(format!("Waiting {seconds} s for a free turn at {server}"));
+        say(format!("Waiting for a free turn at {plain} ({seconds} s)"));
         tracing::info!("OpenStreetMap: {server} has no free slot for us, waiting {seconds} s");
         tokio::time::sleep(std::time::Duration::from_secs(seconds)).await;
     }
@@ -279,13 +279,15 @@ async fn ask_one(
         let (index, resting) = servers.next();
         let url = servers.urls[index].clone();
         let server = server_name(&url);
+        // People see the service, not the host (#712): the main server is "OpenStreetMap", the others its mirrors.
+        let plain = if index == 0 { "OpenStreetMap" } else { "an OpenStreetMap mirror" };
         let again = if attempt > 0 { format!(", try {} of {OVERPASS_TRIES}", attempt + 1) } else { String::new() };
         if !resting.is_zero() {
-            say(format!("Every server is busy; asking {server} again in {} s{again}", resting.as_secs().max(1)));
+            say(format!("OpenStreetMap is busy; asking again in {} s{again}", resting.as_secs().max(1)));
             tokio::time::sleep(resting).await;
         }
-        wait_for_slot(client, &url, &server, say).await;
-        say(format!("Asking {server}{again}"));
+        wait_for_slot(client, &url, &server, plain, say).await;
+        say(format!("Asking {plain}{again}"));
         match tokio::time::timeout(OVERPASS_FIRST_BYTE, client.post(&url).form(&[("data", query)]).send()).await {
             Err(_) => {
                 last = format!("{server} did not answer within {} s", OVERPASS_FIRST_BYTE.as_secs());
@@ -506,7 +508,7 @@ mod tests {
         ask_one(&client, &mut servers, "[out:json];node(1);out;", &say).await.unwrap();
         assert!(started.elapsed() >= std::time::Duration::from_secs(2), "waited for the slot");
         assert_eq!(asked.load(std::sync::atomic::Ordering::SeqCst), 1);
-        assert!(said.lock().iter().any(|w| w.starts_with("Waiting 2 s for a free turn at 127.0.0.1")), "{:?}", said.lock());
+        assert!(said.lock().iter().any(|w| w.starts_with("Waiting for a free turn at OpenStreetMap (2 s)")), "{:?}", said.lock());
     }
 
     #[test]

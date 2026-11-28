@@ -7,6 +7,7 @@ import { ROLE_WORDS, columnRoles } from './column-roles.ts';
 import { icon } from './icons.ts';
 import { middleInput, stopsInput } from './number-inputs.ts';
 import { dataFormat } from '../data-formats.ts';
+import { Picker, type Choice } from '../picker.ts';
 
 /** What a check can offer to change about the file, and the words on its button. */
 type ImportFix = 'crop' | 'swap' | 'flatten';
@@ -15,6 +16,21 @@ const FIX_WORDS: Record<ImportFix, string> = {
   swap: 'Swap latitude and longitude',
   flatten: 'Take the buildings out of the ground',
 };
+
+let pickers = 0;
+/**
+ * The editor's own list to pick from (#712), in place of the browser's dropdown: the same look
+ * as every other choice in the editor, with type-ahead.
+ */
+function choose(label: string, choices: Choice[], value: string, pick: (value: string) => void, none?: string): HTMLElement {
+  // The dialog draws itself again on a pick, which takes the focus out of this list: picking after
+  // the list has closed keeps that blur from settling on the old words and picking them back.
+  const picker = new Picker({ id: `im-pick-${++pickers}`, label, none, load: async () => choices, pick: (value) => queueMicrotask(() => pick(value)) });
+  picker.set(value);
+  const input = picker.element.querySelector('input');
+  if (input) input.ariaLabel = label;
+  return picker.element;
+}
 
 /** What a good file looks like, from the one list the MCP server and the guide read too (#36). */
 function formatExample(dataset: string): string {
@@ -480,15 +496,17 @@ export class Importer {
     } else {
       // Add data: what the file is, then where it comes from.
       const kind = el('div', 'im-kind');
-      const select = el('select');
-      select.ariaLabel = 'What the file holds';
-      for (const option of TARGETS) select.append(new Option(option.name, option.target, false, option.target === this.chosen));
-      select.append(new Option('Something else, by a name of its own', 'own', false, this.chosen === 'own'));
-      select.addEventListener('change', () => {
-        this.chosen = select.value;
-        this.reset();
-      });
-      const label = el('label', 'wz-field');
+      const select = choose(
+        'What the file holds',
+        [...TARGETS.map((t) => ({ value: t.target, label: t.name })), { value: 'own', label: 'Something else, by a name of its own' }],
+        this.chosen,
+        (value) => {
+          if (value === this.chosen) return;
+          this.chosen = value;
+          this.reset();
+        },
+      );
+      const label = el('div', 'wz-field');
       label.append(el('span', undefined, 'The file holds'), select);
       kind.append(label);
       if (this.chosen === 'own') {
@@ -501,7 +519,12 @@ export class Importer {
         kind.append(el('p', 'im-about', 'GeoJSON, a CSV with lat and lon columns, or a shapefile zip or GeoPackage as SGU, Lantmäteriet and SLU hand them out (one layer at a time; you pick which). A GeoTIFF of values, such as soil depth or noise, becomes a raster a layer colours by value. A CSV without positions, such as activity through the day or flows and links between places, is kept as a table that place motions join to places by name or id. An SVG plan drawing covers the table, and its layers are revealed one phase at a time. A video (MP4, MOV or WebM) plays on the controller as a Video walk, with the walker moving along a path on the table.'));
       }
       nodes.push(kind);
-      if (item) nodes.push(el('p', 'im-about', item.about), exampleBox(item.dataset, this.host.site()));
+      if (item) {
+        // The file format is for those who want it (#712): folded away, one click to see it.
+        const format = el('details', 'im-format');
+        format.append(el('summary', undefined, 'Show the file format'), exampleBox(item.dataset, this.host.site()));
+        nodes.push(el('p', 'im-about', item.about), format);
+      }
       const buttons = el('div', 'wz-report-actions');
       buttons.append(...this.sourceButtons(item, false));
       nodes.push(buttons);
@@ -710,24 +733,20 @@ export class Importer {
    * table, so the author can tell the soil map from its coverage outline at a glance.
    */
   private layerPicker(layers: NonNullable<ImportReport['layers']>): HTMLElement {
-    const select = el('select');
-    select.ariaLabel = 'Layer of the file';
     const words = (l: (typeof layers)[number]): string => {
-      if (l.shape === 'raster') return `${l.name}: a raster${l.on_table ? '' : ', off the table'}`;
-      if (l.count === 0) return `${l.name}: empty`;
+      if (l.shape === 'raster') return `A raster${l.on_table ? '' : ', off the table'}`;
       const what = l.shape === 'mixed' ? 'shapes' : l.shape;
-      return `${l.name}: ${l.count} ${what}, ${l.on_table ? `${l.on_table} on the table` : 'none on the table'}`;
+      return `${l.count} ${what}, ${l.on_table ? `${l.on_table} on the table` : 'none on the table'}`;
     };
-    for (const l of layers) {
-      const option = new Option(words(l), l.name, false, l.chosen);
-      option.disabled = l.count === 0 && l.shape !== 'raster';
-      select.append(option);
-    }
-    select.addEventListener('change', () => {
-      this.layer = select.value;
+    // An empty layer has nothing to bring in, so it is not offered.
+    const choices = layers.filter((l) => l.count > 0 || l.shape === 'raster').map((l) => ({ value: l.name, label: l.name, detail: words(l) }));
+    const chosen = layers.find((l) => l.chosen)?.name ?? '';
+    const select = choose('Layer of the file', choices, chosen, (value) => {
+      if (value === chosen) return;
+      this.layer = value;
       void this.check(false);
     });
-    const field = el('label', 'wz-field im-layer');
+    const field = el('div', 'wz-field im-layer');
     field.append(el('span', undefined, 'Layer'), select);
     return field;
   }
@@ -858,17 +877,22 @@ export class Importer {
 
     const box = el('div', 'im-colour');
     box.append(el('h3', undefined, 'Show it on the table'));
-    const select = el('select');
-    select.ariaLabel = 'Colour by';
-    select.append(new Option('In one colour', '', false, this.showAs.column === ''));
-    for (const c of columns) select.append(new Option(`By ${c.name} (${c.kind === 'number' ? 'a value' : `${c.distinct} kinds`})`, c.name, false, c.name === this.showAs.column));
-    select.append(new Option('Not yet: only add the data', '\u0000', false, this.showAs.column === null));
-    select.addEventListener('change', () => {
-      const value = select.value;
-      this.showAs = value === '\u0000' ? { column: null } : value === '' ? { column: '' } : { column: value, classes: this.showAs.classes ?? 'natural' };
-      this.render();
-    });
-    const field = el('label', 'wz-field');
+    const now = this.showAs.column === null ? '\u0000' : this.showAs.column;
+    const select = choose(
+      'Colour by',
+      [
+        ...columns.map((c) => ({ value: c.name, label: `By ${c.name}`, detail: c.kind === 'number' ? 'a value' : `${c.distinct} kinds` })),
+        { value: '\u0000', label: 'Not yet: only add the data' },
+      ],
+      now,
+      (value) => {
+        if (value === now) return;
+        this.showAs = value === '\u0000' ? { column: null } : value === '' ? { column: '' } : { column: value, classes: this.showAs.classes ?? 'natural' };
+        this.render();
+      },
+      'In one colour',
+    );
+    const field = el('div', 'wz-field');
     field.append(el('span', undefined, 'Colour'), select);
     box.append(field);
     if (chosen?.kind === 'number' && shown.column) {

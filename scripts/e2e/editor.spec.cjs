@@ -33,6 +33,45 @@ test.describe('editor', () => {
     await studio.shot(page, 'editor/editor');
   });
 
+  test('the status bar says phones and simulations in plain words, with a Fix that opens the phones setting (#713)', async ({ studio }) => {
+    const page = await studio.open('/edit', { width: 1440, height: 900 }, {
+      init: () => {
+        window.calls = [];
+        window.__TAURI__ = { core: { invoke: async (command, args) => (window.calls.push([command, args]), {}) } };
+      },
+    });
+    const bar = page.locator('footer.ed-status');
+    await bar.locator('.ed-engine svg').waitFor();
+    const text = await bar.innerText();
+    for (const word of ['Engine:', 'llvmpipe', 'Vulkan', 'cannot join']) assert.ok(!text.includes(word), `the status bar says "${word}"`);
+    assert.match(await bar.locator('.ed-engine').innerText(), /^(Fast|Slower) simulations$/);
+    const phones = bar.locator('.ed-phones');
+    if (await phones.evaluate((p) => p.classList.contains('is-off'))) {
+      await phones.getByRole('button', { name: 'Fix' }).click();
+      assert.deepEqual(await page.evaluate(() => window.calls.find(([c]) => c === 'open_settings')), ['open_settings', { page: 'startup' }]);
+    } else assert.match(await phones.innerText(), /^Phones: /);
+    await studio.shot(bar, 'editor/713-status-bar');
+  });
+
+  test('a share reads as a percentage, typed as one too, and labels keep to one line (#710)', async ({ studio }) => {
+    const { page } = await editorAt(studio, '#layer=wind');
+    const more = page.locator('.ed-inspector details.ed-more');
+    if (!(await more.evaluate((d) => d.open))) await more.locator('summary').click();
+    const opacity = page.locator('.ed-inspector .control').filter({ has: page.getByRole('slider', { name: 'Opacity', exact: true }) }).locator('.control-value');
+    await opacity.filter({ hasText: /^\d+\s%$/ }).waitFor();
+    await opacity.click();
+    await page.keyboard.press(`${mod}+a`);
+    await page.keyboard.type('40');
+    await page.keyboard.press('Enter');
+    await opacity.filter({ hasText: /^40\s%$/ }).waitFor();
+    for (const label of await page.locator('.ed-inspector .control-label').all()) {
+      if (!(await label.isVisible())) continue;
+      const box = await label.boundingBox();
+      assert.ok(box && box.height < 24, `"${await label.innerText()}" wraps`);
+    }
+    await studio.shot(page.locator('.ed-inspector'), 'editor/710-inspector');
+  });
+
   test('Back returns to the layer before (#47)', async ({ studio }) => {
     const { page, inspector, row } = await editorAt(studio, '#layer=wind');
     await until(async () => (await inspector()) === 'Wind', 'Wind in the inspector');
@@ -168,7 +207,9 @@ test.describe('editor', () => {
       await page.keyboard.type('data file');
       await page.keyboard.press('Enter');
       const dialog = page.locator('dialog[open]');
-      await dialog.locator('select').first().selectOption({ label: kind });
+      // The editor's own list (#712): open it, then pick.
+      await dialog.getByRole('combobox', { name: 'What the file holds' }).click();
+      await dialog.getByRole('option', { name: kind, exact: true }).click();
       await page.locator(`input[type=file][aria-label="File for ${kind}"]`).setInputFiles(path.join(kit, 'broken', file));
       await until(async () => says.test(await dialog.innerText()), `the message for ${file}`, 15000);
       if (file === 'buildings-3km-away.geojson') await studio.shot(page, 'editor/import-3km');
@@ -426,7 +467,8 @@ test.describe('editor', () => {
     await page.locator('.ed-tab[data-tab="insert"]').click();
     await page.locator('.ed-ribbon [data-command="data.file"]').click();
     const dialog = page.locator('dialog.im-dialog');
-    await dialog.locator('select').first().selectOption('own');
+    await dialog.getByRole('combobox', { name: 'What the file holds' }).click();
+    await dialog.getByRole('option', { name: /^Something else/ }).click();
     await dialog.getByLabel('Name of the dataset').fill('districts');
     const chooser = page.waitForEvent('filechooser');
     await dialog.getByRole('button', { name: 'Choose a file' }).first().click();

@@ -54,6 +54,13 @@
   color: #3b4250;
 }
 
+.im-format > summary {
+  margin: 0 0 6px;
+  color: var(--ed-accent);
+  font-size: 12px;
+  cursor: pointer;
+}
+
 .im-help-box .im-example {
   margin-bottom: 4px;
 }
