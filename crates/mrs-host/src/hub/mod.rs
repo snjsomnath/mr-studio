@@ -37,7 +37,8 @@ use settings::*;
 use tools::*;
 
 pub use recording::{
-    default_recordings_dir, list_recordings, replay, seek, Catalogue, Chapter, RecordingInfo, MAX_RECORDING, RECORDING_FORMAT,
+    default_recordings_dir, edit_recording, list_recordings, recording_folder, replay, seek, Catalogue, Chapter, RecordingInfo,
+    MAX_RECORDING, RECORDING_FORMAT,
 };
 
 pub const PROTOCOL: u32 = 1;

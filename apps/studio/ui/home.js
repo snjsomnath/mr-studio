@@ -97,6 +97,7 @@ async function load(fresh) {
       );
       open.addEventListener('click', () => openTable(site.path));
       const row = el('li', { className: site.problem ? 'broken' : fresh && site.path === fresh ? 'fresh' : '' }, open);
+      row.dataset.id = site.id;
       const tools = el('span', { className: 'card-tools' });
       // Duplicate (#99): a copy to change, the way to start from an example or from another table.
       if (!site.problem) {
@@ -160,7 +161,146 @@ async function load(fresh) {
     }),
   );
   $('tables-hint').textContent = state.sites_folder ? `New tables are kept in ${state.sites_folder}.` : '';
+  tables = state.sites;
+  await loadRecordings();
 }
+
+// ---- Recorded sessions (#525) ----------------------------------------------------------------
+
+/** @type {any[]} */
+let recordings = [];
+/** @type {any[]} */
+let tables = [];
+/** A table's id when its card's "recorded sessions" link was pressed: the library shows only those. */
+let onlyTable = null;
+
+/** 1:05:09 or 5:09. */
+function clock(ms) {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  const two = (n) => String(n).padStart(2, '0');
+  const [h, m, sec] = [Math.floor(s / 3600), Math.floor((s % 3600) / 60), s % 60];
+  return h > 0 ? `${h}:${two(m)}:${two(sec)}` : `${m}:${two(sec)}`;
+}
+
+async function loadRecordings() {
+  recordings = await invoke('recordings_list').catch(() => []);
+  // A table's card counts its recordings, and the count opens the library at them.
+  for (const row of document.querySelectorAll('#tables li[data-id]')) {
+    const count = recordings.filter((r) => r.table?.id === row.dataset.id).length;
+    row.querySelector('.recorded')?.remove();
+    if (!count) continue;
+    const link = el('button', { type: 'button', className: 'recorded', title: 'Show this table’s recorded sessions' }, `${count} recorded session${count === 1 ? '' : 's'}`);
+    link.addEventListener('click', () => {
+      onlyTable = row.dataset.id;
+      showRecordings();
+      $('recordings-title').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+    row.querySelector('.text')?.after(link);
+  }
+  showRecordings();
+}
+
+function showRecordings() {
+  $('recordings-head').hidden = recordings.length === 0;
+  const words = $('recordings-find').value.trim().toLowerCase();
+  const matches = (r) =>
+    !words || [r.name, r.facilitator, ...(r.tags ?? [])].some((text) => (text ?? '').toLowerCase().includes(words));
+  const shown = recordings
+    .filter((r) => !onlyTable || r.table?.id === onlyTable)
+    .filter(matches)
+    .sort((a, b) => ($('recordings-sort').value === 'old' ? a.started - b.started : b.started - a.started));
+  const filter = $('recordings-filter');
+  filter.hidden = !onlyTable;
+  if (onlyTable) {
+    const name = tables.find((t) => t.id === onlyTable)?.name ?? recordings.find((r) => r.table?.id === onlyTable)?.table?.name ?? onlyTable;
+    const all = el('button', { type: 'button', className: 'link' }, 'Show all');
+    all.addEventListener('click', () => {
+      onlyTable = null;
+      showRecordings();
+    });
+    filter.replaceChildren(`Recorded on “${name}”. `, all);
+  }
+  $('recordings').replaceChildren(
+    ...shown.map((r) => {
+      const facts = [r.date, r.length ? clock(r.length) : 'not stopped', `${r.phones ?? 0} phone${r.phones === 1 ? '' : 's'}`].join(' · ');
+      const who = [r.facilitator, r.table?.name].filter(Boolean).join(' · ');
+      const tags = el('span', { className: 'tags' }, ...(r.tags ?? []).map((tag) => el('span', { className: 'chip' }, tag)));
+      const card = el(
+        'div',
+        { className: 'open', title: r.purpose || r.name },
+        el('span', { className: 'thumb recording-thumb' }, el('span', { className: 'rec-dot' })),
+        el('span', { className: 'text' }, el('b', {}, r.name), el('small', { className: 'facts' }, facts), el('small', {}, who), tags),
+        el('span', { className: 'tag' }, r.wrapped ? '' : r.finished ? 'Needs its notes' : 'Cut short'),
+      );
+      const row = el('li', { className: 'recording' }, card);
+      const tools = el('span', { className: 'card-tools' });
+      const edit = el('button', { type: 'button', className: 'remove' }, 'Edit details');
+      edit.addEventListener('click', () => editRecording(r));
+      const reveal = el('button', { type: 'button', className: 'remove', title: 'Show the recording’s folder' }, 'Show in folder');
+      reveal.addEventListener('click', () => invoke('recording_reveal', { id: r.id }).catch(showError));
+      const del = el('button', { type: 'button', className: 'remove danger', title: `Delete…\nMove this recording to the ${TRASH}` });
+      del.setAttribute('aria-label', 'Delete…');
+      del.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3" /></svg>';
+      del.addEventListener('click', () => deleteRecording(r));
+      tools.append(edit, reveal, del);
+      row.append(tools);
+      return row;
+    }),
+  );
+  if (recordings.length && !shown.length) $('recordings').append(el('li', { className: 'none' }, 'No recorded session matches.'));
+}
+
+function editRecording(r) {
+  const dialog = $('recording-edit-dialog');
+  $('recording-edit-name').value = r.name;
+  $('recording-edit-facilitator').value = r.facilitator ?? '';
+  $('recording-edit-purpose').value = r.purpose ?? '';
+  $('recording-edit-tags').value = (r.tags ?? []).join(', ');
+  $('recording-edit-notes').value = r.notes ?? '';
+  showError(undefined, 'recording-edit-error');
+  $('recording-edit-cancel').onclick = () => dialog.close();
+  $('recording-edit-save').onclick = async () => {
+    const details = {
+      name: $('recording-edit-name').value,
+      facilitator: $('recording-edit-facilitator').value,
+      purpose: $('recording-edit-purpose').value,
+      notes: $('recording-edit-notes').value,
+      tags: $('recording-edit-tags').value.split(',').map((t) => t.trim()).filter(Boolean),
+    };
+    try {
+      await invoke('recording_update', { id: r.id, details });
+      dialog.close();
+      await loadRecordings();
+    } catch (e) {
+      showError(e, 'recording-edit-error');
+    }
+  };
+  dialog.showModal();
+  $('recording-edit-name').focus();
+}
+
+function deleteRecording(r) {
+  const dialog = $('recording-delete-dialog');
+  $('recording-delete-title').textContent = `Delete “${r.name}”?`;
+  for (const node of document.querySelectorAll('.trash-name')) node.textContent = TRASH;
+  $('recording-delete-confirm').textContent = `Move to ${TRASH}`;
+  showError(undefined, 'recording-delete-error');
+  $('recording-delete-cancel').onclick = () => dialog.close();
+  $('recording-delete-confirm').onclick = async () => {
+    try {
+      await invoke('recording_delete', { id: r.id });
+      dialog.close();
+      await loadRecordings();
+    } catch (e) {
+      showError(e, 'recording-delete-error');
+    }
+  };
+  dialog.showModal();
+  $('recording-delete-cancel').focus();
+}
+
+$('recordings-find').addEventListener('input', showRecordings);
+$('recordings-sort').addEventListener('change', showRecordings);
 
 // On success the shell closes this window.
 async function openTable(path, welcome = false, readOnly = false) {

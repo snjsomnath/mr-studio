@@ -97,6 +97,9 @@ pub struct Catalogue {
     /// Events in the log.
     #[serde(default)]
     pub events: u64,
+    /// How many phones took part (picked Join, or joined when phones were not asked).
+    #[serde(default)]
+    pub phones: usize,
     /// False until it is stopped. A recording left unfinished by a crash is offered to keep.
     #[serde(default)]
     pub finished: bool,
@@ -116,6 +119,8 @@ pub(super) struct Recording {
     checkpoints: std::fs::File,
     /// The seats (slots) that picked Join on the notice (#530). Only these are in the log.
     joined: std::collections::HashSet<usize>,
+    /// The seats seen joining, for the library's count of phones (#525).
+    seen: std::collections::HashSet<usize>,
     /// When the last checkpoint was written, in ms from the start (#524).
     last_checkpoint: u64,
     catalogue: Catalogue,
@@ -130,6 +135,12 @@ impl Recording {
 
     fn write(&mut self, mut line: Value) {
         line["t"] = json!(self.ms());
+        if line["k"] == "join" {
+            if let Some(slot) = line["slot"].as_u64() {
+                self.seen.insert(slot as usize);
+                self.catalogue.phones = self.seen.len();
+            }
+        }
         let text = line.to_string() + "\n";
         if let Err(e) = self.log.write_all(text.as_bytes()) {
             self.failed.get_or_insert_with(|| format!("the session log could not be written: {e}"));
@@ -505,6 +516,7 @@ impl Hub {
             started,
             length: 0,
             events: 0,
+            phones: 0,
             finished: false,
             wrapped: false,
             table: json!({ "id": info.id, "name": info.name }),
@@ -516,7 +528,17 @@ impl Hub {
         let log = open("log.jsonl").map_err(io)?;
         let checkpoints = open("checkpoints.jsonl").map_err(io)?;
         let joined = std::collections::HashSet::new();
-        let new = Recording { dir, started: Instant::now(), log, checkpoints, joined, last_checkpoint: 0, catalogue, failed: None };
+        let new = Recording {
+            dir,
+            started: Instant::now(),
+            log,
+            checkpoints,
+            joined,
+            seen: std::collections::HashSet::new(),
+            last_checkpoint: 0,
+            catalogue,
+            failed: None,
+        };
         let info = new.info();
         *recording = Some(new);
         drop(recording);
@@ -542,46 +564,70 @@ impl Hub {
     /// `discard: true` to delete it (#522).
     fn wrap_up(&self, p: &Value) -> Result<Value, String> {
         let id = p["id"].as_str().ok_or("say which recording: id")?;
-        if id.contains(['/', '\\']) || id.starts_with('.') {
-            return Err("not a recording".into());
-        }
         if self.recording.lock().as_ref().is_some_and(|r| r.catalogue.id == id) {
             return Err("stop the recording first".into());
         }
-        let dir = self.recordings_dir().join(id);
-        let file = dir.join("recording.json");
-        let mut catalogue: Catalogue = std::fs::read_to_string(&file)
-            .ok()
-            .and_then(|t| serde_json::from_str(&t).ok())
-            .ok_or_else(|| format!("no recording '{id}'"))?;
+        let dir = self.recordings_dir();
         if p["discard"] == true {
-            std::fs::remove_dir_all(&dir).map_err(|e| format!("the recording could not be deleted: {e}"))?;
+            let folder = recording_folder(&dir, id)?;
+            std::fs::remove_dir_all(&folder).map_err(|e| format!("the recording could not be deleted: {e}"))?;
             return Ok(json!({ "discarded": id }));
         }
-        if !p["name"].is_null() {
-            let name = text(p, "name", 120)?;
-            if !name.is_empty() {
-                catalogue.name = name;
-            }
-        }
-        if !p["notes"].is_null() {
-            catalogue.notes = text(p, "notes", 8000)?;
-        }
-        if let Some(tags) = p.get("tags").filter(|t| !t.is_null()) {
-            let tags: Vec<String> = serde_json::from_value(tags.clone()).map_err(|_| "tags is a list of words".to_string())?;
-            catalogue.tags = tags.into_iter().map(|t| t.trim().to_string()).filter(|t| !t.is_empty()).take(20).collect();
-        }
-        if let Some(chapters) = p.get("chapters").filter(|c| !c.is_null()) {
-            let chapters: Vec<Chapter> =
-                serde_json::from_value(chapters.clone()).map_err(|_| "chapters is a list of { t, title }".to_string())?;
-            catalogue.chapters = chapters.into_iter().filter(|c| catalogue.length == 0 || c.t <= catalogue.length).collect();
-            catalogue.chapters.sort_by_key(|c| c.t);
-        }
-        catalogue.finished = true;
-        catalogue.wrapped = true;
-        write_json(&file, &catalogue).map_err(|e| format!("the recording could not be saved: {e}"))?;
+        let catalogue = edit_recording(&dir, id, p, true)?;
         Ok(json!({ "recording": catalogue }))
     }
+}
+
+/// The folder of recording `id` in `dir`, refusing ids that would reach outside it.
+pub fn recording_folder(dir: &Path, id: &str) -> Result<PathBuf, String> {
+    if id.is_empty() || id.contains(['/', '\\']) || id.starts_with('.') {
+        return Err("not a recording".into());
+    }
+    let folder = dir.join(id);
+    if !folder.join("recording.json").is_file() {
+        return Err(format!("no recording '{id}'"));
+    }
+    Ok(folder)
+}
+
+/// Changes a recording's catalogue (#522, #525): any of `name`, `facilitator`, `purpose`,
+/// `notes`, `tags` and `chapters` in `p`. `wrapped` marks the wrap-up as saved. The catalogue
+/// is the only part of a recording that changes after it is made.
+pub fn edit_recording(dir: &Path, id: &str, p: &Value, wrapped: bool) -> Result<Catalogue, String> {
+    let file = recording_folder(dir, id)?.join("recording.json");
+    let mut catalogue: Catalogue =
+        std::fs::read_to_string(&file).ok().and_then(|t| serde_json::from_str(&t).ok()).ok_or_else(|| format!("no recording '{id}'"))?;
+    if !p["name"].is_null() {
+        let name = text(p, "name", 120)?;
+        if !name.is_empty() {
+            catalogue.name = name;
+        }
+    }
+    if !p["facilitator"].is_null() {
+        catalogue.facilitator = text(p, "facilitator", 120)?;
+    }
+    if !p["purpose"].is_null() {
+        catalogue.purpose = text(p, "purpose", 400)?;
+    }
+    if !p["notes"].is_null() {
+        catalogue.notes = text(p, "notes", 8000)?;
+    }
+    if let Some(tags) = p.get("tags").filter(|t| !t.is_null()) {
+        let tags: Vec<String> = serde_json::from_value(tags.clone()).map_err(|_| "tags is a list of words".to_string())?;
+        catalogue.tags = tags.into_iter().map(|t| t.trim().to_string()).filter(|t| !t.is_empty()).take(20).collect();
+    }
+    if let Some(chapters) = p.get("chapters").filter(|c| !c.is_null()) {
+        let chapters: Vec<Chapter> =
+            serde_json::from_value(chapters.clone()).map_err(|_| "chapters is a list of { t, title }".to_string())?;
+        catalogue.chapters = chapters.into_iter().filter(|c| catalogue.length == 0 || c.t <= catalogue.length).collect();
+        catalogue.chapters.sort_by_key(|c| c.t);
+    }
+    if wrapped {
+        catalogue.finished = true;
+        catalogue.wrapped = true;
+    }
+    write_json(&file, &catalogue).map_err(|e| format!("the recording could not be saved: {e}"))?;
+    Ok(catalogue)
 }
 
 /// Replays a recording's log onto a hub started from its snapshot, as far as `until`
@@ -713,6 +759,14 @@ mod tests {
         assert_eq!(list["recordings"][0]["id"], id.as_str());
         assert_eq!(list["recordings"][0]["facilitator"], "Sanjay");
         assert!(hub.request(Role::Tv, 1, "recording.wrapup", &json!({ "id": "../x" })).is_err());
+        // Home's Edit details (#525) changes the catalogue only; the phones taking part are counted.
+        let edited = edit_recording(&dir, &id, &json!({ "facilitator": "Vishvi", "tags": ["open day"], "chapters": null }), false).unwrap();
+        assert_eq!(
+            (edited.facilitator.as_str(), edited.tags.clone(), edited.chapters.len()),
+            ("Vishvi", vec!["open day".to_string()], wrapped["recording"]["chapters"].as_array().unwrap().len())
+        );
+        assert_eq!(edited.phones, 2, "two phones joined");
+        assert!(edit_recording(&dir, "../etc", &json!({}), false).is_err());
         hub.request(Role::Tv, 1, "recording.wrapup", &json!({ "id": id, "discard": true })).unwrap();
         assert!(!folder.exists());
     }

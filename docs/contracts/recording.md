@@ -88,6 +88,16 @@ simulation that has run for ten minutes. A layer like that starts again from the
 params when seeking. Phone sketches, votes, words, field walk spots and published values come
 through requests, so they are in the log, and a checkpoint keeps what the host holds of them.
 
+## The library on Home (#525)
+
+Home lists the recordings under **Recorded sessions**, apart from the tables: name, date,
+length, phones (`phones` in `recording.json`, the seats that joined), facilitator, table and
+tags. Find searches the name, tags and facilitator; sort by date. On a card: **Edit details**
+(`mrs_host::edit_recording`: name, facilitator, purpose, tags, notes), **Show in folder**, and
+**Delete**, which moves the whole folder to the Trash or Recycle Bin after asking. A table's
+card says how many recordings it has, and that link shows only those. The app's commands are
+`recordings_list`, `recording_update`, `recording_delete` and `recording_reveal`.
+
 ## Playing a log again
 
 `mrs_host::replay(hub, log, until)` sends the logged requests to a hub started from the

@@ -57,6 +57,18 @@
       <ul id="tables" class="tables"></ul>
       <p id="tables-hint" class="hint"></p>
 
+      <!-- Recorded sessions (#525): kept apart from the tables, in the app's own data folder. -->
+      <div class="recordings-head" id="recordings-head" hidden>
+        <h2 id="recordings-title">Recorded sessions</h2>
+        <input type="search" id="recordings-find" placeholder="Find by name, tag or facilitator" aria-label="Find a recorded session" />
+        <select id="recordings-sort" aria-label="Sort recorded sessions">
+          <option value="new">Newest first</option>
+          <option value="old">Oldest first</option>
+        </select>
+      </div>
+      <p id="recordings-filter" class="hint" hidden></p>
+      <ul id="recordings" class="tables recordings" aria-labelledby="recordings-title"></ul>
+
       <section id="whats-new" class="news" aria-labelledby="news-title" hidden>
         <header>
           <span class="pill">New</span>
@@ -87,6 +99,30 @@
         <div class="actions">
           <button type="button" id="delete-cancel">Cancel</button>
           <button type="button" id="delete-confirm" class="danger">Move to Trash</button>
+        </div>
+      </dialog>
+      <dialog id="recording-delete-dialog" class="confirm" aria-labelledby="recording-delete-title">
+        <h2 id="recording-delete-title">Delete this recording?</h2>
+        <p>All of it moves to the <span class="trash-name">Trash</span>, with everything phones sent during it. You can put it back from there until the <span class="trash-name">Trash</span> is emptied.</p>
+        <p id="recording-delete-error" class="error" role="alert" hidden></p>
+        <div class="actions">
+          <button type="button" id="recording-delete-cancel">Cancel</button>
+          <button type="button" id="recording-delete-confirm" class="danger">Move to Trash</button>
+        </div>
+      </dialog>
+      <dialog id="recording-edit-dialog" class="confirm" aria-labelledby="recording-edit-title">
+        <h2 id="recording-edit-title">Recording details</h2>
+        <form id="recording-edit-form" class="recording-edit" method="dialog">
+          <label>Name <input id="recording-edit-name" required maxlength="120" /></label>
+          <label>Facilitator <input id="recording-edit-facilitator" maxlength="120" /></label>
+          <label>Purpose <input id="recording-edit-purpose" maxlength="400" /></label>
+          <label>Tags <input id="recording-edit-tags" placeholder="workshop, Lindholmen, round 2" /></label>
+          <label>Notes <textarea id="recording-edit-notes" rows="4"></textarea></label>
+        </form>
+        <p id="recording-edit-error" class="error" role="alert" hidden></p>
+        <div class="actions">
+          <button type="button" id="recording-edit-cancel">Cancel</button>
+          <button type="button" id="recording-edit-save" class="primary">Save</button>
         </div>
       </dialog>
       <dialog id="same-dialog" class="confirm" aria-labelledby="same-title">
