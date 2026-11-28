@@ -2,7 +2,7 @@
 // same checks run in tests, on the TV before a panel is shown, and in an editor
 // before a drop is accepted.
 
-import { compileExpression, isExpressionValue } from '@mrstudio/sdk';
+import { compileExpression, dataQueryProblems, isDataQuery, isExpressionValue } from '@mrstudio/sdk';
 import type { Binding, PanelSize, PanelSpec } from '@mrstudio/sdk';
 
 import type { PropSpec, WidgetDefinition, WidgetRegistry } from './registry.ts';
@@ -34,6 +34,15 @@ function checkProp(path: string, spec: PropSpec, value: unknown, limit: number |
     if (!spec.bindable) fail('binding', 'cannot be worked out by an expression (only props that can be bound)');
     for (const problem of compileExpression(value.expr).problems) fail('binding', problem);
     for (const read of compileExpression(value.expr).reads.values) if (!BIND_PATH.test(read)) fail('binding', `'${read}' is not params.<id>, shared.<key> or site.<field>`);
+    return;
+  }
+  if (isDataQuery(value)) {
+    // A table dataset reduced to a number, or grouped into a list (#670).
+    if (!spec.bindable && spec.kind !== 'list') fail('binding', 'cannot be read from a dataset (only props that can be bound)');
+    const { problems, reads } = dataQueryProblems(value);
+    for (const problem of problems) fail('binding', problem);
+    for (const path of reads) if (!BIND_PATH.test(path)) fail('binding', `'${path}' is not params.<id>, shared.<key> or site.<field>`);
+    if (spec.kind === 'list' && value.group_by === undefined) fail('binding', 'a list from a dataset needs group_by: one item per group');
     return;
   }
   if (isBinding(value)) {
@@ -124,7 +133,7 @@ function checkProps(path: string, specs: Record<string, PropSpec>, props: unknow
 export function panelReads(spec: PanelSpec, widget: WidgetDefinition): number {
   const props: Record<string, unknown> = { ...spec.props };
   for (const [key, prop] of Object.entries(widget.props)) {
-    if (prop.kind === 'list' && isBinding(props[key])) props[key] = new Array(listLimit(widget, key, prop, spec.size)).fill({});
+    if (prop.kind === 'list' && (isBinding(props[key]) || isDataQuery(props[key]))) props[key] = new Array(listLimit(widget, key, prop, spec.size)).fill({});
   }
   return widget.reads(props, spec.size);
 }

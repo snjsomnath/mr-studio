@@ -18,6 +18,7 @@ import { widgets, withTeamWidgets } from './registry.ts';
 import { ribbonBands } from './ribbon-bands.ts';
 import type { Band, Side } from './ribbon-bands.ts';
 import type { Store } from './store.ts';
+import { onPanelRows } from './panel-data.ts';
 
 /** Where the model is in the host's pixels, and the host's size. */
 type Measured = { footprint: [number, number][]; surface: { width: number; height: number } };
@@ -80,6 +81,8 @@ export class Ribbons {
     // A running play head (#373) moves the strip's clock between the table's updates, so it reads
     // the same minute as the controller (#584).
     store.onClock(() => this.queue());
+    // A dataset a strip panel reduces has been read (#670).
+    onPanelRows(() => this.queue());
     store.onTv(() => this.layout());
     // The visitors' language changed (#80): every strip draws again in it.
     window.addEventListener('mrs-language', () => {

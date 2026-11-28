@@ -3029,6 +3029,109 @@ declare module "@mrstudio/sdk/table-space" {
      */
     export function clipToTable(canvas: Pick<CanvasOverlay, 'context' | 'project'>, site: Pick<SiteInfo, 'corners'>): void;
 }
+declare module "@mrstudio/sdk/expression" {
+    /** An expression: a literal, or `[operator, ...arguments]`. */
+    export type Expression = number | string | boolean | null | readonly [string, ...unknown[]];
+    /** What an expression reads: the feature or row it is about, and the layer's live values. */
+    export interface ExpressionScope {
+        /** The feature's properties or the row: `["get", "kwh"]`. Dotted names reach inside (`ecom.kwh`). */
+        item?: Readonly<Record<string, unknown>>;
+        /** The live values: `["bind", "shared.import_kw"]`, `params.year`, `site.name`. */
+        vars?: Readonly<{
+            params?: Record<string, unknown>;
+            shared?: Record<string, unknown>;
+            site?: Record<string, unknown>;
+        }>;
+    }
+    /** A panel prop or look setting worked out by an expression: `{ "expr": [...] }`. */
+    export interface ExpressionValue {
+        expr: Expression;
+    }
+    /** How deep an expression may nest, and how many parts it may have, so it is always cheap. */
+    export const EXPRESSION_LIMITS: {
+        readonly depth: 24;
+        readonly nodes: 500;
+    };
+    /** The operators, with one line on each, for the docs, the editor and the MCP. */
+    export const EXPRESSION_OPERATORS: Readonly<Record<string, string>>;
+    /** A compiled expression: evaluate it as often as needed. It never throws. */
+    export interface CompiledExpression {
+        evaluate(scope?: ExpressionScope): unknown;
+        /** What is wrong with it; empty when it is fine. A faulty expression evaluates to null. */
+        problems: string[];
+        /** The feature properties it reads with `get` or `has`, and the live values it reads with `bind`. */
+        reads: {
+            properties: string[];
+            values: string[];
+        };
+    }
+    /**
+     * Checks and compiles an expression. A faulty one comes back with its problems and evaluates to
+     * null, so a mistake shows as an empty value and a message, never as a broken table.
+     */
+    export function compileExpression(expr: unknown): CompiledExpression;
+    /** Whether a value is `{ "expr": ... }`. */
+    export function isExpressionValue(value: unknown): value is ExpressionValue;
+    /** Compiles once per distinct expression, so evaluating per frame or per feature costs nothing more. */
+    export function expression(expr: unknown): CompiledExpression;
+    /** Evaluates an expression once: for a value read now and then, not per feature. */
+    export function evaluateExpression(expr: unknown, scope?: ExpressionScope): unknown;
+}
+declare module "@mrstudio/sdk/data-query" {
+    import type { Expression, ExpressionScope } from "@mrstudio/sdk/expression";
+    /** How the rows become one number: a column's sum, average, smallest or largest value, the rows counted, or the newest row's value. */
+    export const DATA_REDUCTIONS: readonly ["sum", "average", "min", "max", "count", "latest"];
+    export type DataReduction = (typeof DATA_REDUCTIONS)[number];
+    /** The order of a grouped list: biggest first (the default), smallest first, or by name (time and other ordered names). */
+    export const DATA_ORDERS: readonly ["highest", "lowest", "name"];
+    export interface DataQuery {
+        /** The dataset's name in site.json `data`, or a CSV or GeoJSON file's path in the site folder. */
+        data: string;
+        /** A column to add up. Exactly one of sum, average, min, max, count and latest is given. */
+        sum?: string;
+        average?: string;
+        min?: string;
+        max?: string;
+        /** `true` counts the rows; a column name counts the rows where it has a value. */
+        count?: true | string;
+        /** The value of this column in the last row, or with `time`, in the row nearest before `at`. */
+        latest?: string;
+        /** Only rows for which this expression is true. `["get", "col"]` reads the row, `["bind", ...]` the live values. */
+        where?: Expression;
+        /** One value per distinct value of this column, as a list of `{ label, value }` for bars, a list or a donut. */
+        group_by?: string;
+        /** With group_by: the order of the list. */
+        order?: (typeof DATA_ORDERS)[number];
+        /** A column holding time (an hour, a year, a step): only rows at or before `at` count. */
+        time?: string;
+        /** Where the time is now, usually the shared play head: `["bind", "params.hour"]`. */
+        at?: Expression;
+    }
+    export type DataRow = Readonly<Record<string, unknown>>;
+    export type DataResult = number | string | {
+        label: string;
+        value: number;
+    }[] | null;
+    /** Whether a prop is a data query: an object with `data`. */
+    export function isDataQuery(value: unknown): value is DataQuery;
+    /** The reduction a query asks for, and its column (null for a plain count). */
+    export function queryReduction(query: DataQuery): {
+        reduce: DataReduction;
+        column: string | null;
+    } | null;
+    /** What is wrong with a query; empty when it is fine. The live values it reads are in `reads`. */
+    export function dataQueryProblems(query: DataQuery): {
+        problems: string[];
+        reads: string[];
+    };
+    /**
+     * Runs a query over a dataset's rows. `vars` are the live values `where` and `at` read. A faulty
+     * query gives null, like a faulty expression: an empty value, never a broken screen.
+     */
+    export function runDataQuery(rows: readonly DataRow[], query: DataQuery, vars?: ExpressionScope['vars']): DataResult;
+    /** A GeoJSON file's features as rows (their properties), or a CSV's rows, from the file's text. */
+    export function rowsOf(text: string, csv: boolean): DataRow[];
+}
 declare module "@mrstudio/sdk/geo-pack" {
     import type { SiteInfo } from "@mrstudio/sdk/types";
     import type { Placed, XY } from "@mrstudio/sdk/table-space";
@@ -3222,6 +3325,7 @@ declare module "@mrstudio/sdk/walk-network" {
     export function unpackWalkNetwork<X extends object = Record<never, never>>(packed: PackedWalkNetwork, extra?: () => X): WalkNetwork<WalkEdge & X>;
 }
 declare module "@mrstudio/sdk/site-geometry" {
+    import type { DataRow } from "@mrstudio/sdk/data-query";
     import type { PackedGeometry, SiteGeometry, SitePlacement } from "@mrstudio/sdk/geo-pack";
     import { StreetGraph } from "@mrstudio/sdk/street-network";
     import type { StreetGraphSpec } from "@mrstudio/sdk/street-network";
@@ -3231,6 +3335,8 @@ declare module "@mrstudio/sdk/site-geometry" {
     export type { SiteGeometry } from "@mrstudio/sdk/geo-pack";
     /** Packs GeoJSON bytes into table metres: in the data worker when there is one, otherwise here. `keep` leaves a copy there for street graphs. */
     export function packInWorker(bytes: ArrayBuffer, place: SitePlacement, keep?: string): Promise<PackedGeometry>;
+    /** A CSV's rows, or a GeoJSON file's feature properties, read in the data worker when there is one (#670). */
+    export function rowsInWorker(bytes: ArrayBuffer, csv: boolean): Promise<DataRow[]>;
     /**
      * A named site dataset's polygons, lines and points in table metres, as `geojsonPolygons`,
      * `geojsonLines` and `geojsonPoints` would give them. Null when the site doesn't have the dataset
@@ -4727,54 +4833,6 @@ declare module "@mrstudio/sdk/networks" {
         streets?: string;
     };
 }
-declare module "@mrstudio/sdk/expression" {
-    /** An expression: a literal, or `[operator, ...arguments]`. */
-    export type Expression = number | string | boolean | null | readonly [string, ...unknown[]];
-    /** What an expression reads: the feature or row it is about, and the layer's live values. */
-    export interface ExpressionScope {
-        /** The feature's properties or the row: `["get", "kwh"]`. Dotted names reach inside (`ecom.kwh`). */
-        item?: Readonly<Record<string, unknown>>;
-        /** The live values: `["bind", "shared.import_kw"]`, `params.year`, `site.name`. */
-        vars?: Readonly<{
-            params?: Record<string, unknown>;
-            shared?: Record<string, unknown>;
-            site?: Record<string, unknown>;
-        }>;
-    }
-    /** A panel prop or look setting worked out by an expression: `{ "expr": [...] }`. */
-    export interface ExpressionValue {
-        expr: Expression;
-    }
-    /** How deep an expression may nest, and how many parts it may have, so it is always cheap. */
-    export const EXPRESSION_LIMITS: {
-        readonly depth: 24;
-        readonly nodes: 500;
-    };
-    /** The operators, with one line on each, for the docs, the editor and the MCP. */
-    export const EXPRESSION_OPERATORS: Readonly<Record<string, string>>;
-    /** A compiled expression: evaluate it as often as needed. It never throws. */
-    export interface CompiledExpression {
-        evaluate(scope?: ExpressionScope): unknown;
-        /** What is wrong with it; empty when it is fine. A faulty expression evaluates to null. */
-        problems: string[];
-        /** The feature properties it reads with `get` or `has`, and the live values it reads with `bind`. */
-        reads: {
-            properties: string[];
-            values: string[];
-        };
-    }
-    /**
-     * Checks and compiles an expression. A faulty one comes back with its problems and evaluates to
-     * null, so a mistake shows as an empty value and a message, never as a broken table.
-     */
-    export function compileExpression(expr: unknown): CompiledExpression;
-    /** Whether a value is `{ "expr": ... }`. */
-    export function isExpressionValue(value: unknown): value is ExpressionValue;
-    /** Compiles once per distinct expression, so evaluating per frame or per feature costs nothing more. */
-    export function expression(expr: unknown): CompiledExpression;
-    /** Evaluates an expression once: for a value read now and then, not per feature. */
-    export function evaluateExpression(expr: unknown, scope?: ExpressionScope): unknown;
-}
 declare module "@mrstudio/sdk/recipe" {
     import type { Rgba } from "@mrstudio/sdk/blocks/scale";
     import type { Shapes } from "@mrstudio/sdk/blocks/sources";
@@ -5928,4 +5986,5 @@ declare module "@mrstudio/sdk" {
     export * from "@mrstudio/sdk/readiness";
     export * from "@mrstudio/sdk/widgets";
     export * from "@mrstudio/sdk/expression";
+    export * from "@mrstudio/sdk/data-query";
 }

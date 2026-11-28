@@ -151,6 +151,12 @@ export const BLOCKS: BlockDef[] = [
     detect: 'export function compileExpression',
   },
   {
+    id: 'dataset-panels', group: 'data', name: 'Panels from a dataset',
+    description: "A TV or controller panel that reads a table dataset (CSV or GeoJSON) and reduces it (#670), with no layer and no code: a sum, average, min, max, count or the latest value, filtered by an expression, grouped into a list for bars, a list or a donut, and following the shared play head through a time column.",
+    usage: "panel props { \"data\": \"energy\", \"sum\": \"kwh\", \"where\": expr, \"group_by\": \"building\", \"time\": \"hour\", \"at\": [\"bind\", \"params.hour\"] } (docs/contracts/dashboard.md, Panels from a dataset); runDataQuery() in a layer",
+    detect: 'export function runDataQuery',
+  },
+  {
     id: 'raster-look', group: 'visual', name: 'Raster look with Dig',
     description: 'A GeoTIFF of values (soil depth, rock surface, noise) coloured by value on the table grid, with cut-offs a slider moves so the ground peels away, and a glow along the cut.',
     usage: "a custom layer look block 'raster' on a data:<name> GeoTIFF; bind a range control to look.<id>.hide_below",

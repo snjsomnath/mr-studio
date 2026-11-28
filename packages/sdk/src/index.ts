@@ -49,3 +49,4 @@ export * from './drawing-roles.ts';
 export * from './readiness.ts';
 export * from './widgets.ts';
 export * from './expression.ts';
+export * from './data-query.ts';
