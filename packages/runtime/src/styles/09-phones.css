@@ -364,13 +364,15 @@ body[data-role='phone'] .segmented button {
   font-size: 0.8125rem;
 }
 
-/* No table window open (#412): no layer runs, so its legend and live values wait for one. */
+/* No table window open (#412): no layer runs, so its legend and live values wait for one. Said on the
+   developer page only: visitors at the controller are never told about windows (#708). */
 .stage-no-table {
   margin: 0 0 1rem;
   color: var(--muted);
   font-size: 1rem;
 }
 
-.stage-no-table[hidden] {
+.stage-no-table[hidden],
+body[data-role='tv'] .stage-no-table {
   display: none;
 }
