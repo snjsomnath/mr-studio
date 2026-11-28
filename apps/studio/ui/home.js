@@ -601,6 +601,11 @@ function show(view) {
   if (view === 'new') drawStep();
 }
 
+// The logo and version open the About window (#699).
+$('brand').addEventListener('click', () => void invoke('open_about'));
+$('brand').addEventListener('keydown', (/** @type {KeyboardEvent} */ event) => {
+  if (event.key === 'Enter' || event.key === ' ') void invoke('open_about');
+});
 // The three start cards are the one place to begin (#709); the sidebar no longer repeats them.
 $('card-new').addEventListener('click', newTable);
 $('card-open').addEventListener('click', openFolder);

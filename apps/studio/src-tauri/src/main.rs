@@ -8,6 +8,7 @@
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod about;
 mod cli_tool;
 mod colour;
 #[cfg(test)]
@@ -245,6 +246,8 @@ fn main() -> anyhow::Result<()> {
             starter_pack,
             table_details,
             table_reveal,
+            about::about_info,
+            about::open_about,
             recordings_list,
             recording_update,
             recording_delete,
@@ -295,6 +298,9 @@ fn main() -> anyhow::Result<()> {
             }
             if id == file_menu::INSTALL_CLI {
                 install_cli_from_menu(app.clone());
+            }
+            if id == about::MENU_ID {
+                report(about::show(app).map_err(anyhow::Error::from));
             }
         })
         .setup(|app| {

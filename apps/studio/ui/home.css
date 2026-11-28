@@ -18,7 +18,9 @@ body { display: grid; grid-template-columns: 216px 1fr; background: var(--bg); u
 svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; flex: none; }
 
 aside { display: flex; flex-direction: column; gap: 14px; padding: 16px 10px 12px; border-right: 1px solid var(--line); background: #eef0f4; }
-.brand { display: flex; align-items: center; gap: 10px; padding: 2px 8px 6px; }
+.brand { display: flex; align-items: center; gap: 10px; padding: 2px 8px 6px; border-radius: 8px; }
+.brand:hover { background: #e1e5ec; }
+.brand:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .brand svg { width: 30px; height: 30px; padding: 6px; border-radius: 8px; background: var(--accent); color: #fff; }
 .brand b { display: block; font-size: 14px; }
 .brand span { color: var(--muted); font-size: 12px; }

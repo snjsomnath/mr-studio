@@ -61,6 +61,8 @@ fn main() {
         "file_action",
         "table_details",
         "table_reveal",
+        "about_info",
+        "open_about",
         "recordings_list",
         "recording_update",
         "recording_delete",
