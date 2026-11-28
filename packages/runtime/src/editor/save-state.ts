@@ -38,7 +38,7 @@ export function savedWords(time: string, readOnly: boolean, problem?: string | n
 }
 
 /** The time as the button shows it. */
-const clockTime = (): string => new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+const clockTime = (): string => new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
 
 /** Changes on their way to the host, and the last answer. */
 export class SaveState {

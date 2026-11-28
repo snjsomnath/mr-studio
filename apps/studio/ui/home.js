@@ -504,7 +504,7 @@ async function openTableFile(file) {
 function askSameTable(same) {
   const dialog = $('same-dialog');
   $('same-title').textContent = `“${same.existing_name}” is already on this computer`;
-  $('same-when').textContent = same.edited ? `The one here was last changed ${new Date(same.edited).toLocaleString()}.` : '';
+  $('same-when').textContent = same.edited ? `The one here was last changed ${new Date(same.edited).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short', hourCycle: 'h23' })}.` : '';
   // Open here (#401): on the screens it can wait for the show to stop; in the editor it opens again updated.
   $('same-what').textContent = same.presenting
     ? 'The file is another version of it, and it is on the screens now. It can go in when the show stops, or the show stops now and starts again with it. This computer\'s calibration stays as it is.'

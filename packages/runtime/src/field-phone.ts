@@ -280,9 +280,11 @@ export function fieldCard(store: Store, connection: Connection): HTMLElement {
         if (spot.thumb) pic.style.backgroundImage = `url("${spot.thumb}")`;
         else pic.textContent = spot.kind === 'sound' ? '♪' : spot.kind === 'mark' ? (spot.feeling ? FACES[spot.feeling - 1]! : '📍') : '📷';
         const words = el('span', 'field-words');
+        // The 24-hour clock, as everywhere in MR Studio (#711).
         const time = new Date(spot.at).toLocaleTimeString(undefined, {
           hour: '2-digit',
           minute: '2-digit',
+          hourCycle: 'h23',
         });
         const what = spot.label ?? (spot.kind === 'photo' ? t('Photo') : spot.kind === 'sound' ? t('Sound') : t('Spot'));
         const face = spot.feeling && spot.kind !== 'mark' ? ` ${FACES[spot.feeling - 1]}` : '';

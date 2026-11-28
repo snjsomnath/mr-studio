@@ -9,7 +9,7 @@
       if (!state.site) status = 'Nothing is running. Open a table from Home first.';
       else if (!saved) status = `${state.site} is not calibrated. The table is shown flat.`;
       else {
-        const when = saved.saved_at ? ` on ${new Date(saved.saved_at).toLocaleString()}` : '';
+        const when = saved.saved_at ? ` on ${new Date(saved.saved_at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short', hourCycle: 'h23' })}` : '';
         const error = typeof saved.error_px === 'number' ? `, average error ${saved.error_px.toFixed(1)} px` : '';
         status = `${state.site} was calibrated${when}${error}.`;
       }
