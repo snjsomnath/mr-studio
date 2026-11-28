@@ -41,6 +41,15 @@ jobs:
       # No style sheet keeps rules for class names nothing uses (#546).
       - name: No unused CSS
         run: node scripts/unused-css.mjs
+      # No new file over 1,500 lines, no big pictures on main; lines per package in the summary (#738).
+      - name: Size guard
+        if: github.event_name == 'pull_request'
+        run: node scripts/size-guard.mjs "origin/${{ github.base_ref }}"
+      - name: Lines of code per package
+        if: github.event_name != 'pull_request'
+        run: node scripts/size-guard.mjs --report
+      - name: The size guard does what it says
+        run: node --test scripts/size-guard.test.mjs
 
   rust:
     name: Engine, site, host and CLI
