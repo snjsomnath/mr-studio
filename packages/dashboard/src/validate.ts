@@ -158,8 +158,9 @@ export function validatePanel(spec: PanelSpec, registry: WidgetRegistry, path = 
   else if ([...spec.title].length > TEXT.title) issues.push({ path: `${path}.title`, rule: 'text', message: `is ${[...spec.title].length} characters, the limit is ${TEXT.title}` });
 
   for (const key of Object.keys(spec)) {
-    if (!['id', 'widget', 'size', 'title', 'props', 'visibleWhen', 'priority', 'at', 'layer', 'ribbon'].includes(key)) issues.push({ path: `${path}.${key}`, rule: 'schema', message: 'is not a panel field' });
+    if (!['id', 'widget', 'size', 'title', 'props', 'visibleWhen', 'hideWhenEmpty', 'priority', 'at', 'layer', 'ribbon'].includes(key)) issues.push({ path: `${path}.${key}`, rule: 'schema', message: 'is not a panel field' });
   }
+  if (spec.hideWhenEmpty !== undefined && typeof spec.hideWhenEmpty !== 'boolean') issues.push({ path: `${path}.hideWhenEmpty`, rule: 'schema', message: 'must be true or false' });
   const before = issues.length;
   checkProps(`${path}.props`, widget.props, spec.props ?? {}, issues, (prop) => {
     const p = widget.props[prop];

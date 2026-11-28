@@ -13,6 +13,7 @@ interface PanelSpec {
   title: string;                   // required, at most 28 characters
   props?: Record<string, unknown>; // per the widget's schema; literals or bindings
   visibleWhen?: Record<string, unknown>;   // as for controls, against the layer's params
+  hideWhenEmpty?: boolean;         // left out while its main value is missing, empty, 0 or [] (#752)
   priority?: number;               // automatic layout: higher is placed first
   ribbon?: boolean;                // on the table's ribbon instead of the TV (#78): chip, tile or wide only, at most 4 panels and 10 reads; see present.md, Ribbon
   at?: { col: number; row: number };       // site pages only, 1-based
@@ -51,6 +52,11 @@ file's rows are its features' properties.
 The file is read once per controller, in the SDK's data worker when there is one (`rowsInWorker`), and the panel shows
 nothing until it has arrived. Reducing it is one pass over the rows on the page, kept until a value it reads changes.
 `runDataQuery(rows, query, vars)` and `dataQueryProblems(query)` are in the SDK for layers that want the same.
+
+**Empty cards (#752).** A panel with `"hideWhenEmpty": true` is left out of the layout, the ribbon and the
+map stage while its widget's main prop (the first required prop that can be bound: a stat's `value`, a
+list's `items`) is missing, empty, zero or an empty list. The others move up, so the canvas never shows a
+card that says nothing, such as Sketch's Marks before anyone has drawn.
 
 ## Where panels come from
 

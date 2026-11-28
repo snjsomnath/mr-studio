@@ -3,7 +3,7 @@
 
 import type { PanelControls, PanelLayer, PanelSpec } from '@mrstudio/sdk';
 
-import { resolveProps } from './bind.ts';
+import { panelIsEmpty, resolveProps } from './bind.ts';
 import type { BindSource } from './bind.ts';
 import { pack } from './pack.ts';
 import type { PackItem, Page } from './pack.ts';
@@ -80,11 +80,13 @@ interface Mounted {
   handle: WidgetHandle;
 }
 
-function visible(input: PanelInput, source: BindSource): boolean {
+function visible(input: PanelInput, source: BindSource, widget: WidgetDefinition | undefined): boolean {
   if (input.active && !input.active()) return false;
   const when = input.spec.visibleWhen;
   // A list means any of those values, as for controls.
-  return !when || Object.entries(when).every(([key, value]) => (Array.isArray(value) ? value.includes(source.params[key]) : source.params[key] === value));
+  if (when && !Object.entries(when).every(([key, value]) => (Array.isArray(value) ? value.includes(source.params[key]) : source.params[key] === value))) return false;
+  // An empty card is not shown (#752).
+  return !widget || !panelIsEmpty(widget, input.spec, source);
 }
 
 export class DashboardView {
@@ -212,7 +214,7 @@ export class DashboardView {
     const shown = this.inputs.filter((input) => {
       const source = input.source();
       sources.set(input.key, source);
-      return visible(input, source);
+      return visible(input, source, this.registry.get(input.spec.widget));
     });
     const items: PackItem<PanelInput>[] = shown.map((input) => ({
       item: input,

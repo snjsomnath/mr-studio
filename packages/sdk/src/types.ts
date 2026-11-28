@@ -403,6 +403,8 @@ export interface PanelSpec {
   props?: Record<string, unknown>;
   /** Show only while the layer's params have these values. A list means any of those values. */
   visibleWhen?: Record<string, unknown>;
+  /** Leave the panel out while its main value (its first required bindable prop) is empty, missing or zero (#752). */
+  hideWhenEmpty?: boolean;
   /** Higher is placed first by the automatic layout. Default 0. */
   priority?: number;
   /** Fixed position on the grid, 1-based. Only in a site's pages; layers never choose positions. */
