@@ -329,7 +329,8 @@ function exportRecording(r) {
   showError(undefined, 'recording-export-error');
   $('recording-export-cancel').onclick = () => dialog.close();
   $('recording-export-save').onclick = async () => {
-    const media = document.querySelector('input[name="recording-export-media"]:checked')?.value !== 'lean';
+    const chosen = /** @type {HTMLInputElement | null} */ (document.querySelector('input[name="recording-export-media"]:checked'));
+    const media = chosen?.value !== 'lean';
     try {
       const done = await invoke('recording_export', { id: r.id, media });
       if (!done) return;
