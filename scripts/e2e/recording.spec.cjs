@@ -147,7 +147,11 @@ test.describe('recorded sessions', () => {
     assert.match(csv, /layers,"Controller","Controller opened sunlight"/);
     await studio.shot(room.locator('.pb-side'), 'recording/527-events-notes');
 
-    // Nothing in a recording can be changed from its pages.
+    // A replay shows phones no way to join.
+    assert.equal(await room.frameLocator('.pb-tv iframe').locator('section.join').count(), 0);
+    // One room at a time: each draws a table and a controller.
+    await room.close();
+
     // Play on the table (#528), in the app: the screens are the app's, the timeline stays here.
     const app = await studio.open(`${base}/playback`, { width: 1600, height: 900 }, {
       init: () => {
@@ -159,10 +163,9 @@ test.describe('recorded sessions', () => {
     await onTable.click();
     await app.getByRole('button', { name: 'Stop playing on the table' }).waitFor();
     assert.deepEqual(await app.evaluate(() => window.calls), ['present']);
-    await studio.shot(app.locator('.pb-timeline'), 'recording/528-play-on-table');
-    // A replay shows phones no way to join.
-    assert.equal(await room.frameLocator('.pb-tv iframe').locator('section.join').count(), 0);
+    await studio.shot(app, 'recording/528-play-on-table');
 
+    // Nothing in a recording can be changed from its pages.
     const viewer = await studio.join('tv', Number(new URL(base).port));
     await assert.rejects(viewer.request('layer.activate', { layer: 'wind', active: true }), /read only/);
     viewer.close();
