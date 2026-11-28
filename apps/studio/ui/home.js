@@ -85,6 +85,51 @@ function confirmDelete(site, bytes) {
   $('delete-cancel').focus();
 }
 
+/**
+ * A card's menu (#709), at (x, y): its actions in a list, the dangerous one apart. Escape, a click
+ * elsewhere or a choice closes it, and the focus goes back to `back`.
+ * @param {[string, () => void, string?][]} actions
+ * @param {number} x
+ * @param {number} y
+ * @param {HTMLElement} back
+ */
+function cardMenu(actions, x, y, back) {
+  document.querySelector('.card-menu')?.remove();
+  const menu = el('div', { className: 'card-menu', role: 'menu' });
+  const close = () => {
+    menu.remove();
+    document.removeEventListener('pointerdown', outside, true);
+    back.focus();
+  };
+  /** @param {Event} event */
+  const outside = (event) => {
+    if (!menu.contains(/** @type {Node} */ (event.target))) close();
+  };
+  for (const [label, act, kind] of actions) {
+    const item = el('button', { type: 'button', role: 'menuitem', className: kind ?? '' }, label);
+    item.addEventListener('click', () => {
+      close();
+      act();
+    });
+    menu.append(item);
+  }
+  menu.addEventListener('keydown', (event) => {
+    const items = [...menu.querySelectorAll('button')];
+    const at = items.indexOf(/** @type {HTMLButtonElement} */ (document.activeElement));
+    if (event.key === 'Escape') close();
+    else if (event.key === 'ArrowDown') items[(at + 1) % items.length]?.focus();
+    else if (event.key === 'ArrowUp') items[(at - 1 + items.length) % items.length]?.focus();
+    else return;
+    event.preventDefault();
+  });
+  document.body.append(menu);
+  const box = menu.getBoundingClientRect();
+  menu.style.left = `${Math.max(8, Math.min(x - (x === back.getBoundingClientRect().right ? box.width : 0), innerWidth - box.width - 8))}px`;
+  menu.style.top = `${Math.max(8, Math.min(y, innerHeight - box.height - 8))}px`;
+  document.addEventListener('pointerdown', outside, true);
+  /** @type {HTMLElement | null} */ (menu.querySelector('button'))?.focus();
+}
+
 async function load(fresh) {
   const state = await invoke('launcher_state');
   $('version').textContent = `Version ${state.version}`;
@@ -107,60 +152,58 @@ async function load(fresh) {
       open.addEventListener('click', () => openTable(site.path));
       const row = el('li', { className: site.problem ? 'broken' : fresh && site.path === fresh ? 'fresh' : '' }, open);
       row.dataset.id = site.id;
-      const tools = el('span', { className: 'card-tools' });
-      // Duplicate (#99): a copy to change, the way to start from an example or from another table.
+      // The card's other actions live in its ⋯ menu and on right-click (#709); a click opens the table.
+      /** @type {[string, () => void, string?][]} */
+      const actions = [];
       if (!site.problem) {
-        const copy = el(
-          'button',
-          { type: 'button', className: 'remove', title: example ? 'Make your own copy of this example to change' : 'Make a copy of this table, with its own name' },
+        // Duplicate (#99): a copy to change, the way to start from an example or from another table.
+        actions.push([
           'Duplicate',
-        );
-        copy.addEventListener('click', async () => {
-          copy.disabled = true;
-          showError();
-          try {
-            const made = await invoke('duplicate_table', { path: site.path });
-            await load(made);
-          } catch (e) {
-            showError(e);
-            copy.disabled = false;
-          }
-        });
-        tools.append(copy);
+          async () => {
+            showError();
+            try {
+              const made = await invoke('duplicate_table', { path: site.path });
+              await load(made);
+            } catch (e) {
+              showError(e);
+            }
+          },
+        ]);
         // Read only: a copy is opened, so a demo or a test changes nothing in the table itself.
-        const look = el(
-          'button',
-          { type: 'button', className: 'remove', title: 'Open a copy of this table: nothing changed in the editor, on the controller or on phones is saved to it' },
-          // The short words where the card is narrow, so the three buttons keep to one row (#643).
-          el('span', { className: 'long' }, 'Open read-only'),
-          el('span', { className: 'short' }, 'Read-only'),
-        );
-        look.addEventListener('click', () => openTable(site.path, false, true));
-        tools.append(look);
+        actions.push(['Open read-only', () => openTable(site.path, false, true)]);
       }
       if (site.source === 'added') {
-        const remove = el('button', { type: 'button', className: 'remove', title: 'Take it off this list. The folder is not deleted.' }, 'Remove from list');
-        remove.addEventListener('click', async () => {
-          await invoke('remove_site', { path: site.path });
-          await load();
-        });
-        tools.append(remove);
+        actions.push([
+          'Remove from list',
+          async () => {
+            await invoke('remove_site', { path: site.path });
+            await load();
+          },
+        ]);
       }
+      actions.push(['Show in folder', () => void invoke('table_reveal', { path: site.path }).catch(showError)]);
       // Your own tables can be deleted, after a confirmation; the examples come with the app (#184).
-      if (!example) {
-        // A bin at the right end of the row, with the word in its tooltip and for screen readers (#643).
-        const del = el('button', { type: 'button', className: 'remove danger', title: `Delete…\nMove this table's folder to the ${TRASH}` });
-        del.setAttribute('aria-label', 'Delete…');
-        del.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3" /></svg>';
-        del.addEventListener('click', () => confirmDelete(site, facts.dataset.size));
-        tools.append(del);
-      }
-      if (tools.childElementCount) row.append(tools);
+      if (!example) actions.push(['Delete…', () => confirmDelete(site, facts.dataset.size), 'danger']);
+      const more = el('button', { type: 'button', className: 'card-more', title: 'More: duplicate, open read-only, delete…' }, '⋯');
+      more.setAttribute('aria-label', `More for ${site.name}`);
+      more.setAttribute('aria-haspopup', 'menu');
+      more.addEventListener('click', (event) => {
+        event.stopPropagation();
+        const box = more.getBoundingClientRect();
+        cardMenu(actions, box.right, box.bottom + 4, more);
+      });
+      row.addEventListener('contextmenu', (event) => {
+        event.preventDefault();
+        cardMenu(actions, event.clientX, event.clientY, open);
+      });
+      row.append(more);
       // The picture from the last time it was closed, and the space it takes, come after (#131).
       invoke('table_details', { path: site.path })
         .then((details) => {
-          if (details.thumbnail) picture.style.backgroundImage = `url("${details.thumbnail}")`;
-          picture.classList.toggle('has-picture', !!details.thumbnail);
+          // The picture from the last visit, or until then a drawing of its own streets and buildings (#709).
+          const art = details.thumbnail ?? details.sketch;
+          if (art) picture.style.backgroundImage = `url("${art}")`;
+          picture.classList.toggle('has-picture', !!art);
           facts.dataset.size = size(details.bytes);
           if (!site.problem && !example) facts.textContent = `${edited(site.edited)} · ${size(details.bytes)}`;
           if (example) facts.textContent = `Comes with MR Studio · ${size(details.bytes)}`;
@@ -558,9 +601,10 @@ function show(view) {
   if (view === 'new') drawStep();
 }
 
-for (const id of ['nav-new', 'card-new']) $(id).addEventListener('click', newTable);
-for (const id of ['nav-open', 'card-open']) $(id).addEventListener('click', openFolder);
-for (const id of ['nav-file', 'card-file']) $(id).addEventListener('click', () => openTableFile());
+// The three start cards are the one place to begin (#709); the sidebar no longer repeats them.
+$('card-new').addEventListener('click', newTable);
+$('card-open').addEventListener('click', openFolder);
+$('card-file').addEventListener('click', () => openTableFile());
 window.addEventListener('mrs-opened-file', () => void openWaitingFile());
 $('nav-settings').addEventListener('click', () => invoke('open_settings').catch(showError));
 // Operator mode (#394): the exhibition computer's own window; leaving it takes the PIN.

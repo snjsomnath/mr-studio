@@ -25,6 +25,8 @@ pub struct Details {
     pub bytes: u64,
     /// The picture of the map from when the table was last left, as a `data:` URL.
     pub thumbnail: Option<String>,
+    /// Until there is a picture, a drawing of its own streets and buildings (#709).
+    pub sketch: Option<String>,
 }
 
 /// Where the editor keeps the picture of the map; the host writes it (`mrs_host::THUMBNAIL`).
@@ -36,7 +38,8 @@ pub fn details(path: &Path) -> Details {
         .ok()
         .filter(|b| b.starts_with(&[0xFF, 0xD8]))
         .map(|bytes| format!("data:image/jpeg;base64,{}", base64::engine::general_purpose::STANDARD.encode(bytes)));
-    Details { bytes: folder_size(path), thumbnail }
+    let sketch = if thumbnail.is_none() { crate::sketch::sketch(path) } else { None };
+    Details { bytes: folder_size(path), thumbnail, sketch }
 }
 
 /// The bytes of every file under `path`. Links are not followed, so a link to a large

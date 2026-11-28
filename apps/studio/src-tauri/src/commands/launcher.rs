@@ -109,6 +109,17 @@ pub(crate) async fn table_details(path: PathBuf) -> Result<sites::Details, Strin
     tokio::task::spawn_blocking(move || sites::details(&path)).await.map_err(text)
 }
 
+/// Shows a table's folder in Finder or Explorer, from its card's menu on Home (#709). Only a
+/// folder with a site.json is shown.
+#[tauri::command]
+pub(crate) async fn table_reveal(app: AppHandle, path: PathBuf) -> Result<(), String> {
+    let site = path.join("site.json");
+    if !site.is_file() {
+        return Err(format!("{} is not a table folder.", path.display()));
+    }
+    app.opener().reveal_item_in_dir(site).map_err(text)
+}
+
 /// Asks for a folder and adds it to the picker. `None` when the dialog was cancelled.
 #[tauri::command]
 pub(crate) async fn add_site(app: AppHandle, shell: State<'_, Shell>) -> Result<Option<SiteEntry>, String> {
