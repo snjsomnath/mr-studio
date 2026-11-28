@@ -395,10 +395,28 @@ test.describe('editor', () => {
     const when = open.getByRole('slider', { name: 'When' });
     await when.waitFor();
     assert.equal(await when.getAttribute('step'), '25', 'one step per column');
-    await when.focus();
-    await tv.keyboard.press('Home');
-    for (let i = 0; i < 2; i++) await tv.keyboard.press('ArrowRight');
-    await open.locator('.control', { hasText: 'When' }).locator('.control-value', { hasText: '2010' }).waitFor();
+    // Paused, the year stops moving; on a slow runner a last play tick can still land after the
+    // pause, so wait until it has held still before stepping.
+    const year = open.locator('.control', { hasText: 'When' }).locator('.control-value');
+    let last = '';
+    let still = 0;
+    await until(async () => {
+      const now = await year.textContent();
+      still = now === last ? still + 1 : 0;
+      last = now;
+      return still >= 5;
+    }, 'the year to hold still once paused', 15000);
+    // Home, then two steps right: one column each.
+    await until(async () => {
+      await when.focus();
+      await tv.keyboard.press('Home');
+      for (let i = 0; i < 2; i++) await tv.keyboard.press('ArrowRight');
+      for (let i = 0; i < 10; i++) {
+        if ((await year.textContent())?.includes('2010')) return true;
+        await tv.waitForTimeout(100);
+      }
+      return false;
+    }, 'the When readout to show 2010', 15000);
     await tv.waitForTimeout(400);
     await studio.shot(tv, 'editor/408-when-year');
   });

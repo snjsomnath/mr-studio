@@ -71,7 +71,7 @@ test.describe('setup guide', () => {
   test('a ground file that does not say where it is is read again in the system the author names', async ({ studio }) => {
     const guide = await guidePage(studio);
     const ground = guide.locator('.wz-place[data-target="terrain"]');
-    await guide.getByLabel('File for Ground').setInputFiles(path.join(root, 'sites', 'chalmers', 'data', 'terrain.tif'));
+    await guide.getByLabel('File for Ground').setInputFiles(path.join(root, 'crates', 'mrs-site', 'tests', 'fixtures', 'campus-terrain.tif'));
     await guide.getByLabel('EPSG code of the file').fill('3006');
     await ground.getByRole('button', { name: 'Read it again' }).click();
     // Read as that system it lies far from this table, and the host says so.

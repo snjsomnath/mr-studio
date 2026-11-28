@@ -2543,8 +2543,9 @@ mod tests {
 
     #[test]
     fn terrain_from_a_national_grid_geotiff() {
-        let repo = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../sites/chalmers/data");
-        let tif = std::fs::read(repo.join("terrain.tif")).unwrap();
+        // The Chalmers campus files, kept as fixtures since the site moved to its own repository (#740).
+        let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+        let tif = std::fs::read(fixtures.join("campus-terrain.tif")).unwrap();
 
         // The sample district lies a few hundred metres north of the campus raster.
         let sample = scratch("terrain-miss");
@@ -2595,11 +2596,11 @@ mod tests {
 
         // A whole campus of buildings and trees, as exported for the old app.
         let started = std::time::Instant::now();
-        let buildings = std::fs::read(repo.join("buildings.geojson")).unwrap();
+        let buildings = std::fs::read(fixtures.join("campus-buildings.geojson")).unwrap();
         let prepared = inspect(&campus, &Target::Buildings, "buildings.geojson", &buildings, Options::default());
         assert!(prepared.report.ok && prepared.report.count == 788, "{:?}", prepared.report);
         let (campus, _) = apply(&campus, prepared).unwrap();
-        let trees = std::fs::read(repo.join("trees.geojson")).unwrap();
+        let trees = std::fs::read(fixtures.join("campus-trees.geojson")).unwrap();
         let prepared = inspect(&campus, &Target::Trees, "trees.geojson", &trees, Options::default());
         assert_eq!(prepared.report.count, 8120);
         assert_eq!(prepared.report.preview.as_ref().unwrap()["features"].as_array().unwrap().len(), PREVIEW_LIMIT);

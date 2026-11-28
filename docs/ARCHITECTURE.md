@@ -75,7 +75,6 @@ packages/
   mcp/            @mrstudio/mcp: MCP server that lets a team's LLM assemble sites and draft core requests
 sites/
   sample/         small synthetic site used by tests and layer dev mode
-  chalmers/       flagship reference site
 samples/          a kit of sample data; service-example (a small Python service a site can bring, site.md, Services), controller-map-example and map-stage-example
 templates/        site: the source of the site template repository
 docs/contracts/   the interface contracts below

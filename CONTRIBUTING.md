@@ -83,7 +83,7 @@ commercial licences.
 ```bash
 pnpm install
 pnpm dev                                  # the host and the web dev server on the sample site
-pnpm dev -- --site sites/chalmers         # another site
+pnpm dev -- --site ../my-table           # another table, from its own folder
 ```
 
 <http://localhost:5173/dev> is the layer dev mode: the table with one layer's generated controls

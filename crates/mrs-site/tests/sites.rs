@@ -18,9 +18,15 @@ fn sample_site_bakes() {
     assert!(stats.buildings > 50 && stats.trees > 50);
 }
 
+/// The Chalmers campus lives in its own repository since #740. Point MRS_SITE_CHALMERS at a
+/// checkout of it to run this; without it the test says so and passes.
 #[test]
 fn chalmers_bakes_from_mesh_and_geotiff() {
-    let site = Site::load(site("chalmers")).unwrap();
+    let Some(dir) = std::env::var_os("MRS_SITE_CHALMERS") else {
+        eprintln!("chalmers_bakes_from_mesh_and_geotiff: MRS_SITE_CHALMERS is not set, so the campus is not checked");
+        return;
+    };
+    let site = Site::load(PathBuf::from(dir)).unwrap();
     let (scene, stats) = site.bake().unwrap();
     let grid = scene.grid;
     assert_eq!((grid.width, grid.height), (1250, 750));

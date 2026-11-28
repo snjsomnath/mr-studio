@@ -26,7 +26,6 @@ packages/layers      core layers (listed below)
 packages/mcp         MCP server: build a site by talking to an LLM
 packages/join        the join page on GitHub Pages that phones open from the QR code (docs/join-page.md)
 sites/sample         a small synthetic site for tests and dev mode
-sites/chalmers       the Chalmers campus, the flagship reference site
 samples              a kit of sample data, and small examples: a Python service, a controller map, a map stage
 templates/site       the source of the site template repository
 changes              release notes waiting for the next version (docs/RELEASING.md)
