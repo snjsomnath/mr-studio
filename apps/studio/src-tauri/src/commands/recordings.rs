@@ -59,6 +59,17 @@ pub(crate) async fn recording_open(app: AppHandle, shell: State<'_, Shell>, id: 
     let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or_default();
     let copy = mrs_host::playback_table(&folder, &table, &root.join(format!("playback-{stamp}")))?;
     tracing::info!("playing back {} on a copy of {}", folder.display(), table.display());
+    // Calibration and colour are this computer's, for its projector (#528): a table that came
+    // inside a .mrsession file uses this computer's calibration of the same table, or none.
+    if table.starts_with(&folder) {
+        let here = local_table(&shell, catalogue.table["id"].as_str().unwrap_or_default());
+        let calibration = here.map(|t| t.join("calibration.json")).filter(|c| c.is_file());
+        let into = copy.join("calibration.json");
+        let _ = match calibration {
+            Some(mine) => std::fs::copy(mine, &into).map(|_| ()),
+            None => std::fs::remove_file(&into),
+        };
+    }
     table::launch_playback(&app, copy, folder).await.map_err(text)?;
     open_editor(&app, "playback").map_err(text)?;
     close_shell_pages(&app);
@@ -80,17 +91,17 @@ fn recording_table(shell: &Shell, folder: &Path, catalogue: &mrs_host::Catalogue
         return Ok(inside);
     }
     let table_id = catalogue.table["id"].as_str().unwrap_or_default();
+    local_table(shell, table_id).ok_or_else(|| {
+        let name = catalogue.table["name"].as_str().unwrap_or(table_id);
+        format!("The table this was recorded on ({name}) is not on this computer. Add it on Home, then play the recording again.")
+    })
+}
+
+/// This computer's own copy of the table `id`: its folder before the one that ships with the app.
+fn local_table(shell: &Shell, id: &str) -> Option<PathBuf> {
     let settings = shell.settings();
     let tables = sites::discover(&settings.sites, &shell.sites_folders, &shell.resources.join("sites"));
-    tables
-        .iter()
-        .filter(|t| t.id == table_id && t.problem.is_none())
-        .min_by_key(|t| t.source == "built in")
-        .map(|t| t.path.clone())
-        .ok_or_else(|| {
-            let name = catalogue.table["name"].as_str().unwrap_or(table_id);
-            format!("The table this was recorded on ({name}) is not on this computer. Add it on Home, then play the recording again.")
-        })
+    tables.into_iter().filter(|t| t.id == id && t.problem.is_none()).min_by_key(|t| t.source == "built in").map(|t| t.path)
 }
 
 /// Export… (#529): the recording and a frozen copy of its table as one .mrsession file, with

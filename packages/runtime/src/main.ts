@@ -425,7 +425,8 @@ async function main() {
       const foot = second ?? side;
       // No Home button: pressing the open layer's button again closes it and leaves the map at rest (#74).
       if (second) second.append(rightCards);
-      foot.append(joinPanel(store));
+      // A recording played back takes no phones, so it shows no way to join (#528).
+      if (!store.state.session.playback) foot.append(joinPanel(store));
       // While a session is recorded the controller, and only the controller, shows a red dot (#522).
       if (role === 'tv') stage.append(recordingDot(store));
       // The session and the engine are for whoever runs the table: the developer page has them, the visitors' controller does not.

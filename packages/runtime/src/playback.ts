@@ -163,6 +163,30 @@ export async function playbackRoom(app: HTMLElement, store: Store, connection: C
   track.append(ticks, marks, head, range);
   bar.append(play, speed, prev, next, time, track);
 
+  // Play on the table (#528): in the app, the recording goes on the projector and the TV chosen
+  // in the Display tab, with this computer's calibration, while the timeline stays here.
+  type Invoke = (command: string, args?: Record<string, unknown>) => Promise<unknown>;
+  const invoke = (window as { __TAURI__?: { core?: { invoke?: Invoke } } }).__TAURI__?.core?.invoke;
+  if (invoke) {
+    let showing = false;
+    const onTable = button('Play on the table', 'pb-button pb-on-table');
+    onTable.title = 'Show this recording on the projector and the TV. Phones cannot join a replay.';
+    onTable.addEventListener('click', async () => {
+      onTable.disabled = true;
+      try {
+        await invoke(showing ? 'stop_presenting' : 'present');
+        showing = !showing;
+        onTable.textContent = showing ? 'Stop playing on the table' : 'Play on the table';
+      } catch (error) {
+        onTable.title = String(error);
+        onTable.textContent = 'Could not reach the screens';
+      } finally {
+        onTable.disabled = false;
+      }
+    });
+    bar.append(onTable);
+  }
+
   app.replaceChildren(banner, views, bar);
 
   // ---- Time --------------------------------------------------------------------------------
@@ -284,11 +308,20 @@ export async function playbackRoom(app: HTMLElement, store: Store, connection: C
           jump.append(el('span', 'pb-at', clock(n.t)), el('span', '', n.text));
           jump.addEventListener('click', () => go(n.t));
           const edit = button('Edit', 'pb-small');
-          edit.addEventListener('click', async () => {
-            const text = window.prompt('The note', n.text);
-            if (text === null) return;
-            notes = (await connection.request<{ notes: Note[] }>('playback.note', { id: n.id, text })).notes;
-            drawNotes();
+          edit.addEventListener('click', () => {
+            // Edited in place: the app's windows do not all show the browser's own prompts.
+            const box = el('textarea', 'pb-note-edit');
+            box.value = n.text;
+            box.rows = 2;
+            const save = button('Save', 'pb-small');
+            save.addEventListener('click', async () => {
+              const text = box.value.trim();
+              if (!text) return box.focus();
+              notes = (await connection.request<{ notes: Note[] }>('playback.note', { id: n.id, text })).notes;
+              drawNotes();
+            });
+            item.replaceChildren(box, save);
+            box.focus();
           });
           const remove = button('Delete', 'pb-small');
           remove.addEventListener('click', async () => {

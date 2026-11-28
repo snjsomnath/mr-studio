@@ -148,6 +148,21 @@ test.describe('recorded sessions', () => {
     await studio.shot(room.locator('.pb-side'), 'recording/527-events-notes');
 
     // Nothing in a recording can be changed from its pages.
+    // Play on the table (#528), in the app: the screens are the app's, the timeline stays here.
+    const app = await studio.open(`${base}/playback`, { width: 1600, height: 900 }, {
+      init: () => {
+        window.calls = [];
+        window.__TAURI__ = { core: { invoke: async (command) => window.calls.push(command) } };
+      },
+    });
+    const onTable = app.getByRole('button', { name: 'Play on the table' });
+    await onTable.click();
+    await app.getByRole('button', { name: 'Stop playing on the table' }).waitFor();
+    assert.deepEqual(await app.evaluate(() => window.calls), ['present']);
+    await studio.shot(app.locator('.pb-timeline'), 'recording/528-play-on-table');
+    // A replay shows phones no way to join.
+    assert.equal(await room.frameLocator('.pb-tv iframe').locator('section.join').count(), 0);
+
     const viewer = await studio.join('tv', Number(new URL(base).port));
     await assert.rejects(viewer.request('layer.activate', { layer: 'wind', active: true }), /read only/);
     viewer.close();

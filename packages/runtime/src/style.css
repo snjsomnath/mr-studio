@@ -4493,7 +4493,8 @@ body[data-role='playback'] #app {
   font-variant-numeric: tabular-nums;
 }
 
-.pb-notes textarea {
+.pb-notes textarea,
+.pb-note-edit {
   width: 100%;
   box-sizing: border-box;
   border: 1px solid var(--line);
@@ -4630,3 +4631,7 @@ body[data-role='playback'] #app {
   opacity: 0.35;
 }
 body[data-role='playback'] select { background: #fff; color: var(--text); border: 1px solid var(--line); border-radius: 6px; }
+
+.pb-on-table {
+  margin-left: 0.4rem;
+}

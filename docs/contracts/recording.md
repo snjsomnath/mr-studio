@@ -133,6 +133,16 @@ controller, one phone) and by kind; the same filter thins the ticks on the timel
 notes and events as text** and **Save as CSV** (`time, seconds, kind, who, text`) take the
 review away with the notes, chapters and the events the filter shows.
 
+### Play on the table (#528)
+
+In the app, the room has **Play on the table**: the recording goes on the projector and the TV
+chosen in the Display tab (`present`), while the timeline stays in the room; **Stop playing on
+the table** takes it off (`stop_presenting`). Calibration and colour are this computer's: a
+table that came inside a `.mrsession` file uses this computer's `calibration.json` for the same
+table id, or none. The controller shows "Recorded session, read only" and no way to join, and
+its presses change nothing. Not yet: a warning when the physical model differs from the
+recorded table.
+
 ## A recording as one file: `.mrsession` (#529)
 
 **Export…** on a recording's card on Home writes one `<name>.mrsession` file
