@@ -436,7 +436,7 @@ fn read_geopackage_file(path: &std::path::Path, file: &str) -> Result<Vec<Layer>
         };
         let quoted = |name: &str| format!("\"{}\"", name.replace('"', "\"\""));
         let mut query = db.prepare(&format!("SELECT * FROM {}", quoted(&table))).map_err(|e| format!("{table}: {e}"))?;
-        let names: Vec<String> = query.column_names().iter().map(|s| s.to_string()).collect();
+        let names: Vec<String> = query.column_names().map(|s| s.to_string()).collect();
         let mut rows = query.query([]).map_err(|e| format!("{table}: {e}"))?;
         let mut features = Vec::new();
         while let Some(row) = rows.next().map_err(|e| format!("{table}: {e}"))? {
