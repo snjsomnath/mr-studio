@@ -522,7 +522,8 @@ export interface SiteInfo {
   data: Record<string, string>;
   tv?: TvConfig | null;
   /** How the table's surfaces render (#134). Without it, `good`. */
-  display?: { quality?: DisplayQuality } | null;
+  /** How the table renders (#134) and its interface sounds' volume, 0 to 1 (#703). */
+  display?: { quality?: DisplayQuality; sounds?: number } | null;
   /** The table's palette (#93): a built-in set and the slots it changes. Resolve with `resolvePalette`. */
   palette?: { set?: string; slots?: Record<string, string> } | null;
   /** The 3D model of the site (`scene.mesh`, docs/contracts/site.md), and whether footprints are raised beside it. */

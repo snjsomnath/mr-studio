@@ -306,8 +306,11 @@ async function main() {
     // The projected table opens with its layers fading in one after another, or, when the table
     // says so, zoomed out over its surroundings and slowly zooming in (#446). The controller's
     // Reset plays it again. `?intro=0` leaves it out, for scripted screenshots.
+    // A tap for a layer button and a chime when the table opens (#703), on the table's speakers only.
+    const sounds = role === 'table' ? (await import('./ui-sounds.ts')).tableSounds(store) : null;
     if (role === 'table' && new URLSearchParams(location.search).get('intro') !== '0') {
       const opening = () => {
+        sounds?.opened();
         if (store.state.site.table?.intro === 'zoom') return view.playIntro();
         const { layers, scene } = store.state;
         view.playFade(stackOrder(store, scene).filter((id) => layers[id]?.active));

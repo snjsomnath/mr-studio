@@ -828,7 +828,7 @@ pub struct SiteManifest {
     /// starts beside the table (a Python model in its own venv) or addresses it forwards to.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub services: Vec<Service>,
-    /// How the table's surfaces render (#134): `{ "quality": "draft" | "good" | "best" }`.
+    /// How the table's surfaces render (#134): `{ "quality": "draft" | "good" | "best", "sounds": 0..1 }`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub display: Option<Value>,
     #[serde(default)]
