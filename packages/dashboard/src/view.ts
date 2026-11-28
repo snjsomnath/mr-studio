@@ -6,7 +6,7 @@ import type { PanelControls, PanelLayer, PanelSpec } from '@mrstudio/sdk';
 import { resolveProps } from './bind.ts';
 import type { BindSource } from './bind.ts';
 import { pack } from './pack.ts';
-import type { Page } from './pack.ts';
+import type { PackItem, Page } from './pack.ts';
 import type { WidgetDefinition, WidgetHandle, WidgetRegistry } from './registry.ts';
 import { GRID, ROTATE_S } from './rules.ts';
 import { panelOverflow } from './overflow.ts';
@@ -40,10 +40,13 @@ export interface PanelInput {
   page?: number;
 }
 
-/** The grid's margin, gap and smallest row, in units (see dashboard.css). */
-const MARGIN_U = 3;
+/** The grid's gap and smallest row, in units (see dashboard.css). The margin is measured: a host may set it. */
 const GAP_U = 1.5;
-// A row is at least this tall, so a tile (two rows) holds a title, a headline number and its caption (#137).
+// A short canvas gets fewer rows, not shorter ones (#137). Rows as tall as a full screen's (14.4
+// units at 16:9, less a little) give every panel the room it was designed for (#715). Only when
+// that would split what is up over pages may they shrink, down to 8 units, so a tile still holds
+// its title, number and caption, and every panel stays on the one page.
+const FULL_ROW_U = 14;
 const MIN_ROW_U = 8;
 
 export interface DashboardOptions {
@@ -110,6 +113,8 @@ export class DashboardView {
   private rotateS: number;
   /** How many grid rows the canvas has room for. Six, unless the canvas is short. */
   private rows: number = GRID.rows;
+  /** How many rows the canvas has room for at full height, and at the least height allowed. */
+  private room: { full: number; most: number } = { full: GRID.rows, most: GRID.rows };
   private readonly probe: HTMLElement;
   private readonly resize: ResizeObserver | undefined;
 
@@ -144,15 +149,30 @@ export class DashboardView {
    * fit goes to the next page.
    */
   private measure(): void {
-    const unit = this.probe.getBoundingClientRect().height;
+    const { height: unit, width: margin } = this.probe.getBoundingClientRect();
     const height = this.root.clientHeight;
     if (!unit || !height) return;
-    const [margin, gap] = [MARGIN_U * unit, GAP_U * unit];
-    const rows = Math.max(1, Math.min(GRID.rows, Math.floor((height - 2 * margin + gap) / (MIN_ROW_U * unit + gap))));
-    if (rows === this.rows) return;
-    this.rows = rows;
-    this.root.style.setProperty('--mrs-rows', String(rows));
+    const gap = GAP_U * unit;
+    const fit = (rowU: number) => Math.max(1, Math.min(GRID.rows, Math.floor((height - 2 * margin + gap) / (rowU * unit + gap))));
+    const room = { full: fit(FULL_ROW_U), most: fit(MIN_ROW_U) };
+    if (room.full === this.room.full && room.most === this.room.most) return;
+    this.room = room;
     this.sync();
+  }
+
+  /**
+   * The rows to lay out in: full height if everything up fits on one page that way, else the
+   * fewest rows (down to the least height) that keep it on one page, else full height and pages.
+   */
+  private chooseRows(items: PackItem<PanelInput>[]): number {
+    const { full, most } = this.room;
+    const free = items.filter((item) => !item.at).length;
+    const onePage = (rows: number) => {
+      const pages = pack(items, rows);
+      return pages.length <= 1 && (pages[0]?.panels.filter((p) => !p.item.spec.at).length ?? 0) === free;
+    };
+    for (let rows = full; rows <= most; rows++) if (onePage(rows)) return rows;
+    return full;
   }
 
   /** Applies a site's theme. Tokens that break a rule are refused and reported. */
@@ -192,17 +212,20 @@ export class DashboardView {
       sources.set(input.key, source);
       return visible(input, source);
     });
-    this.pages = pack(
-      shown.map((input) => ({
-        item: input,
-        size: input.spec.size,
-        reads: panelReads(input.spec, this.registry.get(input.spec.widget)!),
-        priority: input.spec.priority,
-        at: input.spec.at,
-        page: input.page,
-      })),
-      this.rows,
-    );
+    const items: PackItem<PanelInput>[] = shown.map((input) => ({
+      item: input,
+      size: input.spec.size,
+      reads: panelReads(input.spec, this.registry.get(input.spec.widget)!),
+      priority: input.spec.priority,
+      at: input.spec.at,
+      page: input.page,
+    }));
+    const rows = this.chooseRows(items);
+    if (rows !== this.rows) {
+      this.rows = rows;
+      this.root.style.setProperty('--mrs-rows', String(rows));
+    }
+    this.pages = pack(items, rows);
 
     while (this.pagesEl.children.length < this.pages.length) this.pagesEl.append(h('div', 'mrs-page'));
     while (this.pagesEl.children.length > Math.max(1, this.pages.length)) this.pagesEl.lastElementChild!.remove();
@@ -210,6 +233,12 @@ export class DashboardView {
     const keep = new Set<string>();
     this.pages.forEach((page, index) => {
       const pageEl = this.pagesEl.children[index] as HTMLElement;
+      // A site's hand-made page keeps the rows it was written with, down to its lowest panel, so a
+      // panel is never laid into rows the grid does not have (#715). On a canvas too short for them
+      // the rows are shorter, and the overflow check says which panels no longer fit.
+      const lowest = Math.max(0, ...page.panels.filter((p) => p.item.spec.at).map((p) => p.row + p.rows - 1));
+      if (lowest > this.rows) pageEl.style.setProperty('--mrs-rows', String(lowest));
+      else pageEl.style.removeProperty('--mrs-rows');
       for (const placed of page.panels) {
         const input = placed.item;
         keep.add(input.key);
