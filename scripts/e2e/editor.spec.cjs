@@ -53,6 +53,25 @@ test.describe('editor', () => {
     await studio.shot(bar, 'editor/713-status-bar');
   });
 
+  test('a share reads as a percentage, typed as one too, and labels keep to one line (#710)', async ({ studio }) => {
+    const { page } = await editorAt(studio, '#layer=wind');
+    const more = page.locator('.ed-inspector details.ed-more');
+    if (!(await more.evaluate((d) => d.open))) await more.locator('summary').click();
+    const opacity = page.locator('.ed-inspector .control').filter({ has: page.getByRole('slider', { name: 'Opacity', exact: true }) }).locator('.control-value');
+    await opacity.filter({ hasText: /^\d+\s%$/ }).waitFor();
+    await opacity.click();
+    await page.keyboard.press(`${mod}+a`);
+    await page.keyboard.type('40');
+    await page.keyboard.press('Enter');
+    await opacity.filter({ hasText: /^40\s%$/ }).waitFor();
+    for (const label of await page.locator('.ed-inspector .control-label').all()) {
+      if (!(await label.isVisible())) continue;
+      const box = await label.boundingBox();
+      assert.ok(box && box.height < 24, `"${await label.innerText()}" wraps`);
+    }
+    await studio.shot(page.locator('.ed-inspector'), 'editor/710-inspector');
+  });
+
   test('Back returns to the layer before (#47)', async ({ studio }) => {
     const { page, inspector, row } = await editorAt(studio, '#layer=wind');
     await until(async () => (await inspector()) === 'Wind', 'Wind in the inspector');

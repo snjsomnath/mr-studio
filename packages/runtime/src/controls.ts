@@ -42,7 +42,22 @@ export function clock(hours: number): string {
   return formatClock(hours);
 }
 
+/**
+ * A range without a unit that runs within 0 to 1 (opacity, volume, a share) reads as a percentage
+ * (#710): 85 %, not 0.85. Its value stays a fraction; only what people see and type changes.
+ */
+export function isShare(control: Extract<Control, { type: 'range' }>): boolean {
+  return !control.unit && control.min >= 0 && control.max <= 1;
+}
+
+/** What the typing field starts with: the value as it reads, without its unit. */
+function typedValue(value: number, control: Extract<Control, { type: 'range' }>): string {
+  if (control.unit === 'h') return clock(value);
+  return isShare(control) ? String(Number((value * 100).toFixed(1))) : String(value);
+}
+
 function formatNumber(value: number, control: Extract<Control, { type: 'range' }>): string {
+  if (isShare(control)) return formatUnit(value * 100, '%', control.step && control.step < 0.01 ? 1 : 0);
   // Hours read as a clock (#64), not as a decimal.
   const decimals = control.step && control.step < 1 ? Math.min(3, String(control.step).split('.')[1]?.length ?? 0) : 0;
   // One formatter (#397): the session's decimal mark, and 270° but 5 m/s.
@@ -59,6 +74,8 @@ export function parseValue(text: string, control: Extract<Control, { type: 'rang
   // A typed number reads with a point or a comma, and its unit after it is ignored (#397).
   let value = control.unit === 'h' && time ? Number(time[1]) + Number(time[2]) / 60 : parseNumber(clean.replace(/[^\d.,\s\u00a0−-]+$/, ''));
   if (value === null || !Number.isFinite(value)) return null;
+  // A share is typed as a percentage (#710): "85" or "85 %" is 0.85.
+  if (isShare(control)) value /= 100;
   value = Math.min(control.max, Math.max(control.min, value));
   if (control.step) value = control.min + Math.round((value - control.min) / control.step) * control.step;
   return Number(value.toFixed(6));
@@ -254,6 +271,8 @@ export function widget(control: Control, send: (value: unknown) => void, act: (w
   const id = `c-${Math.random().toString(36).slice(2)}`;
   const label = el('label', 'control-label', control.label);
   label.htmlFor = id;
+  // The full words when a narrow panel cuts the label short (#710).
+  label.title = control.label;
   if (control.help) row.title = control.help;
   let sync: (value: unknown, params?: Record<string, unknown>, shared?: Record<string, unknown>) => void = () => {};
 
@@ -290,11 +309,11 @@ export function widget(control: Control, send: (value: unknown) => void, act: (w
         readout.tabIndex = 0;
         readout.classList.add('is-exact');
         readout.setAttribute('role', 'button');
-        readout.title = control.unit === 'h' ? 'Click to type a time, such as 13:30' : `Click to type a value from ${control.min} to ${control.max}${control.unit ? ` ${control.unit}` : ''}`;
+        readout.title = control.unit === 'h' ? 'Click to type a time, such as 13:30' : isShare(control) ? `Click to type a percentage from ${typedValue(control.min, control)} to ${typedValue(control.max, control)}` : `Click to type a value from ${control.min} to ${control.max}${control.unit ? ` ${control.unit}` : ''}`;
         const edit = (): void => {
           if (head.querySelector('.control-exact')) return;
           const field = el('input', 'control-exact');
-          Object.assign(field, { type: 'text', inputMode: control.unit === 'h' ? 'text' : 'decimal', value: saved === null ? '' : control.unit === 'h' ? clock(saved) : String(saved) });
+          Object.assign(field, { type: 'text', inputMode: control.unit === 'h' ? 'text' : 'decimal', value: saved === null ? '' : typedValue(saved, control) });
           field.setAttribute('aria-label', `${control.label}${control.unit ? `, ${control.unit === 'h' ? 'time' : control.unit}` : ''}`);
           readout.hidden = true;
           readout.after(field);
@@ -321,8 +340,8 @@ export function widget(control: Control, send: (value: unknown) => void, act: (w
               event.preventDefault();
               const now = parseValue(field.value, control) ?? saved ?? control.min;
               const step = (control.step ?? (control.max - control.min) / 100) * (event.shiftKey ? 10 : 1);
-              const next = parseValue(String(now + (event.key === 'ArrowUp' ? step : -step)), control) ?? now;
-              field.value = control.unit === 'h' ? clock(next) : String(next);
+              const next = parseValue(typedValue(now + (event.key === 'ArrowUp' ? step : -step), control), control) ?? now;
+              field.value = typedValue(next, control);
             }
           });
           field.addEventListener('blur', () => finish(true));

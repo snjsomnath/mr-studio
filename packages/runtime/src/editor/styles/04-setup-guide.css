@@ -470,6 +470,19 @@
   color: #a3aab6;
 }
 
+/* The controller switch is quiet while a setting is on the controller, as most are (#710): it shows
+   on the row's hover and focus. A setting kept from visitors keeps its crossed-out screen in view. */
+.ed-eye[aria-checked='true'] {
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+
+.ed-setting:hover > .ed-eye,
+.ed-setting:focus-within > .ed-eye,
+.ed-eye:focus-visible {
+  opacity: 1;
+}
+
 .ed-setting.is-hidden > .control .control-label {
   color: #a3aab6;
 }
