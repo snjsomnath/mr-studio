@@ -66,7 +66,8 @@ pub enum Kind {
 
 /// Words in a display's name that say what it is, whoever made it.
 const PROJECTOR_WORDS: [&str; 5] = ["projector", "beamer", "pj", "dlp", "proj"];
-const TV_WORDS: [&str; 4] = ["tv", "hdtv", "bravia", "uhd tv"];
+// Signage screens (LG SIGNAGE at the studio PC, #612) are large screens that stand where a TV does.
+const TV_WORDS: [&str; 5] = ["tv", "hdtv", "bravia", "uhd tv", "signage"];
 /// Makers that sell projectors, and next to nothing else with a screen.
 const PROJECTOR_MAKERS: [&str; 18] = [
     "epson",
@@ -189,7 +190,9 @@ impl Displays {
         let tv = others()
             .filter(|d| d.kind == Some(Kind::Tv))
             .min_by_key(|d| is_primary(d))
-            .or_else(|| others().find(|d| is_primary(d)))
+            // With a third screen and no TV recognised, the controller goes on the other external
+            // screen, not the operator's own (the laptop panel at the studio PC, #612).
+            .or_else(|| others().find(|d| !is_primary(d)))
             .or_else(|| others().next());
         let window = |role: &str, display: &Display| WindowSpec { role: role.into(), display: display.reference(), fullscreen: true };
         match (table, tv) {
@@ -338,7 +341,7 @@ mod tests {
         {
             assert_eq!(Kind::guess(projector), Some(Kind::Projector), "{projector}");
         }
-        for tv in ["SAMSUNG", "LG TV SSCR2", "Sony TV", "BRAVIA 4K", "Philips FTV", "TCL 55C", "Hisense", "VIZIO V505"] {
+        for tv in ["SAMSUNG", "LG TV SSCR2", "LG SIGNAGE", "Sony TV", "BRAVIA 4K", "Philips FTV", "TCL 55C", "Hisense", "VIZIO V505"] {
             assert_eq!(Kind::guess(tv), Some(Kind::Tv), "{tv}");
         }
         for neither in ["Color LCD", "DELL U2720Q", "HDMI-1", r"\\.\DISPLAY1", "LG ULTRAGEAR", "Built-in Retina Display", ""] {
@@ -354,9 +357,16 @@ mod tests {
         // The projector is the primary display and the TV is not.
         let swapped = [display(0, "EPSON PJ", true), display(1, "LG TV SSCR2", false)];
         assert_eq!(roles(&swapped), [("table".to_string(), 0), ("tv".to_string(), 1)]);
-        // No TV: the controller stays on the primary display.
+        // No TV recognised among three: the controller goes on the other external screen, not
+        // the operator's laptop panel (#612).
         let no_tv = [display(0, "Color LCD", true), display(1, "DELL U2720Q", false), display(2, "BenQ W2700", false)];
-        assert_eq!(roles(&no_tv), [("table".to_string(), 2), ("tv".to_string(), 0)]);
+        assert_eq!(roles(&no_tv), [("table".to_string(), 2), ("tv".to_string(), 1)]);
+        // Two screens: the controller stays on the primary one.
+        let two = [display(0, "Color LCD", true), display(1, "BenQ W2700", false)];
+        assert_eq!(roles(&two), [("table".to_string(), 1), ("tv".to_string(), 0)]);
+        // The studio PC (#612): laptop panel, LG SIGNAGE, EPSON PJ.
+        let studio = [display(0, r"\\.\DISPLAY1", true), display(1, "LG SIGNAGE", false), display(2, "EPSON PJ", false)];
+        assert_eq!(roles(&studio), [("table".to_string(), 2), ("tv".to_string(), 1)]);
         // Names that say nothing: as before, the table on the other display.
         let plain = [display(0, "HDMI-1", false), display(1, "eDP-1", true)];
         assert_eq!(roles(&plain), [("table".to_string(), 0), ("tv".to_string(), 1)]);
