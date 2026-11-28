@@ -187,7 +187,7 @@ export class FetchAll {
   private clock(): HTMLElement {
     const line = el('span', 'fa-clock');
     line.setAttribute('role', 'status');
-    // Which server and part the host is asking now (#424), e.g. "Asking overpass-api.de, part 2 of 4".
+    // Which server and part the host is asking now (#424), e.g. "Asking OpenStreetMap, part 2 of 4".
     let asking = '';
     const say = () => {
       const seconds = Math.floor((Date.now() - this.since) / 1000);

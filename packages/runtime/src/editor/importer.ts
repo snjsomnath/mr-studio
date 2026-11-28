@@ -501,7 +501,12 @@ export class Importer {
         kind.append(el('p', 'im-about', 'GeoJSON, a CSV with lat and lon columns, or a shapefile zip or GeoPackage as SGU, Lantmäteriet and SLU hand them out (one layer at a time; you pick which). A GeoTIFF of values, such as soil depth or noise, becomes a raster a layer colours by value. A CSV without positions, such as activity through the day or flows and links between places, is kept as a table that place motions join to places by name or id. An SVG plan drawing covers the table, and its layers are revealed one phase at a time. A video (MP4, MOV or WebM) plays on the controller as a Video walk, with the walker moving along a path on the table.'));
       }
       nodes.push(kind);
-      if (item) nodes.push(el('p', 'im-about', item.about), exampleBox(item.dataset, this.host.site()));
+      if (item) {
+        // The file format is for those who want it (#712): folded away, one click to see it.
+        const format = el('details', 'im-format');
+        format.append(el('summary', undefined, 'Show the file format'), exampleBox(item.dataset, this.host.site()));
+        nodes.push(el('p', 'im-about', item.about), format);
+      }
       const buttons = el('div', 'wz-report-actions');
       buttons.append(...this.sourceButtons(item, false));
       nodes.push(buttons);

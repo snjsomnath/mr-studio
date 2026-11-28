@@ -634,6 +634,16 @@ button.ed-saved:hover {
   background: transparent;
 }
 
+/* A dialog gives its × the focus when it opens (#712): no ring for the mouse, a clean accent ring for the keyboard. */
+.ed-icon-button:focus {
+  outline: none;
+}
+
+.ed-icon-button:focus-visible {
+  outline: 2px solid var(--ed-accent);
+  outline-offset: 1px;
+}
+
 .ed-row {
   display: flex;
   align-items: center;

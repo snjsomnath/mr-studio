@@ -9,7 +9,10 @@ test.describe('import and new tables', () => {
     await adder.locator('.ed-tab[data-tab="insert"]').click();
     await adder.locator('.ed-ribbon [data-command="data.file"]').click();
     const dialog = adder.locator('dialog.im-dialog');
-    // Each kind explains what its file should look like.
+    // Each kind explains what its file should look like,
+    // folded away behind "Show the file format" (#712).
+    await studio.shot(dialog, 'import/712-format-folded');
+    await dialog.locator('.im-format summary', { hasText: 'Show the file format' }).click();
     await dialog.locator('.im-example', { hasText: 'GeoJSON polygons' }).waitFor();
     await dialog.getByLabel('What the file holds').selectOption('own');
     await dialog.getByLabel('Name of the dataset').fill('Places');
