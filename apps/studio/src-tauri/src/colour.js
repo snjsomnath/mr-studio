@@ -57,14 +57,6 @@
     current = settings;
     apply();
   };
-  // The controller's size on this display (#682): style.css and the dashboard multiply their
-  // unit by it. The table ignores it, since its text is sized in millimetres on the model.
-  window.__mrsSize = (size) => {
-    const root = document.documentElement;
-    if (size === 1) root.style.removeProperty('--mrs-ui-scale');
-    else root.style.setProperty('--mrs-ui-scale', String(size));
-  };
-
   // The script runs before the page exists; the blended layers need a body.
   document.addEventListener('DOMContentLoaded', apply);
 

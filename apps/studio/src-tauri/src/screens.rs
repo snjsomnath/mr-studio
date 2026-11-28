@@ -490,7 +490,6 @@ pub(crate) fn open_surfaces(app: &AppHandle, port: u16, displays: &Displays) -> 
         let label = format!("surface-{generation}-{n}-{}", spec.role);
         // The colour pass for this display is in place before the page draws anything.
         let colour = target.map(|d| colours.for_display(d)).unwrap_or_default();
-        let size = target.map(|d| colours.size_for(d)).unwrap_or(1.0);
         let builder = WebviewWindowBuilder::new(app, &label, WebviewUrl::External(url))
             .title(format!("MR Studio · {}", spec.role))
             .inner_size(1400.0, 840.0)
@@ -515,12 +514,11 @@ pub(crate) fn open_surfaces(app: &AppHandle, port: u16, displays: &Displays) -> 
         let window = builder
             .initialization_script(format!(
                 // The window's name, which its page sends with each sign of life (#79).
-                "window.__MRS_SHELL__ = true;\nwindow.__MRS_WINDOW__ = {};\nwindow.__MRS_OPERATOR__ = {};\n{SHORTCUTS}\n{}\n{}\n{}\n{}",
+                "window.__MRS_SHELL__ = true;\nwindow.__MRS_WINDOW__ = {};\nwindow.__MRS_OPERATOR__ = {};\n{SHORTCUTS}\n{}\n{}\n{}",
                 serde_json::to_string(&label).expect("a label is a string"),
                 shell.operator_mode.is_on(),
                 colour::SCRIPT,
                 colour.script(),
-                colour::size_script(size),
                 // The way back. A table with a controller beside it is seen by visitors, so
                 // there it shows only when the pointer goes to the top edge (#295).
                 if spec.role == "table" && displays.windows.len() > 1 {

@@ -64,42 +64,7 @@
     );
     renderPresets();
     renderLayers();
-    renderSize();
   }
-
-  // The controller's size on the chosen display (#682).
-  const percent = (size) => `${Math.round(size * 100)}%`;
-  function renderSize() {
-    const size = current()?.size ?? 1;
-    $('ui-size').value = String(size);
-    $('ui-size').disabled = !current();
-    $('ui-size-value').textContent = percent(size);
-  }
-  let sizePending = null;
-  let sizeSending = false;
-  async function sendSize(size) {
-    current().size = size;
-    $('ui-size-value').textContent = percent(size);
-    sizePending = { display, size };
-    if (sizeSending) return;
-    sizeSending = true;
-    while (sizePending) {
-      const next = sizePending;
-      sizePending = null;
-      try {
-        await invoke('set_size', next);
-      } catch (e) {
-        showError(String(e));
-      }
-    }
-    sizeSending = false;
-  }
-  $('ui-size').addEventListener('input', () => current() && sendSize(Number($('ui-size').value)));
-  $('ui-size').addEventListener('dblclick', () => {
-    if (!current()) return;
-    $('ui-size').value = '1';
-    sendSize(1);
-  });
 
   function renderLayers() {
     $('layers-block').hidden = colourState.layers.length === 0;

@@ -29,7 +29,6 @@ type AppCommand =
   | 'quit'
   | 'colour_state'
   | 'set_colour'
-  | 'set_size'
   | 'save_preset'
   | 'delete_preset'
   | 'test_card'

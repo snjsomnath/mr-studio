@@ -14,10 +14,8 @@
    * Rule tokens. The unit is 1% of the canvas height, less on a canvas narrower than 4:3.
    * A host can set --mrs-u-floor so text never shrinks below it on a short canvas, such as
    * the controller with a layer's hero open; that canvas then gets fewer rows (view.ts).
-   * --mrs-ui-scale is the display's size from the app's settings (#682): larger gives fewer
-   * rows and more pages, never a panel that spills.
    */
-  --mrs-u: calc(max(min(1cqh, 0.75cqw), var(--mrs-u-floor, 0px)) * var(--mrs-ui-scale, 1));
+  --mrs-u: max(min(1cqh, 0.75cqw), var(--mrs-u-floor, 0px));
   --mrs-margin: calc(3 * var(--mrs-u));
   --mrs-gap: calc(1.5 * var(--mrs-u));
   --mrs-pad: calc(1.8 * var(--mrs-u));
