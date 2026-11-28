@@ -140,6 +140,8 @@ export class DashboardView {
         this.checkSoon();
       });
       this.resize.observe(root);
+      // The unit can change without the canvas changing size: the display's size setting (#682).
+      this.resize.observe(this.probe);
     }
   }
 

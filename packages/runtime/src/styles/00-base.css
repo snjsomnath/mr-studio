@@ -16,8 +16,14 @@
  * The controller screen beside the table is designed at 1920x1080 and scales with the
  * screen, so a 46-inch 4K TV shows the same layout as a 1080p one, only sharper.
  * Everything in this file is in rem for that reason (hairlines stay in px).
- * --mrs-ui-scale is the per-display "Controller size" (1 = as designed).
+ * --mrs-ui-scale is the per-display "Controller size" (1 = as designed, 0.8 to 1.5), set by
+ * the app's shell (#682) or by ?size= in the address. The table keeps its size: its text is
+ * measured on the model.
  */
+body[data-role='table'] {
+  --mrs-ui-scale: 1;
+}
+
 :root:has(body[data-role='tv']) {
   font-size: clamp(12px, calc(min(100vw / 120, 100vh / 67.5) * var(--mrs-ui-scale, 1)), 48px);
 }

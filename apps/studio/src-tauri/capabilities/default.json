@@ -30,6 +30,7 @@
     "allow-quit",
     "allow-colour-state",
     "allow-set-colour",
+    "allow-set-size",
     "allow-save-preset",
     "allow-delete-preset",
     "allow-test-card",

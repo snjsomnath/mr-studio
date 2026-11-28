@@ -26,6 +26,8 @@ pub(crate) struct DisplayColour {
     /// What is showing on it now, if a session is running: table, tv or dev.
     role: Option<String>,
     colour: Colour,
+    /// The controller's size there, as a share of the designed size (#682).
+    size: f64,
 }
 
 #[derive(Serialize)]
@@ -45,6 +47,7 @@ pub(crate) async fn colour_state(app: AppHandle, shell: State<'_, Shell>) -> Res
         name: d.name.clone().filter(|n| !n.is_empty()).unwrap_or_else(|| format!("Display {}", d.index + 1)),
         role: surfaces.iter().find(|(_, index)| *index == d.index).and_then(|(label, _)| label.rsplit('-').next().map(str::to_string)),
         colour: config.for_display(d),
+        size: config.size_for(d),
     });
     let built_in = colour::built_in_presets().into_iter().map(|(name, colour)| Preset { name: name.into(), built_in: true, colour });
     let saved = config.presets.iter().map(|(name, colour)| Preset { name: name.clone(), built_in: false, colour: colour.clamped() });
@@ -94,6 +97,23 @@ pub(crate) fn set_colour(app: AppHandle, shell: State<'_, Shell>, display: usize
     }
     config.write(&shell.colour_path()).map_err(text)?;
     on_display(&app, display, &colour.script());
+    Ok(())
+}
+
+/// Saves how large the controller is drawn on a display and applies it to what is showing there.
+#[tauri::command]
+pub(crate) fn set_size(app: AppHandle, shell: State<'_, Shell>, display: usize, size: f64) -> Result<(), String> {
+    let size = colour::clamp_size(size);
+    let displays = list_displays(&app).map_err(text)?;
+    let target = displays.iter().find(|d| d.index == display).ok_or("that display is no longer connected")?;
+    let mut config = ColourConfig::read(&shell.colour_path());
+    if size == 1.0 {
+        config.sizes.remove(&colour::key(target));
+    } else {
+        config.sizes.insert(colour::key(target), size);
+    }
+    config.write(&shell.colour_path()).map_err(text)?;
+    on_display(&app, display, &colour::size_script(size));
     Ok(())
 }
 
