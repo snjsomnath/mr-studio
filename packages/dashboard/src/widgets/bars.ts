@@ -34,15 +34,7 @@ export const bars = defineWidget({
     const list = h('div', 'mrs-bars');
     el.append(list);
     const rows: { label: HTMLElement; value: HTMLElement; fill: HTMLElement; row: HTMLElement }[] = [];
-    // A list too long for its panel loses its tail (#681): on a canvas whose rows had to shrink to
-    // keep the page together, or at a large controller size (#682), the last bars give way.
-    const fit = () => {
-      for (const { row } of rows) row.hidden = false;
-      if (!list.isConnected || list.clientHeight === 0) return;
-      for (let shown = rows.length; shown > 1 && list.scrollHeight > list.clientHeight + 1; shown--) rows[shown - 1]!.row.hidden = true;
-    };
     return {
-      fit,
       update(props) {
         const items = (props.items ?? []) as { label?: string; value?: number; slot?: number }[];
         while (rows.length < items.length) {
@@ -65,7 +57,6 @@ export const bars = defineWidget({
           row.fill.style.width = `${Math.max(0, Math.min(1, (item.value ?? 0) / scale)) * 100}%`;
           row.fill.style.background = slotColor(item.slot);
         });
-        fit();
       },
     };
   },

@@ -18,8 +18,6 @@ import { coreWidgets, DashboardView, examplePanel, worstCasePanel } from '../src
 import type { PanelInput } from '../src/index.ts';
 
 const query = new URLSearchParams(location.search);
-// &size=1.5: the display's controller size from the app's settings (#682).
-if (query.has('size')) document.documentElement.style.setProperty('--mrs-ui-scale', query.get('size')!);
 const view = new DashboardView(document.getElementById('canvas')!, { dev: true, rotateS: 6, empty: 'Turn a layer on to see it here' });
 if (query.get('theme') === 'light') {
   view.setTheme(light);

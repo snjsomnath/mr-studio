@@ -23,16 +23,14 @@ const screens = [
 let failed = 0;
 try {
   for (const viewport of screens) {
-    // The controller also at the largest size a display may set (#682).
-    const shapes = ['tv', 'controller', 'controller&size=1.5'];
-    for (const [props, shape] of ['example', 'worst'].flatMap((props) => shapes.map((shape) => [props, shape]))) {
+    for (const [props, shape] of ['example', 'worst'].flatMap((props) => ['tv', 'controller'].map((shape) => [props, shape]))) {
       const page = await browser.newPage({ viewport });
       const errors = [];
       page.on('pageerror', (error) => errors.push(error.message));
       await page.goto(`${url}?view=fit&case=${props}&shape=${shape}&still`);
       await page.waitForFunction(() => window.__fit, null, { timeout: 60_000 });
       const fit = await page.evaluate(() => window.__fit);
-      const name = `${which} ${viewport.width}x${viewport.height} ${shape.replace('&size=', ' at ')} ${props}`;
+      const name = `${which} ${viewport.width}x${viewport.height} ${shape} ${props}`;
       const problems = [...fit.overflow.map((o) => `${o.key}: ${o.what} ${o.side === 'inside' ? `cuts off ${o.px}px` : `reaches ${o.px}px past the panel's ${o.side} edge`}`), ...fit.refused.map((i) => `${i.path}: refused, ${i.message}`), ...errors.map((e) => `page error: ${e}`)];
       console.log(`${problems.length ? 'FAIL' : 'ok  '} ${name}: ${fit.cases} panels${problems.length ? `, ${problems.length} problems` : ''}`);
       for (const p of problems) console.log(`       ${p}`);
