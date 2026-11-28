@@ -83,7 +83,7 @@ pub fn shown(remote: &str) -> String {
 
 /// The folder name a repository address suggests: `.../chalmers-table.git` → `chalmers-table`.
 pub fn folder_for(remote: &str) -> Option<String> {
-    let last = shown(remote).rsplit(['/', ':']).next()?.to_string();
+    let last = shown(remote).rsplit(['/', ':', '\\']).next()?.to_string();
     let clean: String = last.chars().filter(|c| c.is_alphanumeric() || matches!(c, '-' | '_' | ' ' | '.')).collect();
     (!clean.trim().is_empty() && clean != "." && clean != "..").then(|| clean.trim().to_string())
 }
@@ -233,6 +233,7 @@ mod tests {
         assert!(clone(dir.join("nothing.git").to_str().unwrap(), &dir.join("sites")).is_err());
         assert_eq!(shown("https://oauth2:secret@git.chalmers.se/group/table.git"), "git.chalmers.se/group/table");
         assert_eq!(folder_for("git@github.com:me/lindholmen.git").as_deref(), Some("lindholmen"));
+        assert_eq!(folder_for(r"C:\Users\me\chalmers-table.git").as_deref(), Some("chalmers-table"));
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
