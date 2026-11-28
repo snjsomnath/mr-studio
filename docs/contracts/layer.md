@@ -239,6 +239,18 @@ widgets. No module code is needed.
 - The entity inspector, the step strip and the rails stay. The TV's own panels keep the strip under
   the stage; if the stage leaves too little room for them, that strip stays blank.
 
+### Shared looks for a hero (#708)
+
+A hero's own buttons and cards use the controller's shared classes, so every layer's panel looks
+like Sunlight's, not like a web form:
+
+| Class | For |
+| --- | --- |
+| `mrs-button` | An action: a glass button with a light edge. |
+| `mrs-button is-danger` | An action that deletes something. It is red, and filled while `data-armed="true"` (press again to confirm). |
+| `mrs-glass` | A card or round button over a picture or a sky. |
+| `mrs-empty` | "Nothing yet": a centred title in `<b>`, with a quieter line under it. |
+
 ### A map stage, with no code (#374)
 
 `stage` can be a map that fills the centre under the layer's name, with a few panels along its

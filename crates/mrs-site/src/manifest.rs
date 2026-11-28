@@ -38,8 +38,9 @@ pub struct Table {
     /// A soft glow in the projector's blank space in the model's own colours (#476, present.md, Ambient glow).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub glow: Option<Glow>,
-    /// How the projected table opens when it starts and after the controller's Reset: the layers
-    /// fading in one after another (the default) or the zoom in from the city around it (#446).
+    /// How the projected table opens when it starts and after the controller's Reset: the place
+    /// building itself from its streets, buildings and trees (the default, #697), the layers fading
+    /// in one after another, or the zoom in from the city around it (#446).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub intro: Option<Intro>,
 }
@@ -48,8 +49,12 @@ pub struct Table {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum Intro {
-    /// The layers at rest fade in one after another, bottom first, each part of a layer a moment after the one before.
+    /// The place builds itself on a dark table: streets trace in from the middle, then the
+    /// buildings and trees, and the layers at rest fade in as the dark lifts (#697). A table
+    /// without streets or buildings fades instead.
     #[default]
+    Build,
+    /// The layers at rest fade in one after another, bottom first, each part of a layer a moment after the one before.
     Fade,
     /// The map starts zoomed out over the city around the table and slowly zooms in (#446).
     Zoom,
@@ -574,7 +579,7 @@ pub struct LayerButton {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub hidden: bool,
     /// Who made what the layer shows, as one line under its name on the controller (#659),
-    /// such as "Artwork by Vishvi Rajakaruna and Fabio Latino".
+    /// such as "Drawings by the original artist".
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(length(max = 200))]
     pub credit: Option<String>,
@@ -828,7 +833,7 @@ pub struct SiteManifest {
     /// starts beside the table (a Python model in its own venv) or addresses it forwards to.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub services: Vec<Service>,
-    /// How the table's surfaces render (#134): `{ "quality": "draft" | "good" | "best" }`.
+    /// How the table's surfaces render (#134): `{ "quality": "draft" | "good" | "best", "sounds": 0..1 }`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub display: Option<Value>,
     #[serde(default)]

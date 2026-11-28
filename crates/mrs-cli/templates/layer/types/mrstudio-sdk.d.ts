@@ -610,8 +610,8 @@ declare module "@mrstudio/sdk/types" {
                 strength?: number;
                 colours?: 'edges' | 'one';
             };
-            /** How the projected table opens, at start and after Reset: the layers fading in (the default) or the zoom in (#446). */
-            intro?: 'fade' | 'zoom';
+            /** How the projected table opens, at start and after Reset: the place building itself (the default, #697), the layers fading in, or the zoom in (#446). */
+            intro?: 'build' | 'fade' | 'zoom';
         } | null;
         basemap: {
             background: string;
@@ -644,8 +644,10 @@ declare module "@mrstudio/sdk/types" {
         data: Record<string, string>;
         tv?: TvConfig | null;
         /** How the table's surfaces render (#134). Without it, `good`. */
+        /** How the table renders (#134) and its interface sounds' volume, 0 to 1 (#703). */
         display?: {
             quality?: DisplayQuality;
+            sounds?: number;
         } | null;
         /** The table's palette (#93): a built-in set and the slots it changes. Resolve with `resolvePalette`. */
         palette?: {

@@ -7,6 +7,7 @@
 import type { Connection, LayerManifest, LayerState, MediaKind } from '@mrstudio/sdk';
 
 import { el, isAmbient, isAtRest, layerButton } from '../controls.ts';
+import { uiVolume } from '../ui-sounds.ts';
 import type { Store } from '../store.ts';
 import './gallery.css';
 import { DisplayTab } from './display-tab.ts';
@@ -430,6 +431,10 @@ export class Editor {
     this.displayTab = new DisplayTab(invoke, connection, this.canvas, () => void invoke?.('open_settings', { page: 'setup' }));
     this.displayTab.setQuality(this.store.state.site.display?.quality ?? 'good');
     this.store.onDisplay((quality) => this.displayTab.setQuality(quality));
+    // The table's interface sounds (#703), Soft when site.json does not say.
+    const sounds = () => this.displayTab.setSounds(uiVolume(this.store.state.site.display));
+    sounds();
+    this.store.onDisplay(sounds);
     this.tabs.setAttribute('role', 'tablist');
     this.tabs.ariaLabel = 'Ribbon';
     this.ribbon.setAttribute('role', 'tabpanel');

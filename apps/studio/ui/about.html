@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light" />
+    <title>About MR Studio</title>
+    <link rel="stylesheet" href="about.css" />
+  </head>
+  <body>
+    <!-- MR Studio's own About window (#699). about.js fills in the version and the licences. -->
+    <header class="hero">
+      <div class="logo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 3 7.5l9 4.5 9-4.5L12 3Z" /><path d="m3 12 9 4.5 9-4.5" /><path d="m3 16.5 9 4.5 9-4.5" /></svg></div>
+      <h1>MR Studio</h1>
+      <p class="tagline">Interactive tables for places: a physical model, a projected map, a controller and phones.</p>
+      <p class="version"><b id="version">Version</b> <span id="build"></span></p>
+      <p class="system" id="system"></p>
+      <div class="links">
+        <button type="button" id="whats-new">What's new in this version</button>
+      </div>
+    </header>
+
+    <main>
+      <section>
+        <h2>Made by</h2>
+        <p>© 2026 Nodal Works AB. MR Studio is source-available under the Business Source License 1.1; teaching and research use is free.</p>
+        <p id="licence-line" class="hint" hidden></p>
+        <p class="hint">A table's own credits are on its controller.</p>
+      </section>
+
+      <section>
+        <h2>Map and data sources</h2>
+        <ul class="sources">
+          <li><b>OpenStreetMap</b><span>Buildings, streets, paths and trees. © OpenStreetMap contributors, ODbL.</span></li>
+          <li><b>Lantmäteriet</b><span>Swedish maps, aerial photos and heights. © Lantmäteriet.</span></li>
+          <li><b>SGU</b><span>Soil and groundwater, Geological Survey of Sweden.</span></li>
+          <li><b>SLU</b><span>Map services from the Swedish University of Agricultural Sciences.</span></li>
+          <li><b>Terrain tiles</b><span>Free elevation from Mapzen's terrain tiles (SRTM, GMTED and others).</span></li>
+          <li><b>CARTO</b><span>Light and dark base maps. © CARTO, © OpenStreetMap contributors.</span></li>
+          <li><b>Västtrafik</b><span>Live public transport in western Sweden.</span></li>
+        </ul>
+      </section>
+
+      <section>
+        <div class="section-head">
+          <h2>Open-source licences</h2>
+          <button type="button" id="notices-show">Show</button>
+        </div>
+        <p class="hint">MR Studio is built on open-source software. Here is every library it ships, with its licence.</p>
+        <p id="notices-error" class="hint" hidden></p>
+        <div id="notices" hidden>
+          <input id="notices-search" type="search" placeholder="Find a library or licence" />
+          <p id="notices-summary" class="hint"></p>
+          <div id="notices-list" class="notices-list"></div>
+        </div>
+      </section>
+    </main>
+    <script src="about.js"></script>
+  </body>
+</html>

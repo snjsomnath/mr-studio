@@ -146,6 +146,7 @@ export class DisplayTab {
   private readonly clearButton = tool('Clear', 'trash');
   private readonly calibrationStatus = el('span', 'dt-status');
   private readonly qualityButtons = new Map<DisplayQuality, HTMLButtonElement>();
+  private readonly soundButtons = new Map<number, HTMLButtonElement>();
   private readonly problem = el('span', 'dt-status is-error');
   /** The calibration guide, while it is open (#181). */
   private guide: HTMLElement | null = null;
@@ -176,12 +177,14 @@ export class DisplayTab {
       const note = el('p', 'dt-note', 'They belong to this computer, so they are in File › Settings, the same for every table.');
       groups.push(group('This computer', open, note));
       groups.push(setting('computer.quality', 'dialog:screens', this.qualityGroup()));
+      groups.push(setting('table.sounds', 'dialog:screens', this.soundsGroup()));
     } else {
       // In a browser there is no Settings window: the projector is lined up here (settings-list.ts, #392).
       groups.push(setting('computer.calibration', 'dialog:screens', this.projectorGroup()));
       const note = el('p', 'dt-note', 'The colour of each display is set in the MR Studio desktop app, where the table is projected.');
       groups.push(group('Colour', note));
       groups.push(setting('computer.quality', 'dialog:screens', this.qualityGroup()));
+      groups.push(setting('table.sounds', 'dialog:screens', this.soundsGroup()));
     }
     this.groups = groups;
 
@@ -230,6 +233,39 @@ export class DisplayTab {
       this.qualityButtons.set(quality, button);
     }
     return group('Quality', column(...this.qualityButtons.values()));
+  }
+
+  /**
+   * Off, Soft or Normal for the table's interface sounds (#703): a tap when a layer button is
+   * pressed and a chime when the table opens. They play on the table's speakers only, never here,
+   * and the controller's sound switch silences them with everything else.
+   */
+  private soundsGroup(): HTMLElement {
+    const choices: [number, string, string, string][] = [
+      [0, 'Off', 'muted', 'No taps or chimes from the table.'],
+      [0.35, 'Soft', 'sound', 'A quiet tap for each layer button and a chime when the table opens. The default.'],
+      [0.8, 'Normal', 'sound', 'The same sounds, louder, for a busy room.'],
+    ];
+    for (const [sounds, label, iconName, tip] of choices) {
+      const button = tool(label, iconName);
+      button.title = tip;
+      button.addEventListener('click', () => {
+        this.setSounds(sounds);
+        this.connection.request('site.display', { display: { sounds } }).catch((error) => this.say(text(error)));
+      });
+      this.soundButtons.set(sounds, button);
+    }
+    return group('Interface sounds', column(...this.soundButtons.values()));
+  }
+
+  /** Shows the nearest of Off, Soft and Normal to the table's sound volume. */
+  setSounds(volume: number): void {
+    const values = [...this.soundButtons.keys()];
+    const near = values.reduce((a, b) => (Math.abs(b - volume) < Math.abs(a - volume) ? b : a), values[0] ?? 0);
+    for (const [value, button] of this.soundButtons) {
+      button.classList.toggle('is-on', value === near);
+      button.setAttribute('aria-pressed', String(value === near));
+    }
   }
 
   /** Shows which quality the table uses. */

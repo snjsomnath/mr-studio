@@ -81,6 +81,7 @@ export const SETTINGS = {
   'computer.calibration': { label: 'Projector calibration', owner: 'computer', home: 'dialog:screens' },
   'computer.colour': { label: 'Colour of each display', owner: 'computer', home: 'app:settings' },
   'computer.quality': { label: 'Drawing quality', owner: 'computer', home: 'dialog:screens' },
+  'table.sounds': { label: 'Interface sounds on the table', owner: 'table', home: 'dialog:screens' },
 } as const satisfies Record<string, SettingInfo>;
 
 export type SettingId = keyof typeof SETTINGS;

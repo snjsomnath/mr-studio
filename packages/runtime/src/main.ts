@@ -306,11 +306,22 @@ async function main() {
     // The projected table opens with its layers fading in one after another, or, when the table
     // says so, zoomed out over its surroundings and slowly zooming in (#446). The controller's
     // Reset plays it again. `?intro=0` leaves it out, for scripted screenshots.
+    // A tap for a layer button and a chime when the table opens (#703), on the table's speakers only.
+    const sounds = role === 'table' ? (await import('./ui-sounds.ts')).tableSounds(store) : null;
     if (role === 'table' && new URLSearchParams(location.search).get('intro') !== '0') {
+      // The signature build (#697) is the default: from the table's own streets, buildings and
+      // trees. A table without them, or a room asking for less motion, fades instead.
+      const { loadOpening, hasShape, DEFAULT_LENGTH_MS } = await import('./opening.ts');
+      const built = loadOpening(store.state.site);
+      const calm = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
       const opening = () => {
-        if (store.state.site.table?.intro === 'zoom') return view.playIntro();
+        sounds?.opened();
+        const table = store.state.site.table;
+        if (table?.intro === 'zoom') return view.playIntro();
         const { layers, scene } = store.state;
-        view.playFade(stackOrder(store, scene).filter((id) => layers[id]?.active));
+        const resting = stackOrder(store, scene).filter((id) => layers[id]?.active);
+        if (table?.intro === 'fade' || calm) return view.playFade(resting);
+        void built.then((plan) => (hasShape(plan) ? view.playBuild(resting, plan, DEFAULT_LENGTH_MS) : view.playFade(resting)));
       };
       opening();
       connection.on('table.intro', opening);

@@ -19,6 +19,7 @@
     "allow-open-home",
     "allow-quit",
     "allow-open-settings",
+    "allow-job-finished",
     "allow-open-view",
     "allow-create-site",
     "allow-open-site",

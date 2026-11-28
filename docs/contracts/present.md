@@ -104,13 +104,14 @@ A layer that has steps declares how it moves through them:
 
 ## Opening
 
-**Built.** The projected table comes in the same way when it starts and after **Reset** on the controller (host event `table.intro`, session.md). Switching layers never plays it. `table.intro` picks one of two:
+**Built.** The projected table comes in the same way when it starts and after **Reset** on the controller (host event `table.intro`, session.md). Switching layers never plays it. `table.intro` picks one of three:
 
 ```jsonc
 "table": { "width_cm": 100, "height_cm": 60, "intro": "fade" }
 ```
 
-- `"fade"`, the default (also when `intro` is missing): the table starts empty on its background and the layers at rest come in one after another, bottom first: 0.6 s of nothing, then a new layer every 0.85 s, each taking 3 s. Within a layer each part it drew (a field, a set of shapes, a canvas, a decoration) starts a little after the one before, so the base map's ground, water, streets and buildings build up in turn. Through a projector calibration the model's picture takes each layer's share. The ribbons and the ambient glow come in last, over 1.2 s. A layer opened while it plays shows at once.
+- `"build"`, the default (also when `intro` is missing, #697): the place builds itself on a dark table from its own `roads`, `walkways`, `buildings` and `trees` datasets, so every table has it without authoring. Over 6 s the streets trace in as light lines from the middle of the site outwards (the first 45%), the buildings fill in (30 to 70%) and the trees pop in as dots (55 to 80%); then the dark lifts and the layers at rest fade in as `"fade"` does. The drawing is a canvas that follows the projector calibration like any layer canvas, and the table's chime (#703) plays as it starts. A table without streets or buildings, or a computer set to reduce motion, fades instead.
+- `"fade"`: the table starts empty on its background and the layers at rest come in one after another, bottom first: 0.6 s of nothing, then a new layer every 0.85 s, each taking 3 s. Within a layer each part it drew (a field, a set of shapes, a canvas, a decoration) starts a little after the one before, so the base map's ground, water, streets and buildings build up in turn. Through a projector calibration the model's picture takes each layer's share. The ribbons and the ambient glow come in last, over 1.2 s. A layer opened while it plays shows at once.
 - `"zoom"` (#446): the map at rest jumps two zoom steps out over the surroundings, holds 0.9 s and eases back in over 6.5 s. Through a projector calibration the model's picture grows into place instead.
 - It is set in the editor under Design › Table size and place, Opening. `/table?intro=0` leaves the opening out, for scripted screenshots.
 

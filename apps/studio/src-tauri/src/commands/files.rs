@@ -176,6 +176,7 @@ pub(crate) async fn export_table(app: &AppHandle) -> anyhow::Result<()> {
         let names: Vec<String> = exported.sources.iter().map(|s| if s.name.is_empty() { s.id.clone() } else { s.name.clone() }).collect();
         format!("On the other computer, set up {} in Sources and keys. The keys did not go in the file.", names.join(", "))
     };
+    crate::notify::job_done(app, EDITOR, &format!("Exported {}", running.name), &format!("{file} is ready to take to another computer."));
     file_menu::tell_editor(
         app,
         EDITOR,
@@ -207,6 +208,7 @@ pub(crate) async fn share_table(app: &AppHandle) -> anyhow::Result<()> {
         tokio::task::spawn_blocking(move || state.export_table_stamped(&out, &version, stamp)).await?.map_err(anyhow::Error::msg)?;
     tracing::info!("shared '{}' as {} ({} bytes)", running.name, target.display(), exported.bytes);
     let size = megabytes(exported.bytes);
+    crate::notify::job_done(app, EDITOR, &format!("{} is packed", running.name), &format!("{size}, ready to share."));
     // Ask before any mail window opens (#578): the size, and for a big table a way that is
     // not email, since most mail servers refuse attachments over 20 to 25 MB.
     let message = match ask_how_to_share(app, &running.name, &size, exported.bytes).await? {

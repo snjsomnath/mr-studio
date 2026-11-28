@@ -73,7 +73,8 @@ pub fn app_menu(app: &AppHandle<Wry>) -> tauri::Result<Menu<Wry>> {
     // App settings (this computer, every table, #73) are File › Settings… only (#593), so the
     // app menu has the about box and the command line tool.
     let app_menu = SubmenuBuilder::new(app, &name)
-        .item(&PredefinedMenuItem::about(app, None, None)?)
+        // MR Studio's own About window (#699), not the plain box the system draws.
+        .item(&MenuItemBuilder::with_id(crate::about::MENU_ID, format!("About {name}")).build(app)?)
         .separator()
         .item(&MenuItemBuilder::with_id(INSTALL_CLI, "Install command line tool…").build(app)?)
         .separator()
@@ -133,7 +134,7 @@ fn view_submenu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Submenu<R>> {
 /// how the table and this computer are doing, to send with a problem, and the folder with the
 /// logs (#260, handled in `diagnostics.rs`).
 fn help_submenu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Submenu<R>> {
-    SubmenuBuilder::new(app, "Help")
+    let mut help = SubmenuBuilder::new(app, "Help")
         .item(&MenuItemBuilder::with_id("help", "MR Studio Help").build(app)?)
         .item(&MenuItemBuilder::with_id("shortcuts", "Keyboard shortcuts").accelerator("CmdOrCtrl+/").build(app)?)
         .separator()
@@ -141,8 +142,12 @@ fn help_submenu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Submenu<R>> {
         .item(&MenuItemBuilder::with_id("copy-diagnostics", "Copy diagnostics").build(app)?)
         .item(&MenuItemBuilder::with_id("save-diagnostics", "Save diagnostics…").build(app)?)
         .separator()
-        .item(&MenuItemBuilder::with_id("open-logs", "Open log folder").build(app)?)
-        .build()
+        .item(&MenuItemBuilder::with_id("open-logs", "Open log folder").build(app)?);
+    // On macOS About is in the app menu, where people look for it (#699).
+    if !cfg!(target_os = "macos") {
+        help = help.separator().item(&MenuItemBuilder::with_id(crate::about::MENU_ID, "About MR Studio").build(app)?);
+    }
+    help.build()
 }
 
 /// The menu items the editor page carries out: Edit (#57), "Table settings…", "Export

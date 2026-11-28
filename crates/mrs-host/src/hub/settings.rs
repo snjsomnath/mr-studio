@@ -295,12 +295,12 @@ impl Hub {
                             };
                             changed.push("ambient glow");
                         }
-                        // How the table opens: the layers fading in (the default, also for null) or the zoom in.
+                        // How the table opens: the place building itself (the default, also for null), the layers fading in, or the zoom in.
                         "intro" => {
                             t.intro = if value.is_null() {
                                 None
                             } else {
-                                Some(serde_json::from_value(value.clone()).map_err(|_| "the opening is fade or zoom".to_string())?)
+                                Some(serde_json::from_value(value.clone()).map_err(|_| "the opening is build, fade or zoom".to_string())?)
                             };
                             changed.push("opening");
                         }
@@ -396,7 +396,7 @@ impl Hub {
         json!({ "sources": used.into_iter().map(|(source, layers)| json!({ "source": source, "layers": layers })).collect::<Vec<_>>() })
     }
 
-    /// `site.display { display: { quality: "draft" | "good" | "best" | null } }`: how the table's surfaces
+    /// `site.display { display: { quality: "draft" | "good" | "best" | null, sounds: 0..1 | null } }`: how the table's surfaces
     /// render (#134). Saved to site.json and sent to every surface as `site.display`, which apply it at once.
     pub(super) fn set_display(&self, p: &Value, who: Who) -> Result<Value, String> {
         let patch = p["display"].as_object().ok_or("missing display")?;
@@ -407,6 +407,8 @@ impl Hub {
         for (key, value) in patch {
             let fits = match key.as_str() {
                 "quality" => matches!(value.as_str(), Some("draft" | "good" | "best")),
+                // The volume of the table's interface sounds (#703): 0 is off.
+                "sounds" => value.as_f64().is_some_and(|v| (0.0..=1.0).contains(&v)),
                 _ => return Err(format!("'{key}' is not a display setting")),
             };
             if value.is_null() {
@@ -418,7 +420,7 @@ impl Hub {
             }
         }
         let display = if display.is_empty() { Value::Null } else { Value::Object(display) };
-        self.saving_later(who, "Changed the display quality", vec![("display", (!display.is_null()).then(|| display.clone()))])?;
+        self.saving_later(who, "Changed the display settings", vec![("display", (!display.is_null()).then(|| display.clone()))])?;
         self.info.write().display = if display.is_null() { None } else { Some(display.clone()) };
         self.emit("site.display", json!({ "display": display }));
         Ok(json!({ "display": display }))
@@ -611,7 +613,7 @@ mod tests {
     fn the_opening_is_a_table_setting() {
         let hub = scratch_hub("table-intro");
         let dev = |method: &str, p: Value| hub.request(Role::Dev, 0, method, &p);
-        assert_eq!(hub.site().table.unwrap().intro, None, "a table without the setting fades in");
+        assert_eq!(hub.site().table.unwrap().intro, None, "a table without the setting builds itself");
         dev("site.table", json!({ "table": { "intro": "zoom" } })).unwrap();
         assert_eq!(Site::load(&hub.site.dir).unwrap().manifest.table.unwrap().intro, Some(mrs_site::Intro::Zoom));
         assert!(dev("site.table", json!({ "table": { "intro": "spin" } })).is_err());
@@ -665,9 +667,12 @@ mod tests {
         assert_eq!(hub.site().display.unwrap()["quality"], "best");
         assert_eq!(Site::load(&hub.site.dir).unwrap().manifest.display.unwrap()["quality"], "best");
         assert!(dev("site.display", json!({ "display": { "quality": "ultra" } })).is_err());
+        dev("site.display", json!({ "display": { "sounds": 0.8 } })).unwrap();
+        assert_eq!(hub.site().display.unwrap()["sounds"], 0.8);
+        assert!(dev("site.display", json!({ "display": { "sounds": 2 } })).is_err());
         assert!(dev("site.display", json!({ "display": { "fps": 60 } })).is_err());
         assert!(hub.request(Role::Phone, 0, "site.display", &json!({ "display": { "quality": "draft" } })).is_err());
-        dev("site.display", json!({ "display": { "quality": null } })).unwrap();
+        dev("site.display", json!({ "display": { "quality": null, "sounds": null } })).unwrap();
         assert!(Site::load(&hub.site.dir).unwrap().manifest.display.is_none());
     }
 }

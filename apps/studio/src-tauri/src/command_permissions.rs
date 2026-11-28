@@ -5,11 +5,12 @@
 
 const MAIN: &str = include_str!("main.rs");
 const BUILD: &str = include_str!("../build.rs");
-const CAPABILITIES: [&str; 4] = [
+const CAPABILITIES: [&str; 5] = [
     include_str!("../capabilities/default.json"),
     include_str!("../capabilities/editor.json"),
     include_str!("../capabilities/operator.json"),
     include_str!("../capabilities/sources.json"),
+    include_str!("../capabilities/about.json"),
 ];
 
 /// The command names inside `tauri::generate_handler![…]` in main.rs, without their module

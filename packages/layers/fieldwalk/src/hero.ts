@@ -29,12 +29,10 @@ const STYLE = `
 .fw-words b { display: block; font-size: 1.35rem; font-weight: 600; }
 .fw-words > span { display: block; font-size: 1.05rem; opacity: 0.88; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fw-count { margin-left: auto; font-size: 1rem; opacity: 0.8; font-variant-numeric: tabular-nums; }
-.fw-nav { position: absolute; top: 50%; width: 3.5rem; height: 3.5rem; margin-top: -1.75rem; border: 0; border-radius: 50%; color: #fff; cursor: pointer; font-size: 1.6rem; line-height: 1;
-  background: rgb(255 255 255 / 0.14); backdrop-filter: blur(0.875rem); -webkit-backdrop-filter: blur(0.875rem); box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.25); }
+.fw-nav { position: absolute; top: 50%; width: 3.5rem; height: 3.5rem; margin-top: -1.75rem; border-radius: 50%; color: #fff; cursor: pointer; font-size: 1.6rem; line-height: 1; }
 .fw-prev { left: 1.25rem; } .fw-next { right: 1.25rem; }
-.fw-empty { position: absolute; inset: 0; display: grid; place-content: center; gap: 0.6rem; text-align: center; padding: 2rem; }
-.fw-empty b { font-size: 1.6rem; font-weight: 600; }
-.fw-empty span { font-size: 1.1rem; opacity: 0.8; max-width: 34rem; line-height: 1.4; }
+.fw-empty { position: absolute; inset: 0; }
+.fw-empty span { font-size: 1.1rem; max-width: 34rem; line-height: 1.4; }
 .fw-strip { display: flex; gap: 0.5rem; overflow-x: auto; padding: 0.25rem 0.1rem 0.5rem; scrollbar-width: thin; }
 .fw-strip-walker { flex: none; align-self: center; width: 2.25rem; height: 2.25rem; border-radius: 50%; display: grid; place-items: center; font-size: 1.15rem; margin-left: 0.35rem; }
 .fw-thumb { flex: none; position: relative; width: 5.25rem; height: 3.75rem; border: 0; padding: 0; border-radius: 0.6rem; overflow: hidden; cursor: pointer; background: #1a1d2b;
@@ -45,8 +43,8 @@ const STYLE = `
 .fw-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .fw-thumb i { position: absolute; inset: 0; display: grid; place-items: center; font-style: normal; font-size: 1.4rem; color: var(--c); }
 .fw-tools { display: flex; gap: 0.6rem; justify-content: flex-end; }
-.fw-tools button { border: 0; border-radius: 0.6rem; padding: 0.5rem 0.9rem; font: inherit; font-size: 0.95rem; cursor: pointer; color: inherit; background: rgb(127 127 127 / 0.16); }
-.fw-tools button[data-armed="true"] { background: #c92a2a; color: #fff; }
+/* The buttons are the controller's shared .mrs-button (#708): Remove and Clear in danger red, Clear set apart. */
+.fw-tools .fw-clear { margin-left: 0.75rem; }
 .fw-tools .fw-said { margin-right: auto; align-self: center; font-size: 0.95rem; opacity: 0.85; }
 .fw-mark { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 0.75rem; text-align: center; }
 .fw-mark i { font-style: normal; font-size: calc(6rem * var(--mrs-hero-scale, 1)); line-height: 1; filter: drop-shadow(0 0.5rem 1.5rem rgb(0 0 0 / 0.4)); }
@@ -71,14 +69,14 @@ export function fieldHero(ctx: PanelContext<Params>, el: HTMLElement): PanelHand
       <img class="fw-photo" alt="" hidden>
       <div class="fw-sound" hidden><canvas class="fw-wave"></canvas><button class="fw-play" type="button"></button></div>
       <div class="fw-mark" hidden><i></i><b></b></div>
-      <div class="fw-empty" hidden><b></b><span></span></div>
-      <button class="fw-nav fw-prev" type="button">‹</button>
-      <button class="fw-nav fw-next" type="button">›</button>
+      <div class="fw-empty mrs-empty" hidden><b></b><span></span></div>
+      <button class="fw-nav fw-prev mrs-glass" type="button">‹</button>
+      <button class="fw-nav fw-next mrs-glass" type="button">›</button>
       <div class="fw-foot"><div class="fw-who"></div><div class="fw-words"><b></b><span></span></div><div class="fw-count"></div></div>
     </div>
     <div class="fw-key" hidden></div>
     <div class="fw-strip" role="listbox"></div>
-    <div class="fw-tools"><span class="fw-said"></span><button type="button" class="fw-remove"></button><button type="button" class="fw-save"></button><button type="button" class="fw-clear"></button></div>`;
+    <div class="fw-tools"><span class="fw-said"></span><button type="button" class="fw-remove mrs-button is-danger"></button><button type="button" class="fw-save mrs-button"></button><button type="button" class="fw-clear mrs-button is-danger"></button></div>`;
   el.append(root);
   const $ = <T extends Element>(s: string) => root.querySelector<T>(s)!;
   const blur = $<HTMLElement>('.fw-blur');

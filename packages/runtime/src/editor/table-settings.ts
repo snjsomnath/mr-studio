@@ -240,12 +240,13 @@ export function placeSettings(host: TableSettingsHost): HTMLElement[] {
   const intro = el('select');
   intro.ariaLabel = 'How the table opens';
   for (const [v, text] of [
+    ['build', 'The place builds itself'],
     ['fade', 'Layers fade in one by one'],
     ['zoom', 'Zoom in from the city around it'],
   ]) intro.append(Object.assign(el('option'), { value: v, textContent: text }));
-  intro.value = t.intro === 'zoom' ? 'zoom' : 'fade';
-  intro.addEventListener('change', () => table({ table: { intro: intro.value === 'fade' ? null : intro.value } }));
-  physical.append(field('Opening', setting('table.intro', 'dialog:place', intro), 'How the projected table comes in when it starts and after Reset on the controller: the layers at rest fading in one after another, bottom first, or the map zooming in from the city around the table.'));
+  intro.value = t.intro ?? 'build';
+  intro.addEventListener('change', () => table({ table: { intro: intro.value === 'build' ? null : intro.value } }));
+  physical.append(field('Opening', setting('table.intro', 'dialog:place', intro), 'How the projected table comes in when it starts and after Reset on the controller: the place building itself on a dark table from its own streets, buildings and trees (#697), the layers at rest fading in one after another, bottom first, or the map zooming in from the city around the table. A table without streets or buildings fades in.'));
   return [about, physical];
 }
 

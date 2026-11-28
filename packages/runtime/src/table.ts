@@ -12,6 +12,8 @@ import { MapFlowOverlay } from './flow-overlay.ts';
 import { MapSpriteOverlay } from './sprite-overlay.ts';
 import { MapStrokeOverlay } from './stroke-overlay.ts';
 import { ModelView } from './model/view.ts';
+import { drawOpening, PHASES } from './opening.ts';
+import type { Opening } from './opening.ts';
 import { pixelRatio } from './quality.ts';
 import { tablePointer } from './table-pointer.ts';
 
@@ -480,7 +482,7 @@ export class TableView {
     if (!fade) return drawn.intensity;
     const rank = fade.ranks.get(instance);
     if (rank === undefined) return drawn.intensity;
-    const progress = (performance.now() - fade.start - FADE_HOLD_MS - rank * FADE_LAYER_GAP_MS) / FADE_LAYER_MS;
+    const progress = (performance.now() - fade.start - fade.hold - rank * FADE_LAYER_GAP_MS) / FADE_LAYER_MS;
     return drawn.intensity * partShare(progress, part);
   }
 
@@ -950,10 +952,10 @@ export class TableView {
    * `layers` are the layers at rest in stacking order, bottom first; a layer opened while it plays
    * shows at once.
    */
-  playFade(layers: readonly string[]): void {
+  playFade(layers: readonly string[], hold = FADE_HOLD_MS): void {
     this.endIntro();
     const start = performance.now();
-    const fade = { start, ranks: new Map(layers.map((id, rank) => [id, rank])), frame: 0, end: start + FADE_HOLD_MS + Math.max(0, layers.length - 1) * FADE_LAYER_GAP_MS + FADE_LAYER_MS };
+    const fade = { start, hold, ranks: new Map(layers.map((id, rank) => [id, rank])), frame: 0, end: start + hold + Math.max(0, layers.length - 1) * FADE_LAYER_GAP_MS + FADE_LAYER_MS };
     this.fading = fade;
     this.container.classList.add('is-fading-in');
     const apply = () => {
@@ -982,8 +984,39 @@ export class TableView {
     this.cancelIntro = finish;
   }
 
+  /**
+   * The signature opening (#697): the place builds itself from its streets, buildings and trees
+   * on a dark table, and the layers at rest fade in as the dark lifts. `length` is the build's
+   * length in milliseconds.
+   */
+  playBuild(layers: readonly string[], opening: Opening, length: number): void {
+    // The layers wait under the dark until it starts to lift.
+    this.playFade(layers, length * PHASES.lift[0]);
+    const finishFade = this.cancelIntro;
+    const overlay = new MapCanvasOverlay(this.map, this.container, 'opening', this.site, { top: true });
+    overlay.element.style.zIndex = '4';
+    this.placeOverlay(overlay.element);
+    const start = performance.now();
+    let frame = 0;
+    const done = () => {
+      cancelAnimationFrame(frame);
+      overlay.remove();
+    };
+    const tick = () => {
+      const t = (performance.now() - start) / length;
+      if (t >= 1) return done();
+      drawOpening(overlay.context, overlay, opening, (p) => overlay.project(p), t, overlay.pixelsPerMetre);
+      frame = requestAnimationFrame(tick);
+    };
+    tick();
+    this.cancelIntro = () => {
+      done();
+      finishFade?.();
+    };
+  }
+
   /** While the opening fade plays: when it started, each layer's place in it, and when it ends. */
-  private fading: { start: number; ranks: Map<string, number>; frame: number; end: number } | null = null;
+  private fading: { start: number; hold: number; ranks: Map<string, number>; frame: number; end: number } | null = null;
   private cancelIntro: (() => void) | null = null;
   private viewListeners = new Set<() => void>();
 

@@ -497,8 +497,8 @@ export interface SiteInfo {
     ribbons?: Partial<Record<'top' | 'bottom' | 'left' | 'right', 'off' | 'auto' | { cm: number }>>;
     /** The ambient glow in the projector's blank space, in the model's own colours (#476). */
     glow?: { on?: boolean; strength?: number; colours?: 'edges' | 'one' };
-    /** How the projected table opens, at start and after Reset: the layers fading in (the default) or the zoom in (#446). */
-    intro?: 'fade' | 'zoom';
+    /** How the projected table opens, at start and after Reset: the place building itself (the default, #697), the layers fading in, or the zoom in (#446). */
+    intro?: 'build' | 'fade' | 'zoom';
   } | null;
   basemap: { background: string; style: string | null };
   /** Table settings (#73): the controller's title, logo and the welcome line under the title. */
@@ -522,7 +522,8 @@ export interface SiteInfo {
   data: Record<string, string>;
   tv?: TvConfig | null;
   /** How the table's surfaces render (#134). Without it, `good`. */
-  display?: { quality?: DisplayQuality } | null;
+  /** How the table renders (#134) and its interface sounds' volume, 0 to 1 (#703). */
+  display?: { quality?: DisplayQuality; sounds?: number } | null;
   /** The table's palette (#93): a built-in set and the slots it changes. Resolve with `resolvePalette`. */
   palette?: { set?: string; slots?: Record<string, string> } | null;
   /** The 3D model of the site (`scene.mesh`, docs/contracts/site.md), and whether footprints are raised beside it. */

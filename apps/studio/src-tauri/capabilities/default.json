@@ -70,6 +70,7 @@
     "allow-licence-set-use",
     "allow-licence-add",
     "allow-licence-remove",
-    "allow-licence-notices"
+    "allow-licence-notices",
+    "allow-open-about"
   ]
 }
