@@ -4,6 +4,86 @@ Every merge to main that carries a release note becomes a version. The newest is
 The app shows these notes, with their pictures, on Home when a newer version is out.
 How notes are written: docs/RELEASING.md.
 
+## 0.59.0 (2026-11-28)
+
+### New
+
+#### Playback shows what live feeds said at the time (#523)
+
+While a session records, MR Studio now keeps what the outside answered: public transport positions, WMS map pictures, a source's tiles and requests, and a table's own services (#523). Played back, the table shows those answers as they were at that moment, even with the network off, and reaches nothing outside. Each different answer is kept once, at most 512 MB per recording, and it travels in the .mrsession file.
+
+#### Recorded sessions have their own place on Home (#525)
+
+Home now has a **Recorded sessions** section under your tables (#525). Each card shows the recording's name, date, length, how many phones took part, the facilitator, the table and its tags. You can find a recording by name, tag or facilitator and sort by date. Each card has Edit details, Show in folder and Delete (to the Trash or Recycle Bin, after asking). A table's card says how many recordings were made on it, and that link shows just those. A recording is never listed as a table.
+
+![Recorded sessions on Home](docs/screenshots/525-home-recordings.png)
+![Only one table's recordings](docs/screenshots/525-home-filtered.png)
+
+#### Play a recorded session back (#526)
+
+Press a recording on Home and it plays back (#526). A copy of the table as it was runs read only, so nothing in the table or the recording can change, and phones cannot join. The playback room shows the table and the controller side by side over a timeline: play and pause, speeds from half to eight times, the chapter before and after, chapter marks and a tick for each event. Space plays and pauses, the arrow keys move five seconds. Jumping backwards starts from the nearest checkpoint, so it is quick even in a long session. The controller says "Recorded session, read only". From the command line, `mrstudio play <recording folder> --site <table>` does the same.
+
+![The playback room](docs/screenshots/526-playback-room.png)
+
+#### Review a recorded session: what happened, and your notes (#527)
+
+The playback room lists what happened in words, such as "Controller opened sunlight" or "Phone 2 drew or marked on sketch" (#527). Show one phone or the controller only, or only layers, sketches, phones joining, settings or chapters; the timeline's ticks follow the same filter. Press an event to go there. Add a note at any moment: notes are kept beside the recording, never in it, and show as red marks on the timeline. **Save notes and events as text** or **Save as CSV** takes the review away.
+
+![Events and notes](docs/screenshots/527-events-notes.png)
+
+#### Play a recorded session on the real table (#528)
+
+In the playback room in the app, **Play on the table** puts the recording on the projector and the TV, while the timeline stays on the laptop (#528). It uses this computer's calibration for the projector. The controller says it is a recorded session, shows no way for phones to join, and its buttons change nothing. **Stop playing on the table** takes it off the screens again.
+
+![Play on the table](docs/screenshots/528-play-on-table.png)
+
+#### Take a recorded session to another computer (#529)
+
+**Export…** on a recording's card on Home saves it as one `.mrsession` file, with a copy of its table as it was, so it plays back on a computer that never had the table (#529). Choose **Without media** to leave out videos and large pictures and keep the file small. On the other computer, **Open a recorded session…** adds it to Recorded sessions, never to your tables, and pressing it plays it back. Keys and passwords never go in the file.
+
+![Export a recorded session](docs/screenshots/529-export.png)
+![Open a recorded session](docs/screenshots/529-opened.png)
+
+#### Phones are asked before a session records them (#530)
+
+While a session is recorded, every phone now sees a notice first: that the session is being recorded, what is kept, and the organiser's own words if they wrote any (#530). The visitor picks **Join** or **Just watch**. Until a phone answers, it can't change anything and nothing from it is kept. Just watch gives up its seat, and the phone can look around but change nothing. The notice also shows on phones that were already there when recording starts. The Record form has "Ask phones before recording them" (on by default) and a box for the notice. The wording is a placeholder until it has been agreed.
+
+![The notice on a phone](docs/screenshots/530-phone-notice.png)
+![A phone that chose Just watch](docs/screenshots/530-phone-watching.png)
+
+#### Get a table from a git repository, and update it from there (#570)
+
+For teams that keep a table in GitHub or GitLab (#570): **Get a table from a git repository…** under Your tables on Home takes the repository's address and keeps the table in your tables folder. When someone pushes a new version, the table's card says **Update from the repository** with how many changes are new. The studio computer only follows the repository: a table changed there is not updated over, nothing updates while it is on the screens, and its calibration stays as it was. Signing in is git's own; Git LFS is needed for tables that keep big files with it.
+
+![A table that follows its repository](docs/screenshots/570-git-card.png)
+![Get a table from a repository](docs/screenshots/570-git-dialog.png)
+
+### Fixes
+
+#### Sources and keys work again in Settings
+
+Since Sources moved into Settings, opening Settings showed "sources_page not allowed on window launcher" and the Sources page stayed empty. The Settings window may now list, add, test and remove sources again.
+
+### For developers
+
+#### Licensing support, built and switched off (#725, #726, #727, #728, #729, #730, #731, #732)
+
+MR Studio can now carry a licence: who it is licensed to (a designer, and the exhibitor the table
+is for), how many tables and editor seats it covers, and until when. A table is counted by its
+place, so copies of a table are one table. It all works offline, never touches a table that is
+presenting, and runs on the honour system for now: a licence is a plain file made with
+`mrstudio licence issue`. Signed licences are ready for later.
+
+**None of it shows yet.** Settings › Licence, the first-run question, the editor reminders and
+the warning before sharing restricted data stay hidden until licensing is turned on. Checks only
+log what they would have refused. `MRS_LICENSING=preview` shows it all on one computer.
+
+Also new: `data_licences` in site.json says where a table's data came from and on what terms,
+and its credit lines reach the controller's Credits page. Release builds now ship the
+open-source licences of every library inside. See docs/licensing.md.
+
+![The Licence page in Settings, previewed](docs/screenshots/725-licence-page.png)
+
 ## 0.58.1 (2026-11-28)
 
 ### Fixes
