@@ -14,7 +14,9 @@ test.describe('import and new tables', () => {
     await studio.shot(dialog, 'import/712-format-folded');
     await dialog.locator('.im-format summary', { hasText: 'Show the file format' }).click();
     await dialog.locator('.im-example', { hasText: 'GeoJSON polygons' }).waitFor();
-    await dialog.getByLabel('What the file holds').selectOption('own');
+    await dialog.getByRole('combobox', { name: 'What the file holds' }).click();
+    await studio.shot(dialog, 'import/712-picker');
+    await dialog.getByRole('option', { name: /^Something else/ }).click();
     await dialog.getByLabel('Name of the dataset').fill('Places');
     await dialog.getByLabel('File for the dataset').setInputFiles(path.join(kit, 'places.geojson'));
     await dialog.locator('.im-map .im-map-table').waitFor();

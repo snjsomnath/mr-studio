@@ -188,7 +188,9 @@ test.describe('editor', () => {
       await page.keyboard.type('data file');
       await page.keyboard.press('Enter');
       const dialog = page.locator('dialog[open]');
-      await dialog.locator('select').first().selectOption({ label: kind });
+      // The editor's own list (#712): open it, then pick.
+      await dialog.getByRole('combobox', { name: 'What the file holds' }).click();
+      await dialog.getByRole('option', { name: kind, exact: true }).click();
       await page.locator(`input[type=file][aria-label="File for ${kind}"]`).setInputFiles(path.join(kit, 'broken', file));
       await until(async () => says.test(await dialog.innerText()), `the message for ${file}`, 15000);
       if (file === 'buildings-3km-away.geojson') await studio.shot(page, 'editor/import-3km');
@@ -428,7 +430,8 @@ test.describe('editor', () => {
     await page.locator('.ed-tab[data-tab="insert"]').click();
     await page.locator('.ed-ribbon [data-command="data.file"]').click();
     const dialog = page.locator('dialog.im-dialog');
-    await dialog.locator('select').first().selectOption('own');
+    await dialog.getByRole('combobox', { name: 'What the file holds' }).click();
+    await dialog.getByRole('option', { name: /^Something else/ }).click();
     await dialog.getByLabel('Name of the dataset').fill('districts');
     const chooser = page.waitForEvent('filechooser');
     await dialog.getByRole('button', { name: 'Choose a file' }).first().click();
