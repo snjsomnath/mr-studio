@@ -116,7 +116,7 @@ Live values are cut to the same limits at run time.
 rule `overflow`, through the `onOverflow` option, and in dev mode with a dashed outline. Before it measures,
 it calls the widget handle's optional `fit()`, where a widget whose content depends on its width fits it
 (the stat and gauge step their number down to the small number size; the series widens its scale's gutter;
-the donut keeps its key at least half the width). The controller tells the editor which panels spill
+the donut keeps its key at least half the width; bars drop their last bars when rows had to shrink or the controller is drawn large, as a list too long loses its tail). The controller tells the editor which panels spill
 (`{ type: 'mrs-panel-fit', from, panels }`), and the editor's status bar says so.
 `worstCasePanel(widget, size)` is the widget's panel with the worst props the rules allow; every core widget
 fits it at every size in CI (`pnpm --filter @mrstudio/dashboard fit [webkit|msedge]`).
